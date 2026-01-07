@@ -1,0 +1,185 @@
+package state
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"syscall"
+	"time"
+)
+
+// DaemonState represents the state of a running daemon.
+type DaemonState struct {
+	TopologyName string    `json:"topology_name"`
+	TopologyFile string    `json:"topology_file"`
+	PID          int       `json:"pid"`
+	Port         int       `json:"port"`
+	StartedAt    time.Time `json:"started_at"`
+}
+
+// BaseDir returns the base agentlab directory (~/.agentlab/).
+func BaseDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".agentlab")
+}
+
+// StateDir returns the directory for state files (~/.agentlab/state/).
+func StateDir() string {
+	return filepath.Join(BaseDir(), "state")
+}
+
+// LogDir returns the directory for log files (~/.agentlab/logs/).
+func LogDir() string {
+	return filepath.Join(BaseDir(), "logs")
+}
+
+// MigrateFromAgent0 moves data from ~/.agent0 to ~/.agentlab if needed.
+// This ensures backwards compatibility with existing installations.
+func MigrateFromAgent0() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	oldDir := filepath.Join(home, ".agent0")
+	newDir := filepath.Join(home, ".agentlab")
+
+	// Skip if old dir doesn't exist
+	if _, err := os.Stat(oldDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	// Skip if new dir already exists (don't overwrite)
+	if _, err := os.Stat(newDir); err == nil {
+		return nil
+	}
+
+	// Rename old to new
+	fmt.Printf("Migrating data from %s to %s...\n", oldDir, newDir)
+	return os.Rename(oldDir, newDir)
+}
+
+// StatePath returns the path to a state file for a topology.
+func StatePath(name string) string {
+	return filepath.Join(StateDir(), name+".json")
+}
+
+// LogPath returns the path to a log file for a topology.
+func LogPath(name string) string {
+	return filepath.Join(LogDir(), name+".log")
+}
+
+// Load reads a daemon state file.
+func Load(name string) (*DaemonState, error) {
+	data, err := os.ReadFile(StatePath(name))
+	if err != nil {
+		return nil, err
+	}
+
+	var state DaemonState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("parsing state file: %w", err)
+	}
+
+	return &state, nil
+}
+
+// Save writes a daemon state file.
+func Save(state *DaemonState) error {
+	// Ensure directory exists
+	if err := os.MkdirAll(StateDir(), 0755); err != nil {
+		return fmt.Errorf("creating state directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling state: %w", err)
+	}
+
+	if err := os.WriteFile(StatePath(state.TopologyName), data, 0644); err != nil {
+		return fmt.Errorf("writing state file: %w", err)
+	}
+
+	return nil
+}
+
+// Delete removes a state file.
+func Delete(name string) error {
+	path := StatePath(name)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// List returns all daemon states.
+func List() ([]DaemonState, error) {
+	dir := StateDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var states []DaemonState
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		name := entry.Name()[:len(entry.Name())-5] // Remove .json
+		state, err := Load(name)
+		if err != nil {
+			continue // Skip invalid state files
+		}
+		states = append(states, *state)
+	}
+
+	return states, nil
+}
+
+// IsRunning checks if the daemon process is still running.
+func IsRunning(state *DaemonState) bool {
+	if state == nil || state.PID == 0 {
+		return false
+	}
+
+	// Check if process exists by sending signal 0
+	process, err := os.FindProcess(state.PID)
+	if err != nil {
+		return false
+	}
+
+	err = process.Signal(syscall.Signal(0))
+	return err == nil
+}
+
+// KillDaemon sends SIGTERM to the daemon process.
+func KillDaemon(state *DaemonState) error {
+	if state == nil || state.PID == 0 {
+		return nil
+	}
+
+	process, err := os.FindProcess(state.PID)
+	if err != nil {
+		return fmt.Errorf("finding process %d: %w", state.PID, err)
+	}
+
+	if err := process.Signal(syscall.SIGTERM); err != nil {
+		// Process might already be dead
+		if err == os.ErrProcessDone {
+			return nil
+		}
+		return fmt.Errorf("sending SIGTERM to %d: %w", state.PID, err)
+	}
+
+	return nil
+}
+
+// EnsureLogDir creates the log directory if it doesn't exist.
+func EnsureLogDir() error {
+	return os.MkdirAll(LogDir(), 0755)
+}
