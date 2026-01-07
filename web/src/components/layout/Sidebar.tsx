@@ -3,7 +3,6 @@ import { X, Terminal, Box, ChevronDown, ChevronRight, Wrench, FileText } from 'l
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
-import { LogViewer } from '../ui/LogViewer';
 import { ControlBar } from '../ui/ControlBar';
 import { useTopologyStore, useSelectedNodeData } from '../../stores/useTopologyStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -13,9 +12,8 @@ export function Sidebar() {
   const selectedData = useSelectedNodeData();
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
+  const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const selectNode = useTopologyStore((s) => s.selectNode);
-
-  const [showLogs, setShowLogs] = useState(false);
 
   if (!selectedData || selectedData.type === 'gateway') {
     return null;
@@ -28,7 +26,10 @@ export function Sidebar() {
   const handleClose = () => {
     setSidebarOpen(false);
     selectNode(null);
-    setShowLogs(false);
+  };
+
+  const handleShowLogs = () => {
+    setBottomPanelOpen(true);
   };
 
   return (
@@ -118,14 +119,14 @@ export function Sidebar() {
         <Section title="Actions" icon={Terminal} defaultOpen>
           <ControlBar agentName={data.name} />
           <button
-            onClick={() => setShowLogs(true)}
+            onClick={handleShowLogs}
             className={cn(
               'w-full mt-2 flex items-center justify-center gap-2 py-2 rounded',
-              'bg-background hover:bg-surfaceHighlight transition-colors text-sm'
+              'bg-background hover:bg-surface-highlight transition-colors text-sm'
             )}
           >
             <FileText size={14} />
-            View Logs
+            Show Logs Panel
           </button>
         </Section>
 
@@ -138,14 +139,6 @@ export function Sidebar() {
           >
             <ToolList agentName={data.name} />
           </Section>
-        )}
-
-        {/* Log Viewer (overlay) */}
-        {showLogs && (
-          <LogViewer
-            agentName={data.name}
-            onClose={() => setShowLogs(false)}
-          />
         )}
       </div>
     </aside>
