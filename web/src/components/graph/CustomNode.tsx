@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Settings, Wifi, Server, GitBranch } from 'lucide-react';
+import { Terminal, Box, Wifi, Server } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
@@ -15,12 +15,6 @@ interface CustomNodeProps {
 
 const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const isServer = data.type === 'mcp-server';
-  const isRunning = data.status === 'running';
-  const isProcessing = data.status === 'initializing';
-
-  // Determine glass class based on type (Cyan for MCP servers, Purple for resources)
-  const glassClass = isServer ? 'node-glass-cyan' : 'node-glass-purple';
-  const glowClass = isRunning ? (isServer ? 'shadow-glow-primary' : 'shadow-glow-secondary') : '';
 
   // Choose icon
   const Icon = isServer ? Terminal : Box;
@@ -30,80 +24,100 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const TransportIcon = transport === 'stdio' ? Server : Wifi;
   const toolCount = isServer ? (data as MCPServerNodeData).toolCount : null;
 
-  // Format source display
-  const sourceDisplay = isServer
-    ? (data as MCPServerNodeData).endpoint || (data as MCPServerNodeData).containerId || 'unknown'
-    : (data as ResourceNodeData).image;
+  // Get endpoint/containerId for MCP servers (filter out 'unknown')
+  const endpoint = isServer ? (data as MCPServerNodeData).endpoint : null;
+  const containerId = isServer ? (data as MCPServerNodeData).containerId : null;
+  const hasValidEndpoint = endpoint && endpoint !== 'unknown';
+  const hasValidContainerId = containerId && containerId !== 'unknown';
+
+  // Image for resources
+  const image = !isServer ? (data as ResourceNodeData).image : null;
+  const network = !isServer ? (data as ResourceNodeData).network : null;
 
   return (
     <div
       className={cn(
-        'w-64 shadow-node overflow-hidden node-rim-light',
+        'w-64 shadow-node overflow-hidden rounded-lg',
+        'bg-surface border border-border',
         'transition-all duration-200 ease-out',
-        glassClass,
-        glowClass,
-        isProcessing && 'node-border-animated',
-        selected && 'node-active-glow ring-2 ring-primary/50 ring-offset-2 ring-offset-background',
-        !selected && 'hover:shadow-node-hover'
+        selected && 'border-primary ring-2 ring-primary/20',
+        !selected && 'hover:shadow-node-hover hover:border-text-muted'
       )}
     >
       {/* Header */}
-      <div className="bg-white/5 px-3 py-2.5 flex items-center justify-between border-b border-white/10">
+      <div className="bg-surface-highlight px-3 py-2.5 flex items-center justify-between border-b border-border">
         <div className="flex items-center gap-2 min-w-0">
           <div className={cn(
             'p-1.5 rounded-md',
-            isServer ? 'bg-primary/20' : 'bg-secondary/20'
+            isServer ? 'bg-primary/15' : 'bg-secondary/15'
           )}>
             <Icon
               size={14}
-              className={cn(
-                isServer ? 'text-primary' : 'text-secondary',
-                isRunning && 'drop-shadow-[0_0_4px_currentColor]'
-              )}
+              className={isServer ? 'text-primary' : 'text-secondary'}
             />
           </div>
           <span className="font-semibold text-sm text-text-primary truncate">
             {data.name}
           </span>
         </div>
-        <button
-          className="p-1 rounded hover:bg-white/10 transition-colors"
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-        >
-          <Settings size={14} className="text-text-muted hover:text-text-primary" />
-        </button>
+        <StatusDot status={data.status} />
       </div>
 
       {/* Body */}
-      <div className="p-3 space-y-3">
-        {/* Image/Endpoint Row */}
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            {isServer && (data as MCPServerNodeData).endpoint ? (
+      <div className="p-3 space-y-2.5">
+        {/* Endpoint Row (for HTTP MCP servers) */}
+        {isServer && hasValidEndpoint && (
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1.5">
               <Wifi size={10} className="text-text-muted" />
-            ) : (
-              <GitBranch size={10} className="text-text-muted" />
-            )}
-            <span className="text-[10px] uppercase tracking-wider font-bold text-text-muted">
-              {isServer ? (transport === 'http' ? 'Endpoint' : 'Container') : 'Image'}
-            </span>
+              <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">
+                Endpoint
+              </span>
+            </div>
+            <div className="text-xs text-text-secondary font-mono truncate" title={endpoint}>
+              {endpoint}
+            </div>
           </div>
-          <div className="text-xs text-text-secondary font-mono truncate" title={sourceDisplay}>
-            {sourceDisplay}
-          </div>
-        </div>
+        )}
 
-        {/* Transport (for MCP servers) */}
-        {isServer && transport && (
-          <div className="flex items-center gap-2 text-xs text-text-muted">
-            <TransportIcon size={12} />
-            <span className="uppercase text-[10px] tracking-wider">
-              {transport}
+        {/* Container Row (for stdio MCP servers without endpoint) */}
+        {isServer && !hasValidEndpoint && hasValidContainerId && (
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1.5">
+              <Server size={10} className="text-text-muted" />
+              <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">
+                Container
+              </span>
+            </div>
+            <div className="text-xs text-text-secondary font-mono truncate" title={containerId}>
+              {containerId.slice(0, 12)}
+            </div>
+          </div>
+        )}
+
+        {/* Image Row (for resources) */}
+        {!isServer && image && (
+          <div className="space-y-0.5">
+            <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">
+              Image
             </span>
+            <div className="text-xs text-text-secondary font-mono truncate" title={image}>
+              {image}
+            </div>
+          </div>
+        )}
+
+        {/* Transport + Tool count (for MCP servers) */}
+        {isServer && transport && (
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5 text-text-muted">
+              <TransportIcon size={12} />
+              <span className="uppercase text-[10px] tracking-wider">
+                {transport}
+              </span>
+            </div>
             {toolCount !== null && toolCount !== undefined && (
-              <span className="ml-auto text-text-secondary">
+              <span className="text-text-secondary">
                 {toolCount} tools
               </span>
             )}
@@ -111,32 +125,30 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         )}
 
         {/* Network (for resources) */}
-        {!isServer && (data as ResourceNodeData).network && (
-          <div className="flex items-center gap-2 text-xs text-text-muted">
+        {!isServer && network && (
+          <div className="flex items-center gap-1.5 text-xs text-text-muted">
             <Server size={12} />
             <span className="text-text-secondary">
-              {(data as ResourceNodeData).network}
+              {network}
             </span>
           </div>
         )}
 
-        {/* Footer Row: Status */}
-        <div className="flex justify-between items-center pt-1">
+        {/* Status Badge */}
+        <div className="pt-1">
           <Badge status={data.status}>
-            <StatusDot status={data.status} />
-            <span>{data.status}</span>
+            <span className="capitalize">{data.status}</span>
           </Badge>
         </div>
       </div>
 
-      {/* Connection Handles - Neon style */}
+      {/* Connection Handles - Clean style */}
       <Handle
         type="target"
         position={Position.Left}
         className={cn(
           '!w-3 !h-3 !border-2 !border-background',
-          isServer ? '!bg-primary/60' : '!bg-secondary/60',
-          'hover:!bg-primary hover:!shadow-[0_0_8px_rgba(0,202,255,0.6)]',
+          isServer ? '!bg-primary' : '!bg-secondary',
           'transition-all duration-150'
         )}
         id="input"
@@ -146,8 +158,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         position={Position.Right}
         className={cn(
           '!w-3 !h-3 !border-2 !border-background',
-          isServer ? '!bg-primary/60' : '!bg-secondary/60',
-          'hover:!bg-primary hover:!shadow-[0_0_8px_rgba(0,202,255,0.6)]',
+          isServer ? '!bg-primary' : '!bg-secondary',
           'transition-all duration-150'
         )}
         id="output"
