@@ -8,18 +8,31 @@ interface UIState {
   activeTab: SidebarTab;
   edgeStyle: EdgeStyle;
 
+  // Bottom panel state
+  bottomPanelOpen: boolean;
+  bottomPanelHeight: number;
+
   // Actions
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setActiveTab: (tab: SidebarTab) => void;
   setEdgeStyle: (style: EdgeStyle) => void;
   toggleEdgeStyle: () => void;
+
+  // Bottom panel actions
+  setBottomPanelOpen: (open: boolean) => void;
+  toggleBottomPanel: () => void;
+  setBottomPanelHeight: (height: number) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   sidebarOpen: false,
   activeTab: 'details',
-  edgeStyle: 'default', // Bezier curves (organic noodles)
+  edgeStyle: 'default', // Bezier curves
+
+  // Bottom panel defaults
+  bottomPanelOpen: false,
+  bottomPanelHeight: 300,
 
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -28,4 +41,9 @@ export const useUIStore = create<UIState>((set) => ({
   toggleEdgeStyle: () => set((s) => ({
     edgeStyle: s.edgeStyle === 'default' ? 'straight' : 'default',
   })),
+
+  // Bottom panel actions
+  setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
+  toggleBottomPanel: () => set((s) => ({ bottomPanelOpen: !s.bottomPanelOpen })),
+  setBottomPanelHeight: (bottomPanelHeight) => set({ bottomPanelHeight }),
 }));
