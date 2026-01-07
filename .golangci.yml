@@ -1,0 +1,20 @@
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  disable:
+    - depguard
+
+linters-settings:
+  errcheck:
+    check-blank: false
+
+issues:
+  exclude-use-default: true
+
+run:
+  timeout: 3m
