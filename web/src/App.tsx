@@ -3,6 +3,7 @@ import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { StatusBar } from './components/layout/StatusBar';
+import { BottomPanel } from './components/layout/BottomPanel';
 import { Canvas } from './components/graph/Canvas';
 import { useTopologyStore } from './stores/useTopologyStore';
 import { useUIStore } from './stores/useUIStore';
@@ -25,6 +26,8 @@ function AppContent() {
     setTimeout(() => setIsRefreshing(false), 500);
   }, [refresh]);
 
+  const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     onFitView: () => fitView({ padding: 0.2, duration: 300 }),
@@ -35,13 +38,15 @@ function AppContent() {
     onZoomIn: () => zoomIn({ duration: 200 }),
     onZoomOut: () => zoomOut({ duration: 200 }),
     onRefresh: handleRefresh,
+    onToggleBottomPanel: toggleBottomPanel,
   });
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-background">
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
-      <div className="flex-1 flex relative overflow-hidden">
+      {/* Main content area - takes remaining space minus bottom panel and status bar */}
+      <div className="flex-1 flex relative overflow-hidden min-h-0">
         {/* Loading State */}
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-30">
@@ -63,7 +68,7 @@ function AppContent() {
               <p className="text-sm text-text-muted">{error}</p>
               <button
                 onClick={handleRefresh}
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primaryLight transition-colors"
+                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
               >
                 Retry Connection
               </button>
@@ -77,6 +82,9 @@ function AppContent() {
         {/* Sidebar */}
         <Sidebar />
       </div>
+
+      {/* Bottom Panel for Logs */}
+      <BottomPanel />
 
       <StatusBar />
     </div>
