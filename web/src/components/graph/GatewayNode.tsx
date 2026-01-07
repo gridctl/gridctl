@@ -14,16 +14,17 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
   return (
     <div
       className={cn(
-        'w-56 node-glass-cyan shadow-node overflow-hidden node-rim-light',
+        'w-56 shadow-node overflow-hidden rounded-lg',
+        'bg-surface border border-border',
         'transition-all duration-200 ease-out',
-        'shadow-glow-primary',
-        selected && 'node-active-glow ring-2 ring-primary/50 ring-offset-2 ring-offset-background'
+        selected && 'border-primary ring-2 ring-primary/20',
+        !selected && 'hover:shadow-node-hover hover:border-text-muted'
       )}
     >
       {/* Header */}
-      <div className="bg-primary/10 px-4 py-3 flex items-center gap-3 border-b border-primary/20">
-        <div className="p-2 bg-primary/20 rounded-lg">
-          <Activity size={20} className="text-primary drop-shadow-[0_0_6px_rgba(0,202,255,0.6)]" />
+      <div className="bg-surface-highlight px-4 py-3 flex items-center gap-3 border-b border-border">
+        <div className="p-2 bg-primary/15 rounded-lg">
+          <Activity size={20} className="text-primary" />
         </div>
         <div>
           <h3 className="font-bold text-sm text-text-primary">{data.name}</h3>
@@ -66,19 +67,18 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         </div>
 
         {/* Status indicator */}
-        <div className="flex items-center gap-2 pt-2 border-t border-white/10">
+        <div className="flex items-center gap-2 pt-2 border-t border-border">
           <StatusDot status="running" />
-          <span className="text-xs text-status-running font-medium neon-text">Gateway Active</span>
+          <span className="text-xs text-status-running font-medium">Gateway Active</span>
         </div>
       </div>
 
-      {/* Connection Handles - Neon style */}
+      {/* Connection Handles - Clean style */}
       <Handle
         type="target"
         position={Position.Left}
         className={cn(
           '!w-4 !h-4 !bg-primary !border-2 !border-background',
-          '!shadow-[0_0_8px_rgba(0,202,255,0.5)]',
           'transition-all duration-150'
         )}
         id="input"
@@ -88,7 +88,6 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         position={Position.Right}
         className={cn(
           '!w-4 !h-4 !bg-primary !border-2 !border-background',
-          '!shadow-[0_0_8px_rgba(0,202,255,0.5)]',
           'transition-all duration-150'
         )}
         id="output"
