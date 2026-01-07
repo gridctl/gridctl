@@ -1,0 +1,240 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// SSEServer handles Server-Sent Events connections for MCP.
+type SSEServer struct {
+	gateway *Gateway
+
+	mu       sync.RWMutex
+	sessions map[string]*SSESession
+}
+
+// SSESession represents a connected SSE client.
+type SSESession struct {
+	ID        string
+	Writer    http.ResponseWriter
+	Flusher   http.Flusher
+	Done      chan struct{}
+	MessageID atomic.Int64
+}
+
+// NewSSEServer creates a new SSE server.
+func NewSSEServer(gateway *Gateway) *SSEServer {
+	return &SSEServer{
+		gateway:  gateway,
+		sessions: make(map[string]*SSESession),
+	}
+}
+
+// ServeHTTP handles SSE connections at /sse.
+func (s *SSEServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Create session
+	session := &SSESession{
+		ID:      generateSessionID(),
+		Writer:  w,
+		Flusher: flusher,
+		Done:    make(chan struct{}),
+	}
+
+	s.mu.Lock()
+	s.sessions[session.ID] = session
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.sessions, session.ID)
+		s.mu.Unlock()
+		close(session.Done)
+	}()
+
+	// Build full URL for message endpoint
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	// Check for forwarded proto header
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	host := r.Host
+	messageURL := fmt.Sprintf("%s://%s/message?sessionId=%s", scheme, host, session.ID)
+
+	// Send endpoint information
+	s.sendEvent(session, "endpoint", messageURL)
+
+	// Keep connection alive
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			// Send keepalive using SSE comment (starts with :)
+			// This doesn't trigger message parsing in MCP clients
+			fmt.Fprint(session.Writer, ": keepalive\n\n")
+			session.Flusher.Flush()
+		}
+	}
+}
+
+// HandleMessage handles POST requests to /message for a specific session.
+func (s *SSEServer) HandleMessage(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sessionID := r.URL.Query().Get("sessionId")
+	if sessionID == "" {
+		http.Error(w, "Missing sessionId", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	session, ok := s.sessions[sessionID]
+	s.mu.RUnlock()
+
+	if !ok {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse request
+	var req Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Handle the request
+	resp := s.handleRequest(r.Context(), &req)
+
+	// Send response via SSE for SSE-only clients
+	s.sendEvent(session, "message", resp)
+
+	// Also return response directly for HTTP clients
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// handleRequest processes an MCP request.
+func (s *SSEServer) handleRequest(ctx context.Context, req *Request) Response {
+	switch req.Method {
+	case "initialize":
+		return s.handleInitialize(req)
+	case "notifications/initialized":
+		return NewSuccessResponse(req.ID, nil)
+	case "tools/list":
+		return s.handleToolsList(req)
+	case "tools/call":
+		return s.handleToolsCall(ctx, req)
+	case "ping":
+		return NewSuccessResponse(req.ID, struct{}{})
+	default:
+		return NewErrorResponse(req.ID, MethodNotFound, fmt.Sprintf("Unknown method: %s", req.Method))
+	}
+}
+
+func (s *SSEServer) handleInitialize(req *Request) Response {
+	var params InitializeParams
+	if req.Params != nil {
+		_ = json.Unmarshal(req.Params, &params) // params has defaults, unmarshal errors are non-fatal
+	}
+
+	result, err := s.gateway.HandleInitialize(params)
+	if err != nil {
+		return NewErrorResponse(req.ID, InternalError, err.Error())
+	}
+	return NewSuccessResponse(req.ID, result)
+}
+
+func (s *SSEServer) handleToolsList(req *Request) Response {
+	result, err := s.gateway.HandleToolsList()
+	if err != nil {
+		return NewErrorResponse(req.ID, InternalError, err.Error())
+	}
+	return NewSuccessResponse(req.ID, result)
+}
+
+func (s *SSEServer) handleToolsCall(ctx context.Context, req *Request) Response {
+	var params ToolCallParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return NewErrorResponse(req.ID, InvalidParams, "Invalid tools/call params")
+	}
+
+	result, err := s.gateway.HandleToolsCall(ctx, params)
+	if err != nil {
+		return NewErrorResponse(req.ID, InternalError, err.Error())
+	}
+	return NewSuccessResponse(req.ID, result)
+}
+
+// sendEvent sends an SSE event to a session.
+func (s *SSEServer) sendEvent(session *SSESession, event string, data any) {
+	var dataStr string
+	switch v := data.(type) {
+	case string:
+		dataStr = v
+	default:
+		b, _ := json.Marshal(v)
+		dataStr = string(b)
+	}
+
+	// SSE format: id: <id>\nevent: <name>\ndata: <data>\n\n
+	msgID := session.MessageID.Add(1)
+	fmt.Fprintf(session.Writer, "id: %d\n", msgID)
+	fmt.Fprintf(session.Writer, "event: %s\n", event)
+	fmt.Fprintf(session.Writer, "data: %s\n", dataStr)
+	fmt.Fprint(session.Writer, "\n")
+	session.Flusher.Flush()
+}
+
+// Broadcast sends an event to all connected sessions.
+func (s *SSEServer) Broadcast(event string, data any) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, session := range s.sessions {
+		s.sendEvent(session, event, data)
+	}
+}
+
+// SessionCount returns the number of active sessions.
+func (s *SSEServer) SessionCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.sessions)
+}
