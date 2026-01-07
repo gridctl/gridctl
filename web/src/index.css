@@ -2,38 +2,37 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @theme {
-  /* Core palette - Quantum Neon */
-  --color-background: #0D0D0D;
-  --color-surface: #1a1a1a;
-  --color-surface-highlight: #2a2a2a;
-  --color-border: #3a3a3a;
+  /* Core palette - Calm Dark (Linear-inspired) */
+  --color-background: #09090b;        /* Zinc-950 */
+  --color-surface: #18181b;           /* Zinc-900 */
+  --color-surface-highlight: #27272a; /* Zinc-800 */
+  --color-border: #3f3f46;            /* Zinc-700 */
+  --color-border-subtle: rgba(255, 255, 255, 0.1);
 
-  /* Neon Accents */
-  --color-primary: #00CAFF;
-  --color-primary-light: #66DFFF;
-  --color-secondary: #B915CC;
-  --color-secondary-light: #D45DE8;
+  /* Professional Accents */
+  --color-primary: #3b82f6;           /* Blue-500 */
+  --color-primary-light: #60a5fa;     /* Blue-400 */
+  --color-secondary: #8b5cf6;         /* Violet-500 */
+  --color-secondary-light: #a78bfa;   /* Violet-400 */
 
-  /* Status colors */
-  --color-status-running: #2CFF05;
-  --color-status-stopped: #4a4a4a;
-  --color-status-error: #FF3366;
-  --color-status-pending: #FFCC00;
+  /* Status colors (slightly muted) */
+  --color-status-running: #22c55e;    /* Green-500 */
+  --color-status-stopped: #52525b;    /* Zinc-600 */
+  --color-status-error: #ef4444;      /* Red-500 */
+  --color-status-pending: #eab308;    /* Yellow-500 */
 
   /* Text hierarchy */
-  --color-text-primary: #f8fafc;
-  --color-text-secondary: #a0a0a0;
-  --color-text-muted: #707070;
+  --color-text-primary: #fafafa;      /* Zinc-50 */
+  --color-text-secondary: #a1a1aa;    /* Zinc-400 */
+  --color-text-muted: #71717a;        /* Zinc-500 */
 
   /* Fonts */
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', Consolas, monospace;
 
-  /* Shadows */
-  --shadow-node: 0 4px 20px rgba(0, 0, 0, 0.6);
-  --shadow-node-hover: 0 8px 30px rgba(0, 0, 0, 0.7);
-  --shadow-glow-primary: 0 0 20px rgba(0, 202, 255, 0.4);
-  --shadow-glow-secondary: 0 0 20px rgba(185, 21, 204, 0.4);
+  /* Shadows - Clean, no glow */
+  --shadow-node: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-node-hover: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 :root {
@@ -56,7 +55,7 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
-/* React Flow customizations - ComfyUI inspired */
+/* React Flow customizations */
 .react-flow__pane {
   cursor: grab;
 }
@@ -65,36 +64,33 @@ body {
   cursor: grabbing;
 }
 
-/* Edge styling - Cool Gray default, Cyan pulse on activity */
+/* Edge styling - Clean gray default */
 .react-flow__edge-path {
-  stroke: #64748B;
+  stroke: var(--color-border);
   stroke-width: 2px;
-  transition: stroke 0.2s ease, stroke-width 0.2s ease, filter 0.2s ease;
+  transition: stroke 0.2s ease, stroke-width 0.2s ease;
 }
 
 .react-flow__edge:hover .react-flow__edge-path {
-  stroke: rgba(0, 202, 255, 0.6);
-  stroke-width: 3px;
-  filter: drop-shadow(0 0 4px rgba(0, 202, 255, 0.4));
+  stroke: var(--color-text-secondary);
+  stroke-width: 2.5px;
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: var(--color-primary);
-  stroke-width: 3px;
-  filter: drop-shadow(0 0 6px rgba(0, 202, 255, 0.5));
+  stroke-width: 2.5px;
 }
 
-/* Animated edges - Neon Cyan pulse (only when data flows) */
+/* Animated edges - Clean data flow */
 .react-flow__edge.animated .react-flow__edge-path {
-  stroke: #00CAFF;
-  stroke-dasharray: 8 4;
-  animation: neon-flow 1.5s linear infinite;
-  filter: drop-shadow(0 0 4px rgba(0, 202, 255, 0.5));
+  stroke: var(--color-primary);
+  stroke-dasharray: 5 3;
+  animation: data-flow 1s linear infinite;
 }
 
-@keyframes neon-flow {
+@keyframes data-flow {
   from { stroke-dashoffset: 0; }
-  to { stroke-dashoffset: -12; }
+  to { stroke-dashoffset: -8; }
 }
 
 /* Connection line (while dragging) */
@@ -102,7 +98,6 @@ body {
   stroke: var(--color-primary);
   stroke-width: 2px;
   stroke-dasharray: 5 5;
-  filter: drop-shadow(0 0 4px rgba(0, 202, 255, 0.6));
   animation: dash 0.5s linear infinite;
 }
 
@@ -112,12 +107,10 @@ body {
   }
 }
 
-/* Controls styling - Glassmorphism */
+/* Controls styling - Clean flat design */
 .react-flow__controls {
-  background: rgba(26, 26, 26, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 202, 255, 0.2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
   box-shadow: var(--shadow-node);
   overflow: hidden;
@@ -126,17 +119,16 @@ body {
 .react-flow__controls-button {
   background: transparent;
   border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--color-border);
   color: var(--color-text-secondary);
   width: 28px;
   height: 28px;
-  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: background-color 0.15s, color 0.15s;
 }
 
 .react-flow__controls-button:hover {
-  background: rgba(0, 202, 255, 0.1);
-  color: var(--color-primary);
-  box-shadow: inset 0 0 10px rgba(0, 202, 255, 0.1);
+  background: var(--color-surface-highlight);
+  color: var(--color-text-primary);
 }
 
 .react-flow__controls-button:last-child {
@@ -155,12 +147,10 @@ body {
   stroke: currentColor;
 }
 
-/* Custom control buttons - Glassmorphism */
+/* Custom control buttons - Clean flat design */
 .control-button {
-  background: rgba(26, 26, 26, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 202, 255, 0.2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 0.375rem;
   color: var(--color-text-secondary);
   width: 28px;
@@ -169,32 +159,30 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .control-button:hover {
-  background: rgba(0, 202, 255, 0.1);
-  color: var(--color-primary);
-  border-color: rgba(0, 202, 255, 0.4);
-  box-shadow: 0 0 10px rgba(0, 202, 255, 0.2);
+  background: var(--color-surface-highlight);
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
 }
 
-/* MiniMap styling - Quantum Neon */
+/* MiniMap styling - Clean */
 .react-flow__minimap {
-  background-color: rgba(26, 26, 26, 0.9);
+  background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 0.5rem;
   box-shadow: var(--shadow-node);
-  backdrop-filter: blur(8px);
 }
 
 .react-flow__minimap-mask {
-  fill: rgba(13, 13, 13, 0.8);
+  fill: rgba(9, 9, 11, 0.8);
 }
 
 .react-flow__minimap-node {
   fill: var(--color-surface-highlight);
-  stroke: var(--color-primary);
+  stroke: var(--color-border);
   stroke-width: 1;
 }
 
@@ -203,7 +191,7 @@ body {
   display: none;
 }
 
-/* Handle styling - Neon style */
+/* Handle styling - Clean */
 .react-flow__handle {
   width: 0.75rem;
   height: 0.75rem;
@@ -221,15 +209,13 @@ body {
 }
 
 .react-flow__handle:hover {
-  transform: scale(1.25);
-  box-shadow: 0 0 8px rgba(0, 202, 255, 0.6);
+  transform: scale(1.15);
 }
 
-/* Selection box - Neon */
+/* Selection box - Clean */
 .react-flow__selection {
-  background-color: rgba(0, 202, 255, 0.05);
-  border: 1px solid rgba(0, 202, 255, 0.5);
-  box-shadow: 0 0 10px rgba(0, 202, 255, 0.2);
+  background-color: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.4);
 }
 
 /* Custom scrollbar for dark theme */
@@ -242,12 +228,12 @@ body {
 }
 
 .scrollbar-dark::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 202, 255, 0.3);
+  background-color: var(--color-border);
   border-radius: 9999px;
 }
 
 .scrollbar-dark::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 202, 255, 0.5);
+  background-color: var(--color-text-muted);
 }
 
 /* Truncate with ellipsis - multi-line */
@@ -259,129 +245,57 @@ body {
 }
 
 /* ========================================
-   QUANTUM NEON THEME STYLES
+   CLEAN NODE STYLES (Linear-inspired)
    ======================================== */
 
-/* Film grain overlay */
-.film-grain {
-  position: absolute;
-  inset: 0;
-  opacity: 0.015;
-  pointer-events: none;
-  z-index: 1;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+/* Clean node base - MCP servers (primary/blue accent) */
+.node-base {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
 }
 
-/* Glassmorphism node base - Double Background method */
-.node-glass {
-  background:
-    linear-gradient(rgba(13, 13, 13, 0.8), rgba(13, 13, 13, 0.8)) padding-box,
-    linear-gradient(to right, #00CAFF, #B915CC) border-box;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-/* Cyan variant for MCP servers */
+/* Blue variant for MCP servers */
 .node-glass-cyan {
-  background:
-    linear-gradient(rgba(13, 13, 13, 0.8), rgba(13, 13, 13, 0.8)) padding-box,
-    linear-gradient(135deg, #00CAFF 0%, #00CAFF 60%, #B915CC 100%) border-box;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
 }
 
 /* Purple variant for Resources */
 .node-glass-purple {
-  background:
-    linear-gradient(rgba(13, 13, 13, 0.8), rgba(13, 13, 13, 0.8)) padding-box,
-    linear-gradient(135deg, #B915CC 0%, #B915CC 60%, #00CAFF 100%) border-box;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
 }
 
-/* Rim light effect - simulates light catching glass edge */
-.node-rim-light {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+/* Selected node state */
+.node-selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
-/* Active node inner glow */
-.node-active-glow {
-  box-shadow:
-    inset 0 0 30px rgba(0, 202, 255, 0.1),
-    0 0 20px rgba(0, 202, 255, 0.3);
+/* Status dot styles - simple solid dots */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }
 
-/* Neon glow text effect */
-.neon-text {
-  text-shadow: 0 0 10px currentColor;
+.status-dot-running {
+  background: var(--color-status-running);
 }
 
-/* Status pulse with neon glow */
-@keyframes neon-pulse {
-  0%, 100% {
-    box-shadow: 0 0 4px currentColor, 0 0 8px currentColor;
-    opacity: 1;
-  }
-  50% {
-    box-shadow: 0 0 8px currentColor, 0 0 16px currentColor;
-    opacity: 0.8;
-  }
+.status-dot-stopped {
+  background: var(--color-status-stopped);
 }
 
-.status-neon-pulse {
-  animation: neon-pulse 2s ease-in-out infinite;
+.status-dot-error {
+  background: var(--color-status-error);
 }
 
-/* Status glow pulse - 0.8s radial glow for running status */
-@keyframes status-glow-pulse {
-  0%, 100% {
-    box-shadow:
-      0 0 0 0 rgba(44, 255, 5, 0.4),
-      0 0 4px rgba(44, 255, 5, 0.6);
-  }
-  50% {
-    box-shadow:
-      0 0 0 4px rgba(44, 255, 5, 0.1),
-      0 0 8px rgba(44, 255, 5, 0.8);
-  }
-}
-
-.status-glow-pulse {
-  animation: status-glow-pulse 0.8s ease-in-out infinite alternate;
-}
-
-/* Error status glow */
-@keyframes status-glow-error {
-  0%, 100% {
-    box-shadow: 0 0 4px rgba(255, 51, 102, 0.6);
-  }
-  50% {
-    box-shadow: 0 0 8px rgba(255, 51, 102, 0.8);
-  }
-}
-
-.status-glow-error {
-  animation: status-glow-error 0.8s ease-in-out infinite alternate;
-}
-
-/* Pending status glow */
-@keyframes status-glow-pending {
-  0%, 100% {
-    box-shadow: 0 0 4px rgba(255, 204, 0, 0.6);
-  }
-  50% {
-    box-shadow: 0 0 8px rgba(255, 204, 0, 0.8);
-  }
-}
-
-.status-glow-pending {
-  animation: status-glow-pending 0.8s ease-in-out infinite alternate;
+.status-dot-pending {
+  background: var(--color-status-pending);
 }
 
 /* ========================================
@@ -389,31 +303,12 @@ body {
    ======================================== */
 
 /* Hardware acceleration for animated elements */
-.node-glass,
+.node-base,
 .node-glass-cyan,
 .node-glass-purple,
 .react-flow__edge-path {
   transform: translateZ(0);
   will-change: transform, opacity;
-}
-
-@property --border-angle {
-  syntax: '<angle>';
-  initial-value: 0turn;
-  inherits: false;
-}
-
-@keyframes border-spin {
-  from { --border-angle: 0turn; }
-  to { --border-angle: 1turn; }
-}
-
-.node-border-animated {
-  background: 
-    linear-gradient(rgba(13, 13, 13, 0.8), rgba(13, 13, 13, 0.8)) padding-box,
-    conic-gradient(from var(--border-angle), #00CAFF, #B915CC, #00CAFF) border-box !important;
-  animation: border-spin 3s linear infinite;
-  border: 1px solid transparent !important;
 }
 
 /* Containment for better rendering performance */
@@ -422,9 +317,6 @@ body {
 }
 
 /* Optimize animations */
-.status-glow-pulse,
-.status-glow-error,
-.status-glow-pending,
 .react-flow__edge.animated .react-flow__edge-path {
   transform: translateZ(0);
   backface-visibility: hidden;
