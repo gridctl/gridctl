@@ -1,0 +1,62 @@
+# Binary
+/agentlab
+
+# Build artifacts
+cmd/agentlab/web/
+
+# Web dependencies and build
+node_modules/
+web/dist/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Cache
+.cache/
+.npm/
+.eslintcache
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Temporary files
+tmp/
+temp/
+
+# Vendor specific assistant files
+.claude/
+CLAUDE.md
+GEMINI.md
