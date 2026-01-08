@@ -372,6 +372,7 @@ In simple mode, the `network` field on individual containers is ignored.
 - State management: Zustand
 - Data fetching: React Query
 - Styling: Tailwind CSS
+- **UI Design Guidelines:** See [web/AGENTS.md](web/AGENTS.md) for the "Obsidian Observatory" design system, color palette, and component patterns.
 
 ### Commit Messages
 

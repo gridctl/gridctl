@@ -1,0 +1,90 @@
+# Agentlab Web Design System: "Obsidian Observatory"
+
+This document defines the visual language, behavior, and code standards for the Agentlab web interface.
+**All UI changes must strictly adhere to these guidelines.**
+
+## 1. Design Philosophy
+**Aesthetic:** Dark, scientific, mission control, "observatory".
+**Core values:**
+*   **Precision:** Thin borders, mono fonts for data, distinct status indicators.
+*   **Depth:** Heavy use of layering via "glass morphism" (blur + translucency) and Z-axis separation.
+*   **Energy:** Dark backgrounds contrasted with glowing "active" elements (Amber/Teal).
+*   **Atmosphere:** Subtle grain, glows, and organic pulses to make the interface feel "alive" rather than static.
+
+## 2. Color Palette (Tailwind Tokens)
+
+### Backgrounds & Surfaces
+*   `bg-background` (`#08080a`): Global app background.
+*   `bg-surface` (`#111113`): Base card/panel background.
+*   `bg-surface-elevated` (`#18181b`): Modals, dropdowns, floating panels.
+*   `bg-surface-highlight` (`#1f1f23`): Hover states, active list items.
+
+### Brand Colors
+*   **Primary (Amber):** `text-primary` / `bg-primary` (`#f59e0b`). Used for: Actions, active states, energy flow.
+*   **Secondary (Teal):** `text-secondary` / `bg-secondary` (`#0d9488`). Used for: Resources, static data, technical elements.
+
+### Status Indicators
+*   **Running:** `bg-status-running` (`#10b981`) + Glow.
+*   **Stopped:** `bg-status-stopped` (`#52525b`).
+*   **Error:** `bg-status-error` (`#f43f5e`) + Blink animation.
+*   **Pending:** `bg-status-pending` (`#eab308`) + Pulse.
+
+### Text Hierarchy
+*   `text-text-primary` (`#fafaf9`): Headings, main content.
+*   `text-text-secondary` (`#a8a29e`): UI labels, descriptions.
+*   `text-text-muted` (`#78716c`): Placeholder text, subtle metadata.
+
+## 3. Typography
+**Font Family:**
+*   **Sans:** `font-sans` ("Outfit"). Usage: UI elements, headings, buttons.
+*   **Mono:** `font-mono` ("IBM Plex Mono"). Usage: IDs, logs, code, port numbers, technical values.
+
+**Scaling:**
+*   Use `text-sm` for standard UI controls.
+*   Use `text-xs` for metadata/labels.
+*   Use `text-lg`/`text-xl` sparingly for section headers.
+
+## 4. Component Patterns
+
+### Glass Panels (The "Obsidian" Look)
+Do not use flat solid backgrounds for containers. Use the glass utility classes.
+```tsx
+// Standard Panel
+<div className="glass-panel p-4">Content</div>
+
+// Elevated (e.g., Tooltips, Popovers)
+<div className="glass-panel-elevated p-2">Content</div>
+```
+
+### Buttons
+*   **Primary:** Gradient Amber. `btn-primary` class.
+*   **Secondary:** Surface color with border. `btn-secondary` class.
+*   **Ghost:** Transparent, hover highlight. `btn-ghost` class.
+*   **Icon Buttons:** Square, usually `p-2`, often `text-text-muted hover:text-primary`.
+
+### Borders & Separation
+*   Use `border-border` (`#27272a`) for structural edges.
+*   Use `border-border-subtle` (`rgba(255,255,255,0.06)`) for internal dividers.
+*   **Rule:** Prefer 1px borders over background color changes to define separation.
+
+### Shadows & Glows
+*   Use `shadow-node` for floating elements.
+*   Use `shadow-glow-primary` for active/focused elements to create a "light emitting" effect.
+
+## 5. Animation & Interaction
+*   **Transitions:** Always add `transition-all duration-200` (or similar) to interactive elements.
+*   **Micro-interactions:** Buttons should slightly lift (`-translate-y-[1px]`) on hover.
+*   **Loading:** Use `animate-pulse-glow` for loading skeletons, not standard grey pulses.
+
+## 6. Iconography
+*   **Library:** Lucide React (`lucide-react`).
+*   **Style:** Stroke width `1.5px` or `2px`.
+*   **Size:** Standard size is `w-4 h-4` (16px) or `w-5 h-5` (20px).
+
+## 7. Implementation Checklist
+When creating new UI components:
+1.  [ ] Are you using `tailwind.config.js` colors instead of hardcoded hex values?
+2.  [ ] Is the font family correct? (Mono for data, Sans for UI).
+3.  [ ] Does it have a "glass" feel if it's a floating panel?
+4.  [ ] Are borders subtle (`border-border`)?
+5.  [ ] Do interactive elements glow or change color on hover?
