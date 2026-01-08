@@ -8,38 +8,48 @@ export const LAYOUT = {
   NODE_HEIGHT: 140,
 } as const;
 
-// Color palette matching Tailwind config - Quantum Neon
+// ============================================
+// OBSIDIAN OBSERVATORY - Color Palette
+// ============================================
 export const COLORS = {
-  // Background
-  background: '#0D0D0D',
-  surface: '#1a1a1a',
-  surfaceHighlight: '#2a2a2a',
-  border: '#3a3a3a',
+  // Core Obsidian Palette
+  background: '#08080a',
+  surface: '#111113',
+  surfaceElevated: '#18181b',
+  surfaceHighlight: '#1f1f23',
+  border: '#27272a',
+  borderSubtle: 'rgba(255, 255, 255, 0.06)',
 
-  // Primary/Secondary (Neon)
-  primary: '#00CAFF',
-  primaryLight: '#66DFFF',
-  secondary: '#B915CC',
-  secondaryLight: '#D45DE8',
+  // Primary - Warm Amber (Energy, Activity)
+  primary: '#f59e0b',
+  primaryLight: '#fbbf24',
+  primaryDark: '#d97706',
+  primaryGlow: 'rgba(245, 158, 11, 0.15)',
 
-  // Status colors (Neon)
-  statusRunning: '#2CFF05',
-  statusStopped: '#4a4a4a',
-  statusError: '#FF3366',
-  statusPending: '#FFCC00',
+  // Secondary - Deep Teal (Technical, Data)
+  secondary: '#0d9488',
+  secondaryLight: '#14b8a6',
+  secondaryDark: '#0f766e',
+  secondaryGlow: 'rgba(13, 148, 136, 0.15)',
 
-  // Transport indicators
-  transportHttp: '#B915CC',
-  transportStdio: '#00CAFF',
+  // Status colors
+  statusRunning: '#10b981',
+  statusStopped: '#52525b',
+  statusError: '#f43f5e',
+  statusPending: '#eab308',
 
-  // Text
-  textPrimary: '#f8fafc',
-  textSecondary: '#a0a0a0',
-  textMuted: '#707070',
+  // Transport indicators (matching primary/secondary)
+  transportHttp: '#0d9488',  // Teal for network
+  transportStdio: '#f59e0b', // Amber for local
 
-  // Edges
-  edgeDefault: '#64748B',  // Cool Gray
-  edgeAnimated: '#00CAFF',
+  // Text hierarchy - Warm whites
+  textPrimary: '#fafaf9',
+  textSecondary: '#a8a29e',
+  textMuted: '#78716c',
+
+  // Edge colors
+  edgeDefault: '#27272a',
+  edgeAnimated: '#f59e0b',
 } as const;
 
 // Node type identifiers
@@ -56,9 +66,10 @@ export const EDGE_TYPES = {
 
 // Animation durations (ms)
 export const ANIMATION = {
-  NODE_TRANSITION: 200,
-  EDGE_FLOW: 1500,
+  NODE_TRANSITION: 250,
+  EDGE_FLOW: 1200,
   STATUS_PULSE: 2000,
+  STAGGER_DELAY: 50,
 } as const;
 
 // Polling intervals (ms)
