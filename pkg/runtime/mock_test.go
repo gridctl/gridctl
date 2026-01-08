@@ -56,6 +56,9 @@ type MockDockerClient struct {
 	RemovedNetworks []string
 	// Pulled images
 	PulledImages []string
+
+	// Last host config passed to ContainerCreate (for verifying volume mounts, etc.)
+	LastHostConfig *container.HostConfig
 }
 
 func (m *MockDockerClient) recordCall(name string) {
@@ -68,6 +71,7 @@ func (m *MockDockerClient) ContainerCreate(ctx context.Context, config *containe
 		return container.CreateResponse{}, m.ContainerCreateError
 	}
 	m.CreatedContainers = append(m.CreatedContainers, containerName)
+	m.LastHostConfig = hostConfig
 	return container.CreateResponse{ID: "mock-container-" + containerName}, nil
 }
 
