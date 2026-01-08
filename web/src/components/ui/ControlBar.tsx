@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Square, AlertCircle } from 'lucide-react';
-import { cn } from '../../lib/cn';
+import { RefreshCw, Square, AlertCircle, Zap } from 'lucide-react';
 import { Button } from './Button';
 import { restartAgent, stopAgent } from '../../lib/api';
 
@@ -41,7 +40,7 @@ export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex gap-2">
         <Button
           onClick={handleRestart}
@@ -50,10 +49,11 @@ export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
           size="sm"
           className="flex-1"
         >
-          <RefreshCw
-            size={14}
-            className={cn(isRestarting && 'animate-spin')}
-          />
+          {isRestarting ? (
+            <RefreshCw size={14} className="animate-spin" />
+          ) : (
+            <Zap size={14} />
+          )}
           {isRestarting ? 'Restarting...' : 'Restart'}
         </Button>
         <Button
@@ -69,9 +69,9 @@ export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 p-2 bg-status-error/10 rounded text-xs text-status-error">
-          <AlertCircle size={14} />
-          {error}
+        <div className="flex items-center gap-2 p-2.5 bg-status-error/10 border border-status-error/20 rounded-lg text-xs text-status-error">
+          <AlertCircle size={14} className="flex-shrink-0" />
+          <span>{error}</span>
         </div>
       )}
     </div>
