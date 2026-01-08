@@ -7,6 +7,7 @@ import type {
   MCPServerStatus,
   ResourceStatus,
   AgentStatus,
+  A2AAgentStatus,
   Tool,
   ConnectionStatus,
 } from '../types';
@@ -18,6 +19,7 @@ interface TopologyState {
   mcpServers: MCPServerStatus[];
   resources: ResourceStatus[];
   agents: AgentStatus[];
+  a2aAgents: A2AAgentStatus[];
   tools: Tool[];
 
   // === React Flow State ===
@@ -53,6 +55,7 @@ export const useTopologyStore = create<TopologyState>()(
     mcpServers: [],
     resources: [],
     agents: [],
+    a2aAgents: [],
     tools: [],
     nodes: [],
     edges: [],
@@ -69,6 +72,7 @@ export const useTopologyStore = create<TopologyState>()(
         mcpServers: status['mcp-servers'] || [],
         resources: status.resources || [],
         agents: status.agents || [],
+        a2aAgents: status['a2a-agents'] || [],
         lastUpdated: new Date(),
         isLoading: false,
         error: null,
@@ -92,7 +96,7 @@ export const useTopologyStore = create<TopologyState>()(
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, agents, nodes: existingNodes } = get();
+      const { gatewayInfo, mcpServers, resources, agents, a2aAgents, nodes: existingNodes } = get();
       if (!gatewayInfo) return;
 
       // Build map of existing positions to preserve user-dragged positions
@@ -105,13 +109,14 @@ export const useTopologyStore = create<TopologyState>()(
         mcpServers,
         resources,
         agents,
+        a2aAgents,
         positionMap
       );
       set({ nodes, edges });
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources, agents } = get();
+      const { gatewayInfo, mcpServers, resources, agents, a2aAgents } = get();
       if (!gatewayInfo) return;
 
       // Don't pass positionMap to get default calculated positions
@@ -119,7 +124,8 @@ export const useTopologyStore = create<TopologyState>()(
         gatewayInfo,
         mcpServers,
         resources,
-        agents
+        agents,
+        a2aAgents
       );
       set({ nodes, edges });
     },
