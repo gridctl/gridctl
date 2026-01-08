@@ -156,7 +156,7 @@ export function transformToNodesAndEdges(
     });
   });
 
-  // Create agent nodes in radial layout (opposite side from MCP servers)
+  // Create agent nodes in radial layout (right side of gateway)
   agents.forEach((agent, index) => {
     const nodeId = `agent-${agent.name}`;
     const defaultPosition = calculateRadialPosition(
@@ -165,7 +165,7 @@ export function transformToNodesAndEdges(
       LAYOUT.CENTER_X,
       LAYOUT.CENTER_Y,
       LAYOUT.AGENT_RADIUS,
-      Math.PI // Start from left side
+      0 // Start from right side (flow: gateway → agent)
     );
 
     const agentNode: Node = {
