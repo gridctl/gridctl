@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { ChevronDown, ChevronUp, Copy, Trash2, Pause, Play } from 'lucide-react';
+import { ChevronDown, ChevronUp, Copy, Trash2, Pause, Play, Terminal } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { useUIStore } from '../../stores/useUIStore';
@@ -24,7 +24,7 @@ export function BottomPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<number | null>(null);
 
-  // Get agent name from selected node (only for mcp-server and resource types)
+  // Get agent name from selected node
   const agentName: string | null = selectedData && selectedData.type !== 'gateway' ? selectedData.name : null;
 
   const fetchLogs = useCallback(async () => {
@@ -95,7 +95,6 @@ export function BottomPanel() {
     try {
       await navigator.clipboard.writeText(logs.join('\n'));
     } catch {
-      // Fallback for older browsers
       const textArea = document.createElement('textarea');
       textArea.value = logs.join('\n');
       document.body.appendChild(textArea);
@@ -105,29 +104,31 @@ export function BottomPanel() {
     }
   };
 
-  // Collapsed header height
-  const headerHeight = 36;
+  const headerHeight = 40;
 
   return (
     <div
       className={cn(
-        'bg-surface border-t border-border flex flex-col',
-        'transition-all duration-200 ease-out'
+        'bg-surface/90 backdrop-blur-xl border-t border-border/50 flex flex-col',
+        'transition-all duration-300 ease-out relative'
       )}
       style={{ height: bottomPanelOpen ? bottomPanelHeight : headerHeight }}
     >
+      {/* Top accent line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+
       {/* Header */}
       <div
-        className="h-9 flex items-center justify-between px-3 border-b border-border cursor-pointer"
+        className="h-10 flex items-center justify-between px-4 cursor-pointer hover:bg-surface-highlight/30 transition-colors"
         onClick={toggleBottomPanel}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
             onClick={(e) => {
               e.stopPropagation();
               toggleBottomPanel();
             }}
-            className="p-0.5 rounded hover:bg-surface-highlight transition-colors"
+            className="p-1 rounded-md hover:bg-surface-highlight transition-colors"
           >
             {bottomPanelOpen ? (
               <ChevronDown size={14} className="text-text-muted" />
@@ -135,11 +136,16 @@ export function BottomPanel() {
               <ChevronUp size={14} className="text-text-muted" />
             )}
           </button>
-          <span className="text-xs font-medium text-text-primary">
-            {agentName ? `Logs: ${agentName}` : 'Logs'}
-          </span>
+          <div className="flex items-center gap-2">
+            <div className="p-1 rounded-md bg-primary/10">
+              <Terminal size={12} className="text-primary" />
+            </div>
+            <span className="text-xs font-medium text-text-primary">
+              {agentName ? `Logs: ${agentName}` : 'Logs'}
+            </span>
+          </div>
           {isPaused && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-status-pending/20 text-status-pending rounded">
+            <span className="text-[10px] px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
               Paused
             </span>
           )}
@@ -153,6 +159,7 @@ export function BottomPanel() {
               tooltip={isPaused ? 'Resume' : 'Pause'}
               size="sm"
               variant="ghost"
+              className={isPaused ? 'text-status-running hover:text-status-running' : ''}
             />
             <IconButton
               icon={Copy}
@@ -167,6 +174,7 @@ export function BottomPanel() {
               tooltip="Clear Logs"
               size="sm"
               variant="ghost"
+              className="hover:text-status-error"
             />
           </div>
         )}
@@ -177,20 +185,27 @@ export function BottomPanel() {
         <div
           ref={containerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-auto font-mono text-xs p-3 bg-background scrollbar-dark"
+          className="flex-1 overflow-auto font-mono text-xs p-4 bg-background/80 scrollbar-dark"
         >
           {!agentName && (
-            <div className="h-full flex items-center justify-center text-text-muted">
-              Select a node to view logs
+            <div className="h-full flex flex-col items-center justify-center text-text-muted gap-2">
+              <Terminal size={24} className="text-text-muted/50" />
+              <span>Select a node to view logs</span>
             </div>
           )}
 
           {agentName !== null && isLoading && (
-            <div className="text-text-muted">Loading logs...</div>
+            <div className="flex items-center gap-2 text-text-muted">
+              <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              Loading logs...
+            </div>
           )}
 
           {agentName !== null && error && (
-            <div className="text-status-error">Error: {error}</div>
+            <div className="flex items-center gap-2 text-status-error">
+              <span className="w-2 h-2 rounded-full bg-status-error" />
+              Error: {error}
+            </div>
           )}
 
           {agentName !== null && !isLoading && !error && logs.length === 0 && (
@@ -201,7 +216,7 @@ export function BottomPanel() {
             <div
               key={i}
               className={cn(
-                'py-0.5 whitespace-pre-wrap break-all',
+                'py-0.5 whitespace-pre-wrap break-all leading-relaxed',
                 line.includes('ERROR') && 'text-status-error',
                 line.includes('WARN') && 'text-status-pending',
                 line.includes('INFO') && 'text-primary',
