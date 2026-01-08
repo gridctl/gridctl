@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { X, Terminal, Box, Bot, ChevronDown, ChevronRight, Wrench, FileText, Sparkles } from 'lucide-react';
+import { X, Terminal, Box, Bot, Users, ChevronDown, ChevronRight, Wrench, FileText, Sparkles, Globe, Server } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
 import { ControlBar } from '../ui/ControlBar';
 import { useTopologyStore, useSelectedNodeData } from '../../stores/useTopologyStore';
 import { useUIStore } from '../../stores/useUIStore';
-import type { MCPServerNodeData, ResourceNodeData, AgentNodeData } from '../../types';
+import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, A2AAgentNodeData } from '../../types';
 
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
@@ -21,9 +21,10 @@ export function Sidebar() {
 
   const isServer = selectedData.type === 'mcp-server';
   const isAgent = selectedData.type === 'agent';
-  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData;
-  const Icon = isServer ? Terminal : isAgent ? Bot : Box;
-  const colorClass = isServer ? 'primary' : isAgent ? 'tertiary' : 'secondary';
+  const isA2AAgent = selectedData.type === 'a2a-agent';
+  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData | A2AAgentNodeData;
+  const Icon = isServer ? Terminal : isAgent ? Bot : isA2AAgent ? Users : Box;
+  const colorClass = isServer ? 'primary' : (isAgent || isA2AAgent) ? (isA2AAgent ? 'secondary' : 'tertiary') : 'secondary';
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -75,7 +76,7 @@ export function Sidebar() {
               {data.name}
             </h2>
             <p className="text-[10px] text-text-muted uppercase tracking-wider">
-              {isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
+              {isServer ? 'MCP Server' : isAgent ? 'Agent' : isA2AAgent ? 'A2A Agent' : 'Resource'}
             </p>
           </div>
         </div>
@@ -141,8 +142,58 @@ export function Sidebar() {
               </div>
             )}
 
+            {/* A2A Agent fields */}
+            {isA2AAgent && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-text-muted">Role</span>
+                <span className={cn(
+                  'text-xs px-2 py-0.5 rounded-md font-medium uppercase tracking-wider flex items-center gap-1',
+                  'bg-secondary/10 text-secondary'
+                )}>
+                  {(data as A2AAgentNodeData).role === 'remote' ? <Globe size={10} /> : <Server size={10} />}
+                  {(data as A2AAgentNodeData).role}
+                </span>
+              </div>
+            )}
+
+            {isA2AAgent && (data as A2AAgentNodeData).url && (
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-sm text-text-muted">URL</span>
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as A2AAgentNodeData).url}>
+                  {(data as A2AAgentNodeData).url}
+                </span>
+              </div>
+            )}
+
+            {isA2AAgent && (data as A2AAgentNodeData).endpoint && (
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-sm text-text-muted">Endpoint</span>
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as A2AAgentNodeData).endpoint}>
+                  {(data as A2AAgentNodeData).endpoint}
+                </span>
+              </div>
+            )}
+
+            {isA2AAgent && (data as A2AAgentNodeData).skillCount > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-text-muted">Skills</span>
+                <span className="text-sm text-secondary font-bold tabular-nums">
+                  {(data as A2AAgentNodeData).skillCount}
+                </span>
+              </div>
+            )}
+
+            {isA2AAgent && (data as A2AAgentNodeData).description && (
+              <div className="mt-2 pt-2 border-t border-border/30">
+                <span className="text-sm text-text-muted block mb-1">Description</span>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  {(data as A2AAgentNodeData).description}
+                </p>
+              </div>
+            )}
+
             {/* Resource fields */}
-            {!isServer && !isAgent && (data as ResourceNodeData).image && (
+            {!isServer && !isAgent && !isA2AAgent && (data as ResourceNodeData).image && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
                 <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as ResourceNodeData).image}>
@@ -151,7 +202,7 @@ export function Sidebar() {
               </div>
             )}
 
-            {!isServer && !isAgent && (data as ResourceNodeData).network && (
+            {!isServer && !isAgent && !isA2AAgent && (data as ResourceNodeData).network && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Network</span>
                 <span className="text-sm text-secondary font-medium">
@@ -187,6 +238,27 @@ export function Sidebar() {
             count={(data as MCPServerNodeData).toolCount}
           >
             <ToolList agentName={data.name} />
+          </Section>
+        )}
+
+        {/* Skills Section (A2A agents only) */}
+        {isA2AAgent && (data as A2AAgentNodeData).skills.length > 0 && (
+          <Section
+            title="Skills"
+            icon={Sparkles}
+            count={(data as A2AAgentNodeData).skillCount}
+            defaultOpen
+          >
+            <div className="space-y-2">
+              {(data as A2AAgentNodeData).skills.map((skill, idx) => (
+                <div
+                  key={idx}
+                  className="px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30"
+                >
+                  <span className="text-sm text-text-primary font-medium">{skill}</span>
+                </div>
+              ))}
+            </div>
           </Section>
         )}
       </div>
