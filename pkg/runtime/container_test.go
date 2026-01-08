@@ -415,3 +415,54 @@ func TestGetContainerHostPort_InspectError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestCreateContainer_WithVolumes(t *testing.T) {
+	mock := &MockDockerClient{}
+
+	cfg := ContainerConfig{
+		Name:        "agentlab-test-postgres",
+		Image:       "postgres:16",
+		Port:        0,
+		NetworkName: "test-net",
+		Labels: map[string]string{
+			LabelManaged:  "true",
+			LabelResource: "postgres",
+		},
+		Env: map[string]string{
+			"POSTGRES_PASSWORD": "secret",
+		},
+		Volumes: []string{
+			"/host/data:/var/lib/postgresql/data",
+			"/host/config:/etc/postgresql:ro",
+		},
+	}
+
+	ctx := context.Background()
+	id, err := CreateContainer(ctx, mock, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if id == "" {
+		t.Error("expected non-empty container ID")
+	}
+
+	// Verify that volumes were passed to the host config
+	if mock.LastHostConfig == nil {
+		t.Fatal("expected host config to be set")
+	}
+
+	if len(mock.LastHostConfig.Binds) != 2 {
+		t.Errorf("expected 2 volume binds, got %d", len(mock.LastHostConfig.Binds))
+	}
+
+	expectedBinds := []string{
+		"/host/data:/var/lib/postgresql/data",
+		"/host/config:/etc/postgresql:ro",
+	}
+	for i, expected := range expectedBinds {
+		if mock.LastHostConfig.Binds[i] != expected {
+			t.Errorf("bind %d: got %q, want %q", i, mock.LastHostConfig.Binds[i], expected)
+		}
+	}
+}
