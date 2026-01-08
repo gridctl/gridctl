@@ -14,12 +14,12 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
   return (
     <div
       className={cn(
-        'w-60 overflow-hidden rounded-2xl',
+        'w-60 rounded-2xl',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
         'backdrop-blur-xl border border-primary/20',
         'shadow-lg transition-all duration-300 ease-out',
         selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
-        !selected && 'hover:shadow-node-hover hover:border-primary/40 hover:-translate-y-1'
+        !selected && 'hover:shadow-node-hover hover:border-primary/40'
       )}
     >
       {/* Top accent gradient */}
