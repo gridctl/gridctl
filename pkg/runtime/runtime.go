@@ -24,6 +24,14 @@ type MCPServerInfo struct {
 	HostPort      int
 }
 
+// AgentInfo contains runtime information about a started agent.
+type AgentInfo struct {
+	Name          string
+	ContainerID   string
+	ContainerName string
+	Uses          []string // MCP servers this agent depends on
+}
+
 // New creates a new Runtime instance.
 func New() (*Runtime, error) {
 	cli, err := NewDockerClient()
@@ -55,6 +63,7 @@ type UpOptions struct {
 // UpResult contains the result of starting a topology.
 type UpResult struct {
 	MCPServers []MCPServerInfo
+	Agents     []AgentInfo
 }
 
 // Up starts all MCP servers and resources defined in the topology.
@@ -105,6 +114,15 @@ func (r *Runtime) Up(ctx context.Context, topo *config.Topology, opts UpOptions)
 			return nil, fmt.Errorf("starting MCP server %s: %w", server.Name, err)
 		}
 		result.MCPServers = append(result.MCPServers, *info)
+	}
+
+	// Start agents (after MCP servers so dependencies are ready)
+	for _, agent := range topo.Agents {
+		info, err := r.startAgent(ctx, topo, &agent, opts)
+		if err != nil {
+			return nil, fmt.Errorf("starting agent %s: %w", agent.Name, err)
+		}
+		result.Agents = append(result.Agents, *info)
 	}
 
 	fmt.Println("\nAll containers started successfully!")
@@ -263,6 +281,98 @@ func (r *Runtime) startResource(ctx context.Context, topo *config.Topology, res 
 	return StartContainer(ctx, r.cli, containerID)
 }
 
+func (r *Runtime) startAgent(ctx context.Context, topo *config.Topology, agent *config.Agent, opts UpOptions) (*AgentInfo, error) {
+	containerName := ContainerName(topo.Name, agent.Name)
+
+	// Check if container already exists
+	exists, containerID, err := ContainerExists(ctx, r.cli, containerName)
+	if err != nil {
+		return nil, err
+	}
+
+	if exists {
+		fmt.Printf("  Agent '%s' already exists, starting...\n", agent.Name)
+		if err := StartContainer(ctx, r.cli, containerID); err != nil {
+			return nil, err
+		}
+		return &AgentInfo{
+			Name:          agent.Name,
+			ContainerID:   containerID,
+			ContainerName: containerName,
+			Uses:          agent.Uses,
+		}, nil
+	}
+
+	// Determine image
+	var imageName string
+	if agent.Source != nil {
+		// Build from source
+		fmt.Printf("  Building agent '%s' from %s source...\n", agent.Name, agent.Source.Type)
+
+		buildOpts := builder.BuildOptions{
+			SourceType: agent.Source.Type,
+			URL:        agent.Source.URL,
+			Ref:        agent.Source.Ref,
+			Path:       agent.Source.Path,
+			Dockerfile: agent.Source.Dockerfile,
+			Tag:        builder.GenerateTag(topo.Name, agent.Name),
+			BuildArgs:  agent.BuildArgs,
+			NoCache:    opts.NoCache,
+		}
+
+		result, err := r.builder.Build(ctx, buildOpts)
+		if err != nil {
+			return nil, fmt.Errorf("building image: %w", err)
+		}
+		imageName = result.ImageTag
+	} else {
+		imageName = agent.Image
+		fmt.Printf("  Starting agent '%s' (%s)...\n", agent.Name, imageName)
+
+		// Pull image if needed
+		if err := EnsureImage(ctx, r.cli, imageName); err != nil {
+			return nil, err
+		}
+	}
+
+	// Determine network name
+	// In advanced mode (networks[] defined), use agent.Network
+	// In simple mode, use topo.Network.Name (agent.Network is ignored)
+	networkName := topo.Network.Name
+	if len(topo.Networks) > 0 && agent.Network != "" {
+		networkName = agent.Network
+	}
+
+	// Create container (agents don't expose ports like MCP servers)
+	cfg := ContainerConfig{
+		Name:        containerName,
+		Image:       imageName,
+		Env:         agent.Env,
+		Port:        0, // Agents don't need to expose ports
+		NetworkName: networkName,
+		Labels:      AgentLabels(topo.Name, agent.Name),
+	}
+
+	containerID, err = CreateContainer(ctx, r.cli, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start container
+	if err := StartContainer(ctx, r.cli, containerID); err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("  Agent '%s' started (uses: %v)\n", agent.Name, agent.Uses)
+
+	return &AgentInfo{
+		Name:          agent.Name,
+		ContainerID:   containerID,
+		ContainerName: containerName,
+		Uses:          agent.Uses,
+	}, nil
+}
+
 // Down stops and removes all managed containers and networks for a topology.
 func (r *Runtime) Down(ctx context.Context, topology string) error {
 	// Check Docker daemon
@@ -350,6 +460,9 @@ func (r *Runtime) Status(ctx context.Context, topology string) ([]ContainerStatu
 		} else if res, ok := c.Labels[LabelResource]; ok {
 			status.Type = "resource"
 			status.MCPServerName = res
+		} else if agentName, ok := c.Labels[LabelAgent]; ok {
+			status.Type = "agent"
+			status.MCPServerName = agentName
 		}
 
 		statuses = append(statuses, status)
@@ -365,7 +478,7 @@ type ContainerStatus struct {
 	Image         string
 	State         string
 	Status        string
-	Type          string // "mcp-server" or "resource"
-	MCPServerName string
+	Type          string // "mcp-server", "resource", or "agent"
+	MCPServerName string // Name of the MCP server, resource, or agent
 	Topology      string
 }

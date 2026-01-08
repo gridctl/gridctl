@@ -82,6 +82,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := struct {
 		Gateway    ServerInfo        `json:"gateway"`
 		MCPServers []MCPServerStatus `json:"mcp-servers"`
+		Agents     []AgentStatus     `json:"agents"`
 		Resources  []ResourceStatus  `json:"resources"`
 	}{
 		Gateway: ServerInfo{
@@ -89,6 +90,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			Version: s.gateway.ServerInfo().Version,
 		},
 		MCPServers: s.getMCPServerStatuses(),
+		Agents:     s.getAgentStatuses(),
 		Resources:  s.getResourceStatuses(),
 	}
 
@@ -195,6 +197,14 @@ type ResourceStatus struct {
 	Status string `json:"status"`
 }
 
+// AgentStatus contains status information for an agent container.
+type AgentStatus struct {
+	Name        string `json:"name"`
+	Image       string `json:"image"`
+	Status      string `json:"status"`
+	ContainerID string `json:"containerId,omitempty"`
+}
+
 // getResourceStatuses returns status of all resource containers.
 func (s *Server) getResourceStatuses() []ResourceStatus {
 	if s.dockerClient == nil || s.topologyName == "" {
@@ -227,6 +237,41 @@ func (s *Server) getResourceStatuses() []ResourceStatus {
 	}
 
 	return resources
+}
+
+// getAgentStatuses returns status of all agent containers.
+func (s *Server) getAgentStatuses() []AgentStatus {
+	if s.dockerClient == nil || s.topologyName == "" {
+		return []AgentStatus{}
+	}
+
+	ctx := context.Background()
+	containers, err := runtime.ListManagedContainers(ctx, s.dockerClient, s.topologyName)
+	if err != nil {
+		return []AgentStatus{}
+	}
+
+	var agents []AgentStatus
+	for _, c := range containers {
+		// Only include agent containers
+		if agentName, ok := c.Labels[runtime.LabelAgent]; ok {
+			status := "stopped"
+			if c.State == "running" {
+				status = "running"
+			} else if c.State != "exited" {
+				status = c.State
+			}
+
+			agents = append(agents, AgentStatus{
+				Name:        agentName,
+				Image:       c.Image,
+				Status:      status,
+				ContainerID: c.ID[:12],
+			})
+		}
+	}
+
+	return agents
 }
 
 // handleAgentAction routes agent control requests.

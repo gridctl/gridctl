@@ -76,6 +76,26 @@ func expandEnvVars(t *Topology) {
 			t.Resources[i].Env[k] = os.ExpandEnv(v)
 		}
 	}
+
+	for i := range t.Agents {
+		t.Agents[i].Name = os.ExpandEnv(t.Agents[i].Name)
+		t.Agents[i].Image = os.ExpandEnv(t.Agents[i].Image)
+		t.Agents[i].Description = os.ExpandEnv(t.Agents[i].Description)
+		t.Agents[i].Network = os.ExpandEnv(t.Agents[i].Network)
+
+		if t.Agents[i].Source != nil {
+			t.Agents[i].Source.URL = os.ExpandEnv(t.Agents[i].Source.URL)
+			t.Agents[i].Source.Path = os.ExpandEnv(t.Agents[i].Source.Path)
+			t.Agents[i].Source.Ref = os.ExpandEnv(t.Agents[i].Source.Ref)
+		}
+
+		for k, v := range t.Agents[i].Env {
+			t.Agents[i].Env[k] = os.ExpandEnv(v)
+		}
+		for k, v := range t.Agents[i].BuildArgs {
+			t.Agents[i].BuildArgs[k] = os.ExpandEnv(v)
+		}
+	}
 }
 
 // resolveRelativePaths resolves local source paths relative to the topology file.
@@ -84,6 +104,14 @@ func resolveRelativePaths(t *Topology, basePath string) {
 		if t.MCPServers[i].Source != nil && t.MCPServers[i].Source.Type == "local" {
 			if !filepath.IsAbs(t.MCPServers[i].Source.Path) {
 				t.MCPServers[i].Source.Path = filepath.Join(basePath, t.MCPServers[i].Source.Path)
+			}
+		}
+	}
+
+	for i := range t.Agents {
+		if t.Agents[i].Source != nil && t.Agents[i].Source.Type == "local" {
+			if !filepath.IsAbs(t.Agents[i].Source.Path) {
+				t.Agents[i].Source.Path = filepath.Join(basePath, t.Agents[i].Source.Path)
 			}
 		}
 	}

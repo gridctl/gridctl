@@ -153,6 +153,60 @@ func Validate(t *Topology) error {
 		// In simple mode, resource.Network is ignored (per design decision)
 	}
 
+	// Agent validation
+	agentNames := make(map[string]bool)
+	for i, agent := range t.Agents {
+		prefix := fmt.Sprintf("agents[%d]", i)
+
+		if agent.Name == "" {
+			errs = append(errs, ValidationError{prefix + ".name", "is required"})
+		} else if agentNames[agent.Name] {
+			errs = append(errs, ValidationError{prefix + ".name", fmt.Sprintf("duplicate agent name '%s'", agent.Name)})
+		} else if serverNames[agent.Name] {
+			errs = append(errs, ValidationError{prefix + ".name", fmt.Sprintf("name '%s' conflicts with an MCP server", agent.Name)})
+		} else if resourceNames[agent.Name] {
+			errs = append(errs, ValidationError{prefix + ".name", fmt.Sprintf("name '%s' conflicts with a resource", agent.Name)})
+		} else {
+			agentNames[agent.Name] = true
+		}
+
+		// Must have either image or source, not both
+		hasImage := agent.Image != ""
+		hasSource := agent.Source != nil
+
+		if !hasImage && !hasSource {
+			errs = append(errs, ValidationError{prefix, "must have either 'image' or 'source'"})
+		}
+		if hasImage && hasSource {
+			errs = append(errs, ValidationError{prefix, "cannot have both 'image' and 'source'"})
+		}
+
+		// Source validation
+		if agent.Source != nil {
+			errs = append(errs, validateSource(agent.Source, prefix+".source")...)
+		}
+
+		// Validate 'uses' dependencies exist in mcp-servers
+		for j, dep := range agent.Uses {
+			if !serverNames[dep] {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s.uses[%d]", prefix, j),
+					fmt.Sprintf("MCP server '%s' not found in mcp-servers", dep),
+				})
+			}
+		}
+
+		// Network validation (only in advanced mode)
+		if hasNetworks {
+			if agent.Network == "" {
+				errs = append(errs, ValidationError{prefix + ".network", "required when 'networks' is defined"})
+			} else if !networkNames[agent.Network] {
+				errs = append(errs, ValidationError{prefix + ".network", fmt.Sprintf("network '%s' not found in networks list", agent.Network)})
+			}
+		}
+		// In simple mode, agent.Network is ignored (per design decision)
+	}
+
 	if len(errs) > 0 {
 		return errs
 	}

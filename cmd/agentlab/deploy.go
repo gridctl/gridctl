@@ -91,6 +91,7 @@ func runDeploy(topologyPath string) error {
 			fmt.Printf("  Network: %s (%s)\n", topo.Network.Name, topo.Network.Driver)
 		}
 		fmt.Printf("  MCP Servers: %d\n", len(topo.MCPServers))
+		fmt.Printf("  Agents: %d\n", len(topo.Agents))
 		fmt.Printf("  Resources: %d\n", len(topo.Resources))
 	}
 
@@ -209,6 +210,22 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 				ContainerName: status.Name,
 				ContainerPort: containerPort,
 				HostPort:      hostPort,
+			})
+		} else if status.Type == "agent" {
+			// Find the agent config to get uses info
+			var uses []string
+			for _, a := range topo.Agents {
+				if a.Name == status.MCPServerName {
+					uses = a.Uses
+					break
+				}
+			}
+
+			result.Agents = append(result.Agents, runtime.AgentInfo{
+				Name:          status.MCPServerName,
+				ContainerID:   status.ID,
+				ContainerName: status.Name,
+				Uses:          uses,
 			})
 		}
 	}

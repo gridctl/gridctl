@@ -7,6 +7,7 @@ type Topology struct {
 	Network    Network     `yaml:"network"`              // Single network (simple mode)
 	Networks   []Network   `yaml:"networks,omitempty"`   // Multiple networks (advanced mode)
 	MCPServers []MCPServer `yaml:"mcp-servers"`
+	Agents     []Agent     `yaml:"agents,omitempty"`     // Active agents that consume MCP tools
 	Resources  []Resource  `yaml:"resources,omitempty"`
 }
 
@@ -48,6 +49,19 @@ type Resource struct {
 	Network string            `yaml:"network,omitempty"` // Network to join (for multi-network mode)
 }
 
+// Agent defines an active agent container that consumes MCP tools.
+type Agent struct {
+	Name         string            `yaml:"name"`
+	Image        string            `yaml:"image,omitempty"`
+	Source       *Source           `yaml:"source,omitempty"`
+	Description  string            `yaml:"description,omitempty"`
+	Capabilities []string          `yaml:"capabilities,omitempty"`
+	Uses         []string          `yaml:"uses"`                    // References mcp-servers by name
+	Env          map[string]string `yaml:"env,omitempty"`
+	BuildArgs    map[string]string `yaml:"build_args,omitempty"`
+	Network      string            `yaml:"network,omitempty"`       // Network to join (for multi-network mode)
+}
+
 // SetDefaults applies default values to the topology.
 func (t *Topology) SetDefaults() {
 	if t.Version == "" {
@@ -81,6 +95,17 @@ func (t *Topology) SetDefaults() {
 			}
 			if t.MCPServers[i].Source.Type == "git" && t.MCPServers[i].Source.Ref == "" {
 				t.MCPServers[i].Source.Ref = "main"
+			}
+		}
+	}
+
+	for i := range t.Agents {
+		if t.Agents[i].Source != nil {
+			if t.Agents[i].Source.Dockerfile == "" {
+				t.Agents[i].Source.Dockerfile = "Dockerfile"
+			}
+			if t.Agents[i].Source.Type == "git" && t.Agents[i].Source.Ref == "" {
+				t.Agents[i].Source.Ref = "main"
 			}
 		}
 	}
