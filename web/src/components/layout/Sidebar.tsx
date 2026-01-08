@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { X, Terminal, Box, ChevronDown, ChevronRight, Wrench, FileText, Sparkles } from 'lucide-react';
+import { X, Terminal, Box, Bot, ChevronDown, ChevronRight, Wrench, FileText, Sparkles } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
 import { ControlBar } from '../ui/ControlBar';
 import { useTopologyStore, useSelectedNodeData } from '../../stores/useTopologyStore';
 import { useUIStore } from '../../stores/useUIStore';
-import type { MCPServerNodeData, ResourceNodeData } from '../../types';
+import type { MCPServerNodeData, ResourceNodeData, AgentNodeData } from '../../types';
 
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
@@ -20,8 +20,10 @@ export function Sidebar() {
   }
 
   const isServer = selectedData.type === 'mcp-server';
-  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData;
-  const Icon = isServer ? Terminal : Box;
+  const isAgent = selectedData.type === 'agent';
+  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData;
+  const Icon = isServer ? Terminal : isAgent ? Bot : Box;
+  const colorClass = isServer ? 'primary' : isAgent ? 'tertiary' : 'secondary';
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -45,9 +47,9 @@ export function Sidebar() {
       {/* Accent line */}
       <div className={cn(
         'absolute top-0 left-0 bottom-0 w-px',
-        isServer
-          ? 'bg-gradient-to-b from-primary/40 via-primary/20 to-transparent'
-          : 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
+        colorClass === 'primary' && 'bg-gradient-to-b from-primary/40 via-primary/20 to-transparent',
+        colorClass === 'tertiary' && 'bg-gradient-to-b from-tertiary/40 via-tertiary/20 to-transparent',
+        colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
       )} />
 
       {/* Header */}
@@ -55,13 +57,17 @@ export function Sidebar() {
         <div className="flex items-center gap-3 min-w-0">
           <div className={cn(
             'p-2 rounded-xl flex-shrink-0 border',
-            isServer
-              ? 'bg-primary/10 border-primary/20'
-              : 'bg-secondary/10 border-secondary/20'
+            colorClass === 'primary' && 'bg-primary/10 border-primary/20',
+            colorClass === 'tertiary' && 'bg-tertiary/10 border-tertiary/20',
+            colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
           )}>
             <Icon
               size={16}
-              className={isServer ? 'text-primary' : 'text-secondary'}
+              className={cn(
+                colorClass === 'primary' && 'text-primary',
+                colorClass === 'tertiary' && 'text-tertiary',
+                colorClass === 'secondary' && 'text-secondary'
+              )}
             />
           </div>
           <div className="min-w-0">
@@ -69,7 +75,7 @@ export function Sidebar() {
               {data.name}
             </h2>
             <p className="text-[10px] text-text-muted uppercase tracking-wider">
-              {isServer ? 'MCP Server' : 'Resource'}
+              {isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
             </p>
           </div>
         </div>
@@ -116,7 +122,27 @@ export function Sidebar() {
               </div>
             )}
 
-            {!isServer && (data as ResourceNodeData).image && (
+            {/* Agent fields */}
+            {isAgent && (data as AgentNodeData).image && (
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-sm text-text-muted">Image</span>
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as AgentNodeData).image}>
+                  {(data as AgentNodeData).image}
+                </span>
+              </div>
+            )}
+
+            {isAgent && (data as AgentNodeData).containerId && (
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-sm text-text-muted">Container</span>
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as AgentNodeData).containerId}>
+                  {(data as AgentNodeData).containerId}
+                </span>
+              </div>
+            )}
+
+            {/* Resource fields */}
+            {!isServer && !isAgent && (data as ResourceNodeData).image && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
                 <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as ResourceNodeData).image}>
@@ -125,7 +151,7 @@ export function Sidebar() {
               </div>
             )}
 
-            {!isServer && (data as ResourceNodeData).network && (
+            {!isServer && !isAgent && (data as ResourceNodeData).network && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Network</span>
                 <span className="text-sm text-secondary font-medium">
