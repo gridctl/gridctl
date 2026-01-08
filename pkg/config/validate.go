@@ -170,15 +170,30 @@ func Validate(t *Topology) error {
 			agentNames[agent.Name] = true
 		}
 
-		// Must have either image or source, not both
+		// Determine agent mode: container-based or headless
 		hasImage := agent.Image != ""
 		hasSource := agent.Source != nil
+		hasRuntime := agent.Runtime != ""
 
-		if !hasImage && !hasSource {
-			errs = append(errs, ValidationError{prefix, "must have either 'image' or 'source'"})
-		}
-		if hasImage && hasSource {
-			errs = append(errs, ValidationError{prefix, "cannot have both 'image' and 'source'"})
+		if hasRuntime {
+			// Headless agent validation
+			if hasImage {
+				errs = append(errs, ValidationError{prefix, "cannot have both 'runtime' and 'image'"})
+			}
+			if hasSource {
+				errs = append(errs, ValidationError{prefix, "cannot have both 'runtime' and 'source'"})
+			}
+			if agent.Prompt == "" {
+				errs = append(errs, ValidationError{prefix + ".prompt", "is required when 'runtime' is set"})
+			}
+		} else {
+			// Container-based agent validation
+			if !hasImage && !hasSource {
+				errs = append(errs, ValidationError{prefix, "must have either 'image', 'source', or 'runtime'"})
+			}
+			if hasImage && hasSource {
+				errs = append(errs, ValidationError{prefix, "cannot have both 'image' and 'source'"})
+			}
 		}
 
 		// Source validation
