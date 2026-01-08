@@ -37,6 +37,13 @@ export default {
           dark: '#0f766e',
         },
 
+        // Tertiary - Purple/Violet (Agents, AI)
+        tertiary: {
+          DEFAULT: '#8b5cf6',
+          light: '#a78bfa',
+          dark: '#7c3aed',
+        },
+
         // Status colors
         status: {
           running: '#10b981',
@@ -64,6 +71,7 @@ export default {
         'node-hover': '0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)',
         'glow-primary': '0 0 20px rgba(245, 158, 11, 0.15), 0 0 40px rgba(245, 158, 11, 0.1)',
         'glow-secondary': '0 0 20px rgba(13, 148, 136, 0.15), 0 0 40px rgba(13, 148, 136, 0.1)',
+        'glow-tertiary': '0 0 20px rgba(139, 92, 246, 0.15), 0 0 40px rgba(139, 92, 246, 0.1)',
         'glow-success': '0 0 12px rgba(16, 185, 129, 0.2)',
         'glow-error': '0 0 12px rgba(244, 63, 94, 0.2)',
       },

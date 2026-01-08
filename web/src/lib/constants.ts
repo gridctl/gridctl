@@ -4,8 +4,10 @@ export const LAYOUT = {
   CENTER_Y: 300,
   MCP_RADIUS: 280,     // Distance from gateway to MCP servers
   RESOURCE_RADIUS: 420, // Distance from gateway to resources
+  AGENT_RADIUS: 350,   // Distance from gateway to agents
   NODE_WIDTH: 256,
   NODE_HEIGHT: 140,
+  AGENT_SIZE: 120,     // Circular agent node diameter
 } as const;
 
 // ============================================
@@ -32,6 +34,12 @@ export const COLORS = {
   secondaryDark: '#0f766e',
   secondaryGlow: 'rgba(13, 148, 136, 0.15)',
 
+  // Tertiary - Purple/Violet (Agents, AI)
+  tertiary: '#8b5cf6',
+  tertiaryLight: '#a78bfa',
+  tertiaryDark: '#7c3aed',
+  tertiaryGlow: 'rgba(139, 92, 246, 0.15)',
+
   // Status colors
   statusRunning: '#10b981',
   statusStopped: '#52525b',
@@ -57,6 +65,7 @@ export const NODE_TYPES = {
   GATEWAY: 'gateway',
   MCP_SERVER: 'mcpServer',
   RESOURCE: 'resource',
+  AGENT: 'agent',
 } as const;
 
 // Edge type identifiers

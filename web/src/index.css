@@ -28,6 +28,12 @@
   --color-secondary-dark: #0f766e;
   --color-secondary-glow: rgba(13, 148, 136, 0.15);
 
+  /* Tertiary - Purple/Violet (Agents, AI) */
+  --color-tertiary: #8b5cf6;
+  --color-tertiary-light: #a78bfa;
+  --color-tertiary-dark: #7c3aed;
+  --color-tertiary-glow: rgba(139, 92, 246, 0.15);
+
   /* Status - Distinct, purposeful */
   --color-status-running: #10b981;
   --color-status-running-glow: rgba(16, 185, 129, 0.2);
@@ -52,6 +58,7 @@
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.3);
   --shadow-glow-primary: 0 0 20px var(--color-primary-glow), 0 0 40px var(--color-primary-glow);
   --shadow-glow-secondary: 0 0 20px var(--color-secondary-glow), 0 0 40px var(--color-secondary-glow);
+  --shadow-glow-tertiary: 0 0 20px var(--color-tertiary-glow), 0 0 40px var(--color-tertiary-glow);
 
   /* Glass effect */
   --glass-bg: rgba(17, 17, 19, 0.8);
