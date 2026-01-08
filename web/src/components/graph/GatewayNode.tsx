@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Wrench, Zap } from 'lucide-react';
+import { Activity, Server, Wrench, Zap, Bot } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import type { GatewayNodeData } from '../../types';
@@ -14,12 +14,12 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
   return (
     <div
       className={cn(
-        'w-60 overflow-hidden rounded-2xl',
+        'w-60 rounded-2xl',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
         'backdrop-blur-xl border border-primary/20',
         'shadow-lg transition-all duration-300 ease-out',
         selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
-        !selected && 'hover:shadow-node-hover hover:border-primary/40 hover:-translate-y-1'
+        !selected && 'hover:shadow-node-hover hover:border-primary/40'
       )}
     >
       {/* Top accent gradient */}
@@ -58,6 +58,21 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             {data.serverCount}
           </span>
         </div>
+
+        {/* Agents */}
+        {data.agentCount > 0 && (
+          <div className="flex items-center justify-between group">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-tertiary/10 border border-tertiary/20 group-hover:bg-tertiary/15 transition-colors">
+                <Bot size={12} className="text-tertiary" />
+              </div>
+              <span className="text-xs text-text-secondary font-medium">Agents</span>
+            </div>
+            <span className="text-sm font-bold text-text-primary tabular-nums">
+              {data.agentCount}
+            </span>
+          </div>
+        )}
 
         {/* Resources */}
         {data.resourceCount > 0 && (

@@ -60,6 +60,7 @@ type Agent struct {
 	Env          map[string]string `yaml:"env,omitempty"`
 	BuildArgs    map[string]string `yaml:"build_args,omitempty"`
 	Network      string            `yaml:"network,omitempty"`       // Network to join (for multi-network mode)
+	Command      []string          `yaml:"command,omitempty"`       // Override container entrypoint
 	Runtime      string            `yaml:"runtime,omitempty"`       // Headless runtime (e.g., "claude-code")
 	Prompt       string            `yaml:"prompt,omitempty"`        // System prompt for headless agents
 }

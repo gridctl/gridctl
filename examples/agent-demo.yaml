@@ -1,0 +1,45 @@
+# Agent Demo Topology
+#
+# Demonstrates the Agent Platform features including:
+# - MCP servers providing tools
+# - Agents that connect to the gateway and use specific servers
+# - Environment variable injection (MCP_ENDPOINT)
+# - Tool access control via uses field
+#
+# Usage:
+#   agentlab deploy examples/agent-demo.yaml -f
+#
+# Testing:
+#   See TEST.md for comprehensive testing steps
+
+version: "1"
+name: agent-demo
+
+network:
+  name: agent-demo-net
+
+mcp-servers:
+  - name: tools-server
+    image: alpine:latest
+    port: 8080
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    description: "Primary tools server"
+
+  - name: secondary-server
+    image: alpine:latest
+    port: 8081
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    description: "Secondary tools server (not accessible by demo-agent)"
+
+agents:
+  - name: demo-agent
+    image: alpine:latest
+    description: "Demo agent with access to tools-server only"
+    capabilities:
+      - tool-usage
+      - automation
+    uses:
+      - tools-server
+    env:
+      AGENT_MODE: "demo"
+    command: ["sh", "-c", "echo 'Agent started with MCP_ENDPOINT='$MCP_ENDPOINT && while true; do sleep 3600; done"]

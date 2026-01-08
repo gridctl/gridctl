@@ -2,6 +2,7 @@ import type { Node, Edge } from '@xyflow/react';
 import type {
   MCPServerStatus,
   ResourceStatus,
+  AgentStatus,
   NodeStatus,
 } from '../types';
 import { LAYOUT, NODE_TYPES } from './constants';
@@ -47,6 +48,7 @@ export function transformToNodesAndEdges(
   gatewayInfo: { name: string; version: string },
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[] = [],
+  agents: AgentStatus[] = [],
   existingPositions?: Map<string, { x: number; y: number }>
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
@@ -69,6 +71,7 @@ export function transformToNodesAndEdges(
       version: gatewayInfo.version,
       serverCount: mcpServers.length,
       resourceCount: resources.length,
+      agentCount: agents.length,
       totalToolCount,
     },
     draggable: true,
@@ -150,6 +153,43 @@ export function transformToNodesAndEdges(
       source: GATEWAY_NODE_ID,
       target: nodeId,
       animated: resource.status === 'running',
+    });
+  });
+
+  // Create agent nodes in radial layout (right side of gateway)
+  agents.forEach((agent, index) => {
+    const nodeId = `agent-${agent.name}`;
+    const defaultPosition = calculateRadialPosition(
+      index,
+      agents.length,
+      LAYOUT.CENTER_X,
+      LAYOUT.CENTER_Y,
+      LAYOUT.AGENT_RADIUS,
+      0 // Start from right side (flow: gateway → agent)
+    );
+
+    const agentNode: Node = {
+      id: nodeId,
+      type: NODE_TYPES.AGENT,
+      position: existingPositions?.get(nodeId) ?? defaultPosition,
+      data: {
+        type: 'agent',
+        name: agent.name,
+        image: agent.image,
+        containerId: agent.containerId,
+        status: agent.status,
+      },
+      draggable: true,
+    };
+    nodes.push(agentNode);
+
+    // Create edge from gateway to agent
+    edges.push({
+      id: `edge-gateway-agent-${agent.name}`,
+      source: GATEWAY_NODE_ID,
+      target: nodeId,
+      animated: agent.status === 'running',
+      style: { stroke: '#8b5cf6', strokeDasharray: '5,5' }, // Purple dashed line for agents
     });
   });
 

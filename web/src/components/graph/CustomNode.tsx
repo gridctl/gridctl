@@ -37,14 +37,14 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   return (
     <div
       className={cn(
-        'w-64 overflow-hidden rounded-xl',
+        'w-64 rounded-xl',
         'backdrop-blur-xl border transition-all duration-300 ease-out',
         isServer
           ? 'bg-gradient-to-br from-surface/95 to-primary/[0.02] border-border/50'
           : 'bg-gradient-to-br from-surface/95 to-secondary/[0.02] border-border/50',
         selected && isServer && 'border-primary shadow-glow-primary ring-1 ring-primary/30',
         selected && !isServer && 'border-secondary shadow-glow-secondary ring-1 ring-secondary/30',
-        !selected && 'hover:shadow-node-hover hover:border-text-muted/30 hover:-translate-y-0.5'
+        !selected && 'hover:shadow-node-hover hover:border-text-muted/30'
       )}
     >
       {/* Header with gradient accent */}

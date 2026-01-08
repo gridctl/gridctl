@@ -26,10 +26,19 @@ export interface ResourceStatus {
   network?: string;
 }
 
+// Agent status for active agent containers
+export interface AgentStatus {
+  name: string;
+  image: string;
+  status: 'running' | 'stopped' | 'error';
+  containerId?: string;
+}
+
 // Gateway status response from GET /api/status
 export interface GatewayStatus {
   gateway: ServerInfo;
   'mcp-servers': MCPServerStatus[];
+  agents?: AgentStatus[];
   resources?: ResourceStatus[];
 }
 
@@ -75,6 +84,7 @@ export interface GatewayNodeData extends NodeDataBase {
   version: string;
   serverCount: number;
   resourceCount: number;
+  agentCount: number;
   totalToolCount: number;
 }
 
@@ -98,7 +108,15 @@ export interface ResourceNodeData extends NodeDataBase {
   status: NodeStatus;
 }
 
-export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData;
+export interface AgentNodeData extends NodeDataBase {
+  type: 'agent';
+  name: string;
+  image: string;
+  containerId?: string;
+  status: NodeStatus;
+}
+
+export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData;
 
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
