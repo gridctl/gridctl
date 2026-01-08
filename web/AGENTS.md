@@ -20,8 +20,9 @@ This document defines the visual language, behavior, and code standards for the 
 *   `bg-surface-highlight` (`#1f1f23`): Hover states, active list items.
 
 ### Brand Colors
-*   **Primary (Amber):** `text-primary` / `bg-primary` (`#f59e0b`). Used for: Actions, active states, energy flow.
+*   **Primary (Amber):** `text-primary` / `bg-primary` (`#f59e0b`). Used for: Gateway, MCP servers, actions, active states, energy flow.
 *   **Secondary (Teal):** `text-secondary` / `bg-secondary` (`#0d9488`). Used for: Resources, static data, technical elements.
+*   **Tertiary (Purple):** `text-tertiary` / `bg-tertiary` (`#8b5cf6`). Used for: Agents, AI elements, autonomous components.
 
 ### Status Indicators
 *   **Running:** `bg-status-running` (`#10b981`) + Glow.
@@ -73,7 +74,7 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
 
 ## 5. Animation & Interaction
 *   **Transitions:** Always add `transition-all duration-200` (or similar) to interactive elements.
-*   **Micro-interactions:** Buttons should slightly lift (`-translate-y-[1px]`) on hover.
+*   **Micro-interactions:** Use shadow/glow changes and border highlights on hover. Avoid `translate-y` on graph nodes (causes clipping in React Flow).
 *   **Loading:** Use `animate-pulse-glow` for loading skeletons, not standard grey pulses.
 
 ## 6. Iconography
@@ -81,7 +82,32 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
 *   **Style:** Stroke width `1.5px` or `2px`.
 *   **Size:** Standard size is `w-4 h-4` (16px) or `w-5 h-5` (20px).
 
-## 7. Implementation Checklist
+## 7. Graph Node Types
+
+### Gateway Node
+*   **Shape:** Rounded rectangle (`rounded-2xl`)
+*   **Color:** Primary (Amber) accents
+*   **Content:** Name, version, server/agent/resource counts, status
+
+### MCP Server Node
+*   **Shape:** Rounded rectangle (`rounded-xl`)
+*   **Color:** Primary (Amber) accents
+*   **Content:** Name, transport type, endpoint, tool count, status
+
+### Resource Node
+*   **Shape:** Rounded rectangle (`rounded-xl`)
+*   **Color:** Secondary (Teal) accents
+*   **Content:** Name, image, network, status
+
+### Agent Node
+*   **Shape:** Circle (`rounded-full`, 128x128px)
+*   **Color:** Tertiary (Purple) accents with `shadow-glow-tertiary`
+*   **Icon:** Bot icon from Lucide
+*   **Content:** Name, status indicator, container ID hint
+*   **Edge Style:** Purple dashed line (`strokeDasharray: '5,5'`)
+*   **Layout:** Positioned to the right of gateway (start angle: 0)
+
+## 8. Implementation Checklist
 When creating new UI components:
 1.  [ ] Are you using `tailwind.config.js` colors instead of hardcoded hex values?
 2.  [ ] Is the font family correct? (Mono for data, Sans for UI).
