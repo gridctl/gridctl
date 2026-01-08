@@ -9,6 +9,7 @@ type Topology struct {
 	MCPServers []MCPServer `yaml:"mcp-servers"`
 	Agents     []Agent     `yaml:"agents,omitempty"`     // Active agents that consume MCP tools
 	Resources  []Resource  `yaml:"resources,omitempty"`
+	A2AAgents  []A2AAgent  `yaml:"a2a-agents,omitempty"` // External A2A agents for agent-to-agent communication
 }
 
 // Network defines the Docker network configuration.
@@ -63,11 +64,50 @@ type Agent struct {
 	Command      []string          `yaml:"command,omitempty"`       // Override container entrypoint
 	Runtime      string            `yaml:"runtime,omitempty"`       // Headless runtime (e.g., "claude-code")
 	Prompt       string            `yaml:"prompt,omitempty"`        // System prompt for headless agents
+	A2A          *A2AConfig        `yaml:"a2a,omitempty"`           // A2A protocol configuration
+}
+
+// A2AConfig defines A2A protocol settings for exposing an agent via A2A.
+type A2AConfig struct {
+	Enabled  bool       `yaml:"enabled,omitempty"`  // Enable A2A exposure (default: true when block present)
+	Version  string     `yaml:"version,omitempty"`  // Agent version (default: "1.0.0")
+	Skills   []A2ASkill `yaml:"skills,omitempty"`   // Skills this agent exposes
+}
+
+// A2ASkill represents a capability the agent can perform.
+type A2ASkill struct {
+	ID          string   `yaml:"id"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description,omitempty"`
+	Tags        []string `yaml:"tags,omitempty"`
+}
+
+// A2AAgent defines an external A2A agent reference.
+type A2AAgent struct {
+	Name string    `yaml:"name"`               // Local alias for this remote agent
+	URL  string    `yaml:"url"`                // Base URL for the remote agent's A2A endpoint
+	Auth *A2AAuth  `yaml:"auth,omitempty"`     // Authentication configuration
+}
+
+// A2AAuth contains authentication configuration for A2A connections.
+type A2AAuth struct {
+	Type       string `yaml:"type,omitempty"`        // "bearer", "api_key", or "none"
+	TokenEnv   string `yaml:"token_env,omitempty"`   // Environment variable containing the token
+	HeaderName string `yaml:"header_name,omitempty"` // Header name for API key auth (default: "Authorization")
 }
 
 // IsHeadless returns true if the agent uses a headless runtime.
 func (a *Agent) IsHeadless() bool {
 	return a.Runtime != ""
+}
+
+// IsA2AEnabled returns true if the agent is exposed via A2A protocol.
+func (a *Agent) IsA2AEnabled() bool {
+	if a.A2A == nil {
+		return false
+	}
+	// If A2A block is present, it's enabled unless explicitly disabled
+	return a.A2A.Enabled || len(a.A2A.Skills) > 0
 }
 
 // SetDefaults applies default values to the topology.
