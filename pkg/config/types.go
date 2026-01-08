@@ -60,6 +60,13 @@ type Agent struct {
 	Env          map[string]string `yaml:"env,omitempty"`
 	BuildArgs    map[string]string `yaml:"build_args,omitempty"`
 	Network      string            `yaml:"network,omitempty"`       // Network to join (for multi-network mode)
+	Runtime      string            `yaml:"runtime,omitempty"`       // Headless runtime (e.g., "claude-code")
+	Prompt       string            `yaml:"prompt,omitempty"`        // System prompt for headless agents
+}
+
+// IsHeadless returns true if the agent uses a headless runtime.
+func (a *Agent) IsHeadless() bool {
+	return a.Runtime != ""
 }
 
 // SetDefaults applies default values to the topology.

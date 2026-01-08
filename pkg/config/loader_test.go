@@ -415,6 +415,154 @@ func TestValidate_MultiNetwork(t *testing.T) {
 	}
 }
 
+func TestValidate_HeadlessAgent(t *testing.T) {
+	tests := []struct {
+		name    string
+		topo    *Topology
+		wantErr bool
+	}{
+		{
+			name: "valid headless agent",
+			topo: &Topology{
+				Name:    "test",
+				Network: Network{Name: "test-net", Driver: "bridge"},
+				MCPServers: []MCPServer{
+					{Name: "server1", Image: "alpine", Port: 3000},
+				},
+				Agents: []Agent{
+					{
+						Name:    "headless-agent",
+						Runtime: "claude-code",
+						Prompt:  "You are a helpful assistant",
+						Uses:    []string{"server1"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "headless agent missing prompt",
+			topo: &Topology{
+				Name:    "test",
+				Network: Network{Name: "test-net", Driver: "bridge"},
+				MCPServers: []MCPServer{
+					{Name: "server1", Image: "alpine", Port: 3000},
+				},
+				Agents: []Agent{
+					{
+						Name:    "headless-agent",
+						Runtime: "claude-code",
+						Uses:    []string{"server1"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "headless agent with image",
+			topo: &Topology{
+				Name:    "test",
+				Network: Network{Name: "test-net", Driver: "bridge"},
+				MCPServers: []MCPServer{
+					{Name: "server1", Image: "alpine", Port: 3000},
+				},
+				Agents: []Agent{
+					{
+						Name:    "headless-agent",
+						Runtime: "claude-code",
+						Prompt:  "You are a helpful assistant",
+						Image:   "some-image",
+						Uses:    []string{"server1"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "headless agent with source",
+			topo: &Topology{
+				Name:    "test",
+				Network: Network{Name: "test-net", Driver: "bridge"},
+				MCPServers: []MCPServer{
+					{Name: "server1", Image: "alpine", Port: 3000},
+				},
+				Agents: []Agent{
+					{
+						Name:    "headless-agent",
+						Runtime: "claude-code",
+						Prompt:  "You are a helpful assistant",
+						Source:  &Source{Type: "git", URL: "https://github.com/example/repo"},
+						Uses:    []string{"server1"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "container agent still valid",
+			topo: &Topology{
+				Name:    "test",
+				Network: Network{Name: "test-net", Driver: "bridge"},
+				MCPServers: []MCPServer{
+					{Name: "server1", Image: "alpine", Port: 3000},
+				},
+				Agents: []Agent{
+					{
+						Name:  "container-agent",
+						Image: "my-agent:latest",
+						Uses:  []string{"server1"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(tc.topo)
+			if tc.wantErr && err == nil {
+				t.Error("expected validation error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
+func TestAgent_IsHeadless(t *testing.T) {
+	tests := []struct {
+		name  string
+		agent Agent
+		want  bool
+	}{
+		{
+			name:  "headless agent",
+			agent: Agent{Name: "test", Runtime: "claude-code", Prompt: "test"},
+			want:  true,
+		},
+		{
+			name:  "container agent",
+			agent: Agent{Name: "test", Image: "alpine"},
+			want:  false,
+		},
+		{
+			name:  "empty runtime",
+			agent: Agent{Name: "test", Runtime: ""},
+			want:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.agent.IsHeadless(); got != tc.want {
+				t.Errorf("IsHeadless() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
