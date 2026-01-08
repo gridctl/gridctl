@@ -1,0 +1,25 @@
+# GitHub MCP Server Example
+#
+# This topology provides access to GitHub's official MCP server, enabling
+# AI agents to interact with GitHub repositories, issues, pull requests,
+# and other GitHub resources.
+#
+# Prerequisites:
+#   - Create a GitHub Personal Access Token at https://github.com/settings/tokens
+#   - Export it: export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxxxxxxxxxxx
+#
+# Usage:
+#   agentlab up examples/github-mcp.yaml
+#
+# Reference:
+#   https://github.com/github/github-mcp-server
+
+version: "1"
+name: github-mcp
+
+mcp-servers:
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    transport: stdio
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
