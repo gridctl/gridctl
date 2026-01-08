@@ -358,6 +358,7 @@ func (r *Runtime) startAgent(ctx context.Context, topo *config.Topology, agent *
 	cfg := ContainerConfig{
 		Name:        containerName,
 		Image:       imageName,
+		Command:     agent.Command,
 		Env:         env,
 		Port:        0, // Agents don't need to expose ports
 		NetworkName: networkName,
