@@ -5,9 +5,11 @@ export const LAYOUT = {
   MCP_RADIUS: 280,     // Distance from gateway to MCP servers
   RESOURCE_RADIUS: 420, // Distance from gateway to resources
   AGENT_RADIUS: 350,   // Distance from gateway to agents
+  A2A_RADIUS: 400,     // Distance from gateway to A2A agents
   NODE_WIDTH: 256,
   NODE_HEIGHT: 140,
   AGENT_SIZE: 120,     // Circular agent node diameter
+  A2A_SIZE: 144,       // A2A agent node size
 } as const;
 
 // ============================================
@@ -66,6 +68,7 @@ export const NODE_TYPES = {
   MCP_SERVER: 'mcpServer',
   RESOURCE: 'resource',
   AGENT: 'agent',
+  A2A_AGENT: 'a2aAgent',
 } as const;
 
 // Edge type identifiers
