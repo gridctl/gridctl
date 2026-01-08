@@ -309,7 +309,6 @@ body::before {
 .node-glass:hover {
   border-color: var(--color-border);
   box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
 }
 
 /* Primary variant (MCP servers) - Amber accent */
@@ -608,8 +607,13 @@ body::before {
   will-change: transform, opacity, box-shadow;
 }
 
-.react-flow__node {
-  contain: layout style paint;
+/* Prevent clipping on hover animations */
+.react-flow__node,
+.react-flow__node *,
+.react-flow__nodes,
+.react-flow__renderer,
+.react-flow__viewport {
+  overflow: visible !important;
 }
 
 .react-flow__edge.animated .react-flow__edge-path {
