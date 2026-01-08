@@ -108,6 +108,15 @@ This enables network isolation between agents while still allowing them to commu
 | Phase 5 | React Flow UI | Complete |
 | Phase 6 | Release & packaging | Not started |
 
+### Agent Platform Phases
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Agent Phase 1 | Agent primitive (config, runtime, API) | Complete |
+| Agent Phase 2 | Sidecar injector (MCP_ENDPOINT, tool access control) | Complete |
+| Agent Phase 3 | Headless agent schema (runtime, prompt fields) | Complete |
+| Agent Phase 4 | Agent cards UI (circular nodes, purple theme) | Complete |
+
 ## Directory Structure
 
 ```
@@ -304,11 +313,52 @@ mcp-servers:
     build_args:
       DEBUG: "true"
 
+agents:                               # Active agents that consume MCP tools
+  - name: my-agent
+    image: my-org/agent:latest
+    description: "Agent description"
+    capabilities:
+      - code-analysis
+      - automation
+    uses:                             # MCP servers this agent can access
+      - http-server
+      - stdio-server
+    command: ["python", "agent.py"]   # Optional: override container command
+    env:
+      MODEL_NAME: "claude-3-5-sonnet"
+
 resources:                            # Non-MCP containers (databases, etc.)
   - name: postgres
     image: postgres:16
     env:
       POSTGRES_PASSWORD: secret
+```
+
+### Agents
+
+Agents are active containers that consume tools from MCP servers. They receive:
+- `MCP_ENDPOINT` environment variable injected automatically (e.g., `http://host.docker.internal:8080`)
+- Tool access control based on their `uses` field (can only access tools from listed servers)
+
+```yaml
+agents:
+  - name: code-reviewer
+    image: my-org/reviewer:v1
+    description: "Reviews PRs and leaves comments"
+    capabilities: ["code-analysis", "git-ops"]
+    uses:
+      - github-tools           # Can access tools from this MCP server
+    command: ["python", "run.py"]
+    env:
+      MODEL_NAME: "claude-3-5-sonnet"
+
+  # Headless agent (schema only, runtime not yet implemented)
+  - name: headless-agent
+    runtime: claude-code       # Uses built-in runtime instead of image
+    prompt: |
+      You are a helpful assistant that can use tools.
+    uses:
+      - github-tools
 ```
 
 ### Advanced Mode (Multiple Networks)
@@ -386,6 +436,7 @@ All managed resources use these labels:
 - `agentlab.managed=true`
 - `agentlab.topology={name}`
 - `agentlab.mcp-server={name}` (for MCP server containers)
+- `agentlab.agent={name}` (for agent containers)
 - `agentlab.resource={name}` (for resource containers)
 
 ## Testing Requirements
