@@ -34,12 +34,25 @@ export interface AgentStatus {
   containerId?: string;
 }
 
+// A2A Agent status matching a2a.A2AAgentStatus
+export interface A2AAgentStatus {
+  name: string;
+  role: 'local' | 'remote';
+  url?: string;
+  endpoint?: string;
+  available: boolean;
+  skillCount: number;
+  skills: string[];
+  description?: string;
+}
+
 // Gateway status response from GET /api/status
 export interface GatewayStatus {
   gateway: ServerInfo;
   'mcp-servers': MCPServerStatus[];
   agents?: AgentStatus[];
   resources?: ResourceStatus[];
+  'a2a-agents'?: A2AAgentStatus[];
 }
 
 // Tool definition matching mcp.Tool
@@ -85,6 +98,7 @@ export interface GatewayNodeData extends NodeDataBase {
   serverCount: number;
   resourceCount: number;
   agentCount: number;
+  a2aAgentCount: number;
   totalToolCount: number;
 }
 
@@ -116,7 +130,19 @@ export interface AgentNodeData extends NodeDataBase {
   status: NodeStatus;
 }
 
-export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData;
+export interface A2AAgentNodeData extends NodeDataBase {
+  type: 'a2a-agent';
+  name: string;
+  role: 'local' | 'remote';
+  url?: string;
+  endpoint?: string;
+  skillCount: number;
+  skills: string[];
+  description?: string;
+  status: NodeStatus;
+}
+
+export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | A2AAgentNodeData;
 
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
