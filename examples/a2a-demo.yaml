@@ -1,0 +1,104 @@
+# A2A Protocol Demo Topology
+#
+# Demonstrates Agent-to-Agent (A2A) protocol features:
+# - Local agents that expose A2A endpoints via the gateway
+# - Remote A2A agents that the gateway can communicate with
+# - Skills advertisement and discovery
+#
+# Prerequisites:
+#   1. Start the mock A2A server (for remote agent testing):
+#      python3 examples/mock-a2a-server.py
+#
+#   2. Deploy this topology:
+#      agentlab deploy examples/a2a-demo.yaml -f
+#
+# Testing:
+#   # Check gateway status (includes A2A agents)
+#   curl http://localhost:5555/api/status | jq
+#
+#   # Fetch the gateway's Agent Card
+#   curl http://localhost:5555/.well-known/agent.json | jq
+#
+#   # List A2A agents
+#   curl http://localhost:5555/api/a2a-agents | jq
+#
+#   # Send a message to a local A2A agent
+#   curl -X POST http://localhost:5555/a2a/code-assistant \
+#     -H "Content-Type: application/json" \
+#     -d '{
+#       "jsonrpc": "2.0",
+#       "id": "1",
+#       "method": "message/send",
+#       "params": {
+#         "message": {
+#           "role": "user",
+#           "parts": [{"text": "Hello, can you help me write a function?"}]
+#         }
+#       }
+#     }' | jq
+
+version: "1"
+name: a2a-demo
+
+network:
+  name: a2a-demo-net
+
+# MCP servers providing tools to agents
+mcp-servers:
+  - name: code-tools
+    image: alpine:latest
+    port: 8080
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    description: "Code analysis and generation tools"
+
+# Container agents with A2A capabilities
+agents:
+  - name: code-assistant
+    image: alpine:latest
+    description: "AI coding assistant that can help with code review and generation"
+    capabilities:
+      - code-review
+      - code-generation
+    uses:
+      - code-tools
+    # A2A configuration - exposes this agent via A2A protocol
+    a2a:
+      enabled: true
+      version: "1.0.0"
+      skills:
+        - id: code-review
+          name: Code Review
+          description: "Review code for bugs, security issues, and best practices"
+        - id: code-generation
+          name: Code Generation
+          description: "Generate code based on natural language descriptions"
+    command: ["sh", "-c", "echo 'Code assistant ready' && while true; do sleep 3600; done"]
+
+  - name: docs-assistant
+    image: alpine:latest
+    description: "Documentation assistant for generating and updating docs"
+    capabilities:
+      - documentation
+    # A2A configuration
+    a2a:
+      enabled: true
+      version: "1.0.0"
+      skills:
+        - id: doc-generation
+          name: Documentation Generation
+          description: "Generate documentation from code or specifications"
+        - id: doc-review
+          name: Documentation Review
+          description: "Review and improve existing documentation"
+    command: ["sh", "-c", "echo 'Docs assistant ready' && while true; do sleep 3600; done"]
+
+# External A2A agents (remote agents accessible via URL)
+# These are agents running elsewhere that we want to communicate with
+a2a-agents:
+  # Mock server for testing (run examples/mock-a2a-server.py first)
+  - name: mock-agent
+    url: http://localhost:9999
+    # Optional authentication
+    # auth:
+    #   type: bearer
+    #   token: "test-token"
