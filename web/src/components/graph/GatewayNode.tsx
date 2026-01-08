@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Wrench, Zap, Bot } from 'lucide-react';
+import { Activity, Server, Wrench, Zap, Bot, Users } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import type { GatewayNodeData } from '../../types';
@@ -70,6 +70,21 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             </div>
             <span className="text-sm font-bold text-text-primary tabular-nums">
               {data.agentCount}
+            </span>
+          </div>
+        )}
+
+        {/* A2A Agents */}
+        {data.a2aAgentCount > 0 && (
+          <div className="flex items-center justify-between group">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-secondary/10 border border-secondary/20 group-hover:bg-secondary/15 transition-colors">
+                <Users size={12} className="text-secondary" />
+              </div>
+              <span className="text-xs text-text-secondary font-medium">A2A Agents</span>
+            </div>
+            <span className="text-sm font-bold text-text-primary tabular-nums">
+              {data.a2aAgentCount}
             </span>
           </div>
         )}
