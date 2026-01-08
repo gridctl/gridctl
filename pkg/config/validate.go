@@ -220,6 +220,62 @@ func Validate(t *Topology) error {
 			}
 		}
 		// In simple mode, agent.Network is ignored (per design decision)
+
+		// A2A validation (if a2a block is present)
+		if agent.A2A != nil {
+			a2aPrefix := prefix + ".a2a"
+
+			// Skills validation
+			skillIDs := make(map[string]bool)
+			for j, skill := range agent.A2A.Skills {
+				skillPrefix := fmt.Sprintf("%s.skills[%d]", a2aPrefix, j)
+
+				if skill.ID == "" {
+					errs = append(errs, ValidationError{skillPrefix + ".id", "is required"})
+				} else if skillIDs[skill.ID] {
+					errs = append(errs, ValidationError{skillPrefix + ".id", fmt.Sprintf("duplicate skill ID '%s'", skill.ID)})
+				} else {
+					skillIDs[skill.ID] = true
+				}
+
+				if skill.Name == "" {
+					errs = append(errs, ValidationError{skillPrefix + ".name", "is required"})
+				}
+			}
+		}
+	}
+
+	// A2A agent validation
+	a2aAgentNames := make(map[string]bool)
+	for i, a2aAgent := range t.A2AAgents {
+		prefix := fmt.Sprintf("a2a-agents[%d]", i)
+
+		if a2aAgent.Name == "" {
+			errs = append(errs, ValidationError{prefix + ".name", "is required"})
+		} else if a2aAgentNames[a2aAgent.Name] {
+			errs = append(errs, ValidationError{prefix + ".name", fmt.Sprintf("duplicate A2A agent name '%s'", a2aAgent.Name)})
+		} else if agentNames[a2aAgent.Name] {
+			errs = append(errs, ValidationError{prefix + ".name", fmt.Sprintf("name '%s' conflicts with a local agent", a2aAgent.Name)})
+		} else if serverNames[a2aAgent.Name] {
+			errs = append(errs, ValidationError{prefix + ".name", fmt.Sprintf("name '%s' conflicts with an MCP server", a2aAgent.Name)})
+		} else {
+			a2aAgentNames[a2aAgent.Name] = true
+		}
+
+		if a2aAgent.URL == "" {
+			errs = append(errs, ValidationError{prefix + ".url", "is required"})
+		}
+
+		if a2aAgent.Auth != nil {
+			authPrefix := prefix + ".auth"
+			validAuthTypes := map[string]bool{"bearer": true, "api_key": true, "none": true, "": true}
+			if !validAuthTypes[a2aAgent.Auth.Type] {
+				errs = append(errs, ValidationError{authPrefix + ".type", "must be 'bearer', 'api_key', or 'none'"})
+			}
+			if a2aAgent.Auth.Type != "" && a2aAgent.Auth.Type != "none" && a2aAgent.Auth.TokenEnv == "" {
+				errs = append(errs, ValidationError{authPrefix + ".token_env", "is required when auth.type is set"})
+			}
+		}
 	}
 
 	if len(errs) > 0 {
