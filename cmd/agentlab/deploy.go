@@ -110,8 +110,9 @@ func runDeploy(topologyPath string) error {
 
 	ctx := context.Background()
 	opts := runtime.UpOptions{
-		NoCache:  deployNoCache,
-		BasePort: 9000,
+		NoCache:     deployNoCache,
+		BasePort:    9000,
+		GatewayPort: deployPort,
 	}
 	result, err := rt.Up(ctx, topo, opts)
 	if err != nil {
@@ -274,6 +275,19 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		if err := gateway.RegisterMCPServer(ctx, cfg); err != nil {
 			if verbose {
 				fmt.Printf("  Warning: failed to register MCP server %s: %v\n", server.Name, err)
+			}
+		}
+	}
+
+	// Register agents with their access permissions
+	if len(result.Agents) > 0 {
+		if verbose {
+			fmt.Println("\nRegistering agents with gateway...")
+		}
+		for _, agent := range result.Agents {
+			gateway.RegisterAgent(agent.Name, agent.Uses)
+			if verbose {
+				fmt.Printf("  Registered agent '%s' with access to: %v\n", agent.Name, agent.Uses)
 			}
 		}
 	}

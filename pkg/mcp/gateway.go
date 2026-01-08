@@ -23,9 +23,10 @@ type Gateway struct {
 	sessions  *SessionManager
 	dockerCli dockerclient.DockerClient
 
-	mu         sync.RWMutex
-	serverInfo ServerInfo
-	serverMeta map[string]MCPServerConfig // name -> config for status reporting
+	mu          sync.RWMutex
+	serverInfo  ServerInfo
+	serverMeta  map[string]MCPServerConfig // name -> config for status reporting
+	agentAccess map[string][]string        // agent name -> allowed MCP server names
 }
 
 // NewGateway creates a new MCP gateway.
@@ -37,7 +38,8 @@ func NewGateway() *Gateway {
 			Name:    "agentlab-gateway",
 			Version: "1.0.0",
 		},
-		serverMeta: make(map[string]MCPServerConfig),
+		serverMeta:  make(map[string]MCPServerConfig),
+		agentAccess: make(map[string][]string),
 	}
 }
 
@@ -115,6 +117,96 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 func (g *Gateway) UnregisterMCPServer(name string) {
 	g.router.RemoveClient(name)
 	g.router.RefreshTools()
+}
+
+// RegisterAgent registers an agent and its allowed MCP servers.
+func (g *Gateway) RegisterAgent(name string, uses []string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentAccess[name] = uses
+}
+
+// UnregisterAgent removes an agent's access configuration.
+func (g *Gateway) UnregisterAgent(name string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.agentAccess, name)
+}
+
+// GetAgentAllowedServers returns the MCP servers an agent can access.
+// Returns nil if the agent is not registered (allows all for backward compatibility).
+func (g *Gateway) GetAgentAllowedServers(agentName string) []string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.agentAccess[agentName]
+}
+
+// isServerAllowedForAgent checks if an agent can access tools from a specific MCP server.
+func (g *Gateway) isServerAllowedForAgent(agentName, serverName string) bool {
+	allowed := g.GetAgentAllowedServers(agentName)
+	if allowed == nil {
+		// Agent not registered - allow all (backward compatibility)
+		return true
+	}
+	for _, s := range allowed {
+		if s == serverName {
+			return true
+		}
+	}
+	return false
+}
+
+// HandleToolsListForAgent returns tools filtered by agent access permissions.
+func (g *Gateway) HandleToolsListForAgent(agentName string) (*ToolsListResult, error) {
+	allowed := g.GetAgentAllowedServers(agentName)
+	if allowed == nil {
+		// Agent not registered - return all tools
+		return g.HandleToolsList()
+	}
+
+	// Build set of allowed servers for fast lookup
+	allowedSet := make(map[string]bool)
+	for _, name := range allowed {
+		allowedSet[name] = true
+	}
+
+	// Filter tools by allowed MCP servers
+	allTools := g.router.AggregatedTools()
+	var filteredTools []Tool
+	for _, tool := range allTools {
+		serverName, _, err := ParsePrefixedTool(tool.Name)
+		if err != nil {
+			continue
+		}
+		if allowedSet[serverName] {
+			filteredTools = append(filteredTools, tool)
+		}
+	}
+
+	return &ToolsListResult{Tools: filteredTools}, nil
+}
+
+// HandleToolsCallForAgent routes a tool call with agent access validation.
+func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string, params ToolCallParams) (*ToolCallResult, error) {
+	// Parse the tool name to get the MCP server
+	serverName, _, err := ParsePrefixedTool(params.Name)
+	if err != nil {
+		return &ToolCallResult{
+			Content: []Content{NewTextContent(fmt.Sprintf("Invalid tool name: %v", err))},
+			IsError: true,
+		}, nil
+	}
+
+	// Check if agent has access to this server's tools
+	if !g.isServerAllowedForAgent(agentName, serverName) {
+		return &ToolCallResult{
+			Content: []Content{NewTextContent(fmt.Sprintf("Access denied: agent '%s' cannot use tools from '%s'", agentName, serverName))},
+			IsError: true,
+		}, nil
+	}
+
+	// Proceed with the tool call
+	return g.HandleToolsCall(ctx, params)
 }
 
 // waitForHTTPServer waits for an HTTP MCP server to become available.

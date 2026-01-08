@@ -56,8 +56,9 @@ func (r *Runtime) DockerClient() dockerclient.DockerClient {
 
 // UpOptions contains options for the Up operation.
 type UpOptions struct {
-	NoCache  bool // Force rebuild of source-based images
-	BasePort int  // Base port for host port allocation (default: 9000)
+	NoCache     bool // Force rebuild of source-based images
+	BasePort    int  // Base port for host port allocation (default: 9000)
+	GatewayPort int  // Port for MCP gateway (for agent MCP_ENDPOINT injection)
 }
 
 // UpResult contains the result of starting a topology.
@@ -343,11 +344,21 @@ func (r *Runtime) startAgent(ctx context.Context, topo *config.Topology, agent *
 		networkName = agent.Network
 	}
 
+	// Build environment with MCP_ENDPOINT injection
+	env := make(map[string]string)
+	for k, v := range agent.Env {
+		env[k] = v
+	}
+	// Inject MCP gateway endpoint for agent to connect to
+	if opts.GatewayPort > 0 {
+		env["MCP_ENDPOINT"] = fmt.Sprintf("http://host.docker.internal:%d", opts.GatewayPort)
+	}
+
 	// Create container (agents don't expose ports like MCP servers)
 	cfg := ContainerConfig{
 		Name:        containerName,
 		Image:       imageName,
-		Env:         agent.Env,
+		Env:         env,
 		Port:        0, // Agents don't need to expose ports
 		NetworkName: networkName,
 		Labels:      AgentLabels(topo.Name, agent.Name),
