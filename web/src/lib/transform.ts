@@ -3,9 +3,10 @@ import type {
   MCPServerStatus,
   ResourceStatus,
   AgentStatus,
+  A2AAgentStatus,
   NodeStatus,
 } from '../types';
-import { LAYOUT, NODE_TYPES } from './constants';
+import { LAYOUT, NODE_TYPES, COLORS } from './constants';
 
 // Gateway node ID constant
 export const GATEWAY_NODE_ID = 'gateway';
@@ -49,6 +50,7 @@ export function transformToNodesAndEdges(
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[] = [],
   agents: AgentStatus[] = [],
+  a2aAgents: A2AAgentStatus[] = [],
   existingPositions?: Map<string, { x: number; y: number }>
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
@@ -72,6 +74,7 @@ export function transformToNodesAndEdges(
       serverCount: mcpServers.length,
       resourceCount: resources.length,
       agentCount: agents.length,
+      a2aAgentCount: a2aAgents.length,
       totalToolCount,
     },
     draggable: true,
@@ -190,6 +193,51 @@ export function transformToNodesAndEdges(
       target: nodeId,
       animated: agent.status === 'running',
       style: { stroke: '#8b5cf6', strokeDasharray: '5,5' }, // Purple dashed line for agents
+    });
+  });
+
+  // Create A2A agent nodes (positioned on the left side, opposite to regular agents)
+  a2aAgents.forEach((a2aAgent, index) => {
+    const nodeId = `a2a-${a2aAgent.name}`;
+    const defaultPosition = calculateRadialPosition(
+      index,
+      a2aAgents.length,
+      LAYOUT.CENTER_X,
+      LAYOUT.CENTER_Y,
+      LAYOUT.A2A_RADIUS,
+      Math.PI // Start from left side (opposite to agents)
+    );
+
+    const a2aNode: Node = {
+      id: nodeId,
+      type: NODE_TYPES.A2A_AGENT,
+      position: existingPositions?.get(nodeId) ?? defaultPosition,
+      data: {
+        type: 'a2a-agent',
+        name: a2aAgent.name,
+        role: a2aAgent.role,
+        url: a2aAgent.url,
+        endpoint: a2aAgent.endpoint,
+        skillCount: a2aAgent.skillCount,
+        skills: a2aAgent.skills,
+        description: a2aAgent.description,
+        status: a2aAgent.available ? 'running' : 'stopped',
+      },
+      draggable: true,
+    };
+    nodes.push(a2aNode);
+
+    // Create bidirectional-style edge from gateway to A2A agent (teal dashed)
+    edges.push({
+      id: `edge-gateway-a2a-${a2aAgent.name}`,
+      source: GATEWAY_NODE_ID,
+      target: nodeId,
+      animated: a2aAgent.available,
+      style: {
+        stroke: COLORS.secondary, // Teal for A2A
+        strokeDasharray: '8,4',
+        strokeWidth: 2,
+      },
     });
   });
 
