@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"agentlab/internal/api"
+	"agentlab/pkg/a2a"
 	"agentlab/pkg/config"
 	"agentlab/pkg/mcp"
 	"agentlab/pkg/runtime"
@@ -292,6 +293,85 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		}
 	}
 
+	// Create A2A gateway if there are any A2A-enabled agents or external A2A agents
+	var a2aGateway *a2a.Gateway
+	hasA2A := len(topo.A2AAgents) > 0
+	if !hasA2A {
+		for _, agent := range topo.Agents {
+			if agent.IsA2AEnabled() {
+				hasA2A = true
+				break
+			}
+		}
+	}
+
+	if hasA2A {
+		baseURL := fmt.Sprintf("http://localhost:%d", port)
+		a2aGateway = a2a.NewGateway(baseURL)
+
+		if verbose {
+			fmt.Println("\nRegistering A2A agents...")
+		}
+
+		// Register local A2A agents (agents with a2a config)
+		for _, agent := range topo.Agents {
+			if agent.IsA2AEnabled() {
+				version := "1.0.0"
+				if agent.A2A.Version != "" {
+					version = agent.A2A.Version
+				}
+
+				// Convert config skills to a2a skills
+				skills := make([]a2a.Skill, len(agent.A2A.Skills))
+				for i, s := range agent.A2A.Skills {
+					skills[i] = a2a.Skill{
+						ID:          s.ID,
+						Name:        s.Name,
+						Description: s.Description,
+						Tags:        s.Tags,
+					}
+				}
+
+				card := a2a.AgentCard{
+					Name:        agent.Name,
+					Description: agent.Description,
+					Version:     version,
+					Skills:      skills,
+					Capabilities: a2a.AgentCapabilities{
+						Streaming:         false, // MVP: no streaming
+						PushNotifications: false, // MVP: no push
+					},
+				}
+
+				a2aGateway.RegisterLocalAgent(agent.Name, card, nil)
+				if verbose {
+					fmt.Printf("  Registered local A2A agent '%s' with %d skills\n", agent.Name, len(skills))
+				}
+			}
+		}
+
+		// Register external A2A agents
+		for _, a2aAgent := range topo.A2AAgents {
+			authType := ""
+			authToken := ""
+			authHeader := ""
+
+			if a2aAgent.Auth != nil {
+				authType = a2aAgent.Auth.Type
+				if a2aAgent.Auth.TokenEnv != "" {
+					authToken = os.Getenv(a2aAgent.Auth.TokenEnv)
+				}
+				authHeader = a2aAgent.Auth.HeaderName
+			}
+
+			if err := a2aGateway.RegisterRemoteAgent(ctx, a2aAgent.Name, a2aAgent.URL, authType, authToken, authHeader); err != nil {
+				if verbose {
+					fmt.Printf("  Warning: failed to register A2A agent %s: %v\n", a2aAgent.Name, err)
+				}
+			}
+		}
+	}
+
 	// Get embedded web files
 	webFS, err := WebFS()
 	if err != nil && verbose {
@@ -302,6 +382,9 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(rt.DockerClient())
 	server.SetTopologyName(topo.Name)
+	if a2aGateway != nil {
+		server.SetA2AGateway(a2aGateway)
+	}
 	addr := fmt.Sprintf(":%d", port)
 
 	// Handle shutdown gracefully
@@ -331,11 +414,20 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		fmt.Printf("  POST /mcp         - JSON-RPC endpoint\n")
 		fmt.Printf("  GET  /sse         - SSE endpoint (for Claude Desktop)\n")
 		fmt.Printf("  POST /message     - SSE message endpoint\n")
+		if a2aGateway != nil {
+			fmt.Printf("\nA2A Protocol endpoints:\n")
+			fmt.Printf("  GET  /.well-known/agent.json - Agent discovery\n")
+			fmt.Printf("  GET  /a2a/{agent}            - Agent card\n")
+			fmt.Printf("  POST /a2a/{agent}            - JSON-RPC endpoint\n")
+		}
 		fmt.Printf("\nWeb UI available at http://localhost%s/\n", addr)
 		fmt.Printf("API endpoints:\n")
 		fmt.Printf("  GET  /api/status      - Gateway status\n")
 		fmt.Printf("  GET  /api/mcp-servers - List MCP servers\n")
 		fmt.Printf("  GET  /api/tools       - List tools\n")
+		if a2aGateway != nil {
+			fmt.Printf("  GET  /api/a2a-agents  - List A2A agents\n")
+		}
 		fmt.Println("\nPress Ctrl+C to stop...")
 	}
 
