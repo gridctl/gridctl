@@ -24,8 +24,8 @@ func init() {
 	// Migrate from old ~/.agent0 directory if needed
 	_ = state.MigrateFromAgent0()
 
-	rootCmd.AddCommand(upCmd)
-	rootCmd.AddCommand(downCmd)
+	rootCmd.AddCommand(deployCmd)
+	rootCmd.AddCommand(destroyCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(serveCmd)
 }
