@@ -12,19 +12,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var downCmd = &cobra.Command{
-	Use:   "down <topology.yaml>",
+var destroyCmd = &cobra.Command{
+	Use:   "destroy <topology.yaml>",
 	Short: "Stop gateway daemon and remove containers",
 	Long: `Stops the MCP gateway daemon and removes all containers for a topology.
 
 Requires the topology file to identify which topology to stop.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDown(args[0])
+		return runDestroy(args[0])
 	},
 }
 
-func runDown(topologyPath string) error {
+func runDestroy(topologyPath string) error {
 	// Load topology to get its name
 	topo, err := config.LoadTopology(topologyPath)
 	if err != nil {

@@ -115,8 +115,8 @@ agentlab/
 ├── cmd/agentlab/           # CLI entry point
 │   ├── main.go           # Entry point
 │   ├── root.go           # Cobra root command
-│   ├── up.go             # Start topology + gateway
-│   ├── down.go           # Stop containers
+│   ├── deploy.go         # Start topology + gateway
+│   ├── destroy.go        # Stop containers
 │   ├── status.go         # Show container status
 │   └── embed.go          # Embedded web assets
 ├── internal/
@@ -171,24 +171,24 @@ make run        # Build and run
 
 ```bash
 # Start a topology (runs as daemon, returns immediately)
-./agentlab up examples/mcp-test.yaml
+./agentlab deploy examples/mcp-test.yaml
 
 # Start with options
-./agentlab up topology.yaml --port 8080 --no-cache
+./agentlab deploy topology.yaml --port 8080 --no-cache
 
 # Run in foreground with verbose output (for debugging)
-./agentlab up topology.yaml --foreground
+./agentlab deploy topology.yaml --foreground
 
 # Check running gateways and containers
 ./agentlab status
 
 # Stop a specific topology (gateway + containers)
-./agentlab down examples/mcp-test.yaml
+./agentlab destroy examples/mcp-test.yaml
 ```
 
 ### Command Reference
 
-#### `agentlab up <topology.yaml>`
+#### `agentlab deploy <topology.yaml>`
 
 Starts containers and MCP gateway for a topology.
 
@@ -199,7 +199,7 @@ Starts containers and MCP gateway for a topology.
 | `--no-cache` | | Force rebuild of source-based images |
 | `--verbose` | `-v` | Print full topology as JSON |
 
-#### `agentlab down <topology.yaml>`
+#### `agentlab destroy <topology.yaml>`
 
 Stops the gateway daemon and removes all containers for a topology.
 
@@ -213,7 +213,7 @@ Shows running gateways and containers.
 
 ### Daemon Mode
 
-By default, `agentlab up` runs the MCP gateway as a background daemon:
+By default, `agentlab deploy` runs the MCP gateway as a background daemon:
 - Returns immediately after starting
 - State stored in `~/.agentlab/state/{name}.json`
 - Logs written to `~/.agentlab/logs/{name}.log`
@@ -235,7 +235,7 @@ Agentlab stores daemon state in `~/.agentlab/`:
 
 ## MCP Gateway
 
-When `agentlab up` runs, it:
+When `agentlab deploy` runs, it:
 1. Parses the topology YAML
 2. Creates Docker network
 3. Builds/pulls images

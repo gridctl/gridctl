@@ -9,7 +9,7 @@
 #   - Export it: export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxxxxxxxxxxx
 #
 # Usage:
-#   agentlab up examples/github-mcp.yaml
+#   agentlab deploy examples/github-mcp.yaml
 #
 # Reference:
 #   https://github.com/github/github-mcp-server

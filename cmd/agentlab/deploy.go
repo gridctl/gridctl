@@ -23,15 +23,15 @@ import (
 )
 
 var (
-	upVerbose     bool
-	upNoCache     bool
-	upPort        int
-	upForeground  bool
-	upDaemonChild bool
+	deployVerbose     bool
+	deployNoCache     bool
+	deployPort        int
+	deployForeground  bool
+	deployDaemonChild bool
 )
 
-var upCmd = &cobra.Command{
-	Use:   "up <topology.yaml>",
+var deployCmd = &cobra.Command{
+	Use:   "deploy <topology.yaml>",
 	Short: "Start MCP servers defined in a topology file",
 	Long: `Reads a topology YAML file and starts all defined MCP servers and resources.
 
@@ -41,20 +41,20 @@ The MCP gateway runs as a background daemon by default.
 Use --foreground (-f) to run in foreground with verbose output.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runUp(args[0])
+		return runDeploy(args[0])
 	},
 }
 
 func init() {
-	upCmd.Flags().BoolVarP(&upVerbose, "verbose", "v", false, "Print full topology as JSON")
-	upCmd.Flags().BoolVar(&upNoCache, "no-cache", false, "Force rebuild of source-based images")
-	upCmd.Flags().IntVarP(&upPort, "port", "p", 8080, "Port for MCP gateway")
-	upCmd.Flags().BoolVarP(&upForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
-	upCmd.Flags().BoolVar(&upDaemonChild, "daemon-child", false, "Internal flag for daemon process")
-	_ = upCmd.Flags().MarkHidden("daemon-child")
+	deployCmd.Flags().BoolVarP(&deployVerbose, "verbose", "v", false, "Print full topology as JSON")
+	deployCmd.Flags().BoolVar(&deployNoCache, "no-cache", false, "Force rebuild of source-based images")
+	deployCmd.Flags().IntVarP(&deployPort, "port", "p", 8080, "Port for MCP gateway")
+	deployCmd.Flags().BoolVarP(&deployForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
+	deployCmd.Flags().BoolVar(&deployDaemonChild, "daemon-child", false, "Internal flag for daemon process")
+	_ = deployCmd.Flags().MarkHidden("daemon-child")
 }
 
-func runUp(topologyPath string) error {
+func runDeploy(topologyPath string) error {
 	// Convert to absolute path for daemon child
 	absPath, err := filepath.Abs(topologyPath)
 	if err != nil {
@@ -71,17 +71,17 @@ func runUp(topologyPath string) error {
 	// Check if already running
 	existingState, _ := state.Load(topo.Name)
 	if existingState != nil && state.IsRunning(existingState) {
-		return fmt.Errorf("topology '%s' is already running on port %d (PID: %d)\nUse 'agentlab down %s' to stop it first",
+		return fmt.Errorf("topology '%s' is already running on port %d (PID: %d)\nUse 'agentlab destroy %s' to stop it first",
 			topo.Name, existingState.Port, existingState.PID, topologyPath)
 	}
 
 	// If we're the daemon child, run the gateway
-	if upDaemonChild {
-		return runDaemonChild(topologyPath, topo)
+	if deployDaemonChild {
+		return runDeployDaemonChild(topologyPath, topo)
 	}
 
 	// Print info
-	if upForeground || upVerbose {
+	if deployForeground || deployVerbose {
 		fmt.Printf("Loading topology from %s\n", topologyPath)
 		fmt.Printf("Topology '%s' loaded successfully\n", topo.Name)
 		fmt.Printf("  Version: %s\n", topo.Version)
@@ -94,7 +94,7 @@ func runUp(topologyPath string) error {
 		fmt.Printf("  Resources: %d\n", len(topo.Resources))
 	}
 
-	if upVerbose {
+	if deployVerbose {
 		fmt.Println("\nFull topology (JSON):")
 		data, _ := json.MarshalIndent(topo, "", "  ")
 		fmt.Println(string(data))
@@ -109,7 +109,7 @@ func runUp(topologyPath string) error {
 
 	ctx := context.Background()
 	opts := runtime.UpOptions{
-		NoCache:  upNoCache,
+		NoCache:  deployNoCache,
 		BasePort: 9000,
 	}
 	result, err := rt.Up(ctx, topo, opts)
@@ -118,12 +118,12 @@ func runUp(topologyPath string) error {
 	}
 
 	// If foreground mode, run gateway directly
-	if upForeground {
-		return runGateway(ctx, rt, topo, result, upPort, true)
+	if deployForeground {
+		return runGateway(ctx, rt, topo, result, deployPort, true)
 	}
 
 	// Daemon mode: fork child process
-	pid, err := forkDaemon(topologyPath, upPort)
+	pid, err := forkDeployDaemon(topologyPath, deployPort)
 	if err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
@@ -141,13 +141,13 @@ func runUp(topologyPath string) error {
 	fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
 	fmt.Printf("  PID: %d\n", pid)
 	fmt.Printf("  Logs: %s\n", state.LogPath(topo.Name))
-	fmt.Printf("\nUse 'agentlab down %s' to stop\n", topologyPath)
+	fmt.Printf("\nUse 'agentlab destroy %s' to stop\n", topologyPath)
 
 	return nil
 }
 
-// runDaemonChild runs the gateway as a daemon child process
-func runDaemonChild(topologyPath string, topo *config.Topology) error {
+// runDeployDaemonChild runs the gateway as a daemon child process
+func runDeployDaemonChild(topologyPath string, topo *config.Topology) error {
 	// Create runtime
 	rt, err := runtime.New()
 	if err != nil {
@@ -168,7 +168,7 @@ func runDaemonChild(topologyPath string, topo *config.Topology) error {
 		TopologyName: topo.Name,
 		TopologyFile: topologyPath,
 		PID:          os.Getpid(),
-		Port:         upPort,
+		Port:         deployPort,
 		StartedAt:    time.Now(),
 	}
 	if err := state.Save(st); err != nil {
@@ -176,7 +176,7 @@ func runDaemonChild(topologyPath string, topo *config.Topology) error {
 	}
 
 	// Run gateway (blocks until shutdown)
-	return runGateway(ctx, rt, topo, result, upPort, false)
+	return runGateway(ctx, rt, topo, result, deployPort, false)
 }
 
 // getRunningContainers retrieves info about already-running containers
@@ -324,8 +324,8 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 	return nil
 }
 
-// forkDaemon starts the daemon child process
-func forkDaemon(topologyPath string, port int) (int, error) {
+// forkDeployDaemon starts the daemon child process
+func forkDeployDaemon(topologyPath string, port int) (int, error) {
 	// Get current executable
 	exe, err := os.Executable()
 	if err != nil {
@@ -350,7 +350,7 @@ func forkDaemon(topologyPath string, port int) (int, error) {
 	}
 
 	// Build command with --daemon-child flag
-	cmd := exec.Command(exe, "up", topologyPath,
+	cmd := exec.Command(exe, "deploy", topologyPath,
 		"--daemon-child",
 		"--port", strconv.Itoa(port))
 
