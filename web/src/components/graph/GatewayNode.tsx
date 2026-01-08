@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Wrench } from 'lucide-react';
+import { Activity, Server, Wrench, Zap } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import type { GatewayNodeData } from '../../types';
@@ -14,72 +14,98 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
   return (
     <div
       className={cn(
-        'w-56 shadow-node overflow-hidden rounded-lg',
-        'bg-surface border border-border',
-        'transition-all duration-200 ease-out',
-        selected && 'border-primary ring-2 ring-primary/20',
-        !selected && 'hover:shadow-node-hover hover:border-text-muted'
+        'w-60 overflow-hidden rounded-2xl',
+        'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
+        'backdrop-blur-xl border border-primary/20',
+        'shadow-lg transition-all duration-300 ease-out',
+        selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
+        !selected && 'hover:shadow-node-hover hover:border-primary/40 hover:-translate-y-1'
       )}
     >
+      {/* Top accent gradient */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+
       {/* Header */}
-      <div className="bg-surface-highlight px-4 py-3 flex items-center gap-3 border-b border-border">
-        <div className="p-2 bg-primary/15 rounded-lg">
-          <Activity size={20} className="text-primary" />
+      <div className="px-4 py-3.5 flex items-center gap-3 border-b border-primary/10 bg-primary/[0.02] relative">
+        {/* Glowing logo */}
+        <div className="relative">
+          <div className="p-2.5 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl border border-primary/30 shadow-glow-primary">
+            <Activity size={20} className="text-primary" />
+          </div>
+          {/* Pulse effect */}
+          <div
+            className="absolute inset-0 rounded-xl bg-primary/20 animate-ping"
+            style={{ animationDuration: '2s', animationIterationCount: 'infinite' }}
+          />
         </div>
         <div>
-          <h3 className="font-bold text-sm text-text-primary">{data.name}</h3>
-          <p className="text-[10px] text-text-muted font-mono">v{data.version}</p>
+          <h3 className="font-bold text-sm text-text-primary tracking-tight">{data.name}</h3>
+          <p className="text-[10px] text-text-muted font-mono tracking-wider">v{data.version}</p>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-text-muted">
-            <Server size={12} />
-            <span>MCP Servers</span>
+      {/* Stats Grid */}
+      <div className="p-4 space-y-3">
+        {/* MCP Servers */}
+        <div className="flex items-center justify-between group">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
+              <Server size={12} className="text-primary" />
+            </div>
+            <span className="text-xs text-text-secondary font-medium">MCP Servers</span>
           </div>
-          <span className="text-sm font-semibold text-text-primary">
+          <span className="text-sm font-bold text-text-primary tabular-nums">
             {data.serverCount}
           </span>
         </div>
 
+        {/* Resources */}
         {data.resourceCount > 0 && (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs text-text-muted">
-              <Server size={12} className="text-secondary" />
-              <span>Resources</span>
+          <div className="flex items-center justify-between group">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-secondary/10 border border-secondary/20 group-hover:bg-secondary/15 transition-colors">
+                <Server size={12} className="text-secondary" />
+              </div>
+              <span className="text-xs text-text-secondary font-medium">Resources</span>
             </div>
-            <span className="text-sm font-semibold text-text-primary">
+            <span className="text-sm font-bold text-text-primary tabular-nums">
               {data.resourceCount}
             </span>
           </div>
         )}
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-text-muted">
-            <Wrench size={12} />
-            <span>Total Tools</span>
+        {/* Tools */}
+        <div className="flex items-center justify-between group">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-surface-highlight border border-border group-hover:border-text-muted/30 transition-colors">
+              <Wrench size={12} className="text-text-secondary" />
+            </div>
+            <span className="text-xs text-text-secondary font-medium">Total Tools</span>
           </div>
-          <span className="text-sm font-semibold text-text-primary">
+          <span className="text-sm font-bold text-text-primary tabular-nums">
             {data.totalToolCount}
           </span>
         </div>
 
         {/* Status indicator */}
-        <div className="flex items-center gap-2 pt-2 border-t border-border">
-          <StatusDot status="running" />
-          <span className="text-xs text-status-running font-medium">Gateway Active</span>
+        <div className="flex items-center gap-2.5 pt-2 mt-1 border-t border-border/50">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-status-running/10 border border-status-running/20">
+            <StatusDot status="running" />
+            <span className="text-[11px] text-status-running font-semibold tracking-wide">
+              Gateway Active
+            </span>
+          </div>
+          <Zap size={14} className="text-primary animate-pulse" style={{ animationDuration: '2s' }} />
         </div>
       </div>
 
-      {/* Connection Handles - Clean style */}
+      {/* Connection Handles */}
       <Handle
         type="target"
         position={Position.Left}
         className={cn(
-          '!w-4 !h-4 !bg-primary !border-2 !border-background',
-          'transition-all duration-150'
+          '!w-3.5 !h-3.5 !bg-primary !border-2 !border-background !rounded-full',
+          'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
         )}
         id="input"
       />
@@ -87,8 +113,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         type="source"
         position={Position.Right}
         className={cn(
-          '!w-4 !h-4 !bg-primary !border-2 !border-background',
-          'transition-all duration-150'
+          '!w-3.5 !h-3.5 !bg-primary !border-2 !border-background !rounded-full',
+          'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
         )}
         id="output"
       />

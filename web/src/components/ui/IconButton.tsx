@@ -21,14 +21,21 @@ export function IconButton({
   variant = 'default',
 }: IconButtonProps) {
   const sizeClasses = {
-    sm: 'p-1',
+    sm: 'p-1.5',
     md: 'p-2',
   };
   const iconSize = size === 'sm' ? 14 : 16;
 
   const variantClasses = {
-    default: 'bg-background text-text-muted hover:bg-surfaceHighlight hover:text-text-primary',
-    ghost: 'text-text-muted hover:text-text-primary hover:bg-surfaceHighlight',
+    default: cn(
+      'bg-surface-elevated/60 text-text-muted border border-border/50',
+      'hover:bg-surface-highlight hover:text-text-primary hover:border-text-muted/30',
+      'backdrop-blur-sm'
+    ),
+    ghost: cn(
+      'text-text-muted',
+      'hover:text-text-primary hover:bg-surface-highlight/60'
+    ),
   };
 
   return (
@@ -37,8 +44,9 @@ export function IconButton({
       disabled={disabled}
       title={tooltip}
       className={cn(
-        'rounded-lg transition-colors duration-150',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
+        'rounded-lg transition-all duration-200 ease-out',
+        'disabled:opacity-40 disabled:cursor-not-allowed',
+        'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-1 focus:ring-offset-background',
         variantClasses[variant],
         sizeClasses[size],
         className

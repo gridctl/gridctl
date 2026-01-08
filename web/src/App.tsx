@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { StatusBar } from './components/layout/StatusBar';
@@ -42,34 +43,50 @@ function AppContent() {
   });
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-background">
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-background relative">
+      {/* Subtle background grain is applied via CSS */}
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
-      {/* Main content area - takes remaining space minus bottom panel and status bar */}
+      {/* Main content area */}
       <div className="flex-1 flex relative overflow-hidden min-h-0">
         {/* Loading State */}
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-30">
-            <div className="text-center space-y-4">
-              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-text-muted">Loading topology...</p>
+          <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-30">
+            <div className="text-center space-y-5 animate-fade-in-scale">
+              {/* Animated loader */}
+              <div className="relative mx-auto w-16 h-16">
+                <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+                <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                <div className="absolute inset-2 rounded-full border-2 border-secondary/30 border-b-transparent animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+              </div>
+              <div>
+                <p className="text-text-secondary font-medium">Loading topology</p>
+                <p className="text-text-muted text-sm mt-1">Connecting to gateway...</p>
+              </div>
             </div>
           </div>
         )}
 
         {/* Error State */}
         {error && !isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-30">
-            <div className="text-center space-y-4 max-w-md p-6">
-              <div className="w-16 h-16 bg-status-error/20 rounded-full flex items-center justify-center mx-auto">
-                <span className="text-2xl">!</span>
+          <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-30">
+            <div className="text-center space-y-5 max-w-md p-8 animate-fade-in-scale">
+              {/* Error icon with glow */}
+              <div className="relative mx-auto w-20 h-20">
+                <div className="absolute inset-0 bg-status-error/20 rounded-2xl blur-xl" />
+                <div className="relative w-full h-full bg-status-error/10 rounded-2xl border border-status-error/20 flex items-center justify-center">
+                  <AlertCircle size={32} className="text-status-error" />
+                </div>
               </div>
-              <h2 className="text-lg font-semibold text-text-primary">Connection Error</h2>
-              <p className="text-sm text-text-muted">{error}</p>
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary">Connection Error</h2>
+                <p className="text-sm text-text-muted mt-2 leading-relaxed">{error}</p>
+              </div>
               <button
                 onClick={handleRefresh}
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-background font-semibold rounded-lg hover:from-primary-light hover:to-primary transition-all shadow-glow-primary hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
               >
+                <RefreshCw size={16} />
                 Retry Connection
               </button>
             </div>

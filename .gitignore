@@ -58,5 +58,6 @@ temp/
 
 # Vendor specific assistant files
 .claude/
+.claude-plugin/
 CLAUDE.md
 GEMINI.md

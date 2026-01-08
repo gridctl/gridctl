@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Wifi, Server } from 'lucide-react';
+import { Terminal, Box, Wifi, Server, Hash } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
@@ -24,7 +24,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const TransportIcon = transport === 'stdio' ? Server : Wifi;
   const toolCount = isServer ? (data as MCPServerNodeData).toolCount : null;
 
-  // Get endpoint/containerId for MCP servers (filter out 'unknown')
+  // Get endpoint/containerId for MCP servers
   const endpoint = isServer ? (data as MCPServerNodeData).endpoint : null;
   const containerId = isServer ? (data as MCPServerNodeData).containerId : null;
   const hasValidEndpoint = endpoint && endpoint !== 'unknown';
@@ -37,26 +37,42 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   return (
     <div
       className={cn(
-        'w-64 shadow-node overflow-hidden rounded-lg',
-        'bg-surface border border-border',
-        'transition-all duration-200 ease-out',
-        selected && 'border-primary ring-2 ring-primary/20',
-        !selected && 'hover:shadow-node-hover hover:border-text-muted'
+        'w-64 overflow-hidden rounded-xl',
+        'backdrop-blur-xl border transition-all duration-300 ease-out',
+        isServer
+          ? 'bg-gradient-to-br from-surface/95 to-primary/[0.02] border-border/50'
+          : 'bg-gradient-to-br from-surface/95 to-secondary/[0.02] border-border/50',
+        selected && isServer && 'border-primary shadow-glow-primary ring-1 ring-primary/30',
+        selected && !isServer && 'border-secondary shadow-glow-secondary ring-1 ring-secondary/30',
+        !selected && 'hover:shadow-node-hover hover:border-text-muted/30 hover:-translate-y-0.5'
       )}
     >
-      {/* Header */}
-      <div className="bg-surface-highlight px-3 py-2.5 flex items-center justify-between border-b border-border">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* Header with gradient accent */}
+      <div className={cn(
+        'px-3 py-2.5 flex items-center justify-between border-b relative',
+        isServer ? 'border-primary/10 bg-primary/[0.03]' : 'border-secondary/10 bg-secondary/[0.03]'
+      )}>
+        {/* Accent line */}
+        <div className={cn(
+          'absolute top-0 left-0 right-0 h-px',
+          isServer
+            ? 'bg-gradient-to-r from-transparent via-primary/40 to-transparent'
+            : 'bg-gradient-to-r from-transparent via-secondary/40 to-transparent'
+        )} />
+
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className={cn(
-            'p-1.5 rounded-md',
-            isServer ? 'bg-primary/15' : 'bg-secondary/15'
+            'p-1.5 rounded-lg border',
+            isServer
+              ? 'bg-primary/10 border-primary/20'
+              : 'bg-secondary/10 border-secondary/20'
           )}>
             <Icon
               size={14}
               className={isServer ? 'text-primary' : 'text-secondary'}
             />
           </div>
-          <span className="font-semibold text-sm text-text-primary truncate">
+          <span className="font-semibold text-sm text-text-primary truncate tracking-tight">
             {data.name}
           </span>
         </div>
@@ -67,29 +83,29 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
       <div className="p-3 space-y-2.5">
         {/* Endpoint Row (for HTTP MCP servers) */}
         {isServer && hasValidEndpoint && (
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             <div className="flex items-center gap-1.5">
-              <Wifi size={10} className="text-text-muted" />
-              <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">
+              <Wifi size={10} className="text-secondary" />
+              <span className="text-[10px] uppercase tracking-widest font-medium text-text-muted">
                 Endpoint
               </span>
             </div>
-            <div className="text-xs text-text-secondary font-mono truncate" title={endpoint}>
+            <div className="text-xs text-text-secondary font-mono truncate bg-background/50 px-2 py-1 rounded-md" title={endpoint}>
               {endpoint}
             </div>
           </div>
         )}
 
-        {/* Container Row (for stdio MCP servers without endpoint) */}
+        {/* Container Row (for stdio MCP servers) */}
         {isServer && !hasValidEndpoint && hasValidContainerId && (
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             <div className="flex items-center gap-1.5">
-              <Server size={10} className="text-text-muted" />
-              <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">
+              <Hash size={10} className="text-primary" />
+              <span className="text-[10px] uppercase tracking-widest font-medium text-text-muted">
                 Container
               </span>
             </div>
-            <div className="text-xs text-text-secondary font-mono truncate" title={containerId}>
+            <div className="text-xs text-text-secondary font-mono truncate bg-background/50 px-2 py-1 rounded-md" title={containerId}>
               {containerId.slice(0, 12)}
             </div>
           </div>
@@ -97,11 +113,11 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
 
         {/* Image Row (for resources) */}
         {!isServer && image && (
-          <div className="space-y-0.5">
-            <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase tracking-widest font-medium text-text-muted">
               Image
             </span>
-            <div className="text-xs text-text-secondary font-mono truncate" title={image}>
+            <div className="text-xs text-text-secondary font-mono truncate bg-background/50 px-2 py-1 rounded-md" title={image}>
               {image}
             </div>
           </div>
@@ -109,15 +125,18 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
 
         {/* Transport + Tool count (for MCP servers) */}
         {isServer && transport && (
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5 text-text-muted">
-              <TransportIcon size={12} />
-              <span className="uppercase text-[10px] tracking-wider">
+          <div className="flex items-center justify-between text-xs pt-1">
+            <div className={cn(
+              'flex items-center gap-1.5 px-2 py-1 rounded-md',
+              transport === 'stdio' ? 'bg-primary/10 text-primary' : 'bg-secondary/10 text-secondary'
+            )}>
+              <TransportIcon size={11} />
+              <span className="uppercase text-[10px] tracking-wider font-medium">
                 {transport}
               </span>
             </div>
             {toolCount !== null && toolCount !== undefined && (
-              <span className="text-text-secondary">
+              <span className="text-text-secondary font-mono text-[11px]">
                 {toolCount} tools
               </span>
             )}
@@ -126,11 +145,9 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
 
         {/* Network (for resources) */}
         {!isServer && network && (
-          <div className="flex items-center gap-1.5 text-xs text-text-muted">
-            <Server size={12} />
-            <span className="text-text-secondary">
-              {network}
-            </span>
+          <div className="flex items-center gap-1.5 text-xs text-secondary bg-secondary/10 px-2 py-1 rounded-md w-fit">
+            <Server size={11} />
+            <span className="font-medium">{network}</span>
           </div>
         )}
 
@@ -142,14 +159,14 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         </div>
       </div>
 
-      {/* Connection Handles - Clean style */}
+      {/* Connection Handles */}
       <Handle
         type="target"
         position={Position.Left}
         className={cn(
-          '!w-3 !h-3 !border-2 !border-background',
+          '!w-2.5 !h-2.5 !border-2 !border-background !rounded-full',
           isServer ? '!bg-primary' : '!bg-secondary',
-          'transition-all duration-150'
+          'transition-all duration-200 hover:!scale-125'
         )}
         id="input"
       />
@@ -157,9 +174,9 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         type="source"
         position={Position.Right}
         className={cn(
-          '!w-3 !h-3 !border-2 !border-background',
+          '!w-2.5 !h-2.5 !border-2 !border-background !rounded-full',
           isServer ? '!bg-primary' : '!bg-secondary',
-          'transition-all duration-150'
+          'transition-all duration-200 hover:!scale-125'
         )}
         id="output"
       />

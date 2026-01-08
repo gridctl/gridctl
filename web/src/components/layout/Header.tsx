@@ -1,4 +1,4 @@
-import { Activity, RefreshCw, Settings } from 'lucide-react';
+import { Activity, RefreshCw, Settings, Zap } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { IconButton } from '../ui/IconButton';
@@ -19,20 +19,27 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const isConnected = connectionStatus === 'connected';
 
   return (
-    <header className="h-14 bg-surface border-b border-border flex items-center justify-between px-4">
+    <header className="h-14 bg-surface/80 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-5 relative z-30">
+      {/* Subtle gradient line at top */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+
       {/* Left: Logo & Name */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          {/* Logo icon */}
-          <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center">
-            <Activity size={18} className="text-primary" />
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* Logo - Distinctive amber glow */}
+          <div className="relative">
+            <div className="w-9 h-9 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl flex items-center justify-center border border-primary/20 shadow-glow-primary">
+              <Activity size={18} className="text-primary" />
+            </div>
+            {/* Subtle pulse ring */}
+            <div className="absolute inset-0 rounded-xl bg-primary/10 animate-ping opacity-30" style={{ animationDuration: '3s' }} />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-text-primary">
+            <h1 className="text-base font-semibold text-text-primary tracking-tight">
               Agentlab
             </h1>
             {gatewayInfo && (
-              <p className="text-xs text-text-muted -mt-0.5">
+              <p className="text-[11px] text-text-muted font-mono -mt-0.5 tracking-wide">
                 {gatewayInfo.name}
               </p>
             )}
@@ -40,21 +47,29 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         </div>
       </div>
 
-      {/* Center: Status Summary */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-background rounded-full">
-          <StatusDot status={isConnected ? 'running' : 'stopped'} />
-          <span className="text-xs text-text-secondary">
-            Gateway {isConnected ? 'Connected' : 'Disconnected'}
+      {/* Center: Status Pills */}
+      <div className="flex items-center gap-3">
+        {/* Connection Status */}
+        <div className={cn(
+          'flex items-center gap-2 px-3 py-1.5 rounded-full',
+          'bg-surface-elevated/60 backdrop-blur-sm border',
+          isConnected ? 'border-status-running/20' : 'border-status-error/20'
+        )}>
+          <StatusDot status={isConnected ? 'running' : 'error'} />
+          <span className="text-xs font-medium text-text-secondary">
+            {isConnected ? 'Connected' : 'Disconnected'}
           </span>
         </div>
 
+        {/* Server Count */}
         {totalCount > 0 && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-background rounded-full">
-            <span className="text-xs text-text-secondary">
-              <span className="text-status-running font-medium">{runningCount}</span>
-              <span className="text-text-muted"> / {totalCount}</span>
-              <span className="text-text-muted ml-1">servers</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-elevated/60 backdrop-blur-sm border border-border/50">
+            <Zap size={12} className="text-primary" />
+            <span className="text-xs font-medium">
+              <span className="text-status-running">{runningCount}</span>
+              <span className="text-text-muted mx-0.5">/</span>
+              <span className="text-text-secondary">{totalCount}</span>
+              <span className="text-text-muted ml-1.5">active</span>
             </span>
           </div>
         )}
@@ -66,13 +81,17 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
           icon={RefreshCw}
           onClick={onRefresh}
           disabled={isRefreshing}
-          className={cn(isRefreshing && 'animate-spin')}
-          tooltip="Refresh Status"
+          className={cn(
+            isRefreshing && 'animate-spin',
+            'hover:text-primary hover:border-primary/30'
+          )}
+          tooltip="Refresh (⌘R)"
         />
         <IconButton
           icon={Settings}
           onClick={() => {/* Open settings */}}
           tooltip="Settings"
+          className="hover:text-primary hover:border-primary/30"
         />
       </div>
     </header>

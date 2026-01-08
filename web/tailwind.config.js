@@ -7,52 +7,101 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Core palette - Quantum Neon
-        background: '#0D0D0D',       // Rich Black
-        surface: '#1a1a1a',          // Liquid Glass base
-        surfaceHighlight: '#2a2a2a', // Highlight
-        border: '#3a3a3a',           // Border
+        // ============================================
+        // OBSIDIAN OBSERVATORY - Color System
+        // ============================================
 
-        // Neon Accents
-        primary: '#00CAFF',          // Electric Cyan - MCP servers
-        primaryLight: '#66DFFF',     // Light Cyan
-        secondary: '#B915CC',        // Futuristic Purple - Resources
-        secondaryLight: '#D45DE8',   // Light Purple
+        // Core Obsidian Palette
+        background: '#08080a',
+        surface: {
+          DEFAULT: '#111113',
+          elevated: '#18181b',
+          highlight: '#1f1f23',
+        },
+        border: {
+          DEFAULT: '#27272a',
+          subtle: 'rgba(255, 255, 255, 0.06)',
+        },
+
+        // Primary - Warm Amber (Energy, Activity)
+        primary: {
+          DEFAULT: '#f59e0b',
+          light: '#fbbf24',
+          dark: '#d97706',
+        },
+
+        // Secondary - Deep Teal (Technical, Data)
+        secondary: {
+          DEFAULT: '#0d9488',
+          light: '#14b8a6',
+          dark: '#0f766e',
+        },
 
         // Status colors
         status: {
-          running: '#2CFF05',        // Neon Green
-          stopped: '#4a4a4a',        // Dark Gray
-          error: '#FF3366',          // Neon Red
-          pending: '#FFCC00',        // Neon Yellow
+          running: '#10b981',
+          stopped: '#52525b',
+          error: '#f43f5e',
+          pending: '#eab308',
         },
 
-        // Text hierarchy
+        // Text hierarchy - Warm whites
         text: {
-          primary: '#f8fafc',        // White
-          secondary: '#a0a0a0',      // Light Gray
-          muted: '#707070',          // Muted Gray
+          primary: '#fafaf9',
+          secondary: '#a8a29e',
+          muted: '#78716c',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Consolas', 'monospace'],
+        sans: ['Outfit', 'system-ui', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'Fira Code', 'monospace'],
       },
       boxShadow: {
-        'node': '0 4px 20px rgba(0, 0, 0, 0.6)',
-        'node-hover': '0 8px 30px rgba(0, 0, 0, 0.7)',
-        'glow-primary': '0 0 20px rgba(0, 202, 255, 0.4)',
-        'glow-secondary': '0 0 20px rgba(185, 21, 204, 0.4)',
+        'sm': '0 1px 2px rgba(0, 0, 0, 0.5)',
+        'md': '0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3)',
+        'lg': '0 8px 32px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.3)',
+        'node': '0 4px 24px rgba(0, 0, 0, 0.4)',
+        'node-hover': '0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+        'glow-primary': '0 0 20px rgba(245, 158, 11, 0.15), 0 0 40px rgba(245, 158, 11, 0.1)',
+        'glow-secondary': '0 0 20px rgba(13, 148, 136, 0.15), 0 0 40px rgba(13, 148, 136, 0.1)',
+        'glow-success': '0 0 12px rgba(16, 185, 129, 0.2)',
+        'glow-error': '0 0 12px rgba(244, 63, 94, 0.2)',
       },
       animation: {
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'glow': 'glow 2s ease-in-out infinite alternate',
+        'fade-in-up': 'fade-in-up 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards',
+        'fade-in-scale': 'fade-in-scale 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards',
+        'slide-in-right': 'slide-in-right 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards',
+        'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
+        'status-pulse': 'status-pulse 2s ease-in-out infinite',
       },
       keyframes: {
-        glow: {
-          '0%': { boxShadow: '0 0 5px rgba(59, 130, 246, 0.2)' },
-          '100%': { boxShadow: '0 0 20px rgba(59, 130, 246, 0.4)' },
+        'fade-in-up': {
+          '0%': { opacity: '0', transform: 'translateY(12px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        'fade-in-scale': {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        'slide-in-right': {
+          '0%': { opacity: '0', transform: 'translateX(20px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        'pulse-glow': {
+          '0%, 100%': { boxShadow: '0 0 12px rgba(245, 158, 11, 0.1)' },
+          '50%': { boxShadow: '0 0 24px rgba(245, 158, 11, 0.2)' },
+        },
+        'status-pulse': {
+          '0%, 100%': { transform: 'scale(1)', opacity: '1' },
+          '50%': { transform: 'scale(1.5)', opacity: '0' },
+        },
+      },
+      backdropBlur: {
+        'xs': '4px',
+      },
+      borderRadius: {
+        'xl': '12px',
+        '2xl': '16px',
       },
     },
   },
