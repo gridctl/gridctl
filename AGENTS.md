@@ -116,6 +116,9 @@ This enables network isolation between agents while still allowing them to commu
 | Agent Phase 2 | Sidecar injector (MCP_ENDPOINT, tool access control) | Complete |
 | Agent Phase 3 | Headless agent schema (runtime, prompt fields) | Complete |
 | Agent Phase 4 | Agent cards UI (circular nodes, purple theme) | Complete |
+| A2A Phase 1 | A2A protocol types and client | Complete |
+| A2A Phase 2 | A2A handler and gateway | Complete |
+| A2A Phase 3 | A2A UI (teal nodes, sidebar integration) | Complete |
 
 ## Directory Structure
 
@@ -153,15 +156,20 @@ agentlab/
 │   │   └── builder.go    # Main builder
 │   ├── state/            # Daemon state management
 │   │   └── state.go      # ~/.agentlab/state/ and ~/.agentlab/logs/
-│   └── mcp/              # MCP protocol
-│       ├── types.go      # JSON-RPC, MCP types, AgentClient interface
-│       ├── client.go     # HTTP transport client
-│       ├── stdio.go      # Stdio transport client (Docker attach)
-│       ├── sse.go        # SSE server (northbound)
-│       ├── session.go    # Session management
-│       ├── router.go     # Tool routing
-│       ├── gateway.go    # Protocol bridge logic
-│       └── handler.go    # HTTP handlers
+│   ├── mcp/              # MCP protocol
+│   │   ├── types.go      # JSON-RPC, MCP types, AgentClient interface
+│   │   ├── client.go     # HTTP transport client
+│   │   ├── stdio.go      # Stdio transport client (Docker attach)
+│   │   ├── sse.go        # SSE server (northbound)
+│   │   ├── session.go    # Session management
+│   │   ├── router.go     # Tool routing
+│   │   ├── gateway.go    # Protocol bridge logic
+│   │   └── handler.go    # HTTP handlers
+│   └── a2a/              # A2A (Agent-to-Agent) protocol
+│       ├── types.go      # A2A protocol types (AgentCard, Task, Message)
+│       ├── client.go     # HTTP client for remote A2A agents
+│       ├── handler.go    # HTTP handler for A2A endpoints
+│       └── gateway.go    # A2A gateway (local + remote agents)
 └── web/                  # React frontend (Vite)
 ```
 
@@ -266,7 +274,15 @@ When `agentlab deploy` runs, it:
 | `/api/mcp-servers` | GET | List registered MCP servers |
 | `/api/agents` | GET | List registered agents |
 | `/api/tools` | GET | List aggregated tools |
+| `/api/a2a-agents` | GET | List A2A agents (local + remote) |
 | `/` | GET | Web UI (embedded React app) |
+
+**A2A Protocol Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/.well-known/agent.json` | GET | Agent Card discovery (lists all local A2A agents) |
+| `/a2a/{agent}` | GET | Get specific agent's Agent Card |
+| `/a2a/{agent}` | POST | JSON-RPC endpoint (message/send, tasks/get, etc.) |
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name--tool-name` (e.g., `itential-mcp--get_workflows`)
@@ -359,6 +375,29 @@ agents:
       You are a helpful assistant that can use tools.
     uses:
       - github-tools
+
+  # Agent with A2A capabilities
+  - name: a2a-enabled-agent
+    image: my-org/agent:v1
+    a2a:                        # Exposes this agent via A2A protocol
+      enabled: true
+      version: "1.0.0"
+      skills:
+        - id: code-review
+          name: Code Review
+          description: "Review code for issues"
+        - id: summarize
+          name: Summarize
+          description: "Summarize content"
+
+# External A2A agents (remote agents accessible via URL)
+a2a-agents:
+  - name: external-agent
+    url: https://example.com/agent
+    auth:
+      type: bearer              # or "api_key"
+      token: "${A2A_TOKEN}"
+      # header: "X-API-Key"     # for api_key type
 ```
 
 ### Advanced Mode (Multiple Networks)
@@ -453,6 +492,7 @@ All managed resources use these labels:
 | Package | Test Pattern |
 |---------|--------------|
 | pkg/mcp | router_test.go, gateway_test.go, session_test.go, handler_test.go |
+| pkg/a2a | types_test.go, gateway_test.go, handler_test.go |
 | pkg/runtime | runtime_test.go, container_test.go, network_test.go |
 | pkg/builder | cache_test.go, builder_test.go |
 | pkg/state | state_test.go |
