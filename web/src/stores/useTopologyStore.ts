@@ -6,6 +6,7 @@ import type {
   GatewayStatus,
   MCPServerStatus,
   ResourceStatus,
+  AgentStatus,
   Tool,
   ConnectionStatus,
 } from '../types';
@@ -16,6 +17,7 @@ interface TopologyState {
   gatewayInfo: { name: string; version: string } | null;
   mcpServers: MCPServerStatus[];
   resources: ResourceStatus[];
+  agents: AgentStatus[];
   tools: Tool[];
 
   // === React Flow State ===
@@ -50,6 +52,7 @@ export const useTopologyStore = create<TopologyState>()(
     gatewayInfo: null,
     mcpServers: [],
     resources: [],
+    agents: [],
     tools: [],
     nodes: [],
     edges: [],
@@ -65,6 +68,7 @@ export const useTopologyStore = create<TopologyState>()(
         gatewayInfo: status.gateway,
         mcpServers: status['mcp-servers'] || [],
         resources: status.resources || [],
+        agents: status.agents || [],
         lastUpdated: new Date(),
         isLoading: false,
         error: null,
@@ -88,7 +92,7 @@ export const useTopologyStore = create<TopologyState>()(
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, nodes: existingNodes } = get();
+      const { gatewayInfo, mcpServers, resources, agents, nodes: existingNodes } = get();
       if (!gatewayInfo) return;
 
       // Build map of existing positions to preserve user-dragged positions
@@ -100,20 +104,22 @@ export const useTopologyStore = create<TopologyState>()(
         gatewayInfo,
         mcpServers,
         resources,
+        agents,
         positionMap
       );
       set({ nodes, edges });
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources } = get();
+      const { gatewayInfo, mcpServers, resources, agents } = get();
       if (!gatewayInfo) return;
 
       // Don't pass positionMap to get default calculated positions
       const { nodes, edges } = transformToNodesAndEdges(
         gatewayInfo,
         mcpServers,
-        resources
+        resources,
+        agents
       );
       set({ nodes, edges });
     },
