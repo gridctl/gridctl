@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Terminal, Box, ChevronDown, ChevronRight, Wrench, FileText } from 'lucide-react';
+import { X, Terminal, Box, ChevronDown, ChevronRight, Wrench, FileText, Sparkles } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
@@ -35,40 +35,56 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed top-14 right-0 h-[calc(100vh-56px-32px)] w-80 bg-surface border-l border-border',
-        'transform transition-transform duration-300 ease-out z-20',
+        'fixed top-14 right-0 h-[calc(100vh-56px-32px)] w-80',
+        'bg-surface/80 backdrop-blur-xl border-l border-border/50',
+        'transform transition-all duration-300 ease-out z-20',
         'flex flex-col overflow-hidden',
-        sidebarOpen ? 'translate-x-0' : 'translate-x-full'
+        sidebarOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
       )}
     >
+      {/* Accent line */}
+      <div className={cn(
+        'absolute top-0 left-0 bottom-0 w-px',
+        isServer
+          ? 'bg-gradient-to-b from-primary/40 via-primary/20 to-transparent'
+          : 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
+      )} />
+
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30">
+        <div className="flex items-center gap-3 min-w-0">
           <div className={cn(
-            'p-1.5 rounded flex-shrink-0',
-            isServer ? 'bg-primary/20' : 'bg-secondary/20'
+            'p-2 rounded-xl flex-shrink-0 border',
+            isServer
+              ? 'bg-primary/10 border-primary/20'
+              : 'bg-secondary/10 border-secondary/20'
           )}>
             <Icon
               size={16}
               className={isServer ? 'text-primary' : 'text-secondary'}
             />
           </div>
-          <h2 className="font-semibold text-text-primary truncate">
-            {data.name}
-          </h2>
+          <div className="min-w-0">
+            <h2 className="font-semibold text-text-primary truncate tracking-tight">
+              {data.name}
+            </h2>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider">
+              {isServer ? 'MCP Server' : 'Resource'}
+            </p>
+          </div>
         </div>
         <button
           onClick={handleClose}
-          className="p-1 rounded hover:bg-surfaceHighlight transition-colors flex-shrink-0"
+          className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group"
         >
-          <X size={16} className="text-text-muted" />
+          <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
         </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto scrollbar-dark relative">
+      <div className="flex-1 overflow-y-auto scrollbar-dark">
         {/* Status Section */}
-        <Section title="Status" defaultOpen>
+        <Section title="Status" icon={Sparkles} defaultOpen>
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-text-muted">State</span>
@@ -80,25 +96,30 @@ export function Sidebar() {
             {isServer && (data as MCPServerNodeData).transport && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Transport</span>
-                <span className="text-sm text-text-secondary uppercase font-mono">
+                <span className={cn(
+                  'text-xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider',
+                  (data as MCPServerNodeData).transport === 'stdio'
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-secondary/10 text-secondary'
+                )}>
                   {(data as MCPServerNodeData).transport}
                 </span>
               </div>
             )}
 
             {isServer && (data as MCPServerNodeData).endpoint && (
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Endpoint</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px]" title={(data as MCPServerNodeData).endpoint}>
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as MCPServerNodeData).endpoint}>
                   {(data as MCPServerNodeData).endpoint}
                 </span>
               </div>
             )}
 
             {!isServer && (data as ResourceNodeData).image && (
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px]" title={(data as ResourceNodeData).image}>
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as ResourceNodeData).image}>
                   {(data as ResourceNodeData).image}
                 </span>
               </div>
@@ -107,7 +128,7 @@ export function Sidebar() {
             {!isServer && (data as ResourceNodeData).network && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Network</span>
-                <span className="text-sm text-text-secondary">
+                <span className="text-sm text-secondary font-medium">
                   {(data as ResourceNodeData).network}
                 </span>
               </div>
@@ -121,8 +142,10 @@ export function Sidebar() {
           <button
             onClick={handleShowLogs}
             className={cn(
-              'w-full mt-2 flex items-center justify-center gap-2 py-2 rounded',
-              'bg-background hover:bg-surface-highlight transition-colors text-sm'
+              'w-full mt-3 flex items-center justify-center gap-2 py-2.5 rounded-lg',
+              'bg-surface-elevated/60 border border-border/50',
+              'hover:bg-surface-highlight hover:border-text-muted/30 transition-all text-sm',
+              'text-text-secondary hover:text-text-primary'
             )}
           >
             <FileText size={14} />
@@ -158,31 +181,40 @@ function Section({ title, icon: Icon, count, defaultOpen = false, children }: Se
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className="border-b border-border">
+    <div className="border-b border-border/30">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 hover:bg-surfaceHighlight transition-colors"
+        className="w-full flex items-center justify-between p-4 hover:bg-surface-highlight/50 transition-colors group"
       >
-        <div className="flex items-center gap-2">
-          {Icon && <Icon size={14} className="text-text-muted" />}
+        <div className="flex items-center gap-2.5">
+          {Icon && (
+            <div className="p-1 rounded-md bg-surface-highlight/50 group-hover:bg-surface-highlight transition-colors">
+              <Icon size={12} className="text-text-muted group-hover:text-primary transition-colors" />
+            </div>
+          )}
           <span className="text-sm font-medium text-text-primary">{title}</span>
           {count !== undefined && (
-            <span className="text-xs text-text-muted bg-background px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md font-mono">
               {count}
             </span>
           )}
         </div>
-        {isOpen ? (
-          <ChevronDown size={16} className="text-text-muted" />
-        ) : (
-          <ChevronRight size={16} className="text-text-muted" />
-        )}
+        <div className="p-1 rounded-md group-hover:bg-surface-highlight transition-colors">
+          {isOpen ? (
+            <ChevronDown size={14} className="text-text-muted" />
+          ) : (
+            <ChevronRight size={14} className="text-text-muted" />
+          )}
+        </div>
       </button>
-      {isOpen && (
+      <div className={cn(
+        'overflow-hidden transition-all duration-200',
+        isOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+      )}>
         <div className="px-4 pb-4">
           {children}
         </div>
-      )}
+      </div>
     </div>
   );
 }
