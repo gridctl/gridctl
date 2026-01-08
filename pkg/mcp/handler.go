@@ -37,7 +37,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	// Set CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Agent-Name")
 	w.Header().Set("Content-Type", "application/json")
 
 	// Read request body
@@ -74,7 +74,7 @@ func (h *Handler) handleMethod(r *http.Request, req *Request) Response {
 		// Client notification, just acknowledge
 		return NewSuccessResponse(req.ID, nil)
 	case "tools/list":
-		return h.handleToolsList(req)
+		return h.handleToolsList(r, req)
 	case "tools/call":
 		return h.handleToolsCall(r, req)
 	case "ping":
@@ -102,8 +102,20 @@ func (h *Handler) handleInitialize(req *Request) Response {
 }
 
 // handleToolsList handles the tools/list request.
-func (h *Handler) handleToolsList(req *Request) Response {
-	result, err := h.gateway.HandleToolsList()
+func (h *Handler) handleToolsList(r *http.Request, req *Request) Response {
+	// Check for agent identity header for access control
+	agentName := r.Header.Get("X-Agent-Name")
+
+	var result *ToolsListResult
+	var err error
+	if agentName != "" {
+		// Filter tools based on agent's allowed MCP servers
+		result, err = h.gateway.HandleToolsListForAgent(agentName)
+	} else {
+		// No agent header - return all tools
+		result, err = h.gateway.HandleToolsList()
+	}
+
 	if err != nil {
 		return NewErrorResponse(req.ID, InternalError, err.Error())
 	}
@@ -117,7 +129,19 @@ func (h *Handler) handleToolsCall(r *http.Request, req *Request) Response {
 		return NewErrorResponse(req.ID, InvalidParams, "Invalid tools/call params")
 	}
 
-	result, err := h.gateway.HandleToolsCall(r.Context(), params)
+	// Check for agent identity header for access control
+	agentName := r.Header.Get("X-Agent-Name")
+
+	var result *ToolCallResult
+	var err error
+	if agentName != "" {
+		// Validate agent has access to this tool's MCP server
+		result, err = h.gateway.HandleToolsCallForAgent(r.Context(), agentName, params)
+	} else {
+		// No agent header - allow all tools
+		result, err = h.gateway.HandleToolsCall(r.Context(), params)
+	}
+
 	if err != nil {
 		return NewErrorResponse(req.ID, InternalError, err.Error())
 	}
@@ -146,7 +170,7 @@ func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleCORS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Agent-Name")
 	w.WriteHeader(http.StatusOK)
 }
 
