@@ -24,6 +24,7 @@ mcp-servers:
     command: ["sh", "-c", "while true; do sleep 3600; done"]
 
 agents:
+
   # Helper agent that provides utility skills
   - name: helper-bot
     image: alpine:latest
