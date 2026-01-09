@@ -98,7 +98,7 @@ func TestGateway_HandleToolsCall(t *testing.T) {
 	g.Router().RefreshTools()
 
 	params := ToolCallParams{
-		Name:      "agent1--echo",
+		Name:      "agent1::echo",
 		Arguments: map[string]any{"message": "hello"},
 	}
 
@@ -123,7 +123,7 @@ func TestGateway_HandleToolsCall_UnknownTool(t *testing.T) {
 	ctx := context.Background()
 
 	params := ToolCallParams{
-		Name:      "unknown--tool",
+		Name:      "unknown::tool",
 		Arguments: map[string]any{},
 	}
 
@@ -170,7 +170,7 @@ func TestGateway_HandleToolsCall_AgentError(t *testing.T) {
 	g.Router().RefreshTools()
 
 	params := ToolCallParams{
-		Name:      "agent1--fail",
+		Name:      "agent1::fail",
 		Arguments: map[string]any{},
 	}
 

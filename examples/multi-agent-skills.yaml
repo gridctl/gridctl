@@ -17,12 +17,12 @@
 #       +-- skills: [review-code, suggest-improvements]
 #
 # The orchestrator sees these as MCP tools:
-#   - filesystem-server--read_file
-#   - filesystem-server--write_file
-#   - research-agent--web-research
-#   - research-agent--summarize
-#   - code-review-agent--review-code
-#   - code-review-agent--suggest-improvements
+#   - filesystem-server::read_file
+#   - filesystem-server::write_file
+#   - research-agent::web-research
+#   - research-agent::summarize
+#   - code-review-agent::review-code
+#   - code-review-agent::suggest-improvements
 #
 # Usage:
 #   agentlab deploy examples/multi-agent-skills.yaml -f

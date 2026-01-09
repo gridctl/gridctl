@@ -71,11 +71,8 @@ func (c *Client) Initialize(ctx context.Context) error {
 	c.serverInfo = result.ServerInfo
 	c.mu.Unlock()
 
-	// Send initialized notification
-	if err := c.notify(ctx, "notifications/initialized", nil); err != nil {
-		// Non-fatal, some servers may not require this
-		fmt.Printf("Warning: initialized notification failed for %s: %v\n", c.name, err)
-	}
+	// Send initialized notification (non-fatal, some servers may not require this)
+	_ = c.notify(ctx, "notifications/initialized", nil)
 
 	return nil
 }
@@ -161,12 +158,8 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 		return fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 	}
 
-	if result != nil && resp.Result != nil {
-		resultBytes, err := json.Marshal(resp.Result)
-		if err != nil {
-			return fmt.Errorf("marshaling result: %w", err)
-		}
-		if err := json.Unmarshal(resultBytes, result); err != nil {
+	if result != nil && len(resp.Result) > 0 {
+		if err := json.Unmarshal(resp.Result, result); err != nil {
 			return fmt.Errorf("unmarshaling result: %w", err)
 		}
 	}

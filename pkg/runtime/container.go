@@ -71,6 +71,7 @@ func CreateContainer(ctx context.Context, cli dockerclient.DockerClient, cfg Con
 		NetworkMode:  container.NetworkMode(cfg.NetworkName),
 		PortBindings: portBindings,
 		Binds:        cfg.Volumes,
+		ExtraHosts:   []string{"host.docker.internal:host-gateway"},
 	}
 
 	networkConfig := &network.NetworkingConfig{

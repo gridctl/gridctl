@@ -3,7 +3,31 @@ import { ChevronDown, ChevronRight, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useTopologyStore } from '../../stores/useTopologyStore';
 import { parsePrefixedToolName } from '../../lib/transform';
+import { TOOL_NAME_DELIMITER } from '../../lib/constants';
 import type { Tool } from '../../types';
+
+// Helper type for accessing common JSON Schema properties
+interface SchemaProperty {
+  type?: string;
+  description?: string;
+}
+
+// Safe accessor for inputSchema properties
+function getSchemaProperties(schema: Record<string, unknown>): Record<string, SchemaProperty> | undefined {
+  const props = schema.properties;
+  if (props && typeof props === 'object') {
+    return props as Record<string, SchemaProperty>;
+  }
+  return undefined;
+}
+
+function getSchemaRequired(schema: Record<string, unknown>): string[] | undefined {
+  const required = schema.required;
+  if (Array.isArray(required)) {
+    return required as string[];
+  }
+  return undefined;
+}
 
 interface ToolListProps {
   agentName: string;
@@ -12,9 +36,9 @@ interface ToolListProps {
 export function ToolList({ agentName }: ToolListProps) {
   const tools = useTopologyStore((s) => s.tools);
 
-  // Filter tools for this agent (prefixed with agentName--)
+  // Filter tools for this agent (prefixed with agentName::)
   const agentTools = tools.filter((t) =>
-    t.name.startsWith(`${agentName}--`)
+    t.name.startsWith(`${agentName}${TOOL_NAME_DELIMITER}`)
   );
 
   if (agentTools.length === 0) {
@@ -44,8 +68,9 @@ function ToolItem({ tool }: ToolItemProps) {
   // Remove agent prefix for display
   const { toolName } = parsePrefixedToolName(tool.name);
 
-  const hasParams = tool.inputSchema.properties &&
-    Object.keys(tool.inputSchema.properties).length > 0;
+  const properties = getSchemaProperties(tool.inputSchema);
+  const required = getSchemaRequired(tool.inputSchema);
+  const hasParams = properties && Object.keys(properties).length > 0;
 
   return (
     <div className="rounded bg-background/50">
@@ -74,24 +99,24 @@ function ToolItem({ tool }: ToolItemProps) {
             <p className="text-xs text-text-muted">{tool.description}</p>
           )}
 
-          {tool.inputSchema.properties && (
+          {properties && (
             <div className="space-y-1.5">
               <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold">
                 Parameters
               </span>
-              {Object.entries(tool.inputSchema.properties).map(([name, prop]) => (
+              {Object.entries(properties).map(([name, prop]) => (
                 <div key={name} className="flex flex-col gap-0.5">
                   <div className="flex items-center gap-2 text-xs">
                     <span className={cn(
                       'font-mono',
-                      tool.inputSchema.required?.includes(name)
+                      required?.includes(name)
                         ? 'text-status-pending'
                         : 'text-text-secondary'
                     )}>
                       {name}
                     </span>
-                    <span className="text-text-muted">({prop.type})</span>
-                    {tool.inputSchema.required?.includes(name) && (
+                    <span className="text-text-muted">({prop.type ?? 'any'})</span>
+                    {required?.includes(name) && (
                       <span className="text-[10px] text-status-pending">required</span>
                     )}
                   </div>

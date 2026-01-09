@@ -120,16 +120,20 @@ func (r *Router) RouteToolCall(prefixedName string) (AgentClient, string, error)
 	return client, toolName, nil
 }
 
-// PrefixTool creates a prefixed tool name: "agent--tool"
+// ToolNameDelimiter is the separator between agent name and tool name in prefixed tool names.
+// Format: "agentname::toolname"
+const ToolNameDelimiter = "::"
+
+// PrefixTool creates a prefixed tool name: "agent::tool"
 func PrefixTool(agentName, toolName string) string {
-	return fmt.Sprintf("%s--%s", agentName, toolName)
+	return agentName + ToolNameDelimiter + toolName
 }
 
 // ParsePrefixedTool parses a prefixed tool name into agent and tool names.
 func ParsePrefixedTool(prefixed string) (agentName, toolName string, err error) {
-	parts := strings.SplitN(prefixed, "--", 2)
+	parts := strings.SplitN(prefixed, ToolNameDelimiter, 2)
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid tool name format: %s (expected agent--tool)", prefixed)
+		return "", "", fmt.Errorf("invalid tool name format: %s (expected agent::tool)", prefixed)
 	}
 	return parts[0], parts[1], nil
 }

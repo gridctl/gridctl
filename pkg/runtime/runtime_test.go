@@ -3,15 +3,22 @@ package runtime
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 
 	"agentlab/pkg/builder"
 	"agentlab/pkg/config"
+	"agentlab/pkg/logging"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 )
+
+// testLogger returns a discard logger for tests
+func testLogger() *slog.Logger {
+	return logging.NewDiscardLogger()
+}
 
 func TestRuntime_Up_SimpleNetwork(t *testing.T) {
 	mock := &MockDockerClient{
@@ -23,6 +30,7 @@ func TestRuntime_Up_SimpleNetwork(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	topo := &config.Topology{
@@ -79,6 +87,7 @@ func TestRuntime_Up_MultipleServers(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	topo := &config.Topology{
@@ -123,6 +132,7 @@ func TestRuntime_Up_WithResources(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	topo := &config.Topology{
@@ -162,6 +172,7 @@ func TestRuntime_Up_AdvancedNetworkMode(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	topo := &config.Topology{
@@ -197,6 +208,7 @@ func TestRuntime_Up_ImagePull(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	topo := &config.Topology{
@@ -228,6 +240,7 @@ func TestRuntime_Up_PingError(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	topo := &config.Topology{
@@ -251,6 +264,7 @@ func TestRuntime_Up_NetworkCreateError(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	topo := &config.Topology{
@@ -278,6 +292,7 @@ func TestRuntime_Up_ContainerCreateError(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	topo := &config.Topology{
@@ -326,6 +341,7 @@ func TestRuntime_Down_Success(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	ctx := context.Background()
@@ -359,6 +375,7 @@ func TestRuntime_Down_NoContainers(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	ctx := context.Background()
@@ -381,6 +398,7 @@ func TestRuntime_Down_PingError(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	ctx := context.Background()
@@ -402,6 +420,7 @@ func TestRuntime_Down_StopError_Continues(t *testing.T) {
 	rt := &Runtime{
 		cli:     mock,
 		builder: builder.New(mock),
+		logger:  testLogger(),
 	}
 
 	ctx := context.Background()

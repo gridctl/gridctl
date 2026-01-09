@@ -36,10 +36,10 @@ type Request struct {
 
 // Response represents a JSON-RPC 2.0 response.
 type Response struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JSONRPC string           `json:"jsonrpc"`
 	ID      *json.RawMessage `json:"id,omitempty"`
-	Result  any             `json:"result,omitempty"`
-	Error   *Error          `json:"error,omitempty"`
+	Result  json.RawMessage  `json:"result,omitempty"`
+	Error   *Error           `json:"error,omitempty"`
 }
 
 // Error represents a JSON-RPC 2.0 error.
@@ -111,14 +111,17 @@ type InitializeResult struct {
 
 // Tool represents an MCP tool definition.
 type Tool struct {
-	Name        string      `json:"name"`
-	Title       string      `json:"title,omitempty"`
-	Description string      `json:"description,omitempty"`
-	InputSchema InputSchema `json:"inputSchema"`
+	Name        string          `json:"name"`
+	Title       string          `json:"title,omitempty"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"inputSchema"`
 }
 
-// InputSchema describes the expected input for a tool.
-type InputSchema struct {
+// InputSchemaObject is a helper for building simple input schemas.
+// Use this when creating tools programmatically (e.g., A2A skill adapters).
+// For MCP tools received from servers, use json.RawMessage directly to
+// preserve the full JSON Schema without loss.
+type InputSchemaObject struct {
 	Type       string              `json:"type"`
 	Properties map[string]Property `json:"properties,omitempty"`
 	Required   []string            `json:"required,omitempty"`
@@ -172,9 +175,13 @@ func NewErrorResponse(id *json.RawMessage, code int, message string) Response {
 
 // NewSuccessResponse creates a JSON-RPC success response.
 func NewSuccessResponse(id *json.RawMessage, result any) Response {
+	var resultBytes json.RawMessage
+	if result != nil {
+		resultBytes, _ = json.Marshal(result)
+	}
 	return Response{
 		JSONRPC: "2.0",
 		ID:      id,
-		Result:  result,
+		Result:  resultBytes,
 	}
 }

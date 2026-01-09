@@ -267,12 +267,8 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 		if resp.Error != nil {
 			return fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 		}
-		if result != nil && resp.Result != nil {
-			resultBytes, err := json.Marshal(resp.Result)
-			if err != nil {
-				return fmt.Errorf("marshaling result: %w", err)
-			}
-			if err := json.Unmarshal(resultBytes, result); err != nil {
+		if result != nil && len(resp.Result) > 0 {
+			if err := json.Unmarshal(resp.Result, result); err != nil {
 				return fmt.Errorf("unmarshaling result: %w", err)
 			}
 		}

@@ -283,7 +283,7 @@ When `agentlab deploy` runs, it:
 | `/a2a/{agent}` | POST | JSON-RPC endpoint (message/send, tasks/get, etc.) |
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
-- `server-name--tool-name` (e.g., `itential-mcp--get_workflows`)
+- `server-name::tool-name` (e.g., `itential-mcp::get_workflows`)
 
 ## Topology YAML Schema
 
@@ -448,7 +448,7 @@ In simple mode, the `network` field on individual containers is ignored.
 
 - Use standard library when possible
 - Error handling: return errors, don't panic
-- Logging: use `log` package (upgrade to slog later if needed)
+- Logging: use `log/slog` with `SetLogger()` pattern (silent by default, enable via CLI flags)
 - Context: pass context.Context for cancellation
 - Testing: table-driven tests preferred
 - Interfaces: define interfaces for external dependencies (like Docker) to enable mocking

@@ -66,20 +66,9 @@ export interface Tool {
   name: string;
   title?: string;
   description?: string;
-  inputSchema: InputSchema;
-}
-
-export interface InputSchema {
-  type: string;
-  properties?: Record<string, Property>;
-  required?: string[];
-}
-
-export interface Property {
-  type: string;
-  description?: string;
-  enum?: string[];
-  default?: unknown;
+  // InputSchema is now a raw JSON object to preserve full JSON Schema
+  // from MCP servers without loss (supports JSON Schema draft 2020-12)
+  inputSchema: Record<string, unknown>;
 }
 
 // Tools list response from GET /api/tools

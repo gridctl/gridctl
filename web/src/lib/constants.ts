@@ -99,3 +99,9 @@ export const POLLING = {
   TOOLS: 30000,      // Poll tools every 30 seconds
   LOGS: 2000,        // Poll logs every 2 seconds
 } as const;
+
+// Tool naming
+// Delimiter between agent name and tool name in prefixed tool names.
+// Format: "agentname::toolname"
+// This matches the Go backend constant in pkg/mcp/router.go
+export const TOOL_NAME_DELIMITER = '::';

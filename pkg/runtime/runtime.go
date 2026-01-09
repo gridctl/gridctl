@@ -3,16 +3,19 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"agentlab/pkg/builder"
 	"agentlab/pkg/config"
 	"agentlab/pkg/dockerclient"
+	"agentlab/pkg/logging"
 )
 
 // Runtime manages the lifecycle of agentlab containers.
 type Runtime struct {
 	cli     dockerclient.DockerClient
 	builder *builder.Builder
+	logger  *slog.Logger
 }
 
 // MCPServerInfo contains runtime information about a started MCP server.
@@ -41,7 +44,16 @@ func New() (*Runtime, error) {
 	return &Runtime{
 		cli:     cli,
 		builder: builder.New(cli),
+		logger:  logging.NewDiscardLogger(),
 	}, nil
+}
+
+// SetLogger sets the logger for runtime operations.
+// If nil is passed, logging is disabled (default).
+func (r *Runtime) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		r.logger = logger
+	}
 }
 
 // Close closes the Docker client.
@@ -78,13 +90,13 @@ func (r *Runtime) Up(ctx context.Context, topo *config.Topology, opts UpOptions)
 		opts.BasePort = 9000
 	}
 
-	fmt.Printf("Starting topology '%s'\n", topo.Name)
+	r.logger.Info("starting topology", "name", topo.Name)
 
 	// Create network(s)
 	if len(topo.Networks) > 0 {
 		// Advanced mode: create multiple networks
 		for _, net := range topo.Networks {
-			fmt.Printf("Creating network '%s'...\n", net.Name)
+			r.logger.Info("creating network", "name", net.Name)
 			_, err := EnsureNetwork(ctx, r.cli, net.Name, net.Driver, topo.Name)
 			if err != nil {
 				return nil, fmt.Errorf("ensuring network %s: %w", net.Name, err)
@@ -92,7 +104,7 @@ func (r *Runtime) Up(ctx context.Context, topo *config.Topology, opts UpOptions)
 		}
 	} else {
 		// Simple mode: single network
-		fmt.Printf("Creating network '%s'...\n", topo.Network.Name)
+		r.logger.Info("creating network", "name", topo.Network.Name)
 		_, err := EnsureNetwork(ctx, r.cli, topo.Network.Name, topo.Network.Driver, topo.Name)
 		if err != nil {
 			return nil, fmt.Errorf("ensuring network: %w", err)
@@ -131,7 +143,7 @@ func (r *Runtime) Up(ctx context.Context, topo *config.Topology, opts UpOptions)
 		result.Agents = append(result.Agents, *info)
 	}
 
-	fmt.Println("\nAll containers started successfully!")
+	r.logger.Info("all containers started successfully")
 	return result, nil
 }
 
@@ -145,7 +157,7 @@ func (r *Runtime) startMCPServer(ctx context.Context, topo *config.Topology, ser
 	}
 
 	if exists {
-		fmt.Printf("  MCP server '%s' already exists, starting...\n", server.Name)
+		r.logger.Info("MCP server already exists, starting", "name", server.Name)
 		if err := StartContainer(ctx, r.cli, containerID); err != nil {
 			return nil, err
 		}
@@ -164,7 +176,7 @@ func (r *Runtime) startMCPServer(ctx context.Context, topo *config.Topology, ser
 	var imageName string
 	if server.Source != nil {
 		// Build from source
-		fmt.Printf("  Building MCP server '%s' from %s source...\n", server.Name, server.Source.Type)
+		r.logger.Info("building MCP server from source", "name", server.Name, "sourceType", server.Source.Type)
 
 		buildOpts := builder.BuildOptions{
 			SourceType: server.Source.Type,
@@ -184,7 +196,7 @@ func (r *Runtime) startMCPServer(ctx context.Context, topo *config.Topology, ser
 		imageName = result.ImageTag
 	} else {
 		imageName = server.Image
-		fmt.Printf("  Starting MCP server '%s' (%s)...\n", server.Name, imageName)
+		r.logger.Info("starting MCP server", "name", server.Name, "image", imageName)
 
 		// Pull image if needed
 		if err := EnsureImage(ctx, r.cli, imageName); err != nil {
@@ -229,7 +241,7 @@ func (r *Runtime) startMCPServer(ctx context.Context, topo *config.Topology, ser
 		actualHostPort = hostPort
 	}
 
-	fmt.Printf("  MCP server '%s' listening on localhost:%d\n", server.Name, actualHostPort)
+	r.logger.Info("MCP server listening", "name", server.Name, "port", actualHostPort)
 
 	return &MCPServerInfo{
 		Name:          server.Name,
@@ -250,11 +262,11 @@ func (r *Runtime) startResource(ctx context.Context, topo *config.Topology, res 
 	}
 
 	if exists {
-		fmt.Printf("  Resource '%s' already exists, starting...\n", res.Name)
+		r.logger.Info("resource already exists, starting", "name", res.Name)
 		return StartContainer(ctx, r.cli, containerID)
 	}
 
-	fmt.Printf("  Starting resource '%s' (%s)...\n", res.Name, res.Image)
+	r.logger.Info("starting resource", "name", res.Name, "image", res.Image)
 
 	// Pull image if needed
 	if err := EnsureImage(ctx, r.cli, res.Image); err != nil {
@@ -298,7 +310,7 @@ func (r *Runtime) startAgent(ctx context.Context, topo *config.Topology, agent *
 	}
 
 	if exists {
-		fmt.Printf("  Agent '%s' already exists, starting...\n", agent.Name)
+		r.logger.Info("agent already exists, starting", "name", agent.Name)
 		if err := StartContainer(ctx, r.cli, containerID); err != nil {
 			return nil, err
 		}
@@ -314,7 +326,7 @@ func (r *Runtime) startAgent(ctx context.Context, topo *config.Topology, agent *
 	var imageName string
 	if agent.Source != nil {
 		// Build from source
-		fmt.Printf("  Building agent '%s' from %s source...\n", agent.Name, agent.Source.Type)
+		r.logger.Info("building agent from source", "name", agent.Name, "sourceType", agent.Source.Type)
 
 		buildOpts := builder.BuildOptions{
 			SourceType: agent.Source.Type,
@@ -334,7 +346,7 @@ func (r *Runtime) startAgent(ctx context.Context, topo *config.Topology, agent *
 		imageName = result.ImageTag
 	} else {
 		imageName = agent.Image
-		fmt.Printf("  Starting agent '%s' (%s)...\n", agent.Name, imageName)
+		r.logger.Info("starting agent", "name", agent.Name, "image", imageName)
 
 		// Pull image if needed
 		if err := EnsureImage(ctx, r.cli, imageName); err != nil {
@@ -381,7 +393,7 @@ func (r *Runtime) startAgent(ctx context.Context, topo *config.Topology, agent *
 		return nil, err
 	}
 
-	fmt.Printf("  Agent '%s' started (uses: %v)\n", agent.Name, agent.Uses)
+	r.logger.Info("agent started", "name", agent.Name, "uses", agent.Uses)
 
 	return &AgentInfo{
 		Name:          agent.Name,
@@ -398,7 +410,7 @@ func (r *Runtime) Down(ctx context.Context, topology string) error {
 		return err
 	}
 
-	fmt.Println("Stopping managed containers...")
+	r.logger.Info("stopping managed containers")
 
 	containers, err := ListManagedContainers(ctx, r.cli, topology)
 	if err != nil {
@@ -406,7 +418,7 @@ func (r *Runtime) Down(ctx context.Context, topology string) error {
 	}
 
 	if len(containers) == 0 {
-		fmt.Println("No managed containers found.")
+		r.logger.Info("no managed containers found")
 	} else {
 		for _, c := range containers {
 			name := c.Names[0]
@@ -414,29 +426,29 @@ func (r *Runtime) Down(ctx context.Context, topology string) error {
 				name = name[1:]
 			}
 
-			fmt.Printf("  Stopping %s...\n", name)
+			r.logger.Info("stopping container", "name", name)
 			if err := StopContainer(ctx, r.cli, c.ID, 10); err != nil {
-				fmt.Printf("    Warning: %v\n", err)
+				r.logger.Warn("failed to stop container", "name", name, "error", err)
 			}
 
-			fmt.Printf("  Removing %s...\n", name)
+			r.logger.Info("removing container", "name", name)
 			if err := RemoveContainer(ctx, r.cli, c.ID, true); err != nil {
-				fmt.Printf("    Warning: %v\n", err)
+				r.logger.Warn("failed to remove container", "name", name, "error", err)
 			}
 		}
-		fmt.Println("All containers stopped and removed.")
+		r.logger.Info("all containers stopped and removed")
 	}
 
 	// Clean up networks
 	networks, err := ListManagedNetworks(ctx, r.cli, topology)
 	if err != nil {
-		fmt.Printf("Warning: failed to list networks: %v\n", err)
+		r.logger.Warn("failed to list networks", "error", err)
 	} else if len(networks) > 0 {
-		fmt.Println("Removing managed networks...")
+		r.logger.Info("removing managed networks")
 		for _, name := range networks {
-			fmt.Printf("  Removing network %s...\n", name)
+			r.logger.Info("removing network", "name", name)
 			if err := RemoveNetwork(ctx, r.cli, name); err != nil {
-				fmt.Printf("    Warning: %v\n", err)
+				r.logger.Warn("failed to remove network", "name", name, "error", err)
 			}
 		}
 	}

@@ -132,7 +132,7 @@ func TestRouter_AggregatedTools(t *testing.T) {
 	}
 
 	tool := tools[0]
-	expectedName := "myagent--mytool"
+	expectedName := "myagent::mytool"
 	if tool.Name != expectedName {
 		t.Errorf("expected prefixed name '%s', got '%s'", expectedName, tool.Name)
 	}
@@ -174,7 +174,7 @@ func TestRouter_RouteToolCall(t *testing.T) {
 	r.AddClient(client)
 	r.RefreshTools()
 
-	gotClient, gotTool, err := r.RouteToolCall("agent1--tool1")
+	gotClient, gotTool, err := r.RouteToolCall("agent1::tool1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestRouter_RouteToolCall(t *testing.T) {
 func TestRouter_RouteToolCall_UnknownAgent(t *testing.T) {
 	r := NewRouter()
 
-	_, _, err := r.RouteToolCall("unknown--tool1")
+	_, _, err := r.RouteToolCall("unknown::tool1")
 	if err == nil {
 		t.Fatal("expected error for unknown agent")
 	}
@@ -210,9 +210,9 @@ func TestPrefixTool(t *testing.T) {
 		tool     string
 		expected string
 	}{
-		{"agent1", "tool1", "agent1--tool1"},
-		{"my-agent", "my-tool", "my-agent--my-tool"},
-		{"a", "b", "a--b"},
+		{"agent1", "tool1", "agent1::tool1"},
+		{"my-agent", "my-tool", "my-agent::my-tool"},
+		{"a", "b", "a::b"},
 	}
 
 	for _, tc := range tests {
@@ -230,11 +230,12 @@ func TestParsePrefixedTool(t *testing.T) {
 		wantTool  string
 		wantErr   bool
 	}{
-		{"agent1--tool1", "agent1", "tool1", false},
-		{"my-agent--my-tool", "my-agent", "my-tool", false},
-		{"a--b--c", "a", "b--c", false}, // SplitN with 2 preserves extra --
+		{"agent1::tool1", "agent1", "tool1", false},
+		{"my-agent::my-tool", "my-agent", "my-tool", false},
+		{"a::b::c", "a", "b::c", false}, // SplitN with 2 preserves extra ::
 		{"invalidformat", "", "", true},
 		{"single-dash", "", "", true},
+		{"single:colon", "", "", true},
 		{"", "", "", true},
 	}
 
@@ -292,7 +293,7 @@ func TestRouter_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, _ = r.RouteToolCall("agentA--tool")
+			_, _, _ = r.RouteToolCall("agentA::tool")
 		}()
 	}
 	wg.Wait()
