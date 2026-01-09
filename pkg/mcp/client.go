@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,7 @@ type Client struct {
 	initialized bool
 	tools       []Tool
 	serverInfo  ServerInfo
+	sessionID   string // MCP session ID for stateful servers
 }
 
 // NewClient creates a new MCP client for a downstream agent.
@@ -205,6 +207,14 @@ func (c *Client) send(ctx context.Context, req Request) (*Response, error) {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+
+	// Include session ID if we have one (for stateful MCP servers)
+	c.mu.RLock()
+	if c.sessionID != "" {
+		httpReq.Header.Set("Mcp-Session-Id", c.sessionID)
+	}
+	c.mu.RUnlock()
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -217,12 +227,48 @@ func (c *Client) send(ctx context.Context, req Request) (*Response, error) {
 		return nil, fmt.Errorf("HTTP %d: %s", httpResp.StatusCode, string(body))
 	}
 
+	// Capture session ID if provided (for stateful MCP servers)
+	if sid := httpResp.Header.Get("Mcp-Session-Id"); sid != "" {
+		c.mu.Lock()
+		c.sessionID = sid
+		c.mu.Unlock()
+	}
+
+	// Check if response is SSE format (text/event-stream)
+	contentType := httpResp.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "text/event-stream") {
+		return c.parseSSEResponse(httpResp.Body)
+	}
+
 	var resp Response
 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
 	return &resp, nil
+}
+
+// parseSSEResponse parses a Server-Sent Events formatted response.
+func (c *Client) parseSSEResponse(body io.Reader) (*Response, error) {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, fmt.Errorf("reading SSE response: %w", err)
+	}
+
+	// Parse SSE format: look for "data: " lines
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "data: ") {
+			jsonData := strings.TrimPrefix(line, "data: ")
+			var resp Response
+			if err := json.Unmarshal([]byte(jsonData), &resp); err != nil {
+				return nil, fmt.Errorf("decoding SSE JSON: %w", err)
+			}
+			return &resp, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no data field found in SSE response")
 }
 
 // Ping checks if the agent is reachable.
