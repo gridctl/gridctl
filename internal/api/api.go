@@ -71,7 +71,6 @@ func (s *Server) Handler() http.Handler {
 	if s.a2aGateway != nil {
 		mux.HandleFunc("/.well-known/agent.json", s.handleA2AAgentCards)
 		mux.Handle("/a2a/", s.a2aGateway.Handler())
-		mux.HandleFunc("/api/a2a-agents", s.handleA2AAgentsList)
 	}
 
 	// API endpoints
@@ -92,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // handleStatus returns the overall gateway status.
+// Agents are returned as a unified list that merges container and A2A status.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -99,11 +99,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := struct {
-		Gateway    ServerInfo           `json:"gateway"`
-		MCPServers []MCPServerStatus    `json:"mcp-servers"`
-		Agents     []AgentStatus        `json:"agents"`
-		Resources  []ResourceStatus     `json:"resources"`
-		A2AAgents  []a2a.A2AAgentStatus `json:"a2a-agents,omitempty"`
+		Gateway    ServerInfo        `json:"gateway"`
+		MCPServers []MCPServerStatus `json:"mcp-servers"`
+		Agents     []AgentStatus     `json:"agents"`
+		Resources  []ResourceStatus  `json:"resources"`
 	}{
 		Gateway: ServerInfo{
 			Name:    s.gateway.ServerInfo().Name,
@@ -112,10 +111,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		MCPServers: s.getMCPServerStatuses(),
 		Agents:     s.getAgentStatuses(),
 		Resources:  s.getResourceStatuses(),
-	}
-
-	if s.a2aGateway != nil {
-		status.A2AAgents = s.a2aGateway.Status()
 	}
 
 	writeJSON(w, status)
@@ -140,21 +135,6 @@ func (s *Server) handleA2AAgentCards(w http.ResponseWriter, r *http.Request) {
 		"agents": cards,
 	}
 	_ = json.NewEncoder(w).Encode(response)
-}
-
-// handleA2AAgentsList returns status of all A2A agents.
-func (s *Server) handleA2AAgentsList(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.a2aGateway == nil {
-		writeJSON(w, []a2a.A2AAgentStatus{})
-		return
-	}
-
-	writeJSON(w, s.a2aGateway.Status())
 }
 
 // handleMCPServers returns information about registered MCP servers.
@@ -257,12 +237,29 @@ type ResourceStatus struct {
 	Status string `json:"status"`
 }
 
-// AgentStatus contains status information for an agent container.
+// AgentStatus contains unified status for all agents (local containers and remote A2A).
+// This merges container state with A2A protocol state into a single representation.
 type AgentStatus struct {
-	Name        string `json:"name"`
-	Image       string `json:"image"`
-	Status      string `json:"status"`
-	ContainerID string `json:"containerId,omitempty"`
+	// Core identification
+	Name   string `json:"name"`
+	Status string `json:"status"` // "running", "stopped", "error", "unavailable"
+
+	// Variant: "local" (container-based) or "remote" (A2A only)
+	Variant string `json:"variant"`
+
+	// Container fields (populated for local/container-based agents)
+	Image       string   `json:"image,omitempty"`
+	ContainerID string   `json:"containerId,omitempty"`
+	Uses        []string `json:"uses,omitempty"`
+
+	// A2A fields (populated when agent has A2A capability)
+	HasA2A      bool     `json:"hasA2A"`
+	Role        string   `json:"role,omitempty"`        // "local" or "remote"
+	URL         string   `json:"url,omitempty"`         // A2A endpoint URL
+	Endpoint    string   `json:"endpoint,omitempty"`    // A2A RPC endpoint
+	SkillCount  int      `json:"skillCount,omitempty"`  // Number of A2A skills
+	Skills      []string `json:"skills,omitempty"`      // A2A skill names
+	Description string   `json:"description,omitempty"` // Agent description
 }
 
 // getResourceStatuses returns status of all resource containers.
@@ -299,19 +296,29 @@ func (s *Server) getResourceStatuses() []ResourceStatus {
 	return resources
 }
 
-// getAgentStatuses returns status of all agent containers.
-func (s *Server) getAgentStatuses() []AgentStatus {
+// containerAgentInfo holds container-specific info for an agent.
+type containerAgentInfo struct {
+	Name        string
+	Image       string
+	Status      string
+	ContainerID string
+	Uses        []string
+}
+
+// getContainerAgents returns a map of container agent info keyed by name.
+func (s *Server) getContainerAgents() map[string]containerAgentInfo {
+	result := make(map[string]containerAgentInfo)
+
 	if s.dockerClient == nil || s.topologyName == "" {
-		return []AgentStatus{}
+		return result
 	}
 
 	ctx := context.Background()
 	containers, err := runtime.ListManagedContainers(ctx, s.dockerClient, s.topologyName)
 	if err != nil {
-		return []AgentStatus{}
+		return result
 	}
 
-	var agents []AgentStatus
 	for _, c := range containers {
 		// Only include agent containers
 		if agentName, ok := c.Labels[runtime.LabelAgent]; ok {
@@ -322,16 +329,97 @@ func (s *Server) getAgentStatuses() []AgentStatus {
 				status = c.State
 			}
 
-			agents = append(agents, AgentStatus{
+			// Get the agent's uses/dependencies from the gateway
+			uses := s.gateway.GetAgentAllowedServers(agentName)
+
+			result[agentName] = containerAgentInfo{
 				Name:        agentName,
 				Image:       c.Image,
 				Status:      status,
 				ContainerID: c.ID[:12],
+				Uses:        uses,
+			}
+		}
+	}
+
+	return result
+}
+
+// getAgentStatuses returns unified status for all agents (local + remote).
+// It merges container state with A2A protocol state.
+func (s *Server) getAgentStatuses() []AgentStatus {
+	// Get container agents as a map for quick lookup
+	containerAgents := s.getContainerAgents()
+
+	// Get A2A agent statuses
+	var a2aStatuses []a2a.A2AAgentStatus
+	if s.a2aGateway != nil {
+		a2aStatuses = s.a2aGateway.Status()
+	}
+
+	// Build unified list
+	var unified []AgentStatus
+	seen := make(map[string]bool)
+
+	// Process A2A agents first (they may have container counterparts)
+	for _, a2aAgent := range a2aStatuses {
+		agent := AgentStatus{
+			Name:        a2aAgent.Name,
+			HasA2A:      true,
+			Role:        a2aAgent.Role,
+			URL:         a2aAgent.URL,
+			Endpoint:    a2aAgent.Endpoint,
+			SkillCount:  a2aAgent.SkillCount,
+			Skills:      a2aAgent.Skills,
+			Description: a2aAgent.Description,
+		}
+
+		if a2aAgent.Role == "local" {
+			// Local A2A agent - merge with container info if available
+			agent.Variant = "local"
+			if container, ok := containerAgents[a2aAgent.Name]; ok {
+				agent.Image = container.Image
+				agent.Status = container.Status
+				agent.ContainerID = container.ContainerID
+				agent.Uses = container.Uses
+			} else {
+				// Container not found - might be starting or crashed
+				if a2aAgent.Available {
+					agent.Status = "running"
+				} else {
+					agent.Status = "unavailable"
+				}
+			}
+		} else {
+			// Remote A2A agent - no container, derive status from availability
+			agent.Variant = "remote"
+			if a2aAgent.Available {
+				agent.Status = "running"
+			} else {
+				agent.Status = "unavailable"
+			}
+		}
+
+		unified = append(unified, agent)
+		seen[a2aAgent.Name] = true
+	}
+
+	// Add container-only agents (not A2A enabled)
+	for name, container := range containerAgents {
+		if !seen[name] {
+			unified = append(unified, AgentStatus{
+				Name:        name,
+				Variant:     "local",
+				Image:       container.Image,
+				Status:      container.Status,
+				ContainerID: container.ContainerID,
+				Uses:        container.Uses,
+				HasA2A:      false,
 			})
 		}
 	}
 
-	return agents
+	return unified
 }
 
 // handleAgentAction routes agent control requests.
