@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -109,6 +110,16 @@ func runDeploy(topologyPath string) error {
 		return fmt.Errorf("failed to create runtime: %w", err)
 	}
 	defer rt.Close()
+
+	// Configure logging for foreground mode
+	if deployForeground {
+		logLevel := slog.LevelInfo
+		if deployVerbose {
+			logLevel = slog.LevelDebug
+		}
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
+		rt.SetLogger(logger)
+	}
 
 	ctx := context.Background()
 	opts := runtime.UpOptions{
@@ -241,6 +252,16 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 	// Create MCP gateway
 	gateway := mcp.NewGateway()
 	gateway.SetDockerClient(rt.DockerClient())
+
+	// Configure logging for verbose mode
+	if verbose {
+		logLevel := slog.LevelInfo
+		if deployVerbose {
+			logLevel = slog.LevelDebug
+		}
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
+		gateway.SetLogger(logger)
+	}
 
 	// Build a map from MCP server name to config for transport lookup
 	serverConfigs := make(map[string]config.MCPServer)
