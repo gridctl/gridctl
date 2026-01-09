@@ -466,3 +466,32 @@ func TestCreateContainer_WithVolumes(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateContainer_SetsExtraHosts(t *testing.T) {
+	mock := &MockDockerClient{}
+
+	cfg := ContainerConfig{
+		Name:        "test-container",
+		Image:       "alpine:latest",
+		NetworkName: "test-net",
+	}
+
+	ctx := context.Background()
+	_, err := CreateContainer(ctx, mock, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.LastHostConfig == nil {
+		t.Fatal("expected host config to be set")
+	}
+
+	if len(mock.LastHostConfig.ExtraHosts) != 1 {
+		t.Fatalf("expected 1 extra host, got %d", len(mock.LastHostConfig.ExtraHosts))
+	}
+
+	expected := "host.docker.internal:host-gateway"
+	if mock.LastHostConfig.ExtraHosts[0] != expected {
+		t.Errorf("got ExtraHosts[0]=%q, want %q", mock.LastHostConfig.ExtraHosts[0], expected)
+	}
+}
