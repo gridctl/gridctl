@@ -153,8 +153,9 @@ func Validate(t *Topology) error {
 		// In simple mode, resource.Network is ignored (per design decision)
 	}
 
-	// Agent validation
+	// Agent validation - first pass: collect names and A2A status
 	agentNames := make(map[string]bool)
+	a2aEnabledAgents := make(map[string]bool)
 	for i, agent := range t.Agents {
 		prefix := fmt.Sprintf("agents[%d]", i)
 
@@ -168,7 +169,15 @@ func Validate(t *Topology) error {
 			errs = append(errs, ValidationError{prefix + ".name", fmt.Sprintf("name '%s' conflicts with a resource", agent.Name)})
 		} else {
 			agentNames[agent.Name] = true
+			if agent.IsA2AEnabled() {
+				a2aEnabledAgents[agent.Name] = true
+			}
 		}
+	}
+
+	// Agent validation - second pass: validate structure and dependencies
+	for i, agent := range t.Agents {
+		prefix := fmt.Sprintf("agents[%d]", i)
 
 		// Determine agent mode: container-based or headless
 		hasImage := agent.Image != ""
@@ -201,13 +210,27 @@ func Validate(t *Topology) error {
 			errs = append(errs, validateSource(agent.Source, prefix+".source")...)
 		}
 
-		// Validate 'uses' dependencies exist in mcp-servers
+		// Validate 'uses' dependencies exist in mcp-servers or A2A-enabled agents
 		for j, dep := range agent.Uses {
-			if !serverNames[dep] {
-				errs = append(errs, ValidationError{
-					fmt.Sprintf("%s.uses[%d]", prefix, j),
-					fmt.Sprintf("MCP server '%s' not found in mcp-servers", dep),
-				})
+			isValidServer := serverNames[dep]
+			isValidAgent := a2aEnabledAgents[dep] && dep != agent.Name // Can't reference self
+			if !isValidServer && !isValidAgent {
+				if dep == agent.Name {
+					errs = append(errs, ValidationError{
+						fmt.Sprintf("%s.uses[%d]", prefix, j),
+						"agent cannot reference itself",
+					})
+				} else if agentNames[dep] && !a2aEnabledAgents[dep] {
+					errs = append(errs, ValidationError{
+						fmt.Sprintf("%s.uses[%d]", prefix, j),
+						fmt.Sprintf("agent '%s' must have A2A enabled to be used as a skill", dep),
+					})
+				} else {
+					errs = append(errs, ValidationError{
+						fmt.Sprintf("%s.uses[%d]", prefix, j),
+						fmt.Sprintf("'%s' not found in mcp-servers or A2A-enabled agents", dep),
+					})
+				}
 			}
 		}
 
@@ -278,9 +301,75 @@ func Validate(t *Topology) error {
 		}
 	}
 
+	// Check for circular dependencies between agents
+	if cycleErr := detectAgentCycles(t, a2aEnabledAgents); cycleErr != nil {
+		errs = append(errs, ValidationError{"agents", cycleErr.Error()})
+	}
+
 	if len(errs) > 0 {
 		return errs
 	}
+	return nil
+}
+
+// detectAgentCycles checks for circular dependencies in agent-to-agent relationships.
+func detectAgentCycles(t *Topology, a2aEnabledAgents map[string]bool) error {
+	// Build adjacency list for agent dependencies (only agent-to-agent, not agent-to-server)
+	deps := make(map[string][]string)
+	for _, agent := range t.Agents {
+		var agentDeps []string
+		for _, use := range agent.Uses {
+			if a2aEnabledAgents[use] {
+				agentDeps = append(agentDeps, use)
+			}
+		}
+		deps[agent.Name] = agentDeps
+	}
+
+	// DFS-based cycle detection
+	const (
+		white = iota // Unvisited
+		gray         // Visiting (in current path)
+		black        // Visited (finished)
+	)
+
+	color := make(map[string]int)
+	var cycle []string
+
+	var dfs func(node string) bool
+	dfs = func(node string) bool {
+		color[node] = gray
+		for _, neighbor := range deps[node] {
+			if color[neighbor] == gray {
+				// Found a back edge - cycle detected
+				cycle = append(cycle, neighbor, node)
+				return true
+			}
+			if color[neighbor] == white {
+				if dfs(neighbor) {
+					if len(cycle) > 0 && cycle[0] != cycle[len(cycle)-1] {
+						cycle = append(cycle, node)
+					}
+					return true
+				}
+			}
+		}
+		color[node] = black
+		return false
+	}
+
+	for name := range deps {
+		if color[name] == white {
+			if dfs(name) {
+				// Reverse the cycle path for readable output
+				for i, j := 0, len(cycle)-1; i < j; i, j = i+1, j-1 {
+					cycle[i], cycle[j] = cycle[j], cycle[i]
+				}
+				return fmt.Errorf("circular dependency detected: %s", strings.Join(cycle, " -> "))
+			}
+		}
+	}
+
 	return nil
 }
 

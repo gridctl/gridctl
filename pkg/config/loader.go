@@ -20,6 +20,9 @@ func LoadTopology(path string) (*Topology, error) {
 		return nil, fmt.Errorf("parsing topology YAML: %w", err)
 	}
 
+	// Merge equipped_skills alias into uses for each agent
+	mergeEquippedSkills(&topology)
+
 	// Expand environment variables in string values
 	expandEnvVars(&topology)
 
@@ -113,6 +116,28 @@ func resolveRelativePaths(t *Topology, basePath string) {
 			if !filepath.IsAbs(t.Agents[i].Source.Path) {
 				t.Agents[i].Source.Path = filepath.Join(basePath, t.Agents[i].Source.Path)
 			}
+		}
+	}
+}
+
+// mergeEquippedSkills merges the equipped_skills YAML alias into uses.
+// This allows users to use either field name in their topology files.
+func mergeEquippedSkills(t *Topology) {
+	for i := range t.Agents {
+		if len(t.Agents[i].EquippedSkills) > 0 {
+			// Merge without duplicates
+			seen := make(map[string]bool)
+			for _, u := range t.Agents[i].Uses {
+				seen[u] = true
+			}
+			for _, s := range t.Agents[i].EquippedSkills {
+				if !seen[s] {
+					t.Agents[i].Uses = append(t.Agents[i].Uses, s)
+					seen[s] = true
+				}
+			}
+			// Clear the alias field after merging
+			t.Agents[i].EquippedSkills = nil
 		}
 	}
 }

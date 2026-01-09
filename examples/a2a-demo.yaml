@@ -13,14 +13,11 @@
 #      agentlab deploy examples/a2a-demo.yaml -f
 #
 # Testing:
-#   # Check gateway status (includes A2A agents)
+#   # Check gateway status (includes unified agents with A2A info)
 #   curl http://localhost:5555/api/status | jq
 #
 #   # Fetch the gateway's Agent Card
 #   curl http://localhost:5555/.well-known/agent.json | jq
-#
-#   # List A2A agents
-#   curl http://localhost:5555/api/a2a-agents | jq
 #
 #   # Send a message to a local A2A agent
 #   curl -X POST http://localhost:5555/a2a/code-assistant \

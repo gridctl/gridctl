@@ -52,19 +52,20 @@ type Resource struct {
 
 // Agent defines an active agent container that consumes MCP tools.
 type Agent struct {
-	Name         string            `yaml:"name"`
-	Image        string            `yaml:"image,omitempty"`
-	Source       *Source           `yaml:"source,omitempty"`
-	Description  string            `yaml:"description,omitempty"`
-	Capabilities []string          `yaml:"capabilities,omitempty"`
-	Uses         []string          `yaml:"uses"`                    // References mcp-servers by name
-	Env          map[string]string `yaml:"env,omitempty"`
-	BuildArgs    map[string]string `yaml:"build_args,omitempty"`
-	Network      string            `yaml:"network,omitempty"`       // Network to join (for multi-network mode)
-	Command      []string          `yaml:"command,omitempty"`       // Override container entrypoint
-	Runtime      string            `yaml:"runtime,omitempty"`       // Headless runtime (e.g., "claude-code")
-	Prompt       string            `yaml:"prompt,omitempty"`        // System prompt for headless agents
-	A2A          *A2AConfig        `yaml:"a2a,omitempty"`           // A2A protocol configuration
+	Name           string            `yaml:"name"`
+	Image          string            `yaml:"image,omitempty"`
+	Source         *Source           `yaml:"source,omitempty"`
+	Description    string            `yaml:"description,omitempty"`
+	Capabilities   []string          `yaml:"capabilities,omitempty"`
+	Uses           []string          `yaml:"uses"`                      // References mcp-servers or agents by name
+	EquippedSkills []string          `yaml:"equipped_skills,omitempty"` // Alias for Uses (merged during load)
+	Env            map[string]string `yaml:"env,omitempty"`
+	BuildArgs      map[string]string `yaml:"build_args,omitempty"`
+	Network        string            `yaml:"network,omitempty"`         // Network to join (for multi-network mode)
+	Command        []string          `yaml:"command,omitempty"`         // Override container entrypoint
+	Runtime        string            `yaml:"runtime,omitempty"`         // Headless runtime (e.g., "claude-code")
+	Prompt         string            `yaml:"prompt,omitempty"`          // System prompt for headless agents
+	A2A            *A2AConfig        `yaml:"a2a,omitempty"`             // A2A protocol configuration
 }
 
 // A2AConfig defines A2A protocol settings for exposing an agent via A2A.

@@ -1,12 +1,21 @@
 import type { Node, Edge } from '@xyflow/react';
+import { MarkerType } from '@xyflow/react';
 import type {
   MCPServerStatus,
   ResourceStatus,
   AgentStatus,
-  A2AAgentStatus,
   NodeStatus,
 } from '../types';
-import { LAYOUT, NODE_TYPES, COLORS } from './constants';
+import { NODE_TYPES, COLORS } from './constants';
+import { applyDagreLayout, applyDagreLayoutWithPreserved } from './layout';
+
+// Arrow marker for edge endpoints
+const arrowMarker = {
+  type: MarkerType.ArrowClosed,
+  width: 16,
+  height: 16,
+  color: COLORS.edgeDefault,
+};
 
 // Gateway node ID constant
 export const GATEWAY_NODE_ID = 'gateway';
@@ -22,27 +31,13 @@ function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
 }
 
 /**
- * Calculate node positions in a radial layout around the gateway
- */
-function calculateRadialPosition(
-  index: number,
-  total: number,
-  centerX: number,
-  centerY: number,
-  radius: number,
-  startAngle = -Math.PI / 2 // Start from top
-): { x: number; y: number } {
-  const angleStep = (2 * Math.PI) / Math.max(total, 1);
-  const angle = startAngle + index * angleStep;
-
-  return {
-    x: centerX + radius * Math.cos(angle) - LAYOUT.NODE_WIDTH / 2,
-    y: centerY + radius * Math.sin(angle) - LAYOUT.NODE_HEIGHT / 2,
-  };
-}
-
-/**
- * Transform backend data to React Flow nodes and edges
+ * Transform backend data to React Flow nodes and edges with Left-to-Right dagre layout
+ *
+ * Layout tiers (Left to Right):
+ * - Tier 1: Gateway (entry point/controller) - far left
+ * - Tier 2: MCP Servers, Local Agents - middle (connected to gateway)
+ * - Tier 3: Resources, Remote Agents - right side (can be dependencies)
+ *
  * @param existingPositions - Optional map of node IDs to positions to preserve user-dragged positions
  */
 export function transformToNodesAndEdges(
@@ -50,23 +45,24 @@ export function transformToNodesAndEdges(
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[] = [],
   agents: AgentStatus[] = [],
-  a2aAgents: A2AAgentStatus[] = [],
   existingPositions?: Map<string, { x: number; y: number }>
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  // Calculate total tool count
-  const totalToolCount = mcpServers.reduce((sum, s) => sum + s.toolCount, 0);
+  // Calculate total tool count (MCP server tools + A2A agent skills)
+  const mcpToolCount = mcpServers.reduce((sum, s) => sum + s.toolCount, 0);
+  const a2aSkillCount = agents.reduce((sum, a) => sum + (a.skillCount || 0), 0);
+  const totalToolCount = mcpToolCount + a2aSkillCount;
 
-  // Default gateway position
-  const defaultGatewayPosition = { x: LAYOUT.CENTER_X - 112, y: LAYOUT.CENTER_Y - 80 };
+  // Count agents with A2A capability for gateway stats
+  const a2aAgentCount = agents.filter((a) => a.hasA2A).length;
 
-  // Create gateway node at center
+  // === Create Gateway Node (Tier 1 - Root) ===
   const gatewayNode: Node = {
     id: GATEWAY_NODE_ID,
     type: NODE_TYPES.GATEWAY,
-    position: existingPositions?.get(GATEWAY_NODE_ID) ?? defaultGatewayPosition,
+    position: { x: 0, y: 0 }, // Will be calculated by dagre
     data: {
       type: 'gateway',
       name: gatewayInfo.name,
@@ -74,29 +70,21 @@ export function transformToNodesAndEdges(
       serverCount: mcpServers.length,
       resourceCount: resources.length,
       agentCount: agents.length,
-      a2aAgentCount: a2aAgents.length,
+      a2aAgentCount,
       totalToolCount,
     },
     draggable: true,
   };
   nodes.push(gatewayNode);
 
-  // Create MCP server nodes in radial layout (left side)
-  mcpServers.forEach((server, index) => {
+  // === Create MCP Server Nodes (Tier 2) ===
+  mcpServers.forEach((server) => {
     const nodeId = `mcp-${server.name}`;
-    const defaultPosition = calculateRadialPosition(
-      index,
-      mcpServers.length,
-      LAYOUT.CENTER_X,
-      LAYOUT.CENTER_Y,
-      LAYOUT.MCP_RADIUS,
-      0 // Start from right
-    );
 
     const serverNode: Node = {
       id: nodeId,
       type: NODE_TYPES.MCP_SERVER,
-      position: existingPositions?.get(nodeId) ?? defaultPosition,
+      position: { x: 0, y: 0 }, // Will be calculated by dagre
       data: {
         type: 'mcp-server',
         name: server.name,
@@ -112,32 +100,116 @@ export function transformToNodesAndEdges(
     };
     nodes.push(serverNode);
 
-    // Create edge from gateway to server
-    // Note: type is not set here - it's controlled by defaultEdgeOptions in Canvas
+    // Edge: Gateway -> MCP Server
     edges.push({
       id: `edge-gateway-${server.name}`,
       source: GATEWAY_NODE_ID,
       target: nodeId,
       animated: server.initialized,
+      markerEnd: { ...arrowMarker, color: COLORS.primary },
     });
   });
 
-  // Create resource nodes (right side)
-  resources.forEach((resource, index) => {
+  // Build sets for identifying node types (for uses edge routing)
+  const mcpServerNames = new Set(mcpServers.map((s) => s.name));
+  const agentNames = new Set(agents.map((a) => a.name));
+
+  // Track which agents are "used" by other agents (they shouldn't connect directly to gateway)
+  const usedByOtherAgents = new Set<string>();
+  agents.forEach((agent) => {
+    agent.uses?.forEach((dep) => {
+      if (agentNames.has(dep)) {
+        usedByOtherAgents.add(dep);
+      }
+    });
+  });
+
+  // === Create Agent Nodes (Tier 2 for local, Tier 3 for remote) ===
+  agents.forEach((agent) => {
+    const nodeId = `agent-${agent.name}`;
+    const isRunning = agent.status === 'running';
+
+    const agentNode: Node = {
+      id: nodeId,
+      type: NODE_TYPES.AGENT,
+      position: { x: 0, y: 0 }, // Will be calculated by dagre
+      data: {
+        type: 'agent',
+        name: agent.name,
+        status: agent.status,
+        variant: agent.variant,
+        // Container fields (local variant)
+        image: agent.image,
+        containerId: agent.containerId,
+        uses: agent.uses,
+        // A2A fields (when hasA2A is true)
+        hasA2A: agent.hasA2A,
+        role: agent.role,
+        url: agent.url,
+        endpoint: agent.endpoint,
+        skillCount: agent.skillCount,
+        skills: agent.skills,
+        description: agent.description,
+      },
+      draggable: true,
+    };
+    nodes.push(agentNode);
+
+    // Edge: Gateway -> Agent (only if not used by another agent)
+    // This creates proper hierarchy: gateway -> orchestrator -> worker agents
+    if (!usedByOtherAgents.has(agent.name)) {
+      // Style varies based on whether agent has A2A capability
+      const edgeColor = agent.hasA2A ? COLORS.secondary : '#8b5cf6';
+      const edgeStyle = agent.hasA2A
+        ? { stroke: edgeColor, strokeDasharray: '8,4', strokeWidth: 2 }
+        : { stroke: edgeColor, strokeDasharray: '5,5' };
+
+      edges.push({
+        id: `edge-gateway-agent-${agent.name}`,
+        source: GATEWAY_NODE_ID,
+        target: nodeId,
+        animated: isRunning,
+        style: edgeStyle,
+        markerEnd: { ...arrowMarker, color: edgeColor },
+      });
+    }
+
+    // Edges: Agent -> things it uses (MCP servers or other agents)
+    agent.uses?.forEach((dep) => {
+      let targetNodeId: string | null = null;
+
+      if (mcpServerNames.has(dep)) {
+        targetNodeId = `mcp-${dep}`;
+      } else if (agentNames.has(dep)) {
+        // Agent using another agent (via A2A)
+        targetNodeId = `agent-${dep}`;
+      }
+
+      if (targetNodeId) {
+        edges.push({
+          id: `edge-uses-${agent.name}-${dep}`,
+          source: nodeId,
+          target: targetNodeId,
+          animated: isRunning,
+          style: {
+            stroke: COLORS.secondary,
+            strokeDasharray: '4,4',
+            strokeWidth: 1.5,
+          },
+          markerEnd: { ...arrowMarker, color: COLORS.secondary },
+        });
+      }
+    });
+  });
+
+  // === Create Resource Nodes (Tier 3) ===
+  resources.forEach((resource) => {
     const nodeId = `resource-${resource.name}`;
-    const defaultPosition = calculateRadialPosition(
-      index,
-      resources.length,
-      LAYOUT.CENTER_X,
-      LAYOUT.CENTER_Y,
-      LAYOUT.RESOURCE_RADIUS,
-      0 // Start from right
-    );
 
     const resourceNode: Node = {
       id: nodeId,
       type: NODE_TYPES.RESOURCE,
-      position: existingPositions?.get(nodeId) ?? defaultPosition,
+      position: { x: 0, y: 0 }, // Will be calculated by dagre
       data: {
         type: 'resource',
         name: resource.name,
@@ -149,99 +221,22 @@ export function transformToNodesAndEdges(
     };
     nodes.push(resourceNode);
 
-    // Create edge from gateway to resource
-    // Note: type is not set here - it's controlled by defaultEdgeOptions in Canvas
+    // Edge: Gateway -> Resource
     edges.push({
       id: `edge-gateway-${resource.name}`,
       source: GATEWAY_NODE_ID,
       target: nodeId,
       animated: resource.status === 'running',
+      markerEnd: { ...arrowMarker, color: COLORS.secondary },
     });
   });
 
-  // Create agent nodes in radial layout (right side of gateway)
-  agents.forEach((agent, index) => {
-    const nodeId = `agent-${agent.name}`;
-    const defaultPosition = calculateRadialPosition(
-      index,
-      agents.length,
-      LAYOUT.CENTER_X,
-      LAYOUT.CENTER_Y,
-      LAYOUT.AGENT_RADIUS,
-      0 // Start from right side (flow: gateway → agent)
-    );
+  // === Apply Dagre Layout (Left-to-Right) ===
+  const layoutedNodes = existingPositions
+    ? applyDagreLayoutWithPreserved(nodes, edges, existingPositions, { direction: 'LR' })
+    : applyDagreLayout(nodes, edges, { direction: 'LR' });
 
-    const agentNode: Node = {
-      id: nodeId,
-      type: NODE_TYPES.AGENT,
-      position: existingPositions?.get(nodeId) ?? defaultPosition,
-      data: {
-        type: 'agent',
-        name: agent.name,
-        image: agent.image,
-        containerId: agent.containerId,
-        status: agent.status,
-      },
-      draggable: true,
-    };
-    nodes.push(agentNode);
-
-    // Create edge from gateway to agent
-    edges.push({
-      id: `edge-gateway-agent-${agent.name}`,
-      source: GATEWAY_NODE_ID,
-      target: nodeId,
-      animated: agent.status === 'running',
-      style: { stroke: '#8b5cf6', strokeDasharray: '5,5' }, // Purple dashed line for agents
-    });
-  });
-
-  // Create A2A agent nodes (positioned on the left side, opposite to regular agents)
-  a2aAgents.forEach((a2aAgent, index) => {
-    const nodeId = `a2a-${a2aAgent.name}`;
-    const defaultPosition = calculateRadialPosition(
-      index,
-      a2aAgents.length,
-      LAYOUT.CENTER_X,
-      LAYOUT.CENTER_Y,
-      LAYOUT.A2A_RADIUS,
-      Math.PI // Start from left side (opposite to agents)
-    );
-
-    const a2aNode: Node = {
-      id: nodeId,
-      type: NODE_TYPES.A2A_AGENT,
-      position: existingPositions?.get(nodeId) ?? defaultPosition,
-      data: {
-        type: 'a2a-agent',
-        name: a2aAgent.name,
-        role: a2aAgent.role,
-        url: a2aAgent.url,
-        endpoint: a2aAgent.endpoint,
-        skillCount: a2aAgent.skillCount,
-        skills: a2aAgent.skills,
-        description: a2aAgent.description,
-        status: a2aAgent.available ? 'running' : 'stopped',
-      },
-      draggable: true,
-    };
-    nodes.push(a2aNode);
-
-    // Create bidirectional-style edge from gateway to A2A agent (teal dashed)
-    edges.push({
-      id: `edge-gateway-a2a-${a2aAgent.name}`,
-      source: GATEWAY_NODE_ID,
-      target: nodeId,
-      animated: a2aAgent.available,
-      style: {
-        stroke: COLORS.secondary, // Teal for A2A
-        strokeDasharray: '8,4',
-        strokeWidth: 2,
-      },
-    });
-  });
-
-  return { nodes, edges };
+  return { nodes: layoutedNodes, edges };
 }
 
 /**

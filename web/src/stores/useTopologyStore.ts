@@ -7,7 +7,6 @@ import type {
   MCPServerStatus,
   ResourceStatus,
   AgentStatus,
-  A2AAgentStatus,
   Tool,
   ConnectionStatus,
 } from '../types';
@@ -18,8 +17,7 @@ interface TopologyState {
   gatewayInfo: { name: string; version: string } | null;
   mcpServers: MCPServerStatus[];
   resources: ResourceStatus[];
-  agents: AgentStatus[];
-  a2aAgents: A2AAgentStatus[];
+  agents: AgentStatus[];  // Unified: includes both local and remote agents with A2A info
   tools: Tool[];
 
   // === React Flow State ===
@@ -55,7 +53,6 @@ export const useTopologyStore = create<TopologyState>()(
     mcpServers: [],
     resources: [],
     agents: [],
-    a2aAgents: [],
     tools: [],
     nodes: [],
     edges: [],
@@ -71,8 +68,7 @@ export const useTopologyStore = create<TopologyState>()(
         gatewayInfo: status.gateway,
         mcpServers: status['mcp-servers'] || [],
         resources: status.resources || [],
-        agents: status.agents || [],
-        a2aAgents: status['a2a-agents'] || [],
+        agents: status.agents || [],  // Unified agents (includes A2A info)
         lastUpdated: new Date(),
         isLoading: false,
         error: null,
@@ -96,7 +92,7 @@ export const useTopologyStore = create<TopologyState>()(
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, agents, a2aAgents, nodes: existingNodes } = get();
+      const { gatewayInfo, mcpServers, resources, agents, nodes: existingNodes } = get();
       if (!gatewayInfo) return;
 
       // Build map of existing positions to preserve user-dragged positions
@@ -109,14 +105,13 @@ export const useTopologyStore = create<TopologyState>()(
         mcpServers,
         resources,
         agents,
-        a2aAgents,
         positionMap
       );
       set({ nodes, edges });
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources, agents, a2aAgents } = get();
+      const { gatewayInfo, mcpServers, resources, agents } = get();
       if (!gatewayInfo) return;
 
       // Don't pass positionMap to get default calculated positions
@@ -124,8 +119,7 @@ export const useTopologyStore = create<TopologyState>()(
         gatewayInfo,
         mcpServers,
         resources,
-        agents,
-        a2aAgents
+        agents
       );
       set({ nodes, edges });
     },

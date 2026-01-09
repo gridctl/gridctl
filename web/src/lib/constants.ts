@@ -1,15 +1,25 @@
 // Layout parameters for node positioning
+// Uses Left-to-Right (LR) dagre layout - industry standard for flow diagrams
 export const LAYOUT = {
-  CENTER_X: 150,
-  CENTER_Y: 300,
-  MCP_RADIUS: 280,     // Distance from gateway to MCP servers
-  RESOURCE_RADIUS: 420, // Distance from gateway to resources
-  AGENT_RADIUS: 350,   // Distance from gateway to agents
-  A2A_RADIUS: 400,     // Distance from gateway to A2A agents
+  // Node dimensions
+  GATEWAY_WIDTH: 240,
+  GATEWAY_HEIGHT: 160,
   NODE_WIDTH: 256,
   NODE_HEIGHT: 140,
-  AGENT_SIZE: 120,     // Circular agent node diameter
-  A2A_SIZE: 144,       // A2A agent node size
+  AGENT_SIZE: 144,     // Unified agent node size (rounded rectangle)
+
+  // Dagre layout spacing
+  NODE_SPACING: 60,    // Vertical spacing between nodes in same rank
+  RANK_SPACING: 120,   // Horizontal spacing between tiers (gateway -> servers -> etc)
+  MARGIN_X: 40,        // Left/right margin
+  MARGIN_Y: 40,        // Top/bottom margin
+
+  // Legacy radial layout (kept for reference/fallback)
+  CENTER_X: 150,
+  CENTER_Y: 300,
+  MCP_RADIUS: 280,
+  RESOURCE_RADIUS: 420,
+  AGENT_RADIUS: 350,
 } as const;
 
 // ============================================
@@ -68,7 +78,6 @@ export const NODE_TYPES = {
   MCP_SERVER: 'mcpServer',
   RESOURCE: 'resource',
   AGENT: 'agent',
-  A2A_AGENT: 'a2aAgent',
 } as const;
 
 // Edge type identifiers

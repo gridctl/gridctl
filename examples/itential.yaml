@@ -1,0 +1,38 @@
+# Itential MCP Server Example (Dev Stack Integration)
+#
+# This topology connects to an Itential Platform running in the
+# itential-dev-stack Docker network. Use this when you have the
+# dev-stack already running and want to connect agents to it.
+#
+# Prerequisites:
+#   - itential-dev-stack running: cd itential-dev-stack && make up
+#   - The dev-stack creates a 'devstack' network
+#
+# Usage:
+#   agentlab deploy examples/itential-mcp-devstack.yaml
+#
+# Reference:
+#   https://github.com/itential/itential-mcp
+
+version: "1"
+name: itential-mcp-devstack
+
+# Use the existing devstack network created by itential-dev-stack
+network:
+  name: devstack
+  driver: bridge
+
+mcp-servers:
+  - name: itential
+    image: ghcr.io/itential/itential-mcp:latest
+    transport: sse
+    port: 3001
+    env:
+      # Platform connection - uses Docker network hostname
+      ITENTIAL_MCP_PLATFORM_HOST: platform
+      ITENTIAL_MCP_PLATFORM_PORT: "3000"
+      ITENTIAL_MCP_PLATFORM_USER: "${ITENTIAL_PLATFORM_USER:-admin@itential}"
+      ITENTIAL_MCP_PLATFORM_PASSWORD: "${ITENTIAL_PLATFORM_PASSWORD:-admin}"
+      ITENTIAL_MCP_PLATFORM_DISABLE_TLS: "true"
+      # Server settings
+      ITENTIAL_MCP_SERVER_LOG_LEVEL: "${ITENTIAL_LOG_LEVEL:-INFO}"

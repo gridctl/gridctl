@@ -60,8 +60,10 @@ export function Canvas() {
   const minimapNodeColor = useCallback((node: { data: Record<string, unknown> }) => {
     const data = node.data;
     if (data.type === 'gateway') return COLORS.primary;
-    if (data.type === 'agent') return COLORS.tertiary;
-    if (data.type === 'a2a-agent') return COLORS.secondary;
+    if (data.type === 'agent') {
+      // Teal for A2A-enabled or remote agents, purple for local-only
+      return data.hasA2A || data.variant === 'remote' ? COLORS.secondary : COLORS.tertiary;
+    }
 
     const status = data.status as string | undefined;
     if (status === 'running') return COLORS.statusRunning;

@@ -56,6 +56,9 @@ coverage.html
 tmp/
 temp/
 
+# Requirements
+requirements.md
+
 # Vendor specific assistant files
 .claude/
 .claude-plugin/

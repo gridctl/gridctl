@@ -15,6 +15,7 @@ import (
 
 	"agentlab/internal/api"
 	"agentlab/pkg/a2a"
+	"agentlab/pkg/adapter"
 	"agentlab/pkg/config"
 	"agentlab/pkg/mcp"
 	"agentlab/pkg/runtime"
@@ -372,6 +373,11 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		}
 	}
 
+	// Register A2A agents as MCP tool providers (for agent-to-agent skill equipping)
+	if err := registerAgentAdapters(ctx, gateway, topo, port, verbose); err != nil {
+		return fmt.Errorf("registering agent adapters: %w", err)
+	}
+
 	// Get embedded web files
 	webFS, err := WebFS()
 	if err != nil && verbose {
@@ -422,12 +428,9 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		}
 		fmt.Printf("\nWeb UI available at http://localhost%s/\n", addr)
 		fmt.Printf("API endpoints:\n")
-		fmt.Printf("  GET  /api/status      - Gateway status\n")
+		fmt.Printf("  GET  /api/status      - Gateway status (includes unified agents)\n")
 		fmt.Printf("  GET  /api/mcp-servers - List MCP servers\n")
 		fmt.Printf("  GET  /api/tools       - List tools\n")
-		if a2aGateway != nil {
-			fmt.Printf("  GET  /api/a2a-agents  - List A2A agents\n")
-		}
 		fmt.Println("\nPress Ctrl+C to stop...")
 	}
 
@@ -498,4 +501,79 @@ func forkDeployDaemon(topologyPath string, port int) (int, error) {
 
 	// Don't wait - let it run in background
 	return cmd.Process.Pid, nil
+}
+
+// registerAgentAdapters creates A2A client adapters for agents that are used by other agents.
+// This allows Agent A to "equip" Agent B as a skill provider through the unified MCP interface.
+func registerAgentAdapters(_ context.Context, mcpGateway *mcp.Gateway, topo *config.Topology, port int, verbose bool) error {
+	// Build map of A2A-enabled agents with their configs
+	a2aAgentConfigs := make(map[string]*config.Agent)
+	for i := range topo.Agents {
+		agent := &topo.Agents[i]
+		if agent.IsA2AEnabled() {
+			a2aAgentConfigs[agent.Name] = agent
+		}
+	}
+
+	// Find agents that are "used" by other agents (not MCP servers)
+	usedAgents := make(map[string]bool)
+	for _, agent := range topo.Agents {
+		for _, dep := range agent.Uses {
+			if _, isA2A := a2aAgentConfigs[dep]; isA2A {
+				usedAgents[dep] = true
+			}
+		}
+	}
+
+	if len(usedAgents) == 0 {
+		return nil
+	}
+
+	if verbose {
+		fmt.Println("\nRegistering agent-to-agent adapters...")
+	}
+
+	// Create adapters for each used agent
+	for agentName := range usedAgents {
+		agentCfg := a2aAgentConfigs[agentName]
+
+		// Local A2A agents are accessible at the gateway's /a2a/{name} endpoint
+		endpoint := fmt.Sprintf("http://localhost:%d", port)
+
+		// Create the adapter
+		a2aAdapter := adapter.NewA2AClientAdapter(agentName, endpoint)
+
+		// For local agents, initialize directly from config (no HTTP needed)
+		// This avoids the chicken-and-egg problem where the HTTP server
+		// hasn't started yet when we try to fetch the agent card.
+		version := "1.0.0"
+		if agentCfg.A2A.Version != "" {
+			version = agentCfg.A2A.Version
+		}
+
+		// Convert config skills to a2a skills
+		skills := make([]a2a.Skill, len(agentCfg.A2A.Skills))
+		for i, s := range agentCfg.A2A.Skills {
+			skills[i] = a2a.Skill{
+				ID:          s.ID,
+				Name:        s.Name,
+				Description: s.Description,
+				Tags:        s.Tags,
+			}
+		}
+
+		a2aAdapter.InitializeFromSkills(version, skills)
+
+		// Add to MCP gateway router
+		mcpGateway.Router().AddClient(a2aAdapter)
+
+		if verbose {
+			fmt.Printf("  Registered agent '%s' as skill provider with %d tools\n", agentName, len(a2aAdapter.Tools()))
+		}
+	}
+
+	// Refresh aggregated tools in the router
+	mcpGateway.Router().RefreshTools()
+
+	return nil
 }
