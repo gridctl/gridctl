@@ -26,23 +26,30 @@ export interface ResourceStatus {
   network?: string;
 }
 
-// Agent status for active agent containers
-export interface AgentStatus {
-  name: string;
-  image: string;
-  status: 'running' | 'stopped' | 'error';
-  containerId?: string;
-}
+// Agent variant discriminator
+export type AgentVariant = 'local' | 'remote';
 
-// A2A Agent status matching a2a.A2AAgentStatus
-export interface A2AAgentStatus {
+// Unified agent status - merges container and A2A protocol state
+export interface AgentStatus {
+  // Core identification
   name: string;
-  role: 'local' | 'remote';
+  status: 'running' | 'stopped' | 'error' | 'unavailable';
+
+  // Variant: "local" (container-based) or "remote" (A2A only)
+  variant: AgentVariant;
+
+  // Container fields (populated for local/container-based agents)
+  image?: string;
+  containerId?: string;
+  uses?: string[];
+
+  // A2A fields (populated when hasA2A is true)
+  hasA2A: boolean;
+  role?: 'local' | 'remote';
   url?: string;
   endpoint?: string;
-  available: boolean;
-  skillCount: number;
-  skills: string[];
+  skillCount?: number;
+  skills?: string[];
   description?: string;
 }
 
@@ -52,7 +59,6 @@ export interface GatewayStatus {
   'mcp-servers': MCPServerStatus[];
   agents?: AgentStatus[];
   resources?: ResourceStatus[];
-  'a2a-agents'?: A2AAgentStatus[];
 }
 
 // Tool definition matching mcp.Tool
@@ -122,27 +128,31 @@ export interface ResourceNodeData extends NodeDataBase {
   status: NodeStatus;
 }
 
+// Unified agent node data - handles both local (container) and remote (A2A) agents
 export interface AgentNodeData extends NodeDataBase {
   type: 'agent';
   name: string;
-  image: string;
-  containerId?: string;
   status: NodeStatus;
-}
 
-export interface A2AAgentNodeData extends NodeDataBase {
-  type: 'a2a-agent';
-  name: string;
-  role: 'local' | 'remote';
+  // Variant determines primary behavior and visual style
+  variant: AgentVariant;
+
+  // Container fields (local variant only)
+  image?: string;
+  containerId?: string;
+  uses?: string[];
+
+  // A2A fields (when hasA2A is true)
+  hasA2A: boolean;
+  role?: 'local' | 'remote';
   url?: string;
   endpoint?: string;
-  skillCount: number;
-  skills: string[];
+  skillCount?: number;
+  skills?: string[];
   description?: string;
-  status: NodeStatus;
 }
 
-export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | A2AAgentNodeData;
+export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData;
 
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
