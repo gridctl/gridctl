@@ -296,6 +296,8 @@ type MCPServerStatus struct {
 }
 
 // Status returns status of all registered MCP servers.
+// Note: This only returns actual MCP servers, not A2A adapters or other
+// clients added directly to the router.
 func (g *Gateway) Status() []MCPServerStatus {
 	clients := g.router.Clients()
 	statuses := make([]MCPServerStatus, 0, len(clients))
@@ -304,13 +306,20 @@ func (g *Gateway) Status() []MCPServerStatus {
 	defer g.mu.RUnlock()
 
 	for _, client := range clients {
+		// Only include clients that were registered as MCP servers
+		// (have metadata). This filters out A2A adapters which are
+		// internal plumbing and shouldn't appear as MCP servers.
+		meta, isMCPServer := g.serverMeta[client.Name()]
+		if !isMCPServer {
+			continue
+		}
+
 		tools := client.Tools()
 		toolNames := make([]string, len(tools))
 		for i, t := range tools {
 			toolNames[i] = t.Name
 		}
 
-		meta := g.serverMeta[client.Name()]
 		statuses = append(statuses, MCPServerStatus{
 			Name:        client.Name(),
 			Transport:   meta.Transport,
