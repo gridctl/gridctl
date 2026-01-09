@@ -2,15 +2,10 @@
 #
 # Demonstrates Agent-to-Agent (A2A) protocol features:
 # - Local agents that expose A2A endpoints via the gateway
-# - Remote A2A agents that the gateway can communicate with
 # - Skills advertisement and discovery
 #
-# Prerequisites:
-#   1. Start the mock A2A server (for remote agent testing):
-#      python3 examples/mock-a2a-server.py
-#
-#   2. Deploy this topology:
-#      agentlab deploy examples/a2a-demo.yaml -f
+# Usage:
+#   agentlab deploy examples/a2a-demo.yaml -f
 #
 # Testing:
 #   # Check gateway status (includes unified agents with A2A info)
@@ -58,6 +53,7 @@ agents:
       - code-generation
     uses:
       - code-tools
+
     # A2A configuration - exposes this agent via A2A protocol
     a2a:
       enabled: true
@@ -76,6 +72,7 @@ agents:
     description: "Documentation assistant for generating and updating docs"
     capabilities:
       - documentation
+
     # A2A configuration
     a2a:
       enabled: true
@@ -90,12 +87,11 @@ agents:
     command: ["sh", "-c", "echo 'Docs assistant ready' && while true; do sleep 3600; done"]
 
 # External A2A agents (remote agents accessible via URL)
-# These are agents running elsewhere that we want to communicate with
-a2a-agents:
-  # Mock server for testing (run examples/mock-a2a-server.py first)
-  - name: mock-agent
-    url: http://localhost:9999
-    # Optional authentication
-    # auth:
-    #   type: bearer
-    #   token: "test-token"
+# Uncomment to connect to remote A2A agents running elsewhere:
+#
+# a2a-agents:
+#   - name: remote-agent
+#     url: http://example.com:9999
+#     auth:
+#       type: bearer
+#       token_env: REMOTE_AGENT_TOKEN
