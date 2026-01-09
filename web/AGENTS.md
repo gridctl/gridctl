@@ -99,22 +99,22 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
 *   **Color:** Secondary (Teal) accents
 *   **Content:** Name, image, network, status
 
-### Agent Node
-*   **Shape:** Circle (`rounded-full`, 128x128px)
-*   **Color:** Tertiary (Purple) accents with `shadow-glow-tertiary`
-*   **Icon:** Bot icon from Lucide
-*   **Content:** Name, status indicator, container ID hint
-*   **Edge Style:** Purple dashed line (`strokeDasharray: '5,5'`)
-*   **Layout:** Positioned to the right of gateway (start angle: 0)
-
-### A2A Agent Node
+### Agent Node (Unified)
 *   **Shape:** Rounded square (`rounded-lg`, 144x144px)
-*   **Color:** Secondary (Teal) accents with `shadow-glow-secondary`
-*   **Icon:** Users icon from Lucide
-*   **Content:** Name, role badge (local/remote), skill count, status indicator
-*   **Edge Style:** Teal dashed line (`strokeDasharray: '8,4'`, strokeWidth: 2)
-*   **Layout:** Positioned to the left of gateway (start angle: π)
-*   **Role Badge:** Shows "local" or "remote" in top-right corner
+*   **Color:** Variant-based styling ("Cartridge" design pattern)
+    *   Local agents without A2A: Tertiary (Purple) base
+    *   Local agents with A2A: Purple base + Teal accents
+    *   Remote agents: Secondary (Teal) accents
+*   **Icon:** Bot icon from Lucide
+*   **Content:**
+    *   Name and status indicator
+    *   Variant badge (local/remote) in top-left corner
+    *   A2A badge (when enabled) in top-right corner
+    *   Skill count (when A2A enabled)
+    *   Container ID hint (local agents only)
+*   **Edge Style:**
+    *   Without A2A: Purple dashed line (`strokeDasharray: '5,5'`)
+    *   With A2A: Teal dashed line (`strokeDasharray: '8,4'`, strokeWidth: 2)
 
 ## 8. Implementation Checklist
 When creating new UI components:
