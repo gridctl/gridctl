@@ -3,10 +3,12 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"agentlab/pkg/dockerclient"
+	"agentlab/pkg/logging"
 )
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
@@ -22,6 +24,7 @@ type Gateway struct {
 	router    *Router
 	sessions  *SessionManager
 	dockerCli dockerclient.DockerClient
+	logger    *slog.Logger
 
 	mu          sync.RWMutex
 	serverInfo  ServerInfo
@@ -34,12 +37,21 @@ func NewGateway() *Gateway {
 	return &Gateway{
 		router:   NewRouter(),
 		sessions: NewSessionManager(),
+		logger:   logging.NewDiscardLogger(),
 		serverInfo: ServerInfo{
 			Name:    "agentlab-gateway",
 			Version: "1.0.0",
 		},
 		serverMeta:  make(map[string]MCPServerConfig),
 		agentAccess: make(map[string][]string),
+	}
+}
+
+// SetLogger sets the logger for gateway operations.
+// If nil is passed, logging is disabled (default).
+func (g *Gateway) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		g.logger = logger
 	}
 }
 
@@ -101,15 +113,17 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 	}
 
 	// Store metadata
-	g.mu.Lock()
-	g.serverMeta[cfg.Name] = cfg
-	g.mu.Unlock()
+	func() {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		g.serverMeta[cfg.Name] = cfg
+	}()
 
 	// Add to router
 	g.router.AddClient(agentClient)
 	g.router.RefreshTools()
 
-	fmt.Printf("  Registered MCP server '%s' (%s) with %d tools\n", cfg.Name, cfg.Transport, len(agentClient.Tools()))
+	g.logger.Info("registered MCP server", "name", cfg.Name, "transport", cfg.Transport, "tools", len(agentClient.Tools()))
 	return nil
 }
 
@@ -176,6 +190,7 @@ func (g *Gateway) HandleToolsListForAgent(agentName string) (*ToolsListResult, e
 	for _, tool := range allTools {
 		serverName, _, err := ParsePrefixedTool(tool.Name)
 		if err != nil {
+			g.logger.Warn("skipping tool with invalid name format", "name", tool.Name, "error", err)
 			continue
 		}
 		if allowedSet[serverName] {
@@ -277,7 +292,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 func (g *Gateway) RefreshAllTools(ctx context.Context) error {
 	for _, client := range g.router.Clients() {
 		if err := client.RefreshTools(ctx); err != nil {
-			fmt.Printf("Warning: failed to refresh tools for %s: %v\n", client.Name(), err)
+			g.logger.Warn("failed to refresh tools", "server", client.Name(), "error", err)
 		}
 	}
 	g.router.RefreshTools()
