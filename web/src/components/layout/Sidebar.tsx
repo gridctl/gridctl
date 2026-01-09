@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { X, Terminal, Box, Bot, Users, ChevronDown, ChevronRight, Wrench, FileText, Sparkles, Globe, Server } from 'lucide-react';
+import { X, Terminal, Box, Bot, ChevronDown, ChevronRight, Wrench, FileText, Sparkles, Globe, Server, Zap } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
 import { ControlBar } from '../ui/ControlBar';
 import { useTopologyStore, useSelectedNodeData } from '../../stores/useTopologyStore';
 import { useUIStore } from '../../stores/useUIStore';
-import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, A2AAgentNodeData } from '../../types';
+import type { MCPServerNodeData, ResourceNodeData, AgentNodeData } from '../../types';
 
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
@@ -21,10 +21,21 @@ export function Sidebar() {
 
   const isServer = selectedData.type === 'mcp-server';
   const isAgent = selectedData.type === 'agent';
-  const isA2AAgent = selectedData.type === 'a2a-agent';
-  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData | A2AAgentNodeData;
-  const Icon = isServer ? Terminal : isAgent ? Bot : isA2AAgent ? Users : Box;
-  const colorClass = isServer ? 'primary' : (isAgent || isA2AAgent) ? (isA2AAgent ? 'secondary' : 'tertiary') : 'secondary';
+  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData;
+
+  // For agents, determine variant and A2A capability
+  const agentData = isAgent ? (data as AgentNodeData) : null;
+  const isRemote = agentData?.variant === 'remote';
+  const hasA2A = agentData?.hasA2A ?? false;
+
+  const Icon = isServer ? Terminal : isAgent ? Bot : Box;
+
+  // Color logic: purple for local agents, teal for remote or A2A-enabled
+  const colorClass = isServer
+    ? 'primary'
+    : isAgent
+      ? (isRemote ? 'secondary' : 'tertiary')
+      : 'secondary';
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -57,7 +68,7 @@ export function Sidebar() {
       <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30">
         <div className="flex items-center gap-3 min-w-0">
           <div className={cn(
-            'p-2 rounded-xl flex-shrink-0 border',
+            'p-2 rounded-xl flex-shrink-0 border relative',
             colorClass === 'primary' && 'bg-primary/10 border-primary/20',
             colorClass === 'tertiary' && 'bg-tertiary/10 border-tertiary/20',
             colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
@@ -70,14 +81,37 @@ export function Sidebar() {
                 colorClass === 'secondary' && 'text-secondary'
               )}
             />
+            {/* A2A indicator on icon */}
+            {hasA2A && !isRemote && (
+              <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-secondary/20 border border-secondary/40">
+                <Zap size={6} className="text-secondary" />
+              </div>
+            )}
           </div>
           <div className="min-w-0">
             <h2 className="font-semibold text-text-primary truncate tracking-tight">
               {data.name}
             </h2>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider">
-              {isServer ? 'MCP Server' : isAgent ? 'Agent' : isA2AAgent ? 'A2A Agent' : 'Resource'}
-            </p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[10px] text-text-muted uppercase tracking-wider">
+                {isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
+              </p>
+              {isAgent && (
+                <span className={cn(
+                  'text-[9px] px-1 py-0.5 rounded font-medium uppercase flex items-center gap-0.5',
+                  isRemote ? 'bg-secondary/10 text-secondary' : 'bg-tertiary/10 text-tertiary'
+                )}>
+                  {isRemote ? <Globe size={8} /> : <Server size={8} />}
+                  {agentData?.variant}
+                </span>
+              )}
+              {hasA2A && (
+                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-secondary/10 text-secondary flex items-center gap-0.5">
+                  <Zap size={8} />
+                  A2A
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <button
@@ -123,77 +157,77 @@ export function Sidebar() {
               </div>
             )}
 
-            {/* Agent fields */}
-            {isAgent && (data as AgentNodeData).image && (
+            {/* Agent fields - Container info (local variant) */}
+            {isAgent && agentData?.image && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as AgentNodeData).image}>
-                  {(data as AgentNodeData).image}
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={agentData.image}>
+                  {agentData.image}
                 </span>
               </div>
             )}
 
-            {isAgent && (data as AgentNodeData).containerId && (
+            {isAgent && agentData?.containerId && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Container</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as AgentNodeData).containerId}>
-                  {(data as AgentNodeData).containerId}
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={agentData.containerId}>
+                  {agentData.containerId}
                 </span>
               </div>
             )}
 
-            {/* A2A Agent fields */}
-            {isA2AAgent && (
+            {/* Agent fields - A2A info (when hasA2A) */}
+            {isAgent && hasA2A && agentData?.role && (
               <div className="flex justify-between items-center">
-                <span className="text-sm text-text-muted">Role</span>
+                <span className="text-sm text-text-muted">A2A Role</span>
                 <span className={cn(
                   'text-xs px-2 py-0.5 rounded-md font-medium uppercase tracking-wider flex items-center gap-1',
                   'bg-secondary/10 text-secondary'
                 )}>
-                  {(data as A2AAgentNodeData).role === 'remote' ? <Globe size={10} /> : <Server size={10} />}
-                  {(data as A2AAgentNodeData).role}
+                  {agentData.role === 'remote' ? <Globe size={10} /> : <Server size={10} />}
+                  {agentData.role}
                 </span>
               </div>
             )}
 
-            {isA2AAgent && (data as A2AAgentNodeData).url && (
+            {isAgent && hasA2A && agentData?.url && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">URL</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as A2AAgentNodeData).url}>
-                  {(data as A2AAgentNodeData).url}
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={agentData.url}>
+                  {agentData.url}
                 </span>
               </div>
             )}
 
-            {isA2AAgent && (data as A2AAgentNodeData).endpoint && (
+            {isAgent && hasA2A && agentData?.endpoint && (
               <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">Endpoint</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as A2AAgentNodeData).endpoint}>
-                  {(data as A2AAgentNodeData).endpoint}
+                <span className="text-sm text-text-muted">A2A Endpoint</span>
+                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={agentData.endpoint}>
+                  {agentData.endpoint}
                 </span>
               </div>
             )}
 
-            {isA2AAgent && (data as A2AAgentNodeData).skillCount > 0 && (
+            {isAgent && hasA2A && (agentData?.skillCount ?? 0) > 0 && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Skills</span>
                 <span className="text-sm text-secondary font-bold tabular-nums">
-                  {(data as A2AAgentNodeData).skillCount}
+                  {agentData?.skillCount}
                 </span>
               </div>
             )}
 
-            {isA2AAgent && (data as A2AAgentNodeData).description && (
+            {isAgent && hasA2A && agentData?.description && (
               <div className="mt-2 pt-2 border-t border-border/30">
                 <span className="text-sm text-text-muted block mb-1">Description</span>
                 <p className="text-xs text-text-secondary leading-relaxed">
-                  {(data as A2AAgentNodeData).description}
+                  {agentData.description}
                 </p>
               </div>
             )}
 
             {/* Resource fields */}
-            {!isServer && !isAgent && !isA2AAgent && (data as ResourceNodeData).image && (
+            {!isServer && !isAgent && (data as ResourceNodeData).image && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
                 <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as ResourceNodeData).image}>
@@ -202,7 +236,7 @@ export function Sidebar() {
               </div>
             )}
 
-            {!isServer && !isAgent && !isA2AAgent && (data as ResourceNodeData).network && (
+            {!isServer && !isAgent && (data as ResourceNodeData).network && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Network</span>
                 <span className="text-sm text-secondary font-medium">
@@ -241,16 +275,16 @@ export function Sidebar() {
           </Section>
         )}
 
-        {/* Skills Section (A2A agents only) */}
-        {isA2AAgent && (data as A2AAgentNodeData).skills.length > 0 && (
+        {/* Skills Section (Agents with A2A) */}
+        {isAgent && hasA2A && (agentData?.skills?.length ?? 0) > 0 && (
           <Section
             title="Skills"
             icon={Sparkles}
-            count={(data as A2AAgentNodeData).skillCount}
+            count={agentData?.skillCount}
             defaultOpen
           >
             <div className="space-y-2">
-              {(data as A2AAgentNodeData).skills.map((skill, idx) => (
+              {agentData?.skills?.map((skill, idx) => (
                 <div
                   key={idx}
                   className="px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30"
