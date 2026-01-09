@@ -117,8 +117,13 @@ func (r *Runtime) Up(ctx context.Context, topo *config.Topology, opts UpOptions)
 		result.MCPServers = append(result.MCPServers, *info)
 	}
 
-	// Start agents (after MCP servers so dependencies are ready)
-	for _, agent := range topo.Agents {
+	// Start agents in dependency order (topologically sorted)
+	sortedAgents, err := sortAgentsByDependency(topo)
+	if err != nil {
+		return nil, fmt.Errorf("resolving agent dependencies: %w", err)
+	}
+
+	for _, agent := range sortedAgents {
 		info, err := r.startAgent(ctx, topo, &agent, opts)
 		if err != nil {
 			return nil, fmt.Errorf("starting agent %s: %w", agent.Name, err)
@@ -494,4 +499,51 @@ type ContainerStatus struct {
 	Type          string // "mcp-server", "resource", or "agent"
 	MCPServerName string // Name of the MCP server, resource, or agent
 	Topology      string
+}
+
+// sortAgentsByDependency returns agents sorted in dependency order.
+// Agents with no agent dependencies come first, dependent agents come later.
+// This ensures that when Agent A uses Agent B (as a skill), Agent B starts first.
+func sortAgentsByDependency(topo *config.Topology) ([]config.Agent, error) {
+	if len(topo.Agents) == 0 {
+		return nil, nil
+	}
+
+	// Build set of A2A-enabled agent names (these are the only valid agent dependencies)
+	a2aAgents := make(map[string]bool)
+	for _, agent := range topo.Agents {
+		if agent.IsA2AEnabled() {
+			a2aAgents[agent.Name] = true
+		}
+	}
+
+	// Build dependency graph
+	graph := NewDependencyGraph()
+	agentsByName := make(map[string]config.Agent)
+
+	for _, agent := range topo.Agents {
+		graph.AddNode(agent.Name)
+		agentsByName[agent.Name] = agent
+
+		// Add edges for agent-to-agent dependencies only (not MCP server dependencies)
+		for _, dep := range agent.Uses {
+			if a2aAgents[dep] {
+				graph.AddEdge(agent.Name, dep)
+			}
+		}
+	}
+
+	// Topological sort
+	sortedNames, err := graph.Sort()
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert sorted names back to agent configs
+	sortedAgents := make([]config.Agent, len(sortedNames))
+	for i, name := range sortedNames {
+		sortedAgents[i] = agentsByName[name]
+	}
+
+	return sortedAgents, nil
 }
