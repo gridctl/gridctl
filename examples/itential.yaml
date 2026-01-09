@@ -1,21 +1,22 @@
 # Itential MCP Server Example (Dev Stack Integration)
 #
 # This topology connects to an Itential Platform running in the
-# itential-dev-stack Docker network. Use this when you have the
+# itential-dev-stack container network. Use this when you have the
 # dev-stack already running and want to connect agents to it.
 #
 # Prerequisites:
-#   - itential-dev-stack running: cd itential-dev-stack && make up
+#   - itential-dev-stack running
 #   - The dev-stack creates a 'devstack' network
 #
 # Usage:
-#   agentlab deploy examples/itential-mcp-devstack.yaml
+#   agentlab deploy examples/itential-dev-stack.yaml
 #
 # Reference:
 #   https://github.com/itential/itential-mcp
+#   https://github.com/itential/itential-dev-stack
 
 version: "1"
-name: itential-mcp-devstack
+name: itential-devstack
 
 # Use the existing devstack network created by itential-dev-stack
 network:
@@ -26,13 +27,18 @@ mcp-servers:
   - name: itential
     image: ghcr.io/itential/itential-mcp:latest
     transport: sse
-    port: 3001
+    port: 8000
     env:
+
       # Platform connection - uses Docker network hostname
       ITENTIAL_MCP_PLATFORM_HOST: platform
       ITENTIAL_MCP_PLATFORM_PORT: "3000"
-      ITENTIAL_MCP_PLATFORM_USER: "${ITENTIAL_PLATFORM_USER:-admin@itential}"
-      ITENTIAL_MCP_PLATFORM_PASSWORD: "${ITENTIAL_PLATFORM_PASSWORD:-admin}"
+      ITENTIAL_MCP_PLATFORM_USER: admin@itential
+      ITENTIAL_MCP_PLATFORM_PASSWORD: admin
       ITENTIAL_MCP_PLATFORM_DISABLE_TLS: "true"
-      # Server settings
-      ITENTIAL_MCP_SERVER_LOG_LEVEL: "${ITENTIAL_LOG_LEVEL:-INFO}"
+
+      # Server settings - HTTP transport for JSON-RPC mode
+      ITENTIAL_MCP_SERVER_TRANSPORT: http
+      ITENTIAL_MCP_SERVER_HOST: "0.0.0.0"
+      ITENTIAL_MCP_SERVER_PORT: "8000"
+      ITENTIAL_MCP_SERVER_LOG_LEVEL: INFO
