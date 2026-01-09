@@ -6,7 +6,7 @@ import type {
   AgentStatus,
   NodeStatus,
 } from '../types';
-import { NODE_TYPES, COLORS } from './constants';
+import { NODE_TYPES, COLORS, TOOL_NAME_DELIMITER } from './constants';
 import { applyDagreLayout, applyDagreLayoutWithPreserved } from './layout';
 
 // Arrow marker for edge endpoints
@@ -241,17 +241,20 @@ export function transformToNodesAndEdges(
 
 /**
  * Parse prefixed tool name into agent and tool names
- * Matches the format from pkg/mcp/router.go: "agent--tool"
+ * Matches the format from pkg/mcp/router.go: "agent::tool"
  */
 export function parsePrefixedToolName(prefixed: string): {
   agentName: string;
   toolName: string;
 } {
-  const parts = prefixed.split('--');
-  if (parts.length !== 2) {
+  const idx = prefixed.indexOf(TOOL_NAME_DELIMITER);
+  if (idx === -1) {
     return { agentName: '', toolName: prefixed };
   }
-  return { agentName: parts[0], toolName: parts[1] };
+  return {
+    agentName: prefixed.slice(0, idx),
+    toolName: prefixed.slice(idx + TOOL_NAME_DELIMITER.length),
+  };
 }
 
 /**
