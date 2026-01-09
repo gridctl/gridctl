@@ -204,20 +204,22 @@ func (a *A2AClientAdapter) waitForTaskCompletion(ctx context.Context, taskID str
 func skillsToTools(skills []a2a.Skill) []mcp.Tool {
 	tools := make([]mcp.Tool, len(skills))
 	for i, skill := range skills {
+		schema := mcp.InputSchemaObject{
+			Type: "object",
+			Properties: map[string]mcp.Property{
+				"message": {
+					Type:        "string",
+					Description: "Natural language message describing what you want the agent to do",
+				},
+			},
+			Required: []string{"message"},
+		}
+		schemaBytes, _ := json.Marshal(schema)
 		tools[i] = mcp.Tool{
 			Name:        skill.ID,
 			Title:       skill.Name,
 			Description: skill.Description,
-			InputSchema: mcp.InputSchema{
-				Type: "object",
-				Properties: map[string]mcp.Property{
-					"message": {
-						Type:        "string",
-						Description: "Natural language message describing what you want the agent to do",
-					},
-				},
-				Required: []string{"message"},
-			},
+			InputSchema: schemaBytes,
 		}
 	}
 	return tools
