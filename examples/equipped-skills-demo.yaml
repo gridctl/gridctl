@@ -1,0 +1,49 @@
+# Equipped Skills Demo
+#
+# Demonstrates the 'equipped_skills' YAML alias for 'uses'.
+# Both field names work identically - use whichever reads better
+# for your use case.
+#
+# Mental model:
+#   - uses: [postgres-db]           -> Infrastructure/resources
+#   - equipped_skills: [helper-bot] -> Capability augmentation
+#
+# Usage:
+#   agentlab deploy examples/equipped-skills-demo.yaml -f
+
+version: "1"
+name: equipped-skills-demo
+
+network:
+  name: equipped-skills-net
+
+mcp-servers:
+  - name: tools-server
+    image: alpine:latest
+    port: 8080
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+agents:
+  # Helper agent that provides utility skills
+  - name: helper-bot
+    image: alpine:latest
+    description: "Utility bot providing helper functions"
+    command: ["sh", "-c", "echo 'Helper bot ready' && while true; do sleep 3600; done"]
+    a2a:
+      skills:
+        - id: format-output
+          name: Format Output
+          description: "Format data into various output formats (JSON, YAML, Markdown)"
+        - id: validate-input
+          name: Validate Input
+          description: "Validate user input against common patterns"
+
+  # Main agent using the 'equipped_skills' alias
+  - name: main-agent
+    image: alpine:latest
+    description: "Main agent with equipped skills from helper-bot"
+    command: ["sh", "-c", "echo 'Main agent ready' && while true; do sleep 3600; done"]
+    uses:
+      - tools-server        # MCP server (infrastructure)
+    equipped_skills:
+      - helper-bot          # Agent as skill (capability)

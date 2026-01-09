@@ -1,0 +1,96 @@
+# Multi-Agent Skills Demo
+#
+# Demonstrates the Unified Tool Abstraction feature where agents can
+# "equip" other agents as skills through the MCP interface.
+#
+# Architecture:
+#   orchestrator-agent
+#       |
+#       +-- uses: [filesystem-server]     (MCP server for file ops)
+#       +-- uses: [research-agent]        (Agent B as a skill)
+#       +-- uses: [code-review-agent]     (Agent C as a skill)
+#
+#   research-agent (A2A enabled)
+#       +-- skills: [web-research, summarize]
+#
+#   code-review-agent (A2A enabled)
+#       +-- skills: [review-code, suggest-improvements]
+#
+# The orchestrator sees these as MCP tools:
+#   - filesystem-server--read_file
+#   - filesystem-server--write_file
+#   - research-agent--web-research
+#   - research-agent--summarize
+#   - code-review-agent--review-code
+#   - code-review-agent--suggest-improvements
+#
+# Usage:
+#   agentlab deploy examples/multi-agent-skills.yaml -f
+#
+# Testing:
+#   curl http://localhost:8080/api/tools | jq '.tools[].name'
+
+version: "1"
+name: multi-agent-skills
+
+network:
+  name: multi-agent-net
+
+mcp-servers:
+  # Traditional MCP server providing file system tools
+  - name: filesystem-server
+    image: alpine:latest
+    port: 8080
+    command: ["sh", "-c", "echo 'Filesystem MCP server placeholder' && while true; do sleep 3600; done"]
+
+agents:
+  # Research Agent - provides research capabilities as A2A skills
+  # This agent will be started FIRST (no agent dependencies)
+  - name: research-agent
+    image: alpine:latest
+    description: "AI research assistant that can search the web and summarize findings"
+    command: ["sh", "-c", "echo 'Research agent started' && while true; do sleep 3600; done"]
+    a2a:
+      enabled: true
+      version: "1.0.0"
+      skills:
+        - id: web-research
+          name: Web Research
+          description: "Search the web for information on a given topic and return relevant findings"
+          tags: ["research", "search", "web"]
+        - id: summarize
+          name: Summarize Content
+          description: "Summarize long-form content into concise bullet points"
+          tags: ["research", "summarization"]
+
+  # Code Review Agent - provides code analysis as A2A skills
+  # This agent will be started SECOND (no agent dependencies)
+  - name: code-review-agent
+    image: alpine:latest
+    description: "Code review assistant that analyzes code quality and suggests improvements"
+    command: ["sh", "-c", "echo 'Code review agent started' && while true; do sleep 3600; done"]
+    a2a:
+      enabled: true
+      version: "1.0.0"
+      skills:
+        - id: review-code
+          name: Review Code
+          description: "Analyze code for bugs, security issues, and style violations"
+          tags: ["code", "review", "quality"]
+        - id: suggest-improvements
+          name: Suggest Improvements
+          description: "Suggest refactoring and optimization opportunities for code"
+          tags: ["code", "refactoring", "optimization"]
+
+  # Orchestrator Agent - uses both MCP servers AND other agents as skills
+  # This agent will be started LAST (depends on research-agent and code-review-agent)
+  - name: orchestrator-agent
+    image: alpine:latest
+    description: "Main orchestrator that coordinates research and code review tasks"
+    command: ["sh", "-c", "echo 'Orchestrator started with MCP_ENDPOINT='$MCP_ENDPOINT && while true; do sleep 3600; done"]
+    uses:
+      - filesystem-server    # Traditional MCP server
+      - research-agent       # Agent as skill (A2A)
+      - code-review-agent    # Agent as skill (A2A)
+    env:
+      ORCHESTRATOR_MODE: "full"

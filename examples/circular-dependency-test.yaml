@@ -1,0 +1,48 @@
+# Circular Dependency Test (INVALID - for testing validation)
+#
+# This topology intentionally has a circular dependency:
+#   agent-a -> agent-b -> agent-c -> agent-a
+#
+# Running this should produce a validation error:
+#   "circular dependency detected: agent-a -> agent-b -> agent-c -> agent-a"
+#
+# Usage:
+#   agentlab deploy examples/circular-dependency-test.yaml -f
+#   # Expected: Validation error about circular dependency
+
+version: "1"
+name: circular-test
+
+network:
+  name: circular-net
+
+agents:
+  - name: agent-a
+    image: alpine:latest
+    command: ["sh", "-c", "sleep infinity"]
+    uses:
+      - agent-b  # Depends on B
+    a2a:
+      skills:
+        - id: skill-a
+          name: Skill A
+
+  - name: agent-b
+    image: alpine:latest
+    command: ["sh", "-c", "sleep infinity"]
+    uses:
+      - agent-c  # Depends on C
+    a2a:
+      skills:
+        - id: skill-b
+          name: Skill B
+
+  - name: agent-c
+    image: alpine:latest
+    command: ["sh", "-c", "sleep infinity"]
+    uses:
+      - agent-a  # Depends on A -> CIRCULAR!
+    a2a:
+      skills:
+        - id: skill-c
+          name: Skill C
