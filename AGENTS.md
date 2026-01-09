@@ -118,7 +118,7 @@ This enables network isolation between agents while still allowing them to commu
 | Agent Phase 4 | Agent cards UI (circular nodes, purple theme) | Complete |
 | A2A Phase 1 | A2A protocol types and client | Complete |
 | A2A Phase 2 | A2A handler and gateway | Complete |
-| A2A Phase 3 | A2A UI (teal nodes, sidebar integration) | Complete |
+| A2A Phase 3 | Unified agent nodes (merged container + A2A status) | Complete |
 
 ## Directory Structure
 
@@ -270,11 +270,9 @@ When `agentlab deploy` runs, it:
 **API Endpoints:**
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/status` | GET | Gateway + agent status |
+| `/api/status` | GET | Gateway + agent status (unified agents with A2A info) |
 | `/api/mcp-servers` | GET | List registered MCP servers |
-| `/api/agents` | GET | List registered agents |
 | `/api/tools` | GET | List aggregated tools |
-| `/api/a2a-agents` | GET | List A2A agents (local + remote) |
 | `/` | GET | Web UI (embedded React app) |
 
 **A2A Protocol Endpoints:**
