@@ -1,0 +1,61 @@
+# Local Process MCP Server Example
+#
+# This topology demonstrates running MCP servers as local processes on the
+# host machine instead of Docker containers. Local process servers communicate
+# via stdio (stdin/stdout) using JSON-RPC.
+#
+# Use cases:
+#   - Development and debugging MCP servers without Docker
+#   - Running MCP servers that need direct host access
+#   - Testing MCP servers written in any language
+#   - Lightweight deployments without container overhead
+#
+# Prerequisites:
+#   Build the mock stdio server first:
+#     cd examples/local-stdio-server
+#     go build -o mock-stdio-server .
+#
+# Usage:
+#   agentlab deploy examples/local-mcp.yaml
+#
+# Note: Local process servers don't use containers. The gateway spawns the
+# process directly and communicates via stdin/stdout JSON-RPC.
+
+version: "1"
+name: local-mcp-demo
+
+network:
+  name: local-mcp-net
+  driver: bridge
+
+mcp-servers:
+
+  # Local process MCP server using stdio transport
+  # The command is executed relative to the topology file directory
+  - name: local-tools
+    command: ["./local-stdio-server/mock-stdio-server"]
+
+  # You can also use full paths or system commands
+  # - name: python-mcp
+  #   command: ["python", "mcp_server.py"]
+  #   env:
+  #     LOG_LEVEL: debug
+
+  # Environment variables are inherited from the parent process
+  # and merged with any specified env vars
+  # - name: node-mcp
+  #   command: ["node", "mcp-server.js"]
+  #   env:
+  #     NODE_ENV: development
+  #     API_KEY: "${API_KEY}"  # Reference host environment
+
+# You can mix local process and container-based servers in the same topology:
+#
+# mcp-servers:
+#   - name: local-tools
+#     command: ["./my-mcp-server"]
+#
+#   - name: container-tools
+#     image: mcp-tools:latest
+#     port: 8080
+#     transport: http
