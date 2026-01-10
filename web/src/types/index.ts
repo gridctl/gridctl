@@ -18,6 +18,8 @@ export interface MCPServerStatus {
   tools: string[];
   external?: boolean; // True for external URL servers
   localProcess?: boolean; // True for local process servers
+  ssh?: boolean; // True for SSH servers
+  sshHost?: string; // SSH hostname
 }
 
 // Resource status for non-MCP containers
@@ -111,6 +113,8 @@ export interface MCPServerNodeData extends NodeDataBase {
   status: NodeStatus;
   external?: boolean; // True for external URL servers
   localProcess?: boolean; // True for local process servers
+  ssh?: boolean; // True for SSH servers
+  sshHost?: string; // SSH hostname
 }
 
 export interface ResourceNodeData extends NodeDataBase {
