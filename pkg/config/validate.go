@@ -86,38 +86,76 @@ func Validate(t *Topology) error {
 			serverNames[server.Name] = true
 		}
 
-		// Must have either image or source, not both
+		// Determine server type
 		hasImage := server.Image != ""
 		hasSource := server.Source != nil
+		hasURL := server.URL != ""
 
-		if !hasImage && !hasSource {
-			errs = append(errs, ValidationError{prefix, "must have either 'image' or 'source'"})
+		// Mutual exclusivity: must have exactly one of image, source, or url
+		count := 0
+		if hasImage {
+			count++
 		}
-		if hasImage && hasSource {
-			errs = append(errs, ValidationError{prefix, "cannot have both 'image' and 'source'"})
+		if hasSource {
+			count++
+		}
+		if hasURL {
+			count++
 		}
 
-		// Source validation
-		if server.Source != nil {
-			errs = append(errs, validateSource(server.Source, prefix+".source")...)
+		if count == 0 {
+			errs = append(errs, ValidationError{prefix, "must have 'image', 'source', or 'url'"})
+		} else if count > 1 {
+			errs = append(errs, ValidationError{prefix, "can only have one of 'image', 'source', or 'url'"})
 		}
 
-		// Port validation (only required for HTTP transport)
-		if server.Transport != "stdio" {
-			if server.Port <= 0 {
-				errs = append(errs, ValidationError{prefix + ".port", "must be a positive integer"})
+		// External server validation (URL-only)
+		if server.IsExternal() {
+			// Transport must be http or sse for external servers
+			if server.Transport == "stdio" {
+				errs = append(errs, ValidationError{prefix + ".transport", "stdio not valid for external URL servers"})
 			}
-			if server.Port > 65535 {
-				errs = append(errs, ValidationError{prefix + ".port", "must be <= 65535"})
+			// Validate transport is known
+			if server.Transport != "" && server.Transport != "http" && server.Transport != "sse" {
+				errs = append(errs, ValidationError{prefix + ".transport", "must be 'http' or 'sse' for external servers"})
 			}
-		}
+			// Port is not required for URL servers (URL includes the endpoint)
+			if server.Port != 0 {
+				errs = append(errs, ValidationError{prefix + ".port", "should not be set for external URL servers (use url instead)"})
+			}
+			// Network is not applicable for external servers
+			if server.Network != "" {
+				errs = append(errs, ValidationError{prefix + ".network", "not applicable for external URL servers"})
+			}
+		} else {
+			// Container-based server validation (existing logic)
+			// Source validation
+			if server.Source != nil {
+				errs = append(errs, validateSource(server.Source, prefix+".source")...)
+			}
 
-		// Network validation (only in advanced mode)
-		if hasNetworks {
-			if server.Network == "" {
-				errs = append(errs, ValidationError{prefix + ".network", "required when 'networks' is defined"})
-			} else if !networkNames[server.Network] {
-				errs = append(errs, ValidationError{prefix + ".network", fmt.Sprintf("network '%s' not found in networks list", server.Network)})
+			// Transport validation
+			if server.Transport != "" && server.Transport != "http" && server.Transport != "sse" && server.Transport != "stdio" {
+				errs = append(errs, ValidationError{prefix + ".transport", "must be 'http', 'sse', or 'stdio'"})
+			}
+
+			// Port validation (only required for HTTP/SSE transport)
+			if server.Transport != "stdio" {
+				if server.Port <= 0 {
+					errs = append(errs, ValidationError{prefix + ".port", "must be a positive integer"})
+				}
+				if server.Port > 65535 {
+					errs = append(errs, ValidationError{prefix + ".port", "must be <= 65535"})
+				}
+			}
+
+			// Network validation (only in advanced mode for container servers)
+			if hasNetworks {
+				if server.Network == "" {
+					errs = append(errs, ValidationError{prefix + ".network", "required when 'networks' is defined"})
+				} else if !networkNames[server.Network] {
+					errs = append(errs, ValidationError{prefix + ".network", fmt.Sprintf("network '%s' not found in networks list", server.Network)})
+				}
 			}
 		}
 		// In simple mode, server.Network is ignored (per design decision)
