@@ -134,7 +134,7 @@ func runDeploy(topologyPath string) error {
 
 	// If foreground mode, run gateway directly
 	if deployForeground {
-		return runGateway(ctx, rt, topo, result, deployPort, true)
+		return runGateway(ctx, rt, topo, topologyPath, result, deployPort, true)
 	}
 
 	// Daemon mode: fork child process
@@ -191,7 +191,7 @@ func runDeployDaemonChild(topologyPath string, topo *config.Topology) error {
 	}
 
 	// Run gateway (blocks until shutdown)
-	return runGateway(ctx, rt, topo, result, deployPort, false)
+	return runGateway(ctx, rt, topo, topologyPath, result, deployPort, false)
 }
 
 // getRunningContainers retrieves info about already-running containers and external servers
@@ -260,11 +260,22 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 		}
 	}
 
+	// Add local process MCP servers from config (they don't have containers)
+	for _, server := range topo.MCPServers {
+		if server.IsLocalProcess() && !foundServers[server.Name] {
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
+				Name:         server.Name,
+				LocalProcess: true,
+				Command:      server.Command,
+			})
+		}
+	}
+
 	return result, nil
 }
 
 // runGateway runs the MCP gateway (blocking)
-func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology, result *runtime.UpResult, port int, verbose bool) error {
+func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology, topologyPath string, result *runtime.UpResult, port int, verbose bool) error {
 	// Create MCP gateway
 	gateway := mcp.NewGateway()
 	gateway.SetDockerClient(rt.DockerClient())
@@ -311,6 +322,15 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 				Transport: transport,
 				Endpoint:  server.URL,
 				External:  true,
+			}
+		} else if server.LocalProcess {
+			// Local process server - use command
+			cfg = mcp.MCPServerConfig{
+				Name:         server.Name,
+				LocalProcess: true,
+				Command:      server.Command,
+				WorkDir:      filepath.Dir(topologyPath), // Use topology directory
+				Env:          serverCfg.Env,
 			}
 		} else if transport == mcp.TransportStdio {
 			// Container stdio
