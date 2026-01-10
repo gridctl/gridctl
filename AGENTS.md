@@ -36,6 +36,7 @@ Agentlab's core value is acting as a **Protocol Bridge** between MCP transports:
 **Southbound (to MCP servers):**
 - **Stdio (Container)**: Uses Docker container attach for stdin/stdout communication
 - **Stdio (Local Process)**: Spawns local process on host, communicates via stdin/stdout
+- **Stdio (SSH)**: Connects to remote host via SSH, communicates via stdin/stdout over the SSH connection
 - **HTTP**: Standard HTTP POST to container's /mcp endpoint
 - **External URL**: Connects to MCP servers running outside Docker
 
@@ -330,6 +331,15 @@ mcp-servers:
     # transport: stdio                # Implicit for local process
     env:
       LOG_LEVEL: debug                # Environment vars merged with host env
+
+  # SSH MCP server (connects to remote host via SSH)
+  - name: remote-tools
+    command: ["/opt/mcp/server"]      # Command to run on remote host
+    ssh:
+      host: "192.168.1.50"            # SSH hostname or IP
+      user: "mcp"                     # SSH username
+      # port: 22                      # Optional, defaults to 22
+      # identityFile: "~/.ssh/id_ed25519"  # Optional, uses SSH agent by default
 
   # Build from source
   - name: custom-server
