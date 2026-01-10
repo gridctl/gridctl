@@ -20,9 +20,9 @@ This document defines the visual language, behavior, and code standards for the 
 *   `bg-surface-highlight` (`#1f1f23`): Hover states, active list items.
 
 ### Brand Colors
-*   **Primary (Amber):** `text-primary` / `bg-primary` (`#f59e0b`). Used for: Gateway, MCP servers, actions, active states, energy flow.
+*   **Primary (Amber):** `text-primary` / `bg-primary` (`#f59e0b`). Used for: Gateway, actions, active states, energy flow.
 *   **Secondary (Teal):** `text-secondary` / `bg-secondary` (`#0d9488`). Used for: Resources, static data, technical elements.
-*   **Tertiary (Purple):** `text-tertiary` / `bg-tertiary` (`#8b5cf6`). Used for: Agents, AI elements, autonomous components.
+*   **Tertiary (Purple/Violet):** `text-tertiary` / `bg-tertiary` (`#8b5cf6`). Used for: Agents, AI elements, autonomous components, MCP servers.
 
 ### Status Indicators
 *   **Running:** `bg-status-running` (`#10b981`) + Glow.
@@ -31,8 +31,7 @@ This document defines the visual language, behavior, and code standards for the 
 *   **Pending:** `bg-status-pending` (`#eab308`) + Pulse.
 
 ### Transport Badges
-*   **HTTP/SSE:** Violet (`bg-violet-500/10 text-violet-400`)
-*   **Stdio:** Primary/Amber (`bg-primary/10 text-primary`)
+*   **All transports (HTTP/SSE/Stdio):** Violet (`bg-violet-500/10 text-violet-400`)
 
 ### Text Hierarchy
 *   `text-text-primary` (`#fafaf9`): Headings, main content.
@@ -95,10 +94,13 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
 
 ### MCP Server Node
 *   **Shape:** Rounded rectangle (`rounded-xl`)
-*   **Color:** Primary (Amber) accents for container-based, Violet accents for external/local process
-*   **Content:** Name, transport type, endpoint, tool count, status
-*   **External Indicator:** Gray bordered badge with Globe icon next to status badge (for external URL servers)
-*   **Local Process Indicator:** Gray bordered badge with Cpu icon next to status badge (for local process servers without containers)
+*   **Color:** Violet accents for all MCP server types (unified theme)
+*   **Content:** Name, transport type, endpoint/container ID, tool count, status
+*   **Type Indicators:** Gray bordered badge next to status badge indicating server type:
+    *   **Container:** Terminal icon + "Container" (for container-based servers)
+    *   **External:** Globe icon + "External" (for external URL servers)
+    *   **Local:** Cpu icon + "Local" (for local process servers)
+    *   **SSH:** KeyRound icon + "SSH" (for SSH servers)
 
 ### Resource Node
 *   **Shape:** Rounded rectangle (`rounded-xl`)
