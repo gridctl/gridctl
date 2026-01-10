@@ -68,6 +68,13 @@ func expandEnvVars(t *Topology) {
 		for k, v := range t.MCPServers[i].BuildArgs {
 			t.MCPServers[i].BuildArgs[k] = os.ExpandEnv(v)
 		}
+
+		// Expand SSH config environment variables
+		if t.MCPServers[i].SSH != nil {
+			t.MCPServers[i].SSH.Host = os.ExpandEnv(t.MCPServers[i].SSH.Host)
+			t.MCPServers[i].SSH.User = os.ExpandEnv(t.MCPServers[i].SSH.User)
+			t.MCPServers[i].SSH.IdentityFile = os.ExpandEnv(t.MCPServers[i].SSH.IdentityFile)
+		}
 	}
 
 	for i := range t.Resources {
@@ -109,6 +116,11 @@ func resolveRelativePaths(t *Topology, basePath string) {
 				t.MCPServers[i].Source.Path = filepath.Join(basePath, t.MCPServers[i].Source.Path)
 			}
 		}
+
+		// Resolve SSH identity file paths
+		if t.MCPServers[i].SSH != nil && t.MCPServers[i].SSH.IdentityFile != "" {
+			t.MCPServers[i].SSH.IdentityFile = expandTildeAndResolvePath(t.MCPServers[i].SSH.IdentityFile, basePath)
+		}
 	}
 
 	for i := range t.Agents {
@@ -118,6 +130,27 @@ func resolveRelativePaths(t *Topology, basePath string) {
 			}
 		}
 	}
+}
+
+// expandTildeAndResolvePath expands ~ to home directory and resolves relative paths.
+func expandTildeAndResolvePath(path, basePath string) string {
+	// Expand ~ to home directory
+	if len(path) > 0 && path[0] == '~' {
+		if home, err := os.UserHomeDir(); err == nil {
+			if len(path) == 1 {
+				path = home
+			} else if path[1] == '/' || path[1] == filepath.Separator {
+				path = filepath.Join(home, path[2:])
+			}
+		}
+	}
+
+	// Resolve relative paths
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(basePath, path)
+	}
+
+	return path
 }
 
 // mergeEquippedSkills merges the equipped_skills YAML alias into uses.
