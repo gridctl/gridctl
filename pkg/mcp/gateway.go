@@ -15,9 +15,13 @@ import (
 type MCPServerConfig struct {
 	Name        string
 	Transport   Transport
-	Endpoint    string // For HTTP/SSE transport
-	ContainerID string // For Stdio transport
-	External    bool   // True for external URL servers (no container)
+	Endpoint    string            // For HTTP/SSE transport
+	ContainerID string            // For Docker Stdio transport
+	External    bool              // True for external URL servers (no container)
+	LocalProcess bool             // True for local process servers (no container)
+	Command     []string          // For local process transport
+	WorkDir     string            // For local process transport
+	Env         map[string]string // For local process transport
 }
 
 // Gateway aggregates multiple MCP servers into a single endpoint.
@@ -82,33 +86,42 @@ func (g *Gateway) ServerInfo() ServerInfo {
 func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) error {
 	var agentClient AgentClient
 
-	switch cfg.Transport {
-	case TransportStdio:
-		if g.dockerCli == nil {
-			return fmt.Errorf("Docker client not set for stdio transport")
+	// Handle local process servers separately (they use stdio but not Docker)
+	if cfg.LocalProcess {
+		processClient := NewProcessClient(cfg.Name, cfg.Command, cfg.WorkDir, cfg.Env)
+		if err := processClient.Connect(ctx); err != nil {
+			return fmt.Errorf("starting process %s: %w", cfg.Name, err)
 		}
-		stdioClient := NewStdioClient(cfg.Name, cfg.ContainerID, g.dockerCli)
-		if err := stdioClient.Connect(ctx); err != nil {
-			return fmt.Errorf("connecting to container: %w", err)
+		agentClient = processClient
+	} else {
+		switch cfg.Transport {
+		case TransportStdio:
+			if g.dockerCli == nil {
+				return fmt.Errorf("Docker client not set for stdio transport")
+			}
+			stdioClient := NewStdioClient(cfg.Name, cfg.ContainerID, g.dockerCli)
+			if err := stdioClient.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting to container: %w", err)
+			}
+			agentClient = stdioClient
+		case TransportSSE:
+			// SSE transport - uses same HTTP client which handles text/event-stream responses
+			httpClient := NewClient(cfg.Name, cfg.Endpoint)
+			// Wait for MCP server to be ready with retries
+			if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
+				return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
+			}
+			agentClient = httpClient
+		case TransportHTTP, "": // Default to HTTP
+			httpClient := NewClient(cfg.Name, cfg.Endpoint)
+			// Wait for MCP server to be ready with retries
+			if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
+				return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
+			}
+			agentClient = httpClient
+		default:
+			return fmt.Errorf("unknown transport: %s", cfg.Transport)
 		}
-		agentClient = stdioClient
-	case TransportSSE:
-		// SSE transport - uses same HTTP client which handles text/event-stream responses
-		httpClient := NewClient(cfg.Name, cfg.Endpoint)
-		// Wait for MCP server to be ready with retries
-		if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
-			return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
-		}
-		agentClient = httpClient
-	case TransportHTTP, "": // Default to HTTP
-		httpClient := NewClient(cfg.Name, cfg.Endpoint)
-		// Wait for MCP server to be ready with retries
-		if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
-			return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
-		}
-		agentClient = httpClient
-	default:
-		return fmt.Errorf("unknown transport: %s", cfg.Transport)
 	}
 
 	// Initialize MCP connection
@@ -310,14 +323,15 @@ func (g *Gateway) RefreshAllTools(ctx context.Context) error {
 
 // MCPServerStatus returns status information about registered MCP servers.
 type MCPServerStatus struct {
-	Name        string    `json:"name"`
-	Transport   Transport `json:"transport"`
-	Endpoint    string    `json:"endpoint,omitempty"`
-	ContainerID string    `json:"containerId,omitempty"`
-	Initialized bool      `json:"initialized"`
-	ToolCount   int       `json:"toolCount"`
-	Tools       []string  `json:"tools"`
-	External    bool      `json:"external"` // True for external URL servers
+	Name         string    `json:"name"`
+	Transport    Transport `json:"transport"`
+	Endpoint     string    `json:"endpoint,omitempty"`
+	ContainerID  string    `json:"containerId,omitempty"`
+	Initialized  bool      `json:"initialized"`
+	ToolCount    int       `json:"toolCount"`
+	Tools        []string  `json:"tools"`
+	External     bool      `json:"external"`     // True for external URL servers
+	LocalProcess bool      `json:"localProcess"` // True for local process servers
 }
 
 // Status returns status of all registered MCP servers.
@@ -346,14 +360,15 @@ func (g *Gateway) Status() []MCPServerStatus {
 		}
 
 		statuses = append(statuses, MCPServerStatus{
-			Name:        client.Name(),
-			Transport:   meta.Transport,
-			Endpoint:    meta.Endpoint,
-			ContainerID: meta.ContainerID,
-			Initialized: client.IsInitialized(),
-			ToolCount:   len(tools),
-			Tools:       toolNames,
-			External:    meta.External,
+			Name:         client.Name(),
+			Transport:    meta.Transport,
+			Endpoint:     meta.Endpoint,
+			ContainerID:  meta.ContainerID,
+			Initialized:  client.IsInitialized(),
+			ToolCount:    len(tools),
+			Tools:        toolNames,
+			External:     meta.External,
+			LocalProcess: meta.LocalProcess,
 		})
 	}
 
