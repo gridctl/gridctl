@@ -96,6 +96,7 @@ export function transformToNodesAndEdges(
         tools: server.tools,
         status: getMCPServerStatus(server),
         external: server.external,
+        localProcess: server.localProcess,
       },
       draggable: true,
     };

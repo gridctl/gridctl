@@ -90,8 +90,9 @@ func Validate(t *Topology) error {
 		hasImage := server.Image != ""
 		hasSource := server.Source != nil
 		hasURL := server.URL != ""
+		hasCommand := len(server.Command) > 0 && !hasImage && !hasSource && !hasURL // command-only = local process
 
-		// Mutual exclusivity: must have exactly one of image, source, or url
+		// Mutual exclusivity: must have exactly one of image, source, url, or command (local process)
 		count := 0
 		if hasImage {
 			count++
@@ -102,11 +103,14 @@ func Validate(t *Topology) error {
 		if hasURL {
 			count++
 		}
+		if hasCommand {
+			count++
+		}
 
 		if count == 0 {
-			errs = append(errs, ValidationError{prefix, "must have 'image', 'source', or 'url'"})
+			errs = append(errs, ValidationError{prefix, "must have 'image', 'source', 'url', or 'command'"})
 		} else if count > 1 {
-			errs = append(errs, ValidationError{prefix, "can only have one of 'image', 'source', or 'url'"})
+			errs = append(errs, ValidationError{prefix, "can only have one of 'image', 'source', 'url', or 'command'"})
 		}
 
 		// External server validation (URL-only)
@@ -126,6 +130,20 @@ func Validate(t *Topology) error {
 			// Network is not applicable for external servers
 			if server.Network != "" {
 				errs = append(errs, ValidationError{prefix + ".network", "not applicable for external URL servers"})
+			}
+		} else if server.IsLocalProcess() {
+			// Local process server validation (command-only)
+			// Transport must be stdio for local process servers
+			if server.Transport != "" && server.Transport != "stdio" {
+				errs = append(errs, ValidationError{prefix + ".transport", "must be 'stdio' for local process servers"})
+			}
+			// Port is not applicable for local process servers (they use stdio)
+			if server.Port != 0 {
+				errs = append(errs, ValidationError{prefix + ".port", "should not be set for local process servers (use stdio transport)"})
+			}
+			// Network is not applicable for local process servers
+			if server.Network != "" {
+				errs = append(errs, ValidationError{prefix + ".network", "not applicable for local process servers"})
 			}
 		} else {
 			// Container-based server validation (existing logic)

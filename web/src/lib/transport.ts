@@ -62,3 +62,4 @@ export const EXTERNAL_STYLES = {
   // Badge styling
   badge: 'bg-violet-500/20 border border-violet-500/40 text-violet-400',
 } as const;
+

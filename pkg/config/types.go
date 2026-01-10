@@ -37,6 +37,11 @@ func (s *MCPServer) IsExternal() bool {
 	return s.URL != "" && s.Image == "" && s.Source == nil
 }
 
+// IsLocalProcess returns true if this is a local process MCP server (command-only, no container).
+func (s *MCPServer) IsLocalProcess() bool {
+	return len(s.Command) > 0 && s.Image == "" && s.Source == nil && s.URL == ""
+}
+
 // Source defines how to build an MCP server from source code.
 type Source struct {
 	Type       string `yaml:"type"` // "git" or "local"

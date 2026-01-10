@@ -21,12 +21,14 @@ type Runtime struct {
 // MCPServerInfo contains runtime information about a started MCP server.
 type MCPServerInfo struct {
 	Name          string
-	ContainerID   string // Empty for external servers
-	ContainerName string // Empty for external servers
-	ContainerPort int    // 0 for external servers
-	HostPort      int    // 0 for external servers
+	ContainerID   string // Empty for external/local process servers
+	ContainerName string // Empty for external/local process servers
+	ContainerPort int    // 0 for external/local process servers
+	HostPort      int    // 0 for external/local process servers
 	External      bool   // True if external server (no container)
+	LocalProcess  bool   // True if local process server (no container)
 	URL           string // Full URL for external servers
+	Command       []string // Command for local process servers
 }
 
 // AgentInfo contains runtime information about a started agent.
@@ -131,6 +133,17 @@ func (r *Runtime) Up(ctx context.Context, topo *config.Topology, opts UpOptions)
 				Name:     server.Name,
 				External: true,
 				URL:      server.URL,
+			})
+			continue
+		}
+
+		// Skip container creation for local process servers
+		if server.IsLocalProcess() {
+			r.logger.Info("registering local process MCP server", "name", server.Name, "command", server.Command)
+			result.MCPServers = append(result.MCPServers, MCPServerInfo{
+				Name:         server.Name,
+				LocalProcess: true,
+				Command:      server.Command,
 			})
 			continue
 		}

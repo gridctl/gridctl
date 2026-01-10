@@ -17,6 +17,7 @@ export interface MCPServerStatus {
   toolCount: number;
   tools: string[];
   external?: boolean; // True for external URL servers
+  localProcess?: boolean; // True for local process servers
 }
 
 // Resource status for non-MCP containers
@@ -109,6 +110,7 @@ export interface MCPServerNodeData extends NodeDataBase {
   tools: string[];
   status: NodeStatus;
   external?: boolean; // True for external URL servers
+  localProcess?: boolean; // True for local process servers
 }
 
 export interface ResourceNodeData extends NodeDataBase {
