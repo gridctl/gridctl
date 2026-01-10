@@ -23,15 +23,9 @@ export function getTransportIcon(transport: Transport | null): LucideIcon {
  * Get the Tailwind CSS classes for transport badge styling.
  * Returns an object with background and text color classes.
  */
-export function getTransportColorClasses(transport: Transport | null): string {
-  switch (transport) {
-    case 'stdio':
-      return 'bg-primary/10 text-primary';
-    case 'sse':
-    case 'http':
-    default:
-      return 'bg-violet-500/10 text-violet-400';
-  }
+export function getTransportColorClasses(_transport: Transport | null): string {
+  // All MCP servers use violet theme for transport badges
+  return 'bg-violet-500/10 text-violet-400';
 }
 
 /**
