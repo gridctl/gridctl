@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Terminal, Box, Bot, ChevronDown, ChevronRight, Wrench, FileText, Sparkles, Globe, Server, Zap } from 'lucide-react';
+import { X, Terminal, Box, Bot, ChevronDown, ChevronRight, Wrench, FileText, Sparkles, Globe, Server, Zap, Cpu } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
@@ -24,21 +24,23 @@ export function Sidebar() {
   const isAgent = selectedData.type === 'agent';
   const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData;
 
-  // For MCP servers, determine if external
+  // For MCP servers, determine if external or local process
   const serverData = isServer ? (data as MCPServerNodeData) : null;
   const isExternal = serverData?.external ?? false;
+  const isLocalProcess = serverData?.localProcess ?? false;
+  const isNonContainer = isExternal || isLocalProcess;
 
   // For agents, determine variant and A2A capability
   const agentData = isAgent ? (data as AgentNodeData) : null;
   const isRemote = agentData?.variant === 'remote';
   const hasA2A = agentData?.hasA2A ?? false;
 
-  // Icon logic: Globe for external MCP servers, Terminal for container-based
-  const Icon = isServer ? (isExternal ? Globe : Terminal) : isAgent ? Bot : Box;
+  // Icon logic: Globe for external, Cpu for local process, Terminal for container-based
+  const Icon = isServer ? (isExternal ? Globe : isLocalProcess ? Cpu : Terminal) : isAgent ? Bot : Box;
 
-  // Color logic: violet for external, primary for container MCP, purple for local agents, teal for remote
+  // Color logic: violet for external/local process, primary for container MCP, purple for local agents, teal for remote
   const colorClass = isServer
-    ? (isExternal ? 'external' : 'primary')
+    ? (isNonContainer ? 'external' : 'primary')
     : isAgent
       ? (isRemote ? 'secondary' : 'tertiary')
       : 'secondary';
@@ -109,6 +111,12 @@ export function Sidebar() {
                 <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-violet-500/10 text-violet-400 flex items-center gap-0.5">
                   <Globe size={8} />
                   External
+                </span>
+              )}
+              {isServer && isLocalProcess && (
+                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
+                  <Cpu size={8} />
+                  Local
                 </span>
               )}
               {isAgent && (
