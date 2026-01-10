@@ -1,5 +1,5 @@
 // Transport type matching backend pkg/mcp/types.go
-export type Transport = 'http' | 'stdio';
+export type Transport = 'http' | 'stdio' | 'sse';
 
 // Server info matching api.ServerInfo
 export interface ServerInfo {
@@ -16,6 +16,7 @@ export interface MCPServerStatus {
   initialized: boolean;
   toolCount: number;
   tools: string[];
+  external?: boolean; // True for external URL servers
 }
 
 // Resource status for non-MCP containers
@@ -107,6 +108,7 @@ export interface MCPServerNodeData extends NodeDataBase {
   toolCount: number;
   tools: string[];
   status: NodeStatus;
+  external?: boolean; // True for external URL servers
 }
 
 export interface ResourceNodeData extends NodeDataBase {

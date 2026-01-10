@@ -194,7 +194,7 @@ func runDeployDaemonChild(topologyPath string, topo *config.Topology) error {
 	return runGateway(ctx, rt, topo, result, deployPort, false)
 }
 
-// getRunningContainers retrieves info about already-running containers
+// getRunningContainers retrieves info about already-running containers and external servers
 func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config.Topology) (*runtime.UpResult, error) {
 	// Get container statuses
 	statuses, err := rt.Status(ctx, topo.Name)
@@ -204,6 +204,10 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 
 	// Build result from statuses
 	result := &runtime.UpResult{}
+
+	// Track which container-based MCP servers we found
+	foundServers := make(map[string]bool)
+
 	for _, status := range statuses {
 		if status.Type == "mcp-server" {
 			// Find the MCP server config to get port info
@@ -225,6 +229,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 				ContainerPort: containerPort,
 				HostPort:      hostPort,
 			})
+			foundServers[status.MCPServerName] = true
 		} else if status.Type == "agent" {
 			// Find the agent config to get uses info
 			var uses []string
@@ -240,6 +245,17 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 				ContainerID:   status.ID,
 				ContainerName: status.Name,
 				Uses:          uses,
+			})
+		}
+	}
+
+	// Add external MCP servers from config (they don't have containers)
+	for _, server := range topo.MCPServers {
+		if server.IsExternal() && !foundServers[server.Name] {
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
+				Name:     server.Name,
+				External: true,
+				URL:      server.URL,
 			})
 		}
 	}
@@ -275,19 +291,36 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 	}
 	for _, server := range result.MCPServers {
 		serverCfg := serverConfigs[server.Name]
-		transport := mcp.TransportHTTP // default
-		if serverCfg.Transport == "stdio" {
+
+		// Determine transport type
+		var transport mcp.Transport
+		switch serverCfg.Transport {
+		case "sse":
+			transport = mcp.TransportSSE
+		case "stdio":
 			transport = mcp.TransportStdio
+		default:
+			transport = mcp.TransportHTTP
 		}
 
 		var cfg mcp.MCPServerConfig
-		if transport == mcp.TransportStdio {
+		if server.External {
+			// External server - use URL directly
+			cfg = mcp.MCPServerConfig{
+				Name:      server.Name,
+				Transport: transport,
+				Endpoint:  server.URL,
+				External:  true,
+			}
+		} else if transport == mcp.TransportStdio {
+			// Container stdio
 			cfg = mcp.MCPServerConfig{
 				Name:        server.Name,
 				Transport:   transport,
 				ContainerID: server.ContainerID,
 			}
 		} else {
+			// Container HTTP/SSE
 			cfg = mcp.MCPServerConfig{
 				Name:      server.Name,
 				Transport: transport,

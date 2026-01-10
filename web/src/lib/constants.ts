@@ -58,9 +58,15 @@ export const COLORS = {
   statusError: '#f43f5e',
   statusPending: '#eab308',
 
-  // Transport indicators (matching primary/secondary)
+  // Transport indicators (matching primary/secondary/tertiary)
   transportHttp: '#0d9488',  // Teal for network
   transportStdio: '#f59e0b', // Amber for local
+  transportSse: '#8b5cf6',   // Violet for SSE
+
+  // External server styling (violet theme)
+  external: '#8b5cf6',
+  externalLight: '#a78bfa',
+  externalGlow: 'rgba(139, 92, 246, 0.15)',
 
   // Text hierarchy - Warm whites
   textPrimary: '#fafaf9',

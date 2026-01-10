@@ -21,10 +21,12 @@ type Runtime struct {
 // MCPServerInfo contains runtime information about a started MCP server.
 type MCPServerInfo struct {
 	Name          string
-	ContainerID   string
-	ContainerName string
-	ContainerPort int
-	HostPort      int
+	ContainerID   string // Empty for external servers
+	ContainerName string // Empty for external servers
+	ContainerPort int    // 0 for external servers
+	HostPort      int    // 0 for external servers
+	External      bool   // True if external server (no container)
+	URL           string // Full URL for external servers
 }
 
 // AgentInfo contains runtime information about a started agent.
@@ -120,8 +122,21 @@ func (r *Runtime) Up(ctx context.Context, topo *config.Topology, opts UpOptions)
 
 	// Start MCP servers and collect info
 	result := &UpResult{}
-	for i, server := range topo.MCPServers {
-		hostPort := opts.BasePort + i
+	containerIndex := 0 // Track container-based servers for port allocation
+	for _, server := range topo.MCPServers {
+		// Skip container creation for external servers
+		if server.IsExternal() {
+			r.logger.Info("registering external MCP server", "name", server.Name, "url", server.URL)
+			result.MCPServers = append(result.MCPServers, MCPServerInfo{
+				Name:     server.Name,
+				External: true,
+				URL:      server.URL,
+			})
+			continue
+		}
+
+		hostPort := opts.BasePort + containerIndex
+		containerIndex++
 		info, err := r.startMCPServer(ctx, topo, &server, opts, hostPort)
 		if err != nil {
 			return nil, fmt.Errorf("starting MCP server %s: %w", server.Name, err)

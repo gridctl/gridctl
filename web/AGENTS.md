@@ -30,6 +30,10 @@ This document defines the visual language, behavior, and code standards for the 
 *   **Error:** `bg-status-error` (`#f43f5e`) + Blink animation.
 *   **Pending:** `bg-status-pending` (`#eab308`) + Pulse.
 
+### Transport Badges
+*   **HTTP/SSE:** Violet (`bg-violet-500/10 text-violet-400`)
+*   **Stdio:** Primary/Amber (`bg-primary/10 text-primary`)
+
 ### Text Hierarchy
 *   `text-text-primary` (`#fafaf9`): Headings, main content.
 *   `text-text-secondary` (`#a8a29e`): UI labels, descriptions.
@@ -91,8 +95,9 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
 
 ### MCP Server Node
 *   **Shape:** Rounded rectangle (`rounded-xl`)
-*   **Color:** Primary (Amber) accents
+*   **Color:** Primary (Amber) accents for container-based, Violet accents for external
 *   **Content:** Name, transport type, endpoint, tool count, status
+*   **External Indicator:** Gray bordered badge with Globe icon next to status badge (for external servers without containers)
 
 ### Resource Node
 *   **Shape:** Rounded rectangle (`rounded-xl`)

@@ -316,6 +316,11 @@ mcp-servers:
     transport: stdio                  # Uses Docker attach for stdin/stdout
     # port not required for stdio transport
 
+  # External MCP server (no container, connects to existing URL)
+  - name: external-api
+    url: https://api.example.com/mcp  # External URL (no image/source)
+    transport: http                   # "http" or "sse"
+
   # Build from source
   - name: custom-server
     source:
