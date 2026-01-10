@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -13,15 +14,20 @@ import (
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
 type MCPServerConfig struct {
-	Name        string
-	Transport   Transport
-	Endpoint    string            // For HTTP/SSE transport
-	ContainerID string            // For Docker Stdio transport
-	External    bool              // True for external URL servers (no container)
-	LocalProcess bool             // True for local process servers (no container)
-	Command     []string          // For local process transport
-	WorkDir     string            // For local process transport
-	Env         map[string]string // For local process transport
+	Name         string
+	Transport    Transport
+	Endpoint     string            // For HTTP/SSE transport
+	ContainerID  string            // For Docker Stdio transport
+	External     bool              // True for external URL servers (no container)
+	LocalProcess bool              // True for local process servers (no container)
+	SSH          bool              // True for SSH servers (remote process over SSH)
+	Command      []string          // For local process or SSH transport
+	WorkDir      string            // For local process transport
+	Env          map[string]string // For local process or SSH transport
+	SSHHost      string            // SSH hostname (for SSH servers)
+	SSHUser      string            // SSH username (for SSH servers)
+	SSHPort      int               // SSH port (for SSH servers, 0 = default 22)
+	SSHIdentityFile string         // SSH identity file path (for SSH servers)
 }
 
 // Gateway aggregates multiple MCP servers into a single endpoint.
@@ -86,8 +92,16 @@ func (g *Gateway) ServerInfo() ServerInfo {
 func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) error {
 	var agentClient AgentClient
 
-	// Handle local process servers separately (they use stdio but not Docker)
-	if cfg.LocalProcess {
+	// Handle SSH servers (they use stdio over SSH)
+	if cfg.SSH {
+		sshCommand := buildSSHCommand(cfg)
+		processClient := NewProcessClient(cfg.Name, sshCommand, cfg.WorkDir, cfg.Env)
+		if err := processClient.Connect(ctx); err != nil {
+			return fmt.Errorf("starting SSH process %s: %w", cfg.Name, err)
+		}
+		agentClient = processClient
+	} else if cfg.LocalProcess {
+		// Handle local process servers (they use stdio but not Docker)
 		processClient := NewProcessClient(cfg.Name, cfg.Command, cfg.WorkDir, cfg.Env)
 		if err := processClient.Connect(ctx); err != nil {
 			return fmt.Errorf("starting process %s: %w", cfg.Name, err)
@@ -332,6 +346,31 @@ type MCPServerStatus struct {
 	Tools        []string  `json:"tools"`
 	External     bool      `json:"external"`     // True for external URL servers
 	LocalProcess bool      `json:"localProcess"` // True for local process servers
+	SSH          bool      `json:"ssh"`          // True for SSH servers
+	SSHHost      string    `json:"sshHost,omitempty"` // SSH hostname
+}
+
+// buildSSHCommand constructs the ssh command with all options.
+func buildSSHCommand(cfg MCPServerConfig) []string {
+	args := []string{"ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"}
+
+	// Add identity file if specified
+	if cfg.SSHIdentityFile != "" {
+		args = append(args, "-i", cfg.SSHIdentityFile)
+	}
+
+	// Add port if non-default
+	if cfg.SSHPort > 0 && cfg.SSHPort != 22 {
+		args = append(args, "-p", strconv.Itoa(cfg.SSHPort))
+	}
+
+	// Add user@host
+	args = append(args, cfg.SSHUser+"@"+cfg.SSHHost)
+
+	// Add the remote command (as a single argument to be executed remotely)
+	args = append(args, cfg.Command...)
+
+	return args
 }
 
 // Status returns status of all registered MCP servers.
@@ -369,6 +408,8 @@ func (g *Gateway) Status() []MCPServerStatus {
 			Tools:        toolNames,
 			External:     meta.External,
 			LocalProcess: meta.LocalProcess,
+			SSH:          meta.SSH,
+			SSHHost:      meta.SSHHost,
 		})
 	}
 
