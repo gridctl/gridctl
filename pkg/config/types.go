@@ -18,17 +18,23 @@ type Network struct {
 	Driver string `yaml:"driver"`
 }
 
-// MCPServer defines an MCP server container.
+// MCPServer defines an MCP server (container-based or external).
 type MCPServer struct {
 	Name      string            `yaml:"name"`
 	Image     string            `yaml:"image,omitempty"`
 	Source    *Source           `yaml:"source,omitempty"`
-	Port      int               `yaml:"port,omitempty"`      // For HTTP transport
-	Transport string            `yaml:"transport,omitempty"` // "http" (default) or "stdio"
+	URL       string            `yaml:"url,omitempty"`       // External server URL (no container)
+	Port      int               `yaml:"port,omitempty"`      // For HTTP transport (container-based)
+	Transport string            `yaml:"transport,omitempty"` // "http" (default), "stdio", or "sse"
 	Command   []string          `yaml:"command,omitempty"`   // Override container command
 	Env       map[string]string `yaml:"env,omitempty"`
 	BuildArgs map[string]string `yaml:"build_args,omitempty"`
 	Network   string            `yaml:"network,omitempty"`   // Network to join (for multi-network mode)
+}
+
+// IsExternal returns true if this is an external MCP server (URL-only, no container).
+func (s *MCPServer) IsExternal() bool {
+	return s.URL != "" && s.Image == "" && s.Source == nil
 }
 
 // Source defines how to build an MCP server from source code.
