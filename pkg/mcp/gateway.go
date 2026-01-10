@@ -15,8 +15,9 @@ import (
 type MCPServerConfig struct {
 	Name        string
 	Transport   Transport
-	Endpoint    string // For HTTP transport
+	Endpoint    string // For HTTP/SSE transport
 	ContainerID string // For Stdio transport
+	External    bool   // True for external URL servers (no container)
 }
 
 // Gateway aggregates multiple MCP servers into a single endpoint.
@@ -91,6 +92,14 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 			return fmt.Errorf("connecting to container: %w", err)
 		}
 		agentClient = stdioClient
+	case TransportSSE:
+		// SSE transport - uses same HTTP client which handles text/event-stream responses
+		httpClient := NewClient(cfg.Name, cfg.Endpoint)
+		// Wait for MCP server to be ready with retries
+		if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
+			return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
+		}
+		agentClient = httpClient
 	case TransportHTTP, "": // Default to HTTP
 		httpClient := NewClient(cfg.Name, cfg.Endpoint)
 		// Wait for MCP server to be ready with retries
@@ -308,6 +317,7 @@ type MCPServerStatus struct {
 	Initialized bool      `json:"initialized"`
 	ToolCount   int       `json:"toolCount"`
 	Tools       []string  `json:"tools"`
+	External    bool      `json:"external"` // True for external URL servers
 }
 
 // Status returns status of all registered MCP servers.
@@ -343,6 +353,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 			Initialized: client.IsInitialized(),
 			ToolCount:   len(tools),
 			Tools:       toolNames,
+			External:    meta.External,
 		})
 	}
 
