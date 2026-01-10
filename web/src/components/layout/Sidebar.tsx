@@ -4,6 +4,7 @@ import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
 import { ControlBar } from '../ui/ControlBar';
+import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useTopologyStore, useSelectedNodeData } from '../../stores/useTopologyStore';
 import { useUIStore } from '../../stores/useUIStore';
 import type { MCPServerNodeData, ResourceNodeData, AgentNodeData } from '../../types';
@@ -23,16 +24,21 @@ export function Sidebar() {
   const isAgent = selectedData.type === 'agent';
   const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData;
 
+  // For MCP servers, determine if external
+  const serverData = isServer ? (data as MCPServerNodeData) : null;
+  const isExternal = serverData?.external ?? false;
+
   // For agents, determine variant and A2A capability
   const agentData = isAgent ? (data as AgentNodeData) : null;
   const isRemote = agentData?.variant === 'remote';
   const hasA2A = agentData?.hasA2A ?? false;
 
-  const Icon = isServer ? Terminal : isAgent ? Bot : Box;
+  // Icon logic: Globe for external MCP servers, Terminal for container-based
+  const Icon = isServer ? (isExternal ? Globe : Terminal) : isAgent ? Bot : Box;
 
-  // Color logic: purple for local agents, teal for remote or A2A-enabled
+  // Color logic: violet for external, primary for container MCP, purple for local agents, teal for remote
   const colorClass = isServer
-    ? 'primary'
+    ? (isExternal ? 'external' : 'primary')
     : isAgent
       ? (isRemote ? 'secondary' : 'tertiary')
       : 'secondary';
@@ -61,7 +67,8 @@ export function Sidebar() {
         'absolute top-0 left-0 bottom-0 w-px',
         colorClass === 'primary' && 'bg-gradient-to-b from-primary/40 via-primary/20 to-transparent',
         colorClass === 'tertiary' && 'bg-gradient-to-b from-tertiary/40 via-tertiary/20 to-transparent',
-        colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
+        colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent',
+        colorClass === 'external' && 'bg-gradient-to-b from-violet-500/40 via-violet-500/20 to-transparent'
       )} />
 
       {/* Header */}
@@ -71,14 +78,16 @@ export function Sidebar() {
             'p-2 rounded-xl flex-shrink-0 border relative',
             colorClass === 'primary' && 'bg-primary/10 border-primary/20',
             colorClass === 'tertiary' && 'bg-tertiary/10 border-tertiary/20',
-            colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
+            colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20',
+            colorClass === 'external' && 'bg-violet-500/10 border-violet-500/20'
           )}>
             <Icon
               size={16}
               className={cn(
                 colorClass === 'primary' && 'text-primary',
                 colorClass === 'tertiary' && 'text-tertiary',
-                colorClass === 'secondary' && 'text-secondary'
+                colorClass === 'secondary' && 'text-secondary',
+                colorClass === 'external' && 'text-violet-400'
               )}
             />
             {/* A2A indicator on icon */}
@@ -96,6 +105,12 @@ export function Sidebar() {
               <p className="text-[10px] text-text-muted uppercase tracking-wider">
                 {isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
               </p>
+              {isServer && isExternal && (
+                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-violet-500/10 text-violet-400 flex items-center gap-0.5">
+                  <Globe size={8} />
+                  External
+                </span>
+              )}
               {isAgent && (
                 <span className={cn(
                   'text-[9px] px-1 py-0.5 rounded font-medium uppercase flex items-center gap-0.5',
@@ -134,19 +149,22 @@ export function Sidebar() {
               </Badge>
             </div>
 
-            {isServer && (data as MCPServerNodeData).transport && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-text-muted">Transport</span>
-                <span className={cn(
-                  'text-xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider',
-                  (data as MCPServerNodeData).transport === 'stdio'
-                    ? 'bg-primary/10 text-primary'
-                    : 'bg-secondary/10 text-secondary'
-                )}>
-                  {(data as MCPServerNodeData).transport}
-                </span>
-              </div>
-            )}
+            {isServer && (data as MCPServerNodeData).transport && (() => {
+              const transport = (data as MCPServerNodeData).transport;
+              const TransportIcon = getTransportIcon(transport);
+              return (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-text-muted">Transport</span>
+                  <span className={cn(
+                    'text-xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider flex items-center gap-1',
+                    getTransportColorClasses(transport)
+                  )}>
+                    <TransportIcon size={10} />
+                    {transport}
+                  </span>
+                </div>
+              );
+            })()}
 
             {isServer && (data as MCPServerNodeData).endpoint && (
               <div className="flex justify-between items-center gap-4">
