@@ -95,9 +95,10 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
 
 ### MCP Server Node
 *   **Shape:** Rounded rectangle (`rounded-xl`)
-*   **Color:** Primary (Amber) accents for container-based, Violet accents for external
+*   **Color:** Primary (Amber) accents for container-based, Violet accents for external/local process
 *   **Content:** Name, transport type, endpoint, tool count, status
-*   **External Indicator:** Gray bordered badge with Globe icon next to status badge (for external servers without containers)
+*   **External Indicator:** Gray bordered badge with Globe icon next to status badge (for external URL servers)
+*   **Local Process Indicator:** Gray bordered badge with Cpu icon next to status badge (for local process servers without containers)
 
 ### Resource Node
 *   **Shape:** Rounded rectangle (`rounded-xl`)

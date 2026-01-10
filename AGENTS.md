@@ -33,9 +33,11 @@ Agentlab's core value is acting as a **Protocol Bridge** between MCP transports:
               └─────────────┘   └─────────────┘
 ```
 
-**Southbound (to containers):**
-- **Stdio**: Uses Docker container attach for stdin/stdout communication
+**Southbound (to MCP servers):**
+- **Stdio (Container)**: Uses Docker container attach for stdin/stdout communication
+- **Stdio (Local Process)**: Spawns local process on host, communicates via stdin/stdout
 - **HTTP**: Standard HTTP POST to container's /mcp endpoint
+- **External URL**: Connects to MCP servers running outside Docker
 
 **Northbound (to clients):**
 - **SSE**: Server-Sent Events for persistent connections (Claude Desktop)
@@ -160,6 +162,7 @@ agentlab/
 │   │   ├── types.go      # JSON-RPC, MCP types, AgentClient interface
 │   │   ├── client.go     # HTTP transport client
 │   │   ├── stdio.go      # Stdio transport client (Docker attach)
+│   │   ├── process.go    # Local process transport client (host process)
 │   │   ├── sse.go        # SSE server (northbound)
 │   │   ├── session.go    # Session management
 │   │   ├── router.go     # Tool routing
@@ -320,6 +323,13 @@ mcp-servers:
   - name: external-api
     url: https://api.example.com/mcp  # External URL (no image/source)
     transport: http                   # "http" or "sse"
+
+  # Local process MCP server (no container, runs on host)
+  - name: local-tools
+    command: ["./my-mcp-server"]      # Command to run (relative to topology dir)
+    # transport: stdio                # Implicit for local process
+    env:
+      LOG_LEVEL: debug                # Environment vars merged with host env
 
   # Build from source
   - name: custom-server
