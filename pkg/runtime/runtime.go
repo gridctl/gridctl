@@ -21,14 +21,19 @@ type Runtime struct {
 // MCPServerInfo contains runtime information about a started MCP server.
 type MCPServerInfo struct {
 	Name          string
-	ContainerID   string // Empty for external/local process servers
-	ContainerName string // Empty for external/local process servers
-	ContainerPort int    // 0 for external/local process servers
-	HostPort      int    // 0 for external/local process servers
-	External      bool   // True if external server (no container)
-	LocalProcess  bool   // True if local process server (no container)
-	URL           string // Full URL for external servers
-	Command       []string // Command for local process servers
+	ContainerID   string   // Empty for external/local process/SSH servers
+	ContainerName string   // Empty for external/local process/SSH servers
+	ContainerPort int      // 0 for external/local process/SSH servers
+	HostPort      int      // 0 for external/local process/SSH servers
+	External      bool     // True if external server (no container)
+	LocalProcess  bool     // True if local process server (no container)
+	SSH           bool     // True if SSH server (remote process over SSH)
+	URL           string   // Full URL for external servers
+	Command       []string // Command for local process or SSH servers
+	SSHHost       string   // SSH hostname (for SSH servers)
+	SSHUser       string   // SSH username (for SSH servers)
+	SSHPort       int      // SSH port (for SSH servers, 0 = default 22)
+	SSHIdentityFile string // SSH identity file path (for SSH servers)
 }
 
 // AgentInfo contains runtime information about a started agent.
@@ -144,6 +149,25 @@ func (r *Runtime) Up(ctx context.Context, topo *config.Topology, opts UpOptions)
 				Name:         server.Name,
 				LocalProcess: true,
 				Command:      server.Command,
+			})
+			continue
+		}
+
+		// Skip container creation for SSH servers
+		if server.IsSSH() {
+			r.logger.Info("registering SSH MCP server",
+				"name", server.Name,
+				"host", server.SSH.Host,
+				"user", server.SSH.User,
+				"command", server.Command)
+			result.MCPServers = append(result.MCPServers, MCPServerInfo{
+				Name:            server.Name,
+				SSH:             true,
+				Command:         server.Command,
+				SSHHost:         server.SSH.Host,
+				SSHUser:         server.SSH.User,
+				SSHPort:         server.SSH.Port,
+				SSHIdentityFile: server.SSH.IdentityFile,
 			})
 			continue
 		}
