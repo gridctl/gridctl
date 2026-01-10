@@ -11,6 +11,7 @@ type Transport string
 const (
 	TransportHTTP  Transport = "http"
 	TransportStdio Transport = "stdio"
+	TransportSSE   Transport = "sse"
 )
 
 // AgentClient is the interface for communicating with MCP agents.
