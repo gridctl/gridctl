@@ -166,13 +166,14 @@ type ServerInfo struct {
 
 // MCPServerStatus mirrors the mcp.MCPServerStatus type for API responses.
 type MCPServerStatus struct {
-	Name        string   `json:"name"`
-	Transport   string   `json:"transport"`
-	Endpoint    string   `json:"endpoint"`
-	Initialized bool     `json:"initialized"`
-	ToolCount   int      `json:"toolCount"`
-	Tools       []string `json:"tools"`
-	External    bool     `json:"external"`
+	Name         string   `json:"name"`
+	Transport    string   `json:"transport"`
+	Endpoint     string   `json:"endpoint"`
+	Initialized  bool     `json:"initialized"`
+	ToolCount    int      `json:"toolCount"`
+	Tools        []string `json:"tools"`
+	External     bool     `json:"external"`
+	LocalProcess bool     `json:"localProcess"`
 }
 
 func (s *Server) getMCPServerStatuses() []MCPServerStatus {
@@ -180,13 +181,14 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
 		statuses[i] = MCPServerStatus{
-			Name:        ms.Name,
-			Transport:   string(ms.Transport),
-			Endpoint:    ms.Endpoint,
-			Initialized: ms.Initialized,
-			ToolCount:   ms.ToolCount,
-			Tools:       ms.Tools,
-			External:    ms.External,
+			Name:         ms.Name,
+			Transport:    string(ms.Transport),
+			Endpoint:     ms.Endpoint,
+			Initialized:  ms.Initialized,
+			ToolCount:    ms.ToolCount,
+			Tools:        ms.Tools,
+			External:     ms.External,
+			LocalProcess: ms.LocalProcess,
 		}
 	}
 	return statuses
