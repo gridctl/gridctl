@@ -271,6 +271,21 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 		}
 	}
 
+	// Add SSH MCP servers from config (they don't have containers)
+	for _, server := range topo.MCPServers {
+		if server.IsSSH() && !foundServers[server.Name] {
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
+				Name:            server.Name,
+				SSH:             true,
+				Command:         server.Command,
+				SSHHost:         server.SSH.Host,
+				SSHUser:         server.SSH.User,
+				SSHPort:         server.SSH.Port,
+				SSHIdentityFile: server.SSH.IdentityFile,
+			})
+		}
+	}
+
 	return result, nil
 }
 
@@ -331,6 +346,18 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 				Command:      server.Command,
 				WorkDir:      filepath.Dir(topologyPath), // Use topology directory
 				Env:          serverCfg.Env,
+			}
+		} else if server.SSH {
+			// SSH server - use SSH command wrapper
+			cfg = mcp.MCPServerConfig{
+				Name:            server.Name,
+				SSH:             true,
+				Command:         server.Command,
+				SSHHost:         server.SSHHost,
+				SSHUser:         server.SSHUser,
+				SSHPort:         server.SSHPort,
+				SSHIdentityFile: server.SSHIdentityFile,
+				Env:             serverCfg.Env,
 			}
 		} else if transport == mcp.TransportStdio {
 			// Container stdio
