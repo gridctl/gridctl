@@ -1,4 +1,4 @@
-package runtime
+package docker
 
 import (
 	"context"
@@ -19,8 +19,8 @@ type ContainerConfig struct {
 	Image       string
 	Command     []string // Override container command
 	Env         map[string]string
-	Port        int    // Container port
-	HostPort    int    // Host port to publish (0 = auto-assign)
+	Port        int // Container port
+	HostPort    int // Host port to publish (0 = auto-assign)
 	NetworkName string
 	Labels      map[string]string
 	Transport   string   // "http" or "stdio"

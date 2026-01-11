@@ -1,11 +1,10 @@
-package runtime
+package docker
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"agentlab/pkg/dockerclient"
@@ -109,6 +108,3 @@ func ImageExists(ctx context.Context, cli dockerclient.DockerClient, imageName s
 	}
 	return false, nil
 }
-
-// Suppress unused import warning
-var _ = os.Stdout

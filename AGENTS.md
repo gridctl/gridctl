@@ -144,13 +144,19 @@ agentlab/
 │   │   └── validate.go   # Validation rules
 │   ├── dockerclient/     # Docker client interface
 │   │   └── interface.go  # Interface definition for mocking
-│   ├── runtime/          # Docker orchestration
-│   │   ├── client.go     # Docker client
-│   │   ├── network.go    # Network management
-│   │   ├── container.go  # Container lifecycle
-│   │   ├── image.go      # Image pulling
-│   │   ├── labels.go     # Container naming/labels
-│   │   └── runtime.go    # High-level Up/Down
+│   ├── runtime/          # Workload orchestration (runtime-agnostic)
+│   │   ├── interface.go  # WorkloadRuntime interface + types
+│   │   ├── orchestrator.go # High-level Up/Down/Status
+│   │   ├── factory.go    # Runtime factory registration
+│   │   ├── compat.go     # Backward compatibility types
+│   │   └── docker/       # Docker implementation
+│   │       ├── driver.go     # DockerRuntime (implements WorkloadRuntime)
+│   │       ├── init.go       # Factory registration
+│   │       ├── client.go     # Docker client creation
+│   │       ├── container.go  # Container lifecycle
+│   │       ├── network.go    # Network management
+│   │       ├── image.go      # Image pulling
+│   │       └── labels.go     # Container naming/labels
 │   ├── builder/          # Image building
 │   │   ├── types.go      # BuildOptions, BuildResult
 │   │   ├── cache.go      # ~/.agentlab/cache management
@@ -516,14 +522,16 @@ All managed resources use these labels:
 |---------|--------------|
 | pkg/mcp | router_test.go, gateway_test.go, session_test.go, handler_test.go |
 | pkg/a2a | types_test.go, gateway_test.go, handler_test.go |
-| pkg/runtime | runtime_test.go, container_test.go, network_test.go |
+| pkg/runtime | runtime_test.go (tests Orchestrator via mock interfaces) |
+| pkg/runtime/docker | labels_test.go, mock_test.go |
 | pkg/builder | cache_test.go, builder_test.go |
 | pkg/state | state_test.go |
 | tests/integration | *_test.go (build tag: integration) |
 
 ### Mocks
 
-- `MockDockerClient`: pkg/runtime/mock_test.go
+- `MockWorkloadRuntime`: pkg/runtime/runtime_test.go (for testing Orchestrator)
+- `MockDockerClient`: pkg/runtime/docker/mock_test.go (for testing DockerRuntime)
 - `MockAgentClient`: pkg/mcp/mock_test.go
 - HTTP handlers: use `net/http/httptest`
 
