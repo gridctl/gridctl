@@ -57,7 +57,7 @@ tmp/
 temp/
 
 # Requirements
-requirements.md
+requirements/
 
 # Vendor specific assistant files
 .claude/
