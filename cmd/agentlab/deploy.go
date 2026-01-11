@@ -72,8 +72,25 @@ func runDeploy(topologyPath string) error {
 		return fmt.Errorf("failed to load topology: %w", err)
 	}
 
-	// Check if already running
-	existingState, _ := state.Load(topo.Name)
+	// Clean up stale state (process died without cleanup) and check if already running
+	var existingState *state.DaemonState
+	err = state.WithLock(topo.Name, 5*time.Second, func() error {
+		// Auto-clean stale state files
+		cleaned, cleanErr := state.CheckAndClean(topo.Name)
+		if cleanErr != nil {
+			return fmt.Errorf("checking state: %w", cleanErr)
+		}
+		if cleaned {
+			fmt.Printf("Cleaned up stale state for '%s'\n", topo.Name)
+		}
+
+		// Check if already running (after cleanup)
+		existingState, _ = state.Load(topo.Name)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 	if existingState != nil && state.IsRunning(existingState) {
 		return fmt.Errorf("topology '%s' is already running on port %d (PID: %d)\nUse 'agentlab destroy %s' to stop it first",
 			topo.Name, existingState.Port, existingState.PID, topologyPath)
@@ -147,8 +164,10 @@ func runDeploy(topologyPath string) error {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
-	// Wait for daemon to be ready
-	time.Sleep(500 * time.Millisecond)
+	// Wait for daemon to be ready by polling health endpoint (10 second timeout)
+	if err := waitForHealthy(deployPort, 10*time.Second); err != nil {
+		return fmt.Errorf("daemon failed to become healthy: %w\nCheck logs at %s", err, state.LogPath(topo.Name))
+	}
 
 	// Verify daemon started
 	st, err := state.Load(topo.Name)
@@ -693,4 +712,24 @@ func registerAgentAdapters(_ context.Context, mcpGateway *mcp.Gateway, topo *con
 	mcpGateway.Router().RefreshTools()
 
 	return nil
+}
+
+// waitForHealthy polls the health endpoint until it returns 200 or timeout.
+func waitForHealthy(port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	url := fmt.Sprintf("http://localhost:%d/health", port)
+
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			statusOK := resp.StatusCode == http.StatusOK
+			resp.Body.Close() // Always close body, even on non-200 status
+			if statusOK {
+				return nil
+			}
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fmt.Errorf("health check timed out after %v", timeout)
 }
