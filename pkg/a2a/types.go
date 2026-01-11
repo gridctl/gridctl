@@ -30,10 +30,9 @@ type Provider struct {
 }
 
 // AgentCapabilities describes what the agent supports.
+// Note: Currently empty as streaming, push notifications, and state transition history
+// are not implemented. This struct is retained for A2A protocol compatibility.
 type AgentCapabilities struct {
-	Streaming            bool `json:"streaming,omitempty"`
-	PushNotifications    bool `json:"pushNotifications,omitempty"`
-	StateTransitionHistory bool `json:"stateTransitionHistory,omitempty"`
 }
 
 // Skill represents a distinct capability the agent exposes.

@@ -86,7 +86,7 @@ As a host binary, agentlab can route traffic between agents on **different Docke
        └─────────┬─────────┘
                  │
        ┌─────────▼─────────┐
-       │   localhost:8080  │
+       │   localhost:8180  │
        │   (MCP Gateway)   │
        └───────────────────┘
 ```
@@ -96,7 +96,7 @@ This enables network isolation between agents while still allowing them to commu
 ### Better Developer Experience
 
 - **File Access**: Reads `topology.yaml`, local source directories, `~/.ssh/` natively
-- **Localhost**: Web UI at `localhost:8080` without port mapping complexity
+- **Localhost**: Web UI at `localhost:8180` without port mapping complexity
 - **Debugging**: Standard Go debugging tools work directly
 
 ## Implementation Status
@@ -201,7 +201,7 @@ make run        # Build and run
 ./agentlab deploy examples/mcp-test.yaml
 
 # Start with options
-./agentlab deploy topology.yaml --port 8080 --no-cache
+./agentlab deploy topology.yaml --port 8180 --no-cache
 
 # Run in foreground with verbose output (for debugging)
 ./agentlab deploy topology.yaml --foreground
@@ -222,7 +222,7 @@ Starts containers and MCP gateway for a topology.
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--foreground` | `-f` | Run in foreground with verbose output (don't daemonize) |
-| `--port` | `-p` | Port for MCP gateway (default: 8080) |
+| `--port` | `-p` | Port for MCP gateway (default: 8180) |
 | `--no-cache` | | Force rebuild of source-based images |
 | `--verbose` | `-v` | Print full topology as JSON |
 
@@ -382,7 +382,7 @@ resources:                            # Non-MCP containers (databases, etc.)
 ### Agents
 
 Agents are active containers that consume tools from MCP servers. They receive:
-- `MCP_ENDPOINT` environment variable injected automatically (e.g., `http://host.docker.internal:8080`)
+- `MCP_ENDPOINT` environment variable injected automatically (e.g., `http://host.docker.internal:8180`)
 - Tool access control based on their `uses` field (can only access tools from listed servers)
 
 ```yaml
