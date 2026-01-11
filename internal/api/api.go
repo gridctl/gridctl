@@ -12,7 +12,7 @@ import (
 	"agentlab/pkg/a2a"
 	"agentlab/pkg/dockerclient"
 	"agentlab/pkg/mcp"
-	"agentlab/pkg/runtime"
+	"agentlab/pkg/runtime/docker"
 
 	"github.com/docker/docker/api/types/container"
 )
@@ -77,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
+	mux.HandleFunc("/health", s.handleHealth)
 
 	// Agent control endpoints (pattern: /api/agents/{name}/action)
 	mux.HandleFunc("/api/agents/", s.handleAgentAction)
@@ -204,6 +205,13 @@ func writeJSON(w http.ResponseWriter, data any) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
+// writeJSONError writes a JSON error response.
+func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
 // corsMiddleware adds CORS headers to responses.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -279,7 +287,7 @@ func (s *Server) getResourceStatuses() []ResourceStatus {
 	}
 
 	ctx := context.Background()
-	containers, err := runtime.ListManagedContainers(ctx, s.dockerClient, s.topologyName)
+	containers, err := docker.ListManagedContainers(ctx, s.dockerClient, s.topologyName)
 	if err != nil {
 		return []ResourceStatus{}
 	}
@@ -287,7 +295,7 @@ func (s *Server) getResourceStatuses() []ResourceStatus {
 	var resources []ResourceStatus
 	for _, c := range containers {
 		// Only include resource containers (not MCP servers)
-		if resName, ok := c.Labels[runtime.LabelResource]; ok {
+		if resName, ok := c.Labels[docker.LabelResource]; ok {
 			status := "stopped"
 			if c.State == "running" {
 				status = "running"
@@ -324,14 +332,14 @@ func (s *Server) getContainerAgents() map[string]containerAgentInfo {
 	}
 
 	ctx := context.Background()
-	containers, err := runtime.ListManagedContainers(ctx, s.dockerClient, s.topologyName)
+	containers, err := docker.ListManagedContainers(ctx, s.dockerClient, s.topologyName)
 	if err != nil {
 		return result
 	}
 
 	for _, c := range containers {
 		// Only include agent containers
-		if agentName, ok := c.Labels[runtime.LabelAgent]; ok {
+		if agentName, ok := c.Labels[docker.LabelAgent]; ok {
 			status := "stopped"
 			if c.State == "running" {
 				status = "running"
@@ -466,7 +474,7 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	if s.dockerClient == nil || s.topologyName == "" {
-		http.Error(w, "Docker client not configured", http.StatusServiceUnavailable)
+		writeJSONError(w, "Docker client not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -479,14 +487,15 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	// Find container by name
-	containerName := runtime.ContainerName(s.topologyName, agentName)
-	exists, containerID, err := runtime.ContainerExists(r.Context(), s.dockerClient, containerName)
+	containerName := docker.ContainerName(s.topologyName, agentName)
+	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
 	if err != nil {
-		http.Error(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if !exists {
-		http.Error(w, "Container not found: "+agentName, http.StatusNotFound)
+		// No container - might be an external MCP server, local process, SSH, or remote A2A agent
+		writeJSONError(w, "No container for '"+agentName+"' - logs unavailable for external/local/SSH/remote nodes", http.StatusNotFound)
 		return
 	}
 
@@ -531,8 +540,8 @@ func (s *Server) handleAgentRestart(w http.ResponseWriter, r *http.Request, agen
 	}
 
 	// Find container by name
-	containerName := runtime.ContainerName(s.topologyName, agentName)
-	exists, containerID, err := runtime.ContainerExists(r.Context(), s.dockerClient, containerName)
+	containerName := docker.ContainerName(s.topologyName, agentName)
+	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
 	if err != nil {
 		http.Error(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -565,8 +574,8 @@ func (s *Server) handleAgentStop(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	// Find container by name
-	containerName := runtime.ContainerName(s.topologyName, agentName)
-	exists, containerID, err := runtime.ContainerExists(r.Context(), s.dockerClient, containerName)
+	containerName := docker.ContainerName(s.topologyName, agentName)
+	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
 	if err != nil {
 		http.Error(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -577,10 +586,20 @@ func (s *Server) handleAgentStop(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	// Stop container
-	if err := runtime.StopContainer(r.Context(), s.dockerClient, containerID, 10); err != nil {
+	if err := docker.StopContainer(r.Context(), s.dockerClient, containerID, 10); err != nil {
 		http.Error(w, "Failed to stop container: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	writeJSON(w, map[string]string{"status": "stopped", "agent": agentName})
+}
+
+// handleHealth returns 200 OK if the server is running.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
 }
