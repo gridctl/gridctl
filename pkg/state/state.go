@@ -70,6 +70,11 @@ func LogPath(name string) string {
 	return filepath.Join(LogDir(), name+".log")
 }
 
+// LockPath returns the path to a lock file for a topology.
+func LockPath(name string) string {
+	return filepath.Join(StateDir(), name+".lock")
+}
+
 // Load reads a daemon state file.
 func Load(name string) (*DaemonState, error) {
 	data, err := os.ReadFile(StatePath(name))
@@ -191,7 +196,8 @@ func CheckAndClean(name string) (bool, error) {
 	return true, nil
 }
 
-// KillDaemon sends SIGTERM to the daemon process.
+// KillDaemon sends SIGTERM to the daemon process, waits up to 5 seconds for
+// graceful shutdown, then sends SIGKILL if the process is still running.
 func KillDaemon(state *DaemonState) error {
 	if state == nil || state.PID == 0 {
 		return nil
@@ -202,12 +208,34 @@ func KillDaemon(state *DaemonState) error {
 		return fmt.Errorf("finding process %d: %w", state.PID, err)
 	}
 
+	// Check if already dead
+	if !VerifyPID(state.PID) {
+		return nil
+	}
+
+	// Send SIGTERM for graceful shutdown
 	if err := process.Signal(syscall.SIGTERM); err != nil {
-		// Process might already be dead
 		if err == os.ErrProcessDone {
 			return nil
 		}
 		return fmt.Errorf("sending SIGTERM to %d: %w", state.PID, err)
+	}
+
+	// Wait up to 5 seconds for graceful shutdown
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !VerifyPID(state.PID) {
+			return nil // Process exited gracefully
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Process still running, send SIGKILL
+	if err := process.Signal(syscall.SIGKILL); err != nil {
+		if err == os.ErrProcessDone {
+			return nil
+		}
+		return fmt.Errorf("sending SIGKILL to %d: %w", state.PID, err)
 	}
 
 	return nil
@@ -216,4 +244,38 @@ func KillDaemon(state *DaemonState) error {
 // EnsureLogDir creates the log directory if it doesn't exist.
 func EnsureLogDir() error {
 	return os.MkdirAll(LogDir(), 0755)
+}
+
+// WithLock executes fn while holding an exclusive lock on the topology state.
+// Returns error if lock cannot be acquired within timeout.
+func WithLock(name string, timeout time.Duration, fn func() error) error {
+	// Ensure directory exists
+	if err := os.MkdirAll(StateDir(), 0755); err != nil {
+		return fmt.Errorf("creating state directory: %w", err)
+	}
+
+	lockFile, err := os.OpenFile(LockPath(name), os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("opening lock file: %w", err)
+	}
+	defer lockFile.Close()
+
+	// Try to acquire lock with timeout
+	deadline := time.Now().Add(timeout)
+	for {
+		err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout acquiring state lock for %s (another operation may be in progress)", name)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// Lock acquired - ensure we unlock before closing file
+	defer func() {
+		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	}()
+
+	return fn()
 }
