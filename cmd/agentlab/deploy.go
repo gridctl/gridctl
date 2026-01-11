@@ -30,6 +30,7 @@ var (
 	deployVerbose     bool
 	deployNoCache     bool
 	deployPort        int
+	deployBasePort    int
 	deployForeground  bool
 	deployDaemonChild bool
 )
@@ -52,7 +53,8 @@ Use --foreground (-f) to run in foreground with verbose output.`,
 func init() {
 	deployCmd.Flags().BoolVarP(&deployVerbose, "verbose", "v", false, "Print full topology as JSON")
 	deployCmd.Flags().BoolVar(&deployNoCache, "no-cache", false, "Force rebuild of source-based images")
-	deployCmd.Flags().IntVarP(&deployPort, "port", "p", 8080, "Port for MCP gateway")
+	deployCmd.Flags().IntVarP(&deployPort, "port", "p", 8180, "Port for MCP gateway")
+	deployCmd.Flags().IntVar(&deployBasePort, "base-port", 9000, "Base port for MCP server host port allocation")
 	deployCmd.Flags().BoolVarP(&deployForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
 	deployCmd.Flags().BoolVar(&deployDaemonChild, "daemon-child", false, "Internal flag for daemon process")
 	_ = deployCmd.Flags().MarkHidden("daemon-child")
@@ -142,7 +144,7 @@ func runDeploy(topologyPath string) error {
 	ctx := context.Background()
 	opts := runtime.UpOptions{
 		NoCache:     deployNoCache,
-		BasePort:    9000,
+		BasePort:    deployBasePort,
 		GatewayPort: deployPort,
 	}
 	result, err := rt.Up(ctx, topo, opts)
@@ -159,7 +161,7 @@ func runDeploy(topologyPath string) error {
 	}
 
 	// Daemon mode: fork child process
-	pid, err := forkDeployDaemon(topologyPath, deployPort)
+	pid, err := forkDeployDaemon(topologyPath, deployPort, deployBasePort)
 	if err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
@@ -470,14 +472,11 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 				}
 
 				card := a2a.AgentCard{
-					Name:        agent.Name,
-					Description: agent.Description,
-					Version:     version,
-					Skills:      skills,
-					Capabilities: a2a.AgentCapabilities{
-						Streaming:         false, // MVP: no streaming
-						PushNotifications: false, // MVP: no push
-					},
+					Name:         agent.Name,
+					Description:  agent.Description,
+					Version:      version,
+					Skills:       skills,
+					Capabilities: a2a.AgentCapabilities{},
 				}
 
 				a2aGateway.RegisterLocalAgent(agent.Name, card, nil)
@@ -587,7 +586,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 }
 
 // forkDeployDaemon starts the daemon child process
-func forkDeployDaemon(topologyPath string, port int) (int, error) {
+func forkDeployDaemon(topologyPath string, port int, basePort int) (int, error) {
 	// Get current executable
 	exe, err := os.Executable()
 	if err != nil {
@@ -614,7 +613,8 @@ func forkDeployDaemon(topologyPath string, port int) (int, error) {
 	// Build command with --daemon-child flag
 	cmd := exec.Command(exe, "deploy", topologyPath,
 		"--daemon-child",
-		"--port", strconv.Itoa(port))
+		"--port", strconv.Itoa(port),
+		"--base-port", strconv.Itoa(basePort))
 
 	// Detach from terminal
 	cmd.SysProcAttr = &syscall.SysProcAttr{
