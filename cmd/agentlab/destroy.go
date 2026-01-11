@@ -34,24 +34,29 @@ func runDestroy(topologyPath string) error {
 
 	fmt.Printf("Stopping topology '%s'...\n", topo.Name)
 
-	// Check for running daemon
-	st, err := state.Load(topo.Name)
-	if err == nil && st != nil {
-		// Kill daemon process
+	// Check for running daemon (with lock to prevent races with deploy)
+	err = state.WithLock(topo.Name, 5*time.Second, func() error {
+		st, loadErr := state.Load(topo.Name)
+		if loadErr != nil || st == nil {
+			return nil // No state file, nothing to kill
+		}
+
+		// Kill daemon process (SIGTERM, wait 5s, SIGKILL if needed)
 		if state.IsRunning(st) {
 			fmt.Printf("Stopping gateway daemon (PID: %d)...\n", st.PID)
-			if err := state.KillDaemon(st); err != nil {
-				fmt.Printf("  Warning: could not kill daemon: %v\n", err)
-			} else {
-				// Give daemon time to shut down gracefully
-				time.Sleep(500 * time.Millisecond)
+			if killErr := state.KillDaemon(st); killErr != nil {
+				fmt.Printf("  Warning: could not kill daemon: %v\n", killErr)
 			}
 		}
 
 		// Clean up state file
-		if err := state.Delete(topo.Name); err != nil {
-			fmt.Printf("  Warning: could not delete state file: %v\n", err)
+		if delErr := state.Delete(topo.Name); delErr != nil {
+			fmt.Printf("  Warning: could not delete state file: %v\n", delErr)
 		}
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("  Warning: could not acquire lock: %v\n", err)
 	}
 
 	// Stop containers
