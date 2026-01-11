@@ -47,7 +47,7 @@ var serveCmd = &cobra.Command{
 }
 
 func runServe() error {
-	addr := ":8080"
+	addr := ":8180"
 	if port := os.Getenv("PORT"); port != "" {
 		addr = ":" + port
 	}
