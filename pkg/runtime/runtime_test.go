@@ -6,13 +6,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"agentlab/pkg/builder"
 	"agentlab/pkg/config"
 	"agentlab/pkg/logging"
-
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
 )
 
 // testLogger returns a discard logger for tests
@@ -20,18 +15,180 @@ func testLogger() *slog.Logger {
 	return logging.NewDiscardLogger()
 }
 
-func TestRuntime_Up_SimpleNetwork(t *testing.T) {
-	mock := &MockDockerClient{
-		Images: []image.Summary{
-			{RepoTags: []string{"mcp-server:latest"}},
-		},
-	}
+// MockWorkloadRuntime is a mock implementation of WorkloadRuntime for testing.
+type MockWorkloadRuntime struct {
+	// Error injection
+	PingError        error
+	StartError       error
+	StopError        error
+	RemoveError      error
+	ExistsError      error
+	ListError        error
+	GetHostPortError error
+	EnsureNetworkErr error
+	ListNetworksErr  error
+	RemoveNetworkErr error
+	EnsureImageError error
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
+	// Call tracking
+	StartedWorkloads []WorkloadConfig
+	StoppedWorkloads []WorkloadID
+	RemovedWorkloads []WorkloadID
+	CreatedNetworks  []string
+	RemovedNetworks  []string
+	EnsuredImages    []string
+
+	// State
+	ExistingWorkloads map[string]WorkloadID
+	ListedWorkloads   []WorkloadStatus
+	HostPorts         map[WorkloadID]int
+}
+
+func NewMockWorkloadRuntime() *MockWorkloadRuntime {
+	return &MockWorkloadRuntime{
+		ExistingWorkloads: make(map[string]WorkloadID),
+		HostPorts:         make(map[WorkloadID]int),
 	}
+}
+
+func (m *MockWorkloadRuntime) Start(ctx context.Context, cfg WorkloadConfig) (*WorkloadStatus, error) {
+	if m.StartError != nil {
+		return nil, m.StartError
+	}
+	m.StartedWorkloads = append(m.StartedWorkloads, cfg)
+	id := WorkloadID("mock-" + cfg.Name)
+	return &WorkloadStatus{
+		ID:       id,
+		Name:     cfg.Name,
+		Topology: cfg.Topology,
+		Type:     cfg.Type,
+		State:    WorkloadStateRunning,
+		HostPort: cfg.HostPort,
+		Image:    cfg.Image,
+		Labels:   cfg.Labels,
+	}, nil
+}
+
+func (m *MockWorkloadRuntime) Stop(ctx context.Context, id WorkloadID) error {
+	if m.StopError != nil {
+		return m.StopError
+	}
+	m.StoppedWorkloads = append(m.StoppedWorkloads, id)
+	return nil
+}
+
+func (m *MockWorkloadRuntime) Remove(ctx context.Context, id WorkloadID) error {
+	if m.RemoveError != nil {
+		return m.RemoveError
+	}
+	m.RemovedWorkloads = append(m.RemovedWorkloads, id)
+	return nil
+}
+
+func (m *MockWorkloadRuntime) Status(ctx context.Context, id WorkloadID) (*WorkloadStatus, error) {
+	return &WorkloadStatus{
+		ID:    id,
+		State: WorkloadStateRunning,
+	}, nil
+}
+
+func (m *MockWorkloadRuntime) Exists(ctx context.Context, name string) (bool, WorkloadID, error) {
+	if m.ExistsError != nil {
+		return false, "", m.ExistsError
+	}
+	if id, ok := m.ExistingWorkloads[name]; ok {
+		return true, id, nil
+	}
+	return false, "", nil
+}
+
+func (m *MockWorkloadRuntime) List(ctx context.Context, filter WorkloadFilter) ([]WorkloadStatus, error) {
+	if m.ListError != nil {
+		return nil, m.ListError
+	}
+	return m.ListedWorkloads, nil
+}
+
+func (m *MockWorkloadRuntime) GetHostPort(ctx context.Context, id WorkloadID, exposedPort int) (int, error) {
+	if m.GetHostPortError != nil {
+		return 0, m.GetHostPortError
+	}
+	if port, ok := m.HostPorts[id]; ok {
+		return port, nil
+	}
+	return 0, nil
+}
+
+func (m *MockWorkloadRuntime) EnsureNetwork(ctx context.Context, name string, opts NetworkOptions) error {
+	if m.EnsureNetworkErr != nil {
+		return m.EnsureNetworkErr
+	}
+	m.CreatedNetworks = append(m.CreatedNetworks, name)
+	return nil
+}
+
+func (m *MockWorkloadRuntime) ListNetworks(ctx context.Context, topology string) ([]string, error) {
+	if m.ListNetworksErr != nil {
+		return nil, m.ListNetworksErr
+	}
+	return m.CreatedNetworks, nil
+}
+
+func (m *MockWorkloadRuntime) RemoveNetwork(ctx context.Context, name string) error {
+	if m.RemoveNetworkErr != nil {
+		return m.RemoveNetworkErr
+	}
+	m.RemovedNetworks = append(m.RemovedNetworks, name)
+	return nil
+}
+
+func (m *MockWorkloadRuntime) EnsureImage(ctx context.Context, imageName string) error {
+	if m.EnsureImageError != nil {
+		return m.EnsureImageError
+	}
+	m.EnsuredImages = append(m.EnsuredImages, imageName)
+	return nil
+}
+
+func (m *MockWorkloadRuntime) Ping(ctx context.Context) error {
+	return m.PingError
+}
+
+func (m *MockWorkloadRuntime) Close() error {
+	return nil
+}
+
+// Ensure MockWorkloadRuntime implements WorkloadRuntime
+var _ WorkloadRuntime = (*MockWorkloadRuntime)(nil)
+
+// MockBuilder is a mock implementation of Builder for testing.
+type MockBuilder struct {
+	BuildError  error
+	BuildResult *BuildResult
+}
+
+func (m *MockBuilder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, error) {
+	if m.BuildError != nil {
+		return nil, m.BuildError
+	}
+	if m.BuildResult != nil {
+		return m.BuildResult, nil
+	}
+	return &BuildResult{
+		ImageTag: opts.Tag,
+		Cached:   false,
+	}, nil
+}
+
+// Ensure MockBuilder implements Builder
+var _ Builder = (*MockBuilder)(nil)
+
+func TestOrchestrator_Up_SimpleNetwork(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockBuilder := &MockBuilder{}
+
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	topo := &config.Topology{
 		Version: "1",
@@ -50,22 +207,19 @@ func TestRuntime_Up_SimpleNetwork(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := rt.Up(ctx, topo, UpOptions{BasePort: 9000})
+	result, err := orch.Up(ctx, topo, UpOptions{BasePort: 9000})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Verify network was created
-	if len(mock.CreatedNetworks) != 1 || mock.CreatedNetworks[0] != "test-net" {
-		t.Errorf("expected network 'test-net' to be created, got %v", mock.CreatedNetworks)
+	if len(mockRT.CreatedNetworks) != 1 || mockRT.CreatedNetworks[0] != "test-net" {
+		t.Errorf("expected network 'test-net' to be created, got %v", mockRT.CreatedNetworks)
 	}
 
-	// Verify container was created and started
-	if len(mock.CreatedContainers) != 1 {
-		t.Errorf("expected 1 container created, got %d", len(mock.CreatedContainers))
-	}
-	if len(mock.StartedContainers) != 1 {
-		t.Errorf("expected 1 container started, got %d", len(mock.StartedContainers))
+	// Verify workload was started
+	if len(mockRT.StartedWorkloads) != 1 {
+		t.Errorf("expected 1 workload started, got %d", len(mockRT.StartedWorkloads))
 	}
 
 	// Verify result
@@ -77,18 +231,12 @@ func TestRuntime_Up_SimpleNetwork(t *testing.T) {
 	}
 }
 
-func TestRuntime_Up_MultipleServers(t *testing.T) {
-	mock := &MockDockerClient{
-		Images: []image.Summary{
-			{RepoTags: []string{"mcp-server:latest", "another-server:latest"}},
-		},
-	}
+func TestOrchestrator_Up_MultipleServers(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	topo := &config.Topology{
 		Version: "1",
@@ -104,7 +252,7 @@ func TestRuntime_Up_MultipleServers(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := rt.Up(ctx, topo, UpOptions{BasePort: 9000})
+	result, err := orch.Up(ctx, topo, UpOptions{BasePort: 9000})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -122,18 +270,12 @@ func TestRuntime_Up_MultipleServers(t *testing.T) {
 	}
 }
 
-func TestRuntime_Up_WithResources(t *testing.T) {
-	mock := &MockDockerClient{
-		Images: []image.Summary{
-			{RepoTags: []string{"mcp-server:latest", "postgres:16"}},
-		},
-	}
+func TestOrchestrator_Up_WithResources(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	topo := &config.Topology{
 		Version: "1",
@@ -151,29 +293,23 @@ func TestRuntime_Up_WithResources(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := rt.Up(ctx, topo, UpOptions{BasePort: 9000})
+	_, err := orch.Up(ctx, topo, UpOptions{BasePort: 9000})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify 2 containers created (1 MCP server + 1 resource)
-	if len(mock.CreatedContainers) != 2 {
-		t.Errorf("expected 2 containers created, got %d", len(mock.CreatedContainers))
+	// Verify 2 workloads started (1 MCP server + 1 resource)
+	if len(mockRT.StartedWorkloads) != 2 {
+		t.Errorf("expected 2 workloads started, got %d", len(mockRT.StartedWorkloads))
 	}
 }
 
-func TestRuntime_Up_AdvancedNetworkMode(t *testing.T) {
-	mock := &MockDockerClient{
-		Images: []image.Summary{
-			{RepoTags: []string{"frontend:latest", "backend:latest"}},
-		},
-	}
+func TestOrchestrator_Up_AdvancedNetworkMode(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	topo := &config.Topology{
 		Version: "1",
@@ -189,27 +325,23 @@ func TestRuntime_Up_AdvancedNetworkMode(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := rt.Up(ctx, topo, UpOptions{BasePort: 9000})
+	_, err := orch.Up(ctx, topo, UpOptions{BasePort: 9000})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Verify both networks were created
-	if len(mock.CreatedNetworks) != 2 {
-		t.Errorf("expected 2 networks created, got %d", len(mock.CreatedNetworks))
+	if len(mockRT.CreatedNetworks) != 2 {
+		t.Errorf("expected 2 networks created, got %d", len(mockRT.CreatedNetworks))
 	}
 }
 
-func TestRuntime_Up_ImagePull(t *testing.T) {
-	mock := &MockDockerClient{
-		Images: []image.Summary{}, // No local images, will pull
-	}
+func TestOrchestrator_Up_ImageEnsured(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	topo := &config.Topology{
 		Version: "1",
@@ -221,27 +353,24 @@ func TestRuntime_Up_ImagePull(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := rt.Up(ctx, topo, UpOptions{BasePort: 9000})
+	_, err := orch.Up(ctx, topo, UpOptions{BasePort: 9000})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify image was pulled
-	if len(mock.PulledImages) != 1 || mock.PulledImages[0] != "nginx:latest" {
-		t.Errorf("expected 'nginx:latest' to be pulled, got %v", mock.PulledImages)
+	// Verify image was ensured
+	if len(mockRT.EnsuredImages) != 1 || mockRT.EnsuredImages[0] != "nginx:latest" {
+		t.Errorf("expected 'nginx:latest' to be ensured, got %v", mockRT.EnsuredImages)
 	}
 }
 
-func TestRuntime_Up_PingError(t *testing.T) {
-	mock := &MockDockerClient{
-		PingError: errors.New("Docker daemon unavailable"),
-	}
+func TestOrchestrator_Up_PingError(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockRT.PingError = errors.New("runtime unavailable")
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	topo := &config.Topology{
 		Version: "1",
@@ -250,22 +379,19 @@ func TestRuntime_Up_PingError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := rt.Up(ctx, topo, UpOptions{})
+	_, err := orch.Up(ctx, topo, UpOptions{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestRuntime_Up_NetworkCreateError(t *testing.T) {
-	mock := &MockDockerClient{
-		NetworkCreateError: errors.New("network create failed"),
-	}
+func TestOrchestrator_Up_NetworkCreateError(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockRT.EnsureNetworkErr = errors.New("network create failed")
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	topo := &config.Topology{
 		Version: "1",
@@ -277,23 +403,19 @@ func TestRuntime_Up_NetworkCreateError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := rt.Up(ctx, topo, UpOptions{})
+	_, err := orch.Up(ctx, topo, UpOptions{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestRuntime_Up_ContainerCreateError(t *testing.T) {
-	mock := &MockDockerClient{
-		Images:               []image.Summary{{RepoTags: []string{"nginx:latest"}}},
-		ContainerCreateError: errors.New("container create failed"),
-	}
+func TestOrchestrator_Up_WorkloadStartError(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockRT.StartError = errors.New("workload start failed")
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	topo := &config.Topology{
 		Version: "1",
@@ -305,156 +427,122 @@ func TestRuntime_Up_ContainerCreateError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := rt.Up(ctx, topo, UpOptions{})
+	_, err := orch.Up(ctx, topo, UpOptions{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestRuntime_Down_Success(t *testing.T) {
-	mock := &MockDockerClient{
-		Containers: []types.Container{
-			{
-				ID:    "container-1",
-				Names: []string{"/agentlab-test-server1"},
-				Labels: map[string]string{
-					LabelManaged:   "true",
-					LabelTopology:  "test",
-					LabelMCPServer: "server1",
-				},
-			},
-			{
-				ID:    "container-2",
-				Names: []string{"/agentlab-test-postgres"},
-				Labels: map[string]string{
-					LabelManaged:  "true",
-					LabelTopology: "test",
-					LabelResource: "postgres",
-				},
-			},
-		},
-		Networks: []network.Summary{
-			{Name: "test-net"},
-		},
+func TestOrchestrator_Down_Success(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockRT.ListedWorkloads = []WorkloadStatus{
+		{ID: "workload-1", Name: "agentlab-test-server1", Type: WorkloadTypeMCPServer},
+		{ID: "workload-2", Name: "agentlab-test-postgres", Type: WorkloadTypeResource},
 	}
+	mockRT.CreatedNetworks = []string{"test-net"}
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	ctx := context.Background()
-	err := rt.Down(ctx, "test")
+	err := orch.Down(ctx, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify containers were stopped
-	if len(mock.StoppedContainers) != 2 {
-		t.Errorf("expected 2 containers stopped, got %d", len(mock.StoppedContainers))
+	// Verify workloads were stopped
+	if len(mockRT.StoppedWorkloads) != 2 {
+		t.Errorf("expected 2 workloads stopped, got %d", len(mockRT.StoppedWorkloads))
 	}
 
-	// Verify containers were removed
-	if len(mock.RemovedContainers) != 2 {
-		t.Errorf("expected 2 containers removed, got %d", len(mock.RemovedContainers))
+	// Verify workloads were removed
+	if len(mockRT.RemovedWorkloads) != 2 {
+		t.Errorf("expected 2 workloads removed, got %d", len(mockRT.RemovedWorkloads))
 	}
 
 	// Verify networks were removed
-	if len(mock.RemovedNetworks) != 1 {
-		t.Errorf("expected 1 network removed, got %d", len(mock.RemovedNetworks))
+	if len(mockRT.RemovedNetworks) != 1 {
+		t.Errorf("expected 1 network removed, got %d", len(mockRT.RemovedNetworks))
 	}
 }
 
-func TestRuntime_Down_NoContainers(t *testing.T) {
-	mock := &MockDockerClient{
-		Containers: []types.Container{},
-		Networks:   []network.Summary{},
-	}
+func TestOrchestrator_Down_NoWorkloads(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockRT.ListedWorkloads = []WorkloadStatus{}
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	ctx := context.Background()
-	err := rt.Down(ctx, "test")
+	err := orch.Down(ctx, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Should complete without stopping/removing anything
-	if len(mock.StoppedContainers) != 0 {
-		t.Errorf("expected no containers stopped, got %d", len(mock.StoppedContainers))
+	if len(mockRT.StoppedWorkloads) != 0 {
+		t.Errorf("expected no workloads stopped, got %d", len(mockRT.StoppedWorkloads))
 	}
 }
 
-func TestRuntime_Down_PingError(t *testing.T) {
-	mock := &MockDockerClient{
-		PingError: errors.New("Docker daemon unavailable"),
-	}
+func TestOrchestrator_Down_PingError(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockRT.PingError = errors.New("runtime unavailable")
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	ctx := context.Background()
-	err := rt.Down(ctx, "test")
+	err := orch.Down(ctx, "test")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestRuntime_Down_StopError_Continues(t *testing.T) {
-	// Down should continue even if stopping a container fails
-	mock := &MockDockerClient{
-		Containers: []types.Container{
-			{ID: "container-1", Names: []string{"/agentlab-test-server1"}},
-		},
-		ContainerStopError: errors.New("stop failed"),
+func TestOrchestrator_Down_StopError_Continues(t *testing.T) {
+	// Down should continue even if stopping a workload fails
+	mockRT := NewMockWorkloadRuntime()
+	mockRT.ListedWorkloads = []WorkloadStatus{
+		{ID: "workload-1", Name: "agentlab-test-server1"},
 	}
+	mockRT.StopError = errors.New("stop failed")
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mock,
-		builder: builder.New(mock),
-		logger:  testLogger(),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
+	orch.SetLogger(testLogger())
 
 	ctx := context.Background()
-	// Should not return error, just print warning
-	err := rt.Down(ctx, "test")
+	// Should not return error, just log warning
+	err := orch.Down(ctx, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestRuntime_Status(t *testing.T) {
-	mockCli := &MockDockerClient{
-		Containers: []types.Container{
-			{
-				ID:    "1234567890123456", // Must be > 12 chars
-				Names: []string{"/agentlab-test-server1"},
-				Labels: map[string]string{
-					LabelManaged:   "true",
-					LabelTopology:  "test",
-					LabelMCPServer: "server1",
-				},
-				State:  "running",
-				Status: "Up 1 minute",
+func TestOrchestrator_Status(t *testing.T) {
+	mockRT := NewMockWorkloadRuntime()
+	mockRT.ListedWorkloads = []WorkloadStatus{
+		{
+			ID:       "1234567890123456",
+			Name:     "agentlab-test-server1",
+			Type:     WorkloadTypeMCPServer,
+			Topology: "test",
+			State:    WorkloadStateRunning,
+			Message:  "Up 1 minute",
+			Labels: map[string]string{
+				"agentlab.mcp-server": "server1",
 			},
 		},
 	}
+	mockBuilder := &MockBuilder{}
 
-	rt := &Runtime{
-		cli:     mockCli,
-		builder: builder.New(mockCli),
-	}
+	orch := NewOrchestrator(mockRT, mockBuilder)
 
 	ctx := context.Background()
-	statuses, err := rt.Status(ctx, "test")
+	statuses, err := orch.Status(ctx, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -462,19 +550,7 @@ func TestRuntime_Status(t *testing.T) {
 	if len(statuses) != 1 {
 		t.Errorf("expected 1 status, got %d", len(statuses))
 	}
-	if statuses[0].MCPServerName != "server1" {
-		t.Errorf("expected server name 'server1', got '%s'", statuses[0].MCPServerName)
-	}
-}
-
-func TestRuntime_Ping_Error(t *testing.T) {
-	mockCli := &MockDockerClient{
-		PingError: context.DeadlineExceeded,
-	}
-
-	// We can test the package-level Ping function directly
-	err := Ping(context.Background(), mockCli)
-	if err == nil {
-		t.Fatal("expected error from Ping")
+	if statuses[0].Type != WorkloadTypeMCPServer {
+		t.Errorf("expected type 'mcp-server', got '%s'", statuses[0].Type)
 	}
 }

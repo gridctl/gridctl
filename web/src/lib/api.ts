@@ -50,6 +50,15 @@ export async function fetchAgentLogs(name: string, lines = 100): Promise<string[
   const response = await fetch(`${API_BASE}/api/agents/${encodeURIComponent(name)}/logs?lines=${lines}`);
 
   if (!response.ok) {
+    // Try to parse JSON error message from backend
+    try {
+      const errorData = await response.json();
+      if (errorData.error) {
+        throw new Error(errorData.error);
+      }
+    } catch {
+      // If JSON parsing fails, use generic message
+    }
     throw new Error(`Logs fetch failed: ${response.status} ${response.statusText}`);
   }
 

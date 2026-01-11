@@ -20,6 +20,7 @@ import (
 	"agentlab/pkg/config"
 	"agentlab/pkg/mcp"
 	"agentlab/pkg/runtime"
+	_ "agentlab/pkg/runtime/docker" // Register DockerRuntime factory
 	"agentlab/pkg/state"
 
 	"github.com/spf13/cobra"
@@ -132,9 +133,12 @@ func runDeploy(topologyPath string) error {
 		return fmt.Errorf("failed to start topology: %w", err)
 	}
 
+	// Convert to legacy result format for runGateway
+	legacyResult := result.ToLegacyResult()
+
 	// If foreground mode, run gateway directly
 	if deployForeground {
-		return runGateway(ctx, rt, topo, topologyPath, result, deployPort, true)
+		return runGateway(ctx, rt, topo, topologyPath, legacyResult, deployPort, true)
 	}
 
 	// Daemon mode: fork child process
@@ -195,54 +199,66 @@ func runDeployDaemonChild(topologyPath string, topo *config.Topology) error {
 }
 
 // getRunningContainers retrieves info about already-running containers and external servers
-func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config.Topology) (*runtime.UpResult, error) {
-	// Get container statuses
+func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config.Topology) (*runtime.LegacyUpResult, error) {
+	// Get container statuses using new WorkloadStatus API
 	statuses, err := rt.Status(ctx, topo.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	// Build result from statuses
-	result := &runtime.UpResult{}
+	result := &runtime.LegacyUpResult{}
 
 	// Track which container-based MCP servers we found
 	foundServers := make(map[string]bool)
 
 	for _, status := range statuses {
-		if status.Type == "mcp-server" {
+		// Extract workload name from labels
+		var workloadName string
+		if status.Labels != nil {
+			if name, ok := status.Labels[runtime.LabelMCPServer]; ok {
+				workloadName = name
+			} else if name, ok := status.Labels[runtime.LabelResource]; ok {
+				workloadName = name
+			} else if name, ok := status.Labels[runtime.LabelAgent]; ok {
+				workloadName = name
+			}
+		}
+
+		if status.Type == runtime.WorkloadTypeMCPServer {
 			// Find the MCP server config to get port info
 			var containerPort int
 			for _, s := range topo.MCPServers {
-				if s.Name == status.MCPServerName {
+				if s.Name == workloadName {
 					containerPort = s.Port
 					break
 				}
 			}
 
 			// Get host port from container
-			hostPort, _ := runtime.GetContainerHostPort(ctx, rt.DockerClient(), status.ID, containerPort)
+			hostPort, _ := runtime.GetContainerHostPort(ctx, rt.DockerClient(), string(status.ID), containerPort)
 
 			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
-				Name:          status.MCPServerName,
-				ContainerID:   status.ID,
+				Name:          workloadName,
+				ContainerID:   string(status.ID),
 				ContainerName: status.Name,
 				ContainerPort: containerPort,
 				HostPort:      hostPort,
 			})
-			foundServers[status.MCPServerName] = true
-		} else if status.Type == "agent" {
+			foundServers[workloadName] = true
+		} else if status.Type == runtime.WorkloadTypeAgent {
 			// Find the agent config to get uses info
 			var uses []string
 			for _, a := range topo.Agents {
-				if a.Name == status.MCPServerName {
+				if a.Name == workloadName {
 					uses = a.Uses
 					break
 				}
 			}
 
 			result.Agents = append(result.Agents, runtime.AgentInfo{
-				Name:          status.MCPServerName,
-				ContainerID:   status.ID,
+				Name:          workloadName,
+				ContainerID:   string(status.ID),
 				ContainerName: status.Name,
 				Uses:          uses,
 			})
@@ -290,7 +306,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 }
 
 // runGateway runs the MCP gateway (blocking)
-func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology, topologyPath string, result *runtime.UpResult, port int, verbose bool) error {
+func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology, topologyPath string, result *runtime.LegacyUpResult, port int, verbose bool) error {
 	// Create MCP gateway
 	gateway := mcp.NewGateway()
 	gateway.SetDockerClient(rt.DockerClient())

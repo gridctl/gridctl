@@ -7,6 +7,7 @@ import (
 
 	"agentlab/pkg/config"
 	"agentlab/pkg/runtime"
+	_ "agentlab/pkg/runtime/docker" // Register DockerRuntime factory
 	"agentlab/pkg/state"
 
 	"github.com/spf13/cobra"

@@ -143,18 +143,52 @@ func List() ([]DaemonState, error) {
 
 // IsRunning checks if the daemon process is still running.
 func IsRunning(state *DaemonState) bool {
-	if state == nil || state.PID == 0 {
+	if state == nil {
 		return false
 	}
+	return VerifyPID(state.PID)
+}
 
-	// Check if process exists by sending signal 0
-	process, err := os.FindProcess(state.PID)
+// VerifyPID checks if a process with the given PID is running.
+func VerifyPID(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	process, err := os.FindProcess(pid)
 	if err != nil {
 		return false
 	}
+	// Signal 0 checks for existence without killing
+	return process.Signal(syscall.Signal(0)) == nil
+}
 
-	err = process.Signal(syscall.Signal(0))
-	return err == nil
+// CheckAndClean checks if a state file exists and if the process is running.
+// If the process is dead, it removes the state file and returns true (cleaned).
+// If the process is running, it returns false (not cleaned).
+// If no state file exists, it returns false.
+func CheckAndClean(name string) (bool, error) {
+	st, err := Load(name)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		// If we can't load the state file (corrupt), we should probably clean it
+		// Try to delete it so we can start fresh
+		if delErr := Delete(name); delErr != nil {
+			return false, fmt.Errorf("state file corrupt and failed to delete: %w", delErr)
+		}
+		return true, nil
+	}
+
+	if VerifyPID(st.PID) {
+		return false, nil
+	}
+
+	// Process is dead, clean up
+	if err := Delete(name); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // KillDaemon sends SIGTERM to the daemon process.

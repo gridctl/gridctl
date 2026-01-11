@@ -1,4 +1,4 @@
-package runtime
+package docker
 
 import (
 	"context"
@@ -26,18 +26,18 @@ type MockDockerClient struct {
 	ContainerDetails map[string]types.ContainerJSON
 
 	// Error injection per method
-	PingError            error
-	ContainerCreateError error
-	ContainerStartError  error
-	ContainerStopError   error
-	ContainerRemoveError error
-	ContainerListError   error
+	PingError             error
+	ContainerCreateError  error
+	ContainerStartError   error
+	ContainerStopError    error
+	ContainerRemoveError  error
+	ContainerListError    error
 	ContainerInspectError error
-	NetworkCreateError   error
-	NetworkRemoveError   error
-	NetworkListError     error
-	ImageListError       error
-	ImagePullError       error
+	NetworkCreateError    error
+	NetworkRemoveError    error
+	NetworkListError      error
+	ImageListError        error
+	ImagePullError        error
 
 	// Call tracking
 	Calls []string
@@ -132,6 +132,15 @@ func (m *MockDockerClient) ContainerInspect(ctx context.Context, containerID str
 	}
 	// Return default empty response
 	return types.ContainerJSON{
+		ContainerJSONBase: &types.ContainerJSONBase{
+			Name: "/" + containerID,
+			State: &types.ContainerState{
+				Status: "running",
+			},
+		},
+		Config: &container.Config{
+			Labels: map[string]string{},
+		},
 		NetworkSettings: &types.NetworkSettings{
 			Networks: make(map[string]*network.EndpointSettings),
 			NetworkSettingsBase: types.NetworkSettingsBase{
