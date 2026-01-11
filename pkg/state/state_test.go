@@ -455,3 +455,169 @@ func TestMigrateFromAgent0_Success(t *testing.T) {
 		t.Error("expected old dir to be removed after migration")
 	}
 }
+
+func TestLockPath(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	home := os.Getenv("HOME")
+	expected := filepath.Join(home, ".agentlab", "state", "test-topo.lock")
+	if got := LockPath("test-topo"); got != expected {
+		t.Errorf("LockPath(test-topo) = %q, want %q", got, expected)
+	}
+}
+
+func TestWithLock_ExecutesCallback(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	called := false
+	err := WithLock("test-topo", 1*time.Second, func() error {
+		called = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithLock() error = %v", err)
+	}
+	if !called {
+		t.Error("expected callback to be called")
+	}
+}
+
+func TestWithLock_ReturnsCallbackError(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	expectedErr := os.ErrNotExist
+	err := WithLock("test-topo", 1*time.Second, func() error {
+		return expectedErr
+	})
+	if err != expectedErr {
+		t.Errorf("WithLock() error = %v, want %v", err, expectedErr)
+	}
+}
+
+func TestWithLock_CreatesDirectory(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	// State directory doesn't exist yet
+	err := WithLock("test-topo", 1*time.Second, func() error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithLock() error = %v", err)
+	}
+
+	// Verify directory was created
+	dir := StateDir()
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("expected state directory to exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected %s to be a directory", dir)
+	}
+}
+
+func TestWithLock_ExclusiveAccess(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	// Acquire lock and hold it while checking another can't acquire
+	lockAcquired := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		err := WithLock("test-topo", 5*time.Second, func() error {
+			close(lockAcquired) // Signal that lock is held
+			<-done              // Wait for test to finish
+			return nil
+		})
+		if err != nil {
+			t.Errorf("first WithLock() error = %v", err)
+		}
+	}()
+
+	// Wait for first goroutine to acquire lock
+	<-lockAcquired
+
+	// Try to acquire same lock with short timeout - should fail
+	err := WithLock("test-topo", 100*time.Millisecond, func() error {
+		t.Error("second callback should not have been called")
+		return nil
+	})
+	if err == nil {
+		t.Error("expected timeout error when lock is held")
+	}
+
+	// Allow first goroutine to release lock
+	close(done)
+}
+
+func TestCheckAndClean_NoStateFile(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	cleaned, err := CheckAndClean("nonexistent")
+	if err != nil {
+		t.Fatalf("CheckAndClean() error = %v", err)
+	}
+	if cleaned {
+		t.Error("expected cleaned=false when no state file exists")
+	}
+}
+
+func TestCheckAndClean_RunningProcess(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	// Save state with current process PID (which is running)
+	state := &DaemonState{
+		TopologyName: "test-topo",
+		PID:          os.Getpid(),
+	}
+	if err := Save(state); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	cleaned, err := CheckAndClean("test-topo")
+	if err != nil {
+		t.Fatalf("CheckAndClean() error = %v", err)
+	}
+	if cleaned {
+		t.Error("expected cleaned=false when process is running")
+	}
+
+	// State file should still exist
+	if _, err := Load("test-topo"); err != nil {
+		t.Error("expected state file to still exist")
+	}
+}
+
+func TestCheckAndClean_DeadProcess(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	// Save state with a PID that doesn't exist
+	state := &DaemonState{
+		TopologyName: "test-topo",
+		PID:          999999999, // Very high PID unlikely to exist
+	}
+	if err := Save(state); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	cleaned, err := CheckAndClean("test-topo")
+	if err != nil {
+		t.Fatalf("CheckAndClean() error = %v", err)
+	}
+	if !cleaned {
+		t.Error("expected cleaned=true when process is dead")
+	}
+
+	// State file should be deleted
+	if _, err := Load("test-topo"); !os.IsNotExist(err) {
+		t.Error("expected state file to be deleted")
+	}
+}
