@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"agentlab/pkg/runtime"
+	_ "agentlab/pkg/runtime/docker" // Register DockerRuntime factory
 	"agentlab/pkg/state"
 
 	"github.com/spf13/cobra"
@@ -72,23 +73,39 @@ func runStatus(topology string) error {
 	defer rt.Close()
 
 	ctx := context.Background()
-	statuses, err := rt.Status(ctx, topology)
+	workloadStatuses, err := rt.Status(ctx, topology)
 	if err != nil {
 		return fmt.Errorf("failed to get status: %w", err)
 	}
 
-	if len(statuses) == 0 && len(filteredStates) == 0 {
+	if len(workloadStatuses) == 0 && len(filteredStates) == 0 {
 		fmt.Println("No managed gateways or containers found.")
 		return nil
 	}
 
-	if len(statuses) > 0 {
+	if len(workloadStatuses) > 0 {
 		fmt.Println("CONTAINERS")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "ID\tNAME\tTYPE\tIMAGE\tSTATE\tSTATUS")
-		for _, s := range statuses {
+		for _, s := range workloadStatuses {
+			// Get workload name from labels
+			var workloadName string
+			if s.Labels != nil {
+				if name, ok := s.Labels[runtime.LabelMCPServer]; ok {
+					workloadName = name
+				} else if name, ok := s.Labels[runtime.LabelResource]; ok {
+					workloadName = name
+				} else if name, ok := s.Labels[runtime.LabelAgent]; ok {
+					workloadName = name
+				}
+			}
+			// Truncate ID for display
+			id := string(s.ID)
+			if len(id) > 12 {
+				id = id[:12]
+			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				s.ID, s.MCPServerName, s.Type, s.Image, s.State, s.Status)
+				id, workloadName, s.Type, s.Image, s.State, s.Message)
 		}
 		w.Flush()
 	}
