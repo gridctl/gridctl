@@ -495,7 +495,21 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentNa
 	}
 	if !exists {
 		// No container - might be an external MCP server, local process, SSH, or remote A2A agent
-		writeJSONError(w, "No container for '"+agentName+"' - logs unavailable for external/local/SSH/remote nodes", http.StatusNotFound)
+		// Return a friendly message instead of an error so the UI can display it
+		writeJSON(w, []string{
+			"═══════════════════════════════════════════════════════════════",
+			"  Container logs are not available for this node.",
+			"",
+			"  This node is configured as an external MCP server, local",
+			"  process, SSH connection, or remote A2A agent - it does not",
+			"  have a Docker container managed by AgentLab.",
+			"",
+			"  To view logs for external services, check the source directly:",
+			"    • Docker: docker logs <container-name>",
+			"    • Local process: Check stdout/stderr or log files",
+			"    • SSH: Check logs on the remote host",
+			"═══════════════════════════════════════════════════════════════",
+		})
 		return
 	}
 
