@@ -168,7 +168,7 @@ export function Sidebar() {
                   <span className="text-sm text-text-muted">Transport</span>
                   <span className={cn(
                     'text-xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider flex items-center gap-1',
-                    getTransportColorClasses(transport)
+                    getTransportColorClasses()
                   )}>
                     <TransportIcon size={10} />
                     {transport}
