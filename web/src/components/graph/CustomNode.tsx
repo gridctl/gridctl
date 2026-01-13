@@ -1,11 +1,24 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Radio, Cpu, KeyRound } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
-import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
-import type { MCPServerNodeData, ResourceNodeData } from '../../types';
+import { getTransportColorClasses } from '../../lib/transport';
+import type { MCPServerNodeData, ResourceNodeData, Transport } from '../../types';
+
+// Render transport icon based on type - avoids creating components during render
+function TransportIcon({ transport, size }: { transport: Transport | null; size: number }) {
+  switch (transport) {
+    case 'stdio':
+      return <Server size={size} />;
+    case 'sse':
+      return <Radio size={size} />;
+    case 'http':
+    default:
+      return <Wifi size={size} />;
+  }
+}
 
 export type CustomNodeData = MCPServerNodeData | ResourceNodeData;
 
@@ -25,7 +38,6 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
 
   // Get transport info for MCP servers
   const transport = isServer ? (data as MCPServerNodeData).transport : null;
-  const TransportIcon = getTransportIcon(transport);
   const toolCount = isServer ? (data as MCPServerNodeData).toolCount : null;
 
   // Get endpoint/containerId for MCP servers
@@ -137,9 +149,9 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           <div className="flex items-center justify-between text-xs pt-1">
             <div className={cn(
               'flex items-center gap-1.5 px-2 py-1 rounded-md',
-              getTransportColorClasses(transport)
+              getTransportColorClasses()
             )}>
-              <TransportIcon size={11} />
+              <TransportIcon transport={transport} size={11} />
               <span className="uppercase text-[10px] tracking-wider font-medium">
                 {transport}
               </span>
