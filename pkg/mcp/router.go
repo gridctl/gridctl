@@ -121,10 +121,11 @@ func (r *Router) RouteToolCall(prefixedName string) (AgentClient, string, error)
 }
 
 // ToolNameDelimiter is the separator between agent name and tool name in prefixed tool names.
-// Format: "agentname::toolname"
-const ToolNameDelimiter = "::"
+// Format: "agentname__toolname"
+// Uses double underscore to be compatible with Claude Desktop's tool name validation: ^[a-zA-Z0-9_-]{1,64}$
+const ToolNameDelimiter = "__"
 
-// PrefixTool creates a prefixed tool name: "agent::tool"
+// PrefixTool creates a prefixed tool name: "agent__tool"
 func PrefixTool(agentName, toolName string) string {
 	return agentName + ToolNameDelimiter + toolName
 }
@@ -133,7 +134,7 @@ func PrefixTool(agentName, toolName string) string {
 func ParsePrefixedTool(prefixed string) (agentName, toolName string, err error) {
 	parts := strings.SplitN(prefixed, ToolNameDelimiter, 2)
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid tool name format: %s (expected agent::tool)", prefixed)
+		return "", "", fmt.Errorf("invalid tool name format: %s (expected agent__tool)", prefixed)
 	}
 	return parts[0], parts[1], nil
 }

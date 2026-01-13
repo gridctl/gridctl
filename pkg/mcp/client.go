@@ -242,6 +242,8 @@ func (c *Client) send(ctx context.Context, req Request) (*Response, error) {
 }
 
 // parseSSEResponse parses a Server-Sent Events formatted response.
+// SSE streams may contain multiple events (notifications + result).
+// We look for the response with an ID field (the actual result), skipping notifications.
 func (c *Client) parseSSEResponse(body io.Reader) (*Response, error) {
 	data, err := io.ReadAll(body)
 	if err != nil {
@@ -249,19 +251,26 @@ func (c *Client) parseSSEResponse(body io.Reader) (*Response, error) {
 	}
 
 	// Parse SSE format: look for "data: " lines
+	// Some MCP servers send multiple SSE events (notifications followed by result).
+	// We need to find the response with an ID field (not a notification).
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		if strings.HasPrefix(line, "data: ") {
 			jsonData := strings.TrimPrefix(line, "data: ")
 			var resp Response
 			if err := json.Unmarshal([]byte(jsonData), &resp); err != nil {
-				return nil, fmt.Errorf("decoding SSE JSON: %w", err)
+				// Skip malformed lines
+				continue
 			}
-			return &resp, nil
+			// Return the response that has an ID (actual result), not notifications
+			// Notifications have a "method" field but no "id" field
+			if resp.ID != nil {
+				return &resp, nil
+			}
 		}
 	}
 
-	return nil, fmt.Errorf("no data field found in SSE response")
+	return nil, fmt.Errorf("no response with ID found in SSE stream")
 }
 
 // Ping checks if the agent is reachable.
