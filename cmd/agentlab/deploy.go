@@ -338,10 +338,187 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		if deployVerbose {
 			logLevel = slog.LevelDebug
 		}
-		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
-		gateway.SetLogger(logger)
+		gateway.SetLogger(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 	}
 
+	// Create A2A gateway early if needed (for server setup)
+	var a2aGateway *a2a.Gateway
+	hasA2A := len(topo.A2AAgents) > 0
+	if !hasA2A {
+		for _, agent := range topo.Agents {
+			if agent.IsA2AEnabled() {
+				hasA2A = true
+				break
+			}
+		}
+	}
+	if hasA2A {
+		baseURL := fmt.Sprintf("http://localhost:%d", port)
+		a2aGateway = a2a.NewGateway(baseURL)
+	}
+
+	// Get embedded web files
+	webFS, err := WebFS()
+	if err != nil && verbose {
+		fmt.Printf("Warning: no embedded web UI: %v\n", err)
+	}
+
+	// Start API server FIRST so health checks can succeed
+	// MCP servers will be registered asynchronously after the server is running
+	server := api.NewServer(gateway, webFS)
+	server.SetDockerClient(rt.DockerClient())
+	server.SetTopologyName(topo.Name)
+	if a2aGateway != nil {
+		server.SetA2AGateway(a2aGateway)
+	}
+	addr := fmt.Sprintf(":%d", port)
+
+	// Handle shutdown gracefully
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
+
+	// Start server
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := http.ListenAndServe(addr, server.Handler()); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	// Give the server a moment to fail if port is in use
+	select {
+	case err := <-serverErr:
+		// Clean up state file on startup failure
+		_ = state.Delete(topo.Name)
+		return fmt.Errorf("failed to start server on port %d: %w", port, err)
+	case <-time.After(100 * time.Millisecond):
+		// Server started successfully
+	}
+
+	// Now register MCP servers (after HTTP server is running)
+	// This allows the health check to succeed even if MCP servers take time to connect
+	registerMCPServers(ctx, gateway, topo, topologyPath, result, verbose)
+
+	// Register agents with their access permissions
+	if len(result.Agents) > 0 {
+		if verbose {
+			fmt.Println("\nRegistering agents with gateway...")
+		}
+		for _, agent := range result.Agents {
+			gateway.RegisterAgent(agent.Name, agent.Uses)
+			if verbose {
+				fmt.Printf("  Registered agent '%s' with access to: %v\n", agent.Name, agent.Uses)
+			}
+		}
+	}
+
+	// Register A2A agents
+	if a2aGateway != nil {
+		if verbose {
+			fmt.Println("\nRegistering A2A agents...")
+		}
+
+		// Register local A2A agents (agents with a2a config)
+		for _, agent := range topo.Agents {
+			if agent.IsA2AEnabled() {
+				version := "1.0.0"
+				if agent.A2A.Version != "" {
+					version = agent.A2A.Version
+				}
+
+				// Convert config skills to a2a skills
+				skills := make([]a2a.Skill, len(agent.A2A.Skills))
+				for i, s := range agent.A2A.Skills {
+					skills[i] = a2a.Skill{
+						ID:          s.ID,
+						Name:        s.Name,
+						Description: s.Description,
+						Tags:        s.Tags,
+					}
+				}
+
+				card := a2a.AgentCard{
+					Name:         agent.Name,
+					Description:  agent.Description,
+					Version:      version,
+					Skills:       skills,
+					Capabilities: a2a.AgentCapabilities{},
+				}
+
+				a2aGateway.RegisterLocalAgent(agent.Name, card, nil)
+				if verbose {
+					fmt.Printf("  Registered local A2A agent '%s' with %d skills\n", agent.Name, len(skills))
+				}
+			}
+		}
+
+		// Register external A2A agents
+		for _, a2aAgent := range topo.A2AAgents {
+			authType := ""
+			authToken := ""
+			authHeader := ""
+
+			if a2aAgent.Auth != nil {
+				authType = a2aAgent.Auth.Type
+				if a2aAgent.Auth.TokenEnv != "" {
+					authToken = os.Getenv(a2aAgent.Auth.TokenEnv)
+				}
+				authHeader = a2aAgent.Auth.HeaderName
+			}
+
+			if err := a2aGateway.RegisterRemoteAgent(ctx, a2aAgent.Name, a2aAgent.URL, authType, authToken, authHeader); err != nil {
+				if verbose {
+					fmt.Printf("  Warning: failed to register A2A agent %s: %v\n", a2aAgent.Name, err)
+				}
+			}
+		}
+	}
+
+	// Register A2A agents as MCP tool providers (for agent-to-agent skill equipping)
+	if err := registerAgentAdapters(ctx, gateway, topo, port, verbose); err != nil {
+		return fmt.Errorf("registering agent adapters: %w", err)
+	}
+
+	if verbose {
+		fmt.Printf("\nMCP Gateway running:\n")
+		fmt.Printf("  POST /mcp         - JSON-RPC endpoint\n")
+		fmt.Printf("  GET  /sse         - SSE endpoint (for Claude Desktop)\n")
+		fmt.Printf("  POST /message     - SSE message endpoint\n")
+		if a2aGateway != nil {
+			fmt.Printf("\nA2A Protocol endpoints:\n")
+			fmt.Printf("  GET  /.well-known/agent.json - Agent discovery\n")
+			fmt.Printf("  GET  /a2a/{agent}            - Agent card\n")
+			fmt.Printf("  POST /a2a/{agent}            - JSON-RPC endpoint\n")
+		}
+		fmt.Printf("\nWeb UI available at http://localhost%s/\n", addr)
+		fmt.Printf("API endpoints:\n")
+		fmt.Printf("  GET  /api/status      - Gateway status (includes unified agents)\n")
+		fmt.Printf("  GET  /api/mcp-servers - List MCP servers\n")
+		fmt.Printf("  GET  /api/tools       - List tools\n")
+		fmt.Printf("  GET  /health          - Liveness check (daemon is alive)\n")
+		fmt.Printf("  GET  /ready           - Readiness check (all MCP servers initialized)\n")
+		fmt.Println("\nPress Ctrl+C to stop...")
+	}
+
+	// Wait for shutdown signal or server error
+	select {
+	case <-done:
+		if verbose {
+			fmt.Println("\nShutting down...")
+		}
+		// Clean up state file on graceful shutdown
+		_ = state.Delete(topo.Name)
+	case err := <-serverErr:
+		_ = state.Delete(topo.Name)
+		return fmt.Errorf("server error: %w", err)
+	}
+
+	return nil
+}
+
+// registerMCPServers registers all MCP servers with the gateway.
+// This is called after the HTTP server is running so health checks can succeed.
+func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.Topology, topologyPath string, result *runtime.LegacyUpResult, verbose bool) {
 	// Build a map from MCP server name to config for transport lookup
 	serverConfigs := make(map[string]config.MCPServer)
 	for _, s := range topo.MCPServers {
@@ -418,171 +595,6 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 			}
 		}
 	}
-
-	// Register agents with their access permissions
-	if len(result.Agents) > 0 {
-		if verbose {
-			fmt.Println("\nRegistering agents with gateway...")
-		}
-		for _, agent := range result.Agents {
-			gateway.RegisterAgent(agent.Name, agent.Uses)
-			if verbose {
-				fmt.Printf("  Registered agent '%s' with access to: %v\n", agent.Name, agent.Uses)
-			}
-		}
-	}
-
-	// Create A2A gateway if there are any A2A-enabled agents or external A2A agents
-	var a2aGateway *a2a.Gateway
-	hasA2A := len(topo.A2AAgents) > 0
-	if !hasA2A {
-		for _, agent := range topo.Agents {
-			if agent.IsA2AEnabled() {
-				hasA2A = true
-				break
-			}
-		}
-	}
-
-	if hasA2A {
-		baseURL := fmt.Sprintf("http://localhost:%d", port)
-		a2aGateway = a2a.NewGateway(baseURL)
-
-		if verbose {
-			fmt.Println("\nRegistering A2A agents...")
-		}
-
-		// Register local A2A agents (agents with a2a config)
-		for _, agent := range topo.Agents {
-			if agent.IsA2AEnabled() {
-				version := "1.0.0"
-				if agent.A2A.Version != "" {
-					version = agent.A2A.Version
-				}
-
-				// Convert config skills to a2a skills
-				skills := make([]a2a.Skill, len(agent.A2A.Skills))
-				for i, s := range agent.A2A.Skills {
-					skills[i] = a2a.Skill{
-						ID:          s.ID,
-						Name:        s.Name,
-						Description: s.Description,
-						Tags:        s.Tags,
-					}
-				}
-
-				card := a2a.AgentCard{
-					Name:         agent.Name,
-					Description:  agent.Description,
-					Version:      version,
-					Skills:       skills,
-					Capabilities: a2a.AgentCapabilities{},
-				}
-
-				a2aGateway.RegisterLocalAgent(agent.Name, card, nil)
-				if verbose {
-					fmt.Printf("  Registered local A2A agent '%s' with %d skills\n", agent.Name, len(skills))
-				}
-			}
-		}
-
-		// Register external A2A agents
-		for _, a2aAgent := range topo.A2AAgents {
-			authType := ""
-			authToken := ""
-			authHeader := ""
-
-			if a2aAgent.Auth != nil {
-				authType = a2aAgent.Auth.Type
-				if a2aAgent.Auth.TokenEnv != "" {
-					authToken = os.Getenv(a2aAgent.Auth.TokenEnv)
-				}
-				authHeader = a2aAgent.Auth.HeaderName
-			}
-
-			if err := a2aGateway.RegisterRemoteAgent(ctx, a2aAgent.Name, a2aAgent.URL, authType, authToken, authHeader); err != nil {
-				if verbose {
-					fmt.Printf("  Warning: failed to register A2A agent %s: %v\n", a2aAgent.Name, err)
-				}
-			}
-		}
-	}
-
-	// Register A2A agents as MCP tool providers (for agent-to-agent skill equipping)
-	if err := registerAgentAdapters(ctx, gateway, topo, port, verbose); err != nil {
-		return fmt.Errorf("registering agent adapters: %w", err)
-	}
-
-	// Get embedded web files
-	webFS, err := WebFS()
-	if err != nil && verbose {
-		fmt.Printf("Warning: no embedded web UI: %v\n", err)
-	}
-
-	// Start API server with Docker client for container operations
-	server := api.NewServer(gateway, webFS)
-	server.SetDockerClient(rt.DockerClient())
-	server.SetTopologyName(topo.Name)
-	if a2aGateway != nil {
-		server.SetA2AGateway(a2aGateway)
-	}
-	addr := fmt.Sprintf(":%d", port)
-
-	// Handle shutdown gracefully
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
-
-	// Start server
-	serverErr := make(chan error, 1)
-	go func() {
-		if err := http.ListenAndServe(addr, server.Handler()); err != nil && err != http.ErrServerClosed {
-			serverErr <- err
-		}
-	}()
-
-	// Give the server a moment to fail if port is in use
-	select {
-	case err := <-serverErr:
-		// Clean up state file on startup failure
-		_ = state.Delete(topo.Name)
-		return fmt.Errorf("failed to start server on port %d: %w", port, err)
-	case <-time.After(100 * time.Millisecond):
-		// Server started successfully
-	}
-
-	if verbose {
-		fmt.Printf("\nMCP Gateway running:\n")
-		fmt.Printf("  POST /mcp         - JSON-RPC endpoint\n")
-		fmt.Printf("  GET  /sse         - SSE endpoint (for Claude Desktop)\n")
-		fmt.Printf("  POST /message     - SSE message endpoint\n")
-		if a2aGateway != nil {
-			fmt.Printf("\nA2A Protocol endpoints:\n")
-			fmt.Printf("  GET  /.well-known/agent.json - Agent discovery\n")
-			fmt.Printf("  GET  /a2a/{agent}            - Agent card\n")
-			fmt.Printf("  POST /a2a/{agent}            - JSON-RPC endpoint\n")
-		}
-		fmt.Printf("\nWeb UI available at http://localhost%s/\n", addr)
-		fmt.Printf("API endpoints:\n")
-		fmt.Printf("  GET  /api/status      - Gateway status (includes unified agents)\n")
-		fmt.Printf("  GET  /api/mcp-servers - List MCP servers\n")
-		fmt.Printf("  GET  /api/tools       - List tools\n")
-		fmt.Println("\nPress Ctrl+C to stop...")
-	}
-
-	// Wait for shutdown signal or server error
-	select {
-	case <-done:
-		if verbose {
-			fmt.Println("\nShutting down...")
-		}
-		// Clean up state file on graceful shutdown
-		_ = state.Delete(topo.Name)
-	case err := <-serverErr:
-		_ = state.Delete(topo.Name)
-		return fmt.Errorf("server error: %w", err)
-	}
-
-	return nil
 }
 
 // forkDeployDaemon starts the daemon child process
