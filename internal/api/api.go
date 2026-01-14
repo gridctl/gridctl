@@ -78,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/ready", s.handleReady)
 
 	// Agent control endpoints (pattern: /api/agents/{name}/action)
 	mux.HandleFunc("/api/agents/", s.handleAgentAction)
@@ -608,9 +609,22 @@ func (s *Server) handleAgentStop(w http.ResponseWriter, r *http.Request, agentNa
 	writeJSON(w, map[string]string{"status": "stopped", "agent": agentName})
 }
 
-// handleHealth returns 200 OK only when all MCP servers are connected and initialized.
-// This is used by the deploy command to verify the daemon is fully ready.
+// handleHealth returns 200 OK when the daemon is alive and serving requests.
+// This is a liveness check - it returns OK immediately without checking MCP server status.
+// Use /ready for a full readiness check that verifies all MCP servers are initialized.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
+}
+
+// handleReady returns 200 OK only when all MCP servers are connected and initialized.
+// This is a readiness check for verifying the gateway is fully operational.
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
