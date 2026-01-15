@@ -36,7 +36,7 @@ interface ToolListProps {
 export function ToolList({ agentName }: ToolListProps) {
   const tools = useTopologyStore((s) => s.tools);
 
-  // Filter tools for this agent (prefixed with agentName::)
+  // Filter tools for this agent (prefixed with agentName__)
   const agentTools = tools.filter((t) =>
     t.name.startsWith(`${agentName}${TOOL_NAME_DELIMITER}`)
   );
