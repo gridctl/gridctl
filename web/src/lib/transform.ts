@@ -245,7 +245,7 @@ export function transformToNodesAndEdges(
 
 /**
  * Parse prefixed tool name into agent and tool names
- * Matches the format from pkg/mcp/router.go: "agent::tool"
+ * Matches the format from pkg/mcp/router.go: "agent__tool"
  */
 export function parsePrefixedToolName(prefixed: string): {
   agentName: string;
