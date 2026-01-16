@@ -12,6 +12,14 @@ make mock-servers
 
 This builds both servers and starts `mock-mcp-server` on ports 9001 (HTTP) and 9002 (SSE).
 
+To use custom ports:
+
+```bash
+make mock-servers PORT=3000
+```
+
+This starts HTTP on port 3000 and SSE on port 3001.
+
 To stop and clean up:
 
 ```bash

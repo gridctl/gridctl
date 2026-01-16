@@ -70,6 +70,8 @@ test-integration:
 	go test -v -tags=integration ./tests/integration/...
 
 # Build and run mock MCP servers for examples
+# Usage: make mock-servers [PORT=9001]
+PORT ?= 9001
 mock-servers:
 	@echo "Building and starting mock MCP servers..."
 	@command -v go >/dev/null 2>&1 || { echo "Error: Go is not installed. Please install Go first: https://go.dev/dl/"; exit 1; }
@@ -77,14 +79,14 @@ mock-servers:
 	@(cd examples/_mock-servers/local-stdio-server && go build -o mock-stdio-server .)
 	@echo "Building mock-mcp-server..."
 	@(cd examples/_mock-servers/mock-mcp-server && go build -o mock-mcp-server .)
-	@echo "Starting mock-mcp-server on port 9001 (HTTP mode)..."
-	@examples/_mock-servers/mock-mcp-server/mock-mcp-server -port 9001 > /dev/null 2>&1 & echo $$! > examples/_mock-servers/mock-mcp-server/.pid-http
-	@echo "Starting mock-mcp-server on port 9002 (SSE mode)..."
-	@examples/_mock-servers/mock-mcp-server/mock-mcp-server -port 9002 -sse > /dev/null 2>&1 & echo $$! > examples/_mock-servers/mock-mcp-server/.pid-sse
+	@echo "Starting mock-mcp-server on port $(PORT) (HTTP mode)..."
+	@examples/_mock-servers/mock-mcp-server/mock-mcp-server -port $(PORT) > /dev/null 2>&1 & echo $$! > examples/_mock-servers/mock-mcp-server/.pid-http
+	@echo "Starting mock-mcp-server on port $$(( $(PORT) + 1 )) (SSE mode)..."
+	@examples/_mock-servers/mock-mcp-server/mock-mcp-server -port $$(( $(PORT) + 1 )) -sse > /dev/null 2>&1 & echo $$! > examples/_mock-servers/mock-mcp-server/.pid-sse
 	@echo ""
 	@echo "Mock servers running:"
 	@echo "  mock-stdio-server: built at examples/_mock-servers/local-stdio-server/mock-stdio-server"
-	@echo "  mock-mcp-server:   HTTP on localhost:9001, SSE on localhost:9002"
+	@echo "  mock-mcp-server:   HTTP on localhost:$(PORT), SSE on localhost:$$(( $(PORT) + 1 ))"
 	@echo ""
 	@echo "Run 'make clean-mock-servers' to stop and remove them."
 
@@ -119,6 +121,6 @@ help:
 	@echo "  make test       - Run all tests"
 	@echo "  make test-coverage - Run tests with coverage report"
 	@echo "  make test-integration - Run integration tests (requires Docker)"
-	@echo "  make mock-servers     - Build and run mock MCP servers for examples"
+	@echo "  make mock-servers [PORT=9001] - Build and run mock MCP servers for examples"
 	@echo "  make clean-mock-servers - Stop and remove mock MCP servers"
 	@echo "  make help       - Show this help message"
