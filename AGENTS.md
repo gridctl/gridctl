@@ -198,7 +198,7 @@ make run        # Build and run
 
 ```bash
 # Start a topology (runs as daemon, returns immediately)
-./agentlab deploy examples/mcp-test.yaml
+./agentlab deploy examples/getting-started/agent-basic.yaml
 
 # Start with options
 ./agentlab deploy topology.yaml --port 8180 --no-cache
@@ -210,7 +210,7 @@ make run        # Build and run
 ./agentlab status
 
 # Stop a specific topology (gateway + containers)
-./agentlab destroy examples/mcp-test.yaml
+./agentlab destroy examples/getting-started/agent-basic.yaml
 ```
 
 ### Command Reference
@@ -293,7 +293,7 @@ When `agentlab deploy` runs, it:
 | `/a2a/{agent}` | POST | JSON-RPC endpoint (message/send, tasks/get, etc.) |
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
-- `server-name::tool-name` (e.g., `itential-mcp::get_workflows`)
+- `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
 
 ## Topology YAML Schema
 
