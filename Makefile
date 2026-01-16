@@ -1,4 +1,4 @@
-.PHONY: all build build-web build-go dev clean help test test-coverage test-integration
+.PHONY: all build build-web build-go dev clean help test test-coverage test-integration mock-servers clean-mock-servers
 
 # Default target
 all: build
@@ -69,6 +69,41 @@ test-integration:
 	@echo "Running integration tests..."
 	go test -v -tags=integration ./tests/integration/...
 
+# Build and run mock MCP servers for examples
+mock-servers:
+	@echo "Building and starting mock MCP servers..."
+	@command -v go >/dev/null 2>&1 || { echo "Error: Go is not installed. Please install Go first: https://go.dev/dl/"; exit 1; }
+	@echo "Building mock-stdio-server..."
+	@(cd examples/_mock-servers/local-stdio-server && go build -o mock-stdio-server .)
+	@echo "Building mock-mcp-server..."
+	@(cd examples/_mock-servers/mock-mcp-server && go build -o mock-mcp-server .)
+	@echo "Starting mock-mcp-server on port 9001 (HTTP mode)..."
+	@examples/_mock-servers/mock-mcp-server/mock-mcp-server -port 9001 > /dev/null 2>&1 & echo $$! > examples/_mock-servers/mock-mcp-server/.pid-http
+	@echo "Starting mock-mcp-server on port 9002 (SSE mode)..."
+	@examples/_mock-servers/mock-mcp-server/mock-mcp-server -port 9002 -sse > /dev/null 2>&1 & echo $$! > examples/_mock-servers/mock-mcp-server/.pid-sse
+	@echo ""
+	@echo "Mock servers running:"
+	@echo "  mock-stdio-server: built at examples/_mock-servers/local-stdio-server/mock-stdio-server"
+	@echo "  mock-mcp-server:   HTTP on localhost:9001, SSE on localhost:9002"
+	@echo ""
+	@echo "Run 'make clean-mock-servers' to stop and remove them."
+
+# Stop and remove mock MCP servers
+clean-mock-servers:
+	@echo "Stopping mock MCP servers..."
+	@if [ -f examples/_mock-servers/mock-mcp-server/.pid-http ]; then \
+		kill $$(cat examples/_mock-servers/mock-mcp-server/.pid-http) 2>/dev/null || true; \
+		rm -f examples/_mock-servers/mock-mcp-server/.pid-http; \
+	fi
+	@if [ -f examples/_mock-servers/mock-mcp-server/.pid-sse ]; then \
+		kill $$(cat examples/_mock-servers/mock-mcp-server/.pid-sse) 2>/dev/null || true; \
+		rm -f examples/_mock-servers/mock-mcp-server/.pid-sse; \
+	fi
+	@echo "Removing mock server binaries..."
+	@rm -f examples/_mock-servers/local-stdio-server/mock-stdio-server
+	@rm -f examples/_mock-servers/mock-mcp-server/mock-mcp-server
+	@echo "Mock servers cleaned up."
+
 # Help
 help:
 	@echo "Agentlab Makefile"
@@ -84,4 +119,6 @@ help:
 	@echo "  make test       - Run all tests"
 	@echo "  make test-coverage - Run tests with coverage report"
 	@echo "  make test-integration - Run integration tests (requires Docker)"
+	@echo "  make mock-servers     - Build and run mock MCP servers for examples"
+	@echo "  make clean-mock-servers - Stop and remove mock MCP servers"
 	@echo "  make help       - Show this help message"

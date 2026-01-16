@@ -1,14 +1,21 @@
 # Agent Demo Topology
 #
-# Demonstrates the Agent Platform features including:
+# This is an INFRASTRUCTURE demo - it shows how to define topology, networking,
+# and access control. The containers use Alpine with sleep commands as placeholders.
+#
+# Demonstrates:
 # - MCP servers providing tools
 # - Agents that connect to the gateway and use specific servers
 # - Environment variable injection (MCP_ENDPOINT)
-# - Tool access control via uses field
+# - Tool access control via `uses` field
+#
+# For examples with real MCP server logic, see:
+# - transports/local-mcp.yaml (stdio transport with actual MCP server)
+# - transports/external-mcp.yaml (HTTP/SSE transport)
+# - platforms/github-mcp.yaml (real third-party MCP server)
 #
 # Usage:
-#   agentlab deploy examples/agent-demo.yaml -f
-#
+#   agentlab deploy examples/getting-started/agent-basic.yaml
 #
 version: "1"
 name: agent-demo

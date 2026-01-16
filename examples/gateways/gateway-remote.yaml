@@ -1,0 +1,60 @@
+# Remote Gateway Access
+#
+# Enables remote access to Agentlab from MCP clients (e.g., Claude Desktop)
+# running on another machine on the same network.
+#
+# Agentlab Gateway:
+#   - Listens on all interfaces (0.0.0.0:8180 by default)
+#   - Exposes SSE endpoint at /sse for MCP clients
+#   - Aggregates tools from connected MCP servers with prefixes
+#
+# Prerequisites:
+#   1. An MCP server running locally (this example uses itential-dev-stack)
+#      See: https://github.com/itential/itential-dev-stack
+#   2. The MCP server must be accessible at http://localhost:8000/mcp
+#   3. Port 8180 must be accessible from the remote machine (check firewall)
+#
+# Usage:
+#   1. Deploy this topology:
+#      agentlab deploy examples/gateways/gateway-remote.yaml
+#
+#   2. Find this machine's IP address:
+#      ip addr show | grep "inet " | grep -v 127.0.0.1
+#      # or: hostname -I
+#
+#   3. On the remote machine, configure Claude Desktop with:
+#      {
+#        "mcpServers": {
+#          "agentlab": {
+#            "command": "npx",
+#            "args": ["mcp-remote", "http://<THIS_MACHINE_IP>:8180/sse", "--allow-http", "--transport", "sse-only"]
+#          }
+#        }
+#      }
+#
+#   4. Restart Claude Desktop on the remote machine
+#
+# Testing connectivity:
+#   From remote machine:
+#     curl http://<THIS_MACHINE_IP>:8180/api/status
+#     curl http://<THIS_MACHINE_IP>:8180/api/tools
+#
+# Claude Desktop config locations:
+#   Linux:   ~/.config/Claude/claude_desktop_config.json
+#   macOS:   ~/Library/Application Support/Claude/claude_desktop_config.json
+#   Windows: %APPDATA%\Claude\claude_desktop_config.json
+#
+# Note: The remote machine needs Node.js installed for npx mcp-remote
+
+version: "1"
+name: gateway-remote
+
+network:
+  name: devstack
+  driver: bridge
+
+mcp-servers:
+  # Connect to the existing MCP server exposed by itential-dev-stack
+  - name: itential
+    url: http://localhost:8000/mcp
+    transport: http

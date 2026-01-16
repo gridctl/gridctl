@@ -1,7 +1,7 @@
 # External MCP Server Example
 #
 # This topology demonstrates connecting to external MCP servers that run
-# outside of AgentLab's Docker container management. External servers are
+# outside of Agentlab's Docker container management. External servers are
 # identified by providing a `url` field instead of `image` or `source`.
 #
 # Use cases:
@@ -11,13 +11,15 @@
 #   - Connecting to MCP servers managed by other orchestration systems
 #
 # Prerequisites:
-#   Start the mock MCP server first:
-#     cd examples/mock-mcp-server
+#   Run `make mock-servers` from the project root to build and start mock servers.
+#   This starts mock-mcp-server on ports 9001 (HTTP) and 9002 (SSE).
+#   Or start manually:
+#     cd examples/_mock-servers/mock-mcp-server
 #     go run main.go -port 9001           # HTTP mode
 #     go run main.go -port 9002 -sse      # SSE mode
 #
 # Usage:
-#   agentlab deploy examples/external-mcp.yaml
+#   agentlab deploy examples/transports/external-mcp.yaml
 #
 # Note: External servers don't require Docker and skip container creation.
 # The gateway connects directly to the provided URL.

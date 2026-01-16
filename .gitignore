@@ -56,6 +56,11 @@ coverage.html
 tmp/
 temp/
 
+# Mock server binaries and PID files
+examples/_mock-servers/local-stdio-server/mock-stdio-server
+examples/_mock-servers/mock-mcp-server/mock-mcp-server
+examples/_mock-servers/mock-mcp-server/.pid-*
+
 # New features
 plan/
 

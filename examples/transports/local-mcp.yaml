@@ -11,12 +11,13 @@
 #   - Lightweight deployments without container overhead
 #
 # Prerequisites:
-#   Build the mock stdio server first:
-#     cd examples/local-stdio-server
+#   Run `make mock-servers` from the project root to build all mock servers.
+#   Or build manually:
+#     cd examples/_mock-servers/local-stdio-server
 #     go build -o mock-stdio-server .
 #
 # Usage:
-#   agentlab deploy examples/local-mcp.yaml
+#   agentlab deploy examples/transports/local-mcp.yaml
 #
 # Note: Local process servers don't use containers. The gateway spawns the
 # process directly and communicates via stdin/stdout JSON-RPC.
@@ -33,7 +34,7 @@ mcp-servers:
   # Local process MCP server using stdio transport
   # The command is executed relative to the topology file directory
   - name: local-tools
-    command: ["./local-stdio-server/mock-stdio-server"]
+    command: ["../_mock-servers/local-stdio-server/mock-stdio-server"]
 
   # You can also use full paths or system commands
   # - name: python-mcp
