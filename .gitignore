@@ -69,3 +69,4 @@ plan/
 .claude-plugin/
 CLAUDE.md
 GEMINI.md
+dist/
