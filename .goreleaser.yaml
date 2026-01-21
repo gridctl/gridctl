@@ -1,0 +1,88 @@
+version: 2
+
+project_name: agentlab
+
+before:
+  hooks:
+    # Build frontend before Go compilation
+    - npm ci --prefix web
+    - npm run build --prefix web
+    - mkdir -p cmd/agentlab/web
+    - cp -r web/dist cmd/agentlab/web/
+
+builds:
+  - id: agentlab
+    main: ./cmd/agentlab
+    binary: agentlab
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -tags=embed_web
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+  groups:
+    - title: Features
+      regexp: "^feat:"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^fix:"
+      order: 1
+    - title: Performance
+      regexp: "^perf:"
+      order: 2
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: wcollins
+    name: agentlab
+  draft: false
+  prerelease: auto
+  name_template: "{{.Tag}}"
+
+brews:
+  - name: agentlab
+    repository:
+      owner: wcollins
+      name: homebrew-agentlab
+      token: "{{ .Env.GORELEASER_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    homepage: "https://github.com/wcollins/agentlab"
+    description: "MCP orchestration tool - Containerlab for AI Agents"
+    license: "Apache-2.0"
+    install: |
+      bin.install "agentlab"
+    test: |
+      system "#{bin}/agentlab", "--help"
