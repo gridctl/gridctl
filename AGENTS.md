@@ -1,8 +1,8 @@
-# Agentlab Development Guide
+# Gridctl Development Guide
 
 ## Project Overview
 
-Agentlab is an MCP (Model Context Protocol) orchestration tool - "Containerlab for AI Agents".
+Gridctl is an MCP (Model Context Protocol) orchestration tool - "Containerlab for AI Agents".
 
 **Architecture:**
 - Controller (Go): Reads topology.yaml, manages Docker containers
@@ -11,7 +11,7 @@ Agentlab is an MCP (Model Context Protocol) orchestration tool - "Containerlab f
 
 ## Protocol Bridge Architecture
 
-Agentlab's core value is acting as a **Protocol Bridge** between MCP transports:
+Gridctl's core value is acting as a **Protocol Bridge** between MCP transports:
 
 ```
                     ┌─────────────────────┐
@@ -21,7 +21,7 @@ Agentlab's core value is acting as a **Protocol Bridge** between MCP transports:
                                │ SSE (GET /sse + POST /message)
                                ▼
                     ┌─────────────────────┐
-                    │   Agentlab Gateway    │
+                    │   Gridctl Gateway    │
                     │  (Protocol Bridge)  │
                     └───┬─────────────┬───┘
                         │             │
@@ -46,7 +46,7 @@ Agentlab's core value is acting as a **Protocol Bridge** between MCP transports:
 
 ## Architecture Decision: Host Binary
 
-Agentlab is distributed as a **host binary** (not a containerized gateway). This follows the same pattern as Containerlab, Terraform, Kind, and Docker Compose.
+Gridctl is distributed as a **host binary** (not a containerized gateway). This follows the same pattern as Containerlab, Terraform, Kind, and Docker Compose.
 
 ### Why Host Binary?
 
@@ -55,18 +55,18 @@ Agentlab is distributed as a **host binary** (not a containerized gateway). This
 | Networking | Hard - must join every network | Easy - routes via Docker socket |
 | Filesystem | Complex volume mounts | Native file access |
 | Distribution | `docker run ...` | `brew install` / binary download |
-| Updates | `docker pull` | `brew upgrade` / `agentlab update` |
+| Updates | `docker pull` | `brew upgrade` / `gridctl update` |
 | Precedent | Jenkins, Portainer | Containerlab, Docker Compose, Terraform |
 
 ### Docker Socket Access
 
-When agentlab runs on the host, it has direct access to the Docker daemon:
+When gridctl runs on the host, it has direct access to the Docker daemon:
 - **Stdio Transport**: Uses `ContainerAttach` to pipe directly into container stdin/stdout - networks are irrelevant
 - **HTTP Transport**: Containers publish ports to localhost (9000+) - no network joining required
 
 ### Multi-Network Routing
 
-As a host binary, agentlab can route traffic between agents on **different Docker networks**:
+As a host binary, gridctl can route traffic between agents on **different Docker networks**:
 
 ```
 ┌─────────────┐     ┌─────────────┐
@@ -78,7 +78,7 @@ As a host binary, agentlab can route traffic between agents on **different Docke
        └─────────┬─────────┘
                  │
        ┌─────────▼─────────┐
-       │   agentlab binary   │
+       │   gridctl binary   │
        │   (host machine)  │
        │                   │
        │  Routes JSON-RPC  │
@@ -126,8 +126,8 @@ This enables network isolation between agents while still allowing them to commu
 ## Directory Structure
 
 ```
-agentlab/
-├── cmd/agentlab/           # CLI entry point
+gridctl/
+├── cmd/gridctl/           # CLI entry point
 │   ├── main.go           # Entry point
 │   ├── root.go           # Cobra root command
 │   ├── deploy.go         # Start topology + gateway
@@ -159,12 +159,12 @@ agentlab/
 │   │       └── labels.go     # Container naming/labels
 │   ├── builder/          # Image building
 │   │   ├── types.go      # BuildOptions, BuildResult
-│   │   ├── cache.go      # ~/.agentlab/cache management
+│   │   ├── cache.go      # ~/.gridctl/cache management
 │   │   ├── git.go        # Git clone/update
 │   │   ├── docker.go     # Docker build
 │   │   └── builder.go    # Main builder
 │   ├── state/            # Daemon state management
-│   │   └── state.go      # ~/.agentlab/state/ and ~/.agentlab/logs/
+│   │   └── state.go      # ~/.gridctl/state/ and ~/.gridctl/logs/
 │   ├── mcp/              # MCP protocol
 │   │   ├── types.go      # JSON-RPC, MCP types, AgentClient interface
 │   │   ├── client.go     # HTTP transport client
@@ -198,24 +198,24 @@ make run        # Build and run
 
 ```bash
 # Start a topology (runs as daemon, returns immediately)
-./agentlab deploy examples/getting-started/agent-basic.yaml
+./gridctl deploy examples/getting-started/agent-basic.yaml
 
 # Start with options
-./agentlab deploy topology.yaml --port 8180 --no-cache
+./gridctl deploy topology.yaml --port 8180 --no-cache
 
 # Run in foreground with verbose output (for debugging)
-./agentlab deploy topology.yaml --foreground
+./gridctl deploy topology.yaml --foreground
 
 # Check running gateways and containers
-./agentlab status
+./gridctl status
 
 # Stop a specific topology (gateway + containers)
-./agentlab destroy examples/getting-started/agent-basic.yaml
+./gridctl destroy examples/getting-started/agent-basic.yaml
 ```
 
 ### Command Reference
 
-#### `agentlab deploy <topology.yaml>`
+#### `gridctl deploy <topology.yaml>`
 
 Starts containers and MCP gateway for a topology.
 
@@ -226,11 +226,11 @@ Starts containers and MCP gateway for a topology.
 | `--no-cache` | | Force rebuild of source-based images |
 | `--verbose` | `-v` | Print full topology as JSON |
 
-#### `agentlab destroy <topology.yaml>`
+#### `gridctl destroy <topology.yaml>`
 
 Stops the gateway daemon and removes all containers for a topology.
 
-#### `agentlab status`
+#### `gridctl status`
 
 Shows running gateways and containers.
 
@@ -240,18 +240,18 @@ Shows running gateways and containers.
 
 ### Daemon Mode
 
-By default, `agentlab deploy` runs the MCP gateway as a background daemon:
+By default, `gridctl deploy` runs the MCP gateway as a background daemon:
 - Returns immediately after starting
-- State stored in `~/.agentlab/state/{name}.json`
-- Logs written to `~/.agentlab/logs/{name}.log`
+- State stored in `~/.gridctl/state/{name}.json`
+- Logs written to `~/.gridctl/logs/{name}.log`
 - Use `--foreground` (-f) to run interactively with verbose output
 
 ### State Files
 
-Agentlab stores daemon state in `~/.agentlab/`:
+Gridctl stores daemon state in `~/.gridctl/`:
 
 ```
-~/.agentlab/
+~/.gridctl/
 ├── state/              # Daemon state files
 │   └── {name}.json     # PID, port, start time per topology
 ├── logs/               # Daemon log files
@@ -262,7 +262,7 @@ Agentlab stores daemon state in `~/.agentlab/`:
 
 ## MCP Gateway
 
-When `agentlab deploy` runs, it:
+When `gridctl deploy` runs, it:
 1. Parses the topology YAML
 2. Creates Docker network
 3. Builds/pulls images
@@ -297,7 +297,7 @@ When `agentlab deploy` runs, it:
 
 ## Topology YAML Schema
 
-Agentlab supports two network modes:
+Gridctl supports two network modes:
 - **Simple mode** (default): Single network, all containers join automatically
 - **Advanced mode**: Multiple networks with explicit container assignment
 
@@ -501,11 +501,11 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`
 ### Labels for Docker Resources
 
 All managed resources use these labels:
-- `agentlab.managed=true`
-- `agentlab.topology={name}`
-- `agentlab.mcp-server={name}` (for MCP server containers)
-- `agentlab.agent={name}` (for agent containers)
-- `agentlab.resource={name}` (for resource containers)
+- `gridctl.managed=true`
+- `gridctl.topology={name}`
+- `gridctl.mcp-server={name}` (for MCP server containers)
+- `gridctl.agent={name}` (for agent containers)
+- `gridctl.resource={name}` (for resource containers)
 
 ## Testing Requirements
 
