@@ -70,7 +70,7 @@ release:
   prerelease: auto
   name_template: "{{.Tag}}"
 
-brews:
+homebrew_casks:
   - name: agentlab
     repository:
       owner: wcollins
@@ -81,8 +81,10 @@ brews:
       email: bot@goreleaser.com
     homepage: "https://github.com/wcollins/agentlab"
     description: "MCP orchestration tool - Containerlab for AI Agents"
-    license: "Apache-2.0"
-    install: |
-      bin.install "agentlab"
-    test: |
-      system "#{bin}/agentlab", "--help"
+    binaries:
+      - agentlab
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr",
+                         args: ["-dr", "com.apple.quarantine", "#{staged_path}/agentlab"]
