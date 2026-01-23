@@ -1,28 +1,28 @@
-# 🧪 Agentlab
+# Gridctl
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-f59e0b.svg)](LICENSE)
 
 **MCP orchestration for AI agents.** Define your topology in YAML, deploy with one command.
 
-Agentlab is a protocol bridge that aggregates tools from multiple [MCP](https://modelcontextprotocol.io/) servers into a single gateway endpoint. Connect Claude Desktop (or any MCP client) to dozens of tool servers through one SSE connection.
+Gridctl is a protocol bridge that aggregates tools from multiple [MCP](https://modelcontextprotocol.io/) servers into a single gateway endpoint. Connect Claude Desktop (or any MCP client) to dozens of tool servers through one SSE connection.
 
 [Installation](#installation) | [Quick Start](#quick-start) | [Features](#features) | [Configuration](#topology-configuration) | [Examples](#examples)
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install wcollins/agentlab/agentlab
+brew install gridctl/gridctl/gridctl
 ```
 
 Or tap first:
 
 ```bash
-brew tap wcollins/agentlab
-brew install agentlab
+brew tap gridctl/gridctl
+brew install gridctl
 ```
 
 ### From Source
@@ -33,29 +33,29 @@ make build
 
 ---
 
-## ⌚️ Quick Start
+## Quick Start
 
 ```bash
 # Deploy a topology
-agentlab deploy examples/getting-started/agent-basic.yaml
+gridctl deploy examples/getting-started/agent-basic.yaml
 
 # Check status
-agentlab status
+gridctl status
 
 # Open the web UI
 open http://localhost:8180
 
 # Tear down when done
-agentlab destroy examples/getting-started/agent-basic.yaml
+gridctl destroy examples/getting-started/agent-basic.yaml
 ```
 
 ---
 
-## ✨ Features
+## Features
 
 ### Topology as Code
 
-Define your entire MCP infrastructure in a single YAML file. Agentlab handles container orchestration, networking, and protocol translation.
+Define your entire MCP infrastructure in a single YAML file. Gridctl handles container orchestration, networking, and protocol translation.
 
 ### Protocol Bridge
 
@@ -87,7 +87,7 @@ Real-time topology visualization powered by React Flow. Monitor container status
 
 ---
 
-## 💻 Topology Configuration
+## Topology Configuration
 
 ```yaml
 version: "1"
@@ -140,26 +140,26 @@ resources:
 
 ---
 
-## 📋 CLI Reference
+## CLI Reference
 
 | Command | Description |
 |---------|-------------|
-| `agentlab deploy <topology.yaml>` | Start containers and gateway (daemon mode) |
-| `agentlab deploy <topology.yaml> -f` | Start in foreground for debugging |
-| `agentlab deploy <topology.yaml> -p 9000` | Use custom gateway port |
-| `agentlab status` | Show running topologies and containers |
-| `agentlab destroy <topology.yaml>` | Stop gateway and remove containers |
+| `gridctl deploy <topology.yaml>` | Start containers and gateway (daemon mode) |
+| `gridctl deploy <topology.yaml> -f` | Start in foreground for debugging |
+| `gridctl deploy <topology.yaml> -p 9000` | Use custom gateway port |
+| `gridctl status` | Show running topologies and containers |
+| `gridctl destroy <topology.yaml>` | Stop gateway and remove containers |
 
 ---
 
-## 🔌 Example Claude Desktop Configuration
+## Example Claude Desktop Configuration
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "agentlab": {
+    "gridctl": {
       "url": "http://localhost:8180/sse"
     }
   }
@@ -170,7 +170,7 @@ Restart Claude Desktop. All tools from your topology will be available.
 
 ---
 
-## 📚 Examples
+## Examples
 
 | Example | Description |
 |---------|-------------|
@@ -182,7 +182,7 @@ Restart Claude Desktop. All tools from your topology will be available.
 
 ---
 
-## 🔧 Development
+## Development
 
 ```bash
 make build          # Build frontend and backend
@@ -196,6 +196,6 @@ make clean          # Remove build artifacts
 
 ---
 
-## 🪪 License
+## License
 
 [Apache 2.0](LICENSE)
