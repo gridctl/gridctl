@@ -3,8 +3,8 @@ package docker
 import (
 	"context"
 
-	"agentlab/pkg/builder"
-	"agentlab/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/builder"
+	"github.com/gridctl/gridctl/pkg/runtime"
 )
 
 func init() {

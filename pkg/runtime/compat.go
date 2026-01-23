@@ -109,11 +109,11 @@ func ToLegacyStatuses(statuses []WorkloadStatus) []ContainerStatus {
 		}
 		// Set MCPServerName based on type
 		if s.Labels != nil {
-			if name, ok := s.Labels["agentlab.mcp-server"]; ok {
+			if name, ok := s.Labels["gridctl.mcp-server"]; ok {
 				legacy[i].MCPServerName = name
-			} else if name, ok := s.Labels["agentlab.resource"]; ok {
+			} else if name, ok := s.Labels["gridctl.resource"]; ok {
 				legacy[i].MCPServerName = name
-			} else if name, ok := s.Labels["agentlab.agent"]; ok {
+			} else if name, ok := s.Labels["gridctl.agent"]; ok {
 				legacy[i].MCPServerName = name
 			}
 		}
@@ -123,9 +123,9 @@ func ToLegacyStatuses(statuses []WorkloadStatus) []ContainerStatus {
 
 // Label constants re-exported for backward compatibility.
 const (
-	LabelManaged   = "agentlab.managed"
-	LabelTopology  = "agentlab.topology"
-	LabelMCPServer = "agentlab.mcp-server"
-	LabelResource  = "agentlab.resource"
-	LabelAgent     = "agentlab.agent"
+	LabelManaged   = "gridctl.managed"
+	LabelTopology  = "gridctl.topology"
+	LabelMCPServer = "gridctl.mcp-server"
+	LabelResource  = "gridctl.resource"
+	LabelAgent     = "gridctl.agent"
 )

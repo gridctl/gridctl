@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"agentlab/pkg/dockerclient"
-	"agentlab/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/runtime"
 
 	"github.com/docker/go-connections/nat"
 )

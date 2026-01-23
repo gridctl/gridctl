@@ -68,9 +68,9 @@ func TestContainerName(t *testing.T) {
 		name     string
 		want     string
 	}{
-		{"my-topo", "server1", "agentlab-my-topo-server1"},
-		{"prod", "postgres", "agentlab-prod-postgres"},
-		{"dev", "mcp-test", "agentlab-dev-mcp-test"},
+		{"my-topo", "server1", "gridctl-my-topo-server1"},
+		{"prod", "postgres", "gridctl-prod-postgres"},
+		{"dev", "mcp-test", "gridctl-dev-mcp-test"},
 	}
 
 	for _, tc := range tests {

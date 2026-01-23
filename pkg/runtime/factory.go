@@ -3,7 +3,7 @@ package runtime
 import (
 	"context"
 
-	"agentlab/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
 )
 
 // NewFunc is the type for a factory function that creates an Orchestrator.
@@ -14,7 +14,7 @@ var NewFunc func() (*Orchestrator, error)
 // This is the backward-compatible constructor that delegates to the registered factory.
 func New() (*Orchestrator, error) {
 	if NewFunc == nil {
-		panic("runtime.New called but no factory registered - import agentlab/pkg/runtime/docker")
+		panic("runtime.New called but no factory registered - import github.com/gridctl/gridctl/pkg/runtime/docker")
 	}
 	return NewFunc()
 }
@@ -26,7 +26,7 @@ var GetContainerHostPortFunc func(ctx context.Context, cli dockerclient.DockerCl
 // GetContainerHostPort returns the host port for a container.
 func GetContainerHostPort(ctx context.Context, cli dockerclient.DockerClient, containerID string, containerPort int) (int, error) {
 	if GetContainerHostPortFunc == nil {
-		panic("GetContainerHostPort called but no implementation registered - import agentlab/pkg/runtime/docker")
+		panic("GetContainerHostPort called but no implementation registered - import github.com/gridctl/gridctl/pkg/runtime/docker")
 	}
 	return GetContainerHostPortFunc(ctx, cli, containerID, containerPort)
 }

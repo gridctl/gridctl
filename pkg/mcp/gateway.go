@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"agentlab/pkg/dockerclient"
-	"agentlab/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
@@ -50,7 +50,7 @@ func NewGateway() *Gateway {
 		sessions: NewSessionManager(),
 		logger:   logging.NewDiscardLogger(),
 		serverInfo: ServerInfo{
-			Name:    "agentlab-gateway",
+			Name:    "gridctl-gateway",
 			Version: "1.0.0",
 		},
 		serverMeta:  make(map[string]MCPServerConfig),

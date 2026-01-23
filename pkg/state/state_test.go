@@ -24,7 +24,7 @@ func TestBaseDir(t *testing.T) {
 	defer cleanup()
 
 	home := os.Getenv("HOME")
-	expected := filepath.Join(home, ".agentlab")
+	expected := filepath.Join(home, ".gridctl")
 	if got := BaseDir(); got != expected {
 		t.Errorf("BaseDir() = %q, want %q", got, expected)
 	}
@@ -35,7 +35,7 @@ func TestStateDir(t *testing.T) {
 	defer cleanup()
 
 	home := os.Getenv("HOME")
-	expected := filepath.Join(home, ".agentlab", "state")
+	expected := filepath.Join(home, ".gridctl", "state")
 	if got := StateDir(); got != expected {
 		t.Errorf("StateDir() = %q, want %q", got, expected)
 	}
@@ -46,7 +46,7 @@ func TestLogDir(t *testing.T) {
 	defer cleanup()
 
 	home := os.Getenv("HOME")
-	expected := filepath.Join(home, ".agentlab", "logs")
+	expected := filepath.Join(home, ".gridctl", "logs")
 	if got := LogDir(); got != expected {
 		t.Errorf("LogDir() = %q, want %q", got, expected)
 	}
@@ -57,7 +57,7 @@ func TestStatePath(t *testing.T) {
 	defer cleanup()
 
 	home := os.Getenv("HOME")
-	expected := filepath.Join(home, ".agentlab", "state", "test-topo.json")
+	expected := filepath.Join(home, ".gridctl", "state", "test-topo.json")
 	if got := StatePath("test-topo"); got != expected {
 		t.Errorf("StatePath(test-topo) = %q, want %q", got, expected)
 	}
@@ -68,7 +68,7 @@ func TestLogPath(t *testing.T) {
 	defer cleanup()
 
 	home := os.Getenv("HOME")
-	expected := filepath.Join(home, ".agentlab", "logs", "test-topo.log")
+	expected := filepath.Join(home, ".gridctl", "logs", "test-topo.log")
 	if got := LogPath("test-topo"); got != expected {
 		t.Errorf("LogPath(test-topo) = %q, want %q", got, expected)
 	}
@@ -385,83 +385,12 @@ func TestEnsureLogDir_Idempotent(t *testing.T) {
 	}
 }
 
-func TestMigrateFromAgent0_NoOldDir(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
-
-	// Should not error when old dir doesn't exist
-	if err := MigrateFromAgent0(); err != nil {
-		t.Errorf("MigrateFromAgent0() error = %v", err)
-	}
-}
-
-func TestMigrateFromAgent0_NewDirExists(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
-
-	home := os.Getenv("HOME")
-
-	// Create both old and new dirs
-	oldDir := filepath.Join(home, ".agent0")
-	newDir := filepath.Join(home, ".agentlab")
-	if err := os.MkdirAll(oldDir, 0755); err != nil {
-		t.Fatalf("failed to create old dir: %v", err)
-	}
-	if err := os.MkdirAll(newDir, 0755); err != nil {
-		t.Fatalf("failed to create new dir: %v", err)
-	}
-
-	// Should not migrate when new dir already exists
-	if err := MigrateFromAgent0(); err != nil {
-		t.Errorf("MigrateFromAgent0() error = %v", err)
-	}
-
-	// Old dir should still exist (not renamed)
-	if _, err := os.Stat(oldDir); os.IsNotExist(err) {
-		t.Error("expected old dir to still exist")
-	}
-}
-
-func TestMigrateFromAgent0_Success(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
-
-	home := os.Getenv("HOME")
-
-	// Create old dir with a file
-	oldDir := filepath.Join(home, ".agent0")
-	if err := os.MkdirAll(filepath.Join(oldDir, "state"), 0755); err != nil {
-		t.Fatalf("failed to create old dir: %v", err)
-	}
-	testFile := filepath.Join(oldDir, "state", "test.json")
-	if err := os.WriteFile(testFile, []byte("{}"), 0644); err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
-
-	// Migrate
-	if err := MigrateFromAgent0(); err != nil {
-		t.Fatalf("MigrateFromAgent0() error = %v", err)
-	}
-
-	// New dir should exist with the file
-	newDir := filepath.Join(home, ".agentlab")
-	newFile := filepath.Join(newDir, "state", "test.json")
-	if _, err := os.Stat(newFile); os.IsNotExist(err) {
-		t.Error("expected migrated file to exist in new location")
-	}
-
-	// Old dir should be gone
-	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
-		t.Error("expected old dir to be removed after migration")
-	}
-}
-
 func TestLockPath(t *testing.T) {
 	cleanup := setTempHome(t)
 	defer cleanup()
 
 	home := os.Getenv("HOME")
-	expected := filepath.Join(home, ".agentlab", "state", "test-topo.lock")
+	expected := filepath.Join(home, ".gridctl", "state", "test-topo.lock")
 	if got := LockPath("test-topo"); got != expected {
 		t.Errorf("LockPath(test-topo) = %q, want %q", got, expected)
 	}

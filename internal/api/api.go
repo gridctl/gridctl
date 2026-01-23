@@ -9,15 +9,15 @@ import (
 	"strconv"
 	"strings"
 
-	"agentlab/pkg/a2a"
-	"agentlab/pkg/dockerclient"
-	"agentlab/pkg/mcp"
-	"agentlab/pkg/runtime/docker"
+	"github.com/gridctl/gridctl/pkg/a2a"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/runtime/docker"
 
 	"github.com/docker/docker/api/types/container"
 )
 
-// Server provides the combined API server for agentlab.
+// Server provides the combined API server for gridctl.
 type Server struct {
 	gateway      *mcp.Gateway
 	mcpHandler   *mcp.Handler
@@ -503,7 +503,7 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentNa
 			"",
 			"  This node is configured as an external MCP server, local",
 			"  process, SSH connection, or remote A2A agent - it does not",
-			"  have a Docker container managed by AgentLab.",
+			"  have a Docker container managed by Gridctl.",
 			"",
 			"  To view logs for external services, check the source directly:",
 			"    • Docker: docker logs <container-name>",

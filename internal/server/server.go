@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Server handles HTTP requests for the Agentlab application.
+// Server handles HTTP requests for the Gridctl application.
 type Server struct {
 	webFS  fs.FS
 	mux    *http.ServeMux

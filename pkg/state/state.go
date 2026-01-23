@@ -18,46 +18,20 @@ type DaemonState struct {
 	StartedAt    time.Time `json:"started_at"`
 }
 
-// BaseDir returns the base agentlab directory (~/.agentlab/).
+// BaseDir returns the base gridctl directory (~/.gridctl/).
 func BaseDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".agentlab")
+	return filepath.Join(home, ".gridctl")
 }
 
-// StateDir returns the directory for state files (~/.agentlab/state/).
+// StateDir returns the directory for state files (~/.gridctl/state/).
 func StateDir() string {
 	return filepath.Join(BaseDir(), "state")
 }
 
-// LogDir returns the directory for log files (~/.agentlab/logs/).
+// LogDir returns the directory for log files (~/.gridctl/logs/).
 func LogDir() string {
 	return filepath.Join(BaseDir(), "logs")
-}
-
-// MigrateFromAgent0 moves data from ~/.agent0 to ~/.agentlab if needed.
-// This ensures backwards compatibility with existing installations.
-func MigrateFromAgent0() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	oldDir := filepath.Join(home, ".agent0")
-	newDir := filepath.Join(home, ".agentlab")
-
-	// Skip if old dir doesn't exist
-	if _, err := os.Stat(oldDir); os.IsNotExist(err) {
-		return nil
-	}
-
-	// Skip if new dir already exists (don't overwrite)
-	if _, err := os.Stat(newDir); err == nil {
-		return nil
-	}
-
-	// Rename old to new
-	fmt.Printf("Migrating data from %s to %s...\n", oldDir, newDir)
-	return os.Rename(oldDir, newDir)
 }
 
 // StatePath returns the path to a state file for a topology.

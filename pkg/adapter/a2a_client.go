@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"agentlab/pkg/a2a"
-	"agentlab/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/a2a"
+	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
 // A2AClientAdapter adapts an A2A agent to the mcp.AgentClient interface.
