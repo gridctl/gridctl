@@ -6,27 +6,47 @@
 
 Agentlab is a protocol bridge that aggregates tools from multiple [MCP](https://modelcontextprotocol.io/) servers into a single gateway endpoint. Connect Claude Desktop (or any MCP client) to dozens of tool servers through one SSE connection.
 
-[Quick Start](#quick-start) | [Features](#features) | [Configuration](#topology-configuration) | [Examples](#examples)
+[Installation](#installation) | [Quick Start](#quick-start) | [Features](#features) | [Configuration](#topology-configuration) | [Examples](#examples)
+
+---
+
+## 📦 Installation
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install wcollins/agentlab/agentlab
+```
+
+Or tap first:
+
+```bash
+brew tap wcollins/agentlab
+brew install agentlab
+```
+
+### From Source
+
+```bash
+make build
+```
 
 ---
 
 ## ⌚️ Quick Start
 
 ```bash
-# Build agentlab
-make build
-
 # Deploy a topology
-./agentlab deploy examples/getting-started/agent-basic.yaml
+agentlab deploy examples/getting-started/agent-basic.yaml
 
 # Check status
-./agentlab status
+agentlab status
 
 # Open the web UI
 open http://localhost:8180
 
 # Tear down when done
-./agentlab destroy examples/getting-started/agent-basic.yaml
+agentlab destroy examples/getting-started/agent-basic.yaml
 ```
 
 ---
