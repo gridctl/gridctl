@@ -5,7 +5,7 @@
 # - Skills advertisement and discovery
 #
 # Usage:
-#   agentlab deploy examples/multi-agent/basic-a2a.yaml
+#   gridctl deploy examples/multi-agent/basic-a2a.yaml
 #
 # Testing:
 #   # Check gateway status (includes unified agents with A2A info)

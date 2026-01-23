@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"agentlab/pkg/config"
-	"agentlab/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // testLogger returns a discard logger for tests
@@ -436,8 +436,8 @@ func TestOrchestrator_Up_WorkloadStartError(t *testing.T) {
 func TestOrchestrator_Down_Success(t *testing.T) {
 	mockRT := NewMockWorkloadRuntime()
 	mockRT.ListedWorkloads = []WorkloadStatus{
-		{ID: "workload-1", Name: "agentlab-test-server1", Type: WorkloadTypeMCPServer},
-		{ID: "workload-2", Name: "agentlab-test-postgres", Type: WorkloadTypeResource},
+		{ID: "workload-1", Name: "gridctl-test-server1", Type: WorkloadTypeMCPServer},
+		{ID: "workload-2", Name: "gridctl-test-postgres", Type: WorkloadTypeResource},
 	}
 	mockRT.CreatedNetworks = []string{"test-net"}
 	mockBuilder := &MockBuilder{}
@@ -506,7 +506,7 @@ func TestOrchestrator_Down_StopError_Continues(t *testing.T) {
 	// Down should continue even if stopping a workload fails
 	mockRT := NewMockWorkloadRuntime()
 	mockRT.ListedWorkloads = []WorkloadStatus{
-		{ID: "workload-1", Name: "agentlab-test-server1"},
+		{ID: "workload-1", Name: "gridctl-test-server1"},
 	}
 	mockRT.StopError = errors.New("stop failed")
 	mockBuilder := &MockBuilder{}
@@ -527,13 +527,13 @@ func TestOrchestrator_Status(t *testing.T) {
 	mockRT.ListedWorkloads = []WorkloadStatus{
 		{
 			ID:       "1234567890123456",
-			Name:     "agentlab-test-server1",
+			Name:     "gridctl-test-server1",
 			Type:     WorkloadTypeMCPServer,
 			Topology: "test",
 			State:    WorkloadStateRunning,
 			Message:  "Up 1 minute",
 			Labels: map[string]string{
-				"agentlab.mcp-server": "server1",
+				"gridctl.mcp-server": "server1",
 			},
 		},
 	}

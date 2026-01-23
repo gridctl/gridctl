@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"agentlab/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -135,7 +135,7 @@ func ContainerExists(ctx context.Context, cli dockerclient.DockerClient, name st
 	return false, "", nil
 }
 
-// ListManagedContainers returns all containers managed by agentlab.
+// ListManagedContainers returns all containers managed by gridctl.
 func ListManagedContainers(ctx context.Context, cli dockerclient.DockerClient, topology string) ([]types.Container, error) {
 	filterArgs := filters.NewArgs(
 		filters.Arg("label", LabelManaged+"=true"),

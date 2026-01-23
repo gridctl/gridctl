@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	"agentlab/pkg/config"
-	"agentlab/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
-// Orchestrator manages the lifecycle of agentlab workloads.
+// Orchestrator manages the lifecycle of gridctl workloads.
 // It uses a WorkloadRuntime to start/stop workloads and a Builder for image builds.
 type Orchestrator struct {
 	runtime WorkloadRuntime
@@ -575,30 +575,30 @@ func sortAgentsByDependency(topo *config.Topology) ([]config.Agent, error) {
 // Helper functions that don't need Docker-specific code
 
 func containerName(topology, name string) string {
-	return "agentlab-" + topology + "-" + name
+	return "gridctl-" + topology + "-" + name
 }
 
 func generateTag(topology, name string) string {
-	return fmt.Sprintf("agentlab-%s-%s:latest", topology, name)
+	return fmt.Sprintf("gridctl-%s-%s:latest", topology, name)
 }
 
 func managedLabels(topology, name string, isMCPServer bool) map[string]string {
 	labels := map[string]string{
-		"agentlab.managed":  "true",
-		"agentlab.topology": topology,
+		"gridctl.managed":  "true",
+		"gridctl.topology": topology,
 	}
 	if isMCPServer {
-		labels["agentlab.mcp-server"] = name
+		labels["gridctl.mcp-server"] = name
 	} else {
-		labels["agentlab.resource"] = name
+		labels["gridctl.resource"] = name
 	}
 	return labels
 }
 
 func agentLabels(topology, name string) map[string]string {
 	return map[string]string{
-		"agentlab.managed":  "true",
-		"agentlab.topology": topology,
-		"agentlab.agent":    name,
+		"gridctl.managed":  "true",
+		"gridctl.topology": topology,
+		"gridctl.agent":    name,
 	}
 }

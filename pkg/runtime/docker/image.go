@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"agentlab/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
 
 	"github.com/docker/docker/api/types/image"
 )

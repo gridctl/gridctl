@@ -1,4 +1,4 @@
-// Package logging provides shared logging utilities for agentlab.
+// Package logging provides shared logging utilities for gridctl.
 package logging
 
 import (

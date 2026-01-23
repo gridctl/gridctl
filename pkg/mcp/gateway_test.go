@@ -19,8 +19,8 @@ func TestNewGateway(t *testing.T) {
 	}
 
 	info := g.ServerInfo()
-	if info.Name != "agentlab-gateway" {
-		t.Errorf("expected server name 'agentlab-gateway', got '%s'", info.Name)
+	if info.Name != "gridctl-gateway" {
+		t.Errorf("expected server name 'gridctl-gateway', got '%s'", info.Name)
 	}
 	if info.Version != "1.0.0" {
 		t.Errorf("expected version '1.0.0', got '%s'", info.Version)
@@ -43,8 +43,8 @@ func TestGateway_HandleInitialize(t *testing.T) {
 	if result.ProtocolVersion != "2024-11-05" {
 		t.Errorf("expected protocol version '2024-11-05', got '%s'", result.ProtocolVersion)
 	}
-	if result.ServerInfo.Name != "agentlab-gateway" {
-		t.Errorf("expected server name 'agentlab-gateway', got '%s'", result.ServerInfo.Name)
+	if result.ServerInfo.Name != "gridctl-gateway" {
+		t.Errorf("expected server name 'gridctl-gateway', got '%s'", result.ServerInfo.Name)
 	}
 	if result.Capabilities.Tools == nil {
 		t.Error("expected Tools capability to be set")

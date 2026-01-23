@@ -14,14 +14,14 @@ import (
 	"syscall"
 	"time"
 
-	"agentlab/internal/api"
-	"agentlab/pkg/a2a"
-	"agentlab/pkg/adapter"
-	"agentlab/pkg/config"
-	"agentlab/pkg/mcp"
-	"agentlab/pkg/runtime"
-	_ "agentlab/pkg/runtime/docker" // Register DockerRuntime factory
-	"agentlab/pkg/state"
+	"github.com/gridctl/gridctl/internal/api"
+	"github.com/gridctl/gridctl/pkg/a2a"
+	"github.com/gridctl/gridctl/pkg/adapter"
+	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/runtime"
+	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
+	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
 )
@@ -94,7 +94,7 @@ func runDeploy(topologyPath string) error {
 		return err
 	}
 	if existingState != nil && state.IsRunning(existingState) {
-		return fmt.Errorf("topology '%s' is already running on port %d (PID: %d)\nUse 'agentlab destroy %s' to stop it first",
+		return fmt.Errorf("topology '%s' is already running on port %d (PID: %d)\nUse 'gridctl destroy %s' to stop it first",
 			topo.Name, existingState.Port, existingState.PID, topologyPath)
 	}
 
@@ -181,7 +181,7 @@ func runDeploy(topologyPath string) error {
 	fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
 	fmt.Printf("  PID: %d\n", pid)
 	fmt.Printf("  Logs: %s\n", state.LogPath(topo.Name))
-	fmt.Printf("\nUse 'agentlab destroy %s' to stop\n", topologyPath)
+	fmt.Printf("\nUse 'gridctl destroy %s' to stop\n", topologyPath)
 
 	return nil
 }

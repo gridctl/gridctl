@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"agentlab/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
 
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
@@ -46,7 +46,7 @@ func EnsureNetwork(ctx context.Context, cli dockerclient.DockerClient, name, dri
 	return resp.ID, nil
 }
 
-// ListManagedNetworks returns all networks managed by agentlab for a topology.
+// ListManagedNetworks returns all networks managed by gridctl for a topology.
 func ListManagedNetworks(ctx context.Context, cli dockerclient.DockerClient, topology string) ([]string, error) {
 	filterArgs := filters.NewArgs(
 		filters.Arg("label", LabelManaged+"=true"),

@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 )
 
-// CacheDir returns the agentlab cache directory.
+// CacheDir returns the gridctl cache directory.
 func CacheDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	cacheDir := filepath.Join(home, ".agentlab", "cache")
+	cacheDir := filepath.Join(home, ".gridctl", "cache")
 	return cacheDir, nil
 }
 

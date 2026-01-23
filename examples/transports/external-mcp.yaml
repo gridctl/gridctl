@@ -1,7 +1,7 @@
 # External MCP Server Example
 #
 # This topology demonstrates connecting to external MCP servers that run
-# outside of Agentlab's Docker container management. External servers are
+# outside of Gridctl's Docker container management. External servers are
 # identified by providing a `url` field instead of `image` or `source`.
 #
 # Use cases:
@@ -19,7 +19,7 @@
 #     go run main.go -port 9002 -sse      # SSE mode
 #
 # Usage:
-#   agentlab deploy examples/transports/external-mcp.yaml
+#   gridctl deploy examples/transports/external-mcp.yaml
 #
 # Note: External servers don't require Docker and skip container creation.
 # The gateway connects directly to the provided URL.

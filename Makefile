@@ -11,10 +11,10 @@ build-web:
 	@if [ -f web/tsconfig.json ]; then \
 		echo "Building web frontend..."; \
 		(cd web && npm run build); \
-		echo "Copying dist to cmd/agentlab/web/dist..."; \
-		rm -rf cmd/agentlab/web; \
-		mkdir -p cmd/agentlab/web; \
-		cp -r web/dist cmd/agentlab/web/; \
+		echo "Copying dist to cmd/gridctl/web/dist..."; \
+		rm -rf cmd/gridctl/web; \
+		mkdir -p cmd/gridctl/web; \
+		cp -r web/dist cmd/gridctl/web/; \
 	else \
 		echo "Skipping web build (source files not present)"; \
 	fi
@@ -22,12 +22,12 @@ build-web:
 # Build the Go binary
 build-go:
 	@echo "Building Go binary..."
-	@if [ -d cmd/agentlab/web/dist ]; then \
+	@if [ -d cmd/gridctl/web/dist ]; then \
 		echo "Including embedded web assets..."; \
-		go build -tags embed_web -o agentlab ./cmd/agentlab; \
+		go build -tags embed_web -o gridctl ./cmd/gridctl; \
 	else \
 		echo "Building without web assets (run make build-web first to include UI)..."; \
-		go build -o agentlab ./cmd/agentlab; \
+		go build -o gridctl ./cmd/gridctl; \
 	fi
 
 # Development mode - run Vite dev server
@@ -37,8 +37,8 @@ dev:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -rf agentlab
-	rm -rf cmd/agentlab/web
+	rm -rf gridctl
+	rm -rf cmd/gridctl/web
 	rm -rf web/dist
 	rm -rf web/node_modules
 
@@ -50,7 +50,7 @@ deps:
 
 # Run the built binary
 run: build
-	./agentlab
+	./gridctl
 
 # Run tests
 test:
@@ -108,7 +108,7 @@ clean-mock-servers:
 
 # Help
 help:
-	@echo "Agentlab Makefile"
+	@echo "Gridctl Makefile"
 	@echo ""
 	@echo "Usage:"
 	@echo "  make build      - Build frontend and backend"

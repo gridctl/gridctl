@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"agentlab/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
 )
 
 // Builder handles building images from source.
@@ -107,5 +107,5 @@ func (b *Builder) prepareLocalSource(opts BuildOptions) (string, error) {
 
 // GenerateTag creates a deterministic image tag for an agent.
 func GenerateTag(topology, agentName string) string {
-	return fmt.Sprintf("agentlab-%s-%s:latest", topology, agentName)
+	return fmt.Sprintf("gridctl-%s-%s:latest", topology, agentName)
 }

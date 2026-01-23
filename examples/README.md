@@ -1,11 +1,11 @@
-# 📚 Agentlab Examples
+# Examples
 
-Example topologies demonstrating Agentlab patterns and capabilities.
+Example topologies demonstrating Gridctl patterns and capabilities.
 
 ## 🚀 Quick Start
 
 ```bash
-agentlab deploy examples/getting-started/agent-basic.yaml
+gridctl deploy examples/getting-started/agent-basic.yaml
 ```
 
 ## 📁 Categories
@@ -51,11 +51,11 @@ All examples follow the same deployment pattern:
 
 ```bash
 # Deploy a topology
-agentlab deploy examples/<category>/<file>.yaml
+gridctl deploy examples/<category>/<file>.yaml
 
 # Force recreate containers
-agentlab deploy examples/<category>/<file>.yaml
+gridctl deploy examples/<category>/<file>.yaml
 
 # View status
-agentlab status
+gridctl status
 ```

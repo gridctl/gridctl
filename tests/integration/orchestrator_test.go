@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"agentlab/pkg/config"
-	"agentlab/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/runtime"
 )
 
 // MockWorkloadRuntime is a test implementation of WorkloadRuntime for unit testing.

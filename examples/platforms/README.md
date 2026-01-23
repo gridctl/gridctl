@@ -1,6 +1,6 @@
 # 📦 Platforms
 
-Third-party MCP servers that Agentlab runs as containers.
+Third-party MCP servers that Gridctl runs as containers.
 
 ## 📄 Examples
 
@@ -40,8 +40,8 @@ Requires [itential-dev-stack](https://github.com/itential/itential-dev-stack) ru
 ## 💻 Usage
 
 ```bash
-agentlab deploy examples/platforms/github-mcp.yaml
-agentlab deploy examples/platforms/itential.yaml
+gridctl deploy examples/platforms/github-mcp.yaml
+gridctl deploy examples/platforms/itential.yaml
 ```
 
 ## 🔗 References

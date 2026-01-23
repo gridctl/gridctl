@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"agentlab/pkg/config"
-	"agentlab/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/runtime"
 )
 
 // TestFullTopologyLifecycle tests the complete lifecycle of a topology.

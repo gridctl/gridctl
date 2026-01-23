@@ -17,7 +17,7 @@
 #     go build -o mock-stdio-server .
 #
 # Usage:
-#   agentlab deploy examples/transports/local-mcp.yaml
+#   gridctl deploy examples/transports/local-mcp.yaml
 #
 # Note: Local process servers don't use containers. The gateway spawns the
 # process directly and communicates via stdin/stdout JSON-RPC.

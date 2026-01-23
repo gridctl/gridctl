@@ -1,8 +1,8 @@
 # Binary
-/agentlab
+/gridctl
 
 # Build artifacts
-cmd/agentlab/web/
+cmd/gridctl/web/
 
 # Web dependencies and build
 node_modules/

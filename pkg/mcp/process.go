@@ -156,7 +156,7 @@ func (c *ProcessClient) Initialize(ctx context.Context) error {
 	params := InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo: ClientInfo{
-			Name:    "agentlab-gateway",
+			Name:    "gridctl-gateway",
 			Version: "1.0.0",
 		},
 		Capabilities: Capabilities{

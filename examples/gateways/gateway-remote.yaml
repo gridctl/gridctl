@@ -1,9 +1,9 @@
 # Remote Gateway Access
 #
-# Enables remote access to Agentlab from MCP clients (e.g., Claude Desktop)
+# Enables remote access to Gridctl from MCP clients (e.g., Claude Desktop)
 # running on another machine on the same network.
 #
-# Agentlab Gateway:
+# Gridctl Gateway:
 #   - Listens on all interfaces (0.0.0.0:8180 by default)
 #   - Exposes SSE endpoint at /sse for MCP clients
 #   - Aggregates tools from connected MCP servers with prefixes
@@ -16,7 +16,7 @@
 #
 # Usage:
 #   1. Deploy this topology:
-#      agentlab deploy examples/gateways/gateway-remote.yaml
+#      gridctl deploy examples/gateways/gateway-remote.yaml
 #
 #   2. Find this machine's IP address:
 #      ip addr show | grep "inet " | grep -v 127.0.0.1
@@ -25,7 +25,7 @@
 #   3. On the remote machine, configure Claude Desktop with:
 #      {
 #        "mcpServers": {
-#          "agentlab": {
+#          "gridctl": {
 #            "command": "npx",
 #            "args": ["mcp-remote", "http://<THIS_MACHINE_IP>:8180/sse", "--allow-http", "--transport", "sse-only"]
 #          }

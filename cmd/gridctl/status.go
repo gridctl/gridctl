@@ -7,9 +7,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"agentlab/pkg/runtime"
-	_ "agentlab/pkg/runtime/docker" // Register DockerRuntime factory
-	"agentlab/pkg/state"
+	"github.com/gridctl/gridctl/pkg/runtime"
+	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
+	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,7 @@ var statusTopology string
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show status of gateways and containers",
-	Long: `Displays the current status of agentlab-managed gateways and containers.
+	Long: `Displays the current status of gridctl-managed gateways and containers.
 
 Shows running gateways with their ports, and container states.
 Use --topology to filter by a specific topology.`,

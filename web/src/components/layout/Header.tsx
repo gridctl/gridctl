@@ -36,7 +36,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
           </div>
           <div>
             <h1 className="text-base font-semibold text-text-primary tracking-tight">
-              Agentlab
+              Gridctl
             </h1>
             {gatewayInfo && (
               <p className="text-[11px] text-text-muted font-mono -mt-0.5 tracking-wide">

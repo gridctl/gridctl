@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"agentlab/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -138,7 +138,7 @@ func (c *StdioClient) Initialize(ctx context.Context) error {
 	params := InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo: ClientInfo{
-			Name:    "agentlab-gateway",
+			Name:    "gridctl-gateway",
 			Version: "1.0.0",
 		},
 		Capabilities: Capabilities{

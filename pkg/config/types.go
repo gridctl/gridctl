@@ -1,6 +1,6 @@
 package config
 
-// Topology represents the complete agentlab configuration.
+// Topology represents the complete gridctl configuration.
 type Topology struct {
 	Version    string      `yaml:"version"`
 	Name       string      `yaml:"name"`

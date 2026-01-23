@@ -1,12 +1,12 @@
 package docker
 
-// Labels used to identify agentlab-managed resources.
+// Labels used to identify gridctl-managed resources.
 const (
-	LabelManaged   = "agentlab.managed"
-	LabelTopology  = "agentlab.topology"
-	LabelMCPServer = "agentlab.mcp-server"
-	LabelResource  = "agentlab.resource"
-	LabelAgent     = "agentlab.agent"
+	LabelManaged   = "gridctl.managed"
+	LabelTopology  = "gridctl.topology"
+	LabelMCPServer = "gridctl.mcp-server"
+	LabelResource  = "gridctl.resource"
+	LabelAgent     = "gridctl.agent"
 )
 
 // ManagedLabels returns labels that identify a managed container.
@@ -34,5 +34,5 @@ func AgentLabels(topology, name string) map[string]string {
 
 // ContainerName generates a deterministic container name.
 func ContainerName(topology, name string) string {
-	return "agentlab-" + topology + "-" + name
+	return "gridctl-" + topology + "-" + name
 }

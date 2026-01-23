@@ -1,19 +1,19 @@
 version: 2
 
-project_name: agentlab
+project_name: gridctl
 
 before:
   hooks:
     # Build frontend before Go compilation
     - npm ci --prefix web
     - npm run build --prefix web
-    - mkdir -p cmd/agentlab/web
-    - cp -r web/dist cmd/agentlab/web/
+    - mkdir -p cmd/gridctl/web
+    - cp -r web/dist cmd/gridctl/web/
 
 builds:
-  - id: agentlab
-    main: ./cmd/agentlab
-    binary: agentlab
+  - id: gridctl
+    main: ./cmd/gridctl
+    binary: gridctl
     env:
       - CGO_ENABLED=0
     goos:
@@ -64,27 +64,27 @@ changelog:
 
 release:
   github:
-    owner: wcollins
-    name: agentlab
+    owner: gridctl
+    name: gridctl
   draft: false
   prerelease: auto
   name_template: "{{.Tag}}"
 
 homebrew_casks:
-  - name: agentlab
+  - name: gridctl
     repository:
-      owner: wcollins
-      name: homebrew-agentlab
+      owner: gridctl
+      name: homebrew-gridctl
       token: "{{ .Env.GORELEASER_TOKEN }}"
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    homepage: "https://github.com/wcollins/agentlab"
+    homepage: "https://github.com/gridctl/gridctl"
     description: "MCP orchestration tool - Containerlab for AI Agents"
     binaries:
-      - agentlab
+      - gridctl
     hooks:
       post:
         install: |
           system_command "/usr/bin/xattr",
-                         args: ["-dr", "com.apple.quarantine", "#{staged_path}/agentlab"]
+                         args: ["-dr", "com.apple.quarantine", "#{staged_path}/gridctl"]

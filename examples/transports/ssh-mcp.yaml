@@ -14,7 +14,7 @@
 #   You can optionally specify an identity file path for key-based auth.
 #
 # Usage:
-#   agentlab deploy examples/transports/ssh-mcp.yaml
+#   gridctl deploy examples/transports/ssh-mcp.yaml
 #
 # Note: SSH servers communicate via stdin/stdout over the SSH connection.
 # The command specified runs on the remote host and must be an MCP server

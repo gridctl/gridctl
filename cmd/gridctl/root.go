@@ -4,16 +4,15 @@ import (
 	"fmt"
 	"os"
 
-	"agentlab/internal/server"
-	"agentlab/pkg/state"
+	"github.com/gridctl/gridctl/internal/server"
 
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "agentlab",
+	Use:   "gridctl",
 	Short: "MCP orchestration tool",
-	Long: `Agentlab is an MCP (Model Context Protocol) orchestration tool.
+	Long: `Gridctl is an MCP (Model Context Protocol) orchestration tool.
 
 It allows you to define a topology of MCP servers, tools, and resources
 in a simple YAML file, then spins up, wires together, and exposes
@@ -21,8 +20,6 @@ them via a single MCP gateway.`,
 }
 
 func init() {
-	// Migrate from old ~/.agent0 directory if needed
-	_ = state.MigrateFromAgent0()
 
 	rootCmd.AddCommand(deployCmd)
 	rootCmd.AddCommand(destroyCmd)
@@ -40,7 +37,7 @@ func Execute() {
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the web UI server",
-	Long:  "Starts the Agentlab web UI server without managing any topology.",
+	Long:  "Starts the Gridctl web UI server without managing any topology.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServe()
 	},
@@ -58,6 +55,6 @@ func runServe() error {
 	}
 
 	srv := server.New(addr, webFS)
-	fmt.Printf("Agentlab UI starting on http://localhost%s\n", addr)
+	fmt.Printf("Gridctl UI starting on http://localhost%s\n", addr)
 	return srv.ListenAndServe()
 }

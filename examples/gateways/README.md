@@ -1,6 +1,6 @@
 # 🔒 Gateways
 
-Examples where Agentlab acts as a gateway to existing infrastructure.
+Examples where Gridctl acts as a gateway to existing infrastructure.
 
 ## 📄 Examples
 
@@ -34,12 +34,12 @@ An MCP server running and accessible via HTTP or SSE.
 
 ```bash
 # Update the url in the file to match your MCP server
-agentlab deploy examples/gateways/gateway-basic.yaml
+gridctl deploy examples/gateways/gateway-basic.yaml
 ```
 
 ## 🖥️ gateway-remote.yaml
 
-Exposes Agentlab's gateway on all interfaces for remote MCP clients.
+Exposes Gridctl's gateway on all interfaces for remote MCP clients.
 
 ### Prerequisites
 
@@ -50,7 +50,7 @@ Exposes Agentlab's gateway on all interfaces for remote MCP clients.
 
 ```bash
 # Deploy on the server
-agentlab deploy examples/gateways/gateway-remote.yaml
+gridctl deploy examples/gateways/gateway-remote.yaml
 
 # Find server IP
 ip addr show | grep "inet " | grep -v 127.0.0.1
@@ -63,7 +63,7 @@ On the remote machine, configure Claude Desktop:
 ```json
 {
   "mcpServers": {
-    "agentlab": {
+    "gridctl": {
       "command": "npx",
       "args": ["mcp-remote", "http://<SERVER_IP>:8180/sse", "--allow-http", "--transport", "sse-only"]
     }

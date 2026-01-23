@@ -9,7 +9,7 @@
 #   - equipped_skills: [helper-bot] -> Capability augmentation
 #
 # Usage:
-#   agentlab deploy examples/getting-started/skills-basic.yaml
+#   gridctl deploy examples/getting-started/skills-basic.yaml
 
 version: "1"
 name: equipped-skills-demo

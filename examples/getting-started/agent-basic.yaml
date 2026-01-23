@@ -15,7 +15,7 @@
 # - platforms/github-mcp.yaml (real third-party MCP server)
 #
 # Usage:
-#   agentlab deploy examples/getting-started/agent-basic.yaml
+#   gridctl deploy examples/getting-started/agent-basic.yaml
 #
 version: "1"
 name: agent-demo

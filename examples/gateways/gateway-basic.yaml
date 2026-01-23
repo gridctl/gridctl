@@ -1,22 +1,22 @@
 # Basic Gateway Example
 #
-# Demonstrates using Agentlab as a gateway to an existing MCP server.
+# Demonstrates using Gridctl as a gateway to an existing MCP server.
 # This pattern connects to an MCP server already running on your machine
-# and exposes it through Agentlab's unified interface.
+# and exposes it through Gridctl's unified interface.
 #
 # Use cases:
 #   - Connect multiple clients to a single MCP server
 #   - Aggregate tools from multiple MCP servers
-#   - Add Agentlab's monitoring and management layer
+#   - Add Gridctl's monitoring and management layer
 #
 # Prerequisites:
 #   An MCP server running and accessible via HTTP or SSE.
 #   Update the url below to match your server's endpoint.
 #
 # Usage:
-#   agentlab deploy examples/gateways/gateway-basic.yaml
+#   gridctl deploy examples/gateways/gateway-basic.yaml
 #
-#   Then connect clients to Agentlab's gateway URL:
+#   Then connect clients to Gridctl's gateway URL:
 #   http://localhost:8080/sse
 
 version: "1"

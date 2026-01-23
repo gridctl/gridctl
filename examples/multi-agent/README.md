@@ -41,8 +41,8 @@ a2a:
 ## 💻 Usage
 
 ```bash
-agentlab deploy examples/multi-agent/multi-agent-skills.yaml
-agentlab deploy examples/multi-agent/basic-a2a.yaml
+gridctl deploy examples/multi-agent/multi-agent-skills.yaml
+gridctl deploy examples/multi-agent/basic-a2a.yaml
 ```
 
 ## 🧪 Testing

@@ -1,6 +1,6 @@
-# Agentlab Web Design System: "Obsidian Observatory"
+# Gridctl Web Design System: "Obsidian Observatory"
 
-This document defines the visual language, behavior, and code standards for the Agentlab web interface.
+This document defines the visual language, behavior, and code standards for the Gridctl web interface.
 **All UI changes must strictly adhere to these guidelines.**
 
 ## 1. Design Philosophy

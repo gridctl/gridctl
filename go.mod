@@ -1,4 +1,4 @@
-module agentlab
+module github.com/gridctl/gridctl
 
 go 1.24.0
 

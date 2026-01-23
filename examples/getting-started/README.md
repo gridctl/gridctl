@@ -1,6 +1,6 @@
 # 🎯 Getting Started
 
-Basic examples demonstrating core Agentlab features.
+Basic examples demonstrating core Gridctl features.
 
 ## 📄 Examples
 
@@ -13,10 +13,10 @@ Basic examples demonstrating core Agentlab features.
 
 ```bash
 # Deploy the basic agent demo
-agentlab deploy examples/getting-started/agent-basic.yaml
+gridctl deploy examples/getting-started/agent-basic.yaml
 
 # Check status
-agentlab status
+gridctl status
 ```
 
 ## 📖 What You'll Learn
