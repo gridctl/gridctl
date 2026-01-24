@@ -15,13 +15,13 @@ Gridctl is a protocol bridge that aggregates tools from multiple [MCP](https://m
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install gridctl/gridctl/gridctl
+brew install gridctl/tap/gridctl
 ```
 
 Or tap first:
 
 ```bash
-brew tap gridctl/gridctl
+brew tap gridctl/tap
 brew install gridctl
 ```
 
