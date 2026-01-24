@@ -74,7 +74,7 @@ homebrew_casks:
   - name: gridctl
     repository:
       owner: gridctl
-      name: homebrew-gridctl
+      name: homebrew-tap
       token: "{{ .Env.GORELEASER_TOKEN }}"
     commit_author:
       name: goreleaserbot
