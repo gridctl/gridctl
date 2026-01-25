@@ -99,30 +99,6 @@ This enables network isolation between agents while still allowing them to commu
 - **Localhost**: Web UI at `localhost:8180` without port mapping complexity
 - **Debugging**: Standard Go debugging tools work directly
 
-## Implementation Status
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| Phase 0 | Project skeleton, embedded React UI | Complete |
-| Phase 1 | Topology parser, Cobra CLI | Complete |
-| Phase 2 | Docker container orchestration | Complete |
-| Phase 3 | Git-to-image builder | Complete |
-| Phase 4 | MCP Gateway (aggregator) | Complete |
-| Phase 5 | React Flow UI | Complete |
-| Phase 6 | Release & packaging | Not started |
-
-### Agent Platform Phases
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| Agent Phase 1 | Agent primitive (config, runtime, API) | Complete |
-| Agent Phase 2 | Sidecar injector (MCP_ENDPOINT, tool access control) | Complete |
-| Agent Phase 3 | Headless agent schema (runtime, prompt fields) | Complete |
-| Agent Phase 4 | Agent cards UI (circular nodes, purple theme) | Complete |
-| A2A Phase 1 | A2A protocol types and client | Complete |
-| A2A Phase 2 | A2A handler and gateway | Complete |
-| A2A Phase 3 | Unified agent nodes (merged container + A2A status) | Complete |
-
 ## Directory Structure
 
 ```
@@ -133,17 +109,25 @@ gridctl/
 │   ├── deploy.go         # Start topology + gateway
 │   ├── destroy.go        # Stop containers
 │   ├── status.go         # Show container status
-│   └── embed.go          # Embedded web assets
+│   ├── version.go        # Version command
+│   ├── banner.go         # ASCII banner display
+│   ├── help.go           # Custom help template
+│   ├── embed.go          # Embedded web assets
+│   └── embed_stub.go     # Build stub for embed
 ├── internal/
 │   ├── server/           # Legacy HTTP server
 │   └── api/              # API server (MCP + REST)
 ├── pkg/
+│   ├── adapter/          # Protocol adapters
+│   │   └── a2a_client.go # A2A client adapter
 │   ├── config/           # Topology YAML parsing
 │   │   ├── types.go      # Topology, Agent, Resource structs
 │   │   ├── loader.go     # LoadTopology() function
 │   │   └── validate.go   # Validation rules
 │   ├── dockerclient/     # Docker client interface
 │   │   └── interface.go  # Interface definition for mocking
+│   ├── logging/          # Logging utilities
+│   │   └── discard.go    # Discard logger
 │   ├── runtime/          # Workload orchestration (runtime-agnostic)
 │   │   ├── interface.go  # WorkloadRuntime interface + types
 │   │   ├── orchestrator.go # High-level Up/Down/Status
@@ -180,18 +164,30 @@ gridctl/
 │       ├── client.go     # HTTP client for remote A2A agents
 │       ├── handler.go    # HTTP handler for A2A endpoints
 │       └── gateway.go    # A2A gateway (local + remote agents)
-└── web/                  # React frontend (Vite)
+├── web/                  # React frontend (Vite)
+├── examples/             # Example topologies
+│   ├── getting-started/  # Basic examples
+│   ├── transports/       # Transport-specific examples
+│   └── _mock-servers/    # Mock MCP servers for testing
+└── tests/
+    └── integration/      # Integration tests (build tag: integration)
 ```
 
 ## Build Commands
 
 ```bash
-make build      # Build frontend and backend
-make build-web  # Build React frontend only
-make build-go   # Build Go binary only
-make dev        # Run Vite dev server
-make clean      # Remove build artifacts
-make run        # Build and run
+make build           # Build frontend and backend
+make build-web       # Build React frontend only
+make build-go        # Build Go binary only
+make dev             # Run Vite dev server
+make clean           # Remove build artifacts
+make deps            # Install dependencies
+make run             # Build and run
+make test            # Run unit tests
+make test-coverage   # Run tests with coverage report
+make test-integration # Run integration tests (requires Docker)
+make mock-servers    # Build and run mock MCP servers for examples
+make clean-mock-servers # Stop and remove mock MCP servers
 ```
 
 ## CLI Usage
@@ -425,8 +421,8 @@ a2a-agents:
     url: https://example.com/agent
     auth:
       type: bearer              # or "api_key"
-      token: "${A2A_TOKEN}"
-      # header: "X-API-Key"     # for api_key type
+      token_env: "A2A_TOKEN"    # Environment variable containing the token
+      # header_name: "X-API-Key" # for api_key type (default: "Authorization")
 ```
 
 ### Advanced Mode (Multiple Networks)
@@ -488,7 +484,7 @@ In simple mode, the `network` field on individual containers is ignored.
 
 - Functional components with hooks
 - State management: Zustand
-- Data fetching: React Query
+- Data fetching: Custom polling hooks with fetch API
 - Styling: Tailwind CSS
 - **UI Design Guidelines:** See [web/AGENTS.md](web/AGENTS.md) for the "Obsidian Observatory" design system, color palette, and component patterns.
 
@@ -520,13 +516,13 @@ All managed resources use these labels:
 
 | Package | Test Pattern |
 |---------|--------------|
-| pkg/mcp | router_test.go, gateway_test.go, session_test.go, handler_test.go |
+| pkg/config | loader_test.go |
+| pkg/mcp | router_test.go, gateway_test.go, session_test.go, client_test.go, mock_test.go |
 | pkg/a2a | types_test.go, gateway_test.go, handler_test.go |
 | pkg/runtime | runtime_test.go (tests Orchestrator via mock interfaces) |
 | pkg/runtime/docker | labels_test.go, mock_test.go |
-| pkg/builder | cache_test.go, builder_test.go |
 | pkg/state | state_test.go |
-| tests/integration | *_test.go (build tag: integration) |
+| tests/integration | orchestrator_test.go, runtime_test.go (build tag: integration) |
 
 ### Mocks
 
