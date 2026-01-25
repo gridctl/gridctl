@@ -20,6 +20,7 @@ them via a single MCP gateway.`,
 }
 
 func init() {
+	initHelp()
 
 	rootCmd.AddCommand(deployCmd)
 	rootCmd.AddCommand(destroyCmd)
