@@ -1,8 +1,9 @@
-import { Activity, RefreshCw, Settings, Zap } from 'lucide-react';
+import { RefreshCw, Settings, Zap } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { IconButton } from '../ui/IconButton';
 import { useTopologyStore } from '../../stores/useTopologyStore';
+import logoSvg from '../../assets/brand/logo.svg';
 
 interface HeaderProps {
   onRefresh?: () => void;
@@ -23,27 +24,21 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       {/* Subtle gradient line at top */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
-      {/* Left: Logo & Name */}
+      {/* Left: Logo & Version */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
-          {/* Logo - Distinctive amber glow */}
-          <div className="relative">
-            <div className="w-9 h-9 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl flex items-center justify-center border border-primary/20 shadow-glow-primary">
-              <Activity size={18} className="text-primary" />
-            </div>
-            {/* Subtle pulse ring */}
-            <div className="absolute inset-0 rounded-xl bg-primary/10 animate-ping opacity-30" style={{ animationDuration: '3s' }} />
-          </div>
-          <div>
-            <h1 className="text-base font-semibold text-text-primary tracking-tight">
-              Gridctl
-            </h1>
-            {gatewayInfo && (
-              <p className="text-[11px] text-text-muted font-mono -mt-0.5 tracking-wide">
-                {gatewayInfo.name}
-              </p>
-            )}
-          </div>
+          {/* Brand Logo */}
+          <img
+            src={logoSvg}
+            alt="Gridctl"
+            className="h-10 w-auto block"
+          />
+          {/* Version */}
+          {gatewayInfo?.version && (
+            <span className="text-xs font-mono text-text-muted tracking-wide">
+              {gatewayInfo.version}
+            </span>
+          )}
         </div>
       </div>
 
