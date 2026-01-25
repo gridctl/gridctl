@@ -331,6 +331,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 	// Create MCP gateway
 	gateway := mcp.NewGateway()
 	gateway.SetDockerClient(rt.DockerClient())
+	gateway.SetVersion(version)
 
 	// Configure logging for verbose mode
 	if verbose {
