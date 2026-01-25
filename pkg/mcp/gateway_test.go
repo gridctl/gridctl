@@ -22,8 +22,18 @@ func TestNewGateway(t *testing.T) {
 	if info.Name != "gridctl-gateway" {
 		t.Errorf("expected server name 'gridctl-gateway', got '%s'", info.Name)
 	}
-	if info.Version != "1.0.0" {
-		t.Errorf("expected version '1.0.0', got '%s'", info.Version)
+	if info.Version != "dev" {
+		t.Errorf("expected version 'dev', got '%s'", info.Version)
+	}
+}
+
+func TestGateway_SetVersion(t *testing.T) {
+	g := NewGateway()
+	g.SetVersion("v0.1.0-alpha.2")
+
+	info := g.ServerInfo()
+	if info.Version != "v0.1.0-alpha.2" {
+		t.Errorf("expected version 'v0.1.0-alpha.2', got '%s'", info.Version)
 	}
 }
 
