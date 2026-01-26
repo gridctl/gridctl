@@ -49,16 +49,25 @@ changelog:
       - "^docs:"
       - "^test:"
       - "^chore:"
+      - "^style:"
+      - "^ci:"
+      - "^build:"
   groups:
-    - title: Features
-      regexp: "^feat:"
+    - title: Breaking Changes
+      regexp: '^.*!:'
       order: 0
-    - title: Bug Fixes
-      regexp: "^fix:"
+    - title: Features
+      regexp: "^feat"
       order: 1
-    - title: Performance
-      regexp: "^perf:"
+    - title: Bug Fixes
+      regexp: "^fix"
       order: 2
+    - title: Performance
+      regexp: "^perf"
+      order: 3
+    - title: Refactoring
+      regexp: "^refactor"
+      order: 4
     - title: Others
       order: 999
 
@@ -69,6 +78,24 @@ release:
   draft: false
   prerelease: auto
   name_template: "{{.Tag}}"
+  header: |
+    ## What's New in {{ .Tag }}
+
+    See the [CHANGELOG](https://github.com/gridctl/gridctl/blob/main/CHANGELOG.md) for full release history.
+
+    ---
+  footer: |
+    ---
+    ## Installation
+
+    **Homebrew (macOS)**:
+    ```bash
+    brew install gridctl/tap/gridctl
+    ```
+
+    **Binary Download**: See assets below for your platform.
+
+    **Full Changelog**: https://github.com/gridctl/gridctl/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 homebrew_casks:
   - name: gridctl
