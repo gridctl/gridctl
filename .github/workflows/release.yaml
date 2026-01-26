@@ -32,6 +32,27 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 
+      - name: Generate changelog with git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --verbose
+        env:
+          OUTPUT: CHANGELOG.md
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Commit changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --staged --quiet; then
+            echo "No changelog changes to commit"
+          else
+            git commit -m "docs: update changelog for ${GITHUB_REF_NAME}"
+            git push origin HEAD:main
+          fi
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
