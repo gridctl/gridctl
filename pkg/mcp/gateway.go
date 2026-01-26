@@ -232,12 +232,6 @@ func (g *Gateway) getAgentServerAccess(agentName, serverName string) (*config.To
 	return nil, false
 }
 
-// isServerAllowedForAgent checks if an agent can access tools from a specific MCP server.
-func (g *Gateway) isServerAllowedForAgent(agentName, serverName string) bool {
-	_, allowed := g.getAgentServerAccess(agentName, serverName)
-	return allowed
-}
-
 // isToolAllowedForAgent checks if an agent can access a specific tool from a server.
 // This checks both server-level access and tool-level filtering.
 func (g *Gateway) isToolAllowedForAgent(agentName, serverName, toolName string) bool {
