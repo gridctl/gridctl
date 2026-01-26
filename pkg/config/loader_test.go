@@ -434,7 +434,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 						Name:    "headless-agent",
 						Runtime: "claude-code",
 						Prompt:  "You are a helpful assistant",
-						Uses:    []string{"server1"},
+						Uses:    []ToolSelector{{Server: "server1"}},
 					},
 				},
 			},
@@ -452,7 +452,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 					{
 						Name:    "headless-agent",
 						Runtime: "claude-code",
-						Uses:    []string{"server1"},
+						Uses:    []ToolSelector{{Server: "server1"}},
 					},
 				},
 			},
@@ -472,7 +472,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 						Runtime: "claude-code",
 						Prompt:  "You are a helpful assistant",
 						Image:   "some-image",
-						Uses:    []string{"server1"},
+						Uses:    []ToolSelector{{Server: "server1"}},
 					},
 				},
 			},
@@ -492,7 +492,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 						Runtime: "claude-code",
 						Prompt:  "You are a helpful assistant",
 						Source:  &Source{Type: "git", URL: "https://github.com/example/repo"},
-						Uses:    []string{"server1"},
+						Uses:    []ToolSelector{{Server: "server1"}},
 					},
 				},
 			},
@@ -510,7 +510,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 					{
 						Name:  "container-agent",
 						Image: "my-agent:latest",
-						Uses:  []string{"server1"},
+						Uses:  []ToolSelector{{Server: "server1"}},
 					},
 				},
 			},
@@ -560,6 +560,188 @@ func TestAgent_IsHeadless(t *testing.T) {
 				t.Errorf("IsHeadless() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestToolSelectorUnmarshal(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []ToolSelector
+	}{
+		{
+			name: "string format",
+			content: `
+version: "1"
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine
+    port: 3000
+agents:
+  - name: agent1
+    image: alpine
+    uses:
+      - server1
+`,
+			want: []ToolSelector{{Server: "server1"}},
+		},
+		{
+			name: "object format without tools",
+			content: `
+version: "1"
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine
+    port: 3000
+agents:
+  - name: agent1
+    image: alpine
+    uses:
+      - server: server1
+`,
+			want: []ToolSelector{{Server: "server1"}},
+		},
+		{
+			name: "object format with tools",
+			content: `
+version: "1"
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine
+    port: 3000
+agents:
+  - name: agent1
+    image: alpine
+    uses:
+      - server: server1
+        tools: ["tool1", "tool2"]
+`,
+			want: []ToolSelector{{Server: "server1", Tools: []string{"tool1", "tool2"}}},
+		},
+		{
+			name: "mixed formats",
+			content: `
+version: "1"
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine
+    port: 3000
+  - name: server2
+    image: alpine
+    port: 3001
+agents:
+  - name: agent1
+    image: alpine
+    uses:
+      - server1
+      - server: server2
+        tools: ["restricted-tool"]
+`,
+			want: []ToolSelector{
+				{Server: "server1"},
+				{Server: "server2", Tools: []string{"restricted-tool"}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempFile(t, tc.content)
+			topo, err := LoadTopology(path)
+			if err != nil {
+				t.Fatalf("LoadTopology failed: %v", err)
+			}
+
+			if len(topo.Agents) == 0 {
+				t.Fatal("expected at least one agent")
+			}
+
+			got := topo.Agents[0].Uses
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d selectors, want %d", len(got), len(tc.want))
+			}
+
+			for i := range got {
+				if got[i].Server != tc.want[i].Server {
+					t.Errorf("selector[%d].Server = %q, want %q", i, got[i].Server, tc.want[i].Server)
+				}
+				if len(got[i].Tools) != len(tc.want[i].Tools) {
+					t.Errorf("selector[%d] has %d tools, want %d", i, len(got[i].Tools), len(tc.want[i].Tools))
+				}
+				for j := range got[i].Tools {
+					if got[i].Tools[j] != tc.want[i].Tools[j] {
+						t.Errorf("selector[%d].Tools[%d] = %q, want %q", i, j, got[i].Tools[j], tc.want[i].Tools[j])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestMCPServerToolsFilter(t *testing.T) {
+	content := `
+version: "1"
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: filtered-server
+    image: alpine
+    port: 3000
+    tools: ["allowed-tool1", "allowed-tool2"]
+  - name: unfiltered-server
+    image: alpine
+    port: 3001
+`
+	path := writeTempFile(t, content)
+	topo, err := LoadTopology(path)
+	if err != nil {
+		t.Fatalf("LoadTopology failed: %v", err)
+	}
+
+	if len(topo.MCPServers) != 2 {
+		t.Fatalf("expected 2 servers, got %d", len(topo.MCPServers))
+	}
+
+	// First server should have tools filter
+	if len(topo.MCPServers[0].Tools) != 2 {
+		t.Errorf("expected 2 tools in filter, got %d", len(topo.MCPServers[0].Tools))
+	}
+	if topo.MCPServers[0].Tools[0] != "allowed-tool1" {
+		t.Errorf("expected first tool to be 'allowed-tool1', got %q", topo.MCPServers[0].Tools[0])
+	}
+
+	// Second server should have no tools filter
+	if len(topo.MCPServers[1].Tools) != 0 {
+		t.Errorf("expected no tools in filter, got %d", len(topo.MCPServers[1].Tools))
+	}
+}
+
+func TestServerNames(t *testing.T) {
+	selectors := []ToolSelector{
+		{Server: "server1"},
+		{Server: "server2", Tools: []string{"tool1"}},
+		{Server: "server3"},
+	}
+
+	names := ServerNames(selectors)
+	if len(names) != 3 {
+		t.Fatalf("expected 3 names, got %d", len(names))
+	}
+	if names[0] != "server1" || names[1] != "server2" || names[2] != "server3" {
+		t.Errorf("unexpected names: %v", names)
 	}
 }
 
