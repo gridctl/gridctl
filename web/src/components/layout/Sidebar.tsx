@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Terminal, Box, Bot, ChevronDown, ChevronRight, Wrench, FileText, Sparkles, Globe, Server, Zap, Cpu, KeyRound } from 'lucide-react';
+import { X, Terminal, Box, Bot, ChevronDown, ChevronRight, Wrench, FileText, Sparkles, Globe, Server, Zap, Cpu, KeyRound, Network } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
@@ -7,7 +7,7 @@ import { ControlBar } from '../ui/ControlBar';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useTopologyStore, useSelectedNodeData } from '../../stores/useTopologyStore';
 import { useUIStore } from '../../stores/useUIStore';
-import type { MCPServerNodeData, ResourceNodeData, AgentNodeData } from '../../types';
+import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, ToolSelector } from '../../types';
 
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
@@ -309,7 +309,7 @@ export function Sidebar() {
             icon={Wrench}
             count={(data as MCPServerNodeData).toolCount}
           >
-            <ToolList agentName={data.name} />
+            <ToolList serverName={data.name} />
           </Section>
         )}
 
@@ -329,6 +329,22 @@ export function Sidebar() {
                 >
                   <span className="text-sm text-text-primary font-medium">{skill}</span>
                 </div>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* Access Section (Agents only - shows MCP server dependencies) */}
+        {isAgent && agentData?.uses && agentData.uses.length > 0 && (
+          <Section
+            title="Access"
+            icon={Network}
+            count={agentData.uses.length}
+            defaultOpen
+          >
+            <div className="space-y-3">
+              {agentData.uses.map((selector: ToolSelector) => (
+                <AccessItem key={selector.server} selector={selector} />
               ))}
             </div>
           </Section>
@@ -384,6 +400,58 @@ function Section({ title, icon: Icon, count, defaultOpen = false, children }: Se
         <div className="px-4 pb-4">
           {children}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Access item component for showing agent's MCP server dependencies
+interface AccessItemProps {
+  selector: ToolSelector;
+}
+
+function AccessItem({ selector }: AccessItemProps) {
+  const isRestricted = selector.tools && selector.tools.length > 0;
+
+  return (
+    <div className="rounded-lg bg-surface-elevated border border-border/40 overflow-hidden">
+      {/* Server Header */}
+      <div className="px-3 py-2 bg-violet-500/10 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <Server size={12} className="text-violet-400" />
+          <span className="text-xs font-medium text-violet-100">{selector.server}</span>
+        </div>
+        <span className={cn(
+          'text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wider border',
+          isRestricted
+            ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
+            : 'border-violet-500/30 text-violet-400 bg-violet-500/5'
+        )}>
+          {isRestricted ? 'Restricted' : 'Full Access'}
+        </span>
+      </div>
+
+      {/* Tool List */}
+      <div className="p-2">
+        {isRestricted ? (
+          <div className="space-y-1">
+            {selector.tools?.map((toolName) => (
+              <div
+                key={toolName}
+                className="flex items-center gap-2 px-2 py-1.5 rounded bg-background/50"
+              >
+                <Wrench size={10} className="text-primary flex-shrink-0" />
+                <span className="text-xs font-mono text-text-primary truncate">
+                  {toolName}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-text-muted italic px-2">
+            Access to all available tools
+          </span>
+        )}
       </div>
     </div>
   );
