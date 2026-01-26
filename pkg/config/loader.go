@@ -158,15 +158,15 @@ func expandTildeAndResolvePath(path, basePath string) string {
 func mergeEquippedSkills(t *Topology) {
 	for i := range t.Agents {
 		if len(t.Agents[i].EquippedSkills) > 0 {
-			// Merge without duplicates
+			// Merge without duplicates (based on server name)
 			seen := make(map[string]bool)
 			for _, u := range t.Agents[i].Uses {
-				seen[u] = true
+				seen[u.Server] = true
 			}
 			for _, s := range t.Agents[i].EquippedSkills {
-				if !seen[s] {
+				if !seen[s.Server] {
 					t.Agents[i].Uses = append(t.Agents[i].Uses, s)
-					seen[s] = true
+					seen[s.Server] = true
 				}
 			}
 			// Clear the alias field after merging
