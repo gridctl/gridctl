@@ -269,7 +269,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 			foundServers[workloadName] = true
 		} else if status.Type == runtime.WorkloadTypeAgent {
 			// Find the agent config to get uses info
-			var uses []string
+			var uses []config.ToolSelector
 			for _, a := range topo.Agents {
 				if a.Name == workloadName {
 					uses = a.Uses
@@ -408,7 +408,9 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		for _, agent := range result.Agents {
 			gateway.RegisterAgent(agent.Name, agent.Uses)
 			if verbose {
-				fmt.Printf("  Registered agent '%s' with access to: %v\n", agent.Name, agent.Uses)
+				// Format uses for display
+				serverNames := config.ServerNames(agent.Uses)
+				fmt.Printf("  Registered agent '%s' with access to: %v\n", agent.Name, serverNames)
 			}
 		}
 	}
@@ -552,6 +554,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.
 				Transport: transport,
 				Endpoint:  server.URL,
 				External:  true,
+				Tools:     serverCfg.Tools,
 			}
 		} else if server.LocalProcess {
 			// Local process server - use command
@@ -561,6 +564,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.
 				Command:      server.Command,
 				WorkDir:      filepath.Dir(topologyPath), // Use topology directory
 				Env:          serverCfg.Env,
+				Tools:        serverCfg.Tools,
 			}
 		} else if server.SSH {
 			// SSH server - use SSH command wrapper
@@ -573,6 +577,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.
 				SSHPort:         server.SSHPort,
 				SSHIdentityFile: server.SSHIdentityFile,
 				Env:             serverCfg.Env,
+				Tools:           serverCfg.Tools,
 			}
 		} else if transport == mcp.TransportStdio {
 			// Container stdio
@@ -580,6 +585,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.
 				Name:        server.Name,
 				Transport:   transport,
 				ContainerID: server.ContainerID,
+				Tools:       serverCfg.Tools,
 			}
 		} else {
 			// Container HTTP/SSE
@@ -587,6 +593,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.
 				Name:      server.Name,
 				Transport: transport,
 				Endpoint:  fmt.Sprintf("http://localhost:%d/mcp", server.HostPort),
+				Tools:     serverCfg.Tools,
 			}
 		}
 
@@ -667,9 +674,9 @@ func registerAgentAdapters(_ context.Context, mcpGateway *mcp.Gateway, topo *con
 	// Find agents that are "used" by other agents (not MCP servers)
 	usedAgents := make(map[string]bool)
 	for _, agent := range topo.Agents {
-		for _, dep := range agent.Uses {
-			if _, isA2A := a2aAgentConfigs[dep]; isA2A {
-				usedAgents[dep] = true
+		for _, selector := range agent.Uses {
+			if _, isA2A := a2aAgentConfigs[selector.Server]; isA2A {
+				usedAgents[selector.Server] = true
 			}
 		}
 	}
