@@ -168,6 +168,7 @@ gridctl/
 ├── examples/             # Example topologies
 │   ├── getting-started/  # Basic examples
 │   ├── transports/       # Transport-specific examples
+│   ├── access-control/   # Tool filtering and security examples
 │   └── _mock-servers/    # Mock MCP servers for testing
 └── tests/
     └── integration/      # Integration tests (build tag: integration)
@@ -362,8 +363,9 @@ agents:                               # Active agents that consume MCP tools
       - code-analysis
       - automation
     uses:                             # MCP servers this agent can access
-      - http-server
-      - stdio-server
+      - http-server                   # String format: all tools from server
+      - server: stdio-server          # Object format: with tool filtering
+        tools: ["read", "list"]       # Only these tools (agent-level filtering)
     command: ["python", "agent.py"]   # Optional: override container command
     env:
       MODEL_NAME: "claude-3-5-sonnet"
@@ -381,14 +383,29 @@ Agents are active containers that consume tools from MCP servers. They receive:
 - `MCP_ENDPOINT` environment variable injected automatically (e.g., `http://host.docker.internal:8180`)
 - Tool access control based on their `uses` field (can only access tools from listed servers)
 
+#### Tool Filtering
+
+Gridctl supports two levels of tool filtering for implementing least-privilege access:
+
+1. **Server-Level Filtering**: Use the `tools` field on MCP servers to restrict which tools are exposed system-wide
+2. **Agent-Level Filtering**: Use the object format in `uses` to restrict which tools each agent can access
+
 ```yaml
+mcp-servers:
+  - name: file-server
+    image: file-mcp:latest
+    port: 3000
+    tools: ["read", "list"]   # Server-level: only expose these tools to ALL agents
+
 agents:
   - name: code-reviewer
     image: my-org/reviewer:v1
     description: "Reviews PRs and leaves comments"
     capabilities: ["code-analysis", "git-ops"]
     uses:
-      - github-tools           # Can access tools from this MCP server
+      - github-tools           # String format: all tools from this server
+      - server: file-server    # Object format: agent-level filtering
+        tools: ["read"]        # Only "read" tool (even though server exposes "read" and "list")
     command: ["python", "run.py"]
     env:
       MODEL_NAME: "claude-3-5-sonnet"
