@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	"github.com/gridctl/gridctl/pkg/config"
 )
 
 func TestNewGateway(t *testing.T) {
@@ -262,5 +264,152 @@ func TestGateway_UnregisterMCPServer(t *testing.T) {
 	}
 	if g.Router().GetClient("agent1") != nil {
 		t.Error("expected client to be removed")
+	}
+}
+
+func TestGateway_AgentToolFiltering(t *testing.T) {
+	g := NewGateway()
+
+	// Add two mock clients with tools
+	client1 := NewMockAgentClient("server1", []Tool{
+		{Name: "read", Description: "Read tool"},
+		{Name: "write", Description: "Write tool"},
+		{Name: "delete", Description: "Delete tool"},
+	})
+	client2 := NewMockAgentClient("server2", []Tool{
+		{Name: "list", Description: "List tool"},
+		{Name: "create", Description: "Create tool"},
+	})
+	g.Router().AddClient(client1)
+	g.Router().AddClient(client2)
+	g.Router().RefreshTools()
+
+	tests := []struct {
+		name           string
+		agentName      string
+		uses           []config.ToolSelector
+		wantToolCount  int
+		wantToolNames  []string
+	}{
+		{
+			name:      "no registration returns all tools",
+			agentName: "unregistered-agent",
+			uses:      nil, // not registered
+			wantToolCount: 5,
+		},
+		{
+			name:      "server access without tool filter",
+			agentName: "viewer-agent",
+			uses: []config.ToolSelector{
+				{Server: "server1"},
+			},
+			wantToolCount: 3,
+			wantToolNames: []string{"server1__read", "server1__write", "server1__delete"},
+		},
+		{
+			name:      "server access with tool filter",
+			agentName: "restricted-agent",
+			uses: []config.ToolSelector{
+				{Server: "server1", Tools: []string{"read"}},
+			},
+			wantToolCount: 1,
+			wantToolNames: []string{"server1__read"},
+		},
+		{
+			name:      "multiple servers with mixed filtering",
+			agentName: "mixed-agent",
+			uses: []config.ToolSelector{
+				{Server: "server1", Tools: []string{"read", "write"}},
+				{Server: "server2"}, // all tools from server2
+			},
+			wantToolCount: 4,
+			wantToolNames: []string{"server1__read", "server1__write", "server2__list", "server2__create"},
+		},
+		{
+			name:      "empty selectors returns nothing",
+			agentName: "no-access-agent",
+			uses:      []config.ToolSelector{},
+			wantToolCount: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.uses != nil {
+				g.RegisterAgent(tc.agentName, tc.uses)
+			}
+
+			result, err := g.HandleToolsListForAgent(tc.agentName)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(result.Tools) != tc.wantToolCount {
+				t.Errorf("expected %d tools, got %d", tc.wantToolCount, len(result.Tools))
+				for _, tool := range result.Tools {
+					t.Logf("  got tool: %s", tool.Name)
+				}
+			}
+
+			if len(tc.wantToolNames) > 0 {
+				gotNames := make(map[string]bool)
+				for _, tool := range result.Tools {
+					gotNames[tool.Name] = true
+				}
+				for _, name := range tc.wantToolNames {
+					if !gotNames[name] {
+						t.Errorf("expected tool %s to be present", name)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGateway_AgentToolCallFiltering(t *testing.T) {
+	g := NewGateway()
+	ctx := context.Background()
+
+	// Add a mock client with tools
+	client := NewMockAgentClient("server1", []Tool{
+		{Name: "allowed", Description: "Allowed tool"},
+		{Name: "restricted", Description: "Restricted tool"},
+	})
+	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+		return &ToolCallResult{
+			Content: []Content{NewTextContent("called " + name)},
+		}, nil
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Register agent with only "allowed" tool
+	g.RegisterAgent("restricted-agent", []config.ToolSelector{
+		{Server: "server1", Tools: []string{"allowed"}},
+	})
+
+	// Call allowed tool - should succeed
+	result, err := g.HandleToolsCallForAgent(ctx, "restricted-agent", ToolCallParams{
+		Name: "server1__allowed",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected allowed tool call to succeed")
+	}
+
+	// Call restricted tool - should fail with access denied
+	result, err = g.HandleToolsCallForAgent(ctx, "restricted-agent", ToolCallParams{
+		Name: "server1__restricted",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected restricted tool call to fail")
+	}
+	if len(result.Content) == 0 || result.Content[0].Text == "" {
+		t.Error("expected access denied message")
 	}
 }
