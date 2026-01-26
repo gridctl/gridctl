@@ -295,7 +295,8 @@ func Validate(t *Topology) error {
 		}
 
 		// Validate 'uses' dependencies exist in mcp-servers or A2A-enabled agents
-		for j, dep := range agent.Uses {
+		for j, selector := range agent.Uses {
+			dep := selector.Server
 			isValidServer := serverNames[dep]
 			isValidAgent := a2aEnabledAgents[dep] && dep != agent.Name // Can't reference self
 			if !isValidServer && !isValidAgent {
@@ -402,9 +403,9 @@ func detectAgentCycles(t *Topology, a2aEnabledAgents map[string]bool) error {
 	deps := make(map[string][]string)
 	for _, agent := range t.Agents {
 		var agentDeps []string
-		for _, use := range agent.Uses {
-			if a2aEnabledAgents[use] {
-				agentDeps = append(agentDeps, use)
+		for _, selector := range agent.Uses {
+			if a2aEnabledAgents[selector.Server] {
+				agentDeps = append(agentDeps, selector.Server)
 			}
 		}
 		deps[agent.Name] = agentDeps
