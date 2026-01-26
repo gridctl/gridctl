@@ -1,6 +1,13 @@
 // Transport type matching backend pkg/mcp/types.go
 export type Transport = 'http' | 'stdio' | 'sse';
 
+// Tool selector matching pkg/config/types.go ToolSelector
+// Supports agent-level tool filtering
+export interface ToolSelector {
+  server: string;
+  tools?: string[]; // Empty/undefined implies all tools from server
+}
+
 // Server info matching api.ServerInfo
 export interface ServerInfo {
   name: string;
@@ -45,7 +52,7 @@ export interface AgentStatus {
   // Container fields (populated for local/container-based agents)
   image?: string;
   containerId?: string;
-  uses?: string[];
+  uses?: ToolSelector[];
 
   // A2A fields (populated when hasA2A is true)
   hasA2A: boolean;
@@ -137,7 +144,7 @@ export interface AgentNodeData extends NodeDataBase {
   // Container fields (local variant only)
   image?: string;
   containerId?: string;
-  uses?: string[];
+  uses?: ToolSelector[];
 
   // A2A fields (when hasA2A is true)
   hasA2A: boolean;
