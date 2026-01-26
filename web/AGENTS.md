@@ -124,7 +124,46 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
     *   Without A2A: Purple dashed line (`strokeDasharray: '5,5'`)
     *   With A2A: Teal dashed line (`strokeDasharray: '8,4'`, strokeWidth: 2)
 
-## 8. Implementation Checklist
+## 8. Sidebar Sections
+
+The detail sidebar displays contextual information when a node is selected.
+
+### Access Section (Agents Only)
+Shows the MCP server dependencies for an agent with tool-level access visualization.
+
+*   **Location:** Displayed for agent nodes with `uses` configured
+*   **Icon:** Network (Lucide)
+*   **Structure:**
+    *   Each server dependency rendered as an `AccessItem` card
+    *   Server header with violet theme (`bg-violet-500/10`)
+    *   Access badge: "Full Access" (violet) or "Restricted" (amber)
+    *   Tool list when restricted (individual tool names with Wrench icons)
+
+```tsx
+// AccessItem styling
+<div className="rounded-lg bg-surface-elevated border border-border/40">
+  {/* Server Header - Violet theme */}
+  <div className="bg-violet-500/10">
+    <Server className="text-violet-400" />
+    <span className="text-violet-100">{serverName}</span>
+    {/* Badge */}
+    {isRestricted ? (
+      <span className="border-amber-500/30 text-amber-400">Restricted</span>
+    ) : (
+      <span className="border-violet-500/30 text-violet-400">Full Access</span>
+    )}
+  </div>
+  {/* Tool List */}
+  {isRestricted && tools.map(tool => (
+    <div className="bg-background/50">
+      <Wrench className="text-primary" />
+      <span className="font-mono">{tool}</span>
+    </div>
+  ))}
+</div>
+```
+
+## 9. Implementation Checklist
 When creating new UI components:
 1.  [ ] Are you using `tailwind.config.js` colors instead of hardcoded hex values?
 2.  [ ] Is the font family correct? (Mono for data, Sans for UI).
