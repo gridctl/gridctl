@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/a2a"
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
@@ -267,9 +268,9 @@ type AgentStatus struct {
 	Variant string `json:"variant"`
 
 	// Container fields (populated for local/container-based agents)
-	Image       string   `json:"image,omitempty"`
-	ContainerID string   `json:"containerId,omitempty"`
-	Uses        []string `json:"uses,omitempty"`
+	Image       string                `json:"image,omitempty"`
+	ContainerID string                `json:"containerId,omitempty"`
+	Uses        []config.ToolSelector `json:"uses,omitempty"`
 
 	// A2A fields (populated when agent has A2A capability)
 	HasA2A      bool     `json:"hasA2A"`
@@ -321,7 +322,7 @@ type containerAgentInfo struct {
 	Image       string
 	Status      string
 	ContainerID string
-	Uses        []string
+	Uses        []config.ToolSelector
 }
 
 // getContainerAgents returns a map of container agent info keyed by name.
@@ -349,14 +350,14 @@ func (s *Server) getContainerAgents() map[string]containerAgentInfo {
 			}
 
 			// Get the agent's uses/dependencies from the gateway
-			uses := s.gateway.GetAgentAllowedServers(agentName)
+			selectors := s.gateway.GetAgentAllowedServers(agentName)
 
 			result[agentName] = containerAgentInfo{
 				Name:        agentName,
 				Image:       c.Image,
 				Status:      status,
 				ContainerID: c.ID[:12],
-				Uses:        uses,
+				Uses:        selectors,
 			}
 		}
 	}
