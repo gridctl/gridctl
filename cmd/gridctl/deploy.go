@@ -166,9 +166,10 @@ func runDeploy(topologyPath string) error {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
-	// Wait for daemon to be ready by polling health endpoint (10 second timeout)
-	if err := waitForHealthy(deployPort, 10*time.Second); err != nil {
-		return fmt.Errorf("daemon failed to become healthy: %w\nCheck logs at %s", err, state.LogPath(topo.Name))
+	// Wait for daemon to be fully ready (MCP servers initialized)
+	// Use longer timeout for servers that need OAuth flows (e.g., mcp-remote)
+	if err := waitForReady(deployPort, 60*time.Second); err != nil {
+		return fmt.Errorf("daemon failed to become ready: %w\nCheck logs at %s", err, state.LogPath(topo.Name))
 	}
 
 	// Verify daemon started
@@ -734,11 +735,13 @@ func registerAgentAdapters(_ context.Context, mcpGateway *mcp.Gateway, topo *con
 	return nil
 }
 
-// waitForHealthy polls the health endpoint until it returns 200 or timeout.
-func waitForHealthy(port int, timeout time.Duration) error {
+// waitForReady polls the ready endpoint until it returns 200 or timeout.
+// The /ready endpoint only succeeds when all MCP servers are initialized,
+// unlike /health which succeeds immediately when the HTTP server starts.
+func waitForReady(port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 500 * time.Millisecond}
-	url := fmt.Sprintf("http://localhost:%d/health", port)
+	url := fmt.Sprintf("http://localhost:%d/ready", port)
 
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(url)
@@ -751,5 +754,5 @@ func waitForHealthy(port int, timeout time.Duration) error {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	return fmt.Errorf("health check timed out after %v", timeout)
+	return fmt.Errorf("readiness check timed out after %v", timeout)
 }
