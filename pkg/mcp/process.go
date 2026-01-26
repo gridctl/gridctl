@@ -22,10 +22,11 @@ type ProcessClient struct {
 	env       []string
 	requestID atomic.Int64
 
-	mu          sync.RWMutex
-	initialized bool
-	tools       []Tool
-	serverInfo  ServerInfo
+	mu            sync.RWMutex
+	initialized   bool
+	tools         []Tool
+	serverInfo    ServerInfo
+	toolWhitelist []string // Tool whitelist (empty = all tools)
 
 	// Process state
 	procMu  sync.Mutex
@@ -61,6 +62,15 @@ func NewProcessClient(name string, command []string, workDir string, env map[str
 // Name returns the agent name.
 func (c *ProcessClient) Name() string {
 	return c.name
+}
+
+// SetToolWhitelist sets the list of allowed tool names.
+// Only tools in this list will be returned by Tools() and RefreshTools().
+// An empty or nil list means all tools are allowed.
+func (c *ProcessClient) SetToolWhitelist(tools []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.toolWhitelist = tools
 }
 
 // Connect starts the process and attaches to its stdin/stdout.
@@ -181,6 +191,7 @@ func (c *ProcessClient) Initialize(ctx context.Context) error {
 }
 
 // RefreshTools fetches the current tool list from the agent.
+// If a tool whitelist has been set, only tools matching the whitelist are stored.
 func (c *ProcessClient) RefreshTools(ctx context.Context) error {
 	var result ToolsListResult
 	if err := c.call(ctx, "tools/list", nil, &result); err != nil {
@@ -188,8 +199,25 @@ func (c *ProcessClient) RefreshTools(ctx context.Context) error {
 	}
 
 	c.mu.Lock()
-	c.tools = result.Tools
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+
+	// Filter tools if whitelist is set
+	if len(c.toolWhitelist) > 0 {
+		allowed := make(map[string]bool, len(c.toolWhitelist))
+		for _, name := range c.toolWhitelist {
+			allowed[name] = true
+		}
+
+		var filteredTools []Tool
+		for _, tool := range result.Tools {
+			if allowed[tool.Name] {
+				filteredTools = append(filteredTools, tool)
+			}
+		}
+		c.tools = filteredTools
+	} else {
+		c.tools = result.Tools
+	}
 
 	return nil
 }

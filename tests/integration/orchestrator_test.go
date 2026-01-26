@@ -412,19 +412,19 @@ func TestOrchestrator_Up_AgentDependencyOrder(t *testing.T) {
 			{
 				Name:  "agent-c",
 				Image: "agent:latest",
-				Uses:  []string{"agent-b"}, // Depends on agent-b
+				Uses:  []config.ToolSelector{{Server: "agent-b"}}, // Depends on agent-b
 				A2A:   &config.A2AConfig{Enabled: true},
 			},
 			{
 				Name:  "agent-a",
 				Image: "agent:latest",
-				Uses:  []string{}, // No dependencies
+				Uses:  []config.ToolSelector{}, // No dependencies
 				A2A:   &config.A2AConfig{Enabled: true},
 			},
 			{
 				Name:  "agent-b",
 				Image: "agent:latest",
-				Uses:  []string{"agent-a"}, // Depends on agent-a
+				Uses:  []config.ToolSelector{{Server: "agent-a"}}, // Depends on agent-a
 				A2A:   &config.A2AConfig{Enabled: true},
 			},
 		},

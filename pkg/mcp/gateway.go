@@ -8,26 +8,28 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
 type MCPServerConfig struct {
-	Name         string
-	Transport    Transport
-	Endpoint     string            // For HTTP/SSE transport
-	ContainerID  string            // For Docker Stdio transport
-	External     bool              // True for external URL servers (no container)
-	LocalProcess bool              // True for local process servers (no container)
-	SSH          bool              // True for SSH servers (remote process over SSH)
-	Command      []string          // For local process or SSH transport
-	WorkDir      string            // For local process transport
-	Env          map[string]string // For local process or SSH transport
-	SSHHost      string            // SSH hostname (for SSH servers)
-	SSHUser      string            // SSH username (for SSH servers)
-	SSHPort      int               // SSH port (for SSH servers, 0 = default 22)
-	SSHIdentityFile string         // SSH identity file path (for SSH servers)
+	Name            string
+	Transport       Transport
+	Endpoint        string            // For HTTP/SSE transport
+	ContainerID     string            // For Docker Stdio transport
+	External        bool              // True for external URL servers (no container)
+	LocalProcess    bool              // True for local process servers (no container)
+	SSH             bool              // True for SSH servers (remote process over SSH)
+	Command         []string          // For local process or SSH transport
+	WorkDir         string            // For local process transport
+	Env             map[string]string // For local process or SSH transport
+	SSHHost         string            // SSH hostname (for SSH servers)
+	SSHUser         string            // SSH username (for SSH servers)
+	SSHPort         int               // SSH port (for SSH servers, 0 = default 22)
+	SSHIdentityFile string            // SSH identity file path (for SSH servers)
+	Tools           []string          // Tool whitelist (empty = all tools)
 }
 
 // Gateway aggregates multiple MCP servers into a single endpoint.
@@ -39,8 +41,8 @@ type Gateway struct {
 
 	mu          sync.RWMutex
 	serverInfo  ServerInfo
-	serverMeta  map[string]MCPServerConfig // name -> config for status reporting
-	agentAccess map[string][]string        // agent name -> allowed MCP server names
+	serverMeta  map[string]MCPServerConfig       // name -> config for status reporting
+	agentAccess map[string][]config.ToolSelector // agent name -> allowed MCP servers with tool filtering
 }
 
 // NewGateway creates a new MCP gateway.
@@ -54,7 +56,7 @@ func NewGateway() *Gateway {
 			Version: "dev",
 		},
 		serverMeta:  make(map[string]MCPServerConfig),
-		agentAccess: make(map[string][]string),
+		agentAccess: make(map[string][]config.ToolSelector),
 	}
 }
 
@@ -103,6 +105,9 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 	if cfg.SSH {
 		sshCommand := buildSSHCommand(cfg)
 		processClient := NewProcessClient(cfg.Name, sshCommand, cfg.WorkDir, cfg.Env)
+		if len(cfg.Tools) > 0 {
+			processClient.SetToolWhitelist(cfg.Tools)
+		}
 		if err := processClient.Connect(ctx); err != nil {
 			return fmt.Errorf("starting SSH process %s: %w", cfg.Name, err)
 		}
@@ -110,6 +115,9 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 	} else if cfg.LocalProcess {
 		// Handle local process servers (they use stdio but not Docker)
 		processClient := NewProcessClient(cfg.Name, cfg.Command, cfg.WorkDir, cfg.Env)
+		if len(cfg.Tools) > 0 {
+			processClient.SetToolWhitelist(cfg.Tools)
+		}
 		if err := processClient.Connect(ctx); err != nil {
 			return fmt.Errorf("starting process %s: %w", cfg.Name, err)
 		}
@@ -121,6 +129,9 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 				return fmt.Errorf("Docker client not set for stdio transport")
 			}
 			stdioClient := NewStdioClient(cfg.Name, cfg.ContainerID, g.dockerCli)
+			if len(cfg.Tools) > 0 {
+				stdioClient.SetToolWhitelist(cfg.Tools)
+			}
 			if err := stdioClient.Connect(ctx); err != nil {
 				return fmt.Errorf("connecting to container: %w", err)
 			}
@@ -128,6 +139,9 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 		case TransportSSE:
 			// SSE transport - uses same HTTP client which handles text/event-stream responses
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
+			if len(cfg.Tools) > 0 {
+				httpClient.SetToolWhitelist(cfg.Tools)
+			}
 			// Wait for MCP server to be ready with retries
 			if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
 				return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
@@ -135,6 +149,9 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 			agentClient = httpClient
 		case TransportHTTP, "": // Default to HTTP
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
+			if len(cfg.Tools) > 0 {
+				httpClient.SetToolWhitelist(cfg.Tools)
+			}
 			// Wait for MCP server to be ready with retries
 			if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
 				return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
@@ -150,7 +167,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 		return fmt.Errorf("initializing MCP server %s: %w", cfg.Name, err)
 	}
 
-	// Fetch tools
+	// Fetch tools (will be filtered by whitelist if set)
 	if err := agentClient.RefreshTools(ctx); err != nil {
 		return fmt.Errorf("fetching tools from %s: %w", cfg.Name, err)
 	}
@@ -176,8 +193,8 @@ func (g *Gateway) UnregisterMCPServer(name string) {
 	g.router.RefreshTools()
 }
 
-// RegisterAgent registers an agent and its allowed MCP servers.
-func (g *Gateway) RegisterAgent(name string, uses []string) {
+// RegisterAgent registers an agent and its allowed MCP servers with optional tool filtering.
+func (g *Gateway) RegisterAgent(name string, uses []config.ToolSelector) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.agentAccess[name] = uses
@@ -192,21 +209,47 @@ func (g *Gateway) UnregisterAgent(name string) {
 
 // GetAgentAllowedServers returns the MCP servers an agent can access.
 // Returns nil if the agent is not registered (allows all for backward compatibility).
-func (g *Gateway) GetAgentAllowedServers(agentName string) []string {
+func (g *Gateway) GetAgentAllowedServers(agentName string) []config.ToolSelector {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return g.agentAccess[agentName]
 }
 
-// isServerAllowedForAgent checks if an agent can access tools from a specific MCP server.
-func (g *Gateway) isServerAllowedForAgent(agentName, serverName string) bool {
+// getAgentServerAccess returns the ToolSelector for a specific server if the agent has access.
+// Returns nil if the agent doesn't have access to this server, or if the agent is not registered
+// (in which case all access is allowed for backward compatibility).
+func (g *Gateway) getAgentServerAccess(agentName, serverName string) (*config.ToolSelector, bool) {
 	allowed := g.GetAgentAllowedServers(agentName)
 	if allowed == nil {
 		// Agent not registered - allow all (backward compatibility)
+		return nil, true
+	}
+	for i := range allowed {
+		if allowed[i].Server == serverName {
+			return &allowed[i], true
+		}
+	}
+	return nil, false
+}
+
+// isToolAllowedForAgent checks if an agent can access a specific tool from a server.
+// This checks both server-level access and tool-level filtering.
+func (g *Gateway) isToolAllowedForAgent(agentName, serverName, toolName string) bool {
+	selector, allowed := g.getAgentServerAccess(agentName, serverName)
+	if !allowed {
+		return false
+	}
+	if selector == nil {
+		// Agent not registered - allow all (backward compatibility)
 		return true
 	}
-	for _, s := range allowed {
-		if s == serverName {
+	// If no tool list specified, all tools from this server are allowed
+	if len(selector.Tools) == 0 {
+		return true
+	}
+	// Check if tool is in the whitelist
+	for _, t := range selector.Tools {
+		if t == toolName {
 			return true
 		}
 	}
@@ -214,6 +257,7 @@ func (g *Gateway) isServerAllowedForAgent(agentName, serverName string) bool {
 }
 
 // HandleToolsListForAgent returns tools filtered by agent access permissions.
+// This applies both server-level and tool-level filtering.
 func (g *Gateway) HandleToolsListForAgent(agentName string) (*ToolsListResult, error) {
 	allowed := g.GetAgentAllowedServers(agentName)
 	if allowed == nil {
@@ -221,23 +265,39 @@ func (g *Gateway) HandleToolsListForAgent(agentName string) (*ToolsListResult, e
 		return g.HandleToolsList()
 	}
 
-	// Build set of allowed servers for fast lookup
-	allowedSet := make(map[string]bool)
-	for _, name := range allowed {
-		allowedSet[name] = true
+	// Build map of allowed servers to their tool selectors for fast lookup
+	serverSelectors := make(map[string]config.ToolSelector)
+	for _, selector := range allowed {
+		serverSelectors[selector.Server] = selector
 	}
 
-	// Filter tools by allowed MCP servers
+	// Filter tools by allowed MCP servers and tool whitelists
 	allTools := g.router.AggregatedTools()
 	var filteredTools []Tool
 	for _, tool := range allTools {
-		serverName, _, err := ParsePrefixedTool(tool.Name)
+		serverName, originalToolName, err := ParsePrefixedTool(tool.Name)
 		if err != nil {
 			g.logger.Warn("skipping tool with invalid name format", "name", tool.Name, "error", err)
 			continue
 		}
-		if allowedSet[serverName] {
+
+		selector, hasServer := serverSelectors[serverName]
+		if !hasServer {
+			continue
+		}
+
+		// If no tool whitelist, include all tools from this server
+		if len(selector.Tools) == 0 {
 			filteredTools = append(filteredTools, tool)
+			continue
+		}
+
+		// Check if this specific tool is in the whitelist
+		for _, allowedTool := range selector.Tools {
+			if allowedTool == originalToolName {
+				filteredTools = append(filteredTools, tool)
+				break
+			}
 		}
 	}
 
@@ -245,9 +305,10 @@ func (g *Gateway) HandleToolsListForAgent(agentName string) (*ToolsListResult, e
 }
 
 // HandleToolsCallForAgent routes a tool call with agent access validation.
+// This validates both server-level and tool-level access.
 func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string, params ToolCallParams) (*ToolCallResult, error) {
-	// Parse the tool name to get the MCP server
-	serverName, _, err := ParsePrefixedTool(params.Name)
+	// Parse the tool name to get the MCP server and original tool name
+	serverName, originalToolName, err := ParsePrefixedTool(params.Name)
 	if err != nil {
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Invalid tool name: %v", err))},
@@ -255,10 +316,10 @@ func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string,
 		}, nil
 	}
 
-	// Check if agent has access to this server's tools
-	if !g.isServerAllowedForAgent(agentName, serverName) {
+	// Check if agent has access to this specific tool
+	if !g.isToolAllowedForAgent(agentName, serverName, originalToolName) {
 		return &ToolCallResult{
-			Content: []Content{NewTextContent(fmt.Sprintf("Access denied: agent '%s' cannot use tools from '%s'", agentName, serverName))},
+			Content: []Content{NewTextContent(fmt.Sprintf("Access denied: agent '%s' cannot use tool '%s' from '%s'", agentName, originalToolName, serverName))},
 			IsError: true,
 		}, nil
 	}

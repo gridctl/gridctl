@@ -5,6 +5,7 @@ import type {
   ResourceStatus,
   AgentStatus,
   NodeStatus,
+  ToolSelector,
 } from '../types';
 import { NODE_TYPES, COLORS, TOOL_NAME_DELIMITER } from './constants';
 import { applyDagreLayout, applyDagreLayoutWithPreserved } from './layout';
@@ -121,9 +122,10 @@ export function transformToNodesAndEdges(
   // Track which agents are "used" by other agents (they shouldn't connect directly to gateway)
   const usedByOtherAgents = new Set<string>();
   agents.forEach((agent) => {
-    agent.uses?.forEach((dep) => {
-      if (agentNames.has(dep)) {
-        usedByOtherAgents.add(dep);
+    agent.uses?.forEach((selector: ToolSelector) => {
+      const serverName = selector.server;
+      if (agentNames.has(serverName)) {
+        usedByOtherAgents.add(serverName);
       }
     });
   });
@@ -179,19 +181,20 @@ export function transformToNodesAndEdges(
     }
 
     // Edges: Agent -> things it uses (MCP servers or other agents)
-    agent.uses?.forEach((dep) => {
+    agent.uses?.forEach((selector: ToolSelector) => {
+      const serverName = selector.server;
       let targetNodeId: string | null = null;
 
-      if (mcpServerNames.has(dep)) {
-        targetNodeId = `mcp-${dep}`;
-      } else if (agentNames.has(dep)) {
+      if (mcpServerNames.has(serverName)) {
+        targetNodeId = `mcp-${serverName}`;
+      } else if (agentNames.has(serverName)) {
         // Agent using another agent (via A2A)
-        targetNodeId = `agent-${dep}`;
+        targetNodeId = `agent-${serverName}`;
       }
 
       if (targetNodeId) {
         edges.push({
-          id: `edge-uses-${agent.name}-${dep}`,
+          id: `edge-uses-${agent.name}-${serverName}`,
           source: nodeId,
           target: targetNodeId,
           animated: isRunning,

@@ -20,11 +20,12 @@ type Client struct {
 	httpClient *http.Client
 	requestID  atomic.Int64
 
-	mu          sync.RWMutex
-	initialized bool
-	tools       []Tool
-	serverInfo  ServerInfo
-	sessionID   string // MCP session ID for stateful servers
+	mu            sync.RWMutex
+	initialized   bool
+	tools         []Tool
+	serverInfo    ServerInfo
+	sessionID     string   // MCP session ID for stateful servers
+	toolWhitelist []string // Tool whitelist (empty = all tools)
 }
 
 // NewClient creates a new MCP client for a downstream agent.
@@ -46,6 +47,15 @@ func (c *Client) Name() string {
 // Endpoint returns the agent endpoint.
 func (c *Client) Endpoint() string {
 	return c.endpoint
+}
+
+// SetToolWhitelist sets the list of allowed tool names.
+// Only tools in this list will be returned by Tools() and RefreshTools().
+// An empty or nil list means all tools are allowed.
+func (c *Client) SetToolWhitelist(tools []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.toolWhitelist = tools
 }
 
 // Initialize performs the MCP initialize handshake.
@@ -78,6 +88,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 }
 
 // RefreshTools fetches the current tool list from the agent.
+// If a tool whitelist has been set, only tools matching the whitelist are stored.
 func (c *Client) RefreshTools(ctx context.Context) error {
 	var result ToolsListResult
 	if err := c.call(ctx, "tools/list", nil, &result); err != nil {
@@ -85,8 +96,25 @@ func (c *Client) RefreshTools(ctx context.Context) error {
 	}
 
 	c.mu.Lock()
-	c.tools = result.Tools
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+
+	// Filter tools if whitelist is set
+	if len(c.toolWhitelist) > 0 {
+		allowed := make(map[string]bool, len(c.toolWhitelist))
+		for _, name := range c.toolWhitelist {
+			allowed[name] = true
+		}
+
+		var filteredTools []Tool
+		for _, tool := range result.Tools {
+			if allowed[tool.Name] {
+				filteredTools = append(filteredTools, tool)
+			}
+		}
+		c.tools = filteredTools
+	} else {
+		c.tools = result.Tools
+	}
 
 	return nil
 }

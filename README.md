@@ -75,7 +75,12 @@ Connect to MCP servers however they run:
 
 ### Agent Access Control
 
-Define which MCP servers each agent can access. Agents receive an injected `MCP_ENDPOINT` environment variable and can only see tools from their allowed servers.
+Define which MCP servers each agent can access. Gridctl supports two levels of tool filtering:
+
+- **Server-Level**: Restrict which tools a server exposes to all agents
+- **Agent-Level**: Restrict which tools each agent can access from a server
+
+Agents receive an injected `MCP_ENDPOINT` environment variable and can only see tools from their allowed servers.
 
 ### A2A Protocol Support
 
@@ -126,8 +131,9 @@ agents:
     image: my-org/agent:latest
     description: "Agent with selective tool access"
     uses:
-      - api-tools      # Can access these servers
-      - cli-tools
+      - api-tools                 # Full access to all tools
+      - server: cli-tools         # Restricted access
+        tools: ["read", "list"]   # Only these specific tools
     env:
       MODEL: "claude-3-5-sonnet"
 
@@ -175,6 +181,7 @@ Restart Claude Desktop. All tools from your topology will be available.
 | Example | Description |
 |---------|-------------|
 | [agent-basic.yaml](examples/getting-started/agent-basic.yaml) | Basic agent with MCP server access control |
+| [tool-filtering.yaml](examples/access-control/tool-filtering.yaml) | Server and agent-level tool filtering |
 | [local-mcp.yaml](examples/transports/local-mcp.yaml) | Local process MCP server (no container) |
 | [external-mcp.yaml](examples/transports/external-mcp.yaml) | Connect to external HTTP/SSE MCP servers |
 | [ssh-mcp.yaml](examples/transports/ssh-mcp.yaml) | MCP server over SSH tunnel |

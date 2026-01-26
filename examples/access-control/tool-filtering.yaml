@@ -1,0 +1,74 @@
+# Tool Filtering Example
+#
+# This example demonstrates two levels of tool filtering:
+#
+# 1. Server-Level Filtering (tools field on mcp-servers):
+#    - Restricts which tools the server exposes to ALL agents
+#    - Acts as a security boundary - hidden tools never enter the system
+#    - Example: Only expose "read" and "list" from a server with dangerous tools
+#
+# 2. Agent-Level Filtering (tools field on uses):
+#    - Restricts which tools a SPECIFIC agent can access
+#    - Implements least-privilege for each agent
+#    - Example: Agent A can use "read" and "list", Agent B can only use "read"
+#
+# Filtering Precedence:
+#    Server-level filtering happens first. If a tool is hidden at the server
+#    level, no agent can access it regardless of their agent-level config.
+#
+# Usage:
+#   gridctl deploy examples/access-control/tool-filtering.yaml
+#
+version: "1"
+name: tool-filtering-demo
+
+network:
+  name: tool-filtering-net
+
+mcp-servers:
+  # This server exposes all its tools (no filtering)
+  - name: unrestricted-server
+    image: alpine:latest
+    port: 8080
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+  # This server only exposes specific tools (server-level filtering)
+  # Even if an agent tries to access "delete" or "modify", they won't be visible
+  - name: restricted-server
+    image: alpine:latest
+    port: 8081
+    tools: ["read", "list"]  # Only these tools are exposed system-wide
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+agents:
+  # This agent has full access to unrestricted-server but limited access
+  # to restricted-server (which is already filtered at server level)
+  - name: admin-agent
+    image: alpine:latest
+    description: "Admin agent with broad access"
+    uses:
+      - unrestricted-server           # All tools from this server
+      - restricted-server             # All tools exposed by this server (read, list)
+    command: ["sh", "-c", "echo 'Admin agent started' && sleep infinity"]
+
+  # This agent has granular per-server tool restrictions
+  - name: viewer-agent
+    image: alpine:latest
+    description: "Viewer agent with read-only access"
+    uses:
+      # Object format with tools filter - only "read" tool from each server
+      - server: unrestricted-server
+        tools: ["read"]
+      - server: restricted-server
+        tools: ["read"]               # Even more restrictive than server level
+    command: ["sh", "-c", "echo 'Viewer agent started' && sleep infinity"]
+
+  # This agent demonstrates mixed format - some servers with filtering, some without
+  - name: mixed-agent
+    image: alpine:latest
+    description: "Agent with mixed access patterns"
+    uses:
+      - unrestricted-server           # String format: all tools
+      - server: restricted-server     # Object format: all exposed tools
+        tools: ["list"]               # But only "list" from this server
+    command: ["sh", "-c", "echo 'Mixed agent started' && sleep infinity"]

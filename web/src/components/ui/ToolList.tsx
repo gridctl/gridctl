@@ -30,18 +30,29 @@ function getSchemaRequired(schema: Record<string, unknown>): string[] | undefine
 }
 
 interface ToolListProps {
-  agentName: string;
+  // Server name prefix for filtering tools (e.g., "server1" matches "server1__tool")
+  serverName: string;
+  // Optional whitelist - if provided, only show these specific tool names (without prefix)
+  whitelist?: string[];
 }
 
-export function ToolList({ agentName }: ToolListProps) {
+export function ToolList({ serverName, whitelist }: ToolListProps) {
   const tools = useTopologyStore((s) => s.tools);
 
-  // Filter tools for this agent (prefixed with agentName__)
-  const agentTools = tools.filter((t) =>
-    t.name.startsWith(`${agentName}${TOOL_NAME_DELIMITER}`)
+  // Filter tools for this server (prefixed with serverName__)
+  let serverTools = tools.filter((t) =>
+    t.name.startsWith(`${serverName}${TOOL_NAME_DELIMITER}`)
   );
 
-  if (agentTools.length === 0) {
+  // If whitelist provided, further filter to only whitelisted tools
+  if (whitelist && whitelist.length > 0) {
+    const allowedPrefixed = new Set(
+      whitelist.map((name) => `${serverName}${TOOL_NAME_DELIMITER}${name}`)
+    );
+    serverTools = serverTools.filter((t) => allowedPrefixed.has(t.name));
+  }
+
+  if (serverTools.length === 0) {
     return (
       <p className="text-sm text-text-muted italic px-4 py-2">
         No tools available
@@ -51,18 +62,27 @@ export function ToolList({ agentName }: ToolListProps) {
 
   return (
     <div className="space-y-1 px-2">
-      {agentTools.map((tool) => (
+      {serverTools.map((tool) => (
         <ToolItem key={tool.name} tool={tool} />
       ))}
     </div>
   );
 }
 
-interface ToolItemProps {
+// Legacy alias for backward compatibility
+interface LegacyToolListProps {
+  agentName: string;
+}
+
+export function AgentToolList({ agentName }: LegacyToolListProps) {
+  return <ToolList serverName={agentName} />;
+}
+
+export interface ToolItemProps {
   tool: Tool;
 }
 
-function ToolItem({ tool }: ToolItemProps) {
+export function ToolItem({ tool }: ToolItemProps) {
   const [expanded, setExpanded] = useState(false);
 
   // Remove agent prefix for display

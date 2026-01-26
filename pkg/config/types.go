@@ -1,5 +1,7 @@
 package config
 
+import "gopkg.in/yaml.v3"
+
 // Topology represents the complete gridctl configuration.
 type Topology struct {
 	Version    string      `yaml:"version"`
@@ -31,6 +33,7 @@ type MCPServer struct {
 	BuildArgs map[string]string `yaml:"build_args,omitempty"`
 	Network   string            `yaml:"network,omitempty"`   // Network to join (for multi-network mode)
 	SSH       *SSHConfig        `yaml:"ssh,omitempty"`       // SSH connection config for remote servers
+	Tools     []string          `yaml:"tools,omitempty"`     // Tool whitelist (empty = all tools exposed)
 }
 
 // SSHConfig defines SSH connection parameters for remote MCP servers.
@@ -75,6 +78,13 @@ type Resource struct {
 	Network string            `yaml:"network,omitempty"` // Network to join (for multi-network mode)
 }
 
+// ToolSelector specifies which tools an agent can access from an MCP server.
+// Supports both string format (server name only) and object format (server + tools).
+type ToolSelector struct {
+	Server string   `yaml:"server" json:"server"`                   // MCP server or A2A agent name
+	Tools  []string `yaml:"tools,omitempty" json:"tools,omitempty"` // Tool whitelist (empty = all tools from this server)
+}
+
 // Agent defines an active agent container that consumes MCP tools.
 type Agent struct {
 	Name           string            `yaml:"name"`
@@ -82,8 +92,8 @@ type Agent struct {
 	Source         *Source           `yaml:"source,omitempty"`
 	Description    string            `yaml:"description,omitempty"`
 	Capabilities   []string          `yaml:"capabilities,omitempty"`
-	Uses           []string          `yaml:"uses"`                      // References mcp-servers or agents by name
-	EquippedSkills []string          `yaml:"equipped_skills,omitempty"` // Alias for Uses (merged during load)
+	Uses           []ToolSelector    `yaml:"uses"`                      // References mcp-servers or agents by name
+	EquippedSkills []ToolSelector    `yaml:"equipped_skills,omitempty"` // Alias for Uses (merged during load)
 	Env            map[string]string `yaml:"env,omitempty"`
 	BuildArgs      map[string]string `yaml:"build_args,omitempty"`
 	Network        string            `yaml:"network,omitempty"`         // Network to join (for multi-network mode)
@@ -183,4 +193,49 @@ func (t *Topology) SetDefaults() {
 			}
 		}
 	}
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling for ToolSelector.
+// This allows both string format (legacy) and object format (new).
+//
+// String format (legacy):
+//
+//	uses:
+//	  - server-name
+//
+// Object format (new):
+//
+//	uses:
+//	  - server: server-name
+//	    tools: ["tool1", "tool2"]
+func (ts *ToolSelector) UnmarshalYAML(node *yaml.Node) error {
+	// Try string format first (legacy)
+	if node.Kind == yaml.ScalarNode {
+		var serverName string
+		if err := node.Decode(&serverName); err != nil {
+			return err
+		}
+		ts.Server = serverName
+		ts.Tools = nil // Empty means all tools
+		return nil
+	}
+
+	// Try object format
+	type toolSelectorAlias ToolSelector
+	var alias toolSelectorAlias
+	if err := node.Decode(&alias); err != nil {
+		return err
+	}
+	*ts = ToolSelector(alias)
+	return nil
+}
+
+// ServerNames returns a slice of server names from a slice of ToolSelectors.
+// This is useful for backward compatibility with code that expects []string.
+func ServerNames(selectors []ToolSelector) []string {
+	names := make([]string, len(selectors))
+	for i, ts := range selectors {
+		names[i] = ts.Server
+	}
+	return names
 }

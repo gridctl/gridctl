@@ -2,6 +2,8 @@ package runtime
 
 // This file contains backward-compatible type aliases and helpers.
 
+import "github.com/gridctl/gridctl/pkg/config"
+
 // Runtime is an alias for Orchestrator for backward compatibility.
 // Deprecated: Use Orchestrator instead.
 type Runtime = Orchestrator
@@ -31,7 +33,7 @@ type AgentInfo struct {
 	Name          string
 	ContainerID   string
 	ContainerName string
-	Uses          []string // MCP servers this agent depends on
+	Uses          []config.ToolSelector // MCP servers this agent depends on
 }
 
 // ContainerStatus holds status information for a container.

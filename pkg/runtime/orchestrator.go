@@ -77,9 +77,9 @@ type MCPServerResult struct {
 
 // AgentResult is the runtime-agnostic result for an agent.
 type AgentResult struct {
-	Name       string     // Logical name
-	WorkloadID WorkloadID // Runtime ID
-	Uses       []string   // MCP servers this agent depends on
+	Name       string               // Logical name
+	WorkloadID WorkloadID           // Runtime ID
+	Uses       []config.ToolSelector // MCP servers this agent depends on
 }
 
 // NewOrchestrator creates an Orchestrator with the given runtime and builder.
@@ -550,9 +550,9 @@ func sortAgentsByDependency(topo *config.Topology) ([]config.Agent, error) {
 		agentsByName[agent.Name] = agent
 
 		// Add edges for agent-to-agent dependencies only (not MCP server dependencies)
-		for _, dep := range agent.Uses {
-			if a2aAgents[dep] {
-				graph.AddEdge(agent.Name, dep)
+		for _, selector := range agent.Uses {
+			if a2aAgents[selector.Server] {
+				graph.AddEdge(agent.Name, selector.Server)
 			}
 		}
 	}
