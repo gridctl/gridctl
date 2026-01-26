@@ -5,4 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: './',
+  build: {
+    // Suppress chunk size warning for embedded CLI tool UI.
+    // React Flow library exceeds default 500 kB threshold.
+    chunkSizeWarningLimit: 600,
+  },
 })
