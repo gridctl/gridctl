@@ -238,7 +238,7 @@ Shows running gateways and containers.
 ### Daemon Mode
 
 By default, `gridctl deploy` runs the MCP gateway as a background daemon:
-- Returns immediately after starting
+- Waits until all MCP servers are initialized before returning (up to 60s timeout)
 - State stored in `~/.gridctl/state/{name}.json`
 - Logs written to `~/.gridctl/logs/{name}.log`
 - Use `--foreground` (-f) to run interactively with verbose output
@@ -280,6 +280,8 @@ When `gridctl deploy` runs, it:
 | `/api/status` | GET | Gateway + agent status (unified agents with A2A info) |
 | `/api/mcp-servers` | GET | List registered MCP servers |
 | `/api/tools` | GET | List aggregated tools |
+| `/health` | GET | Liveness check (returns 200 when HTTP server is running) |
+| `/ready` | GET | Readiness check (returns 200 only when all MCP servers are initialized) |
 | `/` | GET | Web UI (embedded React app) |
 
 **A2A Protocol Endpoints:**
