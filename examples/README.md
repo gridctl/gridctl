@@ -40,6 +40,7 @@ gridctl deploy examples/getting-started/agent-basic.yaml
 | external-mcp | http, sse | - | - | ✅ |
 | multi-agent-skills | - | ✅ | ✅ | - |
 | basic-a2a | - | ✅ | ✅ | - |
+| atlassian-mcp | sse | - | - | ✅ |
 | github-mcp | stdio | - | - | ✅ |
 | itential | http | - | - | - |
 | gateway-basic | http | - | - | ✅ |
