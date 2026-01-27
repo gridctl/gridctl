@@ -19,6 +19,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/adapter"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
 	"github.com/gridctl/gridctl/pkg/state"
@@ -28,6 +29,7 @@ import (
 
 var (
 	deployVerbose     bool
+	deployQuiet       bool
 	deployNoCache     bool
 	deployPort        int
 	deployBasePort    int
@@ -52,6 +54,7 @@ Use --foreground (-f) to run in foreground with verbose output.`,
 
 func init() {
 	deployCmd.Flags().BoolVarP(&deployVerbose, "verbose", "v", false, "Print full topology as JSON")
+	deployCmd.Flags().BoolVarP(&deployQuiet, "quiet", "q", false, "Suppress progress output (show only final result)")
 	deployCmd.Flags().BoolVar(&deployNoCache, "no-cache", false, "Force rebuild of source-based images")
 	deployCmd.Flags().IntVarP(&deployPort, "port", "p", 8180, "Port for MCP gateway")
 	deployCmd.Flags().IntVar(&deployBasePort, "base-port", 9000, "Base port for MCP server host port allocation")
@@ -103,19 +106,12 @@ func runDeploy(topologyPath string) error {
 		return runDeployDaemonChild(topologyPath, topo)
 	}
 
-	// Print info
-	if deployForeground || deployVerbose {
-		fmt.Printf("Loading topology from %s\n", topologyPath)
-		fmt.Printf("Topology '%s' loaded successfully\n", topo.Name)
-		fmt.Printf("  Version: %s\n", topo.Version)
-		if len(topo.Networks) > 0 {
-			fmt.Printf("  Networks: %d\n", len(topo.Networks))
-		} else {
-			fmt.Printf("  Network: %s (%s)\n", topo.Network.Name, topo.Network.Driver)
-		}
-		fmt.Printf("  MCP Servers: %d\n", len(topo.MCPServers))
-		fmt.Printf("  Agents: %d\n", len(topo.Agents))
-		fmt.Printf("  Resources: %d\n", len(topo.Resources))
+	// Create output printer (verbose by default unless --quiet)
+	var printer *output.Printer
+	if !deployQuiet {
+		printer = output.New()
+		printer.Banner(version)
+		printer.Info("Parsing & checking topology", "file", topologyPath)
 	}
 
 	if deployVerbose {
@@ -131,8 +127,8 @@ func runDeploy(topologyPath string) error {
 	}
 	defer rt.Close()
 
-	// Configure logging for foreground mode
-	if deployForeground {
+	// Configure logging based on output mode
+	if !deployQuiet {
 		logLevel := slog.LevelInfo
 		if deployVerbose {
 			logLevel = slog.LevelDebug
@@ -157,7 +153,7 @@ func runDeploy(topologyPath string) error {
 
 	// If foreground mode, run gateway directly
 	if deployForeground {
-		return runGateway(ctx, rt, topo, topologyPath, legacyResult, deployPort, true)
+		return runGateway(ctx, rt, topo, topologyPath, legacyResult, deployPort, !deployQuiet, printer)
 	}
 
 	// Daemon mode: fork child process
@@ -178,13 +174,76 @@ func runDeploy(topologyPath string) error {
 		return fmt.Errorf("daemon may have failed to start - check logs at %s", state.LogPath(topo.Name))
 	}
 
-	fmt.Printf("Topology '%s' started successfully\n", topo.Name)
-	fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
-	fmt.Printf("  PID: %d\n", pid)
-	fmt.Printf("  Logs: %s\n", state.LogPath(topo.Name))
-	fmt.Printf("\nUse 'gridctl destroy %s' to stop\n", topologyPath)
+	// Print summary table for daemon mode
+	if printer != nil {
+		summaries := buildWorkloadSummaries(topo, result)
+		printer.Summary(summaries)
+		printer.Info("Gateway running", "url", fmt.Sprintf("http://localhost:%d", st.Port))
+		printer.Print("\nUse 'gridctl destroy %s' to stop\n", topologyPath)
+	} else {
+		fmt.Printf("Topology '%s' started successfully\n", topo.Name)
+		fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
+		fmt.Printf("  PID: %d\n", pid)
+		fmt.Printf("  Logs: %s\n", state.LogPath(topo.Name))
+		fmt.Printf("\nUse 'gridctl destroy %s' to stop\n", topologyPath)
+	}
 
 	return nil
+}
+
+// buildWorkloadSummaries creates summary data for the status table.
+func buildWorkloadSummaries(topo *config.Topology, result *runtime.UpResult) []output.WorkloadSummary {
+	var summaries []output.WorkloadSummary
+
+	// Build transport lookup from topology config
+	serverTransports := make(map[string]string)
+	for _, s := range topo.MCPServers {
+		transport := s.Transport
+		if transport == "" {
+			transport = "http"
+		}
+		if s.IsExternal() {
+			transport = "external"
+		} else if s.IsLocalProcess() {
+			transport = "local"
+		} else if s.IsSSH() {
+			transport = "ssh"
+		}
+		serverTransports[s.Name] = transport
+	}
+
+	// MCP Servers
+	for _, server := range result.MCPServers {
+		transport := serverTransports[server.Name]
+		summaries = append(summaries, output.WorkloadSummary{
+			Name:      server.Name,
+			Type:      "mcp-server",
+			Transport: transport,
+			State:     "running",
+		})
+	}
+
+	// Agents
+	for _, agent := range result.Agents {
+		summaries = append(summaries, output.WorkloadSummary{
+			Name:      agent.Name,
+			Type:      "agent",
+			Transport: "container",
+			State:     "running",
+		})
+	}
+
+	// Resources
+	for _, res := range topo.Resources {
+		summaries = append(summaries, output.WorkloadSummary{
+			Name:      res.Name,
+			Type:      "resource",
+			Transport: "container",
+			State:     "running",
+		})
+	}
+
+	return summaries
 }
 
 // runDeployDaemonChild runs the gateway as a daemon child process
@@ -217,7 +276,7 @@ func runDeployDaemonChild(topologyPath string, topo *config.Topology) error {
 	}
 
 	// Run gateway (blocks until shutdown)
-	return runGateway(ctx, rt, topo, topologyPath, result, deployPort, false)
+	return runGateway(ctx, rt, topo, topologyPath, result, deployPort, false, nil)
 }
 
 // getRunningContainers retrieves info about already-running containers and external servers
@@ -328,7 +387,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 }
 
 // runGateway runs the MCP gateway (blocking)
-func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology, topologyPath string, result *runtime.LegacyUpResult, port int, verbose bool) error {
+func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology, topologyPath string, result *runtime.LegacyUpResult, port int, verbose bool, printer *output.Printer) error {
 	// Create MCP gateway
 	gateway := mcp.NewGateway()
 	gateway.SetDockerClient(rt.DockerClient())
