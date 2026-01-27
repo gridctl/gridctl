@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
 	"github.com/gridctl/gridctl/pkg/state"
@@ -26,13 +27,15 @@ Requires the topology file to identify which topology to stop.`,
 }
 
 func runDestroy(topologyPath string) error {
+	printer := output.New()
+
 	// Load topology to get its name
 	topo, err := config.LoadTopology(topologyPath)
 	if err != nil {
 		return fmt.Errorf("failed to load topology: %w", err)
 	}
 
-	fmt.Printf("Stopping topology '%s'...\n", topo.Name)
+	printer.Info("Stopping topology", "name", topo.Name)
 
 	// Check for running daemon (with lock to prevent races with deploy)
 	err = state.WithLock(topo.Name, 5*time.Second, func() error {
@@ -43,20 +46,20 @@ func runDestroy(topologyPath string) error {
 
 		// Kill daemon process (SIGTERM, wait 5s, SIGKILL if needed)
 		if state.IsRunning(st) {
-			fmt.Printf("Stopping gateway daemon (PID: %d)...\n", st.PID)
+			printer.Info("Stopping gateway daemon", "pid", st.PID)
 			if killErr := state.KillDaemon(st); killErr != nil {
-				fmt.Printf("  Warning: could not kill daemon: %v\n", killErr)
+				printer.Warn("could not kill daemon", "error", killErr)
 			}
 		}
 
 		// Clean up state file
 		if delErr := state.Delete(topo.Name); delErr != nil {
-			fmt.Printf("  Warning: could not delete state file: %v\n", delErr)
+			printer.Warn("could not delete state file", "error", delErr)
 		}
 		return nil
 	})
 	if err != nil {
-		fmt.Printf("  Warning: could not acquire lock: %v\n", err)
+		printer.Warn("could not acquire lock", "error", err)
 	}
 
 	// Stop containers
@@ -71,6 +74,6 @@ func runDestroy(topologyPath string) error {
 		return fmt.Errorf("failed to stop containers: %w", err)
 	}
 
-	fmt.Printf("Topology '%s' stopped\n", topo.Name)
+	printer.Info("Topology stopped", "name", topo.Name)
 	return nil
 }
