@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +22,8 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		printBanner()
-		fmt.Printf("gridctl %s\n", version)
+		printer := output.New()
+		printer.Banner(version)
 		fmt.Printf("  commit: %s\n", commit)
 		fmt.Printf("  built:  %s\n", date)
 	},

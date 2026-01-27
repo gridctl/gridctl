@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"text/tabwriter"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
 	"github.com/gridctl/gridctl/pkg/state"
@@ -33,10 +33,12 @@ func init() {
 }
 
 func runStatus(topology string) error {
+	printer := output.New()
+
 	// Show gateway status from state files
 	states, err := state.List()
 	if err != nil && !os.IsNotExist(err) {
-		fmt.Printf("Warning: could not read state files: %v\n", err)
+		printer.Warn("could not read state files", "error", err)
 	}
 
 	// Filter by topology if specified
@@ -47,22 +49,20 @@ func runStatus(topology string) error {
 		}
 	}
 
-	// Print gateways
-	if len(filteredStates) > 0 {
-		fmt.Println("GATEWAYS")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tPORT\tPID\tSTATUS\tSTARTED")
-		for _, s := range filteredStates {
-			status := "stopped"
-			if state.IsRunning(&s) {
-				status = "running"
-			}
-			started := formatDuration(time.Since(s.StartedAt))
-			fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\n",
-				s.TopologyName, s.Port, s.PID, status, started)
+	// Build gateway summaries
+	var gateways []output.GatewaySummary
+	for _, s := range filteredStates {
+		status := "stopped"
+		if state.IsRunning(&s) {
+			status = "running"
 		}
-		w.Flush()
-		fmt.Println()
+		gateways = append(gateways, output.GatewaySummary{
+			Name:    s.TopologyName,
+			Port:    s.Port,
+			PID:     s.PID,
+			Status:  status,
+			Started: formatDuration(time.Since(s.StartedAt)),
+		})
 	}
 
 	// Show container status
@@ -78,37 +78,43 @@ func runStatus(topology string) error {
 		return fmt.Errorf("failed to get status: %w", err)
 	}
 
-	if len(workloadStatuses) == 0 && len(filteredStates) == 0 {
-		fmt.Println("No managed gateways or containers found.")
+	if len(workloadStatuses) == 0 && len(gateways) == 0 {
+		printer.Info("No managed gateways or containers found")
 		return nil
 	}
 
-	if len(workloadStatuses) > 0 {
-		fmt.Println("CONTAINERS")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tNAME\tTYPE\tIMAGE\tSTATE\tSTATUS")
-		for _, s := range workloadStatuses {
-			// Get workload name from labels
-			var workloadName string
-			if s.Labels != nil {
-				if name, ok := s.Labels[runtime.LabelMCPServer]; ok {
-					workloadName = name
-				} else if name, ok := s.Labels[runtime.LabelResource]; ok {
-					workloadName = name
-				} else if name, ok := s.Labels[runtime.LabelAgent]; ok {
-					workloadName = name
-				}
+	// Build container summaries
+	var containers []output.ContainerSummary
+	for _, s := range workloadStatuses {
+		// Get workload name from labels
+		var workloadName string
+		if s.Labels != nil {
+			if name, ok := s.Labels[runtime.LabelMCPServer]; ok {
+				workloadName = name
+			} else if name, ok := s.Labels[runtime.LabelResource]; ok {
+				workloadName = name
+			} else if name, ok := s.Labels[runtime.LabelAgent]; ok {
+				workloadName = name
 			}
-			// Truncate ID for display
-			id := string(s.ID)
-			if len(id) > 12 {
-				id = id[:12]
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				id, workloadName, s.Type, s.Image, s.State, s.Message)
 		}
-		w.Flush()
+		// Truncate ID for display
+		id := string(s.ID)
+		if len(id) > 12 {
+			id = id[:12]
+		}
+		containers = append(containers, output.ContainerSummary{
+			ID:      id,
+			Name:    workloadName,
+			Type:    string(s.Type),
+			Image:   s.Image,
+			State:   string(s.State),
+			Message: s.Message,
+		})
 	}
+
+	// Print tables
+	printer.Gateways(gateways)
+	printer.Containers(containers)
 
 	return nil
 }
