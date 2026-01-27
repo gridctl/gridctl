@@ -8,6 +8,7 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- Remove changelog generation from release workflow
 - Correct handle positions and remove translate-y hover
 - Remove translate-y hover to prevent clipping
 - Remove translate-y hover to prevent clipping
