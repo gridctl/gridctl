@@ -1,0 +1,21 @@
+# Atlassian MCP Server Example
+#
+# This topology provides access to Atlassian's official Rovo MCP server, enabling
+# AI agents to interact with Jira, Confluence, and Compass via natural language.
+#
+# Prerequisites:
+#   - An Atlassian Cloud account with access to Jira, Confluence, or Compass
+#   - OAuth authentication is handled automatically via browser flow on first use
+#
+# Usage:
+#   gridctl deploy examples/platforms/atlassian-mcp.yaml
+#
+# Reference:
+#   https://github.com/atlassian/atlassian-mcp-server
+
+version: "1"
+name: atlassian-mcp
+
+mcp-servers:
+  - name: atlassian
+    command: ["npx", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
