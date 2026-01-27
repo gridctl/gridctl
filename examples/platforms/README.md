@@ -6,6 +6,7 @@ Third-party MCP servers that Gridctl runs as containers.
 
 | File | Platform | Description |
 |------|----------|-------------|
+| `atlassian-mcp.yaml` | Atlassian | Official Atlassian Rovo MCP server for Jira, Confluence, Compass |
 | `github-mcp.yaml` | GitHub | Official GitHub MCP server for repos, issues, PRs |
 | `itential.yaml` | Itential | Itential Platform MCP server in dev-stack network |
 
@@ -24,6 +25,10 @@ For connecting to **existing** MCP servers, see [🔒 gateways/](../gateways/).
 
 ## ⚙️ Prerequisites
 
+### atlassian-mcp.yaml
+
+Requires an Atlassian Cloud account. OAuth authentication is handled via browser flow on first use.
+
 ### github-mcp.yaml
 
 Create a GitHub Personal Access Token:
@@ -40,11 +45,13 @@ Requires [itential-dev-stack](https://github.com/itential/itential-dev-stack) ru
 ## 💻 Usage
 
 ```bash
+gridctl deploy examples/platforms/atlassian-mcp.yaml
 gridctl deploy examples/platforms/github-mcp.yaml
 gridctl deploy examples/platforms/itential.yaml
 ```
 
 ## 🔗 References
 
+- [Atlassian Rovo MCP Server](https://github.com/atlassian/atlassian-mcp-server)
 - [GitHub MCP Server](https://github.com/github/github-mcp-server)
 - [Itential MCP](https://github.com/itential/itential-mcp)
