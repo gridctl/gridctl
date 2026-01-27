@@ -8,6 +8,61 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- Remove duplicate v prefix from gateway node version display
+- Wait for MCP servers to initialize before returning from deploy
+- Remove changelog generation from release workflow
+
+### Features
+
+
+- Add ASCII banner with two-tone coloring
+- Add colored CLI help with Obsidian Observatory theme
+- Display banner on version command
+- Add SetVersion method to gateway
+- Pass version to gateway on deploy
+- Add brand logo asset
+- Replace header icon with brand logo
+- Add ToolSelector type for agent-level tool filtering
+- Add tool whitelist filtering to HTTP MCP client
+- Add tool whitelist filtering to stdio MCP client
+- Add tool whitelist filtering to process MCP client
+- Add agent-level tool filtering to gateway
+- Return full ToolSelector in agent status API
+- Pass tool whitelist to MCP servers on deploy
+- Add tool filtering example
+- Add ToolSelector type to frontend
+- Add whitelist filtering to ToolList component
+- Add Access section to agent sidebar
+- Add amber color theme for terminal output
+- Add output package with printer and banner
+- Add summary tables for workloads and gateways
+- Use output package in deploy command
+
+### Refactoring
+
+
+- Update mergeEquippedSkills for ToolSelector type
+- Update validation for ToolSelector type
+- Update compat types for ToolSelector
+- Update orchestrator for ToolSelector type
+- Update graph transform for ToolSelector
+- Use output package in version command
+- Use output package in status command
+- Use output package in destroy command## [0.1.0-alpha.2] - 2026-01-23
+
+
+### Refactoring
+
+
+- Update module path to github.com/gridctl/gridctl
+- Rename cmd/agentlab to cmd/gridctl
+- Update import paths and branding in Go packages
+- Update web UI branding to Gridctl## [0.1.0-alpha.1] - 2026-01-21
+
+
+### Bug Fixes
+
+
 - Correct handle positions and remove translate-y hover
 - Remove translate-y hover to prevent clipping
 - Remove translate-y hover to prevent clipping
@@ -30,8 +85,6 @@ All notable changes to gridctl will be documented in this file.
 - Add liveness health check and readiness endpoint
 - Start HTTP server before MCP registration
 - Correct tool name delimiter to match backend
-- Remove duplicate v prefix from gateway node version display
-- Wait for MCP servers to initialize before returning from deploy
 
 ### Features
 
@@ -191,28 +244,6 @@ All notable changes to gridctl will be documented in this file.
 - Add GoReleaser configuration
 - Add version command with ldflags
 - Update release workflow for GoReleaser
-- Add ASCII banner with two-tone coloring
-- Add colored CLI help with Obsidian Observatory theme
-- Display banner on version command
-- Add SetVersion method to gateway
-- Pass version to gateway on deploy
-- Add brand logo asset
-- Replace header icon with brand logo
-- Add ToolSelector type for agent-level tool filtering
-- Add tool whitelist filtering to HTTP MCP client
-- Add tool whitelist filtering to stdio MCP client
-- Add tool whitelist filtering to process MCP client
-- Add agent-level tool filtering to gateway
-- Return full ToolSelector in agent status API
-- Pass tool whitelist to MCP servers on deploy
-- Add tool filtering example
-- Add ToolSelector type to frontend
-- Add whitelist filtering to ToolList component
-- Add Access section to agent sidebar
-- Add amber color theme for terminal output
-- Add output package with printer and banner
-- Add summary tables for workloads and gateways
-- Use output package in deploy command
 
 ### Refactoring
 
@@ -257,15 +288,3 @@ All notable changes to gridctl will be documented in this file.
 - Add locking to destroy command
 - Remove unused A2A capability fields
 - Change default gateway port to 8180
-- Update module path to github.com/gridctl/gridctl
-- Rename cmd/agentlab to cmd/gridctl
-- Update import paths and branding in Go packages
-- Update web UI branding to Gridctl
-- Update mergeEquippedSkills for ToolSelector type
-- Update validation for ToolSelector type
-- Update compat types for ToolSelector
-- Update orchestrator for ToolSelector type
-- Update graph transform for ToolSelector
-- Use output package in version command
-- Use output package in status command
-- Use output package in destroy command
