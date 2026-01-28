@@ -106,6 +106,6 @@ func (b *Builder) prepareLocalSource(opts BuildOptions) (string, error) {
 }
 
 // GenerateTag creates a deterministic image tag for an agent.
-func GenerateTag(topology, agentName string) string {
-	return fmt.Sprintf("gridctl-%s-%s:latest", topology, agentName)
+func GenerateTag(stack, agentName string) string {
+	return fmt.Sprintf("gridctl-%s-%s:latest", stack, agentName)
 }
