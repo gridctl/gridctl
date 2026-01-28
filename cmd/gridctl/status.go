@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var statusTopology string
+var statusStack string
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
@@ -22,17 +22,17 @@ var statusCmd = &cobra.Command{
 	Long: `Displays the current status of gridctl-managed gateways and containers.
 
 Shows running gateways with their ports, and container states.
-Use --topology to filter by a specific topology.`,
+Use --stack to filter by a specific stack.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus(statusTopology)
+		return runStatus(statusStack)
 	},
 }
 
 func init() {
-	statusCmd.Flags().StringVarP(&statusTopology, "topology", "t", "", "Only show containers from this topology")
+	statusCmd.Flags().StringVarP(&statusStack, "stack", "s", "", "Only show containers from this stack")
 }
 
-func runStatus(topology string) error {
+func runStatus(stack string) error {
 	printer := output.New()
 
 	// Show gateway status from state files
@@ -41,10 +41,10 @@ func runStatus(topology string) error {
 		printer.Warn("could not read state files", "error", err)
 	}
 
-	// Filter by topology if specified
+	// Filter by stack if specified
 	var filteredStates []state.DaemonState
 	for _, s := range states {
-		if topology == "" || s.TopologyName == topology {
+		if stack == "" || s.StackName == stack {
 			filteredStates = append(filteredStates, s)
 		}
 	}
@@ -57,7 +57,7 @@ func runStatus(topology string) error {
 			status = "running"
 		}
 		gateways = append(gateways, output.GatewaySummary{
-			Name:    s.TopologyName,
+			Name:    s.StackName,
 			Port:    s.Port,
 			PID:     s.PID,
 			Status:  status,
@@ -73,7 +73,7 @@ func runStatus(topology string) error {
 	defer rt.Close()
 
 	ctx := context.Background()
-	workloadStatuses, err := rt.Status(ctx, topology)
+	workloadStatuses, err := rt.Status(ctx, stack)
 	if err != nil {
 		return fmt.Errorf("failed to get status: %w", err)
 	}
