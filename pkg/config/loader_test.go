@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestLoadTopology_Valid(t *testing.T) {
+func TestLoadStack_Valid(t *testing.T) {
 	content := `
 version: "1"
 name: test-lab
@@ -30,7 +30,7 @@ resources:
 `
 	path := writeTempFile(t, content)
 
-	topo, err := LoadTopology(path)
+	topo, err := LoadStack(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,7 +46,7 @@ resources:
 	}
 }
 
-func TestLoadTopology_Defaults(t *testing.T) {
+func TestLoadStack_Defaults(t *testing.T) {
 	content := `
 name: test-lab
 mcp-servers:
@@ -58,7 +58,7 @@ mcp-servers:
 `
 	path := writeTempFile(t, content)
 
-	topo, err := LoadTopology(path)
+	topo, err := LoadStack(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,7 +81,7 @@ mcp-servers:
 	}
 }
 
-func TestLoadTopology_EnvExpansion(t *testing.T) {
+func TestLoadStack_EnvExpansion(t *testing.T) {
 	os.Setenv("TEST_API_KEY", "secret123")
 	defer os.Unsetenv("TEST_API_KEY")
 
@@ -98,7 +98,7 @@ mcp-servers:
 `
 	path := writeTempFile(t, content)
 
-	topo, err := LoadTopology(path)
+	topo, err := LoadStack(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,7 +108,7 @@ mcp-servers:
 	}
 }
 
-func TestLoadTopology_InvalidYAML(t *testing.T) {
+func TestLoadStack_InvalidYAML(t *testing.T) {
 	content := `
 name: test-lab
 mcp-servers:
@@ -117,7 +117,7 @@ mcp-servers:
 `
 	path := writeTempFile(t, content)
 
-	_, err := LoadTopology(path)
+	_, err := LoadStack(path)
 	if err == nil {
 		t.Fatal("expected error for invalid YAML")
 	}
@@ -126,12 +126,12 @@ mcp-servers:
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
-		topo    *Topology
+		topo    *Stack
 		wantErr bool
 	}{
 		{
-			name: "valid topology",
-			topo: &Topology{
+			name: "valid stack",
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net", Driver: "bridge"},
 				MCPServers: []MCPServer{
@@ -142,7 +142,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "missing name",
-			topo: &Topology{
+			topo: &Stack{
 				Network: Network{Name: "test-net"},
 				MCPServers: []MCPServer{
 					{Name: "server1", Image: "alpine", Port: 3000},
@@ -152,7 +152,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "both image and source",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net"},
 				MCPServers: []MCPServer{
@@ -171,7 +171,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "neither image nor source",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net"},
 				MCPServers: []MCPServer{
@@ -182,7 +182,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "invalid source type",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net"},
 				MCPServers: []MCPServer{
@@ -200,7 +200,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "duplicate MCP server names",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net"},
 				MCPServers: []MCPServer{
@@ -212,7 +212,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "invalid port (zero)",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net"},
 				MCPServers: []MCPServer{
@@ -238,7 +238,7 @@ func TestValidate(t *testing.T) {
 
 // Multi-network tests
 
-func TestLoadTopology_MultiNetwork(t *testing.T) {
+func TestLoadStack_MultiNetwork(t *testing.T) {
 	content := `
 version: "1"
 name: multi-net-test
@@ -268,7 +268,7 @@ resources:
 `
 	path := writeTempFile(t, content)
 
-	topo, err := LoadTopology(path)
+	topo, err := LoadStack(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -284,7 +284,7 @@ resources:
 	}
 }
 
-func TestLoadTopology_MultiNetwork_DefaultDriver(t *testing.T) {
+func TestLoadStack_MultiNetwork_DefaultDriver(t *testing.T) {
 	content := `
 version: "1"
 name: multi-net-test
@@ -301,7 +301,7 @@ mcp-servers:
 `
 	path := writeTempFile(t, content)
 
-	topo, err := LoadTopology(path)
+	topo, err := LoadStack(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -317,12 +317,12 @@ mcp-servers:
 func TestValidate_MultiNetwork(t *testing.T) {
 	tests := []struct {
 		name    string
-		topo    *Topology
+		topo    *Stack
 		wantErr bool
 	}{
 		{
 			name: "valid multi-network",
-			topo: &Topology{
+			topo: &Stack{
 				Name: "test",
 				Networks: []Network{
 					{Name: "net1", Driver: "bridge"},
@@ -336,7 +336,7 @@ func TestValidate_MultiNetwork(t *testing.T) {
 		},
 		{
 			name: "both network and networks",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "single-net"},
 				Networks: []Network{
@@ -351,7 +351,7 @@ func TestValidate_MultiNetwork(t *testing.T) {
 		},
 		{
 			name: "missing server network in multi-network mode",
-			topo: &Topology{
+			topo: &Stack{
 				Name: "test",
 				Networks: []Network{
 					{Name: "net1", Driver: "bridge"},
@@ -364,7 +364,7 @@ func TestValidate_MultiNetwork(t *testing.T) {
 		},
 		{
 			name: "invalid network reference",
-			topo: &Topology{
+			topo: &Stack{
 				Name: "test",
 				Networks: []Network{
 					{Name: "net1", Driver: "bridge"},
@@ -377,7 +377,7 @@ func TestValidate_MultiNetwork(t *testing.T) {
 		},
 		{
 			name: "duplicate network names",
-			topo: &Topology{
+			topo: &Stack{
 				Name: "test",
 				Networks: []Network{
 					{Name: "net1", Driver: "bridge"},
@@ -391,7 +391,7 @@ func TestValidate_MultiNetwork(t *testing.T) {
 		},
 		{
 			name: "simple mode ignores server network",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "single-net", Driver: "bridge"},
 				MCPServers: []MCPServer{
@@ -418,12 +418,12 @@ func TestValidate_MultiNetwork(t *testing.T) {
 func TestValidate_HeadlessAgent(t *testing.T) {
 	tests := []struct {
 		name    string
-		topo    *Topology
+		topo    *Stack
 		wantErr bool
 	}{
 		{
 			name: "valid headless agent",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net", Driver: "bridge"},
 				MCPServers: []MCPServer{
@@ -442,7 +442,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 		},
 		{
 			name: "headless agent missing prompt",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net", Driver: "bridge"},
 				MCPServers: []MCPServer{
@@ -460,7 +460,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 		},
 		{
 			name: "headless agent with image",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net", Driver: "bridge"},
 				MCPServers: []MCPServer{
@@ -480,7 +480,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 		},
 		{
 			name: "headless agent with source",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net", Driver: "bridge"},
 				MCPServers: []MCPServer{
@@ -500,7 +500,7 @@ func TestValidate_HeadlessAgent(t *testing.T) {
 		},
 		{
 			name: "container agent still valid",
-			topo: &Topology{
+			topo: &Stack{
 				Name:    "test",
 				Network: Network{Name: "test-net", Driver: "bridge"},
 				MCPServers: []MCPServer{
@@ -659,7 +659,7 @@ agents:
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			path := writeTempFile(t, tc.content)
-			topo, err := LoadTopology(path)
+			topo, err := LoadStack(path)
 			if err != nil {
 				t.Fatalf("LoadTopology failed: %v", err)
 			}
@@ -706,7 +706,7 @@ mcp-servers:
     port: 3001
 `
 	path := writeTempFile(t, content)
-	topo, err := LoadTopology(path)
+	topo, err := LoadStack(path)
 	if err != nil {
 		t.Fatalf("LoadTopology failed: %v", err)
 	}
@@ -748,7 +748,7 @@ func TestServerNames(t *testing.T) {
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "topology.yaml")
+	path := filepath.Join(dir, "stack.yaml")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
