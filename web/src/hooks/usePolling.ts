@@ -1,16 +1,16 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { useTopologyStore } from '../stores/useTopologyStore';
+import { useStackStore } from '../stores/useStackStore';
 import { fetchStatus, fetchTools } from '../lib/api';
 import { POLLING } from '../lib/constants';
 
 export function usePolling() {
   const intervalRef = useRef<number | null>(null);
 
-  const setGatewayStatus = useTopologyStore((s) => s.setGatewayStatus);
-  const setTools = useTopologyStore((s) => s.setTools);
-  const setError = useTopologyStore((s) => s.setError);
-  const setLoading = useTopologyStore((s) => s.setLoading);
-  const setConnectionStatus = useTopologyStore((s) => s.setConnectionStatus);
+  const setGatewayStatus = useStackStore((s) => s.setGatewayStatus);
+  const setTools = useStackStore((s) => s.setTools);
+  const setError = useStackStore((s) => s.setError);
+  const setLoading = useStackStore((s) => s.setLoading);
+  const setConnectionStatus = useStackStore((s) => s.setConnectionStatus);
 
   const poll = useCallback(async () => {
     try {
