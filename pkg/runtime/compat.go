@@ -46,7 +46,7 @@ type ContainerStatus struct {
 	Status        string
 	Type          string // "mcp-server", "resource", or "agent"
 	MCPServerName string // Name of the MCP server, resource, or agent
-	Topology      string
+	Stack         string
 }
 
 // LegacyUpResult provides backward-compatible result format.
@@ -101,13 +101,13 @@ func ToLegacyStatuses(statuses []WorkloadStatus) []ContainerStatus {
 			id = id[:12]
 		}
 		legacy[i] = ContainerStatus{
-			ID:       id,
-			Name:     s.Name,
-			Image:    s.Image,
-			State:    string(s.State),
-			Status:   s.Message,
-			Type:     string(s.Type),
-			Topology: s.Topology,
+			ID:     id,
+			Name:   s.Name,
+			Image:  s.Image,
+			State:  string(s.State),
+			Status: s.Message,
+			Type:   string(s.Type),
+			Stack:  s.Stack,
 		}
 		// Set MCPServerName based on type
 		if s.Labels != nil {
@@ -126,7 +126,7 @@ func ToLegacyStatuses(statuses []WorkloadStatus) []ContainerStatus {
 // Label constants re-exported for backward compatibility.
 const (
 	LabelManaged   = "gridctl.managed"
-	LabelTopology  = "gridctl.topology"
+	LabelStack     = "gridctl.stack"
 	LabelMCPServer = "gridctl.mcp-server"
 	LabelResource  = "gridctl.resource"
 	LabelAgent     = "gridctl.agent"
