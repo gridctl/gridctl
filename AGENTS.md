@@ -5,9 +5,9 @@
 Gridctl is an MCP (Model Context Protocol) orchestration tool - "Containerlab for AI Agents".
 
 **Architecture:**
-- Controller (Go): Reads topology.yaml, manages Docker containers
+- Controller (Go): Reads stack.yaml, manages Docker containers
 - Gateway (Go): Protocol bridge that aggregates tools from downstream agents
-- UI (React + React Flow): Visualizes topology with real-time status
+- UI (React + React Flow): Visualizes stack with real-time status
 
 ## Protocol Bridge Architecture
 
@@ -95,7 +95,7 @@ This enables network isolation between agents while still allowing them to commu
 
 ### Better Developer Experience
 
-- **File Access**: Reads `topology.yaml`, local source directories, `~/.ssh/` natively
+- **File Access**: Reads `stack.yaml`, local source directories, `~/.ssh/` natively
 - **Localhost**: Web UI at `localhost:8180` without port mapping complexity
 - **Debugging**: Standard Go debugging tools work directly
 
@@ -106,7 +106,7 @@ gridctl/
 ├── cmd/gridctl/           # CLI entry point
 │   ├── main.go           # Entry point
 │   ├── root.go           # Cobra root command
-│   ├── deploy.go         # Start topology + gateway
+│   ├── deploy.go         # Start stack + gateway
 │   ├── destroy.go        # Stop containers
 │   ├── status.go         # Show container status
 │   ├── version.go        # Version command
@@ -120,9 +120,9 @@ gridctl/
 ├── pkg/
 │   ├── adapter/          # Protocol adapters
 │   │   └── a2a_client.go # A2A client adapter
-│   ├── config/           # Topology YAML parsing
-│   │   ├── types.go      # Topology, Agent, Resource structs
-│   │   ├── loader.go     # LoadTopology() function
+│   ├── config/           # Stack YAML parsing
+│   │   ├── types.go      # Stack, Agent, Resource structs
+│   │   ├── loader.go     # LoadStack() function
 │   │   └── validate.go   # Validation rules
 │   ├── dockerclient/     # Docker client interface
 │   │   └── interface.go  # Interface definition for mocking
@@ -194,38 +194,38 @@ make clean-mock-servers # Stop and remove mock MCP servers
 ## CLI Usage
 
 ```bash
-# Start a topology (runs as daemon, returns immediately)
+# Start a stack (runs as daemon, returns immediately)
 ./gridctl deploy examples/getting-started/agent-basic.yaml
 
 # Start with options
-./gridctl deploy topology.yaml --port 8180 --no-cache
+./gridctl deploy stack.yaml --port 8180 --no-cache
 
 # Run in foreground with verbose output (for debugging)
-./gridctl deploy topology.yaml --foreground
+./gridctl deploy stack.yaml --foreground
 
 # Check running gateways and containers
 ./gridctl status
 
-# Stop a specific topology (gateway + containers)
+# Stop a specific stack (gateway + containers)
 ./gridctl destroy examples/getting-started/agent-basic.yaml
 ```
 
 ### Command Reference
 
-#### `gridctl deploy <topology.yaml>`
+#### `gridctl deploy <stack.yaml>`
 
-Starts containers and MCP gateway for a topology.
+Starts containers and MCP gateway for a stack.
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--foreground` | `-f` | Run in foreground with verbose output (don't daemonize) |
 | `--port` | `-p` | Port for MCP gateway (default: 8180) |
 | `--no-cache` | | Force rebuild of source-based images |
-| `--verbose` | `-v` | Print full topology as JSON |
+| `--verbose` | `-v` | Print full stack as JSON |
 
-#### `gridctl destroy <topology.yaml>`
+#### `gridctl destroy <stack.yaml>`
 
-Stops the gateway daemon and removes all containers for a topology.
+Stops the gateway daemon and removes all containers for a stack.
 
 #### `gridctl status`
 
@@ -233,7 +233,7 @@ Shows running gateways and containers.
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--topology` | `-t` | Filter by topology name |
+| `--stack` | `-t` | Filter by stack name |
 
 ### Daemon Mode
 
@@ -250,7 +250,7 @@ Gridctl stores daemon state in `~/.gridctl/`:
 ```
 ~/.gridctl/
 ├── state/              # Daemon state files
-│   └── {name}.json     # PID, port, start time per topology
+│   └── {name}.json     # PID, port, start time per stack
 ├── logs/               # Daemon log files
 │   └── {name}.log      # stdout/stderr from daemon
 └── cache/              # Build cache
@@ -260,7 +260,7 @@ Gridctl stores daemon state in `~/.gridctl/`:
 ## MCP Gateway
 
 When `gridctl deploy` runs, it:
-1. Parses the topology YAML
+1. Parses the stack YAML
 2. Creates Docker network
 3. Builds/pulls images
 4. Starts containers with host port bindings (9000+)
@@ -294,7 +294,7 @@ When `gridctl deploy` runs, it:
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
 
-## Topology YAML Schema
+## Stack YAML Schema
 
 Gridctl supports two network modes:
 - **Simple mode** (default): Single network, all containers join automatically
@@ -304,7 +304,7 @@ Gridctl supports two network modes:
 
 ```yaml
 version: "1"
-name: my-topology
+name: my-stack
 
 network:                              # Optional: single network
   name: my-network                    # Defaults to {name}-net
@@ -332,7 +332,7 @@ mcp-servers:
 
   # Local process MCP server (no container, runs on host)
   - name: local-tools
-    command: ["./my-mcp-server"]      # Command to run (relative to topology dir)
+    command: ["./my-mcp-server"]      # Command to run (relative to stack dir)
     # transport: stdio                # Implicit for local process
     env:
       LOG_LEVEL: debug                # Environment vars merged with host env
@@ -450,7 +450,7 @@ Use `networks` (plural) to define multiple isolated networks. Each container mus
 
 ```yaml
 version: "1"
-name: isolated-topology
+name: isolated-stack
 
 networks:                             # Multiple networks (advanced mode)
   - name: public-net
@@ -517,7 +517,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`
 
 All managed resources use these labels:
 - `gridctl.managed=true`
-- `gridctl.topology={name}`
+- `gridctl.stack={name}`
 - `gridctl.mcp-server={name}` (for MCP server containers)
 - `gridctl.agent={name}` (for agent containers)
 - `gridctl.resource={name}` (for resource containers)
