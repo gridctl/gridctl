@@ -79,8 +79,8 @@ func TestSave_CreatesFile(t *testing.T) {
 	defer cleanup()
 
 	state := &DaemonState{
-		TopologyName: "my-topo",
-		TopologyFile: "/path/to/topology.yaml",
+		StackName:"my-topo",
+		StackFile: "/path/to/stack.yaml",
 		PID:          12345,
 		Port:         8080,
 		StartedAt:    time.Now(),
@@ -102,7 +102,7 @@ func TestSave_CreatesDirectory(t *testing.T) {
 	defer cleanup()
 
 	state := &DaemonState{
-		TopologyName: "my-topo",
+		StackName:"my-topo",
 		PID:          12345,
 	}
 
@@ -130,8 +130,8 @@ func TestLoad_Success(t *testing.T) {
 
 	// Save a state first
 	original := &DaemonState{
-		TopologyName: "test-topo",
-		TopologyFile: "/path/to/topo.yaml",
+		StackName:"test-topo",
+		StackFile: "/path/to/topo.yaml",
 		PID:          9999,
 		Port:         8080,
 		StartedAt:    startTime,
@@ -146,11 +146,11 @@ func TestLoad_Success(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if loaded.TopologyName != original.TopologyName {
-		t.Errorf("TopologyName = %q, want %q", loaded.TopologyName, original.TopologyName)
+	if loaded.StackName != original.StackName {
+		t.Errorf("TopologyName = %q, want %q", loaded.StackName, original.StackName)
 	}
-	if loaded.TopologyFile != original.TopologyFile {
-		t.Errorf("TopologyFile = %q, want %q", loaded.TopologyFile, original.TopologyFile)
+	if loaded.StackFile != original.StackFile {
+		t.Errorf("TopologyFile = %q, want %q", loaded.StackFile, original.StackFile)
 	}
 	if loaded.PID != original.PID {
 		t.Errorf("PID = %d, want %d", loaded.PID, original.PID)
@@ -203,7 +203,7 @@ func TestDelete_Success(t *testing.T) {
 	defer cleanup()
 
 	// Save a state first
-	state := &DaemonState{TopologyName: "to-delete", PID: 123}
+	state := &DaemonState{StackName:"to-delete", PID: 123}
 	if err := Save(state); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -255,7 +255,7 @@ func TestList_MultipleStates(t *testing.T) {
 
 	// Save multiple states
 	for _, name := range []string{"topo-a", "topo-b", "topo-c"} {
-		state := &DaemonState{TopologyName: name, PID: 100}
+		state := &DaemonState{StackName:name, PID: 100}
 		if err := Save(state); err != nil {
 			t.Fatalf("Save(%s) error = %v", name, err)
 		}
@@ -281,7 +281,7 @@ func TestList_SkipsInvalidFiles(t *testing.T) {
 	}
 
 	// Save a valid state
-	state := &DaemonState{TopologyName: "valid", PID: 100}
+	state := &DaemonState{StackName:"valid", PID: 100}
 	if err := Save(state); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -316,7 +316,7 @@ func TestIsRunning_NilState(t *testing.T) {
 }
 
 func TestIsRunning_ZeroPID(t *testing.T) {
-	state := &DaemonState{TopologyName: "test", PID: 0}
+	state := &DaemonState{StackName:"test", PID: 0}
 	if IsRunning(state) {
 		t.Error("expected IsRunning with PID=0 to be false")
 	}
@@ -324,7 +324,7 @@ func TestIsRunning_ZeroPID(t *testing.T) {
 
 func TestIsRunning_CurrentProcess(t *testing.T) {
 	// Use current process - this should be running
-	state := &DaemonState{TopologyName: "test", PID: os.Getpid()}
+	state := &DaemonState{StackName:"test", PID: os.Getpid()}
 	if !IsRunning(state) {
 		t.Error("expected IsRunning for current process to be true")
 	}
@@ -332,7 +332,7 @@ func TestIsRunning_CurrentProcess(t *testing.T) {
 
 func TestIsRunning_InvalidPID(t *testing.T) {
 	// Use a very high PID that's unlikely to exist
-	state := &DaemonState{TopologyName: "test", PID: 999999999}
+	state := &DaemonState{StackName:"test", PID: 999999999}
 	if IsRunning(state) {
 		t.Error("expected IsRunning for invalid PID to be false")
 	}
@@ -346,7 +346,7 @@ func TestKillDaemon_NilState(t *testing.T) {
 }
 
 func TestKillDaemon_ZeroPID(t *testing.T) {
-	state := &DaemonState{TopologyName: "test", PID: 0}
+	state := &DaemonState{StackName:"test", PID: 0}
 	// Should not error
 	if err := KillDaemon(state); err != nil {
 		t.Errorf("KillDaemon with PID=0 error = %v", err)
@@ -503,7 +503,7 @@ func TestCheckAndClean_RunningProcess(t *testing.T) {
 
 	// Save state with current process PID (which is running)
 	state := &DaemonState{
-		TopologyName: "test-topo",
+		StackName:"test-topo",
 		PID:          os.Getpid(),
 	}
 	if err := Save(state); err != nil {
@@ -530,7 +530,7 @@ func TestCheckAndClean_DeadProcess(t *testing.T) {
 
 	// Save state with a PID that doesn't exist
 	state := &DaemonState{
-		TopologyName: "test-topo",
+		StackName:"test-topo",
 		PID:          999999999, // Very high PID unlikely to exist
 	}
 	if err := Save(state); err != nil {
