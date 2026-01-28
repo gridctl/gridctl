@@ -38,9 +38,9 @@ var (
 )
 
 var deployCmd = &cobra.Command{
-	Use:   "deploy <topology.yaml>",
-	Short: "Start MCP servers defined in a topology file",
-	Long: `Reads a topology YAML file and starts all defined MCP servers and resources.
+	Use:   "deploy <stack.yaml>",
+	Short: "Start MCP servers defined in a stack file",
+	Long: `Reads a stack YAML file and starts all defined MCP servers and resources.
 
 Creates a Docker network, pulls/builds images as needed, and starts containers.
 The MCP gateway runs as a background daemon by default.
@@ -53,7 +53,7 @@ Use --foreground (-f) to run in foreground with verbose output.`,
 }
 
 func init() {
-	deployCmd.Flags().BoolVarP(&deployVerbose, "verbose", "v", false, "Print full topology as JSON")
+	deployCmd.Flags().BoolVarP(&deployVerbose, "verbose", "v", false, "Print full stack as JSON")
 	deployCmd.Flags().BoolVarP(&deployQuiet, "quiet", "q", false, "Suppress progress output (show only final result)")
 	deployCmd.Flags().BoolVar(&deployNoCache, "no-cache", false, "Force rebuild of source-based images")
 	deployCmd.Flags().IntVarP(&deployPort, "port", "p", 8180, "Port for MCP gateway")
@@ -63,47 +63,47 @@ func init() {
 	_ = deployCmd.Flags().MarkHidden("daemon-child")
 }
 
-func runDeploy(topologyPath string) error {
+func runDeploy(stackPath string) error {
 	// Convert to absolute path for daemon child
-	absPath, err := filepath.Abs(topologyPath)
+	absPath, err := filepath.Abs(stackPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path: %w", err)
 	}
-	topologyPath = absPath
+	stackPath = absPath
 
-	// Load topology
-	topo, err := config.LoadTopology(topologyPath)
+	// Load stack
+	stack, err := config.LoadStack(stackPath)
 	if err != nil {
-		return fmt.Errorf("failed to load topology: %w", err)
+		return fmt.Errorf("failed to load stack: %w", err)
 	}
 
 	// Clean up stale state (process died without cleanup) and check if already running
 	var existingState *state.DaemonState
-	err = state.WithLock(topo.Name, 5*time.Second, func() error {
+	err = state.WithLock(stack.Name, 5*time.Second, func() error {
 		// Auto-clean stale state files
-		cleaned, cleanErr := state.CheckAndClean(topo.Name)
+		cleaned, cleanErr := state.CheckAndClean(stack.Name)
 		if cleanErr != nil {
 			return fmt.Errorf("checking state: %w", cleanErr)
 		}
 		if cleaned {
-			fmt.Printf("Cleaned up stale state for '%s'\n", topo.Name)
+			fmt.Printf("Cleaned up stale state for '%s'\n", stack.Name)
 		}
 
 		// Check if already running (after cleanup)
-		existingState, _ = state.Load(topo.Name)
+		existingState, _ = state.Load(stack.Name)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
 	if existingState != nil && state.IsRunning(existingState) {
-		return fmt.Errorf("topology '%s' is already running on port %d (PID: %d)\nUse 'gridctl destroy %s' to stop it first",
-			topo.Name, existingState.Port, existingState.PID, topologyPath)
+		return fmt.Errorf("stack '%s' is already running on port %d (PID: %d)\nUse 'gridctl destroy %s' to stop it first",
+			stack.Name, existingState.Port, existingState.PID, stackPath)
 	}
 
 	// If we're the daemon child, run the gateway
 	if deployDaemonChild {
-		return runDeployDaemonChild(topologyPath, topo)
+		return runDeployDaemonChild(stackPath, stack)
 	}
 
 	// Create output printer (verbose by default unless --quiet)
@@ -111,12 +111,12 @@ func runDeploy(topologyPath string) error {
 	if !deployQuiet {
 		printer = output.New()
 		printer.Banner(version)
-		printer.Info("Parsing & checking topology", "file", topologyPath)
+		printer.Info("Parsing & checking stack", "file", stackPath)
 	}
 
 	if deployVerbose {
-		fmt.Println("\nFull topology (JSON):")
-		data, _ := json.MarshalIndent(topo, "", "  ")
+		fmt.Println("\nFull stack (JSON):")
+		data, _ := json.MarshalIndent(stack, "", "  ")
 		fmt.Println(string(data))
 	}
 
@@ -143,9 +143,9 @@ func runDeploy(topologyPath string) error {
 		BasePort:    deployBasePort,
 		GatewayPort: deployPort,
 	}
-	result, err := rt.Up(ctx, topo, opts)
+	result, err := rt.Up(ctx, stack, opts)
 	if err != nil {
-		return fmt.Errorf("failed to start topology: %w", err)
+		return fmt.Errorf("failed to start stack: %w", err)
 	}
 
 	// Convert to legacy result format for runGateway
@@ -153,11 +153,11 @@ func runDeploy(topologyPath string) error {
 
 	// If foreground mode, run gateway directly
 	if deployForeground {
-		return runGateway(ctx, rt, topo, topologyPath, legacyResult, deployPort, !deployQuiet, printer)
+		return runGateway(ctx, rt, stack, stackPath, legacyResult, deployPort, !deployQuiet, printer)
 	}
 
 	// Daemon mode: fork child process
-	pid, err := forkDeployDaemon(topologyPath, deployPort, deployBasePort)
+	pid, err := forkDeployDaemon(stackPath, deployPort, deployBasePort)
 	if err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
@@ -165,39 +165,39 @@ func runDeploy(topologyPath string) error {
 	// Wait for daemon to be fully ready (MCP servers initialized)
 	// Use longer timeout for servers that need OAuth flows (e.g., mcp-remote)
 	if err := waitForReady(deployPort, 60*time.Second); err != nil {
-		return fmt.Errorf("daemon failed to become ready: %w\nCheck logs at %s", err, state.LogPath(topo.Name))
+		return fmt.Errorf("daemon failed to become ready: %w\nCheck logs at %s", err, state.LogPath(stack.Name))
 	}
 
 	// Verify daemon started
-	st, err := state.Load(topo.Name)
+	st, err := state.Load(stack.Name)
 	if err != nil {
-		return fmt.Errorf("daemon may have failed to start - check logs at %s", state.LogPath(topo.Name))
+		return fmt.Errorf("daemon may have failed to start - check logs at %s", state.LogPath(stack.Name))
 	}
 
 	// Print summary table for daemon mode
 	if printer != nil {
-		summaries := buildWorkloadSummaries(topo, result)
+		summaries := buildWorkloadSummaries(stack, result)
 		printer.Summary(summaries)
 		printer.Info("Gateway running", "url", fmt.Sprintf("http://localhost:%d", st.Port))
-		printer.Print("\nUse 'gridctl destroy %s' to stop\n", topologyPath)
+		printer.Print("\nUse 'gridctl destroy %s' to stop\n", stackPath)
 	} else {
-		fmt.Printf("Topology '%s' started successfully\n", topo.Name)
+		fmt.Printf("Stack '%s' started successfully\n", stack.Name)
 		fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
 		fmt.Printf("  PID: %d\n", pid)
-		fmt.Printf("  Logs: %s\n", state.LogPath(topo.Name))
-		fmt.Printf("\nUse 'gridctl destroy %s' to stop\n", topologyPath)
+		fmt.Printf("  Logs: %s\n", state.LogPath(stack.Name))
+		fmt.Printf("\nUse 'gridctl destroy %s' to stop\n", stackPath)
 	}
 
 	return nil
 }
 
 // buildWorkloadSummaries creates summary data for the status table.
-func buildWorkloadSummaries(topo *config.Topology, result *runtime.UpResult) []output.WorkloadSummary {
+func buildWorkloadSummaries(stack *config.Stack, result *runtime.UpResult) []output.WorkloadSummary {
 	var summaries []output.WorkloadSummary
 
-	// Build transport lookup from topology config
+	// Build transport lookup from stack config
 	serverTransports := make(map[string]string)
-	for _, s := range topo.MCPServers {
+	for _, s := range stack.MCPServers {
 		transport := s.Transport
 		if transport == "" {
 			transport = "http"
@@ -234,7 +234,7 @@ func buildWorkloadSummaries(topo *config.Topology, result *runtime.UpResult) []o
 	}
 
 	// Resources
-	for _, res := range topo.Resources {
+	for _, res := range stack.Resources {
 		summaries = append(summaries, output.WorkloadSummary{
 			Name:      res.Name,
 			Type:      "resource",
@@ -247,7 +247,7 @@ func buildWorkloadSummaries(topo *config.Topology, result *runtime.UpResult) []o
 }
 
 // runDeployDaemonChild runs the gateway as a daemon child process
-func runDeployDaemonChild(topologyPath string, topo *config.Topology) error {
+func runDeployDaemonChild(stackPath string, stack *config.Stack) error {
 	// Create runtime
 	rt, err := runtime.New()
 	if err != nil {
@@ -258,31 +258,31 @@ func runDeployDaemonChild(topologyPath string, topo *config.Topology) error {
 	// Containers should already be running, but we need the result
 	// Re-query container info
 	ctx := context.Background()
-	result, err := getRunningContainers(ctx, rt, topo)
+	result, err := getRunningContainers(ctx, rt, stack)
 	if err != nil {
 		return fmt.Errorf("failed to get container info: %w", err)
 	}
 
 	// Write state file before starting server
 	st := &state.DaemonState{
-		TopologyName: topo.Name,
-		TopologyFile: topologyPath,
-		PID:          os.Getpid(),
-		Port:         deployPort,
-		StartedAt:    time.Now(),
+		StackName: stack.Name,
+		StackFile: stackPath,
+		PID:       os.Getpid(),
+		Port:      deployPort,
+		StartedAt: time.Now(),
 	}
 	if err := state.Save(st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
 	// Run gateway (blocks until shutdown)
-	return runGateway(ctx, rt, topo, topologyPath, result, deployPort, false, nil)
+	return runGateway(ctx, rt, stack, stackPath, result, deployPort, false, nil)
 }
 
 // getRunningContainers retrieves info about already-running containers and external servers
-func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config.Topology) (*runtime.LegacyUpResult, error) {
+func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *config.Stack) (*runtime.LegacyUpResult, error) {
 	// Get container statuses using new WorkloadStatus API
-	statuses, err := rt.Status(ctx, topo.Name)
+	statuses, err := rt.Status(ctx, stack.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +309,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 		if status.Type == runtime.WorkloadTypeMCPServer {
 			// Find the MCP server config to get port info
 			var containerPort int
-			for _, s := range topo.MCPServers {
+			for _, s := range stack.MCPServers {
 				if s.Name == workloadName {
 					containerPort = s.Port
 					break
@@ -330,7 +330,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 		} else if status.Type == runtime.WorkloadTypeAgent {
 			// Find the agent config to get uses info
 			var uses []config.ToolSelector
-			for _, a := range topo.Agents {
+			for _, a := range stack.Agents {
 				if a.Name == workloadName {
 					uses = a.Uses
 					break
@@ -347,7 +347,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 	}
 
 	// Add external MCP servers from config (they don't have containers)
-	for _, server := range topo.MCPServers {
+	for _, server := range stack.MCPServers {
 		if server.IsExternal() && !foundServers[server.Name] {
 			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
 				Name:     server.Name,
@@ -358,7 +358,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 	}
 
 	// Add local process MCP servers from config (they don't have containers)
-	for _, server := range topo.MCPServers {
+	for _, server := range stack.MCPServers {
 		if server.IsLocalProcess() && !foundServers[server.Name] {
 			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
 				Name:         server.Name,
@@ -369,7 +369,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 	}
 
 	// Add SSH MCP servers from config (they don't have containers)
-	for _, server := range topo.MCPServers {
+	for _, server := range stack.MCPServers {
 		if server.IsSSH() && !foundServers[server.Name] {
 			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
 				Name:            server.Name,
@@ -387,7 +387,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, topo *config
 }
 
 // runGateway runs the MCP gateway (blocking)
-func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology, topologyPath string, result *runtime.LegacyUpResult, port int, verbose bool, printer *output.Printer) error {
+func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, stackPath string, result *runtime.LegacyUpResult, port int, verbose bool, printer *output.Printer) error {
 	// Create MCP gateway
 	gateway := mcp.NewGateway()
 	gateway.SetDockerClient(rt.DockerClient())
@@ -404,9 +404,9 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 
 	// Create A2A gateway early if needed (for server setup)
 	var a2aGateway *a2a.Gateway
-	hasA2A := len(topo.A2AAgents) > 0
+	hasA2A := len(stack.A2AAgents) > 0
 	if !hasA2A {
-		for _, agent := range topo.Agents {
+		for _, agent := range stack.Agents {
 			if agent.IsA2AEnabled() {
 				hasA2A = true
 				break
@@ -428,7 +428,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 	// MCP servers will be registered asynchronously after the server is running
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(rt.DockerClient())
-	server.SetTopologyName(topo.Name)
+	server.SetStackName(stack.Name)
 	if a2aGateway != nil {
 		server.SetA2AGateway(a2aGateway)
 	}
@@ -450,7 +450,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 	select {
 	case err := <-serverErr:
 		// Clean up state file on startup failure
-		_ = state.Delete(topo.Name)
+		_ = state.Delete(stack.Name)
 		return fmt.Errorf("failed to start server on port %d: %w", port, err)
 	case <-time.After(100 * time.Millisecond):
 		// Server started successfully
@@ -458,7 +458,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 
 	// Now register MCP servers (after HTTP server is running)
 	// This allows the health check to succeed even if MCP servers take time to connect
-	registerMCPServers(ctx, gateway, topo, topologyPath, result, verbose)
+	registerMCPServers(ctx, gateway, stack, stackPath, result, verbose)
 
 	// Register agents with their access permissions
 	if len(result.Agents) > 0 {
@@ -482,7 +482,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		}
 
 		// Register local A2A agents (agents with a2a config)
-		for _, agent := range topo.Agents {
+		for _, agent := range stack.Agents {
 			if agent.IsA2AEnabled() {
 				version := "1.0.0"
 				if agent.A2A.Version != "" {
@@ -516,7 +516,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 		}
 
 		// Register external A2A agents
-		for _, a2aAgent := range topo.A2AAgents {
+		for _, a2aAgent := range stack.A2AAgents {
 			authType := ""
 			authToken := ""
 			authHeader := ""
@@ -538,7 +538,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 	}
 
 	// Register A2A agents as MCP tool providers (for agent-to-agent skill equipping)
-	if err := registerAgentAdapters(ctx, gateway, topo, port, verbose); err != nil {
+	if err := registerAgentAdapters(ctx, gateway, stack, port, verbose); err != nil {
 		return fmt.Errorf("registering agent adapters: %w", err)
 	}
 
@@ -570,9 +570,9 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 			fmt.Println("\nShutting down...")
 		}
 		// Clean up state file on graceful shutdown
-		_ = state.Delete(topo.Name)
+		_ = state.Delete(stack.Name)
 	case err := <-serverErr:
-		_ = state.Delete(topo.Name)
+		_ = state.Delete(stack.Name)
 		return fmt.Errorf("server error: %w", err)
 	}
 
@@ -581,10 +581,10 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, topo *config.Topology,
 
 // registerMCPServers registers all MCP servers with the gateway.
 // This is called after the HTTP server is running so health checks can succeed.
-func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.Topology, topologyPath string, result *runtime.LegacyUpResult, verbose bool) {
+func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, stack *config.Stack, stackPath string, result *runtime.LegacyUpResult, verbose bool) {
 	// Build a map from MCP server name to config for transport lookup
 	serverConfigs := make(map[string]config.MCPServer)
-	for _, s := range topo.MCPServers {
+	for _, s := range stack.MCPServers {
 		serverConfigs[s.Name] = s
 	}
 
@@ -622,7 +622,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.
 				Name:         server.Name,
 				LocalProcess: true,
 				Command:      server.Command,
-				WorkDir:      filepath.Dir(topologyPath), // Use topology directory
+				WorkDir:      filepath.Dir(stackPath), // Use stack directory
 				Env:          serverCfg.Env,
 				Tools:        serverCfg.Tools,
 			}
@@ -666,7 +666,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, topo *config.
 }
 
 // forkDeployDaemon starts the daemon child process
-func forkDeployDaemon(topologyPath string, port int, basePort int) (int, error) {
+func forkDeployDaemon(stackPath string, port int, basePort int) (int, error) {
 	// Get current executable
 	exe, err := os.Executable()
 	if err != nil {
@@ -678,20 +678,20 @@ func forkDeployDaemon(topologyPath string, port int, basePort int) (int, error) 
 		return 0, fmt.Errorf("creating log directory: %w", err)
 	}
 
-	// Get topology name for log file
-	topo, err := config.LoadTopology(topologyPath)
+	// Get stack name for log file
+	stack, err := config.LoadStack(stackPath)
 	if err != nil {
-		return 0, fmt.Errorf("loading topology: %w", err)
+		return 0, fmt.Errorf("loading stack: %w", err)
 	}
 
 	// Open log file
-	logFile, err := os.OpenFile(state.LogPath(topo.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	logFile, err := os.OpenFile(state.LogPath(stack.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return 0, fmt.Errorf("opening log file: %w", err)
 	}
 
 	// Build command with --daemon-child flag
-	cmd := exec.Command(exe, "deploy", topologyPath,
+	cmd := exec.Command(exe, "deploy", stackPath,
 		"--daemon-child",
 		"--port", strconv.Itoa(port),
 		"--base-port", strconv.Itoa(basePort))
@@ -721,11 +721,11 @@ func forkDeployDaemon(topologyPath string, port int, basePort int) (int, error) 
 
 // registerAgentAdapters creates A2A client adapters for agents that are used by other agents.
 // This allows Agent A to "equip" Agent B as a skill provider through the unified MCP interface.
-func registerAgentAdapters(_ context.Context, mcpGateway *mcp.Gateway, topo *config.Topology, port int, verbose bool) error {
+func registerAgentAdapters(_ context.Context, mcpGateway *mcp.Gateway, stack *config.Stack, port int, verbose bool) error {
 	// Build map of A2A-enabled agents with their configs
 	a2aAgentConfigs := make(map[string]*config.Agent)
-	for i := range topo.Agents {
-		agent := &topo.Agents[i]
+	for i := range stack.Agents {
+		agent := &stack.Agents[i]
 		if agent.IsA2AEnabled() {
 			a2aAgentConfigs[agent.Name] = agent
 		}
@@ -733,7 +733,7 @@ func registerAgentAdapters(_ context.Context, mcpGateway *mcp.Gateway, topo *con
 
 	// Find agents that are "used" by other agents (not MCP servers)
 	usedAgents := make(map[string]bool)
-	for _, agent := range topo.Agents {
+	for _, agent := range stack.Agents {
 		for _, selector := range agent.Uses {
 			if _, isA2A := a2aAgentConfigs[selector.Server]; isA2A {
 				usedAgents[selector.Server] = true
