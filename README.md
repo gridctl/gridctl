@@ -1,166 +1,218 @@
-# Gridctl
+<p align="center">
+  <img alt="gridctl" src="assets/gridctl.png" width="420">
+</p>
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-f59e0b.svg)](LICENSE)
+<p align="center">
+  <strong>One endpoint. Dozens of AI tools. Zero configuration drift.</strong>
+</p>
 
-**MCP orchestration for AI agents.** Define your stack in YAML, deploy with one command.
-
-Gridctl is a protocol bridge that aggregates tools from multiple [MCP](https://modelcontextprotocol.io/) servers into a single gateway endpoint. Connect Claude Desktop (or any MCP client) to dozens of tool servers through one SSE connection.
-
-[Installation](#installation) | [Quick Start](#quick-start) | [Features](#features) | [Configuration](#stack-configuration) | [Examples](#examples)
+<p align="center">
+  <a href="https://github.com/gridctl/gridctl/releases"><img src="https://img.shields.io/github/v/release/gridctl/gridctl?include_prereleases&style=flat-square&color=f59e0b" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-f59e0b?style=flat-square" alt="License"></a>
+  <a href="https://github.com/gridctl/gridctl/actions"><img src="https://img.shields.io/github/actions/workflow/status/gridctl/gridctl/gatekeeper.yaml?style=flat-square&label=build" alt="Build"></a>
+  <a href="https://goreportcard.com/report/github.com/gridctl/gridctl"><img src="https://goreportcard.com/badge/github.com/gridctl/gridctl?style=flat-square" alt="Go Report"></a>
+</p>
 
 ---
+
+![Gridctl](assets/gridctl.gif)
+
+Gridctl aggregates tools from multiple [MCP](https://modelcontextprotocol.io/) servers into a single gateway. Connect Claude Desktop - or any MCP client - to your grid through one endpoint and start building.
+
+Define your stack in YAML. Deploy with one command. Done.
+
+```bash
+gridctl deploy stack.yaml
+```
+
+> [!TIP] Inspiration
+> This project was heavily influenced by [Containerlab](https://containerlab.dev), a project I've used heavily over the years to rapidly prototype repeatable environments for the purpose of validation, learning, and teaching. Just like Containerlab, Gridctl is designed for fast, ephemeral, stateless, and disposable environments.
+
+## ⚡️ Why Gridctl
+
+MCP servers are everywhere. Running them shouldn't require a PhD in container orchestration. Or, is the MCP server not running in a container? Is a single endpoint exposed behind an existing platform? Is another team hosting and managing an MCP server that is on a different machine on the same network? Different transport types, methods of hosting, and `.json` files start to accumulate like dust. 
+
+I originally built this project to have a way to leverage a single configuration in my application, that I never have to update, while still building various combinations of MCP servers and Agents for rapid prototyping and learning.
+
+I would rather be building than juggling ports, tracking environment variables, and hoping everything with my setup is ready for the next demo, no matter what servers or agents I'm using. My client now connects once and accesses everything over `localhost:8180/sse` by default.
+
+```yaml
+# This is all you need!
+mcp-servers:
+
+  # Build GitHub MCP locally (instantiate in Docker container)
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    transport: stdio
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+
+  # Connects to external SaaS/Cloud Atlassian Rovo MCP Server (breaks out into OAuth to connect)
+  - name: atlassian
+    command: ["npx", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
+
+  # Local filesystem via local process execution
+  - name: filesystem
+    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/Users/home/code/project"]
+```
+
+Three servers. Three different transports. One endpoint.
 
 ## Installation
 
-### Homebrew (macOS/Linux)
-
 ```bash
+# macOS / Linux
 brew install gridctl/tap/gridctl
 ```
 
-Or tap first:
+<details>
+<summary>Other installation methods</summary>
 
 ```bash
-brew tap gridctl/tap
-brew install gridctl
+# From source
+git clone https://github.com/gridctl/gridctl
+cd gridctl && make build
+
+# Binary releases available at:
+# https://github.com/gridctl/gridctl/releases
 ```
 
-### From Source
+</details>
+
+## 🚦 Quick Start
 
 ```bash
-make build
-```
+# Deploy the example stack
+gridctl deploy examples/getting-started/skills-basic.yaml
 
----
-
-## Quick Start
-
-```bash
-# Deploy a stack
-gridctl deploy examples/getting-started/agent-basic.yaml
-
-# Check status
+# Check what's running
 gridctl status
 
 # Open the web UI
 open http://localhost:8180
 
-# Tear down when done
-gridctl destroy examples/getting-started/agent-basic.yaml
+# Clean up
+gridctl destroy examples/getting-started/skills-basic.yaml
 ```
 
----
+<!--
+🎬 VISUAL ASSET NEEDED: Web UI Screenshot
+Location: Immediately below this section
+Specs:
+- Screenshot of the React Flow stack visualization
+- Show: Gateway node (amber), MCP server nodes (violet), connected agents (purple)
+- Capture with status indicators glowing
+- Dark theme matching Obsidian Observatory aesthetic
+- Resolution: 1400x900px
+- Consider: Annotated version with callouts for first-time users
+-->
 
-## Features
+## 🎬 Features
 
 ### Stack as Code
 
-Define your entire MCP infrastructure in a single YAML file. Gridctl handles container orchestration, networking, and protocol translation.
+Fast, consistent, ephemeral, flexible, and version controlled! Many practitioners use different combinations of `MCP Servers` and `Agents` depending on what they are working on. Being able to instantiate, from a single file, the various combinations needed for the right task, saves time in _development_ and _prototyping_. The `stack.yaml` file is where you define this.
 
 ### Protocol Bridge
 
-Aggregates tools from multiple MCP servers into a unified gateway. Clients connect once and access all tools through a single endpoint with automatic namespacing (`server__tool`).
+Aggregates tools from HTTP servers, stdio processes, SSH tunnels, and external URLs into a unified gateway. Automatic namespacing (`server__tool`) prevents collisions.
 
-### Multiple Transports
+### Transport Flexibility
 
-Connect to MCP servers however they run:
+| Transport | Config | When to Use |
+|:----------|:-------|:------------|
+| **Container HTTP** | `image` + `port` | Dockerized MCP servers |
+| **Container Stdio** | `image` + `transport: stdio` | Servers using stdin/stdout |
+| **Local Process** | `command` | Host-native MCP servers |
+| **SSH Tunnel** | `command` + `ssh.host` | Remote machine access |
+| **External URL** | `url` | Existing infrastructure |
 
-| Transport | Configuration | Use Case |
-|-----------|---------------|----------|
-| **HTTP** | `image` + `port` | Containerized MCP servers with HTTP endpoints |
-| **Stdio** | `image` + `transport: stdio` | Containerized MCP servers using stdin/stdout |
-| **Local Process** | `command` | MCP servers running directly on host |
-| **SSH** | `command` + `ssh.host` | MCP servers on remote machines |
-| **External URL** | `url` | Existing MCP servers running elsewhere |
+### Context Window Optimization _(access control)_
 
-### Agent Access Control
+Are you paying for your own tokens for learning? Even if you aren't, being optimized is critical for not overloading that context window! Reducing the numbers of tools and scoping things out correctly, significantly reduces the likelihood of _"tool confusion"_ e.g., a given LLM selects a similarly named tool from the wrong server.
 
-Define which MCP servers each agent can access. Gridctl supports two levels of tool filtering:
+By using `uses` and `tools` filters in the _stack.yaml_ file, `gridctl` filters this list *before* it reaches the LLM. This way, you only get what you need. This is implemented at two levels:
 
-- **Server-Level**: Restrict which tools a server exposes to all agents
-- **Agent-Level**: Restrict which tools each agent can access from a server
+#### Server-Level Filtering (`pkg/mcp/client.go`)
 
-Agents receive an injected `MCP_ENDPOINT` environment variable and can only see tools from their allowed servers.
+When `gridctl` initializes a connection to a downstream MCP server, it applies a whitelist during the `RefreshTools` phase.
 
-### A2A Protocol Support
+```go
+if len(c.toolWhitelist) > 0 {
+    // Only tools in the whitelist are stored in the client's internal cache
+    c.tools = filteredTools
+}
+```
 
-Built-in support for [Agent-to-Agent](https://google.github.io/A2A/) protocol. Expose local agents via `/.well-known/agent.json` or connect to remote A2A agents.
+#### Agent-Level Filtering (`pkg/mcp/gateway.go`)
+
+The `Gateway` validates every tool list request and tool call against the agent's specific `ToolSelector` configuration.
+- `HandleToolsListForAgent`: Filters the aggregated tool list dynamically based on the requesting agent's identity.
+- `HandleToolsCallForAgent`: Provides a security layer by rejecting execution attempts for unauthorized tools, even if the model somehow knows the tool name.
+
+
+
+#### Filtering in Action
+
+**Server-Level Filtering** - Restrict which tools the server exposes to the gateway:
+
+```yaml
+mcp-servers:
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    transport: stdio
+    tools: ["get_file_contents", "search_code", "list_commits", "get_issue", "get_pull_request"]
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+```
+
+This GitHub server only exposes read-only tools. Write operations like `create_issue` and `create_pull_request` are hidden from all agents.
+
+**Agent-Level Filtering** - Further restrict which tools a specific agent can access:
+
+```yaml
+agents:
+  - name: code-review-agent
+    image: my-org/code-review:latest
+    description: "Reviews pull requests and provides feedback"
+    uses:
+      - server: github
+        tools: ["get_file_contents", "get_pull_request", "list_commits"]
+```
+
+This agent can only access three of the five tools exposed by the GitHub server - just enough to review code without searching the broader codebase.
+
+### A2A Protocol
+
+Limited [Agent-to-Agent](https://google.github.io/A2A/) protocol support. Expose your agents via `/.well-known/agent.json` or connect to remote A2A agents. Agents can use other agents as tools. `A2A` is still emerging, as is the common use-cases. This part of the project will continue to evolve in the future.
 
 ### Web UI
 
-Real-time stack visualization powered by React Flow. Monitor container status, view registered tools, and inspect agent configurations.
+Real-time stack visualization. Monitor container status, inspect tool registrations, view agent configurations. Built with React Flow.
 
----
+<!--
+🎬 VISUAL ASSET NEEDED: Web UI GIF
+Location: Here
+Specs:
+- Show: Clicking nodes, sidebar details appearing, status changes
+- Duration: 6-10 seconds
+- Demonstrate the "alive" feeling of the Obsidian Observatory design
+-->
 
-## Stack Configuration
 
-```yaml
-version: "1"
-name: my-stack
+## 📚 CLI Reference
 
-mcp-servers:
-  # Containerized HTTP server
-  - name: api-tools
-    image: ghcr.io/org/mcp-server:latest
-    port: 3000
-    env:
-      API_KEY: "${API_KEY}"
-
-  # Containerized stdio server
-  - name: cli-tools
-    image: ghcr.io/org/cli-mcp:latest
-    transport: stdio
-
-  # Local process on host
-  - name: local-tools
-    command: ["./my-mcp-server"]
-
-  # Remote via SSH
-  - name: remote-tools
-    command: ["/opt/mcp/server"]
-    ssh:
-      host: "192.168.1.50"
-      user: "mcp"
-
-  # External MCP server
-  - name: remote-api
-    url: https://api.example.com/mcp
-
-agents:
-  - name: my-agent
-    image: my-org/agent:latest
-    description: "Agent with selective tool access"
-    uses:
-      - api-tools                 # Full access to all tools
-      - server: cli-tools         # Restricted access
-        tools: ["read", "list"]   # Only these specific tools
-    env:
-      MODEL: "claude-3-5-sonnet"
-
-resources:
-  - name: postgres
-    image: postgres:16
-    env:
-      POSTGRES_PASSWORD: secret
+```bash
+gridctl deploy <stack.yaml>          # Start containers and gateway
+gridctl deploy <stack.yaml> -f       # Run in foreground (debug mode)
+gridctl deploy <stack.yaml> -p 9000  # Custom gateway port
+gridctl status                       # Show running stacks
+gridctl destroy <stack.yaml>         # Stop and remove containers
 ```
 
----
+## 🖥️ Connect LLM Application
 
-## CLI Reference
-
-| Command | Description |
-|---------|-------------|
-| `gridctl deploy <stack.yaml>` | Start containers and gateway (daemon mode) |
-| `gridctl deploy <stack.yaml> -f` | Start in foreground for debugging |
-| `gridctl deploy <stack.yaml> -p 9000` | Use custom gateway port |
-| `gridctl status` | Show running topologies and containers |
-| `gridctl destroy <stack.yaml>` | Stop gateway and remove containers |
-
----
-
-## Example Claude Desktop Configuration
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Each LLM host, the client side application you use to connect the models and chat, will always keep the following configuration. The location of this file varies on the application. For instance, if using `Claude Desktop` on a Macbook, you would place the configuration here: `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -172,37 +224,30 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop. All tools from your stack will be available.
+Restart Claude Desktop. All tools from your stack are now available.
 
----
+## 📙 Examples
 
-## Examples
+| Example | What It Shows |
+|:--------|:--------------|
+| [`skills-basic.yaml`](examples/getting-started/skills-basic.yaml) | Agents with A2A protocol |
+| [`tool-filtering.yaml`](examples/access-control/tool-filtering.yaml) | Server and agent-level access control |
+| [`local-mcp.yaml`](examples/transports/local-mcp.yaml) | Local process transport |
+| [`ssh-mcp.yaml`](examples/transports/ssh-mcp.yaml) | SSH tunnel transport |
+| [`external-mcp.yaml`](examples/transports/external-mcp.yaml) | External HTTP/SSE servers |
+| [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
+| [`basic-a2a.yaml`](examples/multi-agent/basic-a2a.yaml) | Agent-to-agent communication |
 
-| Example | Description |
-|---------|-------------|
-| [agent-basic.yaml](examples/getting-started/agent-basic.yaml) | Basic agent with MCP server access control |
-| [tool-filtering.yaml](examples/access-control/tool-filtering.yaml) | Server and agent-level tool filtering |
-| [local-mcp.yaml](examples/transports/local-mcp.yaml) | Local process MCP server (no container) |
-| [external-mcp.yaml](examples/transports/external-mcp.yaml) | Connect to external HTTP/SSE MCP servers |
-| [ssh-mcp.yaml](examples/transports/ssh-mcp.yaml) | MCP server over SSH tunnel |
-| [basic-a2a.yaml](examples/multi-agent/basic-a2a.yaml) | Agent-to-agent protocol communication |
+## 🤝 Contributing
 
----
+See [CONTRIBUTING.md](CONTRIBUTING.md). We welcome PRs for new transport types, example stacks, and documentation improvements.
 
-## Development
-
-```bash
-make build          # Build frontend and backend
-make build-web      # Build React frontend only
-make build-go       # Build Go binary only
-make dev            # Run Vite dev server
-make test           # Run tests
-make test-coverage  # Run tests with coverage report
-make clean          # Remove build artifacts
-```
-
----
-
-## License
+## 🪪 License
 
 [Apache 2.0](LICENSE)
+
+---
+
+<p align="center">
+  <sub>Built for engineers who'd rather be building and hate the absence of repeatable environments!</sub>
+</p>
