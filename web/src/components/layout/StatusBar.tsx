@@ -1,6 +1,6 @@
 import { Wifi, WifiOff, Clock, Server, Box } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { useTopologyStore } from '../../stores/useTopologyStore';
+import { useStackStore } from '../../stores/useStackStore';
 
 function formatRelativeTime(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -13,11 +13,11 @@ function formatRelativeTime(date: Date): string {
 }
 
 export function StatusBar() {
-  const mcpServers = useTopologyStore((s) => s.mcpServers);
-  const resources = useTopologyStore((s) => s.resources);
-  const connectionStatus = useTopologyStore((s) => s.connectionStatus);
-  const lastUpdated = useTopologyStore((s) => s.lastUpdated);
-  const error = useTopologyStore((s) => s.error);
+  const mcpServers = useStackStore((s) => s.mcpServers);
+  const resources = useStackStore((s) => s.resources);
+  const connectionStatus = useStackStore((s) => s.connectionStatus);
+  const lastUpdated = useStackStore((s) => s.lastUpdated);
+  const error = useStackStore((s) => s.error);
 
   const runningServers = mcpServers.filter((s) => s.initialized).length;
   const runningResources = resources.filter((r) => r.status === 'running').length;
