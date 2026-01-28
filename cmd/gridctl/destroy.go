@@ -15,31 +15,31 @@ import (
 )
 
 var destroyCmd = &cobra.Command{
-	Use:   "destroy <topology.yaml>",
+	Use:   "destroy <stack.yaml>",
 	Short: "Stop gateway daemon and remove containers",
-	Long: `Stops the MCP gateway daemon and removes all containers for a topology.
+	Long: `Stops the MCP gateway daemon and removes all containers for a stack.
 
-Requires the topology file to identify which topology to stop.`,
+Requires the stack file to identify which stack to stop.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDestroy(args[0])
 	},
 }
 
-func runDestroy(topologyPath string) error {
+func runDestroy(stackPath string) error {
 	printer := output.New()
 
-	// Load topology to get its name
-	topo, err := config.LoadTopology(topologyPath)
+	// Load stack to get its name
+	stack, err := config.LoadStack(stackPath)
 	if err != nil {
-		return fmt.Errorf("failed to load topology: %w", err)
+		return fmt.Errorf("failed to load stack: %w", err)
 	}
 
-	printer.Info("Stopping topology", "name", topo.Name)
+	printer.Info("Stopping stack", "name", stack.Name)
 
 	// Check for running daemon (with lock to prevent races with deploy)
-	err = state.WithLock(topo.Name, 5*time.Second, func() error {
-		st, loadErr := state.Load(topo.Name)
+	err = state.WithLock(stack.Name, 5*time.Second, func() error {
+		st, loadErr := state.Load(stack.Name)
 		if loadErr != nil || st == nil {
 			return nil // No state file, nothing to kill
 		}
@@ -53,7 +53,7 @@ func runDestroy(topologyPath string) error {
 		}
 
 		// Clean up state file
-		if delErr := state.Delete(topo.Name); delErr != nil {
+		if delErr := state.Delete(stack.Name); delErr != nil {
 			printer.Warn("could not delete state file", "error", delErr)
 		}
 		return nil
@@ -70,10 +70,10 @@ func runDestroy(topologyPath string) error {
 	defer rt.Close()
 
 	ctx := context.Background()
-	if err := rt.Down(ctx, topo.Name); err != nil {
+	if err := rt.Down(ctx, stack.Name); err != nil {
 		return fmt.Errorf("failed to stop containers: %w", err)
 	}
 
-	printer.Info("Topology stopped", "name", topo.Name)
+	printer.Info("Stack stopped", "name", stack.Name)
 	return nil
 }
