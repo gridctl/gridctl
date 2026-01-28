@@ -136,12 +136,12 @@ func ContainerExists(ctx context.Context, cli dockerclient.DockerClient, name st
 }
 
 // ListManagedContainers returns all containers managed by gridctl.
-func ListManagedContainers(ctx context.Context, cli dockerclient.DockerClient, topology string) ([]types.Container, error) {
+func ListManagedContainers(ctx context.Context, cli dockerclient.DockerClient, stack string) ([]types.Container, error) {
 	filterArgs := filters.NewArgs(
 		filters.Arg("label", LabelManaged+"=true"),
 	)
-	if topology != "" {
-		filterArgs.Add("label", LabelTopology+"="+topology)
+	if stack != "" {
+		filterArgs.Add("label", LabelStack+"="+stack)
 	}
 
 	containers, err := cli.ContainerList(ctx, container.ListOptions{
