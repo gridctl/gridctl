@@ -12,7 +12,7 @@ import type {
 } from '../types';
 import { transformToNodesAndEdges } from '../lib/transform';
 
-interface TopologyState {
+interface StackState {
   // === Raw API Data ===
   gatewayInfo: { name: string; version: string } | null;
   mcpServers: MCPServerStatus[];
@@ -46,7 +46,7 @@ interface TopologyState {
   onEdgesChange: (changes: EdgeChange[]) => void;
 }
 
-export const useTopologyStore = create<TopologyState>()(
+export const useStackStore = create<StackState>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
     gatewayInfo: null,
@@ -140,8 +140,8 @@ export const useTopologyStore = create<TopologyState>()(
 
 // Selectors
 export const useSelectedNode = () => {
-  const selectedNodeId = useTopologyStore((s) => s.selectedNodeId);
-  const nodes = useTopologyStore((s) => s.nodes);
+  const selectedNodeId = useStackStore((s) => s.selectedNodeId);
+  const nodes = useStackStore((s) => s.nodes);
   return nodes.find((n) => n.id === selectedNodeId);
 };
 
