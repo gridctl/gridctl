@@ -37,7 +37,7 @@ func (d *DockerRuntime) Client() dockerclient.DockerClient {
 
 // Start starts a workload and returns its status.
 func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (*runtime.WorkloadStatus, error) {
-	containerName := ContainerName(cfg.Topology, cfg.Name)
+	containerName := ContainerName(cfg.Stack, cfg.Name)
 
 	// Check if already exists
 	exists, containerID, err := ContainerExists(ctx, d.cli, containerName)
@@ -142,7 +142,7 @@ func (d *DockerRuntime) Status(ctx context.Context, id runtime.WorkloadID) (*run
 	return &runtime.WorkloadStatus{
 		ID:       id,
 		Name:     name,
-		Topology: info.Config.Labels[LabelTopology],
+		Stack:    info.Config.Labels[LabelStack],
 		Type:     workloadType,
 		State:    state,
 		Message:  info.State.Status,
@@ -161,7 +161,7 @@ func (d *DockerRuntime) Exists(ctx context.Context, name string) (bool, runtime.
 
 // List returns all workloads matching the filter.
 func (d *DockerRuntime) List(ctx context.Context, filter runtime.WorkloadFilter) ([]runtime.WorkloadStatus, error) {
-	containers, err := ListManagedContainers(ctx, d.cli, filter.Topology)
+	containers, err := ListManagedContainers(ctx, d.cli, filter.Stack)
 	if err != nil {
 		return nil, err
 	}
@@ -198,14 +198,14 @@ func (d *DockerRuntime) List(ctx context.Context, filter runtime.WorkloadFilter)
 		}
 
 		statuses = append(statuses, runtime.WorkloadStatus{
-			ID:       runtime.WorkloadID(c.ID),
-			Name:     name,
-			Topology: c.Labels[LabelTopology],
-			Type:     workloadType,
-			State:    state,
-			Message:  c.Status,
-			Image:    c.Image,
-			Labels:   c.Labels,
+			ID:      runtime.WorkloadID(c.ID),
+			Name:    name,
+			Stack:   c.Labels[LabelStack],
+			Type:    workloadType,
+			State:   state,
+			Message: c.Status,
+			Image:   c.Image,
+			Labels:  c.Labels,
 		})
 	}
 
@@ -230,13 +230,13 @@ func (d *DockerRuntime) GetHostPort(ctx context.Context, id runtime.WorkloadID, 
 
 // EnsureNetwork creates the network if it doesn't exist.
 func (d *DockerRuntime) EnsureNetwork(ctx context.Context, name string, opts runtime.NetworkOptions) error {
-	_, err := EnsureNetwork(ctx, d.cli, name, opts.Driver, opts.Topology)
+	_, err := EnsureNetwork(ctx, d.cli, name, opts.Driver, opts.Stack)
 	return err
 }
 
-// ListNetworks returns all managed networks for a topology.
-func (d *DockerRuntime) ListNetworks(ctx context.Context, topology string) ([]string, error) {
-	return ListManagedNetworks(ctx, d.cli, topology)
+// ListNetworks returns all managed networks for a stack.
+func (d *DockerRuntime) ListNetworks(ctx context.Context, stack string) ([]string, error) {
+	return ListManagedNetworks(ctx, d.cli, stack)
 }
 
 // RemoveNetwork removes a network by name.
