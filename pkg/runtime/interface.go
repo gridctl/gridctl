@@ -32,9 +32,9 @@ const (
 // WorkloadConfig is the runtime-agnostic configuration for starting a workload.
 type WorkloadConfig struct {
 	// Identity
-	Name     string       // Logical name (e.g., "postgres", "weather-server")
-	Topology string       // Topology this workload belongs to
-	Type     WorkloadType // Type of workload
+	Name  string       // Logical name (e.g., "postgres", "weather-server")
+	Stack string       // Stack this workload belongs to
+	Type  WorkloadType // Type of workload
 
 	// Image/artifact
 	Image string // Container image or artifact reference
@@ -61,10 +61,10 @@ type WorkloadConfig struct {
 // WorkloadStatus is the runtime-agnostic status of a running workload.
 type WorkloadStatus struct {
 	// Identity
-	ID       WorkloadID   // Runtime-assigned unique identifier
-	Name     string       // Logical name from config
-	Topology string       // Topology name
-	Type     WorkloadType // Type of workload
+	ID    WorkloadID   // Runtime-assigned unique identifier
+	Name  string       // Logical name from config
+	Stack string       // Stack name
+	Type  WorkloadType // Type of workload
 
 	// State
 	State   WorkloadState // Running, Stopped, Failed, etc.
@@ -81,14 +81,14 @@ type WorkloadStatus struct {
 
 // WorkloadFilter for querying workloads.
 type WorkloadFilter struct {
-	Topology string            // Filter by topology name
-	Labels   map[string]string // Additional label filters
+	Stack  string            // Filter by stack name
+	Labels map[string]string // Additional label filters
 }
 
 // NetworkOptions for network creation.
 type NetworkOptions struct {
-	Driver   string // Network driver (e.g., "bridge")
-	Topology string // For labeling/cleanup purposes
+	Driver string // Network driver (e.g., "bridge")
+	Stack  string // For labeling/cleanup purposes
 }
 
 // WorkloadRuntime is the interface for managing workload lifecycles.
@@ -118,8 +118,8 @@ type WorkloadRuntime interface {
 	// EnsureNetwork creates the network if it doesn't exist.
 	EnsureNetwork(ctx context.Context, name string, opts NetworkOptions) error
 
-	// ListNetworks returns all managed networks for a topology.
-	ListNetworks(ctx context.Context, topology string) ([]string, error)
+	// ListNetworks returns all managed networks for a stack.
+	ListNetworks(ctx context.Context, stack string) ([]string, error)
 
 	// RemoveNetwork removes a network by name.
 	RemoveNetwork(ctx context.Context, name string) error
