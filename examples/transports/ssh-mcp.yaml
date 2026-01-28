@@ -1,6 +1,6 @@
 # SSH MCP Server Example
 #
-# This topology demonstrates connecting to MCP servers running on remote machines
+# This stack demonstrates connecting to MCP servers running on remote machines
 # via SSH. SSH servers communicate using stdio transport over an SSH connection.
 #
 # Use cases:
@@ -58,7 +58,7 @@ mcp-servers:
   #     LOG_LEVEL: "debug"
   #     CONFIG_PATH: "/etc/mcp/config.json"
 
-# You can mix SSH and other server types in the same topology:
+# You can mix SSH and other server types in the same stack:
 #
 # mcp-servers:
 #   - name: remote-via-ssh

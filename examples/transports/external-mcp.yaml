@@ -1,6 +1,6 @@
 # External MCP Server Example
 #
-# This topology demonstrates connecting to external MCP servers that run
+# This stack demonstrates connecting to external MCP servers that run
 # outside of Gridctl's Docker container management. External servers are
 # identified by providing a `url` field instead of `image` or `source`.
 #
@@ -45,7 +45,7 @@ mcp-servers:
     url: http://localhost:9002/mcp
     transport: sse
 
-# You can mix external and container-based servers in the same topology:
+# You can mix external and container-based servers in the same stack:
 #
 # mcp-servers:
 #   - name: external-api

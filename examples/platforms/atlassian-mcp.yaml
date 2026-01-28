@@ -1,6 +1,6 @@
 # Atlassian MCP Server Example
 #
-# This topology provides access to Atlassian's official Rovo MCP server, enabling
+# This stack provides access to Atlassian's official Rovo MCP server, enabling
 # AI agents to interact with Jira, Confluence, and Compass via natural language.
 #
 # Prerequisites:

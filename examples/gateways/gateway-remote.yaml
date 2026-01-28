@@ -15,7 +15,7 @@
 #   3. Port 8180 must be accessible from the remote machine (check firewall)
 #
 # Usage:
-#   1. Deploy this topology:
+#   1. Deploy this stack:
 #      gridctl deploy examples/gateways/gateway-remote.yaml
 #
 #   2. Find this machine's IP address:

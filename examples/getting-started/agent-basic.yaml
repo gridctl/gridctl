@@ -1,6 +1,6 @@
-# Agent Demo Topology
+# Agent Demo Stack
 #
-# This is an INFRASTRUCTURE demo - it shows how to define topology, networking,
+# This is an INFRASTRUCTURE demo - it shows how to define stack, networking,
 # and access control. The containers use Alpine with sleep commands as placeholders.
 #
 # Demonstrates:

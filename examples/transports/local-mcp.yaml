@@ -1,6 +1,6 @@
 # Local Process MCP Server Example
 #
-# This topology demonstrates running MCP servers as local processes on the
+# This stack demonstrates running MCP servers as local processes on the
 # host machine instead of Docker containers. Local process servers communicate
 # via stdio (stdin/stdout) using JSON-RPC.
 #
@@ -32,7 +32,7 @@ network:
 mcp-servers:
 
   # Local process MCP server using stdio transport
-  # The command is executed relative to the topology file directory
+  # The command is executed relative to the stack file directory
   - name: local-tools
     command: ["../_mock-servers/local-stdio-server/mock-stdio-server"]
 
@@ -50,7 +50,7 @@ mcp-servers:
   #     NODE_ENV: development
   #     API_KEY: "${API_KEY}"  # Reference host environment
 
-# You can mix local process and container-based servers in the same topology:
+# You can mix local process and container-based servers in the same stack:
 #
 # mcp-servers:
 #   - name: local-tools
