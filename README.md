@@ -2,11 +2,11 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-f59e0b.svg)](LICENSE)
 
-**MCP orchestration for AI agents.** Define your topology in YAML, deploy with one command.
+**MCP orchestration for AI agents.** Define your stack in YAML, deploy with one command.
 
 Gridctl is a protocol bridge that aggregates tools from multiple [MCP](https://modelcontextprotocol.io/) servers into a single gateway endpoint. Connect Claude Desktop (or any MCP client) to dozens of tool servers through one SSE connection.
 
-[Installation](#installation) | [Quick Start](#quick-start) | [Features](#features) | [Configuration](#topology-configuration) | [Examples](#examples)
+[Installation](#installation) | [Quick Start](#quick-start) | [Features](#features) | [Configuration](#stack-configuration) | [Examples](#examples)
 
 ---
 
@@ -36,7 +36,7 @@ make build
 ## Quick Start
 
 ```bash
-# Deploy a topology
+# Deploy a stack
 gridctl deploy examples/getting-started/agent-basic.yaml
 
 # Check status
@@ -53,7 +53,7 @@ gridctl destroy examples/getting-started/agent-basic.yaml
 
 ## Features
 
-### Topology as Code
+### Stack as Code
 
 Define your entire MCP infrastructure in a single YAML file. Gridctl handles container orchestration, networking, and protocol translation.
 
@@ -88,15 +88,15 @@ Built-in support for [Agent-to-Agent](https://google.github.io/A2A/) protocol. E
 
 ### Web UI
 
-Real-time topology visualization powered by React Flow. Monitor container status, view registered tools, and inspect agent configurations.
+Real-time stack visualization powered by React Flow. Monitor container status, view registered tools, and inspect agent configurations.
 
 ---
 
-## Topology Configuration
+## Stack Configuration
 
 ```yaml
 version: "1"
-name: my-topology
+name: my-stack
 
 mcp-servers:
   # Containerized HTTP server
@@ -150,11 +150,11 @@ resources:
 
 | Command | Description |
 |---------|-------------|
-| `gridctl deploy <topology.yaml>` | Start containers and gateway (daemon mode) |
-| `gridctl deploy <topology.yaml> -f` | Start in foreground for debugging |
-| `gridctl deploy <topology.yaml> -p 9000` | Use custom gateway port |
+| `gridctl deploy <stack.yaml>` | Start containers and gateway (daemon mode) |
+| `gridctl deploy <stack.yaml> -f` | Start in foreground for debugging |
+| `gridctl deploy <stack.yaml> -p 9000` | Use custom gateway port |
 | `gridctl status` | Show running topologies and containers |
-| `gridctl destroy <topology.yaml>` | Stop gateway and remove containers |
+| `gridctl destroy <stack.yaml>` | Stop gateway and remove containers |
 
 ---
 
@@ -172,7 +172,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop. All tools from your topology will be available.
+Restart Claude Desktop. All tools from your stack will be available.
 
 ---
 
