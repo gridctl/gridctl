@@ -25,8 +25,8 @@ Define your stack in YAML. Deploy with one command. Done.
 gridctl deploy stack.yaml
 ```
 
-> [!TIP] Inspiration
-> This project was heavily influenced by [Containerlab](https://containerlab.dev), a project I've used heavily over the years to rapidly prototype repeatable environments for the purpose of validation, learning, and teaching. Just like Containerlab, Gridctl is designed for fast, ephemeral, stateless, and disposable environments.
+> [!NOTE]
+> **Inspiration** - This project was heavily influenced by [Containerlab](https://containerlab.dev), a project I've used heavily over the years to rapidly prototype repeatable environments for the purpose of validation, learning, and teaching. Just like Containerlab, Gridctl is designed for fast, ephemeral, stateless, and disposable environments.
 
 ## ⚡️ Why Gridctl
 
