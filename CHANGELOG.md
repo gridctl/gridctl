@@ -2,7 +2,39 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [0.1.0-alpha.3] - 2026-01-27
+## [0.1.0-alpha.4] - 2026-01-28
+
+
+### Refactoring
+
+
+- Rename Topology struct to Stack in config types
+- Rename LoadTopology to LoadStack
+- Update validate to use Stack terminology
+- Rename TopologyName/TopologyFile to StackName/StackFile
+- Update runtime interface for Stack terminology
+- Update orchestrator for Stack terminology
+- Update runtime compat for Stack terminology
+- Rename LabelTopology to LabelStack
+- Update container for Stack terminology
+- Update docker driver for Stack terminology
+- Update docker network for Stack terminology
+- Update a2a client comment for Stack
+- Rename topology parameter to stack in builder
+- Rename topologyName to stackName in API
+- Update deploy command for Stack terminology
+- Update destroy command for Stack terminology
+- Rename --topology flag to --stack in status
+- Update root help text for Stack terminology
+- Rename useTopologyStore to useStackStore
+- Update App.tsx for useStackStore
+- Update Canvas for useStackStore
+- Update Header for useStackStore
+- Update Sidebar for useStackStore
+- Update StatusBar for useStackStore
+- Update BottomPanel for useStackStore
+- Update ToolList for useStackStore
+- Update usePolling for useStackStore## [0.1.0-alpha.3] - 2026-01-27
 
 
 ### Bug Fixes
