@@ -26,7 +26,7 @@ type Server struct {
 	a2aGateway   *a2a.Gateway
 	staticFS     fs.FS
 	dockerClient dockerclient.DockerClient
-	topologyName string
+	stackName    string
 }
 
 // NewServer creates a new API server.
@@ -54,9 +54,9 @@ func (s *Server) SetDockerClient(cli dockerclient.DockerClient) {
 	s.dockerClient = cli
 }
 
-// SetTopologyName sets the topology name for container lookups.
-func (s *Server) SetTopologyName(name string) {
-	s.topologyName = name
+// SetStackName sets the stack name for container lookups.
+func (s *Server) SetStackName(name string) {
+	s.stackName = name
 }
 
 // Handler returns the main HTTP handler.
@@ -284,12 +284,12 @@ type AgentStatus struct {
 
 // getResourceStatuses returns status of all resource containers.
 func (s *Server) getResourceStatuses() []ResourceStatus {
-	if s.dockerClient == nil || s.topologyName == "" {
+	if s.dockerClient == nil || s.stackName == "" {
 		return []ResourceStatus{}
 	}
 
 	ctx := context.Background()
-	containers, err := docker.ListManagedContainers(ctx, s.dockerClient, s.topologyName)
+	containers, err := docker.ListManagedContainers(ctx, s.dockerClient, s.stackName)
 	if err != nil {
 		return []ResourceStatus{}
 	}
@@ -329,12 +329,12 @@ type containerAgentInfo struct {
 func (s *Server) getContainerAgents() map[string]containerAgentInfo {
 	result := make(map[string]containerAgentInfo)
 
-	if s.dockerClient == nil || s.topologyName == "" {
+	if s.dockerClient == nil || s.stackName == "" {
 		return result
 	}
 
 	ctx := context.Background()
-	containers, err := docker.ListManagedContainers(ctx, s.dockerClient, s.topologyName)
+	containers, err := docker.ListManagedContainers(ctx, s.dockerClient, s.stackName)
 	if err != nil {
 		return result
 	}
@@ -475,7 +475,7 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentNa
 		return
 	}
 
-	if s.dockerClient == nil || s.topologyName == "" {
+	if s.dockerClient == nil || s.stackName == "" {
 		writeJSONError(w, "Docker client not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -489,7 +489,7 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	// Find container by name
-	containerName := docker.ContainerName(s.topologyName, agentName)
+	containerName := docker.ContainerName(s.stackName, agentName)
 	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
 	if err != nil {
 		writeJSONError(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
@@ -550,13 +550,13 @@ func (s *Server) handleAgentRestart(w http.ResponseWriter, r *http.Request, agen
 		return
 	}
 
-	if s.dockerClient == nil || s.topologyName == "" {
+	if s.dockerClient == nil || s.stackName == "" {
 		http.Error(w, "Docker client not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	// Find container by name
-	containerName := docker.ContainerName(s.topologyName, agentName)
+	containerName := docker.ContainerName(s.stackName, agentName)
 	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
 	if err != nil {
 		http.Error(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
@@ -584,13 +584,13 @@ func (s *Server) handleAgentStop(w http.ResponseWriter, r *http.Request, agentNa
 		return
 	}
 
-	if s.dockerClient == nil || s.topologyName == "" {
+	if s.dockerClient == nil || s.stackName == "" {
 		http.Error(w, "Docker client not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	// Find container by name
-	containerName := docker.ContainerName(s.topologyName, agentName)
+	containerName := docker.ContainerName(s.stackName, agentName)
 	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
 	if err != nil {
 		http.Error(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
