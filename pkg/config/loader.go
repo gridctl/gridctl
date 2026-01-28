@@ -8,125 +8,125 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadTopology reads and parses a topology file.
-func LoadTopology(path string) (*Topology, error) {
+// LoadStack reads and parses a stack file.
+func LoadStack(path string) (*Stack, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading topology file: %w", err)
+		return nil, fmt.Errorf("reading stack file: %w", err)
 	}
 
-	var topology Topology
-	if err := yaml.Unmarshal(data, &topology); err != nil {
-		return nil, fmt.Errorf("parsing topology YAML: %w", err)
+	var stack Stack
+	if err := yaml.Unmarshal(data, &stack); err != nil {
+		return nil, fmt.Errorf("parsing stack YAML: %w", err)
 	}
 
 	// Merge equipped_skills alias into uses for each agent
-	mergeEquippedSkills(&topology)
+	mergeEquippedSkills(&stack)
 
 	// Expand environment variables in string values
-	expandEnvVars(&topology)
+	expandEnvVars(&stack)
 
 	// Apply defaults
-	topology.SetDefaults()
+	stack.SetDefaults()
 
-	// Resolve relative paths based on topology file location
+	// Resolve relative paths based on stack file location
 	basePath := filepath.Dir(path)
-	resolveRelativePaths(&topology, basePath)
+	resolveRelativePaths(&stack, basePath)
 
-	// Validate the topology
-	if err := Validate(&topology); err != nil {
+	// Validate the stack
+	if err := Validate(&stack); err != nil {
 		return nil, err
 	}
 
-	return &topology, nil
+	return &stack, nil
 }
 
-// expandEnvVars expands environment variables in the topology.
-func expandEnvVars(t *Topology) {
-	t.Name = os.ExpandEnv(t.Name)
-	t.Network.Name = os.ExpandEnv(t.Network.Name)
+// expandEnvVars expands environment variables in the stack.
+func expandEnvVars(s *Stack) {
+	s.Name = os.ExpandEnv(s.Name)
+	s.Network.Name = os.ExpandEnv(s.Network.Name)
 
 	// Expand networks (advanced mode)
-	for i := range t.Networks {
-		t.Networks[i].Name = os.ExpandEnv(t.Networks[i].Name)
+	for i := range s.Networks {
+		s.Networks[i].Name = os.ExpandEnv(s.Networks[i].Name)
 	}
 
-	for i := range t.MCPServers {
-		t.MCPServers[i].Name = os.ExpandEnv(t.MCPServers[i].Name)
-		t.MCPServers[i].Image = os.ExpandEnv(t.MCPServers[i].Image)
-		t.MCPServers[i].Network = os.ExpandEnv(t.MCPServers[i].Network)
+	for i := range s.MCPServers {
+		s.MCPServers[i].Name = os.ExpandEnv(s.MCPServers[i].Name)
+		s.MCPServers[i].Image = os.ExpandEnv(s.MCPServers[i].Image)
+		s.MCPServers[i].Network = os.ExpandEnv(s.MCPServers[i].Network)
 
-		if t.MCPServers[i].Source != nil {
-			t.MCPServers[i].Source.URL = os.ExpandEnv(t.MCPServers[i].Source.URL)
-			t.MCPServers[i].Source.Path = os.ExpandEnv(t.MCPServers[i].Source.Path)
-			t.MCPServers[i].Source.Ref = os.ExpandEnv(t.MCPServers[i].Source.Ref)
+		if s.MCPServers[i].Source != nil {
+			s.MCPServers[i].Source.URL = os.ExpandEnv(s.MCPServers[i].Source.URL)
+			s.MCPServers[i].Source.Path = os.ExpandEnv(s.MCPServers[i].Source.Path)
+			s.MCPServers[i].Source.Ref = os.ExpandEnv(s.MCPServers[i].Source.Ref)
 		}
 
-		for k, v := range t.MCPServers[i].Env {
-			t.MCPServers[i].Env[k] = os.ExpandEnv(v)
+		for k, v := range s.MCPServers[i].Env {
+			s.MCPServers[i].Env[k] = os.ExpandEnv(v)
 		}
-		for k, v := range t.MCPServers[i].BuildArgs {
-			t.MCPServers[i].BuildArgs[k] = os.ExpandEnv(v)
+		for k, v := range s.MCPServers[i].BuildArgs {
+			s.MCPServers[i].BuildArgs[k] = os.ExpandEnv(v)
 		}
 
 		// Expand SSH config environment variables
-		if t.MCPServers[i].SSH != nil {
-			t.MCPServers[i].SSH.Host = os.ExpandEnv(t.MCPServers[i].SSH.Host)
-			t.MCPServers[i].SSH.User = os.ExpandEnv(t.MCPServers[i].SSH.User)
-			t.MCPServers[i].SSH.IdentityFile = os.ExpandEnv(t.MCPServers[i].SSH.IdentityFile)
+		if s.MCPServers[i].SSH != nil {
+			s.MCPServers[i].SSH.Host = os.ExpandEnv(s.MCPServers[i].SSH.Host)
+			s.MCPServers[i].SSH.User = os.ExpandEnv(s.MCPServers[i].SSH.User)
+			s.MCPServers[i].SSH.IdentityFile = os.ExpandEnv(s.MCPServers[i].SSH.IdentityFile)
 		}
 	}
 
-	for i := range t.Resources {
-		t.Resources[i].Name = os.ExpandEnv(t.Resources[i].Name)
-		t.Resources[i].Image = os.ExpandEnv(t.Resources[i].Image)
-		t.Resources[i].Network = os.ExpandEnv(t.Resources[i].Network)
+	for i := range s.Resources {
+		s.Resources[i].Name = os.ExpandEnv(s.Resources[i].Name)
+		s.Resources[i].Image = os.ExpandEnv(s.Resources[i].Image)
+		s.Resources[i].Network = os.ExpandEnv(s.Resources[i].Network)
 
-		for k, v := range t.Resources[i].Env {
-			t.Resources[i].Env[k] = os.ExpandEnv(v)
+		for k, v := range s.Resources[i].Env {
+			s.Resources[i].Env[k] = os.ExpandEnv(v)
 		}
 	}
 
-	for i := range t.Agents {
-		t.Agents[i].Name = os.ExpandEnv(t.Agents[i].Name)
-		t.Agents[i].Image = os.ExpandEnv(t.Agents[i].Image)
-		t.Agents[i].Description = os.ExpandEnv(t.Agents[i].Description)
-		t.Agents[i].Network = os.ExpandEnv(t.Agents[i].Network)
+	for i := range s.Agents {
+		s.Agents[i].Name = os.ExpandEnv(s.Agents[i].Name)
+		s.Agents[i].Image = os.ExpandEnv(s.Agents[i].Image)
+		s.Agents[i].Description = os.ExpandEnv(s.Agents[i].Description)
+		s.Agents[i].Network = os.ExpandEnv(s.Agents[i].Network)
 
-		if t.Agents[i].Source != nil {
-			t.Agents[i].Source.URL = os.ExpandEnv(t.Agents[i].Source.URL)
-			t.Agents[i].Source.Path = os.ExpandEnv(t.Agents[i].Source.Path)
-			t.Agents[i].Source.Ref = os.ExpandEnv(t.Agents[i].Source.Ref)
+		if s.Agents[i].Source != nil {
+			s.Agents[i].Source.URL = os.ExpandEnv(s.Agents[i].Source.URL)
+			s.Agents[i].Source.Path = os.ExpandEnv(s.Agents[i].Source.Path)
+			s.Agents[i].Source.Ref = os.ExpandEnv(s.Agents[i].Source.Ref)
 		}
 
-		for k, v := range t.Agents[i].Env {
-			t.Agents[i].Env[k] = os.ExpandEnv(v)
+		for k, v := range s.Agents[i].Env {
+			s.Agents[i].Env[k] = os.ExpandEnv(v)
 		}
-		for k, v := range t.Agents[i].BuildArgs {
-			t.Agents[i].BuildArgs[k] = os.ExpandEnv(v)
+		for k, v := range s.Agents[i].BuildArgs {
+			s.Agents[i].BuildArgs[k] = os.ExpandEnv(v)
 		}
 	}
 }
 
-// resolveRelativePaths resolves local source paths relative to the topology file.
-func resolveRelativePaths(t *Topology, basePath string) {
-	for i := range t.MCPServers {
-		if t.MCPServers[i].Source != nil && t.MCPServers[i].Source.Type == "local" {
-			if !filepath.IsAbs(t.MCPServers[i].Source.Path) {
-				t.MCPServers[i].Source.Path = filepath.Join(basePath, t.MCPServers[i].Source.Path)
+// resolveRelativePaths resolves local source paths relative to the stack file.
+func resolveRelativePaths(s *Stack, basePath string) {
+	for i := range s.MCPServers {
+		if s.MCPServers[i].Source != nil && s.MCPServers[i].Source.Type == "local" {
+			if !filepath.IsAbs(s.MCPServers[i].Source.Path) {
+				s.MCPServers[i].Source.Path = filepath.Join(basePath, s.MCPServers[i].Source.Path)
 			}
 		}
 
 		// Resolve SSH identity file paths
-		if t.MCPServers[i].SSH != nil && t.MCPServers[i].SSH.IdentityFile != "" {
-			t.MCPServers[i].SSH.IdentityFile = expandTildeAndResolvePath(t.MCPServers[i].SSH.IdentityFile, basePath)
+		if s.MCPServers[i].SSH != nil && s.MCPServers[i].SSH.IdentityFile != "" {
+			s.MCPServers[i].SSH.IdentityFile = expandTildeAndResolvePath(s.MCPServers[i].SSH.IdentityFile, basePath)
 		}
 	}
 
-	for i := range t.Agents {
-		if t.Agents[i].Source != nil && t.Agents[i].Source.Type == "local" {
-			if !filepath.IsAbs(t.Agents[i].Source.Path) {
-				t.Agents[i].Source.Path = filepath.Join(basePath, t.Agents[i].Source.Path)
+	for i := range s.Agents {
+		if s.Agents[i].Source != nil && s.Agents[i].Source.Type == "local" {
+			if !filepath.IsAbs(s.Agents[i].Source.Path) {
+				s.Agents[i].Source.Path = filepath.Join(basePath, s.Agents[i].Source.Path)
 			}
 		}
 	}
@@ -154,23 +154,23 @@ func expandTildeAndResolvePath(path, basePath string) string {
 }
 
 // mergeEquippedSkills merges the equipped_skills YAML alias into uses.
-// This allows users to use either field name in their topology files.
-func mergeEquippedSkills(t *Topology) {
-	for i := range t.Agents {
-		if len(t.Agents[i].EquippedSkills) > 0 {
+// This allows users to use either field name in their stack files.
+func mergeEquippedSkills(s *Stack) {
+	for i := range s.Agents {
+		if len(s.Agents[i].EquippedSkills) > 0 {
 			// Merge without duplicates (based on server name)
 			seen := make(map[string]bool)
-			for _, u := range t.Agents[i].Uses {
+			for _, u := range s.Agents[i].Uses {
 				seen[u.Server] = true
 			}
-			for _, s := range t.Agents[i].EquippedSkills {
-				if !seen[s.Server] {
-					t.Agents[i].Uses = append(t.Agents[i].Uses, s)
-					seen[s.Server] = true
+			for _, skill := range s.Agents[i].EquippedSkills {
+				if !seen[skill.Server] {
+					s.Agents[i].Uses = append(s.Agents[i].Uses, skill)
+					seen[skill.Server] = true
 				}
 			}
 			// Clear the alias field after merging
-			t.Agents[i].EquippedSkills = nil
+			s.Agents[i].EquippedSkills = nil
 		}
 	}
 }
