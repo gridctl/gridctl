@@ -135,7 +135,7 @@ Use [conventional commits](https://www.conventionalcommits.org/):
 **Examples:**
 - `feat: add SSH transport support`
 - `fix: resolve container timeout on slow networks`
-- `docs: update topology configuration examples`
+- `docs: update stack configuration examples`
 
 ### Commit Signing
 
@@ -190,7 +190,7 @@ gridctl/
 ├── cmd/gridctl/           # CLI entry point
 ├── internal/              # Internal packages
 ├── pkg/                   # Public packages
-│   ├── config/            # Topology YAML parsing
+│   ├── config/            # Stack YAML parsing
 │   ├── runtime/           # Container orchestration
 │   ├── mcp/               # MCP protocol implementation
 │   └── a2a/               # A2A protocol implementation
