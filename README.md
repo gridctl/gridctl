@@ -37,7 +37,9 @@ I originally built this project to have a way to leverage a single configuration
 I would rather be building than juggling ports, tracking environment variables, and hoping everything with my setup is ready for the next demo, no matter what servers or agents I'm using. My client now connects once and accesses everything over `localhost:8180/sse` by default.
 
 ```yaml
-# This is all you need!
+version: "1"
+name: stack
+
 mcp-servers:
 
   # Build GitHub MCP locally (instantiate in Docker container)
@@ -51,19 +53,47 @@ mcp-servers:
   - name: atlassian
     command: ["npx", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
 
-  # Local filesystem via local process execution
-  - name: filesystem
-    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/Users/home/code/project"]
+agents:
+
+  # Test Agent - A2A
+  - name: code-reviewer
+    image: alpine:latest
+    description: "AI assistant for code review and PR analysis"
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+    # Agent Level Filtering for Tools
+    uses:
+      - server: github
+        tools: ["get_file_contents", "get_pull_request", "list_commits"]
+
+    # Agent Definition
+    a2a:
+      enabled: true
+      version: "1.0.0"
+      skills:
+        - id: review-code
+          name: "Review Code"
+          description: "Analyze code changes for bugs, style issues, and improvements"
+          tags: ["code", "review", "quality"]
+        - id: summarize-pr
+          name: "Summarize PR"
+          description: "Generate concise summaries of pull request changes"
+          tags: ["summary", "documentation"]
 ```
 
-Three servers. Three different transports. One endpoint.
+Three servers. Three different transports. One endpoint. Navigate to [localhost:8180](localhost:8180) to visualize the stack 👉
 
-## Installation
+![Gridctl Interface](assets/gridctl-ui.gif)
+
+
+## 🪛 Installation
 
 ```bash
 # macOS / Linux
 brew install gridctl/tap/gridctl
 ```
+
+![Install Gridctl](assets/install.gif)
 
 <details>
 <summary>Other installation methods</summary>
