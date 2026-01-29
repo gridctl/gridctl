@@ -626,6 +626,58 @@ body::before {
   will-change: background-color, color, box-shadow;
 }
 
+/* ============================================
+   PATH HIGHLIGHTING - Selection-based dimming
+   ============================================ */
+
+/* Base transition for nodes and edges */
+.react-flow__node,
+.react-flow__edge {
+  transition: opacity 0.3s ease, filter 0.3s ease, visibility 0.3s ease;
+}
+
+/* Hidden state - for uses edges when no selection */
+.react-flow__edge.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Visible state - override hidden when uses edge should be shown */
+.react-flow__edge.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Uses edges base style (dashed lines) */
+.react-flow__edge.uses-edge .react-flow__edge-path {
+  stroke-dasharray: 4 4;
+}
+
+/* Dimmed state - nodes */
+.react-flow__node.dimmed {
+  opacity: 0.25;
+  filter: grayscale(40%);
+}
+
+/* Dimmed state - edges */
+.react-flow__edge.dimmed .react-flow__edge-path {
+  opacity: 0.15;
+  stroke: var(--color-border) !important;
+}
+
+/* Highlighted state - nodes get elevated z-index */
+.react-flow__node.highlighted {
+  z-index: 10;
+}
+
+/* Highlighted state - edges get enhanced visibility */
+.react-flow__edge.highlighted .react-flow__edge-path {
+  stroke-width: 2.5px !important;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
 /* Reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   *,

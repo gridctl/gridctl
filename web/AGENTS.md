@@ -85,7 +85,54 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
 *   **Style:** Stroke width `1.5px` or `2px`.
 *   **Size:** Standard size is `w-4 h-4` (16px) or `w-5 h-5` (20px).
 
-## 7. Graph Node Types
+## 7. Graph Layout System
+
+### Butterfly Layout (Hub-and-Spoke)
+The graph uses a 4-zone "Butterfly" layout with the Gateway as the central hub.
+
+**Zone Structure (Left to Right):**
+| Zone | Position | Contents |
+|------|----------|----------|
+| Zone 0 | Left | Local Agents (consumers/drivers) |
+| Zone 1 | Center | Gateway (central hub) |
+| Zone 2 | Right | MCP Servers, Remote A2A Agents (providers/tools) |
+| Zone 3 | Far Right | Resources (infrastructure) |
+
+**Edge Direction:**
+Edges flow left-to-right to represent request flow:
+- Agent → Gateway (agents initiate requests)
+- Gateway → MCP Server (gateway exposes servers)
+- Gateway → Resource (gateway manages resources)
+
+**Agent Hierarchy:**
+Worker agents (used by other agents via `uses` field) do not connect directly to Gateway. They connect via their orchestrator agent, preserving visual hierarchy.
+
+### Path Highlighting
+When a user clicks/selects an Agent node:
+1. The selected Agent highlights
+2. The Agent → Gateway edge highlights
+3. The Gateway node highlights
+4. Gateway → MCP Server edges highlight (only for servers that agent uses)
+5. Those MCP Server nodes highlight
+6. All other nodes and edges dim (opacity: 0.25)
+
+The "uses" relationship is visualized through the Gateway path, not direct Agent → Server edges.
+
+### Layout Engine Architecture
+The graph module (`src/lib/graph/`) uses a strategy pattern:
+- `LayoutEngine` interface defines the contract
+- `ButterflyLayoutEngine` implements the 4-zone layout
+- `DagreLayoutEngine` provides fallback hierarchical layout
+
+Key files:
+- `src/lib/graph/types.ts` - Type definitions
+- `src/lib/graph/butterfly.ts` - Butterfly layout implementation
+- `src/lib/graph/edges.ts` - Edge creation with metadata
+- `src/lib/graph/nodes.ts` - Node factories
+- `src/lib/graph/transform.ts` - Orchestrates node/edge creation and layout
+- `src/hooks/usePathHighlight.ts` - Selection-based path highlighting
+
+## 8. Graph Node Types
 
 ### Gateway Node
 *   **Shape:** Rounded rectangle (`rounded-2xl`)
@@ -120,11 +167,11 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
     *   A2A badge (when enabled) in top-right corner
     *   Skill count (when A2A enabled)
     *   Container ID hint (local agents only)
-*   **Edge Style:**
+*   **Edge Style (Agent → Gateway):**
     *   Without A2A: Purple dashed line (`strokeDasharray: '5,5'`)
     *   With A2A: Teal dashed line (`strokeDasharray: '8,4'`, strokeWidth: 2)
 
-## 8. Sidebar Sections
+## 9. Sidebar Sections
 
 The detail sidebar displays contextual information when a node is selected.
 
@@ -163,7 +210,7 @@ Shows the MCP server dependencies for an agent with tool-level access visualizat
 </div>
 ```
 
-## 9. Implementation Checklist
+## 10. Implementation Checklist
 When creating new UI components:
 1.  [ ] Are you using `tailwind.config.js` colors instead of hardcoded hex values?
 2.  [ ] Is the font family correct? (Mono for data, Sans for UI).

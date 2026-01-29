@@ -15,6 +15,8 @@ import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { COLORS } from '../../lib/constants';
+import { usePathHighlight } from '../../hooks/usePathHighlight';
+import { cn } from '../../lib/cn';
 
 export function Canvas() {
   const nodes = useStackStore((s) => s.nodes);
@@ -22,6 +24,7 @@ export function Canvas() {
   const onNodesChange = useStackStore((s) => s.onNodesChange);
   const onEdgesChange = useStackStore((s) => s.onEdgesChange);
   const selectNode = useStackStore((s) => s.selectNode);
+  const selectedNodeId = useStackStore((s) => s.selectedNodeId);
   const resetLayout = useStackStore((s) => s.resetLayout);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const edgeStyle = useUIStore((s) => s.edgeStyle);
@@ -30,6 +33,9 @@ export function Canvas() {
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { zoom } = useViewport();
+
+  // Path highlighting for selected agents
+  const highlightState = usePathHighlight(nodes, edges, selectedNodeId);
 
   // Evolvable grid - main lines at 100px, sub-grid dots at 20px fade in at >0.8x
   const showSubGrid = zoom > 0.8;
@@ -43,6 +49,48 @@ export function Canvas() {
       stroke: COLORS.border,
     },
   }), [edgeStyle]);
+
+  // Apply highlighting classes to nodes
+  const styledNodes = useMemo(() => {
+    if (!highlightState.hasSelection) return nodes;
+
+    return nodes.map((node) => ({
+      ...node,
+      className: cn(
+        node.className,
+        highlightState.highlightedNodeIds.has(node.id) ? 'highlighted' : 'dimmed'
+      ),
+    }));
+  }, [nodes, highlightState]);
+
+  // Apply highlighting classes to edges
+  // Uses edges (Agent → Server) are always hidden - we show the path through Gateway instead
+  const styledEdges = useMemo(() => {
+    return edges.map((edge) => {
+      const edgeData = edge.data as { isUsesEdge?: boolean } | undefined;
+      const isUsesEdge = edgeData?.isUsesEdge;
+
+      // Always hide uses edges - path is shown via Gateway highlighting
+      if (isUsesEdge) {
+        return {
+          ...edge,
+          className: 'hidden',
+        };
+      }
+
+      // No selection: show all butterfly edges normally
+      if (!highlightState.hasSelection) {
+        return edge;
+      }
+
+      // With selection: highlight the path, dim everything else
+      const isHighlighted = highlightState.highlightedEdgeIds.has(edge.id);
+      return {
+        ...edge,
+        className: cn(edge.className, isHighlighted ? 'highlighted' : 'dimmed'),
+      };
+    });
+  }, [edges, highlightState]);
 
   // Handle node selection
   const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string }) => {
@@ -77,8 +125,8 @@ export function Canvas() {
       {/* Film grain overlay */}
       <div className="film-grain" />
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        nodes={styledNodes}
+        edges={styledEdges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
