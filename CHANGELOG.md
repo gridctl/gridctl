@@ -2,7 +2,34 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [0.1.0-alpha.4] - 2026-01-28
+## [0.1.0-alpha.5] - 2026-01-29
+
+
+### Bug Fixes
+
+
+- Correct GitHub admonition syntax in README
+
+### Features
+
+
+- Add Butterfly layout engine for hub-and-spoke visualization
+- Add path highlighting hook for agent selection
+- Integrate path highlighting into Canvas component
+
+### Refactoring
+
+
+- Add graph layout type definitions
+- Add graph utility functions
+- Add Dagre layout engine implementation
+- Extract node factory functions to graph module
+- Extract edge creation with relation metadata
+- Add graph transformation orchestration
+- Add graph module public exports
+- Extract tool parsing utilities
+- Simplify transform.ts to re-export graph module
+- Remove legacy layout module## [0.1.0-alpha.4] - 2026-01-28
 
 
 ### Refactoring
