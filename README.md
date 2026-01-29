@@ -95,18 +95,6 @@ open http://localhost:8180
 gridctl destroy examples/getting-started/skills-basic.yaml
 ```
 
-<!--
-🎬 VISUAL ASSET NEEDED: Web UI Screenshot
-Location: Immediately below this section
-Specs:
-- Screenshot of the React Flow stack visualization
-- Show: Gateway node (amber), MCP server nodes (violet), connected agents (purple)
-- Capture with status indicators glowing
-- Dark theme matching Obsidian Observatory aesthetic
-- Resolution: 1400x900px
-- Consider: Annotated version with callouts for first-time users
--->
-
 ## 🎬 Features
 
 ### Stack as Code
@@ -186,20 +174,6 @@ This agent can only access three of the five tools exposed by the GitHub server 
 
 Limited [Agent-to-Agent](https://google.github.io/A2A/) protocol support. Expose your agents via `/.well-known/agent.json` or connect to remote A2A agents. Agents can use other agents as tools. `A2A` is still emerging, as is the common use-cases. This part of the project will continue to evolve in the future.
 
-### Web UI
-
-Real-time stack visualization. Monitor container status, inspect tool registrations, view agent configurations. Built with React Flow.
-
-<!--
-🎬 VISUAL ASSET NEEDED: Web UI GIF
-Location: Here
-Specs:
-- Show: Clicking nodes, sidebar details appearing, status changes
-- Duration: 6-10 seconds
-- Demonstrate the "alive" feeling of the Obsidian Observatory design
--->
-
-
 ## 📚 CLI Reference
 
 ```bash
@@ -214,11 +188,24 @@ gridctl destroy <stack.yaml>         # Stop and remove containers
 
 Each LLM host, the client side application you use to connect the models and chat, will always keep the following configuration. The location of this file varies on the application. For instance, if using `Claude Desktop` on a Macbook, you would place the configuration here: `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
+### Most Applications
 ```json
 {
   "mcpServers": {
     "gridctl": {
       "url": "http://localhost:8180/sse"
+    }
+  }
+}
+```
+
+### Claude Desktop
+```json
+{
+  "mcpServers": {
+    "gridctl": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:8180/sse", "--allow-http", "--transport", "sse-only"]
     }
   }
 }
