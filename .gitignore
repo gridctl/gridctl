@@ -68,5 +68,6 @@ plan/
 .claude/
 .claude-plugin/
 CLAUDE.md
+**/CLAUDE.md
 GEMINI.md
 dist/
