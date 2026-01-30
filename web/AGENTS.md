@@ -51,13 +51,10 @@ This document defines the visual language, behavior, and code standards for the 
 ## 4. Component Patterns
 
 ### Glass Panels (The "Obsidian" Look)
-Do not use flat solid backgrounds for containers. Use the glass utility classes.
+Use the glass utility classes for containers. No flat solid backgrounds.
 ```tsx
-// Standard Panel
-<div className="glass-panel p-4">Content</div>
-
-// Elevated (e.g., Tooltips, Popovers)
-<div className="glass-panel-elevated p-2">Content</div>
+<div className="glass-panel p-4">Content</div>           // Standard Panel
+<div className="glass-panel-elevated p-2">Content</div>  // Elevated (Tooltips, Popovers)
 ```
 
 ### Buttons
@@ -75,64 +72,30 @@ Do not use flat solid backgrounds for containers. Use the glass utility classes.
 *   Use `shadow-node` for floating elements.
 *   Use `shadow-glow-primary` for active/focused elements to create a "light emitting" effect.
 
-## 5. Animation & Interaction
-*   **Transitions:** Always add `transition-all duration-200` (or similar) to interactive elements.
-*   **Micro-interactions:** Use shadow/glow changes and border highlights on hover. Avoid `translate-y` on graph nodes (causes clipping in React Flow).
-*   **Loading:** Use `animate-pulse-glow` for loading skeletons, not standard grey pulses.
+## 5. Animation & Icons
 
-## 6. Iconography
-*   **Library:** Lucide React (`lucide-react`).
-*   **Style:** Stroke width `1.5px` or `2px`.
-*   **Size:** Standard size is `w-4 h-4` (16px) or `w-5 h-5` (20px).
+**Transitions:** Always add `transition-all duration-200` to interactive elements. Avoid `translate-y` on graph nodes (React Flow clipping).
 
-## 7. Graph Layout System
+**Icons:** Lucide React (`lucide-react`), stroke 1.5-2px, size `w-4 h-4` or `w-5 h-5`.
+
+## 6. Graph Layout System
 
 ### Butterfly Layout (Hub-and-Spoke)
-The graph uses a 4-zone "Butterfly" layout with the Gateway as the central hub.
 
-**Zone Structure (Left to Right):**
 | Zone | Position | Contents |
 |------|----------|----------|
-| Zone 0 | Left | Local Agents (consumers/drivers) |
-| Zone 1 | Center | Gateway (central hub) |
-| Zone 2 | Right | MCP Servers, Remote A2A Agents (providers/tools) |
-| Zone 3 | Far Right | Resources (infrastructure) |
+| 0 | Left | Local Agents (consumers) |
+| 1 | Center | Gateway (hub) |
+| 2 | Right | MCP Servers, Remote A2A Agents |
+| 3 | Far Right | Resources |
 
-**Edge Direction:**
-Edges flow left-to-right to represent request flow:
-- Agent → Gateway (agents initiate requests)
-- Gateway → MCP Server (gateway exposes servers)
-- Gateway → Resource (gateway manages resources)
+**Edge Direction:** Left-to-right (Agent → Gateway → Server/Resource) representing request flow.
 
-**Agent Hierarchy:**
-Worker agents (used by other agents via `uses` field) do not connect directly to Gateway. They connect via their orchestrator agent, preserving visual hierarchy.
+**Path Highlighting:** Clicking an Agent highlights its path through Gateway to used servers; other nodes dim to 0.25 opacity.
 
-### Path Highlighting
-When a user clicks/selects an Agent node:
-1. The selected Agent highlights
-2. The Agent → Gateway edge highlights
-3. The Gateway node highlights
-4. Gateway → MCP Server edges highlight (only for servers that agent uses)
-5. Those MCP Server nodes highlight
-6. All other nodes and edges dim (opacity: 0.25)
+Implementation in `src/lib/graph/` (butterfly.ts, edges.ts, nodes.ts, transform.ts).
 
-The "uses" relationship is visualized through the Gateway path, not direct Agent → Server edges.
-
-### Layout Engine Architecture
-The graph module (`src/lib/graph/`) uses a strategy pattern:
-- `LayoutEngine` interface defines the contract
-- `ButterflyLayoutEngine` implements the 4-zone layout
-- `DagreLayoutEngine` provides fallback hierarchical layout
-
-Key files:
-- `src/lib/graph/types.ts` - Type definitions
-- `src/lib/graph/butterfly.ts` - Butterfly layout implementation
-- `src/lib/graph/edges.ts` - Edge creation with metadata
-- `src/lib/graph/nodes.ts` - Node factories
-- `src/lib/graph/transform.ts` - Orchestrates node/edge creation and layout
-- `src/hooks/usePathHighlight.ts` - Selection-based path highlighting
-
-## 8. Graph Node Types
+## 7. Graph Node Types
 
 ### Gateway Node
 *   **Shape:** Rounded rectangle (`rounded-2xl`)
@@ -171,7 +134,7 @@ Key files:
     *   Without A2A: Purple dashed line (`strokeDasharray: '5,5'`)
     *   With A2A: Teal dashed line (`strokeDasharray: '8,4'`, strokeWidth: 2)
 
-## 9. Sidebar Sections
+## 8. Sidebar Sections
 
 The detail sidebar displays contextual information when a node is selected.
 
@@ -210,10 +173,9 @@ Shows the MCP server dependencies for an agent with tool-level access visualizat
 </div>
 ```
 
-## 10. Implementation Checklist
-When creating new UI components:
-1.  [ ] Are you using `tailwind.config.js` colors instead of hardcoded hex values?
-2.  [ ] Is the font family correct? (Mono for data, Sans for UI).
-3.  [ ] Does it have a "glass" feel if it's a floating panel?
-4.  [ ] Are borders subtle (`border-border`)?
-5.  [ ] Do interactive elements glow or change color on hover?
+## 9. Checklist for New Components
+
+1. Use Tailwind color tokens (no hardcoded hex values)
+2. Use `font-mono` for technical data, `font-sans` for UI
+3. Use glass panels for floating containers
+4. Add hover states with glow/border changes
