@@ -9,41 +9,6 @@ Gridctl is an MCP (Model Context Protocol) orchestration tool - "Containerlab fo
 - Gateway (Go): Protocol bridge that aggregates tools from downstream agents
 - UI (React + React Flow): Visualizes stack with real-time status
 
-## Protocol Bridge Architecture
-
-Gridctl's core value is acting as a **Protocol Bridge** between MCP transports:
-
-```
-                    ┌─────────────────────┐
-                    │    Claude Desktop   │
-                    │    (SSE Client)     │
-                    └──────────┬──────────┘
-                               │ SSE (GET /sse + POST /message)
-                               ▼
-                    ┌─────────────────────┐
-                    │   Gridctl Gateway    │
-                    │  (Protocol Bridge)  │
-                    └───┬─────────────┬───┘
-                        │             │
-           Stdio        │             │  HTTP
-    (Docker Attach)     ▼             ▼  (POST /mcp)
-              ┌─────────────┐   ┌─────────────┐
-              │   Agent A   │   │   Agent B   │
-              │ (stdio MCP) │   │ (HTTP MCP)  │
-              └─────────────┘   └─────────────┘
-```
-
-**Southbound (to MCP servers):**
-- **Stdio (Container)**: Uses Docker container attach for stdin/stdout communication
-- **Stdio (Local Process)**: Spawns local process on host, communicates via stdin/stdout
-- **Stdio (SSH)**: Connects to remote host via SSH, communicates via stdin/stdout over the SSH connection
-- **HTTP**: Standard HTTP POST to container's /mcp endpoint
-- **External URL**: Connects to MCP servers running outside Docker
-
-**Northbound (to clients):**
-- **SSE**: Server-Sent Events for persistent connections (Claude Desktop)
-- **HTTP POST**: Standard JSON-RPC 2.0 to /mcp endpoint
-
 ## Architecture Decision: Host Binary
 
 Gridctl is distributed as a **host binary** (not a containerized gateway). This follows the same pattern as Containerlab, Terraform, Kind, and Docker Compose.
@@ -190,109 +155,6 @@ make test-integration # Run integration tests (requires Docker)
 make mock-servers    # Build and run mock MCP servers for examples
 make clean-mock-servers # Stop and remove mock MCP servers
 ```
-
-## CLI Usage
-
-```bash
-# Start a stack (runs as daemon, returns immediately)
-./gridctl deploy examples/getting-started/agent-basic.yaml
-
-# Start with options
-./gridctl deploy stack.yaml --port 8180 --no-cache
-
-# Run in foreground with verbose output (for debugging)
-./gridctl deploy stack.yaml --foreground
-
-# Check running gateways and containers
-./gridctl status
-
-# Stop a specific stack (gateway + containers)
-./gridctl destroy examples/getting-started/agent-basic.yaml
-```
-
-### Command Reference
-
-#### `gridctl deploy <stack.yaml>`
-
-Starts containers and MCP gateway for a stack.
-
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--foreground` | `-f` | Run in foreground with verbose output (don't daemonize) |
-| `--port` | `-p` | Port for MCP gateway (default: 8180) |
-| `--no-cache` | | Force rebuild of source-based images |
-| `--verbose` | `-v` | Print full stack as JSON |
-
-#### `gridctl destroy <stack.yaml>`
-
-Stops the gateway daemon and removes all containers for a stack.
-
-#### `gridctl status`
-
-Shows running gateways and containers.
-
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--stack` | `-t` | Filter by stack name |
-
-### Daemon Mode
-
-By default, `gridctl deploy` runs the MCP gateway as a background daemon:
-- Waits until all MCP servers are initialized before returning (up to 60s timeout)
-- State stored in `~/.gridctl/state/{name}.json`
-- Logs written to `~/.gridctl/logs/{name}.log`
-- Use `--foreground` (-f) to run interactively with verbose output
-
-### State Files
-
-Gridctl stores daemon state in `~/.gridctl/`:
-
-```
-~/.gridctl/
-├── state/              # Daemon state files
-│   └── {name}.json     # PID, port, start time per stack
-├── logs/               # Daemon log files
-│   └── {name}.log      # stdout/stderr from daemon
-└── cache/              # Build cache
-    └── ...             # Git repos, Docker contexts
-```
-
-## MCP Gateway
-
-When `gridctl deploy` runs, it:
-1. Parses the stack YAML
-2. Creates Docker network
-3. Builds/pulls images
-4. Starts containers with host port bindings (9000+)
-5. Registers agents with the MCP gateway
-6. Starts HTTP server with MCP endpoint
-
-**MCP Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/mcp` | POST | JSON-RPC 2.0 (initialize, tools/list, tools/call) |
-| `/sse` | GET | SSE connection endpoint (for Claude Desktop) |
-| `/message` | POST | Message endpoint for SSE sessions |
-
-**API Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/status` | GET | Gateway + agent status (unified agents with A2A info) |
-| `/api/mcp-servers` | GET | List registered MCP servers |
-| `/api/tools` | GET | List aggregated tools |
-| `/health` | GET | Liveness check (returns 200 when HTTP server is running) |
-| `/ready` | GET | Readiness check (returns 200 only when all MCP servers are initialized) |
-| `/` | GET | Web UI (embedded React app) |
-
-**A2A Protocol Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/.well-known/agent.json` | GET | Agent Card discovery (lists all local A2A agents) |
-| `/a2a/{agent}` | GET | Get specific agent's Agent Card |
-| `/a2a/{agent}` | POST | JSON-RPC endpoint (message/send, tasks/get, etc.) |
-
-**Tool prefixing:** Tools are prefixed with server name to avoid collisions:
-- `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
 
 ## Stack YAML Schema
 
@@ -490,15 +352,6 @@ In simple mode, the `network` field on individual containers is ignored.
 
 ## Code Conventions
 
-### Go
-
-- Use standard library when possible
-- Error handling: return errors, don't panic
-- Logging: use `log/slog` with `SetLogger()` pattern (silent by default, enable via CLI flags)
-- Context: pass context.Context for cancellation
-- Testing: table-driven tests preferred
-- Interfaces: define interfaces for external dependencies (like Docker) to enable mocking
-
 ### TypeScript/React
 
 - Functional components with hooks
@@ -522,44 +375,21 @@ All managed resources use these labels:
 - `gridctl.agent={name}` (for agent containers)
 - `gridctl.resource={name}` (for resource containers)
 
-## Testing Requirements
-
-### Required for All PRs
-
-1. **Unit Tests**: New exported functions must have tests
-2. **Coverage**: Maintain existing coverage levels
-3. **Naming**: Use `TestFunctionName_Scenario` pattern
-4. **Table-Driven**: Preferred for multiple test cases
-
-### Test Locations
-
-| Package | Test Pattern |
-|---------|--------------|
-| pkg/config | loader_test.go |
-| pkg/mcp | router_test.go, gateway_test.go, session_test.go, client_test.go, mock_test.go |
-| pkg/a2a | types_test.go, gateway_test.go, handler_test.go |
-| pkg/runtime | runtime_test.go (tests Orchestrator via mock interfaces) |
-| pkg/runtime/docker | labels_test.go, mock_test.go |
-| pkg/state | state_test.go |
-| tests/integration | orchestrator_test.go, runtime_test.go (build tag: integration) |
-
-### Mocks
-
-- `MockWorkloadRuntime`: pkg/runtime/runtime_test.go (for testing Orchestrator)
-- `MockDockerClient`: pkg/runtime/docker/mock_test.go (for testing DockerRuntime)
-- `MockAgentClient`: pkg/mcp/mock_test.go
-- HTTP handlers: use `net/http/httptest`
-
-### Running Tests
-
-```bash
-make test                                    # Unit tests
-make test-coverage                           # With coverage report
-go test -tags=integration ./tests/integration/...  # Integration tests
-```
-
 ## Important Notes
 
 - Never commit API keys or secrets
 - Keep dependencies minimal
 - Prefer simple solutions over clever ones
+
+## Directory-Specific Guides
+
+For detailed documentation on specific areas, see:
+
+| Directory | Guide | Topics |
+|-----------|-------|--------|
+| `cmd/` | [cmd/AGENTS.md](cmd/AGENTS.md) | CLI commands, daemon mode, state files |
+| `pkg/` | [pkg/AGENTS.md](pkg/AGENTS.md) | Go conventions, interface patterns |
+| `pkg/mcp/` | [pkg/mcp/AGENTS.md](pkg/mcp/AGENTS.md) | MCP protocol, gateway, endpoints |
+| `tests/` | [tests/AGENTS.md](tests/AGENTS.md) | Testing standards, mocks, coverage |
+| `examples/` | [examples/AGENTS.md](examples/AGENTS.md) | Example stack conventions |
+| `web/` | [web/AGENTS.md](web/AGENTS.md) | "Obsidian Observatory" design system |
