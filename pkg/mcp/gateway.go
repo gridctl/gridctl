@@ -22,6 +22,7 @@ type MCPServerConfig struct {
 	External        bool              // True for external URL servers (no container)
 	LocalProcess    bool              // True for local process servers (no container)
 	SSH             bool              // True for SSH servers (remote process over SSH)
+	OpenAPI         bool              // True for OpenAPI-based servers
 	Command         []string          // For local process or SSH transport
 	WorkDir         string            // For local process transport
 	Env             map[string]string // For local process or SSH transport
@@ -29,7 +30,20 @@ type MCPServerConfig struct {
 	SSHUser         string            // SSH username (for SSH servers)
 	SSHPort         int               // SSH port (for SSH servers, 0 = default 22)
 	SSHIdentityFile string            // SSH identity file path (for SSH servers)
+	OpenAPIConfig   *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
 	Tools           []string          // Tool whitelist (empty = all tools)
+}
+
+// OpenAPIClientConfig contains configuration for an OpenAPI-backed MCP client.
+type OpenAPIClientConfig struct {
+	Spec       string   // URL or local file path to OpenAPI spec
+	BaseURL    string   // Override server URL from spec
+	AuthType   string   // "bearer" or "header"
+	AuthToken  string   // Resolved bearer token (from env)
+	AuthHeader string   // Header name for header-based auth
+	AuthValue  string   // Resolved header value (from env)
+	Include    []string // Operation IDs to include
+	Exclude    []string // Operation IDs to exclude
 }
 
 // Gateway aggregates multiple MCP servers into a single endpoint.
@@ -101,8 +115,21 @@ func (g *Gateway) ServerInfo() ServerInfo {
 func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) error {
 	var agentClient AgentClient
 
-	// Handle SSH servers (they use stdio over SSH)
-	if cfg.SSH {
+	// Handle OpenAPI servers
+	if cfg.OpenAPI {
+		if cfg.OpenAPIConfig == nil {
+			return fmt.Errorf("OpenAPI config required for OpenAPI server %s", cfg.Name)
+		}
+		openAPIClient, err := NewOpenAPIClient(cfg.Name, cfg.OpenAPIConfig)
+		if err != nil {
+			return fmt.Errorf("creating OpenAPI client %s: %w", cfg.Name, err)
+		}
+		if len(cfg.Tools) > 0 {
+			openAPIClient.SetToolWhitelist(cfg.Tools)
+		}
+		agentClient = openAPIClient
+	} else if cfg.SSH {
+		// Handle SSH servers (they use stdio over SSH)
 		sshCommand := buildSSHCommand(cfg)
 		processClient := NewProcessClient(cfg.Name, sshCommand, cfg.WorkDir, cfg.Env)
 		if len(cfg.Tools) > 0 {
@@ -416,6 +443,8 @@ type MCPServerStatus struct {
 	LocalProcess bool      `json:"localProcess"` // True for local process servers
 	SSH          bool      `json:"ssh"`          // True for SSH servers
 	SSHHost      string    `json:"sshHost,omitempty"` // SSH hostname
+	OpenAPI      bool      `json:"openapi"`      // True for OpenAPI servers
+	OpenAPISpec  string    `json:"openapiSpec,omitempty"` // OpenAPI spec location
 }
 
 // buildSSHCommand constructs the ssh command with all options.
@@ -466,7 +495,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 			toolNames[i] = t.Name
 		}
 
-		statuses = append(statuses, MCPServerStatus{
+		status := MCPServerStatus{
 			Name:         client.Name(),
 			Transport:    meta.Transport,
 			Endpoint:     meta.Endpoint,
@@ -478,7 +507,12 @@ func (g *Gateway) Status() []MCPServerStatus {
 			LocalProcess: meta.LocalProcess,
 			SSH:          meta.SSH,
 			SSHHost:      meta.SSHHost,
-		})
+			OpenAPI:      meta.OpenAPI,
+		}
+		if meta.OpenAPIConfig != nil {
+			status.OpenAPISpec = meta.OpenAPIConfig.Spec
+		}
+		statuses = append(statuses, status)
 	}
 
 	return statuses
