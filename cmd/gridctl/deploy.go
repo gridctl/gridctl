@@ -208,6 +208,8 @@ func buildWorkloadSummaries(stack *config.Stack, result *runtime.UpResult) []out
 			transport = "local"
 		} else if s.IsSSH() {
 			transport = "ssh"
+		} else if s.IsOpenAPI() {
+			transport = "openapi"
 		}
 		serverTransports[s.Name] = transport
 	}
@@ -379,6 +381,17 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 				SSHUser:         server.SSH.User,
 				SSHPort:         server.SSH.Port,
 				SSHIdentityFile: server.SSH.IdentityFile,
+			})
+		}
+	}
+
+	// Add OpenAPI MCP servers from config (they don't have containers)
+	for _, server := range stack.MCPServers {
+		if server.IsOpenAPI() && !foundServers[server.Name] {
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
+				Name:          server.Name,
+				OpenAPI:       true,
+				OpenAPIConfig: server.OpenAPI,
 			})
 		}
 	}
@@ -638,6 +651,35 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, stack *config
 				SSHIdentityFile: server.SSHIdentityFile,
 				Env:             serverCfg.Env,
 				Tools:           serverCfg.Tools,
+			}
+		} else if server.OpenAPI {
+			// OpenAPI server - create adapter from spec
+			openAPICfg := server.OpenAPIConfig
+			cfg = mcp.MCPServerConfig{
+				Name:    server.Name,
+				OpenAPI: true,
+				OpenAPIConfig: &mcp.OpenAPIClientConfig{
+					Spec:    openAPICfg.Spec,
+					BaseURL: openAPICfg.BaseURL,
+				},
+				Tools: serverCfg.Tools,
+			}
+			// Handle authentication
+			if openAPICfg.Auth != nil {
+				cfg.OpenAPIConfig.AuthType = openAPICfg.Auth.Type
+				if openAPICfg.Auth.Type == "bearer" && openAPICfg.Auth.TokenEnv != "" {
+					cfg.OpenAPIConfig.AuthToken = os.Getenv(openAPICfg.Auth.TokenEnv)
+				} else if openAPICfg.Auth.Type == "header" {
+					cfg.OpenAPIConfig.AuthHeader = openAPICfg.Auth.Header
+					if openAPICfg.Auth.ValueEnv != "" {
+						cfg.OpenAPIConfig.AuthValue = os.Getenv(openAPICfg.Auth.ValueEnv)
+					}
+				}
+			}
+			// Handle operations filter
+			if openAPICfg.Operations != nil {
+				cfg.OpenAPIConfig.Include = openAPICfg.Operations.Include
+				cfg.OpenAPIConfig.Exclude = openAPICfg.Operations.Exclude
 			}
 		} else if transport == mcp.TransportStdio {
 			// Container stdio
