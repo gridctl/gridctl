@@ -55,9 +55,11 @@ const AgentNode = memo(({ data, selected }: AgentNodeProps) => {
 
       {/* A2A capability badge (top-right corner) */}
       {hasA2A && (
-        <div className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-secondary/20 border border-secondary/30 flex items-center gap-1">
-          <Zap size={8} className="text-secondary" />
-          <span className="text-[9px] text-secondary font-medium">
+        <div className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-surface border border-secondary/30 flex items-center gap-1">
+          {/* Teal overlay for glass effect */}
+          <div className="absolute inset-0 rounded-full bg-secondary/20" />
+          <Zap size={8} className="text-secondary relative" />
+          <span className="text-[9px] text-secondary font-medium relative">
             A2A
           </span>
         </div>
@@ -65,15 +67,20 @@ const AgentNode = memo(({ data, selected }: AgentNodeProps) => {
 
       {/* Variant badge (top-left corner) */}
       <div className={cn(
-        'absolute -top-2 -left-2 px-1.5 py-0.5 rounded-full border',
+        'absolute -top-2 -left-2 px-1.5 py-0.5 rounded-full border bg-surface',
         isRemote
-          ? 'bg-secondary/10 border-secondary/30'
-          : 'bg-tertiary/10 border-tertiary/30'
+          ? 'border-secondary/30'
+          : 'border-tertiary/30'
       )}>
+        {/* Color overlay for glass effect */}
+        <div className={cn(
+          'absolute inset-0 rounded-full',
+          isRemote ? 'bg-secondary/10' : 'bg-tertiary/10'
+        )} />
         {isRemote ? (
-          <Globe size={10} className="text-secondary" />
+          <Globe size={10} className="text-secondary relative" />
         ) : (
-          <Server size={10} className="text-tertiary" />
+          <Server size={10} className="text-tertiary relative" />
         )}
       </div>
 
@@ -87,8 +94,9 @@ const AgentNode = memo(({ data, selected }: AgentNodeProps) => {
         <Bot size={22} className={isRemote ? 'text-secondary' : 'text-tertiary'} />
         {/* A2A indicator on icon */}
         {hasA2A && !isRemote && (
-          <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-secondary/20 border border-secondary/40">
-            <Zap size={8} className="text-secondary" />
+          <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-surface border border-secondary/40">
+            <div className="absolute inset-0 rounded-full bg-secondary/20" />
+            <Zap size={8} className="text-secondary relative" />
           </div>
         )}
       </div>
