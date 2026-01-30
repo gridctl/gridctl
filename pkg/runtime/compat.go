@@ -12,19 +12,21 @@ type Runtime = Orchestrator
 // Deprecated: Use MCPServerResult instead.
 type MCPServerInfo struct {
 	Name            string
-	ContainerID     string   // Empty for external/local process/SSH servers
-	ContainerName   string   // Empty for external/local process/SSH servers
-	ContainerPort   int      // 0 for external/local process/SSH servers
-	HostPort        int      // 0 for external/local process/SSH servers
+	ContainerID     string   // Empty for external/local process/SSH/OpenAPI servers
+	ContainerName   string   // Empty for external/local process/SSH/OpenAPI servers
+	ContainerPort   int      // 0 for external/local process/SSH/OpenAPI servers
+	HostPort        int      // 0 for external/local process/SSH/OpenAPI servers
 	External        bool     // True if external server (no container)
 	LocalProcess    bool     // True if local process server (no container)
 	SSH             bool     // True if SSH server (remote process over SSH)
+	OpenAPI         bool     // True if OpenAPI-based server
 	URL             string   // Full URL for external servers
 	Command         []string // Command for local process or SSH servers
 	SSHHost         string   // SSH hostname (for SSH servers)
 	SSHUser         string   // SSH username (for SSH servers)
 	SSHPort         int      // SSH port (for SSH servers, 0 = default 22)
 	SSHIdentityFile string   // SSH identity file path (for SSH servers)
+	OpenAPIConfig   *config.OpenAPIConfig // OpenAPI config (for OpenAPI servers)
 }
 
 // AgentInfo is provided for backward compatibility.
@@ -71,12 +73,14 @@ func (r *UpResult) ToLegacyResult() *LegacyUpResult {
 			External:        s.External,
 			LocalProcess:    s.LocalProcess,
 			SSH:             s.SSH,
+			OpenAPI:         s.OpenAPI,
 			URL:             s.URL,
 			Command:         s.Command,
 			SSHHost:         s.SSHHost,
 			SSHUser:         s.SSHUser,
 			SSHPort:         s.SSHPort,
 			SSHIdentityFile: s.SSHIdentityFile,
+			OpenAPIConfig:   s.OpenAPIConfig,
 		}
 	}
 
