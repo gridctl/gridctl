@@ -67,7 +67,5 @@ plan/
 # Vendor specific assistant files
 .claude/
 .claude-plugin/
-CLAUDE.md
-**/CLAUDE.md
 GEMINI.md
 dist/
