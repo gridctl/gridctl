@@ -92,8 +92,9 @@ func Validate(s *Stack) error {
 		hasURL := server.URL != ""
 		hasSSH := server.SSH != nil && len(server.Command) > 0
 		hasCommand := len(server.Command) > 0 && !hasImage && !hasSource && !hasURL && !hasSSH // command-only = local process
+		hasOpenAPI := server.OpenAPI != nil
 
-		// Mutual exclusivity: must have exactly one of image, source, url, command (local process), or ssh
+		// Mutual exclusivity: must have exactly one of image, source, url, command (local process), ssh, or openapi
 		count := 0
 		if hasImage {
 			count++
@@ -110,11 +111,14 @@ func Validate(s *Stack) error {
 		if hasSSH {
 			count++
 		}
+		if hasOpenAPI {
+			count++
+		}
 
 		if count == 0 {
-			errs = append(errs, ValidationError{prefix, "must have 'image', 'source', 'url', 'command', or 'ssh' with 'command'"})
+			errs = append(errs, ValidationError{prefix, "must have 'image', 'source', 'url', 'command', 'ssh' with 'command', or 'openapi'"})
 		} else if count > 1 {
-			errs = append(errs, ValidationError{prefix, "can only have one of 'image', 'source', 'url', 'command', or 'ssh'"})
+			errs = append(errs, ValidationError{prefix, "can only have one of 'image', 'source', 'url', 'command', 'ssh', or 'openapi'"})
 		}
 
 		// External server validation (URL-only)
@@ -172,6 +176,48 @@ func Validate(s *Stack) error {
 			// Network is not applicable for SSH servers
 			if server.Network != "" {
 				errs = append(errs, ValidationError{prefix + ".network", "not applicable for SSH servers"})
+			}
+		} else if server.IsOpenAPI() {
+			// OpenAPI server validation
+			openapiPrefix := prefix + ".openapi"
+			if server.OpenAPI.Spec == "" {
+				errs = append(errs, ValidationError{openapiPrefix + ".spec", "is required"})
+			}
+			// Auth validation
+			if server.OpenAPI.Auth != nil {
+				authPrefix := openapiPrefix + ".auth"
+				if server.OpenAPI.Auth.Type != "" && server.OpenAPI.Auth.Type != "bearer" && server.OpenAPI.Auth.Type != "header" {
+					errs = append(errs, ValidationError{authPrefix + ".type", "must be 'bearer' or 'header'"})
+				}
+				if server.OpenAPI.Auth.Type == "bearer" && server.OpenAPI.Auth.TokenEnv == "" {
+					errs = append(errs, ValidationError{authPrefix + ".tokenEnv", "required when type is 'bearer'"})
+				}
+				if server.OpenAPI.Auth.Type == "header" {
+					if server.OpenAPI.Auth.Header == "" {
+						errs = append(errs, ValidationError{authPrefix + ".header", "required when type is 'header'"})
+					}
+					if server.OpenAPI.Auth.ValueEnv == "" {
+						errs = append(errs, ValidationError{authPrefix + ".valueEnv", "required when type is 'header'"})
+					}
+				}
+			}
+			// Operations filter validation
+			if server.OpenAPI.Operations != nil {
+				if len(server.OpenAPI.Operations.Include) > 0 && len(server.OpenAPI.Operations.Exclude) > 0 {
+					errs = append(errs, ValidationError{openapiPrefix + ".operations", "cannot use both 'include' and 'exclude'"})
+				}
+			}
+			// Transport is not applicable for OpenAPI servers (uses HTTP internally)
+			if server.Transport != "" {
+				errs = append(errs, ValidationError{prefix + ".transport", "not applicable for OpenAPI servers"})
+			}
+			// Port is not applicable for OpenAPI servers
+			if server.Port != 0 {
+				errs = append(errs, ValidationError{prefix + ".port", "not applicable for OpenAPI servers"})
+			}
+			// Network is not applicable for OpenAPI servers
+			if server.Network != "" {
+				errs = append(errs, ValidationError{prefix + ".network", "not applicable for OpenAPI servers"})
 			}
 		} else {
 			// Container-based server validation (existing logic)
