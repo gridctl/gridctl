@@ -44,60 +44,28 @@ Gridctl's core value is acting as a **Protocol Bridge** between MCP transports:
 - **SSE**: Server-Sent Events for persistent connections (Claude Desktop)
 - **HTTP POST**: Standard JSON-RPC 2.0 to /mcp endpoint
 
-## Architecture Decision: Host Binary
+## Multi-Network Routing
 
-Gridctl is distributed as a **host binary** (not a containerized gateway). This follows the same pattern as Containerlab, Terraform, Kind, and Docker Compose.
-
-### Why Host Binary?
-
-| Feature | Gateway as Container | Gateway as Binary |
-|---------|---------------------|-------------------|
-| Networking | Hard - must join every network | Easy - routes via Docker socket |
-| Filesystem | Complex volume mounts | Native file access |
-| Distribution | `docker run ...` | `brew install` / binary download |
-| Updates | `docker pull` | `brew upgrade` / `gridctl update` |
-| Precedent | Jenkins, Portainer | Containerlab, Docker Compose, Terraform |
-
-### Docker Socket Access
-
-When gridctl runs on the host, it has direct access to the Docker daemon:
-- **Stdio Transport**: Uses `ContainerAttach` to pipe directly into container stdin/stdout - networks are irrelevant
-- **HTTP Transport**: Containers publish ports to localhost (9000+) - no network joining required
-
-### Multi-Network Routing
-
-As a host binary, gridctl can route traffic between agents on **different Docker networks**:
+Gridctl runs as a host binary (like Containerlab, Terraform, Docker Compose), enabling cross-network routing:
 
 ```
 ┌─────────────┐     ┌─────────────┐
 │  Network A  │     │  Network B  │
 │  (Agent 1)  │     │  (Agent 2)  │
 └──────┬──────┘     └──────┬──────┘
-       │                   │
        │   Docker Socket   │
        └─────────┬─────────┘
-                 │
        ┌─────────▼─────────┐
        │   gridctl binary   │
-       │   (host machine)  │
-       │                   │
        │  Routes JSON-RPC  │
        │  through memory   │
        └─────────┬─────────┘
-                 │
        ┌─────────▼─────────┐
        │   localhost:8180  │
-       │   (MCP Gateway)   │
        └───────────────────┘
 ```
 
-This enables network isolation between agents while still allowing them to communicate through the MCP gateway.
-
-### Better Developer Experience
-
-- **File Access**: Reads `stack.yaml`, local source directories, `~/.ssh/` natively
-- **Localhost**: Web UI at `localhost:8180` without port mapping complexity
-- **Debugging**: Standard Go debugging tools work directly
+Network isolation between agents while allowing communication through the MCP gateway.
 
 ## Directory Structure
 
@@ -133,6 +101,7 @@ gridctl/
 │   │   ├── orchestrator.go # High-level Up/Down/Status
 │   │   ├── factory.go    # Runtime factory registration
 │   │   ├── compat.go     # Backward compatibility types
+│   │   ├── depgraph.go   # Dependency graph for startup ordering
 │   │   └── docker/       # Docker implementation
 │   │       ├── driver.go     # DockerRuntime (implements WorkloadRuntime)
 │   │       ├── init.go       # Factory registration
@@ -147,6 +116,10 @@ gridctl/
 │   │   ├── git.go        # Git clone/update
 │   │   ├── docker.go     # Docker build
 │   │   └── builder.go    # Main builder
+│   ├── output/           # CLI output formatting
+│   │   ├── output.go     # Printer and banner
+│   │   ├── styles.go     # Color schemes
+│   │   └── table.go      # Table rendering
 │   ├── state/            # Daemon state management
 │   │   └── state.go      # ~/.gridctl/state/ and ~/.gridctl/logs/
 │   ├── mcp/              # MCP protocol
@@ -169,9 +142,15 @@ gridctl/
 │   ├── getting-started/  # Basic examples
 │   ├── transports/       # Transport-specific examples
 │   ├── access-control/   # Tool filtering and security examples
+│   ├── gateways/         # Gateway configuration examples
+│   ├── multi-agent/      # Multi-agent orchestration examples
+│   ├── platforms/        # Platform-specific examples
 │   └── _mock-servers/    # Mock MCP servers for testing
 └── tests/
     └── integration/      # Integration tests (build tag: integration)
+        ├── orchestrator_test.go
+        ├── runtime_test.go
+        └── openapi_test.go
 ```
 
 ## Build Commands
@@ -220,7 +199,9 @@ Starts containers and MCP gateway for a stack.
 |------|-------|-------------|
 | `--foreground` | `-f` | Run in foreground with verbose output (don't daemonize) |
 | `--port` | `-p` | Port for MCP gateway (default: 8180) |
+| `--base-port` | | Base port for MCP server host port allocation (default: 9000) |
 | `--no-cache` | | Force rebuild of source-based images |
+| `--quiet` | `-q` | Suppress progress output (show only final result) |
 | `--verbose` | `-v` | Print full stack as JSON |
 
 #### `gridctl destroy <stack.yaml>`
@@ -267,29 +248,11 @@ When `gridctl deploy` runs, it:
 5. Registers agents with the MCP gateway
 6. Starts HTTP server with MCP endpoint
 
-**MCP Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/mcp` | POST | JSON-RPC 2.0 (initialize, tools/list, tools/call) |
-| `/sse` | GET | SSE connection endpoint (for Claude Desktop) |
-| `/message` | POST | Message endpoint for SSE sessions |
-
-**API Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/status` | GET | Gateway + agent status (unified agents with A2A info) |
-| `/api/mcp-servers` | GET | List registered MCP servers |
-| `/api/tools` | GET | List aggregated tools |
-| `/health` | GET | Liveness check (returns 200 when HTTP server is running) |
-| `/ready` | GET | Readiness check (returns 200 only when all MCP servers are initialized) |
-| `/` | GET | Web UI (embedded React app) |
-
-**A2A Protocol Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/.well-known/agent.json` | GET | Agent Card discovery (lists all local A2A agents) |
-| `/a2a/{agent}` | GET | Get specific agent's Agent Card |
-| `/a2a/{agent}` | POST | JSON-RPC endpoint (message/send, tasks/get, etc.) |
+**Endpoints:**
+- **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
+- **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/health`, `/ready`
+- **A2A:** `/.well-known/agent.json`, `/a2a/{agent}` (GET card, POST JSON-RPC)
+- **Web UI:** `GET /`
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
@@ -357,6 +320,19 @@ mcp-servers:
     build_args:
       DEBUG: "true"
 
+  # OpenAPI-backed MCP server (transforms OpenAPI spec to MCP tools)
+  - name: api-server
+    openapi:
+      spec: https://api.example.com/openapi.json  # URL or local file path
+      baseUrl: https://api.example.com            # Override server URL from spec
+      auth:
+        type: bearer                              # "bearer" or "header"
+        tokenEnv: API_TOKEN                       # Env var containing bearer token
+        # For header auth: header: "X-API-Key", valueEnv: "API_KEY"
+      operations:
+        include: ["getUser", "listItems"]         # Whitelist operation IDs
+        # exclude: ["deleteUser"]                 # Or blacklist operation IDs
+
 agents:                               # Active agents that consume MCP tools
   - name: my-agent
     image: my-org/agent:latest
@@ -364,7 +340,7 @@ agents:                               # Active agents that consume MCP tools
     capabilities:
       - code-analysis
       - automation
-    uses:                             # MCP servers this agent can access
+    uses:                             # MCP servers this agent can access (alias: equipped_skills)
       - http-server                   # String format: all tools from server
       - server: stdio-server          # Object format: with tool filtering
         tools: ["read", "list"]       # Only these tools (agent-level filtering)
@@ -412,13 +388,13 @@ agents:
     env:
       MODEL_NAME: "claude-3-5-sonnet"
 
-  # Headless agent (schema only, runtime not yet implemented)
-  - name: headless-agent
-    runtime: claude-code       # Uses built-in runtime instead of image
-    prompt: |
-      You are a helpful assistant that can use tools.
-    uses:
-      - github-tools
+  # Headless agent - NOT YET IMPLEMENTED (schema validation only)
+  # - name: headless-agent
+  #   runtime: claude-code       # Uses built-in runtime instead of image
+  #   prompt: |
+  #     You are a helpful assistant that can use tools.
+  #   uses:
+  #     - github-tools
 
   # Agent with A2A capabilities
   - name: a2a-enabled-agent
@@ -533,15 +509,7 @@ All managed resources use these labels:
 
 ### Test Locations
 
-| Package | Test Pattern |
-|---------|--------------|
-| pkg/config | loader_test.go |
-| pkg/mcp | router_test.go, gateway_test.go, session_test.go, client_test.go, mock_test.go |
-| pkg/a2a | types_test.go, gateway_test.go, handler_test.go |
-| pkg/runtime | runtime_test.go (tests Orchestrator via mock interfaces) |
-| pkg/runtime/docker | labels_test.go, mock_test.go |
-| pkg/state | state_test.go |
-| tests/integration | orchestrator_test.go, runtime_test.go (build tag: integration) |
+Tests follow `*_test.go` convention adjacent to source files. Integration tests in `tests/integration/` require build tag `integration`.
 
 ### Mocks
 
