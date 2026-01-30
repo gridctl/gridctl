@@ -57,7 +57,7 @@ type UpResult struct {
 // MCPServerResult is the runtime-agnostic result for an MCP server.
 type MCPServerResult struct {
 	Name       string     // Logical name
-	WorkloadID WorkloadID // Runtime ID (empty for external/local/SSH)
+	WorkloadID WorkloadID // Runtime ID (empty for external/local/SSH/OpenAPI)
 	Endpoint   string     // How to reach it (URL or host:port)
 	HostPort   int        // Host port if applicable
 
@@ -65,6 +65,7 @@ type MCPServerResult struct {
 	External     bool // URL-based external server
 	LocalProcess bool // Local stdio process
 	SSH          bool // SSH-based remote process
+	OpenAPI      bool // OpenAPI-based adapter server
 
 	// For non-container servers
 	URL             string   // External server URL
@@ -73,6 +74,9 @@ type MCPServerResult struct {
 	SSHUser         string
 	SSHPort         int
 	SSHIdentityFile string
+
+	// For OpenAPI servers
+	OpenAPIConfig *config.OpenAPIConfig // OpenAPI configuration for gateway to use
 }
 
 // AgentResult is the runtime-agnostic result for an agent.
@@ -192,6 +196,19 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 				SSHUser:         server.SSH.User,
 				SSHPort:         server.SSH.Port,
 				SSHIdentityFile: server.SSH.IdentityFile,
+			})
+			continue
+		}
+
+		// Skip container creation for OpenAPI servers
+		if server.IsOpenAPI() {
+			o.logger.Info("registering OpenAPI MCP server",
+				"name", server.Name,
+				"spec", server.OpenAPI.Spec)
+			result.MCPServers = append(result.MCPServers, MCPServerResult{
+				Name:          server.Name,
+				OpenAPI:       true,
+				OpenAPIConfig: server.OpenAPI,
 			})
 			continue
 		}

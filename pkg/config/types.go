@@ -33,7 +33,32 @@ type MCPServer struct {
 	BuildArgs map[string]string `yaml:"build_args,omitempty"`
 	Network   string            `yaml:"network,omitempty"`   // Network to join (for multi-network mode)
 	SSH       *SSHConfig        `yaml:"ssh,omitempty"`       // SSH connection config for remote servers
+	OpenAPI   *OpenAPIConfig    `yaml:"openapi,omitempty"`   // OpenAPI spec config for API-backed servers
 	Tools     []string          `yaml:"tools,omitempty"`     // Tool whitelist (empty = all tools exposed)
+}
+
+// OpenAPIConfig defines an MCP server backed by an OpenAPI specification.
+// The spec is parsed and each operation becomes an MCP tool.
+type OpenAPIConfig struct {
+	Spec       string            `yaml:"spec"`                 // URL or local file path to OpenAPI spec (JSON or YAML)
+	BaseURL    string            `yaml:"baseUrl,omitempty"`    // Override the server URL from the spec
+	Auth       *OpenAPIAuth      `yaml:"auth,omitempty"`       // Authentication configuration
+	Operations *OperationsFilter `yaml:"operations,omitempty"` // Filter which operations become tools
+}
+
+// OpenAPIAuth defines authentication for OpenAPI HTTP requests.
+type OpenAPIAuth struct {
+	Type     string `yaml:"type"`               // "bearer" or "header"
+	TokenEnv string `yaml:"tokenEnv,omitempty"` // Env var name containing bearer token (for type: bearer)
+	Header   string `yaml:"header,omitempty"`   // Header name (for type: header, e.g., "X-API-Key")
+	ValueEnv string `yaml:"valueEnv,omitempty"` // Env var name containing header value (for type: header)
+}
+
+// OperationsFilter defines which OpenAPI operations to include or exclude.
+// Only one of Include or Exclude should be specified.
+type OperationsFilter struct {
+	Include []string `yaml:"include,omitempty"` // Operation IDs to include (whitelist)
+	Exclude []string `yaml:"exclude,omitempty"` // Operation IDs to exclude (blacklist)
 }
 
 // SSHConfig defines SSH connection parameters for remote MCP servers.
@@ -57,6 +82,11 @@ func (s *MCPServer) IsLocalProcess() bool {
 // IsSSH returns true if this is an SSH-based MCP server (ssh config with command).
 func (s *MCPServer) IsSSH() bool {
 	return s.SSH != nil && len(s.Command) > 0 && s.Image == "" && s.Source == nil && s.URL == ""
+}
+
+// IsOpenAPI returns true if this is an OpenAPI-based MCP server.
+func (s *MCPServer) IsOpenAPI() bool {
+	return s.OpenAPI != nil && s.Image == "" && s.Source == nil && s.URL == "" && s.SSH == nil
 }
 
 // Source defines how to build an MCP server from source code.

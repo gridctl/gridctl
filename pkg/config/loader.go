@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -75,6 +76,12 @@ func expandEnvVars(s *Stack) {
 			s.MCPServers[i].SSH.User = os.ExpandEnv(s.MCPServers[i].SSH.User)
 			s.MCPServers[i].SSH.IdentityFile = os.ExpandEnv(s.MCPServers[i].SSH.IdentityFile)
 		}
+
+		// Expand OpenAPI config environment variables
+		if s.MCPServers[i].OpenAPI != nil {
+			s.MCPServers[i].OpenAPI.Spec = os.ExpandEnv(s.MCPServers[i].OpenAPI.Spec)
+			s.MCPServers[i].OpenAPI.BaseURL = os.ExpandEnv(s.MCPServers[i].OpenAPI.BaseURL)
+		}
 	}
 
 	for i := range s.Resources {
@@ -121,6 +128,13 @@ func resolveRelativePaths(s *Stack, basePath string) {
 		if s.MCPServers[i].SSH != nil && s.MCPServers[i].SSH.IdentityFile != "" {
 			s.MCPServers[i].SSH.IdentityFile = expandTildeAndResolvePath(s.MCPServers[i].SSH.IdentityFile, basePath)
 		}
+
+		// Resolve OpenAPI spec paths (if not a URL)
+		if s.MCPServers[i].OpenAPI != nil && s.MCPServers[i].OpenAPI.Spec != "" {
+			if !isURL(s.MCPServers[i].OpenAPI.Spec) {
+				s.MCPServers[i].OpenAPI.Spec = expandTildeAndResolvePath(s.MCPServers[i].OpenAPI.Spec, basePath)
+			}
+		}
 	}
 
 	for i := range s.Agents {
@@ -151,6 +165,11 @@ func expandTildeAndResolvePath(path, basePath string) string {
 	}
 
 	return path
+}
+
+// isURL checks if a string looks like a URL (http:// or https://).
+func isURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
 // mergeEquippedSkills merges the equipped_skills YAML alias into uses.
