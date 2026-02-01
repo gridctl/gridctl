@@ -37,6 +37,7 @@ type OpenAPIClient struct {
 	includeOps map[string]bool
 	excludeOps map[string]bool
 	httpClient *http.Client
+	noExpand   bool // If true, skip environment variable expansion in spec file
 
 	mu            sync.RWMutex
 	initialized   bool
@@ -69,6 +70,7 @@ func NewOpenAPIClient(name string, cfg *OpenAPIClientConfig) (*OpenAPIClient, er
 		authValue:  cfg.AuthValue,
 		httpClient: &http.Client{Timeout: defaultOpenAPITimeout},
 		operations: make(map[string]*OpenAPIOperation),
+		noExpand:   cfg.NoExpand,
 	}
 
 	if len(cfg.Include) > 0 {
@@ -290,6 +292,11 @@ func (c *OpenAPIClient) loadSpec(ctx context.Context) (*openapi3.T, error) {
 	data, err := os.ReadFile(c.spec)
 	if err != nil {
 		return nil, fmt.Errorf("reading spec file: %w", err)
+	}
+
+	// Apply environment variable expansion for local files (unless disabled)
+	if !c.noExpand {
+		data = expandEnvVars(data)
 	}
 
 	return loader.LoadFromData(data)
