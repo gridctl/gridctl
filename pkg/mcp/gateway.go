@@ -44,6 +44,7 @@ type OpenAPIClientConfig struct {
 	AuthValue  string   // Resolved header value (from env)
 	Include    []string // Operation IDs to include
 	Exclude    []string // Operation IDs to exclude
+	NoExpand   bool     // If true, skip environment variable expansion in spec file
 }
 
 // Gateway aggregates multiple MCP servers into a single endpoint.
