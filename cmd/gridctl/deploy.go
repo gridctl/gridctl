@@ -35,6 +35,7 @@ var (
 	deployBasePort    int
 	deployForeground  bool
 	deployDaemonChild bool
+	deployNoExpand    bool
 )
 
 var deployCmd = &cobra.Command{
@@ -61,6 +62,7 @@ func init() {
 	deployCmd.Flags().BoolVarP(&deployForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
 	deployCmd.Flags().BoolVar(&deployDaemonChild, "daemon-child", false, "Internal flag for daemon process")
 	_ = deployCmd.Flags().MarkHidden("daemon-child")
+	deployCmd.Flags().BoolVar(&deployNoExpand, "no-expand", false, "Disable environment variable expansion in OpenAPI spec files")
 }
 
 func runDeploy(stackPath string) error {
@@ -157,7 +159,7 @@ func runDeploy(stackPath string) error {
 	}
 
 	// Daemon mode: fork child process
-	pid, err := forkDeployDaemon(stackPath, deployPort, deployBasePort)
+	pid, err := forkDeployDaemon(stackPath, deployPort, deployBasePort, deployNoExpand)
 	if err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
@@ -659,8 +661,9 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, stack *config
 				Name:    server.Name,
 				OpenAPI: true,
 				OpenAPIConfig: &mcp.OpenAPIClientConfig{
-					Spec:    openAPICfg.Spec,
-					BaseURL: openAPICfg.BaseURL,
+					Spec:     openAPICfg.Spec,
+					BaseURL:  openAPICfg.BaseURL,
+					NoExpand: deployNoExpand,
 				},
 				Tools: serverCfg.Tools,
 			}
@@ -708,7 +711,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, stack *config
 }
 
 // forkDeployDaemon starts the daemon child process
-func forkDeployDaemon(stackPath string, port int, basePort int) (int, error) {
+func forkDeployDaemon(stackPath string, port int, basePort int, noExpand bool) (int, error) {
 	// Get current executable
 	exe, err := os.Executable()
 	if err != nil {
@@ -733,10 +736,14 @@ func forkDeployDaemon(stackPath string, port int, basePort int) (int, error) {
 	}
 
 	// Build command with --daemon-child flag
-	cmd := exec.Command(exe, "deploy", stackPath,
+	args := []string{"deploy", stackPath,
 		"--daemon-child",
 		"--port", strconv.Itoa(port),
-		"--base-port", strconv.Itoa(basePort))
+		"--base-port", strconv.Itoa(basePort)}
+	if noExpand {
+		args = append(args, "--no-expand")
+	}
+	cmd := exec.Command(exe, args...)
 
 	// Detach from terminal
 	cmd.SysProcAttr = &syscall.SysProcAttr{
