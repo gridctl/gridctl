@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -933,4 +934,115 @@ func TestOpenAPIClient_ToolDescription(t *testing.T) {
 	}
 
 	t.Error("listItems tool not found")
+}
+
+func TestOpenAPIClient_EnvVarExpansion(t *testing.T) {
+	// Create a mock server to handle API requests
+	server := createTestServer(t)
+	defer server.Close()
+
+	// Create a temp spec file with environment variable placeholders
+	specContent := `{
+  "openapi": "3.0.3",
+  "info": {"title": "Test API", "version": "1.0.0"},
+  "servers": [{"url": "${TEST_OPENAPI_BASE_URL:-http://localhost:8080}"}],
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "listItems",
+        "summary": "List all items",
+        "responses": {"200": {"description": "A list of items"}}
+      }
+    }
+  }
+}`
+
+	dir := t.TempDir()
+	specPath := dir + "/spec.json"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatalf("failed to write temp spec: %v", err)
+	}
+
+	t.Run("expansion with default value", func(t *testing.T) {
+		// Ensure env var is not set - should use default
+		os.Unsetenv("TEST_OPENAPI_BASE_URL")
+
+		cfg := &mcp.OpenAPIClientConfig{
+			Spec:    specPath,
+			BaseURL: "", // Let it come from spec
+		}
+
+		client, err := mcp.NewOpenAPIClient("test-api", cfg)
+		if err != nil {
+			t.Fatalf("NewOpenAPIClient failed: %v", err)
+		}
+
+		ctx := context.Background()
+		if err := client.Initialize(ctx); err != nil {
+			t.Fatalf("Initialize failed: %v", err)
+		}
+
+		// Check that the default URL was used
+		info := client.ServerInfo()
+		if info.Name != "Test API" {
+			t.Errorf("Expected server name 'Test API', got '%s'", info.Name)
+		}
+	})
+
+	t.Run("expansion with env var set", func(t *testing.T) {
+		// Set env var to the mock server URL
+		os.Setenv("TEST_OPENAPI_BASE_URL", server.URL)
+		defer os.Unsetenv("TEST_OPENAPI_BASE_URL")
+
+		cfg := &mcp.OpenAPIClientConfig{
+			Spec: specPath,
+		}
+
+		client, err := mcp.NewOpenAPIClient("test-api", cfg)
+		if err != nil {
+			t.Fatalf("NewOpenAPIClient failed: %v", err)
+		}
+
+		ctx := context.Background()
+		if err := client.Initialize(ctx); err != nil {
+			t.Fatalf("Initialize failed: %v", err)
+		}
+
+		if err := client.RefreshTools(ctx); err != nil {
+			t.Fatalf("RefreshTools failed: %v", err)
+		}
+
+		// Call should work because the URL points to our mock server
+		result, err := client.CallTool(ctx, "listItems", map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("CallTool failed: %v", err)
+		}
+
+		if result.IsError {
+			t.Errorf("Expected successful result, got error: %v", result.Content)
+		}
+	})
+
+	t.Run("no expansion with NoExpand flag", func(t *testing.T) {
+		// Set env var but disable expansion
+		os.Setenv("TEST_OPENAPI_BASE_URL", server.URL)
+		defer os.Unsetenv("TEST_OPENAPI_BASE_URL")
+
+		cfg := &mcp.OpenAPIClientConfig{
+			Spec:     specPath,
+			NoExpand: true,
+		}
+
+		client, err := mcp.NewOpenAPIClient("test-api", cfg)
+		if err != nil {
+			t.Fatalf("NewOpenAPIClient failed: %v", err)
+		}
+
+		ctx := context.Background()
+		// Initialize should fail because the literal ${...} is not a valid URL
+		err = client.Initialize(ctx)
+		if err == nil {
+			t.Error("Expected initialization to fail with unexpanded variable, but it succeeded")
+		}
+	})
 }
