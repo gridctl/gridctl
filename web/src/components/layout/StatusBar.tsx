@@ -19,8 +19,8 @@ export function StatusBar() {
   const lastUpdated = useStackStore((s) => s.lastUpdated);
   const error = useStackStore((s) => s.error);
 
-  const runningServers = mcpServers.filter((s) => s.initialized).length;
-  const runningResources = resources.filter((r) => r.status === 'running').length;
+  const runningServers = (mcpServers ?? []).filter((s) => s.initialized).length;
+  const runningResources = (resources ?? []).filter((r) => r.status === 'running').length;
   const isConnected = connectionStatus === 'connected';
 
   return (
@@ -47,24 +47,24 @@ export function StatusBar() {
         <div className="w-px h-3 bg-border/50" />
 
         {/* Server count */}
-        {mcpServers.length > 0 && (
+        {(mcpServers ?? []).length > 0 && (
           <div className="flex items-center gap-2 text-text-muted">
             <Server size={11} className="text-primary" />
             <span>
               <span className="text-status-running font-semibold">{runningServers}</span>
-              <span className="text-text-muted/60">/{mcpServers.length}</span>
+              <span className="text-text-muted/60">/{(mcpServers ?? []).length}</span>
               <span className="ml-1">MCP</span>
             </span>
           </div>
         )}
 
         {/* Resource count */}
-        {resources.length > 0 && (
+        {(resources ?? []).length > 0 && (
           <div className="flex items-center gap-2 text-text-muted">
             <Box size={11} className="text-secondary" />
             <span>
               <span className="text-secondary font-semibold">{runningResources}</span>
-              <span className="text-text-muted/60">/{resources.length}</span>
+              <span className="text-text-muted/60">/{(resources ?? []).length}</span>
               <span className="ml-1">Resources</span>
             </span>
           </div>

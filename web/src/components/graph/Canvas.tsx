@@ -2,7 +2,6 @@ import { useCallback, useMemo } from 'react';
 import {
   ReactFlow,
   Background,
-  MiniMap,
   Panel,
   BackgroundVariant,
   useReactFlow,
@@ -52,9 +51,9 @@ export function Canvas() {
 
   // Apply highlighting classes to nodes
   const styledNodes = useMemo(() => {
-    if (!highlightState.hasSelection) return nodes;
+    if (!highlightState.hasSelection) return nodes ?? [];
 
-    return nodes.map((node) => ({
+    return (nodes ?? []).map((node) => ({
       ...node,
       className: cn(
         node.className,
@@ -66,7 +65,7 @@ export function Canvas() {
   // Apply highlighting classes to edges
   // Uses edges (Agent → Server) are always hidden - we show the path through Gateway instead
   const styledEdges = useMemo(() => {
-    return edges.map((edge) => {
+    return (edges ?? []).map((edge) => {
       const edgeData = edge.data as { isUsesEdge?: boolean } | undefined;
       const isUsesEdge = edgeData?.isUsesEdge;
 
@@ -104,24 +103,8 @@ export function Canvas() {
     setSidebarOpen(false);
   }, [selectNode, setSidebarOpen]);
 
-  // MiniMap node color based on type and status
-  const minimapNodeColor = useCallback((node: { data: Record<string, unknown> }) => {
-    const data = node.data;
-    if (data.type === 'gateway') return COLORS.primary;
-    if (data.type === 'agent') {
-      // Teal for A2A-enabled or remote agents, purple for local-only
-      return data.hasA2A || data.variant === 'remote' ? COLORS.secondary : COLORS.tertiary;
-    }
-
-    const status = data.status as string | undefined;
-    if (status === 'running') return COLORS.statusRunning;
-    if (status === 'error') return COLORS.statusError;
-    if (status === 'initializing') return COLORS.statusPending;
-    return COLORS.statusStopped;
-  }, []);
-
   return (
-    <div className="flex-1 h-full relative canvas-wrapper">
+    <div className="absolute inset-0 canvas-wrapper">
       {/* Film grain overlay */}
       <div className="film-grain" />
       <ReactFlow
@@ -202,19 +185,6 @@ export function Canvas() {
             )}
           </button>
         </Panel>
-
-        {/* MiniMap */}
-        <MiniMap
-          nodeColor={minimapNodeColor}
-          maskColor="rgba(15, 23, 42, 0.7)"
-          style={{
-            height: 120,
-            width: 180,
-          }}
-          zoomable
-          pannable
-          position="bottom-right"
-        />
       </ReactFlow>
     </div>
   );

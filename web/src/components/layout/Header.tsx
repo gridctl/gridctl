@@ -15,8 +15,8 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
-  const runningCount = mcpServers.filter((s) => s.initialized).length;
-  const totalCount = mcpServers.length;
+  const runningCount = (mcpServers ?? []).filter((s) => s.initialized).length;
+  const totalCount = (mcpServers ?? []).length;
   const isConnected = connectionStatus === 'connected';
 
   return (

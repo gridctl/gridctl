@@ -1,5 +1,21 @@
 import { useState } from 'react';
-import { X, Terminal, Box, Bot, ChevronDown, ChevronRight, Wrench, FileText, Sparkles, Globe, Server, Zap, Cpu, KeyRound, Network } from 'lucide-react';
+import {
+  X,
+  Terminal,
+  Box,
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  Wrench,
+  FileText,
+  Sparkles,
+  Globe,
+  Server,
+  Zap,
+  Cpu,
+  KeyRound,
+  Network,
+} from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
@@ -11,11 +27,11 @@ import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, ToolSelector }
 
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
-  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const selectNode = useStackStore((s) => s.selectNode);
 
+  // Don't render content if no valid selection
   if (!selectedData || selectedData.type === 'gateway') {
     return null;
   }
@@ -36,14 +52,20 @@ export function Sidebar() {
   const hasA2A = agentData?.hasA2A ?? false;
 
   // Icon logic: Globe for external, Cpu for local process, KeyRound for SSH, Terminal for container-based
-  const Icon = isServer ? (isExternal ? Globe : isLocalProcess ? Cpu : isSSH ? KeyRound : Terminal) : isAgent ? Bot : Box;
+  const Icon = isServer
+    ? isExternal
+      ? Globe
+      : isLocalProcess
+        ? Cpu
+        : isSSH
+          ? KeyRound
+          : Terminal
+    : isAgent
+      ? Bot
+      : Box;
 
   // Color logic: violet for all MCP servers, purple for local agents, teal for remote agents/resources
-  const colorClass = isServer
-    ? 'violet'
-    : isAgent
-      ? (isRemote ? 'secondary' : 'tertiary')
-      : 'secondary';
+  const colorClass = isServer ? 'violet' : isAgent ? (isRemote ? 'secondary' : 'tertiary') : 'secondary';
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -55,32 +77,33 @@ export function Sidebar() {
   };
 
   return (
-    <aside
+    <div
       className={cn(
-        'fixed top-14 right-0 h-[calc(100vh-56px-32px)] w-80',
-        'bg-surface/80 backdrop-blur-xl border-l border-border/50',
-        'transform transition-all duration-300 ease-out z-20',
-        'flex flex-col overflow-hidden',
-        sidebarOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+        'h-full w-full',
+        'flex flex-col overflow-hidden'
       )}
     >
       {/* Accent line */}
-      <div className={cn(
-        'absolute top-0 left-0 bottom-0 w-px',
-        colorClass === 'violet' && 'bg-gradient-to-b from-violet-500/40 via-violet-500/20 to-transparent',
-        colorClass === 'tertiary' && 'bg-gradient-to-b from-tertiary/40 via-tertiary/20 to-transparent',
-        colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
-      )} />
+      <div
+        className={cn(
+          'absolute top-0 left-0 bottom-0 w-px',
+          colorClass === 'violet' && 'bg-gradient-to-b from-violet-500/40 via-violet-500/20 to-transparent',
+          colorClass === 'tertiary' && 'bg-gradient-to-b from-tertiary/40 via-tertiary/20 to-transparent',
+          colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
+        )}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30">
         <div className="flex items-center gap-3 min-w-0">
-          <div className={cn(
-            'p-2 rounded-xl flex-shrink-0 border relative',
-            colorClass === 'violet' && 'bg-violet-500/10 border-violet-500/20',
-            colorClass === 'tertiary' && 'bg-tertiary/10 border-tertiary/20',
-            colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
-          )}>
+          <div
+            className={cn(
+              'p-2 rounded-xl flex-shrink-0 border relative',
+              colorClass === 'violet' && 'bg-violet-500/10 border-violet-500/20',
+              colorClass === 'tertiary' && 'bg-tertiary/10 border-tertiary/20',
+              colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
+            )}
+          >
             <Icon
               size={16}
               className={cn(
@@ -97,9 +120,7 @@ export function Sidebar() {
             )}
           </div>
           <div className="min-w-0">
-            <h2 className="font-semibold text-text-primary truncate tracking-tight">
-              {data.name}
-            </h2>
+            <h2 className="font-semibold text-text-primary truncate tracking-tight">{data.name}</h2>
             <div className="flex items-center gap-1.5">
               <p className="text-[10px] text-text-muted uppercase tracking-wider">
                 {isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
@@ -123,10 +144,12 @@ export function Sidebar() {
                 </span>
               )}
               {isAgent && (
-                <span className={cn(
-                  'text-[9px] px-1 py-0.5 rounded font-medium uppercase flex items-center gap-0.5',
-                  isRemote ? 'bg-secondary/10 text-secondary' : 'bg-tertiary/10 text-tertiary'
-                )}>
+                <span
+                  className={cn(
+                    'text-[9px] px-1 py-0.5 rounded font-medium uppercase flex items-center gap-0.5',
+                    isRemote ? 'bg-secondary/10 text-secondary' : 'bg-tertiary/10 text-tertiary'
+                  )}
+                >
                   {isRemote ? <Globe size={8} /> : <Server size={8} />}
                   {agentData?.variant}
                 </span>
@@ -140,10 +163,7 @@ export function Sidebar() {
             </div>
           </div>
         </div>
-        <button
-          onClick={handleClose}
-          className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group"
-        >
+        <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
           <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
         </button>
       </div>
@@ -155,32 +175,37 @@ export function Sidebar() {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-text-muted">State</span>
-              <Badge status={data.status}>
-                {data.status}
-              </Badge>
+              <Badge status={data.status}>{data.status}</Badge>
             </div>
 
-            {isServer && (data as MCPServerNodeData).transport && (() => {
-              const transport = (data as MCPServerNodeData).transport;
-              const TransportIcon = getTransportIcon(transport);
-              return (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-text-muted">Transport</span>
-                  <span className={cn(
-                    'text-xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider flex items-center gap-1',
-                    getTransportColorClasses(transport)
-                  )}>
-                    <TransportIcon size={10} />
-                    {transport}
-                  </span>
-                </div>
-              );
-            })()}
+            {isServer &&
+              (data as MCPServerNodeData).transport &&
+              (() => {
+                const transport = (data as MCPServerNodeData).transport;
+                const TransportIcon = getTransportIcon(transport);
+                return (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-text-muted">Transport</span>
+                    <span
+                      className={cn(
+                        'text-xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider flex items-center gap-1',
+                        getTransportColorClasses(transport)
+                      )}
+                    >
+                      <TransportIcon size={10} />
+                      {transport}
+                    </span>
+                  </div>
+                );
+              })()}
 
             {isServer && (data as MCPServerNodeData).endpoint && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Endpoint</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as MCPServerNodeData).endpoint}>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={(data as MCPServerNodeData).endpoint}
+                >
                   {(data as MCPServerNodeData).endpoint}
                 </span>
               </div>
@@ -189,7 +214,10 @@ export function Sidebar() {
             {isServer && isSSH && serverData?.sshHost && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">SSH Host</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={serverData.sshHost}>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={serverData.sshHost}
+                >
                   {serverData.sshHost}
                 </span>
               </div>
@@ -199,7 +227,10 @@ export function Sidebar() {
             {isAgent && agentData?.image && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={agentData.image}>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={agentData.image}
+                >
                   {agentData.image}
                 </span>
               </div>
@@ -208,7 +239,10 @@ export function Sidebar() {
             {isAgent && agentData?.containerId && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Container</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={agentData.containerId}>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={agentData.containerId}
+                >
                   {agentData.containerId}
                 </span>
               </div>
@@ -218,10 +252,12 @@ export function Sidebar() {
             {isAgent && hasA2A && agentData?.role && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">A2A Role</span>
-                <span className={cn(
-                  'text-xs px-2 py-0.5 rounded-md font-medium uppercase tracking-wider flex items-center gap-1',
-                  'bg-secondary/10 text-secondary'
-                )}>
+                <span
+                  className={cn(
+                    'text-xs px-2 py-0.5 rounded-md font-medium uppercase tracking-wider flex items-center gap-1',
+                    'bg-secondary/10 text-secondary'
+                  )}
+                >
                   {agentData.role === 'remote' ? <Globe size={10} /> : <Server size={10} />}
                   {agentData.role}
                 </span>
@@ -231,7 +267,10 @@ export function Sidebar() {
             {isAgent && hasA2A && agentData?.url && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">URL</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={agentData.url}>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={agentData.url}
+                >
                   {agentData.url}
                 </span>
               </div>
@@ -240,7 +279,10 @@ export function Sidebar() {
             {isAgent && hasA2A && agentData?.endpoint && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">A2A Endpoint</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={agentData.endpoint}>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={agentData.endpoint}
+                >
                   {agentData.endpoint}
                 </span>
               </div>
@@ -249,18 +291,14 @@ export function Sidebar() {
             {isAgent && hasA2A && (agentData?.skillCount ?? 0) > 0 && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Skills</span>
-                <span className="text-sm text-secondary font-bold tabular-nums">
-                  {agentData?.skillCount}
-                </span>
+                <span className="text-sm text-secondary font-bold tabular-nums">{agentData?.skillCount}</span>
               </div>
             )}
 
             {isAgent && hasA2A && agentData?.description && (
               <div className="mt-2 pt-2 border-t border-border/30">
                 <span className="text-sm text-text-muted block mb-1">Description</span>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  {agentData.description}
-                </p>
+                <p className="text-xs text-text-secondary leading-relaxed">{agentData.description}</p>
               </div>
             )}
 
@@ -268,7 +306,10 @@ export function Sidebar() {
             {!isServer && !isAgent && (data as ResourceNodeData).image && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
-                <span className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md" title={(data as ResourceNodeData).image}>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={(data as ResourceNodeData).image}
+                >
                   {(data as ResourceNodeData).image}
                 </span>
               </div>
@@ -277,9 +318,7 @@ export function Sidebar() {
             {!isServer && !isAgent && (data as ResourceNodeData).network && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Network</span>
-                <span className="text-sm text-secondary font-medium">
-                  {(data as ResourceNodeData).network}
-                </span>
+                <span className="text-sm text-secondary font-medium">{(data as ResourceNodeData).network}</span>
               </div>
             )}
           </div>
@@ -291,7 +330,7 @@ export function Sidebar() {
           <button
             onClick={handleShowLogs}
             className={cn(
-              'w-full mt-3 flex items-center justify-center gap-2 py-2.5 rounded-lg',
+              'mt-3 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
               'bg-surface-elevated/60 border border-border/50',
               'hover:bg-surface-highlight hover:border-text-muted/30 transition-all text-sm',
               'text-text-secondary hover:text-text-primary'
@@ -304,29 +343,17 @@ export function Sidebar() {
 
         {/* Tools Section (MCP servers only) */}
         {isServer && (
-          <Section
-            title="Tools"
-            icon={Wrench}
-            count={(data as MCPServerNodeData).toolCount}
-          >
+          <Section title="Tools" icon={Wrench} count={(data as MCPServerNodeData).toolCount}>
             <ToolList serverName={data.name} />
           </Section>
         )}
 
         {/* Skills Section (Agents with A2A) */}
         {isAgent && hasA2A && (agentData?.skills?.length ?? 0) > 0 && (
-          <Section
-            title="Skills"
-            icon={Sparkles}
-            count={agentData?.skillCount}
-            defaultOpen
-          >
+          <Section title="Skills" icon={Sparkles} count={agentData?.skillCount} defaultOpen>
             <div className="space-y-2">
               {agentData?.skills?.map((skill, idx) => (
-                <div
-                  key={idx}
-                  className="px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30"
-                >
+                <div key={idx} className="px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30">
                   <span className="text-sm text-text-primary font-medium">{skill}</span>
                 </div>
               ))}
@@ -335,22 +362,17 @@ export function Sidebar() {
         )}
 
         {/* Access Section (Agents only - shows MCP server dependencies) */}
-        {isAgent && agentData?.uses && agentData.uses.length > 0 && (
-          <Section
-            title="Access"
-            icon={Network}
-            count={agentData.uses.length}
-            defaultOpen
-          >
+        {isAgent && agentData?.uses && (agentData.uses?.length ?? 0) > 0 && (
+          <Section title="Access" icon={Network} count={agentData.uses?.length ?? 0} defaultOpen>
             <div className="space-y-3">
-              {agentData.uses.map((selector: ToolSelector) => (
+              {(agentData.uses ?? []).map((selector: ToolSelector) => (
                 <AccessItem key={selector.server} selector={selector} />
               ))}
             </div>
           </Section>
         )}
       </div>
-    </aside>
+    </div>
   );
 }
 
@@ -393,13 +415,8 @@ function Section({ title, icon: Icon, count, defaultOpen = false, children }: Se
           )}
         </div>
       </button>
-      <div className={cn(
-        'overflow-hidden transition-all duration-200',
-        isOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
-      )}>
-        <div className="px-4 pb-4">
-          {children}
-        </div>
+      <div className={cn('overflow-hidden transition-all duration-200', isOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0')}>
+        <div className="px-4 pb-4">{children}</div>
       </div>
     </div>
   );
@@ -411,7 +428,7 @@ interface AccessItemProps {
 }
 
 function AccessItem({ selector }: AccessItemProps) {
-  const isRestricted = selector.tools && selector.tools.length > 0;
+  const isRestricted = selector.tools && (selector.tools?.length ?? 0) > 0;
 
   return (
     <div className="rounded-lg bg-surface-elevated border border-border/40 overflow-hidden">
@@ -421,12 +438,14 @@ function AccessItem({ selector }: AccessItemProps) {
           <Server size={12} className="text-violet-400" />
           <span className="text-xs font-medium text-violet-100">{selector.server}</span>
         </div>
-        <span className={cn(
-          'text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wider border',
-          isRestricted
-            ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
-            : 'border-violet-500/30 text-violet-400 bg-violet-500/5'
-        )}>
+        <span
+          className={cn(
+            'text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wider border',
+            isRestricted
+              ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
+              : 'border-violet-500/30 text-violet-400 bg-violet-500/5'
+          )}
+        >
           {isRestricted ? 'Restricted' : 'Full Access'}
         </span>
       </div>
@@ -436,21 +455,14 @@ function AccessItem({ selector }: AccessItemProps) {
         {isRestricted ? (
           <div className="space-y-1">
             {selector.tools?.map((toolName) => (
-              <div
-                key={toolName}
-                className="flex items-center gap-2 px-2 py-1.5 rounded bg-background/50"
-              >
+              <div key={toolName} className="flex items-center gap-2 px-2 py-1.5 rounded bg-background/50">
                 <Wrench size={10} className="text-primary flex-shrink-0" />
-                <span className="text-xs font-mono text-text-primary truncate">
-                  {toolName}
-                </span>
+                <span className="text-xs font-mono text-text-primary truncate">{toolName}</span>
               </div>
             ))}
           </div>
         ) : (
-          <span className="text-xs text-text-muted italic px-2">
-            Access to all available tools
-          </span>
+          <span className="text-xs text-text-muted italic px-2">Access to all available tools</span>
         )}
       </div>
     </div>
