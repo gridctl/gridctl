@@ -40,19 +40,19 @@ export function ToolList({ serverName, whitelist }: ToolListProps) {
   const tools = useStackStore((s) => s.tools);
 
   // Filter tools for this server (prefixed with serverName__)
-  let serverTools = tools.filter((t) =>
+  let serverTools = (tools ?? []).filter((t) =>
     t.name.startsWith(`${serverName}${TOOL_NAME_DELIMITER}`)
   );
 
   // If whitelist provided, further filter to only whitelisted tools
-  if (whitelist && whitelist.length > 0) {
+  if (whitelist && (whitelist?.length ?? 0) > 0) {
     const allowedPrefixed = new Set(
       whitelist.map((name) => `${serverName}${TOOL_NAME_DELIMITER}${name}`)
     );
     serverTools = serverTools.filter((t) => allowedPrefixed.has(t.name));
   }
 
-  if (serverTools.length === 0) {
+  if ((serverTools?.length ?? 0) === 0) {
     return (
       <p className="text-sm text-text-muted italic px-4 py-2">
         No tools available
@@ -62,7 +62,7 @@ export function ToolList({ serverName, whitelist }: ToolListProps) {
 
   return (
     <div className="space-y-1 px-2">
-      {serverTools.map((tool) => (
+      {(serverTools ?? []).map((tool) => (
         <ToolItem key={tool.name} tool={tool} />
       ))}
     </div>
