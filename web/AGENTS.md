@@ -259,7 +259,42 @@ These components access arrays that may be null during state transitions:
 | Canvas.tsx | `nodes`, `edges` | `(nodes ?? []).map()` |
 | ToolList.tsx | `tools`, `serverTools` | `(tools ?? []).filter()` |
 
-## 11. Checklist for New Components
+## 11. Detachable Windows (Pop-out)
+
+The UI supports detaching panels into separate browser windows for multi-monitor workflows.
+
+### Routes
+- `/logs` - Detached logs viewer with node selector
+- `/sidebar` - Detached sidebar with node selector
+
+### Components
+- **PopoutButton** (`src/components/ui/PopoutButton.tsx`): Pop-out icon button with hover glow effect
+- **useWindowManager** (`src/hooks/useWindowManager.ts`): Manages detached windows lifecycle
+- **useBroadcastChannel** (`src/hooks/useBroadcastChannel.ts`): Cross-window state sync
+
+### State Management
+- `logsDetached` and `sidebarDetached` in `useUIStore` track detached state
+- BroadcastChannel API enables real-time sync between windows
+- Windows notify main app on open/close for UI state updates
+
+### Window Configuration
+| Window | Size | Features |
+|--------|------|----------|
+| Logs | 900x500 | Node selector, pause/resume, fullscreen |
+| Sidebar | 420x700 | Node selector, collapsible sections |
+
+### Usage Pattern
+```tsx
+const { openDetachedWindow } = useWindowManager();
+
+// Open logs for specific agent
+openDetachedWindow('logs', `agent=${encodeURIComponent(agentName)}`);
+
+// Open sidebar for specific node
+openDetachedWindow('sidebar', `node=${encodeURIComponent(nodeName)}`);
+```
+
+## 12. Checklist for New Components
 
 1. Use Tailwind color tokens (no hardcoded hex values)
 2. Use `font-mono` for technical data, `font-sans` for UI
