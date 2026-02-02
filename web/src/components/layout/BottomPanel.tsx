@@ -10,7 +10,6 @@ import type { NodeData } from '../../types';
 
 export function BottomPanel() {
   const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
-  const bottomPanelHeight = useUIStore((s) => s.bottomPanelHeight);
   const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
 
   const selectedData = useSelectedNodeData() as NodeData | undefined;
@@ -104,22 +103,21 @@ export function BottomPanel() {
     }
   };
 
-  const headerHeight = 40;
-
   return (
     <div
       className={cn(
-        'bg-surface/90 backdrop-blur-xl border-t border-border/50 flex flex-col',
-        'transition-all duration-300 ease-out relative'
+        'h-full w-full',
+        'bg-surface/90 backdrop-blur-xl border-t border-border/50',
+        'flex flex-col relative',
+        'transition-all duration-300 ease-out'
       )}
-      style={{ height: bottomPanelOpen ? bottomPanelHeight : headerHeight }}
     >
       {/* Top accent line */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
 
-      {/* Header */}
+      {/* Header - Always visible */}
       <div
-        className="h-10 flex items-center justify-between px-4 cursor-pointer hover:bg-surface-highlight/30 transition-colors"
+        className="h-10 flex-shrink-0 flex items-center justify-between px-4 cursor-pointer hover:bg-surface-highlight/30 transition-colors"
         onClick={toggleBottomPanel}
       >
         <div className="flex items-center gap-3">
@@ -151,7 +149,7 @@ export function BottomPanel() {
           )}
         </div>
 
-        {bottomPanelOpen && agentName !== null && (
+        {agentName !== null && (
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <IconButton
               icon={isPaused ? Play : Pause}
@@ -161,13 +159,7 @@ export function BottomPanel() {
               variant="ghost"
               className={isPaused ? 'text-status-running hover:text-status-running' : ''}
             />
-            <IconButton
-              icon={Copy}
-              onClick={handleCopyLogs}
-              tooltip="Copy Logs"
-              size="sm"
-              variant="ghost"
-            />
+            <IconButton icon={Copy} onClick={handleCopyLogs} tooltip="Copy Logs" size="sm" variant="ghost" />
             <IconButton
               icon={Trash2}
               onClick={handleClearLogs}
@@ -180,12 +172,12 @@ export function BottomPanel() {
         )}
       </div>
 
-      {/* Content */}
+      {/* Content - Only visible when panel is open */}
       {bottomPanelOpen && (
         <div
           ref={containerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-auto font-mono text-xs p-4 bg-background/80 scrollbar-dark"
+          className="flex-1 overflow-auto font-mono text-xs p-4 bg-background/80 scrollbar-dark min-h-0"
         >
           {!agentName && (
             <div className="h-full flex flex-col items-center justify-center text-text-muted gap-2">
@@ -208,27 +200,25 @@ export function BottomPanel() {
             </div>
           )}
 
-          {agentName !== null && !isLoading && !error && logs.length === 0 && (
+          {agentName !== null && !isLoading && !error && (logs?.length ?? 0) === 0 && (
             <div className="text-text-muted">No logs available</div>
           )}
 
-          {agentName !== null && logs.map((line, i) => (
-            <div
-              key={i}
-              className={cn(
-                'py-0.5 whitespace-pre-wrap break-all leading-relaxed',
-                line.includes('ERROR') && 'text-status-error',
-                line.includes('WARN') && 'text-status-pending',
-                line.includes('INFO') && 'text-primary',
-                !line.includes('ERROR') &&
-                  !line.includes('WARN') &&
-                  !line.includes('INFO') &&
-                  'text-text-muted'
-              )}
-            >
-              {line}
-            </div>
-          ))}
+          {agentName !== null &&
+            (logs ?? []).map((line, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'py-0.5 whitespace-pre-wrap break-all leading-relaxed',
+                  line.includes('ERROR') && 'text-status-error',
+                  line.includes('WARN') && 'text-status-pending',
+                  line.includes('INFO') && 'text-primary',
+                  !line.includes('ERROR') && !line.includes('WARN') && !line.includes('INFO') && 'text-text-muted'
+                )}
+              >
+                {line}
+              </div>
+            ))}
         </div>
       )}
     </div>

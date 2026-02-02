@@ -173,9 +173,98 @@ Shows the MCP server dependencies for an agent with tool-level access visualizat
 </div>
 ```
 
-## 9. Checklist for New Components
+## 9. Layout Architecture
+
+### CSS Grid Main Layout
+The app uses CSS Grid for the main layout with four rows:
+
+```tsx
+// App.tsx grid structure
+<div style={{
+  display: 'grid',
+  gridTemplateRows: `${HEADER_HEIGHT}px 1fr ${bottomRowHeight}px ${STATUSBAR_HEIGHT}px`,
+  gridTemplateColumns: '1fr',
+}}>
+  <Header />           {/* Row 1: Fixed 56px */}
+  <main>               {/* Row 2: Flexible (1fr) */}
+    <Canvas />         {/* Fills main area */}
+    <Sidebar />        {/* Absolute overlay, right side */}
+  </main>
+  <BottomPanel />      {/* Row 3: 40px collapsed, 100-800px expanded */}
+  <StatusBar />        {/* Row 4: Fixed 32px */}
+</div>
+```
+
+### Resizable Panels
+Both sidebar and bottom panel support drag-to-resize:
+
+| Panel | Direction | Min | Default | Max |
+|-------|-----------|-----|---------|-----|
+| Sidebar | Horizontal (width) | 280px | 320px | 600px |
+| Bottom Panel | Vertical (height) | 100px | 250px | 800px |
+
+**ResizeHandle Component:** Thin handle with amber glow on hover/drag, positioned at panel edge.
+
+### Panel State Management
+- `useUIStore` manages `sidebarOpen` and `bottomPanelOpen` states
+- Sidebar uses CSS transform (`translate-x-full`) for show/hide animation
+- Bottom panel height controlled via grid row size
+
+## 10. Defensive Coding Patterns
+
+### Null Safety for Arrays
+Store state and API responses may contain `null` instead of empty arrays. Always use nullish coalescing when accessing array methods:
+
+```tsx
+// BAD - will crash if array is null
+const count = items.length;
+const filtered = items.filter(x => x.active);
+items.map(item => <Item key={item.id} />)
+
+// GOOD - safe with null fallback
+const count = (items ?? []).length;
+const filtered = (items ?? []).filter(x => x.active);
+(items ?? []).map(item => <Item key={item.id} />)
+```
+
+### Common Patterns
+
+**Length checks:**
+```tsx
+{(items?.length ?? 0) > 0 && <List items={items} />}
+```
+
+**Conditional rendering with maps:**
+```tsx
+{items && (items ?? []).map(item => (
+  <Item key={item.id} item={item} />
+))}
+```
+
+**Store selectors:**
+```tsx
+const mcpServers = useStackStore((s) => s.mcpServers);
+const count = (mcpServers ?? []).filter(s => s.initialized).length;
+```
+
+### Components Requiring Null Safety
+These components access arrays that may be null during state transitions:
+
+| Component | Arrays | Pattern |
+|-----------|--------|---------|
+| Header.tsx | `mcpServers` | `(mcpServers ?? []).filter()` |
+| StatusBar.tsx | `mcpServers`, `resources` | `(arr ?? []).length` |
+| Sidebar.tsx | `agentData.uses`, `selector.tools` | `(uses ?? []).map()` |
+| BottomPanel.tsx | `logs` | `(logs ?? []).map()` |
+| Canvas.tsx | `nodes`, `edges` | `(nodes ?? []).map()` |
+| ToolList.tsx | `tools`, `serverTools` | `(tools ?? []).filter()` |
+
+## 11. Checklist for New Components
 
 1. Use Tailwind color tokens (no hardcoded hex values)
 2. Use `font-mono` for technical data, `font-sans` for UI
 3. Use glass panels for floating containers
 4. Add hover states with glow/border changes
+5. **Use `?? []` fallback for all array `.length`, `.map()`, `.filter()` calls**
+6. **Use optional chaining (`?.`) when accessing nested properties**
+7. For resizable containers, use `min-h-0` to allow flex shrinking

@@ -34,12 +34,16 @@ export function createGatewayNode(
   agents: AgentStatus[]
 ): Node {
   // Calculate total tool count (MCP server tools + A2A agent skills)
-  const mcpToolCount = mcpServers.reduce((sum, s) => sum + s.toolCount, 0);
-  const a2aSkillCount = agents.reduce((sum, a) => sum + (a.skillCount || 0), 0);
+  const safeServers = mcpServers ?? [];
+  const safeResources = resources ?? [];
+  const safeAgents = agents ?? [];
+
+  const mcpToolCount = safeServers.reduce((sum, s) => sum + s.toolCount, 0);
+  const a2aSkillCount = safeAgents.reduce((sum, a) => sum + (a.skillCount || 0), 0);
   const totalToolCount = mcpToolCount + a2aSkillCount;
 
   // Count agents with A2A capability
-  const a2aAgentCount = agents.filter((a) => a.hasA2A).length;
+  const a2aAgentCount = safeAgents.filter((a) => a.hasA2A).length;
 
   return {
     id: GATEWAY_NODE_ID,
@@ -49,9 +53,9 @@ export function createGatewayNode(
       type: 'gateway',
       name: gatewayInfo.name,
       version: gatewayInfo.version,
-      serverCount: mcpServers.length,
-      resourceCount: resources.length,
-      agentCount: agents.length,
+      serverCount: safeServers.length,
+      resourceCount: safeResources.length,
+      agentCount: safeAgents.length,
       a2aAgentCount,
       totalToolCount,
     },

@@ -107,11 +107,11 @@ export function LogViewer({ agentName, onClose }: LogViewerProps) {
           <div className="text-status-error">Error: {error}</div>
         )}
 
-        {!isLoading && !error && logs.length === 0 && (
+        {!isLoading && !error && (logs?.length ?? 0) === 0 && (
           <div className="text-text-muted">No logs available</div>
         )}
 
-        {logs.map((line, i) => (
+        {(logs ?? []).map((line, i) => (
           <div
             key={i}
             className={cn(

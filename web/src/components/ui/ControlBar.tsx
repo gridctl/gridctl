@@ -47,7 +47,6 @@ export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
           disabled={isRestarting || isStopping}
           variant="primary"
           size="sm"
-          className="flex-1"
         >
           {isRestarting ? (
             <RefreshCw size={14} className="animate-spin" />
@@ -61,7 +60,6 @@ export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
           disabled={isRestarting || isStopping}
           variant="danger"
           size="sm"
-          className="flex-1"
         >
           <Square size={14} />
           {isStopping ? 'Stopping...' : 'Stop'}

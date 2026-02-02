@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
@@ -10,7 +11,6 @@ interface UIState {
 
   // Bottom panel state
   bottomPanelOpen: boolean;
-  bottomPanelHeight: number;
 
   // Actions
   setSidebarOpen: (open: boolean) => void;
@@ -22,28 +22,38 @@ interface UIState {
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
   toggleBottomPanel: () => void;
-  setBottomPanelHeight: (height: number) => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  sidebarOpen: false,
-  activeTab: 'details',
-  edgeStyle: 'default', // Bezier curves
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      sidebarOpen: false,
+      activeTab: 'details',
+      edgeStyle: 'default', // Bezier curves
 
-  // Bottom panel defaults
-  bottomPanelOpen: false,
-  bottomPanelHeight: 300,
+      // Bottom panel defaults
+      bottomPanelOpen: false,
 
-  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-  setActiveTab: (activeTab) => set({ activeTab }),
-  setEdgeStyle: (edgeStyle) => set({ edgeStyle }),
-  toggleEdgeStyle: () => set((s) => ({
-    edgeStyle: s.edgeStyle === 'default' ? 'straight' : 'default',
-  })),
+      setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+      setActiveTab: (activeTab) => set({ activeTab }),
+      setEdgeStyle: (edgeStyle) => set({ edgeStyle }),
+      toggleEdgeStyle: () =>
+        set((s) => ({
+          edgeStyle: s.edgeStyle === 'default' ? 'straight' : 'default',
+        })),
 
-  // Bottom panel actions
-  setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
-  toggleBottomPanel: () => set((s) => ({ bottomPanelOpen: !s.bottomPanelOpen })),
-  setBottomPanelHeight: (bottomPanelHeight) => set({ bottomPanelHeight }),
-}));
+      // Bottom panel actions
+      setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
+      toggleBottomPanel: () => set((s) => ({ bottomPanelOpen: !s.bottomPanelOpen })),
+    }),
+    {
+      name: 'gridctl-ui-storage',
+      partialize: (state) => ({
+        // Only persist edge style preference
+        edgeStyle: state.edgeStyle,
+        // Don't persist panel open state - start fresh each session
+      }),
+    }
+  )
+);
