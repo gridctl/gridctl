@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { ChevronDown, ChevronUp, Copy, Trash2, Pause, Play, Terminal } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
+import { PopoutButton } from '../ui/PopoutButton';
 import { useUIStore } from '../../stores/useUIStore';
 import { useSelectedNodeData } from '../../stores/useStackStore';
+import { useWindowManager } from '../../hooks/useWindowManager';
 import { fetchAgentLogs } from '../../lib/api';
 import { POLLING } from '../../lib/constants';
 import type { NodeData } from '../../types';
@@ -11,6 +13,8 @@ import type { NodeData } from '../../types';
 export function BottomPanel() {
   const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
   const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
+  const logsDetached = useUIStore((s) => s.logsDetached);
+  const { openDetachedWindow } = useWindowManager();
 
   const selectedData = useSelectedNodeData() as NodeData | undefined;
 
@@ -149,27 +153,35 @@ export function BottomPanel() {
           )}
         </div>
 
-        {agentName !== null && (
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <IconButton
-              icon={isPaused ? Play : Pause}
-              onClick={() => setIsPaused(!isPaused)}
-              tooltip={isPaused ? 'Resume' : 'Pause'}
-              size="sm"
-              variant="ghost"
-              className={isPaused ? 'text-status-running hover:text-status-running' : ''}
-            />
-            <IconButton icon={Copy} onClick={handleCopyLogs} tooltip="Copy Logs" size="sm" variant="ghost" />
-            <IconButton
-              icon={Trash2}
-              onClick={handleClearLogs}
-              tooltip="Clear Logs"
-              size="sm"
-              variant="ghost"
-              className="hover:text-status-error"
-            />
-          </div>
-        )}
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {agentName !== null && (
+            <>
+              <IconButton
+                icon={isPaused ? Play : Pause}
+                onClick={() => setIsPaused(!isPaused)}
+                tooltip={isPaused ? 'Resume' : 'Pause'}
+                size="sm"
+                variant="ghost"
+                className={isPaused ? 'text-status-running hover:text-status-running' : ''}
+              />
+              <IconButton icon={Copy} onClick={handleCopyLogs} tooltip="Copy Logs" size="sm" variant="ghost" />
+              <IconButton
+                icon={Trash2}
+                onClick={handleClearLogs}
+                tooltip="Clear Logs"
+                size="sm"
+                variant="ghost"
+                className="hover:text-status-error"
+              />
+              <div className="w-px h-4 bg-border/50 mx-0.5" />
+            </>
+          )}
+          <PopoutButton
+            onClick={() => openDetachedWindow('logs', agentName ? `agent=${encodeURIComponent(agentName)}` : undefined)}
+            tooltip="Open in new window"
+            disabled={logsDetached}
+          />
+        </div>
       </div>
 
       {/* Content - Only visible when panel is open */}

@@ -20,16 +20,20 @@ import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
 import { ControlBar } from '../ui/ControlBar';
+import { PopoutButton } from '../ui/PopoutButton';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
+import { useWindowManager } from '../../hooks/useWindowManager';
 import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, ToolSelector } from '../../types';
 
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
+  const sidebarDetached = useUIStore((s) => s.sidebarDetached);
   const selectNode = useStackStore((s) => s.selectNode);
+  const { openDetachedWindow } = useWindowManager();
 
   // Don't render content if no valid selection
   if (!selectedData || selectedData.type === 'gateway') {
@@ -74,6 +78,10 @@ export function Sidebar() {
 
   const handleShowLogs = () => {
     setBottomPanelOpen(true);
+  };
+
+  const handlePopout = () => {
+    openDetachedWindow('sidebar', `node=${encodeURIComponent(data.name)}`);
   };
 
   return (
@@ -163,9 +171,16 @@ export function Sidebar() {
             </div>
           </div>
         </div>
-        <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
-          <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
-        </button>
+        <div className="flex items-center gap-1">
+          <PopoutButton
+            onClick={handlePopout}
+            tooltip="Open in new window"
+            disabled={sidebarDetached}
+          />
+          <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
+            <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
+          </button>
+        </div>
       </div>
 
       {/* Content */}

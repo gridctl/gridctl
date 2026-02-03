@@ -12,6 +12,10 @@ interface UIState {
   // Bottom panel state
   bottomPanelOpen: boolean;
 
+  // Detached window state
+  logsDetached: boolean;
+  sidebarDetached: boolean;
+
   // Actions
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
@@ -22,6 +26,10 @@ interface UIState {
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
   toggleBottomPanel: () => void;
+
+  // Detached window actions
+  setLogsDetached: (detached: boolean) => void;
+  setSidebarDetached: (detached: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -33,6 +41,10 @@ export const useUIStore = create<UIState>()(
 
       // Bottom panel defaults
       bottomPanelOpen: false,
+
+      // Detached window defaults
+      logsDetached: false,
+      sidebarDetached: false,
 
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -46,6 +58,10 @@ export const useUIStore = create<UIState>()(
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
       toggleBottomPanel: () => set((s) => ({ bottomPanelOpen: !s.bottomPanelOpen })),
+
+      // Detached window actions
+      setLogsDetached: (logsDetached) => set({ logsDetached }),
+      setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
     }),
     {
       name: 'gridctl-ui-storage',

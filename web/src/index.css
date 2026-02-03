@@ -688,3 +688,30 @@ body::before {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================
+   DETACHED WINDOW STYLES
+   ============================================ */
+
+/* Shadow glow variants for status colors */
+.shadow-glow-success {
+  box-shadow: 0 0 12px var(--color-status-running-glow);
+}
+
+.shadow-glow-error {
+  box-shadow: 0 0 12px var(--color-status-error-glow);
+}
+
+/* Detached window indicator pulse */
+@keyframes detached-pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.detached-indicator {
+  animation: detached-pulse 2s ease-in-out infinite;
+}
