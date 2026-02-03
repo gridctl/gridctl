@@ -95,7 +95,9 @@ gridctl/
 │   ├── dockerclient/     # Docker client interface
 │   │   └── interface.go  # Interface definition for mocking
 │   ├── logging/          # Logging utilities
-│   │   └── discard.go    # Discard logger
+│   │   ├── discard.go    # Discard logger
+│   │   ├── buffer.go     # In-memory circular log buffer for API
+│   │   └── structured.go # Structured slog handler with buffering
 │   ├── runtime/          # Workload orchestration (runtime-agnostic)
 │   │   ├── interface.go  # WorkloadRuntime interface + types
 │   │   ├── orchestrator.go # High-level Up/Down/Status
@@ -250,9 +252,14 @@ When `gridctl deploy` runs, it:
 
 **Endpoints:**
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
-- **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/health`, `/ready`
+- **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/api/logs`, `/health`, `/ready`
 - **A2A:** `/.well-known/agent.json`, `/a2a/{agent}` (GET card, POST JSON-RPC)
 - **Web UI:** `GET /`
+
+**Logs API:**
+- `GET /api/logs` - Returns structured gateway logs as JSON array
+- Query params: `lines` (default 100), `level` (filter by log level)
+- Response: `LogEntry[]` with fields: `level`, `ts`, `msg`, `component`, `trace_id`, `attrs`
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
