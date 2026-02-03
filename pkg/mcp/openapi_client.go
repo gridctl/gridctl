@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // Default HTTP timeout for OpenAPI requests
@@ -37,6 +39,7 @@ type OpenAPIClient struct {
 	includeOps map[string]bool
 	excludeOps map[string]bool
 	httpClient *http.Client
+	logger     *slog.Logger
 	noExpand   bool // If true, skip environment variable expansion in spec file
 
 	mu            sync.RWMutex
@@ -69,6 +72,7 @@ func NewOpenAPIClient(name string, cfg *OpenAPIClientConfig) (*OpenAPIClient, er
 		authHeader: cfg.AuthHeader,
 		authValue:  cfg.AuthValue,
 		httpClient: &http.Client{Timeout: defaultOpenAPITimeout},
+		logger:     logging.NewDiscardLogger(),
 		operations: make(map[string]*OpenAPIOperation),
 		noExpand:   cfg.NoExpand,
 	}
@@ -92,6 +96,13 @@ func NewOpenAPIClient(name string, cfg *OpenAPIClientConfig) (*OpenAPIClient, er
 // Name returns the client name.
 func (c *OpenAPIClient) Name() string {
 	return c.name
+}
+
+// SetLogger sets the logger for this client.
+func (c *OpenAPIClient) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		c.logger = logger
+	}
 }
 
 // SetToolWhitelist sets the list of allowed tool names.
@@ -217,6 +228,8 @@ func (c *OpenAPIClient) Tools() []Tool {
 
 // CallTool executes an OpenAPI operation.
 func (c *OpenAPIClient) CallTool(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+	c.logger.Debug("sending request", "method", "tools/call", "tool", name)
+
 	c.mu.RLock()
 	op, ok := c.operations[name]
 	c.mu.RUnlock()
@@ -241,6 +254,7 @@ func (c *OpenAPIClient) CallTool(ctx context.Context, name string, args map[stri
 	// Build and execute HTTP request
 	resp, statusCode, err := c.executeOperation(ctx, op, args)
 	if err != nil {
+		c.logger.Debug("request failed", "tool", name, "error", err)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("error: %v", err))},
 			IsError: true,
@@ -249,12 +263,14 @@ func (c *OpenAPIClient) CallTool(ctx context.Context, name string, args map[stri
 
 	// Check for error status codes
 	if statusCode >= 400 {
+		c.logger.Debug("received error response", "tool", name, "status", statusCode)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("HTTP %d: %s", statusCode, resp))},
 			IsError: true,
 		}, nil
 	}
 
+	c.logger.Debug("received response", "tool", name, "status", statusCode)
 	return &ToolCallResult{
 		Content: []Content{NewTextContent(resp)},
 	}, nil

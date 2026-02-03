@@ -49,6 +49,30 @@ function toLogLevel(raw: string | undefined): LogLevel {
   return VALID_LEVELS.has(upper) ? (upper as LogLevel) : 'INFO';
 }
 
+// Matches Docker timestamp prefix: 2026-02-03T15:22:01.637603230Z
+const DOCKER_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+/;
+
+// Matches slog text format: time=2026-... level=INFO msg="..." [key=value ...]
+const SLOG_TEXT_RE = /^time=(\S+)\s+level=(\S+)\s+msg=("(?:[^"\\]|\\.)*"|\S+)(.*)/;
+
+// Parses slog text key=value pairs from the remainder string.
+// Handles quoted values: key="value with spaces"
+function parseSlogAttrs(remainder: string): Record<string, string> | undefined {
+  const attrs: Record<string, string> = {};
+  const re = /\s+([a-zA-Z_][\w.]*)=((?:"(?:[^"\\]|\\.)*"|\S+))/g;
+  let match;
+  let found = false;
+  while ((match = re.exec(remainder)) !== null) {
+    found = true;
+    let val = match[2];
+    if (val.startsWith('"') && val.endsWith('"')) {
+      val = val.slice(1, -1);
+    }
+    attrs[match[1]] = val;
+  }
+  return found ? attrs : undefined;
+}
+
 export function parseLogEntry(input: string | LogEntry): ParsedLog {
   if (typeof input === 'object') {
     return {
@@ -62,6 +86,7 @@ export function parseLogEntry(input: string | LogEntry): ParsedLog {
     };
   }
 
+  // Try JSON first
   try {
     const parsed = JSON.parse(input);
     return {
@@ -74,21 +99,51 @@ export function parseLogEntry(input: string | LogEntry): ParsedLog {
       raw: input,
     };
   } catch {
-    const level: LogLevel = input.includes('ERROR')
-      ? 'ERROR'
-      : input.includes('WARN')
-        ? 'WARN'
-        : input.includes('INFO')
-          ? 'INFO'
-          : 'DEBUG';
+    // Not JSON — try structured text formats
+  }
 
+  // Strip Docker timestamp prefix if present
+  let line = input;
+  let dockerTs = '';
+  const dockerMatch = DOCKER_TS_RE.exec(line);
+  if (dockerMatch) {
+    dockerTs = dockerMatch[1];
+    line = line.slice(dockerMatch[0].length);
+  }
+
+  // Try slog text format: time=... level=... msg="..."
+  const slogMatch = SLOG_TEXT_RE.exec(line);
+  if (slogMatch) {
+    let msg = slogMatch[3];
+    if (msg.startsWith('"') && msg.endsWith('"')) {
+      msg = msg.slice(1, -1);
+    }
+    const attrs = parseSlogAttrs(slogMatch[4]);
     return {
-      level,
-      timestamp: '',
-      message: input,
+      level: toLogLevel(slogMatch[2]),
+      timestamp: slogMatch[1] || dockerTs,
+      message: msg,
+      component: attrs?.component,
+      attrs,
       raw: input,
     };
   }
+
+  // Plain text — detect level from keywords
+  const level: LogLevel = line.includes('ERROR')
+    ? 'ERROR'
+    : line.includes('WARN')
+      ? 'WARN'
+      : line.includes('INFO')
+        ? 'INFO'
+        : 'DEBUG';
+
+  return {
+    level,
+    timestamp: dockerTs,
+    message: line,
+    raw: input,
+  };
 }
 
 export function formatTimestamp(ts: string): string {

@@ -326,16 +326,16 @@ interface LogEntry {
 
 ### Log Line Layout
 
-Each log line uses a CSS grid layout with fixed column widths:
+Each log line uses a CSS grid layout with em-based column widths that scale with the `--log-font-size` custom property:
 
 ```tsx
 // LogLine grid structure
-<div className="grid gap-2 px-3 py-1 grid-cols-[90px_50px_80px_1fr_20px]">
-  <span>Timestamp</span>   {/* 90px - HH:MM:SS.mmm format */}
-  <span>Level Badge</span> {/* 50px - Colored badge with dot */}
-  <span>Component</span>   {/* 80px - Truncated component name */}
-  <span>Message</span>     {/* 1fr - Flexible message area */}
-  <span>Expand Icon</span> {/* 20px - ChevronRight when expandable */}
+<div className="grid gap-2 px-3 py-1 log-text grid-cols-[8.5em_5.5em_7.5em_1fr_2em]">
+  <span>Timestamp</span>   {/* 8.5em - HH:MM:SS.mmm format */}
+  <span>Level Badge</span> {/* 5.5em - Colored badge with dot */}
+  <span>Component</span>   {/* 7.5em - Truncated component name */}
+  <span>Message</span>     {/* 1fr  - Flexible message area, truncated */}
+  <span>Expand Icon</span> {/* 2em  - ChevronRight indicator */}
 </div>
 ```
 
@@ -345,7 +345,7 @@ Each log line uses a CSS grid layout with fixed column widths:
 |---------|-------------|
 | **Level Filter** | Dropdown with checkboxes to toggle ERROR, WARN, INFO, DEBUG visibility |
 | **Search** | Text input filters by message, component, or trace_id |
-| **Expandable Entries** | Click log lines with attrs/trace_id to show full JSON details |
+| **Expandable Entries** | Click any log line to expand full wrapped message, attrs, and trace_id |
 | **Auto-scroll** | Automatically scrolls to bottom; pauses when user scrolls up |
 | **Gateway Badge** | "Structured" badge shown when viewing gateway logs |
 | **Text Zoom** | +/- controls and Ctrl+Scroll to scale log text size (8-22px, persisted) |
@@ -355,11 +355,11 @@ Each log line uses a CSS grid layout with fixed column widths:
 All log components are extracted into `src/components/log/` and shared between BottomPanel and DetachedLogsPage:
 
 - **LevelFilter**: Dropdown component with level toggle checkboxes
-- **LogLine**: Individual log entry with expand/collapse functionality
+- **LogLine**: Individual log entry with expand/collapse; expanded view shows full message with `whitespace-pre-wrap break-words`, plus attrs and trace_id when present
 - **ZoomControls**: Compact +/- buttons with font size display and reset
-- **parseLogEntry()**: Parses string or LogEntry into normalized ParsedLog format
+- **parseLogEntry()**: Parses string or LogEntry into normalized ParsedLog format. Handles JSON, Docker timestamp prefixes (`2026-...Z `), Go slog text format (`time=... level=... msg=...` with key=value attrs), and plain text with level keyword detection
 - **formatTimestamp()**: Formats RFC3339 timestamps to HH:MM:SS.mmm
-- **logTypes.ts**: Shared types (LogLevel, ParsedLog) and level styling constants
+- **logTypes.ts**: Shared types (LogLevel, ParsedLog), level styling constants, and parsing regexes
 
 ### Text Zoom
 
