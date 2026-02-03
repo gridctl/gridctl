@@ -348,17 +348,37 @@ Each log line uses a CSS grid layout with fixed column widths:
 | **Expandable Entries** | Click log lines with attrs/trace_id to show full JSON details |
 | **Auto-scroll** | Automatically scrolls to bottom; pauses when user scrolls up |
 | **Gateway Badge** | "Structured" badge shown when viewing gateway logs |
+| **Text Zoom** | +/- controls and Ctrl+Scroll to scale log text size (8-22px, persisted) |
 
-### Components
+### Components (Shared Module: `components/log/`)
+
+All log components are extracted into `src/components/log/` and shared between BottomPanel and DetachedLogsPage:
 
 - **LevelFilter**: Dropdown component with level toggle checkboxes
 - **LogLine**: Individual log entry with expand/collapse functionality
+- **ZoomControls**: Compact +/- buttons with font size display and reset
 - **parseLogEntry()**: Parses string or LogEntry into normalized ParsedLog format
 - **formatTimestamp()**: Formats RFC3339 timestamps to HH:MM:SS.mmm
+- **logTypes.ts**: Shared types (LogLevel, ParsedLog) and level styling constants
+
+### Text Zoom
+
+Log text size is controlled via the `--log-font-size` CSS custom property set on the log container.
+
+| Element | CSS Class | Behavior |
+|---------|-----------|----------|
+| Log text | `.log-text` | Uses `var(--log-font-size, 11px)` with line-height 1.5 |
+| Detail text | `.log-text-detail` | Uses `calc(var(--log-font-size) - 1px)` with line-height 1.4 |
+
+**Hook: `useLogFontSize(containerRef)`**
+- Default: 11px, Range: 8-22px, Step: 1px
+- Persisted to `localStorage` key `gridctl-log-font-size`
+- Ctrl+Scroll zoom within the log container (non-passive wheel handler)
+- Returns: `{ fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault }`
 
 ### Shared Implementation
 
-Both `BottomPanel.tsx` and `DetachedLogsPage.tsx` share identical structured logging components (LevelFilter, LogLine, parseLogEntry, formatTimestamp) to ensure consistent behavior in attached and detached modes.
+Both `BottomPanel.tsx` and `DetachedLogsPage.tsx` import from `components/log/` to ensure consistent behavior in attached and detached modes.
 
 ## 13. Checklist for New Components
 

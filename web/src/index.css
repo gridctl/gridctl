@@ -690,6 +690,22 @@ body::before {
 }
 
 /* ============================================
+   LOG VIEWER - Font size scaling
+   ============================================ */
+
+/* Log text uses a CSS custom property for font sizing.
+   Set --log-font-size on the log container to control all log text. */
+.log-text {
+  font-size: var(--log-font-size, 11px);
+  line-height: 1.5;
+}
+
+.log-text-detail {
+  font-size: calc(var(--log-font-size, 11px) - 1px);
+  line-height: 1.4;
+}
+
+/* ============================================
    DETACHED WINDOW STYLES
    ============================================ */
 
