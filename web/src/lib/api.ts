@@ -93,6 +93,35 @@ export async function stopAgent(name: string): Promise<void> {
   }
 }
 
+// === Structured Log Entry (from gateway) ===
+
+export interface LogEntry {
+  level: string;     // "DEBUG", "INFO", "WARN", "ERROR"
+  ts: string;        // RFC3339Nano timestamp
+  msg: string;       // Log message
+  component?: string; // Component name (e.g., "gateway", "router")
+  trace_id?: string;  // Trace ID for correlation
+  attrs?: Record<string, unknown>; // Additional attributes
+}
+
+/**
+ * Fetch structured gateway logs
+ * GET /api/logs
+ */
+export async function fetchGatewayLogs(lines = 100, level?: string): Promise<LogEntry[]> {
+  let url = `${API_BASE}/api/logs?lines=${lines}`;
+  if (level) {
+    url += `&level=${encodeURIComponent(level)}`;
+  }
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Logs fetch failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 // === JSON-RPC Helper (for MCP protocol calls) ===
 
 interface JSONRPCRequest {
