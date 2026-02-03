@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/logging"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -22,6 +24,7 @@ type StdioClient struct {
 	containerID string
 	cli         dockerclient.DockerClient
 	requestID   atomic.Int64
+	logger      *slog.Logger
 
 	mu            sync.RWMutex
 	initialized   bool
@@ -46,7 +49,15 @@ func NewStdioClient(name, containerID string, cli dockerclient.DockerClient) *St
 		name:        name,
 		containerID: containerID,
 		cli:         cli,
+		logger:      logging.NewDiscardLogger(),
 		responses:   make(map[int64]chan *Response),
+	}
+}
+
+// SetLogger sets the logger for this client.
+func (c *StdioClient) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		c.logger = logger
 	}
 }
 
@@ -120,7 +131,7 @@ func (c *StdioClient) readResponses() {
 
 		var resp Response
 		if err := json.Unmarshal(line, &resp); err != nil {
-			// Not a valid JSON-RPC response, might be log output
+			c.logger.Info("server output", "msg", string(line))
 			continue
 		}
 
@@ -268,11 +279,14 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 	c.responses[id] = respCh
 	c.responsesMu.Unlock()
 
+	c.logger.Debug("sending request", "method", method, "id", id)
+
 	// Send request
 	if err := c.send(req); err != nil {
 		c.responsesMu.Lock()
 		delete(c.responses, id)
 		c.responsesMu.Unlock()
+		c.logger.Debug("request failed", "method", method, "id", id, "error", err)
 		return err
 	}
 
@@ -290,11 +304,14 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 		c.responsesMu.Lock()
 		delete(c.responses, id)
 		c.responsesMu.Unlock()
+		c.logger.Debug("request timed out", "method", method, "id", id)
 		return fmt.Errorf("timeout waiting for response from container")
 	case resp := <-respCh:
 		if resp.Error != nil {
+			c.logger.Debug("received error response", "method", method, "id", id, "code", resp.Error.Code, "message", resp.Error.Message)
 			return fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 		}
+		c.logger.Debug("received response", "method", method, "id", id)
 		if result != nil && len(resp.Result) > 0 {
 			if err := json.Unmarshal(resp.Result, result); err != nil {
 				return fmt.Errorf("unmarshaling result: %w", err)

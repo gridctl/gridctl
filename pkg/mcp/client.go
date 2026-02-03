@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // Client communicates with a downstream MCP server.
@@ -19,6 +22,7 @@ type Client struct {
 	endpoint   string
 	httpClient *http.Client
 	requestID  atomic.Int64
+	logger     *slog.Logger
 
 	mu            sync.RWMutex
 	initialized   bool
@@ -33,9 +37,17 @@ func NewClient(name, endpoint string) *Client {
 	return &Client{
 		name:     name,
 		endpoint: endpoint,
+		logger:   logging.NewDiscardLogger(),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+	}
+}
+
+// SetLogger sets the logger for this client.
+func (c *Client) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		c.logger = logger
 	}
 }
 
@@ -177,14 +189,20 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 		Params:  paramsBytes,
 	}
 
+	c.logger.Debug("sending request", "method", method, "id", id)
+
 	resp, err := c.send(ctx, req)
 	if err != nil {
+		c.logger.Debug("request failed", "method", method, "id", id, "error", err)
 		return err
 	}
 
 	if resp.Error != nil {
+		c.logger.Debug("received error response", "method", method, "id", id, "code", resp.Error.Code, "message", resp.Error.Message)
 		return fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 	}
+
+	c.logger.Debug("received response", "method", method, "id", id)
 
 	if result != nil && len(resp.Result) > 0 {
 		if err := json.Unmarshal(resp.Result, result); err != nil {

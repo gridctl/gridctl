@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // ProcessClient communicates with an MCP server via a local process stdin/stdout.
@@ -21,6 +24,7 @@ type ProcessClient struct {
 	workDir   string
 	env       []string
 	requestID atomic.Int64
+	logger    *slog.Logger
 
 	mu            sync.RWMutex
 	initialized   bool
@@ -55,7 +59,15 @@ func NewProcessClient(name string, command []string, workDir string, env map[str
 		command:   command,
 		workDir:   workDir,
 		env:       envList,
+		logger:    logging.NewDiscardLogger(),
 		responses: make(map[int64]chan *Response),
+	}
+}
+
+// SetLogger sets the logger for this client.
+func (c *ProcessClient) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		c.logger = logger
 	}
 }
 
@@ -138,7 +150,7 @@ func (c *ProcessClient) readResponses() {
 
 		var resp Response
 		if err := json.Unmarshal(line, &resp); err != nil {
-			// Not a valid JSON-RPC response, might be log output
+			c.logger.Info("server output", "msg", string(line))
 			continue
 		}
 
@@ -286,11 +298,14 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 	c.responses[id] = respCh
 	c.responsesMu.Unlock()
 
+	c.logger.Debug("sending request", "method", method, "id", id)
+
 	// Send request
 	if err := c.send(req); err != nil {
 		c.responsesMu.Lock()
 		delete(c.responses, id)
 		c.responsesMu.Unlock()
+		c.logger.Debug("request failed", "method", method, "id", id, "error", err)
 		return err
 	}
 
@@ -308,11 +323,14 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 		c.responsesMu.Lock()
 		delete(c.responses, id)
 		c.responsesMu.Unlock()
+		c.logger.Debug("request timed out", "method", method, "id", id)
 		return fmt.Errorf("timeout waiting for response from process")
 	case resp := <-respCh:
 		if resp.Error != nil {
+			c.logger.Debug("received error response", "method", method, "id", id, "code", resp.Error.Code, "message", resp.Error.Message)
 			return fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 		}
+		c.logger.Debug("received response", "method", method, "id", id)
 		if result != nil && len(resp.Result) > 0 {
 			if err := json.Unmarshal(resp.Result, result); err != nil {
 				return fmt.Errorf("unmarshaling result: %w", err)

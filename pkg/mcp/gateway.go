@@ -115,6 +115,7 @@ func (g *Gateway) ServerInfo() ServerInfo {
 // RegisterMCPServer registers and initializes an MCP server.
 func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) error {
 	var agentClient AgentClient
+	clientLogger := g.logger.With("server", cfg.Name)
 
 	// Handle OpenAPI servers
 	if cfg.OpenAPI {
@@ -125,6 +126,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 		if err != nil {
 			return fmt.Errorf("creating OpenAPI client %s: %w", cfg.Name, err)
 		}
+		openAPIClient.SetLogger(clientLogger)
 		if len(cfg.Tools) > 0 {
 			openAPIClient.SetToolWhitelist(cfg.Tools)
 		}
@@ -133,6 +135,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 		// Handle SSH servers (they use stdio over SSH)
 		sshCommand := buildSSHCommand(cfg)
 		processClient := NewProcessClient(cfg.Name, sshCommand, cfg.WorkDir, cfg.Env)
+		processClient.SetLogger(clientLogger)
 		if len(cfg.Tools) > 0 {
 			processClient.SetToolWhitelist(cfg.Tools)
 		}
@@ -143,6 +146,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 	} else if cfg.LocalProcess {
 		// Handle local process servers (they use stdio but not Docker)
 		processClient := NewProcessClient(cfg.Name, cfg.Command, cfg.WorkDir, cfg.Env)
+		processClient.SetLogger(clientLogger)
 		if len(cfg.Tools) > 0 {
 			processClient.SetToolWhitelist(cfg.Tools)
 		}
@@ -157,6 +161,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 				return fmt.Errorf("Docker client not set for stdio transport")
 			}
 			stdioClient := NewStdioClient(cfg.Name, cfg.ContainerID, g.dockerCli)
+			stdioClient.SetLogger(clientLogger)
 			if len(cfg.Tools) > 0 {
 				stdioClient.SetToolWhitelist(cfg.Tools)
 			}
@@ -167,6 +172,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 		case TransportSSE:
 			// SSE transport - uses same HTTP client which handles text/event-stream responses
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
+			httpClient.SetLogger(clientLogger)
 			if len(cfg.Tools) > 0 {
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}
@@ -177,6 +183,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 			agentClient = httpClient
 		case TransportHTTP, "": // Default to HTTP
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
+			httpClient.SetLogger(clientLogger)
 			if len(cfg.Tools) > 0 {
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}
@@ -409,14 +416,21 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		}, nil
 	}
 
+	g.logger.Info("tool call started", "server", client.Name(), "tool", toolName)
+	start := time.Now()
+
 	result, err := client.CallTool(ctx, toolName, params.Arguments)
+	duration := time.Since(start)
+
 	if err != nil {
+		g.logger.Warn("tool call failed", "server", client.Name(), "tool", toolName, "duration", duration, "error", err)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error calling tool: %v", err))},
 			IsError: true,
 		}, nil
 	}
 
+	g.logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
 	return result, nil
 }
 
