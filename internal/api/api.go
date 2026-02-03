@@ -12,6 +12,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/a2a"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 
@@ -27,6 +28,7 @@ type Server struct {
 	staticFS     fs.FS
 	dockerClient dockerclient.DockerClient
 	stackName    string
+	logBuffer    *logging.LogBuffer
 }
 
 // NewServer creates a new API server.
@@ -59,6 +61,16 @@ func (s *Server) SetStackName(name string) {
 	s.stackName = name
 }
 
+// SetLogBuffer sets the log buffer for gateway logs.
+func (s *Server) SetLogBuffer(buffer *logging.LogBuffer) {
+	s.logBuffer = buffer
+}
+
+// LogBuffer returns the log buffer for gateway logs.
+func (s *Server) LogBuffer() *logging.LogBuffer {
+	return s.logBuffer
+}
+
 // Handler returns the main HTTP handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -78,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
+	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ready", s.handleReady)
 
@@ -608,6 +621,51 @@ func (s *Server) handleAgentStop(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	writeJSON(w, map[string]string{"status": "stopped", "agent": agentName})
+}
+
+// handleGatewayLogs returns structured logs from the gateway log buffer.
+// GET /api/logs?lines=100&level=error,warn,info
+func (s *Server) handleGatewayLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.logBuffer == nil {
+		writeJSON(w, []logging.BufferedEntry{})
+		return
+	}
+
+	// Get number of lines from query param (default 100)
+	lines := 100
+	if linesParam := r.URL.Query().Get("lines"); linesParam != "" {
+		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
+			lines = n
+		}
+	}
+
+	entries := s.logBuffer.GetRecent(lines)
+
+	// Filter by level if specified
+	if levelParam := r.URL.Query().Get("level"); levelParam != "" {
+		levels := make(map[string]bool)
+		for _, l := range strings.Split(levelParam, ",") {
+			levels[strings.ToUpper(strings.TrimSpace(l))] = true
+		}
+
+		filtered := make([]logging.BufferedEntry, 0, len(entries))
+		for _, entry := range entries {
+			if levels[entry.Level] {
+				filtered = append(filtered, entry)
+			}
+		}
+		entries = filtered
+	}
+
+	if entries == nil {
+		entries = []logging.BufferedEntry{}
+	}
+	writeJSON(w, entries)
 }
 
 // handleHealth returns 200 OK when the daemon is alive and serving requests.
