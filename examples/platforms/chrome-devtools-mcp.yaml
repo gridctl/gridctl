@@ -1,0 +1,29 @@
+# Chrome DevTools MCP Server Example
+#
+# This stack provides access to Chrome DevTools via Google's official MCP
+# server, enabling AI agents to control Chrome for browser automation,
+# debugging, performance tracing, and web scraping.
+#
+# Prerequisites:
+#   - Node.js v20.19+ (or v22.12+ or v23+)
+#   - Google Chrome installed on the host
+#
+# Usage:
+#   gridctl deploy examples/platforms/chrome-devtools-mcp.yaml
+#
+# Note:
+#   On first run, Chrome will launch automatically. To connect to an
+#   already-running Chrome instance, add --browserUrl http://127.0.0.1:9222
+#   (Chrome must be started with --remote-debugging-port=9222).
+#
+# Reference:
+#   https://github.com/ChromeDevTools/chrome-devtools-mcp
+
+version: "1"
+name: chrome-devtools-mcp
+
+mcp-servers:
+  - name: chrome-devtools
+    command: ["npx", "-y", "chrome-devtools-mcp@latest"]
+    env:
+      CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "true"
