@@ -55,7 +55,13 @@ func expandEnvVars(s *Stack) {
 	for i := range s.MCPServers {
 		s.MCPServers[i].Name = os.ExpandEnv(s.MCPServers[i].Name)
 		s.MCPServers[i].Image = os.ExpandEnv(s.MCPServers[i].Image)
+		s.MCPServers[i].URL = os.ExpandEnv(s.MCPServers[i].URL)
 		s.MCPServers[i].Network = os.ExpandEnv(s.MCPServers[i].Network)
+
+		// Expand command arguments (for local process servers using env vars in URLs)
+		for j := range s.MCPServers[i].Command {
+			s.MCPServers[i].Command[j] = os.ExpandEnv(s.MCPServers[i].Command[j])
+		}
 
 		if s.MCPServers[i].Source != nil {
 			s.MCPServers[i].Source.URL = os.ExpandEnv(s.MCPServers[i].Source.URL)
@@ -94,11 +100,20 @@ func expandEnvVars(s *Stack) {
 		}
 	}
 
+	for i := range s.A2AAgents {
+		s.A2AAgents[i].Name = os.ExpandEnv(s.A2AAgents[i].Name)
+		s.A2AAgents[i].URL = os.ExpandEnv(s.A2AAgents[i].URL)
+	}
+
 	for i := range s.Agents {
 		s.Agents[i].Name = os.ExpandEnv(s.Agents[i].Name)
 		s.Agents[i].Image = os.ExpandEnv(s.Agents[i].Image)
 		s.Agents[i].Description = os.ExpandEnv(s.Agents[i].Description)
 		s.Agents[i].Network = os.ExpandEnv(s.Agents[i].Network)
+
+		for j := range s.Agents[i].Command {
+			s.Agents[i].Command[j] = os.ExpandEnv(s.Agents[i].Command[j])
+		}
 
 		if s.Agents[i].Source != nil {
 			s.Agents[i].Source.URL = os.ExpandEnv(s.Agents[i].Source.URL)

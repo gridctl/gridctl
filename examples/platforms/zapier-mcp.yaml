@@ -1,0 +1,32 @@
+# Zapier MCP Server Example
+#
+# This stack provides access to Zapier's MCP server, enabling AI agents to
+# interact with 8,000+ apps through Zapier's automation platform.
+#
+# Prerequisites:
+#   - A Zapier account (free plan or higher)
+#   - Node.js installed (for npx/mcp-remote)
+#   - A Zapier MCP server configured at https://mcp.zapier.com
+#
+# Setup:
+#   1. Visit https://mcp.zapier.com and create a new MCP server
+#   2. Add the tools/actions you want (e.g., Gmail, Slack, Google Calendar)
+#   3. OAuth authentication is handled automatically via browser flow on first use
+#
+# Usage:
+#   gridctl deploy examples/platforms/zapier-mcp.yaml
+#
+# Note:
+#   Uses mcp-remote to bridge Zapier's HTTP endpoint to stdio. On first
+#   connection, a browser window will open for OAuth authentication.
+#   Run with --foreground to see the auth prompt.
+#
+# Reference:
+#   https://zapier.com/mcp
+
+version: "1"
+name: zapier-mcp
+
+mcp-servers:
+  - name: zapier
+    command: ["npx", "mcp-remote", "https://mcp.zapier.com/api/v1/connect"]

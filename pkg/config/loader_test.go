@@ -108,6 +108,109 @@ mcp-servers:
 	}
 }
 
+func TestLoadStack_EnvExpansion_CommandAndURL(t *testing.T) {
+	os.Setenv("TEST_MCP_URL", "https://actions.zapier.com/mcp/sk-ak-test123/sse")
+	os.Setenv("TEST_EXTERNAL_URL", "https://api.example.com/mcp")
+	defer os.Unsetenv("TEST_MCP_URL")
+	defer os.Unsetenv("TEST_EXTERNAL_URL")
+
+	content := `
+name: test-lab
+network:
+  name: test-net
+mcp-servers:
+  - name: zapier
+    command: ["npx", "mcp-remote", "${TEST_MCP_URL}"]
+  - name: external
+    url: "${TEST_EXTERNAL_URL}"
+    transport: http
+`
+	path := writeTempFile(t, content)
+
+	topo, err := LoadStack(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify command env expansion
+	if len(topo.MCPServers[0].Command) != 3 {
+		t.Fatalf("expected 3 command args, got %d", len(topo.MCPServers[0].Command))
+	}
+	if topo.MCPServers[0].Command[2] != "https://actions.zapier.com/mcp/sk-ak-test123/sse" {
+		t.Errorf("expected command URL expansion, got '%s'", topo.MCPServers[0].Command[2])
+	}
+
+	// Verify URL env expansion
+	if topo.MCPServers[1].URL != "https://api.example.com/mcp" {
+		t.Errorf("expected URL expansion, got '%s'", topo.MCPServers[1].URL)
+	}
+}
+
+func TestLoadStack_EnvExpansion_AgentCommand(t *testing.T) {
+	os.Setenv("TEST_AGENT_CMD", "run-agent")
+	defer os.Unsetenv("TEST_AGENT_CMD")
+
+	content := `
+name: test-lab
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+agents:
+  - name: agent1
+    image: alpine:latest
+    command: ["python", "${TEST_AGENT_CMD}"]
+    uses:
+      - server1
+`
+	path := writeTempFile(t, content)
+
+	topo, err := LoadStack(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(topo.Agents[0].Command) != 2 {
+		t.Fatalf("expected 2 command args, got %d", len(topo.Agents[0].Command))
+	}
+	if topo.Agents[0].Command[1] != "run-agent" {
+		t.Errorf("expected agent command expansion, got '%s'", topo.Agents[0].Command[1])
+	}
+}
+
+func TestLoadStack_EnvExpansion_A2AAgentURL(t *testing.T) {
+	os.Setenv("TEST_A2A_URL", "https://a2a.example.com/agent")
+	defer os.Unsetenv("TEST_A2A_URL")
+
+	content := `
+name: test-lab
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+a2a-agents:
+  - name: remote-agent
+    url: "${TEST_A2A_URL}"
+`
+	path := writeTempFile(t, content)
+
+	topo, err := LoadStack(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(topo.A2AAgents) != 1 {
+		t.Fatalf("expected 1 A2A agent, got %d", len(topo.A2AAgents))
+	}
+	if topo.A2AAgents[0].URL != "https://a2a.example.com/agent" {
+		t.Errorf("expected A2A agent URL expansion, got '%s'", topo.A2AAgents[0].URL)
+	}
+}
+
 func TestLoadStack_InvalidYAML(t *testing.T) {
 	content := `
 name: test-lab
