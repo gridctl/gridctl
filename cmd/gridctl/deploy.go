@@ -130,8 +130,21 @@ func runDeploy(stackPath string) error {
 	}
 	defer rt.Close()
 
-	// Configure logging based on output mode
-	if !deployQuiet {
+	// In foreground mode, create the log buffer early so orchestrator events
+	// are captured and visible in the UI log viewer
+	var logBuffer *logging.LogBuffer
+	var bufferHandler *logging.BufferHandler
+	if deployForeground && !deployQuiet {
+		logBuffer = logging.NewLogBuffer(1000)
+		logLevel := slog.LevelInfo
+		if deployVerbose {
+			logLevel = slog.LevelDebug
+		}
+		innerHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+		bufferHandler = logging.NewBufferHandler(logBuffer, innerHandler)
+		rt.SetLogger(slog.New(bufferHandler).With("component", "orchestrator"))
+	} else if !deployQuiet {
+		// Non-foreground mode: stderr-only logger for orchestrator
 		logLevel := slog.LevelInfo
 		if deployVerbose {
 			logLevel = slog.LevelDebug
@@ -154,9 +167,9 @@ func runDeploy(stackPath string) error {
 	// Convert to legacy result format for runGateway
 	legacyResult := result.ToLegacyResult()
 
-	// If foreground mode, run gateway directly
+	// If foreground mode, run gateway directly (pass pre-created buffer if available)
 	if deployForeground {
-		return runGateway(ctx, rt, stack, stackPath, legacyResult, deployPort, !deployQuiet, printer)
+		return runGateway(ctx, rt, stack, stackPath, legacyResult, deployPort, !deployQuiet, printer, logBuffer, bufferHandler)
 	}
 
 	// Daemon mode: fork child process
@@ -281,7 +294,7 @@ func runDeployDaemonChild(stackPath string, stack *config.Stack) error {
 	}
 
 	// Run gateway (blocks until shutdown)
-	return runGateway(ctx, rt, stack, stackPath, result, deployPort, false, nil)
+	return runGateway(ctx, rt, stack, stackPath, result, deployPort, false, nil, nil, nil)
 }
 
 // getRunningContainers retrieves info about already-running containers and external servers
@@ -402,29 +415,35 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 	return result, nil
 }
 
-// runGateway runs the MCP gateway (blocking)
-func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, stackPath string, result *runtime.LegacyUpResult, port int, verbose bool, printer *output.Printer) error {
+// runGateway runs the MCP gateway (blocking).
+// existingBuffer and existingHandler allow reusing a log buffer created earlier
+// (e.g., for foreground mode where orchestrator events should also be captured).
+// Pass nil for both to create a fresh buffer.
+func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, stackPath string, result *runtime.LegacyUpResult, port int, verbose bool, printer *output.Printer, existingBuffer *logging.LogBuffer, existingHandler *logging.BufferHandler) error {
 	// Create MCP gateway
 	gateway := mcp.NewGateway()
 	gateway.SetDockerClient(rt.DockerClient())
 	gateway.SetVersion(version)
 
-	// Create log buffer for structured logs (UI consumption)
-	logBuffer := logging.NewLogBuffer(1000)
+	// Reuse existing log buffer if provided, otherwise create fresh
+	logBuffer := existingBuffer
+	var bufferHandler *logging.BufferHandler
+	if logBuffer != nil && existingHandler != nil {
+		bufferHandler = existingHandler
+	} else {
+		logBuffer = logging.NewLogBuffer(1000)
 
-	// Configure structured logging
-	// Always use JSON format for the buffer, optionally add text output for verbose mode
-	logLevel := slog.LevelInfo
-	if deployVerbose {
-		logLevel = slog.LevelDebug
-	}
+		logLevel := slog.LevelInfo
+		if deployVerbose {
+			logLevel = slog.LevelDebug
+		}
 
-	var innerHandler slog.Handler
-	if verbose {
-		// In verbose/foreground mode, also output to stderr
-		innerHandler = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+		var innerHandler slog.Handler
+		if verbose {
+			innerHandler = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+		}
+		bufferHandler = logging.NewBufferHandler(logBuffer, innerHandler)
 	}
-	bufferHandler := logging.NewBufferHandler(logBuffer, innerHandler)
 	gateway.SetLogger(slog.New(bufferHandler))
 
 	// Create A2A gateway early if needed (for server setup)
