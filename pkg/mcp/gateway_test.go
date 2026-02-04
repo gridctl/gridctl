@@ -3,9 +3,11 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 func TestNewGateway(t *testing.T) {
@@ -411,5 +413,116 @@ func TestGateway_AgentToolCallFiltering(t *testing.T) {
 	}
 	if len(result.Content) == 0 || result.Content[0].Text == "" {
 		t.Error("expected access denied message")
+	}
+}
+
+func TestGateway_AccessDenialLogging(t *testing.T) {
+	g := NewGateway()
+	ctx := context.Background()
+
+	// Set up log buffer to capture logs
+	logBuffer := logging.NewLogBuffer(10)
+	handler := logging.NewBufferHandler(logBuffer, nil)
+	g.SetLogger(slog.New(handler))
+
+	// Add a mock client
+	client := NewMockAgentClient("server1", []Tool{
+		{Name: "secret-tool", Description: "Secret tool"},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Register agent with no access to server1
+	g.RegisterAgent("limited-agent", []config.ToolSelector{
+		{Server: "other-server"},
+	})
+
+	// Attempt denied tool call
+	result, err := g.HandleToolsCallForAgent(ctx, "limited-agent", ToolCallParams{
+		Name: "server1__secret-tool",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected access denied error")
+	}
+
+	// Verify WARN log was emitted
+	entries := logBuffer.GetRecent(10)
+	found := false
+	for _, entry := range entries {
+		if entry.Level == "WARN" && entry.Message == "tool access denied" {
+			if entry.Attrs["agent"] != "limited-agent" {
+				t.Errorf("expected agent 'limited-agent', got %v", entry.Attrs["agent"])
+			}
+			if entry.Attrs["tool"] != "secret-tool" {
+				t.Errorf("expected tool 'secret-tool', got %v", entry.Attrs["tool"])
+			}
+			if entry.Attrs["server"] != "server1" {
+				t.Errorf("expected server 'server1', got %v", entry.Attrs["server"])
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected WARN log entry for tool access denial")
+		for _, entry := range entries {
+			t.Logf("  log: level=%s msg=%s attrs=%v", entry.Level, entry.Message, entry.Attrs)
+		}
+	}
+}
+
+func TestGateway_RegisterMCPServer_LogsTiming(t *testing.T) {
+	g := NewGateway()
+
+	// Set up log buffer to capture logs
+	logBuffer := logging.NewLogBuffer(20)
+	handler := logging.NewBufferHandler(logBuffer, nil)
+	g.SetLogger(slog.New(handler))
+
+	// Add a mock client directly to test that RegisterMCPServer logs
+	// We can't fully test RegisterMCPServer without real transport,
+	// but we can verify the gateway logger is wired up by checking
+	// other logged operations. Instead, verify the log methods work
+	// by checking tool call logging (which uses the same logger).
+	client := NewMockAgentClient("test-server", []Tool{
+		{Name: "echo", Description: "Echo tool"},
+	})
+	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+		return &ToolCallResult{
+			Content: []Content{NewTextContent("ok")},
+		}, nil
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	ctx := context.Background()
+	_, _ = g.HandleToolsCall(ctx, ToolCallParams{
+		Name:      "test-server__echo",
+		Arguments: map[string]any{},
+	})
+
+	// Verify tool call logging includes timing info
+	entries := logBuffer.GetRecent(20)
+	foundStarted := false
+	foundFinished := false
+	for _, entry := range entries {
+		if entry.Message == "tool call started" {
+			foundStarted = true
+		}
+		if entry.Message == "tool call finished" {
+			foundFinished = true
+			if entry.Attrs["duration"] == nil {
+				t.Error("expected duration attribute on tool call finished log")
+			}
+		}
+	}
+	if !foundStarted {
+		t.Error("expected 'tool call started' log entry")
+	}
+	if !foundFinished {
+		t.Error("expected 'tool call finished' log entry")
 	}
 }

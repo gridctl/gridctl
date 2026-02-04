@@ -114,6 +114,9 @@ func (g *Gateway) ServerInfo() ServerInfo {
 
 // RegisterMCPServer registers and initializes an MCP server.
 func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) error {
+	g.logger.Info("connecting to MCP server", "name", cfg.Name, "transport", cfg.Transport)
+	start := time.Now()
+
 	var agentClient AgentClient
 	clientLogger := g.logger.With("server", cfg.Name)
 
@@ -218,7 +221,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 	g.router.AddClient(agentClient)
 	g.router.RefreshTools()
 
-	g.logger.Info("registered MCP server", "name", cfg.Name, "transport", cfg.Transport, "tools", len(agentClient.Tools()))
+	g.logger.Info("registered MCP server", "name", cfg.Name, "transport", cfg.Transport, "tools", len(agentClient.Tools()), "duration", time.Since(start))
 	return nil
 }
 
@@ -353,6 +356,7 @@ func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string,
 
 	// Check if agent has access to this specific tool
 	if !g.isToolAllowedForAgent(agentName, serverName, originalToolName) {
+		g.logger.Warn("tool access denied", "agent", agentName, "tool", originalToolName, "server", serverName)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Access denied: agent '%s' cannot use tool '%s' from '%s'", agentName, originalToolName, serverName))},
 			IsError: true,
@@ -365,6 +369,7 @@ func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string,
 
 // waitForHTTPServer waits for an HTTP MCP server to become available.
 func (g *Gateway) waitForHTTPServer(ctx context.Context, client *Client) error {
+	start := time.Now()
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -378,6 +383,7 @@ func (g *Gateway) waitForHTTPServer(ctx context.Context, client *Client) error {
 			return fmt.Errorf("timeout waiting for MCP server")
 		case <-ticker.C:
 			if err := client.Ping(ctx); err == nil {
+				g.logger.Debug("MCP server ready", "name", client.Name(), "wait", time.Since(start))
 				return nil
 			}
 		}

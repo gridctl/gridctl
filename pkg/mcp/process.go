@@ -118,8 +118,13 @@ func (c *ProcessClient) Connect(ctx context.Context) error {
 	}
 	c.stdout = stdout
 
-	// Discard stderr (or could log it)
-	c.cmd.Stderr = nil
+	// Capture stderr and log output at WARN level
+	stderr, err := c.cmd.StderrPipe()
+	if err != nil {
+		c.cmd.Stderr = nil // fall back to discard on pipe error
+	} else {
+		go c.readStderr(stderr)
+	}
 
 	// Start the process
 	if err := c.cmd.Start(); err != nil {
@@ -166,6 +171,14 @@ func (c *ProcessClient) readResponses() {
 				c.responsesMu.Unlock()
 			}
 		}
+	}
+}
+
+// readStderr reads lines from the process stderr and logs them.
+func (c *ProcessClient) readStderr(r io.Reader) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		c.logger.Warn("server stderr", "output", scanner.Text())
 	}
 }
 
