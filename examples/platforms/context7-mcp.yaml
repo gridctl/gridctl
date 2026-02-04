@@ -1,0 +1,25 @@
+# Context7 MCP Server Example
+#
+# This stack provides access to Context7, enabling AI agents to retrieve
+# up-to-date documentation and code examples for any library or framework
+# directly from official sources.
+#
+# Prerequisites:
+#   - Node.js installed (for npx)
+#   - Optional: free API key from https://context7.com/dashboard for higher rate limits
+#     export CONTEXT7_API_KEY=your_api_key
+#
+# Usage:
+#   gridctl deploy examples/platforms/context7-mcp.yaml
+#
+# Reference:
+#   https://github.com/upstash/context7
+
+version: "1"
+name: context7-mcp
+
+mcp-servers:
+  - name: context7
+    command: ["npx", "-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
