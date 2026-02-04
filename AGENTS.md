@@ -78,7 +78,6 @@ gridctl/
 │   ├── destroy.go        # Stop containers
 │   ├── status.go         # Show container status
 │   ├── version.go        # Version command
-│   ├── banner.go         # ASCII banner display
 │   ├── help.go           # Custom help template
 │   ├── embed.go          # Embedded web assets
 │   └── embed_stub.go     # Build stub for embed
@@ -119,7 +118,7 @@ gridctl/
 │   │   ├── docker.go     # Docker build
 │   │   └── builder.go    # Main builder
 │   ├── output/           # CLI output formatting
-│   │   ├── output.go     # Printer and banner
+│   │   ├── output.go     # Printer, banner display, and progress helpers
 │   │   ├── styles.go     # Color schemes
 │   │   └── table.go      # Table rendering
 │   ├── state/            # Daemon state management
@@ -129,11 +128,13 @@ gridctl/
 │   │   ├── client.go     # HTTP transport client
 │   │   ├── stdio.go      # Stdio transport client (Docker attach)
 │   │   ├── process.go    # Local process transport client (host process)
+│   │   ├── openapi_client.go # OpenAPI-backed MCP client
 │   │   ├── sse.go        # SSE server (northbound)
 │   │   ├── session.go    # Session management
 │   │   ├── router.go     # Tool routing
 │   │   ├── gateway.go    # Protocol bridge logic
-│   │   └── handler.go    # HTTP handlers
+│   │   ├── handler.go    # HTTP handlers
+│   │   └── expand.go     # Environment variable expansion
 │   └── a2a/              # A2A (Agent-to-Agent) protocol
 │       ├── types.go      # A2A protocol types (AgentCard, Task, Message)
 │       ├── client.go     # HTTP client for remote A2A agents
