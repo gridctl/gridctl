@@ -140,8 +140,7 @@ func runDeploy(stackPath string) error {
 		if deployVerbose {
 			logLevel = slog.LevelDebug
 		}
-		var innerHandler slog.Handler
-		innerHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+		innerHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 		bufferHandler = logging.NewBufferHandler(logBuffer, innerHandler)
 		rt.SetLogger(slog.New(bufferHandler).With("component", "orchestrator"))
 	} else if !deployQuiet {
