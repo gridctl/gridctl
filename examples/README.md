@@ -41,6 +41,8 @@ gridctl deploy examples/getting-started/agent-basic.yaml
 | multi-agent-skills | - | ✅ | ✅ | - |
 | basic-a2a | - | ✅ | ✅ | - |
 | atlassian-mcp | sse | - | - | ✅ |
+| chrome-devtools-mcp | stdio | - | - | ✅ |
+| context7-mcp | stdio | - | - | ✅ |
 | github-mcp | stdio | - | - | ✅ |
 | itential | http | - | - | - |
 | gateway-basic | http | - | - | ✅ |
