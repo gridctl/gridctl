@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/docker/docker v27.3.1+incompatible
 	github.com/docker/go-connections v0.5.0
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/go-git/go-git/v5 v5.16.4
 	github.com/google/uuid v1.6.0
