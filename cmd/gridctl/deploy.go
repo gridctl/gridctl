@@ -21,6 +21,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
 	"github.com/gridctl/gridctl/pkg/state"
@@ -37,6 +38,7 @@ var (
 	deployForeground  bool
 	deployDaemonChild bool
 	deployNoExpand    bool
+	deployWatch       bool
 )
 
 var deployCmd = &cobra.Command{
@@ -64,6 +66,7 @@ func init() {
 	deployCmd.Flags().BoolVar(&deployDaemonChild, "daemon-child", false, "Internal flag for daemon process")
 	_ = deployCmd.Flags().MarkHidden("daemon-child")
 	deployCmd.Flags().BoolVar(&deployNoExpand, "no-expand", false, "Disable environment variable expansion in OpenAPI spec files")
+	deployCmd.Flags().BoolVarP(&deployWatch, "watch", "w", false, "Watch stack file for changes and hot reload")
 }
 
 func runDeploy(stackPath string) error {
@@ -173,7 +176,7 @@ func runDeploy(stackPath string) error {
 	}
 
 	// Daemon mode: fork child process
-	pid, err := forkDeployDaemon(stackPath, deployPort, deployBasePort, deployNoExpand)
+	pid, err := forkDeployDaemon(stackPath, deployPort, deployBasePort, deployNoExpand, deployWatch)
 	if err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
@@ -438,9 +441,13 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 			logLevel = slog.LevelDebug
 		}
 
+		// Always log to stderr in daemon mode (stderr is redirected to log file)
+		// In foreground verbose mode, use JSON format; in daemon mode use text format
 		var innerHandler slog.Handler
 		if verbose {
 			innerHandler = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+		} else if deployDaemonChild {
+			innerHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 		}
 		bufferHandler = logging.NewBufferHandler(logBuffer, innerHandler)
 	}
@@ -587,6 +594,45 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 		return fmt.Errorf("registering agent adapters: %w", err)
 	}
 
+	// Set up hot reload handler
+	reloadHandler := reload.NewHandler(stackPath, stack, gateway, rt, port, deployBasePort, port)
+	reloadHandler.SetLogger(slog.New(bufferHandler))
+	reloadHandler.SetNoExpand(deployNoExpand)
+	reloadHandler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {
+		return registerSingleMCPServer(ctx, gateway, stack, stackPath, server, hostPort, verbose)
+	})
+	server.SetReloadHandler(reloadHandler)
+
+	// Start file watcher if --watch flag is set
+	var watchCtx context.Context
+	var watchCancel context.CancelFunc
+	if deployWatch {
+		watchCtx, watchCancel = context.WithCancel(ctx)
+		defer watchCancel()
+
+		watcher := reload.NewWatcher(stackPath, func() error {
+			result, err := reloadHandler.Reload(watchCtx)
+			if err != nil {
+				return err
+			}
+			if !result.Success {
+				return fmt.Errorf("%s", result.Message)
+			}
+			return nil
+		})
+		watcher.SetLogger(slog.New(bufferHandler))
+
+		go func() {
+			if err := watcher.Watch(watchCtx); err != nil && err != context.Canceled {
+				slog.New(bufferHandler).Error("file watcher error", "error", err)
+			}
+		}()
+
+		if verbose {
+			fmt.Printf("\nFile watcher enabled for: %s\n", stackPath)
+		}
+	}
+
 	if verbose {
 		fmt.Printf("\nMCP Gateway running:\n")
 		fmt.Printf("  POST /mcp         - JSON-RPC endpoint\n")
@@ -603,6 +649,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 		fmt.Printf("  GET  /api/status      - Gateway status (includes unified agents)\n")
 		fmt.Printf("  GET  /api/mcp-servers - List MCP servers\n")
 		fmt.Printf("  GET  /api/tools       - List tools\n")
+		fmt.Printf("  POST /api/reload      - Trigger configuration reload\n")
 		fmt.Printf("  GET  /health          - Liveness check (daemon is alive)\n")
 		fmt.Printf("  GET  /ready           - Readiness check (all MCP servers initialized)\n")
 		fmt.Println("\nPress Ctrl+C to stop...")
@@ -740,8 +787,97 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, stack *config
 	}
 }
 
+// registerSingleMCPServer registers a single MCP server with the gateway.
+// Used by the reload handler to register newly added servers.
+func registerSingleMCPServer(ctx context.Context, gateway *mcp.Gateway, stack *config.Stack, stackPath string, server config.MCPServer, hostPort int, verbose bool) error {
+	// Determine transport type
+	var transport mcp.Transport
+	switch server.Transport {
+	case "sse":
+		transport = mcp.TransportSSE
+	case "stdio":
+		transport = mcp.TransportStdio
+	default:
+		transport = mcp.TransportHTTP
+	}
+
+	var cfg mcp.MCPServerConfig
+	if server.IsExternal() {
+		cfg = mcp.MCPServerConfig{
+			Name:      server.Name,
+			Transport: transport,
+			Endpoint:  server.URL,
+			External:  true,
+			Tools:     server.Tools,
+		}
+	} else if server.IsLocalProcess() {
+		cfg = mcp.MCPServerConfig{
+			Name:         server.Name,
+			LocalProcess: true,
+			Command:      server.Command,
+			WorkDir:      filepath.Dir(stackPath),
+			Env:          server.Env,
+			Tools:        server.Tools,
+		}
+	} else if server.IsSSH() {
+		cfg = mcp.MCPServerConfig{
+			Name:            server.Name,
+			SSH:             true,
+			Command:         server.Command,
+			SSHHost:         server.SSH.Host,
+			SSHUser:         server.SSH.User,
+			SSHPort:         server.SSH.Port,
+			SSHIdentityFile: server.SSH.IdentityFile,
+			Env:             server.Env,
+			Tools:           server.Tools,
+		}
+	} else if server.IsOpenAPI() {
+		openAPICfg := server.OpenAPI
+		cfg = mcp.MCPServerConfig{
+			Name:    server.Name,
+			OpenAPI: true,
+			OpenAPIConfig: &mcp.OpenAPIClientConfig{
+				Spec:     openAPICfg.Spec,
+				BaseURL:  openAPICfg.BaseURL,
+				NoExpand: deployNoExpand,
+			},
+			Tools: server.Tools,
+		}
+		if openAPICfg.Auth != nil {
+			cfg.OpenAPIConfig.AuthType = openAPICfg.Auth.Type
+			if openAPICfg.Auth.Type == "bearer" && openAPICfg.Auth.TokenEnv != "" {
+				cfg.OpenAPIConfig.AuthToken = os.Getenv(openAPICfg.Auth.TokenEnv)
+			} else if openAPICfg.Auth.Type == "header" {
+				cfg.OpenAPIConfig.AuthHeader = openAPICfg.Auth.Header
+				if openAPICfg.Auth.ValueEnv != "" {
+					cfg.OpenAPIConfig.AuthValue = os.Getenv(openAPICfg.Auth.ValueEnv)
+				}
+			}
+		}
+		if openAPICfg.Operations != nil {
+			cfg.OpenAPIConfig.Include = openAPICfg.Operations.Include
+			cfg.OpenAPIConfig.Exclude = openAPICfg.Operations.Exclude
+		}
+	} else if transport == mcp.TransportStdio {
+		// For stdio, we need to find the container ID
+		// This requires querying Docker - for now we return an error as stdio
+		// containers need special handling that requires the container ID
+		return fmt.Errorf("stdio transport containers must be started via full reload")
+	} else {
+		// Container HTTP/SSE
+		cfg = mcp.MCPServerConfig{
+			Name:      server.Name,
+			Transport: transport,
+			Endpoint:  fmt.Sprintf("http://localhost:%d/mcp", hostPort),
+			Tools:     server.Tools,
+		}
+	}
+
+	return gateway.RegisterMCPServer(ctx, cfg)
+}
+
 // forkDeployDaemon starts the daemon child process
-func forkDeployDaemon(stackPath string, port int, basePort int, noExpand bool) (int, error) {
+func forkDeployDaemon(stackPath string, port int, basePort int, noExpand bool, watch bool) (int, error) {
 	// Get current executable
 	exe, err := os.Executable()
 	if err != nil {
@@ -772,6 +908,9 @@ func forkDeployDaemon(stackPath string, port int, basePort int, noExpand bool) (
 		"--base-port", strconv.Itoa(basePort)}
 	if noExpand {
 		args = append(args, "--no-expand")
+	}
+	if watch {
+		args = append(args, "--watch")
 	}
 	cmd := exec.Command(exe, args...)
 
