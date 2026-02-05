@@ -64,6 +64,9 @@ examples/_mock-servers/mock-mcp-server/.pid-*
 # New features
 plan/
 
+# Release artifacts
+web/.release-version
+
 # Vendor specific assistant files
 .claude/
 .claude-plugin/
