@@ -101,6 +101,10 @@ func (h *Handler) handleToolsList(r *http.Request, req *Request) Response {
 	// Check for agent identity header for access control
 	agentName := r.Header.Get("X-Agent-Name")
 
+	if agentName != "" && !h.gateway.HasAgent(agentName) {
+		return NewErrorResponse(req.ID, InvalidRequest, "unknown agent: "+agentName)
+	}
+
 	var result *ToolsListResult
 	var err error
 	if agentName != "" {
@@ -126,6 +130,10 @@ func (h *Handler) handleToolsCall(r *http.Request, req *Request) Response {
 
 	// Check for agent identity header for access control
 	agentName := r.Header.Get("X-Agent-Name")
+
+	if agentName != "" && !h.gateway.HasAgent(agentName) {
+		return NewErrorResponse(req.ID, InvalidRequest, "unknown agent: "+agentName)
+	}
 
 	var result *ToolCallResult
 	var err error

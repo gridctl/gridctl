@@ -848,6 +848,170 @@ func TestServerNames(t *testing.T) {
 	}
 }
 
+func TestLoadStack_AuthConfig(t *testing.T) {
+	content := `
+version: "1"
+name: auth-test
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+gateway:
+  auth:
+    type: bearer
+    token: my-secret-token
+`
+	path := writeTempFile(t, content)
+
+	stack, err := LoadStack(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stack.Gateway == nil {
+		t.Fatal("expected gateway config")
+	}
+	if stack.Gateway.Auth == nil {
+		t.Fatal("expected auth config")
+	}
+	if stack.Gateway.Auth.Type != "bearer" {
+		t.Errorf("expected type 'bearer', got '%s'", stack.Gateway.Auth.Type)
+	}
+	if stack.Gateway.Auth.Token != "my-secret-token" {
+		t.Errorf("expected token 'my-secret-token', got '%s'", stack.Gateway.Auth.Token)
+	}
+}
+
+func TestLoadStack_AuthConfigEnvExpansion(t *testing.T) {
+	t.Setenv("TEST_AUTH_TOKEN", "expanded-token")
+
+	content := `
+version: "1"
+name: auth-env-test
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+gateway:
+  auth:
+    type: api_key
+    token: $TEST_AUTH_TOKEN
+    header: X-API-Key
+`
+	path := writeTempFile(t, content)
+
+	stack, err := LoadStack(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stack.Gateway.Auth.Token != "expanded-token" {
+		t.Errorf("expected expanded token, got '%s'", stack.Gateway.Auth.Token)
+	}
+	if stack.Gateway.Auth.Header != "X-API-Key" {
+		t.Errorf("expected header 'X-API-Key', got '%s'", stack.Gateway.Auth.Header)
+	}
+}
+
+func TestLoadStack_AuthValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr bool
+	}{
+		{
+			name: "missing type",
+			content: `
+version: "1"
+name: test
+mcp-servers:
+  - name: s1
+    image: alpine:latest
+    port: 3000
+gateway:
+  auth:
+    token: secret
+`,
+			wantErr: true,
+		},
+		{
+			name: "invalid type",
+			content: `
+version: "1"
+name: test
+mcp-servers:
+  - name: s1
+    image: alpine:latest
+    port: 3000
+gateway:
+  auth:
+    type: oauth
+    token: secret
+`,
+			wantErr: true,
+		},
+		{
+			name: "missing token",
+			content: `
+version: "1"
+name: test
+mcp-servers:
+  - name: s1
+    image: alpine:latest
+    port: 3000
+gateway:
+  auth:
+    type: bearer
+`,
+			wantErr: true,
+		},
+		{
+			name: "header with bearer type",
+			content: `
+version: "1"
+name: test
+mcp-servers:
+  - name: s1
+    image: alpine:latest
+    port: 3000
+gateway:
+  auth:
+    type: bearer
+    token: secret
+    header: X-Custom
+`,
+			wantErr: true,
+		},
+		{
+			name: "valid api_key with header",
+			content: `
+version: "1"
+name: test
+mcp-servers:
+  - name: s1
+    image: alpine:latest
+    port: 3000
+gateway:
+  auth:
+    type: api_key
+    token: secret
+    header: X-API-Key
+`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTempFile(t, tt.content)
+			_, err := LoadStack(path)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("LoadStack() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

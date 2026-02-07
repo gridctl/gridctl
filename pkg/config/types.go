@@ -20,7 +20,19 @@ type GatewayConfig struct {
 	// AllowedOrigins lists origins for CORS.
 	// When not set, defaults to ["*"] (allow all) for backward compatibility.
 	// Set explicit origins to restrict cross-origin access.
-	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
+	AllowedOrigins []string    `yaml:"allowed_origins,omitempty"`
+	Auth           *AuthConfig `yaml:"auth,omitempty"`
+}
+
+// AuthConfig configures gateway authentication.
+// When configured, all requests (except /health and /ready) must include a valid token.
+type AuthConfig struct {
+	// Type is the auth mechanism: "bearer" or "api_key".
+	Type string `yaml:"type"`
+	// Token is the expected token value (supports env var references via $VAR or ${VAR}).
+	Token string `yaml:"token"`
+	// Header is the header name for api_key auth (default: "Authorization").
+	Header string `yaml:"header,omitempty"`
 }
 
 // Network defines the Docker network configuration.

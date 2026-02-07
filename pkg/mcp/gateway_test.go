@@ -41,6 +41,30 @@ func TestGateway_SetVersion(t *testing.T) {
 	}
 }
 
+func TestGateway_HasAgent(t *testing.T) {
+	g := NewGateway()
+
+	if g.HasAgent("test-agent") {
+		t.Error("expected HasAgent to return false for unregistered agent")
+	}
+
+	g.RegisterAgent("test-agent", []config.ToolSelector{{Server: "server1"}})
+
+	if !g.HasAgent("test-agent") {
+		t.Error("expected HasAgent to return true for registered agent")
+	}
+
+	if g.HasAgent("unknown") {
+		t.Error("expected HasAgent to return false for unknown agent")
+	}
+
+	g.UnregisterAgent("test-agent")
+
+	if g.HasAgent("test-agent") {
+		t.Error("expected HasAgent to return false after unregister")
+	}
+}
+
 func TestGateway_HandleInitialize(t *testing.T) {
 	g := NewGateway()
 	params := InitializeParams{
