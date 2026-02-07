@@ -411,10 +411,10 @@ func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string,
 // waitForHTTPServer waits for an HTTP MCP server to become available.
 func (g *Gateway) waitForHTTPServer(ctx context.Context, client *Client) error {
 	start := time.Now()
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(DefaultReadyPollInterval)
 	defer ticker.Stop()
 
-	timeout := time.After(30 * time.Second)
+	timeout := time.After(DefaultReadyTimeout)
 
 	for {
 		select {
@@ -437,7 +437,7 @@ func (g *Gateway) HandleInitialize(params InitializeParams) (*InitializeResult, 
 	g.sessions.Create(params.ClientInfo)
 
 	return &InitializeResult{
-		ProtocolVersion: "2024-11-05",
+		ProtocolVersion: MCPProtocolVersion,
 		ServerInfo:      g.ServerInfo(),
 		Capabilities: Capabilities{
 			Tools: &ToolsCapability{
