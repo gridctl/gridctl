@@ -40,6 +40,7 @@ type ProcessClient struct {
 	stdin   io.WriteCloser
 	stdout  io.Reader
 	started bool
+	cancel  context.CancelFunc
 
 	// Response handling
 	responses   map[int64]chan *Response
@@ -124,8 +125,6 @@ func (c *ProcessClient) Connect(ctx context.Context) error {
 	stderr, err := c.cmd.StderrPipe()
 	if err != nil {
 		c.cmd.Stderr = nil // fall back to discard on pipe error
-	} else {
-		go c.readStderr(stderr)
 	}
 
 	// Start the process
@@ -136,20 +135,31 @@ func (c *ProcessClient) Connect(ctx context.Context) error {
 
 	c.started = true
 
-	// Start reading responses
-	go c.readResponses()
+	// Start reading responses and stderr with cancellation
+	readerCtx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
+	go c.readResponses(readerCtx)
+	if stderr != nil {
+		go c.readStderr(readerCtx, stderr)
+	}
 
 	return nil
 }
 
 // readResponses reads JSON-RPC responses from stdout.
-func (c *ProcessClient) readResponses() {
+func (c *ProcessClient) readResponses(ctx context.Context) {
 	scanner := bufio.NewScanner(c.stdout)
 	// Increase buffer size for large responses
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
 	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
@@ -177,9 +187,14 @@ func (c *ProcessClient) readResponses() {
 }
 
 // readStderr reads lines from the process stderr and logs them.
-func (c *ProcessClient) readStderr(r io.Reader) {
+func (c *ProcessClient) readStderr(ctx context.Context, r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		c.logger.Warn("server stderr", "output", scanner.Text())
 	}
 }
@@ -402,6 +417,11 @@ func (c *ProcessClient) send(req Request) error {
 func (c *ProcessClient) Close() error {
 	c.procMu.Lock()
 	defer c.procMu.Unlock()
+
+	// Cancel reader goroutines
+	if c.cancel != nil {
+		c.cancel()
+	}
 
 	if c.cmd == nil || c.cmd.Process == nil {
 		return nil

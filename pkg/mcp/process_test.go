@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ func TestProcessClient_ReadStderr(t *testing.T) {
 	// Run readStderr (it will read until EOF)
 	done := make(chan struct{})
 	go func() {
-		client.readStderr(reader)
+		client.readStderr(context.Background(), reader)
 		close(done)
 	}()
 
@@ -76,7 +77,7 @@ func TestProcessClient_ReadStderr_Empty(t *testing.T) {
 	reader := bytes.NewReader(nil)
 	done := make(chan struct{})
 	go func() {
-		client.readStderr(reader)
+		client.readStderr(context.Background(), reader)
 		close(done)
 	}()
 
