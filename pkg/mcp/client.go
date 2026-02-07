@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,18 +17,13 @@ import (
 
 // Client communicates with a downstream MCP server.
 type Client struct {
+	ClientBase
 	name       string
 	endpoint   string
 	httpClient *http.Client
 	requestID  atomic.Int64
 	logger     *slog.Logger
-
-	mu            sync.RWMutex
-	initialized   bool
-	tools         []Tool
-	serverInfo    ServerInfo
-	sessionID     string   // MCP session ID for stateful servers
-	toolWhitelist []string // Tool whitelist (empty = all tools)
+	sessionID  string // MCP session ID for stateful servers
 }
 
 // NewClient creates a new MCP client for a downstream agent.
@@ -61,15 +55,6 @@ func (c *Client) Endpoint() string {
 	return c.endpoint
 }
 
-// SetToolWhitelist sets the list of allowed tool names.
-// Only tools in this list will be returned by Tools() and RefreshTools().
-// An empty or nil list means all tools are allowed.
-func (c *Client) SetToolWhitelist(tools []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.toolWhitelist = tools
-}
-
 // Initialize performs the MCP initialize handshake.
 func (c *Client) Initialize(ctx context.Context) error {
 	params := InitializeParams{
@@ -88,10 +73,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 		return fmt.Errorf("initialize: %w", err)
 	}
 
-	c.mu.Lock()
-	c.initialized = true
-	c.serverInfo = result.ServerInfo
-	c.mu.Unlock()
+	c.SetInitialized(result.ServerInfo)
 
 	// Send initialized notification (non-fatal, some servers may not require this)
 	_ = c.notify(ctx, "notifications/initialized", nil)
@@ -107,35 +89,8 @@ func (c *Client) RefreshTools(ctx context.Context) error {
 		return fmt.Errorf("tools/list: %w", err)
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Filter tools if whitelist is set
-	if len(c.toolWhitelist) > 0 {
-		allowed := make(map[string]bool, len(c.toolWhitelist))
-		for _, name := range c.toolWhitelist {
-			allowed[name] = true
-		}
-
-		var filteredTools []Tool
-		for _, tool := range result.Tools {
-			if allowed[tool.Name] {
-				filteredTools = append(filteredTools, tool)
-			}
-		}
-		c.tools = filteredTools
-	} else {
-		c.tools = result.Tools
-	}
-
+	c.SetTools(result.Tools)
 	return nil
-}
-
-// Tools returns the cached tools for this agent.
-func (c *Client) Tools() []Tool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.tools
 }
 
 // CallTool invokes a tool on the downstream agent.
@@ -151,20 +106,6 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments map[string
 	}
 
 	return &result, nil
-}
-
-// IsInitialized returns whether the client has been initialized.
-func (c *Client) IsInitialized() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.initialized
-}
-
-// ServerInfo returns the server information.
-func (c *Client) ServerInfo() ServerInfo {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.serverInfo
 }
 
 // call performs a JSON-RPC call and decodes the result.

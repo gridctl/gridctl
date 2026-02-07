@@ -21,18 +21,13 @@ const processKillGracePeriod = 5 * time.Second
 
 // ProcessClient communicates with an MCP server via a local process stdin/stdout.
 type ProcessClient struct {
+	ClientBase
 	name      string
 	command   []string
 	workDir   string
 	env       []string
 	requestID atomic.Int64
 	logger    *slog.Logger
-
-	mu            sync.RWMutex
-	initialized   bool
-	tools         []Tool
-	serverInfo    ServerInfo
-	toolWhitelist []string // Tool whitelist (empty = all tools)
 
 	// Process state
 	procMu  sync.Mutex
@@ -77,15 +72,6 @@ func (c *ProcessClient) SetLogger(logger *slog.Logger) {
 // Name returns the agent name.
 func (c *ProcessClient) Name() string {
 	return c.name
-}
-
-// SetToolWhitelist sets the list of allowed tool names.
-// Only tools in this list will be returned by Tools() and RefreshTools().
-// An empty or nil list means all tools are allowed.
-func (c *ProcessClient) SetToolWhitelist(tools []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.toolWhitelist = tools
 }
 
 // Connect starts the process and attaches to its stdin/stdout.
@@ -221,10 +207,7 @@ func (c *ProcessClient) Initialize(ctx context.Context) error {
 		return fmt.Errorf("initialize: %w", err)
 	}
 
-	c.mu.Lock()
-	c.initialized = true
-	c.serverInfo = result.ServerInfo
-	c.mu.Unlock()
+	c.SetInitialized(result.ServerInfo)
 
 	// Send initialized notification
 	_ = c.notify(ctx, "notifications/initialized", nil)
@@ -240,35 +223,8 @@ func (c *ProcessClient) RefreshTools(ctx context.Context) error {
 		return fmt.Errorf("tools/list: %w", err)
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Filter tools if whitelist is set
-	if len(c.toolWhitelist) > 0 {
-		allowed := make(map[string]bool, len(c.toolWhitelist))
-		for _, name := range c.toolWhitelist {
-			allowed[name] = true
-		}
-
-		var filteredTools []Tool
-		for _, tool := range result.Tools {
-			if allowed[tool.Name] {
-				filteredTools = append(filteredTools, tool)
-			}
-		}
-		c.tools = filteredTools
-	} else {
-		c.tools = result.Tools
-	}
-
+	c.SetTools(result.Tools)
 	return nil
-}
-
-// Tools returns the cached tools for this agent.
-func (c *ProcessClient) Tools() []Tool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.tools
 }
 
 // CallTool invokes a tool on the agent.
@@ -284,20 +240,6 @@ func (c *ProcessClient) CallTool(ctx context.Context, name string, arguments map
 	}
 
 	return &result, nil
-}
-
-// IsInitialized returns whether the client has been initialized.
-func (c *ProcessClient) IsInitialized() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.initialized
-}
-
-// ServerInfo returns the server information.
-func (c *ProcessClient) ServerInfo() ServerInfo {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.serverInfo
 }
 
 // call performs a JSON-RPC call via stdin/stdout.
