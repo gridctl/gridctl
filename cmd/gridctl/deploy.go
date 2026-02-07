@@ -453,6 +453,10 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 	}
 	gateway.SetLogger(slog.New(bufferHandler))
 
+	// Start periodic session cleanup
+	gateway.StartCleanup(ctx)
+	defer gateway.Close()
+
 	// Create A2A gateway early if needed (for server setup)
 	var a2aGateway *a2a.Gateway
 	hasA2A := len(stack.A2AAgents) > 0
@@ -595,6 +599,11 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 				}
 			}
 		}
+	}
+
+	// Start periodic A2A task cleanup
+	if a2aGateway != nil {
+		a2aGateway.StartCleanup(ctx)
 	}
 
 	// Register A2A agents as MCP tool providers (for agent-to-agent skill equipping)

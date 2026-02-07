@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// maxSessions is the maximum number of concurrent sessions before eviction.
+const maxSessions = 1000
+
 // Session represents an MCP client session.
 type Session struct {
 	ID          string
@@ -29,10 +32,15 @@ func NewSessionManager() *SessionManager {
 	}
 }
 
-// Create creates a new session.
+// Create creates a new session. If the session count exceeds maxSessions,
+// the oldest session (by LastSeen) is evicted.
 func (m *SessionManager) Create(clientInfo ClientInfo) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if len(m.sessions) >= maxSessions {
+		m.evictOldest()
+	}
 
 	id := generateSessionID()
 	session := &Session{
@@ -44,6 +52,22 @@ func (m *SessionManager) Create(clientInfo ClientInfo) *Session {
 	}
 	m.sessions[id] = session
 	return session
+}
+
+// evictOldest removes the session with the oldest LastSeen time.
+// Must be called with m.mu held.
+func (m *SessionManager) evictOldest() {
+	var oldestID string
+	var oldestTime time.Time
+	for id, s := range m.sessions {
+		if oldestID == "" || s.LastSeen.Before(oldestTime) {
+			oldestID = id
+			oldestTime = s.LastSeen
+		}
+	}
+	if oldestID != "" {
+		delete(m.sessions, oldestID)
+	}
 }
 
 // Get retrieves a session by ID.
@@ -78,6 +102,13 @@ func (m *SessionManager) List() []*Session {
 		sessions = append(sessions, s)
 	}
 	return sessions
+}
+
+// Count returns the number of active sessions.
+func (m *SessionManager) Count() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.sessions)
 }
 
 // Cleanup removes stale sessions older than the given duration.

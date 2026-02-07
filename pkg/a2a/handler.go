@@ -354,6 +354,29 @@ func (h *Handler) updateTask(task *Task) {
 	h.tasks[task.ID] = task
 }
 
+// CleanupTasks removes terminal tasks older than maxAge. Returns count removed.
+func (h *Handler) CleanupTasks(maxAge time.Duration) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+	for id, task := range h.tasks {
+		if task.Status.State.IsTerminal() && task.UpdatedAt.Before(cutoff) {
+			delete(h.tasks, id)
+			removed++
+		}
+	}
+	return removed
+}
+
+// TaskCount returns the number of tracked tasks.
+func (h *Handler) TaskCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.tasks)
+}
+
 // writeError writes a JSON-RPC error response.
 func (h *Handler) writeError(w http.ResponseWriter, id *json.RawMessage, code int, message string) {
 	h.writeResponse(w, NewErrorResponse(id, code, message))

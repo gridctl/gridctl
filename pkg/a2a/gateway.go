@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Gateway manages A2A agents - both local (server role) and remote (client role).
@@ -28,6 +29,27 @@ func NewGateway(baseURL string) *Gateway {
 // Handler returns the HTTP handler for A2A endpoints.
 func (g *Gateway) Handler() *Handler {
 	return g.handler
+}
+
+// TaskCount returns the number of tracked A2A tasks.
+func (g *Gateway) TaskCount() int {
+	return g.handler.TaskCount()
+}
+
+// StartCleanup starts periodic cleanup of terminal A2A tasks.
+func (g *Gateway) StartCleanup(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				g.handler.CleanupTasks(1 * time.Hour)
+			}
+		}
+	}()
 }
 
 // RegisterLocalAgent registers an agent that this gateway serves (server role).
