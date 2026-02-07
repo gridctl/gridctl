@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const reloadHTTPTimeout = 60 * time.Second
+
 var reloadCmd = &cobra.Command{
 	Use:   "reload [stack-name]",
 	Short: "Reload configuration for a running stack",
@@ -89,7 +91,7 @@ func reloadAllStacks() error {
 func callReloadAPI(st *state.DaemonState) error {
 	url := fmt.Sprintf("http://localhost:%d/api/reload", st.Port)
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: reloadHTTPTimeout}
 	resp, err := client.Post(url, "application/json", nil)
 	if err != nil {
 		return fmt.Errorf("calling reload API: %w", err)
