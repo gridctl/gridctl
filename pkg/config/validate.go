@@ -38,6 +38,23 @@ func Validate(s *Stack) error {
 		errs = append(errs, ValidationError{"stack.name", "is required"})
 	}
 
+	// Gateway auth validation
+	if s.Gateway != nil && s.Gateway.Auth != nil {
+		auth := s.Gateway.Auth
+		authPrefix := "gateway.auth"
+		if auth.Type == "" {
+			errs = append(errs, ValidationError{authPrefix + ".type", "is required"})
+		} else if auth.Type != "bearer" && auth.Type != "api_key" {
+			errs = append(errs, ValidationError{authPrefix + ".type", "must be 'bearer' or 'api_key'"})
+		}
+		if auth.Token == "" {
+			errs = append(errs, ValidationError{authPrefix + ".token", "is required"})
+		}
+		if auth.Header != "" && auth.Type != "api_key" {
+			errs = append(errs, ValidationError{authPrefix + ".header", "only applicable when type is 'api_key'"})
+		}
+	}
+
 	// Network mode validation
 	hasNetwork := s.Network.Name != ""
 	hasNetworks := len(s.Networks) > 0
