@@ -486,6 +486,9 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 	} else {
 		server.SetAllowedOrigins([]string{"*"})
 	}
+	if stack.Gateway != nil && stack.Gateway.Auth != nil {
+		server.SetAuth(stack.Gateway.Auth.Type, stack.Gateway.Auth.Token, stack.Gateway.Auth.Header)
+	}
 	if a2aGateway != nil {
 		server.SetA2AGateway(a2aGateway)
 	}
