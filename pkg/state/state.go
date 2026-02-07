@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const daemonShutdownGracePeriod = 5 * time.Second
+
 // DaemonState represents the state of a running daemon.
 type DaemonState struct {
 	StackName string    `json:"stack_name"`
@@ -196,7 +198,7 @@ func KillDaemon(state *DaemonState) error {
 	}
 
 	// Wait up to 5 seconds for graceful shutdown
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(daemonShutdownGracePeriod)
 	for time.Now().Before(deadline) {
 		if !VerifyPID(state.PID) {
 			return nil // Process exited gracefully
