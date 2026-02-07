@@ -25,8 +25,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		// SSE endpoint for server-sent events (future enhancement)
 		h.handleSSE(w, r)
-	case http.MethodOptions:
-		h.handleCORS(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -34,13 +32,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // handlePost handles JSON-RPC requests.
 func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
-	// Set CORS headers
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Agent-Name")
 	w.Header().Set("Content-Type", "application/json")
 
-	// Read request body
+	// Read request body with size limit
+	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.writeError(w, nil, ParseError, "Failed to read request body")
@@ -154,7 +149,6 @@ func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Send initial connection message
 	fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n")
@@ -164,14 +158,6 @@ func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 	// Keep connection open until client disconnects
 	<-r.Context().Done()
-}
-
-// handleCORS handles CORS preflight requests.
-func (h *Handler) handleCORS(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Agent-Name")
-	w.WriteHeader(http.StatusOK)
 }
 
 // writeResponse writes a JSON-RPC response.
