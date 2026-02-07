@@ -12,7 +12,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -29,6 +28,7 @@ const maxResponseBodySize = 10 * 1024 * 1024
 // It parses an OpenAPI specification and converts each operation into an MCP tool,
 // proxying tool calls to HTTP requests against the target API.
 type OpenAPIClient struct {
+	ClientBase
 	name       string
 	spec       string
 	baseURL    string
@@ -42,13 +42,8 @@ type OpenAPIClient struct {
 	logger     *slog.Logger
 	noExpand   bool // If true, skip environment variable expansion in spec file
 
-	mu            sync.RWMutex
-	initialized   bool
-	tools         []Tool
-	operations    map[string]*OpenAPIOperation // toolName -> operation
-	serverInfo    ServerInfo
-	toolWhitelist []string
-	cachedDoc     *openapi3.T // Cached OpenAPI document
+	operations map[string]*OpenAPIOperation // toolName -> operation (protected by ClientBase.mu)
+	cachedDoc  *openapi3.T                  // Cached OpenAPI document (protected by ClientBase.mu)
 }
 
 // OpenAPIOperation holds parsed OpenAPI operation details for execution.
@@ -105,13 +100,6 @@ func (c *OpenAPIClient) SetLogger(logger *slog.Logger) {
 	}
 }
 
-// SetToolWhitelist sets the list of allowed tool names.
-func (c *OpenAPIClient) SetToolWhitelist(tools []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.toolWhitelist = tools
-}
-
 // Initialize loads and parses the OpenAPI spec.
 func (c *OpenAPIClient) Initialize(ctx context.Context) error {
 	doc, err := c.loadSpec(ctx)
@@ -135,8 +123,8 @@ func (c *OpenAPIClient) Initialize(ctx context.Context) error {
 	}
 
 	c.mu.Lock()
-	c.initialized = true
 	c.cachedDoc = doc
+	c.initialized = true
 	c.serverInfo = ServerInfo{
 		Name:    doc.Info.Title,
 		Version: doc.Info.Version,
@@ -147,8 +135,10 @@ func (c *OpenAPIClient) Initialize(ctx context.Context) error {
 }
 
 // RefreshTools builds MCP tools from OpenAPI operations.
+// OpenAPIClient has custom include/exclude filtering in addition to the whitelist,
+// so it manages tool storage directly rather than using ClientBase.SetTools().
 func (c *OpenAPIClient) RefreshTools(ctx context.Context) error {
-	// Use cached doc if available, otherwise load fresh
+	// Read shared state under lock
 	c.mu.RLock()
 	doc := c.cachedDoc
 	whitelist := c.toolWhitelist
@@ -219,13 +209,6 @@ func (c *OpenAPIClient) RefreshTools(ctx context.Context) error {
 	return nil
 }
 
-// Tools returns the cached tools.
-func (c *OpenAPIClient) Tools() []Tool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.tools
-}
-
 // CallTool executes an OpenAPI operation.
 func (c *OpenAPIClient) CallTool(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
 	c.logger.Debug("sending request", "method", "tools/call", "tool", name)
@@ -274,20 +257,6 @@ func (c *OpenAPIClient) CallTool(ctx context.Context, name string, args map[stri
 	return &ToolCallResult{
 		Content: []Content{NewTextContent(resp)},
 	}, nil
-}
-
-// IsInitialized returns whether the client has been initialized.
-func (c *OpenAPIClient) IsInitialized() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.initialized
-}
-
-// ServerInfo returns the server information.
-func (c *OpenAPIClient) ServerInfo() ServerInfo {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.serverInfo
 }
 
 // loadSpec loads the OpenAPI spec from URL or file.
