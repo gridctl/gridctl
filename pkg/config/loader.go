@@ -50,6 +50,9 @@ func expandEnvVars(s *Stack) {
 		for i := range s.Gateway.AllowedOrigins {
 			s.Gateway.AllowedOrigins[i] = os.ExpandEnv(s.Gateway.AllowedOrigins[i])
 		}
+		if s.Gateway.Auth != nil {
+			s.Gateway.Auth.Token = os.ExpandEnv(s.Gateway.Auth.Token)
+		}
 	}
 
 	s.Network.Name = os.ExpandEnv(s.Network.Name)
