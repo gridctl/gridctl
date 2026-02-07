@@ -53,6 +53,7 @@ type Gateway struct {
 	sessions  *SessionManager
 	dockerCli dockerclient.DockerClient
 	logger    *slog.Logger
+	cancel    context.CancelFunc
 
 	mu          sync.RWMutex
 	serverInfo  ServerInfo
@@ -103,6 +104,38 @@ func (g *Gateway) Router() *Router {
 // Sessions returns the session manager.
 func (g *Gateway) Sessions() *SessionManager {
 	return g.sessions
+}
+
+// SessionCount returns the number of active sessions.
+func (g *Gateway) SessionCount() int {
+	return g.sessions.Count()
+}
+
+// StartCleanup starts periodic session cleanup. Call Close() to stop.
+func (g *Gateway) StartCleanup(ctx context.Context) {
+	ctx, g.cancel = context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				removed := g.sessions.Cleanup(30 * time.Minute)
+				if removed > 0 {
+					g.logger.Info("cleaned up stale sessions", "removed", removed)
+				}
+			}
+		}
+	}()
+}
+
+// Close stops the cleanup goroutine.
+func (g *Gateway) Close() {
+	if g.cancel != nil {
+		g.cancel()
+	}
 }
 
 // ServerInfo returns the gateway server info.
