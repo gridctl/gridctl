@@ -245,6 +245,14 @@ func (g *Gateway) UnregisterAgent(name string) {
 	delete(g.agentAccess, name)
 }
 
+// HasAgent returns true if the named agent is registered with the gateway.
+func (g *Gateway) HasAgent(name string) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	_, ok := g.agentAccess[name]
+	return ok
+}
+
 // GetAgentAllowedServers returns the MCP servers an agent can access.
 // Returns nil if the agent is not registered (allows all for backward compatibility).
 func (g *Gateway) GetAgentAllowedServers(agentName string) []config.ToolSelector {
