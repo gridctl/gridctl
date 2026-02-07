@@ -235,6 +235,12 @@ const (
 	ErrUnsupportedOperation = -32003
 )
 
+// Default timeouts for A2A operations.
+const (
+	// DefaultA2ATimeout is the HTTP client timeout for A2A requests.
+	DefaultA2ATimeout = 60 * time.Second
+)
+
 // NewErrorResponse creates a JSON-RPC error response.
 func NewErrorResponse(id *json.RawMessage, code int, message string) Response {
 	return Response{
