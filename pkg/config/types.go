@@ -4,14 +4,23 @@ import "gopkg.in/yaml.v3"
 
 // Stack represents the complete gridctl configuration.
 type Stack struct {
-	Version    string      `yaml:"version"`
-	Name       string      `yaml:"name"`
-	Network    Network     `yaml:"network"`              // Single network (simple mode)
-	Networks   []Network   `yaml:"networks,omitempty"`   // Multiple networks (advanced mode)
-	MCPServers []MCPServer `yaml:"mcp-servers"`
-	Agents     []Agent     `yaml:"agents,omitempty"`     // Active agents that consume MCP tools
-	Resources  []Resource  `yaml:"resources,omitempty"`
-	A2AAgents  []A2AAgent  `yaml:"a2a-agents,omitempty"` // External A2A agents for agent-to-agent communication
+	Version    string         `yaml:"version"`
+	Name       string         `yaml:"name"`
+	Gateway    *GatewayConfig `yaml:"gateway,omitempty"`
+	Network    Network        `yaml:"network"`              // Single network (simple mode)
+	Networks   []Network      `yaml:"networks,omitempty"`   // Multiple networks (advanced mode)
+	MCPServers []MCPServer    `yaml:"mcp-servers"`
+	Agents     []Agent        `yaml:"agents,omitempty"`     // Active agents that consume MCP tools
+	Resources  []Resource     `yaml:"resources,omitempty"`
+	A2AAgents  []A2AAgent     `yaml:"a2a-agents,omitempty"` // External A2A agents for agent-to-agent communication
+}
+
+// GatewayConfig holds optional gateway-level configuration.
+type GatewayConfig struct {
+	// AllowedOrigins lists origins for CORS.
+	// When not set, defaults to ["*"] (allow all) for backward compatibility.
+	// Set explicit origins to restrict cross-origin access.
+	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
 }
 
 // Network defines the Docker network configuration.
