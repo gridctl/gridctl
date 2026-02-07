@@ -327,20 +327,18 @@ func TestHandler_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestHandler_CORS(t *testing.T) {
+func TestHandler_CORSHandledByMiddleware(t *testing.T) {
 	h := NewHandler("http://localhost:8080")
 
+	// CORS is handled by the central corsMiddleware in api.go, not the A2A handler.
+	// The handler itself returns 405 for OPTIONS since it doesn't handle that method.
 	req := httptest.NewRequest(http.MethodOptions, "/a2a/test-agent", nil)
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("Status code mismatch: got %d, want %d", rec.Code, http.StatusOK)
-	}
-
-	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Error("Missing CORS header")
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("Status code mismatch: got %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
 
