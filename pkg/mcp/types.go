@@ -59,6 +59,9 @@ const (
 	InternalError  = -32603
 )
 
+// MaxRequestBodySize is the maximum allowed size for incoming JSON-RPC request bodies (1MB).
+const MaxRequestBodySize = 1 * 1024 * 1024
+
 // MCP Protocol types
 
 // ServerInfo contains information about the MCP server.
