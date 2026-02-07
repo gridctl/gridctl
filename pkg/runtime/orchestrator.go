@@ -465,9 +465,9 @@ func (o *Orchestrator) startAgent(ctx context.Context, stack *config.Stack, agen
 	for k, v := range agent.Env {
 		env[k] = v
 	}
-	// Inject MCP gateway endpoint for agent to connect to
+	// Inject MCP gateway endpoint for agent to connect to (includes agent identity for SSE access control)
 	if opts.GatewayPort > 0 {
-		env["MCP_ENDPOINT"] = fmt.Sprintf("http://host.docker.internal:%d", opts.GatewayPort)
+		env["MCP_ENDPOINT"] = fmt.Sprintf("http://host.docker.internal:%d?agent=%s", opts.GatewayPort, agent.Name)
 	}
 
 	// Create workload config

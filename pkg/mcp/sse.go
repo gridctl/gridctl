@@ -21,6 +21,7 @@ type SSEServer struct {
 // SSESession represents a connected SSE client.
 type SSESession struct {
 	ID        string
+	AgentName string // Agent identity for tool access control
 	Writer    http.ResponseWriter
 	Flusher   http.Flusher
 	Done      chan struct{}
@@ -48,12 +49,19 @@ func (s *SSEServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture agent identity for access control
+	agentName := r.URL.Query().Get("agent")
+	if agentName == "" {
+		agentName = r.Header.Get("X-Agent-Name")
+	}
+
 	// Create session
 	session := &SSESession{
-		ID:      generateSessionID(),
-		Writer:  w,
-		Flusher: flusher,
-		Done:    make(chan struct{}),
+		ID:        generateSessionID(),
+		AgentName: agentName,
+		Writer:    w,
+		Flusher:   flusher,
+		Done:      make(chan struct{}),
 	}
 
 	s.mu.Lock()
@@ -129,8 +137,8 @@ func (s *SSEServer) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle the request
-	resp := s.handleRequest(r.Context(), &req)
+	// Handle the request with session context for access control
+	resp := s.handleRequest(r.Context(), session, &req)
 
 	// Send response via SSE for SSE-only clients
 	s.sendEvent(session, "message", resp)
@@ -141,16 +149,16 @@ func (s *SSEServer) HandleMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRequest processes an MCP request.
-func (s *SSEServer) handleRequest(ctx context.Context, req *Request) Response {
+func (s *SSEServer) handleRequest(ctx context.Context, session *SSESession, req *Request) Response {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req)
 	case "notifications/initialized":
 		return NewSuccessResponse(req.ID, nil)
 	case "tools/list":
-		return s.handleToolsList(req)
+		return s.handleToolsList(session, req)
 	case "tools/call":
-		return s.handleToolsCall(ctx, req)
+		return s.handleToolsCall(ctx, session, req)
 	case "ping":
 		return NewSuccessResponse(req.ID, struct{}{})
 	default:
@@ -171,21 +179,33 @@ func (s *SSEServer) handleInitialize(req *Request) Response {
 	return NewSuccessResponse(req.ID, result)
 }
 
-func (s *SSEServer) handleToolsList(req *Request) Response {
-	result, err := s.gateway.HandleToolsList()
+func (s *SSEServer) handleToolsList(session *SSESession, req *Request) Response {
+	var result *ToolsListResult
+	var err error
+	if session.AgentName != "" {
+		result, err = s.gateway.HandleToolsListForAgent(session.AgentName)
+	} else {
+		result, err = s.gateway.HandleToolsList()
+	}
 	if err != nil {
 		return NewErrorResponse(req.ID, InternalError, err.Error())
 	}
 	return NewSuccessResponse(req.ID, result)
 }
 
-func (s *SSEServer) handleToolsCall(ctx context.Context, req *Request) Response {
+func (s *SSEServer) handleToolsCall(ctx context.Context, session *SSESession, req *Request) Response {
 	var params ToolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return NewErrorResponse(req.ID, InvalidParams, "Invalid tools/call params")
 	}
 
-	result, err := s.gateway.HandleToolsCall(ctx, params)
+	var result *ToolCallResult
+	var err error
+	if session.AgentName != "" {
+		result, err = s.gateway.HandleToolsCallForAgent(ctx, session.AgentName, params)
+	} else {
+		result, err = s.gateway.HandleToolsCall(ctx, params)
+	}
 	if err != nil {
 		return NewErrorResponse(req.ID, InternalError, err.Error())
 	}
