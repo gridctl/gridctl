@@ -20,17 +20,12 @@ import (
 
 // StdioClient communicates with an MCP server via container stdin/stdout.
 type StdioClient struct {
+	ClientBase
 	name        string
 	containerID string
 	cli         dockerclient.DockerClient
 	requestID   atomic.Int64
 	logger      *slog.Logger
-
-	mu            sync.RWMutex
-	initialized   bool
-	tools         []Tool
-	serverInfo    ServerInfo
-	toolWhitelist []string // Tool whitelist (empty = all tools)
 
 	// Connection state
 	connMu   sync.Mutex
@@ -65,15 +60,6 @@ func (c *StdioClient) SetLogger(logger *slog.Logger) {
 // Name returns the agent name.
 func (c *StdioClient) Name() string {
 	return c.name
-}
-
-// SetToolWhitelist sets the list of allowed tool names.
-// Only tools in this list will be returned by Tools() and RefreshTools().
-// An empty or nil list means all tools are allowed.
-func (c *StdioClient) SetToolWhitelist(tools []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.toolWhitelist = tools
 }
 
 // Connect attaches to the container's stdin/stdout.
@@ -181,10 +167,7 @@ func (c *StdioClient) Initialize(ctx context.Context) error {
 		return fmt.Errorf("initialize: %w", err)
 	}
 
-	c.mu.Lock()
-	c.initialized = true
-	c.serverInfo = result.ServerInfo
-	c.mu.Unlock()
+	c.SetInitialized(result.ServerInfo)
 
 	// Send initialized notification
 	_ = c.notify(ctx, "notifications/initialized", nil)
@@ -200,35 +183,8 @@ func (c *StdioClient) RefreshTools(ctx context.Context) error {
 		return fmt.Errorf("tools/list: %w", err)
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Filter tools if whitelist is set
-	if len(c.toolWhitelist) > 0 {
-		allowed := make(map[string]bool, len(c.toolWhitelist))
-		for _, name := range c.toolWhitelist {
-			allowed[name] = true
-		}
-
-		var filteredTools []Tool
-		for _, tool := range result.Tools {
-			if allowed[tool.Name] {
-				filteredTools = append(filteredTools, tool)
-			}
-		}
-		c.tools = filteredTools
-	} else {
-		c.tools = result.Tools
-	}
-
+	c.SetTools(result.Tools)
 	return nil
-}
-
-// Tools returns the cached tools for this agent.
-func (c *StdioClient) Tools() []Tool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.tools
 }
 
 // CallTool invokes a tool on the agent.
@@ -244,20 +200,6 @@ func (c *StdioClient) CallTool(ctx context.Context, name string, arguments map[s
 	}
 
 	return &result, nil
-}
-
-// IsInitialized returns whether the client has been initialized.
-func (c *StdioClient) IsInitialized() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.initialized
-}
-
-// ServerInfo returns the server information.
-func (c *StdioClient) ServerInfo() ServerInfo {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.serverInfo
 }
 
 // call performs a JSON-RPC call via stdin/stdout.
