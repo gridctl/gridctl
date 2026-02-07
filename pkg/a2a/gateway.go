@@ -3,8 +3,11 @@ package a2a
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // Gateway manages A2A agents - both local (server role) and remote (client role).
@@ -16,13 +19,19 @@ type Gateway struct {
 
 	// Remote agents (client role)
 	remoteAgents map[string]*Client // name -> client
+
+	logger *slog.Logger
 }
 
 // NewGateway creates a new A2A gateway.
-func NewGateway(baseURL string) *Gateway {
+func NewGateway(baseURL string, logger *slog.Logger) *Gateway {
+	if logger == nil {
+		logger = logging.NewDiscardLogger()
+	}
 	return &Gateway{
 		handler:      NewHandler(baseURL),
 		remoteAgents: make(map[string]*Client),
+		logger:       logger,
 	}
 }
 
@@ -84,8 +93,10 @@ func (g *Gateway) RegisterRemoteAgent(ctx context.Context, name, endpoint string
 	g.remoteAgents[name] = client
 	g.mu.Unlock()
 
-	fmt.Printf("  Registered remote A2A agent '%s' (%s) with %d skills\n",
-		name, card.Name, len(card.Skills))
+	g.logger.Info("registered remote A2A agent",
+		"name", name,
+		"card_name", card.Name,
+		"skills", len(card.Skills))
 	return nil
 }
 

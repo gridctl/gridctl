@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewGateway(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 	if gw == nil {
 		t.Fatal("NewGateway returned nil")
 	}
@@ -19,7 +19,7 @@ func TestNewGateway(t *testing.T) {
 }
 
 func TestGateway_RegisterLocalAgent(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 
 	card := AgentCard{
 		Name:        "test-agent",
@@ -54,7 +54,7 @@ func TestGateway_RegisterLocalAgent(t *testing.T) {
 }
 
 func TestGateway_RegisterMultipleLocalAgents(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 
 	// Register first agent
 	gw.RegisterLocalAgent("agent-1", AgentCard{
@@ -92,7 +92,7 @@ func TestGateway_RegisterMultipleLocalAgents(t *testing.T) {
 }
 
 func TestGateway_UnregisterLocalAgent(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 
 	gw.RegisterLocalAgent("test-agent", AgentCard{
 		Name:   "test-agent",
@@ -114,7 +114,7 @@ func TestGateway_UnregisterLocalAgent(t *testing.T) {
 }
 
 func TestGateway_Handler(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 	handler := gw.Handler()
 	if handler == nil {
 		t.Error("Handler() returned nil")
@@ -122,7 +122,7 @@ func TestGateway_Handler(t *testing.T) {
 }
 
 func TestGateway_AggregatedSkills(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 
 	gw.RegisterLocalAgent("agent-1", AgentCard{
 		Name: "agent-1",
@@ -162,7 +162,7 @@ func TestGateway_AggregatedSkills(t *testing.T) {
 }
 
 func TestGateway_ListRemoteAgents_Empty(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 
 	agents := gw.ListRemoteAgents()
 	if len(agents) != 0 {
@@ -171,7 +171,7 @@ func TestGateway_ListRemoteAgents_Empty(t *testing.T) {
 }
 
 func TestGateway_GetRemoteAgent_NotFound(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 
 	agent := gw.GetRemoteAgent("nonexistent")
 	if agent != nil {
@@ -180,7 +180,7 @@ func TestGateway_GetRemoteAgent_NotFound(t *testing.T) {
 }
 
 func TestGateway_TaskCount(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 
 	if gw.TaskCount() != 0 {
 		t.Errorf("expected 0 tasks, got %d", gw.TaskCount())
@@ -196,7 +196,7 @@ func TestGateway_TaskCount(t *testing.T) {
 }
 
 func TestGateway_StartCleanup(t *testing.T) {
-	gw := NewGateway("http://localhost:8080")
+	gw := NewGateway("http://localhost:8080", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	gw.StartCleanup(ctx)

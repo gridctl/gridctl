@@ -9,6 +9,11 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 )
 
+// LoggerSetter is an interface for types that accept a logger.
+type LoggerSetter interface {
+	SetLogger(logger *slog.Logger)
+}
+
 // Orchestrator manages the lifecycle of gridctl workloads.
 // It uses a WorkloadRuntime to start/stop workloads and a Builder for image builds.
 type Orchestrator struct {
@@ -33,6 +38,7 @@ type BuildOptions struct {
 	Tag        string            // Image tag
 	BuildArgs  map[string]string // Build arguments
 	NoCache    bool              // Force rebuild
+	Logger     *slog.Logger      // Logger for build operations (optional)
 }
 
 // BuildResult from a build operation.
@@ -96,9 +102,14 @@ func NewOrchestrator(runtime WorkloadRuntime, builder Builder) *Orchestrator {
 }
 
 // SetLogger sets the logger for orchestration operations.
+// If the underlying runtime supports SetLogger, the logger is propagated.
 func (o *Orchestrator) SetLogger(logger *slog.Logger) {
 	if logger != nil {
 		o.logger = logger
+		// Propagate to runtime if it supports logging
+		if ls, ok := o.runtime.(LoggerSetter); ok {
+			ls.SetLogger(logger)
+		}
 	}
 }
 
@@ -276,6 +287,7 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 			Tag:        generateTag(stack.Name, server.Name),
 			BuildArgs:  server.BuildArgs,
 			NoCache:    opts.NoCache,
+			Logger:     o.logger,
 		}
 
 		result, err := o.builder.Build(ctx, buildOpts)
@@ -424,6 +436,7 @@ func (o *Orchestrator) startAgent(ctx context.Context, stack *config.Stack, agen
 			Tag:        generateTag(stack.Name, agent.Name),
 			BuildArgs:  agent.BuildArgs,
 			NoCache:    opts.NoCache,
+			Logger:     o.logger,
 		}
 
 		result, err := o.builder.Build(ctx, buildOpts)

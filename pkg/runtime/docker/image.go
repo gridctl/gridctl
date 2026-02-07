@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
@@ -13,7 +14,7 @@ import (
 )
 
 // EnsureImage pulls the image if it doesn't exist locally.
-func EnsureImage(ctx context.Context, cli dockerclient.DockerClient, imageName string) error {
+func EnsureImage(ctx context.Context, cli dockerclient.DockerClient, imageName string, logger *slog.Logger) error {
 	// Check if image exists locally
 	images, err := cli.ImageList(ctx, image.ListOptions{})
 	if err != nil {
@@ -29,7 +30,7 @@ func EnsureImage(ctx context.Context, cli dockerclient.DockerClient, imageName s
 	}
 
 	// Pull the image
-	fmt.Printf("  Pulling image %s...\n", imageName)
+	logger.Info("pulling image", "image", imageName)
 	reader, err := cli.ImagePull(ctx, imageName, image.PullOptions{})
 	if err != nil {
 		return fmt.Errorf("pulling image %s: %w", imageName, err)
@@ -37,7 +38,7 @@ func EnsureImage(ctx context.Context, cli dockerclient.DockerClient, imageName s
 	defer reader.Close()
 
 	// Stream pull progress
-	if err := streamPullProgress(reader); err != nil {
+	if err := streamPullProgress(reader, logger); err != nil {
 		return fmt.Errorf("streaming pull progress: %w", err)
 	}
 
@@ -56,7 +57,7 @@ type pullProgress struct {
 }
 
 // streamPullProgress reads and displays Docker pull progress.
-func streamPullProgress(reader io.Reader) error {
+func streamPullProgress(reader io.Reader, logger *slog.Logger) error {
 	decoder := json.NewDecoder(reader)
 	lastStatus := ""
 
@@ -81,7 +82,7 @@ func streamPullProgress(reader io.Reader) error {
 		// Simple progress indicator
 		if status != lastStatus && !strings.Contains(p.Status, "Pulling") {
 			if p.Status == "Pull complete" || p.Status == "Already exists" {
-				fmt.Printf("    %s: %s\n", p.ID, p.Status)
+				logger.Debug("pull progress", "id", p.ID, "status", p.Status)
 			}
 			lastStatus = status
 		}

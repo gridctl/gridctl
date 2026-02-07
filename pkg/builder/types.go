@@ -1,5 +1,7 @@
 package builder
 
+import "log/slog"
+
 // BuildOptions contains options for building an image.
 type BuildOptions struct {
 	// Source configuration
@@ -15,6 +17,9 @@ type BuildOptions struct {
 
 	// Cache control
 	NoCache bool // Force rebuild, ignore cache
+
+	// Logger for build operations (optional, defaults to discard)
+	Logger *slog.Logger
 }
 
 // BuildResult contains the result of a build operation.

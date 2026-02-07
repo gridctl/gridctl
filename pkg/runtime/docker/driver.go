@@ -3,8 +3,10 @@ package docker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/runtime"
 
 	"github.com/docker/go-connections/nat"
@@ -12,7 +14,8 @@ import (
 
 // DockerRuntime implements runtime.WorkloadRuntime using Docker.
 type DockerRuntime struct {
-	cli dockerclient.DockerClient
+	cli    dockerclient.DockerClient
+	logger *slog.Logger
 }
 
 // New creates a new DockerRuntime instance.
@@ -21,12 +24,19 @@ func New() (*DockerRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DockerRuntime{cli: cli}, nil
+	return &DockerRuntime{cli: cli, logger: logging.NewDiscardLogger()}, nil
 }
 
 // NewWithClient creates a DockerRuntime with an existing client (for testing).
 func NewWithClient(cli dockerclient.DockerClient) *DockerRuntime {
-	return &DockerRuntime{cli: cli}
+	return &DockerRuntime{cli: cli, logger: logging.NewDiscardLogger()}
+}
+
+// SetLogger sets the logger for Docker runtime operations.
+func (d *DockerRuntime) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		d.logger = logger
+	}
 }
 
 // Client returns the underlying Docker client for advanced use cases.
@@ -246,7 +256,7 @@ func (d *DockerRuntime) RemoveNetwork(ctx context.Context, name string) error {
 
 // EnsureImage ensures the image is available locally.
 func (d *DockerRuntime) EnsureImage(ctx context.Context, imageName string) error {
-	return EnsureImage(ctx, d.cli, imageName)
+	return EnsureImage(ctx, d.cli, imageName, d.logger)
 }
 
 // Ping checks if the runtime is accessible.

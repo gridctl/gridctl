@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,8 +18,8 @@ import (
 )
 
 // BuildImage builds a Docker image from a context directory.
-func BuildImage(ctx context.Context, cli dockerclient.DockerClient, contextPath, dockerfile, tag string, buildArgs map[string]string, noCache bool) (string, error) {
-	fmt.Printf("    Building image %s...\n", tag)
+func BuildImage(ctx context.Context, cli dockerclient.DockerClient, contextPath, dockerfile, tag string, buildArgs map[string]string, noCache bool, logger *slog.Logger) (string, error) {
+	logger.Info("building image", "tag", tag)
 
 	// Verify Dockerfile exists
 	dockerfilePath := filepath.Join(contextPath, dockerfile)
@@ -56,12 +57,12 @@ func BuildImage(ctx context.Context, cli dockerclient.DockerClient, contextPath,
 	defer resp.Body.Close()
 
 	// Stream build output
-	imageID, err := streamBuildOutput(resp.Body)
+	imageID, err := streamBuildOutput(resp.Body, logger)
 	if err != nil {
 		return "", err
 	}
 
-	fmt.Printf("    Built image %s\n", tag)
+	logger.Info("built image", "tag", tag)
 	return imageID, nil
 }
 
@@ -76,7 +77,7 @@ type buildOutput struct {
 }
 
 // streamBuildOutput reads and displays Docker build output.
-func streamBuildOutput(reader io.Reader) (string, error) {
+func streamBuildOutput(reader io.Reader, logger *slog.Logger) (string, error) {
 	decoder := json.NewDecoder(reader)
 	var imageID string
 
@@ -99,13 +100,13 @@ func streamBuildOutput(reader io.Reader) (string, error) {
 			imageID = output.Aux.ID
 		}
 
-		// Print build steps (filter noise)
+		// Log build steps (filter noise)
 		if output.Stream != "" {
 			stream := strings.TrimSpace(output.Stream)
 			if stream != "" && (strings.HasPrefix(stream, "Step") ||
 				strings.HasPrefix(stream, "Successfully") ||
 				strings.HasPrefix(stream, "---")) {
-				fmt.Printf("      %s\n", stream)
+				logger.Debug("build output", "line", stream)
 			}
 		}
 	}

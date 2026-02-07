@@ -3,10 +3,12 @@ package builder
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // Builder handles building images from source.
@@ -21,12 +23,17 @@ func New(cli dockerclient.DockerClient) *Builder {
 
 // Build builds an image from the given options.
 func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, error) {
+	logger := opts.Logger
+	if logger == nil {
+		logger = logging.NewDiscardLogger()
+	}
+
 	var contextPath string
 	var err error
 
 	switch opts.SourceType {
 	case "git":
-		contextPath, err = b.prepareGitSource(opts)
+		contextPath, err = b.prepareGitSource(opts, logger)
 	case "local":
 		contextPath, err = b.prepareLocalSource(opts)
 	default:
@@ -63,7 +70,7 @@ func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, e
 	}
 
 	// Build the image
-	imageID, err := BuildImage(ctx, b.cli, contextPath, dockerfile, opts.Tag, opts.BuildArgs, opts.NoCache)
+	imageID, err := BuildImage(ctx, b.cli, contextPath, dockerfile, opts.Tag, opts.BuildArgs, opts.NoCache, logger)
 	if err != nil {
 		return nil, fmt.Errorf("building image: %w", err)
 	}
@@ -75,7 +82,7 @@ func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, e
 	}, nil
 }
 
-func (b *Builder) prepareGitSource(opts BuildOptions) (string, error) {
+func (b *Builder) prepareGitSource(opts BuildOptions, logger *slog.Logger) (string, error) {
 	if opts.URL == "" {
 		return "", fmt.Errorf("git URL is required")
 	}
@@ -85,7 +92,7 @@ func (b *Builder) prepareGitSource(opts BuildOptions) (string, error) {
 		ref = "main"
 	}
 
-	return CloneOrUpdate(opts.URL, ref)
+	return CloneOrUpdate(opts.URL, ref, logger)
 }
 
 func (b *Builder) prepareLocalSource(opts BuildOptions) (string, error) {

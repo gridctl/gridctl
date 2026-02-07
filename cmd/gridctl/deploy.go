@@ -470,7 +470,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 	}
 	if hasA2A {
 		baseURL := fmt.Sprintf("http://localhost:%d", port)
-		a2aGateway = a2a.NewGateway(baseURL)
+		a2aGateway = a2a.NewGateway(baseURL, slog.New(bufferHandler))
 	}
 
 	// Get embedded web files
