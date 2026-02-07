@@ -172,6 +172,89 @@ func TestSessionManager_Cleanup_KeepsRecent(t *testing.T) {
 	}
 }
 
+func TestSessionManager_Count(t *testing.T) {
+	m := NewSessionManager()
+	clientInfo := ClientInfo{Name: "client", Version: "1.0"}
+
+	if m.Count() != 0 {
+		t.Errorf("expected 0, got %d", m.Count())
+	}
+
+	m.Create(clientInfo)
+	m.Create(clientInfo)
+
+	if m.Count() != 2 {
+		t.Errorf("expected 2, got %d", m.Count())
+	}
+}
+
+func TestSessionManager_EvictOldest(t *testing.T) {
+	m := NewSessionManager()
+	clientInfo := ClientInfo{Name: "client", Version: "1.0"}
+
+	// Fill to capacity
+	for i := 0; i < maxSessions; i++ {
+		m.Create(clientInfo)
+	}
+
+	if m.Count() != maxSessions {
+		t.Fatalf("expected %d sessions, got %d", maxSessions, m.Count())
+	}
+
+	// Set one session to be the oldest
+	m.mu.Lock()
+	var oldestID string
+	for id := range m.sessions {
+		oldestID = id
+		break
+	}
+	m.sessions[oldestID].LastSeen = time.Now().Add(-1 * time.Hour)
+	m.mu.Unlock()
+
+	// Create one more - should evict the oldest
+	m.Create(clientInfo)
+
+	if m.Count() != maxSessions {
+		t.Errorf("expected %d after eviction, got %d", maxSessions, m.Count())
+	}
+	if m.Get(oldestID) != nil {
+		t.Error("oldest session should have been evicted")
+	}
+}
+
+func TestSessionManager_EvictOldest_EvictsCorrectSession(t *testing.T) {
+	m := NewSessionManager()
+	clientInfo := ClientInfo{Name: "client", Version: "1.0"}
+
+	// Fill to capacity
+	for i := 0; i < maxSessions; i++ {
+		m.Create(clientInfo)
+	}
+
+	// Make two sessions old, but one older than the other
+	m.mu.Lock()
+	ids := make([]string, 0, 2)
+	for id := range m.sessions {
+		ids = append(ids, id)
+		if len(ids) == 2 {
+			break
+		}
+	}
+	m.sessions[ids[0]].LastSeen = time.Now().Add(-2 * time.Hour)
+	m.sessions[ids[1]].LastSeen = time.Now().Add(-1 * time.Hour)
+	m.mu.Unlock()
+
+	// Create one more - should evict the *oldest* (ids[0])
+	m.Create(clientInfo)
+
+	if m.Get(ids[0]) != nil {
+		t.Error("oldest session (2h old) should have been evicted")
+	}
+	if m.Get(ids[1]) == nil {
+		t.Error("second oldest session (1h old) should still exist")
+	}
+}
+
 func TestSessionManager_Concurrent(t *testing.T) {
 	m := NewSessionManager()
 	clientInfo := ClientInfo{Name: "client", Version: "1.0"}
