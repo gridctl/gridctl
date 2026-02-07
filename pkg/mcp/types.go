@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // Transport represents the type of transport for an MCP connection.
@@ -57,6 +58,21 @@ const (
 	MethodNotFound = -32601
 	InvalidParams  = -32602
 	InternalError  = -32603
+)
+
+// MCPProtocolVersion is the MCP protocol version supported by this implementation.
+const MCPProtocolVersion = "2024-11-05"
+
+// Default timeouts for MCP transport clients.
+const (
+	// DefaultRequestTimeout is the timeout for individual MCP JSON-RPC requests.
+	DefaultRequestTimeout = 30 * time.Second
+
+	// DefaultReadyPollInterval is the interval between readiness checks.
+	DefaultReadyPollInterval = 500 * time.Millisecond
+
+	// DefaultReadyTimeout is the overall timeout for server readiness.
+	DefaultReadyTimeout = 30 * time.Second
 )
 
 // MaxRequestBodySize is the maximum allowed size for incoming JSON-RPC request bodies (1MB).
