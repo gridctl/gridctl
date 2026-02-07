@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -131,10 +132,16 @@ func (g *Gateway) StartCleanup(ctx context.Context) {
 	}()
 }
 
-// Close stops the cleanup goroutine.
+// Close stops the cleanup goroutine and closes all agent client connections.
 func (g *Gateway) Close() {
 	if g.cancel != nil {
 		g.cancel()
+	}
+
+	for _, client := range g.router.Clients() {
+		if closer, ok := client.(io.Closer); ok {
+			closer.Close()
+		}
 	}
 }
 

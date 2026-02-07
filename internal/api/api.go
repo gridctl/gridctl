@@ -100,6 +100,16 @@ func (s *Server) SetAuth(authType, token, header string) {
 	s.authHeader = header
 }
 
+// Close performs cleanup of the API server's managed resources.
+func (s *Server) Close() {
+	if s.sseServer != nil {
+		s.sseServer.Close()
+	}
+	if s.gateway != nil {
+		s.gateway.Close()
+	}
+}
+
 // Handler returns the main HTTP handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()

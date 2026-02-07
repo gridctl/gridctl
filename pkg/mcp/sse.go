@@ -222,6 +222,15 @@ func (s *SSEServer) Broadcast(event string, data any) {
 	}
 }
 
+// Close terminates all active SSE connections.
+func (s *SSEServer) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Clear session map; active SSE handlers will exit when
+	// http.Server.Shutdown() cancels their request contexts.
+	s.sessions = make(map[string]*SSESession)
+}
+
 // SessionCount returns the number of active sessions.
 func (s *SSEServer) SessionCount() int {
 	s.mu.RLock()

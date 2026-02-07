@@ -502,10 +502,16 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
-	// Start server
+	// Start server with explicit *http.Server for graceful shutdown
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
 	serverErr := make(chan error, 1)
 	go func() {
-		if err := http.ListenAndServe(addr, server.Handler()); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
 	}()
@@ -674,10 +680,25 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 
 	// Wait for shutdown signal or server error
 	select {
-	case <-done:
+	case sig := <-done:
+		logger := slog.New(bufferHandler)
+		logger.Info("received signal, shutting down", "signal", sig)
+
 		if verbose {
 			fmt.Println("\nShutting down...")
 		}
+
+		// Graceful HTTP shutdown with timeout
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer shutdownCancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("HTTP server shutdown error", "error", err)
+		}
+
+		// Close API server resources (SSE connections, gateway clients)
+		server.Close()
+
 		// Clean up state file on graceful shutdown
 		_ = state.Delete(stack.Name)
 	case err := <-serverErr:
