@@ -505,10 +505,13 @@ func TestGateway_SessionCount(t *testing.T) {
 		t.Errorf("expected 0 sessions, got %d", g.SessionCount())
 	}
 
-	g.HandleInitialize(InitializeParams{
+	_, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo:      ClientInfo{Name: "client1", Version: "1.0"},
 	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if g.SessionCount() != 1 {
 		t.Errorf("expected 1 session, got %d", g.SessionCount())
