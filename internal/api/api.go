@@ -156,6 +156,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		MCPServers []MCPServerStatus `json:"mcp-servers"`
 		Agents     []AgentStatus     `json:"agents"`
 		Resources  []ResourceStatus  `json:"resources"`
+		Sessions   int               `json:"sessions"`
+		A2ATasks   *int              `json:"a2a_tasks,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:    s.gateway.ServerInfo().Name,
@@ -164,6 +166,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		MCPServers: s.getMCPServerStatuses(),
 		Agents:     s.getAgentStatuses(),
 		Resources:  s.getResourceStatuses(),
+		Sessions:   s.gateway.SessionCount(),
+	}
+	if s.a2aGateway != nil {
+		count := s.a2aGateway.TaskCount()
+		status.A2ATasks = &count
 	}
 
 	writeJSON(w, status)
