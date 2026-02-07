@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
 // Transport represents the type of transport for an MCP connection.
@@ -26,38 +28,17 @@ type AgentClient interface {
 	ServerInfo() ServerInfo
 }
 
-// JSON-RPC 2.0 types
+// JSON-RPC 2.0 types — re-exported from pkg/jsonrpc for backward compatibility.
+type Request = jsonrpc.Request
+type Response = jsonrpc.Response
+type Error = jsonrpc.Error
 
-// Request represents a JSON-RPC 2.0 request.
-type Request struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      *json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-// Response represents a JSON-RPC 2.0 response.
-type Response struct {
-	JSONRPC string           `json:"jsonrpc"`
-	ID      *json.RawMessage `json:"id,omitempty"`
-	Result  json.RawMessage  `json:"result,omitempty"`
-	Error   *Error           `json:"error,omitempty"`
-}
-
-// Error represents a JSON-RPC 2.0 error.
-type Error struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
-}
-
-// Standard JSON-RPC error codes
 const (
-	ParseError     = -32700
-	InvalidRequest = -32600
-	MethodNotFound = -32601
-	InvalidParams  = -32602
-	InternalError  = -32603
+	ParseError     = jsonrpc.ParseError
+	InvalidRequest = jsonrpc.InvalidRequest
+	MethodNotFound = jsonrpc.MethodNotFound
+	InvalidParams  = jsonrpc.InvalidParams
+	InternalError  = jsonrpc.InternalError
 )
 
 // MCPProtocolVersion is the MCP protocol version supported by this implementation.
@@ -185,23 +166,7 @@ func NewTextContent(text string) Content {
 }
 
 // NewErrorResponse creates a JSON-RPC error response.
-func NewErrorResponse(id *json.RawMessage, code int, message string) Response {
-	return Response{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error:   &Error{Code: code, Message: message},
-	}
-}
+var NewErrorResponse = jsonrpc.NewErrorResponse
 
 // NewSuccessResponse creates a JSON-RPC success response.
-func NewSuccessResponse(id *json.RawMessage, result any) Response {
-	var resultBytes json.RawMessage
-	if result != nil {
-		resultBytes, _ = json.Marshal(result)
-	}
-	return Response{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  resultBytes,
-	}
-}
+var NewSuccessResponse = jsonrpc.NewSuccessResponse
