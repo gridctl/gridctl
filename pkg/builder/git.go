@@ -2,6 +2,7 @@ package builder
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/go-git/go-git/v5"
@@ -10,7 +11,7 @@ import (
 
 // CloneOrUpdate clones a git repository or updates it if it already exists.
 // Returns the path to the cloned repository.
-func CloneOrUpdate(url, ref string) (string, error) {
+func CloneOrUpdate(url, ref string, logger *slog.Logger) (string, error) {
 	if err := EnsureReposCacheDir(); err != nil {
 		return "", fmt.Errorf("creating cache dir: %w", err)
 	}
@@ -23,15 +24,15 @@ func CloneOrUpdate(url, ref string) (string, error) {
 	// Check if repo already exists
 	if _, err := os.Stat(repoPath); err == nil {
 		// Repo exists, try to update
-		return updateRepo(repoPath, ref)
+		return updateRepo(repoPath, ref, logger)
 	}
 
 	// Clone the repository
-	return cloneRepo(url, ref, repoPath)
+	return cloneRepo(url, ref, repoPath, logger)
 }
 
-func cloneRepo(url, ref, destPath string) (string, error) {
-	fmt.Printf("    Cloning %s...\n", url)
+func cloneRepo(url, ref, destPath string, logger *slog.Logger) (string, error) {
+	logger.Info("cloning repository", "url", url)
 
 	cloneOpts := &git.CloneOptions{
 		URL:      url,
@@ -67,14 +68,14 @@ func cloneRepo(url, ref, destPath string) (string, error) {
 	// Get current commit for logging
 	head, err := repo.Head()
 	if err == nil {
-		fmt.Printf("    Cloned at %s\n", head.Hash().String()[:8])
+		logger.Info("cloned repository", "commit", head.Hash().String()[:8])
 	}
 
 	return destPath, nil
 }
 
-func updateRepo(repoPath, ref string) (string, error) {
-	fmt.Printf("    Updating cached repository...\n")
+func updateRepo(repoPath, ref string, logger *slog.Logger) (string, error) {
+	logger.Info("updating cached repository")
 
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
@@ -95,7 +96,7 @@ func updateRepo(repoPath, ref string) (string, error) {
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		// Non-fatal, continue with what we have
-		fmt.Printf("    Warning: fetch failed: %v\n", err)
+		logger.Warn("fetch failed, using existing", "error", err)
 	}
 
 	// Checkout the ref
@@ -112,14 +113,14 @@ func updateRepo(repoPath, ref string) (string, error) {
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		// Non-fatal for detached HEAD
 		if err != git.ErrNonFastForwardUpdate {
-			fmt.Printf("    Warning: pull failed: %v\n", err)
+			logger.Warn("pull failed, using existing", "error", err)
 		}
 	}
 
 	// Get current commit for logging
 	head, err := repo.Head()
 	if err == nil {
-		fmt.Printf("    At commit %s\n", head.Hash().String()[:8])
+		logger.Info("repository at commit", "commit", head.Hash().String()[:8])
 	}
 
 	return repoPath, nil
