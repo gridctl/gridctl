@@ -32,6 +32,9 @@ type Server struct {
 	logBuffer      *logging.LogBuffer
 	reloadHandler  *reload.Handler
 	allowedOrigins []string
+	authType       string
+	authToken      string
+	authHeader     string
 }
 
 // NewServer creates a new API server.
@@ -89,6 +92,14 @@ func (s *Server) SetAllowedOrigins(origins []string) {
 	s.allowedOrigins = origins
 }
 
+// SetAuth configures authentication for the server.
+// When configured, all requests (except /health and /ready) must include a valid token.
+func (s *Server) SetAuth(authType, token, header string) {
+	s.authType = authType
+	s.authToken = token
+	s.authHeader = header
+}
+
 // Handler returns the main HTTP handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -122,7 +133,14 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", spaHandler(fileServer, s.staticFS))
 	}
 
-	return corsMiddleware(s.allowedOrigins, mux)
+	handler := authMiddleware(s.authType, s.authToken, s.authHeader, mux)
+
+	var extraHeaders []string
+	if s.authHeader != "" && s.authHeader != "Authorization" {
+		extraHeaders = append(extraHeaders, s.authHeader)
+	}
+	handler = corsMiddleware(s.allowedOrigins, extraHeaders, handler)
+	return handler
 }
 
 // handleStatus returns the overall gateway status.
@@ -247,7 +265,8 @@ func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 }
 
 // corsMiddleware adds CORS headers to responses based on allowed origins.
-func corsMiddleware(allowedOrigins []string, next http.Handler) http.Handler {
+// extraHeaders are additional headers to include in Access-Control-Allow-Headers.
+func corsMiddleware(allowedOrigins []string, extraHeaders []string, next http.Handler) http.Handler {
 	originSet := make(map[string]bool, len(allowedOrigins))
 	allowAll := false
 	for _, o := range allowedOrigins {
@@ -256,12 +275,16 @@ func corsMiddleware(allowedOrigins []string, next http.Handler) http.Handler {
 		}
 		originSet[o] = true
 	}
+	allowHeaders := "Content-Type, X-Agent-Name, Authorization"
+	for _, h := range extraHeaders {
+		allowHeaders += ", " + h
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin != "" && (allowAll || originSet[origin]) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Agent-Name, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
 			w.Header().Set("Vary", "Origin")
 		}
 		if r.Method == http.MethodOptions {
