@@ -37,6 +37,7 @@ type StdioClient struct {
 	stdin    io.WriteCloser
 	stdout   io.Reader
 	attached bool
+	cancel   context.CancelFunc
 
 	// Response handling
 	responses   map[int64]chan *Response
@@ -110,20 +111,28 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 		_, _ = stdcopy.StdCopy(stdoutWriter, io.Discard, resp.Reader)
 	}()
 
-	// Start reading responses
-	go c.readResponses()
+	// Start reading responses with cancellation
+	readerCtx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
+	go c.readResponses(readerCtx)
 
 	return nil
 }
 
 // readResponses reads JSON-RPC responses from stdout.
-func (c *StdioClient) readResponses() {
+func (c *StdioClient) readResponses(ctx context.Context) {
 	scanner := bufio.NewScanner(c.stdout)
 	// Increase buffer size for large responses
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
 	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
@@ -368,8 +377,16 @@ func (c *StdioClient) Close() error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
+	if c.cancel != nil {
+		c.cancel()
+	}
 	if c.stdin != nil {
 		c.stdin.Close()
+	}
+	if c.stdout != nil {
+		if closer, ok := c.stdout.(io.Closer); ok {
+			closer.Close()
+		}
 	}
 	c.attached = false
 	return nil
