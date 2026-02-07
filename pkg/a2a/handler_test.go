@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestNewHandler(t *testing.T) {
@@ -375,6 +376,102 @@ func TestHandler_GetLocalAgent(t *testing.T) {
 	agent = h.GetLocalAgent("nonexistent")
 	if agent != nil {
 		t.Error("Expected nil for nonexistent agent")
+	}
+}
+
+func TestHandler_TaskCount(t *testing.T) {
+	h := NewHandler("http://localhost:8080")
+
+	if h.TaskCount() != 0 {
+		t.Errorf("expected 0 tasks, got %d", h.TaskCount())
+	}
+
+	// Create tasks via createTask
+	h.createTask("ctx-1")
+	h.createTask("ctx-2")
+
+	if h.TaskCount() != 2 {
+		t.Errorf("expected 2 tasks, got %d", h.TaskCount())
+	}
+}
+
+func TestHandler_CleanupTasks(t *testing.T) {
+	h := NewHandler("http://localhost:8080")
+
+	// Create some tasks
+	task1 := h.createTask("ctx-1")
+	task2 := h.createTask("ctx-2")
+	task3 := h.createTask("ctx-3")
+
+	// Mark task1 and task2 as terminal (completed and failed)
+	task1.Status = TaskStatus{State: TaskStateCompleted}
+	task1.UpdatedAt = time.Now().Add(-2 * time.Hour)
+	h.updateTask(task1)
+
+	task2.Status = TaskStatus{State: TaskStateFailed}
+	task2.UpdatedAt = time.Now().Add(-2 * time.Hour)
+	h.updateTask(task2)
+
+	// Manually set UpdatedAt back since updateTask sets it to now
+	h.mu.Lock()
+	h.tasks[task1.ID].UpdatedAt = time.Now().Add(-2 * time.Hour)
+	h.tasks[task2.ID].UpdatedAt = time.Now().Add(-2 * time.Hour)
+	h.mu.Unlock()
+
+	// task3 is still in submitted state (non-terminal)
+	_ = task3
+
+	// Cleanup tasks older than 1 hour
+	removed := h.CleanupTasks(1 * time.Hour)
+
+	if removed != 2 {
+		t.Errorf("expected 2 removed tasks, got %d", removed)
+	}
+	if h.TaskCount() != 1 {
+		t.Errorf("expected 1 remaining task, got %d", h.TaskCount())
+	}
+}
+
+func TestHandler_CleanupTasks_KeepsRecentTerminal(t *testing.T) {
+	h := NewHandler("http://localhost:8080")
+
+	// Create a completed task that is recent
+	task := h.createTask("ctx-1")
+	task.Status = TaskStatus{State: TaskStateCompleted}
+	h.updateTask(task)
+
+	// Cleanup tasks older than 1 hour - this is recent so should stay
+	removed := h.CleanupTasks(1 * time.Hour)
+
+	if removed != 0 {
+		t.Errorf("expected 0 removed tasks, got %d", removed)
+	}
+	if h.TaskCount() != 1 {
+		t.Errorf("expected 1 task, got %d", h.TaskCount())
+	}
+}
+
+func TestHandler_CleanupTasks_KeepsNonTerminal(t *testing.T) {
+	h := NewHandler("http://localhost:8080")
+
+	// Create a working task that is old
+	task := h.createTask("ctx-1")
+	task.Status = TaskStatus{State: TaskStateWorking}
+	h.updateTask(task)
+
+	// Manually set UpdatedAt to the past
+	h.mu.Lock()
+	h.tasks[task.ID].UpdatedAt = time.Now().Add(-2 * time.Hour)
+	h.mu.Unlock()
+
+	// Cleanup should not remove non-terminal tasks
+	removed := h.CleanupTasks(1 * time.Hour)
+
+	if removed != 0 {
+		t.Errorf("expected 0 removed (non-terminal), got %d", removed)
+	}
+	if h.TaskCount() != 1 {
+		t.Errorf("expected 1 task, got %d", h.TaskCount())
 	}
 }
 
