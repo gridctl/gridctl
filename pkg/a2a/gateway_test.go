@@ -1,6 +1,7 @@
 package a2a
 
 import (
+	"context"
 	"testing"
 )
 
@@ -176,4 +177,30 @@ func TestGateway_GetRemoteAgent_NotFound(t *testing.T) {
 	if agent != nil {
 		t.Error("Expected nil for nonexistent agent")
 	}
+}
+
+func TestGateway_TaskCount(t *testing.T) {
+	gw := NewGateway("http://localhost:8080")
+
+	if gw.TaskCount() != 0 {
+		t.Errorf("expected 0 tasks, got %d", gw.TaskCount())
+	}
+
+	// Create tasks via the handler
+	gw.handler.createTask("ctx-1")
+	gw.handler.createTask("ctx-2")
+
+	if gw.TaskCount() != 2 {
+		t.Errorf("expected 2 tasks, got %d", gw.TaskCount())
+	}
+}
+
+func TestGateway_StartCleanup(t *testing.T) {
+	gw := NewGateway("http://localhost:8080")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	gw.StartCleanup(ctx)
+
+	// Canceling should stop the goroutine (no panic or leak)
+	cancel()
 }
