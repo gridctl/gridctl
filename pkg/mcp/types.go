@@ -17,6 +17,8 @@ const (
 	TransportSSE   Transport = "sse"
 )
 
+//go:generate mockgen -destination=mock_agent_client_test.go -package=mcp . AgentClient
+
 // AgentClient is the interface for communicating with MCP agents.
 type AgentClient interface {
 	Name() string
