@@ -8,6 +8,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
+	"go.uber.org/mock/gomock"
 )
 
 func TestNewGateway(t *testing.T) {
@@ -99,10 +100,11 @@ func TestGateway_HandleInitialize(t *testing.T) {
 }
 
 func TestGateway_HandleToolsList(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
 	// Add a mock client with tools
-	client := NewMockAgentClient("agent1", []Tool{
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
 		{Name: "tool1", Description: "Tool 1"},
 		{Name: "tool2", Description: "Tool 2"},
 	})
@@ -120,18 +122,22 @@ func TestGateway_HandleToolsList(t *testing.T) {
 }
 
 func TestGateway_HandleToolsCall(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 	ctx := context.Background()
 
-	client := NewMockAgentClient("agent1", []Tool{
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
 		{Name: "echo", Description: "Echo tool"},
 	})
-	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
-		msg := args["message"].(string)
-		return &ToolCallResult{
-			Content: []Content{NewTextContent("Echo: " + msg)},
-		}, nil
-	})
+	// Override default CallTool with custom echo behavior
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+			msg := args["message"].(string)
+			return &ToolCallResult{
+				Content: []Content{NewTextContent("Echo: " + msg)},
+			}, nil
+		},
+	).AnyTimes()
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
 
@@ -195,15 +201,15 @@ func TestGateway_HandleToolsCall_InvalidFormat(t *testing.T) {
 }
 
 func TestGateway_HandleToolsCall_AgentError(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 	ctx := context.Background()
 
-	client := NewMockAgentClient("agent1", []Tool{
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
 		{Name: "fail", Description: "Failing tool"},
 	})
-	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
-		return nil, fmt.Errorf("agent error")
-	})
+	// Override default CallTool to return error
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("agent error")).AnyTimes()
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
 
@@ -235,7 +241,8 @@ func TestGateway_Status(t *testing.T) {
 	}
 
 	// Add a mock client
-	client := NewMockAgentClient("agent1", []Tool{
+	ctrl := gomock.NewController(t)
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
 		{Name: "tool1", Description: "Tool 1"},
 	})
 	g.Router().AddClient(client)
@@ -270,9 +277,10 @@ func TestGateway_Status(t *testing.T) {
 }
 
 func TestGateway_UnregisterMCPServer(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
-	client := NewMockAgentClient("agent1", []Tool{
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
 		{Name: "tool1", Description: "Tool 1"},
 	})
 	g.Router().AddClient(client)
@@ -294,15 +302,16 @@ func TestGateway_UnregisterMCPServer(t *testing.T) {
 }
 
 func TestGateway_AgentToolFiltering(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
 	// Add two mock clients with tools
-	client1 := NewMockAgentClient("server1", []Tool{
+	client1 := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "read", Description: "Read tool"},
 		{Name: "write", Description: "Write tool"},
 		{Name: "delete", Description: "Delete tool"},
 	})
-	client2 := NewMockAgentClient("server2", []Tool{
+	client2 := setupMockAgentClient(ctrl, "server2", []Tool{
 		{Name: "list", Description: "List tool"},
 		{Name: "create", Description: "Create tool"},
 	})
@@ -393,19 +402,23 @@ func TestGateway_AgentToolFiltering(t *testing.T) {
 }
 
 func TestGateway_AgentToolCallFiltering(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 	ctx := context.Background()
 
 	// Add a mock client with tools
-	client := NewMockAgentClient("server1", []Tool{
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "allowed", Description: "Allowed tool"},
 		{Name: "restricted", Description: "Restricted tool"},
 	})
-	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
-		return &ToolCallResult{
-			Content: []Content{NewTextContent("called " + name)},
-		}, nil
-	})
+	// Override default CallTool with custom behavior
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{
+				Content: []Content{NewTextContent("called " + name)},
+			}, nil
+		},
+	).AnyTimes()
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
 
@@ -441,6 +454,7 @@ func TestGateway_AgentToolCallFiltering(t *testing.T) {
 }
 
 func TestGateway_AccessDenialLogging(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 	ctx := context.Background()
 
@@ -450,7 +464,7 @@ func TestGateway_AccessDenialLogging(t *testing.T) {
 	g.SetLogger(slog.New(handler))
 
 	// Add a mock client
-	client := NewMockAgentClient("server1", []Tool{
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "secret-tool", Description: "Secret tool"},
 	})
 	g.Router().AddClient(client)
@@ -543,14 +557,18 @@ func TestGateway_RegisterMCPServer_LogsTiming(t *testing.T) {
 	// but we can verify the gateway logger is wired up by checking
 	// other logged operations. Instead, verify the log methods work
 	// by checking tool call logging (which uses the same logger).
-	client := NewMockAgentClient("test-server", []Tool{
+	ctrl := gomock.NewController(t)
+	client := setupMockAgentClient(ctrl, "test-server", []Tool{
 		{Name: "echo", Description: "Echo tool"},
 	})
-	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
-		return &ToolCallResult{
-			Content: []Content{NewTextContent("ok")},
-		}, nil
-	})
+	// Override default CallTool with custom behavior
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{
+				Content: []Content{NewTextContent("ok")},
+			}, nil
+		},
+	).AnyTimes()
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
 
