@@ -10,6 +10,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // register factory for runtime.New()
 )
 
 // TestFullStackLifecycle tests the complete lifecycle of a stack.
