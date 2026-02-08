@@ -167,12 +167,9 @@ func runDeploy(stackPath string) error {
 		return fmt.Errorf("failed to start stack: %w", err)
 	}
 
-	// Convert to legacy result format for runGateway
-	legacyResult := result.ToLegacyResult()
-
 	// If foreground mode, run gateway directly (pass pre-created buffer if available)
 	if deployForeground {
-		return runGateway(ctx, rt, stack, stackPath, legacyResult, deployPort, !deployQuiet, printer, logBuffer, bufferHandler)
+		return runGateway(ctx, rt, stack, stackPath, result, deployPort, !deployQuiet, printer, logBuffer, bufferHandler)
 	}
 
 	// Daemon mode: fork child process
@@ -301,15 +298,14 @@ func runDeployDaemonChild(stackPath string, stack *config.Stack) error {
 }
 
 // getRunningContainers retrieves info about already-running containers and external servers
-func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *config.Stack) (*runtime.LegacyUpResult, error) {
-	// Get container statuses using new WorkloadStatus API
+func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *config.Stack) (*runtime.UpResult, error) {
+	// Get container statuses using WorkloadStatus API
 	statuses, err := rt.Status(ctx, stack.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build result from statuses
-	result := &runtime.LegacyUpResult{}
+	result := &runtime.UpResult{}
 
 	// Track which container-based MCP servers we found
 	foundServers := make(map[string]bool)
@@ -340,12 +336,10 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 			// Get host port from container
 			hostPort, _ := runtime.GetContainerHostPort(ctx, rt.DockerClient(), string(status.ID), containerPort)
 
-			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
-				Name:          workloadName,
-				ContainerID:   string(status.ID),
-				ContainerName: status.Name,
-				ContainerPort: containerPort,
-				HostPort:      hostPort,
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerResult{
+				Name:       workloadName,
+				WorkloadID: status.ID,
+				HostPort:   hostPort,
 			})
 			foundServers[workloadName] = true
 		} else if status.Type == runtime.WorkloadTypeAgent {
@@ -358,11 +352,10 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 				}
 			}
 
-			result.Agents = append(result.Agents, runtime.AgentInfo{
-				Name:          workloadName,
-				ContainerID:   string(status.ID),
-				ContainerName: status.Name,
-				Uses:          uses,
+			result.Agents = append(result.Agents, runtime.AgentResult{
+				Name:       workloadName,
+				WorkloadID: status.ID,
+				Uses:       uses,
 			})
 		}
 	}
@@ -370,7 +363,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 	// Add external MCP servers from config (they don't have containers)
 	for _, server := range stack.MCPServers {
 		if server.IsExternal() && !foundServers[server.Name] {
-			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerResult{
 				Name:     server.Name,
 				External: true,
 				URL:      server.URL,
@@ -381,7 +374,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 	// Add local process MCP servers from config (they don't have containers)
 	for _, server := range stack.MCPServers {
 		if server.IsLocalProcess() && !foundServers[server.Name] {
-			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerResult{
 				Name:         server.Name,
 				LocalProcess: true,
 				Command:      server.Command,
@@ -392,7 +385,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 	// Add SSH MCP servers from config (they don't have containers)
 	for _, server := range stack.MCPServers {
 		if server.IsSSH() && !foundServers[server.Name] {
-			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerResult{
 				Name:            server.Name,
 				SSH:             true,
 				Command:         server.Command,
@@ -407,7 +400,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 	// Add OpenAPI MCP servers from config (they don't have containers)
 	for _, server := range stack.MCPServers {
 		if server.IsOpenAPI() && !foundServers[server.Name] {
-			result.MCPServers = append(result.MCPServers, runtime.MCPServerInfo{
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerResult{
 				Name:          server.Name,
 				OpenAPI:       true,
 				OpenAPIConfig: server.OpenAPI,
@@ -422,7 +415,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Runtime, stack *confi
 // existingBuffer and existingHandler allow reusing a log buffer created earlier
 // (e.g., for foreground mode where orchestrator events should also be captured).
 // Pass nil for both to create a fresh buffer.
-func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, stackPath string, result *runtime.LegacyUpResult, port int, verbose bool, printer *output.Printer, existingBuffer *logging.LogBuffer, existingHandler *logging.BufferHandler) error {
+func runGateway(ctx context.Context, rt *runtime.Orchestrator, stack *config.Stack, stackPath string, result *runtime.UpResult, port int, verbose bool, printer *output.Printer, existingBuffer *logging.LogBuffer, existingHandler *logging.BufferHandler) error {
 	// Create MCP gateway
 	gateway := mcp.NewGateway()
 	gateway.SetDockerClient(rt.DockerClient())
@@ -711,7 +704,7 @@ func runGateway(ctx context.Context, rt *runtime.Runtime, stack *config.Stack, s
 
 // registerMCPServers registers all MCP servers with the gateway.
 // This is called after the HTTP server is running so health checks can succeed.
-func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, stack *config.Stack, stackPath string, result *runtime.LegacyUpResult, verbose bool) {
+func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, stack *config.Stack, stackPath string, result *runtime.UpResult, verbose bool) {
 	// Build a map from MCP server name to config for transport lookup
 	serverConfigs := make(map[string]config.MCPServer)
 	for _, s := range stack.MCPServers {
@@ -804,7 +797,7 @@ func registerMCPServers(ctx context.Context, gateway *mcp.Gateway, stack *config
 			cfg = mcp.MCPServerConfig{
 				Name:        server.Name,
 				Transport:   transport,
-				ContainerID: server.ContainerID,
+				ContainerID: string(server.WorkloadID),
 				Tools:       serverCfg.Tools,
 			}
 		} else {
