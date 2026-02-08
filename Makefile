@@ -1,4 +1,4 @@
-.PHONY: all build build-web build-go dev clean help test test-coverage test-integration test-frontend mock-servers clean-mock-servers
+.PHONY: all build build-web build-go dev clean help test test-coverage test-integration test-frontend mock-servers clean-mock-servers generate
 
 # Version from git tags (fallback to dev)
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -117,6 +117,12 @@ clean-mock-servers:
 	@rm -f examples/_mock-servers/mock-mcp-server/mock-mcp-server
 	@echo "Mock servers cleaned up."
 
+# Generate mocks (requires mockgen: go install go.uber.org/mock/mockgen@latest)
+generate:
+	@echo "Generating mocks..."
+	go generate ./pkg/mcp/... ./pkg/runtime/...
+	@echo "Done."
+
 # Help
 help:
 	@echo "Gridctl Makefile"
@@ -133,6 +139,7 @@ help:
 	@echo "  make test-coverage - Run tests with coverage report"
 	@echo "  make test-frontend - Run frontend tests"
 	@echo "  make test-integration - Run integration tests (requires Docker)"
+	@echo "  make generate   - Regenerate mock files (requires mockgen)"
 	@echo "  make mock-servers [PORT=9001] - Build and run mock MCP servers for examples"
 	@echo "  make clean-mock-servers - Stop and remove mock MCP servers"
 	@echo "  make help       - Show this help message"
