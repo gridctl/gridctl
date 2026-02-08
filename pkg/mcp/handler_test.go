@@ -11,22 +11,27 @@ import (
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"go.uber.org/mock/gomock"
 )
 
 // setupTestHandler creates a Handler with a gateway containing mock clients.
 func setupTestHandler(t *testing.T) (*Handler, *Gateway) {
 	t.Helper()
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
-	client := NewMockAgentClient("server1", []Tool{
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "echo", Description: "Echo tool"},
 		{Name: "list-files", Description: "List files tool"},
 	})
-	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
-		return &ToolCallResult{
-			Content: []Content{NewTextContent("result for " + name)},
-		}, nil
-	})
+	// Override default CallTool with custom behavior
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{
+				Content: []Content{NewTextContent("result for " + name)},
+			}, nil
+		},
+	).AnyTimes()
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
 
@@ -520,13 +525,13 @@ func TestHandler_RequestSizeLimit(t *testing.T) {
 }
 
 func TestHandler_ToolsCall_AgentError(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
-	client := NewMockAgentClient("server1", []Tool{
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "fail", Description: "Failing tool"},
 	})
-	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
-		return nil, fmt.Errorf("internal failure")
-	})
+	// Override default CallTool to return error
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("internal failure")).AnyTimes()
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
 	h := NewHandler(g)
