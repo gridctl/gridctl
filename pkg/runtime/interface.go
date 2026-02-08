@@ -134,6 +134,15 @@ type WorkloadRuntime interface {
 	Close() error
 }
 
+// Label constants for identifying gridctl-managed resources.
+const (
+	LabelManaged   = "gridctl.managed"
+	LabelStack     = "gridctl.stack"
+	LabelMCPServer = "gridctl.mcp-server"
+	LabelResource  = "gridctl.resource"
+	LabelAgent     = "gridctl.agent"
+)
+
 // Sentinel errors for runtime operations.
 var (
 	ErrWorkloadNotFound   = errors.New("workload not found")
