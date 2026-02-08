@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -449,6 +450,567 @@ func TestSSEServer_HandleMessage_WithAgentFiltering(t *testing.T) {
 		for _, tool := range result.Tools {
 			t.Logf("  got tool: %s", tool.Name)
 		}
+	}
+}
+
+func TestSSEServer_Connection_Headers(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	req := httptest.NewRequest("GET", "/sse", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sse.ServeHTTP(w, req)
+	}()
+
+	waitForSession(t, sse)
+	cancel()
+	<-done
+
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("expected Content-Type text/event-stream, got %s", ct)
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Errorf("expected Cache-Control no-cache, got %s", cc)
+	}
+	if conn := w.Header().Get("Connection"); conn != "keep-alive" {
+		t.Errorf("expected Connection keep-alive, got %s", conn)
+	}
+}
+
+func TestSSEServer_Connection_EndpointEvent(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	req := httptest.NewRequest("GET", "/sse", nil)
+	req.Host = "localhost:8180"
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sse.ServeHTTP(w, req)
+	}()
+
+	waitForSession(t, sse)
+	cancel()
+	<-done
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event: endpoint") {
+		t.Error("expected endpoint event in SSE stream")
+	}
+	if !strings.Contains(body, "/message?sessionId=") {
+		t.Error("expected message URL with sessionId in endpoint event")
+	}
+	if !strings.Contains(body, "http://localhost:8180/message") {
+		t.Errorf("expected full message URL, got body: %s", body)
+	}
+}
+
+func TestSSEServer_Connection_ForwardedProto(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	req := httptest.NewRequest("GET", "/sse", nil)
+	req.Host = "example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sse.ServeHTTP(w, req)
+	}()
+
+	waitForSession(t, sse)
+	cancel()
+	<-done
+
+	body := w.Body.String()
+	if !strings.Contains(body, "https://example.com/message") {
+		t.Errorf("expected https scheme from X-Forwarded-Proto, got body: %s", body)
+	}
+}
+
+func TestSSEServer_SessionCleanupOnDisconnect(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	req := httptest.NewRequest("GET", "/sse", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sse.ServeHTTP(w, req)
+	}()
+
+	waitForSession(t, sse)
+	if sse.SessionCount() != 1 {
+		t.Errorf("expected 1 session, got %d", sse.SessionCount())
+	}
+
+	// Disconnect
+	cancel()
+	<-done
+
+	// Session should be cleaned up
+	if sse.SessionCount() != 0 {
+		t.Errorf("expected 0 sessions after disconnect, got %d", sse.SessionCount())
+	}
+}
+
+func TestSSEServer_HandleMessage_MissingSessionId(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"ping"}`
+	req := httptest.NewRequest("POST", "/message", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing sessionId, got %d", w.Code)
+	}
+}
+
+func TestSSEServer_HandleMessage_InvalidSession(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"ping"}`
+	req := httptest.NewRequest("POST", "/message?sessionId=nonexistent", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for invalid session, got %d", w.Code)
+	}
+}
+
+func TestSSEServer_HandleMessage_MethodNotAllowed(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	req := httptest.NewRequest("GET", "/message?sessionId=test", nil)
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET on /message, got %d", w.Code)
+	}
+}
+
+func TestSSEServer_HandleMessage_InvalidJSON(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Register a session
+	sseW := httptest.NewRecorder()
+	session := &SSESession{
+		ID:      "test-session",
+		Writer:  sseW,
+		Flusher: sseW,
+		Done:    make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, session.ID)
+		sse.mu.Unlock()
+	}()
+
+	req := httptest.NewRequest("POST", "/message?sessionId=test-session", strings.NewReader("{invalid}"))
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid JSON, got %d", w.Code)
+	}
+}
+
+func TestSSEServer_HandleMessage_Initialize(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{
+		ID:      "test-session",
+		Writer:  sseW,
+		Flusher: sseW,
+		Done:    make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, session.ID)
+		sse.mu.Unlock()
+	}()
+
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"clientInfo":      map[string]any{"name": "test-client", "version": "1.0"},
+		},
+	})
+
+	req := httptest.NewRequest("POST", "/message?sessionId=test-session", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp Response
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	var result InitializeResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+	if result.ProtocolVersion != MCPProtocolVersion {
+		t.Errorf("expected protocol version %s, got %s", MCPProtocolVersion, result.ProtocolVersion)
+	}
+}
+
+func TestSSEServer_HandleMessage_Ping(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{
+		ID:      "test-session",
+		Writer:  sseW,
+		Flusher: sseW,
+		Done:    make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, session.ID)
+		sse.mu.Unlock()
+	}()
+
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "ping",
+	})
+
+	req := httptest.NewRequest("POST", "/message?sessionId=test-session", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+
+	var resp Response
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+}
+
+func TestSSEServer_HandleMessage_UnknownMethod(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{
+		ID:      "test-session",
+		Writer:  sseW,
+		Flusher: sseW,
+		Done:    make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, session.ID)
+		sse.mu.Unlock()
+	}()
+
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "nonexistent/method",
+	})
+
+	req := httptest.NewRequest("POST", "/message?sessionId=test-session", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+
+	var resp Response
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error for unknown method")
+	}
+	if resp.Error.Code != MethodNotFound {
+		t.Errorf("expected MethodNotFound code %d, got %d", MethodNotFound, resp.Error.Code)
+	}
+}
+
+func TestSSEServer_HandleMessage_ToolsCall_InvalidParams(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{
+		ID:      "test-session",
+		Writer:  sseW,
+		Flusher: sseW,
+		Done:    make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, session.ID)
+		sse.mu.Unlock()
+	}()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":"invalid"}`
+	req := httptest.NewRequest("POST", "/message?sessionId=test-session", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+
+	var resp Response
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error for invalid tools/call params")
+	}
+	if resp.Error.Code != InvalidParams {
+		t.Errorf("expected InvalidParams code %d, got %d", InvalidParams, resp.Error.Code)
+	}
+}
+
+func TestSSEServer_HandleMessage_SSEEventSent(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{
+		ID:      "test-session",
+		Writer:  sseW,
+		Flusher: sseW,
+		Done:    make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, session.ID)
+		sse.mu.Unlock()
+	}()
+
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "ping",
+	})
+
+	req := httptest.NewRequest("POST", "/message?sessionId=test-session", bytes.NewReader(body))
+	msgW := httptest.NewRecorder()
+	sse.HandleMessage(msgW, req)
+
+	// Verify SSE event was written to the session writer (sseW)
+	sseBody := sseW.Body.String()
+	if !strings.Contains(sseBody, "event: message") {
+		t.Error("expected SSE message event to be written to session writer")
+	}
+	if !strings.Contains(sseBody, "id: 1") {
+		t.Error("expected SSE event ID in session writer output")
+	}
+}
+
+func TestSSEServer_Broadcast(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Create two sessions
+	w1 := httptest.NewRecorder()
+	w2 := httptest.NewRecorder()
+	s1 := &SSESession{
+		ID: "session-1", Writer: w1, Flusher: w1, Done: make(chan struct{}),
+	}
+	s2 := &SSESession{
+		ID: "session-2", Writer: w2, Flusher: w2, Done: make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[s1.ID] = s1
+	sse.sessions[s2.ID] = s2
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, s1.ID)
+		delete(sse.sessions, s2.ID)
+		sse.mu.Unlock()
+	}()
+
+	sse.Broadcast("update", map[string]string{"status": "ok"})
+
+	for i, w := range []*httptest.ResponseRecorder{w1, w2} {
+		body := w.Body.String()
+		if !strings.Contains(body, "event: update") {
+			t.Errorf("session %d: expected broadcast event 'update'", i+1)
+		}
+		if !strings.Contains(body, `"status":"ok"`) {
+			t.Errorf("session %d: expected broadcast data", i+1)
+		}
+	}
+}
+
+func TestSSEServer_Broadcast_StringData(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	w1 := httptest.NewRecorder()
+	s1 := &SSESession{
+		ID: "session-1", Writer: w1, Flusher: w1, Done: make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[s1.ID] = s1
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, s1.ID)
+		sse.mu.Unlock()
+	}()
+
+	sse.Broadcast("info", "plain text message")
+
+	body := w1.Body.String()
+	if !strings.Contains(body, "data: plain text message") {
+		t.Errorf("expected string data in SSE event, got: %s", body)
+	}
+}
+
+func TestSSEServer_Close(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Add sessions
+	w1 := httptest.NewRecorder()
+	s1 := &SSESession{
+		ID: "session-1", Writer: w1, Flusher: w1, Done: make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[s1.ID] = s1
+	sse.mu.Unlock()
+
+	if sse.SessionCount() != 1 {
+		t.Fatalf("expected 1 session, got %d", sse.SessionCount())
+	}
+
+	sse.Close()
+
+	if sse.SessionCount() != 0 {
+		t.Errorf("expected 0 sessions after Close, got %d", sse.SessionCount())
+	}
+}
+
+func TestSSEServer_SessionCount(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	if sse.SessionCount() != 0 {
+		t.Errorf("expected 0 sessions initially, got %d", sse.SessionCount())
+	}
+
+	// Add sessions manually
+	for i := 0; i < 3; i++ {
+		w := httptest.NewRecorder()
+		s := &SSESession{
+			ID: "session-" + strings.Repeat("x", i+1), Writer: w, Flusher: w, Done: make(chan struct{}),
+		}
+		sse.mu.Lock()
+		sse.sessions[s.ID] = s
+		sse.mu.Unlock()
+	}
+
+	if sse.SessionCount() != 3 {
+		t.Errorf("expected 3 sessions, got %d", sse.SessionCount())
+	}
+}
+
+func TestSSEServer_MultipleSessions(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Connect two SSE clients
+	var cancels []context.CancelFunc
+	var dones []chan struct{}
+
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest("GET", "/sse", nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		req = req.WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			sse.ServeHTTP(w, req)
+		}()
+
+		cancels = append(cancels, cancel)
+		dones = append(dones, done)
+	}
+
+	// Wait for all sessions
+	for i := 0; i < 50; i++ {
+		if sse.SessionCount() == 3 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if sse.SessionCount() != 3 {
+		t.Errorf("expected 3 sessions, got %d", sse.SessionCount())
+	}
+
+	// Disconnect all
+	for _, cancel := range cancels {
+		cancel()
+	}
+	for _, done := range dones {
+		<-done
+	}
+
+	if sse.SessionCount() != 0 {
+		t.Errorf("expected 0 sessions after all disconnects, got %d", sse.SessionCount())
 	}
 }
 
