@@ -11,17 +11,19 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"go.uber.org/mock/gomock"
 )
 
 func TestSSEServer_AgentIdentity_QueryParam(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
 	// Add mock MCP servers
-	client1 := NewMockAgentClient("server1", []Tool{
+	client1 := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "read", Description: "Read tool"},
 		{Name: "write", Description: "Write tool"},
 	})
-	client2 := NewMockAgentClient("server2", []Tool{
+	client2 := setupMockAgentClient(ctrl, "server2", []Tool{
 		{Name: "list", Description: "List tool"},
 	})
 	g.Router().AddClient(client1)
@@ -189,14 +191,15 @@ func TestSSEServer_NoAgentIdentity(t *testing.T) {
 }
 
 func TestSSEServer_ToolsListFiltering(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
 	// Set up two servers with different tools
-	client1 := NewMockAgentClient("server1", []Tool{
+	client1 := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "read", Description: "Read"},
 		{Name: "write", Description: "Write"},
 	})
-	client2 := NewMockAgentClient("server2", []Tool{
+	client2 := setupMockAgentClient(ctrl, "server2", []Tool{
 		{Name: "list", Description: "List"},
 	})
 	g.Router().AddClient(client1)
@@ -261,17 +264,21 @@ func TestSSEServer_ToolsListFiltering(t *testing.T) {
 }
 
 func TestSSEServer_ToolsCallFiltering(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
-	client := NewMockAgentClient("server1", []Tool{
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "allowed", Description: "Allowed tool"},
 		{Name: "denied", Description: "Denied tool"},
 	})
-	client.SetCallToolFn(func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
-		return &ToolCallResult{
-			Content: []Content{NewTextContent("called " + name)},
-		}, nil
-	})
+	// Override default CallTool with custom behavior
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{
+				Content: []Content{NewTextContent("called " + name)},
+			}, nil
+		},
+	).AnyTimes()
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
 
@@ -380,9 +387,10 @@ func TestSSEServer_ToolsCallFiltering(t *testing.T) {
 }
 
 func TestSSEServer_HandleMessage_WithAgentFiltering(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
-	client := NewMockAgentClient("server1", []Tool{
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
 		{Name: "read", Description: "Read tool"},
 		{Name: "write", Description: "Write tool"},
 	})
