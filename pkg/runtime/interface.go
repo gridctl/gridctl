@@ -91,6 +91,8 @@ type NetworkOptions struct {
 	Stack  string // For labeling/cleanup purposes
 }
 
+//go:generate mockgen -destination=mock_runtime_test.go -package=runtime . WorkloadRuntime
+
 // WorkloadRuntime is the interface for managing workload lifecycles.
 // Implementations include Docker, Kubernetes, local processes, etc.
 type WorkloadRuntime interface {
