@@ -3,6 +3,8 @@ package mcp
 import (
 	"sync"
 	"testing"
+
+	"go.uber.org/mock/gomock"
 )
 
 func TestNewRouter(t *testing.T) {
@@ -19,8 +21,9 @@ func TestNewRouter(t *testing.T) {
 }
 
 func TestRouter_AddClient(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
-	client := NewMockAgentClient("test-agent", []Tool{
+	client := setupMockAgentClient(ctrl, "test-agent", []Tool{
 		{Name: "tool1", Description: "Test tool 1"},
 	})
 
@@ -36,8 +39,9 @@ func TestRouter_AddClient(t *testing.T) {
 }
 
 func TestRouter_RemoveClient(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
-	client := NewMockAgentClient("test-agent", []Tool{
+	client := setupMockAgentClient(ctrl, "test-agent", []Tool{
 		{Name: "tool1", Description: "Test tool 1"},
 	})
 
@@ -64,8 +68,9 @@ func TestRouter_RemoveClient(t *testing.T) {
 }
 
 func TestRouter_GetClient(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
-	client := NewMockAgentClient("existing", nil)
+	client := setupMockAgentClient(ctrl, "existing", nil)
 	r.AddClient(client)
 
 	// Existing client
@@ -80,9 +85,10 @@ func TestRouter_GetClient(t *testing.T) {
 }
 
 func TestRouter_Clients(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
-	client1 := NewMockAgentClient("agent1", nil)
-	client2 := NewMockAgentClient("agent2", nil)
+	client1 := setupMockAgentClient(ctrl, "agent1", nil)
+	client2 := setupMockAgentClient(ctrl, "agent2", nil)
 
 	r.AddClient(client1)
 	r.AddClient(client2)
@@ -102,8 +108,9 @@ func TestRouter_Clients(t *testing.T) {
 }
 
 func TestRouter_RefreshTools(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
-	client := NewMockAgentClient("agent1", []Tool{
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
 		{Name: "tool1", Description: "Tool 1"},
 		{Name: "tool2", Description: "Tool 2"},
 	})
@@ -118,8 +125,9 @@ func TestRouter_RefreshTools(t *testing.T) {
 }
 
 func TestRouter_AggregatedTools(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
-	client := NewMockAgentClient("myagent", []Tool{
+	client := setupMockAgentClient(ctrl, "myagent", []Tool{
 		{Name: "mytool", Title: "My Tool", Description: "A test tool"},
 	})
 
@@ -146,8 +154,9 @@ func TestRouter_AggregatedTools(t *testing.T) {
 }
 
 func TestRouter_AggregatedTools_NoTitle(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
-	client := NewMockAgentClient("agent", []Tool{
+	client := setupMockAgentClient(ctrl, "agent", []Tool{
 		{Name: "notitle", Description: "No title tool"},
 	})
 
@@ -166,8 +175,9 @@ func TestRouter_AggregatedTools_NoTitle(t *testing.T) {
 }
 
 func TestRouter_RouteToolCall(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
-	client := NewMockAgentClient("agent1", []Tool{
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
 		{Name: "tool1", Description: "Tool 1"},
 	})
 
@@ -257,6 +267,7 @@ func TestParsePrefixedTool(t *testing.T) {
 }
 
 func TestRouter_Concurrent(t *testing.T) {
+	ctrl := gomock.NewController(t)
 	r := NewRouter()
 
 	var wg sync.WaitGroup
@@ -267,7 +278,7 @@ func TestRouter_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			client := NewMockAgentClient("agent"+string(rune('A'+i)), []Tool{
+			client := setupMockAgentClient(ctrl, "agent"+string(rune('A'+i)), []Tool{
 				{Name: "tool", Description: "Tool"},
 			})
 			r.AddClient(client)
