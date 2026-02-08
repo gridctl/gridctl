@@ -62,6 +62,34 @@ func TestManagedLabels(t *testing.T) {
 	}
 }
 
+func TestAgentLabels(t *testing.T) {
+	labels := AgentLabels("my-stack", "my-agent")
+
+	want := map[string]string{
+		LabelManaged: "true",
+		LabelStack:   "my-stack",
+		LabelAgent:   "my-agent",
+	}
+
+	if len(labels) != len(want) {
+		t.Errorf("got %d labels, want %d", len(labels), len(want))
+	}
+
+	for k, wantVal := range want {
+		if got := labels[k]; got != wantVal {
+			t.Errorf("label %q = %q, want %q", k, got, wantVal)
+		}
+	}
+
+	// Verify no MCP server or resource labels
+	if _, ok := labels[LabelMCPServer]; ok {
+		t.Error("agent should not have MCP server label")
+	}
+	if _, ok := labels[LabelResource]; ok {
+		t.Error("agent should not have resource label")
+	}
+}
+
 func TestContainerName(t *testing.T) {
 	tests := []struct {
 		stack string
