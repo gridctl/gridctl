@@ -10,6 +10,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // register factory for runtime.New()
 )
 
 // TestFullStackLifecycle tests the complete lifecycle of a stack.
@@ -203,14 +204,23 @@ func TestMultipleNetworks(t *testing.T) {
 
 // TestDockerNotAvailable verifies graceful handling when Docker is not available.
 func TestDockerNotAvailable(t *testing.T) {
-	// This test only makes sense if we can simulate Docker being unavailable
-	// For now, we just test the error path by temporarily setting DOCKER_HOST to invalid
 	origHost := os.Getenv("DOCKER_HOST")
 	os.Setenv("DOCKER_HOST", "tcp://invalid:99999")
 	defer os.Setenv("DOCKER_HOST", origHost)
 
-	_, err := runtime.New()
-	if err == nil {
+	rt, err := runtime.New()
+	if err != nil {
+		// Client creation failed — test passes
+		return
+	}
+	defer rt.Close()
+
+	// Client creation may succeed with an invalid host; the error
+	// surfaces on the first actual API call (e.g. Ping).
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := rt.Runtime().Ping(ctx); err == nil {
 		t.Error("expected error when Docker is not available")
 	}
 }

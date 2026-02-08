@@ -1,4 +1,4 @@
-.PHONY: all build build-web build-go dev clean help test test-coverage test-integration mock-servers clean-mock-servers
+.PHONY: all build build-web build-go dev clean help test test-coverage test-integration test-frontend mock-servers clean-mock-servers
 
 # Version from git tags (fallback to dev)
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -70,6 +70,11 @@ test-coverage:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
+# Run frontend tests
+test-frontend:
+	@echo "Running frontend tests..."
+	cd web && npm test
+
 # Run integration tests (requires Docker)
 test-integration:
 	@echo "Running integration tests..."
@@ -126,6 +131,7 @@ help:
 	@echo "  make run        - Build and run the binary"
 	@echo "  make test       - Run all tests"
 	@echo "  make test-coverage - Run tests with coverage report"
+	@echo "  make test-frontend - Run frontend tests"
 	@echo "  make test-integration - Run integration tests (requires Docker)"
 	@echo "  make mock-servers [PORT=9001] - Build and run mock MCP servers for examples"
 	@echo "  make clean-mock-servers - Stop and remove mock MCP servers"
