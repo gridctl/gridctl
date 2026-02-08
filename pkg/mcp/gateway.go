@@ -265,6 +265,15 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 	return nil
 }
 
+// SetServerMeta stores metadata for an MCP server without connecting to it.
+// This is used by tests and by internal registration paths that manage
+// their own client connections.
+func (g *Gateway) SetServerMeta(cfg MCPServerConfig) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.serverMeta[cfg.Name] = cfg
+}
+
 // UnregisterMCPServer removes an MCP server from the gateway.
 func (g *Gateway) UnregisterMCPServer(name string) {
 	g.router.RemoveClient(name)
