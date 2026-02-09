@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
 const processKillGracePeriod = 5 * time.Second
@@ -33,7 +35,7 @@ type ProcessClient struct {
 	cancel  context.CancelFunc
 
 	// Response handling
-	responses   map[int64]chan *Response
+	responses   map[int64]chan *jsonrpc.Response
 	responsesMu sync.Mutex
 }
 
@@ -51,7 +53,7 @@ func NewProcessClient(name string, command []string, workDir string, env map[str
 		command:   command,
 		workDir:   workDir,
 		env:       envList,
-		responses: make(map[int64]chan *Response),
+		responses: make(map[int64]chan *jsonrpc.Response),
 	}
 	initRPCClient(&c.RPCClient, name, c)
 	return c
@@ -134,7 +136,7 @@ func (c *ProcessClient) readResponses(ctx context.Context) {
 			continue
 		}
 
-		var resp Response
+		var resp jsonrpc.Response
 		if err := json.Unmarshal(line, &resp); err != nil {
 			c.logger.Info("server output", "msg", string(line))
 			continue
@@ -183,7 +185,7 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 		}
 	}
 
-	req := Request{
+	req := jsonrpc.Request{
 		JSONRPC: "2.0",
 		ID:      &rawID,
 		Method:  method,
@@ -191,7 +193,7 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 	}
 
 	// Create response channel
-	respCh := make(chan *Response, 1)
+	respCh := make(chan *jsonrpc.Response, 1)
 	c.responsesMu.Lock()
 	c.responses[id] = respCh
 	c.responsesMu.Unlock()
@@ -249,7 +251,7 @@ func (c *ProcessClient) send(_ context.Context, method string, params any) error
 }
 
 // sendStdio writes a request to stdin.
-func (c *ProcessClient) sendStdio(req Request) error {
+func (c *ProcessClient) sendStdio(req jsonrpc.Request) error {
 	c.procMu.Lock()
 	defer c.procMu.Unlock()
 
