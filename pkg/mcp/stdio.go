@@ -232,6 +232,23 @@ func (c *StdioClient) sendStdio(req jsonrpc.Request) error {
 	return nil
 }
 
+// Ping checks if the container stdio connection is alive by sending a JSON-RPC ping.
+func (c *StdioClient) Ping(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, DefaultPingTimeout)
+	defer cancel()
+
+	// Verify connection state first
+	c.connMu.Lock()
+	attached := c.attached
+	c.connMu.Unlock()
+	if !attached {
+		return fmt.Errorf("not connected")
+	}
+
+	// Send a ping request and wait for any response
+	return c.call(ctx, "ping", nil, nil)
+}
+
 // Close closes the connection.
 func (c *StdioClient) Close() error {
 	c.connMu.Lock()

@@ -523,6 +523,9 @@ func runGateway(ctx context.Context, rt *runtime.Orchestrator, stack *config.Sta
 	// This allows the health check to succeed even if MCP servers take time to connect
 	registerMCPServers(ctx, gateway, stack, stackPath, result, verbose)
 
+	// Start periodic health monitoring for MCP servers
+	gateway.StartHealthMonitor(ctx, mcp.DefaultHealthCheckInterval)
+
 	// Register agents with their access permissions
 	if len(result.Agents) > 0 {
 		if verbose {

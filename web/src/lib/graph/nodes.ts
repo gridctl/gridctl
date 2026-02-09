@@ -10,11 +10,15 @@ import { NODE_TYPES } from '../constants';
 import { GATEWAY_NODE_ID } from './edges';
 
 /**
- * Determine MCP server status based on its state
+ * Determine MCP server status based on its state and health
  */
 function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
   if (!server.initialized) {
     return 'initializing';
+  }
+  // If health check has run and server is unhealthy, show error
+  if (server.healthy === false) {
+    return 'error';
   }
   return 'running';
 }
@@ -85,6 +89,9 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       localProcess: server.localProcess,
       ssh: server.ssh,
       sshHost: server.sshHost,
+      healthy: server.healthy,
+      lastCheck: server.lastCheck,
+      healthError: server.healthError,
     },
     draggable: true,
   }));

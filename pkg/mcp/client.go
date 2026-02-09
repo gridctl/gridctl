@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
@@ -184,8 +183,7 @@ func (c *Client) parseSSEResponse(body io.Reader) (*jsonrpc.Response, error) {
 
 // Ping checks if the agent is reachable.
 func (c *Client) Ping(ctx context.Context) error {
-	// Try to connect with a short timeout
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, DefaultPingTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", c.endpoint, nil)

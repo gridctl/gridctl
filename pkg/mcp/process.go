@@ -272,6 +272,31 @@ func (c *ProcessClient) sendStdio(req jsonrpc.Request) error {
 	return nil
 }
 
+// Ping checks if the process is alive by verifying it's still running
+// and sending a JSON-RPC ping.
+func (c *ProcessClient) Ping(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, DefaultPingTimeout)
+	defer cancel()
+
+	// Check process is still running
+	c.procMu.Lock()
+	started := c.started
+	cmd := c.cmd
+	c.procMu.Unlock()
+
+	if !started || cmd == nil || cmd.Process == nil {
+		return fmt.Errorf("process not running")
+	}
+
+	// Signal(0) checks if process exists without sending a signal
+	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		return fmt.Errorf("process exited: %w", err)
+	}
+
+	// Send a ping request and wait for response
+	return c.call(ctx, "ping", nil, nil)
+}
+
 // Close terminates the process gracefully.
 // Sends SIGTERM, waits up to 5 seconds, then sends SIGKILL if still running.
 func (c *ProcessClient) Close() error {

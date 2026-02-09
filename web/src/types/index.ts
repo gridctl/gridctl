@@ -27,6 +27,9 @@ export interface MCPServerStatus {
   localProcess?: boolean; // True for local process servers
   ssh?: boolean; // True for SSH servers
   sshHost?: string; // SSH hostname
+  healthy?: boolean; // Health check result (undefined if not yet checked)
+  lastCheck?: string; // RFC3339 timestamp of last health check
+  healthError?: string; // Error message if unhealthy
 }
 
 // Resource status for non-MCP containers
@@ -122,6 +125,9 @@ export interface MCPServerNodeData extends NodeDataBase {
   localProcess?: boolean; // True for local process servers
   ssh?: boolean; // True for SSH servers
   sshHost?: string; // SSH hostname
+  healthy?: boolean; // Health check result
+  lastCheck?: string; // RFC3339 timestamp of last health check
+  healthError?: string; // Error message if unhealthy
 }
 
 export interface ResourceNodeData extends NodeDataBase {
