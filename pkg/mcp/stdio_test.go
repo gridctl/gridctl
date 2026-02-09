@@ -42,7 +42,7 @@ func TestStdioClient_DrainPendingRequests(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -118,7 +118,7 @@ func TestStdioClient_ReadResponses(t *testing.T) {
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -184,7 +184,7 @@ func TestStdioClient_CallFailsFastOnConnectionDrop(t *testing.T) {
 
 	// Start reader goroutine
 	readerCtx, readerCancel := context.WithCancel(context.Background())
-	go client.readResponses(readerCtx)
+	go client.readResponses(readerCtx, client.stdout)
 
 	defer func() {
 		readerCancel()
@@ -236,7 +236,7 @@ func TestStdioClient_DrainOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
