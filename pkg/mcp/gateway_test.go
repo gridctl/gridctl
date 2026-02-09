@@ -889,6 +889,177 @@ func TestGateway_GetHealthStatus_NotFound(t *testing.T) {
 	}
 }
 
+// reconnectableClient wraps a MockAgentClient to implement both Pingable and Reconnectable.
+type reconnectableClient struct {
+	AgentClient
+	pingFn      func(ctx context.Context) error
+	reconnectFn func(ctx context.Context) error
+}
+
+func (r *reconnectableClient) Ping(ctx context.Context) error {
+	return r.pingFn(ctx)
+}
+
+func (r *reconnectableClient) Reconnect(ctx context.Context) error {
+	return r.reconnectFn(ctx)
+}
+
+func TestGateway_HealthMonitor_ReconnectsUnhealthyClient(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	logBuffer := logging.NewLogBuffer(20)
+	handler := logging.NewBufferHandler(logBuffer, nil)
+	g.SetLogger(slog.New(handler))
+
+	var reconnected atomic.Int32
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &reconnectableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return fmt.Errorf("connection refused") },
+		reconnectFn: func(ctx context.Context) error {
+			reconnected.Add(1)
+			return nil
+		},
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportStdio})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	// Verify reconnection was attempted
+	if reconnected.Load() != 1 {
+		t.Errorf("expected 1 reconnection attempt, got %d", reconnected.Load())
+	}
+
+	// After successful reconnection, health should be updated to healthy
+	hs := g.GetHealthStatus("server1")
+	if hs == nil {
+		t.Fatal("expected health status for server1")
+	}
+	if !hs.Healthy {
+		t.Error("expected server to be healthy after successful reconnection")
+	}
+
+	// Verify reconnection log
+	entries := logBuffer.GetRecent(20)
+	foundAttempt := false
+	foundReconnected := false
+	for _, entry := range entries {
+		if entry.Level == "INFO" && entry.Message == "attempting reconnection" {
+			foundAttempt = true
+		}
+		if entry.Level == "INFO" && entry.Message == "MCP server reconnected" {
+			foundReconnected = true
+		}
+	}
+	if !foundAttempt {
+		t.Error("expected 'attempting reconnection' log entry")
+	}
+	if !foundReconnected {
+		t.Error("expected 'MCP server reconnected' log entry")
+	}
+}
+
+func TestGateway_HealthMonitor_ReconnectionFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	logBuffer := logging.NewLogBuffer(20)
+	handler := logging.NewBufferHandler(logBuffer, nil)
+	g.SetLogger(slog.New(handler))
+
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &reconnectableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return fmt.Errorf("connection refused") },
+		reconnectFn: func(ctx context.Context) error { return fmt.Errorf("container not found") },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportStdio})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	// Health should remain unhealthy after failed reconnection
+	hs := g.GetHealthStatus("server1")
+	if hs == nil {
+		t.Fatal("expected health status for server1")
+	}
+	if hs.Healthy {
+		t.Error("expected server to remain unhealthy after failed reconnection")
+	}
+
+	// Verify failure log
+	entries := logBuffer.GetRecent(20)
+	foundFailed := false
+	for _, entry := range entries {
+		if entry.Level == "WARN" && entry.Message == "reconnection failed" {
+			if entry.Attrs["name"] != "server1" {
+				t.Errorf("expected name 'server1', got %v", entry.Attrs["name"])
+			}
+			foundFailed = true
+			break
+		}
+	}
+	if !foundFailed {
+		t.Error("expected 'reconnection failed' WARN log entry")
+	}
+}
+
+func TestGateway_HealthMonitor_SkipsReconnectForNonReconnectable(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Use pingableClient (not reconnectable)
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return fmt.Errorf("connection refused") },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	// Server should be unhealthy but no reconnection attempted (no panic, no error)
+	hs := g.GetHealthStatus("server1")
+	if hs == nil {
+		t.Fatal("expected health status for server1")
+	}
+	if hs.Healthy {
+		t.Error("expected server to be unhealthy")
+	}
+}
+
+func TestGateway_HealthMonitor_SkipsReconnectForHealthy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	var reconnectCount atomic.Int32
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &reconnectableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return nil }, // healthy
+		reconnectFn: func(ctx context.Context) error {
+			reconnectCount.Add(1)
+			return nil
+		},
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportStdio})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	// No reconnection should be attempted for healthy server
+	if reconnectCount.Load() != 0 {
+		t.Errorf("expected 0 reconnection attempts for healthy server, got %d", reconnectCount.Load())
+	}
+}
+
 func TestGateway_RegisterMCPServer_LogsTiming(t *testing.T) {
 	g := NewGateway()
 
