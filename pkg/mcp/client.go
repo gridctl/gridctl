@@ -6,106 +6,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // Client communicates with a downstream MCP server.
 type Client struct {
-	ClientBase
-	name       string
+	RPCClient
 	endpoint   string
 	httpClient *http.Client
 	requestID  atomic.Int64
-	logger     *slog.Logger
 	sessionID  string // MCP session ID for stateful servers
 }
 
 // NewClient creates a new MCP client for a downstream agent.
 func NewClient(name, endpoint string) *Client {
-	return &Client{
-		name:     name,
+	c := &Client{
 		endpoint: endpoint,
-		logger:   logging.NewDiscardLogger(),
 		httpClient: &http.Client{
 			Timeout: DefaultRequestTimeout,
 		},
 	}
-}
-
-// SetLogger sets the logger for this client.
-func (c *Client) SetLogger(logger *slog.Logger) {
-	if logger != nil {
-		c.logger = logger
-	}
-}
-
-// Name returns the agent name.
-func (c *Client) Name() string {
-	return c.name
+	initRPCClient(&c.RPCClient, name, c)
+	return c
 }
 
 // Endpoint returns the agent endpoint.
 func (c *Client) Endpoint() string {
 	return c.endpoint
-}
-
-// Initialize performs the MCP initialize handshake.
-func (c *Client) Initialize(ctx context.Context) error {
-	params := InitializeParams{
-		ProtocolVersion: MCPProtocolVersion,
-		ClientInfo: ClientInfo{
-			Name:    "gridctl-gateway",
-			Version: "1.0.0",
-		},
-		Capabilities: Capabilities{
-			Tools: &ToolsCapability{},
-		},
-	}
-
-	var result InitializeResult
-	if err := c.call(ctx, "initialize", params, &result); err != nil {
-		return fmt.Errorf("initialize: %w", err)
-	}
-
-	c.SetInitialized(result.ServerInfo)
-
-	// Send initialized notification (non-fatal, some servers may not require this)
-	_ = c.notify(ctx, "notifications/initialized", nil)
-
-	return nil
-}
-
-// RefreshTools fetches the current tool list from the agent.
-// If a tool whitelist has been set, only tools matching the whitelist are stored.
-func (c *Client) RefreshTools(ctx context.Context) error {
-	var result ToolsListResult
-	if err := c.call(ctx, "tools/list", nil, &result); err != nil {
-		return fmt.Errorf("tools/list: %w", err)
-	}
-
-	c.SetTools(result.Tools)
-	return nil
-}
-
-// CallTool invokes a tool on the downstream agent.
-func (c *Client) CallTool(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
-	params := ToolCallParams{
-		Name:      name,
-		Arguments: arguments,
-	}
-
-	var result ToolCallResult
-	if err := c.call(ctx, "tools/call", params, &result); err != nil {
-		return nil, fmt.Errorf("tools/call: %w", err)
-	}
-
-	return &result, nil
 }
 
 // call performs a JSON-RPC call and decodes the result.
@@ -132,7 +62,7 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 
 	c.logger.Debug("sending request", "method", method, "id", id)
 
-	resp, err := c.send(ctx, req)
+	resp, err := c.sendHTTP(ctx, req)
 	if err != nil {
 		c.logger.Debug("request failed", "method", method, "id", id, "error", err)
 		return err
@@ -154,29 +84,19 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 	return nil
 }
 
-// notify sends a JSON-RPC notification (no response expected).
-func (c *Client) notify(ctx context.Context, method string, params any) error {
-	var paramsBytes json.RawMessage
-	if params != nil {
-		var err error
-		paramsBytes, err = json.Marshal(params)
-		if err != nil {
-			return fmt.Errorf("marshaling params: %w", err)
-		}
+// send sends a JSON-RPC notification (no response expected).
+func (c *Client) send(ctx context.Context, method string, params any) error {
+	req, err := buildNotification(method, params)
+	if err != nil {
+		return err
 	}
 
-	req := Request{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  paramsBytes,
-	}
-
-	_, err := c.send(ctx, req)
+	_, err = c.sendHTTP(ctx, req)
 	return err
 }
 
-// send sends a request to the downstream agent.
-func (c *Client) send(ctx context.Context, req Request) (*Response, error) {
+// sendHTTP sends a request to the downstream agent via HTTP.
+func (c *Client) sendHTTP(ctx context.Context, req Request) (*Response, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
@@ -279,3 +199,4 @@ func (c *Client) Ping(ctx context.Context) error {
 
 	return nil
 }
+

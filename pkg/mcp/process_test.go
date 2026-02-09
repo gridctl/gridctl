@@ -14,17 +14,25 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 )
 
+// newTestProcessClient creates a ProcessClient for testing with the given name and logger.
+// The transport field is not set since tests calling this construct the client
+// to test low-level methods (readResponses, readStderr, call) directly.
+func newTestProcessClient(name string, logger *slog.Logger) *ProcessClient {
+	c := &ProcessClient{
+		responses: make(map[int64]chan *Response),
+	}
+	c.RPCClient.name = name
+	c.RPCClient.logger = logger
+	return c
+}
+
 func TestProcessClient_ReadStderr(t *testing.T) {
 	// Test that readStderr reads lines and logs them at WARN level
 	buffer := logging.NewLogBuffer(10)
 	handler := logging.NewBufferHandler(buffer, nil)
 	logger := slog.New(handler).With("server", "test-process")
 
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logger,
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logger)
 
 	// Simulate stderr output
 	stderrContent := "error: something failed\nwarning: disk space low\n"
@@ -70,11 +78,7 @@ func TestProcessClient_ReadStderr_Empty(t *testing.T) {
 	handler := logging.NewBufferHandler(buffer, nil)
 	logger := slog.New(handler)
 
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logger,
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logger)
 
 	// Empty reader should produce no log entries
 	reader := bytes.NewReader(nil)
@@ -97,11 +101,7 @@ func TestProcessClient_ReadStderr_Empty(t *testing.T) {
 }
 
 func TestProcessClient_ReadResponses(t *testing.T) {
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logging.NewDiscardLogger(),
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
 	// Create a response channel for request ID 1
 	respCh := make(chan *Response, 1)
@@ -156,11 +156,7 @@ func TestProcessClient_ReadResponses_NonJSON(t *testing.T) {
 	handler := logging.NewBufferHandler(logBuffer, nil)
 	logger := slog.New(handler)
 
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logger,
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logger)
 
 	// Simulate non-JSON output (e.g., debug prints from the server)
 	output := "DEBUG: starting up\nsome random text\n"
@@ -198,11 +194,7 @@ func TestProcessClient_ReadResponses_NonJSON(t *testing.T) {
 }
 
 func TestProcessClient_ReadResponses_EmptyLines(t *testing.T) {
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logging.NewDiscardLogger(),
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
 	// Empty lines should be skipped
 	pr, pw := io.Pipe()
@@ -228,11 +220,7 @@ func TestProcessClient_ReadResponses_EmptyLines(t *testing.T) {
 }
 
 func TestProcessClient_ReadResponses_ErrorResponse(t *testing.T) {
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logging.NewDiscardLogger(),
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
 	respCh := make(chan *Response, 1)
 	client.responsesMu.Lock()
@@ -278,11 +266,7 @@ func TestProcessClient_ReadResponses_ErrorResponse(t *testing.T) {
 }
 
 func TestProcessClient_ReadResponses_UnmatchedID(t *testing.T) {
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logging.NewDiscardLogger(),
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
 	// Register a channel for ID 1, but send response for ID 99
 	respCh := make(chan *Response, 1)
@@ -364,7 +348,7 @@ func TestProcessClient_Connect_Idempotent(t *testing.T) {
 	}
 }
 
-func TestProcessClient_Send_NotConnected(t *testing.T) {
+func TestProcessClient_SendStdio_NotConnected(t *testing.T) {
 	client := NewProcessClient("test", []string{"cat"}, "", nil)
 
 	req := Request{
@@ -372,7 +356,7 @@ func TestProcessClient_Send_NotConnected(t *testing.T) {
 		Method:  "ping",
 	}
 
-	err := client.send(req)
+	err := client.sendStdio(req)
 	if err == nil {
 		t.Fatal("expected error when sending to unconnected client")
 	}
@@ -440,15 +424,11 @@ func TestProcessClient_CallTimeout(t *testing.T) {
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
 
-	client := &ProcessClient{
-		name:      "test",
-		command:   []string{"cat"},
-		logger:    logging.NewDiscardLogger(),
-		responses: make(map[int64]chan *Response),
-		started:   true,
-		stdin:     stdinW,
-		stdout:    stdoutR,
-	}
+	client := newTestProcessClient("test", logging.NewDiscardLogger())
+	client.command = []string{"cat"}
+	client.started = true
+	client.stdin = stdinW
+	client.stdout = stdoutR
 
 	// Drain stdin so send() doesn't block
 	go func() {
@@ -517,11 +497,7 @@ func TestProcessClient_ReadStderr_ContextCancel(t *testing.T) {
 	handler := logging.NewBufferHandler(buffer, nil)
 	logger := slog.New(handler)
 
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logger,
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logger)
 
 	// Use a pipe that blocks on read until context cancellation
 	pr, pw := io.Pipe()
@@ -609,11 +585,7 @@ func TestProcessClient_FullLifecycle(t *testing.T) {
 }
 
 func TestProcessClient_ReadResponses_MultipleResponses(t *testing.T) {
-	client := &ProcessClient{
-		name:      "test-process",
-		logger:    logging.NewDiscardLogger(),
-		responses: make(map[int64]chan *Response),
-	}
+	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
 	// Create channels for IDs 1, 2, 3
 	channels := make(map[int64]chan *Response)
