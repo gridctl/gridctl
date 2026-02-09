@@ -112,7 +112,7 @@ func (c *ProcessClient) Connect(ctx context.Context) error {
 	// Start reading responses and stderr with cancellation
 	readerCtx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
-	go c.readResponses(readerCtx)
+	go c.readResponses(readerCtx, c.stdout)
 	if stderr != nil {
 		go c.readStderr(readerCtx, stderr)
 	}
@@ -121,10 +121,12 @@ func (c *ProcessClient) Connect(ctx context.Context) error {
 }
 
 // readResponses reads JSON-RPC responses from stdout.
-func (c *ProcessClient) readResponses(ctx context.Context) {
+// stdout is passed as a parameter to capture the value at goroutine launch
+// time (under procMu), avoiding a data race with Reconnect clearing c.stdout.
+func (c *ProcessClient) readResponses(ctx context.Context, stdout io.Reader) {
 	defer c.drainPendingRequests()
 
-	scanner := bufio.NewScanner(c.stdout)
+	scanner := bufio.NewScanner(stdout)
 	// Increase buffer size for large responses
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)

@@ -88,16 +88,18 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 	// Start reading responses with cancellation
 	readerCtx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
-	go c.readResponses(readerCtx)
+	go c.readResponses(readerCtx, c.stdout)
 
 	return nil
 }
 
 // readResponses reads JSON-RPC responses from stdout.
-func (c *StdioClient) readResponses(ctx context.Context) {
+// stdout is passed as a parameter to capture the value at goroutine launch
+// time (under connMu), avoiding a data race with Reconnect.
+func (c *StdioClient) readResponses(ctx context.Context, stdout io.Reader) {
 	defer c.drainPendingRequests()
 
-	scanner := bufio.NewScanner(c.stdout)
+	scanner := bufio.NewScanner(stdout)
 	// Increase buffer size for large responses
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
