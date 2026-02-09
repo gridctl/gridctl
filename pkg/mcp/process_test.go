@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 	"github.com/gridctl/gridctl/pkg/logging"
 )
 
@@ -19,7 +20,7 @@ import (
 // to test low-level methods (readResponses, readStderr, call) directly.
 func newTestProcessClient(name string, logger *slog.Logger) *ProcessClient {
 	c := &ProcessClient{
-		responses: make(map[int64]chan *Response),
+		responses: make(map[int64]chan *jsonrpc.Response),
 	}
 	c.RPCClient.name = name
 	c.RPCClient.logger = logger
@@ -104,7 +105,7 @@ func TestProcessClient_ReadResponses(t *testing.T) {
 	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
 	// Create a response channel for request ID 1
-	respCh := make(chan *Response, 1)
+	respCh := make(chan *jsonrpc.Response, 1)
 	client.responsesMu.Lock()
 	client.responses[1] = respCh
 	client.responsesMu.Unlock()
@@ -112,7 +113,7 @@ func TestProcessClient_ReadResponses(t *testing.T) {
 	// Build a valid JSON-RPC response
 	result, _ := json.Marshal(map[string]string{"status": "ok"})
 	idBytes := json.RawMessage(`1`)
-	resp := Response{
+	resp := jsonrpc.Response{
 		JSONRPC: "2.0",
 		ID:      &idBytes,
 		Result:  result,
@@ -222,17 +223,17 @@ func TestProcessClient_ReadResponses_EmptyLines(t *testing.T) {
 func TestProcessClient_ReadResponses_ErrorResponse(t *testing.T) {
 	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
-	respCh := make(chan *Response, 1)
+	respCh := make(chan *jsonrpc.Response, 1)
 	client.responsesMu.Lock()
 	client.responses[1] = respCh
 	client.responsesMu.Unlock()
 
 	// Build an error JSON-RPC response
 	idBytes := json.RawMessage(`1`)
-	resp := Response{
+	resp := jsonrpc.Response{
 		JSONRPC: "2.0",
 		ID:      &idBytes,
-		Error:   &Error{Code: -32600, Message: "invalid request"},
+		Error:   &jsonrpc.Error{Code: -32600, Message: "invalid request"},
 	}
 	line, _ := json.Marshal(resp)
 
@@ -269,13 +270,13 @@ func TestProcessClient_ReadResponses_UnmatchedID(t *testing.T) {
 	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
 	// Register a channel for ID 1, but send response for ID 99
-	respCh := make(chan *Response, 1)
+	respCh := make(chan *jsonrpc.Response, 1)
 	client.responsesMu.Lock()
 	client.responses[1] = respCh
 	client.responsesMu.Unlock()
 
 	idBytes := json.RawMessage(`99`)
-	resp := Response{
+	resp := jsonrpc.Response{
 		JSONRPC: "2.0",
 		ID:      &idBytes,
 		Result:  json.RawMessage(`{}`),
@@ -351,7 +352,7 @@ func TestProcessClient_Connect_Idempotent(t *testing.T) {
 func TestProcessClient_SendStdio_NotConnected(t *testing.T) {
 	client := NewProcessClient("test", []string{"cat"}, "", nil)
 
-	req := Request{
+	req := jsonrpc.Request{
 		JSONRPC: "2.0",
 		Method:  "ping",
 	}
@@ -540,7 +541,7 @@ func TestProcessClient_FullLifecycle(t *testing.T) {
 	resultBytes, _ := json.Marshal(map[string]string{"status": "ok"})
 
 	// Manually construct what we want "cat" to echo back
-	fakeResp := Response{
+	fakeResp := jsonrpc.Response{
 		JSONRPC: "2.0",
 		ID:      &rawID,
 		Result:  resultBytes,
@@ -548,7 +549,7 @@ func TestProcessClient_FullLifecycle(t *testing.T) {
 	respLine, _ := json.Marshal(fakeResp)
 
 	// Create response channel
-	respCh := make(chan *Response, 1)
+	respCh := make(chan *jsonrpc.Response, 1)
 	client.responsesMu.Lock()
 	client.responses[1] = respCh
 	client.responsesMu.Unlock()
@@ -588,9 +589,9 @@ func TestProcessClient_ReadResponses_MultipleResponses(t *testing.T) {
 	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 
 	// Create channels for IDs 1, 2, 3
-	channels := make(map[int64]chan *Response)
+	channels := make(map[int64]chan *jsonrpc.Response)
 	for i := int64(1); i <= 3; i++ {
-		ch := make(chan *Response, 1)
+		ch := make(chan *jsonrpc.Response, 1)
 		channels[i] = ch
 		client.responsesMu.Lock()
 		client.responses[i] = ch
@@ -611,7 +612,7 @@ func TestProcessClient_ReadResponses_MultipleResponses(t *testing.T) {
 	var buf bytes.Buffer
 	for i := int64(1); i <= 3; i++ {
 		idBytes := json.RawMessage(fmt.Sprintf("%d", i))
-		resp := Response{
+		resp := jsonrpc.Response{
 			JSONRPC: "2.0",
 			ID:      &idBytes,
 			Result:  json.RawMessage(fmt.Sprintf(`{"id":%d}`, i)),
