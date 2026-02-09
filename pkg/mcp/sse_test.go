@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 	"go.uber.org/mock/gomock"
 )
 
@@ -238,7 +239,7 @@ func TestSSEServer_ToolsListFiltering(t *testing.T) {
 			}
 
 			reqID := json.RawMessage(`1`)
-			req := &Request{
+			req := &jsonrpc.Request{
 				ID:     &reqID,
 				Method: "tools/list",
 			}
@@ -300,7 +301,7 @@ func TestSSEServer_ToolsCallFiltering(t *testing.T) {
 			Arguments: map[string]any{},
 		})
 		reqID := json.RawMessage(`1`)
-		req := &Request{
+		req := &jsonrpc.Request{
 			ID:     &reqID,
 			Method: "tools/call",
 			Params: json.RawMessage(params),
@@ -332,7 +333,7 @@ func TestSSEServer_ToolsCallFiltering(t *testing.T) {
 			Arguments: map[string]any{},
 		})
 		reqID := json.RawMessage(`1`)
-		req := &Request{
+		req := &jsonrpc.Request{
 			ID:     &reqID,
 			Method: "tools/call",
 			Params: json.RawMessage(params),
@@ -364,7 +365,7 @@ func TestSSEServer_ToolsCallFiltering(t *testing.T) {
 			Arguments: map[string]any{},
 		})
 		reqID := json.RawMessage(`1`)
-		req := &Request{
+		req := &jsonrpc.Request{
 			ID:     &reqID,
 			Method: "tools/call",
 			Params: json.RawMessage(params),
@@ -397,7 +398,7 @@ func TestSSEServer_UnknownAgent_ToolsList(t *testing.T) {
 	}
 
 	reqID := json.RawMessage(`1`)
-	req := &Request{
+	req := &jsonrpc.Request{
 		ID:     &reqID,
 		Method: "tools/list",
 	}
@@ -406,8 +407,8 @@ func TestSSEServer_UnknownAgent_ToolsList(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatal("expected error for unknown agent")
 	}
-	if resp.Error.Code != InvalidRequest {
-		t.Errorf("expected InvalidRequest code %d, got %d", InvalidRequest, resp.Error.Code)
+	if resp.Error.Code != jsonrpc.InvalidRequest {
+		t.Errorf("expected InvalidRequest code %d, got %d", jsonrpc.InvalidRequest, resp.Error.Code)
 	}
 	if !strings.Contains(resp.Error.Message, "nonexistent-agent") {
 		t.Errorf("expected error to contain agent name, got %s", resp.Error.Message)
@@ -429,7 +430,7 @@ func TestSSEServer_UnknownAgent_ToolsCall(t *testing.T) {
 		Arguments: map[string]any{},
 	})
 	reqID := json.RawMessage(`1`)
-	req := &Request{
+	req := &jsonrpc.Request{
 		ID:     &reqID,
 		Method: "tools/call",
 		Params: json.RawMessage(params),
@@ -439,8 +440,8 @@ func TestSSEServer_UnknownAgent_ToolsCall(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatal("expected error for unknown agent on tools/call")
 	}
-	if resp.Error.Code != InvalidRequest {
-		t.Errorf("expected InvalidRequest code %d, got %d", InvalidRequest, resp.Error.Code)
+	if resp.Error.Code != jsonrpc.InvalidRequest {
+		t.Errorf("expected InvalidRequest code %d, got %d", jsonrpc.InvalidRequest, resp.Error.Code)
 	}
 	if !strings.Contains(resp.Error.Message, "nonexistent-agent") {
 		t.Errorf("expected error to contain agent name, got %s", resp.Error.Message)
@@ -483,15 +484,15 @@ func TestSSEServer_UnknownAgent_ViaHandleMessage(t *testing.T) {
 		t.Fatalf("expected 200, got %d", msgW.Code)
 	}
 
-	var resp Response
+	var resp jsonrpc.Response
 	if err := json.NewDecoder(msgW.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if resp.Error == nil {
 		t.Fatal("expected error for unknown agent via HandleMessage")
 	}
-	if resp.Error.Code != InvalidRequest {
-		t.Errorf("expected InvalidRequest code %d, got %d", InvalidRequest, resp.Error.Code)
+	if resp.Error.Code != jsonrpc.InvalidRequest {
+		t.Errorf("expected InvalidRequest code %d, got %d", jsonrpc.InvalidRequest, resp.Error.Code)
 	}
 	if !strings.Contains(resp.Error.Message, "nonexistent-agent") {
 		t.Errorf("expected error to contain agent name, got %s", resp.Error.Message)
@@ -551,7 +552,7 @@ func TestSSEServer_HandleMessage_WithAgentFiltering(t *testing.T) {
 		t.Fatalf("expected 200, got %d", msgW.Code)
 	}
 
-	var resp Response
+	var resp jsonrpc.Response
 	if err := json.NewDecoder(msgW.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -801,7 +802,7 @@ func TestSSEServer_HandleMessage_Initialize(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 
-	var resp Response
+	var resp jsonrpc.Response
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -848,7 +849,7 @@ func TestSSEServer_HandleMessage_Ping(t *testing.T) {
 	w := httptest.NewRecorder()
 	sse.HandleMessage(w, req)
 
-	var resp Response
+	var resp jsonrpc.Response
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -887,15 +888,15 @@ func TestSSEServer_HandleMessage_UnknownMethod(t *testing.T) {
 	w := httptest.NewRecorder()
 	sse.HandleMessage(w, req)
 
-	var resp Response
+	var resp jsonrpc.Response
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if resp.Error == nil {
 		t.Fatal("expected error for unknown method")
 	}
-	if resp.Error.Code != MethodNotFound {
-		t.Errorf("expected MethodNotFound code %d, got %d", MethodNotFound, resp.Error.Code)
+	if resp.Error.Code != jsonrpc.MethodNotFound {
+		t.Errorf("expected MethodNotFound code %d, got %d", jsonrpc.MethodNotFound, resp.Error.Code)
 	}
 }
 
@@ -924,15 +925,15 @@ func TestSSEServer_HandleMessage_ToolsCall_InvalidParams(t *testing.T) {
 	w := httptest.NewRecorder()
 	sse.HandleMessage(w, req)
 
-	var resp Response
+	var resp jsonrpc.Response
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if resp.Error == nil {
 		t.Fatal("expected error for invalid tools/call params")
 	}
-	if resp.Error.Code != InvalidParams {
-		t.Errorf("expected InvalidParams code %d, got %d", InvalidParams, resp.Error.Code)
+	if resp.Error.Code != jsonrpc.InvalidParams {
+		t.Errorf("expected InvalidParams code %d, got %d", jsonrpc.InvalidParams, resp.Error.Code)
 	}
 }
 
