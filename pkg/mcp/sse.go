@@ -180,6 +180,10 @@ func (s *SSEServer) handleInitialize(req *Request) Response {
 }
 
 func (s *SSEServer) handleToolsList(session *SSESession, req *Request) Response {
+	if session.AgentName != "" && !s.gateway.HasAgent(session.AgentName) {
+		return NewErrorResponse(req.ID, InvalidRequest, "unknown agent: "+session.AgentName)
+	}
+
 	var result *ToolsListResult
 	var err error
 	if session.AgentName != "" {
@@ -197,6 +201,10 @@ func (s *SSEServer) handleToolsCall(ctx context.Context, session *SSESession, re
 	var params ToolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return NewErrorResponse(req.ID, InvalidParams, "Invalid tools/call params")
+	}
+
+	if session.AgentName != "" && !s.gateway.HasAgent(session.AgentName) {
+		return NewErrorResponse(req.ID, InvalidRequest, "unknown agent: "+session.AgentName)
 	}
 
 	var result *ToolCallResult
