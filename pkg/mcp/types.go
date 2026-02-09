@@ -34,6 +34,13 @@ type Pingable interface {
 	Ping(ctx context.Context) error
 }
 
+// Reconnectable is an optional interface for AgentClients that support reconnection
+// after connection failures (e.g., container restart, process crash).
+// The health monitor uses type assertion to trigger reconnection on unhealthy clients.
+type Reconnectable interface {
+	Reconnect(ctx context.Context) error
+}
+
 // DefaultPingTimeout is the timeout for health check pings.
 const DefaultPingTimeout = 5 * time.Second
 

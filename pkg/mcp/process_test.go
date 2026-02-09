@@ -303,20 +303,24 @@ func TestProcessClient_ReadResponses_UnmatchedID(t *testing.T) {
 	}
 	cancel()
 
-	// The channel for ID 1 should still be waiting (response was for ID 99)
+	// After EOF, drainPendingRequests sends error to unmatched channel
 	select {
-	case <-respCh:
-		t.Error("did not expect response on channel for ID 1")
+	case got := <-respCh:
+		if got.Error == nil {
+			t.Error("expected error response from drain, got success")
+		} else if got.Error.Message != "connection lost" {
+			t.Errorf("expected 'connection lost' error, got '%s'", got.Error.Message)
+		}
 	default:
-		// Good - no response received
+		t.Error("expected channel to receive drain error after EOF")
 	}
 
-	// Channel should still be registered
+	// Channel should be removed from the map after drain
 	client.responsesMu.Lock()
 	_, exists := client.responses[1]
 	client.responsesMu.Unlock()
-	if !exists {
-		t.Error("expected channel for ID 1 to still be registered")
+	if exists {
+		t.Error("expected channel for ID 1 to be removed after drain")
 	}
 }
 
@@ -583,6 +587,133 @@ func TestProcessClient_FullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Errorf("Close failed: %v", err)
 	}
+}
+
+func TestProcessClient_DrainPendingRequests(t *testing.T) {
+	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
+
+	// Register pending response channels
+	ch1 := make(chan *jsonrpc.Response, 1)
+	ch2 := make(chan *jsonrpc.Response, 1)
+	client.responsesMu.Lock()
+	client.responses[1] = ch1
+	client.responses[2] = ch2
+	client.responsesMu.Unlock()
+
+	// Simulate readResponses exiting by piping then closing stdout
+	pr, pw := io.Pipe()
+	client.stdout = pr
+
+	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		client.readResponses(ctx)
+		close(done)
+	}()
+
+	// Close the pipe to simulate EOF (process crash)
+	pw.Close()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("readResponses did not exit on EOF")
+	}
+
+	// Both channels should receive error responses
+	for id, ch := range map[int64]chan *jsonrpc.Response{1: ch1, 2: ch2} {
+		select {
+		case resp := <-ch:
+			if resp.Error == nil {
+				t.Errorf("channel %d: expected error response", id)
+			} else if resp.Error.Message != "connection lost" {
+				t.Errorf("channel %d: expected 'connection lost', got '%s'", id, resp.Error.Message)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("channel %d: timed out waiting for drain", id)
+		}
+	}
+
+	// Response map should be empty
+	client.responsesMu.Lock()
+	remaining := len(client.responses)
+	client.responsesMu.Unlock()
+	if remaining != 0 {
+		t.Errorf("expected 0 remaining response channels after drain, got %d", remaining)
+	}
+}
+
+func TestProcessClient_DrainPendingRequests_Empty(t *testing.T) {
+	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
+
+	// Drain with no pending requests should not panic
+	client.drainPendingRequests()
+
+	client.responsesMu.Lock()
+	remaining := len(client.responses)
+	client.responsesMu.Unlock()
+	if remaining != 0 {
+		t.Errorf("expected 0 remaining response channels, got %d", remaining)
+	}
+}
+
+func TestProcessClient_Reconnect(t *testing.T) {
+	// Use "cat" as a simple command — it echoes stdin to stdout
+	client := NewProcessClient("test", []string{"cat"}, "", nil)
+
+	// Initial connect
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("initial Connect failed: %v", err)
+	}
+
+	// Verify connected
+	client.procMu.Lock()
+	if !client.started {
+		t.Fatal("expected started=true after Connect")
+	}
+	client.procMu.Unlock()
+
+	// Close and reconnect
+	// Note: Reconnect calls Initialize which calls Connect, then tools/list
+	// Since "cat" doesn't speak MCP, Reconnect will fail at the initialize step.
+	// This is expected — we test that the reconnection lifecycle works correctly
+	// up to the point where it needs a real MCP server.
+	err := client.Reconnect(context.Background())
+	if err == nil {
+		// cat doesn't speak MCP, so initialize should fail
+		t.Log("reconnect succeeded (unexpected for cat, but not fatal)")
+	} else {
+		// Expected: initialize will fail because cat echoes back the request as non-JSON
+		if !strings.Contains(err.Error(), "reinitialize") {
+			t.Errorf("expected reinitialize error, got: %v", err)
+		}
+	}
+
+	// After failed reconnect, client should still be in a connected state
+	// (Connect succeeded, Initialize failed)
+	client.procMu.Lock()
+	started := client.started
+	client.procMu.Unlock()
+	if !started {
+		t.Error("expected client to be started after Connect succeeded in Reconnect")
+	}
+
+	client.Close()
+}
+
+func TestProcessClient_Reconnect_NotStarted(t *testing.T) {
+	// Reconnect on a client that was never started should work like a fresh connect
+	client := NewProcessClient("test", []string{"cat"}, "", nil)
+
+	// Reconnect calls Close (no-op) then Connect
+	err := client.Reconnect(context.Background())
+	// Will fail at Initialize since cat doesn't speak MCP, but Connect should succeed
+	if err != nil && !strings.Contains(err.Error(), "reinitialize") {
+		t.Errorf("expected reinitialize error or nil, got: %v", err)
+	}
+
+	client.Close()
 }
 
 func TestProcessClient_ReadResponses_MultipleResponses(t *testing.T) {

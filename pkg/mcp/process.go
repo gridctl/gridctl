@@ -34,6 +34,9 @@ type ProcessClient struct {
 	started bool
 	cancel  context.CancelFunc
 
+	// Reconnection serialization
+	reconnMu sync.Mutex
+
 	// Response handling
 	responses   map[int64]chan *jsonrpc.Response
 	responsesMu sync.Mutex
@@ -155,6 +158,27 @@ func (c *ProcessClient) readResponses(ctx context.Context) {
 			}
 		}
 	}
+
+	// Scanner exited (EOF or error) — drain pending requests so callers fail fast
+	c.drainPendingRequests()
+}
+
+// drainPendingRequests sends error responses to all pending callers so they
+// fail immediately instead of waiting for the 30s request timeout.
+func (c *ProcessClient) drainPendingRequests() {
+	c.responsesMu.Lock()
+	defer c.responsesMu.Unlock()
+
+	for id, ch := range c.responses {
+		select {
+		case ch <- &jsonrpc.Response{
+			JSONRPC: "2.0",
+			Error:   &jsonrpc.Error{Code: jsonrpc.InternalError, Message: "connection lost"},
+		}:
+		default:
+		}
+		delete(c.responses, id)
+	}
 }
 
 // readStderr reads lines from the process stderr and logs them.
@@ -272,6 +296,48 @@ func (c *ProcessClient) sendStdio(req jsonrpc.Request) error {
 	return nil
 }
 
+// Reconnect terminates the existing process and starts a new one, including the
+// MCP handshake and tool refresh. Thread-safe: concurrent callers will block until
+// reconnection completes.
+func (c *ProcessClient) Reconnect(ctx context.Context) error {
+	c.reconnMu.Lock()
+	defer c.reconnMu.Unlock()
+
+	c.logger.Info("reconnecting process")
+
+	// Close existing process (cancels goroutines, sends SIGTERM/SIGKILL)
+	c.Close()
+
+	// Reset state for fresh connection
+	c.procMu.Lock()
+	c.cmd = nil
+	c.stdin = nil
+	c.stdout = nil
+	c.procMu.Unlock()
+
+	c.responsesMu.Lock()
+	c.responses = make(map[int64]chan *jsonrpc.Response)
+	c.responsesMu.Unlock()
+
+	// Re-start the process
+	if err := c.Connect(ctx); err != nil {
+		return fmt.Errorf("reconnect: %w", err)
+	}
+
+	// Re-do MCP handshake
+	if err := c.Initialize(ctx); err != nil {
+		return fmt.Errorf("reinitialize: %w", err)
+	}
+
+	// Refresh tool list
+	if err := c.RefreshTools(ctx); err != nil {
+		return fmt.Errorf("refresh tools: %w", err)
+	}
+
+	c.logger.Info("reconnected process")
+	return nil
+}
+
 // Ping checks if the process is alive by verifying it's still running
 // and sending a JSON-RPC ping.
 func (c *ProcessClient) Ping(ctx context.Context) error {
@@ -309,6 +375,7 @@ func (c *ProcessClient) Close() error {
 	}
 
 	if c.cmd == nil || c.cmd.Process == nil {
+		c.started = false
 		return nil
 	}
 
