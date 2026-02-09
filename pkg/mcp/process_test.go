@@ -127,7 +127,7 @@ func TestProcessClient_ReadResponses(t *testing.T) {
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -167,7 +167,7 @@ func TestProcessClient_ReadResponses_NonJSON(t *testing.T) {
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -204,7 +204,7 @@ func TestProcessClient_ReadResponses_EmptyLines(t *testing.T) {
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -243,7 +243,7 @@ func TestProcessClient_ReadResponses_ErrorResponse(t *testing.T) {
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -289,7 +289,7 @@ func TestProcessClient_ReadResponses_UnmatchedID(t *testing.T) {
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -449,7 +449,7 @@ func TestProcessClient_CallTimeout(t *testing.T) {
 	// Start reader goroutine
 	readerCtx, readerCancel := context.WithCancel(context.Background())
 	client.cancel = readerCancel
-	go client.readResponses(readerCtx)
+	go client.readResponses(readerCtx, client.stdout)
 
 	defer func() {
 		readerCancel()
@@ -608,7 +608,7 @@ func TestProcessClient_DrainPendingRequests(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -741,7 +741,7 @@ func TestProcessClient_CallFailsFastOnConnectionDrop(t *testing.T) {
 
 	// Start reader goroutine
 	readerCtx, readerCancel := context.WithCancel(context.Background())
-	go client.readResponses(readerCtx)
+	go client.readResponses(readerCtx, client.stdout)
 
 	defer func() {
 		readerCancel()
@@ -793,7 +793,7 @@ func TestProcessClient_DrainOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
@@ -839,7 +839,7 @@ func TestProcessClient_ReadResponses_MultipleResponses(t *testing.T) {
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		client.readResponses(ctx)
+		client.readResponses(ctx, client.stdout)
 		close(done)
 	}()
 
