@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
 // Client communicates with a downstream MCP server.
@@ -53,7 +55,7 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 		}
 	}
 
-	req := Request{
+	req := jsonrpc.Request{
 		JSONRPC: "2.0",
 		ID:      &rawID,
 		Method:  method,
@@ -96,7 +98,7 @@ func (c *Client) send(ctx context.Context, method string, params any) error {
 }
 
 // sendHTTP sends a request to the downstream agent via HTTP.
-func (c *Client) sendHTTP(ctx context.Context, req Request) (*Response, error) {
+func (c *Client) sendHTTP(ctx context.Context, req jsonrpc.Request) (*jsonrpc.Response, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
@@ -140,7 +142,7 @@ func (c *Client) sendHTTP(ctx context.Context, req Request) (*Response, error) {
 		return c.parseSSEResponse(httpResp.Body)
 	}
 
-	var resp Response
+	var resp jsonrpc.Response
 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
@@ -151,7 +153,7 @@ func (c *Client) sendHTTP(ctx context.Context, req Request) (*Response, error) {
 // parseSSEResponse parses a Server-Sent Events formatted response.
 // SSE streams may contain multiple events (notifications + result).
 // We look for the response with an ID field (the actual result), skipping notifications.
-func (c *Client) parseSSEResponse(body io.Reader) (*Response, error) {
+func (c *Client) parseSSEResponse(body io.Reader) (*jsonrpc.Response, error) {
 	data, err := io.ReadAll(body)
 	if err != nil {
 		return nil, fmt.Errorf("reading SSE response: %w", err)
@@ -164,7 +166,7 @@ func (c *Client) parseSSEResponse(body io.Reader) (*Response, error) {
 	for _, line := range lines {
 		if strings.HasPrefix(line, "data: ") {
 			jsonData := strings.TrimPrefix(line, "data: ")
-			var resp Response
+			var resp jsonrpc.Response
 			if err := json.Unmarshal([]byte(jsonData), &resp); err != nil {
 				// Skip malformed lines
 				continue
