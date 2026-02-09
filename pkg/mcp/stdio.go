@@ -6,13 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
-	"github.com/gridctl/gridctl/pkg/logging"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -20,12 +18,10 @@ import (
 
 // StdioClient communicates with an MCP server via container stdin/stdout.
 type StdioClient struct {
-	ClientBase
-	name        string
+	RPCClient
 	containerID string
 	cli         dockerclient.DockerClient
 	requestID   atomic.Int64
-	logger      *slog.Logger
 
 	// Connection state
 	connMu   sync.Mutex
@@ -41,25 +37,13 @@ type StdioClient struct {
 
 // NewStdioClient creates a new stdio-based MCP client.
 func NewStdioClient(name, containerID string, cli dockerclient.DockerClient) *StdioClient {
-	return &StdioClient{
-		name:        name,
+	c := &StdioClient{
 		containerID: containerID,
 		cli:         cli,
-		logger:      logging.NewDiscardLogger(),
 		responses:   make(map[int64]chan *Response),
 	}
-}
-
-// SetLogger sets the logger for this client.
-func (c *StdioClient) SetLogger(logger *slog.Logger) {
-	if logger != nil {
-		c.logger = logger
-	}
-}
-
-// Name returns the agent name.
-func (c *StdioClient) Name() string {
-	return c.name
+	initRPCClient(&c.RPCClient, name, c)
+	return c
 }
 
 // Connect attaches to the container's stdin/stdout.
@@ -145,63 +129,6 @@ func (c *StdioClient) readResponses(ctx context.Context) {
 	}
 }
 
-// Initialize performs the MCP initialize handshake.
-func (c *StdioClient) Initialize(ctx context.Context) error {
-	if err := c.Connect(ctx); err != nil {
-		return err
-	}
-
-	params := InitializeParams{
-		ProtocolVersion: MCPProtocolVersion,
-		ClientInfo: ClientInfo{
-			Name:    "gridctl-gateway",
-			Version: "1.0.0",
-		},
-		Capabilities: Capabilities{
-			Tools: &ToolsCapability{},
-		},
-	}
-
-	var result InitializeResult
-	if err := c.call(ctx, "initialize", params, &result); err != nil {
-		return fmt.Errorf("initialize: %w", err)
-	}
-
-	c.SetInitialized(result.ServerInfo)
-
-	// Send initialized notification
-	_ = c.notify(ctx, "notifications/initialized", nil)
-
-	return nil
-}
-
-// RefreshTools fetches the current tool list from the agent.
-// If a tool whitelist has been set, only tools matching the whitelist are stored.
-func (c *StdioClient) RefreshTools(ctx context.Context) error {
-	var result ToolsListResult
-	if err := c.call(ctx, "tools/list", nil, &result); err != nil {
-		return fmt.Errorf("tools/list: %w", err)
-	}
-
-	c.SetTools(result.Tools)
-	return nil
-}
-
-// CallTool invokes a tool on the agent.
-func (c *StdioClient) CallTool(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
-	params := ToolCallParams{
-		Name:      name,
-		Arguments: arguments,
-	}
-
-	var result ToolCallResult
-	if err := c.call(ctx, "tools/call", params, &result); err != nil {
-		return nil, fmt.Errorf("tools/call: %w", err)
-	}
-
-	return &result, nil
-}
-
 // call performs a JSON-RPC call via stdin/stdout.
 func (c *StdioClient) call(ctx context.Context, method string, params any, result any) error {
 	id := c.requestID.Add(1)
@@ -233,7 +160,7 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 	c.logger.Debug("sending request", "method", method, "id", id)
 
 	// Send request
-	if err := c.send(req); err != nil {
+	if err := c.sendStdio(req); err != nil {
 		c.responsesMu.Lock()
 		delete(c.responses, id)
 		c.responsesMu.Unlock()
@@ -272,28 +199,18 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 	}
 }
 
-// notify sends a JSON-RPC notification.
-func (c *StdioClient) notify(ctx context.Context, method string, params any) error {
-	var paramsBytes json.RawMessage
-	if params != nil {
-		var err error
-		paramsBytes, err = json.Marshal(params)
-		if err != nil {
-			return fmt.Errorf("marshaling params: %w", err)
-		}
+// send sends a JSON-RPC notification via stdin (no response expected).
+func (c *StdioClient) send(_ context.Context, method string, params any) error {
+	req, err := buildNotification(method, params)
+	if err != nil {
+		return err
 	}
 
-	req := Request{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  paramsBytes,
-	}
-
-	return c.send(req)
+	return c.sendStdio(req)
 }
 
-// send writes a request to stdin.
-func (c *StdioClient) send(req Request) error {
+// sendStdio writes a request to stdin.
+func (c *StdioClient) sendStdio(req Request) error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
