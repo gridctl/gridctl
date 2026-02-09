@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -31,7 +32,7 @@ type StdioClient struct {
 	cancel   context.CancelFunc
 
 	// Response handling
-	responses   map[int64]chan *Response
+	responses   map[int64]chan *jsonrpc.Response
 	responsesMu sync.Mutex
 }
 
@@ -40,7 +41,7 @@ func NewStdioClient(name, containerID string, cli dockerclient.DockerClient) *St
 	c := &StdioClient{
 		containerID: containerID,
 		cli:         cli,
-		responses:   make(map[int64]chan *Response),
+		responses:   make(map[int64]chan *jsonrpc.Response),
 	}
 	initRPCClient(&c.RPCClient, name, c)
 	return c
@@ -108,7 +109,7 @@ func (c *StdioClient) readResponses(ctx context.Context) {
 			continue
 		}
 
-		var resp Response
+		var resp jsonrpc.Response
 		if err := json.Unmarshal(line, &resp); err != nil {
 			c.logger.Info("server output", "msg", string(line))
 			continue
@@ -144,7 +145,7 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 		}
 	}
 
-	req := Request{
+	req := jsonrpc.Request{
 		JSONRPC: "2.0",
 		ID:      &rawID,
 		Method:  method,
@@ -152,7 +153,7 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 	}
 
 	// Create response channel
-	respCh := make(chan *Response, 1)
+	respCh := make(chan *jsonrpc.Response, 1)
 	c.responsesMu.Lock()
 	c.responses[id] = respCh
 	c.responsesMu.Unlock()
@@ -210,7 +211,7 @@ func (c *StdioClient) send(_ context.Context, method string, params any) error {
 }
 
 // sendStdio writes a request to stdin.
-func (c *StdioClient) sendStdio(req Request) error {
+func (c *StdioClient) sendStdio(req jsonrpc.Request) error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
