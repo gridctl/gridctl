@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -809,12 +810,12 @@ func TestGateway_StartHealthMonitor_Lifecycle(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()
 
-	pingCount := 0
+	var pingCount atomic.Int32
 	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
 	client := &pingableClient{
 		AgentClient: mock,
 		pingFn: func(ctx context.Context) error {
-			pingCount++
+			pingCount.Add(1)
 			return nil
 		},
 	}
@@ -833,8 +834,8 @@ func TestGateway_StartHealthMonitor_Lifecycle(t *testing.T) {
 	// Wait for goroutine to clean up
 	time.Sleep(20 * time.Millisecond)
 
-	if pingCount < 2 {
-		t.Errorf("expected at least 2 health checks, got %d", pingCount)
+	if pingCount.Load() < 2 {
+		t.Errorf("expected at least 2 health checks, got %d", pingCount.Load())
 	}
 
 	hs := g.GetHealthStatus("server1")
