@@ -28,6 +28,15 @@ type AgentClient interface {
 	ServerInfo() ServerInfo
 }
 
+// Pingable is an optional interface for AgentClients that support health checks.
+// The health monitor uses type assertion to check if a client implements this.
+type Pingable interface {
+	Ping(ctx context.Context) error
+}
+
+// DefaultPingTimeout is the timeout for health check pings.
+const DefaultPingTimeout = 5 * time.Second
+
 // MCPProtocolVersion is the MCP protocol version supported by this implementation.
 const MCPProtocolVersion = "2024-11-05"
 
