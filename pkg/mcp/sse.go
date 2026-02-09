@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
 // SSEServer handles Server-Sent Events connections for MCP.
@@ -131,7 +133,7 @@ func (s *SSEServer) HandleMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Parse request with size limit
 	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize)
-	var req Request
+	var req jsonrpc.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
@@ -149,24 +151,24 @@ func (s *SSEServer) HandleMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRequest processes an MCP request.
-func (s *SSEServer) handleRequest(ctx context.Context, session *SSESession, req *Request) Response {
+func (s *SSEServer) handleRequest(ctx context.Context, session *SSESession, req *jsonrpc.Request) jsonrpc.Response {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req)
 	case "notifications/initialized":
-		return NewSuccessResponse(req.ID, nil)
+		return jsonrpc.NewSuccessResponse(req.ID, nil)
 	case "tools/list":
 		return s.handleToolsList(session, req)
 	case "tools/call":
 		return s.handleToolsCall(ctx, session, req)
 	case "ping":
-		return NewSuccessResponse(req.ID, struct{}{})
+		return jsonrpc.NewSuccessResponse(req.ID, struct{}{})
 	default:
-		return NewErrorResponse(req.ID, MethodNotFound, fmt.Sprintf("Unknown method: %s", req.Method))
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.MethodNotFound, fmt.Sprintf("Unknown method: %s", req.Method))
 	}
 }
 
-func (s *SSEServer) handleInitialize(req *Request) Response {
+func (s *SSEServer) handleInitialize(req *jsonrpc.Request) jsonrpc.Response {
 	var params InitializeParams
 	if req.Params != nil {
 		_ = json.Unmarshal(req.Params, &params) // params has defaults, unmarshal errors are non-fatal
@@ -174,14 +176,14 @@ func (s *SSEServer) handleInitialize(req *Request) Response {
 
 	result, err := s.gateway.HandleInitialize(params)
 	if err != nil {
-		return NewErrorResponse(req.ID, InternalError, err.Error())
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
-	return NewSuccessResponse(req.ID, result)
+	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
-func (s *SSEServer) handleToolsList(session *SSESession, req *Request) Response {
+func (s *SSEServer) handleToolsList(session *SSESession, req *jsonrpc.Request) jsonrpc.Response {
 	if session.AgentName != "" && !s.gateway.HasAgent(session.AgentName) {
-		return NewErrorResponse(req.ID, InvalidRequest, "unknown agent: "+session.AgentName)
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+session.AgentName)
 	}
 
 	var result *ToolsListResult
@@ -192,19 +194,19 @@ func (s *SSEServer) handleToolsList(session *SSESession, req *Request) Response 
 		result, err = s.gateway.HandleToolsList()
 	}
 	if err != nil {
-		return NewErrorResponse(req.ID, InternalError, err.Error())
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
-	return NewSuccessResponse(req.ID, result)
+	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
-func (s *SSEServer) handleToolsCall(ctx context.Context, session *SSESession, req *Request) Response {
+func (s *SSEServer) handleToolsCall(ctx context.Context, session *SSESession, req *jsonrpc.Request) jsonrpc.Response {
 	var params ToolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return NewErrorResponse(req.ID, InvalidParams, "Invalid tools/call params")
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid tools/call params")
 	}
 
 	if session.AgentName != "" && !s.gateway.HasAgent(session.AgentName) {
-		return NewErrorResponse(req.ID, InvalidRequest, "unknown agent: "+session.AgentName)
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+session.AgentName)
 	}
 
 	var result *ToolCallResult
@@ -215,9 +217,9 @@ func (s *SSEServer) handleToolsCall(ctx context.Context, session *SSESession, re
 		result, err = s.gateway.HandleToolsCall(ctx, params)
 	}
 	if err != nil {
-		return NewErrorResponse(req.ID, InternalError, err.Error())
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
-	return NewSuccessResponse(req.ID, result)
+	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
 // sendEvent sends an SSE event to a session.
