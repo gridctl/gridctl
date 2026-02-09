@@ -386,6 +386,118 @@ func TestSSEServer_ToolsCallFiltering(t *testing.T) {
 	})
 }
 
+func TestSSEServer_UnknownAgent_ToolsList(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Session with unknown agent name (not registered via RegisterAgent)
+	session := &SSESession{
+		ID:        "test-session",
+		AgentName: "nonexistent-agent",
+	}
+
+	reqID := json.RawMessage(`1`)
+	req := &Request{
+		ID:     &reqID,
+		Method: "tools/list",
+	}
+
+	resp := sse.handleToolsList(session, req)
+	if resp.Error == nil {
+		t.Fatal("expected error for unknown agent")
+	}
+	if resp.Error.Code != InvalidRequest {
+		t.Errorf("expected InvalidRequest code %d, got %d", InvalidRequest, resp.Error.Code)
+	}
+	if !strings.Contains(resp.Error.Message, "nonexistent-agent") {
+		t.Errorf("expected error to contain agent name, got %s", resp.Error.Message)
+	}
+}
+
+func TestSSEServer_UnknownAgent_ToolsCall(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Session with unknown agent name
+	session := &SSESession{
+		ID:        "test-session",
+		AgentName: "nonexistent-agent",
+	}
+
+	params, _ := json.Marshal(ToolCallParams{
+		Name:      "server1__echo",
+		Arguments: map[string]any{},
+	})
+	reqID := json.RawMessage(`1`)
+	req := &Request{
+		ID:     &reqID,
+		Method: "tools/call",
+		Params: json.RawMessage(params),
+	}
+
+	resp := sse.handleToolsCall(context.Background(), session, req)
+	if resp.Error == nil {
+		t.Fatal("expected error for unknown agent on tools/call")
+	}
+	if resp.Error.Code != InvalidRequest {
+		t.Errorf("expected InvalidRequest code %d, got %d", InvalidRequest, resp.Error.Code)
+	}
+	if !strings.Contains(resp.Error.Message, "nonexistent-agent") {
+		t.Errorf("expected error to contain agent name, got %s", resp.Error.Message)
+	}
+}
+
+func TestSSEServer_UnknownAgent_ViaHandleMessage(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Manually register a session with an unknown agent name
+	sseW := httptest.NewRecorder()
+	session := &SSESession{
+		ID:        "test-session-id",
+		AgentName: "nonexistent-agent",
+		Writer:    sseW,
+		Flusher:   sseW,
+		Done:      make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, session.ID)
+		sse.mu.Unlock()
+	}()
+
+	// Send tools/list via HandleMessage
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/list",
+	})
+	msgReq := httptest.NewRequest("POST", "/message?sessionId=test-session-id", bytes.NewReader(body))
+	msgW := httptest.NewRecorder()
+	sse.HandleMessage(msgW, msgReq)
+
+	if msgW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", msgW.Code)
+	}
+
+	var resp Response
+	if err := json.NewDecoder(msgW.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error for unknown agent via HandleMessage")
+	}
+	if resp.Error.Code != InvalidRequest {
+		t.Errorf("expected InvalidRequest code %d, got %d", InvalidRequest, resp.Error.Code)
+	}
+	if !strings.Contains(resp.Error.Message, "nonexistent-agent") {
+		t.Errorf("expected error to contain agent name, got %s", resp.Error.Message)
+	}
+}
+
 func TestSSEServer_HandleMessage_WithAgentFiltering(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()
