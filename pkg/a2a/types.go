@@ -3,8 +3,6 @@ package a2a
 import (
 	"encoding/json"
 	"time"
-
-	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
 // ProtocolVersion is the A2A protocol version supported by this implementation.
@@ -196,19 +194,6 @@ type CancelTaskParams struct {
 	ID string `json:"id"`
 }
 
-// JSON-RPC 2.0 types — re-exported from pkg/jsonrpc for backward compatibility.
-type Request = jsonrpc.Request
-type Response = jsonrpc.Response
-type Error = jsonrpc.Error
-
-const (
-	ParseError     = jsonrpc.ParseError
-	InvalidRequest = jsonrpc.InvalidRequest
-	MethodNotFound = jsonrpc.MethodNotFound
-	InvalidParams  = jsonrpc.InvalidParams
-	InternalError  = jsonrpc.InternalError
-)
-
 // A2A-specific error codes.
 const (
 	ErrTaskNotFound    = -32001
@@ -222,8 +207,3 @@ const (
 	DefaultA2ATimeout = 60 * time.Second
 )
 
-// NewErrorResponse creates a JSON-RPC error response.
-var NewErrorResponse = jsonrpc.NewErrorResponse
-
-// NewSuccessResponse creates a JSON-RPC success response.
-var NewSuccessResponse = jsonrpc.NewSuccessResponse
