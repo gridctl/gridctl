@@ -684,6 +684,10 @@ func runGateway(ctx context.Context, rt *runtime.Orchestrator, stack *config.Sta
 			fmt.Println("\nShutting down...")
 		}
 
+		// Close API server resources first: broadcasts SSE close event
+		// while HTTP connections are still alive, then closes gateway clients.
+		server.Close()
+
 		// Graceful HTTP shutdown with timeout
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer shutdownCancel()
@@ -691,9 +695,6 @@ func runGateway(ctx context.Context, rt *runtime.Orchestrator, stack *config.Sta
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			logger.Error("HTTP server shutdown error", "error", err)
 		}
-
-		// Close API server resources (SSE connections, gateway clients)
-		server.Close()
 
 		// Clean up state file on graceful shutdown
 		_ = state.Delete(stack.Name)

@@ -243,21 +243,34 @@ func (s *SSEServer) sendEvent(session *SSESession, event string, data any) {
 }
 
 // Broadcast sends an event to all connected sessions.
+// Write errors are silently ignored so disconnected clients don't block delivery.
 func (s *SSEServer) Broadcast(event string, data any) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	for _, session := range s.sessions {
-		s.sendEvent(session, event, data)
+		s.trySendEvent(session, event, data)
 	}
 }
 
-// Close terminates all active SSE connections.
+// trySendEvent sends an SSE event to a session, ignoring write errors.
+// Used during broadcast where some clients may already be disconnected.
+func (s *SSEServer) trySendEvent(session *SSESession, event string, data any) {
+	defer func() {
+		_ = recover() // ignore panics from writes to closed connections
+	}()
+	s.sendEvent(session, event, data)
+}
+
+// Close broadcasts a close event to all connected sessions, then clears the session map.
+// The broadcast is best-effort: write errors to disconnected clients are silently ignored.
+// After Close returns, active SSE handlers will exit when http.Server.Shutdown()
+// cancels their request contexts.
 func (s *SSEServer) Close() {
+	s.Broadcast("close", "server shutting down")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Clear session map; active SSE handlers will exit when
-	// http.Server.Shutdown() cancels their request contexts.
 	s.sessions = make(map[string]*SSESession)
 }
 

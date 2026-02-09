@@ -1063,6 +1063,89 @@ func TestSSEServer_Close(t *testing.T) {
 	}
 }
 
+func TestSSEServer_Close_BroadcastsCloseEvent(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Create two sessions
+	w1 := httptest.NewRecorder()
+	w2 := httptest.NewRecorder()
+	s1 := &SSESession{
+		ID: "session-1", Writer: w1, Flusher: w1, Done: make(chan struct{}),
+	}
+	s2 := &SSESession{
+		ID: "session-2", Writer: w2, Flusher: w2, Done: make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[s1.ID] = s1
+	sse.sessions[s2.ID] = s2
+	sse.mu.Unlock()
+
+	sse.Close()
+
+	// Both sessions should have received the close event before being cleared
+	for i, w := range []*httptest.ResponseRecorder{w1, w2} {
+		body := w.Body.String()
+		if !strings.Contains(body, "event: close") {
+			t.Errorf("session %d: expected close event, got: %s", i+1, body)
+		}
+		if !strings.Contains(body, "data: server shutting down") {
+			t.Errorf("session %d: expected shutdown message, got: %s", i+1, body)
+		}
+	}
+
+	if sse.SessionCount() != 0 {
+		t.Errorf("expected 0 sessions after Close, got %d", sse.SessionCount())
+	}
+}
+
+func TestSSEServer_Close_NoSessions(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Close with no sessions should not panic
+	sse.Close()
+
+	if sse.SessionCount() != 0 {
+		t.Errorf("expected 0 sessions, got %d", sse.SessionCount())
+	}
+}
+
+func TestSSEServer_Broadcast_DisconnectedClient(t *testing.T) {
+	g := NewGateway()
+	sse := NewSSEServer(g)
+
+	// Create one healthy session and one with a panicking writer
+	healthy := httptest.NewRecorder()
+	s1 := &SSESession{
+		ID: "healthy", Writer: healthy, Flusher: healthy, Done: make(chan struct{}),
+	}
+	s2 := &SSESession{
+		ID: "broken", Writer: &panicWriter{}, Flusher: &panicWriter{}, Done: make(chan struct{}),
+	}
+	sse.mu.Lock()
+	sse.sessions[s1.ID] = s1
+	sse.sessions[s2.ID] = s2
+	sse.mu.Unlock()
+	defer func() {
+		sse.mu.Lock()
+		delete(sse.sessions, s1.ID)
+		delete(sse.sessions, s2.ID)
+		sse.mu.Unlock()
+	}()
+
+	// Broadcast should not panic even with a broken writer
+	sse.Broadcast("test", "hello")
+
+	body := healthy.Body.String()
+	if !strings.Contains(body, "event: test") {
+		t.Errorf("healthy session should receive broadcast, got: %s", body)
+	}
+	if !strings.Contains(body, "data: hello") {
+		t.Errorf("healthy session should receive data, got: %s", body)
+	}
+}
+
 func TestSSEServer_SessionCount(t *testing.T) {
 	g := NewGateway()
 	sse := NewSSEServer(g)
@@ -1134,6 +1217,14 @@ func TestSSEServer_MultipleSessions(t *testing.T) {
 		t.Errorf("expected 0 sessions after all disconnects, got %d", sse.SessionCount())
 	}
 }
+
+// panicWriter simulates a disconnected client that panics on write.
+type panicWriter struct{}
+
+func (pw *panicWriter) Header() http.Header        { return http.Header{} }
+func (pw *panicWriter) Write([]byte) (int, error)   { panic("write to closed connection") }
+func (pw *panicWriter) WriteHeader(int)             {}
+func (pw *panicWriter) Flush()                      { panic("flush on closed connection") }
 
 // waitForSession polls until at least one SSE session is registered.
 func waitForSession(t *testing.T, sse *SSEServer) {
