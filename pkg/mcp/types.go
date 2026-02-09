@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"time"
-
-	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
 // Transport represents the type of transport for an MCP connection.
@@ -29,19 +27,6 @@ type AgentClient interface {
 	IsInitialized() bool
 	ServerInfo() ServerInfo
 }
-
-// JSON-RPC 2.0 types — re-exported from pkg/jsonrpc for backward compatibility.
-type Request = jsonrpc.Request
-type Response = jsonrpc.Response
-type Error = jsonrpc.Error
-
-const (
-	ParseError     = jsonrpc.ParseError
-	InvalidRequest = jsonrpc.InvalidRequest
-	MethodNotFound = jsonrpc.MethodNotFound
-	InvalidParams  = jsonrpc.InvalidParams
-	InternalError  = jsonrpc.InternalError
-)
 
 // MCPProtocolVersion is the MCP protocol version supported by this implementation.
 const MCPProtocolVersion = "2024-11-05"
@@ -167,8 +152,3 @@ func NewTextContent(text string) Content {
 	return Content{Type: "text", Text: text}
 }
 
-// NewErrorResponse creates a JSON-RPC error response.
-var NewErrorResponse = jsonrpc.NewErrorResponse
-
-// NewSuccessResponse creates a JSON-RPC success response.
-var NewSuccessResponse = jsonrpc.NewSuccessResponse
