@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 	"github.com/gridctl/gridctl/pkg/logging"
 )
 
@@ -197,17 +198,17 @@ func (r *RPCClient) CallTool(ctx context.Context, name string, arguments map[str
 }
 
 // buildNotification constructs a JSON-RPC notification request.
-func buildNotification(method string, params any) (Request, error) {
+func buildNotification(method string, params any) (jsonrpc.Request, error) {
 	var paramsBytes json.RawMessage
 	if params != nil {
 		var err error
 		paramsBytes, err = json.Marshal(params)
 		if err != nil {
-			return Request{}, fmt.Errorf("marshaling params: %w", err)
+			return jsonrpc.Request{}, fmt.Errorf("marshaling params: %w", err)
 		}
 	}
 
-	return Request{
+	return jsonrpc.Request{
 		JSONRPC: "2.0",
 		Method:  method,
 		Params:  paramsBytes,
