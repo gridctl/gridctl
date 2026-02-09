@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
 // Handler provides HTTP handlers for the MCP gateway.
@@ -38,20 +40,20 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.writeError(w, nil, ParseError, "Failed to read request body")
+		h.writeError(w, nil, jsonrpc.ParseError, "Failed to read request body")
 		return
 	}
 
 	// Parse JSON-RPC request
-	var req Request
+	var req jsonrpc.Request
 	if err := json.Unmarshal(body, &req); err != nil {
-		h.writeError(w, nil, ParseError, "Invalid JSON")
+		h.writeError(w, nil, jsonrpc.ParseError, "Invalid JSON")
 		return
 	}
 
 	// Validate JSON-RPC version
 	if req.JSONRPC != "2.0" {
-		h.writeError(w, req.ID, InvalidRequest, "Invalid JSON-RPC version")
+		h.writeError(w, req.ID, jsonrpc.InvalidRequest, "Invalid JSON-RPC version")
 		return
 	}
 
@@ -61,48 +63,48 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMethod routes the request to the appropriate handler.
-func (h *Handler) handleMethod(r *http.Request, req *Request) Response {
+func (h *Handler) handleMethod(r *http.Request, req *jsonrpc.Request) jsonrpc.Response {
 	switch req.Method {
 	case "initialize":
 		return h.handleInitialize(req)
 	case "notifications/initialized":
 		// Client notification, just acknowledge
-		return NewSuccessResponse(req.ID, nil)
+		return jsonrpc.NewSuccessResponse(req.ID, nil)
 	case "tools/list":
 		return h.handleToolsList(r, req)
 	case "tools/call":
 		return h.handleToolsCall(r, req)
 	case "ping":
-		return NewSuccessResponse(req.ID, struct{}{})
+		return jsonrpc.NewSuccessResponse(req.ID, struct{}{})
 	default:
-		return NewErrorResponse(req.ID, MethodNotFound, fmt.Sprintf("Unknown method: %s", req.Method))
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.MethodNotFound, fmt.Sprintf("Unknown method: %s", req.Method))
 	}
 }
 
 // handleInitialize handles the initialize request.
-func (h *Handler) handleInitialize(req *Request) Response {
+func (h *Handler) handleInitialize(req *jsonrpc.Request) jsonrpc.Response {
 	var params InitializeParams
 	if req.Params != nil {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return NewErrorResponse(req.ID, InvalidParams, "Invalid initialize params")
+			return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid initialize params")
 		}
 	}
 
 	result, err := h.gateway.HandleInitialize(params)
 	if err != nil {
-		return NewErrorResponse(req.ID, InternalError, err.Error())
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
 
-	return NewSuccessResponse(req.ID, result)
+	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
 // handleToolsList handles the tools/list request.
-func (h *Handler) handleToolsList(r *http.Request, req *Request) Response {
+func (h *Handler) handleToolsList(r *http.Request, req *jsonrpc.Request) jsonrpc.Response {
 	// Check for agent identity header for access control
 	agentName := r.Header.Get("X-Agent-Name")
 
 	if agentName != "" && !h.gateway.HasAgent(agentName) {
-		return NewErrorResponse(req.ID, InvalidRequest, "unknown agent: "+agentName)
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+agentName)
 	}
 
 	var result *ToolsListResult
@@ -116,23 +118,23 @@ func (h *Handler) handleToolsList(r *http.Request, req *Request) Response {
 	}
 
 	if err != nil {
-		return NewErrorResponse(req.ID, InternalError, err.Error())
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
-	return NewSuccessResponse(req.ID, result)
+	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
 // handleToolsCall handles the tools/call request.
-func (h *Handler) handleToolsCall(r *http.Request, req *Request) Response {
+func (h *Handler) handleToolsCall(r *http.Request, req *jsonrpc.Request) jsonrpc.Response {
 	var params ToolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return NewErrorResponse(req.ID, InvalidParams, "Invalid tools/call params")
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid tools/call params")
 	}
 
 	// Check for agent identity header for access control
 	agentName := r.Header.Get("X-Agent-Name")
 
 	if agentName != "" && !h.gateway.HasAgent(agentName) {
-		return NewErrorResponse(req.ID, InvalidRequest, "unknown agent: "+agentName)
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+agentName)
 	}
 
 	var result *ToolCallResult
@@ -146,10 +148,10 @@ func (h *Handler) handleToolsCall(r *http.Request, req *Request) Response {
 	}
 
 	if err != nil {
-		return NewErrorResponse(req.ID, InternalError, err.Error())
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
 
-	return NewSuccessResponse(req.ID, result)
+	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
 // handleSSE handles Server-Sent Events connections.
@@ -169,7 +171,7 @@ func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeResponse writes a JSON-RPC response.
-func (h *Handler) writeResponse(w http.ResponseWriter, resp Response) {
+func (h *Handler) writeResponse(w http.ResponseWriter, resp jsonrpc.Response) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
@@ -177,6 +179,6 @@ func (h *Handler) writeResponse(w http.ResponseWriter, resp Response) {
 
 // writeError writes a JSON-RPC error response.
 func (h *Handler) writeError(w http.ResponseWriter, id *json.RawMessage, code int, message string) {
-	resp := NewErrorResponse(id, code, message)
+	resp := jsonrpc.NewErrorResponse(id, code, message)
 	h.writeResponse(w, resp)
 }
