@@ -31,6 +31,9 @@ type StdioClient struct {
 	attached bool
 	cancel   context.CancelFunc
 
+	// Reconnection serialization
+	reconnMu sync.Mutex
+
 	// Response handling
 	responses   map[int64]chan *jsonrpc.Response
 	responsesMu sync.Mutex
@@ -127,6 +130,27 @@ func (c *StdioClient) readResponses(ctx context.Context) {
 				c.responsesMu.Unlock()
 			}
 		}
+	}
+
+	// Scanner exited (EOF or error) — drain pending requests so callers fail fast
+	c.drainPendingRequests()
+}
+
+// drainPendingRequests sends error responses to all pending callers so they
+// fail immediately instead of waiting for the 30s request timeout.
+func (c *StdioClient) drainPendingRequests() {
+	c.responsesMu.Lock()
+	defer c.responsesMu.Unlock()
+
+	for id, ch := range c.responses {
+		select {
+		case ch <- &jsonrpc.Response{
+			JSONRPC: "2.0",
+			Error:   &jsonrpc.Error{Code: jsonrpc.InternalError, Message: "connection lost"},
+		}:
+		default:
+		}
+		delete(c.responses, id)
 	}
 }
 
@@ -229,6 +253,42 @@ func (c *StdioClient) sendStdio(req jsonrpc.Request) error {
 		return fmt.Errorf("writing to stdin: %w", err)
 	}
 
+	return nil
+}
+
+// Reconnect closes the existing connection and re-establishes it, including the
+// MCP handshake and tool refresh. Thread-safe: concurrent callers will block until
+// reconnection completes.
+func (c *StdioClient) Reconnect(ctx context.Context) error {
+	c.reconnMu.Lock()
+	defer c.reconnMu.Unlock()
+
+	c.logger.Info("reconnecting to container")
+
+	// Close existing connection (cancels goroutines, closes pipes)
+	c.Close()
+
+	// Reset response map for fresh state
+	c.responsesMu.Lock()
+	c.responses = make(map[int64]chan *jsonrpc.Response)
+	c.responsesMu.Unlock()
+
+	// Re-establish connection
+	if err := c.Connect(ctx); err != nil {
+		return fmt.Errorf("reconnect: %w", err)
+	}
+
+	// Re-do MCP handshake
+	if err := c.Initialize(ctx); err != nil {
+		return fmt.Errorf("reinitialize: %w", err)
+	}
+
+	// Refresh tool list
+	if err := c.RefreshTools(ctx); err != nil {
+		return fmt.Errorf("refresh tools: %w", err)
+	}
+
+	c.logger.Info("reconnected to container")
 	return nil
 }
 

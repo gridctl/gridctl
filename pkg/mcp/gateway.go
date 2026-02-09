@@ -165,6 +165,7 @@ func (g *Gateway) StartHealthMonitor(ctx context.Context, interval time.Duration
 }
 
 // checkHealth pings all registered MCP servers and updates their health status.
+// If a server is unhealthy and implements Reconnectable, it attempts reconnection.
 func (g *Gateway) checkHealth(ctx context.Context) {
 	clients := g.router.Clients()
 
@@ -210,6 +211,27 @@ func (g *Gateway) checkHealth(ctx context.Context) {
 
 		g.health[client.Name()] = status
 		g.healthMu.Unlock()
+
+		// Attempt reconnection for unhealthy clients that support it
+		if err != nil {
+			if rc, ok := client.(Reconnectable); ok {
+				g.logger.Info("attempting reconnection", "name", client.Name())
+				if reconnErr := rc.Reconnect(ctx); reconnErr != nil {
+					g.logger.Warn("reconnection failed", "name", client.Name(), "error", reconnErr)
+				} else {
+					// Reconnection succeeded — update health status and refresh router
+					g.healthMu.Lock()
+					g.health[client.Name()] = &HealthStatus{
+						Healthy:     true,
+						LastCheck:   time.Now(),
+						LastHealthy: time.Now(),
+					}
+					g.healthMu.Unlock()
+					g.router.RefreshTools()
+					g.logger.Info("MCP server reconnected", "name", client.Name())
+				}
+			}
+		}
 	}
 }
 
