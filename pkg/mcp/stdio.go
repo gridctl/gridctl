@@ -95,6 +95,8 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 
 // readResponses reads JSON-RPC responses from stdout.
 func (c *StdioClient) readResponses(ctx context.Context) {
+	defer c.drainPendingRequests()
+
 	scanner := bufio.NewScanner(c.stdout)
 	// Increase buffer size for large responses
 	buf := make([]byte, 0, 64*1024)
@@ -131,9 +133,6 @@ func (c *StdioClient) readResponses(ctx context.Context) {
 			}
 		}
 	}
-
-	// Scanner exited (EOF or error) — drain pending requests so callers fail fast
-	c.drainPendingRequests()
 }
 
 // drainPendingRequests sends error responses to all pending callers so they
@@ -265,13 +264,10 @@ func (c *StdioClient) Reconnect(ctx context.Context) error {
 
 	c.logger.Info("reconnecting to container")
 
-	// Close existing connection (cancels goroutines, closes pipes)
+	// Close existing connection (cancels goroutines, closes pipes).
+	// The deferred drainPendingRequests in readResponses will clear the
+	// response map, so no explicit reset is needed here.
 	c.Close()
-
-	// Reset response map for fresh state
-	c.responsesMu.Lock()
-	c.responses = make(map[int64]chan *jsonrpc.Response)
-	c.responsesMu.Unlock()
 
 	// Re-establish connection
 	if err := c.Connect(ctx); err != nil {
