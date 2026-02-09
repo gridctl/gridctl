@@ -314,9 +314,6 @@ func TestRPCClient_Initialize_CallError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !r.IsInitialized() == true {
-		// Should NOT be initialized on error
-	}
 	if r.IsInitialized() {
 		t.Error("should not be initialized after error")
 	}
