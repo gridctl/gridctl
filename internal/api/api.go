@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/a2a"
 	"github.com/gridctl/gridctl/pkg/config"
@@ -246,13 +247,18 @@ type MCPServerStatus struct {
 	LocalProcess bool     `json:"localProcess"`
 	SSH          bool     `json:"ssh"`
 	SSHHost      string   `json:"sshHost,omitempty"`
+	OpenAPI      bool     `json:"openapi"`
+	OpenAPISpec  string   `json:"openapiSpec,omitempty"`
+	Healthy      *bool    `json:"healthy,omitempty"`
+	LastCheck    *string  `json:"lastCheck,omitempty"`
+	HealthError  string   `json:"healthError,omitempty"`
 }
 
 func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 	mcpStatuses := s.gateway.Status()
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
-		statuses[i] = MCPServerStatus{
+		status := MCPServerStatus{
 			Name:         ms.Name,
 			Transport:    string(ms.Transport),
 			Endpoint:     ms.Endpoint,
@@ -263,7 +269,16 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 			LocalProcess: ms.LocalProcess,
 			SSH:          ms.SSH,
 			SSHHost:      ms.SSHHost,
+			OpenAPI:      ms.OpenAPI,
+			OpenAPISpec:  ms.OpenAPISpec,
+			Healthy:      ms.Healthy,
+			HealthError:  ms.HealthError,
 		}
+		if ms.LastCheck != nil {
+			ts := ms.LastCheck.Format(time.RFC3339)
+			status.LastCheck = &ts
+		}
+		statuses[i] = status
 	}
 	return statuses
 }

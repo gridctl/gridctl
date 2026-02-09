@@ -259,6 +259,35 @@ func (c *OpenAPIClient) CallTool(ctx context.Context, name string, args map[stri
 	}, nil
 }
 
+// Ping checks if the OpenAPI backend is reachable by making a HEAD request to the base URL.
+func (c *OpenAPIClient) Ping(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, DefaultPingTimeout)
+	defer cancel()
+
+	if c.baseURL == "" {
+		return fmt.Errorf("no base URL configured")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "HEAD", c.baseURL, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	c.applyAuth(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 // loadSpec loads the OpenAPI spec from URL or file.
 func (c *OpenAPIClient) loadSpec(ctx context.Context) (*openapi3.T, error) {
 	loader := openapi3.NewLoader()

@@ -48,6 +48,17 @@ type OpenAPIClientConfig struct {
 	NoExpand   bool     // If true, skip environment variable expansion in spec file
 }
 
+// HealthStatus tracks the health state of a downstream MCP server.
+type HealthStatus struct {
+	Healthy     bool      // Whether the server is responding to pings
+	LastCheck   time.Time // When the last health check ran
+	LastHealthy time.Time // When the server was last seen healthy
+	Error       string    // Error message if unhealthy (empty when healthy)
+}
+
+// DefaultHealthCheckInterval is the default interval between health checks.
+const DefaultHealthCheckInterval = 30 * time.Second
+
 // Gateway aggregates multiple MCP servers into a single endpoint.
 type Gateway struct {
 	router    *Router
@@ -60,6 +71,9 @@ type Gateway struct {
 	serverInfo  ServerInfo
 	serverMeta  map[string]MCPServerConfig       // name -> config for status reporting
 	agentAccess map[string][]config.ToolSelector // agent name -> allowed MCP servers with tool filtering
+
+	healthMu sync.RWMutex
+	health   map[string]*HealthStatus // name -> health status
 }
 
 // NewGateway creates a new MCP gateway.
@@ -74,6 +88,7 @@ func NewGateway() *Gateway {
 		},
 		serverMeta:  make(map[string]MCPServerConfig),
 		agentAccess: make(map[string][]config.ToolSelector),
+		health:      make(map[string]*HealthStatus),
 	}
 }
 
@@ -130,6 +145,80 @@ func (g *Gateway) StartCleanup(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// StartHealthMonitor starts periodic health checking for all registered MCP servers.
+// It runs alongside StartCleanup and stops when the gateway context is cancelled.
+func (g *Gateway) StartHealthMonitor(ctx context.Context, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				g.checkHealth(ctx)
+			}
+		}
+	}()
+}
+
+// checkHealth pings all registered MCP servers and updates their health status.
+func (g *Gateway) checkHealth(ctx context.Context) {
+	clients := g.router.Clients()
+
+	for _, client := range clients {
+		// Only check clients that have server metadata (actual MCP servers)
+		g.mu.RLock()
+		_, isMCPServer := g.serverMeta[client.Name()]
+		g.mu.RUnlock()
+		if !isMCPServer {
+			continue
+		}
+
+		pingable, ok := client.(Pingable)
+		if !ok {
+			continue
+		}
+
+		now := time.Now()
+		err := pingable.Ping(ctx)
+
+		g.healthMu.Lock()
+		prev := g.health[client.Name()]
+
+		status := &HealthStatus{
+			Healthy:   err == nil,
+			LastCheck: now,
+		}
+
+		if err == nil {
+			status.LastHealthy = now
+			if prev != nil && !prev.Healthy {
+				g.logger.Info("MCP server recovered", "name", client.Name())
+			}
+		} else {
+			status.Error = err.Error()
+			if prev != nil {
+				status.LastHealthy = prev.LastHealthy
+			}
+			if prev == nil || prev.Healthy {
+				g.logger.Warn("MCP server unhealthy", "name", client.Name(), "error", err)
+			}
+		}
+
+		g.health[client.Name()] = status
+		g.healthMu.Unlock()
+	}
+}
+
+// GetHealthStatus returns the health status for a named MCP server.
+// Returns nil if no health data is available.
+func (g *Gateway) GetHealthStatus(name string) *HealthStatus {
+	g.healthMu.RLock()
+	defer g.healthMu.RUnlock()
+	return g.health[name]
 }
 
 // Close stops the cleanup goroutine and closes all agent client connections.
@@ -523,6 +612,9 @@ type MCPServerStatus struct {
 	SSHHost      string    `json:"sshHost,omitempty"` // SSH hostname
 	OpenAPI      bool      `json:"openapi"`      // True for OpenAPI servers
 	OpenAPISpec  string    `json:"openapiSpec,omitempty"` // OpenAPI spec location
+	Healthy      *bool      `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
+	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
+	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
 }
 
 // buildSSHCommand constructs the ssh command with all options.
@@ -590,6 +682,16 @@ func (g *Gateway) Status() []MCPServerStatus {
 		if meta.OpenAPIConfig != nil {
 			status.OpenAPISpec = meta.OpenAPIConfig.Spec
 		}
+
+		// Include health status if available
+		g.healthMu.RLock()
+		if hs, ok := g.health[client.Name()]; ok {
+			status.Healthy = &hs.Healthy
+			status.LastCheck = &hs.LastCheck
+			status.HealthError = hs.Error
+		}
+		g.healthMu.RUnlock()
+
 		statuses = append(statuses, status)
 	}
 

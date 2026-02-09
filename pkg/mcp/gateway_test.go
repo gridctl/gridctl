@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
@@ -542,6 +544,349 @@ func TestGateway_Close(t *testing.T) {
 	ctx := context.Background()
 	g.StartCleanup(ctx)
 	g.Close()
+}
+
+// pingableClient wraps a MockAgentClient to also implement Pingable.
+type pingableClient struct {
+	AgentClient
+	pingFn func(ctx context.Context) error
+}
+
+func (p *pingableClient) Ping(ctx context.Context) error {
+	return p.pingFn(ctx)
+}
+
+func TestGateway_HealthMonitor_DetectsUnhealthy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	logBuffer := logging.NewLogBuffer(20)
+	handler := logging.NewBufferHandler(logBuffer, nil)
+	g.SetLogger(slog.New(handler))
+
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return fmt.Errorf("connection refused") },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	// Run a single health check
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	// Verify health status
+	hs := g.GetHealthStatus("server1")
+	if hs == nil {
+		t.Fatal("expected health status for server1")
+	}
+	if hs.Healthy {
+		t.Error("expected server to be unhealthy")
+	}
+	if hs.Error != "connection refused" {
+		t.Errorf("expected error 'connection refused', got '%s'", hs.Error)
+	}
+	if hs.LastCheck.IsZero() {
+		t.Error("expected LastCheck to be set")
+	}
+
+	// Verify WARN log
+	entries := logBuffer.GetRecent(20)
+	found := false
+	for _, entry := range entries {
+		if entry.Level == "WARN" && entry.Message == "MCP server unhealthy" {
+			if entry.Attrs["name"] != "server1" {
+				t.Errorf("expected name 'server1', got %v", entry.Attrs["name"])
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected WARN log for unhealthy server")
+	}
+}
+
+func TestGateway_HealthMonitor_DetectsHealthy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return nil },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	hs := g.GetHealthStatus("server1")
+	if hs == nil {
+		t.Fatal("expected health status for server1")
+	}
+	if !hs.Healthy {
+		t.Error("expected server to be healthy")
+	}
+	if hs.Error != "" {
+		t.Errorf("expected empty error, got '%s'", hs.Error)
+	}
+	if hs.LastHealthy.IsZero() {
+		t.Error("expected LastHealthy to be set")
+	}
+}
+
+func TestGateway_HealthMonitor_Recovery(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	logBuffer := logging.NewLogBuffer(20)
+	handler := logging.NewBufferHandler(logBuffer, nil)
+	g.SetLogger(slog.New(handler))
+
+	pingErr := fmt.Errorf("connection refused")
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return pingErr },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	ctx := context.Background()
+
+	// First check: unhealthy
+	g.checkHealth(ctx)
+	hs := g.GetHealthStatus("server1")
+	if hs == nil || hs.Healthy {
+		t.Fatal("expected unhealthy after first check")
+	}
+
+	// Server recovers
+	client.pingFn = func(ctx context.Context) error { return nil }
+	g.checkHealth(ctx)
+
+	hs = g.GetHealthStatus("server1")
+	if hs == nil || !hs.Healthy {
+		t.Fatal("expected healthy after recovery")
+	}
+
+	// Verify recovery log
+	entries := logBuffer.GetRecent(20)
+	found := false
+	for _, entry := range entries {
+		if entry.Level == "INFO" && entry.Message == "MCP server recovered" {
+			if entry.Attrs["name"] != "server1" {
+				t.Errorf("expected name 'server1', got %v", entry.Attrs["name"])
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected INFO log for server recovery")
+	}
+}
+
+func TestGateway_HealthMonitor_SkipsNonPingable(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Use a regular mock (not pingable)
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	g.Router().AddClient(mock)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	// Should have no health status since client is not Pingable
+	hs := g.GetHealthStatus("server1")
+	if hs != nil {
+		t.Error("expected no health status for non-pingable client")
+	}
+}
+
+func TestGateway_HealthMonitor_SkipsNonMCPServers(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Add a client without server metadata (e.g., A2A adapter)
+	mock := setupMockAgentClient(ctrl, "a2a-adapter", []Tool{{Name: "tool1"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return nil },
+	}
+	g.Router().AddClient(client)
+	// Deliberately not calling SetServerMeta
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	hs := g.GetHealthStatus("a2a-adapter")
+	if hs != nil {
+		t.Error("expected no health status for client without server meta")
+	}
+}
+
+func TestGateway_HealthMonitor_MultipleServers(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Server 1: healthy
+	mock1 := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client1 := &pingableClient{
+		AgentClient: mock1,
+		pingFn:      func(ctx context.Context) error { return nil },
+	}
+	g.Router().AddClient(client1)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	// Server 2: unhealthy
+	mock2 := setupMockAgentClient(ctrl, "server2", []Tool{{Name: "tool2"}})
+	client2 := &pingableClient{
+		AgentClient: mock2,
+		pingFn:      func(ctx context.Context) error { return fmt.Errorf("timeout") },
+	}
+	g.Router().AddClient(client2)
+	g.SetServerMeta(MCPServerConfig{Name: "server2", Transport: TransportStdio})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	hs1 := g.GetHealthStatus("server1")
+	if hs1 == nil || !hs1.Healthy {
+		t.Error("expected server1 to be healthy")
+	}
+
+	hs2 := g.GetHealthStatus("server2")
+	if hs2 == nil || hs2.Healthy {
+		t.Error("expected server2 to be unhealthy")
+	}
+	if hs2.Error != "timeout" {
+		t.Errorf("expected error 'timeout', got '%s'", hs2.Error)
+	}
+}
+
+func TestGateway_Status_IncludesHealth(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return nil },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	// Before health check, status should have no health data
+	statuses := g.Status()
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if statuses[0].Healthy != nil {
+		t.Error("expected Healthy to be nil before health check")
+	}
+
+	// After health check
+	g.checkHealth(context.Background())
+
+	statuses = g.Status()
+	if statuses[0].Healthy == nil {
+		t.Fatal("expected Healthy to be set after health check")
+	}
+	if !*statuses[0].Healthy {
+		t.Error("expected Healthy to be true")
+	}
+	if statuses[0].LastCheck == nil {
+		t.Error("expected LastCheck to be set")
+	}
+}
+
+func TestGateway_StartHealthMonitor_Lifecycle(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	var pingCount atomic.Int32
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn: func(ctx context.Context) error {
+			pingCount.Add(1)
+			return nil
+		},
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start with a very short interval for testing
+	g.StartHealthMonitor(ctx, 50*time.Millisecond)
+
+	// Wait for at least 2 checks
+	time.Sleep(150 * time.Millisecond)
+	cancel()
+
+	// Wait for goroutine to clean up
+	time.Sleep(20 * time.Millisecond)
+
+	if pingCount.Load() < 2 {
+		t.Errorf("expected at least 2 health checks, got %d", pingCount.Load())
+	}
+
+	hs := g.GetHealthStatus("server1")
+	if hs == nil || !hs.Healthy {
+		t.Error("expected server1 to be healthy")
+	}
+}
+
+func TestGateway_HealthMonitor_NoRepeatWarnings(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	logBuffer := logging.NewLogBuffer(20)
+	handler := logging.NewBufferHandler(logBuffer, nil)
+	g.SetLogger(slog.New(handler))
+
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return fmt.Errorf("down") },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP})
+
+	ctx := context.Background()
+
+	// Run multiple health checks while server stays unhealthy
+	g.checkHealth(ctx)
+	g.checkHealth(ctx)
+	g.checkHealth(ctx)
+
+	// Should only log WARN once (on first detection)
+	entries := logBuffer.GetRecent(20)
+	warnCount := 0
+	for _, entry := range entries {
+		if entry.Level == "WARN" && entry.Message == "MCP server unhealthy" {
+			warnCount++
+		}
+	}
+	if warnCount != 1 {
+		t.Errorf("expected exactly 1 unhealthy WARN log, got %d", warnCount)
+	}
+}
+
+func TestGateway_GetHealthStatus_NotFound(t *testing.T) {
+	g := NewGateway()
+
+	hs := g.GetHealthStatus("nonexistent")
+	if hs != nil {
+		t.Error("expected nil health status for unknown server")
+	}
 }
 
 func TestGateway_RegisterMCPServer_LogsTiming(t *testing.T) {
