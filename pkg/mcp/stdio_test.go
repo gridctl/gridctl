@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -156,6 +157,109 @@ func TestStdioClient_SendStdio_NotConnected(t *testing.T) {
 	}
 	if err.Error() != "not connected" {
 		t.Errorf("expected 'not connected' error, got: %v", err)
+	}
+}
+
+func TestStdioClient_CallFailsFastOnConnectionDrop(t *testing.T) {
+	// Verify that call() returns a "connection lost" error quickly when the
+	// underlying reader closes (simulating a container crash), rather than
+	// waiting for the full 30s DefaultRequestTimeout.
+	stdinR, stdinW := io.Pipe()
+	stdoutR, stdoutW := io.Pipe()
+
+	client := newTestStdioClient("test-stdio", logging.NewDiscardLogger())
+	client.attached = true
+	client.stdin = stdinW
+	client.stdout = stdoutR
+
+	// Drain stdin so sendStdio doesn't block
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := stdinR.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Start reader goroutine
+	readerCtx, readerCancel := context.WithCancel(context.Background())
+	go client.readResponses(readerCtx)
+
+	defer func() {
+		readerCancel()
+		stdinR.Close()
+		stdinW.Close()
+	}()
+
+	// Launch call() in background — it will register a pending request and block
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.call(context.Background(), "tools/list", nil, nil)
+	}()
+
+	// Give call() a moment to register the pending request
+	time.Sleep(20 * time.Millisecond)
+
+	// Close stdout to simulate container crash (EOF to readResponses)
+	stdoutW.Close()
+
+	// call() should fail fast with "connection lost" — well under the 30s timeout
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected error from call()")
+		}
+		if !strings.Contains(err.Error(), "connection lost") {
+			t.Errorf("expected 'connection lost' error, got: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("call() did not fail fast on connection drop (waited >2s)")
+	}
+}
+
+func TestStdioClient_DrainOnContextCancel(t *testing.T) {
+	// Verify that drainPendingRequests runs even when readResponses exits
+	// via context cancellation (not just scanner EOF).
+	client := newTestStdioClient("test-stdio", logging.NewDiscardLogger())
+
+	ch := make(chan *jsonrpc.Response, 1)
+	client.responsesMu.Lock()
+	client.responses[1] = ch
+	client.responsesMu.Unlock()
+
+	// Use a pipe that won't EOF — only context cancel will cause exit
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	client.stdout = pr
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		client.readResponses(ctx)
+		close(done)
+	}()
+
+	// Cancel context and close the pipe to unblock Scan()
+	cancel()
+	pr.Close()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("readResponses did not exit on context cancel")
+	}
+
+	// Pending request should have been drained via defer
+	select {
+	case resp := <-ch:
+		if resp.Error == nil {
+			t.Error("expected error response from drain")
+		} else if resp.Error.Message != "connection lost" {
+			t.Errorf("expected 'connection lost', got '%s'", resp.Error.Message)
+		}
+	default:
+		t.Error("expected channel to receive drain error after context cancel")
 	}
 }
 
