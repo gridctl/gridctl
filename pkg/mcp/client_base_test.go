@@ -577,6 +577,10 @@ var _ transporter = (*ProcessClient)(nil)
 var _ connector = (*StdioClient)(nil)
 var _ connector = (*ProcessClient)(nil)
 
+// Compile-time assertions: stdio/process clients implement Reconnectable.
+var _ Reconnectable = (*StdioClient)(nil)
+var _ Reconnectable = (*ProcessClient)(nil)
+
 // Verify Client does NOT implement connector (no Connect method).
 func TestClient_DoesNotImplementConnector(t *testing.T) {
 	c := NewClient("test", "http://localhost:3000")
