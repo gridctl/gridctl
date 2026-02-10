@@ -3,9 +3,60 @@ import type { GatewayStatus, MCPServerStatus, ToolsListResult } from '../types';
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
 
-// Generic fetch wrapper with error handling
+// === Auth Token Management ===
+
+const AUTH_STORAGE_KEY = 'gridctl-auth-token';
+
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
+export function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(AUTH_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function storeToken(token: string): void {
+  try {
+    localStorage.setItem(AUTH_STORAGE_KEY, token);
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
+export function clearToken(): void {
+  try {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
+function buildHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { ...extra };
+  const token = getStoredToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+// === Generic Fetch Wrapper ===
+
 async function fetchJSON<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${endpoint}`);
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    headers: buildHeaders(),
+  });
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status} ${response.statusText}`);
@@ -47,19 +98,26 @@ export async function fetchTools(): Promise<ToolsListResult> {
  * GET /api/agents/{name}/logs
  */
 export async function fetchAgentLogs(name: string, lines = 100): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/api/agents/${encodeURIComponent(name)}/logs?lines=${lines}`);
+  const response = await fetch(
+    `${API_BASE}/api/agents/${encodeURIComponent(name)}/logs?lines=${lines}`,
+    { headers: buildHeaders() },
+  );
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
 
   if (!response.ok) {
-    // Try to parse JSON error message from backend
+    let errorMessage = `Logs fetch failed: ${response.status} ${response.statusText}`;
     try {
       const errorData = await response.json();
       if (errorData.error) {
-        throw new Error(errorData.error);
+        errorMessage = errorData.error;
       }
     } catch {
-      // If JSON parsing fails, use generic message
+      // JSON parsing failed, use default message
     }
-    throw new Error(`Logs fetch failed: ${response.status} ${response.statusText}`);
+    throw new Error(errorMessage);
   }
 
   return response.json();
@@ -72,7 +130,12 @@ export async function fetchAgentLogs(name: string, lines = 100): Promise<string[
 export async function restartAgent(name: string): Promise<void> {
   const response = await fetch(`${API_BASE}/api/agents/${encodeURIComponent(name)}/restart`, {
     method: 'POST',
+    headers: buildHeaders(),
   });
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
 
   if (!response.ok) {
     throw new Error(`Restart failed: ${response.status} ${response.statusText}`);
@@ -86,7 +149,12 @@ export async function restartAgent(name: string): Promise<void> {
 export async function stopAgent(name: string): Promise<void> {
   const response = await fetch(`${API_BASE}/api/agents/${encodeURIComponent(name)}/stop`, {
     method: 'POST',
+    headers: buildHeaders(),
   });
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
 
   if (!response.ok) {
     throw new Error(`Stop failed: ${response.status} ${response.statusText}`);
@@ -113,7 +181,11 @@ export async function fetchGatewayLogs(lines = 100, level?: string): Promise<Log
   if (level) {
     url += `&level=${encodeURIComponent(level)}`;
   }
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: buildHeaders() });
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
 
   if (!response.ok) {
     throw new Error(`Logs fetch failed: ${response.status} ${response.statusText}`);
@@ -138,7 +210,15 @@ export interface ReloadResult {
  * POST /api/reload
  */
 export async function triggerReload(): Promise<ReloadResult> {
-  const response = await fetch(`${API_BASE}/api/reload`, { method: 'POST' });
+  const response = await fetch(`${API_BASE}/api/reload`, {
+    method: 'POST',
+    headers: buildHeaders(),
+  });
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
+
   const data = await response.json();
 
   if (!response.ok) {
@@ -183,9 +263,13 @@ export async function mcpRequest<T>(
 
   const response = await fetch(`${API_BASE}/mcp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(request),
   });
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
 
   const result = await response.json() as JSONRPCResponse<T>;
 
