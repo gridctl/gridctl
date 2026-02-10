@@ -122,6 +122,32 @@ export async function fetchGatewayLogs(lines = 100, level?: string): Promise<Log
   return response.json();
 }
 
+// === Reload API ===
+
+export interface ReloadResult {
+  success: boolean;
+  message: string;
+  added?: string[];
+  removed?: string[];
+  modified?: string[];
+  errors?: string[];
+}
+
+/**
+ * Trigger a configuration reload
+ * POST /api/reload
+ */
+export async function triggerReload(): Promise<ReloadResult> {
+  const response = await fetch(`${API_BASE}/api/reload`, { method: 'POST' });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || `Reload failed: ${response.status}`);
+  }
+
+  return data;
+}
+
 // === JSON-RPC Helper (for MCP protocol calls) ===
 
 interface JSONRPCRequest {
