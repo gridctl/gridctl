@@ -17,6 +17,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
 
   const runningCount = (mcpServers ?? []).filter((s) => s.initialized).length;
   const totalCount = (mcpServers ?? []).length;
+  const unhealthyCount = (mcpServers ?? []).filter((s) => s.healthy === false).length;
   const isConnected = connectionStatus === 'connected';
 
   return (
@@ -65,6 +66,11 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
               <span className="text-text-muted mx-0.5">/</span>
               <span className="text-text-secondary">{totalCount}</span>
               <span className="text-text-muted ml-1.5">active</span>
+              {unhealthyCount > 0 && (
+                <span className="text-status-error ml-1.5">
+                  ({unhealthyCount} unhealthy)
+                </span>
+              )}
             </span>
           </div>
         )}
