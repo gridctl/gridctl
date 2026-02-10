@@ -1,6 +1,6 @@
 import { useCallback, useState, Component, type ReactNode } from 'react';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 
 // Error boundary to catch React crashes
 interface ErrorBoundaryState {
@@ -51,6 +51,7 @@ import { useStackStore } from './stores/useStackStore';
 import { useUIStore } from './stores/useUIStore';
 import { useAuthStore } from './stores/useAuthStore';
 import { usePolling } from './hooks/usePolling';
+import { useSSEShutdown } from './hooks/useSSEShutdown';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { cn } from './lib/cn';
 
@@ -83,8 +84,14 @@ function AppContent() {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const authRequired = useAuthStore((s) => s.authRequired);
 
+  const [isShuttingDown, setIsShuttingDown] = useState(false);
+
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { refresh } = usePolling();
+
+  useSSEShutdown(useCallback(() => {
+    setIsShuttingDown(true);
+  }, []));
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -136,6 +143,13 @@ function AppContent() {
       {/* Auth overlay - above everything */}
       {authRequired && <AuthPrompt />}
 
+      {/* Shutdown notification */}
+      {isShuttingDown && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm font-medium backdrop-blur-xl animate-fade-in-scale">
+          Gateway is shutting down...
+        </div>
+      )}
+
       {/* Row 1: Header */}
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
@@ -168,12 +182,23 @@ function AppContent() {
               <div className="relative mx-auto w-20 h-20">
                 <div className="absolute inset-0 bg-status-error/20 rounded-2xl blur-xl" />
                 <div className="relative w-full h-full bg-status-error/10 rounded-2xl border border-status-error/20 flex items-center justify-center">
-                  <AlertCircle size={32} className="text-status-error" />
+                  {error.includes('unavailable') ? (
+                    <WifiOff size={32} className="text-status-error" />
+                  ) : (
+                    <AlertCircle size={32} className="text-status-error" />
+                  )}
                 </div>
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-text-primary">Connection Error</h2>
+                <h2 className="text-lg font-semibold text-text-primary">
+                  {error.includes('unavailable') ? 'Gateway Unavailable' : 'Connection Error'}
+                </h2>
                 <p className="text-sm text-text-muted mt-2 leading-relaxed">{error}</p>
+                {error.includes('unavailable') && (
+                  <p className="text-xs text-text-muted mt-3">
+                    The gateway may have been shut down or restarted. It will reconnect automatically when available.
+                  </p>
+                )}
               </div>
               <button
                 onClick={handleRefresh}
