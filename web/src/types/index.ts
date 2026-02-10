@@ -30,6 +30,8 @@ export interface MCPServerStatus {
   healthy?: boolean; // Health check result (undefined if not yet checked)
   lastCheck?: string; // RFC3339 timestamp of last health check
   healthError?: string; // Error message if unhealthy
+  openapi?: boolean; // True for OpenAPI-backed servers
+  openapiSpec?: string; // OpenAPI spec URL or file path
 }
 
 // Resource status for non-MCP containers
@@ -128,6 +130,8 @@ export interface MCPServerNodeData extends NodeDataBase {
   healthy?: boolean; // Health check result
   lastCheck?: string; // RFC3339 timestamp of last health check
   healthError?: string; // Error message if unhealthy
+  openapi?: boolean; // True for OpenAPI-backed servers
+  openapiSpec?: string; // OpenAPI spec URL or file path
 }
 
 export interface ResourceNodeData extends NodeDataBase {

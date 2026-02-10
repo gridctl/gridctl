@@ -111,6 +111,7 @@ Implementation in `src/lib/graph/` (butterfly.ts, edges.ts, nodes.ts, transform.
     *   **External:** Globe icon + "External" (for external URL servers)
     *   **Local:** Cpu icon + "Local" (for local process servers)
     *   **SSH:** KeyRound icon + "SSH" (for SSH servers)
+    *   **OpenAPI:** FileJson icon + "OpenAPI" (for OpenAPI-backed servers)
 
 ### Resource Node
 *   **Shape:** Rounded rectangle (`rounded-xl`)

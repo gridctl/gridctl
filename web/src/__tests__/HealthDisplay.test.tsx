@@ -6,10 +6,12 @@ import '@testing-library/jest-dom';
 vi.mock('@xyflow/react', () => ({
   Handle: ({ id }: { id: string }) => <div data-testid={`handle-${id}`} />,
   Position: { Left: 'left', Right: 'right' },
+  MarkerType: { ArrowClosed: 'arrowclosed' },
 }));
 
 import CustomNode from '../components/graph/CustomNode';
-import type { MCPServerNodeData, ResourceNodeData } from '../types';
+import { createMCPServerNodes } from '../lib/graph/nodes';
+import type { MCPServerNodeData, MCPServerStatus, ResourceNodeData } from '../types';
 
 function makeServerData(overrides: Partial<MCPServerNodeData> = {}): MCPServerNodeData {
   return {
@@ -137,6 +139,69 @@ describe('Header unhealthy count', () => {
     render(<Header />);
 
     expect(screen.queryByText(/unhealthy/)).not.toBeInTheDocument();
+  });
+});
+
+// Test OpenAPI server type display
+describe('CustomNode OpenAPI type', () => {
+  it('renders "OpenAPI" badge when openapi is true', () => {
+    const data = makeServerData({ openapi: true, openapiSpec: 'https://api.example.com/openapi.json' });
+    render(<CustomNode data={data} />);
+    expect(screen.getByText('OpenAPI')).toBeInTheDocument();
+  });
+
+  it('does not render "Container" badge when openapi is true', () => {
+    const data = makeServerData({ openapi: true });
+    render(<CustomNode data={data} />);
+    expect(screen.queryByText('Container')).not.toBeInTheDocument();
+    expect(screen.getByText('OpenAPI')).toBeInTheDocument();
+  });
+
+  it('renders "Container" badge when openapi is false', () => {
+    const data = makeServerData({ openapi: false });
+    render(<CustomNode data={data} />);
+    expect(screen.getByText('Container')).toBeInTheDocument();
+    expect(screen.queryByText('OpenAPI')).not.toBeInTheDocument();
+  });
+
+  it('renders "Container" badge when openapi is undefined', () => {
+    const data = makeServerData();
+    render(<CustomNode data={data} />);
+    expect(screen.getByText('Container')).toBeInTheDocument();
+    expect(screen.queryByText('OpenAPI')).not.toBeInTheDocument();
+  });
+});
+
+// Test createMCPServerNodes passes through OpenAPI fields
+describe('createMCPServerNodes OpenAPI fields', () => {
+  function makeServerStatus(overrides: Partial<MCPServerStatus> = {}): MCPServerStatus {
+    return {
+      name: 'test-server',
+      transport: 'http',
+      initialized: true,
+      toolCount: 3,
+      tools: ['tool1', 'tool2', 'tool3'],
+      ...overrides,
+    };
+  }
+
+  it('passes through openapi and openapiSpec fields', () => {
+    const servers = [makeServerStatus({
+      openapi: true,
+      openapiSpec: 'https://api.example.com/openapi.json',
+    })];
+    const nodes = createMCPServerNodes(servers);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].data.openapi).toBe(true);
+    expect(nodes[0].data.openapiSpec).toBe('https://api.example.com/openapi.json');
+  });
+
+  it('passes through undefined when openapi fields not set', () => {
+    const servers = [makeServerStatus()];
+    const nodes = createMCPServerNodes(servers);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].data.openapi).toBeUndefined();
+    expect(nodes[0].data.openapiSpec).toBeUndefined();
   });
 });
 

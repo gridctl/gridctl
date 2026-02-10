@@ -92,6 +92,8 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       healthy: server.healthy,
       lastCheck: server.lastCheck,
       healthError: server.healthError,
+      openapi: server.openapi,
+      openapiSpec: server.openapiSpec,
     },
     draggable: true,
   }));

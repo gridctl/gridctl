@@ -14,6 +14,7 @@ import {
   Zap,
   Cpu,
   KeyRound,
+  FileJson,
   Network,
   HeartPulse,
 } from 'lucide-react';
@@ -51,13 +52,14 @@ export function Sidebar() {
   const isExternal = serverData?.external ?? false;
   const isLocalProcess = serverData?.localProcess ?? false;
   const isSSH = serverData?.ssh ?? false;
+  const isOpenAPI = serverData?.openapi ?? false;
 
   // For agents, determine variant and A2A capability
   const agentData = isAgent ? (data as AgentNodeData) : null;
   const isRemote = agentData?.variant === 'remote';
   const hasA2A = agentData?.hasA2A ?? false;
 
-  // Icon logic: Globe for external, Cpu for local process, KeyRound for SSH, Terminal for container-based
+  // Icon logic: Globe for external, Cpu for local process, KeyRound for SSH, FileJson for OpenAPI, Terminal for container-based
   const Icon = isServer
     ? isExternal
       ? Globe
@@ -65,7 +67,9 @@ export function Sidebar() {
         ? Cpu
         : isSSH
           ? KeyRound
-          : Terminal
+          : isOpenAPI
+            ? FileJson
+            : Terminal
     : isAgent
       ? Bot
       : Box;
@@ -153,6 +157,12 @@ export function Sidebar() {
                   SSH
                 </span>
               )}
+              {isServer && isOpenAPI && (
+                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
+                  <FileJson size={8} />
+                  OpenAPI
+                </span>
+              )}
               {isAgent && (
                 <span
                   className={cn(
@@ -236,6 +246,18 @@ export function Sidebar() {
                   title={serverData.sshHost}
                 >
                   {serverData.sshHost}
+                </span>
+              </div>
+            )}
+
+            {isServer && isOpenAPI && serverData?.openapiSpec && (
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-sm text-text-muted">Spec</span>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={serverData.openapiSpec}
+                >
+                  {serverData.openapiSpec}
                 </span>
               </div>
             )}
