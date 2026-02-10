@@ -26,6 +26,8 @@ func init() {
 	rootCmd.AddCommand(destroyCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(linkCmd)
+	rootCmd.AddCommand(unlinkCmd)
 }
 
 func Execute() {
