@@ -75,6 +75,8 @@ export interface GatewayStatus {
   'mcp-servers': MCPServerStatus[];
   agents?: AgentStatus[];
   resources?: ResourceStatus[];
+  sessions?: number;       // Active MCP session count
+  a2a_tasks?: number;      // Active A2A task count (omitted if no A2A gateway)
 }
 
 // Tool definition matching mcp.Tool
@@ -111,6 +113,8 @@ export interface GatewayNodeData extends NodeDataBase {
   agentCount: number;
   a2aAgentCount: number;
   totalToolCount: number;
+  sessions: number;
+  a2aTasks: number | null;
 }
 
 export interface MCPServerNodeData extends NodeDataBase {
