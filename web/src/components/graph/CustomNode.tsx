@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
@@ -19,9 +19,10 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const isExternal = isServer && (data as MCPServerNodeData).external;
   const isLocalProcess = isServer && (data as MCPServerNodeData).localProcess;
   const isSSH = isServer && (data as MCPServerNodeData).ssh;
+  const isOpenAPI = isServer && (data as MCPServerNodeData).openapi;
 
-  // Choose icon - Globe for external, Cpu for local process, KeyRound for SSH, Terminal for container-based
-  const Icon = isServer ? (isExternal ? Globe : isLocalProcess ? Cpu : isSSH ? KeyRound : Terminal) : Box;
+  // Choose icon - Globe for external, Cpu for local process, KeyRound for SSH, FileJson for OpenAPI, Terminal for container-based
+  const Icon = isServer ? (isExternal ? Globe : isLocalProcess ? Cpu : isSSH ? KeyRound : isOpenAPI ? FileJson : Terminal) : Box;
 
   // Get transport info for MCP servers
   const transport = isServer ? (data as MCPServerNodeData).transport : null;
@@ -181,7 +182,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           <Badge status={data.status}>
             <span className="capitalize">{data.status}</span>
           </Badge>
-          {isServer && !isExternal && !isLocalProcess && !isSSH && (
+          {isServer && !isExternal && !isLocalProcess && !isSSH && !isOpenAPI && (
             <div className={cn(
               'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
               'text-[10px] font-semibold tracking-wide',
@@ -219,6 +220,16 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             )}>
               <KeyRound size={10} />
               SSH
+            </div>
+          )}
+          {isOpenAPI && (
+            <div className={cn(
+              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
+              'text-[10px] font-semibold tracking-wide',
+              'text-text-muted border-border/50'
+            )}>
+              <FileJson size={10} />
+              OpenAPI
             </div>
           )}
         </div>
