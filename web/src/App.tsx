@@ -44,10 +44,12 @@ import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { StatusBar } from './components/layout/StatusBar';
 import { BottomPanel } from './components/layout/BottomPanel';
+import { AuthPrompt } from './components/auth/AuthPrompt';
 import { Canvas } from './components/graph/Canvas';
 import { ResizeHandle } from './components/ui/ResizeHandle';
 import { useStackStore } from './stores/useStackStore';
 import { useUIStore } from './stores/useUIStore';
+import { useAuthStore } from './stores/useAuthStore';
 import { usePolling } from './hooks/usePolling';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { cn } from './lib/cn';
@@ -79,6 +81,7 @@ function AppContent() {
   const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
   const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const authRequired = useAuthStore((s) => s.authRequired);
 
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { refresh } = usePolling();
@@ -130,6 +133,9 @@ function AppContent() {
         gridTemplateColumns: '1fr',
       }}
     >
+      {/* Auth overlay - above everything */}
+      {authRequired && <AuthPrompt />}
+
       {/* Row 1: Header */}
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
