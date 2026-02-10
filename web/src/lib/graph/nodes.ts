@@ -30,12 +30,16 @@ function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
  * @param mcpServers - MCP servers for count
  * @param resources - Resources for count
  * @param agents - Agents for counts (total and A2A)
+ * @param sessions - Active MCP session count
+ * @param a2aTasks - Active A2A task count (null if no A2A gateway)
  */
 export function createGatewayNode(
   gatewayInfo: { name: string; version: string },
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[],
-  agents: AgentStatus[]
+  agents: AgentStatus[],
+  sessions?: number,
+  a2aTasks?: number | null
 ): Node {
   // Calculate total tool count (MCP server tools + A2A agent skills)
   const safeServers = mcpServers ?? [];
@@ -62,6 +66,8 @@ export function createGatewayNode(
       agentCount: safeAgents.length,
       a2aAgentCount,
       totalToolCount,
+      sessions: sessions ?? 0,
+      a2aTasks: a2aTasks ?? null,
     },
     draggable: true,
   };
@@ -164,10 +170,12 @@ export function createAllNodes(
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[],
   agents: AgentStatus[],
-  usedByOtherAgents: Set<string>
+  usedByOtherAgents: Set<string>,
+  sessions?: number,
+  a2aTasks?: number | null
 ): Node[] {
   return [
-    createGatewayNode(gatewayInfo, mcpServers, resources, agents),
+    createGatewayNode(gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks),
     ...createMCPServerNodes(mcpServers),
     ...createAgentNodes(agents, usedByOtherAgents),
     ...createResourceNodes(resources),
