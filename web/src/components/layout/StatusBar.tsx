@@ -1,16 +1,7 @@
 import { Wifi, WifiOff, Clock, Server, Box } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
-
-function formatRelativeTime(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 10) return 'just now';
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-}
+import { formatRelativeTime } from '../../lib/time';
 
 export function StatusBar() {
   const mcpServers = useStackStore((s) => s.mcpServers);
@@ -20,6 +11,7 @@ export function StatusBar() {
   const error = useStackStore((s) => s.error);
 
   const runningServers = (mcpServers ?? []).filter((s) => s.initialized).length;
+  const unhealthyServers = (mcpServers ?? []).filter((s) => s.healthy === false).length;
   const runningResources = (resources ?? []).filter((r) => r.status === 'running').length;
   const isConnected = connectionStatus === 'connected';
 
@@ -55,6 +47,13 @@ export function StatusBar() {
               <span className="text-text-muted/60">/{(mcpServers ?? []).length}</span>
               <span className="ml-1">MCP</span>
             </span>
+            {unhealthyServers > 0 && (
+              <>
+                <span className="text-text-muted/60 mx-0.5">&middot;</span>
+                <span className="text-status-error font-semibold">{unhealthyServers}</span>
+                <span className="ml-0.5">err</span>
+              </>
+            )}
           </div>
         )}
 
