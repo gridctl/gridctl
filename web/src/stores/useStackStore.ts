@@ -19,6 +19,8 @@ interface StackState {
   resources: ResourceStatus[];
   agents: AgentStatus[];  // Unified: includes both local and remote agents with A2A info
   tools: Tool[];
+  sessions: number;
+  a2aTasks: number | null;
 
   // === React Flow State ===
   nodes: Node[];
@@ -54,6 +56,8 @@ export const useStackStore = create<StackState>()(
     resources: [],
     agents: [],
     tools: [],
+    sessions: 0,
+    a2aTasks: null,
     nodes: [],
     edges: [],
     selectedNodeId: null,
@@ -69,6 +73,8 @@ export const useStackStore = create<StackState>()(
         mcpServers: status['mcp-servers'] || [],
         resources: status.resources || [],
         agents: status.agents || [],  // Unified agents (includes A2A info)
+        sessions: status.sessions ?? 0,
+        a2aTasks: status.a2a_tasks ?? null,
         lastUpdated: new Date(),
         isLoading: false,
         error: null,
@@ -92,7 +98,7 @@ export const useStackStore = create<StackState>()(
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, agents, nodes: existingNodes } = get();
+      const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, nodes: existingNodes } = get();
       if (!gatewayInfo) return;
 
       // Build map of existing positions to preserve user-dragged positions
@@ -105,13 +111,15 @@ export const useStackStore = create<StackState>()(
         mcpServers,
         resources,
         agents,
-        positionMap
+        positionMap,
+        sessions,
+        a2aTasks
       );
       set({ nodes, edges });
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources, agents } = get();
+      const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks } = get();
       if (!gatewayInfo) return;
 
       // Don't pass positionMap to get default calculated positions
@@ -119,7 +127,10 @@ export const useStackStore = create<StackState>()(
         gatewayInfo,
         mcpServers,
         resources,
-        agents
+        agents,
+        undefined,
+        sessions,
+        a2aTasks
       );
       set({ nodes, edges });
     },

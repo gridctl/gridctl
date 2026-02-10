@@ -1,4 +1,4 @@
-import { Wifi, WifiOff, Clock, Server, Box } from 'lucide-react';
+import { Wifi, WifiOff, Clock, Server, Box, Radio } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';
@@ -6,6 +6,7 @@ import { formatRelativeTime } from '../../lib/time';
 export function StatusBar() {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const resources = useStackStore((s) => s.resources);
+  const sessions = useStackStore((s) => s.sessions);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
   const lastUpdated = useStackStore((s) => s.lastUpdated);
   const error = useStackStore((s) => s.error);
@@ -65,6 +66,17 @@ export function StatusBar() {
               <span className="text-secondary font-semibold">{runningResources}</span>
               <span className="text-text-muted/60">/{(resources ?? []).length}</span>
               <span className="ml-1">Resources</span>
+            </span>
+          </div>
+        )}
+
+        {/* Session count */}
+        {sessions > 0 && (
+          <div className="flex items-center gap-2 text-text-muted">
+            <Radio size={11} className="text-primary" />
+            <span>
+              <span className="text-primary font-semibold">{sessions}</span>
+              <span className="ml-1">sessions</span>
             </span>
           </div>
         )}
