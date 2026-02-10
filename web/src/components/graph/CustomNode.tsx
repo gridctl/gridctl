@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
@@ -157,6 +157,22 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           <div className="flex items-center gap-1.5 text-xs text-secondary bg-secondary/10 px-2 py-1 rounded-md w-fit">
             <Server size={11} />
             <span className="font-medium">{network}</span>
+          </div>
+        )}
+
+        {/* Health indicator (MCP servers only) */}
+        {isServer && (data as MCPServerNodeData).healthy === false && (
+          <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-error/5 border border-status-error/15">
+            <HeartPulse size={11} className="text-status-error flex-shrink-0" />
+            <span className="text-xs text-status-error/80 font-mono truncate" title={(data as MCPServerNodeData).healthError}>
+              {(data as MCPServerNodeData).healthError || 'Health check failed'}
+            </span>
+          </div>
+        )}
+        {isServer && (data as MCPServerNodeData).healthy === true && (
+          <div className="flex items-center gap-1.5 text-xs text-text-muted">
+            <HeartPulse size={10} className="text-status-running" />
+            <span>Healthy</span>
           </div>
         )}
 
