@@ -15,6 +15,7 @@ import {
   Cpu,
   KeyRound,
   Network,
+  HeartPulse,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
@@ -25,6 +26,7 @@ import { getTransportIcon, getTransportColorClasses } from '../../lib/transport'
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
+import { formatRelativeTime } from '../../lib/time';
 import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, ToolSelector } from '../../types';
 
 export function Sidebar() {
@@ -236,6 +238,41 @@ export function Sidebar() {
                   {serverData.sshHost}
                 </span>
               </div>
+            )}
+
+            {/* Health Check Info (MCP servers only) */}
+            {isServer && serverData?.healthy !== undefined && serverData?.healthy !== null && (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-text-muted">Health</span>
+                  <span className={cn(
+                    'text-xs px-2 py-0.5 rounded-md font-medium flex items-center gap-1',
+                    serverData.healthy
+                      ? 'bg-status-running/10 text-status-running'
+                      : 'bg-status-error/10 text-status-error'
+                  )}>
+                    <HeartPulse size={10} />
+                    {serverData.healthy ? 'Healthy' : 'Unhealthy'}
+                  </span>
+                </div>
+
+                {serverData.lastCheck && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-text-muted">Last Check</span>
+                    <span className="text-xs text-text-secondary font-mono">
+                      {formatRelativeTime(new Date(serverData.lastCheck))}
+                    </span>
+                  </div>
+                )}
+
+                {!serverData.healthy && serverData.healthError && (
+                  <div className="mt-1 p-2 rounded-md bg-status-error/5 border border-status-error/15">
+                    <span className="text-xs text-status-error font-mono break-words">
+                      {serverData.healthError}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Agent fields - Container info (local variant) */}
