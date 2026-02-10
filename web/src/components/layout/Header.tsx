@@ -1,8 +1,10 @@
-import { RefreshCw, Settings, Zap } from 'lucide-react';
+import { RefreshCw, Settings, Zap, RotateCcw } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
+import { triggerReload } from '../../lib/api';
 import logoSvg from '../../assets/brand/logo.svg';
 
 interface HeaderProps {
@@ -14,6 +16,29 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const gatewayInfo = useStackStore((s) => s.gatewayInfo);
   const mcpServers = useStackStore((s) => s.mcpServers);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
+
+  const [isReloading, setIsReloading] = useState(false);
+  const [reloadMessage, setReloadMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  const dismissTimer = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const handleReload = useCallback(async () => {
+    setIsReloading(true);
+    setReloadMessage(null);
+    if (dismissTimer.current) clearTimeout(dismissTimer.current);
+
+    try {
+      const result = await triggerReload();
+      setReloadMessage({ text: result.message, isError: !result.success });
+    } catch (err) {
+      setReloadMessage({
+        text: err instanceof Error ? err.message : 'Reload failed',
+        isError: true,
+      });
+    } finally {
+      setIsReloading(false);
+      dismissTimer.current = setTimeout(() => setReloadMessage(null), 4000);
+    }
+  }, []);
 
   const runningCount = (mcpServers ?? []).filter((s) => s.initialized).length;
   const totalCount = (mcpServers ?? []).length;
@@ -76,6 +101,20 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         )}
       </div>
 
+      {/* Reload notification */}
+      {reloadMessage && (
+        <div className={cn(
+          'absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50',
+          'px-4 py-2 rounded-lg backdrop-blur-xl border shadow-lg',
+          'text-xs font-medium transition-all duration-300 animate-fade-in-scale',
+          reloadMessage.isError
+            ? 'bg-status-error/10 border-status-error/20 text-status-error'
+            : 'bg-status-running/10 border-status-running/20 text-status-running'
+        )}>
+          {reloadMessage.text}
+        </div>
+      )}
+
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
         <IconButton
@@ -87,6 +126,16 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
             'hover:text-primary hover:border-primary/30'
           )}
           tooltip="Refresh (⌘R)"
+        />
+        <IconButton
+          icon={RotateCcw}
+          onClick={handleReload}
+          disabled={isReloading}
+          className={cn(
+            isReloading && 'animate-spin',
+            'hover:text-secondary hover:border-secondary/30'
+          )}
+          tooltip="Reload Config"
         />
         <IconButton
           icon={Settings}
