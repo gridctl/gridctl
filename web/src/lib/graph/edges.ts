@@ -10,7 +10,7 @@
 
 import type { Edge } from '@xyflow/react';
 import { MarkerType } from '@xyflow/react';
-import type { MCPServerStatus, ResourceStatus, AgentStatus, ToolSelector } from '../../types';
+import type { MCPServerStatus, ResourceStatus, AgentStatus, ClientStatus, ToolSelector } from '../../types';
 import type { EdgeMetadata } from './types';
 import { COLORS } from '../constants';
 
@@ -209,9 +209,42 @@ export function buildNodeTypeSets(
 }
 
 /**
+ * Create edges from linked LLM clients TO gateway
+ *
+ * Clients connect to the gateway via SSE or HTTP (northbound).
+ */
+export function createClientToGatewayEdges(
+  clients: ClientStatus[]
+): EnhancedEdge[] {
+  return clients
+    .filter((c) => c.linked)
+    .map((client) => ({
+      id: `edge-client-gateway-${client.slug}`,
+      source: `client-${client.slug}`,
+      target: GATEWAY_NODE_ID,
+      animated: true,
+      style: {
+        stroke: COLORS.primary,
+        strokeWidth: 2,
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 16,
+        height: 16,
+        color: COLORS.primary,
+      },
+      data: {
+        relationType: 'client-to-gateway' as const,
+        isHighlightable: true,
+      },
+    }));
+}
+
+/**
  * Create all edges for the butterfly layout
  *
  * Combines all edge types:
+ * - Client -> Gateway (linked LLM clients)
  * - Agent -> Gateway (primary agents only)
  * - Gateway -> MCP Servers
  * - Gateway -> Resources
@@ -220,7 +253,8 @@ export function buildNodeTypeSets(
 export function createAllEdges(
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[],
-  agents: AgentStatus[]
+  agents: AgentStatus[],
+  clients: ClientStatus[] = []
 ): EnhancedEdge[] {
   const { mcpServerNames, agentNames, usedByOtherAgents } = buildNodeTypeSets(
     mcpServers,
@@ -228,6 +262,7 @@ export function createAllEdges(
   );
 
   return [
+    ...createClientToGatewayEdges(clients),
     ...createAgentToGatewayEdges(agents, usedByOtherAgents),
     ...createGatewayToServerEdges(mcpServers),
     ...createGatewayToResourceEdges(resources),
