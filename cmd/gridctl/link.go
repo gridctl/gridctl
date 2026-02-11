@@ -30,7 +30,7 @@ var linkCmd = &cobra.Command{
 Without arguments, detects installed LLM clients and presents a selection list.
 With a client name, links that specific client directly.
 
-Supported clients: claude, cursor, windsurf, vscode, continue, cline, anythingllm, roo`,
+Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, continue, cline, anythingllm, roo, zed, goose`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var client string
@@ -58,6 +58,7 @@ func runLink(client string) error {
 
 	opts := provisioner.LinkOptions{
 		GatewayURL: gatewayURL,
+		Port:       port,
 		ServerName: linkName,
 		Force:      linkForce,
 		DryRun:     linkDryRun,
@@ -241,7 +242,7 @@ func doLink(printer *output.Printer, prov provisioner.ClientProvisioner, configP
 		return err
 	}
 
-	transport := provisioner.TransportDescription(prov.NeedsBridge())
+	transport := provisioner.TransportDescriptionFor(prov)
 	printer.Info(fmt.Sprintf("Linked %s (via %s)", prov.Name(), transport))
 	return nil
 }
