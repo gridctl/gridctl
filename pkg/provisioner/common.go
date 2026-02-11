@@ -138,8 +138,21 @@ func HasComments(configPath string) bool {
 	return strings.Contains(string(raw), "//") || strings.Contains(string(raw), "/*")
 }
 
-// DryRunDiff returns the before/after JSON for a dry run.
+// DryRunDiff returns the before/after config for a dry run.
+// Supports both JSON and YAML formats based on the provisioner type.
 func DryRunDiff(configPath string, prov ClientProvisioner, opts LinkOptions) (before, after string, err error) {
+	if isYAMLProvisioner(prov) {
+		data, err := readOrCreateYAMLFile(configPath)
+		if err != nil {
+			return "", "", err
+		}
+		before = formatYAML(data)
+		dataCopy := deepCopyMap(data)
+		simulateLink(dataCopy, prov, opts)
+		after = formatYAML(dataCopy)
+		return before, after, nil
+	}
+
 	data, _, err := readOrCreateJSONFile(configPath)
 	if err != nil {
 		return "", "", err
@@ -150,6 +163,12 @@ func DryRunDiff(configPath string, prov ClientProvisioner, opts LinkOptions) (be
 	simulateLink(dataCopy, prov, opts)
 	after = formatJSON(dataCopy)
 	return before, after, nil
+}
+
+// isYAMLProvisioner returns true if the provisioner uses YAML config format.
+func isYAMLProvisioner(prov ClientProvisioner) bool {
+	_, ok := prov.(*Goose)
+	return ok
 }
 
 // simulateLink applies the link operation to a data map without writing to disk.
@@ -168,6 +187,14 @@ func simulateLink(data map[string]any, prov ClientProvisioner, opts LinkOptions)
 		data["experimental"] = experimental
 	case *AnythingLLM:
 		data[opts.ServerName] = p.buildEntry(opts)
+	case *Zed:
+		servers := getOrCreateMap(data, "context_servers")
+		servers[opts.ServerName] = p.buildEntry(opts)
+		data["context_servers"] = servers
+	case *Goose:
+		extensions := getOrCreateMap(data, "extensions")
+		extensions[opts.ServerName] = p.buildEntry(opts)
+		data["extensions"] = extensions
 	default:
 		if mp, ok := getProvisionerBase(prov); ok {
 			servers := getOrCreateMap(data, "mcpServers")
@@ -196,6 +223,10 @@ func getProvisionerBase(prov ClientProvisioner) (*mcpServersProvisioner, bool) {
 		return &p.mcpServersProvisioner, true
 	case *RooCode:
 		return &p.mcpServersProvisioner, true
+	case *ClaudeCode:
+		return &p.mcpServersProvisioner, true
+	case *GeminiCLI:
+		return &p.mcpServersProvisioner, true
 	default:
 		_ = p
 		return nil, false
@@ -211,7 +242,7 @@ func looksLikeGridctlEntry(entry map[string]any, gatewayURL string, needsBridge 
 		cmd, _ := entry["command"].(string)
 		return cmd == "npx"
 	}
-	for _, key := range []string{"url", "serverUrl"} {
+	for _, key := range []string{"url", "serverUrl", "uri"} {
 		if v, ok := entry[key].(string); ok && v != "" {
 			return strings.Contains(v, "localhost") || strings.Contains(v, "127.0.0.1")
 		}
