@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/provisioner"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -1408,3 +1409,81 @@ func (m *mockDockerClient) Ping(_ context.Context) (types.Ping, error) { return 
 func (m *mockDockerClient) Close() error                               { return nil }
 
 var _ dockerclient.DockerClient = &mockDockerClient{}
+
+// --- Clients endpoint tests ---
+
+func TestHandleClients_NoProvisioners(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/clients", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	assertContentType(t, rec, "application/json")
+
+	var clients []ClientStatus
+	if err := json.NewDecoder(rec.Body).Decode(&clients); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(clients) != 0 {
+		t.Errorf("expected empty clients list, got %d", len(clients))
+	}
+}
+
+func TestHandleClients_WithProvisioners(t *testing.T) {
+	srv := newTestServer(t)
+	reg := provisioner.NewRegistry()
+	srv.SetProvisionerRegistry(reg, "test-gw")
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/clients", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var clients []ClientStatus
+	if err := json.NewDecoder(rec.Body).Decode(&clients); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Should return all registered clients (12 in current registry)
+	if len(clients) == 0 {
+		t.Fatal("expected non-empty clients list")
+	}
+
+	// Verify structure of first client
+	first := clients[0]
+	if first.Name == "" {
+		t.Error("expected non-empty client name")
+	}
+	if first.Slug == "" {
+		t.Error("expected non-empty client slug")
+	}
+	if first.Transport == "" {
+		t.Error("expected non-empty transport")
+	}
+}
+
+func TestHandleClients_MethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/api/clients", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Errorf("expected 405 for %s, got %d", method, rec.Code)
+			}
+		})
+	}
+}
