@@ -210,15 +210,31 @@ Limited [Agent-to-Agent](https://google.github.io/A2A/) protocol support. Expose
 gridctl deploy <stack.yaml>          # Start containers and gateway
 gridctl deploy <stack.yaml> -f       # Run in foreground (debug mode)
 gridctl deploy <stack.yaml> -p 9000  # Custom gateway port
+gridctl deploy <stack.yaml> --watch  # Watch for changes and hot reload
+gridctl deploy <stack.yaml> --flash  # Deploy and auto-link LLM clients
 gridctl status                       # Show running stacks
+gridctl link                         # Connect an LLM client to the gateway
+gridctl unlink                       # Remove gridctl from an LLM client
+gridctl reload                       # Hot reload a running stack
 gridctl destroy <stack.yaml>         # Stop and remove containers
 ```
 
 ## 🖥️ Connect LLM Application
 
-Each LLM host, the client side application you use to connect the models and chat, will always keep the following configuration. The location of this file varies on the application. For instance, if using `Claude Desktop` on a Macbook, you would place the configuration here: `~/Library/Application Support/Claude/claude_desktop_config.json`:
+The easiest way to connect is with `gridctl link`, which auto-detects installed LLM clients and injects the gateway configuration:
 
-### Most Applications
+```bash
+gridctl link              # Interactive: detect and select clients
+gridctl link claude       # Link a specific client
+gridctl link --all        # Link all detected clients at once
+```
+
+Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, Continue, Cline, AnythingLLM, Roo, Zed, Goose
+
+<details>
+<summary>Manual configuration</summary>
+
+#### Most Applications
 ```json
 {
   "mcpServers": {
@@ -229,7 +245,7 @@ Each LLM host, the client side application you use to connect the models and cha
 }
 ```
 
-### Claude Desktop
+#### Claude Desktop
 ```json
 {
   "mcpServers": {
@@ -241,19 +257,29 @@ Each LLM host, the client side application you use to connect the models and cha
 }
 ```
 
-Restart Claude Desktop. All tools from your stack are now available.
+Restart Claude Desktop after editing. All tools from your stack are now available.
+
+</details>
 
 ## 📙 Examples
 
 | Example | What It Shows |
 |:--------|:--------------|
+| [`agent-basic.yaml`](examples/getting-started/agent-basic.yaml) | Stack definition with agents and access control |
 | [`skills-basic.yaml`](examples/getting-started/skills-basic.yaml) | Agents with A2A protocol |
 | [`tool-filtering.yaml`](examples/access-control/tool-filtering.yaml) | Server and agent-level access control |
 | [`local-mcp.yaml`](examples/transports/local-mcp.yaml) | Local process transport |
 | [`ssh-mcp.yaml`](examples/transports/ssh-mcp.yaml) | SSH tunnel transport |
 | [`external-mcp.yaml`](examples/transports/external-mcp.yaml) | External HTTP/SSE servers |
-| [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
+| [`gateway-basic.yaml`](examples/gateways/gateway-basic.yaml) | Gateway to an existing MCP server |
+| [`gateway-remote.yaml`](examples/gateways/gateway-remote.yaml) | Remote access to Gridctl from other machines |
 | [`basic-a2a.yaml`](examples/multi-agent/basic-a2a.yaml) | Agent-to-agent communication |
+| [`multi-agent-skills.yaml`](examples/multi-agent/multi-agent-skills.yaml) | Agents equipping other agents as skills |
+| [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
+| [`atlassian-mcp.yaml`](examples/platforms/atlassian-mcp.yaml) | Atlassian Rovo (Jira, Confluence) integration |
+| [`zapier-mcp.yaml`](examples/platforms/zapier-mcp.yaml) | Zapier automation platform integration |
+| [`chrome-devtools-mcp.yaml`](examples/platforms/chrome-devtools-mcp.yaml) | Chrome DevTools browser automation |
+| [`context7-mcp.yaml`](examples/platforms/context7-mcp.yaml) | Up-to-date library documentation |
 
 ## 🤝 Contributing
 
