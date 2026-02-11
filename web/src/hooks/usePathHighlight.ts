@@ -66,10 +66,27 @@ export function usePathHighlight(
       };
     }
 
-    // Only agents trigger path highlighting
     const nodeData = selectedNode.data as Record<string, unknown>;
+
+    // Client nodes: highlight client -> gateway path
+    if (nodeData?.type === 'client') {
+      const highlightedNodeIds = new Set<string>([selectedNodeId]);
+      const highlightedEdgeIds = new Set<string>();
+
+      for (const edge of edges) {
+        if (edge.source === selectedNodeId && edge.target === 'gateway') {
+          highlightedEdgeIds.add(edge.id);
+          highlightedNodeIds.add('gateway');
+          break;
+        }
+      }
+
+      return { highlightedNodeIds, highlightedEdgeIds, hasSelection: true };
+    }
+
+    // Only agents trigger full path highlighting
     if (nodeData?.type !== 'agent') {
-      // For non-agents, just highlight the selected node
+      // For non-agents (servers, resources), just highlight the selected node
       return {
         highlightedNodeIds: new Set([selectedNodeId]),
         highlightedEdgeIds: new Set<string>(),
