@@ -5,7 +5,7 @@
  */
 
 import type { Node } from '@xyflow/react';
-import type { MCPServerStatus, ResourceStatus, AgentStatus, NodeStatus } from '../../types';
+import type { MCPServerStatus, ResourceStatus, AgentStatus, ClientStatus, NodeStatus } from '../../types';
 import { NODE_TYPES } from '../constants';
 import { GATEWAY_NODE_ID } from './edges';
 
@@ -39,7 +39,8 @@ export function createGatewayNode(
   resources: ResourceStatus[],
   agents: AgentStatus[],
   sessions?: number,
-  a2aTasks?: number | null
+  a2aTasks?: number | null,
+  clientCount?: number
 ): Node {
   // Calculate total tool count (MCP server tools + A2A agent skills)
   const safeServers = mcpServers ?? [];
@@ -65,6 +66,7 @@ export function createGatewayNode(
       resourceCount: safeResources.length,
       agentCount: safeAgents.length,
       a2aAgentCount,
+      clientCount: clientCount ?? 0,
       totalToolCount,
       sessions: sessions ?? 0,
       a2aTasks: a2aTasks ?? null,
@@ -163,6 +165,28 @@ export function createResourceNodes(resources: ResourceStatus[]): Node[] {
 }
 
 /**
+ * Create client nodes for linked LLM clients
+ */
+export function createClientNodes(clients: ClientStatus[]): Node[] {
+  return clients
+    .filter((c) => c.linked)
+    .map((client) => ({
+      id: `client-${client.slug}`,
+      type: NODE_TYPES.CLIENT,
+      position: { x: 0, y: 0 },
+      data: {
+        type: 'client',
+        name: client.name,
+        slug: client.slug,
+        transport: client.transport,
+        configPath: client.configPath,
+        status: 'running' as const,
+      },
+      draggable: true,
+    }));
+}
+
+/**
  * Create all nodes for the graph
  */
 export function createAllNodes(
@@ -172,10 +196,13 @@ export function createAllNodes(
   agents: AgentStatus[],
   usedByOtherAgents: Set<string>,
   sessions?: number,
-  a2aTasks?: number | null
+  a2aTasks?: number | null,
+  clients: ClientStatus[] = []
 ): Node[] {
+  const linkedClients = clients.filter((c) => c.linked);
   return [
-    createGatewayNode(gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks),
+    createGatewayNode(gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, linkedClients.length),
+    ...createClientNodes(clients),
     ...createMCPServerNodes(mcpServers),
     ...createAgentNodes(agents, usedByOtherAgents),
     ...createResourceNodes(resources),
