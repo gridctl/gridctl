@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ToolsListResult } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -89,6 +89,14 @@ export async function fetchMCPServers(): Promise<MCPServerStatus[]> {
  */
 export async function fetchTools(): Promise<ToolsListResult> {
   return fetchJSON<ToolsListResult>('/api/tools');
+}
+
+/**
+ * Fetch detected/linked LLM clients
+ * GET /api/clients
+ */
+export async function fetchClients(): Promise<ClientStatus[]> {
+  return fetchJSON<ClientStatus[]>('/api/clients');
 }
 
 // === Agent Control Functions (require backend endpoints) ===
