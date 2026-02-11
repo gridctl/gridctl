@@ -22,6 +22,7 @@ function makeGatewayData(overrides: Partial<GatewayNodeData> = {}): GatewayNodeD
     resourceCount: 0,
     agentCount: 0,
     a2aAgentCount: 0,
+    clientCount: 0,
     totalToolCount: 5,
     sessions: 0,
     a2aTasks: null,
