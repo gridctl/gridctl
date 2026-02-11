@@ -73,10 +73,13 @@ Network isolation between agents while allowing communication through the MCP ga
 gridctl/
 ├── cmd/gridctl/           # CLI entry point
 │   ├── main.go           # Entry point
-│   ├── root.go           # Cobra root command
+│   ├── root.go           # Cobra root command + serve command
 │   ├── deploy.go         # Start stack + gateway
 │   ├── destroy.go        # Stop containers
 │   ├── status.go         # Show container status
+│   ├── link.go           # Connect LLM clients to gateway
+│   ├── unlink.go         # Remove gridctl from LLM clients
+│   ├── reload.go         # Hot reload stack configuration
 │   ├── version.go        # Version command
 │   ├── help.go           # Custom help template
 │   ├── embed.go          # Embedded web assets
@@ -121,6 +124,22 @@ gridctl/
 │   │   ├── output.go     # Printer, banner display, and progress helpers
 │   │   ├── styles.go     # Color schemes
 │   │   └── table.go      # Table rendering
+│   ├── controller/       # Deploy orchestration
+│   │   ├── controller.go # Main deploy/destroy logic
+│   │   ├── daemon.go     # Daemon mode (background process)
+│   │   ├── server_registrar.go # MCP server registration
+│   │   └── gateway_builder_test.go
+│   ├── jsonrpc/          # JSON-RPC 2.0 types
+│   │   └── types.go      # Request, Response, Error types
+│   ├── provisioner/      # LLM client provisioning (link/unlink)
+│   │   ├── claude.go     # Claude Desktop provisioner
+│   │   ├── cursor.go     # Cursor provisioner
+│   │   ├── windsurf.go   # Windsurf provisioner
+│   │   └── ...           # Other client provisioners
+│   ├── reload/           # Hot reload support
+│   │   ├── reload.go     # Reload handler and result types
+│   │   ├── diff.go       # Stack diff computation
+│   │   └── watcher.go    # File watcher for --watch mode
 │   ├── state/            # Daemon state management
 │   │   └── state.go      # ~/.gridctl/state/ and ~/.gridctl/logs/
 │   ├── mcp/              # MCP protocol
@@ -186,8 +205,23 @@ make clean-mock-servers # Stop and remove mock MCP servers
 # Run in foreground with verbose output (for debugging)
 ./gridctl deploy stack.yaml --foreground
 
+# Watch for changes and auto-reload
+./gridctl deploy stack.yaml --watch
+
+# Deploy and auto-link all detected LLM clients
+./gridctl deploy stack.yaml --flash
+
 # Check running gateways and containers
 ./gridctl status
+
+# Connect an LLM client to the gateway
+./gridctl link
+
+# Remove gridctl from an LLM client
+./gridctl unlink
+
+# Hot reload a running stack
+./gridctl reload
 
 # Stop a specific stack (gateway + containers)
 ./gridctl destroy examples/getting-started/agent-basic.yaml
@@ -207,6 +241,9 @@ Starts containers and MCP gateway for a stack.
 | `--no-cache` | | Force rebuild of source-based images |
 | `--quiet` | `-q` | Suppress progress output (show only final result) |
 | `--verbose` | `-v` | Print full stack as JSON |
+| `--watch` | `-w` | Watch stack file for changes and hot reload |
+| `--flash` | | Auto-link detected LLM clients after deploy |
+| `--no-expand` | | Disable environment variable expansion in OpenAPI spec files |
 
 #### `gridctl destroy <stack.yaml>`
 
@@ -218,7 +255,39 @@ Shows running gateways and containers.
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--stack` | `-t` | Filter by stack name |
+| `--stack` | `-s` | Filter by stack name |
+
+#### `gridctl link [client]`
+
+Connect an LLM client to the gridctl gateway. Without arguments, detects installed clients and presents a selection list.
+
+Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, continue, cline, anythingllm, roo, zed, goose
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--port` | `-p` | Gateway port (default: auto-detect from running stack, else 8180) |
+| `--all` | `-a` | Link all detected clients at once |
+| `--name` | `-n` | Server name in client config (default: "gridctl") |
+| `--dry-run` | | Show what would change without modifying files |
+| `--force` | | Overwrite existing gridctl entry even if present |
+
+#### `gridctl unlink [client]`
+
+Remove gridctl from an LLM client's MCP configuration. Without arguments, detects linked clients and presents a selection.
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--all` | `-a` | Unlink from all clients |
+| `--name` | `-n` | Server name to remove (default: "gridctl") |
+| `--dry-run` | | Show what would change without modifying files |
+
+#### `gridctl reload [stack-name]`
+
+Triggers a hot reload of the stack configuration. The stack must be running with the `--watch` flag, or use this command to manually trigger a reload. If no stack name is provided, reloads all running stacks.
+
+#### `gridctl serve`
+
+Starts the web UI server without managing any stack. Listens on port 8180 by default (override with `PORT` environment variable).
 
 ### Daemon Mode
 
@@ -254,7 +323,8 @@ When `gridctl deploy` runs, it:
 
 **Endpoints:**
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
-- **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/api/logs`, `/health`, `/ready`
+- **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/health`, `/ready`
+- **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
 - **A2A:** `/.well-known/agent.json`, `/a2a/{agent}` (GET card, POST JSON-RPC)
 - **Web UI:** `GET /`
 
@@ -262,6 +332,17 @@ When `gridctl deploy` runs, it:
 - `GET /api/logs` - Returns structured gateway logs as JSON array
 - Query params: `lines` (default 100), `level` (filter by log level)
 - Response: `LogEntry[]` with fields: `level`, `ts`, `msg`, `component`, `trace_id`, `attrs`
+
+**Clients API:**
+- `GET /api/clients` - Returns status of detected LLM clients (name, detected, linked, transport)
+
+**Reload API:**
+- `POST /api/reload` - Triggers hot reload of the stack configuration (requires `--watch` flag on deploy)
+
+**Agent Control API:**
+- `GET /api/agents/{name}/logs` - Returns container logs for an agent
+- `POST /api/agents/{name}/restart` - Restart an agent container
+- `POST /api/agents/{name}/stop` - Stop an agent container
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
