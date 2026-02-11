@@ -2230,6 +2230,64 @@ func TestRegistry_FindBySlug_NewClients(t *testing.T) {
 	}
 }
 
+// --- AllClientInfo Tests ---
+
+func TestAllClientInfo_ReturnsAllClients(t *testing.T) {
+	r := NewRegistry()
+	infos := r.AllClientInfo("gridctl")
+
+	// Should return one info per registered client
+	slugs := r.AllSlugs()
+	if len(infos) != len(slugs) {
+		t.Fatalf("expected %d infos, got %d", len(slugs), len(infos))
+	}
+
+	for i, info := range infos {
+		if info.Slug != slugs[i] {
+			t.Errorf("info[%d].Slug = %q, want %q", i, info.Slug, slugs[i])
+		}
+		if info.Name == "" {
+			t.Errorf("info[%d].Name should not be empty", i)
+		}
+		if info.Transport == "" {
+			t.Errorf("info[%d].Transport should not be empty", i)
+		}
+	}
+}
+
+func TestAllClientInfo_DetectedClient(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	// Write a minimal config so Detect + IsLinked work
+	writeTestJSON(t, configPath, map[string]any{"mcpServers": map[string]any{}})
+
+	p := &mcpServersProvisioner{
+		name:   "Test",
+		slug:   "test",
+		bridge: false,
+		paths:  map[string]string{"linux": configPath, "darwin": configPath, "windows": configPath},
+		buildEntry: func(opts LinkOptions) map[string]any {
+			return sseConfig("serverUrl", opts.GatewayURL)
+		},
+	}
+
+	r := &Registry{clients: []ClientProvisioner{p}}
+	infos := r.AllClientInfo("gridctl")
+
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 info, got %d", len(infos))
+	}
+	if !infos[0].Detected {
+		t.Error("expected Detected=true")
+	}
+	if infos[0].ConfigPath != configPath {
+		t.Errorf("expected ConfigPath=%q, got %q", configPath, infos[0].ConfigPath)
+	}
+	if infos[0].Linked {
+		t.Error("expected Linked=false (not linked yet)")
+	}
+}
+
 // --- Interface Compliance Tests ---
 
 func TestNewClientProvisioners_ImplementInterface(t *testing.T) {
