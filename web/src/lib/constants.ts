@@ -7,6 +7,8 @@ export const LAYOUT = {
   NODE_WIDTH: 256,
   NODE_HEIGHT: 140,
   AGENT_SIZE: 144,     // Unified agent node size (rounded rectangle)
+  CLIENT_WIDTH: 160,   // Linked client node width
+  CLIENT_HEIGHT: 120,  // Linked client node height
 
   // Dagre layout spacing
   NODE_SPACING: 60,    // Vertical spacing between nodes in same rank
@@ -84,6 +86,7 @@ export const NODE_TYPES = {
   MCP_SERVER: 'mcpServer',
   RESOURCE: 'resource',
   AGENT: 'agent',
+  CLIENT: 'client',
 } as const;
 
 // Edge type identifiers
