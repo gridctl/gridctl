@@ -17,6 +17,7 @@ import {
   FileJson,
   Network,
   HeartPulse,
+  Monitor,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
@@ -28,7 +29,7 @@ import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatRelativeTime } from '../../lib/time';
-import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, ToolSelector } from '../../types';
+import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, ClientNodeData, ToolSelector } from '../../types';
 
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
@@ -45,7 +46,8 @@ export function Sidebar() {
 
   const isServer = selectedData.type === 'mcp-server';
   const isAgent = selectedData.type === 'agent';
-  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData;
+  const isClient = selectedData.type === 'client';
+  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData;
 
   // For MCP servers, determine if external, local process, or SSH
   const serverData = isServer ? (data as MCPServerNodeData) : null;
@@ -59,23 +61,28 @@ export function Sidebar() {
   const isRemote = agentData?.variant === 'remote';
   const hasA2A = agentData?.hasA2A ?? false;
 
-  // Icon logic: Globe for external, Cpu for local process, KeyRound for SSH, FileJson for OpenAPI, Terminal for container-based
-  const Icon = isServer
-    ? isExternal
-      ? Globe
-      : isLocalProcess
-        ? Cpu
-        : isSSH
-          ? KeyRound
-          : isOpenAPI
-            ? FileJson
-            : Terminal
-    : isAgent
-      ? Bot
-      : Box;
+  // Client-specific data
+  const clientData = isClient ? (data as ClientNodeData) : null;
 
-  // Color logic: violet for all MCP servers, purple for local agents, teal for remote agents/resources
-  const colorClass = isServer ? 'violet' : isAgent ? (isRemote ? 'secondary' : 'tertiary') : 'secondary';
+  // Icon logic: Monitor for clients, Globe for external, Cpu for local process, KeyRound for SSH, FileJson for OpenAPI, Terminal for container-based
+  const Icon = isClient
+    ? Monitor
+    : isServer
+      ? isExternal
+        ? Globe
+        : isLocalProcess
+          ? Cpu
+          : isSSH
+            ? KeyRound
+            : isOpenAPI
+              ? FileJson
+              : Terminal
+      : isAgent
+        ? Bot
+        : Box;
+
+  // Color logic: primary (amber) for clients, violet for MCP servers, purple for local agents, teal for remote agents/resources
+  const colorClass = isClient ? 'primary' : isServer ? 'violet' : isAgent ? (isRemote ? 'secondary' : 'tertiary') : 'secondary';
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -101,6 +108,7 @@ export function Sidebar() {
       <div
         className={cn(
           'absolute top-0 left-0 bottom-0 w-px',
+          colorClass === 'primary' && 'bg-gradient-to-b from-primary/40 via-primary/20 to-transparent',
           colorClass === 'violet' && 'bg-gradient-to-b from-violet-500/40 via-violet-500/20 to-transparent',
           colorClass === 'tertiary' && 'bg-gradient-to-b from-tertiary/40 via-tertiary/20 to-transparent',
           colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
@@ -113,6 +121,7 @@ export function Sidebar() {
           <div
             className={cn(
               'p-2 rounded-xl flex-shrink-0 border relative',
+              colorClass === 'primary' && 'bg-primary/10 border-primary/20',
               colorClass === 'violet' && 'bg-violet-500/10 border-violet-500/20',
               colorClass === 'tertiary' && 'bg-tertiary/10 border-tertiary/20',
               colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
@@ -121,6 +130,7 @@ export function Sidebar() {
             <Icon
               size={16}
               className={cn(
+                colorClass === 'primary' && 'text-primary',
                 colorClass === 'violet' && 'text-violet-400',
                 colorClass === 'tertiary' && 'text-tertiary',
                 colorClass === 'secondary' && 'text-secondary'
@@ -137,7 +147,7 @@ export function Sidebar() {
             <h2 className="font-semibold text-text-primary truncate tracking-tight">{data.name}</h2>
             <div className="flex items-center gap-1.5">
               <p className="text-[10px] text-text-muted uppercase tracking-wider">
-                {isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
+                {isClient ? 'LLM Client' : isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
               </p>
               {isServer && isExternal && (
                 <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-violet-500/10 text-violet-400 flex items-center gap-0.5">
@@ -376,8 +386,30 @@ export function Sidebar() {
               </div>
             )}
 
+            {/* Client fields */}
+            {isClient && clientData?.transport && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-text-muted">Transport</span>
+                <span className="text-xs px-2 py-0.5 rounded-md font-mono font-medium bg-primary/10 text-primary">
+                  {clientData.transport}
+                </span>
+              </div>
+            )}
+
+            {isClient && clientData?.configPath && (
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-sm text-text-muted">Config</span>
+                <span
+                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
+                  title={clientData.configPath}
+                >
+                  {clientData.configPath}
+                </span>
+              </div>
+            )}
+
             {/* Resource fields */}
-            {!isServer && !isAgent && (data as ResourceNodeData).image && (
+            {!isServer && !isAgent && !isClient && (data as ResourceNodeData).image && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
                 <span
@@ -389,7 +421,7 @@ export function Sidebar() {
               </div>
             )}
 
-            {!isServer && !isAgent && (data as ResourceNodeData).network && (
+            {!isServer && !isAgent && !isClient && (data as ResourceNodeData).network && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Network</span>
                 <span className="text-sm text-secondary font-medium">{(data as ResourceNodeData).network}</span>
@@ -398,22 +430,24 @@ export function Sidebar() {
           </div>
         </Section>
 
-        {/* Controls Section */}
-        <Section title="Actions" icon={Terminal} defaultOpen>
-          <ControlBar agentName={data.name} />
-          <button
-            onClick={handleShowLogs}
-            className={cn(
-              'mt-3 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
-              'bg-surface-elevated/60 border border-border/50',
-              'hover:bg-surface-highlight hover:border-text-muted/30 transition-all text-sm',
-              'text-text-secondary hover:text-text-primary'
-            )}
-          >
-            <FileText size={14} />
-            Show Logs Panel
-          </button>
-        </Section>
+        {/* Controls Section (not for clients - they aren't containers) */}
+        {!isClient && (
+          <Section title="Actions" icon={Terminal} defaultOpen>
+            <ControlBar agentName={data.name} />
+            <button
+              onClick={handleShowLogs}
+              className={cn(
+                'mt-3 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
+                'bg-surface-elevated/60 border border-border/50',
+                'hover:bg-surface-highlight hover:border-text-muted/30 transition-all text-sm',
+                'text-text-secondary hover:text-text-primary'
+              )}
+            >
+              <FileText size={14} />
+              Show Logs Panel
+            </button>
+          </Section>
+        )}
 
         {/* Tools Section (MCP servers only) */}
         {isServer && (
