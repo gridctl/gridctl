@@ -7,6 +7,7 @@ import type {
   MCPServerStatus,
   ResourceStatus,
   AgentStatus,
+  ClientStatus,
   Tool,
   ConnectionStatus,
 } from '../types';
@@ -18,6 +19,7 @@ interface StackState {
   mcpServers: MCPServerStatus[];
   resources: ResourceStatus[];
   agents: AgentStatus[];  // Unified: includes both local and remote agents with A2A info
+  clients: ClientStatus[];  // Detected/linked LLM clients
   tools: Tool[];
   sessions: number;
   a2aTasks: number | null;
@@ -35,6 +37,7 @@ interface StackState {
 
   // === Actions ===
   setGatewayStatus: (status: GatewayStatus) => void;
+  setClients: (clients: ClientStatus[]) => void;
   setTools: (tools: Tool[]) => void;
   setError: (error: string | null) => void;
   setLoading: (loading: boolean) => void;
@@ -55,6 +58,7 @@ export const useStackStore = create<StackState>()(
     mcpServers: [],
     resources: [],
     agents: [],
+    clients: [],
     tools: [],
     sessions: 0,
     a2aTasks: null,
@@ -83,6 +87,12 @@ export const useStackStore = create<StackState>()(
       get().refreshNodesAndEdges();
     },
 
+    setClients: (clients) => {
+      set({ clients });
+      // No refreshNodesAndEdges here -- setGatewayStatus already triggers it,
+      // and clients are read from store state during refresh.
+    },
+
     setTools: (tools) => set({ tools }),
 
     setError: (error) => set({
@@ -98,7 +108,7 @@ export const useStackStore = create<StackState>()(
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, nodes: existingNodes } = get();
+      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks, nodes: existingNodes } = get();
       if (!gatewayInfo) return;
 
       // Build map of existing positions to preserve user-dragged positions
@@ -113,13 +123,14 @@ export const useStackStore = create<StackState>()(
         agents,
         positionMap,
         sessions,
-        a2aTasks
+        a2aTasks,
+        clients
       );
       set({ nodes, edges });
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks } = get();
+      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks } = get();
       if (!gatewayInfo) return;
 
       // Don't pass positionMap to get default calculated positions
@@ -130,7 +141,8 @@ export const useStackStore = create<StackState>()(
         agents,
         undefined,
         sessions,
-        a2aTasks
+        a2aTasks,
+        clients
       );
       set({ nodes, edges });
     },
