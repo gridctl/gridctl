@@ -6,7 +6,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/react';
-import type { MCPServerStatus, ResourceStatus, AgentStatus } from '../../types';
+import type { MCPServerStatus, ResourceStatus, AgentStatus, ClientStatus } from '../../types';
 import type { LayoutEngine, LayoutOptions } from './types';
 import { createAllNodes } from './nodes';
 import { createAllEdges, buildNodeTypeSets } from './edges';
@@ -22,6 +22,7 @@ export interface TransformInput {
   agents: AgentStatus[];
   sessions?: number;
   a2aTasks?: number | null;
+  clients?: ClientStatus[];
 }
 
 /**
@@ -59,7 +60,7 @@ export function transformToGraph(
   input: TransformInput,
   options: TransformOptions = {}
 ): TransformOutput {
-  const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks } = input;
+  const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients = [] } = input;
   const { layoutEngine = defaultLayoutEngine, preservedPositions } = options;
 
   // Build lookup sets for edge routing
@@ -73,11 +74,12 @@ export function transformToGraph(
     agents,
     usedByOtherAgents,
     sessions,
-    a2aTasks
+    a2aTasks,
+    clients
   );
 
   // Create edges
-  const edges = createAllEdges(mcpServers, resources, agents);
+  const edges = createAllEdges(mcpServers, resources, agents, clients);
 
   // Apply layout
   const layoutOptions: LayoutOptions = { preservedPositions };
@@ -108,10 +110,11 @@ export function transformToNodesAndEdges(
   agents: AgentStatus[] = [],
   existingPositions?: Map<string, { x: number; y: number }>,
   sessions?: number,
-  a2aTasks?: number | null
+  a2aTasks?: number | null,
+  clients?: ClientStatus[]
 ): TransformOutput {
   return transformToGraph(
-    { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks },
+    { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients },
     { preservedPositions: existingPositions }
   );
 }

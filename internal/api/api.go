@@ -15,6 +15,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 
@@ -32,6 +33,8 @@ type Server struct {
 	stackName      string
 	logBuffer      *logging.LogBuffer
 	reloadHandler  *reload.Handler
+	provisioners   *provisioner.Registry
+	linkServerName string
 	allowedOrigins []string
 	authType       string
 	authToken      string
@@ -101,6 +104,12 @@ func (s *Server) SetAuth(authType, token, header string) {
 	s.authHeader = header
 }
 
+// SetProvisionerRegistry sets the provisioner registry for client detection.
+func (s *Server) SetProvisionerRegistry(r *provisioner.Registry, serverName string) {
+	s.provisioners = r
+	s.linkServerName = serverName
+}
+
 // Close performs cleanup of the API server's managed resources.
 func (s *Server) Close() {
 	if s.sseServer != nil {
@@ -131,6 +140,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
+	mux.HandleFunc("/api/clients", s.handleClients)
 	mux.HandleFunc("/api/reload", s.handleReload)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ready", s.handleReady)
@@ -809,4 +819,48 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
+}
+
+// ClientStatus describes an LLM client's detection and link state.
+type ClientStatus struct {
+	Name       string `json:"name"`
+	Slug       string `json:"slug"`
+	Detected   bool   `json:"detected"`
+	Linked     bool   `json:"linked"`
+	Transport  string `json:"transport"`
+	ConfigPath string `json:"configPath,omitempty"`
+}
+
+// handleClients returns detected LLM clients and their link status.
+// GET /api/clients
+func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.provisioners == nil {
+		writeJSON(w, []ClientStatus{})
+		return
+	}
+
+	serverName := s.linkServerName
+	if serverName == "" {
+		serverName = "gridctl"
+	}
+
+	infos := s.provisioners.AllClientInfo(serverName)
+	statuses := make([]ClientStatus, 0, len(infos))
+	for _, info := range infos {
+		statuses = append(statuses, ClientStatus{
+			Name:       info.Name,
+			Slug:       info.Slug,
+			Detected:   info.Detected,
+			Linked:     info.Linked,
+			Transport:  info.Transport,
+			ConfigPath: info.ConfigPath,
+		})
+	}
+
+	writeJSON(w, statuses)
 }

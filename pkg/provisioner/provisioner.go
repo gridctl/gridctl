@@ -164,6 +164,38 @@ func TransportDescriptionFor(prov ClientProvisioner) string {
 	}
 }
 
+// ClientInfo holds detection and link status for one client provisioner.
+type ClientInfo struct {
+	Name       string
+	Slug       string
+	Detected   bool
+	Linked     bool
+	Transport  string
+	ConfigPath string
+}
+
+// AllClientInfo returns detection and link status for every registered client.
+func (r *Registry) AllClientInfo(serverName string) []ClientInfo {
+	infos := make([]ClientInfo, 0, len(r.clients))
+	for _, c := range r.clients {
+		info := ClientInfo{
+			Name:      c.Name(),
+			Slug:      c.Slug(),
+			Transport: TransportDescriptionFor(c),
+		}
+		if path, found := c.Detect(); found {
+			info.Detected = true
+			info.ConfigPath = path
+			linked, err := c.IsLinked(path, serverName)
+			if err == nil {
+				info.Linked = linked
+			}
+		}
+		infos = append(infos, info)
+	}
+	return infos
+}
+
 // GatewayURL constructs the SSE gateway URL from a port.
 func GatewayURL(port int) string {
 	return fmt.Sprintf("http://localhost:%d/sse", port)

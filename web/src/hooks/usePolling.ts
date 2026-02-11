@@ -1,13 +1,14 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
-import { fetchStatus, fetchTools, AuthError } from '../lib/api';
+import { fetchStatus, fetchTools, fetchClients, AuthError } from '../lib/api';
 import { POLLING } from '../lib/constants';
 
 export function usePolling() {
   const intervalRef = useRef<number | null>(null);
 
   const setGatewayStatus = useStackStore((s) => s.setGatewayStatus);
+  const setClients = useStackStore((s) => s.setClients);
   const setTools = useStackStore((s) => s.setTools);
   const setError = useStackStore((s) => s.setError);
   const setLoading = useStackStore((s) => s.setLoading);
@@ -26,6 +27,14 @@ export function usePolling() {
       setGatewayStatus(status);
       setTools(toolsResult.tools);
       setAuthRequired(false);
+
+      // Fetch clients separately — failure should not block core updates
+      try {
+        const clients = await fetchClients();
+        setClients(clients);
+      } catch {
+        // Client endpoint may not be available; ignore gracefully
+      }
     } catch (error) {
       if (error instanceof AuthError) {
         setAuthRequired(true);
@@ -44,7 +53,7 @@ export function usePolling() {
         setConnectionStatus('error');
       }
     }
-  }, [setGatewayStatus, setTools, setError, setConnectionStatus, setAuthRequired, setLoading]);
+  }, [setGatewayStatus, setClients, setTools, setError, setConnectionStatus, setAuthRequired, setLoading]);
 
   useEffect(() => {
     // Don't poll while auth prompt is showing

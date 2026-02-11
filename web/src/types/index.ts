@@ -69,6 +69,16 @@ export interface AgentStatus {
   description?: string;
 }
 
+// LLM client status from GET /api/clients
+export interface ClientStatus {
+  name: string;       // Human-readable name (e.g., "Claude Desktop")
+  slug: string;       // CLI identifier (e.g., "claude")
+  detected: boolean;  // Whether client is installed on the system
+  linked: boolean;    // Whether gridctl entry exists in client config
+  transport: string;  // "native SSE", "native HTTP", or "mcp-remote bridge"
+  configPath?: string; // Config file path (only if detected)
+}
+
 // Gateway status response from GET /api/status
 export interface GatewayStatus {
   gateway: ServerInfo;
@@ -112,6 +122,7 @@ export interface GatewayNodeData extends NodeDataBase {
   resourceCount: number;
   agentCount: number;
   a2aAgentCount: number;
+  clientCount: number;
   totalToolCount: number;
   sessions: number;
   a2aTasks: number | null;
@@ -170,7 +181,17 @@ export interface AgentNodeData extends NodeDataBase {
   description?: string;
 }
 
-export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData;
+// Linked LLM client node data
+export interface ClientNodeData extends NodeDataBase {
+  type: 'client';
+  name: string;
+  slug: string;
+  transport: string;
+  configPath?: string;
+  status: NodeStatus;
+}
+
+export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData;
 
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';

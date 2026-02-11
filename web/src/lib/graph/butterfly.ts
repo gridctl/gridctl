@@ -1,13 +1,14 @@
 /**
- * Butterfly layout engine - Hub-and-Spoke with 4 zones
+ * Butterfly layout engine - Hub-and-Spoke with 5 zones
  *
  * Implements a clean, logic-driven layout where the Gateway acts as
  * the central hub with zones arranged left-to-right:
  *
- * Zone 1 (Left):      Agents - consumers/drivers that initiate requests
- * Zone 2 (Center):    Gateway - central hub/router
- * Zone 3 (Right):     MCP Servers & A2A Agents - providers/tools
- * Zone 4 (Far Right): Resources - infrastructure/databases
+ * Zone 4 (Far Left):  Clients - linked LLM clients
+ * Zone 0 (Left):      Agents - consumers/drivers that initiate requests
+ * Zone 1 (Center):    Gateway - central hub/router
+ * Zone 2 (Right):     MCP Servers & A2A Agents - providers/tools
+ * Zone 3 (Far Right): Resources - infrastructure/databases
  */
 
 import type { Node } from '@xyflow/react';
@@ -25,9 +26,10 @@ import { getNodeDimensions } from './utils';
 /**
  * Default zone configuration
  * X positions create clear visual separation between zones
- * Zones are 0-indexed: 0=AGENTS, 1=GATEWAY, 2=SERVERS, 3=RESOURCES
+ * Zones: 4=CLIENTS, 0=AGENTS, 1=GATEWAY, 2=SERVERS, 3=RESOURCES
  */
 const DEFAULT_ZONE_CONFIGS: Record<ButterflyZone, ZoneConfig> = {
+  [4]: { zone: 4, baseX: -400, nodeSpacing: 80 },       // CLIENTS (far left)
   [0]: { zone: 0, baseX: 0, nodeSpacing: 80 },          // AGENTS (left)
   [1]: { zone: 1, baseX: 400, nodeSpacing: 0 },         // GATEWAY (center)
   [2]: { zone: 2, baseX: 800, nodeSpacing: 80 },        // SERVERS (right)
@@ -42,6 +44,9 @@ function getNodeZone(node: Node): ButterflyZone {
   const nodeType = nodeData?.type as string;
 
   switch (nodeType) {
+    case 'client':
+      return 4; // CLIENTS zone (far left)
+
     case 'gateway':
       return 1; // GATEWAY zone
 

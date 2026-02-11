@@ -17,6 +17,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -233,6 +234,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Ga
 	server.SetDockerClient(b.rt.DockerClient())
 	server.SetStackName(b.stack.Name)
 	server.SetLogBuffer(logBuffer)
+	server.SetProvisionerRegistry(provisioner.NewRegistry(), "gridctl")
 
 	if b.stack.Gateway != nil && len(b.stack.Gateway.AllowedOrigins) > 0 {
 		server.SetAllowedOrigins(b.stack.Gateway.AllowedOrigins)

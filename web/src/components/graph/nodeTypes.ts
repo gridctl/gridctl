@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import CustomNode from './CustomNode';
 import GatewayNode from './GatewayNode';
 import AgentNode from './AgentNode';
+import ClientNode from './ClientNode';
 
 // Use 'any' to bypass React Flow's strict typing
 // The components receive props correctly at runtime
@@ -10,4 +11,5 @@ export const nodeTypes: Record<string, ComponentType<any>> = {
   resource: CustomNode,
   gateway: GatewayNode,
   agent: AgentNode,
+  client: ClientNode,
 };

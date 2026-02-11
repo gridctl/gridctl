@@ -46,12 +46,14 @@ export interface LayoutEngine {
 /**
  * Butterfly layout zone definitions
  *
- * Zone 1 (Left):      Agents - consumers/drivers that initiate requests
- * Zone 2 (Center):    Gateway - central hub/router
- * Zone 3 (Right):     MCP Servers & A2A Agents - providers/tools
- * Zone 4 (Far Right): Resources - infrastructure/databases
+ * Zone 4 (Far Left):  Clients - linked LLM clients
+ * Zone 0 (Left):      Agents - consumers/drivers that initiate requests
+ * Zone 1 (Center):    Gateway - central hub/router
+ * Zone 2 (Right):     MCP Servers & A2A Agents - providers/tools
+ * Zone 3 (Far Right): Resources - infrastructure/databases
  */
 export const ButterflyZone = {
+  CLIENTS: 4,
   AGENTS: 0,
   GATEWAY: 1,
   SERVERS: 2,
@@ -76,6 +78,7 @@ export interface ZoneConfig {
  * Edge relationship types for path highlighting
  */
 export type EdgeRelationType =
+  | 'client-to-gateway'    // LLM client connects to gateway
   | 'agent-to-gateway'     // Agent initiates connection to gateway
   | 'gateway-to-server'    // Gateway exposes MCP server
   | 'gateway-to-resource'  // Gateway manages resource
