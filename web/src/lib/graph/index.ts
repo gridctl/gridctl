@@ -35,12 +35,14 @@ export {
   createMCPServerNodes,
   createAgentNodes,
   createResourceNodes,
+  createClientNodes,
   createAllNodes,
 } from './nodes';
 
 // Edge creation
 export {
   GATEWAY_NODE_ID,
+  createClientToGatewayEdges,
   createAgentToGatewayEdges,
   createGatewayToServerEdges,
   createGatewayToResourceEdges,
