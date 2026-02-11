@@ -45,6 +45,7 @@ type ClientProvisioner interface {
 // LinkOptions configures how a link is created.
 type LinkOptions struct {
 	GatewayURL string // e.g., "http://localhost:8180/sse"
+	Port       int    // Gateway port for HTTP URL construction
 	ServerName string // Key name in config (default: "gridctl")
 	Force      bool   // Overwrite existing entry
 	DryRun     bool   // Show what would change without modifying files
@@ -77,14 +78,18 @@ func NewRegistry() *Registry {
 		clients: []ClientProvisioner{
 			// Tier 1
 			newClaudeDesktop(),
+			newClaudeCode(),
 			newCursor(),
 			newWindsurf(),
 			newVSCode(),
+			newGeminiCLI(),
 			// Tier 2
 			newContinueDev(),
 			newCline(),
 			newAnythingLLM(),
 			newRooCode(),
+			newZed(),
+			newGoose(),
 		},
 	}
 }
@@ -145,7 +150,26 @@ func TransportDescription(needsBridge bool) string {
 	return "native SSE"
 }
 
+// TransportDescriptionFor returns a transport description for a specific provisioner,
+// distinguishing HTTP-native clients from SSE-native clients.
+func TransportDescriptionFor(prov ClientProvisioner) string {
+	if prov.NeedsBridge() {
+		return "mcp-remote bridge"
+	}
+	switch prov.(type) {
+	case *ClaudeCode, *GeminiCLI:
+		return "native HTTP"
+	default:
+		return "native SSE"
+	}
+}
+
 // GatewayURL constructs the SSE gateway URL from a port.
 func GatewayURL(port int) string {
 	return fmt.Sprintf("http://localhost:%d/sse", port)
+}
+
+// GatewayHTTPURL constructs the streamable HTTP gateway URL from a port.
+func GatewayHTTPURL(port int) string {
+	return fmt.Sprintf("http://localhost:%d/mcp", port)
 }
