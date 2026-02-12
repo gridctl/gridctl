@@ -6,7 +6,8 @@ export const LAYOUT = {
   GATEWAY_HEIGHT: 160,
   NODE_WIDTH: 256,
   NODE_HEIGHT: 140,
-  AGENT_SIZE: 144,     // Unified agent node size (rounded rectangle)
+  AGENT_WIDTH: 160,    // Agent node width (matches client for column alignment)
+  AGENT_HEIGHT: 144,   // Agent node height
   CLIENT_WIDTH: 160,   // Linked client node width
   CLIENT_HEIGHT: 120,  // Linked client node height
 
