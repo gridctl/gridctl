@@ -27,6 +27,7 @@ interface StackState {
   // === React Flow State ===
   nodes: Node[];
   edges: Edge[];
+  draggedPositions: Map<string, { x: number; y: number }>;  // User-dragged node positions
 
   // === UI State ===
   selectedNodeId: string | null;
@@ -64,6 +65,7 @@ export const useStackStore = create<StackState>()(
     a2aTasks: null,
     nodes: [],
     edges: [],
+    draggedPositions: new Map(),
     selectedNodeId: null,
     connectionStatus: 'disconnected',
     lastUpdated: null,
@@ -108,20 +110,16 @@ export const useStackStore = create<StackState>()(
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks, nodes: existingNodes } = get();
+      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks, draggedPositions } = get();
       if (!gatewayInfo) return;
 
-      // Build map of existing positions to preserve user-dragged positions
-      const positionMap = new Map(
-        existingNodes.map((n) => [n.id, n.position])
-      );
-
+      // Only preserve positions for nodes the user has explicitly dragged
       const { nodes, edges } = transformToNodesAndEdges(
         gatewayInfo,
         mcpServers,
         resources,
         agents,
-        positionMap,
+        draggedPositions.size > 0 ? draggedPositions : undefined,
         sessions,
         a2aTasks,
         clients
@@ -133,7 +131,7 @@ export const useStackStore = create<StackState>()(
       const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks } = get();
       if (!gatewayInfo) return;
 
-      // Don't pass positionMap to get default calculated positions
+      // Clear dragged positions and recalculate from scratch
       const { nodes, edges } = transformToNodesAndEdges(
         gatewayInfo,
         mcpServers,
@@ -144,13 +142,21 @@ export const useStackStore = create<StackState>()(
         a2aTasks,
         clients
       );
-      set({ nodes, edges });
+      set({ nodes, edges, draggedPositions: new Map() });
     },
 
     onNodesChange: (changes) => {
-      set({
-        nodes: applyNodeChanges(changes, get().nodes),
-      });
+      const nodes = applyNodeChanges(changes, get().nodes);
+
+      // Track user-dragged positions (drag end events)
+      const draggedPositions = new Map(get().draggedPositions);
+      for (const change of changes) {
+        if (change.type === 'position' && change.dragging === false && change.position) {
+          draggedPositions.set(change.id, change.position);
+        }
+      }
+
+      set({ nodes, draggedPositions });
     },
 
     onEdgesChange: (changes) => {
