@@ -185,8 +185,6 @@ func simulateLink(data map[string]any, prov ClientProvisioner, opts LinkOptions)
 		servers = append(servers, entry)
 		experimental["mcpServers"] = servers
 		data["experimental"] = experimental
-	case *AnythingLLM:
-		data[opts.ServerName] = p.buildEntry(opts)
 	case *Zed:
 		servers := getOrCreateMap(data, "context_servers")
 		servers[opts.ServerName] = p.buildEntry(opts)
@@ -226,6 +224,8 @@ func getProvisionerBase(prov ClientProvisioner) (*mcpServersProvisioner, bool) {
 	case *ClaudeCode:
 		return &p.mcpServersProvisioner, true
 	case *GeminiCLI:
+		return &p.mcpServersProvisioner, true
+	case *AnythingLLM:
 		return &p.mcpServersProvisioner, true
 	default:
 		_ = p
