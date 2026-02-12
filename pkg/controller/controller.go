@@ -182,14 +182,14 @@ func (sc *StackController) createPrinter(stack *config.Stack) *output.Printer {
 	if sc.config.Verbose {
 		fmt.Println("\nFull stack (JSON):")
 		data, _ := json.MarshalIndent(stack, "", "  ")
-		fmt.Println(string(data))
+		fmt.Println(logging.RedactString(string(data)))
 	}
 
 	return printer
 }
 
 // setupOrchestratorLogging configures logging for the runtime orchestrator.
-func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*logging.LogBuffer, *logging.BufferHandler) {
+func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*logging.LogBuffer, slog.Handler) {
 	cfg := sc.config
 
 	if cfg.Foreground && !cfg.Quiet {
@@ -200,8 +200,9 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 		}
 		innerHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 		bufferHandler := logging.NewBufferHandler(logBuffer, innerHandler)
-		rt.SetLogger(slog.New(bufferHandler).With("component", "orchestrator"))
-		return logBuffer, bufferHandler
+		redactHandler := logging.NewRedactingHandler(bufferHandler)
+		rt.SetLogger(slog.New(redactHandler).With("component", "orchestrator"))
+		return logBuffer, redactHandler
 	}
 
 	if !cfg.Quiet {
@@ -209,8 +210,9 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 		if cfg.Verbose {
 			logLevel = slog.LevelDebug
 		}
-		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
-		rt.SetLogger(logger)
+		textHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+		redactHandler := logging.NewRedactingHandler(textHandler)
+		rt.SetLogger(slog.New(redactHandler))
 	}
 
 	return nil, nil
