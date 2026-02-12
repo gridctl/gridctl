@@ -51,20 +51,11 @@ export function createAgentToGatewayEdges(
       const nodeId = `agent-${agent.name}`;
       const isRunning = agent.status === 'running';
 
-      // Style varies based on A2A capability
-      const edgeColor = agent.hasA2A ? COLORS.secondary : '#8b5cf6';
-      const style = agent.hasA2A
-        ? { stroke: edgeColor, strokeDasharray: '8,4', strokeWidth: 2 }
-        : { stroke: edgeColor, strokeDasharray: '5,5' };
-
       return {
         id: `edge-agent-gateway-${agent.name}`,
         source: nodeId,
         target: GATEWAY_NODE_ID,
-        targetHandle: 'agent-input',
         animated: isRunning,
-        style,
-        markerEnd: { ...arrowMarker, color: edgeColor },
         data: {
           relationType: 'agent-to-gateway' as const,
           sourceAgent: agent.name,
@@ -223,18 +214,7 @@ export function createClientToGatewayEdges(
       id: `edge-client-gateway-${client.slug}`,
       source: `client-${client.slug}`,
       target: GATEWAY_NODE_ID,
-      targetHandle: 'client-input',
       animated: true,
-      style: {
-        stroke: COLORS.primary,
-        strokeWidth: 2,
-      },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        width: 16,
-        height: 16,
-        color: COLORS.primary,
-      },
       data: {
         relationType: 'client-to-gateway' as const,
         isHighlightable: true,
