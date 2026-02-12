@@ -2,7 +2,292 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [0.1.0-alpha.5] - 2026-01-29
+## [0.1.0-alpha.7] - 2026-02-12
+
+
+### Bug Fixes
+
+
+- Add session cap with eviction and count method
+- Add periodic session cleanup to MCP gateway
+- Add TTL-based cleanup for A2A tasks
+- Add periodic A2A task cleanup to gateway
+- Wire cleanup goroutines into deploy lifecycle
+- Check HandleInitialize error in session count test
+- Add context cancellation to stdio transport reader goroutine
+- Add context cancellation to process transport reader goroutines
+- Add missing docker factory import in integration tests
+- Use Ping to verify Docker availability in test
+- Remove unused setupMockAgentClientWithCallTool
+- Remove empty branch flagged by staticcheck SA9003
+- Validate agent identity on SSE tools requests
+- Reorder shutdown to broadcast before closing HTTP
+- Drain pending requests on all readResponses exit paths
+- Drain pending requests on all ProcessClient exit paths
+- Data race in ProcessClient between readResponses and Reconnect
+- Data race in StdioClient between readResponses and Reconnect
+- Add client count display to gateway node
+- Use mcpServers wrapper and native SSE for AnythingLLM provisioner
+- Upgrade Cursor provisioner to native SSE transport
+- Align client nodes with agents in butterfly layout
+- Split agent layout dimensions into width and height
+- Use separate agent width and height for layout
+- Left-align nodes within zones using max width
+- Match left-side edges to right-side style
+- Only preserve user-dragged node positions
+- Use single centered input handle on gateway
+- Widen agent node to match client width
+- Match client handle size to other nodes
+
+### Features
+
+
+- Add reload package for config hot reload
+- Add reload API endpoint and handler support
+- Add --watch flag and hot reload integration
+- Add reload CLI command
+- Add MaxRequestBodySize constant for body limits
+- Add GatewayConfig with allowed_origins to stack schema
+- Add env var expansion for gateway allowed_origins
+- Add body size limit and remove inline CORS from MCP handler
+- Add body size limit and remove inline CORS from SSE handler
+- Add body size limit and remove inline CORS from A2A handler
+- Refactor CORS middleware to accept configurable origins
+- Thread allowed origins from stack config to API server
+- Add AuthConfig struct to gateway config
+- Add validation rules for auth config
+- Expand env vars in auth token config
+- Add auth middleware for bearer and API key
+- Wire auth middleware into HTTP handler
+- Add HasAgent method for identity validation
+- Validate X-Agent-Name against known agents
+- Thread auth config from stack to API server
+- Expose session and task counts in status API
+- Extend gateway Close to drain client connections
+- Add Close method to SSE server
+- Add Close method to API server
+- Add graceful HTTP shutdown with connection draining
+- Add agent identity tracking to SSE sessions
+- Include agent identity in MCP_ENDPOINT URL
+- Include agent identity in reload MCP_ENDPOINT
+- Add SetServerMeta method to gateway
+- Add Pingable interface for health checks
+- Add Ping method to StdioClient
+- Add Ping method to ProcessClient
+- Add Ping method to OpenAPIClient
+- Add health monitor to gateway
+- Expose health status in API responses
+- Wire up health monitor in deploy command
+- Add health fields to frontend types
+- Show health status in graph nodes
+- Add Reconnectable interface for MCP clients
+- Add reconnection support to StdioClient
+- Add reconnection support to ProcessClient
+- Trigger reconnection from health monitor
+- Add SSE shutdown broadcast notification
+- Add shared formatRelativeTime utility
+- Add health indicator to MCP server nodes
+- Add health details to sidebar status section
+- Show unhealthy server count in header
+- Show unhealthy count in status bar
+- Add openapi fields to MCP server types
+- Pass openapi fields through graph node mapping
+- Add OpenAPI icon and type badge to graph node
+- Add OpenAPI label and spec display to sidebar
+- Add session and task count fields to gateway types
+- Store session and task counts from status response
+- Thread session and task counts through graph transform
+- Pass session and task counts to gateway node data
+- Display session and A2A task counts in gateway node
+- Show session count in status bar
+- Add reload API function and result type
+- Add reload button with notification to header
+- Add auth token management and 401 detection to API layer
+- Add auth state store for gateway authentication
+- Detect auth errors in polling and pause during auth
+- Add auth prompt overlay component
+- Integrate auth prompt into app layout
+- Differentiate network errors from HTTP errors in polling
+- Add SSE shutdown event listener hook
+- Add contextual error overlay and shutdown notification
+- Add client provisioner registry and interface
+- Add platform detection helpers
+- Add JSONC read/write with comment detection
+- Add config file backup before modification
+- Add mcp-remote bridge and npx detection
+- Add shared link/unlink logic for MCP clients
+- Add Claude Desktop provisioner
+- Add Cursor provisioner
+- Add Windsurf provisioner
+- Add VS Code provisioner
+- Add Continue provisioner
+- Add Cline provisioner
+- Add AnythingLLM provisioner
+- Add Roo Code provisioner
+- Add link command for LLM client configuration
+- Add unlink command to remove client config
+- Register link and unlink commands
+- Add --flash flag and post-deploy link hint
+- Add YAML read/write utilities for provisioner system
+- Add httpConfig bridge helper for HTTP-native clients
+- Add GatewayHTTPURL, Port field, and register new provisioners
+- Extend DryRunDiff for YAML and add new provisioner cases
+- Add Claude Code provisioner with custom detection
+- Add Gemini CLI provisioner
+- Add Zed Editor provisioner
+- Add Goose provisioner with YAML config support
+- Pass Port in link opts and update supported clients list
+- Pass Port in flash link opts for HTTP-native clients
+- Add AllClientInfo method for client detection status
+- Add /api/clients endpoint for LLM client status
+- Wire provisioner registry to API server
+- Add ClientStatus and ClientNodeData types
+- Add fetchClients API function
+- Add client node dimensions and type constant
+- Add client zone and edge relation type
+- Add client node creation functions
+- Add client-to-gateway edge creation
+- Add client zone to butterfly layout
+- Add client node dimensions to layout utils
+- Thread clients through graph transform pipeline
+- Re-export client graph functions
+- Add ClientNode component for linked LLM clients
+- Register client node type
+- Add LLM client support to sidebar
+- Add clients state to stack store
+- Poll /api/clients endpoint
+- Add client path highlighting
+
+### Refactoring
+
+
+- Add MCP protocol version and timeout constants
+- Use named constants in HTTP MCP client
+- Use named constants in stdio MCP client
+- Use named constants in process MCP client
+- Use named constants in MCP gateway
+- Add A2A timeout constant
+- Use named timeout constant in A2A client
+- Use named constants in A2A adapter
+- Use named constant for daemon shutdown grace
+- Use named constant for reload HTTP timeout
+- Add shared JSON-RPC 2.0 types package
+- Re-export JSON-RPC types from shared package in mcp
+- Re-export JSON-RPC types from shared package in a2a
+- Add Logger field to BuildOptions
+- Add LoggerSetter and propagate logger to runtime
+- Add logger to DockerRuntime
+- Pass logger through builder adapter
+- Replace fmt.Printf with slog in git operations
+- Replace fmt.Printf with slog in image building
+- Initialize and pass logger in builder
+- Replace fmt.Printf with slog in image pulling
+- Replace fmt.Printf with slog in A2A gateway
+- Pass logger to A2A gateway constructor
+- Add ClientBase with shared state and accessor methods
+- Embed ClientBase in HTTPClient
+- Embed ClientBase in StdioClient
+- Embed ClientBase in ProcessClient
+- Embed ClientBase in OpenAPIClient
+- Move label constants from compat to interface
+- Use UpResult and Orchestrator directly in CLI
+- Remove compat layer after consumer migration
+- Remove hand-rolled AgentClient mock
+- Add RPCClient base with transporter interface
+- Embed RPCClient in HTTP transport client
+- Embed RPCClient in stdio transport client
+- Embed RPCClient in process transport client
+- Remove JSON-RPC type re-exports from mcp package
+- Remove JSON-RPC type re-exports from a2a package
+- Use jsonrpc types directly in client_base
+- Use jsonrpc types directly in mcp handler
+- Use jsonrpc types directly in SSE server
+- Use jsonrpc types directly in HTTP client
+- Use jsonrpc types directly in stdio client
+- Use jsonrpc types directly in process client
+- Use jsonrpc types directly in a2a handler
+- Use DefaultPingTimeout in HTTP client Ping
+- Add controller package with Config and StackController
+- Add DaemonManager for fork and readiness
+- Add ServerRegistrar for MCP server registration
+- Add GatewayBuilder for gateway lifecycle
+- Slim deploy.go to thin CLI layer over controller
+- Remove AnythingLLM special case from simulateLink## [0.1.0-alpha.6] - 2026-02-04
+
+
+### Bug Fixes
+
+
+- Prevent selection glow bleedthrough on agent badges
+- Add null safety for nodes and edges arrays
+- Add null safety for mcpServers array
+- Add null safety for mcpServers and resources arrays
+- Add null safety for logs array
+- Add null safety for tools and whitelist arrays
+- Add null safety for graph node creation
+- Scale log grid columns with font size and add text wrapping
+
+### Features
+
+
+- Add kin-openapi dependency for OpenAPI parsing
+- Add OpenAPI config types for MCP server definition
+- Support env var expansion and path resolution for OpenAPI specs
+- Add validation rules for OpenAPI MCP server configuration
+- Register OpenAPI clients in MCP gateway
+- Implement OpenAPI client for MCP tool transformation
+- Handle OpenAPI servers in orchestrator
+- Add OpenAPI fields to runtime compatibility types
+- Handle OpenAPI transport in deploy command
+- Add POSIX-style environment variable expansion for OpenAPI specs
+- Add NoExpand config option to OpenAPIClientConfig
+- Apply env var expansion when loading local OpenAPI specs
+- Add --no-expand flag to disable env var expansion in OpenAPI specs
+- Add ResizeHandle component for draggable panel resizing
+- Implement CSS Grid layout with resizable panels
+- Add BroadcastChannel hook for cross-window sync
+- Add window manager hook for detached windows
+- Add PopoutButton component for panel headers
+- Add detached window state tracking to UIStore
+- Add detached logs page with node selector
+- Add detached sidebar page with node selector
+- Add React Router with detached panel routes
+- Add popout button to Sidebar header
+- Add popout button to BottomPanel header
+- Add in-memory circular log buffer for API
+- Add structured slog handler with buffering
+- Add /api/logs endpoint for structured gateway logs
+- Integrate structured logging with buffer handler
+- Add fetchGatewayLogs API function
+- Add structured log viewer with filtering
+- Add detached logs and sidebar pages
+- Add shared log types and parsing utilities
+- Add shared LogLine component
+- Add shared LevelFilter component
+- Add useLogFontSize hook with persistence
+- Add ZoomControls component
+- Add barrel export for log components
+- Add logger support to HTTP MCP client
+- Add logger support to stdio MCP client
+- Add logger support to process MCP client
+- Add logger support to OpenAPI MCP client
+- Inject loggers into clients and log tool calls
+- Parse Docker timestamps and slog text format in log viewer
+- Expand env vars in command, url, and a2a-agent fields
+- Capture process stderr and log at warn level
+- Add init timing, readiness, and access denial logging
+- Share log buffer with orchestrator in foreground mode
+- Add Chrome DevTools MCP platform example
+- Add Context7 MCP platform example
+
+### Refactoring
+
+
+- Simplify UI store for panel state management
+- Simplify Sidebar to fill parent container
+- Simplify BottomPanel to fill grid cell
+- Use shared log components and add zoom controls
+- Use shared log components and add zoom controls## [0.1.0-alpha.5] - 2026-01-29
 
 
 ### Bug Fixes
