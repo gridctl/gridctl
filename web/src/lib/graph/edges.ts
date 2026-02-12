@@ -61,6 +61,7 @@ export function createAgentToGatewayEdges(
         id: `edge-agent-gateway-${agent.name}`,
         source: nodeId,
         target: GATEWAY_NODE_ID,
+        targetHandle: 'agent-input',
         animated: isRunning,
         style,
         markerEnd: { ...arrowMarker, color: edgeColor },
@@ -222,6 +223,7 @@ export function createClientToGatewayEdges(
       id: `edge-client-gateway-${client.slug}`,
       source: `client-${client.slug}`,
       target: GATEWAY_NODE_ID,
+      targetHandle: 'client-input',
       animated: true,
       style: {
         stroke: COLORS.primary,

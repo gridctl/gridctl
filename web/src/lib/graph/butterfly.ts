@@ -4,8 +4,7 @@
  * Implements a clean, logic-driven layout where the Gateway acts as
  * the central hub with zones arranged left-to-right:
  *
- * Zone 4 (Far Left):  Clients - linked LLM clients
- * Zone 0 (Left):      Agents - consumers/drivers that initiate requests
+ * Zone 0 (Left):      Agents & Clients - consumers/drivers and linked LLM clients
  * Zone 1 (Center):    Gateway - central hub/router
  * Zone 2 (Right):     MCP Servers & A2A Agents - providers/tools
  * Zone 3 (Far Right): Resources - infrastructure/databases
@@ -26,7 +25,7 @@ import { getNodeDimensions } from './utils';
 /**
  * Default zone configuration
  * X positions create clear visual separation between zones
- * Zones: 4=CLIENTS, 0=AGENTS, 1=GATEWAY, 2=SERVERS, 3=RESOURCES
+ * Zones: 0=AGENTS+CLIENTS, 1=GATEWAY, 2=SERVERS, 3=RESOURCES
  */
 const DEFAULT_ZONE_CONFIGS: Record<ButterflyZone, ZoneConfig> = {
   [4]: { zone: 4, baseX: -400, nodeSpacing: 80 },       // CLIENTS (far left)
@@ -45,7 +44,7 @@ function getNodeZone(node: Node): ButterflyZone {
 
   switch (nodeType) {
     case 'client':
-      return 4; // CLIENTS zone (far left)
+      return 0; // AGENTS zone (stacked with agents)
 
     case 'gateway':
       return 1; // GATEWAY zone
