@@ -2,7 +2,7 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [0.1.0-alpha.7] - 2026-02-12
+## [Unreleased]
 
 
 ### Bug Fixes
@@ -38,6 +38,10 @@ All notable changes to gridctl will be documented in this file.
 - Use single centered input handle on gateway
 - Widen agent node to match client width
 - Match client handle size to other nodes
+- Wire RedactingHandler into gateway logging chain
+- Redact secrets in verbose output and orchestrator logs
+- Restrict daemon log file permissions to 0600
+- Restrict state file permissions to 0600
 
 ### Features
 
@@ -157,6 +161,7 @@ All notable changes to gridctl will be documented in this file.
 - Add clients state to stack store
 - Poll /api/clients endpoint
 - Add client path highlighting
+- Add RedactingHandler for secret redaction in logs
 
 ### Refactoring
 
