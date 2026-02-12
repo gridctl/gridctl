@@ -174,26 +174,15 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         </div>
       </div>
 
-      {/* Connection Handles - Left side: separate handles for agents and clients */}
+      {/* Connection Handle - Left side: single input (mirrors right-side output) */}
       <Handle
         type="target"
         position={Position.Left}
         className={cn(
-          '!w-3 !h-3 !bg-tertiary !border-2 !border-background !rounded-full',
-          'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-tertiary'
-        )}
-        id="agent-input"
-        style={{ top: '30%' }}
-      />
-      <Handle
-        type="target"
-        position={Position.Left}
-        className={cn(
-          '!w-3 !h-3 !bg-primary !border-2 !border-background !rounded-full',
+          '!w-3.5 !h-3.5 !bg-primary !border-2 !border-background !rounded-full',
           'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
         )}
-        id="client-input"
-        style={{ top: '70%' }}
+        id="input"
       />
       <Handle
         type="source"
