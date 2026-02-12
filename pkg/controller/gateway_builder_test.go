@@ -28,7 +28,7 @@ func TestGatewayBuilder_BuildLogging_Existing(t *testing.T) {
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", nil, &runtime.UpResult{})
 
 	existingBuffer := logging.NewLogBuffer(100)
-	existingHandler := logging.NewBufferHandler(existingBuffer, nil)
+	existingHandler := logging.NewRedactingHandler(logging.NewBufferHandler(existingBuffer, nil))
 	builder.SetExistingLogInfra(existingBuffer, existingHandler)
 
 	logBuffer, handler := builder.buildLogging(false)
@@ -47,7 +47,7 @@ func TestGatewayBuilder_BuildA2AGateway_NoA2A(t *testing.T) {
 		Agents:  []config.Agent{{Name: "agent1"}},
 	}
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", nil, &runtime.UpResult{})
-	handler := logging.NewBufferHandler(logging.NewLogBuffer(100), nil)
+	handler := logging.NewRedactingHandler(logging.NewBufferHandler(logging.NewLogBuffer(100), nil))
 
 	gw := builder.buildA2AGateway(handler)
 	if gw != nil {
@@ -70,7 +70,7 @@ func TestGatewayBuilder_BuildA2AGateway_WithLocalA2A(t *testing.T) {
 		},
 	}
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", nil, &runtime.UpResult{})
-	handler := logging.NewBufferHandler(logging.NewLogBuffer(100), nil)
+	handler := logging.NewRedactingHandler(logging.NewBufferHandler(logging.NewLogBuffer(100), nil))
 
 	gw := builder.buildA2AGateway(handler)
 	if gw == nil {
@@ -87,7 +87,7 @@ func TestGatewayBuilder_BuildA2AGateway_WithExternalA2A(t *testing.T) {
 		},
 	}
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", nil, &runtime.UpResult{})
-	handler := logging.NewBufferHandler(logging.NewLogBuffer(100), nil)
+	handler := logging.NewRedactingHandler(logging.NewBufferHandler(logging.NewLogBuffer(100), nil))
 
 	gw := builder.buildA2AGateway(handler)
 	if gw == nil {

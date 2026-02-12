@@ -78,7 +78,7 @@ func Save(state *DaemonState) error {
 		return fmt.Errorf("marshaling state: %w", err)
 	}
 
-	if err := os.WriteFile(StatePath(state.StackName), data, 0644); err != nil {
+	if err := os.WriteFile(StatePath(state.StackName), data, 0600); err != nil {
 		return fmt.Errorf("writing state file: %w", err)
 	}
 

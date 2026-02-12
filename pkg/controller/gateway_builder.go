@@ -34,7 +34,7 @@ type GatewayInstance struct {
 	HTTPServer *http.Server
 	A2AGateway *a2a.Gateway
 	LogBuffer  *logging.LogBuffer
-	Handler    *logging.BufferHandler
+	Handler    slog.Handler
 }
 
 // GatewayBuilder constructs and runs the MCP gateway from a stack config.
@@ -50,7 +50,7 @@ type GatewayBuilder struct {
 	// Pre-created log infrastructure (for foreground mode where orchestrator
 	// events should also be captured before gateway starts).
 	existingBuffer  *logging.LogBuffer
-	existingHandler *logging.BufferHandler
+	existingHandler slog.Handler
 }
 
 // NewGatewayBuilder creates a GatewayBuilder.
@@ -76,7 +76,7 @@ func (b *GatewayBuilder) SetWebFS(fn WebFSFunc) {
 
 // SetExistingLogInfra allows reusing a log buffer/handler created earlier
 // (e.g., in foreground mode where orchestrator events should also be captured).
-func (b *GatewayBuilder) SetExistingLogInfra(buffer *logging.LogBuffer, handler *logging.BufferHandler) {
+func (b *GatewayBuilder) SetExistingLogInfra(buffer *logging.LogBuffer, handler slog.Handler) {
 	b.existingBuffer = buffer
 	b.existingHandler = handler
 }
@@ -187,7 +187,8 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 }
 
 // buildLogging creates or reuses the log buffer and handler.
-func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, *logging.BufferHandler) {
+// The returned handler chain is: RedactingHandler → BufferHandler → inner (JSON/Text).
+func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Handler) {
 	if b.existingBuffer != nil && b.existingHandler != nil {
 		return b.existingBuffer, b.existingHandler
 	}
@@ -206,11 +207,12 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, *loggin
 		innerHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 	}
 
-	return logBuffer, logging.NewBufferHandler(logBuffer, innerHandler)
+	bufferHandler := logging.NewBufferHandler(logBuffer, innerHandler)
+	return logBuffer, logging.NewRedactingHandler(bufferHandler)
 }
 
 // buildA2AGateway creates an A2A gateway if the stack has A2A-enabled agents.
-func (b *GatewayBuilder) buildA2AGateway(handler *logging.BufferHandler) *a2a.Gateway {
+func (b *GatewayBuilder) buildA2AGateway(handler slog.Handler) *a2a.Gateway {
 	hasA2A := len(b.stack.A2AAgents) > 0
 	if !hasA2A {
 		for _, agent := range b.stack.Agents {
@@ -272,7 +274,7 @@ func (b *GatewayBuilder) registerAgents(gateway *mcp.Gateway, verbose bool) {
 }
 
 // registerA2AAgents registers local and external A2A agents.
-func (b *GatewayBuilder) registerA2AAgents(ctx context.Context, a2aGateway *a2a.Gateway, handler *logging.BufferHandler, verbose bool) {
+func (b *GatewayBuilder) registerA2AAgents(ctx context.Context, a2aGateway *a2a.Gateway, handler slog.Handler, verbose bool) {
 	if a2aGateway == nil {
 		return
 	}
@@ -401,7 +403,7 @@ func (b *GatewayBuilder) registerAgentAdapters(_ context.Context, mcpGateway *mc
 }
 
 // setupHotReload configures file watching and reload for the stack.
-func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstance, registrar *ServerRegistrar, handler *logging.BufferHandler, verbose bool) {
+func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstance, registrar *ServerRegistrar, handler slog.Handler, verbose bool) {
 	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, b.config.Port)
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
@@ -464,7 +466,7 @@ func (b *GatewayBuilder) printEndpoints(inst *GatewayInstance) {
 }
 
 // waitForShutdown blocks until a shutdown signal or server error, then cleans up.
-func (b *GatewayBuilder) waitForShutdown(inst *GatewayInstance, handler *logging.BufferHandler, serverErr <-chan error, verbose bool) error {
+func (b *GatewayBuilder) waitForShutdown(inst *GatewayInstance, handler slog.Handler, serverErr <-chan error, verbose bool) error {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
