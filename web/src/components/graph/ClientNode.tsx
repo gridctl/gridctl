@@ -52,7 +52,7 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
         type="source"
         position={Position.Right}
         className={cn(
-          '!w-3 !h-3 !bg-primary !border-2 !border-background !rounded-full',
+          '!w-2.5 !h-2.5 !bg-primary !border-2 !border-background !rounded-full',
           'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
         )}
         id="output"

@@ -23,7 +23,7 @@ const AgentNode = memo(({ data, selected }: AgentNodeProps) => {
   return (
     <div
       className={cn(
-        'w-36 h-36 rounded-lg',
+        'w-40 h-36 rounded-lg',
         'backdrop-blur-xl border-2 transition-all duration-300 ease-out',
         // Gradient background - purple for local, teal tint for remote
         isRemote
@@ -102,7 +102,7 @@ const AgentNode = memo(({ data, selected }: AgentNodeProps) => {
       </div>
 
       {/* Name */}
-      <span className="font-semibold text-xs text-text-primary truncate max-w-[100px] px-1">
+      <span className="font-semibold text-xs text-text-primary truncate max-w-[130px] px-1">
         {data.name}
       </span>
 

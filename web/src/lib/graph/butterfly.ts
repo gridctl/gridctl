@@ -142,11 +142,14 @@ export class ButterflyLayoutEngine implements LayoutEngine {
       return sum + height + spacing;
     }, 0);
 
+    // Calculate max width for consistent left-edge alignment
+    const maxWidth = Math.max(...nodes.map((n) => getNodeDimensions(n).width));
+
     // Start Y position to center nodes vertically
     let currentY = -totalHeight / 2 + this.verticalMargin;
 
     return nodes.map((node) => {
-      const { width, height } = getNodeDimensions(node);
+      const { height } = getNodeDimensions(node);
 
       // Check for preserved position (user-dragged)
       const preserved = preservedPositions?.get(node.id);
@@ -154,9 +157,9 @@ export class ButterflyLayoutEngine implements LayoutEngine {
         return { ...node, position: preserved };
       }
 
-      // Calculate position: center node horizontally within zone
+      // Calculate position: left-align nodes within zone (all share same left edge)
       const position = {
-        x: config.baseX - width / 2,
+        x: config.baseX - maxWidth / 2,
         y: currentY,
       };
 

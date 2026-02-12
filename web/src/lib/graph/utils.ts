@@ -17,7 +17,7 @@ export function getNodeDimensions(node: Node): { width: number; height: number }
     case 'resource':
       return { width: LAYOUT.NODE_WIDTH, height: LAYOUT.NODE_HEIGHT };
     case 'agent':
-      return { width: LAYOUT.AGENT_SIZE, height: LAYOUT.AGENT_SIZE };
+      return { width: LAYOUT.AGENT_WIDTH, height: LAYOUT.AGENT_HEIGHT };
     case 'client':
       return { width: LAYOUT.CLIENT_WIDTH, height: LAYOUT.CLIENT_HEIGHT };
     default:
