@@ -36,7 +36,7 @@ func (d *DaemonManager) Fork(stack *config.Stack) (int, error) {
 		return 0, fmt.Errorf("creating log directory: %w", err)
 	}
 
-	logFile, err := os.OpenFile(state.LogPath(stack.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	logFile, err := os.OpenFile(state.LogPath(stack.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return 0, fmt.Errorf("opening log file: %w", err)
 	}
