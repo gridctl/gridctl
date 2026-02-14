@@ -608,6 +608,15 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	return result, nil
 }
 
+// CallTool implements the ToolCaller interface, allowing components to call
+// tools through the gateway without a direct reference to the router.
+func (g *Gateway) CallTool(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+	return g.HandleToolsCall(ctx, ToolCallParams{
+		Name:      name,
+		Arguments: arguments,
+	})
+}
+
 // RefreshAllTools refreshes tools from all registered MCP servers.
 func (g *Gateway) RefreshAllTools(ctx context.Context) error {
 	for _, client := range g.router.Clients() {
