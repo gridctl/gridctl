@@ -1116,3 +1116,38 @@ func TestGateway_RegisterMCPServer_LogsTiming(t *testing.T) {
 		t.Error("expected 'tool call finished' log entry")
 	}
 }
+
+func TestGateway_ImplementsToolCaller(t *testing.T) {
+	var _ ToolCaller = (*Gateway)(nil) // compile-time check
+}
+
+func TestGateway_CallTool(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	ctx := context.Background()
+
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
+		{Name: "echo", Description: "Echo tool"},
+	})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+			msg := args["message"].(string)
+			return &ToolCallResult{
+				Content: []Content{NewTextContent("Echo: " + msg)},
+			}, nil
+		},
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	result, err := g.CallTool(ctx, "agent1__echo", map[string]any{"message": "hello"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected successful result")
+	}
+	if len(result.Content) != 1 || result.Content[0].Text != "Echo: hello" {
+		t.Errorf("unexpected result: %+v", result)
+	}
+}
