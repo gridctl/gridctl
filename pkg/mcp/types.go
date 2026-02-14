@@ -41,6 +41,14 @@ type Reconnectable interface {
 	Reconnect(ctx context.Context) error
 }
 
+// ToolCaller allows calling tools across the gateway's aggregated servers.
+// This interface decouples the registry from the gateway to avoid circular dependencies.
+// The gateway implements this interface and passes it to components that need
+// to call tools without holding a direct reference to the gateway or router.
+type ToolCaller interface {
+	CallTool(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error)
+}
+
 // DefaultPingTimeout is the timeout for health check pings.
 const DefaultPingTimeout = 5 * time.Second
 
