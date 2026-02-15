@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, Prompt, Skill } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -234,6 +234,100 @@ export async function triggerReload(): Promise<ReloadResult> {
   }
 
   return data;
+}
+
+// === Registry API ===
+
+async function mutateJSON<T>(
+  endpoint: string,
+  method: 'POST' | 'PUT' | 'DELETE',
+  body?: unknown,
+): Promise<T> {
+  const headers: Record<string, string> = { ...buildHeaders() };
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `${method} ${endpoint} failed: ${response.status}`);
+  }
+
+  // DELETE returns no body
+  if (method === 'DELETE') return undefined as T;
+  return response.json();
+}
+
+export async function fetchRegistryStatus(): Promise<RegistryStatus> {
+  return fetchJSON<RegistryStatus>('/api/registry/status');
+}
+
+// --- Prompts ---
+
+export async function fetchRegistryPrompts(): Promise<Prompt[]> {
+  return fetchJSON<Prompt[]>('/api/registry/prompts');
+}
+
+export async function fetchRegistryPrompt(name: string): Promise<Prompt> {
+  return fetchJSON<Prompt>(`/api/registry/prompts/${encodeURIComponent(name)}`);
+}
+
+export async function createRegistryPrompt(prompt: Prompt): Promise<Prompt> {
+  return mutateJSON<Prompt>('/api/registry/prompts', 'POST', prompt);
+}
+
+export async function updateRegistryPrompt(name: string, prompt: Prompt): Promise<Prompt> {
+  return mutateJSON<Prompt>(`/api/registry/prompts/${encodeURIComponent(name)}`, 'PUT', prompt);
+}
+
+export async function deleteRegistryPrompt(name: string): Promise<void> {
+  return mutateJSON<void>(`/api/registry/prompts/${encodeURIComponent(name)}`, 'DELETE');
+}
+
+export async function activateRegistryPrompt(name: string): Promise<Prompt> {
+  return mutateJSON<Prompt>(`/api/registry/prompts/${encodeURIComponent(name)}/activate`, 'POST');
+}
+
+export async function disableRegistryPrompt(name: string): Promise<Prompt> {
+  return mutateJSON<Prompt>(`/api/registry/prompts/${encodeURIComponent(name)}/disable`, 'POST');
+}
+
+// --- Skills ---
+
+export async function fetchRegistrySkills(): Promise<Skill[]> {
+  return fetchJSON<Skill[]>('/api/registry/skills');
+}
+
+export async function fetchRegistrySkill(name: string): Promise<Skill> {
+  return fetchJSON<Skill>(`/api/registry/skills/${encodeURIComponent(name)}`);
+}
+
+export async function createRegistrySkill(skill: Skill): Promise<Skill> {
+  return mutateJSON<Skill>('/api/registry/skills', 'POST', skill);
+}
+
+export async function updateRegistrySkill(name: string, skill: Skill): Promise<Skill> {
+  return mutateJSON<Skill>(`/api/registry/skills/${encodeURIComponent(name)}`, 'PUT', skill);
+}
+
+export async function deleteRegistrySkill(name: string): Promise<void> {
+  return mutateJSON<void>(`/api/registry/skills/${encodeURIComponent(name)}`, 'DELETE');
+}
+
+export async function activateRegistrySkill(name: string): Promise<Skill> {
+  return mutateJSON<Skill>(`/api/registry/skills/${encodeURIComponent(name)}/activate`, 'POST');
+}
+
+export async function disableRegistrySkill(name: string): Promise<Skill> {
+  return mutateJSON<Skill>(`/api/registry/skills/${encodeURIComponent(name)}/disable`, 'POST');
 }
 
 // === JSON-RPC Helper (for MCP protocol calls) ===

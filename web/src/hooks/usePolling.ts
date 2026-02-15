@@ -1,7 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
-import { fetchStatus, fetchTools, fetchClients, AuthError } from '../lib/api';
+import { useRegistryStore } from '../stores/useRegistryStore';
+import { fetchStatus, fetchTools, fetchClients, fetchRegistryStatus, fetchRegistryPrompts, fetchRegistrySkills, AuthError } from '../lib/api';
 import { POLLING } from '../lib/constants';
 
 export function usePolling() {
@@ -34,6 +35,21 @@ export function usePolling() {
         setClients(clients);
       } catch {
         // Client endpoint may not be available; ignore gracefully
+      }
+
+      // Fetch registry data — progressive disclosure, never blocks main cycle
+      try {
+        const [regStatus, regPrompts, regSkills] = await Promise.all([
+          fetchRegistryStatus(),
+          fetchRegistryPrompts(),
+          fetchRegistrySkills(),
+        ]);
+        useRegistryStore.getState().setStatus(regStatus);
+        useRegistryStore.getState().setPrompts(regPrompts);
+        useRegistryStore.getState().setSkills(regSkills);
+        useRegistryStore.getState().setError(null);
+      } catch {
+        // Registry not available — not an error (progressive disclosure)
       }
     } catch (error) {
       if (error instanceof AuthError) {

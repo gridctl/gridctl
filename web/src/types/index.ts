@@ -191,7 +191,58 @@ export interface ClientNodeData extends NodeDataBase {
   status: NodeStatus;
 }
 
-export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData;
+// --- Registry Types ---
+
+export type ItemState = 'draft' | 'active' | 'disabled';
+
+export interface PromptArgument {
+  name: string;
+  description: string;
+  required: boolean;
+  default?: string;
+}
+
+export interface Prompt {
+  name: string;
+  description: string;
+  content: string;
+  arguments: PromptArgument[];
+  tags: string[];
+  state: ItemState;
+}
+
+export interface SkillStep {
+  tool: string;
+  arguments: Record<string, string>;
+}
+
+export interface Skill {
+  name: string;
+  description: string;
+  steps: SkillStep[];
+  input: PromptArgument[];
+  timeout?: string;
+  tags: string[];
+  state: ItemState;
+}
+
+export interface RegistryStatus {
+  totalPrompts: number;
+  activePrompts: number;
+  totalSkills: number;
+  activeSkills: number;
+}
+
+export interface RegistryNodeData extends NodeDataBase {
+  type: 'registry';
+  name: string;
+  totalPrompts: number;
+  activePrompts: number;
+  totalSkills: number;
+  activeSkills: number;
+}
+
+export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData | RegistryNodeData;
 
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
