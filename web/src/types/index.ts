@@ -242,6 +242,17 @@ export interface RegistryNodeData extends NodeDataBase {
   activeSkills: number;
 }
 
+// Tool call result from skill test runs
+export interface ToolCallContent {
+  type: string;
+  text?: string;
+}
+
+export interface ToolCallResult {
+  content: ToolCallContent[];
+  isError?: boolean;
+}
+
 export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData | RegistryNodeData;
 
 // Connection status for real-time updates

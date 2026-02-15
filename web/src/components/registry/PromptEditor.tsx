@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 import { createRegistryPrompt, updateRegistryPrompt } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import type { Prompt, PromptArgument, ItemState } from '../../types';
+import type { Prompt, ItemState } from '../../types';
 
 interface PromptEditorProps {
   isOpen: boolean;
@@ -13,13 +13,22 @@ interface PromptEditorProps {
   prompt?: Prompt;
 }
 
+// Internal representation with stable IDs for React keys
+interface ArgEntry {
+  id: number;
+  name: string;
+  description: string;
+  required: boolean;
+}
+
 export function PromptEditor({ isOpen, onClose, onSaved, prompt }: PromptEditorProps) {
   const isEditing = !!prompt;
+  const idCounter = useRef(0);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
-  const [args, setArgs] = useState<PromptArgument[]>([]);
+  const [args, setArgs] = useState<ArgEntry[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [state, setState] = useState<ItemState>('draft');
@@ -27,11 +36,19 @@ export function PromptEditor({ isOpen, onClose, onSaved, prompt }: PromptEditorP
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    idCounter.current = 0;
     if (prompt) {
       setName(prompt.name);
       setDescription(prompt.description);
       setContent(prompt.content);
-      setArgs(prompt.arguments ?? []);
+      setArgs(
+        (prompt.arguments ?? []).map((a) => ({
+          id: ++idCounter.current,
+          name: a.name,
+          description: a.description,
+          required: a.required,
+        })),
+      );
       setTags(prompt.tags ?? []);
       setState(prompt.state);
     } else {
@@ -54,7 +71,11 @@ export function PromptEditor({ isOpen, onClose, onSaved, prompt }: PromptEditorP
         name,
         description,
         content,
-        arguments: args,
+        arguments: args.map(({ name: n, description: d, required: r }) => ({
+          name: n,
+          description: d,
+          required: r,
+        })),
         tags,
         state,
       };
@@ -76,17 +97,15 @@ export function PromptEditor({ isOpen, onClose, onSaved, prompt }: PromptEditorP
   };
 
   const addArgument = () => {
-    setArgs([...args, { name: '', description: '', required: false }]);
+    setArgs([...args, { id: ++idCounter.current, name: '', description: '', required: false }]);
   };
 
-  const removeArgument = (index: number) => {
-    setArgs(args.filter((_, i) => i !== index));
+  const removeArgument = (argId: number) => {
+    setArgs(args.filter((a) => a.id !== argId));
   };
 
-  const updateArgument = (index: number, field: keyof PromptArgument, value: string | boolean) => {
-    const updated = [...args];
-    updated[index] = { ...updated[index], [field]: value };
-    setArgs(updated);
+  const updateArgument = (argId: number, field: 'name' | 'description' | 'required', value: string | boolean) => {
+    setArgs(args.map((a) => (a.id === argId ? { ...a, [field]: value } : a)));
   };
 
   const addTag = () => {
@@ -164,19 +183,19 @@ export function PromptEditor({ isOpen, onClose, onSaved, prompt }: PromptEditorP
             </button>
           </div>
           <div className="space-y-2">
-            {(args ?? []).map((arg, i) => (
-              <div key={i} className="flex items-center gap-2">
+            {(args ?? []).map((arg) => (
+              <div key={arg.id} className="flex items-center gap-2">
                 <input
                   type="text"
                   value={arg.name}
-                  onChange={(e) => updateArgument(i, 'name', e.target.value)}
+                  onChange={(e) => updateArgument(arg.id, 'name', e.target.value)}
                   placeholder="name"
                   className="flex-1 bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
                 />
                 <input
                   type="text"
                   value={arg.description}
-                  onChange={(e) => updateArgument(i, 'description', e.target.value)}
+                  onChange={(e) => updateArgument(arg.id, 'description', e.target.value)}
                   placeholder="description"
                   className="flex-[2] bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
                 />
@@ -184,13 +203,13 @@ export function PromptEditor({ isOpen, onClose, onSaved, prompt }: PromptEditorP
                   <input
                     type="checkbox"
                     checked={arg.required}
-                    onChange={(e) => updateArgument(i, 'required', e.target.checked)}
+                    onChange={(e) => updateArgument(arg.id, 'required', e.target.checked)}
                     className="rounded"
                   />
                   Req
                 </label>
                 <button
-                  onClick={() => removeArgument(i)}
+                  onClick={() => removeArgument(arg.id)}
                   className="p-1 text-text-muted hover:text-status-error transition-colors"
                 >
                   <Trash2 size={12} />

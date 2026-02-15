@@ -8,6 +8,10 @@ import {
   ChevronRight,
   Plus,
   Pencil,
+  Trash2,
+  Play,
+  Power,
+  PowerOff,
   X,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -18,10 +22,18 @@ import { useWindowManager } from '../../hooks/useWindowManager';
 import { PopoutButton } from '../ui/PopoutButton';
 import { PromptEditor } from './PromptEditor';
 import { SkillEditor } from './SkillEditor';
+import { SkillTestRunner } from './SkillTestRunner';
+import { showToast } from '../ui/Toast';
 import {
   fetchRegistryStatus,
   fetchRegistryPrompts,
   fetchRegistrySkills,
+  deleteRegistryPrompt,
+  deleteRegistrySkill,
+  activateRegistryPrompt,
+  disableRegistryPrompt,
+  activateRegistrySkill,
+  disableRegistrySkill,
 } from '../../lib/api';
 import type { Prompt, Skill, ItemState, RegistryStatus } from '../../types';
 
@@ -48,6 +60,10 @@ export function RegistrySidebar() {
   const [editingPrompt, setEditingPrompt] = useState<Prompt | undefined>();
   const [showSkillEditor, setShowSkillEditor] = useState(false);
   const [editingSkill, setEditingSkill] = useState<Skill | undefined>();
+  const [testingSkill, setTestingSkill] = useState<Skill | undefined>();
+
+  // Delete confirmation state
+  const [confirmDelete, setConfirmDelete] = useState<{ type: 'prompt' | 'skill'; name: string } | null>(null);
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -82,6 +98,54 @@ export function RegistrySidebar() {
     setEditingSkill(skill);
     setShowSkillEditor(true);
   }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!confirmDelete) return;
+    try {
+      if (confirmDelete.type === 'prompt') {
+        await deleteRegistryPrompt(confirmDelete.name);
+        showToast('success', 'Prompt deleted');
+      } else {
+        await deleteRegistrySkill(confirmDelete.name);
+        showToast('success', 'Skill deleted');
+      }
+      refreshRegistry();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setConfirmDelete(null);
+    }
+  }, [confirmDelete, refreshRegistry]);
+
+  const handleTogglePromptState = useCallback(async (prompt: Prompt) => {
+    try {
+      if (prompt.state === 'active') {
+        await disableRegistryPrompt(prompt.name);
+        showToast('success', `Prompt "${prompt.name}" disabled`);
+      } else {
+        await activateRegistryPrompt(prompt.name);
+        showToast('success', `Prompt "${prompt.name}" activated`);
+      }
+      refreshRegistry();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'State change failed');
+    }
+  }, [refreshRegistry]);
+
+  const handleToggleSkillState = useCallback(async (skill: Skill) => {
+    try {
+      if (skill.state === 'active') {
+        await disableRegistrySkill(skill.name);
+        showToast('success', `Skill "${skill.name}" disabled`);
+      } else {
+        await activateRegistrySkill(skill.name);
+        showToast('success', `Skill "${skill.name}" activated`);
+      }
+      refreshRegistry();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'State change failed');
+    }
+  }, [refreshRegistry]);
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden">
@@ -156,13 +220,50 @@ export function RegistrySidebar() {
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto scrollbar-dark">
         {activeTab === 'prompts' && (
-          <PromptsTab prompts={prompts ?? []} onEdit={handleEditPrompt} />
+          <PromptsTab
+            prompts={prompts ?? []}
+            onEdit={handleEditPrompt}
+            onDelete={(name) => setConfirmDelete({ type: 'prompt', name })}
+            onToggleState={handleTogglePromptState}
+          />
         )}
         {activeTab === 'skills' && (
-          <SkillsTab skills={skills ?? []} onEdit={handleEditSkill} />
+          <SkillsTab
+            skills={skills ?? []}
+            onEdit={handleEditSkill}
+            onDelete={(name) => setConfirmDelete({ type: 'skill', name })}
+            onToggleState={handleToggleSkillState}
+            onTest={setTestingSkill}
+          />
         )}
         {activeTab === 'status' && <StatusTab status={status} />}
       </div>
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="glass-panel-elevated rounded-xl p-5 max-w-xs mx-4 space-y-3">
+            <p className="text-sm text-text-primary">
+              Delete <span className="font-mono text-primary">{confirmDelete.name}</span>?
+            </p>
+            <p className="text-xs text-text-muted">This action cannot be undone.</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary bg-surface-elevated rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-status-error text-white hover:bg-status-error/90 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <PromptEditor
@@ -183,6 +284,13 @@ export function RegistrySidebar() {
         onSaved={refreshRegistry}
         skill={editingSkill}
       />
+      {testingSkill && (
+        <SkillTestRunner
+          isOpen={!!testingSkill}
+          onClose={() => setTestingSkill(undefined)}
+          skill={testingSkill}
+        />
+      )}
     </div>
   );
 }
@@ -192,9 +300,13 @@ export function RegistrySidebar() {
 function PromptsTab({
   prompts,
   onEdit,
+  onDelete,
+  onToggleState,
 }: {
   prompts: Prompt[];
   onEdit: (prompt: Prompt) => void;
+  onDelete: (name: string) => void;
+  onToggleState: (prompt: Prompt) => void;
 }) {
   if ((prompts ?? []).length === 0) {
     return (
@@ -208,7 +320,13 @@ function PromptsTab({
   return (
     <div className="p-2 space-y-1">
       {(prompts ?? []).map((prompt) => (
-        <PromptItem key={prompt.name} prompt={prompt} onEdit={onEdit} />
+        <PromptItem
+          key={prompt.name}
+          prompt={prompt}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onToggleState={onToggleState}
+        />
       ))}
     </div>
   );
@@ -217,9 +335,13 @@ function PromptsTab({
 function PromptItem({
   prompt,
   onEdit,
+  onDelete,
+  onToggleState,
 }: {
   prompt: Prompt;
   onEdit: (prompt: Prompt) => void;
+  onDelete: (name: string) => void;
+  onToggleState: (prompt: Prompt) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -281,16 +403,42 @@ function PromptItem({
               ))}
             </div>
           )}
-          {/* Edit button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(prompt);
-            }}
-            className="flex items-center gap-1 mt-3 text-[10px] text-text-muted hover:text-primary transition-colors"
-          >
-            <Pencil size={10} /> Edit
-          </button>
+          {/* Actions */}
+          <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border-subtle/50">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleState(prompt);
+              }}
+              className={cn(
+                'flex items-center gap-1 text-[10px] transition-colors',
+                prompt.state === 'active'
+                  ? 'text-text-muted hover:text-status-pending'
+                  : 'text-text-muted hover:text-status-running',
+              )}
+            >
+              {prompt.state === 'active' ? <PowerOff size={10} /> : <Power size={10} />}
+              {prompt.state === 'active' ? 'Disable' : 'Activate'}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(prompt);
+              }}
+              className="flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors"
+            >
+              <Pencil size={10} /> Edit
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(prompt.name);
+              }}
+              className="flex items-center gap-1 text-[10px] text-text-muted hover:text-status-error transition-colors"
+            >
+              <Trash2 size={10} /> Delete
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -302,9 +450,15 @@ function PromptItem({
 function SkillsTab({
   skills,
   onEdit,
+  onDelete,
+  onToggleState,
+  onTest,
 }: {
   skills: Skill[];
   onEdit: (skill: Skill) => void;
+  onDelete: (name: string) => void;
+  onToggleState: (skill: Skill) => void;
+  onTest: (skill: Skill) => void;
 }) {
   if ((skills ?? []).length === 0) {
     return (
@@ -318,7 +472,14 @@ function SkillsTab({
   return (
     <div className="p-2 space-y-1">
       {(skills ?? []).map((skill) => (
-        <SkillItem key={skill.name} skill={skill} onEdit={onEdit} />
+        <SkillItem
+          key={skill.name}
+          skill={skill}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onToggleState={onToggleState}
+          onTest={onTest}
+        />
       ))}
     </div>
   );
@@ -327,9 +488,15 @@ function SkillsTab({
 function SkillItem({
   skill,
   onEdit,
+  onDelete,
+  onToggleState,
+  onTest,
 }: {
   skill: Skill;
   onEdit: (skill: Skill) => void;
+  onDelete: (name: string) => void;
+  onToggleState: (skill: Skill) => void;
+  onTest: (skill: Skill) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -406,16 +573,53 @@ function SkillItem({
             </div>
           )}
 
-          {/* Edit button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(skill);
-            }}
-            className="flex items-center gap-1 mt-3 text-[10px] text-text-muted hover:text-primary transition-colors"
-          >
-            <Pencil size={10} /> Edit
-          </button>
+          {/* Actions */}
+          <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border-subtle/50">
+            {skill.state === 'active' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTest(skill);
+                }}
+                className="flex items-center gap-1 text-[10px] text-text-muted hover:text-status-running transition-colors"
+              >
+                <Play size={10} /> Test
+              </button>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleState(skill);
+              }}
+              className={cn(
+                'flex items-center gap-1 text-[10px] transition-colors',
+                skill.state === 'active'
+                  ? 'text-text-muted hover:text-status-pending'
+                  : 'text-text-muted hover:text-status-running',
+              )}
+            >
+              {skill.state === 'active' ? <PowerOff size={10} /> : <Power size={10} />}
+              {skill.state === 'active' ? 'Disable' : 'Activate'}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(skill);
+              }}
+              className="flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors"
+            >
+              <Pencil size={10} /> Edit
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(skill.name);
+              }}
+              className="flex items-center gap-1 text-[10px] text-text-muted hover:text-status-error transition-colors"
+            >
+              <Trash2 size={10} /> Delete
+            </button>
+          </div>
         </div>
       )}
     </div>

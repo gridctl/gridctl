@@ -4,7 +4,7 @@ import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 import { createRegistrySkill, updateRegistrySkill } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import type { Skill, PromptArgument, ItemState } from '../../types';
+import type { Skill, ItemState } from '../../types';
 
 // Internal representation with stable IDs for React keys
 interface ArgEntry {
@@ -14,8 +14,16 @@ interface ArgEntry {
 }
 
 interface EditableStep {
+  id: number;
   tool: string;
   args: ArgEntry[];
+}
+
+interface InputEntry {
+  id: number;
+  name: string;
+  description: string;
+  required: boolean;
 }
 
 interface SkillEditorProps {
@@ -45,12 +53,12 @@ function argsToRecord(args: ArgEntry[]): Record<string, string> {
 
 export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProps) {
   const isEditing = !!skill;
-  const argIdCounter = useRef(0);
+  const idCounter = useRef(0);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [steps, setSteps] = useState<EditableStep[]>([]);
-  const [input, setInput] = useState<PromptArgument[]>([]);
+  const [input, setInput] = useState<InputEntry[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [state, setState] = useState<ItemState>('draft');
@@ -58,17 +66,25 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    argIdCounter.current = 0;
+    idCounter.current = 0;
     if (skill) {
       setName(skill.name);
       setDescription(skill.description);
       setSteps(
         (skill.steps ?? []).map((s) => ({
+          id: ++idCounter.current,
           tool: s.tool,
-          args: recordToArgs(s.arguments, argIdCounter),
+          args: recordToArgs(s.arguments, idCounter),
         })),
       );
-      setInput(skill.input ?? []);
+      setInput(
+        (skill.input ?? []).map((p) => ({
+          id: ++idCounter.current,
+          name: p.name,
+          description: p.description,
+          required: p.required,
+        })),
+      );
       setTags(skill.tags ?? []);
       setState(skill.state);
     } else {
@@ -94,7 +110,11 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
           tool: s.tool,
           arguments: argsToRecord(s.args),
         })),
-        input,
+        input: input.map(({ name: n, description: d, required: r }) => ({
+          name: n,
+          description: d,
+          required: r,
+        })),
         tags,
         state,
       };
@@ -118,60 +138,50 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
   // --- Step management ---
 
   const addStep = () => {
-    setSteps([...steps, { tool: '', args: [] }]);
+    setSteps([...steps, { id: ++idCounter.current, tool: '', args: [] }]);
   };
 
-  const removeStep = (index: number) => {
-    setSteps(steps.filter((_, i) => i !== index));
+  const removeStep = (stepId: number) => {
+    setSteps(steps.filter((s) => s.id !== stepId));
   };
 
-  const updateStepTool = (index: number, tool: string) => {
-    const updated = [...steps];
-    updated[index] = { ...updated[index], tool };
-    setSteps(updated);
+  const updateStepTool = (stepId: number, tool: string) => {
+    setSteps(steps.map((s) => (s.id === stepId ? { ...s, tool } : s)));
   };
 
-  const addStepArg = (stepIndex: number) => {
-    const updated = [...steps];
-    const newArg: ArgEntry = { id: ++argIdCounter.current, key: '', value: '' };
-    updated[stepIndex] = { ...updated[stepIndex], args: [...updated[stepIndex].args, newArg] };
-    setSteps(updated);
+  const addStepArg = (stepId: number) => {
+    const newArg: ArgEntry = { id: ++idCounter.current, key: '', value: '' };
+    setSteps(steps.map((s) =>
+      s.id === stepId ? { ...s, args: [...s.args, newArg] } : s,
+    ));
   };
 
-  const removeStepArg = (stepIndex: number, argId: number) => {
-    const updated = [...steps];
-    updated[stepIndex] = {
-      ...updated[stepIndex],
-      args: updated[stepIndex].args.filter((a) => a.id !== argId),
-    };
-    setSteps(updated);
+  const removeStepArg = (stepId: number, argId: number) => {
+    setSteps(steps.map((s) =>
+      s.id === stepId ? { ...s, args: s.args.filter((a) => a.id !== argId) } : s,
+    ));
   };
 
-  const updateStepArg = (stepIndex: number, argId: number, field: 'key' | 'value', val: string) => {
-    const updated = [...steps];
-    updated[stepIndex] = {
-      ...updated[stepIndex],
-      args: updated[stepIndex].args.map((a) =>
-        a.id === argId ? { ...a, [field]: val } : a,
-      ),
-    };
-    setSteps(updated);
+  const updateStepArg = (stepId: number, argId: number, field: 'key' | 'value', val: string) => {
+    setSteps(steps.map((s) =>
+      s.id === stepId
+        ? { ...s, args: s.args.map((a) => (a.id === argId ? { ...a, [field]: val } : a)) }
+        : s,
+    ));
   };
 
   // --- Input parameter management ---
 
   const addInput = () => {
-    setInput([...input, { name: '', description: '', required: false }]);
+    setInput([...input, { id: ++idCounter.current, name: '', description: '', required: false }]);
   };
 
-  const removeInput = (index: number) => {
-    setInput(input.filter((_, i) => i !== index));
+  const removeInput = (inputId: number) => {
+    setInput(input.filter((p) => p.id !== inputId));
   };
 
-  const updateInput = (index: number, field: keyof PromptArgument, value: string | boolean) => {
-    const updated = [...input];
-    updated[index] = { ...updated[index], [field]: value };
-    setInput(updated);
+  const updateInput = (inputId: number, field: 'name' | 'description' | 'required', value: string | boolean) => {
+    setInput(input.map((p) => (p.id === inputId ? { ...p, [field]: value } : p)));
   };
 
   // --- Tags ---
@@ -240,12 +250,12 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
           </div>
           <div className="space-y-2">
             {(steps ?? []).map((step, i) => (
-              <div key={i}>
+              <div key={step.id}>
                 <div className="glass-panel p-3 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] text-text-muted font-mono">Step {i + 1}</span>
                     <button
-                      onClick={() => removeStep(i)}
+                      onClick={() => removeStep(step.id)}
                       className="p-1 text-text-muted hover:text-status-error transition-colors"
                     >
                       <Trash2 size={12} />
@@ -254,7 +264,7 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
                   <input
                     type="text"
                     value={step.tool}
-                    onChange={(e) => updateStepTool(i, e.target.value)}
+                    onChange={(e) => updateStepTool(step.id, e.target.value)}
                     placeholder="server__tool_name"
                     className="w-full bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none mb-2"
                   />
@@ -265,19 +275,19 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
                         <input
                           type="text"
                           value={arg.key}
-                          onChange={(e) => updateStepArg(i, arg.id, 'key', e.target.value)}
+                          onChange={(e) => updateStepArg(step.id, arg.id, 'key', e.target.value)}
                           placeholder="key"
                           className="flex-1 bg-surface border border-border/30 rounded px-2 py-1 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
                         />
                         <input
                           type="text"
                           value={arg.value}
-                          onChange={(e) => updateStepArg(i, arg.id, 'value', e.target.value)}
+                          onChange={(e) => updateStepArg(step.id, arg.id, 'value', e.target.value)}
                           placeholder="{{input.name}} or {{step1.result}}"
                           className="flex-[2] bg-surface border border-border/30 rounded px-2 py-1 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
                         />
                         <button
-                          onClick={() => removeStepArg(i, arg.id)}
+                          onClick={() => removeStepArg(step.id, arg.id)}
                           className="p-0.5 text-text-muted hover:text-status-error transition-colors"
                         >
                           <Trash2 size={10} />
@@ -285,7 +295,7 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
                       </div>
                     ))}
                     <button
-                      onClick={() => addStepArg(i)}
+                      onClick={() => addStepArg(step.id)}
                       className="text-[10px] text-primary hover:text-primary/80 transition-colors"
                     >
                       + Add argument
@@ -315,19 +325,19 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
             </button>
           </div>
           <div className="space-y-2">
-            {(input ?? []).map((param, i) => (
-              <div key={i} className="flex items-center gap-2">
+            {(input ?? []).map((param) => (
+              <div key={param.id} className="flex items-center gap-2">
                 <input
                   type="text"
                   value={param.name}
-                  onChange={(e) => updateInput(i, 'name', e.target.value)}
+                  onChange={(e) => updateInput(param.id, 'name', e.target.value)}
                   placeholder="name"
                   className="flex-1 bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
                 />
                 <input
                   type="text"
                   value={param.description}
-                  onChange={(e) => updateInput(i, 'description', e.target.value)}
+                  onChange={(e) => updateInput(param.id, 'description', e.target.value)}
                   placeholder="description"
                   className="flex-[2] bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
                 />
@@ -335,13 +345,13 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
                   <input
                     type="checkbox"
                     checked={param.required}
-                    onChange={(e) => updateInput(i, 'required', e.target.checked)}
+                    onChange={(e) => updateInput(param.id, 'required', e.target.checked)}
                     className="rounded"
                   />
                   Req
                 </label>
                 <button
-                  onClick={() => removeInput(i)}
+                  onClick={() => removeInput(param.id)}
                   className="p-1 text-text-muted hover:text-status-error transition-colors"
                 >
                   <Trash2 size={12} />

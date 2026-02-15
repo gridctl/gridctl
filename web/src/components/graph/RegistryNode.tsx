@@ -41,11 +41,17 @@ const RegistryNode = memo(({ data, selected }: RegistryNodeProps) => {
         <div className="flex items-center gap-3 text-[11px] text-text-muted font-mono">
           <div className="flex items-center gap-1.5">
             <FileText size={10} className="text-primary/70" />
-            <span>{data.activePrompts ?? 0} prompts</span>
+            <span>
+              <span className="text-status-running">{data.activePrompts ?? 0}</span>
+              <span className="text-text-muted/60">/{data.totalPrompts ?? 0}</span>
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
             <Wrench size={10} className="text-primary/70" />
-            <span>{data.activeSkills ?? 0} skills</span>
+            <span>
+              <span className="text-status-running">{data.activeSkills ?? 0}</span>
+              <span className="text-text-muted/60">/{data.totalSkills ?? 0}</span>
+            </span>
           </div>
         </div>
 
