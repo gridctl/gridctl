@@ -1,0 +1,40 @@
+# Registry Advanced Example
+#
+# Demonstrates cross-server skill chains with two MCP servers. Skills can
+# reference tools from different servers using the server__tool naming
+# convention, enabling multi-step workflows that span server boundaries.
+#
+# Prerequisites:
+#   Run `make mock-servers` from the project root to build the mock server.
+#
+# Usage:
+#   gridctl deploy examples/registry/registry-advanced.yaml
+#
+# After deploying, copy the cross-server skill:
+#   mkdir -p ~/.gridctl/registry/skills
+#   cp examples/registry/items/skills/chained-calculation.yaml ~/.gridctl/registry/skills/
+#
+# Then activate and test:
+#   curl -X POST http://localhost:8180/api/registry/skills/chained-calculation/activate
+#   curl -X POST http://localhost:8180/api/registry/skills/chained-calculation/test \
+#     -H 'Content-Type: application/json' \
+#     -d '{"a": "5", "b": "3"}'
+
+version: "1"
+name: registry-advanced
+
+network:
+  name: registry-advanced-net
+  driver: bridge
+
+mcp-servers:
+
+  # Math server — same binary, registered under a different name.
+  # Skills reference its tools as math-server__add, math-server__get_time.
+  - name: math-server
+    command: ["../_mock-servers/local-stdio-server/mock-stdio-server"]
+
+  # Text server — provides echo for formatting/piping results.
+  # Skills reference its tools as text-server__echo.
+  - name: text-server
+    command: ["../_mock-servers/local-stdio-server/mock-stdio-server"]
