@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -29,12 +31,13 @@ type WebFSFunc func() (fs.FS, error)
 
 // GatewayInstance holds all components of a running gateway.
 type GatewayInstance struct {
-	Gateway    *mcp.Gateway
-	APIServer  *api.Server
-	HTTPServer *http.Server
-	A2AGateway *a2a.Gateway
-	LogBuffer  *logging.LogBuffer
-	Handler    slog.Handler
+	Gateway        *mcp.Gateway
+	APIServer      *api.Server
+	HTTPServer     *http.Server
+	A2AGateway     *a2a.Gateway
+	LogBuffer      *logging.LogBuffer
+	Handler        slog.Handler
+	RegistryServer *registry.Server // Internal registry MCP server (nil if empty)
 }
 
 // GatewayBuilder constructs and runs the MCP gateway from a stack config.
@@ -51,6 +54,9 @@ type GatewayBuilder struct {
 	// events should also be captured before gateway starts).
 	existingBuffer  *logging.LogBuffer
 	existingHandler slog.Handler
+
+	// registryDir overrides the default registry directory for testing.
+	registryDir string
 }
 
 // NewGatewayBuilder creates a GatewayBuilder.
@@ -100,9 +106,27 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	inst.Gateway.SetDockerClient(b.rt.DockerClient())
 	inst.Gateway.SetVersion(b.version)
 
+	// Phase 1b: Create registry server (internal MCP server)
+	regDir := filepath.Join(state.BaseDir(), "registry")
+	if b.registryDir != "" {
+		regDir = b.registryDir
+	}
+	registryStore := registry.NewStore(regDir)
+	registryServer := registry.New(registryStore, inst.Gateway)
+	inst.RegistryServer = registryServer
+
 	// Phase 2: Configure logging
 	inst.LogBuffer, inst.Handler = b.buildLogging(verbose)
 	inst.Gateway.SetLogger(slog.New(inst.Handler))
+
+	// Initialize registry after logging is configured so warnings are captured
+	if err := registryServer.Initialize(context.Background()); err != nil {
+		slog.New(inst.Handler).Warn("registry initialization failed", "error", err)
+	}
+	if registryServer.HasContent() {
+		inst.Gateway.Router().AddClient(registryServer)
+		inst.Gateway.Router().RefreshTools()
+	}
 
 	// Phase 3: Create A2A gateway if needed
 	inst.A2AGateway = b.buildA2AGateway(inst.Handler)
@@ -118,7 +142,7 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	}
 
 	// Phase 5: Create API server
-	inst.APIServer = b.buildAPIServer(inst.Gateway, inst.A2AGateway, inst.LogBuffer, webFS)
+	inst.APIServer = b.buildAPIServer(inst.Gateway, inst.A2AGateway, inst.LogBuffer, webFS, inst.RegistryServer)
 
 	// Phase 6: Create HTTP server
 	inst.HTTPServer = &http.Server{
@@ -231,7 +255,7 @@ func (b *GatewayBuilder) buildA2AGateway(handler slog.Handler) *a2a.Gateway {
 }
 
 // buildAPIServer creates and configures the API server.
-func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS) *api.Server {
+func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server) *api.Server {
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(b.rt.DockerClient())
 	server.SetStackName(b.stack.Name)
@@ -250,6 +274,10 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Ga
 
 	if a2aGateway != nil {
 		server.SetA2AGateway(a2aGateway)
+	}
+
+	if registryServer != nil {
+		server.SetRegistryServer(registryServer)
 	}
 
 	return server
@@ -423,6 +451,18 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			}
 			if !result.Success {
 				return fmt.Errorf("%s", result.Message)
+			}
+			// Refresh registry if it exists
+			if inst.RegistryServer != nil {
+				if refreshErr := inst.RegistryServer.RefreshTools(watchCtx); refreshErr != nil {
+					slog.New(handler).Warn("registry refresh failed", "error", refreshErr)
+				}
+				if inst.RegistryServer.HasContent() {
+					inst.Gateway.Router().AddClient(inst.RegistryServer)
+				} else {
+					inst.Gateway.Router().RemoveClient("registry")
+				}
+				inst.Gateway.Router().RefreshTools()
 			}
 			return nil
 		})

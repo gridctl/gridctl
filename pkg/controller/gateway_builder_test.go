@@ -1,10 +1,13 @@
 package controller
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/runtime"
 )
 
@@ -112,4 +115,108 @@ func TestNewDaemonManager(t *testing.T) {
 	if dm.config.Port != 8180 {
 		t.Errorf("expected port 8180, got %d", dm.config.Port)
 	}
+}
+
+func TestGatewayBuilder_Build_WithEmptyRegistry(t *testing.T) {
+	regDir := t.TempDir() // Empty directory — no prompts or skills
+
+	cfg := Config{Port: 8180}
+	stack := &config.Stack{Name: "test"}
+	rt := runtime.NewOrchestrator(nil, nil)
+	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", rt, &runtime.UpResult{})
+	builder.registryDir = regDir
+
+	inst, err := builder.Build(false)
+	if err != nil {
+		t.Fatalf("Build() returned error: %v", err)
+	}
+
+	if inst.RegistryServer == nil {
+		t.Fatal("expected RegistryServer to be non-nil")
+	}
+	if inst.RegistryServer.HasContent() {
+		t.Error("expected empty registry to have no content")
+	}
+
+	// Registry should NOT be in the router (progressive disclosure)
+	client := inst.Gateway.Router().GetClient("registry")
+	if client != nil {
+		t.Error("expected registry to NOT be registered in router when empty")
+	}
+
+	// API server should have the registry server
+	if inst.APIServer.RegistryServer() == nil {
+		t.Error("expected API server to have registry server set")
+	}
+}
+
+func TestGatewayBuilder_Build_WithPopulatedRegistry(t *testing.T) {
+	regDir := t.TempDir()
+
+	// Create a skill YAML file
+	skillsDir := filepath.Join(regDir, "skills")
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		t.Fatalf("creating skills dir: %v", err)
+	}
+	skillYAML := `name: test-skill
+description: A test skill
+state: active
+steps:
+  - tool: some-server__some-tool
+    arguments:
+      key: value
+`
+	if err := os.WriteFile(filepath.Join(skillsDir, "test-skill.yaml"), []byte(skillYAML), 0644); err != nil {
+		t.Fatalf("writing skill YAML: %v", err)
+	}
+
+	cfg := Config{Port: 8180}
+	stack := &config.Stack{Name: "test"}
+	rt := runtime.NewOrchestrator(nil, nil)
+	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", rt, &runtime.UpResult{})
+	builder.registryDir = regDir
+
+	inst, err := builder.Build(false)
+	if err != nil {
+		t.Fatalf("Build() returned error: %v", err)
+	}
+
+	if inst.RegistryServer == nil {
+		t.Fatal("expected RegistryServer to be non-nil")
+	}
+	if !inst.RegistryServer.HasContent() {
+		t.Error("expected populated registry to have content")
+	}
+
+	// Registry SHOULD be in the router (progressive disclosure — content present)
+	client := inst.Gateway.Router().GetClient("registry")
+	if client == nil {
+		t.Fatal("expected registry to be registered in router when it has content")
+	}
+
+	// Tools should appear in aggregated list
+	tools := inst.Gateway.Router().AggregatedTools()
+	found := false
+	for _, tool := range tools {
+		if tool.Name == mcp.PrefixTool("registry", "test-skill") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected tool 'registry__test-skill' in aggregated tools, got: %v", toolNames(tools))
+	}
+
+	// API server should have the registry server
+	if inst.APIServer.RegistryServer() == nil {
+		t.Error("expected API server to have registry server set")
+	}
+}
+
+func toolNames(tools []mcp.Tool) []string {
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Name
+	}
+	return names
 }

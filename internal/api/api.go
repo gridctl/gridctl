@@ -16,6 +16,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 
@@ -35,6 +36,7 @@ type Server struct {
 	reloadHandler  *reload.Handler
 	provisioners   *provisioner.Registry
 	linkServerName string
+	registryServer *registry.Server
 	allowedOrigins []string
 	authType       string
 	authToken      string
@@ -108,6 +110,16 @@ func (s *Server) SetAuth(authType, token, header string) {
 func (s *Server) SetProvisionerRegistry(r *provisioner.Registry, serverName string) {
 	s.provisioners = r
 	s.linkServerName = serverName
+}
+
+// SetRegistryServer sets the registry server for prompt/skill management.
+func (s *Server) SetRegistryServer(r *registry.Server) {
+	s.registryServer = r
+}
+
+// RegistryServer returns the registry server.
+func (s *Server) RegistryServer() *registry.Server {
+	return s.registryServer
 }
 
 // Close performs cleanup of the API server's managed resources.
