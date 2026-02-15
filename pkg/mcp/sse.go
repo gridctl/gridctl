@@ -161,6 +161,14 @@ func (s *SSEServer) handleRequest(ctx context.Context, session *SSESession, req 
 		return s.handleToolsList(session, req)
 	case "tools/call":
 		return s.handleToolsCall(ctx, session, req)
+	case "prompts/list":
+		return s.handlePromptsList(req)
+	case "prompts/get":
+		return s.handlePromptsGet(req)
+	case "resources/list":
+		return s.handleResourcesList(req)
+	case "resources/read":
+		return s.handleResourcesRead(req)
 	case "ping":
 		return jsonrpc.NewSuccessResponse(req.ID, struct{}{})
 	default:
@@ -216,6 +224,52 @@ func (s *SSEServer) handleToolsCall(ctx context.Context, session *SSESession, re
 	} else {
 		result, err = s.gateway.HandleToolsCall(ctx, params)
 	}
+	if err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, result)
+}
+
+func (s *SSEServer) handlePromptsList(req *jsonrpc.Request) jsonrpc.Response {
+	result, err := s.gateway.HandlePromptsList()
+	if err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, result)
+}
+
+func (s *SSEServer) handlePromptsGet(req *jsonrpc.Request) jsonrpc.Response {
+	if req.Params == nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "params required for prompts/get")
+	}
+	var params PromptsGetParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid prompts/get params")
+	}
+	result, err := s.gateway.HandlePromptsGet(params)
+	if err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, result)
+}
+
+func (s *SSEServer) handleResourcesList(req *jsonrpc.Request) jsonrpc.Response {
+	result, err := s.gateway.HandleResourcesList()
+	if err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, result)
+}
+
+func (s *SSEServer) handleResourcesRead(req *jsonrpc.Request) jsonrpc.Response {
+	if req.Params == nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "params required for resources/read")
+	}
+	var params ResourcesReadParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid resources/read params")
+	}
+	result, err := s.gateway.HandleResourcesRead(params)
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
