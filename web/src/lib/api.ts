@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, Prompt, Skill } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, Prompt, Skill, ToolCallResult } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -328,6 +328,17 @@ export async function activateRegistrySkill(name: string): Promise<Skill> {
 
 export async function disableRegistrySkill(name: string): Promise<Skill> {
   return mutateJSON<Skill>(`/api/registry/skills/${encodeURIComponent(name)}/disable`, 'POST');
+}
+
+export async function testRegistrySkill(
+  name: string,
+  args?: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  return mutateJSON<ToolCallResult>(
+    `/api/registry/skills/${encodeURIComponent(name)}/test`,
+    'POST',
+    args ?? {},
+  );
 }
 
 // === JSON-RPC Helper (for MCP protocol calls) ===
