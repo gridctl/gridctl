@@ -381,7 +381,51 @@ Log text size is controlled via the `--log-font-size` CSS custom property set on
 
 Both `BottomPanel.tsx` and `DetachedLogsPage.tsx` import from `components/log/` to ensure consistent behavior in attached and detached modes.
 
-## 13. Checklist for New Components
+## 13. Registry UI
+
+The registry provides a CRUD interface for managing MCP prompts and skills through the web UI.
+
+### Components (`src/components/registry/`)
+
+- **RegistrySidebar**: Main registry panel with tabs for Prompts and Skills, including create/edit/delete/activate/disable actions
+- **PromptEditor**: Modal form for creating and editing prompts (name, description, arguments)
+- **SkillEditor**: Modal form for creating and editing skills (name, description, multi-step tool pipelines with arguments, input schemas)
+
+### Store: `useRegistryStore`
+
+Zustand store managing prompts, skills, and loading states. Fetches from `/api/registry/prompts` and `/api/registry/skills`.
+
+### Graph Integration
+
+- **RegistryNode**: Graph node displayed when registry has content (progressive disclosure)
+- Appears connected to the gateway node
+- Shows active/total counts for prompts and skills
+
+## 14. Authentication
+
+Gateway authentication support in the web UI.
+
+### Components
+
+- **AuthPrompt** (`src/components/auth/AuthPrompt.tsx`): Modal that prompts for a bearer token when the gateway returns 401
+
+### Store: `useAuthStore`
+
+Manages `authRequired` (boolean) and `token` (string) state. The token is included as a Bearer header in all API requests when set.
+
+### Integration
+
+- `usePolling` detects 401 responses and sets `authRequired = true`
+- `AuthPrompt` renders over the main UI until a valid token is provided
+- Token persists in the store for the session duration
+
+## 15. Keyboard Shortcuts
+
+Hook: `useKeyboardShortcuts` (`src/hooks/useKeyboardShortcuts.ts`)
+
+Provides global keyboard shortcuts for common UI actions (toggling panels, refreshing, etc.).
+
+## 16. Checklist for New Components
 
 1. Use Tailwind color tokens (no hardcoded hex values)
 2. Use `font-mono` for technical data, `font-sans` for UI
