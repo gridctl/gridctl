@@ -8,6 +8,6 @@ export default defineConfig({
   build: {
     // Suppress chunk size warning for embedded CLI tool UI.
     // React Flow library exceeds default 500 kB threshold.
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 650,
   },
 })
