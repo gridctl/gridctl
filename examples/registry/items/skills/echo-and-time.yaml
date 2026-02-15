@@ -1,0 +1,16 @@
+name: echo-and-time
+description: Echo a message and return the current time
+input:
+  - name: message
+    description: Message to echo
+    required: true
+steps:
+  - tool: local-tools__echo
+    arguments:
+      message: "{{input.message}}"
+  - tool: local-tools__get_time
+    arguments: {}
+tags:
+  - basic
+  - demo
+state: draft
