@@ -14,6 +14,7 @@ export function usePolling() {
   const setError = useStackStore((s) => s.setError);
   const setLoading = useStackStore((s) => s.setLoading);
   const setConnectionStatus = useStackStore((s) => s.setConnectionStatus);
+  const refreshNodesAndEdges = useStackStore((s) => s.refreshNodesAndEdges);
 
   const authRequired = useAuthStore((s) => s.authRequired);
   const setAuthRequired = useAuthStore((s) => s.setAuthRequired);
@@ -44,10 +45,18 @@ export function usePolling() {
           fetchRegistryPrompts(),
           fetchRegistrySkills(),
         ]);
+        const prevStatus = useRegistryStore.getState().status;
         useRegistryStore.getState().setStatus(regStatus);
         useRegistryStore.getState().setPrompts(regPrompts);
         useRegistryStore.getState().setSkills(regSkills);
         useRegistryStore.getState().setError(null);
+
+        // Refresh graph when registry content changes (node appears/disappears)
+        const hadContent = prevStatus && ((prevStatus.totalPrompts ?? 0) > 0 || (prevStatus.totalSkills ?? 0) > 0);
+        const hasContent = (regStatus.totalPrompts ?? 0) > 0 || (regStatus.totalSkills ?? 0) > 0;
+        if (hadContent !== hasContent) {
+          refreshNodesAndEdges();
+        }
       } catch {
         // Registry not available — not an error (progressive disclosure)
       }
@@ -69,7 +78,7 @@ export function usePolling() {
         setConnectionStatus('error');
       }
     }
-  }, [setGatewayStatus, setClients, setTools, setError, setConnectionStatus, setAuthRequired, setLoading]);
+  }, [setGatewayStatus, setClients, setTools, setError, setConnectionStatus, setAuthRequired, setLoading, refreshNodesAndEdges]);
 
   useEffect(() => {
     // Don't poll while auth prompt is showing
