@@ -82,6 +82,7 @@ export type EdgeRelationType =
   | 'agent-to-gateway'     // Agent initiates connection to gateway
   | 'gateway-to-server'    // Gateway exposes MCP server
   | 'gateway-to-resource'  // Gateway manages resource
+  | 'gateway-to-registry'  // Gateway connects to registry
   | 'agent-uses-server'    // Agent uses specific MCP server (via uses field)
   | 'agent-uses-agent';    // Agent delegates to another agent (A2A)
 
