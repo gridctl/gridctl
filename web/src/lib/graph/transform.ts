@@ -6,7 +6,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/react';
-import type { MCPServerStatus, ResourceStatus, AgentStatus, ClientStatus } from '../../types';
+import type { MCPServerStatus, ResourceStatus, AgentStatus, ClientStatus, RegistryStatus } from '../../types';
 import type { LayoutEngine, LayoutOptions } from './types';
 import { createAllNodes } from './nodes';
 import { createAllEdges, buildNodeTypeSets } from './edges';
@@ -23,6 +23,7 @@ export interface TransformInput {
   sessions?: number;
   a2aTasks?: number | null;
   clients?: ClientStatus[];
+  registryStatus?: RegistryStatus | null;
 }
 
 /**
@@ -60,7 +61,7 @@ export function transformToGraph(
   input: TransformInput,
   options: TransformOptions = {}
 ): TransformOutput {
-  const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients = [] } = input;
+  const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients = [], registryStatus } = input;
   const { layoutEngine = defaultLayoutEngine, preservedPositions } = options;
 
   // Build lookup sets for edge routing
@@ -75,11 +76,12 @@ export function transformToGraph(
     usedByOtherAgents,
     sessions,
     a2aTasks,
-    clients
+    clients,
+    registryStatus
   );
 
   // Create edges
-  const edges = createAllEdges(mcpServers, resources, agents, clients);
+  const edges = createAllEdges(mcpServers, resources, agents, clients, registryStatus);
 
   // Apply layout
   const layoutOptions: LayoutOptions = { preservedPositions };
@@ -111,10 +113,11 @@ export function transformToNodesAndEdges(
   existingPositions?: Map<string, { x: number; y: number }>,
   sessions?: number,
   a2aTasks?: number | null,
-  clients?: ClientStatus[]
+  clients?: ClientStatus[],
+  registryStatus?: RegistryStatus | null
 ): TransformOutput {
   return transformToGraph(
-    { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients },
+    { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients, registryStatus },
     { preservedPositions: existingPositions }
   );
 }
