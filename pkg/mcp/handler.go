@@ -74,6 +74,14 @@ func (h *Handler) handleMethod(r *http.Request, req *jsonrpc.Request) jsonrpc.Re
 		return h.handleToolsList(r, req)
 	case "tools/call":
 		return h.handleToolsCall(r, req)
+	case "prompts/list":
+		return h.handlePromptsList(req)
+	case "prompts/get":
+		return h.handlePromptsGet(req)
+	case "resources/list":
+		return h.handleResourcesList(req)
+	case "resources/read":
+		return h.handleResourcesRead(req)
 	case "ping":
 		return jsonrpc.NewSuccessResponse(req.ID, struct{}{})
 	default:
@@ -151,6 +159,56 @@ func (h *Handler) handleToolsCall(r *http.Request, req *jsonrpc.Request) jsonrpc
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
 
+	return jsonrpc.NewSuccessResponse(req.ID, result)
+}
+
+// handlePromptsList handles the prompts/list request.
+func (h *Handler) handlePromptsList(req *jsonrpc.Request) jsonrpc.Response {
+	result, err := h.gateway.HandlePromptsList()
+	if err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, result)
+}
+
+// handlePromptsGet handles the prompts/get request.
+func (h *Handler) handlePromptsGet(req *jsonrpc.Request) jsonrpc.Response {
+	if req.Params == nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "params required for prompts/get")
+	}
+	var params PromptsGetParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid prompts/get params")
+	}
+	result, err := h.gateway.HandlePromptsGet(params)
+	if err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, result)
+}
+
+// handleResourcesList handles the resources/list request.
+func (h *Handler) handleResourcesList(req *jsonrpc.Request) jsonrpc.Response {
+	result, err := h.gateway.HandleResourcesList()
+	if err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, result)
+}
+
+// handleResourcesRead handles the resources/read request.
+func (h *Handler) handleResourcesRead(req *jsonrpc.Request) jsonrpc.Response {
+	if req.Params == nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "params required for resources/read")
+	}
+	var params ResourcesReadParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid resources/read params")
+	}
+	result, err := h.gateway.HandleResourcesRead(params)
+	if err != nil {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
 	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 

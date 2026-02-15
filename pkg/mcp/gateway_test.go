@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1151,3 +1152,474 @@ func TestGateway_CallTool(t *testing.T) {
 		t.Errorf("unexpected result: %+v", result)
 	}
 }
+
+// promptProviderClient wraps a MockAgentClient to also implement PromptProvider.
+type promptProviderClient struct {
+	AgentClient
+	prompts []PromptData
+}
+
+func (p *promptProviderClient) ListPromptData() []PromptData {
+	return p.prompts
+}
+
+func (p *promptProviderClient) GetPromptData(name string) (*PromptData, error) {
+	for _, pd := range p.prompts {
+		if pd.Name == name {
+			return &pd, nil
+		}
+	}
+	return nil, fmt.Errorf("prompt %q: not found", name)
+}
+
+func TestGateway_HandleInitialize_WithRegistry(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Register a registry client that implements PromptProvider
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts:     []PromptData{{Name: "test-prompt"}},
+	}
+	g.Router().AddClient(client)
+
+	params := InitializeParams{
+		ProtocolVersion: "2024-11-05",
+		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
+	}
+
+	result, err := g.HandleInitialize(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Capabilities.Tools == nil {
+		t.Error("expected Tools capability to be set")
+	}
+	if result.Capabilities.Prompts == nil {
+		t.Error("expected Prompts capability to be set")
+	}
+	if result.Capabilities.Prompts != nil && !result.Capabilities.Prompts.ListChanged {
+		t.Error("expected Prompts.ListChanged to be true")
+	}
+	if result.Capabilities.Resources == nil {
+		t.Error("expected Resources capability to be set")
+	}
+	if result.Capabilities.Resources != nil && !result.Capabilities.Resources.ListChanged {
+		t.Error("expected Resources.ListChanged to be true")
+	}
+}
+
+func TestGateway_HandleInitialize_WithoutRegistry(t *testing.T) {
+	g := NewGateway()
+
+	params := InitializeParams{
+		ProtocolVersion: "2024-11-05",
+		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
+	}
+
+	result, err := g.HandleInitialize(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Capabilities.Tools == nil {
+		t.Error("expected Tools capability to be set")
+	}
+	if result.Capabilities.Prompts != nil {
+		t.Error("expected Prompts capability to be nil without registry")
+	}
+	if result.Capabilities.Resources != nil {
+		t.Error("expected Resources capability to be nil without registry")
+	}
+}
+
+func TestGateway_HandlePromptsList_Empty(t *testing.T) {
+	g := NewGateway()
+
+	result, err := g.HandlePromptsList()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Prompts == nil {
+		t.Fatal("expected non-nil prompts slice")
+	}
+	if len(result.Prompts) != 0 {
+		t.Errorf("expected 0 prompts, got %d", len(result.Prompts))
+	}
+}
+
+func TestGateway_HandlePromptsList_WithPrompts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts: []PromptData{
+			{
+				Name:        "code-review",
+				Description: "Review code for issues",
+				Arguments: []PromptArgumentData{
+					{Name: "language", Description: "Programming language", Required: true},
+					{Name: "style", Description: "Review style", Required: false},
+				},
+			},
+			{
+				Name:        "summarize",
+				Description: "Summarize content",
+			},
+		},
+	}
+	g.Router().AddClient(client)
+
+	result, err := g.HandlePromptsList()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Prompts) != 2 {
+		t.Fatalf("expected 2 prompts, got %d", len(result.Prompts))
+	}
+
+	// Find the code-review prompt
+	var found bool
+	for _, p := range result.Prompts {
+		if p.Name == "code-review" {
+			found = true
+			if p.Description != "Review code for issues" {
+				t.Errorf("expected description 'Review code for issues', got %q", p.Description)
+			}
+			if len(p.Arguments) != 2 {
+				t.Errorf("expected 2 arguments, got %d", len(p.Arguments))
+			}
+			if p.Arguments[0].Name != "language" || !p.Arguments[0].Required {
+				t.Errorf("unexpected first argument: %+v", p.Arguments[0])
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'code-review' prompt to be present")
+	}
+}
+
+func TestGateway_HandlePromptsGet_ArgumentSubstitution(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts: []PromptData{
+			{
+				Name:        "greet",
+				Description: "Greeting prompt",
+				Content:     "Hello {{name}}, welcome to {{place}}!",
+				Arguments: []PromptArgumentData{
+					{Name: "name", Description: "User name", Required: true},
+					{Name: "place", Description: "Location", Required: false, Default: "the world"},
+				},
+			},
+		},
+	}
+	g.Router().AddClient(client)
+
+	// Test with all arguments provided
+	result, err := g.HandlePromptsGet(PromptsGetParams{
+		Name:      "greet",
+		Arguments: map[string]string{"name": "Alice", "place": "Wonderland"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Description != "Greeting prompt" {
+		t.Errorf("expected description 'Greeting prompt', got %q", result.Description)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result.Messages))
+	}
+	if result.Messages[0].Role != "user" {
+		t.Errorf("expected role 'user', got %q", result.Messages[0].Role)
+	}
+	if result.Messages[0].Content.Text != "Hello Alice, welcome to Wonderland!" {
+		t.Errorf("expected substituted content, got %q", result.Messages[0].Content.Text)
+	}
+}
+
+func TestGateway_HandlePromptsGet_DefaultArguments(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts: []PromptData{
+			{
+				Name:    "greet",
+				Content: "Hello {{name}}, welcome to {{place}}!",
+				Arguments: []PromptArgumentData{
+					{Name: "name", Description: "User name", Required: true},
+					{Name: "place", Description: "Location", Default: "the world"},
+				},
+			},
+		},
+	}
+	g.Router().AddClient(client)
+
+	// Test with missing "place" argument — should use default
+	result, err := g.HandlePromptsGet(PromptsGetParams{
+		Name:      "greet",
+		Arguments: map[string]string{"name": "Bob"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Messages[0].Content.Text != "Hello Bob, welcome to the world!" {
+		t.Errorf("expected default substitution, got %q", result.Messages[0].Content.Text)
+	}
+}
+
+func TestGateway_HandlePromptsGet_NotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts:     []PromptData{},
+	}
+	g.Router().AddClient(client)
+
+	_, err := g.HandlePromptsGet(PromptsGetParams{Name: "nonexistent"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent prompt")
+	}
+}
+
+func TestGateway_HandlePromptsGet_NoRegistry(t *testing.T) {
+	g := NewGateway()
+
+	_, err := g.HandlePromptsGet(PromptsGetParams{Name: "anything"})
+	if err == nil {
+		t.Fatal("expected error when no registry")
+	}
+	if err.Error() != "registry not available" {
+		t.Errorf("expected 'registry not available' error, got %q", err.Error())
+	}
+}
+
+func TestGateway_HandleResourcesList(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts: []PromptData{
+			{Name: "code-review", Description: "Review code"},
+			{Name: "summarize", Description: "Summarize content"},
+		},
+	}
+	g.Router().AddClient(client)
+
+	result, err := g.HandleResourcesList()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Resources) != 2 {
+		t.Fatalf("expected 2 resources, got %d", len(result.Resources))
+	}
+
+	for _, r := range result.Resources {
+		if r.MimeType != "text/plain" {
+			t.Errorf("expected mimeType 'text/plain', got %q", r.MimeType)
+		}
+		if r.URI != "prompt://"+r.Name {
+			t.Errorf("expected URI 'prompt://%s', got %q", r.Name, r.URI)
+		}
+	}
+}
+
+func TestGateway_HandleResourcesList_Empty(t *testing.T) {
+	g := NewGateway()
+
+	result, err := g.HandleResourcesList()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Resources == nil {
+		t.Fatal("expected non-nil resources slice")
+	}
+	if len(result.Resources) != 0 {
+		t.Errorf("expected 0 resources, got %d", len(result.Resources))
+	}
+}
+
+func TestGateway_HandleResourcesRead(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts: []PromptData{
+			{
+				Name:    "code-review",
+				Content: "Please review the following code.",
+			},
+		},
+	}
+	g.Router().AddClient(client)
+
+	result, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://code-review"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Contents) != 1 {
+		t.Fatalf("expected 1 content item, got %d", len(result.Contents))
+	}
+	if result.Contents[0].URI != "prompt://code-review" {
+		t.Errorf("expected URI 'prompt://code-review', got %q", result.Contents[0].URI)
+	}
+	if result.Contents[0].MimeType != "text/plain" {
+		t.Errorf("expected mimeType 'text/plain', got %q", result.Contents[0].MimeType)
+	}
+	if result.Contents[0].Text != "Please review the following code." {
+		t.Errorf("expected prompt content, got %q", result.Contents[0].Text)
+	}
+}
+
+func TestGateway_HandleResourcesRead_InvalidURI(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts:     []PromptData{},
+	}
+	g.Router().AddClient(client)
+
+	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "https://example.com/foo"})
+	if err == nil {
+		t.Fatal("expected error for non-prompt:// URI")
+	}
+	if !strings.Contains(err.Error(), "unsupported URI scheme") {
+		t.Errorf("expected 'unsupported URI scheme' error, got %q", err.Error())
+	}
+}
+
+func TestGateway_HandleResourcesRead_NotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts:     []PromptData{},
+	}
+	g.Router().AddClient(client)
+
+	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://nonexistent"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent prompt")
+	}
+}
+
+func TestGateway_HandleResourcesRead_NoRegistry(t *testing.T) {
+	g := NewGateway()
+
+	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://anything"})
+	if err == nil {
+		t.Fatal("expected error when no registry")
+	}
+}
+
+func TestGateway_HandlePromptsGet_NilArguments(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts: []PromptData{
+			{
+				Name:    "simple",
+				Content: "Hello world",
+			},
+		},
+	}
+	g.Router().AddClient(client)
+
+	// nil arguments map should work for prompts without required args
+	result, err := g.HandlePromptsGet(PromptsGetParams{
+		Name:      "simple",
+		Arguments: nil,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Messages[0].Content.Text != "Hello world" {
+		t.Errorf("expected 'Hello world', got %q", result.Messages[0].Content.Text)
+	}
+}
+
+func TestGateway_HandlePromptsGet_RequiredArgumentMissing(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts: []PromptData{
+			{
+				Name:    "greet",
+				Content: "Hello {{name}}!",
+				Arguments: []PromptArgumentData{
+					{Name: "name", Description: "User name", Required: true},
+				},
+			},
+		},
+	}
+	g.Router().AddClient(client)
+
+	_, err := g.HandlePromptsGet(PromptsGetParams{
+		Name:      "greet",
+		Arguments: map[string]string{},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing required argument")
+	}
+	if !strings.Contains(err.Error(), "required argument") {
+		t.Errorf("expected 'required argument' in error, got %q", err.Error())
+	}
+}
+
+func TestGateway_HandleResourcesRead_EmptyName(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	client := &promptProviderClient{
+		AgentClient: mock,
+		prompts:     []PromptData{},
+	}
+	g.Router().AddClient(client)
+
+	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://"})
+	if err == nil {
+		t.Fatal("expected error for empty prompt name")
+	}
+	if !strings.Contains(err.Error(), "empty prompt name") {
+		t.Errorf("expected 'empty prompt name' in error, got %q", err.Error())
+	}
+}
+

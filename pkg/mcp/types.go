@@ -176,3 +176,98 @@ func NewTextContent(text string) Content {
 	return Content{Type: "text", Text: text}
 }
 
+// PromptProvider is an optional interface for AgentClients that manage prompts.
+// The gateway uses type assertion to detect prompt-capable clients and serve
+// the MCP prompts/* and resources/* protocol methods.
+type PromptProvider interface {
+	ListPromptData() []PromptData
+	GetPromptData(name string) (*PromptData, error)
+}
+
+// PromptData contains prompt information used by the MCP protocol layer.
+type PromptData struct {
+	Name        string
+	Description string
+	Content     string
+	Arguments   []PromptArgumentData
+}
+
+// PromptArgumentData describes a prompt argument with default value support.
+type PromptArgumentData struct {
+	Name        string
+	Description string
+	Required    bool
+	Default     string
+}
+
+// --- MCP Prompts Protocol Types ---
+
+// MCPPrompt represents a prompt in the MCP prompts/list response.
+type MCPPrompt struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Arguments   []PromptArgument `json:"arguments,omitempty"`
+}
+
+// PromptArgument describes a prompt parameter.
+type PromptArgument struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// PromptsListResult is the response to prompts/list.
+type PromptsListResult struct {
+	Prompts []MCPPrompt `json:"prompts"`
+}
+
+// PromptsGetParams contains parameters for prompts/get.
+type PromptsGetParams struct {
+	Name      string            `json:"name"`
+	Arguments map[string]string `json:"arguments,omitempty"`
+}
+
+// PromptMessage represents a message in a prompts/get response.
+type PromptMessage struct {
+	Role    string  `json:"role"` // "user" or "assistant"
+	Content Content `json:"content"`
+}
+
+// PromptsGetResult is the response to prompts/get.
+type PromptsGetResult struct {
+	Description string          `json:"description,omitempty"`
+	Messages    []PromptMessage `json:"messages"`
+}
+
+// --- MCP Resources Protocol Types ---
+
+// MCPResource represents a resource in the resources/list response.
+type MCPResource struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// ResourcesListResult is the response to resources/list.
+type ResourcesListResult struct {
+	Resources []MCPResource `json:"resources"`
+}
+
+// ResourcesReadParams contains parameters for resources/read.
+type ResourcesReadParams struct {
+	URI string `json:"uri"`
+}
+
+// ResourceContents represents the content of a resource.
+type ResourceContents struct {
+	URI      string `json:"uri"`
+	MimeType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+}
+
+// ResourcesReadResult is the response to resources/read.
+type ResourcesReadResult struct {
+	Contents []ResourceContents `json:"contents"`
+}
+

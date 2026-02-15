@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1236,4 +1237,171 @@ func waitForSession(t *testing.T, sse *SSEServer) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("timed out waiting for SSE session")
+}
+
+// sseTestPromptProvider wraps a MockAgentClient to implement PromptProvider for SSE tests.
+type sseTestPromptProvider struct {
+	AgentClient
+	prompts []PromptData
+}
+
+func (p *sseTestPromptProvider) ListPromptData() []PromptData {
+	return p.prompts
+}
+
+func (p *sseTestPromptProvider) GetPromptData(name string) (*PromptData, error) {
+	for _, pd := range p.prompts {
+		if pd.Name == name {
+			return &pd, nil
+		}
+	}
+	return nil, fmt.Errorf("prompt %q: not found", name)
+}
+
+// setupSSEWithRegistry creates an SSE server with a registry PromptProvider.
+func setupSSEWithRegistry(t *testing.T) *SSEServer {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	pp := &sseTestPromptProvider{
+		AgentClient: mock,
+		prompts: []PromptData{
+			{
+				Name:        "code-review",
+				Description: "Review code for issues",
+				Content:     "Review this {{language}} code: {{code}}",
+				Arguments: []PromptArgumentData{
+					{Name: "language", Description: "Language", Required: true},
+					{Name: "code", Description: "Code", Required: true},
+				},
+			},
+		},
+	}
+	g.Router().AddClient(pp)
+
+	return NewSSEServer(g)
+}
+
+// ssePost sends a JSON-RPC request via HandleMessage to the given SSE server/session.
+func ssePost(t *testing.T, sse *SSEServer, sessionID string, method string, params any) jsonrpc.Response {
+	t.Helper()
+	m := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
+	if params != nil {
+		m["params"] = params
+	}
+	body, _ := json.Marshal(m)
+	req := httptest.NewRequest("POST", "/message?sessionId="+sessionID, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	sse.HandleMessage(w, req)
+	var resp jsonrpc.Response
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	return resp
+}
+
+func TestSSEServer_HandleMessage_PromptsList(t *testing.T) {
+	sse := setupSSEWithRegistry(t)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{ID: "test-session", Writer: sseW, Flusher: sseW, Done: make(chan struct{})}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+
+	resp := ssePost(t, sse, "test-session", "prompts/list", nil)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	var result PromptsListResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(result.Prompts) != 1 {
+		t.Errorf("expected 1 prompt, got %d", len(result.Prompts))
+	}
+}
+
+func TestSSEServer_HandleMessage_PromptsGet(t *testing.T) {
+	sse := setupSSEWithRegistry(t)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{ID: "test-session", Writer: sseW, Flusher: sseW, Done: make(chan struct{})}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+
+	resp := ssePost(t, sse, "test-session", "prompts/get", map[string]any{
+		"name":      "code-review",
+		"arguments": map[string]any{"language": "Go", "code": "func main() {}"},
+	})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	var result PromptsGetResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	expected := "Review this Go code: func main() {}"
+	if result.Messages[0].Content.Text != expected {
+		t.Errorf("expected %q, got %q", expected, result.Messages[0].Content.Text)
+	}
+}
+
+func TestSSEServer_HandleMessage_ResourcesList(t *testing.T) {
+	sse := setupSSEWithRegistry(t)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{ID: "test-session", Writer: sseW, Flusher: sseW, Done: make(chan struct{})}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+
+	resp := ssePost(t, sse, "test-session", "resources/list", nil)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	var result ResourcesListResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(result.Resources) != 1 {
+		t.Errorf("expected 1 resource, got %d", len(result.Resources))
+	}
+	if result.Resources[0].URI != "prompt://code-review" {
+		t.Errorf("expected URI 'prompt://code-review', got %q", result.Resources[0].URI)
+	}
+}
+
+func TestSSEServer_HandleMessage_ResourcesRead(t *testing.T) {
+	sse := setupSSEWithRegistry(t)
+
+	sseW := httptest.NewRecorder()
+	session := &SSESession{ID: "test-session", Writer: sseW, Flusher: sseW, Done: make(chan struct{})}
+	sse.mu.Lock()
+	sse.sessions[session.ID] = session
+	sse.mu.Unlock()
+
+	resp := ssePost(t, sse, "test-session", "resources/read", map[string]any{
+		"uri": "prompt://code-review",
+	})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+
+	var result ResourcesReadResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(result.Contents) != 1 {
+		t.Fatalf("expected 1 content item, got %d", len(result.Contents))
+	}
+	if result.Contents[0].Text == "" {
+		t.Error("expected non-empty content text")
+	}
 }

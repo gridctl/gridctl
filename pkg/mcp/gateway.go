@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -563,14 +564,26 @@ func (g *Gateway) HandleInitialize(params InitializeParams) (*InitializeResult, 
 	// Create a session for this client
 	g.sessions.Create(params.ClientInfo)
 
+	caps := Capabilities{
+		Tools: &ToolsCapability{
+			ListChanged: true,
+		},
+	}
+
+	// Advertise Prompts and Resources if registry is available
+	if g.promptProvider() != nil {
+		caps.Prompts = &PromptsCapability{
+			ListChanged: true,
+		}
+		caps.Resources = &ResourcesCapability{
+			ListChanged: true,
+		}
+	}
+
 	return &InitializeResult{
 		ProtocolVersion: MCPProtocolVersion,
 		ServerInfo:      g.ServerInfo(),
-		Capabilities: Capabilities{
-			Tools: &ToolsCapability{
-				ListChanged: true,
-			},
-		},
+		Capabilities:    caps,
 	}, nil
 }
 
@@ -615,6 +628,135 @@ func (g *Gateway) CallTool(ctx context.Context, name string, arguments map[strin
 		Name:      name,
 		Arguments: arguments,
 	})
+}
+
+// promptProvider returns the PromptProvider from the router, if registered.
+func (g *Gateway) promptProvider() PromptProvider {
+	client := g.router.GetClient("registry")
+	if client == nil {
+		return nil
+	}
+	if pp, ok := client.(PromptProvider); ok {
+		return pp
+	}
+	return nil
+}
+
+// HandlePromptsList returns all active prompts as MCP Prompts.
+func (g *Gateway) HandlePromptsList() (*PromptsListResult, error) {
+	pp := g.promptProvider()
+	if pp == nil {
+		return &PromptsListResult{Prompts: []MCPPrompt{}}, nil
+	}
+
+	prompts := pp.ListPromptData()
+	result := make([]MCPPrompt, len(prompts))
+	for i, p := range prompts {
+		args := make([]PromptArgument, len(p.Arguments))
+		for j, a := range p.Arguments {
+			args[j] = PromptArgument{
+				Name:        a.Name,
+				Description: a.Description,
+				Required:    a.Required,
+			}
+		}
+		result[i] = MCPPrompt{
+			Name:        p.Name,
+			Description: p.Description,
+			Arguments:   args,
+		}
+	}
+	return &PromptsListResult{Prompts: result}, nil
+}
+
+// HandlePromptsGet returns a specific prompt with argument substitution.
+func (g *Gateway) HandlePromptsGet(params PromptsGetParams) (*PromptsGetResult, error) {
+	pp := g.promptProvider()
+	if pp == nil {
+		return nil, fmt.Errorf("registry not available")
+	}
+
+	p, err := pp.GetPromptData(params.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Perform argument substitution on content
+	content := p.Content
+	for _, arg := range p.Arguments {
+		placeholder := "{{" + arg.Name + "}}"
+		value, ok := params.Arguments[arg.Name]
+		if !ok {
+			if arg.Default != "" {
+				value = arg.Default
+			} else if arg.Required {
+				return nil, fmt.Errorf("required argument %q not provided", arg.Name)
+			}
+		}
+		content = strings.ReplaceAll(content, placeholder, value)
+	}
+
+	return &PromptsGetResult{
+		Description: p.Description,
+		Messages: []PromptMessage{
+			{
+				Role:    "user",
+				Content: NewTextContent(content),
+			},
+		},
+	}, nil
+}
+
+// HandleResourcesList returns prompts as MCP Resources.
+func (g *Gateway) HandleResourcesList() (*ResourcesListResult, error) {
+	pp := g.promptProvider()
+	if pp == nil {
+		return &ResourcesListResult{Resources: []MCPResource{}}, nil
+	}
+
+	prompts := pp.ListPromptData()
+	resources := make([]MCPResource, len(prompts))
+	for i, p := range prompts {
+		resources[i] = MCPResource{
+			URI:         "prompt://" + p.Name,
+			Name:        p.Name,
+			Description: p.Description,
+			MimeType:    "text/plain",
+		}
+	}
+	return &ResourcesListResult{Resources: resources}, nil
+}
+
+// HandleResourcesRead returns the content of a prompt resource.
+func (g *Gateway) HandleResourcesRead(params ResourcesReadParams) (*ResourcesReadResult, error) {
+	pp := g.promptProvider()
+	if pp == nil {
+		return nil, fmt.Errorf("registry not available")
+	}
+
+	// Parse prompt:// URI
+	name := strings.TrimPrefix(params.URI, "prompt://")
+	if name == params.URI {
+		return nil, fmt.Errorf("unsupported URI scheme: %s", params.URI)
+	}
+	if name == "" {
+		return nil, fmt.Errorf("empty prompt name in URI: %s", params.URI)
+	}
+
+	p, err := pp.GetPromptData(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ResourcesReadResult{
+		Contents: []ResourceContents{
+			{
+				URI:      params.URI,
+				MimeType: "text/plain",
+				Text:     p.Content,
+			},
+		},
+	}, nil
 }
 
 // RefreshAllTools refreshes tools from all registered MCP servers.
