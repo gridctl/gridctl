@@ -322,18 +322,18 @@ func TestServer_ServerInfo(t *testing.T) {
 	}
 }
 
-func TestServer_CallTool_Stub(t *testing.T) {
+func TestServer_CallTool_NoToolCaller(t *testing.T) {
 	srv, _ := newTestServer(t)
 
 	result, err := srv.CallTool(context.Background(), "any-skill", map[string]any{"key": "value"})
-	if result != nil {
-		t.Error("expected nil result from stub")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if err == nil {
-		t.Fatal("expected error from stub")
+	if result == nil {
+		t.Fatal("expected non-nil result")
 	}
-	if err.Error() != "skill execution not yet implemented" {
-		t.Errorf("error = %q, want %q", err.Error(), "skill execution not yet implemented")
+	if !result.IsError {
+		t.Error("expected error result when toolCaller is nil")
 	}
 }
 

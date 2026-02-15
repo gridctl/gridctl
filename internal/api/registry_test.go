@@ -922,3 +922,114 @@ func TestHandleRegistry_ProgressiveDisclosure(t *testing.T) {
 		t.Errorf("expected %d tools after creating skill, got %d", initialToolCount+1, len(toolsAfter.Tools))
 	}
 }
+
+// --- Skills: test run ---
+
+func TestHandleRegistry_SkillTest(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+
+	// Create an active skill
+	sk := &registry.Skill{
+		Name:  "test-skill",
+		Steps: []registry.Step{{Tool: "some-tool"}},
+		State: registry.StateActive,
+	}
+	if err := regServer.Store().SaveSkill(sk); err != nil {
+		t.Fatalf("failed to seed skill: %v", err)
+	}
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/test-skill/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result mcp.ToolCallResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	// The gateway is the toolCaller here; since no real servers are registered,
+	// it should return a result (either error or default behavior)
+}
+
+func TestHandleRegistry_SkillTest_WithArguments(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+
+	sk := &registry.Skill{
+		Name:  "arg-skill",
+		Steps: []registry.Step{{Tool: "some-tool", Arguments: map[string]string{"key": "{{input.val}}"}}},
+		Input: []registry.Argument{{Name: "val", Description: "A value", Required: true}},
+		State: registry.StateActive,
+	}
+	if err := regServer.Store().SaveSkill(sk); err != nil {
+		t.Fatalf("failed to seed skill: %v", err)
+	}
+
+	handler := srv.Handler()
+	body := `{"val": "hello"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/arg-skill/test", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result mcp.ToolCallResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+}
+
+func TestHandleRegistry_SkillTest_SkillNotFound(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/nonexistent/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	// CallTool returns an IsError ToolCallResult for not-found skills (not an HTTP error)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result mcp.ToolCallResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError true for nonexistent skill")
+	}
+}
+
+func TestHandleRegistry_SkillTest_MethodNotAllowed(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "test-skill", registry.StateActive)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/test-skill/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegistry_SkillTest_InvalidJSON(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "test-skill", registry.StateActive)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/test-skill/test", strings.NewReader("{invalid"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}

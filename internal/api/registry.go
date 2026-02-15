@@ -230,6 +230,15 @@ func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if action == "test" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handleRegistrySkillTest(w, r, name)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		sk, err := s.registryServer.Store().GetSkill(name)
@@ -290,6 +299,29 @@ func (s *Server) handleRegistrySkillStateChange(w http.ResponseWriter, name, act
 	}
 	s.refreshRegistryRouter()
 	writeJSON(w, sk)
+}
+
+// handleRegistrySkillTest executes a skill and returns the result.
+// POST /api/registry/skills/{name}/test
+func (s *Server) handleRegistrySkillTest(w http.ResponseWriter, r *http.Request, name string) {
+	var args map[string]any
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&args); err != nil && err.Error() != "EOF" {
+			writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if args == nil {
+		args = make(map[string]any)
+	}
+
+	result, err := s.registryServer.CallTool(r.Context(), name, args)
+	if err != nil {
+		writeJSONError(w, "Execution error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, result)
 }
 
 // refreshRegistryRouter refreshes the registry server's tools and re-registers
