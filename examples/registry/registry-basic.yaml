@@ -1,0 +1,38 @@
+# Registry Basic Example
+#
+# Demonstrates prompts and skills with a single MCP server. The registry
+# stores reusable prompt templates and multi-step skill chains as YAML
+# files in ~/.gridctl/registry/. Items are NOT declared in stack YAML —
+# they are managed via the REST API or Web UI.
+#
+# Prerequisites:
+#   Run `make mock-servers` from the project root to build the mock server.
+#
+# Usage:
+#   gridctl deploy examples/registry/registry-basic.yaml
+#
+# After deploying, copy pre-made items into the registry:
+#   mkdir -p ~/.gridctl/registry/prompts ~/.gridctl/registry/skills
+#   cp examples/registry/items/prompts/*.yaml ~/.gridctl/registry/prompts/
+#   cp examples/registry/items/skills/echo-and-time.yaml ~/.gridctl/registry/skills/
+#   cp examples/registry/items/skills/add-and-echo.yaml ~/.gridctl/registry/skills/
+#
+# Then activate and test:
+#   curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/activate
+#   curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/test \
+#     -H 'Content-Type: application/json' \
+#     -d '{"message": "hello world"}'
+
+version: "1"
+name: registry-basic
+
+network:
+  name: registry-basic-net
+  driver: bridge
+
+mcp-servers:
+
+  # Local process MCP server (stdio transport, no Docker required)
+  # Provides: echo, add, get_time tools
+  - name: local-tools
+    command: ["../_mock-servers/local-stdio-server/mock-stdio-server"]
