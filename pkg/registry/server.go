@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
@@ -78,10 +79,43 @@ func (s *Server) Tools() []mcp.Tool {
 	return s.tools
 }
 
-// CallTool looks up a skill by name and executes the tool chain.
-// Stub: full execution will be built in a future prompt.
+// CallTool looks up a skill by name and executes its tool chain.
 func (s *Server) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
-	return nil, fmt.Errorf("skill execution not yet implemented")
+	if s.toolCaller == nil {
+		return &mcp.ToolCallResult{
+			Content: []mcp.Content{mcp.NewTextContent("skill execution not available: no tool caller configured")},
+			IsError: true,
+		}, nil
+	}
+
+	skill, err := s.store.GetSkill(name)
+	if err != nil {
+		return &mcp.ToolCallResult{
+			Content: []mcp.Content{mcp.NewTextContent(fmt.Sprintf("skill not found: %s", name))},
+			IsError: true,
+		}, nil
+	}
+
+	if skill.State != StateActive {
+		return &mcp.ToolCallResult{
+			Content: []mcp.Content{mcp.NewTextContent(fmt.Sprintf("skill is not active: %s (state: %s)", name, skill.State))},
+			IsError: true,
+		}, nil
+	}
+
+	// Parse timeout
+	timeout := 30 * time.Second
+	if skill.Timeout != "" {
+		parsed, err := time.ParseDuration(skill.Timeout)
+		if err == nil {
+			timeout = parsed
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	return s.executeSkill(ctx, skill, arguments)
 }
 
 // IsInitialized returns whether the server has been initialized.
