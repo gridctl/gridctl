@@ -1,0 +1,28 @@
+name: code-review
+description: Structured code review prompt with language and focus area
+content: |
+  Review the following {{language}} code. Focus on {{focus_area}}.
+
+  Provide feedback organized as:
+  1. Issues found (bugs, security, performance)
+  2. Suggestions for improvement
+  3. What the code does well
+
+  ```
+  {{code}}
+  ```
+arguments:
+  - name: language
+    description: Programming language of the code
+    required: true
+  - name: focus_area
+    description: Area to focus the review on
+    required: false
+    default: correctness, readability, and best practices
+  - name: code
+    description: The code to review
+    required: true
+tags:
+  - development
+  - review
+state: draft
