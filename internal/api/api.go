@@ -160,6 +160,9 @@ func (s *Server) Handler() http.Handler {
 	// Agent control endpoints (pattern: /api/agents/{name}/action)
 	mux.HandleFunc("/api/agents/", s.handleAgentAction)
 
+	// Registry endpoints (always registered, even when registry is empty)
+	mux.HandleFunc("/api/registry/", s.handleRegistry)
+
 	// Static files (UI) - served at root
 	if s.staticFS != nil {
 		fileServer := http.FileServer(http.FS(s.staticFS))
@@ -185,12 +188,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := struct {
-		Gateway    ServerInfo        `json:"gateway"`
-		MCPServers []MCPServerStatus `json:"mcp-servers"`
-		Agents     []AgentStatus     `json:"agents"`
-		Resources  []ResourceStatus  `json:"resources"`
-		Sessions   int               `json:"sessions"`
-		A2ATasks   *int              `json:"a2a_tasks,omitempty"`
+		Gateway    ServerInfo                `json:"gateway"`
+		MCPServers []MCPServerStatus         `json:"mcp-servers"`
+		Agents     []AgentStatus             `json:"agents"`
+		Resources  []ResourceStatus          `json:"resources"`
+		Sessions   int                       `json:"sessions"`
+		A2ATasks   *int                      `json:"a2a_tasks,omitempty"`
+		Registry   *registry.RegistryStatus  `json:"registry,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:    s.gateway.ServerInfo().Name,
@@ -204,6 +208,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if s.a2aGateway != nil {
 		count := s.a2aGateway.TaskCount()
 		status.A2ATasks = &count
+	}
+	if s.registryServer != nil && s.registryServer.HasContent() {
+		regStatus := s.registryServer.Store().Status()
+		status.Registry = &regStatus
 	}
 
 	writeJSON(w, status)
