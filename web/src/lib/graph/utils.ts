@@ -20,6 +20,8 @@ export function getNodeDimensions(node: Node): { width: number; height: number }
       return { width: LAYOUT.AGENT_WIDTH, height: LAYOUT.AGENT_HEIGHT };
     case 'client':
       return { width: LAYOUT.CLIENT_WIDTH, height: LAYOUT.CLIENT_HEIGHT };
+    case 'registry':
+      return { width: LAYOUT.REGISTRY_WIDTH, height: LAYOUT.REGISTRY_HEIGHT };
     default:
       return { width: LAYOUT.NODE_WIDTH, height: LAYOUT.NODE_HEIGHT };
   }
