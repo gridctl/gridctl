@@ -631,3 +631,395 @@ func TestHandler_Notification_NoID(t *testing.T) {
 		t.Errorf("expected 200 for notification, got %d", w.Code)
 	}
 }
+
+// setupTestHandlerWithRegistry creates a Handler with a gateway that has a
+// registry PromptProvider registered. Returns the handler, gateway, and
+// a function to update the prompts.
+func setupTestHandlerWithRegistry(t *testing.T) (*Handler, *Gateway, *testPromptProvider) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Set up regular MCP server
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "echo", Description: "Echo tool"},
+	})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{
+				Content: []Content{NewTextContent("result for " + name)},
+			}, nil
+		},
+	).AnyTimes()
+	g.Router().AddClient(client)
+
+	// Set up registry client with PromptProvider
+	registryMock := setupMockAgentClient(ctrl, "registry", nil)
+	pp := &testPromptProvider{
+		AgentClient: registryMock,
+		prompts: []PromptData{
+			{
+				Name:        "code-review",
+				Description: "Review code for issues",
+				Content:     "Review the following {{language}} code:\n{{code}}",
+				Arguments: []PromptArgumentData{
+					{Name: "language", Description: "Programming language", Required: true},
+					{Name: "code", Description: "Code to review", Required: true},
+				},
+			},
+			{
+				Name:        "summarize",
+				Description: "Summarize content",
+				Content:     "Summarize this {{format}} content: {{text}}",
+				Arguments: []PromptArgumentData{
+					{Name: "format", Description: "Output format", Default: "brief"},
+					{Name: "text", Description: "Text to summarize", Required: true},
+				},
+			},
+		},
+	}
+	g.Router().AddClient(pp)
+	g.Router().RefreshTools()
+
+	h := NewHandler(g)
+	return h, g, pp
+}
+
+// testPromptProvider wraps a MockAgentClient to also implement PromptProvider.
+type testPromptProvider struct {
+	AgentClient
+	prompts []PromptData
+}
+
+func (p *testPromptProvider) ListPromptData() []PromptData {
+	return p.prompts
+}
+
+func (p *testPromptProvider) GetPromptData(name string) (*PromptData, error) {
+	for _, pd := range p.prompts {
+		if pd.Name == name {
+			return &pd, nil
+		}
+	}
+	return nil, fmt.Errorf("prompt %q: not found", name)
+}
+
+func TestHandler_PromptsList_Empty(t *testing.T) {
+	h, _ := setupTestHandler(t)
+
+	body := makeJSONRPC(t, 1, "prompts/list", nil)
+	w := postMCP(t, h, body)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result PromptsListResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if result.Prompts == nil {
+		t.Fatal("expected non-nil prompts slice")
+	}
+	if len(result.Prompts) != 0 {
+		t.Errorf("expected 0 prompts, got %d", len(result.Prompts))
+	}
+}
+
+func TestHandler_PromptsList_WithPrompts(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := makeJSONRPC(t, 1, "prompts/list", nil)
+	w := postMCP(t, h, body)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result PromptsListResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if len(result.Prompts) != 2 {
+		t.Fatalf("expected 2 prompts, got %d", len(result.Prompts))
+	}
+
+	// Verify prompt names exist
+	names := make(map[string]bool)
+	for _, p := range result.Prompts {
+		names[p.Name] = true
+	}
+	if !names["code-review"] {
+		t.Error("expected 'code-review' prompt")
+	}
+	if !names["summarize"] {
+		t.Error("expected 'summarize' prompt")
+	}
+}
+
+func TestHandler_PromptsGet(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := makeJSONRPC(t, 1, "prompts/get", map[string]any{
+		"name":      "code-review",
+		"arguments": map[string]any{"language": "Go", "code": "func main() {}"},
+	})
+	w := postMCP(t, h, body)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result PromptsGetResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if result.Description != "Review code for issues" {
+		t.Errorf("expected description 'Review code for issues', got %q", result.Description)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result.Messages))
+	}
+	if result.Messages[0].Role != "user" {
+		t.Errorf("expected role 'user', got %q", result.Messages[0].Role)
+	}
+	expected := "Review the following Go code:\nfunc main() {}"
+	if result.Messages[0].Content.Text != expected {
+		t.Errorf("expected %q, got %q", expected, result.Messages[0].Content.Text)
+	}
+}
+
+func TestHandler_PromptsGet_DefaultArguments(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	// Only provide "text" — "format" should use default "brief"
+	body := makeJSONRPC(t, 1, "prompts/get", map[string]any{
+		"name":      "summarize",
+		"arguments": map[string]any{"text": "some long text"},
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result PromptsGetResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	expected := "Summarize this brief content: some long text"
+	if result.Messages[0].Content.Text != expected {
+		t.Errorf("expected %q, got %q", expected, result.Messages[0].Content.Text)
+	}
+}
+
+func TestHandler_PromptsGet_NotFound(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := makeJSONRPC(t, 1, "prompts/get", map[string]any{
+		"name": "nonexistent",
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for nonexistent prompt")
+	}
+	if resp.Error.Code != jsonrpc.InternalError {
+		t.Errorf("expected InternalError code %d, got %d", jsonrpc.InternalError, resp.Error.Code)
+	}
+}
+
+func TestHandler_PromptsGet_InvalidParams(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":"not-an-object"}`
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for invalid params")
+	}
+	if resp.Error.Code != jsonrpc.InvalidParams {
+		t.Errorf("expected InvalidParams code %d, got %d", jsonrpc.InvalidParams, resp.Error.Code)
+	}
+}
+
+func TestHandler_ResourcesList(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := makeJSONRPC(t, 1, "resources/list", nil)
+	w := postMCP(t, h, body)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result ResourcesListResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if len(result.Resources) != 2 {
+		t.Fatalf("expected 2 resources, got %d", len(result.Resources))
+	}
+
+	for _, r := range result.Resources {
+		if r.MimeType != "text/plain" {
+			t.Errorf("expected mimeType 'text/plain', got %q", r.MimeType)
+		}
+		if !strings.HasPrefix(r.URI, "prompt://") {
+			t.Errorf("expected URI to start with 'prompt://', got %q", r.URI)
+		}
+	}
+}
+
+func TestHandler_ResourcesRead(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := makeJSONRPC(t, 1, "resources/read", map[string]any{
+		"uri": "prompt://code-review",
+	})
+	w := postMCP(t, h, body)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result ResourcesReadResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if len(result.Contents) != 1 {
+		t.Fatalf("expected 1 content item, got %d", len(result.Contents))
+	}
+	if result.Contents[0].URI != "prompt://code-review" {
+		t.Errorf("expected URI 'prompt://code-review', got %q", result.Contents[0].URI)
+	}
+	if result.Contents[0].MimeType != "text/plain" {
+		t.Errorf("expected mimeType 'text/plain', got %q", result.Contents[0].MimeType)
+	}
+	if result.Contents[0].Text == "" {
+		t.Error("expected non-empty content text")
+	}
+}
+
+func TestHandler_ResourcesRead_InvalidURI(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := makeJSONRPC(t, 1, "resources/read", map[string]any{
+		"uri": "https://example.com/foo",
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for non-prompt:// URI")
+	}
+	if resp.Error.Code != jsonrpc.InternalError {
+		t.Errorf("expected InternalError code %d, got %d", jsonrpc.InternalError, resp.Error.Code)
+	}
+	if !strings.Contains(resp.Error.Message, "unsupported URI scheme") {
+		t.Errorf("expected 'unsupported URI scheme' in error message, got %q", resp.Error.Message)
+	}
+}
+
+func TestHandler_ResourcesRead_InvalidParams(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"resources/read","params":"not-an-object"}`
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for invalid params")
+	}
+	if resp.Error.Code != jsonrpc.InvalidParams {
+		t.Errorf("expected InvalidParams code %d, got %d", jsonrpc.InvalidParams, resp.Error.Code)
+	}
+}
+
+func TestHandler_ResourcesList_Empty(t *testing.T) {
+	h, _ := setupTestHandler(t)
+
+	body := makeJSONRPC(t, 1, "resources/list", nil)
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result ResourcesListResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if result.Resources == nil {
+		t.Fatal("expected non-nil resources slice")
+	}
+	if len(result.Resources) != 0 {
+		t.Errorf("expected 0 resources without registry, got %d", len(result.Resources))
+	}
+}
+
+func TestHandler_Initialize_WithRegistry_Capabilities(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := makeJSONRPC(t, 1, "initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"clientInfo":      map[string]any{"name": "test", "version": "1.0"},
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result InitializeResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if result.Capabilities.Tools == nil {
+		t.Error("expected Tools capability")
+	}
+	if result.Capabilities.Prompts == nil {
+		t.Error("expected Prompts capability when registry is present")
+	}
+	if result.Capabilities.Resources == nil {
+		t.Error("expected Resources capability when registry is present")
+	}
+}
