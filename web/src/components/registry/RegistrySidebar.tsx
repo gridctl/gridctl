@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Library,
   FileText,
@@ -6,6 +6,9 @@ import {
   BarChart3,
   ChevronDown,
   ChevronRight,
+  Plus,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useRegistryStore } from '../../stores/useRegistryStore';
@@ -13,7 +16,13 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { PopoutButton } from '../ui/PopoutButton';
-import { X } from 'lucide-react';
+import { PromptEditor } from './PromptEditor';
+import { SkillEditor } from './SkillEditor';
+import {
+  fetchRegistryStatus,
+  fetchRegistryPrompts,
+  fetchRegistrySkills,
+} from '../../lib/api';
 import type { Prompt, Skill, ItemState, RegistryStatus } from '../../types';
 
 type Tab = 'prompts' | 'skills' | 'status';
@@ -34,6 +43,12 @@ export function RegistrySidebar() {
   const selectNode = useStackStore((s) => s.selectNode);
   const { openDetachedWindow } = useWindowManager();
 
+  // Modal state
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<Prompt | undefined>();
+  const [showSkillEditor, setShowSkillEditor] = useState(false);
+  const [editingSkill, setEditingSkill] = useState<Skill | undefined>();
+
   const handleClose = () => {
     setSidebarOpen(false);
     selectNode(null);
@@ -42,6 +57,31 @@ export function RegistrySidebar() {
   const handlePopout = () => {
     openDetachedWindow('sidebar', `node=${encodeURIComponent('Registry')}`);
   };
+
+  const refreshRegistry = useCallback(async () => {
+    try {
+      const [regStatus, regPrompts, regSkills] = await Promise.all([
+        fetchRegistryStatus(),
+        fetchRegistryPrompts(),
+        fetchRegistrySkills(),
+      ]);
+      useRegistryStore.getState().setStatus(regStatus);
+      useRegistryStore.getState().setPrompts(regPrompts);
+      useRegistryStore.getState().setSkills(regSkills);
+    } catch {
+      // Next polling cycle will pick up changes
+    }
+  }, []);
+
+  const handleEditPrompt = useCallback((prompt: Prompt) => {
+    setEditingPrompt(prompt);
+    setShowPromptEditor(true);
+  }, []);
+
+  const handleEditSkill = useCallback((skill: Skill) => {
+    setEditingSkill(skill);
+    setShowSkillEditor(true);
+  }, []);
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden">
@@ -92,19 +132,70 @@ export function RegistrySidebar() {
         ))}
       </div>
 
+      {/* Item count + New button */}
+      {activeTab !== 'status' && (
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border/20">
+          <span className="text-[10px] text-text-muted">
+            {activeTab === 'prompts'
+              ? `${(prompts ?? []).length} items`
+              : `${(skills ?? []).length} items`}
+          </span>
+          <button
+            onClick={() =>
+              activeTab === 'prompts'
+                ? setShowPromptEditor(true)
+                : setShowSkillEditor(true)
+            }
+            className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+          >
+            <Plus size={10} /> New
+          </button>
+        </div>
+      )}
+
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto scrollbar-dark">
-        {activeTab === 'prompts' && <PromptsTab prompts={prompts ?? []} />}
-        {activeTab === 'skills' && <SkillsTab skills={skills ?? []} />}
+        {activeTab === 'prompts' && (
+          <PromptsTab prompts={prompts ?? []} onEdit={handleEditPrompt} />
+        )}
+        {activeTab === 'skills' && (
+          <SkillsTab skills={skills ?? []} onEdit={handleEditSkill} />
+        )}
         {activeTab === 'status' && <StatusTab status={status} />}
       </div>
+
+      {/* Modals */}
+      <PromptEditor
+        isOpen={showPromptEditor}
+        onClose={() => {
+          setShowPromptEditor(false);
+          setEditingPrompt(undefined);
+        }}
+        onSaved={refreshRegistry}
+        prompt={editingPrompt}
+      />
+      <SkillEditor
+        isOpen={showSkillEditor}
+        onClose={() => {
+          setShowSkillEditor(false);
+          setEditingSkill(undefined);
+        }}
+        onSaved={refreshRegistry}
+        skill={editingSkill}
+      />
     </div>
   );
 }
 
 // --- Prompts Tab ---
 
-function PromptsTab({ prompts }: { prompts: Prompt[] }) {
+function PromptsTab({
+  prompts,
+  onEdit,
+}: {
+  prompts: Prompt[];
+  onEdit: (prompt: Prompt) => void;
+}) {
   if ((prompts ?? []).length === 0) {
     return (
       <div className="p-6 text-center">
@@ -117,13 +208,19 @@ function PromptsTab({ prompts }: { prompts: Prompt[] }) {
   return (
     <div className="p-2 space-y-1">
       {(prompts ?? []).map((prompt) => (
-        <PromptItem key={prompt.name} prompt={prompt} />
+        <PromptItem key={prompt.name} prompt={prompt} onEdit={onEdit} />
       ))}
     </div>
   );
 }
 
-function PromptItem({ prompt }: { prompt: Prompt }) {
+function PromptItem({
+  prompt,
+  onEdit,
+}: {
+  prompt: Prompt;
+  onEdit: (prompt: Prompt) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -184,6 +281,16 @@ function PromptItem({ prompt }: { prompt: Prompt }) {
               ))}
             </div>
           )}
+          {/* Edit button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(prompt);
+            }}
+            className="flex items-center gap-1 mt-3 text-[10px] text-text-muted hover:text-primary transition-colors"
+          >
+            <Pencil size={10} /> Edit
+          </button>
         </div>
       )}
     </div>
@@ -192,7 +299,13 @@ function PromptItem({ prompt }: { prompt: Prompt }) {
 
 // --- Skills Tab ---
 
-function SkillsTab({ skills }: { skills: Skill[] }) {
+function SkillsTab({
+  skills,
+  onEdit,
+}: {
+  skills: Skill[];
+  onEdit: (skill: Skill) => void;
+}) {
   if ((skills ?? []).length === 0) {
     return (
       <div className="p-6 text-center">
@@ -205,13 +318,19 @@ function SkillsTab({ skills }: { skills: Skill[] }) {
   return (
     <div className="p-2 space-y-1">
       {(skills ?? []).map((skill) => (
-        <SkillItem key={skill.name} skill={skill} />
+        <SkillItem key={skill.name} skill={skill} onEdit={onEdit} />
       ))}
     </div>
   );
 }
 
-function SkillItem({ skill }: { skill: Skill }) {
+function SkillItem({
+  skill,
+  onEdit,
+}: {
+  skill: Skill;
+  onEdit: (skill: Skill) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -286,6 +405,17 @@ function SkillItem({ skill }: { skill: Skill }) {
               ))}
             </div>
           )}
+
+          {/* Edit button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(skill);
+            }}
+            className="flex items-center gap-1 mt-3 text-[10px] text-text-muted hover:text-primary transition-colors"
+          >
+            <Pencil size={10} /> Edit
+          </button>
         </div>
       )}
     </div>
