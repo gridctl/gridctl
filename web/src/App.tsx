@@ -53,6 +53,7 @@ import { useAuthStore } from './stores/useAuthStore';
 import { usePolling } from './hooks/usePolling';
 import { useSSEShutdown } from './hooks/useSSEShutdown';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { ToastContainer } from './components/ui/Toast';
 import { cn } from './lib/cn';
 
 // Constants for panel sizing
@@ -258,6 +259,9 @@ function AppContent() {
 
       {/* Row 4: Status Bar */}
       <StatusBar />
+
+      {/* Toast notifications */}
+      <ToastContainer />
     </div>
   );
 }
