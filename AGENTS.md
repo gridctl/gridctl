@@ -85,8 +85,11 @@ gridctl/
 │   ├── embed.go          # Embedded web assets
 │   └── embed_stub.go     # Build stub for embed
 ├── internal/
-│   ├── server/           # Legacy HTTP server
-│   └── api/              # API server (MCP + REST)
+│   ├── server/           # Legacy HTTP server (SPA only)
+│   └── api/              # API server (MCP + REST + Registry)
+│       ├── api.go        # Server setup and route registration
+│       ├── auth.go       # Gateway authentication middleware
+│       └── registry.go   # Registry CRUD endpoints
 ├── pkg/
 │   ├── adapter/          # Protocol adapters
 │   │   └── a2a_client.go # A2A client adapter
@@ -154,11 +157,16 @@ gridctl/
 │   │   ├── gateway.go    # Protocol bridge logic
 │   │   ├── handler.go    # HTTP handlers
 │   │   └── expand.go     # Environment variable expansion
-│   └── a2a/              # A2A (Agent-to-Agent) protocol
-│       ├── types.go      # A2A protocol types (AgentCard, Task, Message)
-│       ├── client.go     # HTTP client for remote A2A agents
-│       ├── handler.go    # HTTP handler for A2A endpoints
-│       └── gateway.go    # A2A gateway (local + remote agents)
+│   ├── a2a/              # A2A (Agent-to-Agent) protocol
+│   │   ├── types.go      # A2A protocol types (AgentCard, Task, Message)
+│   │   ├── client.go     # HTTP client for remote A2A agents
+│   │   ├── handler.go    # HTTP handler for A2A endpoints
+│   │   └── gateway.go    # A2A gateway (local + remote agents)
+│   └── registry/         # MCP registry (prompts + skills)
+│       ├── types.go      # Prompt, Skill, validation types
+│       ├── store.go      # File-based persistent store
+│       ├── executor.go   # Skill execution engine
+│       └── server.go     # MCP server interface for registry
 ├── web/                  # React frontend (Vite)
 ├── examples/             # Example topologies
 │   ├── getting-started/  # Basic examples
@@ -325,7 +333,8 @@ When `gridctl deploy` runs, it:
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
 - **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/health`, `/ready`
 - **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
-- **A2A:** `/.well-known/agent.json`, `/a2a/{agent}` (GET card, POST JSON-RPC)
+- **A2A:** `/.well-known/agent.json`, `/a2a/` (list agents), `/a2a/{agent}` (GET card, POST JSON-RPC)
+- **Registry:** `/api/registry/status`, `/api/registry/prompts[/{name}]`, `/api/registry/skills[/{name}]`
 - **Web UI:** `GET /`
 
 **Logs API:**
@@ -344,6 +353,20 @@ When `gridctl deploy` runs, it:
 - `POST /api/agents/{name}/restart` - Restart an agent container
 - `POST /api/agents/{name}/stop` - Stop an agent container
 
+**Registry API:**
+- `GET /api/registry/status` - Returns prompt and skill counts
+- `GET /api/registry/prompts` - List all prompts
+- `POST /api/registry/prompts` - Create a prompt
+- `GET/PUT/DELETE /api/registry/prompts/{name}` - CRUD for individual prompts
+- `POST /api/registry/prompts/{name}/activate` - Activate a prompt
+- `POST /api/registry/prompts/{name}/disable` - Disable a prompt
+- `GET /api/registry/skills` - List all skills
+- `POST /api/registry/skills` - Create a skill
+- `GET/PUT/DELETE /api/registry/skills/{name}` - CRUD for individual skills
+- `POST /api/registry/skills/{name}/activate` - Activate a skill
+- `POST /api/registry/skills/{name}/disable` - Disable a skill
+- `POST /api/registry/skills/{name}/test` - Execute a skill with test arguments
+
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
 
@@ -358,6 +381,14 @@ Gridctl supports two network modes:
 ```yaml
 version: "1"
 name: my-stack
+
+gateway:                              # Optional: gateway-level configuration
+  allowed_origins:                    # CORS origins (defaults to ["*"])
+    - "http://localhost:3000"
+  auth:                               # Gateway authentication
+    type: bearer                      # "bearer" or "api_key"
+    token: "${GATEWAY_TOKEN}"         # Expected token (supports env var expansion)
+    # header: "X-API-Key"            # Custom header for api_key type
 
 network:                              # Optional: single network
   name: my-network                    # Defaults to {name}-net
