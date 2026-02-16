@@ -52,6 +52,7 @@ export function RegistrySidebar() {
   const status = useRegistryStore((s) => s.status);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const sidebarDetached = useUIStore((s) => s.sidebarDetached);
+  const editorDetached = useUIStore((s) => s.editorDetached);
   const selectNode = useStackStore((s) => s.selectNode);
   const { openDetachedWindow } = useWindowManager();
 
@@ -274,6 +275,15 @@ export function RegistrySidebar() {
         }}
         onSaved={refreshRegistry}
         prompt={editingPrompt}
+        popoutDisabled={editorDetached}
+        onPopout={() => {
+          const params = editingPrompt
+            ? `type=prompt&name=${encodeURIComponent(editingPrompt.name)}`
+            : 'type=prompt';
+          openDetachedWindow('editor', params);
+          setShowPromptEditor(false);
+          setEditingPrompt(undefined);
+        }}
       />
       <SkillEditor
         isOpen={showSkillEditor}
@@ -283,6 +293,15 @@ export function RegistrySidebar() {
         }}
         onSaved={refreshRegistry}
         skill={editingSkill}
+        popoutDisabled={editorDetached}
+        onPopout={() => {
+          const params = editingSkill
+            ? `type=skill&name=${encodeURIComponent(editingSkill.name)}`
+            : 'type=skill';
+          openDetachedWindow('editor', params);
+          setShowSkillEditor(false);
+          setEditingSkill(undefined);
+        }}
       />
       {testingSkill && (
         <SkillTestRunner
