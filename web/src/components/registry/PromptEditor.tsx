@@ -11,6 +11,14 @@ interface PromptEditorProps {
   onClose: () => void;
   onSaved: () => void;
   prompt?: Prompt;
+  /** Callback to pop editor into a new window */
+  onPopout?: () => void;
+  /** Disable popout button */
+  popoutDisabled?: boolean;
+  /** Force modal size (for detached mode) */
+  size?: 'default' | 'wide' | 'full';
+  /** Flush mode: panel fills viewport (for detached windows) */
+  flush?: boolean;
 }
 
 // Internal representation with stable IDs for React keys
@@ -21,7 +29,7 @@ interface ArgEntry {
   required: boolean;
 }
 
-export function PromptEditor({ isOpen, onClose, onSaved, prompt }: PromptEditorProps) {
+export function PromptEditor({ isOpen, onClose, onSaved, prompt, onPopout, popoutDisabled, size, flush }: PromptEditorProps) {
   const isEditing = !!prompt;
   const idCounter = useRef(0);
 
@@ -121,7 +129,7 @@ export function PromptEditor({ isOpen, onClose, onSaved, prompt }: PromptEditorP
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={isEditing ? 'Edit Prompt' : 'New Prompt'}>
+    <Modal isOpen={isOpen} onClose={onClose} title={isEditing ? 'Edit Prompt' : 'New Prompt'} expandable onPopout={onPopout} popoutDisabled={popoutDisabled} size={size} flush={flush}>
       <div className="space-y-4">
         {/* Error */}
         {error && (

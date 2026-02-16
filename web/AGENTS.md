@@ -267,6 +267,7 @@ The UI supports detaching panels into separate browser windows for multi-monitor
 ### Routes
 - `/logs` - Detached logs viewer with node selector
 - `/sidebar` - Detached sidebar with node selector
+- `/editor` - Detached registry editor (prompt or skill)
 
 ### Components
 - **PopoutButton** (`src/components/ui/PopoutButton.tsx`): Pop-out icon button with hover glow effect
@@ -274,7 +275,7 @@ The UI supports detaching panels into separate browser windows for multi-monitor
 - **useBroadcastChannel** (`src/hooks/useBroadcastChannel.ts`): Cross-window state sync
 
 ### State Management
-- `logsDetached` and `sidebarDetached` in `useUIStore` track detached state
+- `logsDetached`, `sidebarDetached`, and `editorDetached` in `useUIStore` track detached state
 - BroadcastChannel API enables real-time sync between windows
 - Windows notify main app on open/close for UI state updates
 
@@ -283,6 +284,7 @@ The UI supports detaching panels into separate browser windows for multi-monitor
 |--------|------|----------|
 | Logs | 900x500 | Node selector, pause/resume, fullscreen |
 | Sidebar | 420x700 | Node selector, collapsible sections |
+| Editor | 720x750 | Prompt/skill editing, auto-close on save |
 
 ### Usage Pattern
 ```tsx
@@ -293,6 +295,12 @@ openDetachedWindow('logs', `agent=${encodeURIComponent(agentName)}`);
 
 // Open sidebar for specific node
 openDetachedWindow('sidebar', `node=${encodeURIComponent(nodeName)}`);
+
+// Open editor for existing prompt
+openDetachedWindow('editor', `type=prompt&name=${encodeURIComponent(promptName)}`);
+
+// Open editor for new skill
+openDetachedWindow('editor', 'type=skill');
 ```
 
 ## 12. Structured Log Viewer
@@ -388,8 +396,23 @@ The registry provides a CRUD interface for managing MCP prompts and skills throu
 ### Components (`src/components/registry/`)
 
 - **RegistrySidebar**: Main registry panel with tabs for Prompts and Skills, including create/edit/delete/activate/disable actions
-- **PromptEditor**: Modal form for creating and editing prompts (name, description, arguments)
-- **SkillEditor**: Modal form for creating and editing skills (name, description, multi-step tool pipelines with arguments, input schemas)
+- **PromptEditor**: Modal form for creating and editing prompts (name, description, arguments). Supports expand toggle and popout to detached window
+- **SkillEditor**: Modal form for creating and editing skills (name, description, multi-step tool pipelines with arguments, input schemas). Supports expand toggle and popout to detached window
+- **DetachedEditorPage** (`src/pages/DetachedEditorPage.tsx`): Standalone editor page for popout window. Loads prompt/skill by name from API and renders in wide modal format
+
+### Editor Modal Features
+
+The `Modal` component supports three modes for editor flexibility:
+- **Default**: Standard `max-w-lg` (512px) modal
+- **Expanded**: `max-w-3xl` (768px) via expand toggle button in header
+- **Wide (detached)**: `max-w-5xl` (1024px) forced size for detached windows
+
+Header controls:
+- **Expand/Collapse** (Maximize2/Minimize2 icons): Toggle between default and wide sizes within the main window
+- **Popout** (ExternalLink icon): Open editor in a dedicated 720x750 detached window
+- **Close** (X icon): Close the modal
+
+Escape key behavior: Blurs the active input/textarea field first, then closes the modal on second press (prevents accidental data loss).
 
 ### Store: `useRegistryStore`
 
