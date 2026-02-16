@@ -8,6 +8,73 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- Use stable ID keys in prompt editor arguments
+- Use stable ID keys in skill editor steps and inputs
+- Clarify registry node counts with active/total format
+- Correct gateway port in multi-agent example docs
+
+### Features
+
+
+- Add registry types for prompts and skills
+- Add file-based registry store with YAML persistence
+- Add ToolCaller interface for decoupled tool execution
+- Implement ToolCaller on Gateway
+- Add registry server implementing AgentClient
+- Add registry server field and accessors to API server
+- Wire registry server into gateway build pipeline
+- Add registry REST API handlers for prompts and skills
+- Wire registry routes and enrich status endpoint
+- Add MCP prompts and resources protocol types
+- Implement PromptProvider interface on registry server
+- Add gateway handlers for prompts and resources
+- Route prompts and resources methods in HTTP handler
+- Route prompts and resources methods in SSE server
+- Add registry TypeScript types and node data
+- Add registry API client functions
+- Add registry Zustand store
+- Integrate registry polling into data fetch cycle
+- Add registry node type and layout dimensions
+- Add gateway-to-registry edge relation type
+- Add createRegistryNode with progressive disclosure
+- Add gateway-to-registry edge creation
+- Pass registry status through graph transform
+- Assign registry node to Zone 2 in layout
+- Add registry node dimensions to layout utils
+- Export registry node and edge functions
+- Include registry status in graph refresh
+- Trigger graph refresh on registry visibility change
+- Add registry graph node component
+- Register registry node type in React Flow
+- Add registry sidebar with prompts, skills, status tabs
+- Route registry node selection to RegistrySidebar
+- Add reusable modal component
+- Add toast notification system
+- Add prompt editor modal
+- Add skill editor modal with tool chain builder
+- Wire modal editors into registry sidebar
+- Add toast container to app layout
+- Implement skill CallTool with timeout and state validation
+- Add skill execution engine with template resolution
+- Add skill test run REST API endpoint
+- Add ToolCallResult types for skill test runs
+- Add testRegistrySkill API function
+- Add skill test runner modal
+- Add delete, activate/disable, and test run actions
+- Add editorDetached state to UI store
+- Add editor type to broadcast channel sync
+- Add editor window config and detach handlers
+- Add expandable, popout, and flush modes to modal
+- Add popout and expand props to prompt editor
+- Add popout and expand props to skill editor
+- Add detached editor page for popout window
+- Register /editor route for detached editor
+- Wire popout handlers for prompt and skill editors## [0.1.0-alpha.7] - 2026-02-12
+
+
+### Bug Fixes
+
+
 - Add session cap with eviction and count method
 - Add periodic session cleanup to MCP gateway
 - Add TTL-based cleanup for A2A tasks
