@@ -31,6 +31,14 @@ interface SkillEditorProps {
   onClose: () => void;
   onSaved: () => void;
   skill?: Skill;
+  /** Callback to pop editor into a new window */
+  onPopout?: () => void;
+  /** Disable popout button */
+  popoutDisabled?: boolean;
+  /** Force modal size (for detached mode) */
+  size?: 'default' | 'wide' | 'full';
+  /** Flush mode: panel fills viewport (for detached windows) */
+  flush?: boolean;
 }
 
 // Convert Record<string, string> to ArgEntry[] with stable IDs
@@ -51,7 +59,7 @@ function argsToRecord(args: ArgEntry[]): Record<string, string> {
   return result;
 }
 
-export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProps) {
+export function SkillEditor({ isOpen, onClose, onSaved, skill, onPopout, popoutDisabled, size, flush }: SkillEditorProps) {
   const isEditing = !!skill;
   const idCounter = useRef(0);
 
@@ -199,7 +207,7 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill }: SkillEditorProp
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={isEditing ? 'Edit Skill' : 'New Skill'}>
+    <Modal isOpen={isOpen} onClose={onClose} title={isEditing ? 'Edit Skill' : 'New Skill'} expandable onPopout={onPopout} popoutDisabled={popoutDisabled} size={size} flush={flush}>
       <div className="space-y-4">
         {/* Error */}
         {error && (
