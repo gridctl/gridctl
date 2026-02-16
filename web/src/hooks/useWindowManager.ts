@@ -19,6 +19,11 @@ const WINDOW_CONFIGS: Record<string, WindowConfig> = {
     height: 700,
     title: 'Gridctl - Details',
   },
+  editor: {
+    width: 720,
+    height: 750,
+    title: 'Gridctl - Editor',
+  },
 };
 
 export function useWindowManager() {
@@ -26,6 +31,7 @@ export function useWindowManager() {
 
   const setLogsDetached = useUIStore((s) => s.setLogsDetached);
   const setSidebarDetached = useUIStore((s) => s.setSidebarDetached);
+  const setEditorDetached = useUIStore((s) => s.setEditorDetached);
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
@@ -41,24 +47,28 @@ export function useWindowManager() {
         } else if (payload?.windowType === 'sidebar') {
           setSidebarDetached(true);
           setSidebarOpen(false);
+        } else if (payload?.windowType === 'editor') {
+          setEditorDetached(true);
         }
       } else if (message.type === 'WINDOW_CLOSED') {
         if (payload?.windowType === 'logs') {
           setLogsDetached(false);
         } else if (payload?.windowType === 'sidebar') {
           setSidebarDetached(false);
+        } else if (payload?.windowType === 'editor') {
+          setEditorDetached(false);
         }
         windowRefs.current.delete(payload?.windowType ?? '');
       }
     }
-  }, [setLogsDetached, setSidebarDetached, setBottomPanelOpen, setSidebarOpen]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setBottomPanelOpen, setSidebarOpen]);
 
   const { postMessage } = useBroadcastChannel({
     onMessage: handleMessage,
   });
 
   // Open a detached window
-  const openDetachedWindow = useCallback((type: 'logs' | 'sidebar', params?: string) => {
+  const openDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor', params?: string) => {
     const existingWindow = windowRefs.current.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.focus();
@@ -101,14 +111,16 @@ export function useWindowManager() {
             setLogsDetached(false);
           } else if (type === 'sidebar') {
             setSidebarDetached(false);
+          } else if (type === 'editor') {
+            setEditorDetached(false);
           }
         }
       }, 500);
     }
-  }, [setLogsDetached, setSidebarDetached]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached]);
 
   // Close a detached window
-  const closeDetachedWindow = useCallback((type: 'logs' | 'sidebar') => {
+  const closeDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor') => {
     const existingWindow = windowRefs.current.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.close();
