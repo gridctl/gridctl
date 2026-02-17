@@ -718,10 +718,10 @@ func (g *Gateway) HandleResourcesList() (*ResourcesListResult, error) {
 	resources := make([]MCPResource, len(prompts))
 	for i, p := range prompts {
 		resources[i] = MCPResource{
-			URI:         "prompt://" + p.Name,
+			URI:         "skills://registry/" + p.Name,
 			Name:        p.Name,
 			Description: p.Description,
-			MimeType:    "text/plain",
+			MimeType:    "text/markdown",
 		}
 	}
 	return &ResourcesListResult{Resources: resources}, nil
@@ -734,13 +734,17 @@ func (g *Gateway) HandleResourcesRead(params ResourcesReadParams) (*ResourcesRea
 		return nil, fmt.Errorf("registry not available")
 	}
 
-	// Parse prompt:// URI
-	name := strings.TrimPrefix(params.URI, "prompt://")
+	// Parse skills://registry/ URI (with legacy prompt:// fallback)
+	name := strings.TrimPrefix(params.URI, "skills://registry/")
 	if name == params.URI {
-		return nil, fmt.Errorf("unsupported URI scheme: %s", params.URI)
+		// Try legacy prompt:// scheme for backward compatibility
+		name = strings.TrimPrefix(params.URI, "prompt://")
+		if name == params.URI {
+			return nil, fmt.Errorf("unsupported URI scheme: %s", params.URI)
+		}
 	}
 	if name == "" {
-		return nil, fmt.Errorf("empty prompt name in URI: %s", params.URI)
+		return nil, fmt.Errorf("empty resource name in URI: %s", params.URI)
 	}
 
 	p, err := pp.GetPromptData(name)
@@ -752,7 +756,7 @@ func (g *Gateway) HandleResourcesRead(params ResourcesReadParams) (*ResourcesRea
 		Contents: []ResourceContents{
 			{
 				URI:      params.URI,
-				MimeType: "text/plain",
+				MimeType: "text/markdown",
 				Text:     p.Content,
 			},
 		},
