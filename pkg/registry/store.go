@@ -106,7 +106,16 @@ func (s *Store) SaveSkill(sk *AgentSkill) error {
 		return fmt.Errorf("validating skill: %w", err)
 	}
 
-	skillDir := filepath.Join(s.baseDir, "skills", filepath.Base(sk.Name))
+	// Preserve existing Dir for updates; default to name for new skills
+	if sk.Dir == "" {
+		if existing, ok := s.skills[sk.Name]; ok {
+			sk.Dir = existing.Dir
+		} else {
+			sk.Dir = sk.Name
+		}
+	}
+
+	skillDir := filepath.Join(s.baseDir, "skills", sk.Dir)
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		return fmt.Errorf("creating skill directory: %w", err)
 	}
@@ -132,7 +141,7 @@ func (s *Store) DeleteSkill(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	skillDir := filepath.Join(s.baseDir, "skills", filepath.Base(name))
+	skillDir := s.skillDirPath(name)
 	if err := os.RemoveAll(skillDir); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("deleting skill %q: %w", name, err)
 	}
@@ -174,8 +183,9 @@ func (s *Store) RenameSkill(oldName, newName string) error {
 		return fmt.Errorf("skill %q: %w", oldName, ErrNotFound)
 	}
 
-	oldDir := filepath.Join(s.baseDir, "skills", filepath.Base(oldName))
-	newDir := filepath.Join(s.baseDir, "skills", filepath.Base(newName))
+	oldDir := s.skillDirPath(oldName)
+	// New dir is a sibling of old dir (same parent)
+	newDir := filepath.Join(filepath.Dir(oldDir), filepath.Base(newName))
 
 	if err := os.Rename(oldDir, newDir); err != nil {
 		return fmt.Errorf("renaming directory: %w", err)
@@ -198,6 +208,11 @@ func (s *Store) RenameSkill(oldName, newName string) error {
 		return fmt.Errorf("writing SKILL.md: %w", err)
 	}
 
+	// Update Dir to reflect new directory location
+	skillsDir := filepath.Join(s.baseDir, "skills")
+	newRelDir, _ := filepath.Rel(skillsDir, newDir)
+	sk.Dir = newRelDir
+
 	delete(s.skills, oldName)
 	s.skills[newName] = sk
 	return nil
@@ -208,7 +223,7 @@ func (s *Store) ListFiles(skillName string) ([]SkillFile, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	skillDir := filepath.Join(s.baseDir, "skills", filepath.Base(skillName))
+	skillDir := s.skillDirPath(skillName)
 	var files []SkillFile
 
 	err := filepath.WalkDir(skillDir, func(path string, d fs.DirEntry, err error) error {
@@ -280,8 +295,7 @@ func (s *Store) WriteFile(skillName, filePath string, data []byte) error {
 
 	// Update file count in cache
 	if sk, ok := s.skills[skillName]; ok {
-		skillDir := filepath.Join(s.baseDir, "skills", filepath.Base(skillName))
-		sk.FileCount = countSupportingFiles(skillDir)
+		sk.FileCount = countSupportingFiles(s.skillDirPath(skillName))
 	}
 	return nil
 }
@@ -305,17 +319,26 @@ func (s *Store) DeleteFile(skillName, filePath string) error {
 
 	// Update file count in cache
 	if sk, ok := s.skills[skillName]; ok {
-		skillDir := filepath.Join(s.baseDir, "skills", filepath.Base(skillName))
-		sk.FileCount = countSupportingFiles(skillDir)
+		sk.FileCount = countSupportingFiles(s.skillDirPath(skillName))
 	}
 	return nil
+}
+
+// skillDirPath returns the absolute directory path for a skill.
+// If the skill is loaded and has a Dir set, it uses that. Otherwise it falls
+// back to using the skill name as the directory name (flat layout).
+func (s *Store) skillDirPath(name string) string {
+	if sk, ok := s.skills[name]; ok && sk.Dir != "" {
+		return filepath.Join(s.baseDir, "skills", sk.Dir)
+	}
+	return filepath.Join(s.baseDir, "skills", filepath.Base(name))
 }
 
 // safeFilePath validates and resolves a file path within a skill directory,
 // preventing directory traversal attacks.
 func (s *Store) safeFilePath(skillName, filePath string) (string, error) {
-	cleanName := filepath.Base(skillName)
-	if cleanName != skillName {
+	// Reject skill names with path traversal components
+	if strings.Contains(skillName, "..") || filepath.IsAbs(skillName) {
 		return "", fmt.Errorf("invalid skill name: %q", skillName)
 	}
 
@@ -324,7 +347,7 @@ func (s *Store) safeFilePath(skillName, filePath string) (string, error) {
 		return "", fmt.Errorf("invalid file path: %q", filePath)
 	}
 
-	skillDir := filepath.Join(s.baseDir, "skills", cleanName)
+	skillDir := s.skillDirPath(skillName)
 	fullPath := filepath.Join(skillDir, cleanPath)
 
 	// Defense in depth: verify the resolved path is under the skill directory
@@ -343,38 +366,40 @@ func (s *Store) safeFilePath(skillName, filePath string) (string, error) {
 	return fullPath, nil
 }
 
-// loadSkills reads all SKILL.md files from the skills/ subdirectory.
+// loadSkills recursively walks the skills/ subdirectory to find all SKILL.md files.
+// Skills can be organized flat (skills/deploy/SKILL.md) or nested in groups
+// (skills/git-workflow/branch-fork/SKILL.md).
 func (s *Store) loadSkills() error {
 	dir := filepath.Join(s.baseDir, "skills")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("reading skills directory: %w", err)
-	}
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		dirName := entry.Name()
-		skillFile := filepath.Join(dir, dirName, "SKILL.md")
-		data, err := os.ReadFile(skillFile)
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
-				continue
+				return nil
 			}
-			slog.Warn("skipping skill directory", "path", skillFile, "error", err)
-			continue
+			return err
+		}
+
+		if d.IsDir() || d.Name() != "SKILL.md" {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			slog.Warn("skipping skill file", "path", path, "error", err)
+			return nil
 		}
 
 		sk, err := ParseSkillMD(data)
 		if err != nil {
-			slog.Warn("skipping skill file", "path", skillFile, "error", err)
-			continue
+			slog.Warn("skipping skill file", "path", path, "error", err)
+			return nil
 		}
+
+		// Relative path from skills/ root to the skill directory
+		skillDir := filepath.Dir(path)
+		relDir, _ := filepath.Rel(dir, skillDir)
+		dirName := filepath.Base(skillDir)
 
 		// Name mismatch: directory name takes precedence over frontmatter
 		if sk.Name == "" {
@@ -388,12 +413,27 @@ func (s *Store) loadSkills() error {
 		}
 
 		if err := sk.Validate(); err != nil {
-			slog.Warn("skipping invalid skill", "path", skillFile, "error", err)
-			continue
+			slog.Warn("skipping invalid skill", "path", path, "error", err)
+			return nil
 		}
 
-		sk.FileCount = countSupportingFiles(filepath.Join(dir, dirName))
+		// Check for duplicate names
+		if existing, ok := s.skills[sk.Name]; ok {
+			slog.Warn("duplicate skill name, keeping first occurrence",
+				"name", sk.Name,
+				"kept", existing.Dir,
+				"skipped", relDir,
+			)
+			return nil
+		}
+
+		sk.Dir = relDir
+		sk.FileCount = countSupportingFiles(skillDir)
 		s.skills[sk.Name] = sk
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("walking skills directory: %w", err)
 	}
 	return nil
 }
