@@ -1,19 +1,16 @@
 import { useEffect, useState, useCallback, Component, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertCircle, FileText, Wrench } from 'lucide-react';
-import { PromptEditor } from '../components/registry/PromptEditor';
+import { AlertCircle, Wrench } from 'lucide-react';
 import { SkillEditor } from '../components/registry/SkillEditor';
 import { ToastContainer } from '../components/ui/Toast';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import {
-  fetchRegistryPrompt,
   fetchRegistrySkill,
   fetchRegistryStatus,
-  fetchRegistryPrompts,
   fetchRegistrySkills,
 } from '../lib/api';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import type { Prompt, Skill } from '../types';
+import type { AgentSkill } from '../types';
 
 // Error boundary for detached window
 interface ErrorBoundaryState {
@@ -57,16 +54,13 @@ class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
   }
 }
 
-const VALID_TYPES = new Set(['prompt', 'skill']);
-
 function DetachedEditorContent() {
   const [searchParams] = useSearchParams();
   const rawType = searchParams.get('type');
-  const editorType = VALID_TYPES.has(rawType ?? '') ? (rawType as 'prompt' | 'skill') : null;
+  const editorType = rawType === 'skill' ? 'skill' : null;
   const itemName = searchParams.get('name');
 
-  const [prompt, setPrompt] = useState<Prompt | undefined>();
-  const [skill, setSkill] = useState<Skill | undefined>();
+  const [skill, setSkill] = useState<AgentSkill | undefined>();
   const [loading, setLoading] = useState(!!itemName);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,13 +69,11 @@ function DetachedEditorContent() {
 
   const refreshRegistry = useCallback(async () => {
     try {
-      const [regStatus, regPrompts, regSkills] = await Promise.all([
+      const [regStatus, regSkills] = await Promise.all([
         fetchRegistryStatus(),
-        fetchRegistryPrompts(),
         fetchRegistrySkills(),
       ]);
       useRegistryStore.getState().setStatus(regStatus);
-      useRegistryStore.getState().setPrompts(regPrompts);
       useRegistryStore.getState().setSkills(regSkills);
     } catch {
       // Ignore - store updates are best-effort from detached window
@@ -97,10 +89,7 @@ function DetachedEditorContent() {
 
     const loadItem = async () => {
       try {
-        if (editorType === 'prompt') {
-          const p = await fetchRegistryPrompt(itemName);
-          setPrompt(p);
-        } else if (editorType === 'skill') {
+        if (editorType === 'skill') {
           const s = await fetchRegistrySkill(itemName);
           setSkill(s);
         }
@@ -140,7 +129,7 @@ function DetachedEditorContent() {
       <div className="h-screen w-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
           <div className="w-10 h-10 mx-auto border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-text-muted">Loading {editorType}...</p>
+          <p className="text-sm text-text-muted">Loading skill...</p>
         </div>
       </div>
     );
@@ -176,12 +165,8 @@ function DetachedEditorContent() {
       {/* Status bar at bottom */}
       <div className="fixed bottom-0 left-0 right-0 h-6 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted z-20">
         <span className="flex items-center gap-1.5">
-          {editorType === 'prompt' ? (
-            <FileText size={10} className="text-primary/60" />
-          ) : (
-            <Wrench size={10} className="text-primary/60" />
-          )}
-          {itemName ? `Editing: ${itemName}` : `New ${editorType}`}
+          <Wrench size={10} className="text-primary/60" />
+          {itemName ? `Editing: ${itemName}` : 'New skill'}
         </span>
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
@@ -190,24 +175,13 @@ function DetachedEditorContent() {
       </div>
 
       {/* Editor - rendered flush (fills viewport) in detached window */}
-      {editorType === 'prompt' && (
-        <PromptEditor
-          isOpen={true}
-          onClose={handleClose}
-          onSaved={handleSaved}
-          prompt={prompt}
-          flush
-        />
-      )}
-      {editorType === 'skill' && (
-        <SkillEditor
-          isOpen={true}
-          onClose={handleClose}
-          onSaved={handleSaved}
-          skill={skill}
-          flush
-        />
-      )}
+      <SkillEditor
+        isOpen={true}
+        onClose={handleClose}
+        onSaved={handleSaved}
+        skill={skill}
+        flush
+      />
 
       <ToastContainer />
     </div>
