@@ -29,9 +29,12 @@ const RegistryNode = memo(({ data, selected }: RegistryNodeProps) => {
           <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20">
             <Library size={14} className="text-primary" />
           </div>
-          <span className="font-semibold text-sm text-text-primary truncate tracking-tight">
-            {data.name}
-          </span>
+          <div className="flex-1 min-w-0">
+            <span className="font-semibold text-sm text-text-primary block truncate tracking-tight">
+              {data.name}
+            </span>
+            <span className="text-[9px] text-text-muted">Agent Skills</span>
+          </div>
         </div>
       </div>
 
