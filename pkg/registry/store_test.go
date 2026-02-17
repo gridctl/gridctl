@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -18,6 +19,18 @@ func newTestStore(t *testing.T) *Store {
 func writeSkillMD(t *testing.T, baseDir, skillName, content string) {
 	t.Helper()
 	dir := filepath.Join(baseDir, "skills", skillName)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeNestedSkillMD writes a SKILL.md file in a nested skill directory (e.g., group/skill).
+func writeNestedSkillMD(t *testing.T, baseDir, group, skillName, content string) {
+	t.Helper()
+	dir := filepath.Join(baseDir, "skills", group, skillName)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +162,210 @@ func TestStore_Load_MissingSkillMD(t *testing.T) {
 
 	if s.HasContent() {
 		t.Error("expected no content from directory without SKILL.md")
+	}
+}
+
+func TestStore_Load_NestedSkills(t *testing.T) {
+	dir := t.TempDir()
+
+	// Flat skill (existing behavior)
+	writeSkillMD(t, dir, "docs", `---
+name: docs
+description: Documentation skill
+state: active
+---
+
+# Docs
+`)
+
+	// Nested skills in a group directory
+	writeNestedSkillMD(t, dir, "git-workflow", "branch-fork", `---
+description: Create feature branch (fork)
+state: active
+---
+
+# Branch Fork
+`)
+
+	writeNestedSkillMD(t, dir, "git-workflow", "pr-trunk", `---
+description: Create PR to main
+state: active
+---
+
+# PR Trunk
+`)
+
+	writeNestedSkillMD(t, dir, "utilities", "gif-create", `---
+description: Create terminal GIFs
+state: draft
+---
+
+# GIF Create
+`)
+
+	s := NewStore(dir)
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	skills := s.ListSkills()
+	if len(skills) != 4 {
+		t.Fatalf("expected 4 skills, got %d", len(skills))
+	}
+
+	// Verify each skill was discovered
+	for _, name := range []string{"docs", "branch-fork", "pr-trunk", "gif-create"} {
+		sk, err := s.GetSkill(name)
+		if err != nil {
+			t.Errorf("expected to find skill %q: %v", name, err)
+			continue
+		}
+		if sk.Name != name {
+			t.Errorf("skill %q has wrong name: %q", name, sk.Name)
+		}
+	}
+
+	// Verify Dir is set correctly for nested skills
+	sk, _ := s.GetSkill("branch-fork")
+	if sk.Dir != filepath.Join("git-workflow", "branch-fork") {
+		t.Errorf("expected Dir 'git-workflow/branch-fork', got %q", sk.Dir)
+	}
+
+	// Verify flat skill Dir
+	sk, _ = s.GetSkill("docs")
+	if sk.Dir != "docs" {
+		t.Errorf("expected Dir 'docs', got %q", sk.Dir)
+	}
+}
+
+func TestStore_Load_NestedSkills_DuplicateName(t *testing.T) {
+	dir := t.TempDir()
+
+	// Two skills with the same leaf name in different groups
+	writeNestedSkillMD(t, dir, "group-a", "deploy", `---
+description: Deploy from group A
+state: active
+---
+
+# Deploy A
+`)
+
+	writeNestedSkillMD(t, dir, "group-b", "deploy", `---
+description: Deploy from group B
+state: active
+---
+
+# Deploy B
+`)
+
+	s := NewStore(dir)
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	// Only one should be loaded (first encountered wins)
+	skills := s.ListSkills()
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill (duplicate skipped), got %d", len(skills))
+	}
+	if skills[0].Name != "deploy" {
+		t.Errorf("expected name 'deploy', got %q", skills[0].Name)
+	}
+}
+
+func TestStore_NestedSkill_FileOperations(t *testing.T) {
+	dir := t.TempDir()
+
+	writeNestedSkillMD(t, dir, "git-workflow", "branch-fork", `---
+name: branch-fork
+description: Create feature branch
+state: active
+---
+
+# Branch Fork
+`)
+
+	s := NewStore(dir)
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	// Write a file to the nested skill
+	content := []byte("# Reference doc")
+	if err := s.WriteFile("branch-fork", filepath.Join("references", "guide.md"), content); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Read it back
+	data, err := s.ReadFile("branch-fork", filepath.Join("references", "guide.md"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != string(content) {
+		t.Errorf("content mismatch: got %q", string(data))
+	}
+
+	// List files
+	files, err := s.ListFiles("branch-fork")
+	if err != nil {
+		t.Fatalf("ListFiles: %v", err)
+	}
+	if len(files) == 0 {
+		t.Error("expected files in listing")
+	}
+
+	// Delete the file
+	if err := s.DeleteFile("branch-fork", filepath.Join("references", "guide.md")); err != nil {
+		t.Fatalf("DeleteFile: %v", err)
+	}
+}
+
+func TestStore_NestedSkill_SavePreservesDir(t *testing.T) {
+	dir := t.TempDir()
+
+	writeNestedSkillMD(t, dir, "git-workflow", "branch-fork", `---
+name: branch-fork
+description: Create feature branch
+state: draft
+---
+
+# Branch Fork
+`)
+
+	s := NewStore(dir)
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	// Update the skill via SaveSkill
+	sk, _ := s.GetSkill("branch-fork")
+	sk.State = StateActive
+	sk.Description = "Updated description"
+	if err := s.SaveSkill(sk); err != nil {
+		t.Fatalf("SaveSkill: %v", err)
+	}
+
+	// Verify SKILL.md was written to the nested path
+	mdPath := filepath.Join(dir, "skills", "git-workflow", "branch-fork", "SKILL.md")
+	data, err := os.ReadFile(mdPath)
+	if err != nil {
+		t.Fatalf("expected SKILL.md at nested path: %v", err)
+	}
+	if !strings.Contains(string(data), "Updated description") {
+		t.Error("SKILL.md should contain updated description")
+	}
+
+	// Verify Dir is preserved after reload
+	s2 := NewStore(dir)
+	if err := s2.Load(); err != nil {
+		t.Fatal(err)
+	}
+	sk2, err := s2.GetSkill("branch-fork")
+	if err != nil {
+		t.Fatalf("skill not found after reload: %v", err)
+	}
+	if sk2.Dir != filepath.Join("git-workflow", "branch-fork") {
+		t.Errorf("Dir not preserved after reload, got %q", sk2.Dir)
 	}
 }
 
