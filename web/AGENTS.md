@@ -267,7 +267,7 @@ The UI supports detaching panels into separate browser windows for multi-monitor
 ### Routes
 - `/logs` - Detached logs viewer with node selector
 - `/sidebar` - Detached sidebar with node selector
-- `/editor` - Detached registry editor (prompt or skill)
+- `/editor` - Detached registry editor (skill)
 
 ### Components
 - **PopoutButton** (`src/components/ui/PopoutButton.tsx`): Pop-out icon button with hover glow effect
@@ -284,7 +284,7 @@ The UI supports detaching panels into separate browser windows for multi-monitor
 |--------|------|----------|
 | Logs | 900x500 | Node selector, pause/resume, fullscreen |
 | Sidebar | 420x700 | Node selector, collapsible sections |
-| Editor | 720x750 | Prompt/skill editing, auto-close on save |
+| Editor | 720x750 | Skill editing, auto-close on save |
 
 ### Usage Pattern
 ```tsx
@@ -296,8 +296,8 @@ openDetachedWindow('logs', `agent=${encodeURIComponent(agentName)}`);
 // Open sidebar for specific node
 openDetachedWindow('sidebar', `node=${encodeURIComponent(nodeName)}`);
 
-// Open editor for existing prompt
-openDetachedWindow('editor', `type=prompt&name=${encodeURIComponent(promptName)}`);
+// Open editor for existing skill
+openDetachedWindow('editor', `type=skill&name=${encodeURIComponent(skillName)}`);
 
 // Open editor for new skill
 openDetachedWindow('editor', 'type=skill');
@@ -391,38 +391,34 @@ Both `BottomPanel.tsx` and `DetachedLogsPage.tsx` import from `components/log/` 
 
 ## 13. Registry UI
 
-The registry provides a CRUD interface for managing MCP prompts and skills through the web UI.
+The registry provides a CRUD interface for managing Agent Skills (SKILL.md files) following the agentskills.io specification.
 
 ### Components (`src/components/registry/`)
 
-- **RegistrySidebar**: Main registry panel with tabs for Prompts and Skills, including create/edit/delete/activate/disable actions
-- **PromptEditor**: Modal form for creating and editing prompts (name, description, arguments). Supports expand toggle and popout to detached window
-- **SkillEditor**: Modal form for creating and editing skills (name, description, multi-step tool pipelines with arguments, input schemas). Supports expand toggle and popout to detached window
-- **DetachedEditorPage** (`src/pages/DetachedEditorPage.tsx`): Standalone editor page for popout window. Loads prompt/skill by name from API and renders in wide modal format
+- **RegistrySidebar**: Skills list with create/edit/delete/activate/disable actions
+- **SkillEditor**: Split-pane markdown editor with frontmatter helpers, live preview, and validation
+- **SkillFileTree**: File browser for scripts/, references/, assets/ within a skill directory
+- **DetachedEditorPage** (`src/pages/DetachedEditorPage.tsx`): Standalone editor for popout window
 
-### Editor Modal Features
+### Editor Features
 
-The `Modal` component supports three modes for editor flexibility:
-- **Default**: Standard `max-w-lg` (512px) modal
-- **Expanded**: `max-w-3xl` (768px) via expand toggle button in header
-- **Wide (detached)**: `max-w-5xl` (1024px) forced size for detached windows
-
-Header controls:
-- **Expand/Collapse** (Maximize2/Minimize2 icons): Toggle between default and wide sizes within the main window
-- **Popout** (ExternalLink icon): Open editor in a dedicated 720x750 detached window
-- **Close** (X icon): Close the modal
-
-Escape key behavior: Blurs the active input/textarea field first, then closes the modal on second press (prevents accidental data loss).
+| Feature | Description |
+|---------|-------------|
+| Split pane | Markdown editor (left) + live preview (right) |
+| Frontmatter helpers | Form fields synced with YAML frontmatter |
+| File tree | Browse and manage supporting files |
+| Validation | Real-time spec validation with errors/warnings |
+| State toggle | Draft/Active/Disabled state management |
+| Popout | Detachable to separate window |
 
 ### Store: `useRegistryStore`
 
-Zustand store managing prompts, skills, and loading states. Fetches from `/api/registry/prompts` and `/api/registry/skills`.
+Zustand store managing skills and loading states. Fetches from `/api/registry/skills`.
 
 ### Graph Integration
 
-- **RegistryNode**: Graph node displayed when registry has content (progressive disclosure)
-- Appears connected to the gateway node
-- Shows active/total counts for prompts and skills
+- **RegistryNode**: Shows active/total skill count
+- Appears connected to gateway node when registry has content (progressive disclosure)
 
 ## 14. Authentication
 
