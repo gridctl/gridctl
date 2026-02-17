@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Library, FileText, Wrench } from 'lucide-react';
+import { Library, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import type { RegistryNodeData } from '../../types';
 
@@ -40,17 +40,11 @@ const RegistryNode = memo(({ data, selected }: RegistryNodeProps) => {
         {/* Counts */}
         <div className="flex items-center gap-3 text-[11px] text-text-muted font-mono">
           <div className="flex items-center gap-1.5">
-            <FileText size={10} className="text-primary/70" />
-            <span>
-              <span className="text-status-running">{data.activePrompts ?? 0}</span>
-              <span className="text-text-muted/60">/{data.totalPrompts ?? 0}</span>
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
             <Wrench size={10} className="text-primary/70" />
             <span>
               <span className="text-status-running">{data.activeSkills ?? 0}</span>
               <span className="text-text-muted/60">/{data.totalSkills ?? 0}</span>
+              <span className="ml-1 text-text-muted/50">skills</span>
             </span>
           </div>
         </div>
