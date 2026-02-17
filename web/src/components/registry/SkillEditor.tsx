@@ -13,6 +13,7 @@ import {
 import { marked } from 'marked';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
+import { SkillFileTree } from './SkillFileTree';
 import { createRegistrySkill, updateRegistrySkill, validateSkillContent } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import type { AgentSkill, ItemState, SkillValidationResult } from '../../types';
@@ -508,6 +509,16 @@ export function SkillEditor({
             </div>
           )}
         </div>
+
+        {/* File tree (only for existing skills) */}
+        {!isNew && skill && (
+          <SkillFileTree
+            skillName={skill.name}
+            onSelectFile={(path) => {
+              showToast('success', `Selected: ${path}`);
+            }}
+          />
+        )}
 
         {/* Split pane: editor + preview */}
         <div className="flex-1 flex min-h-0">
