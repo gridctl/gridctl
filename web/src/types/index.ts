@@ -191,44 +191,39 @@ export interface ClientNodeData extends NodeDataBase {
   status: NodeStatus;
 }
 
-// --- Registry Types ---
+// --- Agent Skills Registry Types ---
 
 export type ItemState = 'draft' | 'active' | 'disabled';
 
-export interface PromptArgument {
+// AgentSkill represents a SKILL.md file following the agentskills.io spec
+export interface AgentSkill {
   name: string;
   description: string;
-  required: boolean;
-  default?: string;
-}
-
-export interface Prompt {
-  name: string;
-  description: string;
-  content: string;
-  arguments: PromptArgument[];
-  tags: string[];
+  license?: string;
+  compatibility?: string;
+  metadata?: Record<string, string>;
+  allowedTools?: string;
   state: ItemState;
+  body: string;          // Markdown content (after frontmatter)
+  fileCount: number;     // Supporting files count
 }
 
-export interface SkillStep {
-  tool: string;
-  arguments: Record<string, string>;
+// SkillFile represents a file within a skill directory
+export interface SkillFile {
+  path: string;          // Relative path (e.g., "scripts/lint.sh")
+  size: number;          // File size in bytes
+  isDir: boolean;        // True for directories
 }
 
-export interface Skill {
-  name: string;
-  description: string;
-  steps: SkillStep[];
-  input: PromptArgument[];
-  timeout?: string;
-  tags: string[];
-  state: ItemState;
+// Validation result from POST /api/registry/skills/validate
+export interface SkillValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  parsed?: AgentSkill;   // Parsed skill from content (when parseable)
 }
 
 export interface RegistryStatus {
-  totalPrompts: number;
-  activePrompts: number;
   totalSkills: number;
   activeSkills: number;
 }
@@ -236,21 +231,8 @@ export interface RegistryStatus {
 export interface RegistryNodeData extends NodeDataBase {
   type: 'registry';
   name: string;
-  totalPrompts: number;
-  activePrompts: number;
   totalSkills: number;
   activeSkills: number;
-}
-
-// Tool call result from skill test runs
-export interface ToolCallContent {
-  type: string;
-  text?: string;
-}
-
-export interface ToolCallResult {
-  content: ToolCallContent[];
-  isError?: boolean;
 }
 
 export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData | RegistryNodeData;
