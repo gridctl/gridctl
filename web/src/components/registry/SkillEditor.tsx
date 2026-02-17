@@ -1,36 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 import { createRegistrySkill, updateRegistrySkill } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import type { Skill, ItemState } from '../../types';
+import type { AgentSkill, ItemState } from '../../types';
 
-// Internal representation with stable IDs for React keys
-interface ArgEntry {
+// Internal representation for metadata key-value pairs with stable IDs
+interface MetadataEntry {
   id: number;
   key: string;
   value: string;
-}
-
-interface EditableStep {
-  id: number;
-  tool: string;
-  args: ArgEntry[];
-}
-
-interface InputEntry {
-  id: number;
-  name: string;
-  description: string;
-  required: boolean;
 }
 
 interface SkillEditorProps {
   isOpen: boolean;
   onClose: () => void;
   onSaved: () => void;
-  skill?: Skill;
+  skill?: AgentSkill;
   /** Callback to pop editor into a new window */
   onPopout?: () => void;
   /** Disable popout button */
@@ -41,34 +28,17 @@ interface SkillEditorProps {
   flush?: boolean;
 }
 
-// Convert Record<string, string> to ArgEntry[] with stable IDs
-function recordToArgs(record: Record<string, string>, counter: { current: number }): ArgEntry[] {
-  return Object.entries(record ?? {}).map(([key, value]) => ({
-    id: ++counter.current,
-    key,
-    value,
-  }));
-}
-
-// Convert ArgEntry[] back to Record<string, string> for API
-function argsToRecord(args: ArgEntry[]): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const arg of args) {
-    if (arg.key) result[arg.key] = arg.value;
-  }
-  return result;
-}
-
 export function SkillEditor({ isOpen, onClose, onSaved, skill, onPopout, popoutDisabled, size, flush }: SkillEditorProps) {
   const isEditing = !!skill;
   const idCounter = useRef(0);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [steps, setSteps] = useState<EditableStep[]>([]);
-  const [input, setInput] = useState<InputEntry[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
+  const [body, setBody] = useState('');
+  const [allowedTools, setAllowedTools] = useState('');
+  const [license, setLicense] = useState('');
+  const [compatibility, setCompatibility] = useState('');
+  const [metadata, setMetadata] = useState<MetadataEntry[]>([]);
   const [state, setState] = useState<ItemState>('draft');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -78,53 +48,50 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill, onPopout, popoutD
     if (skill) {
       setName(skill.name);
       setDescription(skill.description);
-      setSteps(
-        (skill.steps ?? []).map((s) => ({
+      setBody(skill.body ?? '');
+      setAllowedTools(skill.allowedTools ?? '');
+      setLicense(skill.license ?? '');
+      setCompatibility(skill.compatibility ?? '');
+      setMetadata(
+        Object.entries(skill.metadata ?? {}).map(([key, value]) => ({
           id: ++idCounter.current,
-          tool: s.tool,
-          args: recordToArgs(s.arguments, idCounter),
+          key,
+          value,
         })),
       );
-      setInput(
-        (skill.input ?? []).map((p) => ({
-          id: ++idCounter.current,
-          name: p.name,
-          description: p.description,
-          required: p.required,
-        })),
-      );
-      setTags(skill.tags ?? []);
       setState(skill.state);
     } else {
       setName('');
       setDescription('');
-      setSteps([]);
-      setInput([]);
-      setTags([]);
+      setBody('');
+      setAllowedTools('');
+      setLicense('');
+      setCompatibility('');
+      setMetadata([]);
       setState('draft');
     }
     setError(null);
-    setTagInput('');
   }, [skill, isOpen]);
 
   const handleSave = async () => {
     setError(null);
     setSaving(true);
     try {
-      const payload: Skill = {
+      const metadataRecord: Record<string, string> = {};
+      for (const entry of metadata) {
+        if (entry.key) metadataRecord[entry.key] = entry.value;
+      }
+
+      const payload: AgentSkill = {
         name,
         description,
-        steps: steps.map((s) => ({
-          tool: s.tool,
-          arguments: argsToRecord(s.args),
-        })),
-        input: input.map(({ name: n, description: d, required: r }) => ({
-          name: n,
-          description: d,
-          required: r,
-        })),
-        tags,
+        body,
         state,
+        fileCount: skill?.fileCount ?? 0,
+        ...(allowedTools && { allowedTools }),
+        ...(license && { license }),
+        ...(compatibility && { compatibility }),
+        ...(Object.keys(metadataRecord).length > 0 && { metadata: metadataRecord }),
       };
       if (isEditing) {
         await updateRegistrySkill(name, payload);
@@ -143,67 +110,18 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill, onPopout, popoutD
     }
   };
 
-  // --- Step management ---
+  // --- Metadata management ---
 
-  const addStep = () => {
-    setSteps([...steps, { id: ++idCounter.current, tool: '', args: [] }]);
+  const addMetadata = () => {
+    setMetadata([...metadata, { id: ++idCounter.current, key: '', value: '' }]);
   };
 
-  const removeStep = (stepId: number) => {
-    setSteps(steps.filter((s) => s.id !== stepId));
+  const removeMetadata = (entryId: number) => {
+    setMetadata(metadata.filter((m) => m.id !== entryId));
   };
 
-  const updateStepTool = (stepId: number, tool: string) => {
-    setSteps(steps.map((s) => (s.id === stepId ? { ...s, tool } : s)));
-  };
-
-  const addStepArg = (stepId: number) => {
-    const newArg: ArgEntry = { id: ++idCounter.current, key: '', value: '' };
-    setSteps(steps.map((s) =>
-      s.id === stepId ? { ...s, args: [...s.args, newArg] } : s,
-    ));
-  };
-
-  const removeStepArg = (stepId: number, argId: number) => {
-    setSteps(steps.map((s) =>
-      s.id === stepId ? { ...s, args: s.args.filter((a) => a.id !== argId) } : s,
-    ));
-  };
-
-  const updateStepArg = (stepId: number, argId: number, field: 'key' | 'value', val: string) => {
-    setSteps(steps.map((s) =>
-      s.id === stepId
-        ? { ...s, args: s.args.map((a) => (a.id === argId ? { ...a, [field]: val } : a)) }
-        : s,
-    ));
-  };
-
-  // --- Input parameter management ---
-
-  const addInput = () => {
-    setInput([...input, { id: ++idCounter.current, name: '', description: '', required: false }]);
-  };
-
-  const removeInput = (inputId: number) => {
-    setInput(input.filter((p) => p.id !== inputId));
-  };
-
-  const updateInput = (inputId: number, field: 'name' | 'description' | 'required', value: string | boolean) => {
-    setInput(input.map((p) => (p.id === inputId ? { ...p, [field]: value } : p)));
-  };
-
-  // --- Tags ---
-
-  const addTag = () => {
-    const trimmed = tagInput.trim();
-    if (trimmed && !(tags ?? []).includes(trimmed)) {
-      setTags([...(tags ?? []), trimmed]);
-      setTagInput('');
-    }
-  };
-
-  const removeTag = (tag: string) => {
-    setTags((tags ?? []).filter((t) => t !== tag));
+  const updateMetadata = (entryId: number, field: 'key' | 'value', val: string) => {
+    setMetadata(metadata.map((m) => (m.id === entryId ? { ...m, [field]: val } : m)));
   };
 
   return (
@@ -224,7 +142,7 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill, onPopout, popoutD
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={isEditing}
-            placeholder="e.g., deploy-pipeline"
+            placeholder="e.g., code-review"
             className={cn(
               'w-full bg-surface border border-border/30 rounded-lg px-3 py-2 text-sm text-text-primary',
               'placeholder:text-text-muted focus:border-primary/50 focus:outline-none font-mono',
@@ -245,161 +163,98 @@ export function SkillEditor({ isOpen, onClose, onSaved, skill, onPopout, popoutD
           />
         </div>
 
-        {/* Tool Chain Steps */}
+        {/* Body (markdown content) */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs text-text-secondary font-medium">Tool Chain</label>
-            <button
-              onClick={addStep}
-              className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
-            >
-              <Plus size={10} /> Add Step
-            </button>
+          <label className="text-xs text-text-secondary font-medium block mb-1">Body</label>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Skill instructions in markdown format..."
+            rows={8}
+            className="w-full bg-surface border border-border/30 rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none font-mono resize-y min-h-[160px]"
+          />
+        </div>
+
+        {/* Allowed Tools */}
+        <div>
+          <label className="text-xs text-text-secondary font-medium block mb-1">
+            Allowed Tools <span className="text-text-muted">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={allowedTools}
+            onChange={(e) => setAllowedTools(e.target.value)}
+            placeholder="e.g., Read, Write, Bash"
+            className="w-full bg-surface border border-border/30 rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none font-mono"
+          />
+        </div>
+
+        {/* License & Compatibility */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-text-secondary font-medium block mb-1">
+              License <span className="text-text-muted">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={license}
+              onChange={(e) => setLicense(e.target.value)}
+              placeholder="e.g., MIT"
+              className="w-full bg-surface border border-border/30 rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none font-mono"
+            />
           </div>
-          <div className="space-y-2">
-            {(steps ?? []).map((step, i) => (
-              <div key={step.id}>
-                <div className="glass-panel p-3 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] text-text-muted font-mono">Step {i + 1}</span>
-                    <button
-                      onClick={() => removeStep(step.id)}
-                      className="p-1 text-text-muted hover:text-status-error transition-colors"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    value={step.tool}
-                    onChange={(e) => updateStepTool(step.id, e.target.value)}
-                    placeholder="server__tool_name"
-                    className="w-full bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none mb-2"
-                  />
-                  {/* Step arguments */}
-                  <div className="space-y-1">
-                    {(step.args ?? []).map((arg) => (
-                      <div key={arg.id} className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={arg.key}
-                          onChange={(e) => updateStepArg(step.id, arg.id, 'key', e.target.value)}
-                          placeholder="key"
-                          className="flex-1 bg-surface border border-border/30 rounded px-2 py-1 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={arg.value}
-                          onChange={(e) => updateStepArg(step.id, arg.id, 'value', e.target.value)}
-                          placeholder="{{input.name}} or {{step1.result}}"
-                          className="flex-[2] bg-surface border border-border/30 rounded px-2 py-1 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
-                        />
-                        <button
-                          onClick={() => removeStepArg(step.id, arg.id)}
-                          className="p-0.5 text-text-muted hover:text-status-error transition-colors"
-                        >
-                          <Trash2 size={10} />
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => addStepArg(step.id)}
-                      className="text-[10px] text-primary hover:text-primary/80 transition-colors"
-                    >
-                      + Add argument
-                    </button>
-                  </div>
-                </div>
-                {/* Connector to next step */}
-                {i < (steps ?? []).length - 1 && (
-                  <div className="flex justify-center py-1">
-                    <div className="w-px h-4 bg-border/50" />
-                  </div>
-                )}
-              </div>
-            ))}
+          <div>
+            <label className="text-xs text-text-secondary font-medium block mb-1">
+              Compatibility <span className="text-text-muted">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={compatibility}
+              onChange={(e) => setCompatibility(e.target.value)}
+              placeholder="e.g., claude, gpt-4"
+              className="w-full bg-surface border border-border/30 rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none font-mono"
+            />
           </div>
         </div>
 
-        {/* Input Parameters */}
+        {/* Metadata */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs text-text-secondary font-medium">Input Parameters</label>
+            <label className="text-xs text-text-secondary font-medium">
+              Metadata <span className="text-text-muted">(optional)</span>
+            </label>
             <button
-              onClick={addInput}
+              onClick={addMetadata}
               className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
             >
               <Plus size={10} /> Add
             </button>
           </div>
           <div className="space-y-2">
-            {(input ?? []).map((param) => (
-              <div key={param.id} className="flex items-center gap-2">
+            {(metadata ?? []).map((entry) => (
+              <div key={entry.id} className="flex items-center gap-2">
                 <input
                   type="text"
-                  value={param.name}
-                  onChange={(e) => updateInput(param.id, 'name', e.target.value)}
-                  placeholder="name"
+                  value={entry.key}
+                  onChange={(e) => updateMetadata(entry.id, 'key', e.target.value)}
+                  placeholder="key"
                   className="flex-1 bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
                 />
                 <input
                   type="text"
-                  value={param.description}
-                  onChange={(e) => updateInput(param.id, 'description', e.target.value)}
-                  placeholder="description"
-                  className="flex-[2] bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
+                  value={entry.value}
+                  onChange={(e) => updateMetadata(entry.id, 'value', e.target.value)}
+                  placeholder="value"
+                  className="flex-[2] bg-surface border border-border/30 rounded-lg px-2 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none"
                 />
-                <label className="flex items-center gap-1 text-[10px] text-text-muted whitespace-nowrap">
-                  <input
-                    type="checkbox"
-                    checked={param.required}
-                    onChange={(e) => updateInput(param.id, 'required', e.target.checked)}
-                    className="rounded"
-                  />
-                  Req
-                </label>
                 <button
-                  onClick={() => removeInput(param.id)}
+                  onClick={() => removeMetadata(entry.id)}
                   className="p-1 text-text-muted hover:text-status-error transition-colors"
                 >
                   <Trash2 size={12} />
                 </button>
               </div>
             ))}
-          </div>
-        </div>
-
-        {/* Tags */}
-        <div>
-          <label className="text-xs text-text-secondary font-medium block mb-1">Tags</label>
-          <div className="flex items-center gap-2 flex-wrap">
-            {(tags ?? []).map((tag) => (
-              <span
-                key={tag}
-                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-surface-highlight text-text-secondary"
-              >
-                {tag}
-                <button
-                  onClick={() => removeTag(tag)}
-                  className="text-text-muted hover:text-status-error transition-colors"
-                >
-                  <X size={8} />
-                </button>
-              </span>
-            ))}
-            <input
-              type="text"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  addTag();
-                }
-              }}
-              placeholder="+ Add tag"
-              className="bg-transparent text-[10px] text-text-muted placeholder:text-text-muted focus:outline-none w-16"
-            />
           </div>
         </div>
 
