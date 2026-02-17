@@ -57,8 +57,9 @@ class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 function DetachedEditorContent() {
   const [searchParams] = useSearchParams();
   const rawType = searchParams.get('type');
-  const editorType = rawType === 'skill' ? 'skill' : null;
-  const itemName = searchParams.get('name');
+  // Always treat as skill editor (gracefully handle legacy "prompt" type)
+  const editorType = (rawType === 'skill' || rawType === 'prompt' || !rawType) ? 'skill' : null;
+  const itemName = rawType === 'prompt' ? null : searchParams.get('name');
 
   const [skill, setSkill] = useState<AgentSkill | undefined>();
   const [loading, setLoading] = useState(!!itemName);
