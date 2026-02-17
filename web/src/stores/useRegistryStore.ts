@@ -1,53 +1,42 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { Prompt, Skill, RegistryStatus } from '../types';
+import type { AgentSkill, RegistryStatus } from '../types';
 
 interface RegistryState {
   // Data
-  prompts: Prompt[];
-  skills: Skill[];
+  skills: AgentSkill[] | null;
   status: RegistryStatus | null;
 
-  // UI state
+  // Loading state
   isLoading: boolean;
   error: string | null;
 
   // Actions
-  setPrompts: (prompts: Prompt[]) => void;
-  setSkills: (skills: Skill[]) => void;
+  setSkills: (skills: AgentSkill[]) => void;
   setStatus: (status: RegistryStatus) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
   // Computed helpers
   hasContent: () => boolean;
-  activePromptCount: () => number;
   activeSkillCount: () => number;
 }
 
 export const useRegistryStore = create<RegistryState>()(
   subscribeWithSelector((set, get) => ({
-    // Initial state
-    prompts: [],
-    skills: [],
+    skills: null,
     status: null,
     isLoading: false,
     error: null,
 
-    // Actions
-    setPrompts: (prompts) => set({ prompts: prompts ?? [] }),
     setSkills: (skills) => set({ skills: skills ?? [] }),
     setStatus: (status) => set({ status }),
     setLoading: (isLoading) => set({ isLoading }),
     setError: (error) => set({ error }),
 
-    // Computed
     hasContent: () => {
-      const { prompts, skills } = get();
-      return (prompts ?? []).length > 0 || (skills ?? []).length > 0;
-    },
-    activePromptCount: () => {
-      return (get().prompts ?? []).filter((p) => p.state === 'active').length;
+      const { skills } = get();
+      return (skills ?? []).length > 0;
     },
     activeSkillCount: () => {
       return (get().skills ?? []).filter((s) => s.state === 'active').length;
