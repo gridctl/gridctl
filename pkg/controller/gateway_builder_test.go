@@ -196,29 +196,25 @@ Execute some-server__some-tool with key=value.
 		t.Fatal("expected registry to be registered in router when it has content")
 	}
 
-	// Tools should appear in aggregated list
+	// Registry should NOT expose tools — skills are served as prompts/resources
 	tools := inst.Gateway.Router().AggregatedTools()
-	found := false
 	for _, tool := range tools {
 		if tool.Name == mcp.PrefixTool("registry", "test-skill") {
-			found = true
-			break
+			t.Error("registry should not expose skills as tools")
 		}
 	}
-	if !found {
-		t.Errorf("expected tool 'registry__test-skill' in aggregated tools, got: %v", toolNames(tools))
+
+	// Skills should be available as prompts
+	prompts := inst.RegistryServer.ListPromptData()
+	if len(prompts) != 1 {
+		t.Fatalf("expected 1 prompt, got %d", len(prompts))
+	}
+	if prompts[0].Name != "test-skill" {
+		t.Errorf("prompt name = %q, want %q", prompts[0].Name, "test-skill")
 	}
 
 	// API server should have the registry server
 	if inst.APIServer.RegistryServer() == nil {
 		t.Error("expected API server to have registry server set")
 	}
-}
-
-func toolNames(tools []mcp.Tool) []string {
-	names := make([]string, len(tools))
-	for i, t := range tools {
-		names[i] = t.Name
-	}
-	return names
 }

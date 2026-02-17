@@ -17,10 +17,10 @@ func setupRegistryTestServer(t *testing.T) (*Server, *registry.Server) {
 	t.Helper()
 	dir := t.TempDir()
 	store := registry.NewStore(dir)
-	gateway := mcp.NewGateway()
-	regServer := registry.New(store, gateway)
+	regServer := registry.New(store)
 	_ = regServer.Initialize(context.Background())
 
+	gateway := mcp.NewGateway()
 	apiServer := NewServer(gateway, nil)
 	apiServer.SetRegistryServer(regServer)
 	return apiServer, regServer
@@ -476,35 +476,53 @@ func TestHandleRegistry_ProgressiveDisclosure(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	// Initially, no tools from registry
-	toolsReq := httptest.NewRequest(http.MethodGet, "/api/tools", nil)
-	toolsRec := httptest.NewRecorder()
-	handler.ServeHTTP(toolsRec, toolsReq)
+	// Initially, registry status shows 0 skills
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
 
-	var toolsBefore mcp.ToolsListResult
-	_ = json.NewDecoder(toolsRec.Body).Decode(&toolsBefore)
-	initialToolCount := len(toolsBefore.Tools)
+	var statusBefore registry.RegistryStatus
+	_ = json.NewDecoder(rec.Body).Decode(&statusBefore)
+	if statusBefore.TotalSkills != 0 {
+		t.Fatalf("expected 0 skills initially, got %d", statusBefore.TotalSkills)
+	}
 
 	// Create an active skill — should register with router
 	body := `{"name":"new-skill","description":"A new skill","state":"active"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
-	rec := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
+	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d; body: %s", rec.Code, rec.Body.String())
 	}
 
-	// Now tools should include the new skill
-	toolsReq = httptest.NewRequest(http.MethodGet, "/api/tools", nil)
-	toolsRec = httptest.NewRecorder()
+	// Registry status should now show the skill
+	req = httptest.NewRequest(http.MethodGet, "/api/registry/status", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var statusAfter registry.RegistryStatus
+	_ = json.NewDecoder(rec.Body).Decode(&statusAfter)
+	if statusAfter.TotalSkills != 1 {
+		t.Errorf("expected 1 skill after creating, got %d", statusAfter.TotalSkills)
+	}
+	if statusAfter.ActiveSkills != 1 {
+		t.Errorf("expected 1 active skill after creating, got %d", statusAfter.ActiveSkills)
+	}
+
+	// Skills should NOT appear as tools (skills are knowledge, not tools)
+	toolsReq := httptest.NewRequest(http.MethodGet, "/api/tools", nil)
+	toolsRec := httptest.NewRecorder()
 	handler.ServeHTTP(toolsRec, toolsReq)
 
-	var toolsAfter mcp.ToolsListResult
-	_ = json.NewDecoder(toolsRec.Body).Decode(&toolsAfter)
+	var toolsResult mcp.ToolsListResult
+	_ = json.NewDecoder(toolsRec.Body).Decode(&toolsResult)
 
-	if len(toolsAfter.Tools) != initialToolCount+1 {
-		t.Errorf("expected %d tools after creating skill, got %d", initialToolCount+1, len(toolsAfter.Tools))
+	for _, tool := range toolsResult.Tools {
+		if strings.Contains(tool.Name, "new-skill") {
+			t.Error("skills should not appear as tools in the aggregated list")
+		}
 	}
 }
 

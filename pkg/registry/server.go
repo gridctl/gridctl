@@ -2,35 +2,39 @@ package registry
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
-// Server is an in-process MCP server that provides skill management.
-// It implements mcp.AgentClient so it can be registered with the gateway router.
+// Server is an in-process MCP server that serves Agent Skills as prompts.
+// It implements mcp.AgentClient so it can be registered with the gateway router,
+// and mcp.PromptProvider so the gateway can serve skills via MCP prompts and resources.
+//
+// Agent Skills are knowledge documents, not executable tools. The server exposes
+// them as MCP prompts (prompts/list, prompts/get) and resources (resources/list,
+// resources/read) rather than as MCP tools.
 type Server struct {
-	store      *Store
-	toolCaller mcp.ToolCaller
+	store *Store
 
 	mu          sync.RWMutex
 	initialized bool
-	tools       []mcp.Tool
 	serverInfo  mcp.ServerInfo
 }
 
-// Compile-time check that Server implements required interfaces.
-var _ mcp.AgentClient = (*Server)(nil)
+// Compile-time checks.
+var (
+	_ mcp.AgentClient    = (*Server)(nil)
+	_ mcp.PromptProvider = (*Server)(nil)
+)
 
 // New creates a registry server.
-// The toolCaller parameter allows the registry to execute tools from other
-// MCP servers when running skills. Pass nil if skill execution is not needed.
-func New(store *Store, toolCaller mcp.ToolCaller) *Server {
+// Unlike the previous version, no ToolCaller is needed — Agent Skills
+// are knowledge documents served to clients, not executable operations.
+func New(store *Store) *Server {
 	return &Server{
-		store:      store,
-		toolCaller: toolCaller,
+		store: store,
 		serverInfo: mcp.ServerInfo{
 			Name:    "registry",
 			Version: "1.0.0",
@@ -43,13 +47,11 @@ func (s *Server) Name() string {
 	return "registry"
 }
 
-// Initialize loads the store and builds the MCP tool list from active skills.
+// Initialize loads the store.
 func (s *Server) Initialize(ctx context.Context) error {
 	if err := s.store.Load(); err != nil {
 		return fmt.Errorf("loading registry store: %w", err)
 	}
-
-	s.refreshTools()
 
 	s.mu.Lock()
 	s.initialized = true
@@ -58,41 +60,24 @@ func (s *Server) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// RefreshTools re-scans the store and rebuilds the tools list.
+// RefreshTools reloads the store from disk.
 func (s *Server) RefreshTools(ctx context.Context) error {
 	if err := s.store.Load(); err != nil {
 		return fmt.Errorf("reloading registry store: %w", err)
 	}
-	s.refreshTools()
 	return nil
 }
 
-// Tools returns the cached tools list.
+// Tools returns an empty list. Agent Skills are not exposed as MCP tools.
 func (s *Server) Tools() []mcp.Tool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.tools
+	return nil
 }
 
-// CallTool looks up a skill by name and returns its body as content.
+// CallTool returns an error — Agent Skills are knowledge documents, not executable tools.
 func (s *Server) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
-	skill, err := s.store.GetSkill(name)
-	if err != nil {
-		return &mcp.ToolCallResult{
-			Content: []mcp.Content{mcp.NewTextContent(fmt.Sprintf("skill not found: %s", name))},
-			IsError: true,
-		}, nil
-	}
-
-	if skill.State != StateActive {
-		return &mcp.ToolCallResult{
-			Content: []mcp.Content{mcp.NewTextContent(fmt.Sprintf("skill is not active: %s (state: %s)", name, skill.State))},
-			IsError: true,
-		}, nil
-	}
-
 	return &mcp.ToolCallResult{
-		Content: []mcp.Content{mcp.NewTextContent(skill.Body)},
+		Content: []mcp.Content{mcp.NewTextContent("Agent Skills are knowledge documents, not executable tools. Read the skill content via prompts/get or resources/read instead.")},
+		IsError: true,
 	}, nil
 }
 
@@ -120,29 +105,48 @@ func (s *Server) HasContent() bool {
 	return s.store.HasContent()
 }
 
-// refreshTools rebuilds the MCP tool list from active skills in the store.
-func (s *Server) refreshTools() {
+// ListPromptData returns active Agent Skills as MCP PromptData.
+// Each skill gets a single optional "context" argument for clients to pass
+// additional context when requesting the skill via prompts/get.
+func (s *Server) ListPromptData() []mcp.PromptData {
 	skills := s.store.ActiveSkills()
-	tools := make([]mcp.Tool, len(skills))
+	result := make([]mcp.PromptData, len(skills))
 	for i, sk := range skills {
-		tools[i] = skillToTool(sk)
+		result[i] = mcp.PromptData{
+			Name:        sk.Name,
+			Description: sk.Description,
+			Content:     sk.Body,
+			Arguments: []mcp.PromptArgumentData{
+				{
+					Name:        "context",
+					Description: "Additional context for the skill",
+					Required:    false,
+				},
+			},
+		}
 	}
-
-	s.mu.Lock()
-	s.tools = tools
-	s.mu.Unlock()
+	return result
 }
 
-// skillToTool converts an AgentSkill to an MCP Tool.
-func skillToTool(sk *AgentSkill) mcp.Tool {
-	schema := mcp.InputSchemaObject{
-		Type:       "object",
-		Properties: make(map[string]mcp.Property),
+// GetPromptData returns a specific active skill's content as MCP PromptData.
+func (s *Server) GetPromptData(name string) (*mcp.PromptData, error) {
+	sk, err := s.store.GetSkill(name)
+	if err != nil {
+		return nil, err
 	}
-	schemaBytes, _ := json.Marshal(schema)
-	return mcp.Tool{
+	if sk.State != StateActive {
+		return nil, fmt.Errorf("skill %q is not active (state: %s)", name, sk.State)
+	}
+	return &mcp.PromptData{
 		Name:        sk.Name,
 		Description: sk.Description,
-		InputSchema: schemaBytes,
-	}
+		Content:     sk.Body,
+		Arguments: []mcp.PromptArgumentData{
+			{
+				Name:        "context",
+				Description: "Additional context for the skill",
+				Required:    false,
+			},
+		},
+	}, nil
 }

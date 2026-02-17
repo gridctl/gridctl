@@ -112,7 +112,7 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		regDir = b.registryDir
 	}
 	registryStore := registry.NewStore(regDir)
-	registryServer := registry.New(registryStore, inst.Gateway)
+	registryServer := registry.New(registryStore)
 	inst.RegistryServer = registryServer
 
 	// Phase 2: Configure logging

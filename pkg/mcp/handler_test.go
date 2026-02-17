@@ -890,11 +890,11 @@ func TestHandler_ResourcesList(t *testing.T) {
 	}
 
 	for _, r := range result.Resources {
-		if r.MimeType != "text/plain" {
-			t.Errorf("expected mimeType 'text/plain', got %q", r.MimeType)
+		if r.MimeType != "text/markdown" {
+			t.Errorf("expected mimeType 'text/markdown', got %q", r.MimeType)
 		}
-		if !strings.HasPrefix(r.URI, "prompt://") {
-			t.Errorf("expected URI to start with 'prompt://', got %q", r.URI)
+		if !strings.HasPrefix(r.URI, "skills://registry/") {
+			t.Errorf("expected URI to start with 'skills://registry/', got %q", r.URI)
 		}
 	}
 }
@@ -903,7 +903,7 @@ func TestHandler_ResourcesRead(t *testing.T) {
 	h, _, _ := setupTestHandlerWithRegistry(t)
 
 	body := makeJSONRPC(t, 1, "resources/read", map[string]any{
-		"uri": "prompt://code-review",
+		"uri": "skills://registry/code-review",
 	})
 	w := postMCP(t, h, body)
 
@@ -924,11 +924,11 @@ func TestHandler_ResourcesRead(t *testing.T) {
 	if len(result.Contents) != 1 {
 		t.Fatalf("expected 1 content item, got %d", len(result.Contents))
 	}
-	if result.Contents[0].URI != "prompt://code-review" {
-		t.Errorf("expected URI 'prompt://code-review', got %q", result.Contents[0].URI)
+	if result.Contents[0].URI != "skills://registry/code-review" {
+		t.Errorf("expected URI 'skills://registry/code-review', got %q", result.Contents[0].URI)
 	}
-	if result.Contents[0].MimeType != "text/plain" {
-		t.Errorf("expected mimeType 'text/plain', got %q", result.Contents[0].MimeType)
+	if result.Contents[0].MimeType != "text/markdown" {
+		t.Errorf("expected mimeType 'text/markdown', got %q", result.Contents[0].MimeType)
 	}
 	if result.Contents[0].Text == "" {
 		t.Error("expected non-empty content text")

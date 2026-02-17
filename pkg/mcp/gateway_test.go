@@ -1437,11 +1437,11 @@ func TestGateway_HandleResourcesList(t *testing.T) {
 	}
 
 	for _, r := range result.Resources {
-		if r.MimeType != "text/plain" {
-			t.Errorf("expected mimeType 'text/plain', got %q", r.MimeType)
+		if r.MimeType != "text/markdown" {
+			t.Errorf("expected mimeType 'text/markdown', got %q", r.MimeType)
 		}
-		if r.URI != "prompt://"+r.Name {
-			t.Errorf("expected URI 'prompt://%s', got %q", r.Name, r.URI)
+		if r.URI != "skills://registry/"+r.Name {
+			t.Errorf("expected URI 'skills://registry/%s', got %q", r.Name, r.URI)
 		}
 	}
 }
@@ -1478,7 +1478,7 @@ func TestGateway_HandleResourcesRead(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	result, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://code-review"})
+	result, err := g.HandleResourcesRead(ResourcesReadParams{URI: "skills://registry/code-review"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1486,11 +1486,11 @@ func TestGateway_HandleResourcesRead(t *testing.T) {
 	if len(result.Contents) != 1 {
 		t.Fatalf("expected 1 content item, got %d", len(result.Contents))
 	}
-	if result.Contents[0].URI != "prompt://code-review" {
-		t.Errorf("expected URI 'prompt://code-review', got %q", result.Contents[0].URI)
+	if result.Contents[0].URI != "skills://registry/code-review" {
+		t.Errorf("expected URI 'skills://registry/code-review', got %q", result.Contents[0].URI)
 	}
-	if result.Contents[0].MimeType != "text/plain" {
-		t.Errorf("expected mimeType 'text/plain', got %q", result.Contents[0].MimeType)
+	if result.Contents[0].MimeType != "text/markdown" {
+		t.Errorf("expected mimeType 'text/markdown', got %q", result.Contents[0].MimeType)
 	}
 	if result.Contents[0].Text != "Please review the following code." {
 		t.Errorf("expected prompt content, got %q", result.Contents[0].Text)
@@ -1614,12 +1614,12 @@ func TestGateway_HandleResourcesRead_EmptyName(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://"})
+	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "skills://registry/"})
 	if err == nil {
-		t.Fatal("expected error for empty prompt name")
+		t.Fatal("expected error for empty resource name")
 	}
-	if !strings.Contains(err.Error(), "empty prompt name") {
-		t.Errorf("expected 'empty prompt name' in error, got %q", err.Error())
+	if !strings.Contains(err.Error(), "empty resource name") {
+		t.Errorf("expected 'empty resource name' in error, got %q", err.Error())
 	}
 }
 

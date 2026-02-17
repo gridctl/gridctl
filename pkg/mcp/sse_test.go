@@ -1373,8 +1373,8 @@ func TestSSEServer_HandleMessage_ResourcesList(t *testing.T) {
 	if len(result.Resources) != 1 {
 		t.Errorf("expected 1 resource, got %d", len(result.Resources))
 	}
-	if result.Resources[0].URI != "prompt://code-review" {
-		t.Errorf("expected URI 'prompt://code-review', got %q", result.Resources[0].URI)
+	if result.Resources[0].URI != "skills://registry/code-review" {
+		t.Errorf("expected URI 'skills://registry/code-review', got %q", result.Resources[0].URI)
 	}
 }
 
@@ -1388,7 +1388,7 @@ func TestSSEServer_HandleMessage_ResourcesRead(t *testing.T) {
 	sse.mu.Unlock()
 
 	resp := ssePost(t, sse, "test-session", "resources/read", map[string]any{
-		"uri": "prompt://code-review",
+		"uri": "skills://registry/code-review",
 	})
 	if resp.Error != nil {
 		t.Fatalf("unexpected error: %s", resp.Error.Message)
