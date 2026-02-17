@@ -1,32 +1,34 @@
 # Registry
 
-Examples demonstrating reusable MCP prompts and skills via the registry.
+Examples demonstrating the Agent Skills registry following the [agentskills.io](https://agentskills.io) specification.
 
 ## Examples
 
 | File | Description |
 |------|-------------|
-| `registry-basic.yaml` | Single server — prompts and basic skill chains |
-| `registry-advanced.yaml` | Two servers — cross-server skill chains |
+| `registry-basic.yaml` | Single server with basic Agent Skills |
+| `registry-advanced.yaml` | Two servers with cross-server skills |
 
 ## How the Registry Works
 
-The registry stores prompt templates and skill chains as YAML files:
+The registry stores Agent Skills as SKILL.md files — markdown documents with YAML frontmatter:
 
 ```
 ~/.gridctl/registry/
-├── prompts/          # Prompt templates with arguments
-│   └── {name}.yaml
-└── skills/           # Multi-step tool chains
-    └── {name}.yaml
+└── skills/
+    └── {name}/
+        ├── SKILL.md          # Required: frontmatter + markdown body
+        ├── scripts/          # Optional: executable scripts
+        ├── references/       # Optional: reference materials
+        └── assets/           # Optional: images, data files
 ```
 
-Each item has a lifecycle state:
+Each skill has a lifecycle state:
 - **draft** — stored but not exposed via MCP (default)
-- **active** — exposed as an MCP prompt or tool
+- **active** — exposed as an MCP prompt and resource
 - **disabled** — temporarily hidden without deletion
 
-Items are managed via the REST API or Web UI — they are **not** declared in stack YAML.
+Skills are managed via the REST API or Web UI — they are **not** declared in stack YAML.
 
 ## Prerequisites
 
@@ -38,23 +40,17 @@ make mock-servers
 
 ## Quick Start
 
-### Option A: Copy Pre-Made Items
+### Option A: Copy Pre-Made Skills
 
 ```bash
-# Copy items into the registry
-mkdir -p ~/.gridctl/registry/prompts ~/.gridctl/registry/skills
-cp examples/registry/items/prompts/*.yaml ~/.gridctl/registry/prompts/
-cp examples/registry/items/skills/echo-and-time.yaml ~/.gridctl/registry/skills/
-cp examples/registry/items/skills/add-and-echo.yaml ~/.gridctl/registry/skills/
+# Copy skill directories into the registry
+cp -r examples/registry/items/* ~/.gridctl/registry/skills/
 
 # Deploy the stack
 gridctl deploy examples/registry/registry-basic.yaml
 
-# Activate a skill and test it
+# Activate a skill
 curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/activate
-curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/test \
-  -H 'Content-Type: application/json' \
-  -d '{"message": "hello world"}'
 ```
 
 ### Option B: Create via API
@@ -63,97 +59,51 @@ curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/test \
 # Deploy the stack first
 gridctl deploy examples/registry/registry-basic.yaml
 
-# Create a prompt via API
-curl -X POST http://localhost:8180/api/registry/prompts \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "greeting",
-    "description": "Simple greeting prompt",
-    "content": "Hello {{name}}, welcome to {{project}}!",
-    "arguments": [
-      {"name": "name", "description": "Person to greet", "required": true},
-      {"name": "project", "description": "Project name", "required": true}
-    ]
-  }'
-
 # Create a skill via API
 curl -X POST http://localhost:8180/api/registry/skills \
   -H 'Content-Type: application/json' \
   -d '{
-    "name": "quick-echo",
-    "description": "Echo a message",
-    "input": [{"name": "message", "description": "Message", "required": true}],
-    "steps": [{"tool": "local-tools__echo", "arguments": {"message": "{{input.message}}"}}]
+    "name": "my-skill",
+    "description": "A helpful skill",
+    "body": "# My Skill\n\nInstructions for the LLM..."
   }'
+
+# Activate it
+curl -X POST http://localhost:8180/api/registry/skills/my-skill/activate
 ```
 
-## Pre-Made Items
+## Pre-Made Skills
 
-### Prompts
+| Skill | Tags | For Stack |
+|-------|------|-----------|
+| `code-review` | development, review | any |
+| `explain-error` | debugging, errors | any |
+| `echo-and-time` | basic, demo | registry-basic |
+| `add-and-echo` | chaining, demo | registry-basic |
+| `chained-calculation` | cross-server, chaining | registry-advanced |
 
-| File | Arguments | Description |
-|------|-----------|-------------|
-| `code-review.yaml` | `language`\*, `focus_area`, `code`\* | Structured code review template |
-| `explain-error.yaml` | `error_message`\*, `context` | Error explanation template |
+## SKILL.md Format
 
-\* = required
+Skills use YAML frontmatter followed by a markdown body:
 
-### Skills
-
-| File | Inputs | Steps | For Stack |
-|------|--------|-------|-----------|
-| `echo-and-time.yaml` | `message`\* | echo → get_time | registry-basic |
-| `add-and-echo.yaml` | `a`\*, `b`\* | add → echo (step piping) | registry-basic |
-| `chained-calculation.yaml` | `a`\*, `b`\* | add → echo → get_time (cross-server) | registry-advanced |
-
-## Concepts
-
-### Prompts
-
-Prompts are text templates with named arguments. When active, they appear in MCP `prompts/list` responses so LLM clients can discover and use them.
-
-```yaml
-name: code-review
-content: |
-  Review the following {{language}} code.
-  {{code}}
-arguments:
-  - name: language
-    description: Programming language
-    required: true
-  - name: code
-    description: Code to review
-    required: true
+```markdown
+---
+name: my-skill
+description: What this skill does
+tags:
+  - category
+allowed-tools: server__tool1, server__tool2
 state: draft
+---
+
+# My Skill
+
+Instructions, context, and workflow steps for the LLM.
 ```
 
-Arguments use `{{argument_name}}` syntax in the content field.
+**Required fields:** `name`, `description`
 
-### Skills
-
-Skills are multi-step tool chains. When active, each skill appears as a single MCP tool. Clients call the skill by name and the gateway executes all steps sequentially.
-
-```yaml
-name: add-and-echo
-input:
-  - name: a
-    required: true
-  - name: b
-    required: true
-steps:
-  - tool: local-tools__add
-    arguments:
-      a: "{{input.a}}"        # Substituted from skill input
-      b: "{{input.b}}"
-  - tool: local-tools__echo
-    arguments:
-      message: "{{step1.result}}"  # Output from step 1
-state: draft
-```
-
-**Template variables:**
-- `{{input.name}}` — substitutes a skill input parameter
-- `{{stepN.result}}` — substitutes the output from step N (1-indexed)
+**Optional fields:** `tags`, `allowed-tools`, `license`, `compatibility`, `metadata`, `state`
 
 ### Tool Naming
 
@@ -173,33 +123,42 @@ For example, a server named `local-tools` with an `echo` tool becomes `local-too
 # Check registry status
 curl http://localhost:8180/api/registry/status | jq
 
-# List all prompts and skills
-curl http://localhost:8180/api/registry/prompts | jq
+# List all skills
 curl http://localhost:8180/api/registry/skills | jq
 
 # Activate a skill
-curl -X POST http://localhost:8180/api/registry/skills/add-and-echo/activate
+curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/activate
 
-# Test a skill with arguments
-curl -X POST http://localhost:8180/api/registry/skills/add-and-echo/test \
-  -H 'Content-Type: application/json' \
-  -d '{"a": "10", "b": "20"}'
+# Validate a SKILL.md without saving
+curl -X POST http://localhost:8180/api/registry/skills/validate \
+  -H 'Content-Type: text/markdown' \
+  -d '---
+name: test
+description: Test skill
+---
+# Test'
+
+# Manage supporting files
+curl http://localhost:8180/api/registry/skills/echo-and-time/files | jq
 ```
 
 ### Web UI
 
 1. Open http://localhost:8180 in a browser
 2. Navigate to the Registry section
-3. Activate items and run test executions from the UI
+3. Create and edit skills with the split-pane markdown editor
+4. Activate skills and browse supporting files
 
 ### MCP Protocol
 
 ```bash
-# List active prompts via MCP
+# List active skills as MCP prompts
 curl -X POST http://localhost:8180/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"prompts/list"}'
 
-# List tools (active skills appear here)
-curl http://localhost:8180/api/tools | jq '.tools[].name'
+# Get a specific skill prompt
+curl -X POST http://localhost:8180/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"prompts/get","params":{"name":"code-review"}}'
 ```
