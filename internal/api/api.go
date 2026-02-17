@@ -112,7 +112,7 @@ func (s *Server) SetProvisionerRegistry(r *provisioner.Registry, serverName stri
 	s.linkServerName = serverName
 }
 
-// SetRegistryServer sets the registry server for prompt/skill management.
+// SetRegistryServer sets the registry server for skill management.
 func (s *Server) SetRegistryServer(r *registry.Server) {
 	s.registryServer = r
 }
@@ -345,7 +345,7 @@ func corsMiddleware(allowedOrigins []string, extraHeaders []string, next http.Ha
 		origin := r.Header.Get("Origin")
 		if origin != "" && (allowAll || originSet[origin]) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
 			w.Header().Set("Vary", "Origin")
 		}

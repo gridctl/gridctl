@@ -3,7 +3,10 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/registry"
@@ -23,6 +26,8 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		s.handleRegistryStatus(w, r)
 	case path == "skills":
 		s.handleRegistrySkillsList(w, r)
+	case path == "skills/validate":
+		s.handleRegistryValidate(w, r)
 	case strings.HasPrefix(path, "skills/"):
 		s.handleRegistrySkillAction(w, r, strings.TrimPrefix(path, "skills/"))
 	default:
@@ -51,6 +56,7 @@ func (s *Server) handleRegistrySkillsList(w http.ResponseWriter, r *http.Request
 			skills = []*registry.AgentSkill{}
 		}
 		writeJSON(w, skills)
+
 	case http.MethodPost:
 		var sk registry.AgentSkill
 		if err := json.NewDecoder(r.Body).Decode(&sk); err != nil {
@@ -61,6 +67,7 @@ func (s *Server) handleRegistrySkillsList(w http.ResponseWriter, r *http.Request
 			writeJSONError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// Check name uniqueness
 		if _, err := s.registryServer.Store().GetSkill(sk.Name); err == nil {
 			writeJSONError(w, "Skill already exists: "+sk.Name, http.StatusConflict)
 			return
@@ -72,6 +79,7 @@ func (s *Server) handleRegistrySkillsList(w http.ResponseWriter, r *http.Request
 		s.refreshRegistryRouter()
 		w.WriteHeader(http.StatusCreated)
 		writeJSON(w, sk)
+
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -83,6 +91,10 @@ func (s *Server) handleRegistrySkillsList(w http.ResponseWriter, r *http.Request
 // DELETE /api/registry/skills/{name}
 // POST   /api/registry/skills/{name}/activate
 // POST   /api/registry/skills/{name}/disable
+// GET    /api/registry/skills/{name}/files
+// GET    /api/registry/skills/{name}/files/{path}
+// PUT    /api/registry/skills/{name}/files/{path}
+// DELETE /api/registry/skills/{name}/files/{path}
 func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Request, subpath string) {
 	parts := strings.SplitN(subpath, "/", 2)
 	name := parts[0]
@@ -91,6 +103,7 @@ func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Reques
 		action = parts[1]
 	}
 
+	// State transitions
 	if action == "activate" || action == "disable" {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -100,15 +113,17 @@ func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if action == "test" {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
+	// File management
+	if action == "files" || strings.HasPrefix(action, "files/") {
+		filePath := ""
+		if strings.HasPrefix(action, "files/") {
+			filePath = strings.TrimPrefix(action, "files/")
 		}
-		s.handleRegistrySkillTest(w, r, name)
+		s.handleRegistrySkillFiles(w, r, name, filePath)
 		return
 	}
 
+	// CRUD on the skill itself
 	switch r.Method {
 	case http.MethodGet:
 		sk, err := s.registryServer.Store().GetSkill(name)
@@ -117,13 +132,14 @@ func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		writeJSON(w, sk)
+
 	case http.MethodPut:
 		var sk registry.AgentSkill
 		if err := json.NewDecoder(r.Body).Decode(&sk); err != nil {
 			writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		sk.Name = name
+		sk.Name = name // URL path takes precedence
 		if err := sk.Validate(); err != nil {
 			writeJSONError(w, err.Error(), http.StatusBadRequest)
 			return
@@ -138,6 +154,7 @@ func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Reques
 		}
 		s.refreshRegistryRouter()
 		writeJSON(w, sk)
+
 	case http.MethodDelete:
 		if err := s.registryServer.Store().DeleteSkill(name); err != nil {
 			writeJSONError(w, "Failed to delete skill: "+err.Error(), http.StatusInternalServerError)
@@ -145,6 +162,7 @@ func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Reques
 		}
 		s.refreshRegistryRouter()
 		w.WriteHeader(http.StatusNoContent)
+
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -171,31 +189,135 @@ func (s *Server) handleRegistrySkillStateChange(w http.ResponseWriter, name, act
 	writeJSON(w, sk)
 }
 
-// handleRegistrySkillTest executes a skill and returns the result.
-// POST /api/registry/skills/{name}/test
-func (s *Server) handleRegistrySkillTest(w http.ResponseWriter, r *http.Request, name string) {
-	var args map[string]any
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&args); err != nil && err.Error() != "EOF" {
-			writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-	if args == nil {
-		args = make(map[string]any)
-	}
-
-	result, err := s.registryServer.CallTool(r.Context(), name, args)
-	if err != nil {
-		writeJSONError(w, "Execution error: "+err.Error(), http.StatusInternalServerError)
+// handleRegistrySkillFiles handles file management within a skill directory.
+// GET    /api/registry/skills/{name}/files          — list files
+// GET    /api/registry/skills/{name}/files/{path}   — read file
+// PUT    /api/registry/skills/{name}/files/{path}   — write file
+// DELETE /api/registry/skills/{name}/files/{path}   — delete file
+func (s *Server) handleRegistrySkillFiles(w http.ResponseWriter, r *http.Request, skillName, filePath string) {
+	// Verify skill exists
+	if _, err := s.registryServer.Store().GetSkill(skillName); err != nil {
+		writeJSONError(w, "Skill not found: "+skillName, http.StatusNotFound)
 		return
 	}
 
-	writeJSON(w, result)
+	if filePath == "" {
+		// GET /api/registry/skills/{name}/files — list files
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		files, err := s.registryServer.Store().ListFiles(skillName)
+		if err != nil {
+			writeJSONError(w, "Failed to list files: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if files == nil {
+			files = []registry.SkillFile{}
+		}
+		writeJSON(w, files)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		// GET /api/registry/skills/{name}/files/{path} — read file
+		data, err := s.registryServer.Store().ReadFile(skillName, filePath)
+		if err != nil {
+			if errors.Is(err, registry.ErrNotFound) {
+				writeJSONError(w, "File not found: "+filePath, http.StatusNotFound)
+			} else {
+				writeJSONError(w, "Failed to read file: "+err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		w.Header().Set("Content-Type", detectContentType(filePath))
+		_, _ = w.Write(data)
+
+	case http.MethodPut:
+		// PUT /api/registry/skills/{name}/files/{path} — write file
+		data, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1MB limit
+		if err != nil {
+			writeJSONError(w, "Failed to read body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.registryServer.Store().WriteFile(skillName, filePath, data); err != nil {
+			writeJSONError(w, "Failed to write file: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	case http.MethodDelete:
+		// DELETE /api/registry/skills/{name}/files/{path} — delete file
+		if err := s.registryServer.Store().DeleteFile(skillName, filePath); err != nil {
+			writeJSONError(w, "Failed to delete file: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
-// refreshRegistryRouter refreshes the registry server's tools and re-registers
-// with the gateway router.
+// detectContentType returns a MIME type based on file extension.
+func detectContentType(path string) string {
+	switch filepath.Ext(path) {
+	case ".md":
+		return "text/markdown"
+	case ".sh":
+		return "text/x-shellscript"
+	case ".py":
+		return "text/x-python"
+	case ".json":
+		return "application/json"
+	case ".yaml", ".yml":
+		return "text/yaml"
+	case ".csv":
+		return "text/csv"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// handleRegistryValidate validates SKILL.md content without saving.
+// POST /api/registry/skills/validate
+func (s *Server) handleRegistryValidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Content string `json:"content"` // Raw SKILL.md content
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	skill, err := registry.ParseSkillMD([]byte(req.Content))
+	if err != nil {
+		writeJSON(w, map[string]any{
+			"valid":    false,
+			"errors":   []string{"Failed to parse SKILL.md: " + err.Error()},
+			"warnings": []string{},
+		})
+		return
+	}
+
+	result := registry.ValidateSkillFull(skill)
+	writeJSON(w, map[string]any{
+		"valid":    result.Valid(),
+		"errors":   result.Errors,
+		"warnings": result.Warnings,
+		"parsed":   skill,
+	})
+}
+
+// refreshRegistryRouter refreshes the registry and re-registers with the gateway router.
+// This handles progressive disclosure: if the registry gains content, it registers;
+// if all content is removed, the registry is deregistered.
 func (s *Server) refreshRegistryRouter() {
 	if s.registryServer == nil {
 		return
@@ -203,6 +325,8 @@ func (s *Server) refreshRegistryRouter() {
 	_ = s.registryServer.RefreshTools(context.Background())
 	if s.registryServer.HasContent() {
 		s.gateway.Router().AddClient(s.registryServer)
+	} else {
+		s.gateway.Router().RemoveClient("registry")
 	}
 	s.gateway.Router().RefreshTools()
 }
