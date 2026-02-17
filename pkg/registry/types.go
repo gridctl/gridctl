@@ -30,7 +30,8 @@ type AgentSkill struct {
 	Body string `yaml:"-" json:"body"` // Markdown content after frontmatter
 
 	// --- Computed fields (not serialized to YAML) ---
-	FileCount int `yaml:"-" json:"fileCount"` // Number of supporting files (scripts/, references/, assets/)
+	FileCount int    `yaml:"-" json:"fileCount"` // Number of supporting files (scripts/, references/, assets/)
+	Dir       string `yaml:"-" json:"-"`          // Relative path from skills/ root (e.g., "git-workflow/branch-fork")
 }
 
 // Validate checks the skill against the agentskills.io specification.
