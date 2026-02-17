@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -404,6 +405,7 @@ func TestHandleRegistry_MethodNotAllowed(t *testing.T) {
 		{"/api/registry/skills/s1/activate", http.MethodGet},
 		{"/api/registry/skills/s1/activate", http.MethodPut},
 		{"/api/registry/skills/s1/disable", http.MethodGet},
+		{"/api/registry/skills/validate", http.MethodGet},
 	}
 
 	for _, tt := range tests {
@@ -526,55 +528,230 @@ func TestHandleRegistry_ProgressiveDisclosure(t *testing.T) {
 	}
 }
 
-// --- Skills: test run ---
+// --- Progressive disclosure: deleting last item deregisters from router ---
 
-func TestHandleRegistry_SkillTest(t *testing.T) {
+func TestHandleRegistry_ProgressiveDisclosure_Deregister(t *testing.T) {
 	srv, regServer := setupRegistryTestServer(t)
-	seedSkill(t, regServer, "test-skill", registry.StateActive)
+	seedSkill(t, regServer, "only-skill", registry.StateActive)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/test-skill/test", nil)
+
+	// Verify the skill is registered (create triggers refreshRegistryRouter)
+	srv.refreshRegistryRouter()
+	client := srv.gateway.Router().GetClient("registry")
+	if client == nil {
+		t.Fatal("expected registry to be registered after seeding skill")
+	}
+
+	// Delete the only skill
+	req := httptest.NewRequest(http.MethodDelete, "/api/registry/skills/only-skill", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
 	}
 
-	var result mcp.ToolCallResult
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
+	// Registry should be deregistered from router
+	client = srv.gateway.Router().GetClient("registry")
+	if client != nil {
+		t.Error("expected registry to be deregistered after deleting last skill")
 	}
 }
 
-func TestHandleRegistry_SkillTest_SkillNotFound(t *testing.T) {
+// --- Validation endpoint ---
+
+func TestHandleRegistry_Validate_Valid(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
-
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/nonexistent/test", nil)
+
+	content := "---\nname: test-skill\ndescription: A test\n---\n\n# Body\n\nInstructions here."
+	body := `{"content":"` + strings.ReplaceAll(content, "\n", "\\n") + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	// CallTool returns an IsError ToolCallResult for not-found skills (not an HTTP error)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
 	}
 
-	var result mcp.ToolCallResult
+	var result map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if !result.IsError {
-		t.Error("expected IsError true for nonexistent skill")
+	if result["valid"] != true {
+		t.Errorf("expected valid=true, got %v", result["valid"])
 	}
 }
 
-func TestHandleRegistry_SkillTest_MethodNotAllowed(t *testing.T) {
+func TestHandleRegistry_Validate_Invalid(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	handler := srv.Handler()
+
+	// Missing description
+	content := "---\nname: test-skill\n---\n\n# Body"
+	body := `{"content":"` + strings.ReplaceAll(content, "\n", "\\n") + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result["valid"] != false {
+		t.Errorf("expected valid=false, got %v", result["valid"])
+	}
+}
+
+func TestHandleRegistry_Validate_InvalidJSON(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader("nope"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+// --- File management ---
+
+func TestHandleRegistry_ListFiles_Empty(t *testing.T) {
 	srv, regServer := setupRegistryTestServer(t)
-	seedSkill(t, regServer, "test-skill", registry.StateActive)
+	seedSkill(t, regServer, "file-skill", registry.StateActive)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/test-skill/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/file-skill/files", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result []registry.SkillFile
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty file list, got %d", len(result))
+	}
+}
+
+func TestHandleRegistry_WriteAndReadFile(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "file-skill", registry.StateActive)
+
+	handler := srv.Handler()
+
+	// Write a file
+	fileContent := "#!/bin/bash\necho hello"
+	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/file-skill/files/scripts/test.sh", strings.NewReader(fileContent))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for write, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	// Read the file back
+	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/file-skill/files/scripts/test.sh", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for read, got %d", rec.Code)
+	}
+
+	data, _ := io.ReadAll(rec.Body)
+	if string(data) != fileContent {
+		t.Errorf("expected content %q, got %q", fileContent, string(data))
+	}
+
+	ct := rec.Header().Get("Content-Type")
+	if ct != "text/x-shellscript" {
+		t.Errorf("expected Content-Type text/x-shellscript, got %q", ct)
+	}
+
+	// List files should show the new file
+	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/file-skill/files", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var files []registry.SkillFile
+	_ = json.NewDecoder(rec.Body).Decode(&files)
+	found := false
+	for _, f := range files {
+		if strings.Contains(f.Path, "test.sh") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected test.sh in file listing")
+	}
+}
+
+func TestHandleRegistry_DeleteFile(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "file-skill", registry.StateActive)
+
+	handler := srv.Handler()
+
+	// Write a file first
+	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/file-skill/files/scripts/temp.sh", strings.NewReader("temp"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for write, got %d", rec.Code)
+	}
+
+	// Delete it
+	req = httptest.NewRequest(http.MethodDelete, "/api/registry/skills/file-skill/files/scripts/temp.sh", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for delete, got %d", rec.Code)
+	}
+
+	// Reading should return 404 or error
+	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/file-skill/files/scripts/temp.sh", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 after delete, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegistry_Files_SkillNotFound(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/nonexistent/files", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for nonexistent skill files, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegistry_Files_MethodNotAllowed(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "file-skill", registry.StateActive)
+	handler := srv.Handler()
+
+	// POST to files listing should be method not allowed
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/file-skill/files", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -583,16 +760,30 @@ func TestHandleRegistry_SkillTest_MethodNotAllowed(t *testing.T) {
 	}
 }
 
-func TestHandleRegistry_SkillTest_InvalidJSON(t *testing.T) {
-	srv, regServer := setupRegistryTestServer(t)
-	seedSkill(t, regServer, "test-skill", registry.StateActive)
+// --- Content type detection ---
 
-	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/test-skill/test", strings.NewReader("{invalid"))
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+func TestDetectContentType(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"readme.md", "text/markdown"},
+		{"script.sh", "text/x-shellscript"},
+		{"main.py", "text/x-python"},
+		{"config.json", "application/json"},
+		{"stack.yaml", "text/yaml"},
+		{"stack.yml", "text/yaml"},
+		{"data.csv", "text/csv"},
+		{"binary.bin", "application/octet-stream"},
+		{"noext", "application/octet-stream"},
+	}
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d; body: %s", rec.Code, rec.Body.String())
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			ct := detectContentType(tt.path)
+			if ct != tt.expected {
+				t.Errorf("detectContentType(%q) = %q, want %q", tt.path, ct, tt.expected)
+			}
+		})
 	}
 }
