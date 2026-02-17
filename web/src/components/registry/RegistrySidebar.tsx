@@ -1,8 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   Library,
-  Wrench,
-  BarChart3,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -11,7 +10,7 @@ import {
   Power,
   PowerOff,
   X,
-  FileCode,
+  FolderOpen,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useRegistryStore } from '../../stores/useRegistryStore';
@@ -28,17 +27,9 @@ import {
   activateRegistrySkill,
   disableRegistrySkill,
 } from '../../lib/api';
-import type { AgentSkill, ItemState, RegistryStatus } from '../../types';
-
-type Tab = 'skills' | 'status';
-
-const tabConfig: { key: Tab; label: string; icon: typeof Wrench }[] = [
-  { key: 'skills', label: 'Skills', icon: Wrench },
-  { key: 'status', label: 'Status', icon: BarChart3 },
-];
+import type { AgentSkill, ItemState } from '../../types';
 
 export function RegistrySidebar() {
-  const [activeTab, setActiveTab] = useState<Tab>('skills');
   const skills = useRegistryStore((s) => s.skills);
   const status = useRegistryStore((s) => s.status);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
@@ -47,12 +38,12 @@ export function RegistrySidebar() {
   const selectNode = useStackStore((s) => s.selectNode);
   const { openDetachedWindow } = useWindowManager();
 
-  // Modal state
-  const [showSkillEditor, setShowSkillEditor] = useState(false);
+  // Editor state
+  const [showEditor, setShowEditor] = useState(false);
   const [editingSkill, setEditingSkill] = useState<AgentSkill | undefined>();
 
-  // Delete confirmation state
-  const [confirmDelete, setConfirmDelete] = useState<{ name: string } | null>(null);
+  // Delete confirmation
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -76,25 +67,7 @@ export function RegistrySidebar() {
     }
   }, []);
 
-  const handleEditSkill = useCallback((skill: AgentSkill) => {
-    setEditingSkill(skill);
-    setShowSkillEditor(true);
-  }, []);
-
-  const handleDeleteConfirm = useCallback(async () => {
-    if (!confirmDelete) return;
-    try {
-      await deleteRegistrySkill(confirmDelete.name);
-      showToast('success', 'Skill deleted');
-      refreshRegistry();
-    } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Delete failed');
-    } finally {
-      setConfirmDelete(null);
-    }
-  }, [confirmDelete, refreshRegistry]);
-
-  const handleToggleSkillState = useCallback(async (skill: AgentSkill) => {
+  const handleToggleState = useCallback(async (skill: AgentSkill) => {
     try {
       if (skill.state === 'active') {
         await disableRegistrySkill(skill.name);
@@ -108,6 +81,19 @@ export function RegistrySidebar() {
       showToast('error', err instanceof Error ? err.message : 'State change failed');
     }
   }, [refreshRegistry]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!confirmDelete) return;
+    try {
+      await deleteRegistrySkill(confirmDelete);
+      showToast('success', 'Skill deleted');
+      refreshRegistry();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setConfirmDelete(null);
+    }
+  }, [confirmDelete, refreshRegistry]);
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden">
@@ -139,59 +125,45 @@ export function RegistrySidebar() {
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex border-b border-border/30">
-        {tabConfig.map(({ key, label, icon: TabIcon }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors',
-              activeTab === key
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-text-muted hover:text-text-secondary'
-            )}
-          >
-            <TabIcon size={12} />
-            {label}
-          </button>
-        ))}
+      {/* Item count + New Skill button */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border/20">
+        <span className="text-[10px] text-text-muted">
+          {(skills ?? []).length} skills
+        </span>
+        <button
+          onClick={() => { setEditingSkill(undefined); setShowEditor(true); }}
+          className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+        >
+          <Plus size={10} /> New Skill
+        </button>
       </div>
 
-      {/* Item count + New button */}
-      {activeTab === 'skills' && (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-border/20">
-          <span className="text-[10px] text-text-muted">
-            {(skills ?? []).length} items
-          </span>
-          <button
-            onClick={() => setShowSkillEditor(true)}
-            className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
-          >
-            <Plus size={10} /> New
-          </button>
+      {/* Skills list */}
+      <div className="flex-1 overflow-y-auto scrollbar-dark">
+        <SkillsList
+          skills={skills ?? []}
+          onEdit={(skill) => { setEditingSkill(skill); setShowEditor(true); }}
+          onDelete={(name) => setConfirmDelete(name)}
+          onToggleState={handleToggleState}
+        />
+      </div>
+
+      {/* Status footer */}
+      {status && (
+        <div className="px-4 py-2 border-t border-border/30 bg-surface/30">
+          <div className="flex items-center justify-between text-[10px] text-text-muted">
+            <span>{status.totalSkills} total</span>
+            <span className="text-status-running">{status.activeSkills} active</span>
+          </div>
         </div>
       )}
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto scrollbar-dark">
-        {activeTab === 'skills' && (
-          <SkillsTab
-            skills={skills ?? []}
-            onEdit={handleEditSkill}
-            onDelete={(name) => setConfirmDelete({ name })}
-            onToggleState={handleToggleSkillState}
-          />
-        )}
-        {activeTab === 'status' && <StatusTab status={status} />}
-      </div>
-
-      {/* Delete confirmation */}
+      {/* Delete confirmation overlay */}
       {confirmDelete && (
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="glass-panel-elevated rounded-xl p-5 max-w-xs mx-4 space-y-3">
             <p className="text-sm text-text-primary">
-              Delete <span className="font-mono text-primary">{confirmDelete.name}</span>?
+              Delete <span className="font-mono text-primary">{confirmDelete}</span>?
             </p>
             <p className="text-xs text-text-muted">This action cannot be undone.</p>
             <div className="flex justify-end gap-2 pt-2">
@@ -212,13 +184,10 @@ export function RegistrySidebar() {
         </div>
       )}
 
-      {/* Modals */}
+      {/* Editor modal */}
       <SkillEditor
-        isOpen={showSkillEditor}
-        onClose={() => {
-          setShowSkillEditor(false);
-          setEditingSkill(undefined);
-        }}
+        isOpen={showEditor}
+        onClose={() => { setShowEditor(false); setEditingSkill(undefined); }}
         onSaved={refreshRegistry}
         skill={editingSkill}
         popoutDisabled={editorDetached}
@@ -227,7 +196,7 @@ export function RegistrySidebar() {
             ? `type=skill&name=${encodeURIComponent(editingSkill.name)}`
             : 'type=skill';
           openDetachedWindow('editor', params);
-          setShowSkillEditor(false);
+          setShowEditor(false);
           setEditingSkill(undefined);
         }}
       />
@@ -235,9 +204,9 @@ export function RegistrySidebar() {
   );
 }
 
-// --- Skills Tab ---
+// --- SkillsList ---
 
-function SkillsTab({
+function SkillsList({
   skills,
   onEdit,
   onDelete,
@@ -251,8 +220,11 @@ function SkillsTab({
   if ((skills ?? []).length === 0) {
     return (
       <div className="p-6 text-center">
-        <Wrench size={24} className="text-text-muted/30 mx-auto mb-2" />
+        <BookOpen size={24} className="text-text-muted/30 mx-auto mb-2" />
         <p className="text-text-muted text-xs">No skills registered</p>
+        <p className="text-text-muted/60 text-[10px] mt-1">
+          Create a SKILL.md to get started
+        </p>
       </div>
     );
   }
@@ -272,6 +244,8 @@ function SkillsTab({
   );
 }
 
+// --- SkillItem ---
+
 function SkillItem({
   skill,
   onEdit,
@@ -287,6 +261,7 @@ function SkillItem({
 
   return (
     <div className="rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
+      {/* Header row */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 p-3 hover:bg-surface-highlight/50 transition-colors"
@@ -294,87 +269,73 @@ function SkillItem({
         <div className="p-0.5 text-text-muted">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </div>
-        <Wrench size={12} className="text-primary/60 flex-shrink-0" />
+        <BookOpen size={12} className="text-primary/60 flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary flex-1 text-left truncate">
           {skill.name}
         </span>
         <StateBadge state={skill.state} />
         {skill.fileCount > 0 && (
-          <span className="flex items-center gap-0.5 text-[10px] text-text-muted font-mono">
-            <FileCode size={9} />
+          <span className="text-[10px] text-text-muted font-mono flex items-center gap-0.5">
+            <FolderOpen size={9} />
             {skill.fileCount}
           </span>
         )}
       </button>
 
+      {/* Expanded content */}
       {expanded && (
         <div className="px-3 pb-3 border-t border-border-subtle">
+          {/* Description */}
           {skill.description && (
             <p className="text-[11px] text-text-secondary mt-2 mb-2 leading-relaxed">
               {skill.description}
             </p>
           )}
 
-          {/* Body preview */}
+          {/* Body preview (first 6 lines of markdown) */}
           {skill.body && (
-            <pre className="text-[10px] text-text-muted font-mono bg-background/60 p-2 rounded overflow-x-auto max-h-32 scrollbar-dark leading-relaxed whitespace-pre-wrap break-words">
-              {skill.body}
+            <pre className="text-[10px] text-text-muted font-mono bg-background/60 p-2 rounded overflow-x-auto max-h-32 scrollbar-dark leading-relaxed whitespace-pre-wrap">
+              {skill.body.split('\n').slice(0, 6).join('\n')}
+              {skill.body.split('\n').length > 6 && '\n...'}
             </pre>
           )}
 
-          {/* Allowed tools */}
-          {skill.allowedTools && (
-            <div className="mt-2">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Allowed Tools</span>
-              <span className="text-[10px] font-mono text-primary">{skill.allowedTools}</span>
-            </div>
-          )}
-
-          {/* Metadata */}
-          {skill.metadata && Object.keys(skill.metadata).length > 0 && (
-            <div className="mt-2 space-y-1">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider">Metadata</span>
-              {Object.entries(skill.metadata).map(([key, value]) => (
-                <div key={key} className="flex items-center gap-2 text-[10px]">
-                  <span className="font-mono text-primary">{key}</span>
-                  <span className="text-text-muted">=</span>
-                  <span className="text-text-secondary truncate">{value}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Metadata badges */}
+          <div className="flex gap-1 mt-2 flex-wrap">
+            {skill.license && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
+                {skill.license}
+              </span>
+            )}
+            {skill.compatibility && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
+                {skill.compatibility}
+              </span>
+            )}
+          </div>
 
           {/* Actions */}
           <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border-subtle/50">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleState(skill);
-              }}
+              onClick={(e) => { e.stopPropagation(); onToggleState(skill); }}
               className={cn(
                 'flex items-center gap-1 text-[10px] transition-colors',
                 skill.state === 'active'
                   ? 'text-text-muted hover:text-status-pending'
-                  : 'text-text-muted hover:text-status-running',
+                  : 'text-text-muted hover:text-status-running'
               )}
             >
               {skill.state === 'active' ? <PowerOff size={10} /> : <Power size={10} />}
               {skill.state === 'active' ? 'Disable' : 'Activate'}
             </button>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(skill);
-              }}
+              onClick={(e) => { e.stopPropagation(); onEdit(skill); }}
               className="flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors"
             >
               <Pencil size={10} /> Edit
             </button>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(skill.name);
-              }}
+              onClick={(e) => { e.stopPropagation(); onDelete(skill.name); }}
               className="flex items-center gap-1 text-[10px] text-text-muted hover:text-status-error transition-colors"
             >
               <Trash2 size={10} /> Delete
@@ -386,41 +347,7 @@ function SkillItem({
   );
 }
 
-// --- Status Tab ---
-
-function StatusTab({ status }: { status: RegistryStatus | null }) {
-  if (!status) {
-    return (
-      <div className="p-6 text-center">
-        <BarChart3 size={24} className="text-text-muted/30 mx-auto mb-2" />
-        <p className="text-text-muted text-xs">Loading registry status...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-4 space-y-3">
-      <div className="glass-panel p-3 rounded-lg">
-        <div className="flex items-center gap-2 mb-3">
-          <Wrench size={12} className="text-primary/60" />
-          <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">Skills</span>
-        </div>
-        <div className="space-y-2">
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-text-secondary">Total</span>
-            <span className="text-xs font-mono text-text-primary font-bold tabular-nums">{status.totalSkills}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-text-secondary">Active</span>
-            <span className="text-xs font-mono text-status-running font-bold tabular-nums">{status.activeSkills}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- Shared Components ---
+// --- StateBadge ---
 
 function StateBadge({ state }: { state: ItemState }) {
   const styles: Record<ItemState, string> = {
