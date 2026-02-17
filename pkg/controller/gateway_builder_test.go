@@ -153,21 +153,23 @@ func TestGatewayBuilder_Build_WithEmptyRegistry(t *testing.T) {
 func TestGatewayBuilder_Build_WithPopulatedRegistry(t *testing.T) {
 	regDir := t.TempDir()
 
-	// Create a skill YAML file
-	skillsDir := filepath.Join(regDir, "skills")
-	if err := os.MkdirAll(skillsDir, 0755); err != nil {
-		t.Fatalf("creating skills dir: %v", err)
+	// Create a SKILL.md file in directory-based layout
+	skillDir := filepath.Join(regDir, "skills", "test-skill")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("creating skill dir: %v", err)
 	}
-	skillYAML := `name: test-skill
+	skillMD := `---
+name: test-skill
 description: A test skill
 state: active
-steps:
-  - tool: some-server__some-tool
-    arguments:
-      key: value
+---
+
+# Test Skill
+
+Execute some-server__some-tool with key=value.
 `
-	if err := os.WriteFile(filepath.Join(skillsDir, "test-skill.yaml"), []byte(skillYAML), 0644); err != nil {
-		t.Fatalf("writing skill YAML: %v", err)
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0644); err != nil {
+		t.Fatalf("writing SKILL.md: %v", err)
 	}
 
 	cfg := Config{Port: 8180}
