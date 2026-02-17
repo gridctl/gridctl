@@ -1,170 +1,119 @@
 package registry
 
 import (
+	"encoding/json"
 	"testing"
 )
 
-func TestPrompt_Validate(t *testing.T) {
+func TestAgentSkill_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
-		prompt  Prompt
-		wantErr bool
-	}{
-		{
-			name: "valid prompt",
-			prompt: Prompt{
-				Name:    "my-prompt",
-				Content: "Hello {{name}}",
-				State:   StateActive,
-			},
-		},
-		{
-			name: "valid prompt with arguments",
-			prompt: Prompt{
-				Name:    "greet_user",
-				Content: "Hello {{name}}, welcome to {{place}}",
-				Arguments: []Argument{
-					{Name: "name", Description: "User name", Required: true},
-					{Name: "place", Description: "Location", Default: "the system"},
-				},
-				Tags:  []string{"greeting"},
-				State: StateDraft,
-			},
-		},
-		{
-			name: "defaults to draft state",
-			prompt: Prompt{
-				Name:    "test",
-				Content: "content",
-			},
-		},
-		{
-			name:    "empty name",
-			prompt:  Prompt{Content: "content"},
-			wantErr: true,
-		},
-		{
-			name: "invalid name characters",
-			prompt: Prompt{
-				Name:    "my prompt!",
-				Content: "content",
-			},
-			wantErr: true,
-		},
-		{
-			name: "name with path traversal",
-			prompt: Prompt{
-				Name:    "../etc/passwd",
-				Content: "content",
-			},
-			wantErr: true,
-		},
-		{
-			name: "empty content",
-			prompt: Prompt{
-				Name: "test",
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid state",
-			prompt: Prompt{
-				Name:    "test",
-				Content: "content",
-				State:   "bogus",
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.prompt.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestPrompt_Validate_DefaultsState(t *testing.T) {
-	p := Prompt{Name: "test", Content: "content"}
-	if err := p.Validate(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if p.State != StateDraft {
-		t.Errorf("expected state %q, got %q", StateDraft, p.State)
-	}
-}
-
-func TestSkill_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		skill   Skill
+		skill   AgentSkill
 		wantErr bool
 	}{
 		{
 			name: "valid skill",
-			skill: Skill{
-				Name:  "deploy-app",
-				Steps: []Step{{Tool: "docker__build"}, {Tool: "docker__push"}},
-				State: StateActive,
+			skill: AgentSkill{
+				Name:        "code-review",
+				Description: "Review code for quality issues",
+				State:       StateActive,
 			},
 		},
 		{
-			name: "valid skill with input and timeout",
-			skill: Skill{
-				Name:        "run-tests",
-				Description: "Run test suite",
-				Steps:       []Step{{Tool: "exec__run", Arguments: map[string]string{"cmd": "go test"}}},
-				Input:       []Argument{{Name: "verbose", Description: "Verbose output", Required: false}},
-				Timeout:     "30s",
-				Tags:        []string{"testing", "ci"},
-				State:       StateDraft,
+			name: "valid skill with all fields",
+			skill: AgentSkill{
+				Name:          "deploy-app",
+				Description:   "Deploy application to production",
+				License:       "MIT",
+				Compatibility: "Requires Docker",
+				Metadata:      map[string]string{"author": "test", "version": "1.0"},
+				AllowedTools:  "Bash(docker:*) Read",
+				State:         StateActive,
+				Body:          "# Deploy\n\nRun the deployment.",
 			},
 		},
 		{
-			name:    "empty name",
-			skill:   Skill{Steps: []Step{{Tool: "test"}}},
-			wantErr: true,
-		},
-		{
-			name: "invalid name characters",
-			skill: Skill{
-				Name:  "my skill!",
-				Steps: []Step{{Tool: "test"}},
+			name: "defaults to draft state",
+			skill: AgentSkill{
+				Name:        "test-skill",
+				Description: "A test skill",
 			},
-			wantErr: true,
 		},
 		{
-			name: "no steps",
-			skill: Skill{
-				Name:  "empty-skill",
-				Steps: []Step{},
+			name: "empty name",
+			skill: AgentSkill{
+				Description: "A skill",
 			},
 			wantErr: true,
 		},
 		{
-			name: "nil steps",
-			skill: Skill{
-				Name: "nil-skill",
+			name: "missing description",
+			skill: AgentSkill{
+				Name: "my-skill",
 			},
 			wantErr: true,
 		},
 		{
-			name: "step with empty tool",
-			skill: Skill{
-				Name:  "bad-step",
-				Steps: []Step{{Tool: "good"}, {Tool: ""}},
+			name: "invalid name characters (uppercase)",
+			skill: AgentSkill{
+				Name:        "MySkill",
+				Description: "A skill",
 			},
 			wantErr: true,
+		},
+		{
+			name: "invalid name characters (spaces)",
+			skill: AgentSkill{
+				Name:        "my skill",
+				Description: "A skill",
+			},
+			wantErr: true,
+		},
+		{
+			name: "consecutive hyphens",
+			skill: AgentSkill{
+				Name:        "my--skill",
+				Description: "A skill",
+			},
+			wantErr: true,
+		},
+		{
+			name: "leading hyphen",
+			skill: AgentSkill{
+				Name:        "-my-skill",
+				Description: "A skill",
+			},
+			wantErr: true,
+		},
+		{
+			name: "trailing hyphen",
+			skill: AgentSkill{
+				Name:        "my-skill-",
+				Description: "A skill",
+			},
+			wantErr: true,
+		},
+		{
+			name: "name too long",
+			skill: AgentSkill{
+				Name:        "a234567890123456789012345678901234567890123456789012345678901234x",
+				Description: "A skill",
+			},
+			wantErr: true,
+		},
+		{
+			name: "single character name",
+			skill: AgentSkill{
+				Name:        "a",
+				Description: "A skill",
+			},
 		},
 		{
 			name: "invalid state",
-			skill: Skill{
-				Name:  "test",
-				Steps: []Step{{Tool: "test"}},
-				State: "unknown",
+			skill: AgentSkill{
+				Name:        "test",
+				Description: "A skill",
+				State:       "bogus",
 			},
 			wantErr: true,
 		},
@@ -175,6 +124,70 @@ func TestSkill_Validate(t *testing.T) {
 			err := tt.skill.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRegistryStatus_JSON(t *testing.T) {
+	status := RegistryStatus{
+		TotalSkills:  5,
+		ActiveSkills: 3,
+	}
+
+	data, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var decoded RegistryStatus
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if decoded.TotalSkills != 5 {
+		t.Errorf("TotalSkills = %d, want 5", decoded.TotalSkills)
+	}
+	if decoded.ActiveSkills != 3 {
+		t.Errorf("ActiveSkills = %d, want 3", decoded.ActiveSkills)
+	}
+
+	// Verify JSON field names
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Unmarshal to map error = %v", err)
+	}
+	if _, ok := raw["totalSkills"]; !ok {
+		t.Error("expected JSON key 'totalSkills'")
+	}
+	if _, ok := raw["activeSkills"]; !ok {
+		t.Error("expected JSON key 'activeSkills'")
+	}
+}
+
+func TestValidateState(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   ItemState
+		want    ItemState
+		wantErr bool
+	}{
+		{name: "empty defaults to draft", state: "", want: StateDraft},
+		{name: "draft is valid", state: StateDraft, want: StateDraft},
+		{name: "active is valid", state: StateActive, want: StateActive},
+		{name: "disabled is valid", state: StateDisabled, want: StateDisabled},
+		{name: "invalid state", state: "unknown", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := tt.state
+			err := validateState(&s)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateState() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && s != tt.want {
+				t.Errorf("validateState() state = %q, want %q", s, tt.want)
 			}
 		})
 	}

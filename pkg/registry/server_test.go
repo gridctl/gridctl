@@ -10,26 +10,14 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
-// writeSkillYAML writes a skill YAML file to the given directory.
-func writeSkillYAML(t *testing.T, dir, filename, content string) {
+// writeTestSkill writes a SKILL.md file in the directory-based layout for tests.
+func writeTestSkill(t *testing.T, baseDir, skillName, content string) {
 	t.Helper()
-	skillDir := filepath.Join(dir, "skills")
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	dir := filepath.Join(baseDir, "skills", skillName)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, filename), []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// writePromptYAML writes a prompt YAML file to the given directory.
-func writePromptYAML(t *testing.T, dir, filename, content string) {
-	t.Helper()
-	promptDir := filepath.Join(dir, "prompts")
-	if err := os.MkdirAll(promptDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(promptDir, filename), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -67,27 +55,23 @@ func TestServer_Name(t *testing.T) {
 func TestServer_Initialize(t *testing.T) {
 	dir := t.TempDir()
 
-	writeSkillYAML(t, dir, "audit.yaml", `name: audit-repo
+	writeTestSkill(t, dir, "audit-repo", `---
+name: audit-repo
 description: Audit a repository
-steps:
-  - tool: git__log
-  - tool: lint__check
-input:
-  - name: repo
-    description: Repository URL
-    required: true
 state: active
+---
+
+# Audit
+
+Run the audit steps.
 `)
-	writeSkillYAML(t, dir, "draft-skill.yaml", `name: draft-skill
+	writeTestSkill(t, dir, "draft-skill", `---
+name: draft-skill
 description: A draft skill
-steps:
-  - tool: noop
 state: draft
-`)
-	writePromptYAML(t, dir, "greeting.yaml", `name: greeting
-description: A greeting prompt
-content: "Hello {{name}}"
-state: active
+---
+
+Draft body.
 `)
 
 	store := NewStore(dir)
@@ -116,50 +100,34 @@ state: active
 	if tools[0].Description != "Audit a repository" {
 		t.Errorf("tool description = %q, want %q", tools[0].Description, "Audit a repository")
 	}
-
-	// Verify input schema
-	var schema mcp.InputSchemaObject
-	if err := json.Unmarshal(tools[0].InputSchema, &schema); err != nil {
-		t.Fatalf("unmarshal input schema: %v", err)
-	}
-	if schema.Type != "object" {
-		t.Errorf("schema type = %q, want %q", schema.Type, "object")
-	}
-	repoProp, ok := schema.Properties["repo"]
-	if !ok {
-		t.Fatal("expected 'repo' property in schema")
-	}
-	if repoProp.Type != "string" {
-		t.Errorf("repo type = %q, want %q", repoProp.Type, "string")
-	}
-	if repoProp.Description != "Repository URL" {
-		t.Errorf("repo description = %q, want %q", repoProp.Description, "Repository URL")
-	}
-	if len(schema.Required) != 1 || schema.Required[0] != "repo" {
-		t.Errorf("required = %v, want [repo]", schema.Required)
-	}
 }
 
 func TestServer_Tools(t *testing.T) {
 	dir := t.TempDir()
 
-	writeSkillYAML(t, dir, "active.yaml", `name: active-skill
+	writeTestSkill(t, dir, "active-skill", `---
+name: active-skill
 description: Active
-steps:
-  - tool: exec
 state: active
+---
+
+Active body.
 `)
-	writeSkillYAML(t, dir, "draft.yaml", `name: draft-skill
+	writeTestSkill(t, dir, "draft-skill", `---
+name: draft-skill
 description: Draft
-steps:
-  - tool: exec
 state: draft
+---
+
+Draft body.
 `)
-	writeSkillYAML(t, dir, "disabled.yaml", `name: disabled-skill
+	writeTestSkill(t, dir, "disabled-skill", `---
+name: disabled-skill
 description: Disabled
-steps:
-  - tool: exec
 state: disabled
+---
+
+Disabled body.
 `)
 
 	store := NewStore(dir)
@@ -180,11 +148,13 @@ state: disabled
 func TestServer_RefreshTools(t *testing.T) {
 	dir := t.TempDir()
 
-	writeSkillYAML(t, dir, "skill1.yaml", `name: skill1
+	writeTestSkill(t, dir, "skill1", `---
+name: skill1
 description: First skill
-steps:
-  - tool: exec
 state: active
+---
+
+Body.
 `)
 
 	store := NewStore(dir)
@@ -198,11 +168,13 @@ state: active
 	}
 
 	// Add a new active skill to disk
-	writeSkillYAML(t, dir, "skill2.yaml", `name: skill2
+	writeTestSkill(t, dir, "skill2", `---
+name: skill2
 description: Second skill
-steps:
-  - tool: deploy
 state: active
+---
+
+Body 2.
 `)
 
 	if err := srv.RefreshTools(context.Background()); err != nil {
@@ -221,10 +193,13 @@ func TestServer_HasContent(t *testing.T) {
 		t.Error("expected no content initially")
 	}
 
-	writePromptYAML(t, dir, "test.yaml", `name: test
-description: Test prompt
-content: "hello"
+	writeTestSkill(t, dir, "test", `---
+name: test
+description: Test skill
 state: draft
+---
+
+Body.
 `)
 
 	if err := srv.Initialize(context.Background()); err != nil {
@@ -232,65 +207,7 @@ state: draft
 	}
 
 	if !srv.HasContent() {
-		t.Error("expected content after loading prompt")
-	}
-}
-
-func TestServer_Prompts(t *testing.T) {
-	dir := t.TempDir()
-
-	writePromptYAML(t, dir, "active.yaml", `name: active-prompt
-description: Active prompt
-content: "hello"
-state: active
-`)
-	writePromptYAML(t, dir, "draft.yaml", `name: draft-prompt
-description: Draft prompt
-content: "bye"
-state: draft
-`)
-
-	store := NewStore(dir)
-	srv := New(store, nil)
-	if err := srv.Initialize(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	prompts := srv.Prompts()
-	if len(prompts) != 1 {
-		t.Fatalf("expected 1 active prompt, got %d", len(prompts))
-	}
-	if prompts[0].Name != "active-prompt" {
-		t.Errorf("expected active-prompt, got %s", prompts[0].Name)
-	}
-}
-
-func TestServer_GetPrompt(t *testing.T) {
-	dir := t.TempDir()
-
-	writePromptYAML(t, dir, "greeting.yaml", `name: greeting
-description: A greeting
-content: "Hello {{name}}"
-state: active
-`)
-
-	store := NewStore(dir)
-	srv := New(store, nil)
-	if err := srv.Initialize(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	p, err := srv.GetPrompt("greeting")
-	if err != nil {
-		t.Fatalf("GetPrompt() error: %v", err)
-	}
-	if p.Content != "Hello {{name}}" {
-		t.Errorf("content = %q, want %q", p.Content, "Hello {{name}}")
-	}
-
-	_, err = srv.GetPrompt("nonexistent")
-	if err == nil {
-		t.Error("expected error for nonexistent prompt")
+		t.Error("expected content after loading skill")
 	}
 }
 
@@ -322,18 +239,75 @@ func TestServer_ServerInfo(t *testing.T) {
 	}
 }
 
-func TestServer_CallTool_NoToolCaller(t *testing.T) {
+func TestServer_CallTool_SkillNotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
+	_ = srv.store.Load()
 
-	result, err := srv.CallTool(context.Background(), "any-skill", map[string]any{"key": "value"})
+	result, err := srv.CallTool(context.Background(), "nonexistent", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	if !result.IsError {
+		t.Fatal("expected error result")
+	}
+}
+
+func TestServer_CallTool_InactiveSkill(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTestSkill(t, dir, "draft-skill", `---
+name: draft-skill
+description: A draft skill
+state: draft
+---
+
+Body.
+`)
+
+	store := NewStore(dir)
+	_ = store.Load()
+	srv := New(store, nil)
+
+	result, err := srv.CallTool(context.Background(), "draft-skill", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if !result.IsError {
-		t.Error("expected error result when toolCaller is nil")
+		t.Fatal("expected error result")
+	}
+}
+
+func TestServer_CallTool_Success(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTestSkill(t, dir, "active-skill", `---
+name: active-skill
+description: Active skill
+state: active
+---
+
+# Instructions
+
+Do the thing.
+`)
+
+	store := NewStore(dir)
+	_ = store.Load()
+	srv := New(store, nil)
+
+	result, err := srv.CallTool(context.Background(), "active-skill", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatal("expected success result")
+	}
+	// Should return the body content
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in result")
+	}
+	if result.Content[0].Type != "text" {
+		t.Errorf("content type = %q, want %q", result.Content[0].Type, "text")
 	}
 }
 
@@ -350,17 +324,19 @@ func TestServer_ImplementsAgentClient(t *testing.T) {
 	var _ mcp.AgentClient = (*Server)(nil) // compile-time check
 }
 
-func TestServer_SkillToTool_NoInput(t *testing.T) {
-	sk := &Skill{
+func TestServer_SkillToTool(t *testing.T) {
+	sk := &AgentSkill{
 		Name:        "simple",
 		Description: "A simple skill",
-		Steps:       []Step{{Tool: "exec"}},
 		State:       StateActive,
 	}
 
 	tool := skillToTool(sk)
 	if tool.Name != "simple" {
 		t.Errorf("name = %q, want %q", tool.Name, "simple")
+	}
+	if tool.Description != "A simple skill" {
+		t.Errorf("description = %q, want %q", tool.Description, "A simple skill")
 	}
 
 	var schema mcp.InputSchemaObject
@@ -372,49 +348,5 @@ func TestServer_SkillToTool_NoInput(t *testing.T) {
 	}
 	if len(schema.Properties) != 0 {
 		t.Errorf("expected 0 properties, got %d", len(schema.Properties))
-	}
-	if len(schema.Required) != 0 {
-		t.Errorf("expected 0 required, got %d", len(schema.Required))
-	}
-}
-
-func TestServer_SkillToTool_WithInput(t *testing.T) {
-	sk := &Skill{
-		Name:        "deploy",
-		Description: "Deploy workflow",
-		Steps:       []Step{{Tool: "docker__build"}},
-		Input: []Argument{
-			{Name: "target", Description: "Deploy target", Required: true},
-			{Name: "dry-run", Description: "Skip actual deploy", Required: false},
-		},
-		State: StateActive,
-	}
-
-	tool := skillToTool(sk)
-
-	var schema mcp.InputSchemaObject
-	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if len(schema.Properties) != 2 {
-		t.Fatalf("expected 2 properties, got %d", len(schema.Properties))
-	}
-
-	targetProp := schema.Properties["target"]
-	if targetProp.Type != "string" {
-		t.Errorf("target type = %q, want %q", targetProp.Type, "string")
-	}
-	if targetProp.Description != "Deploy target" {
-		t.Errorf("target description = %q, want %q", targetProp.Description, "Deploy target")
-	}
-
-	dryRunProp := schema.Properties["dry-run"]
-	if dryRunProp.Description != "Skip actual deploy" {
-		t.Errorf("dry-run description = %q, want %q", dryRunProp.Description, "Skip actual deploy")
-	}
-
-	if len(schema.Required) != 1 || schema.Required[0] != "target" {
-		t.Errorf("required = %v, want [target]", schema.Required)
 	}
 }

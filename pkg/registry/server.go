@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
-// Server is an in-process MCP server that provides prompt and skill management.
+// Server is an in-process MCP server that provides skill management.
 // It implements mcp.AgentClient so it can be registered with the gateway router.
 type Server struct {
 	store      *Store
@@ -22,16 +21,12 @@ type Server struct {
 	serverInfo  mcp.ServerInfo
 }
 
-// Compile-time checks that Server implements required interfaces.
-var (
-	_ mcp.AgentClient    = (*Server)(nil)
-	_ mcp.PromptProvider = (*Server)(nil)
-)
+// Compile-time check that Server implements required interfaces.
+var _ mcp.AgentClient = (*Server)(nil)
 
 // New creates a registry server.
 // The toolCaller parameter allows the registry to execute tools from other
-// MCP servers when running skill chains. Pass nil if skill execution is
-// not needed (e.g., prompts-only mode).
+// MCP servers when running skills. Pass nil if skill execution is not needed.
 func New(store *Store, toolCaller mcp.ToolCaller) *Server {
 	return &Server{
 		store:      store,
@@ -79,15 +74,8 @@ func (s *Server) Tools() []mcp.Tool {
 	return s.tools
 }
 
-// CallTool looks up a skill by name and executes its tool chain.
+// CallTool looks up a skill by name and returns its body as content.
 func (s *Server) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
-	if s.toolCaller == nil {
-		return &mcp.ToolCallResult{
-			Content: []mcp.Content{mcp.NewTextContent("skill execution not available: no tool caller configured")},
-			IsError: true,
-		}, nil
-	}
-
 	skill, err := s.store.GetSkill(name)
 	if err != nil {
 		return &mcp.ToolCallResult{
@@ -103,19 +91,9 @@ func (s *Server) CallTool(ctx context.Context, name string, arguments map[string
 		}, nil
 	}
 
-	// Parse timeout
-	timeout := 30 * time.Second
-	if skill.Timeout != "" {
-		parsed, err := time.ParseDuration(skill.Timeout)
-		if err == nil {
-			timeout = parsed
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	return s.executeSkill(ctx, skill, arguments)
+	return &mcp.ToolCallResult{
+		Content: []mcp.Content{mcp.NewTextContent(skill.Body)},
+	}, nil
 }
 
 // IsInitialized returns whether the server has been initialized.
@@ -132,69 +110,12 @@ func (s *Server) ServerInfo() mcp.ServerInfo {
 	return s.serverInfo
 }
 
-// Prompts returns all active prompts (for MCP prompts/list).
-func (s *Server) Prompts() []*Prompt {
-	return s.store.ActivePrompts()
-}
-
-// GetPrompt returns a specific prompt by name (for MCP prompts/get).
-func (s *Server) GetPrompt(name string) (*Prompt, error) {
-	return s.store.GetPrompt(name)
-}
-
-// ListPromptData returns all active prompts as MCP PromptData (implements mcp.PromptProvider).
-func (s *Server) ListPromptData() []mcp.PromptData {
-	prompts := s.store.ActivePrompts()
-	result := make([]mcp.PromptData, len(prompts))
-	for i, p := range prompts {
-		args := make([]mcp.PromptArgumentData, len(p.Arguments))
-		for j, a := range p.Arguments {
-			args[j] = mcp.PromptArgumentData{
-				Name:        a.Name,
-				Description: a.Description,
-				Required:    a.Required,
-				Default:     a.Default,
-			}
-		}
-		result[i] = mcp.PromptData{
-			Name:        p.Name,
-			Description: p.Description,
-			Content:     p.Content,
-			Arguments:   args,
-		}
-	}
-	return result
-}
-
-// GetPromptData returns a prompt by name as MCP PromptData (implements mcp.PromptProvider).
-func (s *Server) GetPromptData(name string) (*mcp.PromptData, error) {
-	p, err := s.store.GetPrompt(name)
-	if err != nil {
-		return nil, err
-	}
-	args := make([]mcp.PromptArgumentData, len(p.Arguments))
-	for j, a := range p.Arguments {
-		args[j] = mcp.PromptArgumentData{
-			Name:        a.Name,
-			Description: a.Description,
-			Required:    a.Required,
-			Default:     a.Default,
-		}
-	}
-	return &mcp.PromptData{
-		Name:        p.Name,
-		Description: p.Description,
-		Content:     p.Content,
-		Arguments:   args,
-	}, nil
-}
-
 // Store returns the underlying store for REST API access.
 func (s *Server) Store() *Store {
 	return s.store
 }
 
-// HasContent returns true if the registry has any prompts or skills.
+// HasContent returns true if the registry has any skills.
 func (s *Server) HasContent() bool {
 	return s.store.HasContent()
 }
@@ -212,20 +133,11 @@ func (s *Server) refreshTools() {
 	s.mu.Unlock()
 }
 
-// skillToTool converts a Skill to an MCP Tool with a JSON Schema input.
-func skillToTool(sk *Skill) mcp.Tool {
+// skillToTool converts an AgentSkill to an MCP Tool.
+func skillToTool(sk *AgentSkill) mcp.Tool {
 	schema := mcp.InputSchemaObject{
 		Type:       "object",
 		Properties: make(map[string]mcp.Property),
-	}
-	for _, arg := range sk.Input {
-		schema.Properties[arg.Name] = mcp.Property{
-			Type:        "string",
-			Description: arg.Description,
-		}
-		if arg.Required {
-			schema.Required = append(schema.Required, arg.Name)
-		}
 	}
 	schemaBytes, _ := json.Marshal(schema)
 	return mcp.Tool{
