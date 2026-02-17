@@ -130,8 +130,8 @@ gridctl/
 │   ├── controller/       # Deploy orchestration
 │   │   ├── controller.go # Main deploy/destroy logic
 │   │   ├── daemon.go     # Daemon mode (background process)
-│   │   ├── server_registrar.go # MCP server registration
-│   │   └── gateway_builder_test.go
+│   │   ├── gateway_builder.go # MCP gateway construction
+│   │   └── server_registrar.go # MCP server registration
 │   ├── jsonrpc/          # JSON-RPC 2.0 types
 │   │   └── types.go      # Request, Response, Error types
 │   ├── provisioner/      # LLM client provisioning (link/unlink)
@@ -162,10 +162,11 @@ gridctl/
 │   │   ├── client.go     # HTTP client for remote A2A agents
 │   │   ├── handler.go    # HTTP handler for A2A endpoints
 │   │   └── gateway.go    # A2A gateway (local + remote agents)
-│   └── registry/         # MCP registry (prompts + skills)
-│       ├── types.go      # Prompt, Skill, validation types
-│       ├── store.go      # File-based persistent store
-│       ├── executor.go   # Skill execution engine
+│   └── registry/         # Agent Skills registry (agentskills.io)
+│       ├── types.go      # AgentSkill, SkillFile, ItemState types
+│       ├── frontmatter.go # SKILL.md parsing (YAML frontmatter + markdown body)
+│       ├── validator.go   # agentskills.io spec validation
+│       ├── store.go      # Directory-based persistent store
 │       └── server.go     # MCP server interface for registry
 ├── web/                  # React frontend (Vite)
 ├── examples/             # Example topologies
@@ -334,7 +335,7 @@ When `gridctl deploy` runs, it:
 - **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/health`, `/ready`
 - **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
 - **A2A:** `/.well-known/agent.json`, `/a2a/` (list agents), `/a2a/{agent}` (GET card, POST JSON-RPC)
-- **Registry:** `/api/registry/status`, `/api/registry/prompts[/{name}]`, `/api/registry/skills[/{name}]`
+- **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`
 - **Web UI:** `GET /`
 
 **Logs API:**
@@ -354,18 +355,15 @@ When `gridctl deploy` runs, it:
 - `POST /api/agents/{name}/stop` - Stop an agent container
 
 **Registry API:**
-- `GET /api/registry/status` - Returns prompt and skill counts
-- `GET /api/registry/prompts` - List all prompts
-- `POST /api/registry/prompts` - Create a prompt
-- `GET/PUT/DELETE /api/registry/prompts/{name}` - CRUD for individual prompts
-- `POST /api/registry/prompts/{name}/activate` - Activate a prompt
-- `POST /api/registry/prompts/{name}/disable` - Disable a prompt
+- `GET /api/registry/status` - Returns skill counts
 - `GET /api/registry/skills` - List all skills
 - `POST /api/registry/skills` - Create a skill
 - `GET/PUT/DELETE /api/registry/skills/{name}` - CRUD for individual skills
 - `POST /api/registry/skills/{name}/activate` - Activate a skill
 - `POST /api/registry/skills/{name}/disable` - Disable a skill
-- `POST /api/registry/skills/{name}/test` - Execute a skill with test arguments
+- `GET /api/registry/skills/{name}/files` - List files in skill directory
+- `GET/PUT/DELETE /api/registry/skills/{name}/files/{path}` - File management
+- `POST /api/registry/skills/validate` - Validate SKILL.md content
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
