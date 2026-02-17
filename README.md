@@ -204,6 +204,19 @@ This agent can only access three of the five tools exposed by the GitHub server 
 
 Limited [Agent-to-Agent](https://google.github.io/A2A/) protocol support. Expose your agents via `/.well-known/agent.json` or connect to remote A2A agents. Agents can use other agents as tools. `A2A` is still emerging, as is the common use-cases. This part of the project will continue to evolve in the future.
 
+### Agent Skills Registry
+
+Store reusable skills as [SKILL.md](https://agentskills.io) files — markdown documents with YAML frontmatter that get exposed to LLM clients as MCP prompts. Create them via the REST API, Web UI, or by dropping files into `~/.gridctl/registry/skills/`.
+
+```
+~/.gridctl/registry/skills/
+└── code-review/
+    ├── SKILL.md              # Frontmatter + markdown instructions
+    └── references/           # Optional supporting files
+```
+
+Skills have three lifecycle states: **draft** (stored, not exposed), **active** (discoverable via MCP), and **disabled** (hidden without deletion). See [`examples/registry/`](examples/registry/) for working examples.
+
 ## 📚 CLI Reference
 
 ```bash
@@ -280,6 +293,8 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | [`zapier-mcp.yaml`](examples/platforms/zapier-mcp.yaml) | Zapier automation platform integration |
 | [`chrome-devtools-mcp.yaml`](examples/platforms/chrome-devtools-mcp.yaml) | Chrome DevTools browser automation |
 | [`context7-mcp.yaml`](examples/platforms/context7-mcp.yaml) | Up-to-date library documentation |
+| [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Agent Skills registry with a single server |
+| [`registry-advanced.yaml`](examples/registry/registry-advanced.yaml) | Cross-server Agent Skills |
 
 ## 🤝 Contributing
 

@@ -1,8 +1,8 @@
 # Registry Advanced Example
 #
-# Demonstrates cross-server skill chains with two MCP servers. Skills can
+# Demonstrates cross-server Agent Skills with two MCP servers. Skills can
 # reference tools from different servers using the server__tool naming
-# convention, enabling multi-step workflows that span server boundaries.
+# convention, enabling workflows that span server boundaries.
 #
 # Prerequisites:
 #   Run `make mock-servers` from the project root to build the mock server.
@@ -11,14 +11,10 @@
 #   gridctl deploy examples/registry/registry-advanced.yaml
 #
 # After deploying, copy the cross-server skill:
-#   mkdir -p ~/.gridctl/registry/skills
-#   cp examples/registry/items/skills/chained-calculation.yaml ~/.gridctl/registry/skills/
+#   cp -r examples/registry/items/chained-calculation ~/.gridctl/registry/skills/
 #
-# Then activate and test:
+# Then activate it:
 #   curl -X POST http://localhost:8180/api/registry/skills/chained-calculation/activate
-#   curl -X POST http://localhost:8180/api/registry/skills/chained-calculation/test \
-#     -H 'Content-Type: application/json' \
-#     -d '{"a": "5", "b": "3"}'
 
 version: "1"
 name: registry-advanced

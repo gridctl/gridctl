@@ -18,7 +18,7 @@ gridctl deploy examples/getting-started/agent-basic.yaml
 | [📦 platforms/](platforms/) | Third-party MCP servers (container-based) |
 | [🔐 access-control/](access-control/) | Tool filtering and security patterns |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
-| [📋 registry/](registry/) | Reusable MCP prompts and skill chains |
+| [📋 registry/](registry/) | Agent Skills registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
 
 ## 🎬 Recommended Path
@@ -27,7 +27,7 @@ gridctl deploy examples/getting-started/agent-basic.yaml
 2. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
 3. **Multi-agent**: `multi-agent/multi-agent-skills.yaml` - agents using other agents as tools
 4. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
-5. **Registry**: `registry/registry-basic.yaml` - reusable prompts and skill chains
+5. **Registry**: `registry/registry-basic.yaml` - Agent Skills as MCP prompts
 
 > **Note:** Getting-started examples use placeholder containers to focus on infrastructure concepts.
 > Transport and platform examples include real MCP server implementations.
