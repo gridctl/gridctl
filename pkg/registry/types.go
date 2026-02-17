@@ -1,14 +1,9 @@
 package registry
 
-import (
-	"fmt"
-	"regexp"
-)
+import "fmt"
 
-// namePattern validates MCP-compatible identifiers.
-var namePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-
-// ItemState represents the lifecycle state of a prompt or skill.
+// ItemState represents the lifecycle state of a skill.
+// Note: state is a gridctl extension, not part of the agentskills.io spec.
 type ItemState string
 
 const (
@@ -17,86 +12,43 @@ const (
 	StateDisabled ItemState = "disabled"
 )
 
-// Prompt represents a reusable prompt template.
-type Prompt struct {
-	Name        string     `yaml:"name" json:"name"`
-	Description string     `yaml:"description" json:"description"`
-	Content     string     `yaml:"content" json:"content"`
-	Arguments   []Argument `yaml:"arguments,omitempty" json:"arguments,omitempty"`
-	Tags        []string   `yaml:"tags,omitempty" json:"tags,omitempty"`
-	State       ItemState  `yaml:"state" json:"state"`
+// AgentSkill represents an Agent Skills standard SKILL.md file.
+// See https://agentskills.io/specification for the full spec.
+type AgentSkill struct {
+	// --- Frontmatter fields (from YAML between --- delimiters) ---
+	Name          string            `yaml:"name" json:"name"`
+	Description   string            `yaml:"description" json:"description"`
+	License       string            `yaml:"license,omitempty" json:"license,omitempty"`
+	Compatibility string            `yaml:"compatibility,omitempty" json:"compatibility,omitempty"`
+	Metadata      map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	AllowedTools  string            `yaml:"allowed-tools,omitempty" json:"allowedTools,omitempty"`
+
+	// --- Gridctl extensions (not in agentskills.io spec) ---
+	State ItemState `yaml:"state,omitempty" json:"state"`
+
+	// --- Parsed from file content (not in frontmatter YAML) ---
+	Body string `yaml:"-" json:"body"` // Markdown content after frontmatter
+
+	// --- Computed fields (not serialized to YAML) ---
+	FileCount int `yaml:"-" json:"fileCount"` // Number of supporting files (scripts/, references/, assets/)
 }
 
-// Argument represents a parameter in a prompt template.
-type Argument struct {
-	Name        string `yaml:"name" json:"name"`
-	Description string `yaml:"description" json:"description"`
-	Required    bool   `yaml:"required" json:"required"`
-	Default     string `yaml:"default,omitempty" json:"default,omitempty"`
+// Validate checks the skill against the agentskills.io specification.
+func (s *AgentSkill) Validate() error {
+	return ValidateSkill(s)
 }
 
-// Skill represents a composed tool workflow.
-type Skill struct {
-	Name        string     `yaml:"name" json:"name"`
-	Description string     `yaml:"description" json:"description"`
-	Steps       []Step     `yaml:"steps" json:"steps"`
-	Input       []Argument `yaml:"input,omitempty" json:"input,omitempty"`
-	Timeout     string     `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	Tags        []string   `yaml:"tags,omitempty" json:"tags,omitempty"`
-	State       ItemState  `yaml:"state" json:"state"`
-}
-
-// Step represents a single step in a skill's tool chain.
-type Step struct {
-	Tool      string            `yaml:"tool" json:"tool"`
-	Arguments map[string]string `yaml:"arguments,omitempty" json:"arguments,omitempty"`
+// SkillFile represents a file within a skill directory.
+type SkillFile struct {
+	Path  string `json:"path"`  // Relative path within the skill dir (e.g., "scripts/lint.sh")
+	Size  int64  `json:"size"`  // File size in bytes
+	IsDir bool   `json:"isDir"` // True for directories
 }
 
 // RegistryStatus contains summary statistics.
 type RegistryStatus struct {
-	TotalPrompts  int `json:"totalPrompts"`
-	ActivePrompts int `json:"activePrompts"`
-	TotalSkills   int `json:"totalSkills"`
-	ActiveSkills  int `json:"activeSkills"`
-}
-
-// Validate checks a Prompt for correctness.
-func (p *Prompt) Validate() error {
-	if p.Name == "" {
-		return fmt.Errorf("name is required")
-	}
-	if !namePattern.MatchString(p.Name) {
-		return fmt.Errorf("name %q must match %s", p.Name, namePattern.String())
-	}
-	if p.Content == "" {
-		return fmt.Errorf("content is required")
-	}
-	if err := validateState(&p.State); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Validate checks a Skill for correctness.
-func (sk *Skill) Validate() error {
-	if sk.Name == "" {
-		return fmt.Errorf("name is required")
-	}
-	if !namePattern.MatchString(sk.Name) {
-		return fmt.Errorf("name %q must match %s", sk.Name, namePattern.String())
-	}
-	if len(sk.Steps) == 0 {
-		return fmt.Errorf("at least one step is required")
-	}
-	for i, step := range sk.Steps {
-		if step.Tool == "" {
-			return fmt.Errorf("step[%d]: tool is required", i)
-		}
-	}
-	if err := validateState(&sk.State); err != nil {
-		return err
-	}
-	return nil
+	TotalSkills  int `json:"totalSkills"`
+	ActiveSkills int `json:"activeSkills"`
 }
 
 // validateState checks that the state is valid, defaulting to draft if empty.
