@@ -232,7 +232,7 @@ func (s *Server) handleRegistrySkillFiles(w http.ResponseWriter, r *http.Request
 			return
 		}
 		w.Header().Set("Content-Type", detectContentType(filePath))
-		w.Write(data)
+		_, _ = w.Write(data)
 
 	case http.MethodPut:
 		// PUT /api/registry/skills/{name}/files/{path} — write file
