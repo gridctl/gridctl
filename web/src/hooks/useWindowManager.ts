@@ -20,8 +20,8 @@ const WINDOW_CONFIGS: Record<string, WindowConfig> = {
     title: 'Gridctl - Details',
   },
   editor: {
-    width: 720,
-    height: 750,
+    width: 1100,
+    height: 850,
     title: 'Gridctl - Editor',
   },
 };
