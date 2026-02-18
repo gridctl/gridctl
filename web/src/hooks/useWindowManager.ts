@@ -24,6 +24,11 @@ const WINDOW_CONFIGS: Record<string, WindowConfig> = {
     height: 850,
     title: 'Gridctl - Editor',
   },
+  registry: {
+    width: 420,
+    height: 700,
+    title: 'Gridctl - Registry',
+  },
 };
 
 export function useWindowManager() {
@@ -32,6 +37,7 @@ export function useWindowManager() {
   const setLogsDetached = useUIStore((s) => s.setLogsDetached);
   const setSidebarDetached = useUIStore((s) => s.setSidebarDetached);
   const setEditorDetached = useUIStore((s) => s.setEditorDetached);
+  const setRegistryDetached = useUIStore((s) => s.setRegistryDetached);
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
@@ -49,6 +55,9 @@ export function useWindowManager() {
           setSidebarOpen(false);
         } else if (payload?.windowType === 'editor') {
           setEditorDetached(true);
+        } else if (payload?.windowType === 'registry') {
+          setRegistryDetached(true);
+          setSidebarOpen(false);
         }
       } else if (message.type === 'WINDOW_CLOSED') {
         if (payload?.windowType === 'logs') {
@@ -57,18 +66,20 @@ export function useWindowManager() {
           setSidebarDetached(false);
         } else if (payload?.windowType === 'editor') {
           setEditorDetached(false);
+        } else if (payload?.windowType === 'registry') {
+          setRegistryDetached(false);
         }
         windowRefs.current.delete(payload?.windowType ?? '');
       }
     }
-  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setBottomPanelOpen, setSidebarOpen]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setBottomPanelOpen, setSidebarOpen]);
 
   const { postMessage } = useBroadcastChannel({
     onMessage: handleMessage,
   });
 
   // Open a detached window
-  const openDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor', params?: string) => {
+  const openDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor' | 'registry', params?: string) => {
     const existingWindow = windowRefs.current.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.focus();
@@ -113,14 +124,16 @@ export function useWindowManager() {
             setSidebarDetached(false);
           } else if (type === 'editor') {
             setEditorDetached(false);
+          } else if (type === 'registry') {
+            setRegistryDetached(false);
           }
         }
       }, 500);
     }
-  }, [setLogsDetached, setSidebarDetached, setEditorDetached]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached]);
 
   // Close a detached window
-  const closeDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor') => {
+  const closeDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor' | 'registry') => {
     const existingWindow = windowRefs.current.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.close();
