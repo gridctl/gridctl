@@ -13,6 +13,9 @@ const DetachedSidebarPage = lazy(() =>
 const DetachedEditorPage = lazy(() =>
   import('./pages/DetachedEditorPage.tsx').then(m => ({ default: m.DetachedEditorPage }))
 );
+const DetachedRegistryPage = lazy(() =>
+  import('./pages/DetachedRegistryPage.tsx').then(m => ({ default: m.DetachedRegistryPage }))
+);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -23,6 +26,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/logs" element={<DetachedLogsPage />} />
           <Route path="/sidebar" element={<DetachedSidebarPage />} />
           <Route path="/editor" element={<DetachedEditorPage />} />
+          <Route path="/registry" element={<DetachedRegistryPage />} />
         </Routes>
       </Suspense>
     </BrowserRouter>
