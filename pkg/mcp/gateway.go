@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -872,5 +873,6 @@ func (g *Gateway) Status() []MCPServerStatus {
 		statuses = append(statuses, status)
 	}
 
+	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
 	return statuses
 }
