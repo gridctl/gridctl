@@ -33,7 +33,7 @@ export function RegistrySidebar() {
   const skills = useRegistryStore((s) => s.skills);
   const status = useRegistryStore((s) => s.status);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
-  const sidebarDetached = useUIStore((s) => s.sidebarDetached);
+  const registryDetached = useUIStore((s) => s.registryDetached);
   const editorDetached = useUIStore((s) => s.editorDetached);
   const selectNode = useStackStore((s) => s.selectNode);
   const { openDetachedWindow } = useWindowManager();
@@ -51,7 +51,7 @@ export function RegistrySidebar() {
   };
 
   const handlePopout = () => {
-    openDetachedWindow('sidebar', `node=${encodeURIComponent('Registry')}`);
+    openDetachedWindow('registry');
   };
 
   const refreshRegistry = useCallback(async () => {
@@ -117,7 +117,7 @@ export function RegistrySidebar() {
           <PopoutButton
             onClick={handlePopout}
             tooltip="Open in new window"
-            disabled={sidebarDetached}
+            disabled={registryDetached}
           />
           <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
             <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
@@ -315,14 +315,14 @@ function SkillItem({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border-subtle/50">
+          <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-border-subtle/50">
             <button
               onClick={(e) => { e.stopPropagation(); onToggleState(skill); }}
               className={cn(
-                'flex items-center gap-1 text-[10px] transition-colors',
+                'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all duration-200',
                 skill.state === 'active'
-                  ? 'text-text-muted hover:text-status-pending'
-                  : 'text-text-muted hover:text-status-running'
+                  ? 'bg-status-pending text-background shadow-[0_1px_8px_rgba(234,179,8,0.2)] hover:shadow-[0_2px_12px_rgba(234,179,8,0.3)] hover:-translate-y-0.5 active:translate-y-0'
+                  : 'bg-status-running text-background shadow-[0_1px_8px_rgba(16,185,129,0.2)] hover:shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:translate-y-0'
               )}
             >
               {skill.state === 'active' ? <PowerOff size={10} /> : <Power size={10} />}
@@ -330,13 +330,13 @@ function SkillItem({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(skill); }}
-              className="flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_8px_rgba(245,158,11,0.2)] hover:shadow-[0_2px_12px_rgba(245,158,11,0.3)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
             >
               <Pencil size={10} /> Edit
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(skill.name); }}
-              className="flex items-center gap-1 text-[10px] text-text-muted hover:text-status-error transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gradient-to-r from-status-error to-rose-600 text-white shadow-[0_1px_8px_rgba(244,63,94,0.2)] hover:shadow-[0_2px_12px_rgba(244,63,94,0.3)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
             >
               <Trash2 size={10} /> Delete
             </button>
