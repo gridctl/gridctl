@@ -6,8 +6,13 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   build: {
-    // Suppress chunk size warning for embedded CLI tool UI.
-    // React Flow library exceeds default 500 kB threshold.
-    chunkSizeWarningLimit: 650,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-graph': ['@xyflow/react', '@dagrejs/dagre'],
+        },
+      },
+    },
   },
 })
