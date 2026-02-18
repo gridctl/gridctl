@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -123,6 +124,7 @@ func (g *Gateway) ListRemoteAgents() []*Client {
 	for _, client := range g.remoteAgents {
 		clients = append(clients, client)
 	}
+	sort.Slice(clients, func(i, j int) bool { return clients[i].name < clients[j].name })
 	return clients
 }
 
@@ -205,11 +207,18 @@ func (g *Gateway) Status() []A2AAgentStatus {
 		})
 	}
 
-	// Remote agents
+	// Remote agents - collect names and sort for deterministic output
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	for name, client := range g.remoteAgents {
+	remoteNames := make([]string, 0, len(g.remoteAgents))
+	for name := range g.remoteAgents {
+		remoteNames = append(remoteNames, name)
+	}
+	sort.Strings(remoteNames)
+
+	for _, name := range remoteNames {
+		client := g.remoteAgents[name]
 		status := A2AAgentStatus{
 			Name:      name,
 			Role:      "remote",
@@ -248,11 +257,18 @@ func (g *Gateway) AggregatedSkills() []Skill {
 		}
 	}
 
-	// Remote agent skills
+	// Remote agent skills - sort by name for deterministic output
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	for name, client := range g.remoteAgents {
+	remoteNames := make([]string, 0, len(g.remoteAgents))
+	for name := range g.remoteAgents {
+		remoteNames = append(remoteNames, name)
+	}
+	sort.Strings(remoteNames)
+
+	for _, name := range remoteNames {
+		client := g.remoteAgents[name]
 		if card := client.AgentCard(); card != nil {
 			for _, skill := range card.Skills {
 				prefixedSkill := skill
