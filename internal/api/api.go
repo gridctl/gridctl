@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -551,8 +552,15 @@ func (s *Server) getAgentStatuses() []AgentStatus {
 		seen[a2aAgent.Name] = true
 	}
 
-	// Add container-only agents (not A2A enabled)
-	for name, container := range containerAgents {
+	// Add container-only agents (not A2A enabled) - sort names for deterministic output
+	containerNames := make([]string, 0, len(containerAgents))
+	for name := range containerAgents {
+		containerNames = append(containerNames, name)
+	}
+	sort.Strings(containerNames)
+
+	for _, name := range containerNames {
+		container := containerAgents[name]
 		if !seen[name] {
 			unified = append(unified, AgentStatus{
 				Name:        name,
@@ -566,6 +574,7 @@ func (s *Server) getAgentStatuses() []AgentStatus {
 		}
 	}
 
+	sort.Slice(unified, func(i, j int) bool { return unified[i].Name < unified[j].Name })
 	return unified
 }
 
