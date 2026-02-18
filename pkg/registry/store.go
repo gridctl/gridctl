@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -81,6 +82,7 @@ func (s *Store) ListSkills() []*AgentSkill {
 		cp := *sk
 		result = append(result, &cp)
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
 }
 
@@ -162,6 +164,7 @@ func (s *Store) ActiveSkills() []*AgentSkill {
 			result = append(result, &cp)
 		}
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
 }
 
