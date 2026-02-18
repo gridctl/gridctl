@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, Component, type ReactNode } from 'react';
+import { useEffect, useState, useCallback, useRef, Component, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Terminal,
@@ -21,7 +21,9 @@ import {
 import { cn } from '../lib/cn';
 import { Badge } from '../components/ui/Badge';
 import { IconButton } from '../components/ui/IconButton';
+import { ZoomControls } from '../components/log/ZoomControls';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
+import { useLogFontSize } from '../hooks/useLogFontSize';
 import { fetchStatus, fetchTools } from '../lib/api';
 import { getTransportIcon, getTransportColorClasses } from '../lib/transport';
 import { POLLING } from '../lib/constants';
@@ -90,6 +92,11 @@ function DetachedSidebarPageContent() {
   const [selectedNode, setSelectedNode] = useState<string | null>(initialNode);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Text zoom
+  const contentRef = useRef<HTMLElement>(null);
+  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } =
+    useLogFontSize(contentRef);
 
   // Register with main window
   useDetachedWindowSync('sidebar');
@@ -228,11 +235,26 @@ function DetachedSidebarPageContent() {
           </div>
         </div>
 
-        <IconButton icon={RefreshCw} onClick={fetchData} tooltip="Refresh" size="sm" variant="ghost" />
+        <div className="flex items-center gap-2">
+          <ZoomControls
+            fontSize={fontSize}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onReset={resetZoom}
+            isMin={isMin}
+            isMax={isMax}
+            isDefault={isDefault}
+          />
+          <IconButton icon={RefreshCw} onClick={fetchData} tooltip="Refresh" size="sm" variant="ghost" />
+        </div>
       </header>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto scrollbar-dark">
+      <main
+        ref={contentRef}
+        className="flex-1 overflow-y-auto scrollbar-dark"
+        style={{ '--log-font-size': `${fontSize}px` } as React.CSSProperties}
+      >
         {isLoading && (
           <div className="h-full flex items-center justify-center">
             <div className="w-6 h-6 border-2 border-tertiary border-t-transparent rounded-full animate-spin" />
@@ -366,7 +388,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
       <Section title="Status" icon={Sparkles} defaultOpen>
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <span className="text-sm text-text-muted">State</span>
+            <span className="log-text text-text-muted">State</span>
             <Badge status={status as 'running' | 'stopped' | 'error'}>{status}</Badge>
           </div>
 
@@ -374,7 +396,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
             const TransportIcon = getTransportIcon(serverData.transport);
             return (
               <div className="flex justify-between items-center">
-                <span className="text-sm text-text-muted">Transport</span>
+                <span className="log-text text-text-muted">Transport</span>
                 <span
                   className={cn(
                     'text-xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider flex items-center gap-1',
@@ -390,7 +412,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
 
           {isServer && serverData?.endpoint && (
             <div className="flex justify-between items-center gap-4">
-              <span className="text-sm text-text-muted">Endpoint</span>
+              <span className="log-text text-text-muted">Endpoint</span>
               <span
                 className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
                 title={serverData.endpoint}
@@ -402,7 +424,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
 
           {isAgent && agentData?.image && (
             <div className="flex justify-between items-center gap-4">
-              <span className="text-sm text-text-muted">Image</span>
+              <span className="log-text text-text-muted">Image</span>
               <span
                 className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
                 title={agentData.image}
@@ -414,7 +436,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
 
           {isAgent && agentData?.containerId && (
             <div className="flex justify-between items-center gap-4">
-              <span className="text-sm text-text-muted">Container</span>
+              <span className="log-text text-text-muted">Container</span>
               <span
                 className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
                 title={agentData.containerId}
@@ -426,7 +448,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
 
           {resourceData?.image && (
             <div className="flex justify-between items-center gap-4">
-              <span className="text-sm text-text-muted">Image</span>
+              <span className="log-text text-text-muted">Image</span>
               <span
                 className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
                 title={resourceData.image}
@@ -438,8 +460,8 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
 
           {resourceData?.network && (
             <div className="flex justify-between items-center">
-              <span className="text-sm text-text-muted">Network</span>
-              <span className="text-sm text-secondary font-medium">{resourceData.network}</span>
+              <span className="log-text text-text-muted">Network</span>
+              <span className="log-text text-secondary font-medium">{resourceData.network}</span>
             </div>
           )}
         </div>
@@ -449,7 +471,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
       {isServer && (
         <Section title="Tools" icon={Wrench} count={serverTools.length}>
           {serverTools.length === 0 ? (
-            <p className="text-sm text-text-muted italic">No tools registered</p>
+            <p className="log-text text-text-muted italic">No tools registered</p>
           ) : (
             <div className="space-y-2">
               {serverTools.map((tool) => (
@@ -466,7 +488,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
           <div className="space-y-2">
             {agentData?.skills?.map((skill, idx) => (
               <div key={idx} className="px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30">
-                <span className="text-sm text-text-primary font-medium">{skill}</span>
+                <span className="log-text text-text-primary font-medium">{skill}</span>
               </div>
             ))}
           </div>
@@ -515,7 +537,7 @@ function Section({
               <Icon size={12} className="text-text-muted group-hover:text-primary transition-colors" />
             </div>
           )}
-          <span className="text-sm font-medium text-text-primary">{title}</span>
+          <span className="log-text font-medium text-text-primary">{title}</span>
           {count !== undefined && (
             <span className="text-[10px] text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md font-mono">
               {count}
@@ -554,7 +576,7 @@ function ToolItem({ tool, serverName }: { tool: Tool; serverName: string }) {
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-highlight/50 transition-colors"
       >
         <Wrench size={12} className="text-primary flex-shrink-0" />
-        <span className="text-sm font-mono text-text-primary truncate flex-1 text-left">{displayName}</span>
+        <span className="log-text font-mono text-text-primary truncate flex-1 text-left">{displayName}</span>
         {isExpanded ? (
           <ChevronUp size={12} className="text-text-muted" />
         ) : (
@@ -562,7 +584,7 @@ function ToolItem({ tool, serverName }: { tool: Tool; serverName: string }) {
         )}
       </button>
       {isExpanded && tool.description && (
-        <div className="px-3 pb-2 text-xs text-text-muted">{tool.description}</div>
+        <div className="px-3 pb-2 log-text-detail text-text-muted">{tool.description}</div>
       )}
     </div>
   );
@@ -601,7 +623,7 @@ function AccessItem({ selector }: { selector: ToolSelector }) {
             ))}
           </div>
         ) : (
-          <span className="text-xs text-text-muted italic px-2">Access to all available tools</span>
+          <span className="log-text-detail text-text-muted italic px-2">Access to all available tools</span>
         )}
       </div>
     </div>
