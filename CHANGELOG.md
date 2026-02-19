@@ -8,6 +8,71 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- Remove unused toolNames helper function
+- Update CORS methods and registry comment
+- Check return value of w.Write for errcheck
+- Handle legacy prompt type in detached editor
+- Support recursive skill discovery in nested directories
+- Sort skills list for deterministic API responses
+- Sort router clients and tools by name
+- Sort MCP server statuses by name
+- Sort A2A agent lists for stable ordering
+- Sort unified agent statuses by name
+- Use dedicated registry window for popout
+- Add zoom controls and scalable text to sidebar
+
+### Features
+
+
+- Replace registry types with AgentSkill for agentskills.io spec
+- Add skill validator per agentskills.io spec
+- Add SKILL.md frontmatter parser and renderer
+- Replace skill editor with markdown split-pane layout
+- Add file tree browser for skill directories
+- Integrate file tree into skill editor
+- Improve skills editor UX with resizable panes and larger inputs
+- Enlarge detached editor window for better editing
+- Add Dir field to AgentSkill for nested path tracking
+- Add registryDetached state to UI store
+- Add registry type to broadcast channel
+- Add registry window management support
+- Add dedicated detached registry page
+- Add detached registry route
+
+### Refactoring
+
+
+- Migrate store to directory-based SKILL.md layout
+- Update registry server for AgentSkill types
+- Remove step-based executor for markdown skills
+- Update API endpoints for skills-only registry
+- Directory-based skill storage with file management
+- Serve agent skills as prompts instead of tools
+- Remove ToolCaller from registry server constructor
+- Update resource URI scheme to skills://registry/
+- Remove executor placeholder file
+- Add file management and validation endpoints
+- Replace prompt/skill types with AgentSkill model
+- Update API client for agent skills registry
+- Simplify registry store to skills-only
+- Remove prompt fetching from polling hook
+- Update registry node to skills-only counts
+- Update registry edge condition for skills-only
+- Display skills-only counts in registry node
+- Remove obsolete prompt editor component
+- Remove obsolete skill test runner component
+- Rewrite skill editor for AgentSkill model
+- Simplify registry sidebar to skills-only
+- Update detached editor for skills-only
+- Replace sidebar tabs with single skills list view
+- Add agent skills sublabel to registry node
+- Replace chunk size suppression with vendor splitting
+- Lazy-load detached page routes## [0.1.0-alpha.8] - 2026-02-16
+
+
+### Bug Fixes
+
+
 - Use stable ID keys in prompt editor arguments
 - Use stable ID keys in skill editor steps and inputs
 - Clarify registry node counts with active/total format
