@@ -1,0 +1,69 @@
+# OpenAPI Authentication Example
+#
+# Most real APIs require authentication. Gridctl supports two auth methods
+# for OpenAPI-backed MCP servers:
+#
+#   1. Bearer Token — sends "Authorization: Bearer <token>" header
+#   2. Custom Header — sends any header name with a value (e.g., X-API-Key)
+#
+# Auth tokens are read from environment variables at deploy time. This keeps
+# secrets out of your stack files and works with .env files, CI/CD, and
+# secret managers.
+#
+# Prerequisites:
+#   Set the environment variables referenced in tokenEnv / valueEnv before
+#   deploying. For example:
+#
+#     export EXAMPLE_API_TOKEN=your-bearer-token
+#     export EXAMPLE_API_KEY=your-api-key
+#
+# Usage:
+#   gridctl deploy examples/openapi/openapi-auth.yaml
+
+version: "1"
+name: openapi-auth-demo
+
+mcp-servers:
+
+  # Bearer token authentication
+  # Sends: Authorization: Bearer <value of EXAMPLE_API_TOKEN>
+  - name: bearer-api
+    openapi:
+      spec: https://petstore3.swagger.io/api/v3/openapi.json
+      auth:
+        type: bearer
+        tokenEnv: EXAMPLE_API_TOKEN
+      operations:
+        include:
+          - getPetById
+          - findPetsByStatus
+
+  # Custom header authentication (API key style)
+  # Sends: X-API-Key: <value of EXAMPLE_API_KEY>
+  - name: apikey-api
+    openapi:
+      spec: https://petstore3.swagger.io/api/v3/openapi.json
+      auth:
+        type: header
+        header: X-API-Key
+        valueEnv: EXAMPLE_API_KEY
+      operations:
+        include:
+          - getPetById
+          - findPetsByStatus
+
+# Combine OpenAPI servers with container-based servers in the same stack:
+#
+# mcp-servers:
+#   - name: company-api
+#     openapi:
+#       spec: https://api.example.com/openapi.json
+#       auth:
+#         type: bearer
+#         tokenEnv: COMPANY_TOKEN
+#
+#   - name: github
+#     image: ghcr.io/github/github-mcp-server:latest
+#     transport: stdio
+#     env:
+#       GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"

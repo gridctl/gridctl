@@ -144,6 +144,7 @@ Aggregates tools from HTTP servers, stdio processes, SSH tunnels, and external U
 | **Local Process** | `command` | Host-native MCP servers |
 | **SSH Tunnel** | `command` + `ssh.host` | Remote machine access |
 | **External URL** | `url` | Existing infrastructure |
+| **OpenAPI Spec** | `openapi.spec` | Any REST API with an OpenAPI spec |
 
 ### Context Window Optimization _(access control)_
 
@@ -293,6 +294,8 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | [`zapier-mcp.yaml`](examples/platforms/zapier-mcp.yaml) | Zapier automation platform integration |
 | [`chrome-devtools-mcp.yaml`](examples/platforms/chrome-devtools-mcp.yaml) | Chrome DevTools browser automation |
 | [`context7-mcp.yaml`](examples/platforms/context7-mcp.yaml) | Up-to-date library documentation |
+| [`openapi-basic.yaml`](examples/openapi/openapi-basic.yaml) | Turn a REST API into MCP tools via OpenAPI spec |
+| [`openapi-auth.yaml`](examples/openapi/openapi-auth.yaml) | OpenAPI with bearer token and API key auth |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Agent Skills registry with a single server |
 | [`registry-advanced.yaml`](examples/registry/registry-advanced.yaml) | Cross-server Agent Skills |
 
