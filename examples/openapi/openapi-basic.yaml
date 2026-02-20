@@ -1,0 +1,47 @@
+# OpenAPI Basic Example
+#
+# Turn any REST API with an OpenAPI spec into MCP tools — no container needed.
+#
+# Gridctl loads the OpenAPI specification, converts each operation into an MCP
+# tool with proper JSON Schema input, and proxies tool calls as real HTTP
+# requests to the API.
+#
+# This example uses the Swagger Petstore v3 demo API, a public API that
+# requires no authentication and is always available for testing.
+#
+# What happens when you deploy:
+#   1. Gridctl fetches the OpenAPI spec from the URL
+#   2. Each operationId becomes an MCP tool (e.g., getPetById, addPet)
+#   3. Tool calls are proxied as HTTP requests to the API
+#   4. Responses are returned as MCP tool results
+#
+# The `operations` filter limits which endpoints become tools. Without it,
+# every operation in the spec would be exposed.
+#
+# Usage:
+#   gridctl deploy examples/openapi/openapi-basic.yaml
+#
+# After deploying, connect your LLM client and try:
+#   "Find pet with ID 1"
+#   "List pets by status: available"
+
+version: "1"
+name: openapi-basic-demo
+
+mcp-servers:
+
+  # Minimal configuration — just point to an OpenAPI spec
+  - name: petstore
+    openapi:
+      spec: https://petstore3.swagger.io/api/v3/openapi.json
+
+  # With operation filtering — expose only read operations
+  - name: petstore-readonly
+    openapi:
+      spec: https://petstore3.swagger.io/api/v3/openapi.json
+      operations:
+        include:
+          - getPetById
+          - findPetsByStatus
+          - findPetsByTags
+          - getInventory
