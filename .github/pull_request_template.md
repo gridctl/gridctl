@@ -1,32 +1,17 @@
-## 📒 Description
+## Description
 
-<!-- What does this PR do? Why is it needed? -->
+<!-- What does this PR do? Why is it needed? Link related issues with "Fixes #123". -->
 
-## 🔍 Type of Change
+## Changes Made
 
-<!-- Mark the appropriate option with an "x" -->
+<!-- Key changes in this PR. Helps reviewers navigate larger diffs. -->
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Documentation
-- [ ] Refactor
-- [ ] Chore
+## Testing
 
-## 🔧 Changes Made
+<!-- How were changes verified? -->
 
-<!-- Summarize the key changes in this PR -->
+## Checklist
 
-## 🧪 Testing
-
-<!-- Describe how you tested your changes -->
-
-## 📋 Checklist
-
-- [ ] Code follows the project's style guidelines
-- [ ] Self-review of code has been performed
-- [ ] Code has been commented where necessary
-- [ ] Tested with `make test` or relevant profile
+- [ ] Tests pass (`make test`)
 - [ ] Commits follow conventional format (`type: subject`)
 - [ ] No secrets or credentials committed
-- [ ] Documentation has been updated accordingly
-- [ ] PR has been labeled appropriately (`enhancement`, `bug`, `documentation`, `refactor`, `chore`)
