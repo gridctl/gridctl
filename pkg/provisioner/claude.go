@@ -17,7 +17,11 @@ func newClaudeDesktop() *ClaudeDesktop {
 		"linux":   "~/.config/Claude/claude_desktop_config.json",
 	}
 	c.buildEntry = func(opts LinkOptions) map[string]any {
-		return bridgeConfig(opts.GatewayURL)
+		url := opts.GatewayURL
+		if opts.Port > 0 {
+			url = GatewayHTTPURL(opts.Port)
+		}
+		return bridgeConfig(url)
 	}
 	return c
 }
