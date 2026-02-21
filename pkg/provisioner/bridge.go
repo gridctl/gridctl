@@ -12,6 +12,8 @@ var NpxAvailable = func() bool {
 }
 
 // bridgeConfig returns the mcp-remote bridge configuration for stdio-only clients.
+// The gatewayURL should point to the /mcp (streamable HTTP) endpoint so that
+// mcp-remote's default http-first transport strategy works correctly.
 func bridgeConfig(gatewayURL string) map[string]any {
 	return map[string]any{
 		"command": "npx",
