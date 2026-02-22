@@ -676,6 +676,56 @@ func TestCline_Link(t *testing.T) {
 	}
 }
 
+func TestClaudeDesktop_Link_UsesHTTPEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "claude_desktop_config.json")
+
+	c := newClaudeDesktop()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+
+	if err := c.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	args := entry["args"].([]any)
+	// Should use /mcp endpoint, not /sse
+	if args[2] != "http://localhost:8180/mcp" {
+		t.Errorf("expected mcp-remote URL http://localhost:8180/mcp, got %v", args[2])
+	}
+}
+
+func TestCline_Link_UsesHTTPEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "cline_mcp_settings.json")
+
+	c := newCline()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+
+	if err := c.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	args := entry["args"].([]any)
+	// Should use /mcp endpoint, not /sse
+	if args[2] != "http://localhost:8180/mcp" {
+		t.Errorf("expected mcp-remote URL http://localhost:8180/mcp, got %v", args[2])
+	}
+}
+
 // --- Backup Tests ---
 
 func TestBackup_CreatesBackup(t *testing.T) {
