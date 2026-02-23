@@ -189,6 +189,10 @@ func simulateLink(data map[string]any, prov ClientProvisioner, opts LinkOptions)
 		servers := getOrCreateMap(data, "context_servers")
 		servers[opts.ServerName] = p.buildEntry(opts)
 		data["context_servers"] = servers
+	case *OpenCode:
+		servers := getOrCreateMap(data, "mcp")
+		servers[opts.ServerName] = p.buildEntry(opts)
+		data["mcp"] = servers
 	case *Goose:
 		extensions := getOrCreateMap(data, "extensions")
 		extensions[opts.ServerName] = p.buildEntry(opts)
