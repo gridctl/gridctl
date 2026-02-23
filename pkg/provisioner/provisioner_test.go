@@ -51,7 +51,7 @@ func TestNewRegistry(t *testing.T) {
 	slugs := r.AllSlugs()
 
 	expected := []string{
-		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini",
+		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "opencode",
 		"continue", "cline", "anythingllm", "roo", "zed", "goose",
 	}
 	if len(slugs) != len(expected) {
@@ -78,6 +78,7 @@ func TestRegistry_FindBySlug(t *testing.T) {
 		{"windsurf", true, "Windsurf"},
 		{"vscode", true, "VS Code"},
 		{"gemini", true, "Gemini CLI"},
+		{"opencode", true, "OpenCode"},
 		{"continue", true, "Continue"},
 		{"cline", true, "Cline"},
 		{"anythingllm", true, "AnythingLLM"},
@@ -969,6 +970,7 @@ func TestClientProvisioners_ImplementInterface(t *testing.T) {
 		newWindsurf(),
 		newVSCode(),
 		newGeminiCLI(),
+		newOpenCode(),
 		newContinueDev(),
 		newCline(),
 		newAnythingLLM(),
@@ -1721,6 +1723,312 @@ func TestZed_IsLinked(t *testing.T) {
 	}
 }
 
+// --- OpenCode Tests ---
+
+func TestOpenCode_Link(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	o := newOpenCode()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+
+	if err := o.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcp"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	if entry["type"] != "remote" {
+		t.Errorf("expected type=remote, got %v", entry["type"])
+	}
+	if entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected url=http://localhost:8180/mcp, got %v", entry["url"])
+	}
+}
+
+func TestOpenCode_Link_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	o := newOpenCode()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+
+	if err := o.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	err := o.Link(configPath, opts)
+	if err != ErrAlreadyLinked {
+		t.Errorf("expected ErrAlreadyLinked, got: %v", err)
+	}
+}
+
+func TestOpenCode_Link_Conflict(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	o := newOpenCode()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcp": map[string]any{
+			"gridctl": map[string]any{
+				"type":    "local",
+				"command": []any{"some-other-tool"},
+			},
+		},
+	})
+
+	err := o.Link(configPath, opts)
+	if err != ErrConflict {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+}
+
+func TestOpenCode_Link_Force(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	o := newOpenCode()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+		Force:      true,
+	}
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcp": map[string]any{
+			"gridctl": map[string]any{
+				"type":    "local",
+				"command": []any{"some-other-tool"},
+			},
+		},
+	})
+
+	if err := o.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcp"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	if entry["type"] != "remote" {
+		t.Errorf("expected type=remote after force, got %v", entry["type"])
+	}
+	if entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected url after force, got %v", entry["url"])
+	}
+}
+
+func TestOpenCode_Link_PreservesOtherServers(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcp": map[string]any{
+			"other-server": map[string]any{
+				"type": "remote",
+				"url":  "http://other:3000/mcp",
+			},
+		},
+	})
+
+	o := newOpenCode()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+
+	if err := o.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcp"].(map[string]any)
+	if _, ok := servers["other-server"]; !ok {
+		t.Error("other-server should be preserved")
+	}
+	if _, ok := servers["gridctl"]; !ok {
+		t.Error("gridctl should be added")
+	}
+}
+
+func TestOpenCode_Link_PreservesOtherConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"provider": "anthropic",
+		"model":    "claude-3-5-sonnet-20241022",
+	})
+
+	o := newOpenCode()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+
+	if err := o.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	if data["provider"] != "anthropic" {
+		t.Error("other config should be preserved")
+	}
+	if data["model"] != "claude-3-5-sonnet-20241022" {
+		t.Error("other config should be preserved")
+	}
+	servers := data["mcp"].(map[string]any)
+	if _, ok := servers["gridctl"]; !ok {
+		t.Error("gridctl should be added")
+	}
+}
+
+func TestOpenCode_Link_FallbackURL(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	o := newOpenCode()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:9090/sse",
+		Port:       0,
+		ServerName: "gridctl",
+	}
+
+	if err := o.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcp"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	if entry["url"] != "http://localhost:9090/sse" {
+		t.Errorf("expected fallback URL, got %v", entry["url"])
+	}
+}
+
+func TestOpenCode_Unlink(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcp": map[string]any{
+			"gridctl": map[string]any{"type": "remote", "url": "http://localhost:8180/mcp"},
+			"other":   map[string]any{"type": "remote", "url": "http://other:3000/mcp"},
+		},
+	})
+
+	o := newOpenCode()
+	if err := o.Unlink(configPath, "gridctl"); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcp"].(map[string]any)
+	if _, ok := servers["gridctl"]; ok {
+		t.Error("gridctl should have been removed")
+	}
+	if _, ok := servers["other"]; !ok {
+		t.Error("other entry should be preserved")
+	}
+}
+
+func TestOpenCode_Unlink_NotLinked(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcp": map[string]any{},
+	})
+
+	o := newOpenCode()
+	err := o.Unlink(configPath, "gridctl")
+	if err != ErrNotLinked {
+		t.Errorf("expected ErrNotLinked, got: %v", err)
+	}
+}
+
+func TestOpenCode_Detect(t *testing.T) {
+	dir := t.TempDir()
+	opencodeDir := filepath.Join(dir, ".config", "opencode")
+	if err := os.MkdirAll(opencodeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(opencodeDir, "opencode.json")
+
+	o := newOpenCode()
+	o.paths = map[string]string{
+		"linux":   configPath,
+		"darwin":  configPath,
+		"windows": configPath,
+	}
+
+	path, found := o.Detect()
+	if !found {
+		t.Error("expected Detect to find OpenCode via directory")
+	}
+	if path != configPath {
+		t.Errorf("expected path %q, got %q", configPath, path)
+	}
+}
+
+func TestOpenCode_Detect_Negative(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "nope", ".config", "opencode", "opencode.json")
+
+	o := newOpenCode()
+	o.paths = map[string]string{
+		"linux":   configPath,
+		"darwin":  configPath,
+		"windows": configPath,
+	}
+
+	_, found := o.Detect()
+	if found {
+		t.Error("expected Detect to not find OpenCode")
+	}
+}
+
+func TestOpenCode_IsLinked(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+
+	o := newOpenCode()
+
+	linked, err := o.IsLinked(configPath, "gridctl")
+	if err != nil || linked {
+		t.Errorf("expected not linked, got linked=%v err=%v", linked, err)
+	}
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcp": map[string]any{
+			"gridctl": map[string]any{"type": "remote", "url": "http://localhost:8180/mcp"},
+		},
+	})
+
+	linked, err = o.IsLinked(configPath, "gridctl")
+	if err != nil || !linked {
+		t.Errorf("expected linked, got linked=%v err=%v", linked, err)
+	}
+}
+
 // --- Goose Tests ---
 
 func TestGoose_Link(t *testing.T) {
@@ -2193,6 +2501,36 @@ func TestDryRunDiff_ClaudeCode(t *testing.T) {
 	}
 }
 
+func TestDryRunDiff_OpenCode(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+	writeTestJSON(t, configPath, map[string]any{})
+
+	o := newOpenCode()
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+
+	before, after, err := DryRunDiff(configPath, o, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(before, "gridctl") {
+		t.Error("before should not contain gridctl")
+	}
+	if !strings.Contains(after, `"mcp"`) {
+		t.Error("after should contain mcp key")
+	}
+	if !strings.Contains(after, `"gridctl"`) {
+		t.Error("after should contain gridctl entry")
+	}
+	if !strings.Contains(after, `"remote"`) {
+		t.Error("after should contain remote transport type")
+	}
+}
+
 // --- looksLikeGridctlEntry Tests ---
 
 func TestLooksLikeGridctlEntry_URI(t *testing.T) {
@@ -2224,6 +2562,7 @@ func TestTransportDescriptionFor(t *testing.T) {
 		{"Claude Desktop", newClaudeDesktop(), "mcp-remote bridge"},
 		{"Claude Code", newClaudeCode(), "native HTTP"},
 		{"GeminiCLI", newGeminiCLI(), "native HTTP"},
+		{"OpenCode", newOpenCode(), "native HTTP"},
 		{"VS Code", newVSCode(), "native SSE"},
 		{"Zed", newZed(), "native SSE"},
 		{"Goose", newGoose(), "native SSE"},
@@ -2247,7 +2586,7 @@ func TestNewRegistry_WithNewClients(t *testing.T) {
 	slugs := r.AllSlugs()
 
 	expected := []string{
-		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini",
+		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "opencode",
 		"continue", "cline", "anythingllm", "roo", "zed", "goose",
 	}
 	if len(slugs) != len(expected) {
@@ -2351,6 +2690,7 @@ func TestNewClientProvisioners_ImplementInterface(t *testing.T) {
 	clients := []ClientProvisioner{
 		newClaudeCode(),
 		newGeminiCLI(),
+		newOpenCode(),
 		newZed(),
 		newGoose(),
 	}
