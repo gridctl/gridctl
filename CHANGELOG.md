@@ -2,7 +2,14 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-alpha.10] - 2026-02-23
+
+
+### Bug Fixes
+
+
+- Use streamable HTTP endpoint for Claude Desktop bridge
+- Use streamable HTTP endpoint for Cline bridge## [0.1.0-alpha.9] - 2026-02-19
 
 
 ### Bug Fixes
