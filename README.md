@@ -243,7 +243,7 @@ gridctl link claude       # Link a specific client
 gridctl link --all        # Link all detected clients at once
 ```
 
-Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, Continue, Cline, AnythingLLM, Roo, Zed, Goose
+Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, OpenCode, Continue, Cline, AnythingLLM, Roo, Zed, Goose
 
 <details>
 <summary>Manual configuration</summary>
