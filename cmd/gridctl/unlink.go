@@ -27,7 +27,7 @@ var unlinkCmd = &cobra.Command{
 Without arguments, detects linked clients and presents a selection.
 With a client name, unlinks that specific client directly.
 
-Supported clients: claude, cursor, windsurf, vscode, continue, cline, anythingllm, roo`,
+Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, opencode, continue, cline, anythingllm, roo, zed, goose`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var client string
