@@ -30,7 +30,7 @@ var linkCmd = &cobra.Command{
 Without arguments, detects installed LLM clients and presents a selection list.
 With a client name, links that specific client directly.
 
-Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, continue, cline, anythingllm, roo, zed, goose`,
+Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, opencode, continue, cline, anythingllm, roo, zed, goose`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var client string
