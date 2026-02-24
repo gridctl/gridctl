@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -56,13 +58,18 @@ func runStatus(stack string) error {
 		if state.IsRunning(&s) {
 			status = "running"
 		}
-		gateways = append(gateways, output.GatewaySummary{
+		gw := output.GatewaySummary{
 			Name:    s.StackName,
 			Port:    s.Port,
 			PID:     s.PID,
 			Status:  status,
 			Started: formatDuration(time.Since(s.StartedAt)),
-		})
+		}
+		// Query the running gateway for code mode status
+		if status == "running" {
+			gw.CodeMode = queryCodeMode(s.Port)
+		}
+		gateways = append(gateways, gw)
 	}
 
 	// Show container status
@@ -117,6 +124,25 @@ func runStatus(stack string) error {
 	printer.Containers(containers)
 
 	return nil
+}
+
+// queryCodeMode queries a running gateway's API for code mode status.
+// Returns "on" if active, empty string otherwise.
+func queryCodeMode(port int) string {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/status", port))
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var status struct {
+		CodeMode string `json:"code_mode"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&status) == nil {
+		return status.CodeMode
+	}
+	return ""
 }
 
 // formatDuration formats a duration in human-readable form
