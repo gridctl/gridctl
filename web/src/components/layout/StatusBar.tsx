@@ -1,4 +1,4 @@
-import { Wifi, WifiOff, Clock, Server, Box, Radio } from 'lucide-react';
+import { Wifi, WifiOff, Clock, Server, Box, Radio, Code } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';
@@ -7,6 +7,7 @@ export function StatusBar() {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const resources = useStackStore((s) => s.resources);
   const sessions = useStackStore((s) => s.sessions);
+  const codeMode = useStackStore((s) => s.codeMode);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
   const lastUpdated = useStackStore((s) => s.lastUpdated);
   const error = useStackStore((s) => s.error);
@@ -78,6 +79,14 @@ export function StatusBar() {
               <span className="text-primary font-semibold">{sessions}</span>
               <span className="ml-1">sessions</span>
             </span>
+          </div>
+        )}
+
+        {/* Code Mode indicator */}
+        {codeMode && codeMode !== 'off' && (
+          <div className="flex items-center gap-2 text-text-muted">
+            <Code size={11} className="text-primary" />
+            <span className="text-primary font-semibold">Code Mode</span>
           </div>
         )}
       </div>
