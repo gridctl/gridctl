@@ -24,6 +24,7 @@ export interface TransformInput {
   a2aTasks?: number | null;
   clients?: ClientStatus[];
   registryStatus?: RegistryStatus | null;
+  codeMode?: string | null;
 }
 
 /**
@@ -61,7 +62,7 @@ export function transformToGraph(
   input: TransformInput,
   options: TransformOptions = {}
 ): TransformOutput {
-  const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients = [], registryStatus } = input;
+  const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients = [], registryStatus, codeMode } = input;
   const { layoutEngine = defaultLayoutEngine, preservedPositions } = options;
 
   // Build lookup sets for edge routing
@@ -77,7 +78,8 @@ export function transformToGraph(
     sessions,
     a2aTasks,
     clients,
-    registryStatus
+    registryStatus,
+    codeMode
   );
 
   // Create edges
@@ -114,10 +116,11 @@ export function transformToNodesAndEdges(
   sessions?: number,
   a2aTasks?: number | null,
   clients?: ClientStatus[],
-  registryStatus?: RegistryStatus | null
+  registryStatus?: RegistryStatus | null,
+  codeMode?: string | null
 ): TransformOutput {
   return transformToGraph(
-    { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients, registryStatus },
+    { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients, registryStatus, codeMode },
     { preservedPositions: existingPositions }
   );
 }
