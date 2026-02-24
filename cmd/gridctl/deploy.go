@@ -24,6 +24,7 @@ var (
 	deployNoExpand    bool
 	deployWatch       bool
 	deployFlash       bool
+	deployCodeMode    bool
 )
 
 var deployCmd = &cobra.Command{
@@ -54,6 +55,7 @@ func init() {
 	deployCmd.Flags().BoolVar(&deployNoExpand, "no-expand", false, "Disable environment variable expansion in OpenAPI spec files")
 	deployCmd.Flags().BoolVarP(&deployWatch, "watch", "w", false, "Watch stack file for changes and hot reload")
 	deployCmd.Flags().BoolVar(&deployFlash, "flash", false, "Auto-link detected LLM clients after deploy")
+	deployCmd.Flags().BoolVar(&deployCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools)")
 }
 
 func runDeploy(stackPath string) error {
@@ -68,6 +70,7 @@ func runDeploy(stackPath string) error {
 		Foreground:  deployForeground,
 		Watch:       deployWatch,
 		DaemonChild: deployDaemonChild,
+		CodeMode:    deployCodeMode,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
