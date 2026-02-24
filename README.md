@@ -205,6 +205,24 @@ This agent can only access three of the five tools exposed by the GitHub server 
 
 Limited [Agent-to-Agent](https://google.github.io/A2A/) protocol support. Expose your agents via `/.well-known/agent.json` or connect to remote A2A agents. Agents can use other agents as tools. `A2A` is still emerging, as is the common use-cases. This part of the project will continue to evolve in the future.
 
+### Code Mode
+
+When a stack exposes dozens of tools, context window consumption grows fast. Code Mode replaces all individual tool definitions with two meta-tools — `search` and `execute` — reducing context overhead by 99%+. LLM agents discover tools via search, then call them through JavaScript executed in a sandboxed [goja](https://github.com/nicholasgasior/goja) runtime.
+
+```yaml
+gateway:
+  code_mode: "on"
+  code_mode_timeout: 30     # Execution timeout in seconds (default: 30)
+```
+
+Or enable via CLI flag:
+
+```bash
+gridctl deploy stack.yaml --code-mode
+```
+
+The sandbox provides `mcp.callTool(serverName, toolName, args)` for synchronous tool calls and `console.log/warn/error` for output capture. Modern JavaScript syntax (arrow functions, destructuring, template literals) is supported via esbuild transpilation. Agent-level ACLs are enforced inside the sandbox — agents can only call tools they have access to. See [`examples/code-mode/`](examples/code-mode/) for a working example.
+
 ### Agent Skills Registry
 
 Store reusable skills as [SKILL.md](https://agentskills.io) files — markdown documents with YAML frontmatter that get exposed to LLM clients as MCP prompts. Create them via the REST API, Web UI, or by dropping files into `~/.gridctl/registry/skills/`.
@@ -226,6 +244,7 @@ gridctl deploy <stack.yaml> -f       # Run in foreground (debug mode)
 gridctl deploy <stack.yaml> -p 9000  # Custom gateway port
 gridctl deploy <stack.yaml> --watch  # Watch for changes and hot reload
 gridctl deploy <stack.yaml> --flash  # Deploy and auto-link LLM clients
+gridctl deploy <stack.yaml> --code-mode  # Enable code mode (search + execute)
 gridctl status                       # Show running stacks
 gridctl link                         # Connect an LLM client to the gateway
 gridctl unlink                       # Remove gridctl from an LLM client
@@ -296,6 +315,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | [`context7-mcp.yaml`](examples/platforms/context7-mcp.yaml) | Up-to-date library documentation |
 | [`openapi-basic.yaml`](examples/openapi/openapi-basic.yaml) | Turn a REST API into MCP tools via OpenAPI spec |
 | [`openapi-auth.yaml`](examples/openapi/openapi-auth.yaml) | OpenAPI with bearer token and API key auth |
+| [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Agent Skills registry with a single server |
 | [`registry-advanced.yaml`](examples/registry/registry-advanced.yaml) | Cross-server Agent Skills |
 
