@@ -38,6 +38,17 @@ func Validate(s *Stack) error {
 		errs = append(errs, ValidationError{"stack.name", "is required"})
 	}
 
+	// Gateway code_mode validation
+	if s.Gateway != nil && s.Gateway.CodeMode != "" {
+		validModes := map[string]bool{"off": true, "on": true}
+		if !validModes[s.Gateway.CodeMode] {
+			errs = append(errs, ValidationError{"gateway.code_mode", "must be 'off' or 'on'"})
+		}
+		if s.Gateway.CodeModeTimeout < 0 {
+			errs = append(errs, ValidationError{"gateway.code_mode_timeout", "must be a positive integer"})
+		}
+	}
+
 	// Gateway auth validation
 	if s.Gateway != nil && s.Gateway.Auth != nil {
 		auth := s.Gateway.Auth
