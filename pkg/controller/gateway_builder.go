@@ -106,6 +106,19 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	inst.Gateway.SetDockerClient(b.rt.DockerClient())
 	inst.Gateway.SetVersion(b.version)
 
+	// Phase 1a: Enable code mode if configured
+	codeModeEnabled := b.config.CodeMode
+	if !codeModeEnabled && b.stack.Gateway != nil && b.stack.Gateway.CodeMode == "on" {
+		codeModeEnabled = true
+	}
+	if codeModeEnabled {
+		timeout := 30 * time.Second
+		if b.stack.Gateway != nil && b.stack.Gateway.CodeModeTimeout > 0 {
+			timeout = time.Duration(b.stack.Gateway.CodeModeTimeout) * time.Second
+		}
+		inst.Gateway.SetCodeMode(timeout)
+	}
+
 	// Phase 1b: Create registry server (internal MCP server)
 	regDir := filepath.Join(state.BaseDir(), "registry")
 	if b.registryDir != "" {
