@@ -1012,6 +1012,60 @@ gateway:
 	}
 }
 
+func TestValidate_CodeMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		topo    *Stack
+		wantErr bool
+	}{
+		{
+			name: "valid code_mode on",
+			topo: &Stack{
+				Name:    "test",
+				Network: Network{Name: "test-net"},
+				Gateway: &GatewayConfig{CodeMode: "on"},
+				MCPServers: []MCPServer{
+					{Name: "s1", Image: "alpine", Port: 3000},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid code_mode off",
+			topo: &Stack{
+				Name:    "test",
+				Network: Network{Name: "test-net"},
+				Gateway: &GatewayConfig{CodeMode: "off"},
+				MCPServers: []MCPServer{
+					{Name: "s1", Image: "alpine", Port: 3000},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid code_mode value",
+			topo: &Stack{
+				Name:    "test",
+				Network: Network{Name: "test-net"},
+				Gateway: &GatewayConfig{CodeMode: "auto"},
+				MCPServers: []MCPServer{
+					{Name: "s1", Image: "alpine", Port: 3000},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(tt.topo)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
