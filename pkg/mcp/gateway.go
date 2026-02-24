@@ -73,9 +73,13 @@ type Gateway struct {
 	serverInfo  ServerInfo
 	serverMeta  map[string]MCPServerConfig       // name -> config for status reporting
 	agentAccess map[string][]config.ToolSelector // agent name -> allowed MCP servers with tool filtering
+	codeMode    *CodeMode                        // nil when code mode is off
+	codeModeStr string                           // "off", "on" — for status reporting
 
 	healthMu sync.RWMutex
 	health   map[string]*HealthStatus // name -> health status
+
+	toolCountWarned bool // whether the tool count hint has been logged
 }
 
 // NewGateway creates a new MCP gateway.
@@ -112,6 +116,27 @@ func (g *Gateway) SetVersion(version string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.serverInfo.Version = version
+}
+
+// SetCodeMode enables code mode with the given timeout.
+// When code mode is active, tools/list returns meta-tools instead of individual tools.
+func (g *Gateway) SetCodeMode(timeout time.Duration) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	cm := NewCodeMode(timeout)
+	cm.SetLogger(g.logger)
+	g.codeMode = cm
+	g.codeModeStr = "on"
+}
+
+// CodeModeStatus returns the code mode status string ("off" or "on").
+func (g *Gateway) CodeModeStatus() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.codeModeStr == "" {
+		return "off"
+	}
+	return g.codeModeStr
 }
 
 // Router returns the tool router.
@@ -466,7 +491,16 @@ func (g *Gateway) isToolAllowedForAgent(agentName, serverName, toolName string) 
 
 // HandleToolsListForAgent returns tools filtered by agent access permissions.
 // This applies both server-level and tool-level filtering.
+// When code mode is active, returns the two meta-tools instead.
 func (g *Gateway) HandleToolsListForAgent(agentName string) (*ToolsListResult, error) {
+	g.mu.RLock()
+	cm := g.codeMode
+	g.mu.RUnlock()
+
+	if cm != nil {
+		return cm.ToolsList(), nil
+	}
+
 	allowed := g.GetAgentAllowedServers(agentName)
 	if allowed == nil {
 		// Agent not registered - return all tools
@@ -514,7 +548,18 @@ func (g *Gateway) HandleToolsListForAgent(agentName string) (*ToolsListResult, e
 
 // HandleToolsCallForAgent routes a tool call with agent access validation.
 // This validates both server-level and tool-level access.
+// When code mode is active, passes the agent-scoped tool list to the sandbox.
 func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string, params ToolCallParams) (*ToolCallResult, error) {
+	g.mu.RLock()
+	cm := g.codeMode
+	g.mu.RUnlock()
+
+	if cm != nil && cm.IsMetaTool(params.Name) {
+		// Build agent-scoped tool list for the sandbox
+		agentTools, _ := g.getAgentFilteredTools(agentName)
+		return cm.HandleCallWithScope(ctx, params, g, agentTools)
+	}
+
 	// Parse the tool name to get the MCP server and original tool name
 	serverName, originalToolName, err := ParsePrefixedTool(params.Name)
 	if err != nil {
@@ -535,6 +580,57 @@ func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string,
 
 	// Proceed with the tool call
 	return g.HandleToolsCall(ctx, params)
+}
+
+// getAgentFilteredTools returns the aggregated tools filtered by agent access permissions.
+// This is used by code mode to build a scoped tool set for the sandbox.
+// Unlike HandleToolsListForAgent, this always returns real tools (not meta-tools).
+func (g *Gateway) getAgentFilteredTools(agentName string) ([]Tool, error) {
+	allowed := g.GetAgentAllowedServers(agentName)
+	if allowed == nil {
+		return g.router.AggregatedTools(), nil
+	}
+
+	serverSelectors := make(map[string]config.ToolSelector)
+	for _, selector := range allowed {
+		serverSelectors[selector.Server] = selector
+	}
+
+	allTools := g.router.AggregatedTools()
+	var filteredTools []Tool
+	for _, tool := range allTools {
+		serverName, originalToolName, err := ParsePrefixedTool(tool.Name)
+		if err != nil {
+			continue
+		}
+		selector, hasServer := serverSelectors[serverName]
+		if !hasServer {
+			continue
+		}
+		if len(selector.Tools) == 0 {
+			filteredTools = append(filteredTools, tool)
+			continue
+		}
+		for _, allowedTool := range selector.Tools {
+			if allowedTool == originalToolName {
+				filteredTools = append(filteredTools, tool)
+				break
+			}
+		}
+	}
+	return filteredTools, nil
+}
+
+// logToolCountHint logs an INFO message suggesting code_mode when tool count exceeds 50.
+func (g *Gateway) logToolCountHint(toolCount int) {
+	if g.toolCountWarned || toolCount <= 50 {
+		return
+	}
+	g.toolCountWarned = true
+	g.logger.Info("large tool count detected — consider enabling gateway code_mode to reduce context usage",
+		"tool_count", toolCount,
+		"hint", "add 'code_mode: on' to gateway config or use --code-mode flag",
+	)
 }
 
 // waitForHTTPServer waits for an HTTP MCP server to become available.
@@ -589,13 +685,33 @@ func (g *Gateway) HandleInitialize(params InitializeParams) (*InitializeResult, 
 }
 
 // HandleToolsList returns all aggregated tools.
+// When code mode is active, returns the two meta-tools instead.
 func (g *Gateway) HandleToolsList() (*ToolsListResult, error) {
+	g.mu.RLock()
+	cm := g.codeMode
+	g.mu.RUnlock()
+
+	if cm != nil {
+		return cm.ToolsList(), nil
+	}
+
 	tools := g.router.AggregatedTools()
+	g.logToolCountHint(len(tools))
 	return &ToolsListResult{Tools: tools}, nil
 }
 
 // HandleToolsCall routes a tool call to the appropriate MCP server.
+// When code mode is active and the tool is a meta-tool, delegates to code mode.
 func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*ToolCallResult, error) {
+	g.mu.RLock()
+	cm := g.codeMode
+	g.mu.RUnlock()
+
+	if cm != nil && cm.IsMetaTool(params.Name) {
+		allTools := g.router.AggregatedTools()
+		return cm.HandleCall(ctx, params, g, allTools)
+	}
+
 	client, toolName, err := g.router.RouteToolCall(params.Name)
 	if err != nil {
 		return &ToolCallResult{

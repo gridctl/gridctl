@@ -87,6 +87,7 @@ export interface GatewayStatus {
   resources?: ResourceStatus[];
   sessions?: number;       // Active MCP session count
   a2a_tasks?: number;      // Active A2A task count (omitted if no A2A gateway)
+  code_mode?: string;      // "on" when code mode is active (omitted when off)
 }
 
 // Tool definition matching mcp.Tool
@@ -126,6 +127,7 @@ export interface GatewayNodeData extends NodeDataBase {
   totalToolCount: number;
   sessions: number;
   a2aTasks: number | null;
+  codeMode: string | null;
 }
 
 export interface MCPServerNodeData extends NodeDataBase {

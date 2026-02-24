@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Wrench, Zap, Bot, Users, Radio, ListChecks, Monitor } from 'lucide-react';
+import { Activity, Server, Wrench, Zap, Bot, Users, Radio, ListChecks, Monitor, Code } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import type { GatewayNodeData } from '../../types';
@@ -161,6 +161,14 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             {data.totalToolCount}
           </span>
         </div>
+
+        {/* Code Mode badge */}
+        {data.codeMode && data.codeMode !== 'off' && (
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20">
+            <Code size={12} className="text-primary" />
+            <span className="text-[11px] text-primary font-semibold tracking-wide">Code Mode</span>
+          </div>
+        )}
 
         {/* Status indicator */}
         <div className="flex items-center gap-2.5 pt-2 mt-1 border-t border-border/50">

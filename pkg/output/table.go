@@ -16,11 +16,12 @@ type WorkloadSummary struct {
 
 // GatewaySummary contains data for the gateway status table.
 type GatewaySummary struct {
-	Name    string
-	Port    int
-	PID     int
-	Status  string // running, stopped
-	Started string // human-readable duration
+	Name     string
+	Port     int
+	PID      int
+	Status   string // running, stopped
+	Started  string // human-readable duration
+	CodeMode string // "on" or empty
 }
 
 // ContainerSummary contains data for the container status table.
@@ -89,14 +90,31 @@ func (p *Printer) Gateways(gateways []GatewaySummary) {
 	t.SetOutputMirror(p.out)
 	t.SetStyle(p.tableStyle())
 
-	t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Started"})
+	// Check if any gateway has code mode enabled
+	hasCodeMode := false
+	for _, g := range gateways {
+		if g.CodeMode != "" {
+			hasCodeMode = true
+			break
+		}
+	}
+
+	if hasCodeMode {
+		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Code Mode", "Started"})
+	} else {
+		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Started"})
+	}
 
 	for _, g := range gateways {
 		status := g.Status
 		if p.isTTY {
 			status = colorState(g.Status)
 		}
-		t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Started})
+		if hasCodeMode {
+			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.CodeMode, g.Started})
+		} else {
+			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Started})
+		}
 	}
 
 	t.Render()

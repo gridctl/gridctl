@@ -196,6 +196,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Sessions   int                       `json:"sessions"`
 		A2ATasks   *int                      `json:"a2a_tasks,omitempty"`
 		Registry   *registry.RegistryStatus  `json:"registry,omitempty"`
+		CodeMode   string                    `json:"code_mode,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:    s.gateway.ServerInfo().Name,
@@ -205,6 +206,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Agents:     s.getAgentStatuses(),
 		Resources:  s.getResourceStatuses(),
 		Sessions:   s.gateway.SessionCount(),
+	}
+	if cm := s.gateway.CodeModeStatus(); cm != "off" {
+		status.CodeMode = cm
 	}
 	if s.a2aGateway != nil {
 		count := s.a2aGateway.TaskCount()

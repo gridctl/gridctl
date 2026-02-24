@@ -26,6 +26,7 @@ function makeGatewayData(overrides: Partial<GatewayNodeData> = {}): GatewayNodeD
     totalToolCount: 5,
     sessions: 0,
     a2aTasks: null,
+    codeMode: null,
     ...overrides,
   };
 }

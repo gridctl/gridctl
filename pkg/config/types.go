@@ -22,6 +22,12 @@ type GatewayConfig struct {
 	// Set explicit origins to restrict cross-origin access.
 	AllowedOrigins []string    `yaml:"allowed_origins,omitempty"`
 	Auth           *AuthConfig `yaml:"auth,omitempty"`
+
+	// CodeMode controls whether the gateway replaces individual tool definitions
+	// with two meta-tools (search + execute). Values: "off" (default), "on".
+	CodeMode string `yaml:"code_mode,omitempty"`
+	// CodeModeTimeout is the execution timeout in seconds (default: 30).
+	CodeModeTimeout int `yaml:"code_mode_timeout,omitempty"`
 }
 
 // AuthConfig configures gateway authentication.

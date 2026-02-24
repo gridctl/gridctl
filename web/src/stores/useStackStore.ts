@@ -24,6 +24,7 @@ interface StackState {
   tools: Tool[];
   sessions: number;
   a2aTasks: number | null;
+  codeMode: string | null;  // Gateway code mode status ("on" when active)
 
   // === React Flow State ===
   nodes: Node[];
@@ -64,6 +65,7 @@ export const useStackStore = create<StackState>()(
     tools: [],
     sessions: 0,
     a2aTasks: null,
+    codeMode: null,
     nodes: [],
     edges: [],
     draggedPositions: new Map(),
@@ -82,6 +84,7 @@ export const useStackStore = create<StackState>()(
         agents: status.agents || [],  // Unified agents (includes A2A info)
         sessions: status.sessions ?? 0,
         a2aTasks: status.a2a_tasks ?? null,
+        codeMode: status.code_mode || null,
         lastUpdated: new Date(),
         isLoading: false,
         error: null,
@@ -111,7 +114,7 @@ export const useStackStore = create<StackState>()(
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks, draggedPositions } = get();
+      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks, codeMode, draggedPositions } = get();
       if (!gatewayInfo) return;
 
       const registryStatus = useRegistryStore.getState().status;
@@ -126,13 +129,14 @@ export const useStackStore = create<StackState>()(
         sessions,
         a2aTasks,
         clients,
-        registryStatus
+        registryStatus,
+        codeMode
       );
       set({ nodes, edges });
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks } = get();
+      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks, codeMode } = get();
       if (!gatewayInfo) return;
 
       const registryStatus = useRegistryStore.getState().status;
@@ -147,7 +151,8 @@ export const useStackStore = create<StackState>()(
         sessions,
         a2aTasks,
         clients,
-        registryStatus
+        registryStatus,
+        codeMode
       );
       set({ nodes, edges, draggedPositions: new Map() });
     },
