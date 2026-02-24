@@ -31,6 +31,7 @@ type Config struct {
 	Foreground  bool
 	Watch       bool
 	DaemonChild bool
+	CodeMode    bool // Enable code mode via CLI flag
 }
 
 // StackController orchestrates the full deploy lifecycle.
