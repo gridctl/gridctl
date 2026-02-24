@@ -1,0 +1,79 @@
+# Code Mode Example
+#
+# Demonstrates the gateway code mode feature, which replaces individual tool
+# definitions with two meta-tools (search + execute) to reduce context window
+# consumption by 99%+. When enabled, LLM agents discover tools via search and
+# call them through JavaScript code executed in a sandboxed goja runtime.
+#
+# How it works:
+#   1. Agent calls "search" with a query to discover available tools
+#   2. Agent writes JavaScript that uses mcp.callTool(server, tool, args)
+#   3. Agent calls "execute" with the JavaScript code
+#   4. The sandbox runs the code, enforces ACLs, and returns results
+#
+# The sandbox supports:
+#   - mcp.callTool(serverName, toolName, args) - synchronous tool calls
+#   - console.log/warn/error - captured and returned in the response
+#   - Modern JS syntax (arrow functions, destructuring, template literals)
+#   - 64KB max code size, configurable timeout (default: 30s)
+#
+# Usage:
+#   gridctl deploy examples/code-mode/code-mode-basic.yaml
+#
+#   Or enable code mode on any stack via CLI flag:
+#   gridctl deploy stack.yaml --code-mode
+#
+# Note: This example uses placeholder containers to demonstrate the gateway
+# configuration. Replace with real MCP server images for actual usage.
+
+version: "1"
+name: code-mode-demo
+
+gateway:
+  code_mode: "on"
+  code_mode_timeout: 30   # Execution timeout in seconds (default: 30)
+
+network:
+  name: code-mode-net
+
+mcp-servers:
+  # Server A - simulates a data API with multiple tools
+  - name: data-api
+    image: alpine:latest
+    port: 8080
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+  # Server B - simulates a notification service
+  - name: notifications
+    image: alpine:latest
+    port: 8081
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+agents:
+  # This agent receives only the "search" and "execute" meta-tools instead of
+  # individual tool definitions from data-api and notifications.
+  #
+  # Workflow:
+  #   1. search({ query: "user" })     -> discovers data-api__get_users, etc.
+  #   2. execute({ code: "..." })      -> runs JS with mcp.callTool()
+  #
+  # Agent-level ACLs are enforced inside the sandbox. This agent can only call
+  # tools from the servers listed in "uses", even through code execution.
+  - name: orchestrator
+    image: alpine:latest
+    description: "Agent that discovers and calls tools via code mode"
+    uses:
+      - data-api
+      - notifications
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+  # This agent demonstrates restricted access under code mode.
+  # The sandbox enforces that mcp.callTool() can only reach data-api,
+  # not notifications, regardless of what code is submitted.
+  - name: reader
+    image: alpine:latest
+    description: "Agent with read-only access to data API"
+    uses:
+      - server: data-api
+        tools: ["get_users", "get_status"]
+    command: ["sh", "-c", "while true; do sleep 3600; done"]

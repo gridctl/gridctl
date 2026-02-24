@@ -18,6 +18,7 @@ gridctl deploy examples/getting-started/agent-basic.yaml
 | [📦 platforms/](platforms/) | Third-party MCP servers (container-based) |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
 | [🔐 access-control/](access-control/) | Tool filtering and security patterns |
+| [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
 | [📋 registry/](registry/) | Agent Skills registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
@@ -36,27 +37,28 @@ gridctl deploy examples/getting-started/agent-basic.yaml
 
 ## 📊 Feature Matrix
 
-| Example | Transports | Agents | A2A | External | OpenAPI | Registry |
-|---------|------------|--------|-----|----------|---------|----------|
-| agent-basic | - | ✅ | - | - | - | - |
-| skills-basic | - | ✅ | ✅ | - | - | - |
-| local-mcp | stdio | - | - | - | - | - |
-| ssh-mcp | ssh+stdio | - | - | - | - | - |
-| external-mcp | http, sse | - | - | ✅ | - | - |
-| multi-agent-skills | - | ✅ | ✅ | - | - | - |
-| basic-a2a | - | ✅ | ✅ | - | - | - |
-| atlassian-mcp | sse | - | - | ✅ | - | - |
-| chrome-devtools-mcp | stdio | - | - | ✅ | - | - |
-| context7-mcp | stdio | - | - | ✅ | - | - |
-| github-mcp | stdio | - | - | ✅ | - | - |
-| zapier-mcp | stdio | - | - | ✅ | - | - |
-| openapi-basic | openapi | - | - | - | ✅ | - |
-| openapi-auth | openapi | - | - | - | ✅ | - |
-| tool-filtering | - | ✅ | - | - | - | - |
-| gateway-basic | http | - | - | ✅ | - | - |
-| gateway-remote | http | - | - | ✅ | - | - |
-| registry-basic | stdio | - | - | - | - | ✅ |
-| registry-advanced | stdio | - | - | - | - | ✅ |
+| Example | Transports | Agents | A2A | External | OpenAPI | Registry | Code Mode |
+|---------|------------|--------|-----|----------|---------|----------|-----------|
+| agent-basic | - | ✅ | - | - | - | - | - |
+| skills-basic | - | ✅ | ✅ | - | - | - | - |
+| local-mcp | stdio | - | - | - | - | - | - |
+| ssh-mcp | ssh+stdio | - | - | - | - | - | - |
+| external-mcp | http, sse | - | - | ✅ | - | - | - |
+| multi-agent-skills | - | ✅ | ✅ | - | - | - | - |
+| basic-a2a | - | ✅ | ✅ | - | - | - | - |
+| atlassian-mcp | sse | - | - | ✅ | - | - | - |
+| chrome-devtools-mcp | stdio | - | - | ✅ | - | - | - |
+| context7-mcp | stdio | - | - | ✅ | - | - | - |
+| github-mcp | stdio | - | - | ✅ | - | - | - |
+| zapier-mcp | stdio | - | - | ✅ | - | - | - |
+| openapi-basic | openapi | - | - | - | ✅ | - | - |
+| openapi-auth | openapi | - | - | - | ✅ | - | - |
+| tool-filtering | - | ✅ | - | - | - | - | - |
+| code-mode-basic | - | ✅ | - | - | - | - | ✅ |
+| gateway-basic | http | - | - | ✅ | - | - | - |
+| gateway-remote | http | - | - | ✅ | - | - | - |
+| registry-basic | stdio | - | - | - | - | ✅ | - |
+| registry-advanced | stdio | - | - | - | - | ✅ | - |
 
 ## 💻 Usage Pattern
 

@@ -156,7 +156,12 @@ gridctl/
 │   │   ├── router.go     # Tool routing
 │   │   ├── gateway.go    # Protocol bridge logic
 │   │   ├── handler.go    # HTTP handlers
-│   │   └── expand.go     # Environment variable expansion
+│   │   ├── expand.go     # Environment variable expansion
+│   │   ├── codemode.go       # Code mode orchestrator
+│   │   ├── codemode_tools.go # Meta-tool definitions (search, execute)
+│   │   ├── codemode_search.go # Tool search index
+│   │   ├── codemode_sandbox.go # goja JavaScript sandbox
+│   │   └── codemode_transpile.go # esbuild ES2020+ → ES2015 transpilation
 │   ├── a2a/              # A2A (Agent-to-Agent) protocol
 │   │   ├── types.go      # A2A protocol types (AgentCard, Task, Message)
 │   │   ├── client.go     # HTTP client for remote A2A agents
@@ -173,6 +178,7 @@ gridctl/
 │   ├── getting-started/  # Basic examples
 │   ├── transports/       # Transport-specific examples
 │   ├── access-control/   # Tool filtering and security examples
+│   ├── code-mode/        # Code mode (search + execute meta-tools) examples
 │   ├── gateways/         # Gateway configuration examples
 │   ├── multi-agent/      # Multi-agent orchestration examples
 │   ├── platforms/        # Platform-specific examples
@@ -252,6 +258,7 @@ Starts containers and MCP gateway for a stack.
 | `--verbose` | `-v` | Print full stack as JSON |
 | `--watch` | `-w` | Watch stack file for changes and hot reload |
 | `--flash` | | Auto-link detected LLM clients after deploy |
+| `--code-mode` | | Enable gateway code mode (replaces tools with search + execute meta-tools) |
 | `--no-expand` | | Disable environment variable expansion in OpenAPI spec files |
 
 #### `gridctl destroy <stack.yaml>`
@@ -387,6 +394,8 @@ gateway:                              # Optional: gateway-level configuration
     type: bearer                      # "bearer" or "api_key"
     token: "${GATEWAY_TOKEN}"         # Expected token (supports env var expansion)
     # header: "X-API-Key"            # Custom header for api_key type
+  code_mode: "on"                     # Replace tools with search + execute meta-tools ("off" | "on")
+  code_mode_timeout: 30               # Code execution timeout in seconds (default: 30)
 
 network:                              # Optional: single network
   name: my-network                    # Defaults to {name}-net
