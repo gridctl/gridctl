@@ -3,6 +3,8 @@ package registry
 import (
 	"encoding/json"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestAgentSkill_Validate(t *testing.T) {
@@ -188,6 +190,97 @@ func TestValidateState(t *testing.T) {
 			}
 			if !tt.wantErr && s != tt.want {
 				t.Errorf("validateState() state = %q, want %q", s, tt.want)
+			}
+		})
+	}
+}
+
+func TestStringOrSlice_UnmarshalYAML(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want StringOrSlice
+	}{
+		{
+			name: "single string",
+			yaml: `depends_on: step-a`,
+			want: StringOrSlice{"step-a"},
+		},
+		{
+			name: "string slice",
+			yaml: `depends_on: [step-a, step-b]`,
+			want: StringOrSlice{"step-a", "step-b"},
+		},
+		{
+			name: "multiline slice",
+			yaml: "depends_on:\n  - step-a\n  - step-b\n  - step-c",
+			want: StringOrSlice{"step-a", "step-b", "step-c"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result struct {
+				DependsOn StringOrSlice `yaml:"depends_on"`
+			}
+			if err := yaml.Unmarshal([]byte(tt.yaml), &result); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if len(result.DependsOn) != len(tt.want) {
+				t.Fatalf("got %d items, want %d", len(result.DependsOn), len(tt.want))
+			}
+			for i, v := range result.DependsOn {
+				if v != tt.want[i] {
+					t.Errorf("item[%d] = %q, want %q", i, v, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestStringOrSlice_EmptyUnmarshal(t *testing.T) {
+	var result struct {
+		DependsOn StringOrSlice `yaml:"depends_on"`
+	}
+	if err := yaml.Unmarshal([]byte("other: value"), &result); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if result.DependsOn != nil {
+		t.Errorf("expected nil, got %v", result.DependsOn)
+	}
+}
+
+func TestAgentSkill_IsExecutable(t *testing.T) {
+	tests := []struct {
+		name string
+		skill AgentSkill
+		want  bool
+	}{
+		{
+			name: "with workflow",
+			skill: AgentSkill{
+				Workflow: []WorkflowStep{{ID: "step-1", Tool: "server__tool"}},
+			},
+			want: true,
+		},
+		{
+			name: "without workflow",
+			skill: AgentSkill{},
+			want: false,
+		},
+		{
+			name: "empty workflow slice",
+			skill: AgentSkill{
+				Workflow: []WorkflowStep{},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.skill.IsExecutable(); got != tt.want {
+				t.Errorf("IsExecutable() = %v, want %v", got, tt.want)
 			}
 		})
 	}

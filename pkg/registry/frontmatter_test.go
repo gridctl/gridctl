@@ -273,6 +273,232 @@ func TestRenderSkillMD_Format(t *testing.T) {
 	}
 }
 
+func TestParseSkillMD_WithWorkflow(t *testing.T) {
+	input := `---
+name: network-check
+description: Check network connectivity
+inputs:
+  device-ip:
+    type: string
+    description: Target device IP
+    required: true
+  protocol:
+    type: string
+    default: icmp
+    enum: [icmp, tcp]
+workflow:
+  - id: check-reachable
+    tool: network__ping
+    args:
+      target: "{{ inputs.device-ip }}"
+      protocol: "{{ inputs.protocol }}"
+  - id: get-interfaces
+    tool: network__get-interfaces
+    args:
+      device: "{{ inputs.device-ip }}"
+    depends_on: check-reachable
+    on_error: skip
+output:
+  format: merged
+---
+
+# Network Check
+
+Validates connectivity to a network device.
+`
+
+	skill, err := ParseSkillMD([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseSkillMD() error = %v", err)
+	}
+
+	if skill.Name != "network-check" {
+		t.Errorf("Name = %q, want %q", skill.Name, "network-check")
+	}
+
+	// Verify inputs
+	if len(skill.Inputs) != 2 {
+		t.Fatalf("expected 2 inputs, got %d", len(skill.Inputs))
+	}
+	ip := skill.Inputs["device-ip"]
+	if ip.Type != "string" || !ip.Required {
+		t.Errorf("device-ip input = %+v", ip)
+	}
+	proto := skill.Inputs["protocol"]
+	if proto.Default != "icmp" || len(proto.Enum) != 2 {
+		t.Errorf("protocol input = %+v", proto)
+	}
+
+	// Verify workflow
+	if len(skill.Workflow) != 2 {
+		t.Fatalf("expected 2 workflow steps, got %d", len(skill.Workflow))
+	}
+	if skill.Workflow[0].ID != "check-reachable" {
+		t.Errorf("step 0 ID = %q", skill.Workflow[0].ID)
+	}
+	if skill.Workflow[1].OnError != "skip" {
+		t.Errorf("step 1 on_error = %q, want 'skip'", skill.Workflow[1].OnError)
+	}
+	if len(skill.Workflow[1].DependsOn) != 1 || skill.Workflow[1].DependsOn[0] != "check-reachable" {
+		t.Errorf("step 1 depends_on = %v", skill.Workflow[1].DependsOn)
+	}
+
+	// Verify output
+	if skill.Output == nil || skill.Output.Format != "merged" {
+		t.Errorf("output = %+v", skill.Output)
+	}
+
+	// Verify body preserved
+	if !strings.Contains(skill.Body, "# Network Check") {
+		t.Errorf("Body should contain header, got %q", skill.Body)
+	}
+}
+
+func TestParseSkillMD_WithoutWorkflow_BackwardCompat(t *testing.T) {
+	input := `---
+name: simple-skill
+description: A simple knowledge skill
+---
+
+# Instructions
+
+Just a regular skill without workflow.
+`
+
+	skill, err := ParseSkillMD([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseSkillMD() error = %v", err)
+	}
+
+	if skill.Name != "simple-skill" {
+		t.Errorf("Name = %q", skill.Name)
+	}
+	if skill.IsExecutable() {
+		t.Error("skill without workflow should not be executable")
+	}
+	if skill.Inputs != nil {
+		t.Errorf("Inputs should be nil, got %v", skill.Inputs)
+	}
+	if skill.Workflow != nil {
+		t.Errorf("Workflow should be nil, got %v", skill.Workflow)
+	}
+	if skill.Output != nil {
+		t.Errorf("Output should be nil, got %v", skill.Output)
+	}
+}
+
+func TestParseSkillMD_DependsOnSingleString(t *testing.T) {
+	input := `---
+name: dep-test
+description: Test depends_on as single string
+workflow:
+  - id: step-a
+    tool: server__tool-a
+  - id: step-b
+    tool: server__tool-b
+    depends_on: step-a
+---
+`
+
+	skill, err := ParseSkillMD([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseSkillMD() error = %v", err)
+	}
+
+	if len(skill.Workflow[1].DependsOn) != 1 {
+		t.Fatalf("expected 1 dependency, got %d", len(skill.Workflow[1].DependsOn))
+	}
+	if skill.Workflow[1].DependsOn[0] != "step-a" {
+		t.Errorf("depends_on[0] = %q, want 'step-a'", skill.Workflow[1].DependsOn[0])
+	}
+}
+
+func TestParseSkillMD_DependsOnArray(t *testing.T) {
+	input := `---
+name: dep-test
+description: Test depends_on as array
+workflow:
+  - id: step-a
+    tool: server__tool-a
+  - id: step-b
+    tool: server__tool-b
+  - id: step-c
+    tool: server__tool-c
+    depends_on: [step-a, step-b]
+---
+`
+
+	skill, err := ParseSkillMD([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseSkillMD() error = %v", err)
+	}
+
+	if len(skill.Workflow[2].DependsOn) != 2 {
+		t.Fatalf("expected 2 dependencies, got %d", len(skill.Workflow[2].DependsOn))
+	}
+	if skill.Workflow[2].DependsOn[0] != "step-a" || skill.Workflow[2].DependsOn[1] != "step-b" {
+		t.Errorf("depends_on = %v", skill.Workflow[2].DependsOn)
+	}
+}
+
+func TestRenderSkillMD_RoundTrip_WithWorkflow(t *testing.T) {
+	original := &AgentSkill{
+		Name:        "workflow-roundtrip",
+		Description: "Test round-trip with workflow",
+		State:       StateActive,
+		Inputs: map[string]SkillInput{
+			"target": {Type: "string", Required: true, Description: "Target host"},
+		},
+		Workflow: []WorkflowStep{
+			{
+				ID:   "step-1",
+				Tool: "network__ping",
+				Args: map[string]any{"host": "{{ inputs.target }}"},
+			},
+			{
+				ID:        "step-2",
+				Tool:      "network__traceroute",
+				DependsOn: StringOrSlice{"step-1"},
+				OnError:   "skip",
+			},
+		},
+		Output: &WorkflowOutput{Format: "merged"},
+		Body:   "# Workflow Skill\n",
+	}
+
+	rendered, err := RenderSkillMD(original)
+	if err != nil {
+		t.Fatalf("RenderSkillMD() error = %v", err)
+	}
+
+	parsed, err := ParseSkillMD(rendered)
+	if err != nil {
+		t.Fatalf("ParseSkillMD() error = %v", err)
+	}
+
+	if parsed.Name != original.Name {
+		t.Errorf("Name = %q, want %q", parsed.Name, original.Name)
+	}
+	if !parsed.IsExecutable() {
+		t.Error("parsed skill should be executable")
+	}
+	if len(parsed.Workflow) != 2 {
+		t.Fatalf("expected 2 workflow steps, got %d", len(parsed.Workflow))
+	}
+	if parsed.Workflow[0].ID != "step-1" {
+		t.Errorf("step 0 ID = %q", parsed.Workflow[0].ID)
+	}
+	if parsed.Workflow[1].OnError != "skip" {
+		t.Errorf("step 1 on_error = %q", parsed.Workflow[1].OnError)
+	}
+	if len(parsed.Inputs) != 1 {
+		t.Errorf("expected 1 input, got %d", len(parsed.Inputs))
+	}
+	if parsed.Output == nil || parsed.Output.Format != "merged" {
+		t.Errorf("output = %+v", parsed.Output)
+	}
+}
+
 func TestRenderSkillMD_EmptyBody(t *testing.T) {
 	skill := &AgentSkill{
 		Name:        "no-body",

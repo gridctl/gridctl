@@ -84,13 +84,16 @@ func ParseSkillMD(data []byte) (*AgentSkill, error) {
 func RenderSkillMD(skill *AgentSkill) ([]byte, error) {
 	// Marshal frontmatter fields to YAML
 	fm := struct {
-		Name          string            `yaml:"name,omitempty"`
-		Description   string            `yaml:"description,omitempty"`
-		License       string            `yaml:"license,omitempty"`
-		Compatibility string            `yaml:"compatibility,omitempty"`
-		Metadata      map[string]string `yaml:"metadata,omitempty"`
-		AllowedTools  string            `yaml:"allowed-tools,omitempty"`
-		State         ItemState         `yaml:"state,omitempty"`
+		Name          string                `yaml:"name,omitempty"`
+		Description   string                `yaml:"description,omitempty"`
+		License       string                `yaml:"license,omitempty"`
+		Compatibility string                `yaml:"compatibility,omitempty"`
+		Metadata      map[string]string     `yaml:"metadata,omitempty"`
+		AllowedTools  string                `yaml:"allowed-tools,omitempty"`
+		State         ItemState             `yaml:"state,omitempty"`
+		Inputs        map[string]SkillInput `yaml:"inputs,omitempty"`
+		Workflow      []WorkflowStep        `yaml:"workflow,omitempty"`
+		Output        *WorkflowOutput       `yaml:"output,omitempty"`
 	}{
 		Name:          skill.Name,
 		Description:   skill.Description,
@@ -99,6 +102,9 @@ func RenderSkillMD(skill *AgentSkill) ([]byte, error) {
 		Metadata:      skill.Metadata,
 		AllowedTools:  skill.AllowedTools,
 		State:         skill.State,
+		Inputs:        skill.Inputs,
+		Workflow:      skill.Workflow,
+		Output:        skill.Output,
 	}
 
 	yamlBytes, err := yaml.Marshal(fm)
