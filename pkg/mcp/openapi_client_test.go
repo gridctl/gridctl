@@ -11,7 +11,7 @@ import (
 func TestLoadSpec_HTMLContentType(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte("<!DOCTYPE html><html><body>Not a spec</body></html>"))
+		_, _ = w.Write([]byte("<!DOCTYPE html><html><body>Not a spec</body></html>"))
 	}))
 	defer srv.Close()
 
@@ -43,7 +43,7 @@ func TestLoadSpec_JSONContentType(t *testing.T) {
 	}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(spec))
+		_, _ = w.Write([]byte(spec))
 	}))
 	defer srv.Close()
 
@@ -79,7 +79,7 @@ func TestInitialize_ValidationWarningNonFatal(t *testing.T) {
 	}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(spec))
+		_, _ = w.Write([]byte(spec))
 	}))
 	defer srv.Close()
 
