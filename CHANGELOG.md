@@ -2,7 +2,42 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [0.1.0-alpha.10] - 2026-02-23
+## [Unreleased]
+
+
+### Bug Fixes
+
+
+- Update stale unlink command help text
+- Reject HTML responses and warn on OpenAPI 3.1 compat errors
+- Check w.Write return values in tests
+
+### Features
+
+
+- Add OpenCode provisioner for link/unlink
+- Register OpenCode in provisioner registry
+- Add OpenCode case to simulateLink
+- Add code_mode fields to GatewayConfig
+- Add code_mode validation rules
+- Add esbuild transpiler for code mode
+- Add tool search index for code mode
+- Add goja sandbox with tool bindings
+- Add search and execute meta-tool defs
+- Add code mode orchestrator
+- Integrate code mode into gateway
+- Add CodeMode to controller config
+- Wire code mode config to gateway
+- Add --code-mode flag to deploy command
+- Add code_mode to /api/status response
+- Show code mode in gridctl status
+- Add Code Mode column to gateway table
+- Add code_mode to frontend types
+- Extract codeMode in stack store
+- Pass codeMode through graph transform
+- Pass codeMode to gateway node data
+- Add Code Mode badge to gateway node
+- Add Code Mode indicator to status bar## [0.1.0-alpha.10] - 2026-02-23
 
 
 ### Bug Fixes
