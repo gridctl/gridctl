@@ -107,9 +107,13 @@ func (c *OpenAPIClient) Initialize(ctx context.Context) error {
 		return fmt.Errorf("loading OpenAPI spec: %w", err)
 	}
 
-	// Validate the spec
+	// Validate the spec — downgrade known OpenAPI 3.1 compat issues to warnings
 	if err := doc.Validate(ctx); err != nil {
-		return fmt.Errorf("validating OpenAPI spec: %w", err)
+		if isOpenAPI31CompatError(err) {
+			c.logger.Warn("OpenAPI spec validation issue (continuing anyway)", "error", err)
+		} else {
+			return fmt.Errorf("validating OpenAPI spec: %w", err)
+		}
 	}
 
 	// Determine base URL from spec if not overridden
@@ -295,11 +299,11 @@ func (c *OpenAPIClient) loadSpec(ctx context.Context) (*openapi3.T, error) {
 	loader.Context = ctx // Propagate context for cancellation
 
 	if strings.HasPrefix(c.spec, "http://") || strings.HasPrefix(c.spec, "https://") {
-		u, err := url.Parse(c.spec)
+		data, err := c.fetchSpec(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("parsing spec URL: %w", err)
+			return nil, err
 		}
-		return loader.LoadFromURI(u)
+		return loader.LoadFromData(data)
 	}
 
 	// Load from file
@@ -314,6 +318,45 @@ func (c *OpenAPIClient) loadSpec(ctx context.Context) (*openapi3.T, error) {
 	}
 
 	return loader.LoadFromData(data)
+}
+
+// fetchSpec fetches an OpenAPI spec from a URL with content-type validation.
+func (c *OpenAPIClient) fetchSpec(ctx context.Context) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.spec, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating spec request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json, application/yaml, application/x-yaml")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching spec from %s: %w", c.spec, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("fetching spec from %s: HTTP %d", c.spec, resp.StatusCode)
+	}
+
+	// Reject HTML responses early with a clear error
+	ct := resp.Header.Get("Content-Type")
+	if strings.Contains(ct, "text/html") {
+		return nil, fmt.Errorf("URL returned content type %q instead of JSON or YAML — verify the spec URL points to the actual OpenAPI endpoint", ct)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+	if err != nil {
+		return nil, fmt.Errorf("reading spec response: %w", err)
+	}
+
+	return data, nil
+}
+
+// isOpenAPI31CompatError returns true for validation errors caused by valid
+// OpenAPI 3.1 constructs that kin-openapi doesn't fully support (e.g., type: "null").
+func isOpenAPI31CompatError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, `unsupported 'type' value "null"`)
 }
 
 // shouldInclude checks if an operation should be included based on filters.
