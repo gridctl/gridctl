@@ -12,16 +12,19 @@ import {
   GripVertical,
   Eye,
   EyeOff,
+  Code2,
   GitBranch,
+  Play,
 } from 'lucide-react';
 import { marked } from 'marked';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 import { SkillFileTree } from './SkillFileTree';
 import { WorkflowPanel } from '../workflow/WorkflowPanel';
+import { VisualDesigner } from '../workflow/VisualDesigner';
 import { createRegistrySkill, updateRegistrySkill, validateSkillContent } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import type { AgentSkill, ItemState, SkillValidationResult } from '../../types';
+import type { AgentSkill, ItemState, SkillValidationResult, WorkflowStep, SkillInput, WorkflowOutput } from '../../types';
 
 // --- Types ---
 
@@ -348,12 +351,16 @@ export function SkillEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<SkillValidationResult | null>(null);
-  const [activeEditorTab, setActiveEditorTab] = useState<'editor' | 'workflow'>('editor');
+  const [editorMode, setEditorMode] = useState<'code' | 'visual' | 'test'>('code');
+
+  // Visual designer workflow state
+  const [designerSteps, setDesignerSteps] = useState<WorkflowStep[]>([]);
+  const [designerInputs, setDesignerInputs] = useState<Record<string, SkillInput>>({});
+  const [designerOutput, setDesignerOutput] = useState<WorkflowOutput | undefined>();
 
   // Detect if skill has a workflow block
   const hasWorkflow = useMemo(() => {
     if (!skill) return false;
-    // Check the full skill content (frontmatter) for workflow definition
     const fullContent = buildSkillMDContent({
       name: skill.name,
       description: skill.description,
@@ -552,32 +559,47 @@ export function SkillEditor({
           </div>
         </div>
 
-        {/* Tab bar (only shown when skill has a workflow) */}
+        {/* Mode toggle (shown when skill has a workflow) */}
         {hasWorkflow && !isNew && (
-          <div className="flex items-center gap-0 px-5 border-b border-border/30 bg-surface/30 flex-shrink-0">
-            <button
-              onClick={() => setActiveEditorTab('editor')}
-              className={cn(
-                'px-3 py-2 text-xs font-medium transition-all duration-200 border-b-2 -mb-px',
-                activeEditorTab === 'editor'
-                  ? 'text-primary border-primary'
-                  : 'text-text-muted border-transparent hover:text-text-secondary',
-              )}
-            >
-              Markdown
-            </button>
-            <button
-              onClick={() => setActiveEditorTab('workflow')}
-              className={cn(
-                'px-3 py-2 text-xs font-medium transition-all duration-200 border-b-2 -mb-px flex items-center gap-1.5',
-                activeEditorTab === 'workflow'
-                  ? 'text-primary border-primary'
-                  : 'text-text-muted border-transparent hover:text-text-secondary',
-              )}
-            >
-              <GitBranch size={12} />
-              Workflow
-            </button>
+          <div className="flex items-center justify-center px-5 py-2 border-b border-border/30 bg-surface/30 flex-shrink-0">
+            <div className="flex items-center rounded-lg border border-border/50 bg-surface-elevated/60 overflow-hidden">
+              <button
+                onClick={() => setEditorMode('code')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5',
+                  editorMode === 'code'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
+                )}
+              >
+                <Code2 size={12} />
+                Code
+              </button>
+              <button
+                onClick={() => setEditorMode('visual')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium transition-all duration-200 border-x border-border/30 flex items-center gap-1.5',
+                  editorMode === 'visual'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
+                )}
+              >
+                <GitBranch size={12} />
+                Visual
+              </button>
+              <button
+                onClick={() => setEditorMode('test')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5',
+                  editorMode === 'test'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
+                )}
+              >
+                <Play size={12} />
+                Test
+              </button>
+            </div>
           </div>
         )}
 
@@ -588,13 +610,25 @@ export function SkillEditor({
           </div>
         )}
 
-        {/* Workflow tab content */}
-        {activeEditorTab === 'workflow' && hasWorkflow && !isNew && skill && (
+        {/* Visual mode */}
+        {editorMode === 'visual' && hasWorkflow && !isNew && (
+          <VisualDesigner
+            steps={designerSteps}
+            inputs={designerInputs}
+            output={designerOutput}
+            onStepsChange={setDesignerSteps}
+            onInputsChange={setDesignerInputs}
+            onOutputChange={setDesignerOutput}
+          />
+        )}
+
+        {/* Test mode */}
+        {editorMode === 'test' && hasWorkflow && !isNew && skill && (
           <WorkflowPanel skillName={skill.name} />
         )}
 
-        {/* Editor tab content */}
-        {activeEditorTab === 'editor' && (
+        {/* Code mode */}
+        {editorMode === 'code' && (
           <>
         {/* Frontmatter helpers (collapsible, scrollable) */}
         <div className="border-b border-border/30 flex-shrink-0">
