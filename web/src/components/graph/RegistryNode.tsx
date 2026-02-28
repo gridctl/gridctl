@@ -53,10 +53,15 @@ const RegistryNode = memo(({ data, selected }: RegistryNodeProps) => {
         </div>
 
         {/* Type badge */}
-        <div>
+        <div className="flex items-center gap-1.5">
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono uppercase tracking-wider">
             Internal
           </span>
+          {(data.activeSkills ?? 0) > 0 && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-status-running/10 text-status-running font-mono">
+              executable
+            </span>
+          )}
         </div>
       </div>
 
