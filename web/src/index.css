@@ -755,3 +755,53 @@ body::before {
 .detached-indicator {
   animation: detached-pulse 2s ease-in-out infinite;
 }
+
+/* ============================================
+   WORKFLOW EXECUTION ANIMATIONS
+   ============================================ */
+
+/* Edge dash-flow: animated dashed stroke for active edges */
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.workflow-edge-active {
+  stroke-dasharray: 5 5;
+  animation: dash-flow 1s linear infinite;
+}
+
+/* Node pulse: running nodes have a subtle border glow pulse */
+@keyframes step-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.3);
+  }
+}
+
+.step-node-running {
+  animation: step-pulse 2s ease-in-out infinite;
+}
+
+/* Completion flash: green glow that fades on success */
+@keyframes step-complete {
+  0% {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.15);
+  }
+}
+
+.step-node-just-completed {
+  animation: step-complete 0.5s ease-out;
+}
+
+/* Text zoom scaling classes */
+.text-zoom {
+  font-size: var(--text-zoom-size, 12px);
+  line-height: 1.5;
+}
