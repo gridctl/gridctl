@@ -11,6 +11,7 @@ import {
   PowerOff,
   X,
   FolderOpen,
+  GitBranch,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useRegistryStore } from '../../stores/useRegistryStore';
@@ -27,6 +28,7 @@ import {
   activateRegistrySkill,
   disableRegistrySkill,
 } from '../../lib/api';
+import { hasWorkflowBlock } from '../../lib/workflowSync';
 import type { AgentSkill, ItemState } from '../../types';
 
 export function RegistrySidebar() {
@@ -145,6 +147,7 @@ export function RegistrySidebar() {
           onEdit={(skill) => { setEditingSkill(skill); setShowEditor(true); }}
           onDelete={(name) => setConfirmDelete(name)}
           onToggleState={handleToggleState}
+          onOpenWorkflow={(name) => openDetachedWindow('workflow', `skill=${encodeURIComponent(name)}`)}
         />
       </div>
 
@@ -211,11 +214,13 @@ function SkillsList({
   onEdit,
   onDelete,
   onToggleState,
+  onOpenWorkflow,
 }: {
   skills: AgentSkill[];
   onEdit: (skill: AgentSkill) => void;
   onDelete: (name: string) => void;
   onToggleState: (skill: AgentSkill) => void;
+  onOpenWorkflow: (name: string) => void;
 }) {
   if ((skills ?? []).length === 0) {
     return (
@@ -238,6 +243,7 @@ function SkillsList({
           onEdit={onEdit}
           onDelete={onDelete}
           onToggleState={onToggleState}
+          onOpenWorkflow={onOpenWorkflow}
         />
       ))}
     </div>
@@ -251,13 +257,16 @@ function SkillItem({
   onEdit,
   onDelete,
   onToggleState,
+  onOpenWorkflow,
 }: {
   skill: AgentSkill;
   onEdit: (skill: AgentSkill) => void;
   onDelete: (name: string) => void;
   onToggleState: (skill: AgentSkill) => void;
+  onOpenWorkflow: (name: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isExecutable = hasWorkflowBlock(skill.body ?? '');
 
   return (
     <div className="rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
@@ -273,7 +282,24 @@ function SkillItem({
         <span className="text-xs font-medium text-text-primary flex-1 text-left truncate">
           {skill.name}
         </span>
+        {isExecutable && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-mono">
+            workflow
+          </span>
+        )}
         <StateBadge state={skill.state} />
+        {isExecutable && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenWorkflow(skill.name);
+            }}
+            title="Open workflow designer"
+            className="p-1 rounded hover:bg-primary/10 transition-all duration-200 group"
+          >
+            <GitBranch size={12} className="text-text-muted group-hover:text-primary transition-colors" />
+          </button>
+        )}
         {skill.fileCount > 0 && (
           <span className="text-[10px] text-text-muted font-mono flex items-center gap-0.5">
             <FolderOpen size={9} />
