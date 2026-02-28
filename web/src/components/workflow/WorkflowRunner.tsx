@@ -9,12 +9,13 @@ import {
   Crosshair,
   Loader2,
   Clock,
+  History,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { ZoomControls } from '../log/ZoomControls';
 import { useWorkflowStore } from '../../stores/useWorkflowStore';
 import { useWorkflowFontSize } from '../../hooks/useWorkflowFontSize';
-import type { SkillInput, StepExecutionResult } from '../../types';
+import type { SkillInput, StepExecutionResult, ExecutionResult } from '../../types';
 
 // --- Input form field ---
 
@@ -143,7 +144,7 @@ function InputField({
 
 // --- Step result card ---
 
-function StepResultCard({ step }: { step: StepExecutionResult }) {
+function StepResultCard({ step, dimmed }: { step: StepExecutionResult; dimmed?: boolean }) {
   const [expanded, setExpanded] = useState(step.status === 'failed');
 
   const statusDot: Record<string, string> = {
@@ -160,6 +161,7 @@ function StepResultCard({ step }: { step: StepExecutionResult }) {
         'bg-surface-elevated border rounded-lg transition-all duration-200',
         step.status === 'failed' ? 'border-status-error/30 bg-status-error/5' : 'border-border/40',
         step.status === 'skipped' && 'opacity-50',
+        dimmed && 'opacity-80',
       )}
     >
       <button
@@ -205,6 +207,97 @@ function StepResultCard({ step }: { step: StepExecutionResult }) {
   );
 }
 
+// --- Error recovery panel ---
+
+function ErrorRecoveryPanel({
+  execution,
+  onRetry,
+  onInspect,
+}: {
+  execution: ExecutionResult;
+  onRetry: () => void;
+  onInspect?: (stepId: string) => void;
+}) {
+  const failedStep = (execution.steps ?? []).find((s) => s.status === 'failed');
+  const failedStepId = failedStep?.id;
+  const isPreExecutionError = !failedStepId;
+
+  return (
+    <div className="flex items-center gap-3 mt-3 p-3 rounded-lg bg-status-error/5 border border-status-error/20">
+      <AlertCircle size={16} className="text-status-error flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-status-error font-medium">{execution.error ?? 'Execution failed'}</p>
+        {!isPreExecutionError && failedStep && (
+          <p className="text-[10px] text-text-muted mt-0.5">
+            Failed at step &ldquo;{failedStepId}&rdquo; after {failedStep.durationMs ?? 0}ms
+            {(failedStep.attempts ?? 0) > 1 && ` (${failedStep.attempts} attempts)`}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <button onClick={onRetry} className="btn-secondary text-xs px-2.5 py-1">
+          Retry
+        </button>
+        {!isPreExecutionError && failedStepId && onInspect && (
+          <button
+            onClick={() => onInspect(failedStepId)}
+            className="btn-ghost text-xs px-2.5 py-1"
+          >
+            Inspect
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Execution history item ---
+
+function HistoryItem({ result }: { result: ExecutionResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const time = new Date(result.startedAt).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const successSteps = (result.steps ?? []).filter((s) => s.status === 'success').length;
+  const totalSteps = (result.steps ?? []).length;
+
+  return (
+    <div className="opacity-80">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-surface-highlight/50 rounded transition-colors"
+      >
+        <div className={cn(
+          'w-1.5 h-1.5 rounded-full flex-shrink-0',
+          result.status === 'completed' ? 'bg-status-running' : 'bg-status-error',
+        )} />
+        <span className="font-mono text-[10px] text-text-muted">{time}</span>
+        <span className="text-[10px] text-text-muted/60">&mdash;</span>
+        <span className={cn(
+          'text-[10px]',
+          result.status === 'completed' ? 'text-status-running' : 'text-status-error',
+        )}>
+          {result.status}
+        </span>
+        <span className="text-[10px] text-text-muted/60">&mdash;</span>
+        <span className="font-mono text-[10px] text-text-muted">
+          {result.durationMs < 1000 ? `${result.durationMs}ms` : `${(result.durationMs / 1000).toFixed(1)}s`}
+        </span>
+        <span className="text-[10px] text-text-muted/60">&mdash;</span>
+        <span className="font-mono text-[10px] text-text-muted">{successSteps}/{totalSteps} steps</span>
+        <span className="ml-auto">
+          {expanded ? <ChevronDown size={10} className="text-text-muted" /> : <ChevronRight size={10} className="text-text-muted" />}
+        </span>
+      </button>
+      {expanded && (
+        <div className="pl-4 pr-2 pb-2 space-y-1.5">
+          {(result.steps ?? []).map((step) => (
+            <StepResultCard key={step.id} step={step} dimmed />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Main WorkflowRunner component ---
 
 export function WorkflowRunner() {
@@ -212,15 +305,19 @@ export function WorkflowRunner() {
   const skillName = useWorkflowStore((s) => s.skillName);
   const executing = useWorkflowStore((s) => s.executing);
   const execution = useWorkflowStore((s) => s.execution);
+  const executionHistory = useWorkflowStore((s) => s.executionHistory);
+  const lastArguments = useWorkflowStore((s) => s.lastArguments);
   const runWorkflow = useWorkflowStore((s) => s.executeWorkflow);
   const validateInputs = useWorkflowStore((s) => s.validateWorkflowInputs);
   const validation = useWorkflowStore((s) => s.validation);
   const validating = useWorkflowStore((s) => s.validating);
   const followMode = useWorkflowStore((s) => s.followMode);
   const toggleFollowMode = useWorkflowStore((s) => s.toggleFollowMode);
+  const setSelectedStep = useWorkflowStore((s) => s.setSelectedStep);
 
   const [inputValues, setInputValues] = useState<Record<string, unknown>>({});
   const [resultsExpanded, setResultsExpanded] = useState(true);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
   const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useWorkflowFontSize(resultsRef);
 
@@ -256,10 +353,22 @@ export function WorkflowRunner() {
     setResultsExpanded(true);
   }, [skillName, executing, runWorkflow, buildArgs]);
 
+  const handleRetry = useCallback(async () => {
+    if (!skillName || executing) return;
+    await runWorkflow(skillName, lastArguments);
+    setResultsExpanded(true);
+  }, [skillName, executing, runWorkflow, lastArguments]);
+
+  const handleInspect = useCallback((stepId: string) => {
+    setSelectedStep(stepId);
+  }, [setSelectedStep]);
+
   if (!definition) return null;
 
   const inputEntries = Object.entries(inputs);
   const steps = execution?.steps ?? [];
+  // History excludes the current execution (first item is the current one)
+  const pastHistory = (executionHistory ?? []).slice(1);
 
   return (
     <div className="border-t border-border/50 bg-surface/50 flex flex-col min-h-0">
@@ -387,6 +496,37 @@ export function WorkflowRunner() {
               <div className="space-y-2">
                 {steps.map((step) => (
                   <StepResultCard key={step.id} step={step} />
+                ))}
+              </div>
+            )}
+
+            {/* Error recovery */}
+            {execution?.status === 'failed' && (
+              <ErrorRecoveryPanel
+                execution={execution}
+                onRetry={handleRetry}
+                onInspect={handleInspect}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Execution history */}
+        {pastHistory.length > 0 && (
+          <div className="px-4 py-3 border-t border-border/20">
+            <button
+              onClick={() => setHistoryExpanded(!historyExpanded)}
+              className="flex items-center gap-1.5 text-[10px] text-text-muted uppercase tracking-wider hover:text-text-secondary transition-colors w-full"
+            >
+              {historyExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <History size={10} />
+              History ({pastHistory.length} runs)
+            </button>
+
+            {historyExpanded && (
+              <div className="mt-2 space-y-1">
+                {pastHistory.map((result, i) => (
+                  <HistoryItem key={`${result.startedAt}-${i}`} result={result} />
                 ))}
               </div>
             )}
