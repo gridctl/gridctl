@@ -53,10 +53,10 @@ func New(store *Store, opts ...ServerOption) *Server {
 type ServerOption func(*Server)
 
 // WithToolCaller enables workflow execution through the given ToolCaller.
-func WithToolCaller(caller ToolCaller, logger *slog.Logger) ServerOption {
+func WithToolCaller(caller ToolCaller, logger *slog.Logger, opts ...ExecutorOption) ServerOption {
 	return func(s *Server) {
 		if caller != nil {
-			s.executor = NewExecutor(caller, logger)
+			s.executor = NewExecutor(caller, logger, opts...)
 		}
 	}
 }
