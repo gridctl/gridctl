@@ -444,7 +444,93 @@ Hook: `useKeyboardShortcuts` (`src/hooks/useKeyboardShortcuts.ts`)
 
 Provides global keyboard shortcuts for common UI actions (toggling panels, refreshing, etc.).
 
-## 16. Checklist for New Components
+### Workflow Keyboard Shortcuts
+
+Hook: `useWorkflowKeyboardShortcuts` (`src/hooks/useWorkflowKeyboardShortcuts.ts`)
+
+| Shortcut | Action | Context |
+|----------|--------|---------|
+| `1` | Switch to Code mode | Workflow editor |
+| `2` | Switch to Visual mode | Workflow editor |
+| `3` | Switch to Test mode | Workflow editor |
+| `f` | Toggle follow mode | Test/Visual mode during execution |
+| `Delete` / `Backspace` | Delete selected step or edge | Visual mode |
+| `Escape` | Deselect / close inspector | Visual mode |
+| `Ctrl+Enter` / `Cmd+Enter` | Run workflow | Test mode |
+| `Ctrl+Shift+V` / `Cmd+Shift+V` | Validate workflow (dry-run) | Test mode |
+| `t` | Toggle toolbox palette | Visual mode |
+| `i` | Toggle inspector panel | Visual mode |
+| `l` | Auto-layout ("Tidy") | Visual mode |
+| `Ctrl+S` / `Cmd+S` | Save skill | All modes |
+
+## 16. Workflow Designer
+
+### Components (`src/components/workflow/`)
+
+- **WorkflowGraph**: DAG visualization using React Flow, top-to-bottom layout
+- **StepNode**: Custom React Flow node with status indicators and glass panel styling
+- **WorkflowInspector**: Right-side editing panel for step properties
+- **WorkflowRunner**: Test panel with input form and step-by-step results
+- **WorkflowToolbar**: Mode toggle (Code/Visual/Test) with zoom and follow controls
+- **VisualDesigner**: Editable workflow canvas with drag-and-drop tool palette
+- **DesignerGraph**: Editable React Flow canvas with connection and drop support
+- **DesignerInspector**: Step property editor with variable picker
+- **ToolboxPalette**: Left sidebar with tool search, inputs, and output config
+- **WorkflowEmptyState**: Empty state with "Add Workflow Template" button
+
+### Status Colors (Workflow Steps)
+
+| Status | Border | Glow | Dot | Animation |
+|--------|--------|------|-----|-----------|
+| pending | `border-border/40` | none | `bg-text-muted` | none |
+| running | `border-primary/60` | `shadow-[0_0_12px_rgba(245,158,11,0.2)]` | `bg-primary` | pulse (`step-node-running`) |
+| success | `border-status-running/60` | `shadow-[0_0_8px_rgba(16,185,129,0.15)]` | `bg-status-running` | flash (`step-node-just-completed`) |
+| failed | `border-status-error/60` | `shadow-[0_0_8px_rgba(244,63,94,0.15)]` | `bg-status-error` | blink |
+| skipped | `border-border/20` | none | `bg-text-muted/40` | dimmed (opacity-50) |
+
+### Execution Animations (CSS)
+
+- **Edge dash-flow**: `workflow-edge-active` - dashed stroke animation on edges leading to running steps
+- **Node pulse**: `step-node-running` - subtle border glow pulse on running nodes
+- **Completion flash**: `step-node-just-completed` - green glow that fades on success
+
+### Template Expression Highlighting
+
+Template expressions `{{ ... }}` use: `text-primary bg-primary/10 px-1 rounded` inline styling.
+
+### Pop-out Windows
+
+Route: `/workflow?skill={name}&mode={code|visual|test}`
+Window size: 1200x800
+BroadcastChannel: workflow execution sync between windows via `gridctl-workflow-sync` channel
+
+### Text Zoom
+
+Generalized via `useTextZoom` hook (`src/hooks/useTextZoom.ts`):
+
+| Area | Storage Key | Default | Range |
+|------|-------------|---------|-------|
+| Log viewer | `gridctl-log-font-size` | 11px | 8-22px |
+| Workflow runner results | `gridctl-workflow-font-size` | 12px | 8-20px |
+
+### Responsive Layout
+
+Container-width-based layout via `useContainerWidth` hook:
+- **Small** (< 600px): Hide toolbox, compact inspector
+- **Medium** (600-900px): Collapsed toolbox by default, min-width inspector
+- **Large** (> 900px): Full layout with toolbox, canvas, and inspector
+
+### Execution History
+
+Last 5 execution results stored in `useWorkflowStore.executionHistory`. Collapsible history section in WorkflowRunner with expandable per-step results.
+
+### Error Recovery
+
+Failed executions show a recovery panel with:
+- **Pre-execution errors**: Error message + Retry button
+- **Step-level errors**: Error message with failed step details + Retry + Inspect buttons
+
+## 17. Checklist for New Components
 
 1. Use Tailwind color tokens (no hardcoded hex values)
 2. Use `font-mono` for technical data, `font-sans` for UI

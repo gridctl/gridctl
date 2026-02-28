@@ -12,6 +12,8 @@ interface ValidationResult {
   resolvedArgs?: Record<string, Record<string, unknown>>;
 }
 
+const MAX_HISTORY = 5;
+
 interface WorkflowState {
   // Workflow data
   definition: WorkflowDefinition | null;
@@ -22,6 +24,8 @@ interface WorkflowState {
   execution: ExecutionResult | null;
   executing: boolean;
   stepStatuses: Record<string, StepStatus>;
+  executionHistory: ExecutionResult[];
+  lastArguments: Record<string, unknown>;
 
   // Validation
   validation: ValidationResult | null;
@@ -49,6 +53,8 @@ export const useWorkflowStore = create<WorkflowState>()(
     execution: null,
     executing: false,
     stepStatuses: {},
+    executionHistory: [],
+    lastArguments: {},
     validation: null,
     validating: false,
     selectedStepId: null,
@@ -91,7 +97,7 @@ export const useWorkflowStore = create<WorkflowState>()(
         stepStatuses[step.id] = 'running';
       }
 
-      set({ executing: true, execution: null, stepStatuses, validation: null });
+      set({ executing: true, execution: null, stepStatuses, validation: null, lastArguments: args });
 
       try {
         const result = await executeWorkflowApi(skillName, args);
@@ -100,7 +106,9 @@ export const useWorkflowStore = create<WorkflowState>()(
         for (const step of result.steps ?? []) {
           finalStatuses[step.id] = step.status as StepStatus;
         }
-        set({ execution: result, executing: false, stepStatuses: finalStatuses });
+        // Add to execution history (keep last N)
+        const history = [result, ...get().executionHistory].slice(0, MAX_HISTORY);
+        set({ execution: result, executing: false, stepStatuses: finalStatuses, executionHistory: history });
       } catch (err) {
         set({
           error: err instanceof Error ? err.message : 'Execution failed',
@@ -136,6 +144,8 @@ export const useWorkflowStore = create<WorkflowState>()(
         execution: null,
         executing: false,
         stepStatuses: {},
+        executionHistory: [],
+        lastArguments: {},
         validation: null,
         validating: false,
         selectedStepId: null,

@@ -236,8 +236,19 @@ export function DesignerGraph({
     setNodes(tidyNodes);
   }, [steps, selectedStepId, setNodes]);
 
+  const isEmpty = steps.length === 0;
+
   return (
     <div ref={reactFlowWrapper} className="w-full h-full relative">
+      {/* Empty canvas hint */}
+      {isEmpty && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="text-center">
+            <p className="text-sm text-text-muted mb-2">Drag tools from the palette to build a workflow</p>
+            <p className="text-xs text-text-muted/50">Or switch to Code mode and write YAML directly</p>
+          </div>
+        </div>
+      )}
       <ReactFlow
         nodes={nodes}
         edges={edges}

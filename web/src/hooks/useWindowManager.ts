@@ -30,9 +30,9 @@ const WINDOW_CONFIGS: Record<string, WindowConfig> = {
     title: 'Gridctl - Registry',
   },
   workflow: {
-    width: 1100,
-    height: 750,
-    title: 'Gridctl - Workflow',
+    width: 1200,
+    height: 800,
+    title: 'Gridctl - Workflow Designer',
   },
 };
 

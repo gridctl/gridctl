@@ -4,6 +4,7 @@ import { WorkflowGraph } from './WorkflowGraph';
 import { WorkflowInspector } from './WorkflowInspector';
 import { WorkflowRunner } from './WorkflowRunner';
 import { useWorkflowStore } from '../../stores/useWorkflowStore';
+import { useWorkflowKeyboardShortcuts } from '../../hooks/useWorkflowKeyboardShortcuts';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 interface WorkflowPanelProps {
@@ -22,22 +23,15 @@ export function WorkflowPanel({ skillName }: WorkflowPanelProps) {
     loadWorkflow(skillName);
   }, [skillName, loadWorkflow]);
 
-  // Escape key deselects step
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selectedStepId) {
-        e.preventDefault();
-        setSelectedStep(null);
-      }
-      // 'f' toggles follow mode (only when not in input)
-      if (e.key === 'f' && !isInputElement(e.target as HTMLElement)) {
-        e.preventDefault();
-        useWorkflowStore.getState().toggleFollowMode();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedStepId, setSelectedStep]);
+  // Keyboard shortcuts
+  useWorkflowKeyboardShortcuts({
+    onEscape: () => {
+      if (selectedStepId) setSelectedStep(null);
+    },
+    onToggleFollow: () => {
+      useWorkflowStore.getState().toggleFollowMode();
+    },
+  });
 
   if (loading) {
     return (
@@ -95,9 +89,4 @@ export function WorkflowPanel({ skillName }: WorkflowPanelProps) {
       </div>
     </div>
   );
-}
-
-function isInputElement(el: HTMLElement): boolean {
-  const tag = el.tagName?.toLowerCase();
-  return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
 }

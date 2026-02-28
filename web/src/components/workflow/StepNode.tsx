@@ -49,6 +49,8 @@ function StepNodeComponent({ data }: NodeProps) {
         'transition-all duration-200',
         statusBorder[status],
         d.selected && 'shadow-glow-primary border-primary/70',
+        status === 'running' && 'step-node-running',
+        status === 'success' && 'step-node-just-completed',
       )}
     >
       <Handle
@@ -120,4 +122,16 @@ function StepNodeComponent({ data }: NodeProps) {
   );
 }
 
-export const StepNode = memo(StepNodeComponent);
+// Custom comparator: only re-render when status, selection, or data changes
+export const StepNode = memo(StepNodeComponent, (prev, next) => {
+  const pd = prev.data as StepNodeData;
+  const nd = next.data as StepNodeData;
+  return (
+    pd.status === nd.status &&
+    pd.selected === nd.selected &&
+    pd.durationMs === nd.durationMs &&
+    pd.error === nd.error &&
+    pd.stepId === nd.stepId &&
+    pd.tool === nd.tool
+  );
+});

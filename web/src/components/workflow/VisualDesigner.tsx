@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { ToolboxPalette } from './ToolboxPalette';
 import { DesignerGraph } from './DesignerGraph';
@@ -6,6 +6,7 @@ import { DesignerInspector } from './DesignerInspector';
 import { Loader2 } from 'lucide-react';
 import { fetchTools } from '../../lib/api';
 import { showToast } from '../ui/Toast';
+import { useContainerWidth } from '../../hooks/useContainerWidth';
 import type { WorkflowStep, SkillInput, WorkflowOutput, Tool } from '../../types';
 
 interface VisualDesignerProps {
@@ -28,6 +29,8 @@ export function VisualDesigner({
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [tools, setTools] = useState<Tool[]>([]);
   const [toolsLoading, setToolsLoading] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { layoutSize } = useContainerWidth(containerRef);
 
   // Load available tools
   useEffect(() => {
@@ -151,17 +154,22 @@ export function VisualDesigner({
     );
   }
 
+  const showToolbox = layoutSize !== 'small';
+  const showInspector = selectedStep != null;
+
   return (
-    <div className="flex-1 flex min-h-0">
-      {/* Left: Toolbox palette */}
-      <ToolboxPalette
-        tools={tools}
-        inputs={inputs}
-        output={output}
-        onInputsChange={onInputsChange}
-        onOutputChange={onOutputChange}
-        stepIds={stepIds}
-      />
+    <div ref={containerRef} className="flex-1 flex min-h-0">
+      {/* Left: Toolbox palette (hidden on small) */}
+      {showToolbox && (
+        <ToolboxPalette
+          tools={tools}
+          inputs={inputs}
+          output={output}
+          onInputsChange={onInputsChange}
+          onOutputChange={onOutputChange}
+          stepIds={stepIds}
+        />
+      )}
 
       {/* Center: Canvas */}
       <div className="flex-1 min-w-0 min-h-0">
@@ -178,9 +186,9 @@ export function VisualDesigner({
       </div>
 
       {/* Right: Inspector (when step selected) */}
-      {selectedStep && (
+      {showInspector && (
         <DesignerInspector
-          step={selectedStep}
+          step={selectedStep!}
           allSteps={steps}
           inputs={inputs}
           tools={tools}

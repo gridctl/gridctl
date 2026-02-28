@@ -57,18 +57,22 @@ function buildFlowElements(
 
       (step.dependsOn ?? []).forEach((depId) => {
         const depStatus = stepStatuses[depId] ?? 'pending';
+        const targetStatus = stepStatuses[step.id] ?? 'pending';
+        const isActive = targetStatus === 'running';
         edges.push({
           id: `${depId}-${step.id}`,
           source: depId,
           target: step.id,
           type: 'smoothstep',
           animated: depStatus === 'running',
+          className: isActive ? 'workflow-edge-active' : undefined,
           style: {
             stroke:
               depStatus === 'success' ? '#10b981' :
               depStatus === 'failed' ? '#f43f5e' :
               '#27272a',
             strokeWidth: 1.5,
+            ...(isActive && { strokeDasharray: '5 5' }),
           },
         });
       });
