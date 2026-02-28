@@ -1,13 +1,21 @@
-import { Component, type ReactNode } from 'react';
+import { Component, type ReactNode, useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertCircle, GitBranch } from 'lucide-react';
+import { AlertCircle, GitBranch, Code2, Play } from 'lucide-react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { WorkflowGraph } from '../components/workflow/WorkflowGraph';
 import { WorkflowInspector } from '../components/workflow/WorkflowInspector';
 import { WorkflowRunner } from '../components/workflow/WorkflowRunner';
+import { VisualDesigner } from '../components/workflow/VisualDesigner';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
+import { useBroadcastChannel } from '../hooks/useBroadcastChannel';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
-import { useEffect } from 'react';
+import { cn } from '../lib/cn';
+import type { WorkflowStep, SkillInput, WorkflowOutput } from '../types';
+
+// Workflow-specific broadcast channel for execution sync
+const WORKFLOW_CHANNEL = 'gridctl-workflow-sync';
+
+type WorkflowMode = 'code' | 'visual' | 'test';
 
 // Error boundary
 interface ErrorBoundaryState {
@@ -54,14 +62,61 @@ class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 function DetachedWorkflowContent() {
   const [searchParams] = useSearchParams();
   const skillName = searchParams.get('skill');
+  const initialMode = (searchParams.get('mode') as WorkflowMode) ?? 'test';
 
   const loading = useWorkflowStore((s) => s.loading);
   const error = useWorkflowStore((s) => s.error);
+  const definition = useWorkflowStore((s) => s.definition);
   const selectedStepId = useWorkflowStore((s) => s.selectedStepId);
+  const execution = useWorkflowStore((s) => s.execution);
+  const executing = useWorkflowStore((s) => s.executing);
   const loadWorkflow = useWorkflowStore((s) => s.loadWorkflow);
+
+  const [mode, setMode] = useState<WorkflowMode>(initialMode);
+
+  // Visual designer state (for visual mode)
+  const [designerSteps, setDesignerSteps] = useState<WorkflowStep[]>([]);
+  const [designerInputs, setDesignerInputs] = useState<Record<string, SkillInput>>({});
+  const [designerOutput, setDesignerOutput] = useState<WorkflowOutput | undefined>();
 
   // Register with main window
   useDetachedWindowSync('workflow');
+
+  // Workflow execution sync channel
+  const { postMessage: postWorkflowMessage } = useBroadcastChannel({
+    channelName: WORKFLOW_CHANNEL,
+    onMessage: (msg) => {
+      // Handle execution sync from main window
+      if (msg.source === 'main') {
+        // State is already shared via Zustand store
+      }
+    },
+  });
+
+  // Broadcast execution state changes
+  useEffect(() => {
+    if (execution && skillName) {
+      postWorkflowMessage({
+        type: 'STATE_UPDATE',
+        payload: {
+          type: 'execution-completed',
+          skill: skillName,
+          result: execution,
+        },
+        source: 'detached',
+      });
+    }
+  }, [execution, skillName, postWorkflowMessage]);
+
+  useEffect(() => {
+    if (executing && skillName) {
+      postWorkflowMessage({
+        type: 'STATE_UPDATE',
+        payload: { type: 'execution-started', skill: skillName },
+        source: 'detached',
+      });
+    }
+  }, [executing, skillName, postWorkflowMessage]);
 
   // Load workflow data
   useEffect(() => {
@@ -69,6 +124,36 @@ function DetachedWorkflowContent() {
       loadWorkflow(skillName);
     }
   }, [skillName, loadWorkflow]);
+
+  // Initialize visual designer state from definition
+  useEffect(() => {
+    if (definition) {
+      setDesignerSteps(definition.workflow ?? []);
+      setDesignerInputs(definition.inputs ?? {});
+      setDesignerOutput(definition.output);
+    }
+  }, [definition]);
+
+  // Keyboard shortcuts for mode switching
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const tag = target.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable) return;
+
+      if (e.key === '1') { e.preventDefault(); setMode('code'); }
+      else if (e.key === '2') { e.preventDefault(); setMode('visual'); }
+      else if (e.key === '3') { e.preventDefault(); setMode('test'); }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  // Detect if skill has workflow
+  const hasWorkflow = useMemo(() => {
+    if (!definition) return false;
+    return (definition.workflow ?? []).length > 0;
+  }, [definition]);
 
   if (!skillName) {
     return (
@@ -119,24 +204,92 @@ function DetachedWorkflowContent() {
         }}
       />
 
+      {/* Mode toggle bar */}
+      {hasWorkflow && (
+        <div className="flex items-center justify-center px-5 py-2 border-b border-border/30 bg-surface/30 flex-shrink-0 relative z-10">
+          <div className="flex items-center rounded-lg border border-border/50 bg-surface-elevated/60 overflow-hidden">
+            <button
+              onClick={() => setMode('code')}
+              className={cn(
+                'px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5',
+                mode === 'code'
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
+              )}
+            >
+              <Code2 size={12} />
+              Code
+            </button>
+            <button
+              onClick={() => setMode('visual')}
+              className={cn(
+                'px-3 py-1.5 text-xs font-medium transition-all duration-200 border-x border-border/30 flex items-center gap-1.5',
+                mode === 'visual'
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
+              )}
+            >
+              <GitBranch size={12} />
+              Visual
+            </button>
+            <button
+              onClick={() => setMode('test')}
+              className={cn(
+                'px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5',
+                mode === 'test'
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
+              )}
+            >
+              <Play size={12} />
+              Test
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex-1 flex flex-col min-h-0 relative z-10">
-        <div className="flex-1 flex min-h-0">
-          {/* Graph */}
-          <div className="flex-1 min-w-0 min-h-0">
-            <ReactFlowProvider>
-              <WorkflowGraph />
-            </ReactFlowProvider>
+        {/* Visual mode */}
+        {mode === 'visual' && hasWorkflow && (
+          <VisualDesigner
+            steps={designerSteps}
+            inputs={designerInputs}
+            output={designerOutput}
+            onStepsChange={setDesignerSteps}
+            onInputsChange={setDesignerInputs}
+            onOutputChange={setDesignerOutput}
+          />
+        )}
+
+        {/* Code mode - show graph read-only */}
+        {mode === 'code' && (
+          <div className="flex-1 flex min-h-0">
+            <div className="flex-1 min-w-0 min-h-0">
+              <ReactFlowProvider>
+                <WorkflowGraph />
+              </ReactFlowProvider>
+            </div>
+            {selectedStepId && <WorkflowInspector />}
           </div>
+        )}
 
-          {/* Inspector */}
-          {selectedStepId && <WorkflowInspector />}
-        </div>
-
-        {/* Runner */}
-        <div className="max-h-[40%] min-h-[120px] overflow-hidden flex flex-col">
-          <WorkflowRunner />
-        </div>
+        {/* Test mode */}
+        {mode === 'test' && (
+          <>
+            <div className="flex-1 flex min-h-0">
+              <div className="flex-1 min-w-0 min-h-0">
+                <ReactFlowProvider>
+                  <WorkflowGraph />
+                </ReactFlowProvider>
+              </div>
+              {selectedStepId && <WorkflowInspector />}
+            </div>
+            <div className="max-h-[40%] min-h-[120px] overflow-hidden flex flex-col">
+              <WorkflowRunner />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Status bar */}
@@ -145,9 +298,14 @@ function DetachedWorkflowContent() {
           <GitBranch size={10} className="text-primary/60" />
           Workflow: {skillName}
         </span>
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
-          Detached Workflow
+        <span className="flex items-center gap-3">
+          <span className="text-text-muted/50 font-mono">
+            1/2/3 modes &middot; f follow &middot; &thinsp;run &middot; t toolbox &middot; i inspector
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+            Detached
+          </span>
         </span>
       </div>
     </div>
