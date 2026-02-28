@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -351,6 +351,34 @@ export async function deleteSkillFile(skillName: string, filePath: string): Prom
 
 export async function validateSkillContent(content: string): Promise<SkillValidationResult> {
   return mutateJSON<SkillValidationResult>('/api/registry/skills/validate', 'POST', { content });
+}
+
+// --- Workflow API ---
+
+export async function fetchWorkflowDefinition(skillName: string): Promise<WorkflowDefinition> {
+  return fetchJSON<WorkflowDefinition>(`/api/registry/skills/${encodeURIComponent(skillName)}/workflow`);
+}
+
+export async function executeWorkflow(
+  skillName: string,
+  args: Record<string, unknown>
+): Promise<ExecutionResult> {
+  return mutateJSON<ExecutionResult>(
+    `/api/registry/skills/${encodeURIComponent(skillName)}/execute`,
+    'POST',
+    { arguments: args },
+  );
+}
+
+export async function validateWorkflow(
+  skillName: string,
+  args: Record<string, unknown>
+): Promise<{ valid: boolean; errors: string[]; warnings: string[]; resolvedArgs?: Record<string, Record<string, unknown>> }> {
+  return mutateJSON(
+    `/api/registry/skills/${encodeURIComponent(skillName)}/validate-workflow`,
+    'POST',
+    { arguments: args },
+  );
 }
 
 // === JSON-RPC Helper (for MCP protocol calls) ===
