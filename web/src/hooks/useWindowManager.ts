@@ -29,6 +29,11 @@ const WINDOW_CONFIGS: Record<string, WindowConfig> = {
     height: 700,
     title: 'Gridctl - Registry',
   },
+  workflow: {
+    width: 1100,
+    height: 750,
+    title: 'Gridctl - Workflow',
+  },
 };
 
 export function useWindowManager() {
@@ -38,6 +43,7 @@ export function useWindowManager() {
   const setSidebarDetached = useUIStore((s) => s.setSidebarDetached);
   const setEditorDetached = useUIStore((s) => s.setEditorDetached);
   const setRegistryDetached = useUIStore((s) => s.setRegistryDetached);
+  const setWorkflowDetached = useUIStore((s) => s.setWorkflowDetached);
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
@@ -58,6 +64,8 @@ export function useWindowManager() {
         } else if (payload?.windowType === 'registry') {
           setRegistryDetached(true);
           setSidebarOpen(false);
+        } else if (payload?.windowType === 'workflow') {
+          setWorkflowDetached(true);
         }
       } else if (message.type === 'WINDOW_CLOSED') {
         if (payload?.windowType === 'logs') {
@@ -68,18 +76,20 @@ export function useWindowManager() {
           setEditorDetached(false);
         } else if (payload?.windowType === 'registry') {
           setRegistryDetached(false);
+        } else if (payload?.windowType === 'workflow') {
+          setWorkflowDetached(false);
         }
         windowRefs.current.delete(payload?.windowType ?? '');
       }
     }
-  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setBottomPanelOpen, setSidebarOpen]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setWorkflowDetached, setBottomPanelOpen, setSidebarOpen]);
 
   const { postMessage } = useBroadcastChannel({
     onMessage: handleMessage,
   });
 
   // Open a detached window
-  const openDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor' | 'registry', params?: string) => {
+  const openDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor' | 'registry' | 'workflow', params?: string) => {
     const existingWindow = windowRefs.current.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.focus();
@@ -126,14 +136,16 @@ export function useWindowManager() {
             setEditorDetached(false);
           } else if (type === 'registry') {
             setRegistryDetached(false);
+          } else if (type === 'workflow') {
+            setWorkflowDetached(false);
           }
         }
       }, 500);
     }
-  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setWorkflowDetached]);
 
   // Close a detached window
-  const closeDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor' | 'registry') => {
+  const closeDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor' | 'registry' | 'workflow') => {
     const existingWindow = windowRefs.current.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.close();
