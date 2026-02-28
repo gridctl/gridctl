@@ -239,5 +239,64 @@ export interface RegistryNodeData extends NodeDataBase {
 
 export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData | RegistryNodeData;
 
+// --- Workflow Types ---
+
+export interface SkillInput {
+  type: string;
+  description?: string;
+  required?: boolean;
+  default?: unknown;
+  enum?: string[];
+}
+
+export interface WorkflowStep {
+  id: string;
+  tool: string;
+  args?: Record<string, unknown>;
+  dependsOn?: string[];
+  condition?: string;
+  onError?: string;
+  timeout?: string;
+  retry?: { maxAttempts: number; backoff?: string };
+}
+
+export interface WorkflowOutput {
+  format?: string;
+  include?: string[];
+  template?: string;
+}
+
+export interface WorkflowDefinition {
+  name: string;
+  inputs?: Record<string, SkillInput>;
+  workflow: WorkflowStep[];
+  output?: WorkflowOutput;
+  dag: {
+    levels: WorkflowStep[][];
+  };
+}
+
+export interface StepExecutionResult {
+  id: string;
+  tool: string;
+  status: 'success' | 'failed' | 'skipped' | 'running' | 'pending';
+  startedAt?: string;
+  durationMs?: number;
+  error?: string;
+  attempts?: number;
+  skipReason?: string;
+  level: number;
+}
+
+export interface ExecutionResult {
+  skill: string;
+  status: 'completed' | 'failed' | 'partial';
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  steps: StepExecutionResult[];
+  error?: string;
+}
+
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
