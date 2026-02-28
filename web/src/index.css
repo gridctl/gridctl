@@ -706,6 +706,30 @@ body::before {
 }
 
 /* ============================================
+   WORKFLOW VIEWER - Font size scaling
+   ============================================ */
+
+.workflow-text {
+  font-size: var(--workflow-font-size, 12px);
+  line-height: 1.5;
+}
+
+.workflow-text-detail {
+  font-size: calc(var(--workflow-font-size, 12px) - 1px);
+  line-height: 1.4;
+}
+
+/* Blink animation for failed step status */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-blink {
+  animation: blink 1s ease-in-out infinite;
+}
+
+/* ============================================
    DETACHED WINDOW STYLES
    ============================================ */
 
