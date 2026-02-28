@@ -17,6 +17,7 @@ interface UIState {
   sidebarDetached: boolean;
   editorDetached: boolean;
   registryDetached: boolean;
+  workflowDetached: boolean;
 
   // Actions
   setSidebarOpen: (open: boolean) => void;
@@ -34,6 +35,7 @@ interface UIState {
   setSidebarDetached: (detached: boolean) => void;
   setEditorDetached: (detached: boolean) => void;
   setRegistryDetached: (detached: boolean) => void;
+  setWorkflowDetached: (detached: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -51,6 +53,7 @@ export const useUIStore = create<UIState>()(
       sidebarDetached: false,
       editorDetached: false,
       registryDetached: false,
+      workflowDetached: false,
 
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -70,6 +73,7 @@ export const useUIStore = create<UIState>()(
       setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
       setEditorDetached: (editorDetached) => set({ editorDetached }),
       setRegistryDetached: (registryDetached) => set({ registryDetached }),
+      setWorkflowDetached: (workflowDetached) => set({ workflowDetached }),
     }),
     {
       name: 'gridctl-ui-storage',
