@@ -113,6 +113,20 @@ func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Workflow endpoints
+	if action == "workflow" {
+		s.handleRegistrySkillWorkflow(w, r, name)
+		return
+	}
+	if action == "execute" {
+		s.handleRegistrySkillExecute(w, r, name)
+		return
+	}
+	if action == "validate-workflow" {
+		s.handleRegistrySkillValidateWorkflow(w, r, name)
+		return
+	}
+
 	// File management
 	if action == "files" || strings.HasPrefix(action, "files/") {
 		filePath := ""
@@ -312,6 +326,198 @@ func (s *Server) handleRegistryValidate(w http.ResponseWriter, r *http.Request) 
 		"errors":   result.Errors,
 		"warnings": result.Warnings,
 		"parsed":   skill,
+	})
+}
+
+// handleRegistrySkillWorkflow returns the parsed workflow definition as JSON.
+// GET /api/registry/skills/{name}/workflow
+func (s *Server) handleRegistrySkillWorkflow(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sk, err := s.registryServer.Store().GetSkill(name)
+	if err != nil {
+		writeJSONError(w, "Skill not found: "+name, http.StatusNotFound)
+		return
+	}
+	if !sk.IsExecutable() {
+		writeJSONError(w, "Skill has no workflow definition", http.StatusBadRequest)
+		return
+	}
+
+	// Build DAG for visualization
+	levels, dagErr := registry.BuildWorkflowDAG(sk.Workflow)
+	var dagResponse any
+	if dagErr != nil {
+		dagResponse = map[string]any{"error": dagErr.Error()}
+	} else {
+		dagResponse = map[string]any{"levels": levels}
+	}
+
+	writeJSON(w, map[string]any{
+		"name":     sk.Name,
+		"inputs":   sk.Inputs,
+		"workflow": sk.Workflow,
+		"output":   sk.Output,
+		"dag":      dagResponse,
+	})
+}
+
+// handleRegistrySkillExecute executes a workflow skill directly.
+// POST /api/registry/skills/{name}/execute
+func (s *Server) handleRegistrySkillExecute(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sk, err := s.registryServer.Store().GetSkill(name)
+	if err != nil {
+		writeJSONError(w, "Skill not found: "+name, http.StatusNotFound)
+		return
+	}
+	if !sk.IsExecutable() {
+		writeJSONError(w, "Skill has no workflow definition", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Arguments map[string]any `json:"arguments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	result, err := s.registryServer.CallTool(r.Context(), name, req.Arguments)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, result)
+}
+
+// handleRegistrySkillValidateWorkflow dry-runs workflow validation without executing tools.
+// POST /api/registry/skills/{name}/validate-workflow
+func (s *Server) handleRegistrySkillValidateWorkflow(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sk, err := s.registryServer.Store().GetSkill(name)
+	if err != nil {
+		writeJSONError(w, "Skill not found: "+name, http.StatusNotFound)
+		return
+	}
+	if !sk.IsExecutable() {
+		writeJSONError(w, "Skill has no workflow definition", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Arguments map[string]any `json:"arguments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var validationErrors []string
+	var warnings []string
+
+	// Validate DAG
+	levels, dagErr := registry.BuildWorkflowDAG(sk.Workflow)
+	if dagErr != nil {
+		validationErrors = append(validationErrors, "DAG: "+dagErr.Error())
+	}
+
+	// Build template context with provided arguments for dry-run resolution
+	args := make(map[string]any)
+	for k, v := range req.Arguments {
+		args[k] = v
+	}
+	// Apply defaults
+	for inputName, input := range sk.Inputs {
+		if _, ok := args[inputName]; !ok {
+			if input.Default != nil {
+				args[inputName] = input.Default
+			} else if input.Required {
+				validationErrors = append(validationErrors, "required input '"+inputName+"' is missing")
+			}
+		}
+	}
+
+	tmplCtx := &registry.TemplateContext{
+		Inputs: args,
+		Steps:  make(map[string]*registry.StepResult),
+	}
+
+	// Dry-run template resolution for each step
+	resolvedArgs := make(map[string]map[string]any)
+	for _, step := range sk.Workflow {
+		// Add a placeholder step result for template resolution
+		tmplCtx.Steps[step.ID] = registry.NewStepResult("{}", false)
+	}
+
+	for _, step := range sk.Workflow {
+		resolved, resolveErr := registry.ResolveArgs(step.Args, tmplCtx)
+		if resolveErr != nil {
+			warnings = append(warnings, "step '"+step.ID+"': "+resolveErr.Error())
+		} else {
+			resolvedArgs[step.ID] = resolved
+		}
+
+		// Check conditions
+		if step.Condition != "" {
+			if _, condErr := registry.EvaluateCondition(step.Condition, tmplCtx); condErr != nil {
+				warnings = append(warnings, "step '"+step.ID+"' condition: "+condErr.Error())
+			}
+		}
+
+		// Warn about dependency chains with on_error: skip
+		if step.OnError == "skip" {
+			for _, otherStep := range sk.Workflow {
+				for _, dep := range otherStep.DependsOn {
+					if dep == step.ID && otherStep.Condition == "" {
+						warnings = append(warnings, "step '"+otherStep.ID+"' has no condition but depends on a step with on_error: skip")
+					}
+				}
+			}
+		}
+	}
+
+	// Check tool availability via gateway router
+	availableTools := make(map[string]bool)
+	if s.gateway != nil {
+		toolsList, _ := s.gateway.HandleToolsList()
+		if toolsList != nil {
+			for _, t := range toolsList.Tools {
+				availableTools[t.Name] = true
+			}
+		}
+	}
+	if len(availableTools) > 0 {
+		for _, step := range sk.Workflow {
+			if !availableTools[step.Tool] {
+				warnings = append(warnings, "step '"+step.ID+"' references tool '"+step.Tool+"' which is not currently available in the gateway")
+			}
+		}
+	}
+
+	var dagResponse any
+	if levels != nil {
+		dagResponse = map[string]any{"levels": levels}
+	}
+
+	writeJSON(w, map[string]any{
+		"valid":        len(validationErrors) == 0,
+		"dag":          dagResponse,
+		"resolvedArgs": resolvedArgs,
+		"errors":       validationErrors,
+		"warnings":     warnings,
 	})
 }
 
