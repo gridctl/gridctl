@@ -760,6 +760,162 @@ func TestHandleRegistry_Files_MethodNotAllowed(t *testing.T) {
 	}
 }
 
+// --- Workflow endpoints ---
+
+// seedWorkflowSkill creates a skill with a workflow definition for testing.
+func seedWorkflowSkill(t *testing.T, regServer *registry.Server, name string) {
+	t.Helper()
+	sk := &registry.AgentSkill{
+		Name:        name,
+		Description: "Workflow skill: " + name,
+		State:       registry.StateActive,
+		Body:        "# " + name,
+		Inputs: map[string]registry.SkillInput{
+			"target": {Type: "string", Required: true, Description: "Target host"},
+		},
+		Workflow: []registry.WorkflowStep{
+			{ID: "step-a", Tool: "server__ping", Args: map[string]any{
+				"host": "{{ inputs.target }}",
+			}},
+			{ID: "step-b", Tool: "server__scan", DependsOn: registry.StringOrSlice{"step-a"}, Args: map[string]any{
+				"host": "{{ inputs.target }}",
+			}},
+		},
+		Output: &registry.WorkflowOutput{Format: "merged"},
+	}
+	if err := regServer.Store().SaveSkill(sk); err != nil {
+		t.Fatalf("failed to seed workflow skill: %v", err)
+	}
+}
+
+func TestHandleRegistry_GetWorkflow(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedWorkflowSkill(t, regServer, "wf-skill")
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/wf-skill/workflow", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result["name"] != "wf-skill" {
+		t.Errorf("expected name 'wf-skill', got %v", result["name"])
+	}
+	if result["workflow"] == nil {
+		t.Error("expected workflow field")
+	}
+	if result["dag"] == nil {
+		t.Error("expected dag field")
+	}
+	dag := result["dag"].(map[string]any)
+	if dag["levels"] == nil {
+		t.Error("expected dag.levels field")
+	}
+}
+
+func TestHandleRegistry_GetWorkflow_NotFound(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/nonexistent/workflow", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegistry_GetWorkflow_NonExecutable(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "knowledge-skill", registry.StateActive)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/knowledge-skill/workflow", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegistry_ValidateWorkflow(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedWorkflowSkill(t, regServer, "validate-wf")
+
+	handler := srv.Handler()
+	body := `{"arguments":{"target":"10.1.1.1"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/validate-wf/validate-workflow", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result["valid"] != true {
+		t.Errorf("expected valid=true, got %v; errors: %v", result["valid"], result["errors"])
+	}
+	if result["resolvedArgs"] == nil {
+		t.Error("expected resolvedArgs field")
+	}
+}
+
+func TestHandleRegistry_ExecuteWorkflow_NonExecutable(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "knowledge-skill", registry.StateActive)
+
+	handler := srv.Handler()
+	body := `{"arguments":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/knowledge-skill/execute", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRegistry_ExecuteWorkflow_NotFound(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	handler := srv.Handler()
+
+	body := `{"arguments":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/nonexistent/execute", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegistry_ValidateWorkflow_NotFound(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	handler := srv.Handler()
+
+	body := `{"arguments":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/nonexistent/validate-workflow", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
 // --- Content type detection ---
 
 func TestDetectContentType(t *testing.T) {
