@@ -3,20 +3,23 @@ package registry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
-// Server is an in-process MCP server that serves Agent Skills as prompts.
+// Server is an in-process MCP server that serves Agent Skills as prompts
+// and executable workflow skills as MCP tools.
 // It implements mcp.AgentClient so it can be registered with the gateway router,
 // and mcp.PromptProvider so the gateway can serve skills via MCP prompts and resources.
 //
-// Agent Skills are knowledge documents, not executable tools. The server exposes
-// them as MCP prompts (prompts/list, prompts/get) and resources (resources/list,
-// resources/read) rather than as MCP tools.
+// Skills without a workflow are knowledge documents exposed as prompts.
+// Skills with a workflow are executable and exposed as MCP tools that
+// route through the gateway's ToolCaller for step execution.
 type Server struct {
-	store *Store
+	store    *Store
+	executor *Executor // nil if no ToolCaller was provided
 
 	mu          sync.RWMutex
 	initialized bool
@@ -29,16 +32,39 @@ var (
 	_ mcp.PromptProvider = (*Server)(nil)
 )
 
-// New creates a registry server.
-// Unlike the previous version, no ToolCaller is needed — Agent Skills
-// are knowledge documents served to clients, not executable operations.
-func New(store *Store) *Server {
-	return &Server{
+// New creates a registry server. If caller is non-nil, executable
+// skills (those with workflows) are exposed as MCP tools that route
+// through the caller. Skills without workflows remain knowledge documents.
+func New(store *Store, opts ...ServerOption) *Server {
+	s := &Server{
 		store: store,
 		serverInfo: mcp.ServerInfo{
 			Name:    "registry",
 			Version: "1.0.0",
 		},
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// ServerOption configures the registry server.
+type ServerOption func(*Server)
+
+// WithToolCaller enables workflow execution through the given ToolCaller.
+func WithToolCaller(caller ToolCaller, logger *slog.Logger) ServerOption {
+	return func(s *Server) {
+		if caller != nil {
+			s.executor = NewExecutor(caller, logger)
+		}
+	}
+}
+
+// SetLogger updates the executor's logger if one is configured.
+func (s *Server) SetLogger(logger *slog.Logger) {
+	if s.executor != nil {
+		s.executor.SetLogger(logger)
 	}
 }
 
@@ -68,17 +94,42 @@ func (s *Server) RefreshTools(ctx context.Context) error {
 	return nil
 }
 
-// Tools returns an empty list. Agent Skills are not exposed as MCP tools.
+// Tools returns executable skills as MCP tools.
+// Skills without workflows are not included (they remain prompts only).
 func (s *Server) Tools() []mcp.Tool {
-	return nil
+	if s.executor == nil {
+		return nil
+	}
+	var tools []mcp.Tool
+	for _, sk := range s.store.ActiveSkills() {
+		if !sk.IsExecutable() {
+			continue
+		}
+		tools = append(tools, sk.ToMCPTool())
+	}
+	return tools
 }
 
-// CallTool returns an error — Agent Skills are knowledge documents, not executable tools.
+// CallTool dispatches to the executor for executable skills.
+// Non-executable skills return an informational error.
 func (s *Server) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
-	return &mcp.ToolCallResult{
-		Content: []mcp.Content{mcp.NewTextContent("Agent Skills are knowledge documents, not executable tools. Read the skill content via prompts/get or resources/read instead.")},
-		IsError: true,
-	}, nil
+	sk, err := s.store.GetSkill(name)
+	if err != nil {
+		return nil, fmt.Errorf("skill %q not found", name)
+	}
+	if !sk.IsExecutable() {
+		return &mcp.ToolCallResult{
+			Content: []mcp.Content{mcp.NewTextContent("This skill is a knowledge document, not executable.")},
+			IsError: true,
+		}, nil
+	}
+	if s.executor == nil {
+		return &mcp.ToolCallResult{
+			Content: []mcp.Content{mcp.NewTextContent("Workflow execution is not available (no ToolCaller configured).")},
+			IsError: true,
+		}, nil
+	}
+	return s.executor.Execute(ctx, sk, arguments)
 }
 
 // IsInitialized returns whether the server has been initialized.

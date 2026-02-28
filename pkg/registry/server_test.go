@@ -229,20 +229,31 @@ func TestServer_Tools_ReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestServer_CallTool_ReturnsError(t *testing.T) {
+func TestServer_CallTool_SkillNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	result, err := srv.CallTool(context.Background(), "anything", nil)
+	_, err := srv.CallTool(context.Background(), "anything", nil)
+	if err == nil {
+		t.Fatal("expected error for nonexistent skill")
+	}
+}
+
+func TestServer_CallTool_NonExecutable(t *testing.T) {
+	srv, dir := setupTestServer(t)
+	writeTestSkill(t, dir, "knowledge-skill", "A knowledge skill", "Body.", StateActive)
+
+	if err := srv.Initialize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := srv.CallTool(context.Background(), "knowledge-skill", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !result.IsError {
-		t.Error("expected error result from CallTool")
+		t.Error("expected error result for non-executable skill")
 	}
-	if len(result.Content) == 0 {
-		t.Fatal("expected content in error result")
-	}
-	if result.Content[0].Text == "" {
+	if len(result.Content) == 0 || result.Content[0].Text == "" {
 		t.Error("expected explanation text in error result")
 	}
 }

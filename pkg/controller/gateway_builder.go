@@ -125,12 +125,14 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		regDir = b.registryDir
 	}
 	registryStore := registry.NewStore(regDir)
-	registryServer := registry.New(registryStore)
+	registryServer := registry.New(registryStore,
+		registry.WithToolCaller(inst.Gateway, nil))
 	inst.RegistryServer = registryServer
 
 	// Phase 2: Configure logging
 	inst.LogBuffer, inst.Handler = b.buildLogging(verbose)
 	inst.Gateway.SetLogger(slog.New(inst.Handler))
+	registryServer.SetLogger(slog.New(inst.Handler))
 
 	// Initialize registry after logging is configured so warnings are captured
 	if err := registryServer.Initialize(context.Background()); err != nil {
