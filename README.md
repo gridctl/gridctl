@@ -236,6 +236,30 @@ Store reusable skills as [SKILL.md](https://agentskills.io) files — markdown d
 
 Skills have three lifecycle states: **draft** (stored, not exposed), **active** (discoverable via MCP), and **disabled** (hidden without deletion). See [`examples/registry/`](examples/registry/) for working examples.
 
+### Skill Workflows
+
+Add `inputs`, `workflow`, and `output` blocks to a SKILL.md frontmatter to make it **executable**. Executable skills are exposed as MCP tools and run deterministic multi-step tool orchestration through the gateway.
+
+```yaml
+inputs:
+  a: { type: number, required: true }
+  b: { type: number, required: true }
+
+workflow:
+  - id: add
+    tool: math__add
+    args: { a: "{{ inputs.a }}", b: "{{ inputs.b }}" }
+  - id: echo
+    tool: text__echo
+    args: { message: "{{ steps.add.result }}" }
+    depends_on: add
+
+output:
+  format: last
+```
+
+Steps without dependencies run in parallel. Template expressions reference inputs (`{{ inputs.x }}`) and prior step results (`{{ steps.id.result }}`). Each step supports retry policies, timeouts, conditional execution, and configurable error handling (`fail` / `skip` / `continue`). The Web UI includes a visual workflow designer with Code, Visual, and Test modes. See [`examples/registry/`](examples/registry/) for working examples.
+
 ## 📚 CLI Reference
 
 ```bash
@@ -318,6 +342,9 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Agent Skills registry with a single server |
 | [`registry-advanced.yaml`](examples/registry/registry-advanced.yaml) | Cross-server Agent Skills |
+| [`workflow-basic`](examples/registry/items/workflow-basic/SKILL.md) | Executable skill workflow with sequential steps |
+| [`workflow-parallel`](examples/registry/items/workflow-parallel/SKILL.md) | Fan-out parallel execution with fan-in merge |
+| [`workflow-conditional`](examples/registry/items/workflow-conditional/SKILL.md) | Retry policies and error handling strategies |
 
 ## 🤝 Contributing
 
