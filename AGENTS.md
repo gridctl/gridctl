@@ -168,11 +168,14 @@ gridctl/
 │   │   ├── handler.go    # HTTP handler for A2A endpoints
 │   │   └── gateway.go    # A2A gateway (local + remote agents)
 │   └── registry/         # Agent Skills registry (agentskills.io)
-│       ├── types.go      # AgentSkill, SkillFile, ItemState types
+│       ├── types.go      # AgentSkill, SkillFile, ItemState, workflow types
 │       ├── frontmatter.go # SKILL.md parsing (YAML frontmatter + markdown body)
-│       ├── validator.go   # agentskills.io spec validation
+│       ├── validator.go   # agentskills.io spec validation + workflow validation
 │       ├── store.go      # Directory-based persistent store
-│       └── server.go     # MCP server interface for registry
+│       ├── server.go     # MCP server interface for registry
+│       ├── dag.go        # Workflow DAG builder (Kahn's algorithm, level grouping)
+│       ├── template.go   # Template engine for workflow expressions
+│       └── executor.go   # Workflow executor with parallel step dispatch
 ├── web/                  # React frontend (Vite)
 ├── examples/             # Example topologies
 │   ├── getting-started/  # Basic examples
@@ -342,7 +345,7 @@ When `gridctl deploy` runs, it:
 - **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/health`, `/ready`
 - **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
 - **A2A:** `/.well-known/agent.json`, `/a2a/` (list agents), `/a2a/{agent}` (GET card, POST JSON-RPC)
-- **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`
+- **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`, `/api/registry/skills/{name}/workflow`, `/api/registry/skills/{name}/execute`, `/api/registry/skills/{name}/validate-workflow`
 - **Web UI:** `GET /`
 
 **Logs API:**
@@ -371,6 +374,11 @@ When `gridctl deploy` runs, it:
 - `GET /api/registry/skills/{name}/files` - List files in skill directory
 - `GET/PUT/DELETE /api/registry/skills/{name}/files/{path}` - File management
 - `POST /api/registry/skills/validate` - Validate SKILL.md content
+
+**Workflow API:**
+- `GET /api/registry/skills/{name}/workflow` - Get parsed workflow definition with DAG levels
+- `POST /api/registry/skills/{name}/execute` - Execute a workflow skill (returns ToolCallResult)
+- `POST /api/registry/skills/{name}/validate-workflow` - Dry-run validation without execution
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
@@ -591,6 +599,108 @@ resources:
 | Set | Set | **Error**: cannot use both |
 
 In simple mode, the `network` field on individual containers is ignored.
+
+## Skill Workflows
+
+Skills with a `workflow` block in their YAML frontmatter become **executable** — they are exposed as MCP tools (not just prompts) and run deterministic multi-step tool orchestration through the gateway.
+
+### Workflow SKILL.md Schema
+
+```yaml
+---
+name: my-workflow
+description: What the workflow does
+allowed-tools: server__tool1, server__tool2
+state: active
+
+inputs:
+  param_name:
+    type: string          # string | number | boolean | object | array
+    description: Help text
+    required: true
+    default: "fallback"   # Optional default value
+    enum: ["a", "b"]      # Optional allowed values
+
+workflow:
+  - id: step-one
+    tool: server__tool1
+    args:
+      key: "{{ inputs.param_name }}"
+    on_error: fail        # fail | skip | continue (default: fail)
+
+  - id: step-two
+    tool: server__tool2
+    args:
+      data: "{{ steps.step-one.result }}"
+    depends_on: step-one
+    timeout: "30s"
+    retry:
+      max_attempts: 3
+      backoff: "2s"
+
+output:
+  format: merged          # merged | last | custom
+  include: [step-one, step-two]
+---
+
+# My Workflow
+
+Documentation for the workflow.
+```
+
+### Template Expressions
+
+| Expression | Returns | Example |
+|---|---|---|
+| `{{ inputs.name }}` | Input parameter value | `{{ inputs.device_ip }}` |
+| `{{ steps.id.result }}` | Full text result of a step | `{{ steps.fetch.result }}` |
+| `{{ steps.id.json.path }}` | JSON path extraction | `{{ steps.api.json.data.name }}` |
+| `{{ steps.id.is_error }}` | Boolean error flag | `{{ steps.validate.is_error }}` |
+
+Whole expressions (`"{{ inputs.count }}"`) preserve types. Mixed text (`"Value: {{ inputs.count }}"`) converts to string.
+
+### DAG Execution
+
+Steps are organized into levels using topological sort (Kahn's algorithm). Steps in the same level run concurrently (bounded by `maxParallel`, default 4).
+
+```
+depends_on: step-a            # Single dependency
+depends_on: [step-a, step-b]  # Multiple (all must complete)
+# No depends_on               # Runs in Level 0 (first)
+```
+
+### Error Handling
+
+| Policy | Behavior |
+|---|---|
+| `on_error: fail` | Halt entire workflow (default) |
+| `on_error: skip` | Mark step + transitive dependents as skipped |
+| `on_error: continue` | Store error, proceed (downstream can check `is_error`) |
+
+### Conditional Execution
+
+```yaml
+condition: "{{ steps.validate.json.valid == true }}"
+```
+
+Steps with a false condition are skipped along with their dependents.
+
+### Output Formats
+
+| Format | Behavior |
+|---|---|
+| `merged` | Joins non-error step results with separator (default) |
+| `last` | Returns only the last non-skipped step's result |
+| `custom` | Uses `template` field with `{{ steps.*.result }}` expressions |
+
+### Executor Limits
+
+| Limit | Default |
+|---|---|
+| `maxParallel` | 4 concurrent steps per level |
+| `maxResultSize` | 1MB per step result |
+| `maxDepth` | 10 (nested skill composition) |
+| `workflowTimeout` | 5 minutes |
 
 ## Code Conventions
 
