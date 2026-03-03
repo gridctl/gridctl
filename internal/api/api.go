@@ -20,6 +20,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
+	"github.com/gridctl/gridctl/pkg/vault"
 
 	"github.com/docker/docker/api/types/container"
 )
@@ -38,6 +39,7 @@ type Server struct {
 	provisioners   *provisioner.Registry
 	linkServerName string
 	registryServer *registry.Server
+	vaultStore     *vault.Store
 	allowedOrigins []string
 	authType       string
 	authToken      string
@@ -118,6 +120,11 @@ func (s *Server) SetRegistryServer(r *registry.Server) {
 	s.registryServer = r
 }
 
+// SetVaultStore sets the vault store for secrets management.
+func (s *Server) SetVaultStore(v *vault.Store) {
+	s.vaultStore = v
+}
+
 // RegistryServer returns the registry server.
 func (s *Server) RegistryServer() *registry.Server {
 	return s.registryServer
@@ -160,6 +167,10 @@ func (s *Server) Handler() http.Handler {
 
 	// Agent control endpoints (pattern: /api/agents/{name}/action)
 	mux.HandleFunc("/api/agents/", s.handleAgentAction)
+
+	// Vault endpoints
+	mux.HandleFunc("/api/vault/", s.handleVault)
+	mux.HandleFunc("/api/vault", s.handleVault)
 
 	// Registry endpoints (always registered, even when registry is empty)
 	mux.HandleFunc("/api/registry/", s.handleRegistry)
