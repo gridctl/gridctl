@@ -7,12 +7,18 @@ type Stack struct {
 	Version    string         `yaml:"version"`
 	Name       string         `yaml:"name"`
 	Gateway    *GatewayConfig `yaml:"gateway,omitempty"`
-	Network    Network        `yaml:"network"`              // Single network (simple mode)
-	Networks   []Network      `yaml:"networks,omitempty"`   // Multiple networks (advanced mode)
+	Secrets    *Secrets       `yaml:"secrets,omitempty"`     // Variable set references
+	Network    Network        `yaml:"network"`               // Single network (simple mode)
+	Networks   []Network      `yaml:"networks,omitempty"`    // Multiple networks (advanced mode)
 	MCPServers []MCPServer    `yaml:"mcp-servers"`
-	Agents     []Agent        `yaml:"agents,omitempty"`     // Active agents that consume MCP tools
+	Agents     []Agent        `yaml:"agents,omitempty"`      // Active agents that consume MCP tools
 	Resources  []Resource     `yaml:"resources,omitempty"`
 	A2AAgents  []A2AAgent     `yaml:"a2a-agents,omitempty"` // External A2A agents for agent-to-agent communication
+}
+
+// Secrets configures automatic secret injection from variable sets.
+type Secrets struct {
+	Sets []string `yaml:"sets,omitempty" json:"sets,omitempty"`
 }
 
 // GatewayConfig holds optional gateway-level configuration.
