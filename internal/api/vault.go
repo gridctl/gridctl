@@ -33,6 +33,30 @@ func (s *Server) handleVault(w http.ResponseWriter, r *http.Request) {
 		second = segments[1]
 	}
 
+	// Routes that work regardless of lock state
+	switch {
+	case first == "status" && r.Method == http.MethodGet:
+		s.handleVaultStatus(w, r)
+		return
+	case first == "unlock" && r.Method == http.MethodPost:
+		s.handleVaultUnlock(w, r)
+		return
+	case first == "lock" && r.Method == http.MethodPost:
+		s.handleVaultLock(w, r)
+		return
+	}
+
+	// All other routes require the vault to be unlocked
+	if s.vaultStore.IsLocked() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusLocked)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "vault is locked",
+			"hint":  "POST /api/vault/unlock with passphrase",
+		})
+		return
+	}
+
 	switch {
 	case first == "" && r.Method == http.MethodGet:
 		s.handleVaultList(w, r)
@@ -48,11 +72,80 @@ func (s *Server) handleVault(w http.ResponseWriter, r *http.Request) {
 		s.handleVaultSetsDelete(w, r, second)
 	case first != "" && second == "set" && r.Method == http.MethodPut:
 		s.handleVaultAssignSet(w, r, first)
-	case first != "" && first != "import" && first != "sets":
+	case first != "" && first != "import" && first != "sets" && first != "status" && first != "unlock" && first != "lock":
 		s.handleVaultKey(w, r, first)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleVaultStatus returns the lock state and counts.
+// GET /api/vault/status
+func (s *Server) handleVaultStatus(w http.ResponseWriter, r *http.Request) {
+	status := map[string]any{
+		"locked":    s.vaultStore.IsLocked(),
+		"encrypted": s.vaultStore.IsEncrypted(),
+	}
+
+	if !s.vaultStore.IsLocked() {
+		status["secrets_count"] = len(s.vaultStore.List())
+		status["sets_count"] = len(s.vaultStore.ListSets())
+	}
+
+	writeJSON(w, status)
+}
+
+// handleVaultUnlock unlocks the vault with a passphrase.
+// POST /api/vault/unlock
+func (s *Server) handleVaultUnlock(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Passphrase == "" {
+		writeJSONError(w, "Passphrase is required", http.StatusBadRequest)
+		return
+	}
+
+	if !s.vaultStore.IsLocked() {
+		writeJSON(w, map[string]string{"status": "already_unlocked"})
+		return
+	}
+
+	if err := s.vaultStore.Unlock(req.Passphrase); err != nil {
+		writeJSONError(w, "wrong passphrase or corrupted vault", http.StatusUnauthorized)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "unlocked"})
+}
+
+// handleVaultLock encrypts the vault with a passphrase.
+// POST /api/vault/lock
+func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Passphrase == "" {
+		writeJSONError(w, "Passphrase is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.vaultStore.Lock(req.Passphrase); err != nil {
+		writeJSONError(w, "Failed to lock vault: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "locked"})
 }
 
 // handleVaultList returns all vault keys with set assignments (no values).
