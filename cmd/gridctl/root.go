@@ -28,6 +28,7 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(linkCmd)
 	rootCmd.AddCommand(unlinkCmd)
+	rootCmd.AddCommand(vaultCmd)
 }
 
 func Execute() {
