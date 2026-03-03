@@ -17,6 +17,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/state"
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 // Config holds all deploy configuration, replacing package-level variables.
@@ -36,9 +37,10 @@ type Config struct {
 
 // StackController orchestrates the full deploy lifecycle.
 type StackController struct {
-	config  Config
-	version string
-	webFS   WebFSFunc
+	config     Config
+	version    string
+	webFS      WebFSFunc
+	vaultStore *vault.Store
 }
 
 // New creates a StackController.
@@ -68,8 +70,16 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	cfg.StackPath = absPath
 	sc.config = cfg
 
-	// Load stack
-	stack, err := config.LoadStack(cfg.StackPath)
+	// Load vault
+	vaultStore := vault.NewStore(state.VaultDir())
+	if err := vaultStore.Load(); err != nil {
+		return fmt.Errorf("loading vault: %w", err)
+	}
+
+	sc.vaultStore = vaultStore
+
+	// Load stack with vault resolution
+	stack, err := config.LoadStack(cfg.StackPath, config.WithVault(vaultStore))
 	if err != nil {
 		return fmt.Errorf("failed to load stack: %w", err)
 	}
@@ -193,6 +203,13 @@ func (sc *StackController) createPrinter(stack *config.Stack) *output.Printer {
 func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*logging.LogBuffer, slog.Handler) {
 	cfg := sc.config
 
+	// Helper to register vault values on a redacting handler
+	registerVault := func(h *logging.RedactingHandler) {
+		if sc.vaultStore != nil {
+			h.RegisterRedactValues(sc.vaultStore.Values())
+		}
+	}
+
 	if cfg.Foreground && !cfg.Quiet {
 		logBuffer := logging.NewLogBuffer(1000)
 		logLevel := slog.LevelInfo
@@ -202,6 +219,7 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 		innerHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 		bufferHandler := logging.NewBufferHandler(logBuffer, innerHandler)
 		redactHandler := logging.NewRedactingHandler(bufferHandler)
+		registerVault(redactHandler)
 		rt.SetLogger(slog.New(redactHandler).With("component", "orchestrator"))
 		return logBuffer, redactHandler
 	}
@@ -213,6 +231,7 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 		}
 		textHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 		redactHandler := logging.NewRedactingHandler(textHandler)
+		registerVault(redactHandler)
 		rt.SetLogger(slog.New(redactHandler))
 	}
 
@@ -258,6 +277,7 @@ func (sc *StackController) newGatewayBuilder(stack *config.Stack, rt *runtime.Or
 	builder := NewGatewayBuilder(sc.config, stack, sc.config.StackPath, rt, result)
 	builder.SetVersion(sc.version)
 	builder.SetWebFS(sc.webFS)
+	builder.SetVaultStore(sc.vaultStore)
 	return builder
 }
 
