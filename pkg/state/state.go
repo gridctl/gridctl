@@ -36,6 +36,11 @@ func LogDir() string {
 	return filepath.Join(BaseDir(), "logs")
 }
 
+// VaultDir returns the directory for vault storage (~/.gridctl/vault/).
+func VaultDir() string {
+	return filepath.Join(BaseDir(), "vault")
+}
+
 // StatePath returns the path to a state file for a stack.
 func StatePath(name string) string {
 	return filepath.Join(StateDir(), name+".json")
