@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,8 +10,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// loadConfig holds options for LoadStack.
+type loadConfig struct {
+	vault VaultLookup
+}
+
+// LoadOption configures LoadStack behavior.
+type LoadOption func(*loadConfig)
+
+// WithVault enables ${vault:KEY} resolution during stack loading.
+func WithVault(v VaultLookup) LoadOption {
+	return func(c *loadConfig) { c.vault = v }
+}
+
 // LoadStack reads and parses a stack file.
-func LoadStack(path string) (*Stack, error) {
+func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
+	var cfg loadConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading stack file: %w", err)
@@ -24,8 +43,30 @@ func LoadStack(path string) (*Stack, error) {
 	// Merge equipped_skills alias into uses for each agent
 	mergeEquippedSkills(&stack)
 
-	// Expand environment variables in string values
-	expandEnvVars(&stack)
+	// Build resolver
+	var resolve Resolver
+	if cfg.vault != nil {
+		resolve = VaultResolver(cfg.vault)
+	} else {
+		resolve = EnvResolver()
+	}
+
+	// Expand variable references in string values
+	unresolved, emptyVars := expandStackVars(&stack, resolve)
+
+	// Fail on unresolved vault references
+	if len(unresolved) > 0 {
+		msg := fmt.Sprintf("missing vault secret(s): %s", strings.Join(unresolved, ", "))
+		msg += "\n  To fix: gridctl vault set <KEY>"
+		return nil, fmt.Errorf("%s", msg)
+	}
+
+	// Hint about empty env vars that could use vault
+	if cfg.vault == nil {
+		for _, v := range emptyVars {
+			slog.Info("hint: "+v+" resolved to empty — use 'gridctl vault set "+v+"' to store it securely", "var", v)
+		}
+	}
 
 	// Apply defaults
 	stack.SetDefaults()
@@ -42,102 +83,108 @@ func LoadStack(path string) (*Stack, error) {
 	return &stack, nil
 }
 
-// expandEnvVars expands environment variables in the stack.
-func expandEnvVars(s *Stack) {
-	s.Name = os.ExpandEnv(s.Name)
+// expandStackVars expands variable references in all stack string fields using the
+// unified ExpandString function. Returns unresolved vault references and empty env vars.
+func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, emptyEnvVars []string) {
+	expand := func(val string) string {
+		result, unresolved, empty := ExpandString(val, resolve)
+		unresolvedVault = append(unresolvedVault, unresolved...)
+		emptyEnvVars = append(emptyEnvVars, empty...)
+		return result
+	}
+
+	s.Name = expand(s.Name)
 
 	if s.Gateway != nil {
 		for i := range s.Gateway.AllowedOrigins {
-			s.Gateway.AllowedOrigins[i] = os.ExpandEnv(s.Gateway.AllowedOrigins[i])
+			s.Gateway.AllowedOrigins[i] = expand(s.Gateway.AllowedOrigins[i])
 		}
 		if s.Gateway.Auth != nil {
-			s.Gateway.Auth.Token = os.ExpandEnv(s.Gateway.Auth.Token)
+			s.Gateway.Auth.Token = expand(s.Gateway.Auth.Token)
 		}
 	}
 
-	s.Network.Name = os.ExpandEnv(s.Network.Name)
+	s.Network.Name = expand(s.Network.Name)
 
-	// Expand networks (advanced mode)
 	for i := range s.Networks {
-		s.Networks[i].Name = os.ExpandEnv(s.Networks[i].Name)
+		s.Networks[i].Name = expand(s.Networks[i].Name)
 	}
 
 	for i := range s.MCPServers {
-		s.MCPServers[i].Name = os.ExpandEnv(s.MCPServers[i].Name)
-		s.MCPServers[i].Image = os.ExpandEnv(s.MCPServers[i].Image)
-		s.MCPServers[i].URL = os.ExpandEnv(s.MCPServers[i].URL)
-		s.MCPServers[i].Network = os.ExpandEnv(s.MCPServers[i].Network)
+		s.MCPServers[i].Name = expand(s.MCPServers[i].Name)
+		s.MCPServers[i].Image = expand(s.MCPServers[i].Image)
+		s.MCPServers[i].URL = expand(s.MCPServers[i].URL)
+		s.MCPServers[i].Network = expand(s.MCPServers[i].Network)
 
-		// Expand command arguments (for local process servers using env vars in URLs)
 		for j := range s.MCPServers[i].Command {
-			s.MCPServers[i].Command[j] = os.ExpandEnv(s.MCPServers[i].Command[j])
+			s.MCPServers[i].Command[j] = expand(s.MCPServers[i].Command[j])
 		}
 
 		if s.MCPServers[i].Source != nil {
-			s.MCPServers[i].Source.URL = os.ExpandEnv(s.MCPServers[i].Source.URL)
-			s.MCPServers[i].Source.Path = os.ExpandEnv(s.MCPServers[i].Source.Path)
-			s.MCPServers[i].Source.Ref = os.ExpandEnv(s.MCPServers[i].Source.Ref)
+			s.MCPServers[i].Source.URL = expand(s.MCPServers[i].Source.URL)
+			s.MCPServers[i].Source.Path = expand(s.MCPServers[i].Source.Path)
+			s.MCPServers[i].Source.Ref = expand(s.MCPServers[i].Source.Ref)
 		}
 
 		for k, v := range s.MCPServers[i].Env {
-			s.MCPServers[i].Env[k] = os.ExpandEnv(v)
+			s.MCPServers[i].Env[k] = expand(v)
 		}
 		for k, v := range s.MCPServers[i].BuildArgs {
-			s.MCPServers[i].BuildArgs[k] = os.ExpandEnv(v)
+			s.MCPServers[i].BuildArgs[k] = expand(v)
 		}
 
-		// Expand SSH config environment variables
 		if s.MCPServers[i].SSH != nil {
-			s.MCPServers[i].SSH.Host = os.ExpandEnv(s.MCPServers[i].SSH.Host)
-			s.MCPServers[i].SSH.User = os.ExpandEnv(s.MCPServers[i].SSH.User)
-			s.MCPServers[i].SSH.IdentityFile = os.ExpandEnv(s.MCPServers[i].SSH.IdentityFile)
+			s.MCPServers[i].SSH.Host = expand(s.MCPServers[i].SSH.Host)
+			s.MCPServers[i].SSH.User = expand(s.MCPServers[i].SSH.User)
+			s.MCPServers[i].SSH.IdentityFile = expand(s.MCPServers[i].SSH.IdentityFile)
 		}
 
-		// Expand OpenAPI config environment variables
 		if s.MCPServers[i].OpenAPI != nil {
-			s.MCPServers[i].OpenAPI.Spec = os.ExpandEnv(s.MCPServers[i].OpenAPI.Spec)
-			s.MCPServers[i].OpenAPI.BaseURL = os.ExpandEnv(s.MCPServers[i].OpenAPI.BaseURL)
+			s.MCPServers[i].OpenAPI.Spec = expand(s.MCPServers[i].OpenAPI.Spec)
+			s.MCPServers[i].OpenAPI.BaseURL = expand(s.MCPServers[i].OpenAPI.BaseURL)
 		}
 	}
 
 	for i := range s.Resources {
-		s.Resources[i].Name = os.ExpandEnv(s.Resources[i].Name)
-		s.Resources[i].Image = os.ExpandEnv(s.Resources[i].Image)
-		s.Resources[i].Network = os.ExpandEnv(s.Resources[i].Network)
+		s.Resources[i].Name = expand(s.Resources[i].Name)
+		s.Resources[i].Image = expand(s.Resources[i].Image)
+		s.Resources[i].Network = expand(s.Resources[i].Network)
 
 		for k, v := range s.Resources[i].Env {
-			s.Resources[i].Env[k] = os.ExpandEnv(v)
+			s.Resources[i].Env[k] = expand(v)
 		}
 	}
 
 	for i := range s.A2AAgents {
-		s.A2AAgents[i].Name = os.ExpandEnv(s.A2AAgents[i].Name)
-		s.A2AAgents[i].URL = os.ExpandEnv(s.A2AAgents[i].URL)
+		s.A2AAgents[i].Name = expand(s.A2AAgents[i].Name)
+		s.A2AAgents[i].URL = expand(s.A2AAgents[i].URL)
 	}
 
 	for i := range s.Agents {
-		s.Agents[i].Name = os.ExpandEnv(s.Agents[i].Name)
-		s.Agents[i].Image = os.ExpandEnv(s.Agents[i].Image)
-		s.Agents[i].Description = os.ExpandEnv(s.Agents[i].Description)
-		s.Agents[i].Network = os.ExpandEnv(s.Agents[i].Network)
+		s.Agents[i].Name = expand(s.Agents[i].Name)
+		s.Agents[i].Image = expand(s.Agents[i].Image)
+		s.Agents[i].Description = expand(s.Agents[i].Description)
+		s.Agents[i].Network = expand(s.Agents[i].Network)
 
 		for j := range s.Agents[i].Command {
-			s.Agents[i].Command[j] = os.ExpandEnv(s.Agents[i].Command[j])
+			s.Agents[i].Command[j] = expand(s.Agents[i].Command[j])
 		}
 
 		if s.Agents[i].Source != nil {
-			s.Agents[i].Source.URL = os.ExpandEnv(s.Agents[i].Source.URL)
-			s.Agents[i].Source.Path = os.ExpandEnv(s.Agents[i].Source.Path)
-			s.Agents[i].Source.Ref = os.ExpandEnv(s.Agents[i].Source.Ref)
+			s.Agents[i].Source.URL = expand(s.Agents[i].Source.URL)
+			s.Agents[i].Source.Path = expand(s.Agents[i].Source.Path)
+			s.Agents[i].Source.Ref = expand(s.Agents[i].Source.Ref)
 		}
 
 		for k, v := range s.Agents[i].Env {
-			s.Agents[i].Env[k] = os.ExpandEnv(v)
+			s.Agents[i].Env[k] = expand(v)
 		}
 		for k, v := range s.Agents[i].BuildArgs {
-			s.Agents[i].BuildArgs[k] = os.ExpandEnv(v)
+			s.Agents[i].BuildArgs[k] = expand(v)
 		}
 	}
+
+	return unresolvedVault, emptyEnvVars
 }
 
 // resolveRelativePaths resolves local source paths relative to the stack file.
