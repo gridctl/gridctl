@@ -23,6 +23,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/state"
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 // WebFSFunc is a function that returns embedded web UI files.
@@ -57,6 +58,9 @@ type GatewayBuilder struct {
 
 	// registryDir overrides the default registry directory for testing.
 	registryDir string
+
+	// vaultStore for API server injection and log redaction.
+	vaultStore *vault.Store
 }
 
 // NewGatewayBuilder creates a GatewayBuilder.
@@ -85,6 +89,11 @@ func (b *GatewayBuilder) SetWebFS(fn WebFSFunc) {
 func (b *GatewayBuilder) SetExistingLogInfra(buffer *logging.LogBuffer, handler slog.Handler) {
 	b.existingBuffer = buffer
 	b.existingHandler = handler
+}
+
+// SetVaultStore sets the vault store for API server injection and log redaction.
+func (b *GatewayBuilder) SetVaultStore(v *vault.Store) {
+	b.vaultStore = v
 }
 
 // BuildAndRun constructs the gateway and runs it until shutdown.
@@ -247,7 +256,14 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 	}
 
 	bufferHandler := logging.NewBufferHandler(logBuffer, innerHandler)
-	return logBuffer, logging.NewRedactingHandler(bufferHandler)
+	redactHandler := logging.NewRedactingHandler(bufferHandler)
+
+	// Register vault values for redaction
+	if b.vaultStore != nil {
+		redactHandler.RegisterRedactValues(b.vaultStore.Values())
+	}
+
+	return logBuffer, redactHandler
 }
 
 // buildA2AGateway creates an A2A gateway if the stack has A2A-enabled agents.
@@ -293,6 +309,10 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Ga
 
 	if registryServer != nil {
 		server.SetRegistryServer(registryServer)
+	}
+
+	if b.vaultStore != nil {
+		server.SetVaultStore(b.vaultStore)
 	}
 
 	return server
