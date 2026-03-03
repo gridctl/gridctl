@@ -430,6 +430,27 @@ export async function assignSecretToSet(key: string, set: string): Promise<void>
   await mutateJSON<unknown>(`/api/vault/${encodeURIComponent(key)}/set`, 'PUT', { set });
 }
 
+// === Vault Encryption API ===
+
+export interface VaultStatus {
+  locked: boolean;
+  encrypted: boolean;
+  secrets_count?: number;
+  sets_count?: number;
+}
+
+export async function fetchVaultStatus(): Promise<VaultStatus> {
+  return fetchJSON<VaultStatus>('/api/vault/status');
+}
+
+export async function unlockVault(passphrase: string): Promise<{ status: string }> {
+  return mutateJSON<{ status: string }>('/api/vault/unlock', 'POST', { passphrase });
+}
+
+export async function lockVault(passphrase: string): Promise<{ status: string }> {
+  return mutateJSON<{ status: string }>('/api/vault/lock', 'POST', { passphrase });
+}
+
 // === JSON-RPC Helper (for MCP protocol calls) ===
 
 interface JSONRPCRequest {
