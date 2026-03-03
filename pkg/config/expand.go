@@ -13,6 +13,18 @@ type VaultLookup interface {
 	Get(key string) (string, bool)
 }
 
+// VaultSetLookup extends VaultLookup with set operations for secrets.sets support.
+type VaultSetLookup interface {
+	VaultLookup
+	GetSetSecrets(setName string) []VaultSecret
+}
+
+// VaultSecret is a minimal secret view for set lookups.
+type VaultSecret struct {
+	Key   string
+	Value string
+}
+
 // EnvResolver returns a resolver that checks os.LookupEnv.
 func EnvResolver() Resolver {
 	return os.LookupEnv
