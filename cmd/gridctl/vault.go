@@ -26,6 +26,7 @@ var vaultCmd = &cobra.Command{
 // Flags
 var (
 	vaultSetValue    string
+	vaultSetSetName  string
 	vaultGetPlain    bool
 	vaultDeleteForce bool
 	vaultImportFmt   string
@@ -91,13 +92,51 @@ var vaultExportCmd = &cobra.Command{
 	},
 }
 
+var vaultSetsCmd = &cobra.Command{
+	Use:   "sets",
+	Short: "Manage variable sets",
+	Long:  "List, create, or delete variable sets that group related secrets.",
+}
+
+var vaultSetsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List variable sets",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runVaultSetsList()
+	},
+}
+
+var vaultSetsCreateCmd = &cobra.Command{
+	Use:   "create <name>",
+	Short: "Create a variable set",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runVaultSetsCreate(args[0])
+	},
+}
+
+var vaultSetsDeleteCmd = &cobra.Command{
+	Use:   "delete <name>",
+	Short: "Delete a variable set",
+	Long:  "Delete a variable set. Secrets in the set are unassigned but not deleted.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runVaultSetsDelete(args[0])
+	},
+}
+
 func init() {
 	vaultSetCmd.Flags().StringVar(&vaultSetValue, "value", "", "Secret value (non-interactive)")
+	vaultSetCmd.Flags().StringVar(&vaultSetSetName, "set", "", "Assign secret to a variable set")
 	vaultGetCmd.Flags().BoolVar(&vaultGetPlain, "plain", false, "Show unmasked value")
 	vaultDeleteCmd.Flags().BoolVar(&vaultDeleteForce, "force", false, "Skip confirmation")
 	vaultImportCmd.Flags().StringVar(&vaultImportFmt, "format", "", "File format (env, json). Auto-detected if omitted")
 	vaultExportCmd.Flags().StringVar(&vaultExportFmt, "format", "env", "Export format (env, json)")
 	vaultExportCmd.Flags().BoolVar(&vaultExportPlain, "plain", false, "Show unmasked values")
+
+	vaultSetsCmd.AddCommand(vaultSetsListCmd)
+	vaultSetsCmd.AddCommand(vaultSetsCreateCmd)
+	vaultSetsCmd.AddCommand(vaultSetsDeleteCmd)
 
 	vaultCmd.AddCommand(vaultSetCmd)
 	vaultCmd.AddCommand(vaultGetCmd)
@@ -105,6 +144,7 @@ func init() {
 	vaultCmd.AddCommand(vaultDeleteCmd)
 	vaultCmd.AddCommand(vaultImportCmd)
 	vaultCmd.AddCommand(vaultExportCmd)
+	vaultCmd.AddCommand(vaultSetsCmd)
 }
 
 func loadVault() (*vault.Store, error) {
@@ -144,12 +184,22 @@ func runVaultSet(key string) error {
 		}
 	}
 
-	if err := store.Set(key, value); err != nil {
-		return err
+	if vaultSetSetName != "" {
+		if err := store.SetWithSet(key, value, vaultSetSetName); err != nil {
+			return err
+		}
+	} else {
+		if err := store.Set(key, value); err != nil {
+			return err
+		}
 	}
 
 	printer := output.New()
-	printer.Info("Secret stored", "key", key)
+	if vaultSetSetName != "" {
+		printer.Info("Secret stored", "key", key, "set", vaultSetSetName)
+	} else {
+		printer.Info("Secret stored", "key", key)
+	}
 	return nil
 }
 
@@ -179,8 +229,8 @@ func runVaultList() error {
 		return err
 	}
 
-	keys := store.Keys()
-	if len(keys) == 0 {
+	secrets := store.List()
+	if len(secrets) == 0 {
 		fmt.Println("No secrets stored in vault")
 		return nil
 	}
@@ -188,9 +238,9 @@ func runVaultList() error {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	t.SetStyle(table.StyleRounded)
-	t.AppendHeader(table.Row{"Key"})
-	for _, k := range keys {
-		t.AppendRow(table.Row{k})
+	t.AppendHeader(table.Row{"Key", "Set"})
+	for _, sec := range secrets {
+		t.AppendRow(table.Row{sec.Key, sec.Set})
 	}
 	t.Render()
 	return nil
@@ -282,6 +332,59 @@ func runVaultExport() error {
 			}
 		}
 	}
+	return nil
+}
+
+func runVaultSetsList() error {
+	store, err := loadVault()
+	if err != nil {
+		return err
+	}
+
+	sets := store.ListSets()
+	if len(sets) == 0 {
+		fmt.Println("No variable sets defined")
+		return nil
+	}
+
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.SetStyle(table.StyleRounded)
+	t.AppendHeader(table.Row{"Set", "Secrets"})
+	for _, s := range sets {
+		t.AppendRow(table.Row{s.Name, s.Count})
+	}
+	t.Render()
+	return nil
+}
+
+func runVaultSetsCreate(name string) error {
+	store, err := loadVault()
+	if err != nil {
+		return err
+	}
+
+	if err := store.CreateSet(name); err != nil {
+		return err
+	}
+
+	printer := output.New()
+	printer.Info("Variable set created", "name", name)
+	return nil
+}
+
+func runVaultSetsDelete(name string) error {
+	store, err := loadVault()
+	if err != nil {
+		return err
+	}
+
+	if err := store.DeleteSet(name); err != nil {
+		return err
+	}
+
+	printer := output.New()
+	printer.Info("Variable set deleted", "name", name)
 	return nil
 }
 

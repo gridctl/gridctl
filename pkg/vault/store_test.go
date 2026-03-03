@@ -308,3 +308,205 @@ func TestStore_AtomicWrite(t *testing.T) {
 		}
 	}
 }
+
+// --- Variable Set Tests ---
+
+func TestStore_SetWithSet(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.SetWithSet("TOKEN", "abc123", "github"); err != nil {
+		t.Fatalf("SetWithSet() error: %v", err)
+	}
+
+	// Verify secret stored
+	got, ok := store.Get("TOKEN")
+	if !ok || got != "abc123" {
+		t.Errorf("Get() = %q, ok=%v; want %q, ok=true", got, ok, "abc123")
+	}
+
+	// Verify set was auto-created
+	sets := store.ListSets()
+	if len(sets) != 1 || sets[0].Name != "github" {
+		t.Errorf("ListSets() = %v, want [{github 1}]", sets)
+	}
+	if sets[0].Count != 1 {
+		t.Errorf("set count = %d, want 1", sets[0].Count)
+	}
+
+	// Verify secret is in the set
+	secrets := store.GetSetSecrets("github")
+	if len(secrets) != 1 || secrets[0].Key != "TOKEN" {
+		t.Errorf("GetSetSecrets(github) = %v, want [{TOKEN}]", secrets)
+	}
+}
+
+func TestStore_SetPreservesExistingSet(t *testing.T) {
+	store := NewStore(t.TempDir())
+	_ = store.SetWithSet("KEY", "val1", "mygroup")
+
+	// Update value without changing set
+	_ = store.Set("KEY", "val2")
+
+	secrets := store.GetSetSecrets("mygroup")
+	if len(secrets) != 1 || secrets[0].Value != "val2" {
+		t.Errorf("Set() should preserve set assignment; got %v", secrets)
+	}
+}
+
+func TestStore_CreateSet(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.CreateSet("production"); err != nil {
+		t.Fatalf("CreateSet() error: %v", err)
+	}
+
+	sets := store.ListSets()
+	if len(sets) != 1 || sets[0].Name != "production" || sets[0].Count != 0 {
+		t.Errorf("ListSets() = %v, want [{production 0}]", sets)
+	}
+}
+
+func TestStore_CreateSet_Duplicate(t *testing.T) {
+	store := NewStore(t.TempDir())
+	_ = store.CreateSet("dup")
+
+	err := store.CreateSet("dup")
+	if err == nil {
+		t.Error("CreateSet() should error on duplicate")
+	}
+}
+
+func TestStore_DeleteSet(t *testing.T) {
+	store := NewStore(t.TempDir())
+	_ = store.CreateSet("temp")
+	_ = store.SetWithSet("KEY", "val", "temp")
+
+	if err := store.DeleteSet("temp"); err != nil {
+		t.Fatalf("DeleteSet() error: %v", err)
+	}
+
+	// Set should be gone
+	sets := store.ListSets()
+	if len(sets) != 0 {
+		t.Errorf("ListSets() after delete = %v, want empty", sets)
+	}
+
+	// Secret should still exist but unassigned
+	secrets := store.List()
+	if len(secrets) != 1 || secrets[0].Set != "" {
+		t.Errorf("Secret should be unassigned after set delete; got %v", secrets)
+	}
+}
+
+func TestStore_DeleteSet_NotFound(t *testing.T) {
+	store := NewStore(t.TempDir())
+	err := store.DeleteSet("missing")
+	if err == nil {
+		t.Error("DeleteSet() should error on nonexistent set")
+	}
+}
+
+func TestStore_SetSecretSet(t *testing.T) {
+	store := NewStore(t.TempDir())
+	_ = store.Set("KEY", "value")
+	_ = store.CreateSet("group")
+
+	if err := store.SetSecretSet("KEY", "group"); err != nil {
+		t.Fatalf("SetSecretSet() error: %v", err)
+	}
+
+	secrets := store.GetSetSecrets("group")
+	if len(secrets) != 1 || secrets[0].Key != "KEY" {
+		t.Errorf("GetSetSecrets() = %v, want [{KEY}]", secrets)
+	}
+}
+
+func TestStore_SetSecretSet_Unassign(t *testing.T) {
+	store := NewStore(t.TempDir())
+	_ = store.SetWithSet("KEY", "val", "group")
+
+	if err := store.SetSecretSet("KEY", ""); err != nil {
+		t.Fatalf("SetSecretSet() error: %v", err)
+	}
+
+	secrets := store.GetSetSecrets("group")
+	if len(secrets) != 0 {
+		t.Errorf("GetSetSecrets() = %v, want empty", secrets)
+	}
+}
+
+func TestStore_SetSecretSet_NotFound(t *testing.T) {
+	store := NewStore(t.TempDir())
+	err := store.SetSecretSet("MISSING", "group")
+	if err == nil {
+		t.Error("SetSecretSet() should error on nonexistent key")
+	}
+}
+
+func TestStore_ListSets_Sorted(t *testing.T) {
+	store := NewStore(t.TempDir())
+	_ = store.CreateSet("beta")
+	_ = store.CreateSet("alpha")
+	_ = store.CreateSet("gamma")
+
+	sets := store.ListSets()
+	if len(sets) != 3 {
+		t.Fatalf("ListSets() returned %d, want 3", len(sets))
+	}
+	if sets[0].Name != "alpha" || sets[1].Name != "beta" || sets[2].Name != "gamma" {
+		t.Errorf("ListSets() not sorted: %v", sets)
+	}
+}
+
+func TestStore_GetSetSecrets_Sorted(t *testing.T) {
+	store := NewStore(t.TempDir())
+	_ = store.SetWithSet("CHARLIE", "c", "group")
+	_ = store.SetWithSet("ALPHA", "a", "group")
+	_ = store.SetWithSet("BRAVO", "b", "group")
+
+	secrets := store.GetSetSecrets("group")
+	if len(secrets) != 3 {
+		t.Fatalf("GetSetSecrets() returned %d, want 3", len(secrets))
+	}
+	if secrets[0].Key != "ALPHA" || secrets[1].Key != "BRAVO" || secrets[2].Key != "CHARLIE" {
+		t.Errorf("GetSetSecrets() not sorted: %v", secrets)
+	}
+}
+
+func TestStore_LegacyFormatBackwardCompat(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write legacy format (flat array)
+	legacy := `[{"key":"LEGACY","value":"old-format"}]`
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	got, ok := store.Get("LEGACY")
+	if !ok || got != "old-format" {
+		t.Errorf("Legacy format not loaded: ok=%v, got=%q", ok, got)
+	}
+}
+
+func TestStore_SetsPersistence(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write with first store
+	store1 := NewStore(dir)
+	_ = store1.CreateSet("persist-set")
+	_ = store1.SetWithSet("KEY", "val", "persist-set")
+
+	// Load with second store
+	store2 := NewStore(dir)
+	if err := store2.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	sets := store2.ListSets()
+	if len(sets) != 1 || sets[0].Name != "persist-set" || sets[0].Count != 1 {
+		t.Errorf("Sets not persisted: %v", sets)
+	}
+}

@@ -381,6 +381,55 @@ export async function validateWorkflow(
   );
 }
 
+// === Vault API ===
+
+export interface VaultSecret {
+  key: string;
+  set?: string;
+}
+
+export interface VaultSet {
+  name: string;
+  description?: string;
+  count: number;
+}
+
+export async function fetchVaultSecrets(): Promise<VaultSecret[]> {
+  return fetchJSON<VaultSecret[]>('/api/vault');
+}
+
+export async function createVaultSecret(key: string, value: string, set?: string): Promise<void> {
+  await mutateJSON<unknown>('/api/vault', 'POST', { key, value, ...(set ? { set } : {}) });
+}
+
+export async function getVaultSecret(key: string): Promise<{ key: string; value: string }> {
+  return fetchJSON<{ key: string; value: string }>(`/api/vault/${encodeURIComponent(key)}`);
+}
+
+export async function updateVaultSecret(key: string, value: string): Promise<void> {
+  await mutateJSON<unknown>(`/api/vault/${encodeURIComponent(key)}`, 'PUT', { value });
+}
+
+export async function deleteVaultSecret(key: string): Promise<void> {
+  return mutateJSON<void>(`/api/vault/${encodeURIComponent(key)}`, 'DELETE');
+}
+
+export async function fetchVaultSets(): Promise<VaultSet[]> {
+  return fetchJSON<VaultSet[]>('/api/vault/sets');
+}
+
+export async function createVaultSet(name: string): Promise<void> {
+  await mutateJSON<unknown>('/api/vault/sets', 'POST', { name });
+}
+
+export async function deleteVaultSet(name: string): Promise<void> {
+  return mutateJSON<void>(`/api/vault/sets/${encodeURIComponent(name)}`, 'DELETE');
+}
+
+export async function assignSecretToSet(key: string, set: string): Promise<void> {
+  await mutateJSON<unknown>(`/api/vault/${encodeURIComponent(key)}/set`, 'PUT', { set });
+}
+
 // === JSON-RPC Helper (for MCP protocol calls) ===
 
 interface JSONRPCRequest {

@@ -5,10 +5,15 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 // validKeyRegex matches valid vault key names (same pattern as variable names).
 var validKeyRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// validSetNameRegex matches valid variable set names.
+var validSetNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // handleVault routes all /api/vault requests.
 func (s *Server) handleVault(w http.ResponseWriter, r *http.Request) {
@@ -20,35 +25,49 @@ func (s *Server) handleVault(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/vault")
 	path = strings.TrimPrefix(path, "/")
 
+	// Split into segments for clean routing
+	segments := strings.SplitN(path, "/", 3)
+	first := segments[0]
+	second := ""
+	if len(segments) > 1 {
+		second = segments[1]
+	}
+
 	switch {
-	case path == "" && r.Method == http.MethodGet:
+	case first == "" && r.Method == http.MethodGet:
 		s.handleVaultList(w, r)
-	case path == "" && r.Method == http.MethodPost:
+	case first == "" && r.Method == http.MethodPost:
 		s.handleVaultCreate(w, r)
-	case path == "import" && r.Method == http.MethodPost:
+	case first == "import" && r.Method == http.MethodPost:
 		s.handleVaultImport(w, r)
-	case path != "" && path != "import":
-		s.handleVaultKey(w, r, path)
+	case first == "sets" && second == "" && r.Method == http.MethodGet:
+		s.handleVaultSetsList(w, r)
+	case first == "sets" && second == "" && r.Method == http.MethodPost:
+		s.handleVaultSetsCreate(w, r)
+	case first == "sets" && second != "" && r.Method == http.MethodDelete:
+		s.handleVaultSetsDelete(w, r, second)
+	case first != "" && second == "set" && r.Method == http.MethodPut:
+		s.handleVaultAssignSet(w, r, first)
+	case first != "" && first != "import" && first != "sets":
+		s.handleVaultKey(w, r, first)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-// handleVaultList returns all vault keys (no values).
+// handleVaultList returns all vault keys with set assignments (no values).
 // GET /api/vault
 func (s *Server) handleVaultList(w http.ResponseWriter, r *http.Request) {
-	keys := s.vaultStore.Keys()
-	if keys == nil {
-		keys = []string{}
-	}
+	secrets := s.vaultStore.List()
 
 	type keyEntry struct {
 		Key string `json:"key"`
+		Set string `json:"set,omitempty"`
 	}
 
-	entries := make([]keyEntry, len(keys))
-	for i, k := range keys {
-		entries[i] = keyEntry{Key: k}
+	entries := make([]keyEntry, len(secrets))
+	for i, sec := range secrets {
+		entries[i] = keyEntry{Key: sec.Key, Set: sec.Set}
 	}
 
 	writeJSON(w, entries)
@@ -60,6 +79,7 @@ func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
+		Set   string `json:"set,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -75,9 +95,16 @@ func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.vaultStore.Set(req.Key, req.Value); err != nil {
-		writeJSONError(w, "Failed to save secret: "+err.Error(), http.StatusInternalServerError)
-		return
+	if req.Set != "" {
+		if err := s.vaultStore.SetWithSet(req.Key, req.Value, req.Set); err != nil {
+			writeJSONError(w, "Failed to save secret: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if err := s.vaultStore.Set(req.Key, req.Value); err != nil {
+			writeJSONError(w, "Failed to save secret: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -122,6 +149,82 @@ func (s *Server) handleVaultKey(w http.ResponseWriter, r *http.Request, key stri
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleVaultSetsList returns all variable sets with member counts.
+// GET /api/vault/sets
+func (s *Server) handleVaultSetsList(w http.ResponseWriter, r *http.Request) {
+	sets := s.vaultStore.ListSets()
+	if sets == nil {
+		sets = []vault.SetSummary{}
+	}
+	writeJSON(w, sets)
+}
+
+// handleVaultSetsCreate creates a new variable set.
+// POST /api/vault/sets
+func (s *Server) handleVaultSetsCreate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		writeJSONError(w, "Name is required", http.StatusBadRequest)
+		return
+	}
+	if !validSetNameRegex.MatchString(req.Name) {
+		writeJSONError(w, "Invalid set name: must match [a-z0-9][a-z0-9-]*", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.vaultStore.CreateSet(req.Name); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			writeJSONError(w, err.Error(), http.StatusConflict)
+		} else {
+			writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, map[string]string{"name": req.Name, "status": "created"})
+}
+
+// handleVaultSetsDelete deletes a variable set.
+// DELETE /api/vault/sets/{name}
+func (s *Server) handleVaultSetsDelete(w http.ResponseWriter, r *http.Request, name string) {
+	if err := s.vaultStore.DeleteSet(name); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeJSONError(w, err.Error(), http.StatusNotFound)
+		} else {
+			writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleVaultAssignSet assigns or unassigns a secret to a set.
+// PUT /api/vault/{key}/set
+func (s *Server) handleVaultAssignSet(w http.ResponseWriter, r *http.Request, key string) {
+	var req struct {
+		Set string `json:"set"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.vaultStore.SetSecretSet(key, req.Set); err != nil {
+		writeJSONError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, map[string]string{"key": key, "set": req.Set, "status": "updated"})
 }
 
 // handleVaultImport bulk imports secrets.

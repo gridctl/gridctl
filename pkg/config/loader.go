@@ -12,7 +12,8 @@ import (
 
 // loadConfig holds options for LoadStack.
 type loadConfig struct {
-	vault VaultLookup
+	vault    VaultLookup
+	vaultSet VaultSetLookup
 }
 
 // LoadOption configures LoadStack behavior.
@@ -21,6 +22,11 @@ type LoadOption func(*loadConfig)
 // WithVault enables ${vault:KEY} resolution during stack loading.
 func WithVault(v VaultLookup) LoadOption {
 	return func(c *loadConfig) { c.vault = v }
+}
+
+// WithVaultSets enables secrets.sets injection during stack loading.
+func WithVaultSets(v VaultSetLookup) LoadOption {
+	return func(c *loadConfig) { c.vaultSet = v }
 }
 
 // LoadStack reads and parses a stack file.
@@ -80,7 +86,64 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 		return nil, err
 	}
 
+	// Inject variable set secrets into container env
+	if stack.Secrets != nil && len(stack.Secrets.Sets) > 0 && cfg.vaultSet != nil {
+		injectSetSecrets(&stack, cfg.vaultSet)
+	}
+
 	return &stack, nil
+}
+
+// injectSetSecrets resolves secrets from variable sets and injects them into container env.
+// Explicit env values in YAML take precedence over set-injected values.
+func injectSetSecrets(s *Stack, vault VaultSetLookup) {
+	// Collect all secrets from referenced sets
+	setSecrets := make(map[string]string)
+	for _, setName := range s.Secrets.Sets {
+		for _, sec := range vault.GetSetSecrets(setName) {
+			setSecrets[sec.Key] = sec.Value
+		}
+	}
+
+	if len(setSecrets) == 0 {
+		return
+	}
+
+	// Inject into MCP servers
+	for i := range s.MCPServers {
+		if s.MCPServers[i].Env == nil {
+			s.MCPServers[i].Env = make(map[string]string)
+		}
+		for k, v := range setSecrets {
+			if _, exists := s.MCPServers[i].Env[k]; !exists {
+				s.MCPServers[i].Env[k] = v
+			}
+		}
+	}
+
+	// Inject into agents
+	for i := range s.Agents {
+		if s.Agents[i].Env == nil {
+			s.Agents[i].Env = make(map[string]string)
+		}
+		for k, v := range setSecrets {
+			if _, exists := s.Agents[i].Env[k]; !exists {
+				s.Agents[i].Env[k] = v
+			}
+		}
+	}
+
+	// Inject into resources
+	for i := range s.Resources {
+		if s.Resources[i].Env == nil {
+			s.Resources[i].Env = make(map[string]string)
+		}
+		for k, v := range setSecrets {
+			if _, exists := s.Resources[i].Env[k]; !exists {
+				s.Resources[i].Env[k] = v
+			}
+		}
+	}
 }
 
 // expandStackVars expands variable references in all stack string fields using the

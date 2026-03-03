@@ -5,6 +5,7 @@ import { StatusDot } from '../ui/StatusDot';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
 import { triggerReload } from '../../lib/api';
+import { VaultPanel } from '../vault/VaultPanel';
 import logoSvg from '../../assets/brand/logo.svg';
 
 interface HeaderProps {
@@ -17,6 +18,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
+  const [showVault, setShowVault] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const [reloadMessage, setReloadMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout>>(null);
@@ -139,11 +141,15 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         />
         <IconButton
           icon={Settings}
-          onClick={() => {/* Open settings */}}
-          tooltip="Settings"
-          className="hover:text-primary hover:border-primary/30"
+          onClick={() => setShowVault(!showVault)}
+          tooltip="Vault"
+          className={cn(
+            'hover:text-primary hover:border-primary/30',
+            showVault && 'text-primary border-primary/30'
+          )}
         />
       </div>
+      {showVault && <VaultPanel onClose={() => setShowVault(false)} />}
     </header>
   );
 }

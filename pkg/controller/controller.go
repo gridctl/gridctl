@@ -20,6 +20,28 @@ import (
 	"github.com/gridctl/gridctl/pkg/vault"
 )
 
+// vaultSetAdapter wraps vault.Store to satisfy config.VaultSetLookup.
+type vaultSetAdapter struct {
+	store *vault.Store
+}
+
+func newVaultSetAdapter(store *vault.Store) *vaultSetAdapter {
+	return &vaultSetAdapter{store: store}
+}
+
+func (a *vaultSetAdapter) Get(key string) (string, bool) {
+	return a.store.Get(key)
+}
+
+func (a *vaultSetAdapter) GetSetSecrets(setName string) []config.VaultSecret {
+	secrets := a.store.GetSetSecrets(setName)
+	result := make([]config.VaultSecret, len(secrets))
+	for i, s := range secrets {
+		result[i] = config.VaultSecret{Key: s.Key, Value: s.Value}
+	}
+	return result
+}
+
 // Config holds all deploy configuration, replacing package-level variables.
 type Config struct {
 	StackPath   string
@@ -78,8 +100,8 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 
 	sc.vaultStore = vaultStore
 
-	// Load stack with vault resolution
-	stack, err := config.LoadStack(cfg.StackPath, config.WithVault(vaultStore))
+	// Load stack with vault resolution and set injection
+	stack, err := config.LoadStack(cfg.StackPath, config.WithVault(vaultStore), config.WithVaultSets(newVaultSetAdapter(vaultStore)))
 	if err != nil {
 		return fmt.Errorf("failed to load stack: %w", err)
 	}
