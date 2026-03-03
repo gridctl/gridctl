@@ -25,6 +25,9 @@ import (
 	"github.com/docker/docker/api/types/container"
 )
 
+// HTTP status code for locked vault.
+const statusLocked = 423
+
 // Server provides the combined API server for gridctl.
 type Server struct {
 	gateway        *mcp.Gateway
