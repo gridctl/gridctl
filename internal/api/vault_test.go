@@ -289,3 +289,183 @@ func TestHandleVault_ListIncludesSet(t *testing.T) {
 		t.Errorf("entry set = %q, want github", entries[0]["set"])
 	}
 }
+
+// --- Vault Encryption API Tests ---
+
+func TestHandleVault_Status_Unlocked(t *testing.T) {
+	server, store := setupVaultServer(t)
+	_ = store.Set("KEY", "val")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/vault/status", nil)
+	w := httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result map[string]any
+	_ = json.NewDecoder(w.Body).Decode(&result)
+	if result["locked"] != false {
+		t.Errorf("locked = %v, want false", result["locked"])
+	}
+	if result["encrypted"] != false {
+		t.Errorf("encrypted = %v, want false", result["encrypted"])
+	}
+	if result["secrets_count"] != float64(1) {
+		t.Errorf("secrets_count = %v, want 1", result["secrets_count"])
+	}
+}
+
+func TestHandleVault_Lock(t *testing.T) {
+	server, store := setupVaultServer(t)
+	_ = store.Set("API_KEY", "secret123")
+
+	body := `{"passphrase":"testpass"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("lock status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var result map[string]string
+	_ = json.NewDecoder(w.Body).Decode(&result)
+	if result["status"] != "locked" {
+		t.Errorf("status = %q, want locked", result["status"])
+	}
+}
+
+func TestHandleVault_LockAndUnlock(t *testing.T) {
+	server, store := setupVaultServer(t)
+	_ = store.Set("API_KEY", "secret123")
+
+	// Lock
+	body := `{"passphrase":"testpass"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("lock status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	// Reload store to simulate fresh start
+	_ = store.Load()
+
+	// Verify locked status
+	req = httptest.NewRequest(http.MethodGet, "/api/vault/status", nil)
+	w = httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	var status map[string]any
+	_ = json.NewDecoder(w.Body).Decode(&status)
+	if status["locked"] != true {
+		t.Errorf("expected locked=true after reload, got %v", status["locked"])
+	}
+
+	// Unlock
+	body = `{"passphrase":"testpass"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/vault/unlock", bytes.NewBufferString(body))
+	w = httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("unlock status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// Verify unlocked
+	req = httptest.NewRequest(http.MethodGet, "/api/vault/status", nil)
+	w = httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	_ = json.NewDecoder(w.Body).Decode(&status)
+	if status["locked"] != false {
+		t.Errorf("expected locked=false after unlock, got %v", status["locked"])
+	}
+}
+
+func TestHandleVault_Unlock_WrongPassphrase(t *testing.T) {
+	server, store := setupVaultServer(t)
+	_ = store.Set("KEY", "val")
+	_ = store.Lock("correct")
+	_ = store.Load() // reload to get locked state
+
+	body := `{"passphrase":"wrong"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/vault/unlock", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandleVault_LockedReturns423(t *testing.T) {
+	server, store := setupVaultServer(t)
+	_ = store.Set("KEY", "val")
+	_ = store.Lock("pass")
+	_ = store.Load() // reload to get locked state
+
+	// GET /api/vault should return 423
+	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	w := httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	if w.Code != 423 {
+		t.Errorf("locked list status = %d, want 423", w.Code)
+	}
+
+	var result map[string]string
+	_ = json.NewDecoder(w.Body).Decode(&result)
+	if result["error"] != "vault is locked" {
+		t.Errorf("error = %q, want 'vault is locked'", result["error"])
+	}
+}
+
+func TestHandleVault_LockedCreateReturns423(t *testing.T) {
+	server, store := setupVaultServer(t)
+	_ = store.Set("KEY", "val")
+	_ = store.Lock("pass")
+	_ = store.Load()
+
+	body := `{"key":"NEW","value":"val"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	if w.Code != 423 {
+		t.Errorf("locked create status = %d, want 423", w.Code)
+	}
+}
+
+func TestHandleVault_Lock_MissingPassphrase(t *testing.T) {
+	server, _ := setupVaultServer(t)
+
+	body := `{}`
+	req := httptest.NewRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleVault_StatusShowsEncrypted(t *testing.T) {
+	server, store := setupVaultServer(t)
+	_ = store.Set("KEY", "val")
+	_ = store.Lock("pass")
+
+	// Status should show encrypted=true even when not locked (data in memory)
+	req := httptest.NewRequest(http.MethodGet, "/api/vault/status", nil)
+	w := httptest.NewRecorder()
+	server.handleVault(w, req)
+
+	var result map[string]any
+	_ = json.NewDecoder(w.Body).Decode(&result)
+	if result["encrypted"] != true {
+		t.Errorf("encrypted = %v, want true", result["encrypted"])
+	}
+}
