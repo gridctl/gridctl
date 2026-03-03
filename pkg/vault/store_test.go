@@ -510,3 +510,249 @@ func TestStore_SetsPersistence(t *testing.T) {
 		t.Errorf("Sets not persisted: %v", sets)
 	}
 }
+
+// --- Encryption Tests ---
+
+func TestStore_Lock(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("API_KEY", "secret123")
+
+	if err := store.Lock("mypassphrase"); err != nil {
+		t.Fatalf("Lock() error: %v", err)
+	}
+
+	// secrets.enc should exist
+	if _, err := os.Stat(filepath.Join(dir, "secrets.enc")); err != nil {
+		t.Error("secrets.enc should exist after lock")
+	}
+
+	// secrets.json should be removed
+	if _, err := os.Stat(filepath.Join(dir, "secrets.json")); !os.IsNotExist(err) {
+		t.Error("secrets.json should be removed after lock")
+	}
+
+	// Store should not be locked (we just locked it, but data is in memory)
+	if store.IsLocked() {
+		t.Error("store should not be locked after Lock() (data in memory)")
+	}
+
+	// Data should still be accessible
+	val, ok := store.Get("API_KEY")
+	if !ok || val != "secret123" {
+		t.Errorf("Get after Lock: ok=%v, val=%q", ok, val)
+	}
+}
+
+func TestStore_LockUnlock_NewStore(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("DB_PASS", "s3cret")
+	_ = store.SetWithSet("TOKEN", "tok123", "github")
+
+	if err := store.Lock("pass"); err != nil {
+		t.Fatalf("Lock() error: %v", err)
+	}
+
+	// Load with new store — should be locked
+	store2 := NewStore(dir)
+	if err := store2.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if !store2.IsLocked() {
+		t.Error("new store should be locked")
+	}
+
+	// Can't access secrets while locked
+	if _, ok := store2.Get("DB_PASS"); ok {
+		t.Error("should not be able to Get while locked")
+	}
+
+	// Unlock
+	if err := store2.Unlock("pass"); err != nil {
+		t.Fatalf("Unlock() error: %v", err)
+	}
+
+	if store2.IsLocked() {
+		t.Error("should not be locked after Unlock")
+	}
+
+	// Verify data
+	val, ok := store2.Get("DB_PASS")
+	if !ok || val != "s3cret" {
+		t.Errorf("Get after Unlock: ok=%v, val=%q", ok, val)
+	}
+
+	// Verify sets survived
+	sets := store2.ListSets()
+	if len(sets) != 1 || sets[0].Name != "github" {
+		t.Errorf("sets after unlock: %v", sets)
+	}
+}
+
+func TestStore_Unlock_WrongPassphrase(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("KEY", "val")
+	_ = store.Lock("correct")
+
+	store2 := NewStore(dir)
+	_ = store2.Load()
+
+	if err := store2.Unlock("wrong"); err == nil {
+		t.Error("expected error with wrong passphrase")
+	}
+
+	if !store2.IsLocked() {
+		t.Error("should still be locked after failed unlock")
+	}
+}
+
+func TestStore_ChangePassphrase(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("SECRET", "data")
+	_ = store.Lock("oldpass")
+
+	if err := store.ChangePassphrase("oldpass", "newpass"); err != nil {
+		t.Fatalf("ChangePassphrase() error: %v", err)
+	}
+
+	// New store should unlock with new passphrase
+	store2 := NewStore(dir)
+	_ = store2.Load()
+
+	if err := store2.Unlock("newpass"); err != nil {
+		t.Fatalf("Unlock with new passphrase error: %v", err)
+	}
+
+	val, ok := store2.Get("SECRET")
+	if !ok || val != "data" {
+		t.Errorf("Get after passphrase change: ok=%v, val=%q", ok, val)
+	}
+
+	// Old passphrase should fail
+	store3 := NewStore(dir)
+	_ = store3.Load()
+
+	if err := store3.Unlock("oldpass"); err == nil {
+		t.Error("expected error with old passphrase")
+	}
+}
+
+func TestStore_ChangePassphrase_WrongOld(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("KEY", "val")
+	_ = store.Lock("correct")
+
+	if err := store.ChangePassphrase("wrong", "newpass"); err == nil {
+		t.Error("expected error with wrong old passphrase")
+	}
+}
+
+func TestStore_ModifyAfterUnlock(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("KEY1", "val1")
+	_ = store.Lock("pass")
+
+	// Unlock and modify
+	store2 := NewStore(dir)
+	_ = store2.Load()
+	_ = store2.Unlock("pass")
+	_ = store2.Set("KEY2", "val2")
+
+	// Verify re-encrypted file is valid
+	store3 := NewStore(dir)
+	_ = store3.Load()
+
+	if !store3.IsLocked() {
+		t.Error("should be locked on fresh load")
+	}
+
+	_ = store3.Unlock("pass")
+
+	val1, ok1 := store3.Get("KEY1")
+	val2, ok2 := store3.Get("KEY2")
+	if !ok1 || val1 != "val1" {
+		t.Errorf("KEY1: ok=%v, val=%q", ok1, val1)
+	}
+	if !ok2 || val2 != "val2" {
+		t.Errorf("KEY2: ok=%v, val=%q", ok2, val2)
+	}
+}
+
+func TestStore_EncryptedFilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("KEY", "val")
+	_ = store.Lock("pass")
+
+	info, err := os.Stat(filepath.Join(dir, "secrets.enc"))
+	if err != nil {
+		t.Fatalf("stat error: %v", err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("permissions = %o, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestStore_IsEncrypted(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("KEY", "val")
+
+	if store.IsEncrypted() {
+		t.Error("should not be encrypted initially")
+	}
+
+	_ = store.Lock("pass")
+
+	if !store.IsEncrypted() {
+		t.Error("should be encrypted after lock")
+	}
+}
+
+func TestStore_LockAlreadyLocked(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("KEY", "val")
+	_ = store.Lock("pass")
+
+	// Locking again should re-encrypt (not error)
+	if err := store.Lock("newpass"); err != nil {
+		t.Fatalf("second Lock() error: %v", err)
+	}
+
+	// Should unlock with new passphrase
+	store2 := NewStore(dir)
+	_ = store2.Load()
+	if err := store2.Unlock("newpass"); err != nil {
+		t.Fatalf("Unlock with new pass error: %v", err)
+	}
+}
+
+func TestStore_DeleteWhileEncrypted(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Set("KEEP", "val1")
+	_ = store.Set("DEL", "val2")
+	_ = store.Lock("pass")
+
+	// Delete while encrypted
+	_ = store.Delete("DEL")
+
+	// Reload and verify
+	store2 := NewStore(dir)
+	_ = store2.Load()
+	_ = store2.Unlock("pass")
+
+	if _, ok := store2.Get("DEL"); ok {
+		t.Error("deleted key should not exist")
+	}
+	if val, ok := store2.Get("KEEP"); !ok || val != "val1" {
+		t.Error("kept key should exist")
+	}
+}
