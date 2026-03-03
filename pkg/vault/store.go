@@ -14,10 +14,13 @@ import (
 
 // Store manages secrets in a JSON file with mutex-protected access.
 type Store struct {
-	baseDir string
-	mu      sync.RWMutex
-	secrets map[string]Secret
-	sets    map[string]Set
+	baseDir    string
+	mu         sync.RWMutex
+	secrets    map[string]Secret
+	sets       map[string]Set
+	locked     bool   // true when secrets.enc exists and vault is not unlocked
+	encrypted  bool   // true when vault was loaded from secrets.enc (re-encrypt on save)
+	passphrase string // held in memory for re-encryption after modifications
 }
 
 // NewStore creates a vault store rooted at the given directory.
@@ -29,14 +32,24 @@ func NewStore(baseDir string) *Store {
 	}
 }
 
-// Load reads secrets.json into memory. If the file doesn't exist, starts empty.
-// Supports both legacy flat array format and new object format with sets.
+// Load reads secrets into memory. Checks for secrets.enc first (encrypted),
+// then falls back to secrets.json (plaintext). If the file doesn't exist, starts empty.
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.secrets = make(map[string]Secret)
 	s.sets = make(map[string]Set)
+	s.locked = false
+	s.encrypted = false
+
+	// Check for encrypted vault first
+	encPath := s.encryptedPath()
+	if _, err := os.Stat(encPath); err == nil {
+		s.locked = true
+		s.encrypted = true
+		return nil
+	}
 
 	path := s.secretsPath()
 	data, err := os.ReadFile(path)
@@ -47,6 +60,11 @@ func (s *Store) Load() error {
 		return fmt.Errorf("reading vault: %w", err)
 	}
 
+	return s.parseSecretsData(data)
+}
+
+// parseSecretsData parses secrets JSON into the in-memory maps.
+func (s *Store) parseSecretsData(data []byte) error {
 	// Try new format first (object with secrets and sets)
 	var sd storeData
 	if err := json.Unmarshal(data, &sd); err == nil && (sd.Secrets != nil || sd.Sets != nil) {
@@ -339,14 +357,177 @@ func (s *Store) GetSetSecrets(setName string) []Secret {
 	return result
 }
 
+// IsLocked returns true when the vault is encrypted and not yet unlocked.
+func (s *Store) IsLocked() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.locked
+}
+
+// IsEncrypted returns true when the vault has an encrypted backing file.
+func (s *Store) IsEncrypted() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.encrypted
+}
+
+// Lock encrypts the vault with a passphrase.
+func (s *Store) Lock(passphrase string) error {
+	return state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if err := s.loadLocked(); err != nil {
+			return err
+		}
+
+		data, err := s.serializeSecrets()
+		if err != nil {
+			return err
+		}
+
+		ev, err := LockVault(data, passphrase)
+		if err != nil {
+			return fmt.Errorf("encrypting vault: %w", err)
+		}
+
+		encData, err := marshalEncryptedVault(ev)
+		if err != nil {
+			return err
+		}
+
+		if err := os.MkdirAll(s.baseDir, 0700); err != nil {
+			return fmt.Errorf("creating vault directory: %w", err)
+		}
+
+		if err := atomicWrite(s.encryptedPath(), encData, 0600); err != nil {
+			return err
+		}
+
+		// Remove plaintext file
+		_ = os.Remove(s.secretsPath())
+
+		s.encrypted = true
+		s.locked = false
+		s.passphrase = passphrase
+		return nil
+	})
+}
+
+// Unlock decrypts an encrypted vault into memory.
+func (s *Store) Unlock(passphrase string) error {
+	return state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if !s.locked {
+			return nil
+		}
+
+		data, err := os.ReadFile(s.encryptedPath())
+		if err != nil {
+			return fmt.Errorf("reading encrypted vault: %w", err)
+		}
+
+		ev, err := unmarshalEncryptedVault(data)
+		if err != nil {
+			return err
+		}
+
+		plaintext, err := UnlockVault(ev, passphrase)
+		if err != nil {
+			return err
+		}
+
+		s.secrets = make(map[string]Secret)
+		s.sets = make(map[string]Set)
+		if err := s.parseSecretsData(plaintext); err != nil {
+			return err
+		}
+
+		s.locked = false
+		s.passphrase = passphrase
+		return nil
+	})
+}
+
+// ChangePassphrase re-encrypts the DEK with a new passphrase.
+func (s *Store) ChangePassphrase(oldPass, newPass string) error {
+	if !s.encrypted {
+		return fmt.Errorf("vault is not encrypted")
+	}
+
+	return state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		data, err := os.ReadFile(s.encryptedPath())
+		if err != nil {
+			return fmt.Errorf("reading encrypted vault: %w", err)
+		}
+
+		ev, err := unmarshalEncryptedVault(data)
+		if err != nil {
+			return err
+		}
+
+		changed, err := ChangePassphrase(ev, oldPass, newPass)
+		if err != nil {
+			return err
+		}
+
+		encData, err := marshalEncryptedVault(changed)
+		if err != nil {
+			return err
+		}
+
+		if err := atomicWrite(s.encryptedPath(), encData, 0600); err != nil {
+			return err
+		}
+
+		s.passphrase = newPass
+		return nil
+	})
+}
+
 // secretsPath returns the path to the secrets JSON file.
 func (s *Store) secretsPath() string {
 	return filepath.Join(s.baseDir, "secrets.json")
 }
 
+// encryptedPath returns the path to the encrypted vault file.
+func (s *Store) encryptedPath() string {
+	return filepath.Join(s.baseDir, "secrets.enc")
+}
+
 // loadLocked reads from disk without acquiring the mutex (caller must hold it).
-// Supports both legacy flat array format and new object format.
+// Supports plaintext, legacy, and encrypted formats.
 func (s *Store) loadLocked() error {
+	// If encrypted and unlocked, read from encrypted file
+	if s.encrypted && !s.locked && s.passphrase != "" {
+		data, err := os.ReadFile(s.encryptedPath())
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return fmt.Errorf("reading encrypted vault: %w", err)
+		}
+
+		ev, err := unmarshalEncryptedVault(data)
+		if err != nil {
+			return err
+		}
+
+		plaintext, err := UnlockVault(ev, s.passphrase)
+		if err != nil {
+			return err
+		}
+
+		s.secrets = make(map[string]Secret)
+		s.sets = make(map[string]Set)
+		return s.parseSecretsData(plaintext)
+	}
+
 	path := s.secretsPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -356,63 +537,54 @@ func (s *Store) loadLocked() error {
 		return fmt.Errorf("reading vault: %w", err)
 	}
 
-	// Try new format first
-	var sd storeData
-	if err := json.Unmarshal(data, &sd); err == nil && (sd.Secrets != nil || sd.Sets != nil) {
-		s.secrets = make(map[string]Secret, len(sd.Secrets))
-		for _, sec := range sd.Secrets {
-			s.secrets[sec.Key] = sec
-		}
-		s.sets = make(map[string]Set, len(sd.Sets))
-		for _, set := range sd.Sets {
-			s.sets[set.Name] = set
-		}
-		return nil
-	}
-
-	// Fall back to legacy flat array
-	var secrets []Secret
-	if err := json.Unmarshal(data, &secrets); err != nil {
-		return fmt.Errorf("parsing vault: %w", err)
-	}
-
-	s.secrets = make(map[string]Secret, len(secrets))
-	for _, sec := range secrets {
-		s.secrets[sec.Key] = sec
-	}
+	s.secrets = make(map[string]Secret)
 	s.sets = make(map[string]Set)
-	return nil
+	return s.parseSecretsData(data)
 }
 
-// saveLocked writes secrets to disk atomically. Creates directory on first write.
-// Always writes in the new object format.
-func (s *Store) saveLocked() error {
-	if err := os.MkdirAll(s.baseDir, 0700); err != nil {
-		return fmt.Errorf("creating vault directory: %w", err)
-	}
-
-	// Sort secrets for deterministic output
+// serializeSecrets returns the current secrets as JSON.
+func (s *Store) serializeSecrets() ([]byte, error) {
 	secrets := make([]Secret, 0, len(s.secrets))
 	for _, sec := range s.secrets {
 		secrets = append(secrets, sec)
 	}
 	sort.Slice(secrets, func(i, j int) bool { return secrets[i].Key < secrets[j].Key })
 
-	// Sort sets for deterministic output
 	sets := make([]Set, 0, len(s.sets))
 	for _, set := range s.sets {
 		sets = append(sets, set)
 	}
 	sort.Slice(sets, func(i, j int) bool { return sets[i].Name < sets[j].Name })
 
-	sd := storeData{
-		Secrets: secrets,
-		Sets:    sets,
+	sd := storeData{Secrets: secrets, Sets: sets}
+	return json.MarshalIndent(sd, "", "  ")
+}
+
+// saveLocked writes secrets to disk atomically. Creates directory on first write.
+// If the vault is encrypted, re-encrypts and writes to secrets.enc.
+func (s *Store) saveLocked() error {
+	if err := os.MkdirAll(s.baseDir, 0700); err != nil {
+		return fmt.Errorf("creating vault directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(sd, "", "  ")
+	data, err := s.serializeSecrets()
 	if err != nil {
 		return fmt.Errorf("marshaling vault: %w", err)
+	}
+
+	// Re-encrypt if vault is in encrypted mode
+	if s.encrypted && s.passphrase != "" {
+		ev, err := LockVault(data, s.passphrase)
+		if err != nil {
+			return fmt.Errorf("re-encrypting vault: %w", err)
+		}
+
+		encData, err := marshalEncryptedVault(ev)
+		if err != nil {
+			return err
+		}
+
+		return atomicWrite(s.encryptedPath(), encData, 0600)
 	}
 
 	return atomicWrite(s.secretsPath(), data, 0600)
