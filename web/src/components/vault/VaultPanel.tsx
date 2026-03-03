@@ -14,6 +14,8 @@ import {
   ChevronRight,
   AlertCircle,
   Package,
+  Lock,
+  LockOpen,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
@@ -29,8 +31,12 @@ import {
   createVaultSet,
   deleteVaultSet,
   assignSecretToSet,
+  fetchVaultStatus,
+  unlockVault,
+  lockVault,
 } from '../../lib/api';
 import type { VaultSecret } from '../../lib/api';
+import { VaultLockPrompt } from './VaultLockPrompt';
 
 interface VaultPanelProps {
   onClose: () => void;
@@ -41,6 +47,15 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const sets = useVaultStore((s) => s.sets);
   const loading = useVaultStore((s) => s.loading);
   const error = useVaultStore((s) => s.error);
+  const locked = useVaultStore((s) => s.locked);
+  const encrypted = useVaultStore((s) => s.encrypted);
+
+  // Lock UI state
+  const [showLockForm, setShowLockForm] = useState(false);
+  const [lockPassphrase, setLockPassphrase] = useState('');
+  const [lockConfirm, setLockConfirm] = useState('');
+  const [lockError, setLockError] = useState<string | null>(null);
+  const [isLocking, setIsLocking] = useState(false);
 
   // Quick-add form state
   const [newKey, setNewKey] = useState('');
@@ -73,12 +88,18 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     useVaultStore.getState().setLoading(true);
     useVaultStore.getState().setError(null);
     try {
-      const [secretsData, setsData] = await Promise.all([
-        fetchVaultSecrets(),
-        fetchVaultSets(),
-      ]);
-      useVaultStore.getState().setSecrets(secretsData);
-      useVaultStore.getState().setSets(setsData);
+      const status = await fetchVaultStatus();
+      useVaultStore.getState().setLocked(status.locked);
+      useVaultStore.getState().setEncrypted(status.encrypted);
+
+      if (!status.locked) {
+        const [secretsData, setsData] = await Promise.all([
+          fetchVaultSecrets(),
+          fetchVaultSets(),
+        ]);
+        useVaultStore.getState().setSecrets(secretsData);
+        useVaultStore.getState().setSets(setsData);
+      }
     } catch (err) {
       useVaultStore.getState().setError(err instanceof Error ? err.message : 'Failed to load vault');
     } finally {
@@ -109,6 +130,41 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  const handleUnlock = useCallback(async (passphrase: string): Promise<boolean> => {
+    try {
+      await unlockVault(passphrase);
+      useVaultStore.getState().setLocked(false);
+      await refresh();
+      showToast('success', 'Vault unlocked');
+      return true;
+    } catch {
+      return false;
+    }
+  }, [refresh]);
+
+  const handleLock = useCallback(async () => {
+    if (!lockPassphrase.trim()) return;
+    if (lockPassphrase !== lockConfirm) {
+      setLockError('Passphrases do not match');
+      return;
+    }
+
+    setIsLocking(true);
+    setLockError(null);
+    try {
+      await lockVault(lockPassphrase);
+      setShowLockForm(false);
+      setLockPassphrase('');
+      setLockConfirm('');
+      showToast('success', 'Vault encrypted');
+      await refresh();
+    } catch (err) {
+      setLockError(err instanceof Error ? err.message : 'Failed to lock vault');
+    } finally {
+      setIsLocking(false);
+    }
+  }, [lockPassphrase, lockConfirm, refresh]);
 
   const handleReveal = useCallback(async (key: string) => {
     if (revealed[key]) {
@@ -250,22 +306,90 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
         <div className="flex items-center gap-2">
           <KeyRound size={16} className="text-primary" />
           <h2 className="text-sm font-medium text-text-primary">Vault</h2>
-          {(secrets ?? []).length > 0 && (
+          {encrypted && !locked && (
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1">
+              <LockOpen size={10} />
+              Encrypted
+            </span>
+          )}
+          {locked && (
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">
+              <Lock size={10} />
+              Locked
+            </span>
+          )}
+          {!locked && (secrets ?? []).length > 0 && (
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary">
               {(secrets ?? []).length}
             </span>
           )}
         </div>
-        <button
-          onClick={onClose}
-          className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors"
-        >
-          <X size={14} className="text-text-muted" />
-        </button>
+        <div className="flex items-center gap-1">
+          {!locked && !encrypted && (secrets ?? []).length > 0 && (
+            <button
+              onClick={() => setShowLockForm(!showLockForm)}
+              className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors"
+              title="Encrypt vault"
+            >
+              <Lock size={14} className="text-text-muted hover:text-primary" />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors"
+          >
+            <X size={14} className="text-text-muted" />
+          </button>
+        </div>
       </div>
 
+      {/* Lock prompt */}
+      {locked && (
+        <VaultLockPrompt onUnlock={handleUnlock} />
+      )}
+
       {/* Content */}
-      <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
+      {!locked && <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
+        {/* Lock form */}
+        {showLockForm && (
+          <div className="px-4 pt-3 pb-2 border-b border-border-subtle/50">
+            <div className="space-y-2">
+              <div className="text-xs text-text-secondary mb-2">Encrypt vault with a passphrase:</div>
+              <input
+                type="password"
+                value={lockPassphrase}
+                onChange={(e) => { setLockPassphrase(e.target.value); setLockError(null); }}
+                placeholder="New passphrase"
+                autoFocus
+                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
+              />
+              <input
+                type="password"
+                value={lockConfirm}
+                onChange={(e) => { setLockConfirm(e.target.value); setLockError(null); }}
+                placeholder="Confirm passphrase"
+                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLock(); }}
+              />
+              {lockError && (
+                <p className="text-[10px] text-status-error">{lockError}</p>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => { setShowLockForm(false); setLockPassphrase(''); setLockConfirm(''); setLockError(null); }}
+                  className="px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <Button variant="primary" size="sm" onClick={handleLock} disabled={!lockPassphrase.trim() || !lockConfirm.trim() || isLocking}>
+                  <Lock size={12} />
+                  {isLocking ? 'Encrypting...' : 'Encrypt'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Error */}
         {error && (
           <div className="mx-4 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error">
@@ -494,7 +618,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
             />
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Delete confirmation overlay */}
       {confirmDelete && (

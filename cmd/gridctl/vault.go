@@ -125,6 +125,33 @@ var vaultSetsDeleteCmd = &cobra.Command{
 	},
 }
 
+var vaultLockCmd = &cobra.Command{
+	Use:   "lock",
+	Short: "Encrypt the vault with a passphrase",
+	Long:  "Encrypt all vault secrets at rest using envelope encryption (XChaCha20-Poly1305 + Argon2id).",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runVaultLock()
+	},
+}
+
+var vaultUnlockCmd = &cobra.Command{
+	Use:   "unlock",
+	Short: "Decrypt the vault for this session",
+	Long:  "Unlock an encrypted vault by providing the passphrase. Secrets are decrypted into memory.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runVaultUnlock()
+	},
+}
+
+var vaultChangePassphraseCmd = &cobra.Command{
+	Use:   "change-passphrase",
+	Short: "Change the vault passphrase",
+	Long:  "Change the vault encryption passphrase. Only re-encrypts the key envelope — secrets data is unchanged.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runVaultChangePassphrase()
+	},
+}
+
 func init() {
 	vaultSetCmd.Flags().StringVar(&vaultSetValue, "value", "", "Secret value (non-interactive)")
 	vaultSetCmd.Flags().StringVar(&vaultSetSetName, "set", "", "Assign secret to a variable set")
@@ -145,6 +172,9 @@ func init() {
 	vaultCmd.AddCommand(vaultImportCmd)
 	vaultCmd.AddCommand(vaultExportCmd)
 	vaultCmd.AddCommand(vaultSetsCmd)
+	vaultCmd.AddCommand(vaultLockCmd)
+	vaultCmd.AddCommand(vaultUnlockCmd)
+	vaultCmd.AddCommand(vaultChangePassphraseCmd)
 }
 
 func loadVault() (*vault.Store, error) {
@@ -155,9 +185,82 @@ func loadVault() (*vault.Store, error) {
 	return store, nil
 }
 
+// ensureUnlocked prompts for the passphrase if the vault is locked.
+func ensureUnlocked(store *vault.Store) error {
+	if !store.IsLocked() {
+		return nil
+	}
+
+	pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE")
+	if pass == "" {
+		if !isatty.IsTerminal(os.Stdin.Fd()) {
+			return fmt.Errorf("vault is locked. Set GRIDCTL_VAULT_PASSPHRASE or run 'gridctl vault unlock'")
+		}
+		fmt.Print("Vault passphrase: ")
+		raw, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Println()
+		if err != nil {
+			return fmt.Errorf("reading passphrase: %w", err)
+		}
+		pass = string(raw)
+	}
+
+	return store.Unlock(pass)
+}
+
+// promptPassphrase reads a hidden passphrase from the terminal.
+func promptPassphrase(prompt string) (string, error) {
+	pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE")
+	if pass != "" {
+		return pass, nil
+	}
+
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		return "", fmt.Errorf("interactive input required. Set GRIDCTL_VAULT_PASSPHRASE for non-interactive use")
+	}
+
+	fmt.Print(prompt)
+	raw, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("reading input: %w", err)
+	}
+	return string(raw), nil
+}
+
+// promptPassphraseConfirm reads a passphrase twice and confirms they match.
+func promptPassphraseConfirm() (string, error) {
+	pass1, err := promptPassphrase("New passphrase: ")
+	if err != nil {
+		return "", err
+	}
+	if pass1 == "" {
+		return "", fmt.Errorf("passphrase cannot be empty")
+	}
+
+	// Skip confirmation if using env var
+	if os.Getenv("GRIDCTL_VAULT_PASSPHRASE") != "" {
+		return pass1, nil
+	}
+
+	pass2, err := promptPassphrase("Confirm passphrase: ")
+	if err != nil {
+		return "", err
+	}
+
+	if pass1 != pass2 {
+		return "", fmt.Errorf("passphrases do not match")
+	}
+	return pass1, nil
+}
+
 func runVaultSet(key string) error {
 	store, err := loadVault()
 	if err != nil {
+		return err
+	}
+
+	if err := ensureUnlocked(store); err != nil {
 		return err
 	}
 
@@ -209,6 +312,10 @@ func runVaultGet(key string) error {
 		return err
 	}
 
+	if err := ensureUnlocked(store); err != nil {
+		return err
+	}
+
 	value, ok := store.Get(key)
 	if !ok {
 		return fmt.Errorf("secret %q not found", key)
@@ -226,6 +333,10 @@ func runVaultGet(key string) error {
 func runVaultList() error {
 	store, err := loadVault()
 	if err != nil {
+		return err
+	}
+
+	if err := ensureUnlocked(store); err != nil {
 		return err
 	}
 
@@ -249,6 +360,10 @@ func runVaultList() error {
 func runVaultDelete(key string) error {
 	store, err := loadVault()
 	if err != nil {
+		return err
+	}
+
+	if err := ensureUnlocked(store); err != nil {
 		return err
 	}
 
@@ -282,6 +397,10 @@ func runVaultImport(file string) error {
 		return err
 	}
 
+	if err := ensureUnlocked(store); err != nil {
+		return err
+	}
+
 	secrets, err := parseSecretsFile(file, vaultImportFmt)
 	if err != nil {
 		return err
@@ -300,6 +419,10 @@ func runVaultImport(file string) error {
 func runVaultExport() error {
 	store, err := loadVault()
 	if err != nil {
+		return err
+	}
+
+	if err := ensureUnlocked(store); err != nil {
 		return err
 	}
 
@@ -341,6 +464,10 @@ func runVaultSetsList() error {
 		return err
 	}
 
+	if err := ensureUnlocked(store); err != nil {
+		return err
+	}
+
 	sets := store.ListSets()
 	if len(sets) == 0 {
 		fmt.Println("No variable sets defined")
@@ -364,6 +491,10 @@ func runVaultSetsCreate(name string) error {
 		return err
 	}
 
+	if err := ensureUnlocked(store); err != nil {
+		return err
+	}
+
 	if err := store.CreateSet(name); err != nil {
 		return err
 	}
@@ -379,12 +510,97 @@ func runVaultSetsDelete(name string) error {
 		return err
 	}
 
+	if err := ensureUnlocked(store); err != nil {
+		return err
+	}
+
 	if err := store.DeleteSet(name); err != nil {
 		return err
 	}
 
 	printer := output.New()
 	printer.Info("Variable set deleted", "name", name)
+	return nil
+}
+
+func runVaultLock() error {
+	store, err := loadVault()
+	if err != nil {
+		return err
+	}
+
+	// If already locked, unlock first so we can re-encrypt
+	if store.IsLocked() {
+		if err := ensureUnlocked(store); err != nil {
+			return err
+		}
+	}
+
+	pass, err := promptPassphraseConfirm()
+	if err != nil {
+		return err
+	}
+
+	if err := store.Lock(pass); err != nil {
+		return err
+	}
+
+	printer := output.New()
+	printer.Info("Vault locked", "encryption", "XChaCha20-Poly1305", "kdf", "Argon2id")
+	return nil
+}
+
+func runVaultUnlock() error {
+	store, err := loadVault()
+	if err != nil {
+		return err
+	}
+
+	if !store.IsLocked() {
+		fmt.Println("Vault is already unlocked")
+		return nil
+	}
+
+	pass, err := promptPassphrase("Vault passphrase: ")
+	if err != nil {
+		return err
+	}
+
+	if err := store.Unlock(pass); err != nil {
+		return err
+	}
+
+	printer := output.New()
+	printer.Info("Vault unlocked", "secrets", len(store.List()))
+	return nil
+}
+
+func runVaultChangePassphrase() error {
+	store, err := loadVault()
+	if err != nil {
+		return err
+	}
+
+	if !store.IsEncrypted() {
+		return fmt.Errorf("vault is not encrypted. Run 'gridctl vault lock' first")
+	}
+
+	oldPass, err := promptPassphrase("Current passphrase: ")
+	if err != nil {
+		return err
+	}
+
+	newPass, err := promptPassphraseConfirm()
+	if err != nil {
+		return err
+	}
+
+	if err := store.ChangePassphrase(oldPass, newPass); err != nil {
+		return err
+	}
+
+	printer := output.New()
+	printer.Info("Passphrase changed")
 	return nil
 }
 
