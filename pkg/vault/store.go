@@ -17,6 +17,7 @@ type Store struct {
 	baseDir string
 	mu      sync.RWMutex
 	secrets map[string]Secret
+	sets    map[string]Set
 }
 
 // NewStore creates a vault store rooted at the given directory.
@@ -24,15 +25,18 @@ func NewStore(baseDir string) *Store {
 	return &Store{
 		baseDir: baseDir,
 		secrets: make(map[string]Secret),
+		sets:    make(map[string]Set),
 	}
 }
 
 // Load reads secrets.json into memory. If the file doesn't exist, starts empty.
+// Supports both legacy flat array format and new object format with sets.
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.secrets = make(map[string]Secret)
+	s.sets = make(map[string]Set)
 
 	path := s.secretsPath()
 	data, err := os.ReadFile(path)
@@ -43,6 +47,19 @@ func (s *Store) Load() error {
 		return fmt.Errorf("reading vault: %w", err)
 	}
 
+	// Try new format first (object with secrets and sets)
+	var sd storeData
+	if err := json.Unmarshal(data, &sd); err == nil && (sd.Secrets != nil || sd.Sets != nil) {
+		for _, sec := range sd.Secrets {
+			s.secrets[sec.Key] = sec
+		}
+		for _, set := range sd.Sets {
+			s.sets[set.Name] = set
+		}
+		return nil
+	}
+
+	// Fall back to legacy flat array format
 	var secrets []Secret
 	if err := json.Unmarshal(data, &secrets); err != nil {
 		return fmt.Errorf("parsing vault: %w", err)
@@ -72,12 +89,38 @@ func (s *Store) Set(key, value string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		// Reload from disk inside lock to avoid clobbering concurrent writes
 		if err := s.loadLocked(); err != nil {
 			return err
 		}
 
-		s.secrets[key] = Secret{Key: key, Value: value}
+		existing, ok := s.secrets[key]
+		if ok {
+			existing.Value = value
+			s.secrets[key] = existing
+		} else {
+			s.secrets[key] = Secret{Key: key, Value: value}
+		}
+		return s.saveLocked()
+	})
+}
+
+// SetWithSet adds or updates a secret and assigns it to a set.
+func (s *Store) SetWithSet(key, value, setName string) error {
+	return state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if err := s.loadLocked(); err != nil {
+			return err
+		}
+
+		s.secrets[key] = Secret{Key: key, Value: value, Set: setName}
+		// Auto-create set if it doesn't exist
+		if setName != "" {
+			if _, exists := s.sets[setName]; !exists {
+				s.sets[setName] = Set{Name: setName}
+			}
+		}
 		return s.saveLocked()
 	})
 }
@@ -181,12 +224,128 @@ func (s *Store) Values() []string {
 	return vals
 }
 
+// SetSecretSet assigns a secret to a set (or unassigns if setName is empty).
+func (s *Store) SetSecretSet(key, setName string) error {
+	return state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if err := s.loadLocked(); err != nil {
+			return err
+		}
+
+		sec, ok := s.secrets[key]
+		if !ok {
+			return fmt.Errorf("secret %q not found", key)
+		}
+
+		sec.Set = setName
+		s.secrets[key] = sec
+
+		// Auto-create set if it doesn't exist
+		if setName != "" {
+			if _, exists := s.sets[setName]; !exists {
+				s.sets[setName] = Set{Name: setName}
+			}
+		}
+
+		return s.saveLocked()
+	})
+}
+
+// ListSets returns all sets with their member counts.
+func (s *Store) ListSets() []SetSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Count members per set
+	counts := make(map[string]int)
+	for _, sec := range s.secrets {
+		if sec.Set != "" {
+			counts[sec.Set]++
+		}
+	}
+
+	result := make([]SetSummary, 0, len(s.sets))
+	for _, set := range s.sets {
+		result = append(result, SetSummary{
+			Name:        set.Name,
+			Description: set.Description,
+			Count:       counts[set.Name],
+		})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
+// CreateSet creates an empty variable set.
+func (s *Store) CreateSet(name string) error {
+	return state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if err := s.loadLocked(); err != nil {
+			return err
+		}
+
+		if _, exists := s.sets[name]; exists {
+			return fmt.Errorf("set %q already exists", name)
+		}
+
+		s.sets[name] = Set{Name: name}
+		return s.saveLocked()
+	})
+}
+
+// DeleteSet removes a set. Secrets in the set are unassigned but not deleted.
+func (s *Store) DeleteSet(name string) error {
+	return state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if err := s.loadLocked(); err != nil {
+			return err
+		}
+
+		if _, exists := s.sets[name]; !exists {
+			return fmt.Errorf("set %q not found", name)
+		}
+
+		// Unassign secrets from this set
+		for k, sec := range s.secrets {
+			if sec.Set == name {
+				sec.Set = ""
+				s.secrets[k] = sec
+			}
+		}
+
+		delete(s.sets, name)
+		return s.saveLocked()
+	})
+}
+
+// GetSetSecrets returns all secrets belonging to a set, sorted by key.
+func (s *Store) GetSetSecrets(setName string) []Secret {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []Secret
+	for _, sec := range s.secrets {
+		if sec.Set == setName {
+			result = append(result, sec)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Key < result[j].Key })
+	return result
+}
+
 // secretsPath returns the path to the secrets JSON file.
 func (s *Store) secretsPath() string {
 	return filepath.Join(s.baseDir, "secrets.json")
 }
 
 // loadLocked reads from disk without acquiring the mutex (caller must hold it).
+// Supports both legacy flat array format and new object format.
 func (s *Store) loadLocked() error {
 	path := s.secretsPath()
 	data, err := os.ReadFile(path)
@@ -197,6 +356,21 @@ func (s *Store) loadLocked() error {
 		return fmt.Errorf("reading vault: %w", err)
 	}
 
+	// Try new format first
+	var sd storeData
+	if err := json.Unmarshal(data, &sd); err == nil && (sd.Secrets != nil || sd.Sets != nil) {
+		s.secrets = make(map[string]Secret, len(sd.Secrets))
+		for _, sec := range sd.Secrets {
+			s.secrets[sec.Key] = sec
+		}
+		s.sets = make(map[string]Set, len(sd.Sets))
+		for _, set := range sd.Sets {
+			s.sets[set.Name] = set
+		}
+		return nil
+	}
+
+	// Fall back to legacy flat array
 	var secrets []Secret
 	if err := json.Unmarshal(data, &secrets); err != nil {
 		return fmt.Errorf("parsing vault: %w", err)
@@ -206,23 +380,37 @@ func (s *Store) loadLocked() error {
 	for _, sec := range secrets {
 		s.secrets[sec.Key] = sec
 	}
+	s.sets = make(map[string]Set)
 	return nil
 }
 
 // saveLocked writes secrets to disk atomically. Creates directory on first write.
+// Always writes in the new object format.
 func (s *Store) saveLocked() error {
 	if err := os.MkdirAll(s.baseDir, 0700); err != nil {
 		return fmt.Errorf("creating vault directory: %w", err)
 	}
 
-	// Sort for deterministic output
+	// Sort secrets for deterministic output
 	secrets := make([]Secret, 0, len(s.secrets))
 	for _, sec := range s.secrets {
 		secrets = append(secrets, sec)
 	}
 	sort.Slice(secrets, func(i, j int) bool { return secrets[i].Key < secrets[j].Key })
 
-	data, err := json.MarshalIndent(secrets, "", "  ")
+	// Sort sets for deterministic output
+	sets := make([]Set, 0, len(s.sets))
+	for _, set := range s.sets {
+		sets = append(sets, set)
+	}
+	sort.Slice(sets, func(i, j int) bool { return sets[i].Name < sets[j].Name })
+
+	sd := storeData{
+		Secrets: secrets,
+		Sets:    sets,
+	}
+
+	data, err := json.MarshalIndent(sd, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling vault: %w", err)
 	}
