@@ -1,0 +1,28 @@
+# Vault Secrets Example
+#
+# Uses the gridctl vault to inject secrets into MCP server containers
+# instead of exporting environment variables.
+#
+# Prerequisites:
+#   gridctl vault set GITHUB_TOKEN
+#   gridctl vault set OPENAI_API_KEY
+#
+# Usage:
+#   gridctl deploy examples/secrets-vault/vault-basic.yaml
+
+version: "1"
+name: vault-basic
+
+mcp-servers:
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    transport: stdio
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${vault:GITHUB_TOKEN}"
+
+  - name: ai-service
+    image: ghcr.io/org/ai-mcp-server:latest
+    port: 3000
+    env:
+      OPENAI_API_KEY: "${vault:OPENAI_API_KEY}"
+      LOG_LEVEL: "info"                # Non-secret values work as usual
