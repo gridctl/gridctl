@@ -1,0 +1,27 @@
+# Variable Sets Example
+#
+# Groups related secrets into sets and injects them automatically
+# into all containers. Explicit env values take precedence.
+#
+# Prerequisites:
+#   gridctl vault sets create production
+#   gridctl vault set DB_HOST --value db.example.com --set production
+#   gridctl vault set DB_PASSWORD --set production
+#   gridctl vault set API_KEY --set production
+#
+# Usage:
+#   gridctl deploy examples/secrets-vault/vault-sets.yaml
+
+version: "1"
+name: vault-sets
+
+secrets:
+  sets:
+    - production          # All secrets in this set are injected into container env
+
+mcp-servers:
+  - name: backend
+    image: ghcr.io/org/backend-mcp:latest
+    port: 3000
+    env:
+      LOG_LEVEL: "info"   # Explicit env values take precedence over set values

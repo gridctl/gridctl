@@ -80,6 +80,7 @@ gridctl/
 │   ├── link.go           # Connect LLM clients to gateway
 │   ├── unlink.go         # Remove gridctl from LLM clients
 │   ├── reload.go         # Hot reload stack configuration
+│   ├── vault.go          # Vault secret management commands
 │   ├── version.go        # Version command
 │   ├── help.go           # Custom help template
 │   ├── embed.go          # Embedded web assets
@@ -89,19 +90,22 @@ gridctl/
 │   └── api/              # API server (MCP + REST + Registry)
 │       ├── api.go        # Server setup and route registration
 │       ├── auth.go       # Gateway authentication middleware
-│       └── registry.go   # Registry CRUD endpoints
+│       ├── registry.go   # Registry CRUD endpoints
+│       └── vault.go      # Vault REST API endpoints
 ├── pkg/
 │   ├── adapter/          # Protocol adapters
 │   │   └── a2a_client.go # A2A client adapter
 │   ├── config/           # Stack YAML parsing
 │   │   ├── types.go      # Stack, Agent, Resource structs
 │   │   ├── loader.go     # LoadStack() function
+│   │   ├── expand.go     # Variable expansion (env + vault)
 │   │   └── validate.go   # Validation rules
 │   ├── dockerclient/     # Docker client interface
 │   │   └── interface.go  # Interface definition for mocking
 │   ├── logging/          # Logging utilities
 │   │   ├── discard.go    # Discard logger
 │   │   ├── buffer.go     # In-memory circular log buffer for API
+│   │   ├── redact.go     # Secret redaction in log output
 │   │   └── structured.go # Structured slog handler with buffering
 │   ├── runtime/          # Workload orchestration (runtime-agnostic)
 │   │   ├── interface.go  # WorkloadRuntime interface + types
@@ -167,6 +171,10 @@ gridctl/
 │   │   ├── client.go     # HTTP client for remote A2A agents
 │   │   ├── handler.go    # HTTP handler for A2A endpoints
 │   │   └── gateway.go    # A2A gateway (local + remote agents)
+│   ├── vault/            # Secrets vault
+│   │   ├── types.go      # Secret, Set, EncryptedVault types
+│   │   ├── crypto.go     # XChaCha20-Poly1305 + Argon2id envelope encryption
+│   │   └── store.go      # CRUD, lock/unlock, variable sets, import/export
 │   └── registry/         # Agent Skills registry (agentskills.io)
 │       ├── types.go      # AgentSkill, SkillFile, ItemState, workflow types
 │       ├── frontmatter.go # SKILL.md parsing (YAML frontmatter + markdown body)
@@ -185,6 +193,7 @@ gridctl/
 │   ├── gateways/         # Gateway configuration examples
 │   ├── multi-agent/      # Multi-agent orchestration examples
 │   ├── platforms/        # Platform-specific examples
+│   ├── secrets-vault/    # Vault secrets and variable sets
 │   └── _mock-servers/    # Mock MCP servers for testing
 └── tests/
     └── integration/      # Integration tests (build tag: integration)
@@ -243,6 +252,11 @@ make clean-mock-servers # Stop and remove mock MCP servers
 
 # Stop a specific stack (gateway + containers)
 ./gridctl destroy examples/getting-started/agent-basic.yaml
+
+# Manage secrets
+./gridctl vault set API_KEY
+./gridctl vault list
+./gridctl vault import .env
 ```
 
 ### Command Reference
@@ -308,6 +322,37 @@ Triggers a hot reload of the stack configuration. The stack must be running with
 
 Starts the web UI server without managing any stack. Listens on port 8180 by default (override with `PORT` environment variable).
 
+#### `gridctl vault <subcommand>`
+
+Manage secrets stored in `~/.gridctl/vault/`. Secrets can be referenced in stack YAML via `${vault:KEY}` syntax.
+
+| Subcommand | Description |
+|------------|-------------|
+| `set <KEY>` | Store a secret (prompts for value, or use `--value`) |
+| `get <KEY>` | Retrieve a secret (masked by default, use `--plain`) |
+| `list` | List all secret keys with set assignments |
+| `delete <KEY>` | Delete a secret (`--force` to skip confirmation) |
+| `import <file>` | Import from .env or .json (`--format` to override auto-detection) |
+| `export` | Export all secrets (`--format env\|json`, `--plain` for unmasked) |
+| `lock` | Encrypt vault with a passphrase |
+| `unlock` | Decrypt vault for the session |
+| `change-passphrase` | Re-encrypt vault with a new passphrase |
+| `sets list` | List variable sets |
+| `sets create <name>` | Create a variable set |
+| `sets delete <name>` | Delete a variable set |
+
+**Flags:**
+
+| Flag | Subcommand | Description |
+|------|------------|-------------|
+| `--value` | `set` | Non-interactive secret value |
+| `--set` | `set` | Assign secret to a variable set |
+| `--plain` | `get`, `export` | Show unmasked value |
+| `--force` | `delete` | Skip confirmation prompt |
+| `--format` | `import`, `export` | File format: `env` or `json` |
+
+The `GRIDCTL_VAULT_PASSPHRASE` environment variable can provide the passphrase non-interactively for `lock`, `unlock`, and `change-passphrase` commands. When the vault is locked, all other vault commands auto-prompt for the passphrase.
+
 ### Daemon Mode
 
 By default, `gridctl deploy` runs the MCP gateway as a background daemon:
@@ -326,6 +371,9 @@ Gridctl stores daemon state in `~/.gridctl/`:
 │   └── {name}.json     # PID, port, start time per stack
 ├── logs/               # Daemon log files
 │   └── {name}.log      # stdout/stderr from daemon
+├── vault/              # Secrets vault (0700 permissions)
+│   ├── secrets.json    # Plaintext secrets (when unlocked/unencrypted)
+│   └── secrets.enc     # Encrypted secrets (when locked)
 └── cache/              # Build cache
     └── ...             # Git repos, Docker contexts
 ```
@@ -343,6 +391,7 @@ When `gridctl deploy` runs, it:
 **Endpoints:**
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
 - **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/health`, `/ready`
+- **Vault:** `/api/vault`, `/api/vault/status`, `/api/vault/unlock`, `/api/vault/lock`, `/api/vault/sets`, `/api/vault/import`
 - **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
 - **A2A:** `/.well-known/agent.json`, `/a2a/` (list agents), `/a2a/{agent}` (GET card, POST JSON-RPC)
 - **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`, `/api/registry/skills/{name}/workflow`, `/api/registry/skills/{name}/execute`, `/api/registry/skills/{name}/validate-workflow`
@@ -380,6 +429,23 @@ When `gridctl deploy` runs, it:
 - `POST /api/registry/skills/{name}/execute` - Execute a workflow skill (returns ToolCallResult)
 - `POST /api/registry/skills/{name}/validate-workflow` - Dry-run validation without execution
 
+**Vault API:**
+- `GET /api/vault/status` - Returns `{locked, encrypted, secrets_count?, sets_count?}`
+- `POST /api/vault/unlock` - Unlock encrypted vault (body: `{passphrase}`)
+- `POST /api/vault/lock` - Encrypt vault with passphrase (body: `{passphrase}`)
+- `GET /api/vault` - List secrets (keys and set assignments, no values)
+- `POST /api/vault` - Create secret (body: `{key, value, set?}`)
+- `GET /api/vault/{key}` - Get secret value
+- `PUT /api/vault/{key}` - Update secret value
+- `DELETE /api/vault/{key}` - Delete secret
+- `GET /api/vault/sets` - List variable sets with counts
+- `POST /api/vault/sets` - Create variable set
+- `DELETE /api/vault/sets/{name}` - Delete variable set
+- `PUT /api/vault/{key}/set` - Assign secret to a set
+- `POST /api/vault/import` - Bulk import (body: `{secrets: {key: value, ...}}`)
+
+When the vault is locked, all endpoints except `status`, `unlock`, and `lock` return HTTP 423 (Locked).
+
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
 
@@ -405,6 +471,10 @@ gateway:                              # Optional: gateway-level configuration
   code_mode: "on"                     # Replace tools with search + execute meta-tools ("off" | "on")
   code_mode_timeout: 30               # Code execution timeout in seconds (default: 30)
 
+secrets:                              # Optional: auto-inject vault secrets by set
+  sets:                               # Variable sets to inject into all container env
+    - production                      # Secrets in this set added to env (explicit values take precedence)
+
 network:                              # Optional: single network
   name: my-network                    # Defaults to {name}-net
   driver: bridge                      # Defaults to bridge
@@ -417,6 +487,7 @@ mcp-servers:
     transport: http                   # Optional, default is "http"
     env:
       API_KEY: "${ENV_VAR}"           # Environment variable expansion
+      SECRET: "${vault:MY_SECRET}"    # Vault secret reference (fails if missing)
 
   # Stdio transport - for MCP servers using stdin/stdout
   - name: stdio-server

@@ -530,7 +530,43 @@ Failed executions show a recovery panel with:
 - **Pre-execution errors**: Error message + Retry button
 - **Step-level errors**: Error message with failed step details + Retry + Inspect buttons
 
-## 17. Checklist for New Components
+## 17. Vault Panel
+
+### Components (`src/components/vault/`)
+
+- **VaultPanel**: Right sidebar (w-[380px]) for managing secrets and variable sets. Features:
+  - Quick-add form with key validation, password input, set selector
+  - Secret list grouped by unassigned + variable sets (collapsible)
+  - Per-secret actions: reveal (10s auto-hide timer), inline edit, delete with confirmation
+  - Lock/unlock controls with passphrase input (confirmation match on lock)
+  - Encrypted badge in header when vault is locked
+  - Uses `useVaultStore` for state (`secrets`, `sets`, `locked`, `encrypted`)
+
+- **VaultLockPrompt**: Centered modal overlay shown when vault is locked. Features:
+  - Lock icon with primary color glow
+  - Passphrase input with show/hide toggle
+  - Auto-focus on mount, Enter key submits
+  - Error message display for wrong passphrase
+  - Fade-in scale animation on glass panel background
+
+### Store (`src/stores/useVaultStore.ts`)
+
+Zustand store with fields: `secrets`, `sets`, `loading`, `error`, `locked`, `encrypted`.
+- `setLocked(true)` clears `secrets` and `sets` to null
+- Null-safe coercion: `setSets(null)` and `setSecrets(null)` coerce to `[]`
+
+### API Functions (`src/lib/api.ts`)
+
+Vault-specific: `fetchVaultSecrets`, `createVaultSecret`, `getVaultSecret`, `updateVaultSecret`, `deleteVaultSecret`, `fetchVaultSets`, `createVaultSet`, `deleteVaultSet`, `assignSecretToSet`, `fetchVaultStatus`, `unlockVault`, `lockVault`.
+
+### Styling Notes
+
+- Glass panel sidebar with backdrop blur
+- Amber primary for lock/unlock actions, Teal secondary for set icons
+- Monospace font (`font-mono`) for secret keys and values
+- Error states use `status-error` color token
+
+## 18. Checklist for New Components
 
 1. Use Tailwind color tokens (no hardcoded hex values)
 2. Use `font-mono` for technical data, `font-sans` for UI
