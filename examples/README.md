@@ -20,6 +20,7 @@ gridctl deploy examples/getting-started/agent-basic.yaml
 | [🔐 access-control/](access-control/) | Tool filtering and security patterns |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
+| [🔑 secrets-vault/](secrets-vault/) | Vault secrets and variable sets |
 | [📋 registry/](registry/) | Agent Skills registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
 
@@ -38,31 +39,33 @@ gridctl deploy examples/getting-started/agent-basic.yaml
 
 ## 📊 Feature Matrix
 
-| Example | Transports | Agents | A2A | External | OpenAPI | Registry | Workflows | Code Mode |
-|---------|------------|--------|-----|----------|---------|----------|-----------|-----------|
-| agent-basic | - | ✅ | - | - | - | - | - | - |
-| skills-basic | - | ✅ | ✅ | - | - | - | - | - |
-| local-mcp | stdio | - | - | - | - | - | - | - |
-| ssh-mcp | ssh+stdio | - | - | - | - | - | - | - |
-| external-mcp | http, sse | - | - | ✅ | - | - | - | - |
-| multi-agent-skills | - | ✅ | ✅ | - | - | - | - | - |
-| basic-a2a | - | ✅ | ✅ | - | - | - | - | - |
-| atlassian-mcp | sse | - | - | ✅ | - | - | - | - |
-| chrome-devtools-mcp | stdio | - | - | ✅ | - | - | - | - |
-| context7-mcp | stdio | - | - | ✅ | - | - | - | - |
-| github-mcp | stdio | - | - | ✅ | - | - | - | - |
-| zapier-mcp | stdio | - | - | ✅ | - | - | - | - |
-| openapi-basic | openapi | - | - | - | ✅ | - | - | - |
-| openapi-auth | openapi | - | - | - | ✅ | - | - | - |
-| tool-filtering | - | ✅ | - | - | - | - | - | - |
-| code-mode-basic | - | ✅ | - | - | - | - | - | ✅ |
-| gateway-basic | http | - | - | ✅ | - | - | - | - |
-| gateway-remote | http | - | - | ✅ | - | - | - | - |
-| registry-basic | stdio | - | - | - | - | ✅ | - | - |
-| registry-advanced | stdio | - | - | - | - | ✅ | - | - |
-| workflow-basic | stdio | - | - | - | - | ✅ | ✅ | - |
-| workflow-parallel | stdio | - | - | - | - | ✅ | ✅ | - |
-| workflow-conditional | stdio | - | - | - | - | ✅ | ✅ | - |
+| Example | Transports | Agents | A2A | External | OpenAPI | Registry | Workflows | Code Mode | Vault |
+|---------|------------|--------|-----|----------|---------|----------|-----------|-----------|-------|
+| agent-basic | - | ✅ | - | - | - | - | - | - | - |
+| skills-basic | - | ✅ | ✅ | - | - | - | - | - | - |
+| local-mcp | stdio | - | - | - | - | - | - | - | - |
+| ssh-mcp | ssh+stdio | - | - | - | - | - | - | - | - |
+| external-mcp | http, sse | - | - | ✅ | - | - | - | - | - |
+| multi-agent-skills | - | ✅ | ✅ | - | - | - | - | - | - |
+| basic-a2a | - | ✅ | ✅ | - | - | - | - | - | - |
+| atlassian-mcp | sse | - | - | ✅ | - | - | - | - | - |
+| chrome-devtools-mcp | stdio | - | - | ✅ | - | - | - | - | - |
+| context7-mcp | stdio | - | - | ✅ | - | - | - | - | - |
+| github-mcp | stdio | - | - | ✅ | - | - | - | - | - |
+| zapier-mcp | stdio | - | - | ✅ | - | - | - | - | - |
+| openapi-basic | openapi | - | - | - | ✅ | - | - | - | - |
+| openapi-auth | openapi | - | - | - | ✅ | - | - | - | - |
+| tool-filtering | - | ✅ | - | - | - | - | - | - | - |
+| code-mode-basic | - | ✅ | - | - | - | - | - | ✅ | - |
+| gateway-basic | http | - | - | ✅ | - | - | - | - | - |
+| gateway-remote | http | - | - | ✅ | - | - | - | - | - |
+| vault-basic | stdio | - | - | - | - | - | - | - | ✅ |
+| vault-sets | - | - | - | - | - | - | - | - | ✅ |
+| registry-basic | stdio | - | - | - | - | ✅ | - | - | - |
+| registry-advanced | stdio | - | - | - | - | ✅ | - | - | - |
+| workflow-basic | stdio | - | - | - | - | ✅ | ✅ | - | - |
+| workflow-parallel | stdio | - | - | - | - | ✅ | ✅ | - | - |
+| workflow-conditional | stdio | - | - | - | - | ✅ | ✅ | - | - |
 
 ## 💻 Usage Pattern
 
