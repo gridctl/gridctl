@@ -36,7 +36,6 @@ export {
   createAgentNodes,
   createResourceNodes,
   createClientNodes,
-  createRegistryNode,
   createAllNodes,
 } from './nodes';
 
@@ -47,7 +46,6 @@ export {
   createAgentToGatewayEdges,
   createGatewayToServerEdges,
   createGatewayToResourceEdges,
-  createGatewayToRegistryEdge,
   createAgentUsesEdges,
   createAllEdges,
   buildNodeTypeSets,
