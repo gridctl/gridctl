@@ -50,39 +50,38 @@ export function ResizeHandle({ direction, onResize, onResizeEnd, className }: Re
       className={cn(
         'group relative flex items-center justify-center select-none',
         'transition-colors duration-150',
-        isHorizontal ? 'h-2 cursor-row-resize' : 'w-2 cursor-col-resize',
-        'hover:bg-primary/5',
+        isHorizontal ? 'h-1.5 cursor-row-resize' : 'w-1.5 cursor-col-resize',
+        'hover:bg-primary/8',
         isDragging && 'bg-primary/10',
         className
       )}
     >
-      {/* Invisible hit area for easier grabbing */}
+      {/* Hit area — generous for easy grabbing */}
       <div
         className={cn(
           'absolute',
-          isHorizontal ? 'inset-x-0 -inset-y-1' : 'inset-y-0 -inset-x-1'
+          isHorizontal ? 'inset-x-0 -inset-y-1.5' : 'inset-y-0 -inset-x-1.5'
         )}
       />
 
-      {/* The visible handle line */}
+      {/* Full-length edge line — always visible as a subtle border */}
       <div
         className={cn(
-          'relative rounded-full transition-all duration-150',
-          'bg-border/30',
-          'group-hover:bg-primary/50',
-          isDragging && 'bg-primary shadow-[0_0_8px_rgba(245,158,11,0.4)]',
+          'absolute transition-colors duration-150',
+          'bg-border/40',
+          'group-hover:bg-primary/30',
+          isDragging && 'bg-primary/50',
           isHorizontal
-            ? 'h-0.5 w-12 group-hover:w-16'
-            : 'w-0.5 h-12 group-hover:h-16',
-          isDragging && (isHorizontal ? 'w-20' : 'h-20')
+            ? 'h-px inset-x-0 top-0'
+            : 'w-px inset-y-0 left-0'
         )}
       />
 
-      {/* Grip dots - appear on hover */}
+      {/* Grip dots — subtle at rest, prominent on hover */}
       <div
         className={cn(
-          'absolute flex gap-0.5 transition-opacity duration-150',
-          'opacity-0 group-hover:opacity-100',
+          'absolute flex gap-1 transition-all duration-150',
+          'opacity-40 group-hover:opacity-100',
           isDragging && 'opacity-100',
           isHorizontal ? 'flex-row' : 'flex-col'
         )}
@@ -91,9 +90,10 @@ export function ResizeHandle({ direction, onResize, onResizeEnd, className }: Re
           <div
             key={i}
             className={cn(
-              'w-1 h-1 rounded-full',
-              'bg-text-muted/40',
-              'group-hover:bg-primary/60',
+              'rounded-full transition-all duration-150',
+              isHorizontal ? 'w-1.5 h-0.5' : 'w-0.5 h-1.5',
+              'bg-text-muted/30',
+              'group-hover:bg-primary/70',
               isDragging && 'bg-primary'
             )}
           />
