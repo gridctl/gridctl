@@ -27,6 +27,8 @@ function makeGatewayData(overrides: Partial<GatewayNodeData> = {}): GatewayNodeD
     sessions: 0,
     a2aTasks: null,
     codeMode: null,
+    totalSkills: 0,
+    activeSkills: 0,
     ...overrides,
   };
 }
