@@ -31,7 +31,7 @@ import {
 import { hasWorkflowBlock } from '../../lib/workflowSync';
 import type { AgentSkill, ItemState } from '../../types';
 
-export function RegistrySidebar() {
+export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {}) {
   const skills = useRegistryStore((s) => s.skills);
   const status = useRegistryStore((s) => s.status);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
@@ -98,33 +98,37 @@ export function RegistrySidebar() {
   }, [confirmDelete, refreshRegistry]);
 
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden">
-      {/* Accent line */}
-      <div className="absolute top-0 left-0 bottom-0 w-px bg-gradient-to-b from-primary/40 via-primary/20 to-transparent" />
+    <div className={cn('flex flex-col overflow-hidden', !embedded && 'h-full w-full')}>
+      {!embedded && (
+        <>
+          {/* Accent line */}
+          <div className="absolute top-0 left-0 bottom-0 w-px bg-gradient-to-b from-primary/40 via-primary/20 to-transparent" />
 
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="p-2 rounded-xl flex-shrink-0 border bg-primary/10 border-primary/20">
-            <Library size={16} className="text-primary" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="font-semibold text-text-primary truncate tracking-tight">Registry</h2>
-            <div className="flex items-center gap-1.5">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider">Agent Skills</p>
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-xl flex-shrink-0 border bg-primary/10 border-primary/20">
+                <Library size={16} className="text-primary" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-semibold text-text-primary truncate tracking-tight">Registry</h2>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[10px] text-text-muted uppercase tracking-wider">Agent Skills</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <PopoutButton
+                onClick={handlePopout}
+                disabled={registryDetached}
+              />
+              <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
+                <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
+              </button>
             </div>
           </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <PopoutButton
-            onClick={handlePopout}
-            disabled={registryDetached}
-          />
-          <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
-            <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
-          </button>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Item count + New Skill button */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border/20">
