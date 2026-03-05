@@ -128,6 +128,8 @@ export interface GatewayNodeData extends NodeDataBase {
   sessions: number;
   a2aTasks: number | null;
   codeMode: string | null;
+  totalSkills: number;
+  activeSkills: number;
 }
 
 export interface MCPServerNodeData extends NodeDataBase {
@@ -230,14 +232,7 @@ export interface RegistryStatus {
   activeSkills: number;
 }
 
-export interface RegistryNodeData extends NodeDataBase {
-  type: 'registry';
-  name: string;
-  totalSkills: number;
-  activeSkills: number;
-}
-
-export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData | RegistryNodeData;
+export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData;
 
 // --- Workflow Types ---
 
