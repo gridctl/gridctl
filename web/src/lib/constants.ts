@@ -10,9 +10,6 @@ export const LAYOUT = {
   AGENT_HEIGHT: 144,   // Agent node height
   CLIENT_WIDTH: 160,   // Linked client node width
   CLIENT_HEIGHT: 120,  // Linked client node height
-  REGISTRY_WIDTH: 200, // Registry node width
-  REGISTRY_HEIGHT: 120, // Registry node height
-
   // Dagre layout spacing
   NODE_SPACING: 60,    // Vertical spacing between nodes in same rank
   RANK_SPACING: 120,   // Horizontal spacing between tiers (gateway -> servers -> etc)
@@ -90,7 +87,6 @@ export const NODE_TYPES = {
   RESOURCE: 'resource',
   AGENT: 'agent',
   CLIENT: 'client',
-  REGISTRY: 'registry',
 } as const;
 
 // Edge type identifiers
