@@ -202,7 +202,6 @@ export function Sidebar() {
         <div className="flex items-center gap-1">
           <PopoutButton
             onClick={handlePopout}
-            tooltip="Open in new window"
             disabled={sidebarDetached}
           />
           <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
