@@ -262,7 +262,6 @@ export function BottomPanel() {
           )}
           <PopoutButton
             onClick={() => openDetachedWindow('logs', agentName ? `agent=${encodeURIComponent(agentName)}` : undefined)}
-            tooltip="Open in new window"
             disabled={logsDetached}
           />
         </div>
