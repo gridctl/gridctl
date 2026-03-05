@@ -83,7 +83,7 @@ export function transformToGraph(
   );
 
   // Create edges
-  const edges = createAllEdges(mcpServers, resources, agents, clients, registryStatus);
+  const edges = createAllEdges(mcpServers, resources, agents, clients);
 
   // Apply layout
   const layoutOptions: LayoutOptions = { preservedPositions };

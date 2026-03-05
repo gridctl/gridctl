@@ -10,7 +10,7 @@
 
 import type { Edge } from '@xyflow/react';
 import { MarkerType } from '@xyflow/react';
-import type { MCPServerStatus, ResourceStatus, AgentStatus, ClientStatus, ToolSelector, RegistryStatus } from '../../types';
+import type { MCPServerStatus, ResourceStatus, AgentStatus, ClientStatus, ToolSelector } from '../../types';
 import type { EdgeMetadata } from './types';
 import { COLORS } from '../constants';
 
@@ -223,29 +223,6 @@ export function createClientToGatewayEdges(
 }
 
 /**
- * Create edge from gateway to registry node
- */
-export function createGatewayToRegistryEdge(
-  registryStatus: RegistryStatus | null
-): EnhancedEdge[] {
-  if (!registryStatus || (registryStatus.totalSkills ?? 0) === 0) {
-    return [];
-  }
-
-  return [{
-    id: 'edge-gateway-registry',
-    source: GATEWAY_NODE_ID,
-    target: 'registry',
-    animated: false,
-    markerEnd: { ...arrowMarker, color: COLORS.primary },
-    data: {
-      relationType: 'gateway-to-registry' as const,
-      isHighlightable: false,
-    },
-  }];
-}
-
-/**
  * Create all edges for the butterfly layout
  *
  * Combines all edge types:
@@ -253,15 +230,13 @@ export function createGatewayToRegistryEdge(
  * - Agent -> Gateway (primary agents only)
  * - Gateway -> MCP Servers
  * - Gateway -> Resources
- * - Gateway -> Registry
  * - Agent -> things it uses
  */
 export function createAllEdges(
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[],
   agents: AgentStatus[],
-  clients: ClientStatus[] = [],
-  registryStatus?: RegistryStatus | null
+  clients: ClientStatus[] = []
 ): EnhancedEdge[] {
   const { mcpServerNames, agentNames, usedByOtherAgents } = buildNodeTypeSets(
     mcpServers,
@@ -273,7 +248,6 @@ export function createAllEdges(
     ...createAgentToGatewayEdges(agents, usedByOtherAgents),
     ...createGatewayToServerEdges(mcpServers),
     ...createGatewayToResourceEdges(resources),
-    ...createGatewayToRegistryEdge(registryStatus ?? null),
     ...createAgentUsesEdges(agents, mcpServerNames, agentNames),
   ];
 }

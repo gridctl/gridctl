@@ -41,7 +41,8 @@ export function createGatewayNode(
   sessions?: number,
   a2aTasks?: number | null,
   clientCount?: number,
-  codeMode?: string | null
+  codeMode?: string | null,
+  registryStatus?: RegistryStatus | null
 ): Node {
   // Calculate total tool count (MCP server tools + A2A agent skills)
   const safeServers = mcpServers ?? [];
@@ -72,6 +73,8 @@ export function createGatewayNode(
       sessions: sessions ?? 0,
       a2aTasks: a2aTasks ?? null,
       codeMode: codeMode ?? null,
+      totalSkills: registryStatus?.totalSkills ?? 0,
+      activeSkills: registryStatus?.activeSkills ?? 0,
     },
     draggable: true,
   };
@@ -189,28 +192,6 @@ export function createClientNodes(clients: ClientStatus[]): Node[] {
 }
 
 /**
- * Create registry node (progressive disclosure: only if registry has content)
- */
-export function createRegistryNode(status: RegistryStatus | null): Node | null {
-  if (!status || (status.totalSkills ?? 0) === 0) {
-    return null;
-  }
-
-  return {
-    id: 'registry',
-    type: NODE_TYPES.REGISTRY,
-    position: { x: 0, y: 0 },
-    data: {
-      type: 'registry',
-      name: 'Registry',
-      totalSkills: status.totalSkills ?? 0,
-      activeSkills: status.activeSkills ?? 0,
-    },
-    draggable: true,
-  };
-}
-
-/**
  * Create all nodes for the graph
  */
 export function createAllNodes(
@@ -227,17 +208,12 @@ export function createAllNodes(
 ): Node[] {
   const linkedClients = clients.filter((c) => c.linked);
   const nodes: Node[] = [
-    createGatewayNode(gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, linkedClients.length, codeMode),
+    createGatewayNode(gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, linkedClients.length, codeMode, registryStatus),
     ...createClientNodes(clients),
     ...createMCPServerNodes(mcpServers),
     ...createAgentNodes(agents, usedByOtherAgents),
     ...createResourceNodes(resources),
   ];
-
-  const registryNode = createRegistryNode(registryStatus ?? null);
-  if (registryNode) {
-    nodes.push(registryNode);
-  }
 
   return nodes;
 }

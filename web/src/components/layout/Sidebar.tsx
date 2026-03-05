@@ -24,7 +24,7 @@ import { Badge } from '../ui/Badge';
 import { ToolList } from '../ui/ToolList';
 import { ControlBar } from '../ui/ControlBar';
 import { PopoutButton } from '../ui/PopoutButton';
-import { RegistrySidebar } from '../registry/RegistrySidebar';
+import { GatewaySidebar } from '../gateway/GatewaySidebar';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -40,14 +40,19 @@ export function Sidebar() {
   const selectNode = useStackStore((s) => s.selectNode);
   const { openDetachedWindow } = useWindowManager();
 
+  const handleClose = () => {
+    setSidebarOpen(false);
+    selectNode(null);
+  };
+
   // Don't render content if no valid selection
-  if (!selectedData || selectedData.type === 'gateway') {
+  if (!selectedData) {
     return null;
   }
 
-  // Registry gets its own sidebar
-  if (selectedData.type === 'registry') {
-    return <RegistrySidebar />;
+  // Gateway gets its own sidebar with embedded registry
+  if (selectedData.type === 'gateway') {
+    return <GatewaySidebar onClose={handleClose} />;
   }
 
   const isServer = selectedData.type === 'mcp-server';
@@ -89,11 +94,6 @@ export function Sidebar() {
 
   // Color logic: primary (amber) for clients, violet for MCP servers, purple for local agents, teal for remote agents/resources
   const colorClass = isClient ? 'primary' : isServer ? 'violet' : isAgent ? (isRemote ? 'secondary' : 'tertiary') : 'secondary';
-
-  const handleClose = () => {
-    setSidebarOpen(false);
-    selectNode(null);
-  };
 
   const handleShowLogs = () => {
     setBottomPanelOpen(true);

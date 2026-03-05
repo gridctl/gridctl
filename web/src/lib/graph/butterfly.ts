@@ -60,9 +60,6 @@ function getNodeZone(node: Node): ButterflyZone {
     case 'mcp-server':
       return 2; // SERVERS zone
 
-    case 'registry':
-      return 2; // SERVERS zone (alongside MCP servers)
-
     case 'resource':
       return 3; // RESOURCES zone
 

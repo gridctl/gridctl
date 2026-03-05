@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Wrench, Zap, Bot, Users, Radio, ListChecks, Monitor, Code } from 'lucide-react';
+import { Activity, Server, Database, Wrench, Zap, Bot, Users, Radio, ListChecks, Monitor, Code, Library } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import type { GatewayNodeData } from '../../types';
@@ -63,8 +63,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {data.agentCount > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-tertiary/10 border border-tertiary/20 group-hover:bg-tertiary/15 transition-colors">
-                <Bot size={12} className="text-tertiary" />
+              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
+                <Bot size={12} className="text-primary" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Agents</span>
             </div>
@@ -78,8 +78,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {data.a2aAgentCount > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-secondary/10 border border-secondary/20 group-hover:bg-secondary/15 transition-colors">
-                <Users size={12} className="text-secondary" />
+              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
+                <Users size={12} className="text-primary" />
               </div>
               <span className="text-xs text-text-secondary font-medium">A2A Agents</span>
             </div>
@@ -93,8 +93,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {data.resourceCount > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-secondary/10 border border-secondary/20 group-hover:bg-secondary/15 transition-colors">
-                <Server size={12} className="text-secondary" />
+              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
+                <Database size={12} className="text-primary" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Resources</span>
             </div>
@@ -138,8 +138,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {data.a2aTasks != null && data.a2aTasks > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-secondary/10 border border-secondary/20 group-hover:bg-secondary/15 transition-colors">
-                <ListChecks size={12} className="text-secondary" />
+              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
+                <ListChecks size={12} className="text-primary" />
               </div>
               <span className="text-xs text-text-secondary font-medium">A2A Tasks</span>
             </div>
@@ -152,8 +152,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {/* Tools */}
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-surface-highlight border border-border group-hover:border-text-muted/30 transition-colors">
-              <Wrench size={12} className="text-text-secondary" />
+            <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
+              <Wrench size={12} className="text-primary" />
             </div>
             <span className="text-xs text-text-secondary font-medium">Total Tools</span>
           </div>
@@ -161,6 +161,21 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             {data.totalToolCount}
           </span>
         </div>
+
+        {/* Skills (Registry) */}
+        {(data.totalSkills ?? 0) > 0 && (
+          <div className="flex items-center justify-between group">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
+                <Library size={12} className="text-primary" />
+              </div>
+              <span className="text-xs text-text-secondary font-medium">Skills</span>
+            </div>
+            <span className="text-sm font-bold text-text-primary tabular-nums">
+              {data.activeSkills ?? 0}<span className="text-text-muted font-normal">/{data.totalSkills}</span>
+            </span>
+          </div>
+        )}
 
         {/* Code Mode badge */}
         {data.codeMode && data.codeMode !== 'off' && (
