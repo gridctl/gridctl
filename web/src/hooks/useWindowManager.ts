@@ -2,38 +2,12 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useUIStore } from '../stores/useUIStore';
 import { useBroadcastChannel, type BroadcastMessage } from './useBroadcastChannel';
 
-interface WindowConfig {
-  width: number;
-  height: number;
-  title: string;
-}
-
-const WINDOW_CONFIGS: Record<string, WindowConfig> = {
-  logs: {
-    width: 900,
-    height: 500,
-    title: 'Gridctl - Logs',
-  },
-  sidebar: {
-    width: 420,
-    height: 700,
-    title: 'Gridctl - Details',
-  },
-  editor: {
-    width: 1100,
-    height: 850,
-    title: 'Gridctl - Editor',
-  },
-  registry: {
-    width: 420,
-    height: 700,
-    title: 'Gridctl - Registry',
-  },
-  workflow: {
-    width: 1200,
-    height: 800,
-    title: 'Gridctl - Workflow Designer',
-  },
+const WINDOW_TITLES: Record<string, string> = {
+  logs: 'Gridctl - Logs',
+  sidebar: 'Gridctl - Details',
+  editor: 'Gridctl - Editor',
+  registry: 'Gridctl - Registry',
+  workflow: 'Gridctl - Workflow Designer',
 };
 
 export function useWindowManager() {
@@ -96,31 +70,15 @@ export function useWindowManager() {
       return;
     }
 
-    const config = WINDOW_CONFIGS[type];
-    const left = window.screenX + (window.outerWidth - config.width) / 2;
-    const top = window.screenY + (window.outerHeight - config.height) / 2;
-
     const url = params ? `/${type}?${params}` : `/${type}`;
-    const features = [
-      `width=${config.width}`,
-      `height=${config.height}`,
-      `left=${left}`,
-      `top=${top}`,
-      'menubar=no',
-      'toolbar=no',
-      'location=no',
-      'status=no',
-      'resizable=yes',
-    ].join(',');
-
-    const newWindow = window.open(url, `gridctl-${type}`, features);
+    const newWindow = window.open(url, `gridctl-${type}`);
 
     if (newWindow) {
       windowRefs.current.set(type, newWindow);
 
       // Update title after load
       newWindow.addEventListener('load', () => {
-        newWindow.document.title = config.title;
+        newWindow.document.title = WINDOW_TITLES[type];
       });
 
       // Track window close
