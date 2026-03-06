@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   Library,
   BookOpen,
@@ -10,6 +10,7 @@ import {
   Power,
   PowerOff,
   X,
+  Search,
   FolderOpen,
   GitBranch,
 } from 'lucide-react';
@@ -43,6 +44,18 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
   // Editor state
   const [showEditor, setShowEditor] = useState(false);
   const [editingSkill, setEditingSkill] = useState<AgentSkill | undefined>();
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredSkills = useMemo(() => {
+    const all = skills ?? [];
+    if (!searchQuery) return all;
+    const lower = searchQuery.toLowerCase();
+    return all.filter(
+      (s) => s.name.toLowerCase().includes(lower) || (s.description ?? '').toLowerCase().includes(lower),
+    );
+  }, [skills, searchQuery]);
 
   // Delete confirmation
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -133,7 +146,9 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       {/* Item count + New Skill button */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border/20">
         <span className="text-[10px] text-text-muted">
-          {(skills ?? []).length} skills
+          {searchQuery
+            ? `${filteredSkills.length} of ${(skills ?? []).length} skills`
+            : `${(skills ?? []).length} skills`}
         </span>
         <button
           onClick={() => { setEditingSkill(undefined); setShowEditor(true); }}
@@ -143,10 +158,33 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
         </button>
       </div>
 
+      {/* Search */}
+      <div className="px-2 py-1.5 border-b border-border/20 flex-shrink-0" role="search">
+        <div className="relative">
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/50" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search skills..."
+            aria-label="Filter skills"
+            className="w-full bg-background/40 border border-border/30 rounded-lg pl-7 pr-7 py-1 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/40"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-highlight transition-colors"
+            >
+              <X size={12} className="text-text-muted" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Skills list */}
       <div className="flex-1 overflow-y-auto scrollbar-dark">
         <SkillsList
-          skills={skills ?? []}
+          skills={filteredSkills}
+          isFiltered={!!searchQuery}
           onEdit={(skill) => { setEditingSkill(skill); setShowEditor(true); }}
           onDelete={(name) => setConfirmDelete(name)}
           onToggleState={handleToggleState}
@@ -214,12 +252,14 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
 
 function SkillsList({
   skills,
+  isFiltered,
   onEdit,
   onDelete,
   onToggleState,
   onOpenWorkflow,
 }: {
   skills: AgentSkill[];
+  isFiltered: boolean;
   onEdit: (skill: AgentSkill) => void;
   onDelete: (name: string) => void;
   onToggleState: (skill: AgentSkill) => void;
@@ -229,10 +269,14 @@ function SkillsList({
     return (
       <div className="p-6 text-center">
         <BookOpen size={24} className="text-text-muted/30 mx-auto mb-2" />
-        <p className="text-text-muted text-xs">No skills registered</p>
-        <p className="text-text-muted/60 text-[10px] mt-1">
-          Create a SKILL.md to get started
+        <p className="text-text-muted text-xs">
+          {isFiltered ? 'No matching skills' : 'No skills registered'}
         </p>
+        {!isFiltered && (
+          <p className="text-text-muted/60 text-[10px] mt-1">
+            Create a SKILL.md to get started
+          </p>
+        )}
       </div>
     );
   }
