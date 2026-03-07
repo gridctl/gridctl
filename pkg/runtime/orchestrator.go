@@ -125,37 +125,39 @@ func (o *Orchestrator) Runtime() WorkloadRuntime {
 
 // Up starts all MCP servers and resources defined in the stack.
 func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptions) (*UpResult, error) {
-	// Check runtime
-	if err := o.runtime.Ping(ctx); err != nil {
-		return nil, err
-	}
-
 	if opts.BasePort == 0 {
 		opts.BasePort = 9000
 	}
 
 	o.logger.Info("starting stack", "name", stack.Name)
 
-	// Create network(s)
-	if len(stack.Networks) > 0 {
-		// Advanced mode: create multiple networks
-		for _, net := range stack.Networks {
-			o.logger.Info("creating network", "name", net.Name)
-			if err := o.runtime.EnsureNetwork(ctx, net.Name, NetworkOptions{
-				Driver: net.Driver,
+	// Only check Docker and create networks when container workloads exist
+	if stack.NeedsDocker() {
+		if err := o.runtime.Ping(ctx); err != nil {
+			return nil, dockerRequiredError(stack, err)
+		}
+
+		// Create network(s)
+		if len(stack.Networks) > 0 {
+			// Advanced mode: create multiple networks
+			for _, net := range stack.Networks {
+				o.logger.Info("creating network", "name", net.Name)
+				if err := o.runtime.EnsureNetwork(ctx, net.Name, NetworkOptions{
+					Driver: net.Driver,
+					Stack:  stack.Name,
+				}); err != nil {
+					return nil, fmt.Errorf("ensuring network %s: %w", net.Name, err)
+				}
+			}
+		} else {
+			// Simple mode: single network
+			o.logger.Info("creating network", "name", stack.Network.Name)
+			if err := o.runtime.EnsureNetwork(ctx, stack.Network.Name, NetworkOptions{
+				Driver: stack.Network.Driver,
 				Stack:  stack.Name,
 			}); err != nil {
-				return nil, fmt.Errorf("ensuring network %s: %w", net.Name, err)
+				return nil, fmt.Errorf("ensuring network: %w", err)
 			}
-		}
-	} else {
-		// Simple mode: single network
-		o.logger.Info("creating network", "name", stack.Network.Name)
-		if err := o.runtime.EnsureNetwork(ctx, stack.Network.Name, NetworkOptions{
-			Driver: stack.Network.Driver,
-			Stack:  stack.Name,
-		}); err != nil {
-			return nil, fmt.Errorf("ensuring network: %w", err)
 		}
 	}
 
@@ -631,4 +633,27 @@ func agentLabels(stack, name string) map[string]string {
 		"gridctl.stack":   stack,
 		"gridctl.agent":   name,
 	}
+}
+
+// dockerRequiredError builds an actionable error message listing which workloads need Docker.
+func dockerRequiredError(stack *config.Stack, pingErr error) error {
+	msg := "Docker is required but not available\n"
+
+	if dockerWorkloads := stack.DockerWorkloads(); len(dockerWorkloads) > 0 {
+		msg += "\nThese workloads need Docker:\n"
+		for _, w := range dockerWorkloads {
+			msg += w + "\n"
+		}
+	}
+
+	if nonDockerWorkloads := stack.NonDockerWorkloads(); len(nonDockerWorkloads) > 0 {
+		msg += "\nThese work without Docker:\n"
+		for _, w := range nonDockerWorkloads {
+			msg += w + "\n"
+		}
+	}
+
+	msg += "\nInstall Docker: https://docs.docker.com/get-docker/"
+
+	return fmt.Errorf("%s\n\n%w", msg, pingErr)
 }
