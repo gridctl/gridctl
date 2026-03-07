@@ -10,13 +10,26 @@ import (
 // This is set by the docker package at init time to avoid import cycles.
 var NewFunc func() (*Orchestrator, error)
 
-// New creates a new Orchestrator with a DockerRuntime.
+// NewWithInfoFunc is the factory function that accepts RuntimeInfo.
+// This is set by the docker package at init time to avoid import cycles.
+var NewWithInfoFunc func(info *RuntimeInfo) (*Orchestrator, error)
+
+// New creates a new Orchestrator with default runtime detection.
 // This is the backward-compatible constructor that delegates to the registered factory.
 func New() (*Orchestrator, error) {
 	if NewFunc == nil {
 		panic("runtime.New called but no factory registered - import github.com/gridctl/gridctl/pkg/runtime/docker")
 	}
 	return NewFunc()
+}
+
+// NewWithInfo creates a new Orchestrator using the provided RuntimeInfo.
+// This allows callers to pass pre-detected runtime configuration.
+func NewWithInfo(info *RuntimeInfo) (*Orchestrator, error) {
+	if NewWithInfoFunc == nil {
+		panic("runtime.NewWithInfo called but no factory registered - import github.com/gridctl/gridctl/pkg/runtime/docker")
+	}
+	return NewWithInfoFunc(info)
 }
 
 // GetContainerHostPort is a backward-compatible helper.
