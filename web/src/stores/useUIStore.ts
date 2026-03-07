@@ -9,6 +9,9 @@ interface UIState {
   activeTab: SidebarTab;
   edgeStyle: EdgeStyle;
 
+  // Compact card mode
+  compactCards: boolean;
+
   // Bottom panel state
   bottomPanelOpen: boolean;
 
@@ -25,6 +28,7 @@ interface UIState {
   setActiveTab: (tab: SidebarTab) => void;
   setEdgeStyle: (style: EdgeStyle) => void;
   toggleEdgeStyle: () => void;
+  toggleCompactCards: () => void;
 
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
@@ -45,6 +49,9 @@ export const useUIStore = create<UIState>()(
       activeTab: 'details',
       edgeStyle: 'default', // Bezier curves
 
+      // Compact cards default
+      compactCards: false,
+
       // Bottom panel defaults
       bottomPanelOpen: false,
 
@@ -63,6 +70,8 @@ export const useUIStore = create<UIState>()(
         set((s) => ({
           edgeStyle: s.edgeStyle === 'default' ? 'straight' : 'default',
         })),
+      toggleCompactCards: () =>
+        set((s) => ({ compactCards: !s.compactCards })),
 
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
@@ -78,9 +87,8 @@ export const useUIStore = create<UIState>()(
     {
       name: 'gridctl-ui-storage',
       partialize: (state) => ({
-        // Only persist edge style preference
         edgeStyle: state.edgeStyle,
-        // Don't persist panel open state - start fresh each session
+        compactCards: state.compactCards,
       }),
     }
   )
