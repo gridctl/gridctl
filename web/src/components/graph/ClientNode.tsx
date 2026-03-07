@@ -3,6 +3,8 @@ import { Handle, Position } from '@xyflow/react';
 import { Monitor } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
+import { useUIStore } from '../../stores/useUIStore';
+import { LAYOUT } from '../../lib/constants';
 import type { ClientNodeData } from '../../types';
 
 interface ClientNodeProps {
@@ -11,11 +13,50 @@ interface ClientNodeProps {
 }
 
 const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
+  const isCompact = useUIStore((s) => s.compactCards);
+
+  if (isCompact) {
+    return (
+      <div
+        className={cn(
+          'w-40 rounded-xl relative',
+          'backdrop-blur-xl border transition-all duration-200 ease-out',
+          'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
+          'flex items-center px-2.5 gap-2',
+          selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
+          !selected && 'border-primary/25 hover:shadow-node-hover hover:border-primary/40'
+        )}
+        style={{ height: LAYOUT.CLIENT_HEIGHT_COMPACT }}
+      >
+        {/* Top accent */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+
+        <div className="p-1.5 rounded-md border bg-primary/10 border-primary/25 flex-shrink-0">
+          <Monitor size={14} className="text-primary" />
+        </div>
+        <span className="font-semibold text-xs text-text-primary truncate min-w-0">
+          {data.name}
+        </span>
+        <StatusDot status={data.status} />
+
+        <Handle
+          type="source"
+          position={Position.Right}
+          className={cn(
+            '!w-2.5 !h-2.5 !bg-primary !border-2 !border-background !rounded-full',
+            'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
+          )}
+          id="output"
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
         'w-40 rounded-xl relative',
-        'backdrop-blur-xl border transition-all duration-300 ease-out',
+        'backdrop-blur-xl border transition-all duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
         'flex flex-col items-center justify-center text-center p-3 gap-1',
         selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
