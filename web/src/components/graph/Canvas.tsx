@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -8,7 +8,7 @@ import {
   useViewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RotateCcw, Spline, Minus, Plus, Maximize } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
@@ -28,10 +28,21 @@ export function Canvas() {
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const edgeStyle = useUIStore((s) => s.edgeStyle);
   const toggleEdgeStyle = useUIStore((s) => s.toggleEdgeStyle);
+  const compactCards = useUIStore((s) => s.compactCards);
+  const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
 
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { zoom } = useViewport();
+
+  // Reset layout when compact cards toggle changes
+  const prevCompactRef = useRef(compactCards);
+  useEffect(() => {
+    if (prevCompactRef.current !== compactCards) {
+      prevCompactRef.current = compactCards;
+      resetLayout();
+    }
+  }, [compactCards, resetLayout]);
 
   // Path highlighting for selected agents
   const highlightState = usePathHighlight(nodes, edges, selectedNodeId);
@@ -182,6 +193,20 @@ export function Canvas() {
               <Minus className="w-4 h-4 rotate-45" />
             ) : (
               <Spline className="w-4 h-4" />
+            )}
+          </button>
+          <button
+            onClick={toggleCompactCards}
+            className={cn(
+              'control-button',
+              compactCards && 'ring-1 ring-primary/30'
+            )}
+            title={compactCards ? 'Switch to full cards' : 'Switch to compact cards'}
+          >
+            {compactCards ? (
+              <LayoutGrid className="w-4 h-4" />
+            ) : (
+              <Rows3 className="w-4 h-4" />
             )}
           </button>
         </Panel>
