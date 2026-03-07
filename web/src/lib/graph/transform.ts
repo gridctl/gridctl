@@ -41,6 +41,8 @@ export interface TransformOutput {
 export interface TransformOptions extends LayoutOptions {
   /** Layout engine to use (defaults to butterfly) */
   layoutEngine?: LayoutEngine;
+  /** Whether to use compact node dimensions */
+  compact?: boolean;
 }
 
 /** Default layout engine - butterfly layout */
@@ -63,7 +65,7 @@ export function transformToGraph(
   options: TransformOptions = {}
 ): TransformOutput {
   const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients = [], registryStatus, codeMode } = input;
-  const { layoutEngine = defaultLayoutEngine, preservedPositions } = options;
+  const { layoutEngine = defaultLayoutEngine, preservedPositions, compact } = options;
 
   // Build lookup sets for edge routing
   const { usedByOtherAgents } = buildNodeTypeSets(mcpServers, agents);
@@ -86,7 +88,7 @@ export function transformToGraph(
   const edges = createAllEdges(mcpServers, resources, agents, clients);
 
   // Apply layout
-  const layoutOptions: LayoutOptions = { preservedPositions };
+  const layoutOptions: LayoutOptions = { preservedPositions, compact };
   const { nodes: layoutedNodes, edges: layoutedEdges } = layoutEngine.layout(
     { nodes, edges },
     layoutOptions
@@ -117,10 +119,11 @@ export function transformToNodesAndEdges(
   a2aTasks?: number | null,
   clients?: ClientStatus[],
   registryStatus?: RegistryStatus | null,
-  codeMode?: string | null
+  codeMode?: string | null,
+  compact?: boolean
 ): TransformOutput {
   return transformToGraph(
     { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients, registryStatus, codeMode },
-    { preservedPositions: existingPositions }
+    { preservedPositions: existingPositions, compact }
   );
 }
