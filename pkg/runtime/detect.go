@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -358,7 +359,8 @@ func parseSemver(v string) [3]int {
 	var parts [3]int
 	for i := 1; i < len(matches) && i <= 3; i++ {
 		if matches[i] != "" {
-			fmt.Sscanf(matches[i], "%d", &parts[i-1])
+			n, _ := strconv.Atoi(matches[i])
+			parts[i-1] = n
 		}
 	}
 	return parts
