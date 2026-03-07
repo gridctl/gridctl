@@ -101,6 +101,7 @@ export class ButterflyLayoutEngine implements LayoutEngine {
   layout(input: LayoutInput, options?: LayoutOptions): LayoutOutput {
     const { nodes, edges } = input;
     const preservedPositions = options?.preservedPositions;
+    const compact = options?.compact ?? false;
 
     // Group nodes by zone
     const nodesByZone = new Map<ButterflyZone, Node[]>();
@@ -117,7 +118,7 @@ export class ButterflyLayoutEngine implements LayoutEngine {
 
     for (const [zone, zoneNodes] of nodesByZone) {
       const config = this.zoneConfigs[zone];
-      const positioned = this.layoutZone(zoneNodes, config, preservedPositions);
+      const positioned = this.layoutZone(zoneNodes, config, preservedPositions, compact);
       positionedNodes.push(...positioned);
     }
 
@@ -131,25 +132,29 @@ export class ButterflyLayoutEngine implements LayoutEngine {
   private layoutZone(
     nodes: Node[],
     config: ZoneConfig,
-    preservedPositions?: Map<string, { x: number; y: number }>
+    preservedPositions?: Map<string, { x: number; y: number }>,
+    compact = false
   ): Node[] {
     if (nodes.length === 0) return [];
 
+    // Tighter spacing in compact mode — full gaps look excessive between short cards
+    const spacing = compact ? Math.round(config.nodeSpacing * 0.5) : config.nodeSpacing;
+
     // Calculate total height of all nodes plus spacing
     const totalHeight = nodes.reduce((sum, node, index) => {
-      const { height } = getNodeDimensions(node);
-      const spacing = index < nodes.length - 1 ? config.nodeSpacing : 0;
-      return sum + height + spacing;
+      const { height } = getNodeDimensions(node, compact);
+      const gap = index < nodes.length - 1 ? spacing : 0;
+      return sum + height + gap;
     }, 0);
 
     // Calculate max width for consistent left-edge alignment
-    const maxWidth = Math.max(...nodes.map((n) => getNodeDimensions(n).width));
+    const maxWidth = Math.max(...nodes.map((n) => getNodeDimensions(n, compact).width));
 
     // Start Y position to center nodes vertically
     let currentY = -totalHeight / 2 + this.verticalMargin;
 
     return nodes.map((node) => {
-      const { height } = getNodeDimensions(node);
+      const { height } = getNodeDimensions(node, compact);
 
       // Check for preserved position (user-dragged)
       const preserved = preservedPositions?.get(node.id);
@@ -164,7 +169,7 @@ export class ButterflyLayoutEngine implements LayoutEngine {
       };
 
       // Advance Y for next node
-      currentY += height + config.nodeSpacing;
+      currentY += height + spacing;
 
       return { ...node, position };
     });
