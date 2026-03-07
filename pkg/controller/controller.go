@@ -54,7 +54,8 @@ type Config struct {
 	Foreground  bool
 	Watch       bool
 	DaemonChild bool
-	CodeMode    bool // Enable code mode via CLI flag
+	CodeMode    bool   // Enable code mode via CLI flag
+	Runtime     string // Explicit container runtime ("docker" or "podman")
 }
 
 // StackController orchestrates the full deploy lifecycle.
@@ -119,10 +120,10 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	// Create output printer
 	printer := sc.createPrinter(stack)
 
-	// Start containers
-	rt, err := runtime.New()
+	// Detect runtime and start containers
+	rt, err := sc.createRuntime(ctx, stack, printer)
 	if err != nil {
-		return fmt.Errorf("failed to create runtime: %w", err)
+		return err
 	}
 	defer rt.Close()
 
@@ -148,6 +149,61 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 
 	// Daemon mode: fork child process
 	return sc.runDaemonMode(ctx, stack, result, printer)
+}
+
+// createRuntime detects the container runtime and creates an orchestrator.
+// If the stack doesn't need a container runtime, falls back to the default factory.
+func (sc *StackController) createRuntime(ctx context.Context, stack *config.Stack, printer *output.Printer) (*runtime.Orchestrator, error) {
+	if !stack.NeedsContainerRuntime() {
+		// No container workloads — use default runtime (won't fail if Docker unavailable)
+		rt, err := runtime.New()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create runtime: %w", err)
+		}
+		return rt, nil
+	}
+
+	// Detect runtime
+	info, err := runtime.DetectRuntime(ctx, runtime.DetectOptions{
+		Explicit: sc.config.Runtime,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Print runtime info
+	if printer != nil {
+		printer.Info("Runtime", "type", info.DisplayName())
+	} else if !sc.config.Quiet {
+		fmt.Printf("Runtime: %s\n", info.DisplayName())
+	}
+
+	// Warn about rootless Podman
+	if info.IsRootless() {
+		msg := "rootless Podman detected — networking may not work as expected; use rootful mode for full compatibility"
+		if printer != nil {
+			printer.Warn(msg)
+		} else {
+			fmt.Printf("Warning: %s\n", msg)
+		}
+	}
+
+	// Log SELinux volume label behavior
+	if info.SELinux && info.Type == runtime.RuntimePodman {
+		msg := "SELinux detected — :Z labels will be auto-applied to volume mounts"
+		if printer != nil {
+			printer.Info(msg)
+		} else if !sc.config.Quiet {
+			fmt.Printf("%s\n", msg)
+		}
+	}
+
+	rt, err := runtime.NewWithInfo(info)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create runtime: %w", err)
+	}
+
+	return rt, nil
 }
 
 // checkState acquires a lock, cleans stale state, and checks if already running.
@@ -176,9 +232,9 @@ func (sc *StackController) checkState(stack *config.Stack) error {
 
 // runDaemonChild runs the gateway as a daemon child process.
 func (sc *StackController) runDaemonChild(ctx context.Context, stack *config.Stack) error {
-	rt, err := runtime.New()
+	rt, err := sc.createRuntime(ctx, stack, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create runtime: %w", err)
+		return err
 	}
 	defer rt.Close()
 
@@ -363,7 +419,7 @@ func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *
 
 	// Only query Docker for container statuses when the stack has container workloads
 	var statuses []runtime.WorkloadStatus
-	if stack.NeedsDocker() {
+	if stack.NeedsContainerRuntime() {
 		var err error
 		statuses, err = rt.Status(ctx, stack.Name)
 		if err != nil {
