@@ -14,8 +14,9 @@ import (
 
 // DockerRuntime implements runtime.WorkloadRuntime using Docker.
 type DockerRuntime struct {
-	cli    dockerclient.DockerClient
-	logger *slog.Logger
+	cli         dockerclient.DockerClient
+	logger      *slog.Logger
+	runtimeInfo *runtime.RuntimeInfo
 }
 
 // New creates a new DockerRuntime instance.
@@ -27,9 +28,23 @@ func New() (*DockerRuntime, error) {
 	return &DockerRuntime{cli: cli, logger: logging.NewDiscardLogger()}, nil
 }
 
+// NewWithInfo creates a DockerRuntime using pre-detected runtime information.
+func NewWithInfo(info *runtime.RuntimeInfo) (*DockerRuntime, error) {
+	cli, err := NewDockerClientWithHost(info.DockerHost())
+	if err != nil {
+		return nil, err
+	}
+	return &DockerRuntime{cli: cli, logger: logging.NewDiscardLogger(), runtimeInfo: info}, nil
+}
+
 // NewWithClient creates a DockerRuntime with an existing client (for testing).
 func NewWithClient(cli dockerclient.DockerClient) *DockerRuntime {
 	return &DockerRuntime{cli: cli, logger: logging.NewDiscardLogger()}
+}
+
+// RuntimeInfo returns the runtime info, if set.
+func (d *DockerRuntime) RuntimeInfo() *runtime.RuntimeInfo {
+	return d.runtimeInfo
 }
 
 // SetLogger sets the logger for Docker runtime operations.
@@ -76,7 +91,7 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 		Volumes:     cfg.Volumes,
 	}
 
-	containerID, err = CreateContainer(ctx, d.cli, dockerCfg)
+	containerID, err = CreateContainerWithInfo(ctx, d.cli, dockerCfg, d.runtimeInfo)
 	if err != nil {
 		return nil, err
 	}
