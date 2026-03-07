@@ -82,7 +82,7 @@ func runStatus(stack string) error {
 		ctx := context.Background()
 		workloadStatuses, statusErr := rt.Status(ctx, stack)
 		if statusErr != nil {
-			printer.Warn("docker unavailable — container status not shown", "error", statusErr)
+			printer.Warn("container runtime unavailable — container status not shown", "error", statusErr)
 		} else {
 			for _, s := range workloadStatuses {
 				// Get workload name from labels
