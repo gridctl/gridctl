@@ -21,6 +21,18 @@ func NewDockerClient() (dockerclient.DockerClient, error) {
 	return cli, nil
 }
 
+// NewDockerClientWithHost creates a Docker client that connects to a specific socket.
+func NewDockerClientWithHost(host string) (dockerclient.DockerClient, error) {
+	cli, err := client.NewClientWithOpts(
+		client.WithHost(host),
+		client.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating docker client: %w", err)
+	}
+	return cli, nil
+}
+
 // Ping checks if the Docker daemon is accessible.
 func Ping(ctx context.Context, cli dockerclient.DockerClient) error {
 	_, err := cli.Ping(ctx)
