@@ -1,6 +1,10 @@
 package config
 
-import "gopkg.in/yaml.v3"
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Stack represents the complete gridctl configuration.
 type Stack struct {
@@ -122,6 +126,11 @@ func (s *MCPServer) IsOpenAPI() bool {
 	return s.OpenAPI != nil && s.Image == "" && s.Source == nil && s.URL == "" && s.SSH == nil
 }
 
+// IsContainerBased returns true if this MCP server requires a container runtime.
+func (s *MCPServer) IsContainerBased() bool {
+	return !s.IsExternal() && !s.IsLocalProcess() && !s.IsSSH() && !s.IsOpenAPI()
+}
+
 // Source defines how to build an MCP server from source code.
 type Source struct {
 	Type       string `yaml:"type"` // "git" or "local"
@@ -193,6 +202,64 @@ type A2AAuth struct {
 	Type       string `yaml:"type,omitempty"`        // "bearer", "api_key", or "none"
 	TokenEnv   string `yaml:"token_env,omitempty"`   // Environment variable containing the token
 	HeaderName string `yaml:"header_name,omitempty"` // Header name for API key auth (default: "Authorization")
+}
+
+// NeedsDocker returns true if the stack has workloads requiring a container runtime.
+func (s *Stack) NeedsDocker() bool {
+	if len(s.Resources) > 0 || len(s.Agents) > 0 {
+		return true
+	}
+	for _, srv := range s.MCPServers {
+		if srv.IsContainerBased() {
+			return true
+		}
+	}
+	return false
+}
+
+// DockerWorkloads returns human-readable descriptions of workloads that require Docker.
+func (s *Stack) DockerWorkloads() []string {
+	var workloads []string
+	for _, srv := range s.MCPServers {
+		if srv.IsContainerBased() {
+			detail := "container"
+			if srv.Image != "" {
+				detail = "image: " + srv.Image
+			} else if srv.Source != nil {
+				detail = "source: " + srv.Source.Type
+			}
+			workloads = append(workloads, fmt.Sprintf("  - %-20s (%s)", srv.Name, detail))
+		}
+	}
+	for _, res := range s.Resources {
+		workloads = append(workloads, fmt.Sprintf("  - %-20s (resource)", res.Name))
+	}
+	for _, agent := range s.Agents {
+		workloads = append(workloads, fmt.Sprintf("  - %-20s (agent)", agent.Name))
+	}
+	return workloads
+}
+
+// NonDockerWorkloads returns human-readable descriptions of workloads that work without Docker.
+func (s *Stack) NonDockerWorkloads() []string {
+	var workloads []string
+	for _, srv := range s.MCPServers {
+		var kind string
+		switch {
+		case srv.IsExternal():
+			kind = "external"
+		case srv.IsLocalProcess():
+			kind = "local process"
+		case srv.IsSSH():
+			kind = "ssh"
+		case srv.IsOpenAPI():
+			kind = "openapi"
+		default:
+			continue
+		}
+		workloads = append(workloads, fmt.Sprintf("  - %-20s (%s)", srv.Name, kind))
+	}
+	return workloads
 }
 
 // IsHeadless returns true if the agent uses a headless runtime.
