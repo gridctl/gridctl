@@ -11,6 +11,9 @@ func init() {
 	// Register factory function for runtime.New()
 	runtime.NewFunc = newOrchestrator
 
+	// Register factory function for runtime.NewWithInfo()
+	runtime.NewWithInfoFunc = newOrchestratorWithInfo
+
 	// Register helper functions
 	runtime.GetContainerHostPortFunc = GetContainerHostPort
 }
@@ -23,6 +26,18 @@ func newOrchestrator() (*runtime.Orchestrator, error) {
 	}
 	bldr := &dockerBuilderAdapter{builder.New(dockerRT.Client())}
 	return runtime.NewOrchestrator(dockerRT, bldr), nil
+}
+
+// newOrchestratorWithInfo creates an Orchestrator using explicit RuntimeInfo.
+func newOrchestratorWithInfo(info *runtime.RuntimeInfo) (*runtime.Orchestrator, error) {
+	dockerRT, err := NewWithInfo(info)
+	if err != nil {
+		return nil, err
+	}
+	bldr := &dockerBuilderAdapter{builder.New(dockerRT.Client())}
+	orch := runtime.NewOrchestrator(dockerRT, bldr)
+	orch.SetRuntimeInfo(info)
+	return orch, nil
 }
 
 // dockerBuilderAdapter wraps builder.Builder to implement the runtime.Builder interface.
