@@ -17,9 +17,10 @@ type LoggerSetter interface {
 // Orchestrator manages the lifecycle of gridctl workloads.
 // It uses a WorkloadRuntime to start/stop workloads and a Builder for image builds.
 type Orchestrator struct {
-	runtime WorkloadRuntime
-	builder Builder
-	logger  *slog.Logger
+	runtime     WorkloadRuntime
+	builder     Builder
+	logger      *slog.Logger
+	runtimeInfo *RuntimeInfo
 }
 
 // Builder handles image/artifact building.
@@ -113,6 +114,16 @@ func (o *Orchestrator) SetLogger(logger *slog.Logger) {
 	}
 }
 
+// SetRuntimeInfo stores runtime detection info for runtime-aware behavior.
+func (o *Orchestrator) SetRuntimeInfo(info *RuntimeInfo) {
+	o.runtimeInfo = info
+}
+
+// RuntimeInfo returns the detected runtime info, or nil if not set.
+func (o *Orchestrator) RuntimeInfo() *RuntimeInfo {
+	return o.runtimeInfo
+}
+
 // Close closes the runtime.
 func (o *Orchestrator) Close() error {
 	return o.runtime.Close()
@@ -132,9 +143,9 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 	o.logger.Info("starting stack", "name", stack.Name)
 
 	// Only check Docker and create networks when container workloads exist
-	if stack.NeedsDocker() {
+	if stack.NeedsContainerRuntime() {
 		if err := o.runtime.Ping(ctx); err != nil {
-			return nil, dockerRequiredError(stack, err)
+			return nil, runtimeRequiredError(stack, err)
 		}
 
 		// Create network(s)
@@ -469,7 +480,11 @@ func (o *Orchestrator) startAgent(ctx context.Context, stack *config.Stack, agen
 	}
 	// Inject MCP gateway endpoint for agent to connect to (includes agent identity for SSE access control)
 	if opts.GatewayPort > 0 {
-		env["MCP_ENDPOINT"] = fmt.Sprintf("http://host.docker.internal:%d?agent=%s", opts.GatewayPort, agent.Name)
+		hostAlias := "host.docker.internal"
+		if o.runtimeInfo != nil {
+			hostAlias = o.runtimeInfo.HostAliasHostname()
+		}
+		env["MCP_ENDPOINT"] = fmt.Sprintf("http://%s:%d?agent=%s", hostAlias, opts.GatewayPort, agent.Name)
 	}
 
 	// Create workload config
@@ -635,25 +650,26 @@ func agentLabels(stack, name string) map[string]string {
 	}
 }
 
-// dockerRequiredError builds an actionable error message listing which workloads need Docker.
-func dockerRequiredError(stack *config.Stack, pingErr error) error {
-	msg := "Docker is required but not available\n"
+// runtimeRequiredError builds an actionable error message listing which workloads need a container runtime.
+func runtimeRequiredError(stack *config.Stack, pingErr error) error {
+	msg := "A container runtime is required but not available\n"
 
-	if dockerWorkloads := stack.DockerWorkloads(); len(dockerWorkloads) > 0 {
-		msg += "\nThese workloads need Docker:\n"
-		for _, w := range dockerWorkloads {
+	if containerWorkloads := stack.ContainerWorkloads(); len(containerWorkloads) > 0 {
+		msg += "\nThese workloads need a container runtime:\n"
+		for _, w := range containerWorkloads {
 			msg += w + "\n"
 		}
 	}
 
-	if nonDockerWorkloads := stack.NonDockerWorkloads(); len(nonDockerWorkloads) > 0 {
-		msg += "\nThese work without Docker:\n"
-		for _, w := range nonDockerWorkloads {
+	if nonContainerWorkloads := stack.NonContainerWorkloads(); len(nonContainerWorkloads) > 0 {
+		msg += "\nThese work without a container runtime:\n"
+		for _, w := range nonContainerWorkloads {
 			msg += w + "\n"
 		}
 	}
 
 	msg += "\nInstall Docker: https://docs.docker.com/get-docker/"
+	msg += "\nInstall Podman: https://podman.io/getting-started/installation"
 
 	return fmt.Errorf("%s\n\n%w", msg, pingErr)
 }
