@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/runtime"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -28,7 +29,13 @@ type ContainerConfig struct {
 }
 
 // CreateContainer creates a new container with the given configuration.
+// Use CreateContainerWithInfo for runtime-aware host alias and volume labels.
 func CreateContainer(ctx context.Context, cli dockerclient.DockerClient, cfg ContainerConfig) (string, error) {
+	return CreateContainerWithInfo(ctx, cli, cfg, nil)
+}
+
+// CreateContainerWithInfo creates a new container with runtime-aware configuration.
+func CreateContainerWithInfo(ctx context.Context, cli dockerclient.DockerClient, cfg ContainerConfig, info *runtime.RuntimeInfo) (string, error) {
 	// Convert env map to slice
 	var envSlice []string
 	for k, v := range cfg.Env {
@@ -67,11 +74,19 @@ func CreateContainer(ctx context.Context, cli dockerclient.DockerClient, cfg Con
 		}
 	}
 
+	// Determine host alias and volume labels based on runtime
+	hostAlias := "host.docker.internal:host-gateway"
+	volumes := cfg.Volumes
+	if info != nil {
+		hostAlias = info.HostAlias
+		volumes = info.ApplyVolumeLabels(volumes)
+	}
+
 	hostConfig := &container.HostConfig{
 		NetworkMode:  container.NetworkMode(cfg.NetworkName),
 		PortBindings: portBindings,
-		Binds:        cfg.Volumes,
-		ExtraHosts:   []string{"host.docker.internal:host-gateway"},
+		Binds:        volumes,
+		ExtraHosts:   []string{hostAlias},
 	}
 
 	networkConfig := &network.NetworkingConfig{
