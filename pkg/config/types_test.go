@@ -2,7 +2,7 @@ package config
 
 import "testing"
 
-func TestStack_NeedsDocker(t *testing.T) {
+func TestStack_NeedsContainerRuntime(t *testing.T) {
 	tests := []struct {
 		name string
 		stack Stack
@@ -125,15 +125,15 @@ func TestStack_NeedsDocker(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.stack.NeedsDocker()
+			got := tt.stack.NeedsContainerRuntime()
 			if got != tt.want {
-				t.Errorf("NeedsDocker() = %v, want %v", got, tt.want)
+				t.Errorf("NeedsContainerRuntime() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestStack_DockerWorkloads(t *testing.T) {
+func TestStack_ContainerWorkloads(t *testing.T) {
 	stack := Stack{
 		Name: "test",
 		MCPServers: []MCPServer{
@@ -148,13 +148,13 @@ func TestStack_DockerWorkloads(t *testing.T) {
 		},
 	}
 
-	workloads := stack.DockerWorkloads()
+	workloads := stack.ContainerWorkloads()
 	if len(workloads) != 3 {
-		t.Fatalf("expected 3 Docker workloads, got %d", len(workloads))
+		t.Fatalf("expected 3 container workloads, got %d", len(workloads))
 	}
 }
 
-func TestStack_NonDockerWorkloads(t *testing.T) {
+func TestStack_NonContainerWorkloads(t *testing.T) {
 	stack := Stack{
 		Name: "test",
 		MCPServers: []MCPServer{
@@ -164,8 +164,8 @@ func TestStack_NonDockerWorkloads(t *testing.T) {
 		},
 	}
 
-	workloads := stack.NonDockerWorkloads()
+	workloads := stack.NonContainerWorkloads()
 	if len(workloads) != 2 {
-		t.Fatalf("expected 2 non-Docker workloads, got %d", len(workloads))
+		t.Fatalf("expected 2 non-container workloads, got %d", len(workloads))
 	}
 }
