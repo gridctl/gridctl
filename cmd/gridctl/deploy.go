@@ -71,6 +71,7 @@ func runDeploy(stackPath string) error {
 		Watch:       deployWatch,
 		DaemonChild: deployDaemonChild,
 		CodeMode:    deployCodeMode,
+		Runtime:     runtimeFlag,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
