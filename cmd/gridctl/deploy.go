@@ -25,6 +25,7 @@ var (
 	deployWatch       bool
 	deployFlash       bool
 	deployCodeMode    bool
+	deployRuntime     string
 )
 
 var deployCmd = &cobra.Command{
@@ -32,11 +33,13 @@ var deployCmd = &cobra.Command{
 	Short: "Start MCP servers defined in a stack file",
 	Long: `Reads a stack YAML file and starts all defined MCP servers and resources.
 
-Creates a Docker network, pulls/builds images as needed, and starts containers.
+Creates a container network, pulls/builds images as needed, and starts containers.
+Supports Docker and Podman (experimental) as container runtimes.
 The MCP gateway runs as a background daemon by default.
 
 Use --foreground (-f) to run in foreground with verbose output.
-Use --flash to auto-link detected LLM clients after deploy.`,
+Use --flash to auto-link detected LLM clients after deploy.
+Use --runtime to explicitly select docker or podman.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDeploy(args[0])
@@ -56,6 +59,7 @@ func init() {
 	deployCmd.Flags().BoolVarP(&deployWatch, "watch", "w", false, "Watch stack file for changes and hot reload")
 	deployCmd.Flags().BoolVar(&deployFlash, "flash", false, "Auto-link detected LLM clients after deploy")
 	deployCmd.Flags().BoolVar(&deployCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools)")
+	deployCmd.Flags().StringVar(&deployRuntime, "runtime", "", "Container runtime to use: docker or podman (default: auto-detect)")
 }
 
 func runDeploy(stackPath string) error {
@@ -71,6 +75,7 @@ func runDeploy(stackPath string) error {
 		Watch:       deployWatch,
 		DaemonChild: deployDaemonChild,
 		CodeMode:    deployCodeMode,
+		Runtime:     deployRuntime,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
