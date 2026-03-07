@@ -630,7 +630,7 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	if s.dockerClient == nil || s.stackName == "" {
-		writeJSONError(w, "Docker client not configured", http.StatusServiceUnavailable)
+		writeJSONError(w, "Container runtime not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -658,10 +658,10 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentNa
 			"",
 			"  This node is configured as an external MCP server, local",
 			"  process, SSH connection, or remote A2A agent - it does not",
-			"  have a Docker container managed by Gridctl.",
+			"  have a container managed by Gridctl.",
 			"",
 			"  To view logs for external services, check the source directly:",
-			"    • Docker: docker logs <container-name>",
+			"    • Container: docker logs / podman logs <container-name>",
 			"    • Local process: Check stdout/stderr or log files",
 			"    • SSH: Check logs on the remote host",
 			"═══════════════════════════════════════════════════════════════",
@@ -705,7 +705,7 @@ func (s *Server) handleAgentRestart(w http.ResponseWriter, r *http.Request, agen
 	}
 
 	if s.dockerClient == nil || s.stackName == "" {
-		http.Error(w, "Docker client not configured", http.StatusServiceUnavailable)
+		http.Error(w, "Container runtime not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -739,7 +739,7 @@ func (s *Server) handleAgentStop(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	if s.dockerClient == nil || s.stackName == "" {
-		http.Error(w, "Docker client not configured", http.StatusServiceUnavailable)
+		http.Error(w, "Container runtime not configured", http.StatusServiceUnavailable)
 		return
 	}
 
