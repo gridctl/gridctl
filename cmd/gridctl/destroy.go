@@ -62,16 +62,20 @@ func runDestroy(stackPath string) error {
 		printer.Warn("could not acquire lock", "error", err)
 	}
 
-	// Stop containers
+	// Stop containers (best-effort when Docker is unavailable)
 	rt, err := runtime.New()
 	if err != nil {
-		return fmt.Errorf("failed to create runtime: %w", err)
-	}
-	defer rt.Close()
-
-	ctx := context.Background()
-	if err := rt.Down(ctx, stack.Name); err != nil {
-		return fmt.Errorf("failed to stop containers: %w", err)
+		if stack.NeedsDocker() {
+			printer.Warn("could not initialize runtime — container cleanup skipped", "error", err)
+		}
+	} else {
+		defer rt.Close()
+		ctx := context.Background()
+		if err := rt.Down(ctx, stack.Name); err != nil {
+			if stack.NeedsDocker() {
+				printer.Warn("docker unavailable — could not remove containers", "error", err)
+			}
+		}
 	}
 
 	printer.Info("Stack stopped", "name", stack.Name)
