@@ -450,7 +450,11 @@ func (h *Handler) startAgent(ctx context.Context, agent config.Agent, stack *con
 		env[k] = v
 	}
 	if h.gatewayPort > 0 {
-		env["MCP_ENDPOINT"] = fmt.Sprintf("http://host.docker.internal:%d?agent=%s", h.gatewayPort, agent.Name)
+		hostAlias := "host.docker.internal"
+		if ri := h.runtime.RuntimeInfo(); ri != nil {
+			hostAlias = ri.HostAliasHostname()
+		}
+		env["MCP_ENDPOINT"] = fmt.Sprintf("http://%s:%d?agent=%s", hostAlias, h.gatewayPort, agent.Name)
 	}
 
 	cfg := runtime.WorkloadConfig{
