@@ -204,8 +204,8 @@ type A2AAuth struct {
 	HeaderName string `yaml:"header_name,omitempty"` // Header name for API key auth (default: "Authorization")
 }
 
-// NeedsDocker returns true if the stack has workloads requiring a container runtime.
-func (s *Stack) NeedsDocker() bool {
+// NeedsContainerRuntime returns true if the stack has workloads requiring a container runtime.
+func (s *Stack) NeedsContainerRuntime() bool {
 	if len(s.Resources) > 0 || len(s.Agents) > 0 {
 		return true
 	}
@@ -217,8 +217,8 @@ func (s *Stack) NeedsDocker() bool {
 	return false
 }
 
-// DockerWorkloads returns human-readable descriptions of workloads that require Docker.
-func (s *Stack) DockerWorkloads() []string {
+// ContainerWorkloads returns human-readable descriptions of workloads that require a container runtime.
+func (s *Stack) ContainerWorkloads() []string {
 	var workloads []string
 	for _, srv := range s.MCPServers {
 		if srv.IsContainerBased() {
@@ -240,8 +240,8 @@ func (s *Stack) DockerWorkloads() []string {
 	return workloads
 }
 
-// NonDockerWorkloads returns human-readable descriptions of workloads that work without Docker.
-func (s *Stack) NonDockerWorkloads() []string {
+// NonContainerWorkloads returns human-readable descriptions of workloads that work without a container runtime.
+func (s *Stack) NonContainerWorkloads() []string {
 	var workloads []string
 	for _, srv := range s.MCPServers {
 		var kind string
