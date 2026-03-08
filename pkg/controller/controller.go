@@ -127,6 +127,16 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	}
 	defer rt.Close()
 
+	// Print detected runtime at startup
+	if printer != nil {
+		if info := rt.RuntimeInfo(); info != nil {
+			printer.Info("Runtime detected", "runtime", info.DisplayName())
+			if info.IsRootless() {
+				printer.Warn("Rootless Podman detected — container-to-host networking may be limited")
+			}
+		}
+	}
+
 	// Set up logging for orchestrator
 	logBuffer, bufferHandler := sc.setupOrchestratorLogging(rt)
 
