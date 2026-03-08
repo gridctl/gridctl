@@ -2,10 +2,12 @@ package controller
 
 import (
 	"io/fs"
+	"os"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 func TestNew(t *testing.T) {
@@ -220,5 +222,274 @@ func TestConfig_Defaults(t *testing.T) {
 	}
 	if cfg.DaemonChild {
 		t.Error("expected DaemonChild to default to false")
+	}
+}
+
+func TestCreatePrinter_Quiet(t *testing.T) {
+	sc := New(Config{Quiet: true})
+	stack := &config.Stack{Name: "test"}
+	printer := sc.createPrinter(stack)
+	if printer != nil {
+		t.Error("expected nil printer when Quiet=true")
+	}
+}
+
+func TestCreatePrinter_NotQuiet(t *testing.T) {
+	sc := New(Config{StackPath: "/path/to/stack.yaml"})
+	sc.SetVersion("v0.1.0")
+	stack := &config.Stack{Name: "test"}
+	printer := sc.createPrinter(stack)
+	if printer == nil {
+		t.Error("expected non-nil printer when Quiet=false")
+	}
+}
+
+func TestCreatePrinter_Verbose(t *testing.T) {
+	sc := New(Config{StackPath: "/path/to/stack.yaml", Verbose: true})
+	stack := &config.Stack{Name: "test"}
+	// Should not panic with verbose mode
+	printer := sc.createPrinter(stack)
+	if printer == nil {
+		t.Error("expected non-nil printer when Verbose=true")
+	}
+}
+
+func TestSetupOrchestratorLogging_ForegroundVerbose(t *testing.T) {
+	sc := New(Config{Foreground: true, Verbose: true})
+	rt := runtime.NewOrchestrator(nil, nil)
+
+	logBuffer, handler := sc.setupOrchestratorLogging(rt)
+	if logBuffer == nil {
+		t.Error("expected non-nil logBuffer in foreground+non-quiet mode")
+	}
+	if handler == nil {
+		t.Error("expected non-nil handler in foreground+non-quiet mode")
+	}
+}
+
+func TestSetupOrchestratorLogging_ForegroundNonQuiet(t *testing.T) {
+	sc := New(Config{Foreground: true, Quiet: false})
+	rt := runtime.NewOrchestrator(nil, nil)
+
+	logBuffer, handler := sc.setupOrchestratorLogging(rt)
+	if logBuffer == nil {
+		t.Error("expected non-nil logBuffer in foreground+non-quiet mode")
+	}
+	if handler == nil {
+		t.Error("expected non-nil handler")
+	}
+}
+
+func TestSetupOrchestratorLogging_NonQuiet(t *testing.T) {
+	sc := New(Config{Foreground: false, Quiet: false})
+	rt := runtime.NewOrchestrator(nil, nil)
+
+	logBuffer, handler := sc.setupOrchestratorLogging(rt)
+	// Non-foreground, non-quiet returns nil buffer but still sets logger on rt
+	if logBuffer != nil {
+		t.Error("expected nil logBuffer in non-foreground mode")
+	}
+	if handler != nil {
+		t.Error("expected nil handler in non-foreground mode")
+	}
+}
+
+func TestSetupOrchestratorLogging_Quiet(t *testing.T) {
+	sc := New(Config{Quiet: true})
+	rt := runtime.NewOrchestrator(nil, nil)
+
+	logBuffer, handler := sc.setupOrchestratorLogging(rt)
+	if logBuffer != nil {
+		t.Error("expected nil logBuffer in quiet mode")
+	}
+	if handler != nil {
+		t.Error("expected nil handler in quiet mode")
+	}
+}
+
+func TestSetupOrchestratorLogging_WithVault(t *testing.T) {
+	sc := New(Config{Foreground: true})
+	sc.vaultStore = vault.NewStore(t.TempDir())
+	rt := runtime.NewOrchestrator(nil, nil)
+
+	logBuffer, handler := sc.setupOrchestratorLogging(rt)
+	if logBuffer == nil {
+		t.Error("expected non-nil logBuffer")
+	}
+	if handler == nil {
+		t.Error("expected non-nil handler")
+	}
+}
+
+func TestNewGatewayBuilder(t *testing.T) {
+	cfg := Config{
+		Port:     8180,
+		CodeMode: true,
+		NoExpand: true,
+	}
+	sc := &StackController{
+		config:  cfg,
+		version: "v1.0.0",
+	}
+	sc.SetWebFS(func() (fs.FS, error) { return nil, nil })
+	sc.vaultStore = vault.NewStore(t.TempDir())
+
+	stack := &config.Stack{Name: "test"}
+	rt := runtime.NewOrchestrator(nil, nil)
+	result := &runtime.UpResult{}
+
+	builder := sc.newGatewayBuilder(stack, rt, result)
+	if builder == nil {
+		t.Fatal("expected non-nil builder")
+	}
+	if builder.version != "v1.0.0" {
+		t.Errorf("expected version 'v1.0.0', got '%s'", builder.version)
+	}
+	if builder.webFS == nil {
+		t.Error("expected webFS to be set")
+	}
+	if builder.vaultStore == nil {
+		t.Error("expected vaultStore to be set")
+	}
+	if builder.config.Port != 8180 {
+		t.Errorf("expected port 8180, got %d", builder.config.Port)
+	}
+}
+
+func TestNewVaultSetAdapter(t *testing.T) {
+	store := vault.NewStore(t.TempDir())
+	adapter := newVaultSetAdapter(store)
+	if adapter == nil {
+		t.Fatal("expected non-nil adapter")
+	}
+	if adapter.store != store {
+		t.Error("expected adapter to wrap the given store")
+	}
+}
+
+func TestVaultSetAdapter_Get_NotFound(t *testing.T) {
+	store := vault.NewStore(t.TempDir())
+	adapter := newVaultSetAdapter(store)
+
+	_, found := adapter.Get("nonexistent")
+	if found {
+		t.Error("expected found=false for nonexistent key")
+	}
+}
+
+func TestVaultSetAdapter_GetSetSecrets_Empty(t *testing.T) {
+	store := vault.NewStore(t.TempDir())
+	adapter := newVaultSetAdapter(store)
+
+	secrets := adapter.GetSetSecrets("nonexistent-set")
+	if len(secrets) != 0 {
+		t.Errorf("expected 0 secrets, got %d", len(secrets))
+	}
+}
+
+func TestVaultSetAdapter_GetSetSecrets_WithSecrets(t *testing.T) {
+	dir := t.TempDir()
+	// Write a secrets.json file that the vault store will load
+	secretsJSON := `[
+		{"key":"DB_PASSWORD","value":"secret123","set":"database"},
+		{"key":"DB_HOST","value":"localhost","set":"database"},
+		{"key":"API_KEY","value":"key456","set":"api"}
+	]`
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("creating dir: %v", err)
+	}
+	if err := os.WriteFile(dir+"/secrets.json", []byte(secretsJSON), 0644); err != nil {
+		t.Fatalf("writing secrets.json: %v", err)
+	}
+
+	store := vault.NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatalf("loading vault: %v", err)
+	}
+
+	adapter := newVaultSetAdapter(store)
+
+	// Get secrets for the "database" set
+	secrets := adapter.GetSetSecrets("database")
+	if len(secrets) != 2 {
+		t.Fatalf("expected 2 secrets, got %d", len(secrets))
+	}
+
+	// Verify the secrets are config.VaultSecret type with correct values
+	secretMap := make(map[string]string)
+	for _, s := range secrets {
+		secretMap[s.Key] = s.Value
+	}
+	if secretMap["DB_PASSWORD"] != "secret123" {
+		t.Errorf("expected DB_PASSWORD=secret123, got %s", secretMap["DB_PASSWORD"])
+	}
+	if secretMap["DB_HOST"] != "localhost" {
+		t.Errorf("expected DB_HOST=localhost, got %s", secretMap["DB_HOST"])
+	}
+}
+
+func TestVaultSetAdapter_Get_WithValue(t *testing.T) {
+	dir := t.TempDir()
+	secretsJSON := `[{"key":"MY_SECRET","value":"hello"}]`
+	if err := os.WriteFile(dir+"/secrets.json", []byte(secretsJSON), 0644); err != nil {
+		t.Fatalf("writing secrets.json: %v", err)
+	}
+
+	store := vault.NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatalf("loading vault: %v", err)
+	}
+
+	adapter := newVaultSetAdapter(store)
+	val, found := adapter.Get("MY_SECRET")
+	if !found {
+		t.Error("expected found=true")
+	}
+	if val != "hello" {
+		t.Errorf("expected 'hello', got '%s'", val)
+	}
+}
+
+func TestBuildWorkloadSummaries_OnlyResources(t *testing.T) {
+	stack := &config.Stack{
+		Resources: []config.Resource{
+			{Name: "pg"},
+			{Name: "redis"},
+			{Name: "minio"},
+		},
+	}
+	result := &runtime.UpResult{}
+
+	summaries := BuildWorkloadSummaries(stack, result)
+	if len(summaries) != 3 {
+		t.Fatalf("expected 3 summaries, got %d", len(summaries))
+	}
+	for _, s := range summaries {
+		if s.Type != "resource" {
+			t.Errorf("expected type 'resource', got '%s' for %s", s.Type, s.Name)
+		}
+	}
+}
+
+func TestBuildWorkloadSummaries_ServerNotInConfig(t *testing.T) {
+	// MCPServer result has a name that doesn't match any config entry
+	stack := &config.Stack{
+		MCPServers: []config.MCPServer{},
+	}
+	result := &runtime.UpResult{
+		MCPServers: []runtime.MCPServerResult{
+			{Name: "orphan-server"},
+		},
+	}
+
+	summaries := BuildWorkloadSummaries(stack, result)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	// Transport defaults to "http" via the fallback for empty transport
+	// But since the config entry is missing, serverTransports won't have this key,
+	// so the transport stays empty string
+	if summaries[0].Transport != "" {
+		t.Errorf("expected empty transport for orphan server, got '%s'", summaries[0].Transport)
 	}
 }
