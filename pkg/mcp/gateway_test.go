@@ -1623,3 +1623,1014 @@ func TestGateway_HandleResourcesRead_EmptyName(t *testing.T) {
 	}
 }
 
+func TestGateway_SetCodeMode(t *testing.T) {
+	g := NewGateway()
+
+	// Default is off
+	if g.CodeModeStatus() != "off" {
+		t.Errorf("expected initial code mode 'off', got %q", g.CodeModeStatus())
+	}
+
+	// Enable code mode
+	g.SetCodeMode(30 * time.Second)
+	if g.CodeModeStatus() != "on" {
+		t.Errorf("expected code mode 'on', got %q", g.CodeModeStatus())
+	}
+}
+
+func TestGateway_CodeModeStatus_Default(t *testing.T) {
+	g := NewGateway()
+	if g.CodeModeStatus() != "off" {
+		t.Errorf("expected 'off', got %q", g.CodeModeStatus())
+	}
+}
+
+func TestGateway_HandleToolsList_CodeMode(t *testing.T) {
+	g := NewGateway()
+	g.SetCodeMode(30 * time.Second)
+
+	result, err := g.HandleToolsList()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Code mode should return meta-tools instead of real tools
+	if len(result.Tools) == 0 {
+		t.Error("expected code mode meta-tools")
+	}
+
+	// Meta-tools should include "search" and "execute"
+	toolNames := make(map[string]bool)
+	for _, tool := range result.Tools {
+		toolNames[tool.Name] = true
+	}
+	if !toolNames["search"] && !toolNames["execute"] {
+		t.Errorf("expected meta-tools 'search' and 'execute', got %v", toolNames)
+	}
+}
+
+func TestGateway_HandleToolsListForAgent_CodeMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Register a server and agent
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	g.Router().AddClient(mock)
+	g.RegisterAgent("agent1", []config.ToolSelector{{Server: "server1"}})
+
+	// Enable code mode
+	g.SetCodeMode(30 * time.Second)
+
+	// When code mode is active, HandleToolsListForAgent should return meta-tools
+	result, err := g.HandleToolsListForAgent("agent1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should return meta-tools, not real tools
+	for _, tool := range result.Tools {
+		if tool.Name == "server1__tool1" {
+			t.Error("expected meta-tools in code mode, not real tools")
+		}
+	}
+}
+
+func TestGateway_RefreshAllTools(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	g.Router().AddClient(mock)
+
+	ctx := context.Background()
+	err := g.RefreshAllTools(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGateway_HandleToolsCallForAgent_MetaTool(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	g.SetCodeMode(30 * time.Second)
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "A tool"},
+	})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Register agent
+	g.RegisterAgent("my-agent", []config.ToolSelector{{Server: "server1"}})
+
+	ctx := context.Background()
+
+	// Search meta-tool should work via agent path
+	result, err := g.HandleToolsCallForAgent(ctx, "my-agent", ToolCallParams{
+		Name:      MetaToolSearch,
+		Arguments: map[string]any{"query": "tool"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected search to succeed")
+	}
+}
+
+func TestGateway_HandleToolsCallForAgent_InvalidToolName(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "A tool"},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	g.RegisterAgent("my-agent", []config.ToolSelector{{Server: "server1"}})
+
+	ctx := context.Background()
+
+	// Tool name without double underscore should return error
+	result, err := g.HandleToolsCallForAgent(ctx, "my-agent", ToolCallParams{
+		Name: "invalid-name",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for invalid tool name format")
+	}
+}
+
+func TestGateway_HandleToolsCallForAgent_AccessDenied(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "secret-tool", Description: "Restricted"},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Agent only has access to server2, not server1
+	g.RegisterAgent("limited-agent", []config.ToolSelector{{Server: "server2"}})
+
+	ctx := context.Background()
+
+	result, err := g.HandleToolsCallForAgent(ctx, "limited-agent", ToolCallParams{
+		Name:      "server1__secret-tool",
+		Arguments: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for access denied")
+	}
+	if len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "Access denied") {
+		t.Error("expected 'Access denied' in error content")
+	}
+}
+
+func TestGateway_HandleToolsCallForAgent_UnregisteredAgent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "A tool"},
+	})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	ctx := context.Background()
+
+	// Unregistered agent should be allowed (backward compatibility)
+	result, err := g.HandleToolsCallForAgent(ctx, "unregistered", ToolCallParams{
+		Name:      "server1__tool1",
+		Arguments: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected unregistered agent to be allowed (backward compat)")
+	}
+}
+
+func TestGateway_getAgentServerAccess(t *testing.T) {
+	g := NewGateway()
+
+	// Unregistered agent returns nil selector and true (allow all)
+	selector, allowed := g.getAgentServerAccess("unregistered", "server1")
+	if !allowed {
+		t.Error("expected allowed=true for unregistered agent")
+	}
+	if selector != nil {
+		t.Error("expected nil selector for unregistered agent")
+	}
+
+	// Registered agent with specific server access
+	g.RegisterAgent("agent1", []config.ToolSelector{
+		{Server: "server1", Tools: []string{"tool1"}},
+		{Server: "server2"},
+	})
+
+	selector, allowed = g.getAgentServerAccess("agent1", "server1")
+	if !allowed {
+		t.Error("expected allowed=true for server1")
+	}
+	if selector == nil {
+		t.Fatal("expected non-nil selector for server1")
+	}
+	if selector.Server != "server1" {
+		t.Errorf("expected server 'server1', got '%s'", selector.Server)
+	}
+
+	// Access to server2 (no tool whitelist)
+	selector, allowed = g.getAgentServerAccess("agent1", "server2")
+	if !allowed {
+		t.Error("expected allowed=true for server2")
+	}
+	if selector == nil {
+		t.Fatal("expected non-nil selector for server2")
+	}
+
+	// Access to server3 (not in agent's allowed list)
+	selector, allowed = g.getAgentServerAccess("agent1", "server3")
+	if allowed {
+		t.Error("expected allowed=false for server3")
+	}
+	if selector != nil {
+		t.Error("expected nil selector for denied server")
+	}
+}
+
+func TestGateway_isToolAllowedForAgent(t *testing.T) {
+	g := NewGateway()
+
+	// Unregistered agent: all tools allowed
+	if !g.isToolAllowedForAgent("unregistered", "server1", "any-tool") {
+		t.Error("expected all tools allowed for unregistered agent")
+	}
+
+	g.RegisterAgent("agent1", []config.ToolSelector{
+		{Server: "server1", Tools: []string{"read", "write"}},
+		{Server: "server2"}, // all tools allowed
+	})
+
+	// Tool in whitelist
+	if !g.isToolAllowedForAgent("agent1", "server1", "read") {
+		t.Error("expected 'read' to be allowed")
+	}
+
+	// Tool not in whitelist
+	if g.isToolAllowedForAgent("agent1", "server1", "delete") {
+		t.Error("expected 'delete' to be denied")
+	}
+
+	// Server with no tool whitelist: all tools allowed
+	if !g.isToolAllowedForAgent("agent1", "server2", "anything") {
+		t.Error("expected all tools allowed for server2")
+	}
+
+	// Server not in allowed list
+	if g.isToolAllowedForAgent("agent1", "server3", "tool") {
+		t.Error("expected tool denied for disallowed server")
+	}
+}
+
+func TestGateway_logToolCountHint(t *testing.T) {
+	g := NewGateway()
+	logBuf := logging.NewLogBuffer(100)
+	g.SetLogger(slog.New(logging.NewBufferHandler(logBuf, nil)))
+
+	// Should not warn for <= 50 tools
+	g.logToolCountHint(50)
+	if g.toolCountWarned {
+		t.Error("should not warn for exactly 50 tools")
+	}
+
+	// Should warn for > 50 tools
+	g.logToolCountHint(51)
+	if !g.toolCountWarned {
+		t.Error("should warn for 51 tools")
+	}
+
+	// Should not warn again (already warned)
+	g.logToolCountHint(100)
+	// No panic or double warning
+}
+
+func TestGateway_HandleToolsList_LogsHint(t *testing.T) {
+	g := NewGateway()
+
+	// Add >50 mock tools by creating a mock with many tools
+	ctrl := gomock.NewController(t)
+	tools := make([]Tool, 55)
+	for i := range tools {
+		tools[i] = Tool{Name: fmt.Sprintf("tool%d", i), Description: "desc"}
+	}
+	client := setupMockAgentClient(ctrl, "server1", tools)
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	result, err := g.HandleToolsList()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Tools) != 55 {
+		t.Errorf("expected 55 tools, got %d", len(result.Tools))
+	}
+	if !g.toolCountWarned {
+		t.Error("expected toolCountWarned to be true after listing >50 tools")
+	}
+}
+
+func TestGateway_HandleToolsCall_CodeMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	g.SetCodeMode(30 * time.Second)
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "A test tool"},
+	})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	ctx := context.Background()
+
+	// Meta-tool search should be handled by code mode
+	result, err := g.HandleToolsCall(ctx, ToolCallParams{
+		Name:      MetaToolSearch,
+		Arguments: map[string]any{"query": ""},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected search to succeed")
+	}
+	if len(result.Content) == 0 {
+		t.Error("expected non-empty content")
+	}
+}
+
+func TestGateway_HandleResourcesRead_LegacyPromptURI(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Set up registry provider
+	registryMock := setupMockAgentClient(ctrl, "registry", nil)
+	pp := &gatewayTestPromptProvider{
+		AgentClient: registryMock,
+		prompts: []PromptData{
+			{
+				Name:        "test-prompt",
+				Description: "A prompt",
+				Content:     "Hello world",
+			},
+		},
+	}
+	g.Router().AddClient(pp)
+
+	// Legacy prompt:// URI should work
+	result, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://test-prompt"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Contents) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(result.Contents))
+	}
+	if result.Contents[0].Text != "Hello world" {
+		t.Errorf("expected 'Hello world', got '%s'", result.Contents[0].Text)
+	}
+}
+
+func TestGateway_HandleResourcesRead_EmptyNameInURI(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	registryMock := setupMockAgentClient(ctrl, "registry", nil)
+	pp := &gatewayTestPromptProvider{
+		AgentClient: registryMock,
+		prompts:     []PromptData{},
+	}
+	g.Router().AddClient(pp)
+
+	// Empty name after prefix strip
+	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "skills://registry/"})
+	if err == nil {
+		t.Fatal("expected error for empty resource name")
+	}
+	if !strings.Contains(err.Error(), "empty resource name") {
+		t.Errorf("expected 'empty resource name' error, got: %v", err)
+	}
+}
+
+// gatewayTestPromptProvider wraps a MockAgentClient for gateway-level prompt tests.
+type gatewayTestPromptProvider struct {
+	AgentClient
+	prompts []PromptData
+}
+
+func (p *gatewayTestPromptProvider) ListPromptData() []PromptData {
+	return p.prompts
+}
+
+func (p *gatewayTestPromptProvider) GetPromptData(name string) (*PromptData, error) {
+	for _, pd := range p.prompts {
+		if pd.Name == name {
+			return &pd, nil
+		}
+	}
+	return nil, fmt.Errorf("prompt %q: not found", name)
+}
+
+func TestGateway_HandleToolsListForAgent_AllServers(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "Tool 1"},
+		{Name: "tool2", Description: "Tool 2"},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Agent with access to server1 (all tools)
+	g.RegisterAgent("agent1", []config.ToolSelector{{Server: "server1"}})
+
+	result, err := g.HandleToolsListForAgent("agent1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Tools) != 2 {
+		t.Errorf("expected 2 tools, got %d", len(result.Tools))
+	}
+}
+
+func TestGateway_HandleToolsListForAgent_ToolWhitelist(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "read", Description: "Read"},
+		{Name: "write", Description: "Write"},
+		{Name: "delete", Description: "Delete"},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Agent with access to only read and write tools
+	g.RegisterAgent("agent1", []config.ToolSelector{
+		{Server: "server1", Tools: []string{"read", "write"}},
+	})
+
+	result, err := g.HandleToolsListForAgent("agent1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Tools) != 2 {
+		t.Errorf("expected 2 filtered tools, got %d", len(result.Tools))
+	}
+	for _, tool := range result.Tools {
+		if strings.Contains(tool.Name, "delete") {
+			t.Error("should not include 'delete' tool")
+		}
+	}
+}
+
+func TestGateway_HandleToolsListForAgent_Unregistered(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "Tool 1"},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Unregistered agent gets all tools
+	result, err := g.HandleToolsListForAgent("unregistered")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Tools) != 1 {
+		t.Errorf("expected 1 tool for unregistered agent, got %d", len(result.Tools))
+	}
+}
+
+func TestGateway_HandleToolsListForAgent_NoServerAccess(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "Tool 1"},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Agent with access to server2 only (no server1)
+	g.RegisterAgent("agent1", []config.ToolSelector{{Server: "server2"}})
+
+	result, err := g.HandleToolsListForAgent("agent1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Tools) != 0 {
+		t.Errorf("expected 0 tools, got %d", len(result.Tools))
+	}
+}
+
+func TestGateway_HandleToolsCallForAgent_NonMetaTool_Succeeds(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "echo", Description: "Echo"},
+	})
+	client.EXPECT().CallTool(gomock.Any(), "echo", gomock.Any()).Return(
+		&ToolCallResult{Content: []Content{NewTextContent("echoed")}}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Agent with access
+	g.RegisterAgent("agent1", []config.ToolSelector{{Server: "server1"}})
+
+	ctx := context.Background()
+	result, err := g.HandleToolsCallForAgent(ctx, "agent1", ToolCallParams{
+		Name:      "server1__echo",
+		Arguments: map[string]any{"msg": "hi"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected successful tool call")
+	}
+}
+
+func TestGateway_SetLogger_Nil(t *testing.T) {
+	g := NewGateway()
+	// Should not panic when passing nil
+	g.SetLogger(nil)
+	// Logger should remain the default discard logger
+	if g.logger == nil {
+		t.Error("logger should not be nil after SetLogger(nil)")
+	}
+}
+
+func TestGateway_buildSSHCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      MCPServerConfig
+		wantLen  int
+		contains []string
+	}{
+		{
+			name: "basic SSH",
+			cfg: MCPServerConfig{
+				SSHUser: "user",
+				SSHHost: "host.example.com",
+				Command: []string{"/opt/server"},
+			},
+			wantLen:  7,
+			contains: []string{"ssh", "user@host.example.com", "/opt/server"},
+		},
+		{
+			name: "SSH with identity file",
+			cfg: MCPServerConfig{
+				SSHUser:         "admin",
+				SSHHost:         "10.0.0.1",
+				SSHIdentityFile: "~/.ssh/id_ed25519",
+				Command:         []string{"/opt/server"},
+			},
+			contains: []string{"-i", "~/.ssh/id_ed25519"},
+		},
+		{
+			name: "SSH with custom port",
+			cfg: MCPServerConfig{
+				SSHUser: "admin",
+				SSHHost: "10.0.0.1",
+				SSHPort: 2222,
+				Command: []string{"/opt/server"},
+			},
+			contains: []string{"-p", "2222"},
+		},
+		{
+			name: "SSH with default port (22) should not add -p",
+			cfg: MCPServerConfig{
+				SSHUser: "admin",
+				SSHHost: "10.0.0.1",
+				SSHPort: 22,
+				Command: []string{"/opt/server"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := buildSSHCommand(tc.cfg)
+			if tc.wantLen > 0 && len(result) != tc.wantLen {
+				t.Errorf("expected %d args, got %d: %v", tc.wantLen, len(result), result)
+			}
+			for _, want := range tc.contains {
+				found := false
+				for _, arg := range result {
+					if arg == want {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected command to contain '%s', got: %v", want, result)
+				}
+			}
+			// Default port 22 should not have -p
+			if tc.cfg.SSHPort == 22 {
+				for _, arg := range result {
+					if arg == "-p" {
+						t.Error("should not include -p for default port 22")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGateway_getAgentFilteredTools(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "Tool 1"},
+		{Name: "tool2", Description: "Tool 2"},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Unregistered agent: get all tools
+	tools, err := g.getAgentFilteredTools("unregistered")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Errorf("expected 2 tools, got %d", len(tools))
+	}
+
+	// Registered agent with tool whitelist
+	g.RegisterAgent("agent1", []config.ToolSelector{
+		{Server: "server1", Tools: []string{"tool1"}},
+	})
+	tools, err = g.getAgentFilteredTools("agent1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Errorf("expected 1 tool, got %d", len(tools))
+	}
+
+	// Agent with no server access
+	g.RegisterAgent("agent2", []config.ToolSelector{
+		{Server: "other-server"},
+	})
+	tools, err = g.getAgentFilteredTools("agent2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tools) != 0 {
+		t.Errorf("expected 0 tools, got %d", len(tools))
+	}
+}
+
+func TestGateway_Status_SortsAlphabetically(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	clientB := setupMockAgentClient(ctrl, "bravo", []Tool{{Name: "t1"}})
+	clientA := setupMockAgentClient(ctrl, "alpha", []Tool{{Name: "t2"}})
+	g.Router().AddClient(clientB)
+	g.Router().AddClient(clientA)
+	g.SetServerMeta(MCPServerConfig{Name: "bravo"})
+	g.SetServerMeta(MCPServerConfig{Name: "alpha"})
+
+	statuses := g.Status()
+	if len(statuses) != 2 {
+		t.Fatalf("expected 2 statuses, got %d", len(statuses))
+	}
+	if statuses[0].Name != "alpha" {
+		t.Errorf("expected first status 'alpha', got '%s'", statuses[0].Name)
+	}
+	if statuses[1].Name != "bravo" {
+		t.Errorf("expected second status 'bravo', got '%s'", statuses[1].Name)
+	}
+}
+
+func TestGateway_Status_ExcludesNonMCPClients(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Add a client without server metadata (e.g., an A2A adapter)
+	client := setupMockAgentClient(ctrl, "adapter1", []Tool{{Name: "t1"}})
+	g.Router().AddClient(client)
+	// Don't call SetServerMeta for adapter1
+
+	statuses := g.Status()
+	if len(statuses) != 0 {
+		t.Errorf("expected 0 statuses (non-MCP client excluded), got %d", len(statuses))
+	}
+}
+
+func TestGateway_Status_OpenAPISpec(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "api-server", []Tool{{Name: "get"}})
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{
+		Name:    "api-server",
+		OpenAPI: true,
+		OpenAPIConfig: &OpenAPIClientConfig{
+			Spec: "https://api.example.com/spec.json",
+		},
+	})
+
+	statuses := g.Status()
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if !statuses[0].OpenAPI {
+		t.Error("expected OpenAPI=true")
+	}
+	if statuses[0].OpenAPISpec != "https://api.example.com/spec.json" {
+		t.Errorf("expected OpenAPI spec URL, got '%s'", statuses[0].OpenAPISpec)
+	}
+}
+
+func TestSearchIndex_ToolCount(t *testing.T) {
+	tools := []Tool{
+		{Name: "tool1"},
+		{Name: "tool2"},
+		{Name: "tool3"},
+	}
+	idx := NewSearchIndex(tools)
+	if idx.ToolCount() != 3 {
+		t.Errorf("expected ToolCount=3, got %d", idx.ToolCount())
+	}
+
+	emptyIdx := NewSearchIndex(nil)
+	if emptyIdx.ToolCount() != 0 {
+		t.Errorf("expected ToolCount=0 for empty index, got %d", emptyIdx.ToolCount())
+	}
+}
+
+func TestCodeMode_HandleCallWithScope_UnknownTool(t *testing.T) {
+	cm := NewCodeMode(5 * time.Second)
+
+	// A tool name that is neither search nor execute
+	params := ToolCallParams{
+		Name:      "unknown_meta_tool",
+		Arguments: map[string]any{},
+	}
+
+	result, err := cm.HandleCallWithScope(context.Background(), params, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for unknown code mode tool")
+	}
+	if !strings.Contains(result.Content[0].Text, "Unknown code mode tool") {
+		t.Errorf("expected 'Unknown code mode tool' message, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestCodeMode_HandleExecute_SyntaxError(t *testing.T) {
+	cm := NewCodeMode(5 * time.Second)
+	caller := &mockToolCaller{
+		callFn: func(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{}, nil
+		},
+	}
+
+	params := ToolCallParams{
+		Name:      MetaToolExecute,
+		Arguments: map[string]any{"code": "const x = {;"},
+	}
+
+	result, err := cm.HandleCall(context.Background(), params, caller, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for syntax error")
+	}
+	if !strings.Contains(result.Content[0].Text, "syntax") {
+		t.Errorf("expected syntax error hint, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestCodeMode_HandleExecute_AccessDenied(t *testing.T) {
+	cm := NewCodeMode(5 * time.Second)
+	caller := &mockToolCaller{
+		callFn: func(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+			t.Fatal("should not call tool")
+			return nil, nil
+		},
+	}
+
+	allowedTools := []Tool{{Name: "server__allowed"}}
+
+	params := ToolCallParams{
+		Name:      MetaToolExecute,
+		Arguments: map[string]any{"code": `mcp.callTool("server", "forbidden", {});`},
+	}
+
+	result, err := cm.HandleCall(context.Background(), params, caller, allowedTools)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for access denied")
+	}
+	if !strings.Contains(result.Content[0].Text, "access denied") {
+		t.Errorf("expected 'access denied' hint, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestCodeMode_HandleExecute_Timeout(t *testing.T) {
+	cm := NewCodeMode(100 * time.Millisecond)
+	caller := &mockToolCaller{
+		callFn: func(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{}, nil
+		},
+	}
+
+	params := ToolCallParams{
+		Name:      MetaToolExecute,
+		Arguments: map[string]any{"code": "while(true) {}"},
+	}
+
+	result, err := cm.HandleCall(context.Background(), params, caller, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for timeout")
+	}
+}
+
+func TestCodeMode_HandleExecute_CodeTooLarge(t *testing.T) {
+	cm := NewCodeMode(5 * time.Second)
+	caller := &mockToolCaller{
+		callFn: func(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{}, nil
+		},
+	}
+
+	params := ToolCallParams{
+		Name:      MetaToolExecute,
+		Arguments: map[string]any{"code": strings.Repeat("x", MaxCodeSize+1)},
+	}
+
+	result, err := cm.HandleCall(context.Background(), params, caller, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for code too large")
+	}
+	if !strings.Contains(result.Content[0].Text, "code too large") {
+		t.Errorf("expected 'code too large' hint, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestCodeMode_HandleExecute_NoOutput(t *testing.T) {
+	cm := NewCodeMode(5 * time.Second)
+	caller := &mockToolCaller{
+		callFn: func(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{}, nil
+		},
+	}
+
+	params := ToolCallParams{
+		Name:      MetaToolExecute,
+		Arguments: map[string]any{"code": "undefined;"},
+	}
+
+	result, err := cm.HandleCall(context.Background(), params, caller, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected success for undefined result")
+	}
+	if result.Content[0].Text != "(no output)" {
+		t.Errorf("expected '(no output)', got: %s", result.Content[0].Text)
+	}
+}
+
+func TestCodeMode_HandleExecute_WithConsole(t *testing.T) {
+	cm := NewCodeMode(5 * time.Second)
+	caller := &mockToolCaller{
+		callFn: func(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{}, nil
+		},
+	}
+
+	params := ToolCallParams{
+		Name:      MetaToolExecute,
+		Arguments: map[string]any{"code": `console.log("hello"); "result";`},
+	}
+
+	result, err := cm.HandleCall(context.Background(), params, caller, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected success")
+	}
+	text := result.Content[0].Text
+	if !strings.Contains(text, "result") {
+		t.Errorf("expected 'result' in output, got: %s", text)
+	}
+	if !strings.Contains(text, "Console Output") {
+		t.Errorf("expected 'Console Output' in output, got: %s", text)
+	}
+}
+
+func TestCodeMode_HandleExecute_MissingCodeParam(t *testing.T) {
+	cm := NewCodeMode(5 * time.Second)
+
+	params := ToolCallParams{
+		Name:      MetaToolExecute,
+		Arguments: map[string]any{}, // no "code" key
+	}
+
+	result, err := cm.HandleCall(context.Background(), params, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for missing code param")
+	}
+	if !strings.Contains(result.Content[0].Text, "'code' parameter is required") {
+		t.Errorf("expected 'code parameter required' message, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestGateway_SetDockerClient(t *testing.T) {
+	g := NewGateway()
+	g.SetDockerClient(nil) // Should not panic
+}
+
+func TestGateway_Close_WithoutStartCleanup(t *testing.T) {
+	g := NewGateway()
+	// Close without StartCleanup should not panic (cancel is nil)
+	g.Close()
+}
+
+func TestGateway_Close_WithStartCleanup(t *testing.T) {
+	g := NewGateway()
+	ctx := context.Background()
+	g.StartCleanup(ctx)
+	// Close should cancel the cleanup goroutine
+	g.Close()
+}
+
+func TestCodeMode_HandleSearch_NoQuery(t *testing.T) {
+	cm := NewCodeMode(5 * time.Second)
+	tools := []Tool{
+		{Name: "server__tool1", Description: "Tool 1"},
+		{Name: "server__tool2", Description: "Tool 2"},
+	}
+
+	params := ToolCallParams{
+		Name:      MetaToolSearch,
+		Arguments: map[string]any{},
+	}
+
+	result, err := cm.HandleCall(context.Background(), params, nil, tools)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected success for search with no query")
+	}
+	if !strings.Contains(result.Content[0].Text, "Found 2 tool(s)") {
+		t.Errorf("expected all tools returned, got: %s", result.Content[0].Text)
+	}
+}
+
