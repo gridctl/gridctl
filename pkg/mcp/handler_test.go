@@ -1023,3 +1023,149 @@ func TestHandler_Initialize_WithRegistry_Capabilities(t *testing.T) {
 		t.Error("expected Resources capability when registry is present")
 	}
 }
+
+func TestHandler_PromptsGet_NoParams(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	// prompts/get with no params should return error
+	body := `{"jsonrpc":"2.0","id":1,"method":"prompts/get"}`
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for missing params")
+	}
+	if resp.Error.Code != jsonrpc.InvalidParams {
+		t.Errorf("expected InvalidParams code %d, got %d", jsonrpc.InvalidParams, resp.Error.Code)
+	}
+}
+
+func TestHandler_ResourcesRead_NoParams(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	// resources/read with no params should return error
+	body := `{"jsonrpc":"2.0","id":1,"method":"resources/read"}`
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for missing params")
+	}
+	if resp.Error.Code != jsonrpc.InvalidParams {
+		t.Errorf("expected InvalidParams code %d, got %d", jsonrpc.InvalidParams, resp.Error.Code)
+	}
+}
+
+func TestHandler_PromptsGet_MissingRequiredArg(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	// code-review requires both "language" and "code"
+	body := makeJSONRPC(t, 1, "prompts/get", map[string]any{
+		"name":      "code-review",
+		"arguments": map[string]any{"language": "Go"},
+		// "code" is missing
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for missing required argument")
+	}
+}
+
+func TestHandler_PromptsList_NoRegistry(t *testing.T) {
+	h, _ := setupTestHandler(t) // No registry
+
+	body := makeJSONRPC(t, 1, "prompts/list", nil)
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result PromptsListResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+	if len(result.Prompts) != 0 {
+		t.Errorf("expected 0 prompts without registry, got %d", len(result.Prompts))
+	}
+}
+
+func TestHandler_PromptsGet_NoRegistry(t *testing.T) {
+	h, _ := setupTestHandler(t) // No registry
+
+	body := makeJSONRPC(t, 1, "prompts/get", map[string]any{
+		"name": "anything",
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error when no registry")
+	}
+	if !strings.Contains(resp.Error.Message, "registry not available") {
+		t.Errorf("expected 'registry not available' in error, got %s", resp.Error.Message)
+	}
+}
+
+func TestHandler_ResourcesRead_NoRegistry(t *testing.T) {
+	h, _ := setupTestHandler(t) // No registry
+
+	body := makeJSONRPC(t, 1, "resources/read", map[string]any{
+		"uri": "skills://registry/test",
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error when no registry")
+	}
+	if !strings.Contains(resp.Error.Message, "registry not available") {
+		t.Errorf("expected 'registry not available' in error, got %s", resp.Error.Message)
+	}
+}
+
+func TestHandler_ResourcesRead_LegacyPromptURI(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	// Legacy prompt:// URI should work
+	body := makeJSONRPC(t, 1, "resources/read", map[string]any{
+		"uri": "prompt://code-review",
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var result ResourcesReadResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+	if len(result.Contents) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(result.Contents))
+	}
+	if result.Contents[0].Text == "" {
+		t.Error("expected non-empty content text")
+	}
+}
+
+func TestHandler_ResourcesRead_EmptyResourceName(t *testing.T) {
+	h, _, _ := setupTestHandlerWithRegistry(t)
+
+	body := makeJSONRPC(t, 1, "resources/read", map[string]any{
+		"uri": "skills://registry/",
+	})
+	w := postMCP(t, h, body)
+
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for empty resource name")
+	}
+	if !strings.Contains(resp.Error.Message, "empty resource name") {
+		t.Errorf("expected 'empty resource name' in error, got %s", resp.Error.Message)
+	}
+}
