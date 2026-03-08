@@ -109,6 +109,51 @@ cd gridctl && make build
 
 </details>
 
+## 🐋 Container Runtime
+
+Gridctl requires a container runtime for workloads that run in containers (MCP servers with `image`, resources, agents). Docker is detected by default; [Podman](https://podman.io) is supported as an experimental alternative.
+
+### Runtime Detection
+
+Gridctl auto-detects your runtime by probing sockets in this order:
+
+1. `$DOCKER_HOST` (if set)
+2. `/var/run/docker.sock` (Docker)
+3. `/run/podman/podman.sock` (Podman rootful)
+4. `$XDG_RUNTIME_DIR/podman/podman.sock` (Podman rootless)
+
+Override detection with the `--runtime` flag or `GRIDCTL_RUNTIME` environment variable:
+
+```bash
+gridctl deploy stack.yaml --runtime podman
+# or
+GRIDCTL_RUNTIME=podman gridctl deploy stack.yaml
+```
+
+### Using Podman
+
+```bash
+# Install Podman (macOS)
+brew install podman
+podman machine init
+podman machine start
+
+# Install Podman (Linux)
+sudo apt install podman        # Debian/Ubuntu
+sudo dnf install podman        # Fedora/RHEL
+
+# Enable the Podman socket (Linux rootless)
+systemctl --user enable --now podman.socket
+
+# Verify gridctl detects Podman
+gridctl info
+```
+
+Podman 4.7+ is recommended for full `host.containers.internal` support. Older versions fall back to the Docker-compatible `host.docker.internal` alias. SELinux volume labels (`:Z`) are applied automatically when Podman is running on an SELinux-enforcing system.
+
+> [!NOTE]
+> Podman support is **experimental**. File issues at [github.com/gridctl/gridctl/issues](https://github.com/gridctl/gridctl/issues) if you encounter problems.
+
 ## 🚦 Quick Start
 
 ```bash
@@ -270,6 +315,7 @@ gridctl deploy <stack.yaml> --watch  # Watch for changes and hot reload
 gridctl deploy <stack.yaml> --flash  # Deploy and auto-link LLM clients
 gridctl deploy <stack.yaml> --code-mode  # Enable code mode (search + execute)
 gridctl status                       # Show running stacks
+gridctl info                         # Show detected container runtime
 gridctl link                         # Connect an LLM client to the gateway
 gridctl unlink                       # Remove gridctl from an LLM client
 gridctl reload                       # Hot reload a running stack
