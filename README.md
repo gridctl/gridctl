@@ -420,6 +420,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 
 - [Configuration Reference](docs/config-schema.md) — every field in `stack.yaml`
 - [REST API Reference](docs/api-reference.md) — all gateway endpoints
+- [Troubleshooting](docs/troubleshooting.md) — common issues and resolutions
 
 ## 🤝 Contributing
 
