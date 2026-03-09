@@ -35,8 +35,10 @@ type GatewayConfig struct {
 
 	// CodeMode controls whether the gateway replaces individual tool definitions
 	// with two meta-tools (search + execute). Values: "off" (default), "on".
+	// Experimental: may change without notice.
 	CodeMode string `yaml:"code_mode,omitempty"`
 	// CodeModeTimeout is the execution timeout in seconds (default: 30).
+	// Experimental: may change without notice.
 	CodeModeTimeout int `yaml:"code_mode_timeout,omitempty"`
 }
 
@@ -176,6 +178,7 @@ type Agent struct {
 }
 
 // A2AConfig defines A2A protocol settings for exposing an agent via A2A.
+// Experimental: may change without notice.
 type A2AConfig struct {
 	Enabled  bool       `yaml:"enabled,omitempty"`  // Enable A2A exposure (default: true when block present)
 	Version  string     `yaml:"version,omitempty"`  // Agent version (default: "1.0.0")
@@ -191,6 +194,7 @@ type A2ASkill struct {
 }
 
 // A2AAgent defines an external A2A agent reference.
+// Experimental: may change without notice.
 type A2AAgent struct {
 	Name string    `yaml:"name"`               // Local alias for this remote agent
 	URL  string    `yaml:"url"`                // Base URL for the remote agent's A2A endpoint
