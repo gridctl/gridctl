@@ -392,6 +392,35 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | [`workflow-parallel`](examples/registry/items/workflow-parallel/SKILL.md) | Fan-out parallel execution with fan-in merge |
 | [`workflow-conditional`](examples/registry/items/workflow-conditional/SKILL.md) | Retry policies and error handling strategies |
 
+## 📐 Stability
+
+| Feature | Status | Compatibility |
+|---------|--------|---------------|
+| MCP gateway (stdio, SSE, HTTP) | Stable | Backward compatible in 0.x |
+| Container orchestration (Docker) | Stable | Backward compatible in 0.x |
+| Config schema (servers, agents, resources) | Stable | Backward compatible in 0.x |
+| Auth middleware (bearer, API key) | Stable | Backward compatible in 0.x |
+| Hot reload | Stable | Backward compatible in 0.x |
+| Vault secrets | Stable | Backward compatible in 0.x |
+| Web UI | Stable | No API guarantee (internal) |
+| Code mode | Experimental | May change without notice |
+| A2A protocol | Experimental | May change without notice |
+| Podman runtime | Experimental | May change without notice |
+| Skills registry workflows | Experimental | May change without notice |
+
+## ⚠️ Known Limitations
+
+- Podman rootless networking requires `slirp4netns` or `pasta` for inter-container communication
+- A2A protocol support is experimental and tracks the evolving spec
+- Code mode sandbox has no filesystem access (by design)
+- Skills registry is local-only with no remote discovery
+- Web UI requires a modern browser (no IE11 support)
+
+## 📖 Documentation
+
+- [Configuration Reference](docs/config-schema.md) — every field in `stack.yaml`
+- [REST API Reference](docs/api-reference.md) — all gateway endpoints
+
 ## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). We welcome PRs for new transport types, example stacks, and documentation improvements.

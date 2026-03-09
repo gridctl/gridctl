@@ -55,7 +55,7 @@ func init() {
 	deployCmd.Flags().BoolVar(&deployNoExpand, "no-expand", false, "Disable environment variable expansion in OpenAPI spec files")
 	deployCmd.Flags().BoolVarP(&deployWatch, "watch", "w", false, "Watch stack file for changes and hot reload")
 	deployCmd.Flags().BoolVar(&deployFlash, "flash", false, "Auto-link detected LLM clients after deploy")
-	deployCmd.Flags().BoolVar(&deployCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools)")
+	deployCmd.Flags().BoolVar(&deployCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools) (experimental)")
 }
 
 func runDeploy(stackPath string) error {
