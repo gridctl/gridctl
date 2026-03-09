@@ -974,6 +974,60 @@ func TestHandleAgentStop_MethodNotAllowed(t *testing.T) {
 	}
 }
 
+// --- MCP server action endpoint tests ---
+
+func TestHandleMCPServerAction_InvalidPath(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/mcp-servers/myserver", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleMCPServerAction_UnknownAction(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/mcp-servers/myserver/delete", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleMCPServerRestart_MethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/myserver/restart", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rec.Code)
+	}
+}
+
+func TestHandleMCPServerRestart_NotFound(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/mcp-servers/nonexistent/restart", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
 // --- Docker error path tests ---
 
 func TestHandleAgentLogs_ContainerListError(t *testing.T) {

@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { RefreshCw, Square, AlertCircle, Zap } from 'lucide-react';
 import { Button } from './Button';
-import { restartAgent, stopAgent } from '../../lib/api';
+import { restartAgent, stopAgent, restartMCPServer } from '../../lib/api';
 
 interface ControlBarProps {
-  agentName: string;
+  name: string;
+  variant: 'agent' | 'mcp-server';
   onActionComplete?: () => void;
 }
 
-export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
+export function ControlBar({ name, variant, onActionComplete }: ControlBarProps) {
   const [isRestarting, setIsRestarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +18,11 @@ export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
     setIsRestarting(true);
     setError(null);
     try {
-      await restartAgent(agentName);
+      if (variant === 'mcp-server') {
+        await restartMCPServer(name);
+      } else {
+        await restartAgent(name);
+      }
       onActionComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Restart failed');
@@ -30,7 +35,7 @@ export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
     setIsStopping(true);
     setError(null);
     try {
-      await stopAgent(agentName);
+      await stopAgent(name);
       onActionComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Stop failed');
@@ -55,15 +60,17 @@ export function ControlBar({ agentName, onActionComplete }: ControlBarProps) {
           )}
           {isRestarting ? 'Restarting...' : 'Restart'}
         </Button>
-        <Button
-          onClick={handleStop}
-          disabled={isRestarting || isStopping}
-          variant="danger"
-          size="sm"
-        >
-          <Square size={14} />
-          {isStopping ? 'Stopping...' : 'Stop'}
-        </Button>
+        {variant === 'agent' && (
+          <Button
+            onClick={handleStop}
+            disabled={isRestarting || isStopping}
+            variant="danger"
+            size="sm"
+          >
+            <Square size={14} />
+            {isStopping ? 'Stopping...' : 'Stop'}
+          </Button>
+        )}
       </div>
 
       {error && (

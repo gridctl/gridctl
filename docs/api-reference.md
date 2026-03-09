@@ -301,6 +301,32 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/agents/
 
 ---
 
+### MCP Server Control
+
+#### `POST /api/mcp-servers/{name}/restart`
+
+Restarts an individual MCP server connection. For container-based servers (stdio transport), this restarts the Docker container and re-establishes the MCP session. For external servers (HTTP/SSE), this re-initializes the MCP handshake and refreshes tools. For process-based servers (local, SSH), this kills and restarts the process.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-servers/github/restart
+```
+
+**Response:**
+```json
+{
+  "status": "restarted",
+  "server": "github"
+}
+```
+
+**Errors:**
+- `404` — Server name not found in gateway
+- `500` — Restart failed (container error, connection timeout, etc.)
+
+---
+
 ### Vault (Secrets Management)
 
 The vault stores secrets locally with optional encryption. Secrets can be organized into variable sets for scoped injection.

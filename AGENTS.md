@@ -390,7 +390,7 @@ When `gridctl deploy` runs, it:
 
 **Endpoints:**
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
-- **API:** `/api/status`, `/api/mcp-servers`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/health`, `/ready`
+- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/health`, `/ready`
 - **Vault:** `/api/vault`, `/api/vault/status`, `/api/vault/unlock`, `/api/vault/lock`, `/api/vault/sets`, `/api/vault/import`
 - **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
 - **A2A:** `/.well-known/agent.json`, `/a2a/` (list agents), `/a2a/{agent}` (GET card, POST JSON-RPC)
@@ -412,6 +412,9 @@ When `gridctl deploy` runs, it:
 - `GET /api/agents/{name}/logs` - Returns container logs for an agent
 - `POST /api/agents/{name}/restart` - Restart an agent container
 - `POST /api/agents/{name}/stop` - Stop an agent container
+
+**MCP Server Control API:**
+- `POST /api/mcp-servers/{name}/restart` - Restart an individual MCP server connection
 
 **Registry API:**
 - `GET /api/registry/status` - Returns skill counts

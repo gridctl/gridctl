@@ -438,7 +438,7 @@ export function Sidebar() {
         {/* Controls Section (not for clients - they aren't containers) */}
         {!isClient && (
           <Section title="Actions" icon={Terminal} defaultOpen>
-            <ControlBar agentName={data.name} />
+            <ControlBar name={data.name} variant={isServer ? 'mcp-server' : 'agent'} />
             <button
               onClick={handleShowLogs}
               className={cn(
