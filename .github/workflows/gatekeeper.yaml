@@ -29,8 +29,27 @@ jobs:
           version: latest
           args: --timeout=3m
 
-      - name: Go tests
-        run: go test -race ./...
+      - name: Go tests with coverage
+        run: |
+          go test -race -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 65" | bc -l) )); then
+            echo "Coverage ${COVERAGE}% is below 65% threshold"
+            exit 1
+          fi
+
+      - name: Per-package coverage thresholds
+        run: bash scripts/check-coverage.sh
+
+      - name: Go vulnerability check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
       - name: Build Go binary
         run: make build-go
@@ -114,8 +133,12 @@ jobs:
         run: npx tsc --noEmit
         working-directory: web
 
-      - name: Tests
-        run: npm test
+      - name: Tests with coverage
+        run: npx vitest run --coverage
+        working-directory: web
+
+      - name: Security audit
+        run: npm audit --audit-level=high
         working-directory: web
 
       - name: Build
