@@ -169,6 +169,31 @@ export async function stopAgent(name: string): Promise<void> {
   }
 }
 
+// === MCP Server Control Functions ===
+
+/**
+ * Restart an MCP server connection
+ * POST /api/mcp-servers/{name}/restart
+ */
+export async function restartMCPServer(name: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/api/mcp-servers/${encodeURIComponent(name)}/restart`,
+    {
+      method: 'POST',
+      headers: buildHeaders(),
+    },
+  );
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Restart failed: ${response.status} ${response.statusText}`);
+  }
+}
+
 // === Structured Log Entry (from gateway) ===
 
 export interface LogEntry {

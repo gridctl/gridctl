@@ -304,6 +304,73 @@ func TestGateway_UnregisterMCPServer(t *testing.T) {
 	}
 }
 
+// closableClient wraps a MockAgentClient to implement io.Closer.
+type closableClient struct {
+	AgentClient
+	closeFn func() error
+}
+
+func (c *closableClient) Close() error {
+	return c.closeFn()
+}
+
+func TestGateway_RestartMCPServer_NotFound(t *testing.T) {
+	g := NewGateway()
+	err := g.RestartMCPServer(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown server")
+	}
+	if !strings.Contains(err.Error(), "unknown MCP server") {
+		t.Errorf("expected 'unknown MCP server' in error, got: %s", err)
+	}
+}
+
+func TestGateway_RestartMCPServer_ClosesExistingClient(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	var closed atomic.Bool
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	client := &closableClient{
+		AgentClient: mock,
+		closeFn:     func() error { closed.Store(true); return nil },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP, Endpoint: "http://localhost:9999", External: true})
+
+	// Restart will fail at re-registration (no real server), but close should be called
+	_ = g.RestartMCPServer(context.Background(), "server1")
+
+	if !closed.Load() {
+		t.Error("expected existing client to be closed")
+	}
+}
+
+func TestGateway_RestartMCPServer_UnregistersBeforeReregister(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "tool1"}})
+	g.Router().AddClient(mock)
+	g.Router().RefreshTools()
+	g.SetServerMeta(MCPServerConfig{Name: "server1", Transport: TransportHTTP, Endpoint: "http://localhost:9999", External: true})
+
+	// Verify tools exist before restart
+	if len(g.Router().AggregatedTools()) != 1 {
+		t.Fatal("expected 1 tool before restart")
+	}
+
+	// Restart will fail at re-registration, but unregister should have cleared the router
+	_ = g.RestartMCPServer(context.Background(), "server1")
+
+	if g.Router().GetClient("server1") != nil {
+		t.Error("expected client to be removed after failed restart")
+	}
+	if len(g.Router().AggregatedTools()) != 0 {
+		t.Error("expected 0 tools after failed restart")
+	}
+}
+
 func TestGateway_AgentToolFiltering(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()

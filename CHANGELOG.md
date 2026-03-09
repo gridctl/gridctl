@@ -14,7 +14,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Features
 
-
+- Add individual MCP server restart API and UI control
 - Add OpenCode provisioner for link/unlink
 - Register OpenCode in provisioner registry
 - Add OpenCode case to simulateLink

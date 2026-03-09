@@ -160,6 +160,7 @@ func (s *Server) Handler() http.Handler {
 
 	// API endpoints
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/mcp-servers/", s.handleMCPServerAction)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
@@ -762,6 +763,46 @@ func (s *Server) handleAgentStop(w http.ResponseWriter, r *http.Request, agentNa
 	}
 
 	writeJSON(w, map[string]string{"status": "stopped", "agent": agentName})
+}
+
+// handleMCPServerAction routes MCP server control requests.
+// URL pattern: /api/mcp-servers/{name}/{action}
+func (s *Server) handleMCPServerAction(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/mcp-servers/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 {
+		http.Error(w, "Invalid path: expected /api/mcp-servers/{name}/{action}", http.StatusBadRequest)
+		return
+	}
+
+	serverName := parts[0]
+	action := parts[1]
+
+	switch action {
+	case "restart":
+		s.handleMCPServerRestart(w, r, serverName)
+	default:
+		http.Error(w, "Unknown action: "+action, http.StatusBadRequest)
+	}
+}
+
+// handleMCPServerRestart restarts an individual MCP server connection.
+func (s *Server) handleMCPServerRestart(w http.ResponseWriter, r *http.Request, serverName string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := s.gateway.RestartMCPServer(r.Context(), serverName); err != nil {
+		if strings.Contains(err.Error(), "unknown MCP server") {
+			writeJSONError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		writeJSONError(w, "Restart failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "restarted", "server": serverName})
 }
 
 // handleGatewayLogs returns structured logs from the gateway log buffer.

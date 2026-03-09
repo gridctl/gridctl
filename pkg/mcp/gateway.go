@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
@@ -416,6 +417,59 @@ func (g *Gateway) SetServerMeta(cfg MCPServerConfig) {
 func (g *Gateway) UnregisterMCPServer(name string) {
 	g.router.RemoveClient(name)
 	g.router.RefreshTools()
+}
+
+// RestartMCPServer restarts an individual MCP server by name.
+// It tears down the existing connection, optionally restarts the container
+// (for stdio transport), and re-registers the server using its stored config.
+func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
+	g.mu.RLock()
+	cfg, ok := g.serverMeta[name]
+	g.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("unknown MCP server: %s", name)
+	}
+
+	g.logger.Info("restarting MCP server", "name", name, "transport", cfg.Transport)
+
+	// Close the existing client connection
+	if client := g.router.GetClient(name); client != nil {
+		if closer, ok := client.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				g.logger.Warn("error closing MCP server connection", "name", name, "error", err)
+			}
+		}
+	}
+
+	// Unregister from router (removes client + cleans tool registry)
+	g.UnregisterMCPServer(name)
+
+	// For stdio (container) transport, restart the Docker container
+	if cfg.Transport == TransportStdio && !cfg.External && !cfg.LocalProcess && !cfg.SSH && !cfg.OpenAPI {
+		if g.dockerCli != nil && cfg.ContainerID != "" {
+			timeout := 10
+			if err := g.dockerCli.ContainerRestart(ctx, cfg.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
+				return fmt.Errorf("restarting container for %s: %w", name, err)
+			}
+		}
+	}
+
+	// Re-register using stored config (creates new client, initializes MCP, fetches tools)
+	if err := g.RegisterMCPServer(ctx, cfg); err != nil {
+		return fmt.Errorf("re-registering MCP server %s: %w", name, err)
+	}
+
+	// Update health status to healthy
+	g.healthMu.Lock()
+	g.health[name] = &HealthStatus{
+		Healthy:     true,
+		LastCheck:   time.Now(),
+		LastHealthy: time.Now(),
+	}
+	g.healthMu.Unlock()
+
+	g.logger.Info("MCP server restarted", "name", name)
+	return nil
 }
 
 // RegisterAgent registers an agent and its allowed MCP servers with optional tool filtering.
