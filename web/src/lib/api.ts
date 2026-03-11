@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -225,6 +225,35 @@ export async function fetchGatewayLogs(lines = 100, level?: string): Promise<Log
   }
 
   return response.json();
+}
+
+// === Token Metrics API ===
+
+/**
+ * Fetch historical token metrics
+ * GET /api/metrics/tokens?range=1h
+ */
+export async function fetchTokenMetrics(range: string = '1h'): Promise<TokenMetricsResponse> {
+  return fetchJSON<TokenMetricsResponse>(`/api/metrics/tokens?range=${encodeURIComponent(range)}`);
+}
+
+/**
+ * Clear all token metrics
+ * DELETE /api/metrics/tokens
+ */
+export async function clearTokenMetrics(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/metrics/tokens`, {
+    method: 'DELETE',
+    headers: buildHeaders(),
+  });
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Clear metrics failed: ${response.status} ${response.statusText}`);
+  }
 }
 
 // === Reload API ===
