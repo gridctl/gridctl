@@ -18,6 +18,7 @@ import {
   Network,
   HeartPulse,
   Monitor,
+  Gauge,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
@@ -25,6 +26,7 @@ import { ToolList } from '../ui/ToolList';
 import { ControlBar } from '../ui/ControlBar';
 import { PopoutButton } from '../ui/PopoutButton';
 import { GatewaySidebar } from '../gateway/GatewaySidebar';
+import { TokenUsageSection } from '../sidebar/TokenUsageSection';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -434,6 +436,13 @@ export function Sidebar() {
             )}
           </div>
         </Section>
+
+        {/* Token Usage Section (MCP servers only) */}
+        {isServer && (
+          <Section title="Token Usage" icon={Gauge}>
+            <TokenUsageSection serverName={data.name} />
+          </Section>
+        )}
 
         {/* Controls Section (not for clients - they aren't containers) */}
         {!isClient && (
