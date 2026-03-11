@@ -110,6 +110,7 @@ export const POLLING = {
   STATUS: 3000,      // Poll status every 3 seconds
   TOOLS: 30000,      // Poll tools every 30 seconds
   LOGS: 2000,        // Poll logs every 2 seconds
+  METRICS: 5000,     // Poll metrics every 5 seconds (live mode)
 } as const;
 
 // Tool naming
