@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 
 	"github.com/docker/docker/api/types"
@@ -1539,5 +1540,184 @@ func TestHandleClients_MethodNotAllowed(t *testing.T) {
 				t.Errorf("expected 405 for %s, got %d", method, rec.Code)
 			}
 		})
+	}
+}
+
+// --- Token Metrics endpoint tests ---
+
+func newTestServerWithMetrics(t *testing.T) *Server {
+	t.Helper()
+	srv := newTestServer(t)
+	acc := metrics.NewAccumulator(100)
+	srv.SetMetricsAccumulator(acc)
+	return srv
+}
+
+func TestHandleStatus_IncludesTokenUsage(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	// Record some metrics
+	srv.metricsAccumulator.Record("test-server", 100, 50)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	tokenUsageRaw, ok := result["token_usage"]
+	if !ok {
+		t.Fatal("expected token_usage in status response")
+	}
+
+	var tokenUsage metrics.TokenUsage
+	if err := json.Unmarshal(tokenUsageRaw, &tokenUsage); err != nil {
+		t.Fatalf("failed to unmarshal token_usage: %v", err)
+	}
+
+	if tokenUsage.Session.InputTokens != 100 {
+		t.Errorf("expected input_tokens=100, got %d", tokenUsage.Session.InputTokens)
+	}
+	if tokenUsage.Session.OutputTokens != 50 {
+		t.Errorf("expected output_tokens=50, got %d", tokenUsage.Session.OutputTokens)
+	}
+	if tokenUsage.Session.TotalTokens != 150 {
+		t.Errorf("expected total_tokens=150, got %d", tokenUsage.Session.TotalTokens)
+	}
+}
+
+func TestHandleStatus_NoTokenUsageWithoutAccumulator(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if _, ok := result["token_usage"]; ok {
+		t.Error("expected no token_usage when accumulator is nil")
+	}
+}
+
+func TestHandleGetMetricsTokens(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.Record("server-a", 200, 100)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result metrics.TimeSeriesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if result.Range != "1h" {
+		t.Errorf("range = %q, want %q", result.Range, "1h")
+	}
+	if len(result.Points) == 0 {
+		t.Error("expected at least 1 data point")
+	}
+}
+
+func TestHandleGetMetricsTokens_DefaultRange(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/tokens", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result metrics.TimeSeriesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if result.Range != "1h" {
+		t.Errorf("default range = %q, want %q", result.Range, "1h")
+	}
+}
+
+func TestHandleDeleteMetricsTokens(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.Record("server-a", 100, 50)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodDelete, "/api/metrics/tokens", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	// Verify metrics were cleared
+	snap := srv.metricsAccumulator.Snapshot()
+	if snap.Session.TotalTokens != 0 {
+		t.Errorf("expected 0 tokens after clear, got %d", snap.Session.TotalTokens)
+	}
+}
+
+func TestHandleMetricsTokens_MethodNotAllowed(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	handler := srv.Handler()
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch} {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/api/metrics/tokens", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Errorf("expected 405 for %s, got %d", method, rec.Code)
+			}
+		})
+	}
+}
+
+func TestHandleGetMetricsTokens_NoAccumulator(t *testing.T) {
+	srv := newTestServer(t) // no accumulator
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result metrics.TimeSeriesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if len(result.Points) != 0 {
+		t.Errorf("expected 0 data points, got %d", len(result.Points))
 	}
 }
