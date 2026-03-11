@@ -2,7 +2,16 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-beta.2] - 2026-03-11
+
+
+### Bug Fixes
+
+
+- Skip vault ref validation when no vault provided
+- Auto-unlock vault with env passphrase on deploy
+- Pass vault context through reload handler
+- Wire vault store into hot reload handler## [0.1.0-beta.1] - 2026-03-09
 
 
 ### Bug Fixes
