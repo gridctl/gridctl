@@ -88,7 +88,7 @@ func setupHandler(t *testing.T, stackPath string, cfg *config.Stack) (*Handler, 
 	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
 	gw := mcp.NewGateway()
 
-	h := NewHandler(stackPath, cfg, gw, orch, 8180, 9000, 8180)
+	h := NewHandler(stackPath, cfg, gw, orch, 8180, 9000, 8180, nil, nil)
 	return h, mockRT
 }
 
@@ -98,7 +98,7 @@ func TestNewHandler(t *testing.T) {
 	mockRT := newMockWorkloadRuntime()
 	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
 
-	h := NewHandler("/path/to/stack.yaml", cfg, gw, orch, 8180, 9000, 8180)
+	h := NewHandler("/path/to/stack.yaml", cfg, gw, orch, 8180, 9000, 8180, nil, nil)
 	if h == nil {
 		t.Fatal("NewHandler returned nil")
 	}
@@ -116,7 +116,7 @@ func TestHandler_SettersAndGetters(t *testing.T) {
 	mockRT := newMockWorkloadRuntime()
 	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
 
-	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180)
+	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180, nil, nil)
 
 	// SetNoExpand
 	h.SetNoExpand(true)
@@ -460,7 +460,7 @@ func TestHandler_StopAndRemoveContainer_NonExistent(t *testing.T) {
 	gw := mcp.NewGateway()
 	cfg := &config.Stack{Name: "test"}
 
-	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180)
+	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180, nil, nil)
 
 	err := h.stopAndRemoveContainer(context.Background(), "gridctl-test-nonexistent")
 	if err != nil {
@@ -474,7 +474,7 @@ func TestHandler_AllocatePort(t *testing.T) {
 	gw := mcp.NewGateway()
 	cfg := &config.Stack{Name: "test"}
 
-	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180)
+	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180, nil, nil)
 
 	port := h.allocatePort(context.Background())
 	if port != 9000 {
@@ -602,6 +602,60 @@ agents:
 		t.Errorf("expected success, got: %s", result.Message)
 	}
 	assertContains(t, result.Modified, "agent:agent1")
+}
+
+// mockVault implements config.VaultLookup for testing.
+type mockVault struct {
+	secrets map[string]string
+}
+
+func (m *mockVault) Get(key string) (string, bool) {
+	v, ok := m.secrets[key]
+	return v, ok
+}
+
+func TestHandler_Reload_WithVault(t *testing.T) {
+	vault := &mockVault{secrets: map[string]string{
+		"DB_PASSWORD": "secret-from-vault",
+	}}
+
+	content := `
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+    env:
+      DB_PASS: "${vault:DB_PASSWORD}"
+`
+	stackPath := writeStackFile(t, content)
+
+	initialCfg, err := config.LoadStack(stackPath, config.WithVault(vault))
+	if err != nil {
+		t.Fatalf("failed to load initial config: %v", err)
+	}
+
+	mockRT := newMockWorkloadRuntime()
+	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
+	gw := mcp.NewGateway()
+
+	h := NewHandler(stackPath, initialCfg, gw, orch, 8180, 9000, 8180, vault, nil)
+
+	result, err := h.Reload(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("expected success, got: %s", result.Message)
+	}
+
+	// Verify the reloaded config has vault secrets resolved
+	reloaded := h.CurrentConfig()
+	if reloaded.MCPServers[0].Env["DB_PASS"] != "secret-from-vault" {
+		t.Errorf("expected vault secret resolved, got %q", reloaded.MCPServers[0].Env["DB_PASS"])
+	}
 }
 
 func assertContains(t *testing.T, items []string, expected string) {

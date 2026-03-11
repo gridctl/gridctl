@@ -99,6 +99,15 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 		return fmt.Errorf("loading vault: %w", err)
 	}
 
+	// Automatically unlock if encrypted and passphrase is provided via environment
+	if vaultStore.IsLocked() {
+		if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
+			if err := vaultStore.Unlock(pass); err != nil {
+				return fmt.Errorf("unlocking vault: %w", err)
+			}
+		}
+	}
+
 	sc.vaultStore = vaultStore
 
 	// Load stack with vault resolution and set injection

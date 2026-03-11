@@ -34,13 +34,15 @@ type Handler struct {
 	gatewayPort int
 	logger      *slog.Logger
 	noExpand    bool
+	vault       config.VaultLookup
+	vaultSet    config.VaultSetLookup
 
 	// Callback for registering new MCP servers with gateway
 	registerServer func(ctx context.Context, server config.MCPServer, hostPort int) error
 }
 
 // NewHandler creates a reload handler.
-func NewHandler(stackPath string, currentCfg *config.Stack, gateway *mcp.Gateway, rt *runtime.Orchestrator, port, basePort, gatewayPort int) *Handler {
+func NewHandler(stackPath string, currentCfg *config.Stack, gateway *mcp.Gateway, rt *runtime.Orchestrator, port, basePort, gatewayPort int, v config.VaultLookup, vs config.VaultSetLookup) *Handler {
 	return &Handler{
 		stackPath:   stackPath,
 		currentCfg:  currentCfg,
@@ -50,6 +52,8 @@ func NewHandler(stackPath string, currentCfg *config.Stack, gateway *mcp.Gateway
 		basePort:    basePort,
 		gatewayPort: gatewayPort,
 		logger:      logging.NewDiscardLogger(),
+		vault:       v,
+		vaultSet:    vs,
 	}
 }
 
@@ -84,8 +88,17 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 
 	h.logger.Info("reloading configuration", "path", h.stackPath)
 
+	// Build load options
+	var loadOpts []config.LoadOption
+	if h.vault != nil {
+		loadOpts = append(loadOpts, config.WithVault(h.vault))
+	}
+	if h.vaultSet != nil {
+		loadOpts = append(loadOpts, config.WithVaultSets(h.vaultSet))
+	}
+
 	// Load new config
-	newCfg, err := config.LoadStack(h.stackPath)
+	newCfg, err := config.LoadStack(h.stackPath, loadOpts...)
 	if err != nil {
 		return &ReloadResult{
 			Success: false,

@@ -467,7 +467,13 @@ func (b *GatewayBuilder) registerAgentAdapters(_ context.Context, mcpGateway *mc
 
 // setupHotReload configures file watching and reload for the stack.
 func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstance, registrar *ServerRegistrar, handler slog.Handler, verbose bool) {
-	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, b.config.Port)
+	var vaultLookup config.VaultLookup
+	var vaultSetLookup config.VaultSetLookup
+	if b.vaultStore != nil {
+		vaultLookup = b.vaultStore
+		vaultSetLookup = newVaultSetAdapter(b.vaultStore)
+	}
+	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, b.config.Port, vaultLookup, vaultSetLookup)
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
 	reloadHandler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {

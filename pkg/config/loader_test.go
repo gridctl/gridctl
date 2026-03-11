@@ -1066,6 +1066,59 @@ func TestValidate_CodeMode(t *testing.T) {
 	}
 }
 
+func TestLoadStack_NoVault_VaultRefsIgnored(t *testing.T) {
+	content := `
+name: test-vault
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+    env:
+      SECRET: "${vault:ANY_KEY}"
+`
+	path := writeTempFile(t, content)
+
+	// Without WithVault, unresolved vault refs should be silently ignored
+	stack, err := LoadStack(path)
+	if err != nil {
+		t.Fatalf("expected no error without vault, got: %v", err)
+	}
+	if stack.Name != "test-vault" {
+		t.Errorf("expected name 'test-vault', got %q", stack.Name)
+	}
+	// The raw vault reference should remain as-is
+	if stack.MCPServers[0].Env["SECRET"] != "${vault:ANY_KEY}" {
+		t.Errorf("expected raw vault ref preserved, got %q", stack.MCPServers[0].Env["SECRET"])
+	}
+}
+
+func TestLoadStack_WithVault_MissingKeyErrors(t *testing.T) {
+	vault := &mockVault{secrets: map[string]string{}}
+
+	content := `
+name: test-vault
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+    env:
+      SECRET: "${vault:MISSING_KEY}"
+`
+	path := writeTempFile(t, content)
+
+	_, err := LoadStack(path, WithVault(vault))
+	if err == nil {
+		t.Fatal("expected error for missing vault key with vault provided")
+	}
+	if !contains(err.Error(), "missing vault secret") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
