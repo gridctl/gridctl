@@ -11,6 +11,7 @@ export default defineConfig({
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-graph': ['@xyflow/react', '@dagrejs/dagre'],
+          'vendor-charts': ['recharts'],
         },
       },
     },
