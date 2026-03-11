@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
+type BottomPanelTab = 'logs' | 'metrics';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
 
 interface UIState {
@@ -14,6 +15,7 @@ interface UIState {
 
   // Bottom panel state
   bottomPanelOpen: boolean;
+  bottomPanelTab: BottomPanelTab;
 
   // Detached window state
   logsDetached: boolean;
@@ -33,6 +35,7 @@ interface UIState {
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
   toggleBottomPanel: () => void;
+  setBottomPanelTab: (tab: BottomPanelTab) => void;
 
   // Detached window actions
   setLogsDetached: (detached: boolean) => void;
@@ -54,6 +57,7 @@ export const useUIStore = create<UIState>()(
 
       // Bottom panel defaults
       bottomPanelOpen: false,
+      bottomPanelTab: 'logs',
 
       // Detached window defaults
       logsDetached: false,
@@ -76,6 +80,7 @@ export const useUIStore = create<UIState>()(
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
       toggleBottomPanel: () => set((s) => ({ bottomPanelOpen: !s.bottomPanelOpen })),
+      setBottomPanelTab: (bottomPanelTab) => set({ bottomPanelTab, bottomPanelOpen: true }),
 
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
