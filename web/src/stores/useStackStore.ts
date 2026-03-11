@@ -9,6 +9,7 @@ import type {
   AgentStatus,
   ClientStatus,
   Tool,
+  TokenUsage,
   ConnectionStatus,
 } from '../types';
 import { transformToNodesAndEdges } from '../lib/transform';
@@ -26,6 +27,7 @@ interface StackState {
   sessions: number;
   a2aTasks: number | null;
   codeMode: string | null;  // Gateway code mode status ("on" when active)
+  tokenUsage: TokenUsage | null; // Token usage metrics from status response
 
   // === React Flow State ===
   nodes: Node[];
@@ -67,6 +69,7 @@ export const useStackStore = create<StackState>()(
     sessions: 0,
     a2aTasks: null,
     codeMode: null,
+    tokenUsage: null,
     nodes: [],
     edges: [],
     draggedPositions: new Map(),
@@ -86,6 +89,7 @@ export const useStackStore = create<StackState>()(
         sessions: status.sessions ?? 0,
         a2aTasks: status.a2a_tasks ?? null,
         codeMode: status.code_mode || null,
+        tokenUsage: status.token_usage ?? null,
         lastUpdated: new Date(),
         isLoading: false,
         error: null,
