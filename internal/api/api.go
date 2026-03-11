@@ -16,6 +16,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
@@ -42,8 +43,9 @@ type Server struct {
 	provisioners   *provisioner.Registry
 	linkServerName string
 	registryServer *registry.Server
-	vaultStore     *vault.Store
-	allowedOrigins []string
+	vaultStore         *vault.Store
+	metricsAccumulator *metrics.Accumulator
+	allowedOrigins     []string
 	authType       string
 	authToken      string
 	authHeader     string
@@ -128,6 +130,16 @@ func (s *Server) SetVaultStore(v *vault.Store) {
 	s.vaultStore = v
 }
 
+// SetMetricsAccumulator sets the token metrics accumulator.
+func (s *Server) SetMetricsAccumulator(acc *metrics.Accumulator) {
+	s.metricsAccumulator = acc
+}
+
+// MetricsAccumulator returns the token metrics accumulator.
+func (s *Server) MetricsAccumulator() *metrics.Accumulator {
+	return s.metricsAccumulator
+}
+
 // RegistryServer returns the registry server.
 func (s *Server) RegistryServer() *registry.Server {
 	return s.registryServer
@@ -164,6 +176,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
+	mux.HandleFunc("/api/metrics/tokens", s.handleMetricsTokens)
 	mux.HandleFunc("/api/clients", s.handleClients)
 	mux.HandleFunc("/api/reload", s.handleReload)
 	mux.HandleFunc("/health", s.handleHealth)
@@ -212,6 +225,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		A2ATasks   *int                      `json:"a2a_tasks,omitempty"`
 		Registry   *registry.RegistryStatus  `json:"registry,omitempty"`
 		CodeMode   string                    `json:"code_mode,omitempty"`
+		TokenUsage *metrics.TokenUsage       `json:"token_usage,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:    s.gateway.ServerInfo().Name,
@@ -232,6 +246,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if s.registryServer != nil && s.registryServer.HasContent() {
 		regStatus := s.registryServer.Store().Status()
 		status.Registry = &regStatus
+	}
+	if s.metricsAccumulator != nil {
+		snap := s.metricsAccumulator.Snapshot()
+		status.TokenUsage = &snap
 	}
 
 	writeJSON(w, status)
@@ -848,6 +866,84 @@ func (s *Server) handleGatewayLogs(w http.ResponseWriter, r *http.Request) {
 		entries = []logging.BufferedEntry{}
 	}
 	writeJSON(w, entries)
+}
+
+// handleMetricsTokens handles token metrics requests.
+// GET /api/metrics/tokens?range=1h — returns historical time-series data
+// DELETE /api/metrics/tokens — clears all token metrics
+func (s *Server) handleMetricsTokens(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetMetricsTokens(w, r)
+	case http.MethodDelete:
+		s.handleDeleteMetricsTokens(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleGetMetricsTokens returns historical token metrics.
+// GET /api/metrics/tokens?range=1h
+func (s *Server) handleGetMetricsTokens(w http.ResponseWriter, r *http.Request) {
+	if s.metricsAccumulator == nil {
+		writeJSON(w, metrics.TimeSeriesResponse{
+			Range:     "1h",
+			Interval:  "1m",
+			Points:    []metrics.DataPoint{},
+			PerServer: map[string][]metrics.DataPoint{},
+		})
+		return
+	}
+
+	rangeParam := r.URL.Query().Get("range")
+	duration := parseRange(rangeParam)
+
+	result := s.metricsAccumulator.Query(duration)
+
+	// Ensure non-nil slices for JSON serialization
+	if result.Points == nil {
+		result.Points = []metrics.DataPoint{}
+	}
+	if result.PerServer == nil {
+		result.PerServer = map[string][]metrics.DataPoint{}
+	}
+	for name, points := range result.PerServer {
+		if points == nil {
+			result.PerServer[name] = []metrics.DataPoint{}
+		}
+	}
+
+	writeJSON(w, result)
+}
+
+// handleDeleteMetricsTokens clears all token metrics.
+// DELETE /api/metrics/tokens
+func (s *Server) handleDeleteMetricsTokens(w http.ResponseWriter, _ *http.Request) {
+	if s.metricsAccumulator == nil {
+		writeJSON(w, map[string]string{"status": "ok", "message": "Token metrics cleared"})
+		return
+	}
+
+	s.metricsAccumulator.Clear()
+	writeJSON(w, map[string]string{"status": "ok", "message": "Token metrics cleared"})
+}
+
+// parseRange converts a range query parameter to a duration.
+func parseRange(s string) time.Duration {
+	switch s {
+	case "30m":
+		return 30 * time.Minute
+	case "1h":
+		return time.Hour
+	case "6h":
+		return 6 * time.Hour
+	case "24h":
+		return 24 * time.Hour
+	case "7d":
+		return 7 * 24 * time.Hour
+	default:
+		return time.Hour // Default to 1h
+	}
 }
 
 // handleReload triggers a configuration reload from disk.

@@ -79,6 +79,44 @@ export interface ClientStatus {
   configPath?: string; // Config file path (only if detected)
 }
 
+// Token counts for a session or server
+export interface TokenCounts {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
+// Format savings from output formatting (e.g., TOON/CSV)
+export interface FormatSavings {
+  original_tokens: number;
+  formatted_tokens: number;
+  saved_tokens: number;
+  savings_percent: number;
+}
+
+// Token usage summary from GET /api/status
+export interface TokenUsage {
+  session: TokenCounts;
+  per_server: Record<string, TokenCounts>;
+  format_savings: FormatSavings;
+}
+
+// Historical time-series data point
+export interface TokenDataPoint {
+  timestamp: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
+// Response from GET /api/metrics/tokens
+export interface TokenMetricsResponse {
+  range: string;
+  interval: string;
+  data_points: TokenDataPoint[];
+  per_server: Record<string, TokenDataPoint[]>;
+}
+
 // Gateway status response from GET /api/status
 export interface GatewayStatus {
   gateway: ServerInfo;
@@ -88,6 +126,7 @@ export interface GatewayStatus {
   sessions?: number;       // Active MCP session count
   a2a_tasks?: number;      // Active A2A task count (omitted if no A2A gateway)
   code_mode?: string;      // "on" when code mode is active (omitted when off)
+  token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
 }
 
 // Tool definition matching mcp.Tool

@@ -49,6 +49,17 @@ type ToolCaller interface {
 	CallTool(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error)
 }
 
+// ToolCallObserver receives notifications after tool calls complete.
+// Used by the metrics system to count tokens without coupling the gateway
+// to the metrics package directly.
+type ToolCallObserver interface {
+	// ObserveToolCall is called after a tool call completes.
+	// serverName is the MCP server that handled the call.
+	// arguments are the tool call arguments (input).
+	// result is the tool call response (output). May be nil on error.
+	ObserveToolCall(serverName string, arguments map[string]any, result *ToolCallResult)
+}
+
 // DefaultPingTimeout is the timeout for health check pings.
 const DefaultPingTimeout = 5 * time.Second
 

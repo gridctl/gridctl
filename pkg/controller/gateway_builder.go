@@ -18,11 +18,13 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/state"
+	"github.com/gridctl/gridctl/pkg/token"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
 
@@ -314,6 +316,13 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Ga
 	if b.vaultStore != nil {
 		server.SetVaultStore(b.vaultStore)
 	}
+
+	// Wire token usage metrics
+	counter := token.NewHeuristicCounter(4)
+	accumulator := metrics.NewAccumulator(10000)
+	observer := metrics.NewObserver(counter, accumulator)
+	gateway.SetToolCallObserver(observer)
+	server.SetMetricsAccumulator(accumulator)
 
 	return server
 }

@@ -1,13 +1,15 @@
-import { Wifi, WifiOff, Clock, Server, Box, Radio, Code } from 'lucide-react';
+import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, Gauge, ArrowDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';
+import { formatCompactNumber } from '../../lib/format';
 
 export function StatusBar() {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const resources = useStackStore((s) => s.resources);
   const sessions = useStackStore((s) => s.sessions);
   const codeMode = useStackStore((s) => s.codeMode);
+  const tokenUsage = useStackStore((s) => s.tokenUsage);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
   const lastUpdated = useStackStore((s) => s.lastUpdated);
   const error = useStackStore((s) => s.error);
@@ -87,6 +89,27 @@ export function StatusBar() {
           <div className="flex items-center gap-2 text-text-muted">
             <Code size={11} className="text-primary" />
             <span className="text-primary font-semibold">Code Mode</span>
+          </div>
+        )}
+
+        {/* Token counter */}
+        {tokenUsage && tokenUsage.session.total_tokens > 0 && (
+          <div className="flex items-center gap-2 text-text-muted">
+            <Gauge size={11} className="text-primary" />
+            <span>
+              <span className="text-primary font-semibold">{formatCompactNumber(tokenUsage.session.total_tokens)}</span>
+              <span className="ml-1">tokens</span>
+            </span>
+          </div>
+        )}
+
+        {/* Format savings indicator */}
+        {tokenUsage && tokenUsage.format_savings.savings_percent > 0 && (
+          <div className="flex items-center gap-2 text-text-muted">
+            <ArrowDown size={11} className="text-status-running" />
+            <span className="text-status-running font-semibold">
+              {Math.round(tokenUsage.format_savings.savings_percent)}% saved
+            </span>
           </div>
         )}
       </div>
