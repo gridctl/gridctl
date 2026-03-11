@@ -80,6 +80,8 @@ type Gateway struct {
 	healthMu sync.RWMutex
 	health   map[string]*HealthStatus // name -> health status
 
+	toolCallObserver ToolCallObserver // optional observer for tool call metrics
+
 	toolCountWarned bool // whether the tool count hint has been logged
 }
 
@@ -110,6 +112,14 @@ func (g *Gateway) SetLogger(logger *slog.Logger) {
 // SetDockerClient sets the Docker client for stdio transport.
 func (g *Gateway) SetDockerClient(cli dockerclient.DockerClient) {
 	g.dockerCli = cli
+}
+
+// SetToolCallObserver sets an observer that is notified after every tool call.
+// Used to collect token usage metrics without coupling the gateway to a metrics package.
+func (g *Gateway) SetToolCallObserver(obs ToolCallObserver) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.toolCallObserver = obs
 }
 
 // SetVersion sets the gateway version string.
@@ -789,6 +799,15 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	}
 
 	g.logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
+
+	// Notify observer asynchronously to avoid adding latency to tool calls
+	g.mu.RLock()
+	obs := g.toolCallObserver
+	g.mu.RUnlock()
+	if obs != nil {
+		go obs.ObserveToolCall(client.Name(), params.Arguments, result)
+	}
+
 	return result, nil
 }
 
