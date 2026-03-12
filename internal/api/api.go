@@ -317,6 +317,7 @@ type MCPServerStatus struct {
 	SSHHost      string   `json:"sshHost,omitempty"`
 	OpenAPI      bool     `json:"openapi"`
 	OpenAPISpec  string   `json:"openapiSpec,omitempty"`
+	OutputFormat string   `json:"outputFormat,omitempty"`
 	Healthy      *bool    `json:"healthy,omitempty"`
 	LastCheck    *string  `json:"lastCheck,omitempty"`
 	HealthError  string   `json:"healthError,omitempty"`
@@ -339,6 +340,7 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 			SSHHost:      ms.SSHHost,
 			OpenAPI:      ms.OpenAPI,
 			OpenAPISpec:  ms.OpenAPISpec,
+			OutputFormat: ms.OutputFormat,
 			Healthy:      ms.Healthy,
 			HealthError:  ms.HealthError,
 		}
