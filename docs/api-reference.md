@@ -124,7 +124,24 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
     "draft": 1,
     "disabled": 1
   },
-  "code_mode": "on"
+  "code_mode": "on",
+  "token_usage": {
+    "session": {
+      "input_tokens": 12400,
+      "output_tokens": 8200,
+      "total_tokens": 20600
+    },
+    "per_server": {
+      "github": { "input_tokens": 8000, "output_tokens": 5000, "total_tokens": 13000 },
+      "analytics": { "input_tokens": 4400, "output_tokens": 3200, "total_tokens": 7600 }
+    },
+    "format_savings": {
+      "original_tokens": 25000,
+      "formatted_tokens": 20600,
+      "saved_tokens": 4400,
+      "savings_percent": 17.6
+    }
+  }
 }
 ```
 
@@ -138,6 +155,17 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `a2a_tasks` | int | Active A2A task count (omitted if A2A disabled) |
 | `registry` | object | Registry skill counts (omitted if empty) |
 | `code_mode` | string | Code mode status (omitted if `"off"`) |
+| `token_usage` | object | Token usage metrics (omitted if no metrics accumulator) |
+
+**Token usage fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session` | object | Aggregate token counts (`input_tokens`, `output_tokens`, `total_tokens`) |
+| `per_server` | map | Token counts keyed by server name |
+| `format_savings` | object | Savings from output format conversion (`original_tokens`, `formatted_tokens`, `saved_tokens`, `savings_percent`) |
+
+**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server.
 
 #### `GET /api/mcp-servers`
 
@@ -196,6 +224,65 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/clients
     "configPath": "/Users/user/Library/Application Support/Claude/claude_desktop_config.json"
   }
 ]
+```
+
+---
+
+### Token Metrics
+
+#### `GET /api/metrics/tokens`
+
+Returns historical token usage time-series data.
+
+**Auth:** Yes
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `range` | string | `"1h"` | Time range: `"30m"`, `"1h"`, `"6h"`, `"24h"`, `"7d"` |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/metrics/tokens?range=1h"
+```
+
+**Response:**
+```json
+{
+  "range": "1h",
+  "interval": "1m",
+  "data_points": [
+    {
+      "timestamp": "2026-03-12T10:00:00Z",
+      "input_tokens": 1200,
+      "output_tokens": 800,
+      "total_tokens": 2000
+    }
+  ],
+  "per_server": {
+    "github": [
+      {
+        "timestamp": "2026-03-12T10:00:00Z",
+        "input_tokens": 1200,
+        "output_tokens": 800,
+        "total_tokens": 2000
+      }
+    ]
+  }
+}
+```
+
+#### `DELETE /api/metrics/tokens`
+
+Clears all accumulated token metrics.
+
+**Auth:** Yes
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/metrics/tokens
+```
+
+**Response:**
+```json
+{"status": "ok", "message": "Token metrics cleared"}
 ```
 
 ---
