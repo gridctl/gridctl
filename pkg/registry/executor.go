@@ -2,12 +2,14 @@ package registry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/format"
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
@@ -653,6 +655,10 @@ func (e *Executor) assembleOutput(skill *AgentSkill, tmplCtx *TemplateContext, s
 			return nil, fmt.Errorf("output format 'custom' requires a template")
 		}
 		return e.assembleOutputCustom(skill.Output.Template, tmplCtx)
+	case "toon":
+		return e.assembleOutputFormatted(skill, tmplCtx, skipped, "toon")
+	case "csv":
+		return e.assembleOutputFormatted(skill, tmplCtx, skipped, "csv")
 	default:
 		return nil, fmt.Errorf("unknown output format: %q", format)
 	}
@@ -715,6 +721,39 @@ func (e *Executor) assembleOutputCustom(tmpl string, tmplCtx *TemplateContext) (
 	}
 	return &mcp.ToolCallResult{
 		Content: []mcp.Content{mcp.NewTextContent(resolved)},
+	}, nil
+}
+
+// assembleOutputFormatted collects step results, parses as JSON, and converts to the target format.
+// Falls back to merged text if the result is not valid JSON.
+func (e *Executor) assembleOutputFormatted(skill *AgentSkill, tmplCtx *TemplateContext, skipped map[string]bool, formatName string) (*mcp.ToolCallResult, error) {
+	// Collect step results (same as merged)
+	merged, err := e.assembleOutputMerged(skill, tmplCtx, skipped)
+	if err != nil {
+		return nil, err
+	}
+
+	text := extractText(merged)
+	if text == "" {
+		return merged, nil
+	}
+
+	// Try to parse as JSON and convert
+	var data any
+	if jsonErr := json.Unmarshal([]byte(text), &data); jsonErr != nil {
+		// Not JSON — return merged text as-is
+		return merged, nil
+	}
+
+	formatted, fmtErr := format.Format(data, formatName)
+	if fmtErr != nil {
+		e.logger.Warn("output format conversion failed, using merged text",
+			"format", formatName, "error", fmtErr)
+		return merged, nil
+	}
+
+	return &mcp.ToolCallResult{
+		Content: []mcp.Content{mcp.NewTextContent(formatted)},
 	}, nil
 }
 
