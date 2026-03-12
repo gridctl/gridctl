@@ -1093,6 +1093,7 @@ type MCPServerStatus struct {
 	SSHHost      string    `json:"sshHost,omitempty"` // SSH hostname
 	OpenAPI      bool      `json:"openapi"`      // True for OpenAPI servers
 	OpenAPISpec  string    `json:"openapiSpec,omitempty"` // OpenAPI spec location
+	OutputFormat string    `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
 	Healthy      *bool      `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
 	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
 	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
@@ -1146,6 +1147,12 @@ func (g *Gateway) Status() []MCPServerStatus {
 			toolNames[i] = t.Name
 		}
 
+		// Resolve effective output format: server override > gateway default
+		outputFormat := meta.OutputFormat
+		if outputFormat == "" && g.defaultOutputFormat != "" {
+			outputFormat = g.defaultOutputFormat
+		}
+
 		status := MCPServerStatus{
 			Name:         client.Name(),
 			Transport:    meta.Transport,
@@ -1159,6 +1166,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 			SSH:          meta.SSH,
 			SSHHost:      meta.SSHHost,
 			OpenAPI:      meta.OpenAPI,
+			OutputFormat: outputFormat,
 		}
 		if meta.OpenAPIConfig != nil {
 			status.OpenAPISpec = meta.OpenAPIConfig.Spec
