@@ -13,6 +13,9 @@ interface UIState {
   // Compact card mode
   compactCards: boolean;
 
+  // Token heat overlay on graph nodes
+  showHeatMap: boolean;
+
   // Bottom panel state
   bottomPanelOpen: boolean;
   bottomPanelTab: BottomPanelTab;
@@ -23,6 +26,7 @@ interface UIState {
   editorDetached: boolean;
   registryDetached: boolean;
   workflowDetached: boolean;
+  metricsDetached: boolean;
 
   // Actions
   setSidebarOpen: (open: boolean) => void;
@@ -31,6 +35,7 @@ interface UIState {
   setEdgeStyle: (style: EdgeStyle) => void;
   toggleEdgeStyle: () => void;
   toggleCompactCards: () => void;
+  toggleHeatMap: () => void;
 
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
@@ -43,6 +48,7 @@ interface UIState {
   setEditorDetached: (detached: boolean) => void;
   setRegistryDetached: (detached: boolean) => void;
   setWorkflowDetached: (detached: boolean) => void;
+  setMetricsDetached: (detached: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -55,6 +61,9 @@ export const useUIStore = create<UIState>()(
       // Compact cards default
       compactCards: false,
 
+      // Token heat overlay default
+      showHeatMap: false,
+
       // Bottom panel defaults
       bottomPanelOpen: false,
       bottomPanelTab: 'logs',
@@ -65,6 +74,7 @@ export const useUIStore = create<UIState>()(
       editorDetached: false,
       registryDetached: false,
       workflowDetached: false,
+      metricsDetached: false,
 
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -76,6 +86,8 @@ export const useUIStore = create<UIState>()(
         })),
       toggleCompactCards: () =>
         set((s) => ({ compactCards: !s.compactCards })),
+      toggleHeatMap: () =>
+        set((s) => ({ showHeatMap: !s.showHeatMap })),
 
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
@@ -88,6 +100,7 @@ export const useUIStore = create<UIState>()(
       setEditorDetached: (editorDetached) => set({ editorDetached }),
       setRegistryDetached: (registryDetached) => set({ registryDetached }),
       setWorkflowDetached: (workflowDetached) => set({ workflowDetached }),
+      setMetricsDetached: (metricsDetached) => set({ metricsDetached }),
     }),
     {
       name: 'gridctl-ui-storage',
