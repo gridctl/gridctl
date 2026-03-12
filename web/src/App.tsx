@@ -81,6 +81,7 @@ function AppContent() {
   const selectNode = useStackStore((s) => s.selectNode);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
+  const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
   const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const authRequired = useAuthStore((s) => s.authRequired);
@@ -127,6 +128,8 @@ function AppContent() {
     onZoomOut: () => zoomOut({ duration: 200 }),
     onRefresh: handleRefresh,
     onToggleBottomPanel: toggleBottomPanel,
+    onSwitchToLogs: () => setBottomPanelTab('logs'),
+    onSwitchToMetrics: () => setBottomPanelTab('metrics'),
   });
 
   // Calculate grid row height for bottom panel
