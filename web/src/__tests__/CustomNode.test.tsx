@@ -98,4 +98,22 @@ describe('CustomNode', () => {
     expect(screen.getByTestId('handle-input')).toBeInTheDocument();
     expect(screen.getByTestId('handle-output')).toBeInTheDocument();
   });
+
+  it('displays output format badge when not json', () => {
+    render(<CustomNode data={makeServerData({ outputFormat: 'toon' })} />);
+    expect(screen.getByText('toon')).toBeInTheDocument();
+  });
+
+  it('hides output format badge for json default', () => {
+    render(<CustomNode data={makeServerData({ outputFormat: 'json' })} />);
+    // Transport 'http' should be visible but 'json' format badge should not
+    expect(screen.getByText('http')).toBeInTheDocument();
+    expect(screen.queryByText('json')).not.toBeInTheDocument();
+  });
+
+  it('hides output format badge when not set', () => {
+    render(<CustomNode data={makeServerData()} />);
+    expect(screen.queryByText('toon')).not.toBeInTheDocument();
+    expect(screen.queryByText('csv')).not.toBeInTheDocument();
+  });
 });
