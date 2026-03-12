@@ -280,6 +280,67 @@ func TestGateway_Status(t *testing.T) {
 	}
 }
 
+func TestGateway_Status_IncludesOutputFormat(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	// Server with explicit output format
+	client1 := setupMockAgentClient(ctrl, "toon-server", []Tool{{Name: "tool1"}})
+	g.Router().AddClient(client1)
+	g.SetServerMeta(MCPServerConfig{
+		Name:         "toon-server",
+		Transport:    TransportHTTP,
+		OutputFormat: "toon",
+	})
+
+	// Server without output format (should inherit gateway default)
+	client2 := setupMockAgentClient(ctrl, "default-server", []Tool{{Name: "tool2"}})
+	g.Router().AddClient(client2)
+	g.SetServerMeta(MCPServerConfig{
+		Name:      "default-server",
+		Transport: TransportStdio,
+	})
+
+	// Set gateway default
+	g.SetDefaultOutputFormat("csv")
+
+	statuses := g.Status()
+	if len(statuses) != 2 {
+		t.Fatalf("expected 2 statuses, got %d", len(statuses))
+	}
+
+	// Statuses are sorted by name
+	defaultStatus := statuses[0] // "default-server"
+	toonStatus := statuses[1]    // "toon-server"
+
+	if toonStatus.OutputFormat != "toon" {
+		t.Errorf("toon-server output format = %q, want %q", toonStatus.OutputFormat, "toon")
+	}
+	if defaultStatus.OutputFormat != "csv" {
+		t.Errorf("default-server output format = %q, want %q (gateway default)", defaultStatus.OutputFormat, "csv")
+	}
+}
+
+func TestGateway_Status_OutputFormat_NoDefault(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	client := setupMockAgentClient(ctrl, "plain-server", []Tool{{Name: "tool1"}})
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{
+		Name:      "plain-server",
+		Transport: TransportHTTP,
+	})
+
+	statuses := g.Status()
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if statuses[0].OutputFormat != "" {
+		t.Errorf("output format = %q, want empty (no override, no default)", statuses[0].OutputFormat)
+	}
+}
+
 func TestGateway_UnregisterMCPServer(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()
