@@ -98,7 +98,7 @@ func ValidateSkillFull(s *AgentSkill) *ValidationResult {
 var (
 	validInputTypes   = map[string]bool{"string": true, "number": true, "boolean": true, "object": true, "array": true}
 	validOnError      = map[string]bool{"fail": true, "skip": true, "continue": true, "": true}
-	validOutputFormat = map[string]bool{"merged": true, "last": true, "custom": true, "": true}
+	validOutputFormat = map[string]bool{"merged": true, "last": true, "custom": true, "toon": true, "csv": true, "": true}
 )
 
 // validateWorkflow validates the workflow definition within a skill.
@@ -182,7 +182,7 @@ func validateWorkflow(s *AgentSkill, result *ValidationResult) {
 	if s.Output != nil {
 		if !validOutputFormat[s.Output.Format] {
 			result.Errors = append(result.Errors,
-				fmt.Sprintf("workflow: output format '%s' is invalid (expected: merged, last, or custom)", s.Output.Format))
+				fmt.Sprintf("workflow: output format '%s' is invalid (expected: merged, last, custom, toon, or csv)", s.Output.Format))
 		}
 		if s.Output.Format == "custom" && s.Output.Template == "" {
 			result.Errors = append(result.Errors,
