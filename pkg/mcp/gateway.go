@@ -11,10 +11,14 @@ import (
 	"sync"
 	"time"
 
+	"encoding/json"
+
 	"github.com/docker/docker/api/types/container"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/format"
 	"github.com/gridctl/gridctl/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/token"
 )
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
@@ -36,6 +40,7 @@ type MCPServerConfig struct {
 	SSHIdentityFile string            // SSH identity file path (for SSH servers)
 	OpenAPIConfig   *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
 	Tools           []string          // Tool whitelist (empty = all tools)
+	OutputFormat    string            // Output format: "json", "toon", "csv", "text"
 }
 
 // OpenAPIClientConfig contains configuration for an OpenAPI-backed MCP client.
@@ -81,6 +86,10 @@ type Gateway struct {
 	health   map[string]*HealthStatus // name -> health status
 
 	toolCallObserver ToolCallObserver // optional observer for tool call metrics
+
+	defaultOutputFormat    string                // gateway-level default output format
+	tokenCounter          token.Counter          // token counter for format savings calculation
+	formatSavingsRecorder FormatSavingsRecorder  // optional recorder for format savings
 
 	toolCountWarned bool // whether the tool count hint has been logged
 }
@@ -138,6 +147,41 @@ func (g *Gateway) SetCodeMode(timeout time.Duration) {
 	cm.SetLogger(g.logger)
 	g.codeMode = cm
 	g.codeModeStr = "on"
+}
+
+// SetDefaultOutputFormat sets the gateway-level default output format.
+func (g *Gateway) SetDefaultOutputFormat(format string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.defaultOutputFormat = format
+}
+
+// SetTokenCounter sets the token counter used for format savings calculation.
+func (g *Gateway) SetTokenCounter(counter token.Counter) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.tokenCounter = counter
+}
+
+// SetFormatSavingsRecorder sets the recorder for format savings metrics.
+func (g *Gateway) SetFormatSavingsRecorder(recorder FormatSavingsRecorder) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.formatSavingsRecorder = recorder
+}
+
+// resolveOutputFormat returns the output format for the given server.
+// Resolution order: server format > gateway default > "json".
+func (g *Gateway) resolveOutputFormat(serverName string) string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if meta, ok := g.serverMeta[serverName]; ok && meta.OutputFormat != "" {
+		return meta.OutputFormat
+	}
+	if g.defaultOutputFormat != "" {
+		return g.defaultOutputFormat
+	}
+	return "json"
 }
 
 // CodeModeStatus returns the code mode status string ("off" or "on").
@@ -800,6 +844,9 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 
 	g.logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
 
+	// Format conversion: convert JSON content to the configured output format
+	g.applyFormatConversion(client.Name(), result)
+
 	// Notify observer asynchronously to avoid adding latency to tool calls
 	g.mu.RLock()
 	obs := g.toolCallObserver
@@ -809,6 +856,73 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	}
 
 	return result, nil
+}
+
+// maxFormatPayloadSize is the maximum text size for format conversion (1MB).
+// Payloads larger than this are skipped to prevent excessive memory allocation.
+const maxFormatPayloadSize = 1 << 20
+
+// applyFormatConversion converts tool result content to the configured output format.
+// It modifies result.Content in place. On any failure, content is left unchanged.
+func (g *Gateway) applyFormatConversion(serverName string, result *ToolCallResult) {
+	if result == nil || result.IsError {
+		return
+	}
+
+	outputFormat := g.resolveOutputFormat(serverName)
+	if outputFormat == "" || outputFormat == "json" || outputFormat == "text" {
+		return
+	}
+
+	g.mu.RLock()
+	counter := g.tokenCounter
+	recorder := g.formatSavingsRecorder
+	g.mu.RUnlock()
+
+	var totalOriginalTokens, totalFormattedTokens int
+
+	for i, c := range result.Content {
+		if c.Type != "text" || c.Text == "" {
+			continue
+		}
+
+		if len(c.Text) > maxFormatPayloadSize {
+			g.logger.Debug("skipping format conversion for large payload",
+				"server", serverName, "size", len(c.Text))
+			continue
+		}
+
+		var data any
+		if err := json.Unmarshal([]byte(c.Text), &data); err != nil {
+			continue // Not JSON, leave unchanged
+		}
+
+		formatted, err := format.Format(data, outputFormat)
+		if err != nil {
+			g.logger.Warn("format conversion failed",
+				"server", serverName, "format", outputFormat, "error", err)
+			continue // Leave unchanged
+		}
+
+		// Count tokens before and after
+		if counter != nil {
+			originalTokens := counter.Count(c.Text)
+			formattedTokens := counter.Count(formatted)
+			totalOriginalTokens += originalTokens
+			totalFormattedTokens += formattedTokens
+		}
+
+		result.Content[i].Text = formatted
+
+		g.logger.Info("format conversion applied",
+			"server", serverName, "format", outputFormat,
+			"original_size", len(c.Text), "formatted_size", len(formatted))
+	}
+
+	// Record format savings if any conversion happened
+	if recorder != nil && totalOriginalTokens > 0 {
+		recorder.RecordFormatSavings(serverName, totalOriginalTokens, totalFormattedTokens)
+	}
 }
 
 // CallTool implements the ToolCaller interface, allowing components to call
