@@ -40,6 +40,11 @@ type GatewayConfig struct {
 	// CodeModeTimeout is the execution timeout in seconds (default: 30).
 	// Experimental: may change without notice.
 	CodeModeTimeout int `yaml:"code_mode_timeout,omitempty"`
+
+	// OutputFormat sets the default output format for tool call results.
+	// Values: "json" (default), "toon", "csv", "text".
+	// Per-server output_format overrides this value.
+	OutputFormat string `yaml:"output_format,omitempty"`
 }
 
 // AuthConfig configures gateway authentication.
@@ -73,7 +78,8 @@ type MCPServer struct {
 	Network   string            `yaml:"network,omitempty"`   // Network to join (for multi-network mode)
 	SSH       *SSHConfig        `yaml:"ssh,omitempty"`       // SSH connection config for remote servers
 	OpenAPI   *OpenAPIConfig    `yaml:"openapi,omitempty"`   // OpenAPI spec config for API-backed servers
-	Tools     []string          `yaml:"tools,omitempty"`     // Tool whitelist (empty = all tools exposed)
+	Tools        []string          `yaml:"tools,omitempty"`          // Tool whitelist (empty = all tools exposed)
+	OutputFormat string            `yaml:"output_format,omitempty"` // Output format override: "json", "toon", "csv", "text"
 }
 
 // OpenAPIConfig defines an MCP server backed by an OpenAPI specification.
