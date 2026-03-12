@@ -60,6 +60,17 @@ type ToolCallObserver interface {
 	ObserveToolCall(serverName string, arguments map[string]any, result *ToolCallResult)
 }
 
+// FormatSavingsRecorder receives format savings observations.
+// Used by the gateway to report token savings from format conversion
+// without coupling to the metrics package directly.
+// Normal token usage tracking is handled separately by the ToolCallObserver.
+type FormatSavingsRecorder interface {
+	// RecordFormatSavings records token counts before and after format conversion.
+	// originalTokens is the token count of the original JSON content.
+	// formattedTokens is the token count of the converted content (TOON/CSV).
+	RecordFormatSavings(serverName string, originalTokens, formattedTokens int)
+}
+
 // DefaultPingTimeout is the timeout for health check pings.
 const DefaultPingTimeout = 5 * time.Second
 
