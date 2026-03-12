@@ -155,6 +155,117 @@ func TestAccumulator_FormatSavingsZero(t *testing.T) {
 	}
 }
 
+func TestAccumulator_RecordFormatSavings(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	// Record savings: 1000 original tokens → 600 formatted tokens
+	acc.RecordFormatSavings("server-a", 1000, 600)
+
+	snap := acc.Snapshot()
+
+	// Normal token tracking should be unaffected (savings-only method)
+	if snap.Session.InputTokens != 0 {
+		t.Errorf("session input = %d, want 0", snap.Session.InputTokens)
+	}
+
+	// Format savings should be populated
+	if snap.FormatSavings.OriginalTokens != 1000 {
+		t.Errorf("original tokens = %d, want 1000", snap.FormatSavings.OriginalTokens)
+	}
+	if snap.FormatSavings.FormattedTokens != 600 {
+		t.Errorf("formatted tokens = %d, want 600", snap.FormatSavings.FormattedTokens)
+	}
+	if snap.FormatSavings.SavedTokens != 400 {
+		t.Errorf("saved tokens = %d, want 400", snap.FormatSavings.SavedTokens)
+	}
+	if snap.FormatSavings.SavingsPercent != 40.0 {
+		t.Errorf("savings percent = %f, want 40.0", snap.FormatSavings.SavingsPercent)
+	}
+}
+
+func TestAccumulator_RecordFormatSavings_Cumulative(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordFormatSavings("server-a", 500, 300)
+	acc.RecordFormatSavings("server-b", 500, 300)
+
+	snap := acc.Snapshot()
+	if snap.FormatSavings.OriginalTokens != 1000 {
+		t.Errorf("cumulative original = %d, want 1000", snap.FormatSavings.OriginalTokens)
+	}
+	if snap.FormatSavings.FormattedTokens != 600 {
+		t.Errorf("cumulative formatted = %d, want 600", snap.FormatSavings.FormattedTokens)
+	}
+	if snap.FormatSavings.SavedTokens != 400 {
+		t.Errorf("cumulative saved = %d, want 400", snap.FormatSavings.SavedTokens)
+	}
+}
+
+func TestAccumulator_RecordFormatSavings_ClearResets(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordFormatSavings("server-a", 1000, 600)
+
+	acc.Clear()
+
+	snap := acc.Snapshot()
+	if snap.FormatSavings.OriginalTokens != 0 {
+		t.Errorf("original after clear = %d, want 0", snap.FormatSavings.OriginalTokens)
+	}
+	if snap.FormatSavings.SavingsPercent != 0 {
+		t.Errorf("savings percent after clear = %f, want 0", snap.FormatSavings.SavingsPercent)
+	}
+}
+
+func TestAccumulator_RecordFormatSavings_Concurrent(t *testing.T) {
+	acc := NewAccumulator(100)
+	var wg sync.WaitGroup
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			acc.RecordFormatSavings("server-a", 100, 60)
+		}()
+	}
+
+	wg.Wait()
+
+	snap := acc.Snapshot()
+	if snap.FormatSavings.OriginalTokens != 10000 {
+		t.Errorf("concurrent original = %d, want 10000", snap.FormatSavings.OriginalTokens)
+	}
+	if snap.FormatSavings.FormattedTokens != 6000 {
+		t.Errorf("concurrent formatted = %d, want 6000", snap.FormatSavings.FormattedTokens)
+	}
+}
+
+func TestAccumulator_RecordFormatSavings_IndependentFromRecord(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	// Normal tracking via Record
+	acc.Record("server-a", 100, 50)
+	// Format savings via RecordFormatSavings
+	acc.RecordFormatSavings("server-a", 500, 300)
+
+	snap := acc.Snapshot()
+
+	// Session totals should only include Record() data
+	if snap.Session.InputTokens != 100 {
+		t.Errorf("session input = %d, want 100 (only from Record)", snap.Session.InputTokens)
+	}
+	if snap.Session.OutputTokens != 50 {
+		t.Errorf("session output = %d, want 50 (only from Record)", snap.Session.OutputTokens)
+	}
+
+	// Format savings should be independent
+	if snap.FormatSavings.OriginalTokens != 500 {
+		t.Errorf("original = %d, want 500", snap.FormatSavings.OriginalTokens)
+	}
+	if snap.FormatSavings.SavedTokens != 200 {
+		t.Errorf("saved = %d, want 200", snap.FormatSavings.SavedTokens)
+	}
+}
+
 func TestFormatRange(t *testing.T) {
 	tests := []struct {
 		d    time.Duration
