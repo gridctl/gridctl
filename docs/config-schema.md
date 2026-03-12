@@ -47,6 +47,7 @@ gateway:
     token: "${MY_TOKEN}"
   code_mode: "on"
   code_mode_timeout: 30
+  output_format: toon
 ```
 
 | Field | Type | Required | Default | Description |
@@ -55,6 +56,7 @@ gateway:
 | `auth` | object | No | — | Authentication configuration |
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` *(experimental)* |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 *(experimental)* |
+| `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
 
 ### Auth
 
@@ -238,6 +240,7 @@ mcp-servers:
 | `ssh` | object | Conditional | — | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | — | OpenAPI spec config (see [OpenAPI](#openapi)) |
 | `tools` | []string | No | — | Tool whitelist. Empty exposes all tools |
+| `output_format` | string | No | — | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 
 **Type determination rules:**
 - Must have exactly one of: `image`, `source`, `url`, `command` (alone), `ssh` + `command`, or `openapi`

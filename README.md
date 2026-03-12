@@ -250,6 +250,30 @@ This agent can only access three of the five tools exposed by the GitHub server 
 
 Limited [Agent-to-Agent](https://google.github.io/A2A/) protocol support. Expose your agents via `/.well-known/agent.json` or connect to remote A2A agents. Agents can use other agents as tools. `A2A` is still emerging, as is the common use-cases. This part of the project will continue to evolve in the future.
 
+### Output Format Conversion
+
+Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into TOON or CSV before they reach the client — reducing token consumption by 25–61% for tabular and key-value data.
+
+```yaml
+gateway:
+  output_format: toon      # Default for all servers: json, toon, csv, text
+
+mcp-servers:
+  - name: analytics
+    image: my-org/analytics:latest
+    port: 8080
+    output_format: csv      # Override: this server returns CSV
+```
+
+| Format | Best For | Savings |
+|--------|----------|---------|
+| `toon` | Key-value pairs, nested objects | ~25–40% |
+| `csv` | Tabular / array-of-objects data | ~40–61% |
+| `text` | Raw passthrough (no conversion) | — |
+| `json` | Default (no conversion) | — |
+
+Non-JSON responses and payloads over 1MB are passed through unchanged. Per-server settings override the gateway default.
+
 ### Code Mode
 
 When a stack exposes dozens of tools, context window consumption grows fast. Code Mode replaces all individual tool definitions with two meta-tools — `search` and `execute` — reducing context overhead by 99%+. LLM agents discover tools via search, then call them through JavaScript executed in a sandboxed [goja](https://github.com/nicholasgasior/goja) runtime.
@@ -403,6 +427,8 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | Hot reload | Stable | Backward compatible in 0.x |
 | Vault secrets | Stable | Backward compatible in 0.x |
 | Web UI | Stable | No API guarantee (internal) |
+| Output format conversion | Stable | Backward compatible in 0.x |
+| Token usage metrics | Stable | Backward compatible in 0.x |
 | Code mode | Experimental | May change without notice |
 | A2A protocol | Experimental | May change without notice |
 | Podman runtime | Experimental | May change without notice |

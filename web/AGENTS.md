@@ -106,6 +106,8 @@ Implementation in `src/lib/graph/` (butterfly.ts, edges.ts, nodes.ts, transform.
 *   **Shape:** Rounded rectangle (`rounded-xl`)
 *   **Color:** Violet accents for all MCP server types (unified theme)
 *   **Content:** Name, transport type, endpoint/container ID, tool count, status
+*   **Format Badge:** Teal badge next to transport badge, shown only when `outputFormat` is non-default (not `json`). Displays format name (TOON, CSV, text).
+*   **Token Heat Overlay:** Amber glow proportional to relative token usage when heat map is enabled via Flame button in canvas controls.
 *   **Type Indicators:** Gray bordered badge next to status badge indicating server type:
     *   **Container:** Terminal icon + "Container" (for container-based servers)
     *   **External:** Globe icon + "External" (for external URL servers)
@@ -138,6 +140,17 @@ Implementation in `src/lib/graph/` (butterfly.ts, edges.ts, nodes.ts, transform.
 ## 8. Sidebar Sections
 
 The detail sidebar displays contextual information when a node is selected.
+
+### Token Usage Section (MCP Servers Only)
+Shows per-server token counts, sparkline trend chart, and conditional format savings display.
+
+*   **Location:** Between Status and Actions sections (MCP server nodes only)
+*   **Icon:** Activity (Lucide)
+*   **Components:**
+    *   `TokenUsageSection` — Token counts (input/output/total), SparkChart with 5s auto-refresh, format savings bar with ARIA accessibility
+    *   `SparkChart` — Minimal Recharts-based sparkline (no axes, legends, or tooltips)
+*   **Visibility:** Only renders when token data exists for the selected server
+*   **Format Savings:** Conditional bar showing original vs formatted tokens and savings percentage
 
 ### Access Section (Agents Only)
 Shows the MCP server dependencies for an agent with tool-level access visualization.
@@ -266,6 +279,7 @@ The UI supports detaching panels into separate browser windows for multi-monitor
 
 ### Routes
 - `/logs` - Detached logs viewer with node selector
+- `/metrics` - Detached metrics dashboard with KPI cards, chart, and per-server table
 - `/sidebar` - Detached sidebar with node selector
 - `/editor` - Detached registry editor (skill)
 
@@ -303,9 +317,23 @@ openDetachedWindow('editor', `type=skill&name=${encodeURIComponent(skillName)}`)
 openDetachedWindow('editor', 'type=skill');
 ```
 
-## 12. Structured Log Viewer
+## 12. Bottom Panel (Tabbed Container)
 
-The BottomPanel and DetachedLogsPage components provide a structured log viewer with filtering capabilities.
+The BottomPanel is a tabbed container with two tabs: **Logs** and **Metrics**. Tab state is preserved via CSS `invisible` (both tabs rendered simultaneously). Supports keyboard shortcuts: `Cmd/Ctrl+1` for Logs, `Cmd/Ctrl+2` for Metrics (auto-opens panel if collapsed).
+
+### Metrics Tab
+
+*   **Components:**
+    *   `MetricsTab` — Session KPI cards, Recharts area chart, time range selector, and sortable per-server table
+    *   Vendored Tremor Raw chart components adapted for Obsidian Observatory theme
+    *   Recharts with vendor chunk code splitting
+*   **Controls:** Time range selector (30m, 1h, 6h, 24h, 7d), pause/resume, clear, fullscreen
+*   **Pop-out:** Full detached metrics window with KPI cards, area chart, per-server table, and all controls
+*   **Data source:** `GET /api/metrics/tokens?range=` with polling
+
+### Structured Log Viewer
+
+The LogsTab and DetachedLogsPage components provide a structured log viewer with filtering capabilities.
 
 ### Log Entry Format
 
@@ -443,6 +471,11 @@ Manages `authRequired` (boolean) and `token` (string) state. The token is includ
 Hook: `useKeyboardShortcuts` (`src/hooks/useKeyboardShortcuts.ts`)
 
 Provides global keyboard shortcuts for common UI actions (toggling panels, refreshing, etc.).
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd/Ctrl+1` | Switch to Logs tab (auto-opens bottom panel) |
+| `Cmd/Ctrl+2` | Switch to Metrics tab (auto-opens bottom panel) |
 
 ### Workflow Keyboard Shortcuts
 

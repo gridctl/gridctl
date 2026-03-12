@@ -113,6 +113,7 @@ gridctl/
 │   │   ├── factory.go    # Runtime factory registration
 │   │   ├── compat.go     # Backward compatibility types
 │   │   ├── depgraph.go   # Dependency graph for startup ordering
+│   │   ├── detect.go     # Runtime detection (Docker/Podman socket probing, version query)
 │   │   └── docker/       # Docker implementation
 │   │       ├── driver.go     # DockerRuntime (implements WorkloadRuntime)
 │   │       ├── init.go       # Factory registration
@@ -171,6 +172,15 @@ gridctl/
 │   │   ├── client.go     # HTTP client for remote A2A agents
 │   │   ├── handler.go    # HTTP handler for A2A endpoints
 │   │   └── gateway.go    # A2A gateway (local + remote agents)
+│   ├── format/           # Output format converters
+│   │   ├── format.go     # Format() dispatcher (toon, csv, json, text)
+│   │   ├── toon.go       # TOON v3.0 converter (key-value, nested, tabular)
+│   │   └── csv.go        # CSV converter (sorted headers, encoding/csv)
+│   ├── token/            # Token counting
+│   │   └── counter.go    # Counter interface + heuristic implementation (4 bytes/token)
+│   ├── metrics/          # Metrics accumulation
+│   │   ├── accumulator.go # Atomic session/per-server counters, ring buffer time buckets, format savings
+│   │   └── observer.go   # Observer adapter bridging ToolCallObserver to counter + accumulator
 │   ├── vault/            # Secrets vault
 │   │   ├── types.go      # Secret, Set, EncryptedVault types
 │   │   ├── crypto.go     # XChaCha20-Poly1305 + Argon2id envelope encryption
@@ -390,7 +400,7 @@ When `gridctl deploy` runs, it:
 
 **Endpoints:**
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
-- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/health`, `/ready`
+- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/health`, `/ready`
 - **Vault:** `/api/vault`, `/api/vault/status`, `/api/vault/unlock`, `/api/vault/lock`, `/api/vault/sets`, `/api/vault/import`
 - **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
 - **A2A:** `/.well-known/agent.json`, `/a2a/` (list agents), `/a2a/{agent}` (GET card, POST JSON-RPC)
@@ -415,6 +425,11 @@ When `gridctl deploy` runs, it:
 
 **MCP Server Control API:**
 - `POST /api/mcp-servers/{name}/restart` - Restart an individual MCP server connection
+
+**Token Metrics API:**
+- `GET /api/metrics/tokens?range=1h` - Historical time-series token data (range: 30m, 1h, 6h, 24h, 7d)
+- `DELETE /api/metrics/tokens` - Clear all token metrics
+- `GET /api/status` includes `token_usage` (session totals, per-server breakdown, format savings)
 
 **Registry API:**
 - `GET /api/registry/status` - Returns skill counts
@@ -473,6 +488,7 @@ gateway:                              # Optional: gateway-level configuration
     # header: "X-API-Key"            # Custom header for api_key type
   code_mode: "on"                     # Replace tools with search + execute meta-tools ("off" | "on")
   code_mode_timeout: 30               # Code execution timeout in seconds (default: 30)
+  output_format: toon                 # Default output format for tool results: "json" (default), "toon", "csv", "text"
 
 secrets:                              # Optional: auto-inject vault secrets by set
   sets:                               # Variable sets to inject into all container env
@@ -496,6 +512,7 @@ mcp-servers:
   - name: stdio-server
     image: ghcr.io/org/stdio-mcp:latest
     transport: stdio                  # Uses Docker attach for stdin/stdout
+    output_format: csv                # Per-server output format override (overrides gateway default)
     # port not required for stdio transport
 
   # External MCP server (no container, connects to existing URL)
