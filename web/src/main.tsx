@@ -19,6 +19,9 @@ const DetachedRegistryPage = lazy(() =>
 const DetachedWorkflowPage = lazy(() =>
   import('./pages/DetachedWorkflowPage.tsx').then(m => ({ default: m.DetachedWorkflowPage }))
 );
+const DetachedMetricsPage = lazy(() =>
+  import('./pages/DetachedMetricsPage.tsx').then(m => ({ default: m.DetachedMetricsPage }))
+);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -31,6 +34,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/editor" element={<DetachedEditorPage />} />
           <Route path="/registry" element={<DetachedRegistryPage />} />
           <Route path="/workflow" element={<DetachedWorkflowPage />} />
+          <Route path="/metrics" element={<DetachedMetricsPage />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

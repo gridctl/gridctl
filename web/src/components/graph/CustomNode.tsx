@@ -6,6 +6,7 @@ import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useUIStore } from '../../stores/useUIStore';
+import { useTokenHeat } from '../../hooks/useTokenHeat';
 import { LAYOUT } from '../../lib/constants';
 import type { MCPServerNodeData, ResourceNodeData } from '../../types';
 
@@ -19,6 +20,7 @@ interface CustomNodeProps {
 const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const isCompact = useUIStore((s) => s.compactCards);
   const isServer = data.type === 'mcp-server';
+  const heatIntensity = useTokenHeat(isServer ? data.name : '');
   const isExternal = isServer && (data as MCPServerNodeData).external;
   const isLocalProcess = isServer && (data as MCPServerNodeData).localProcess;
   const isSSH = isServer && (data as MCPServerNodeData).ssh;
@@ -54,7 +56,13 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         selected && !isServer && 'border-secondary shadow-glow-secondary ring-1 ring-secondary/30',
         !selected && 'hover:shadow-node-hover hover:border-text-muted/30'
       )}
-      style={{ height: isCompact ? LAYOUT.NODE_HEIGHT_COMPACT : undefined }}
+      style={{
+        height: isCompact ? LAYOUT.NODE_HEIGHT_COMPACT : undefined,
+        ...(heatIntensity > 0 && !selected ? {
+          borderColor: `rgba(245, 158, 11, ${0.2 + heatIntensity * 0.5})`,
+          boxShadow: `0 0 ${8 + heatIntensity * 16}px rgba(245, 158, 11, ${heatIntensity * 0.3})`,
+        } : {}),
+      }}
     >
 
       {/* Header with gradient accent */}

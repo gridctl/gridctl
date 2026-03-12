@@ -8,6 +8,8 @@ interface ShortcutOptions {
   onZoomOut?: () => void;
   onRefresh?: () => void;
   onToggleBottomPanel?: () => void;
+  onSwitchToLogs?: () => void;
+  onSwitchToMetrics?: () => void;
 }
 
 export function useKeyboardShortcuts(options: ShortcutOptions) {
@@ -60,6 +62,18 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
       if (isMod && e.key === 'j') {
         e.preventDefault();
         options.onToggleBottomPanel?.();
+      }
+
+      // Switch to Logs tab: Cmd/Ctrl+1
+      if (isMod && e.key === '1') {
+        e.preventDefault();
+        options.onSwitchToLogs?.();
+      }
+
+      // Switch to Metrics tab: Cmd/Ctrl+2
+      if (isMod && e.key === '2') {
+        e.preventDefault();
+        options.onSwitchToMetrics?.();
       }
     };
 

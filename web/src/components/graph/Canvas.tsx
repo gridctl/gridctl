@@ -8,7 +8,7 @@ import {
   useViewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
@@ -30,6 +30,8 @@ export function Canvas() {
   const toggleEdgeStyle = useUIStore((s) => s.toggleEdgeStyle);
   const compactCards = useUIStore((s) => s.compactCards);
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
+  const showHeatMap = useUIStore((s) => s.showHeatMap);
+  const toggleHeatMap = useUIStore((s) => s.toggleHeatMap);
 
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -208,6 +210,16 @@ export function Canvas() {
             ) : (
               <Rows3 className="w-4 h-4" />
             )}
+          </button>
+          <button
+            onClick={toggleHeatMap}
+            className={cn(
+              'control-button',
+              showHeatMap && 'ring-1 ring-primary/30'
+            )}
+            title={showHeatMap ? 'Hide token heat map' : 'Show token heat map'}
+          >
+            <Flame className="w-4 h-4" />
           </button>
         </Panel>
       </ReactFlow>

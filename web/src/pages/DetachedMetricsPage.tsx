@@ -1,26 +1,69 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, Component, type ReactNode } from 'react';
+import {
+  BarChart3,
+  AlertCircle,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
+import { cn } from '../lib/cn';
+import { IconButton } from '../components/ui/IconButton';
+import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
+import { fetchStatus, fetchTokenMetrics, clearTokenMetrics } from '../lib/api';
+import { formatCompactNumber } from '../lib/format';
+import { POLLING } from '../lib/constants';
+import { AreaChart } from '../components/chart/AreaChart';
+import type { GatewayStatus, TokenMetricsResponse, TokenUsage } from '../types';
 import {
   Pause,
   Play,
   Trash2,
-  BarChart3,
+  RefreshCw,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  AlertCircle,
-  RefreshCw,
 } from 'lucide-react';
-import { cn } from '../../lib/cn';
-import { IconButton } from '../ui/IconButton';
-import { PopoutButton } from '../ui/PopoutButton';
-import { useUIStore } from '../../stores/useUIStore';
-import { useStackStore } from '../../stores/useStackStore';
-import { fetchTokenMetrics, clearTokenMetrics } from '../../lib/api';
-import { useWindowManager } from '../../hooks/useWindowManager';
-import { formatCompactNumber } from '../../lib/format';
-import { POLLING } from '../../lib/constants';
-import { AreaChart } from '../chart/AreaChart';
-import type { TokenMetricsResponse } from '../../types';
+
+// Error boundary for detached window
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen w-screen bg-background flex items-center justify-center">
+          <div className="text-center p-8 max-w-md">
+            <div className="p-4 rounded-xl bg-status-error/10 border border-status-error/20 inline-block mb-4">
+              <AlertCircle size={32} className="text-status-error" />
+            </div>
+            <h1 className="text-lg text-status-error mb-2">Something went wrong</h1>
+            <pre className="text-xs text-text-muted bg-surface p-4 rounded-lg overflow-auto max-h-32 mb-4">
+              {this.state.error?.message}
+            </pre>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-primary text-background rounded-lg font-medium hover:bg-primary-light transition-colors"
+            >
+              Reload Window
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type TimeRange = 'live' | '1h' | '6h' | '24h' | '7d';
 type SortColumn = 'name' | 'input' | 'output' | 'total';
@@ -34,12 +77,8 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: '7d', label: '7d' },
 ];
 
-export function MetricsTab() {
-  const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
-  const bottomPanelTab = useUIStore((s) => s.bottomPanelTab);
-  const tokenUsage = useStackStore((s) => s.tokenUsage);
-  const metricsDetached = useUIStore((s) => s.metricsDetached);
-  const { openDetachedWindow } = useWindowManager();
+function DetachedMetricsPageContent() {
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('live');
   const [isPaused, setIsPaused] = useState(false);
   const [metricsData, setMetricsData] = useState<TokenMetricsResponse | null>(null);
@@ -48,12 +87,27 @@ export function MetricsTab() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [sortColumn, setSortColumn] = useState<SortColumn>('total');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const intervalRef = useRef<number | null>(null);
-  const isVisible = bottomPanelOpen && bottomPanelTab === 'metrics';
+  useDetachedWindowSync('metrics');
 
-  // Map time range to API range param
   const apiRange = timeRange === 'live' ? '30m' : timeRange;
+
+  // Poll status for real-time token usage
+  useEffect(() => {
+    const pollStatus = async () => {
+      try {
+        const status: GatewayStatus = await fetchStatus();
+        setTokenUsage(status.token_usage ?? null);
+      } catch {
+        // Ignore status errors
+      }
+    };
+
+    pollStatus();
+    const interval = window.setInterval(pollStatus, POLLING.STATUS);
+    return () => clearInterval(interval);
+  }, []);
 
   const loadMetrics = useCallback(async () => {
     try {
@@ -67,32 +121,19 @@ export function MetricsTab() {
     }
   }, [apiRange]);
 
-  // Fetch on mount and when range changes
+  // Fetch on mount and range change
   useEffect(() => {
-    if (!isVisible) return;
     setIsLoading(true);
     loadMetrics();
-  }, [isVisible, apiRange, loadMetrics]);
+  }, [apiRange, loadMetrics]);
 
   // Auto-refresh in live mode
   useEffect(() => {
-    if (!isVisible || isPaused || timeRange !== 'live') {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      return;
-    }
+    if (isPaused || timeRange !== 'live') return;
 
-    intervalRef.current = window.setInterval(loadMetrics, POLLING.METRICS);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [isVisible, isPaused, timeRange, loadMetrics]);
+    const interval = window.setInterval(loadMetrics, POLLING.METRICS);
+    return () => clearInterval(interval);
+  }, [isPaused, timeRange, loadMetrics]);
 
   const handleClearMetrics = async () => {
     try {
@@ -115,54 +156,75 @@ export function MetricsTab() {
     }
   };
 
-  // Per-server data from the real-time status (for KPI + table)
-  const perServerEntries = useMemo(() => {
-    if (!tokenUsage?.per_server) return [];
-    return Object.entries(tokenUsage.per_server).map(([name, counts]) => ({
-      name,
-      input: counts.input_tokens,
-      output: counts.output_tokens,
-      total: counts.total_tokens,
-    }));
-  }, [tokenUsage]);
+  // Per-server data
+  const perServerEntries = tokenUsage?.per_server
+    ? Object.entries(tokenUsage.per_server).map(([name, counts]) => ({
+        name,
+        input: counts.input_tokens,
+        output: counts.output_tokens,
+        total: counts.total_tokens,
+      }))
+    : [];
 
-  // Sort per-server entries
-  const sortedServers = useMemo(() => {
-    const sorted = [...perServerEntries];
-    sorted.sort((a, b) => {
-      const dir = sortDirection === 'asc' ? 1 : -1;
-      if (sortColumn === 'name') return dir * a.name.localeCompare(b.name);
-      return dir * (a[sortColumn] - b[sortColumn]);
-    });
-    return sorted;
-  }, [perServerEntries, sortColumn, sortDirection]);
+  const sortedServers = [...perServerEntries].sort((a, b) => {
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    if (sortColumn === 'name') return dir * a.name.localeCompare(b.name);
+    return dir * (a[sortColumn] - b[sortColumn]);
+  });
 
-  // Session totals from real-time status
   const sessionInput = tokenUsage?.session.input_tokens ?? 0;
   const sessionOutput = tokenUsage?.session.output_tokens ?? 0;
   const sessionTotal = tokenUsage?.session.total_tokens ?? 0;
   const savingsPercent = tokenUsage?.format_savings.savings_percent ?? 0;
   const savedTokens = tokenUsage?.format_savings.saved_tokens ?? 0;
-
   const hasData = sessionTotal > 0 || (metricsData?.data_points?.length ?? 0) > 0;
 
-  // Transform API data points to Recharts format
-  const chartData = useMemo(() => {
-    if (!metricsData?.data_points) return [];
-    return metricsData.data_points.map((dp) => ({
-      time: new Date(dp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      "Input Tokens": dp.input_tokens,
-      "Output Tokens": dp.output_tokens,
-    }));
-  }, [metricsData]);
+  const chartData = metricsData?.data_points
+    ? metricsData.data_points.map((dp) => ({
+        time: new Date(dp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        "Input Tokens": dp.input_tokens,
+        "Output Tokens": dp.output_tokens,
+      }))
+    : [];
+
+  const toggleFullscreen = async () => {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      await document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Control bar */}
-      <div className="flex items-center justify-between px-4 h-9 flex-shrink-0 border-b border-border/30 bg-surface-elevated/20">
-        <div className="flex items-center gap-2">
+    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
+      {/* Background grain */}
+      <div
+        className="fixed inset-0 pointer-events-none z-0 opacity-[0.015]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+        }}
+      />
+
+      {/* Header */}
+      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-10 relative">
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 rounded-lg border bg-primary/10 border-primary/20">
+            <BarChart3 size={14} className="text-primary" />
+          </div>
+          <span className="text-sm font-semibold text-text-primary">Token Metrics</span>
+
           {/* Time range selector */}
-          <div className="flex items-center bg-background/60 rounded-md border border-border/40 overflow-hidden">
+          <div className="flex items-center bg-background/60 rounded-md border border-border/40 overflow-hidden ml-2">
             {TIME_RANGES.map((range) => (
               <button
                 key={range.value}
@@ -182,11 +244,15 @@ export function MetricsTab() {
             ))}
           </div>
 
-          {/* Live indicator */}
           {timeRange === 'live' && !isPaused && (
             <span className="flex items-center gap-1 text-[9px] text-status-running font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
               Live
+            </span>
+          )}
+          {isPaused && (
+            <span className="text-[10px] px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
+              Paused
             </span>
           )}
         </div>
@@ -196,7 +262,7 @@ export function MetricsTab() {
             <IconButton
               icon={isPaused ? Play : Pause}
               onClick={() => setIsPaused(!isPaused)}
-              tooltip={isPaused ? 'Resume live updates' : 'Pause live updates'}
+              tooltip={isPaused ? 'Resume' : 'Pause'}
               size="sm"
               variant="ghost"
               className={isPaused ? 'text-status-running hover:text-status-running' : ''}
@@ -242,29 +308,29 @@ export function MetricsTab() {
             )}
           </div>
 
-          <div className="w-px h-4 bg-border/50 mx-0.5" />
-          <PopoutButton
-            onClick={() => openDetachedWindow('metrics')}
-            disabled={metricsDetached}
+          <div className="w-px h-4 bg-border/50 mx-1" />
+          <IconButton
+            icon={isFullscreen ? Minimize2 : Maximize2}
+            onClick={toggleFullscreen}
+            tooltip={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            size="sm"
+            variant="ghost"
           />
         </div>
-      </div>
+      </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto scrollbar-dark min-h-0 p-4">
+      <main className="flex-1 overflow-auto bg-background scrollbar-dark min-h-0 p-4">
         {/* Loading skeleton */}
         {isLoading && !metricsData && (
           <div className="space-y-4 animate-pulse">
-            {/* KPI skeleton */}
             <div className="grid grid-cols-3 gap-3">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-16 rounded-lg bg-surface-elevated/60 border border-border/30" />
               ))}
             </div>
-            {/* Chart skeleton */}
-            <div className="h-40 rounded-lg bg-surface-elevated/60 border border-border/30" />
-            {/* Table skeleton */}
-            <div className="h-24 rounded-lg bg-surface-elevated/60 border border-border/30" />
+            <div className="h-48 rounded-lg bg-surface-elevated/60 border border-border/30" />
+            <div className="h-32 rounded-lg bg-surface-elevated/60 border border-border/30" />
           </div>
         )}
 
@@ -285,13 +351,13 @@ export function MetricsTab() {
         {/* Empty state */}
         {!isLoading && !error && !hasData && (
           <div className="flex flex-col items-center justify-center h-full text-text-muted gap-2">
-            <BarChart3 size={24} className="text-text-muted/30" />
-            <span className="text-xs">No token data yet</span>
-            <span className="text-[10px] text-text-muted/60">Metrics will appear after tool calls</span>
+            <BarChart3 size={32} className="text-text-muted/30" />
+            <span className="text-sm">No token data yet</span>
+            <span className="text-xs text-text-muted/60">Metrics will appear after tool calls</span>
           </div>
         )}
 
-        {/* Data view — shown even while loading if we have stale data to prevent flash */}
+        {/* Data view */}
         {!error && hasData && (
           <div className="space-y-4">
             {/* KPI Cards */}
@@ -306,16 +372,9 @@ export function MetricsTab() {
                     <span className="text-lg font-bold text-status-running tabular-nums">{Math.round(savingsPercent)}%</span>
                     <span className="text-[10px] text-text-muted">{formatCompactNumber(savedTokens)} saved</span>
                   </div>
-                  {/* Savings bar */}
                   <div className="mt-2 h-1.5 rounded-full bg-surface-highlight overflow-hidden flex">
-                    <div
-                      className="h-full bg-primary rounded-full"
-                      style={{ width: `${100 - savingsPercent}%` }}
-                    />
-                    <div
-                      className="h-full bg-primary/20"
-                      style={{ width: `${savingsPercent}%` }}
-                    />
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${100 - savingsPercent}%` }} />
+                    <div className="h-full bg-primary/20" style={{ width: `${savingsPercent}%` }} />
                   </div>
                 </div>
               )}
@@ -343,7 +402,7 @@ export function MetricsTab() {
                 showYAxis={true}
                 yAxisWidth={48}
                 valueFormatter={(v: number) => formatCompactNumber(v)}
-                className="h-36"
+                className="h-48"
               />
             </div>
 
@@ -353,37 +412,10 @@ export function MetricsTab() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border/30">
-                      <SortableHeader
-                        label="Server"
-                        column="name"
-                        sortColumn={sortColumn}
-                        sortDirection={sortDirection}
-                        onSort={handleSort}
-                      />
-                      <SortableHeader
-                        label="Input"
-                        column="input"
-                        sortColumn={sortColumn}
-                        sortDirection={sortDirection}
-                        onSort={handleSort}
-                        align="right"
-                      />
-                      <SortableHeader
-                        label="Output"
-                        column="output"
-                        sortColumn={sortColumn}
-                        sortDirection={sortDirection}
-                        onSort={handleSort}
-                        align="right"
-                      />
-                      <SortableHeader
-                        label="Total"
-                        column="total"
-                        sortColumn={sortColumn}
-                        sortDirection={sortDirection}
-                        onSort={handleSort}
-                        align="right"
-                      />
+                      <SortableHeader label="Server" column="name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} />
+                      <SortableHeader label="Input" column="input" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} align="right" />
+                      <SortableHeader label="Output" column="output" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} align="right" />
+                      <SortableHeader label="Total" column="total" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} align="right" />
                     </tr>
                   </thead>
                   <tbody>
@@ -401,9 +433,20 @@ export function MetricsTab() {
             )}
           </div>
         )}
-      </div>
+      </main>
 
-      {/* Click-away handler for clear confirm */}
+      {/* Footer */}
+      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
+        <span>
+          {sessionTotal > 0 ? `${formatCompactNumber(sessionTotal)} total tokens` : 'No data'}
+          {isPaused ? ' (paused)' : ''}
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+          Detached Window
+        </span>
+      </footer>
+
       {showClearConfirm && (
         <div className="fixed inset-0 z-40" onClick={() => setShowClearConfirm(false)} />
       )}
@@ -411,7 +454,7 @@ export function MetricsTab() {
   );
 }
 
-// KPI Card component
+// KPI Card
 function KPICard({ label, value, colorClass }: { label: string; value: number; colorClass: string }) {
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
@@ -421,26 +464,15 @@ function KPICard({ label, value, colorClass }: { label: string; value: number; c
   );
 }
 
-// Sortable table header
+// Sortable header
 function SortableHeader({
-  label,
-  column,
-  sortColumn,
-  sortDirection,
-  onSort,
-  align = 'left',
+  label, column, sortColumn, sortDirection, onSort, align = 'left',
 }: {
-  label: string;
-  column: SortColumn;
-  sortColumn: SortColumn;
-  sortDirection: SortDirection;
-  onSort: (column: SortColumn) => void;
-  align?: 'left' | 'right';
+  label: string; column: SortColumn; sortColumn: SortColumn; sortDirection: SortDirection;
+  onSort: (column: SortColumn) => void; align?: 'left' | 'right';
 }) {
   const isActive = sortColumn === column;
-  const SortIcon = isActive
-    ? sortDirection === 'asc' ? ArrowUp : ArrowDown
-    : ArrowUpDown;
+  const SortIcon = isActive ? (sortDirection === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
 
   return (
     <th
@@ -459,5 +491,13 @@ function SortableHeader({
         <SortIcon size={10} className={isActive ? 'text-primary' : 'text-text-muted/40'} />
       </span>
     </th>
+  );
+}
+
+export function DetachedMetricsPage() {
+  return (
+    <DetachedErrorBoundary>
+      <DetachedMetricsPageContent />
+    </DetachedErrorBoundary>
   );
 }

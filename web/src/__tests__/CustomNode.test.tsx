@@ -5,6 +5,7 @@ import '@testing-library/jest-dom';
 vi.mock('@xyflow/react', () => ({
   Handle: ({ id }: { id: string }) => <div data-testid={`handle-${id}`} />,
   Position: { Left: 'left', Right: 'right' },
+  MarkerType: { ArrowClosed: 'arrowclosed' },
 }));
 
 import CustomNode from '../components/graph/CustomNode';
