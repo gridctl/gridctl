@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
@@ -161,17 +161,27 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             </div>
           )}
 
-          {/* Transport + Tool count (for MCP servers) */}
+          {/* Transport + Format + Tool count (for MCP servers) */}
           {isServer && transport && (
             <div className="flex items-center justify-between text-xs pt-1">
-              <div className={cn(
-                'flex items-center gap-1.5 px-2 py-1 rounded-md',
-                getTransportColorClasses(transport)
-              )}>
-                <TransportIcon size={11} />
-                <span className="uppercase text-[10px] tracking-wider font-medium">
-                  {transport}
-                </span>
+              <div className="flex items-center gap-1.5">
+                <div className={cn(
+                  'flex items-center gap-1.5 px-2 py-1 rounded-md',
+                  getTransportColorClasses(transport)
+                )}>
+                  <TransportIcon size={11} />
+                  <span className="uppercase text-[10px] tracking-wider font-medium">
+                    {transport}
+                  </span>
+                </div>
+                {isServer && (data as MCPServerNodeData).outputFormat && (data as MCPServerNodeData).outputFormat !== 'json' && (
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-secondary/10 text-secondary">
+                    <FileOutput size={10} />
+                    <span className="uppercase text-[10px] tracking-wider font-medium">
+                      {(data as MCPServerNodeData).outputFormat}
+                    </span>
+                  </div>
+                )}
               </div>
               {toolCount !== null && toolCount !== undefined && (
                 <span className="text-text-secondary font-mono text-[11px]">
