@@ -1,4 +1,4 @@
-import { RefreshCw, Settings, Zap, RotateCcw } from 'lucide-react';
+import { RefreshCw, Settings, Zap, RotateCcw, Plus } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
@@ -7,7 +7,9 @@ import { useStackStore } from '../../stores/useStackStore';
 import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api';
 import { VaultPanel } from '../vault/VaultPanel';
 import { SpecDiffModal } from '../spec/SpecDiffModal';
+import { CreationWizard } from '../wizard/CreationWizard';
 import { useSpecStore } from '../../stores/useSpecStore';
+import { useWizardStore } from '../../stores/useWizardStore';
 import logoSvg from '../../assets/brand/logo.svg';
 
 interface HeaderProps {
@@ -147,6 +149,12 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
         <IconButton
+          icon={Plus}
+          onClick={() => useWizardStore.getState().open()}
+          tooltip="Create Resource"
+          className="hover:text-primary hover:border-primary/30"
+        />
+        <IconButton
           icon={RefreshCw}
           onClick={onRefresh}
           disabled={isRefreshing}
@@ -181,6 +189,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         onApply={executeReload}
         validationErrors={validationErrors}
       />
+      <CreationWizard />
     </header>
   );
 }
