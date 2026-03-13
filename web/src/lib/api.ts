@@ -547,6 +547,45 @@ export async function fetchStackSpec(): Promise<StackSpec> {
   return fetchJSON<StackSpec>('/api/stack/spec');
 }
 
+// === Wizard Draft API ===
+
+export interface WizardDraft {
+  id: string;
+  name: string;
+  resourceType: string;
+  formData: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * List saved wizard drafts
+ * GET /api/wizard/drafts
+ */
+export async function fetchWizardDrafts(): Promise<WizardDraft[]> {
+  return fetchJSON<WizardDraft[]>('/api/wizard/drafts');
+}
+
+/**
+ * Save a new wizard draft
+ * POST /api/wizard/drafts
+ */
+export async function saveWizardDraft(draft: {
+  name: string;
+  resourceType: string;
+  formData: Record<string, unknown>;
+}): Promise<WizardDraft> {
+  return mutateJSON<WizardDraft>('/api/wizard/drafts', 'POST', draft);
+}
+
+/**
+ * Delete a wizard draft
+ * DELETE /api/wizard/drafts/{id}
+ */
+export async function deleteWizardDraft(id: string): Promise<void> {
+  return mutateJSON<void>(`/api/wizard/drafts/${encodeURIComponent(id)}`, 'DELETE');
+}
+
 // === JSON-RPC Helper (for MCP protocol calls) ===
 
 interface JSONRPCRequest {
