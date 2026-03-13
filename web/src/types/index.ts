@@ -336,3 +336,64 @@ export interface ExecutionResult {
 
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
+
+// --- Spec Types (from Phase 1 backend) ---
+
+export type IssueSeverity = 'error' | 'warning' | 'info';
+
+export interface ValidationIssue {
+  field: string;
+  message: string;
+  severity: IssueSeverity;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errorCount: number;
+  warningCount: number;
+  issues: ValidationIssue[];
+}
+
+export type DiffAction = 'add' | 'remove' | 'change';
+
+export interface DiffItem {
+  action: DiffAction;
+  kind: string;
+  name: string;
+  details?: string[];
+}
+
+export interface PlanDiff {
+  hasChanges: boolean;
+  items: DiffItem[];
+  summary: string;
+}
+
+export interface ValidationStatus {
+  status: 'valid' | 'warnings' | 'errors' | 'unknown';
+  errorCount: number;
+  warningCount: number;
+}
+
+export interface DriftStatus {
+  status: 'in-sync' | 'drifted' | 'unknown';
+  added?: string[];
+  removed?: string[];
+  changed?: string[];
+}
+
+export interface DependencyStatus {
+  status: 'resolved' | 'missing';
+  missing?: string[];
+}
+
+export interface SpecHealth {
+  validation: ValidationStatus;
+  drift: DriftStatus;
+  dependencies: DependencyStatus;
+}
+
+export interface StackSpec {
+  path: string;
+  content: string;
+}
