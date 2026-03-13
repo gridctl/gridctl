@@ -3,15 +3,18 @@ import {
   ChevronUp,
   ScrollText,
   BarChart3,
+  FileCode2,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
 import { LogsTab } from '../log/LogsTab';
 import { MetricsTab } from '../metrics/MetricsTab';
+import { SpecTab } from '../spec/SpecTab';
 
 const TABS = [
   { id: 'logs' as const, label: 'Logs', icon: ScrollText },
   { id: 'metrics' as const, label: 'Metrics', icon: BarChart3 },
+  { id: 'spec' as const, label: 'Spec', icon: FileCode2 },
 ];
 
 export function BottomPanel() {
@@ -90,6 +93,9 @@ export function BottomPanel() {
           </div>
           <div id="panel-metrics" role="tabpanel" aria-labelledby="tab-metrics" className={cn('absolute inset-0', bottomPanelTab !== 'metrics' && 'invisible')}>
             <MetricsTab />
+          </div>
+          <div id="panel-spec" role="tabpanel" aria-labelledby="tab-spec" className={cn('absolute inset-0', bottomPanelTab !== 'spec' && 'invisible')}>
+            <SpecTab />
           </div>
         </div>
       )}

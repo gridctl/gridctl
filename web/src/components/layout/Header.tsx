@@ -4,8 +4,10 @@ import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
-import { triggerReload } from '../../lib/api';
+import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api';
 import { VaultPanel } from '../vault/VaultPanel';
+import { SpecDiffModal } from '../spec/SpecDiffModal';
+import { useSpecStore } from '../../stores/useSpecStore';
 import logoSvg from '../../assets/brand/logo.svg';
 
 interface HeaderProps {
@@ -21,9 +23,10 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const [showVault, setShowVault] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const [reloadMessage, setReloadMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const dismissTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
-  const handleReload = useCallback(async () => {
+  const executeReload = useCallback(async () => {
     setIsReloading(true);
     setReloadMessage(null);
     if (dismissTimer.current) clearTimeout(dismissTimer.current);
@@ -41,6 +44,30 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       dismissTimer.current = setTimeout(() => setReloadMessage(null), 4000);
     }
   }, []);
+
+  const handleReload = useCallback(async () => {
+    // Fetch the new spec from disk to show diff before applying
+    try {
+      const newSpec = await fetchStackSpec();
+      const currentSpec = useSpecStore.getState().spec;
+
+      // If we have both specs and they differ, show the diff modal
+      if (currentSpec && newSpec.content !== currentSpec.content) {
+        // Validate the new spec
+        const result = await validateStackSpec(newSpec.content);
+        const errors = result.issues
+          .filter((i) => i.severity === 'error')
+          .map((i) => `${i.field}: ${i.message}`);
+        setValidationErrors(errors);
+        useSpecStore.getState().openDiffModal(newSpec.content);
+        return;
+      }
+    } catch {
+      // If spec fetch fails, fall through to direct reload
+    }
+
+    executeReload();
+  }, [executeReload]);
 
   const runningCount = (mcpServers ?? []).filter((s) => s.initialized).length;
   const totalCount = (mcpServers ?? []).length;
@@ -150,6 +177,10 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         />
       </div>
       {showVault && <VaultPanel onClose={() => setShowVault(false)} />}
+      <SpecDiffModal
+        onApply={executeReload}
+        validationErrors={validationErrors}
+      />
     </header>
   );
 }

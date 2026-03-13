@@ -3,6 +3,7 @@ import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';
 import { formatCompactNumber } from '../../lib/format';
+import { SpecHealthBadge } from '../spec/SpecHealthBadge';
 
 export function StatusBar() {
   const mcpServers = useStackStore((s) => s.mcpServers);
@@ -112,6 +113,12 @@ export function StatusBar() {
             </span>
           </div>
         )}
+
+        {/* Divider before spec health */}
+        <div className="w-px h-3 bg-border/50" />
+
+        {/* Spec health badge */}
+        <SpecHealthBadge />
       </div>
 
       {/* Last update */}

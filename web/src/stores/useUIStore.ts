@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
-type BottomPanelTab = 'logs' | 'metrics';
+type BottomPanelTab = 'logs' | 'metrics' | 'spec';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
 
 interface UIState {

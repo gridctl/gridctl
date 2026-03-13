@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, ValidationResult, PlanDiff, SpecHealth, StackSpec } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -503,6 +503,48 @@ export async function unlockVault(passphrase: string): Promise<{ status: string 
 
 export async function lockVault(passphrase: string): Promise<{ status: string }> {
   return mutateJSON<{ status: string }>('/api/vault/lock', 'POST', { passphrase });
+}
+
+// === Stack Spec API ===
+
+/**
+ * Validate a stack YAML body
+ * POST /api/stack/validate
+ */
+export async function validateStackSpec(yamlContent: string): Promise<ValidationResult> {
+  const response = await fetch(`${API_BASE}/api/stack/validate`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/x-yaml' }),
+    body: yamlContent,
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  return response.json();
+}
+
+/**
+ * Get spec plan diff (spec vs running state)
+ * GET /api/stack/plan
+ */
+export async function fetchStackPlan(): Promise<PlanDiff> {
+  return fetchJSON<PlanDiff>('/api/stack/plan');
+}
+
+/**
+ * Get aggregate spec health
+ * GET /api/stack/health
+ */
+export async function fetchStackHealth(): Promise<SpecHealth> {
+  return fetchJSON<SpecHealth>('/api/stack/health');
+}
+
+/**
+ * Get current stack.yaml content
+ * GET /api/stack/spec
+ */
+export async function fetchStackSpec(): Promise<StackSpec> {
+  return fetchJSON<StackSpec>('/api/stack/spec');
 }
 
 // === JSON-RPC Helper (for MCP protocol calls) ===
