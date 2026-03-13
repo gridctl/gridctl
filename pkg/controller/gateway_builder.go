@@ -297,6 +297,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Ga
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(b.rt.DockerClient())
 	server.SetStackName(b.stack.Name)
+	server.SetStackFile(b.config.StackPath)
 	server.SetLogBuffer(logBuffer)
 	server.SetProvisionerRegistry(provisioner.NewRegistry(), "gridctl")
 
