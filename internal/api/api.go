@@ -45,6 +45,7 @@ type Server struct {
 	registryServer *registry.Server
 	vaultStore         *vault.Store
 	metricsAccumulator *metrics.Accumulator
+	stackFile          string
 	allowedOrigins     []string
 	authType       string
 	authToken      string
@@ -130,6 +131,11 @@ func (s *Server) SetVaultStore(v *vault.Store) {
 	s.vaultStore = v
 }
 
+// SetStackFile sets the path to the stack YAML file for spec endpoints.
+func (s *Server) SetStackFile(path string) {
+	s.stackFile = path
+}
+
 // SetMetricsAccumulator sets the token metrics accumulator.
 func (s *Server) SetMetricsAccumulator(acc *metrics.Accumulator) {
 	s.metricsAccumulator = acc
@@ -188,6 +194,9 @@ func (s *Server) Handler() http.Handler {
 	// Vault endpoints
 	mux.HandleFunc("/api/vault/", s.handleVault)
 	mux.HandleFunc("/api/vault", s.handleVault)
+
+	// Stack spec endpoints
+	mux.HandleFunc("/api/stack/", s.handleStack)
 
 	// Registry endpoints (always registered, even when registry is empty)
 	mux.HandleFunc("/api/registry/", s.handleRegistry)
