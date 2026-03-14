@@ -8,7 +8,7 @@ import {
   useViewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Bot, Database } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
@@ -147,6 +147,29 @@ export function Canvas() {
               <Plus size={14} />
               New Stack
             </button>
+            {/* Quick-add links */}
+            <div className="flex items-center gap-2 mt-3">
+              <span className="text-[10px] text-text-muted">or add:</span>
+              {[
+                { type: 'mcp-server' as const, icon: Server, label: 'Server', color: 'text-primary hover:text-primary/80' },
+                { type: 'agent' as const, icon: Bot, label: 'Agent', color: 'text-tertiary hover:text-tertiary/80' },
+                { type: 'resource' as const, icon: Database, label: 'Resource', color: 'text-secondary hover:text-secondary/80' },
+              ].map((item) => (
+                <button
+                  key={item.type}
+                  onClick={() => useWizardStore.getState().open(item.type)}
+                  className={cn(
+                    'inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium',
+                    'bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12]',
+                    'transition-all duration-200',
+                    item.color,
+                  )}
+                >
+                  <item.icon size={10} />
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
