@@ -126,7 +126,7 @@ func outputJSON(stack *config.Stack) error {
 		return writeToDir(exportOutputDir, "stack.json", data)
 	}
 
-	fmt.Println(string(data))
+	fmt.Print(string(data))
 	return nil
 }
 
