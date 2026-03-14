@@ -397,3 +397,88 @@ export interface StackSpec {
   path: string;
   content: string;
 }
+
+// --- Skill Source Types (from Phase 7 backend) ---
+
+export interface SecurityFinding {
+  stepId: string;
+  pattern: string;
+  description: string;
+  severity: 'warning' | 'danger';
+}
+
+export interface SkillSourceEntry {
+  name: string;
+  description: string;
+  state: string;
+  isRemote: boolean;
+  contentHash?: string;
+}
+
+export interface SkillSourceStatus {
+  name: string;
+  repo: string;
+  ref?: string;
+  path?: string;
+  autoUpdate: boolean;
+  updateInterval: string;
+  skills: SkillSourceEntry[];
+  lastFetched?: string;
+  commitSha?: string;
+  updateAvailable: boolean;
+}
+
+export interface SkillPreview {
+  name: string;
+  description: string;
+  body: string;
+  valid: boolean;
+  errors?: string[];
+  warnings?: string[];
+  findings?: SecurityFinding[];
+  exists: boolean;
+}
+
+export interface SkillPreviewResponse {
+  repo: string;
+  ref: string;
+  commitSha: string;
+  skills: SkillPreview[];
+}
+
+export interface ImportedSkillResult {
+  name: string;
+  path: string;
+}
+
+export interface SkippedSkillResult {
+  name: string;
+  reason: string;
+}
+
+export interface ImportResult {
+  imported?: ImportedSkillResult[];
+  skipped?: SkippedSkillResult[];
+  warnings?: string[];
+}
+
+export interface SourceUpdateCheck {
+  source: string;
+  currentSha: string;
+  latestSha: string;
+  hasUpdate: boolean;
+}
+
+export interface SourceUpdateSummary {
+  name: string;
+  repo: string;
+  currentSha: string;
+  latestSha?: string;
+  hasUpdate: boolean;
+  error?: string;
+}
+
+export interface UpdateSummary {
+  available: number;
+  sources: SourceUpdateSummary[];
+}
