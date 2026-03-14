@@ -32,6 +32,11 @@ func NewStore(baseDir string) *Store {
 	}
 }
 
+// Dir returns the store's base directory path.
+func (s *Store) Dir() string {
+	return s.baseDir
+}
+
 // Load scans the skills/ subdirectory for SKILL.md files and checks for
 // legacy YAML registry files.
 func (s *Store) Load() error {
