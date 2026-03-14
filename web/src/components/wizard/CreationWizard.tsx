@@ -26,6 +26,7 @@ import { ExpertModeToggle } from './ExpertModeToggle';
 import { DraftManager } from './DraftManager';
 import { ReviewStep } from './steps/ReviewStep';
 import { MCPServerForm } from './steps/MCPServerForm';
+import { StackForm } from './steps/StackForm';
 
 interface ResourceTypeCard {
   type: ResourceType;
@@ -556,7 +557,17 @@ function FormRenderer({
     );
   }
 
-  // Other types — placeholder forms (phases 6-8 will replace)
+  // Stack — full composition form
+  if (resourceType === 'stack') {
+    return (
+      <StackForm
+        data={formData['stack']}
+        onChange={(partial) => updateFormData('stack', partial as Record<string, unknown>)}
+      />
+    );
+  }
+
+  // Other types — placeholder forms (phases 7-8 will replace)
   return (
     <div className="space-y-4">
       <div className="text-xs text-text-muted uppercase tracking-wider font-medium mb-2">
@@ -602,20 +613,6 @@ function FormRenderer({
               updateFormData('agent', { image: e.target.value })
             }
             placeholder="my-agent:latest"
-            className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
-          />
-        </div>
-      )}
-
-      {resourceType === 'stack' && (
-        <div>
-          <label className="block text-xs text-text-secondary mb-1.5">Version</label>
-          <input
-            type="text"
-            value={(data?.version as string) || '1'}
-            onChange={(e) =>
-              updateFormData('stack', { version: e.target.value })
-            }
             className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
           />
         </div>

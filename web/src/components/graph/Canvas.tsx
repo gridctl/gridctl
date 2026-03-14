@@ -8,11 +8,12 @@ import {
   useViewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
+import { useWizardStore } from '../../stores/useWizardStore';
 import { COLORS } from '../../lib/constants';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
@@ -116,10 +117,39 @@ export function Canvas() {
     setSidebarOpen(false);
   }, [selectNode, setSidebarOpen]);
 
+  const isEmpty = !nodes || nodes.length === 0;
+
   return (
     <div className="absolute inset-0 canvas-wrapper">
       {/* Film grain overlay */}
       <div className="film-grain" />
+      {/* Empty state CTA */}
+      {isEmpty && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <div className="pointer-events-auto glass-panel-elevated rounded-xl p-8 text-center max-w-sm animate-fade-in-up">
+            <div className="w-12 h-12 rounded-xl bg-surface-elevated border border-border/40 flex items-center justify-center mx-auto mb-4">
+              <Layers size={22} className="text-primary" />
+            </div>
+            <h3 className="text-sm font-medium text-text-primary mb-1.5">
+              Create your first stack
+            </h3>
+            <p className="text-xs text-text-muted mb-5 leading-relaxed">
+              Define MCP servers, agents, and resources in a guided wizard to generate your stack spec.
+            </p>
+            <button
+              onClick={() => useWizardStore.getState().open('stack')}
+              className={cn(
+                'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium',
+                'bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30',
+                'transition-all duration-200',
+              )}
+            >
+              <Plus size={14} />
+              New Stack
+            </button>
+          </div>
+        </div>
+      )}
       <ReactFlow
         nodes={styledNodes}
         edges={styledEdges}
