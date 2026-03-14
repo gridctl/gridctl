@@ -9,6 +9,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/controller"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/skills"
 
 	"github.com/spf13/cobra"
 )
@@ -89,6 +90,13 @@ func runDeploy(stackPath string) error {
 	// Post-deploy hint: suggest `gridctl link` if no clients are linked
 	if !deployQuiet && !deployFlash && !deployDaemonChild && !deployForeground {
 		showLinkHint()
+	}
+
+	// Show pending skill update notice (non-blocking read from cache)
+	if !deployQuiet && !deployDaemonChild {
+		if notice := skills.FormatUpdateNotice(); notice != "" {
+			fmt.Print(notice)
+		}
 	}
 
 	return nil

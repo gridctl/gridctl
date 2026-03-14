@@ -16,6 +16,9 @@ interface UIState {
   // Token heat overlay on graph nodes
   showHeatMap: boolean;
 
+  // Drift detection overlay on canvas
+  showDriftOverlay: boolean;
+
   // Bottom panel state
   bottomPanelOpen: boolean;
   bottomPanelTab: BottomPanelTab;
@@ -36,6 +39,7 @@ interface UIState {
   toggleEdgeStyle: () => void;
   toggleCompactCards: () => void;
   toggleHeatMap: () => void;
+  toggleDriftOverlay: () => void;
 
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
@@ -64,6 +68,9 @@ export const useUIStore = create<UIState>()(
       // Token heat overlay default
       showHeatMap: false,
 
+      // Drift overlay default
+      showDriftOverlay: false,
+
       // Bottom panel defaults
       bottomPanelOpen: false,
       bottomPanelTab: 'logs',
@@ -88,6 +95,8 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ compactCards: !s.compactCards })),
       toggleHeatMap: () =>
         set((s) => ({ showHeatMap: !s.showHeatMap })),
+      toggleDriftOverlay: () =>
+        set((s) => ({ showDriftOverlay: !s.showDriftOverlay })),
 
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),

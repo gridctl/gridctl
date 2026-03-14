@@ -8,7 +8,7 @@ import {
   useViewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Bot, Database } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Bot, Database, GitCompareArrows } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
@@ -17,6 +17,7 @@ import { useWizardStore } from '../../stores/useWizardStore';
 import { COLORS } from '../../lib/constants';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
+import { DriftOverlay } from '../spec/DriftOverlay';
 
 export function Canvas() {
   const nodes = useStackStore((s) => s.nodes);
@@ -33,6 +34,8 @@ export function Canvas() {
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
   const showHeatMap = useUIStore((s) => s.showHeatMap);
   const toggleHeatMap = useUIStore((s) => s.toggleHeatMap);
+  const showDriftOverlay = useUIStore((s) => s.showDriftOverlay);
+  const toggleDriftOverlay = useUIStore((s) => s.toggleDriftOverlay);
 
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -274,8 +277,24 @@ export function Canvas() {
           >
             <Flame className="w-4 h-4" />
           </button>
+          <button
+            onClick={toggleDriftOverlay}
+            className={cn(
+              'control-button',
+              showDriftOverlay && 'ring-1 ring-primary/30'
+            )}
+            title={showDriftOverlay ? 'Hide drift overlay' : 'Show drift overlay'}
+          >
+            <GitCompareArrows className="w-4 h-4" />
+          </button>
         </Panel>
       </ReactFlow>
+      {showDriftOverlay && (
+        <div className="absolute inset-0 pointer-events-none bg-primary/[0.02] z-10" />
+      )}
+      {showDriftOverlay && (
+        <DriftOverlay className="absolute inset-0 z-20" />
+      )}
     </div>
   );
 }

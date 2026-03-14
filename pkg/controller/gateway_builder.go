@@ -23,6 +23,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/token"
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -229,6 +230,12 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 	if err := b.registerAgentAdapters(ctx, gateway, verbose); err != nil {
 		return fmt.Errorf("registering agent adapters: %w", err)
 	}
+
+	// Start background skill update check (non-blocking)
+	skills.CheckUpdatesBackground(
+		filepath.Join(state.BaseDir(), "registry"),
+		slog.New(bufferHandler),
+	)
 
 	// Set up hot reload
 	b.setupHotReload(ctx, inst, registrar, bufferHandler, verbose)

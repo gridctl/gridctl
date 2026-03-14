@@ -31,6 +31,7 @@ import {
   activateRegistrySkill,
   disableRegistrySkill,
   fetchSkillUpdates,
+  updateSkillSource,
 } from '../../lib/api';
 import { hasWorkflowBlock } from '../../lib/workflowSync';
 import { useWizardStore } from '../../stores/useWizardStore';
@@ -54,6 +55,9 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
 
   // Update badge state
   const [updateSummary, setUpdateSummary] = useState<UpdateSummary | null>(null);
+
+  // Update-all loading state
+  const [updatingAll, setUpdatingAll] = useState(false);
 
   // Check for updates periodically
   const checkUpdates = useCallback(async () => {
@@ -103,6 +107,24 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       // Next polling cycle will pick up changes
     }
   }, []);
+
+  // Update all sources with available updates
+  const handleUpdateAll = useCallback(async () => {
+    if (!updateSummary?.sources) return;
+    setUpdatingAll(true);
+    try {
+      const toUpdate = updateSummary.sources.filter((s) => s.hasUpdate);
+      for (const src of toUpdate) {
+        await updateSkillSource(src.name);
+      }
+      showToast('success', `Updated ${toUpdate.length} source${toUpdate.length !== 1 ? 's' : ''}`);
+      await Promise.all([refreshRegistry(), checkUpdates()]);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setUpdatingAll(false);
+    }
+  }, [updateSummary, refreshRegistry, checkUpdates]);
 
   const handleToggleState = useCallback(async (skill: AgentSkill) => {
     try {
@@ -174,10 +196,25 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
               : `${(skills ?? []).length} skills`}
           </span>
           {(updateSummary?.available ?? 0) > 0 && (
-            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium flex items-center gap-0.5 animate-fade-in-scale">
-              <ArrowUpCircle size={8} />
-              {updateSummary?.available} update{(updateSummary?.available ?? 0) !== 1 ? 's' : ''}
-            </span>
+            <>
+              <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium flex items-center gap-0.5 animate-fade-in-scale">
+                <ArrowUpCircle size={8} />
+                {updateSummary?.available} update{(updateSummary?.available ?? 0) !== 1 ? 's' : ''}
+              </span>
+              <button
+                onClick={handleUpdateAll}
+                disabled={updatingAll}
+                className={cn(
+                  'text-[8px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5 transition-colors',
+                  updatingAll
+                    ? 'bg-text-muted/10 text-text-muted cursor-wait'
+                    : 'bg-secondary/10 text-secondary hover:bg-secondary/20',
+                )}
+              >
+                <ArrowUpCircle size={8} />
+                {updatingAll ? 'Updating...' : 'Update All'}
+              </button>
+            </>
           )}
         </div>
         <div className="flex items-center gap-2">
