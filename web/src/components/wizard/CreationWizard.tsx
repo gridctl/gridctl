@@ -25,6 +25,7 @@ import { YAMLPreview } from './YAMLPreview';
 import { ExpertModeToggle } from './ExpertModeToggle';
 import { DraftManager } from './DraftManager';
 import { ReviewStep } from './steps/ReviewStep';
+import { MCPServerForm } from './steps/MCPServerForm';
 
 interface ResourceTypeCard {
   type: ResourceType;
@@ -439,7 +440,7 @@ function renderStepContent(
         );
       }
       return (
-        <FormPlaceholder
+        <FormRenderer
           resourceType={selectedType}
           formData={formData}
           updateFormData={updateFormData}
@@ -533,8 +534,8 @@ function TypePicker({
   );
 }
 
-// Placeholder form for resource types (phases 5-8 will replace these)
-function FormPlaceholder({
+// Form renderer for each resource type
+function FormRenderer({
   resourceType,
   formData,
   updateFormData,
@@ -545,6 +546,17 @@ function FormPlaceholder({
 }) {
   const data = formData[resourceType as keyof typeof formData] as unknown as Record<string, unknown>;
 
+  // MCP Server — full form
+  if (resourceType === 'mcp-server') {
+    return (
+      <MCPServerForm
+        data={formData['mcp-server']}
+        onChange={(partial) => updateFormData('mcp-server', partial as Record<string, unknown>)}
+      />
+    );
+  }
+
+  // Other types — placeholder forms (phases 6-8 will replace)
   return (
     <div className="space-y-4">
       <div className="text-xs text-text-muted uppercase tracking-wider font-medium mb-2">
@@ -564,52 +576,6 @@ function FormPlaceholder({
           className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
         />
       </div>
-
-      {/* Type-specific basic fields */}
-      {resourceType === 'mcp-server' && (
-        <>
-          <div>
-            <label className="block text-xs text-text-secondary mb-1.5">Image</label>
-            <input
-              type="text"
-              value={(data?.image as string) || ''}
-              onChange={(e) =>
-                updateFormData('mcp-server', { image: e.target.value })
-              }
-              placeholder="my-image:latest"
-              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1.5">Port</label>
-              <input
-                type="number"
-                value={(data?.port as number) || ''}
-                onChange={(e) =>
-                  updateFormData('mcp-server', { port: e.target.value ? Number(e.target.value) : undefined })
-                }
-                placeholder="8080"
-                className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1.5">Transport</label>
-              <select
-                value={(data?.transport as string) || 'http'}
-                onChange={(e) =>
-                  updateFormData('mcp-server', { transport: e.target.value })
-                }
-                className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary transition-colors"
-              >
-                <option value="http">HTTP</option>
-                <option value="stdio">stdio</option>
-                <option value="sse">SSE</option>
-              </select>
-            </div>
-          </div>
-        </>
-      )}
 
       {resourceType === 'resource' && (
         <div>
