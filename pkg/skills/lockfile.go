@@ -27,8 +27,9 @@ type LockedSource struct {
 
 // LockedSkill records per-skill metadata within a source.
 type LockedSkill struct {
-	Path        string `yaml:"path"`
-	ContentHash string `yaml:"content_hash"`
+	Path        string       `yaml:"path"`
+	ContentHash string       `yaml:"content_hash"`
+	Fingerprint *Fingerprint `yaml:"fingerprint,omitempty"`
 }
 
 // LockFilePath returns the default path to skills.lock.yaml.
