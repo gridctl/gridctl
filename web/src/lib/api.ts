@@ -547,6 +547,43 @@ export async function fetchStackSpec(): Promise<StackSpec> {
   return fetchJSON<StackSpec>('/api/stack/spec');
 }
 
+// === Stack Export & Canvas APIs ===
+
+/**
+ * Export stack spec from running state
+ * GET /api/stack/export
+ */
+export async function fetchStackExport(): Promise<{ content: string; format: string }> {
+  return fetchJSON<{ content: string; format: string }>('/api/stack/export');
+}
+
+/**
+ * Get secret-to-node mapping for heatmap overlay
+ * GET /api/stack/secrets-map
+ */
+export async function fetchSecretsMap(): Promise<{
+  secrets: Record<string, string[]>;
+  nodes: Record<string, string[]>;
+}> {
+  return fetchJSON('/api/stack/secrets-map');
+}
+
+/**
+ * Get available stack recipes
+ * GET /api/stack/recipes
+ */
+export interface StackRecipe {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  spec: string;
+}
+
+export async function fetchStackRecipes(): Promise<StackRecipe[]> {
+  return fetchJSON<StackRecipe[]>('/api/stack/recipes');
+}
+
 // === Wizard Draft API ===
 
 export interface WizardDraft {

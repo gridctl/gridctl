@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/output"
@@ -428,11 +430,22 @@ func runSkillTry(repoURL string) error {
 		return fmt.Errorf("no skills were imported")
 	}
 
-	// Schedule cleanup
-	go func() {
-		time.Sleep(duration)
+	fmt.Printf("\nSkill(s) will be automatically removed in %s\n", duration)
+	fmt.Println("Press Ctrl+C to remove immediately and exit.")
+
+	// Countdown with periodic updates
+	deadline := time.Now().Add(duration)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	cleanup := func() {
 		cleanStore, err := loadRegistry()
 		if err != nil {
+			slog.Warn("failed to load registry for cleanup", "error", err)
 			return
 		}
 		cleanImp := skills.NewImporter(cleanStore, registryDir(), skills.LockFilePath(), slog.Default())
@@ -440,11 +453,26 @@ func runSkillTry(repoURL string) error {
 			if err := cleanImp.Remove(name); err != nil {
 				slog.Warn("failed to clean up ephemeral skill", "name", name, "error", err)
 			} else {
-				slog.Info("cleaned up ephemeral skill", "name", name)
+				printer.Info("Removed ephemeral skill", "name", name)
 			}
 		}
-	}()
+	}
 
-	fmt.Printf("\nSkill(s) will be automatically removed in %s\n", duration)
-	return nil
+	for {
+		select {
+		case <-sigCh:
+			fmt.Println("\nCleaning up ephemeral skills...")
+			cleanup()
+			return nil
+		case <-ticker.C:
+			remaining := time.Until(deadline).Round(time.Second)
+			if remaining > 0 {
+				fmt.Printf("  ⏱ %s remaining before auto-cleanup\n", remaining)
+			}
+		case <-time.After(time.Until(deadline)):
+			fmt.Println("\nDuration expired. Cleaning up ephemeral skills...")
+			cleanup()
+			return nil
+		}
+	}
 }

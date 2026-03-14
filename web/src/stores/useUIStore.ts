@@ -19,6 +19,15 @@ interface UIState {
   // Drift detection overlay on canvas
   showDriftOverlay: boolean;
 
+  // Canvas spec mode — shows ghost nodes for undeployed spec items
+  showSpecMode: boolean;
+
+  // Canvas wiring mode — drag connections between agents and servers
+  showWiringMode: boolean;
+
+  // Secret heatmap overlay
+  showSecretHeatmap: boolean;
+
   // Bottom panel state
   bottomPanelOpen: boolean;
   bottomPanelTab: BottomPanelTab;
@@ -40,6 +49,9 @@ interface UIState {
   toggleCompactCards: () => void;
   toggleHeatMap: () => void;
   toggleDriftOverlay: () => void;
+  toggleSpecMode: () => void;
+  toggleWiringMode: () => void;
+  toggleSecretHeatmap: () => void;
 
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
@@ -71,6 +83,15 @@ export const useUIStore = create<UIState>()(
       // Drift overlay default
       showDriftOverlay: false,
 
+      // Spec mode default
+      showSpecMode: false,
+
+      // Wiring mode default
+      showWiringMode: false,
+
+      // Secret heatmap default
+      showSecretHeatmap: false,
+
       // Bottom panel defaults
       bottomPanelOpen: false,
       bottomPanelTab: 'logs',
@@ -97,6 +118,12 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ showHeatMap: !s.showHeatMap })),
       toggleDriftOverlay: () =>
         set((s) => ({ showDriftOverlay: !s.showDriftOverlay })),
+      toggleSpecMode: () =>
+        set((s) => ({ showSpecMode: !s.showSpecMode })),
+      toggleWiringMode: () =>
+        set((s) => ({ showWiringMode: !s.showWiringMode })),
+      toggleSecretHeatmap: () =>
+        set((s) => ({ showSecretHeatmap: !s.showSecretHeatmap })),
 
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),

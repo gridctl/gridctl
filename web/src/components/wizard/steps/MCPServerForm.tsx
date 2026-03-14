@@ -18,6 +18,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
 import { SecretsPopover } from '../SecretsPopover';
+import { TransportAdvisor } from '../TransportAdvisor';
 
 // --- Server type definitions ---
 
@@ -1032,6 +1033,12 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               )}
             </div>
           )}
+
+          {/* Transport compatibility advisor */}
+          <TransportAdvisor
+            serverType={data.serverType}
+            transport={data.transport ?? typeOption.transportDefault}
+          />
         </div>
       </Section>
 

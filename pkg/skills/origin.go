@@ -11,12 +11,13 @@ import (
 // Origin tracks the remote source of an imported skill.
 // Stored as .origin.json alongside the SKILL.md file.
 type Origin struct {
-	Repo        string    `json:"repo"`
-	Ref         string    `json:"ref"`
-	Path        string    `json:"path,omitempty"`
-	CommitSHA   string    `json:"commitSha"`
-	ImportedAt  time.Time `json:"importedAt"`
-	ContentHash string    `json:"contentHash"`
+	Repo        string       `json:"repo"`
+	Ref         string       `json:"ref"`
+	Path        string       `json:"path,omitempty"`
+	CommitSHA   string       `json:"commitSha"`
+	ImportedAt  time.Time    `json:"importedAt"`
+	ContentHash string       `json:"contentHash"`
+	Fingerprint *Fingerprint `json:"fingerprint,omitempty"`
 }
 
 const originFileName = ".origin.json"

@@ -144,6 +144,9 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			continue
 		}
 
+		// Compute fingerprint
+		fp := ComputeFingerprint(discovered.Skill)
+
 		// Write origin sidecar
 		origin := &Origin{
 			Repo:        opts.Repo,
@@ -152,6 +155,7 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			CommitSHA:   result.CommitSHA,
 			ImportedAt:  time.Now().UTC(),
 			ContentHash: discovered.ContentHash,
+			Fingerprint: fp,
 		}
 
 		skillDir := imp.skillDir(skillName)
@@ -162,6 +166,7 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		lockedSkills[skillName] = LockedSkill{
 			Path:        discovered.Path,
 			ContentHash: discovered.ContentHash,
+			Fingerprint: fp,
 		}
 
 		imported := ImportedSkill{
@@ -251,13 +256,33 @@ func (imp *Importer) Update(skillName string, dryRun, force bool) (*ImportResult
 		}, nil
 	}
 
-	return imp.Import(ImportOptions{
+	// Store old fingerprint for comparison
+	oldFingerprint := origin.Fingerprint
+
+	result, err := imp.Import(ImportOptions{
 		Repo:  origin.Repo,
 		Ref:   origin.Ref,
 		Path:  origin.Path,
 		Trust: true,
 		Force: true,
 	})
+	if err != nil {
+		return result, err
+	}
+
+	// Check for behavioral changes
+	if oldFingerprint != nil && len(result.Imported) > 0 {
+		for _, imported := range result.Imported {
+			if imported.Origin != nil && imported.Origin.Fingerprint != nil {
+				changes := BehavioralChanges(oldFingerprint, imported.Origin.Fingerprint)
+				for _, c := range changes {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("%s: behavioral change — %s", imported.Name, c))
+				}
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // Pin updates a skill's ref and disables auto-update.

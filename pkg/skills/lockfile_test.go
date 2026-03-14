@@ -120,3 +120,58 @@ func TestLockFileInvalidYAML(t *testing.T) {
 	_, err := ReadLockFile(path)
 	assert.Error(t, err)
 }
+
+func TestLockFilePath(t *testing.T) {
+	p := LockFilePath()
+	assert.Contains(t, p, ".gridctl")
+	assert.Contains(t, p, "skills.lock.yaml")
+}
+
+func TestLockFileWithFingerprint(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "skills.lock.yaml")
+
+	fp := &Fingerprint{
+		ContentHash: "abc123",
+		ToolsHash:   "def456",
+		Tools:       []string{"tool-a", "tool-b"},
+		WorkflowLen: 3,
+	}
+
+	lf := &LockFile{
+		Sources: map[string]LockedSource{
+			"test-src": {
+				Repo:      "https://github.com/org/skills",
+				Ref:       "main",
+				CommitSHA: "sha1",
+				FetchedAt: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
+				Skills: map[string]LockedSkill{
+					"my-skill": {
+						Path:        "skills/my-skill",
+						ContentHash: "hash1",
+						Fingerprint: fp,
+					},
+				},
+			},
+		},
+	}
+
+	require.NoError(t, WriteLockFile(path, lf))
+
+	got, err := ReadLockFile(path)
+	require.NoError(t, err)
+
+	skill := got.Sources["test-src"].Skills["my-skill"]
+	require.NotNil(t, skill.Fingerprint)
+	assert.Equal(t, "abc123", skill.Fingerprint.ContentHash)
+	assert.Equal(t, "def456", skill.Fingerprint.ToolsHash)
+	assert.Equal(t, []string{"tool-a", "tool-b"}, skill.Fingerprint.Tools)
+	assert.Equal(t, 3, skill.Fingerprint.WorkflowLen)
+}
+
+func TestLockFileSetSourceInitializesMap(t *testing.T) {
+	lf := &LockFile{}
+	lf.SetSource("new", LockedSource{Repo: "https://example.com/repo"})
+	assert.Len(t, lf.Sources, 1)
+	assert.Equal(t, "https://example.com/repo", lf.Sources["new"].Repo)
+}

@@ -101,6 +101,12 @@ func TestUpdateStatus_WithErrors(t *testing.T) {
 	assert.Contains(t, read.Errors[0], "network timeout")
 }
 
+func TestUpdateCachePath(t *testing.T) {
+	p := UpdateCachePath()
+	assert.Contains(t, p, ".gridctl")
+	assert.Contains(t, p, "skill-updates.yaml")
+}
+
 func TestCheckUpdatesBackground_DisabledInCI(t *testing.T) {
 	origCI := os.Getenv("CI")
 	defer os.Setenv("CI", origCI)
