@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { useMemo, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { AlertCircle, Minus, Plus, Equal, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { Modal } from '../ui/Modal';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { Button } from '../ui/Button';
 
@@ -17,11 +17,9 @@ function computeLineDiff(oldText: string, newText: string): DiffLine[] {
   const newLines = newText.split('\n');
   const result: DiffLine[] = [];
 
-  // Simple LCS-based diff
   const m = oldLines.length;
   const n = newLines.length;
 
-  // Build LCS table
   const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
@@ -33,7 +31,6 @@ function computeLineDiff(oldText: string, newText: string): DiffLine[] {
     }
   }
 
-  // Backtrack to produce diff
   const diff: Array<{ type: 'context' | 'added' | 'removed'; text: string; oldIdx: number; newIdx: number }> = [];
   let i = m, j = n;
   while (i > 0 || j > 0) {
@@ -69,83 +66,127 @@ interface SpecDiffModalProps {
 export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps) {
   const diffModalOpen = useSpecStore((s) => s.diffModalOpen);
   const closeDiffModal = useSpecStore((s) => s.closeDiffModal);
-  const spec = useSpecStore((s) => s.spec);
+  const appliedSpec = useSpecStore((s) => s.appliedSpec);
   const pendingSpec = useSpecStore((s) => s.pendingSpec);
 
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeDiffModal();
+    },
+    [closeDiffModal],
+  );
+
+  useEffect(() => {
+    if (diffModalOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [diffModalOpen, handleKeyDown]);
+
   const diffLines = useMemo(() => {
-    if (!spec || !pendingSpec) return [];
-    return computeLineDiff(spec.content, pendingSpec);
-  }, [spec, pendingSpec]);
+    if (!appliedSpec || !pendingSpec) return [];
+    return computeLineDiff(appliedSpec.content, pendingSpec);
+  }, [appliedSpec, pendingSpec]);
 
   const hasChanges = diffLines.some((l) => l.type !== 'context');
   const hasErrors = validationErrors && validationErrors.length > 0;
 
-  return (
-    <Modal
-      isOpen={diffModalOpen}
-      onClose={closeDiffModal}
-      title="Configuration Changed"
-      size="full"
-    >
-      <div className="flex flex-col gap-4 h-full">
-        {/* Diff view */}
-        <div className="flex-1 overflow-auto scrollbar-dark rounded-lg border border-border/30 bg-background/60">
-          {!hasChanges ? (
-            <div className="flex items-center justify-center h-full text-text-muted text-xs py-12">
-              No changes detected
+  const addedCount = diffLines.filter((l) => l.type === 'added').length;
+  const removedCount = diffLines.filter((l) => l.type === 'removed').length;
+  const unchangedCount = diffLines.filter((l) => l.type === 'context').length;
+
+  if (!diffModalOpen) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex flex-col bg-background">
+      {/* Header — pinned */}
+      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-border/50 bg-surface-elevated">
+        <div className="flex items-center gap-4">
+          <h2 className="text-sm font-semibold text-text-primary">Configuration Changed</h2>
+          {hasChanges && (
+            <div className="flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-running/10 text-status-running">
+                <Plus size={11} />
+                {addedCount} added
+              </span>
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-error/10 text-status-error">
+                <Minus size={11} />
+                {removedCount} removed
+              </span>
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-highlight text-text-muted">
+                <Equal size={11} />
+                {unchangedCount} unchanged
+              </span>
             </div>
-          ) : (
-            <table className="w-full font-mono text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-border/30 sticky top-0 bg-surface-elevated/95 backdrop-blur-sm">
-                  <th className="text-left px-3 py-2 text-text-muted font-medium w-12">Old</th>
-                  <th className="text-left px-3 py-2 text-text-muted font-medium w-12">New</th>
-                  <th className="text-left px-3 py-2 text-text-muted font-medium">Content</th>
-                </tr>
-              </thead>
-              <tbody>
-                {diffLines.map((line, idx) => (
-                  <tr
-                    key={idx}
-                    className={cn(
-                      'border-b border-border/10',
-                      line.type === 'added' && 'bg-status-running/[0.08]',
-                      line.type === 'removed' && 'bg-status-error/[0.08]',
-                    )}
-                  >
-                    <td className={cn(
-                      'px-3 py-px text-right w-12',
-                      line.type === 'removed' ? 'text-status-error/60' : 'text-text-muted/40',
-                    )}>
-                      {line.lineOld ?? ''}
-                    </td>
-                    <td className={cn(
-                      'px-3 py-px text-right w-12',
-                      line.type === 'added' ? 'text-status-running/60' : 'text-text-muted/40',
-                    )}>
-                      {line.lineNew ?? ''}
-                    </td>
-                    <td className="px-3 py-px whitespace-pre">
-                      <span className={cn(
-                        line.type === 'added' && 'text-status-running',
-                        line.type === 'removed' && 'text-status-error line-through',
-                        line.type === 'context' && 'text-text-secondary',
-                      )}>
-                        {line.type === 'added' && '+ '}
-                        {line.type === 'removed' && '- '}
-                        {line.text}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
         </div>
+        <button
+          onClick={closeDiffModal}
+          className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors text-text-muted hover:text-text-primary"
+        >
+          <X size={16} />
+        </button>
+      </div>
 
-        {/* Validation errors */}
+      {/* Diff body — scrollable, takes all remaining space */}
+      <div className="flex-1 min-h-0 overflow-auto scrollbar-dark">
+        {!hasChanges ? (
+          <div className="flex items-center justify-center h-full text-text-muted text-sm">
+            No changes detected
+          </div>
+        ) : (
+          <table className="w-full font-mono text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-border/30 sticky top-0 bg-surface-elevated z-10">
+                <th className="text-right px-3 py-2 text-text-muted font-medium w-14">Old</th>
+                <th className="text-right px-3 py-2 text-text-muted font-medium w-14">New</th>
+                <th className="text-left px-4 py-2 text-text-muted font-medium">Content</th>
+              </tr>
+            </thead>
+            <tbody>
+              {diffLines.map((line, idx) => (
+                <tr
+                  key={idx}
+                  className={cn(
+                    'border-b border-border/10',
+                    line.type === 'added' && 'bg-status-running/[0.08]',
+                    line.type === 'removed' && 'bg-status-error/[0.08]',
+                  )}
+                >
+                  <td className={cn(
+                    'px-3 py-0.5 text-right w-14 select-none',
+                    line.type === 'removed' ? 'text-status-error/60' : 'text-text-muted/40',
+                  )}>
+                    {line.lineOld ?? ''}
+                  </td>
+                  <td className={cn(
+                    'px-3 py-0.5 text-right w-14 select-none',
+                    line.type === 'added' ? 'text-status-running/60' : 'text-text-muted/40',
+                  )}>
+                    {line.lineNew ?? ''}
+                  </td>
+                  <td className="px-4 py-0.5 whitespace-pre">
+                    <span className={cn(
+                      line.type === 'added' && 'text-status-running',
+                      line.type === 'removed' && 'text-status-error line-through',
+                      line.type === 'context' && 'text-text-secondary',
+                    )}>
+                      {line.type === 'added' && '+ '}
+                      {line.type === 'removed' && '- '}
+                      {line.text}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Footer — pinned */}
+      <div className="flex-shrink-0 border-t border-border/50 bg-surface-elevated px-6 py-3">
         {hasErrors && (
-          <div className="rounded-lg border border-status-error/30 bg-status-error/[0.06] px-4 py-3">
+          <div className="rounded-lg border border-status-error/30 bg-status-error/[0.06] px-4 py-3 mb-3">
             <div className="flex items-center gap-2 text-status-error text-xs font-medium mb-2">
               <AlertCircle size={12} />
               Validation errors in new spec
@@ -161,8 +202,7 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/30">
+        <div className="flex items-center justify-end gap-3">
           <Button variant="secondary" onClick={closeDiffModal}>
             Cancel
           </Button>
@@ -178,6 +218,7 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
           </Button>
         </div>
       </div>
-    </Modal>
+    </div>,
+    document.body,
   );
 }
