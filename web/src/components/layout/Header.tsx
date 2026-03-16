@@ -36,6 +36,17 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
     try {
       const result = await triggerReload();
       setReloadMessage({ text: result.message, isError: !result.success });
+      // On successful reload, promote the pending spec (what the user approved)
+      // to the applied baseline. Fall back to current spec for direct reloads.
+      if (result.success) {
+        const store = useSpecStore.getState();
+        const applied = store.pendingSpec
+          ? { path: store.spec?.path ?? '', content: store.pendingSpec }
+          : store.spec;
+        if (applied) {
+          store.setAppliedSpec(applied);
+        }
+      }
     } catch (err) {
       setReloadMessage({
         text: err instanceof Error ? err.message : 'Reload failed',
@@ -48,22 +59,30 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   }, []);
 
   const handleReload = useCallback(async () => {
-    // Fetch the new spec from disk to show diff before applying
+    // Fetch the new spec from disk and diff against the applied baseline
     try {
       const newSpec = await fetchStackSpec();
-      const currentSpec = useSpecStore.getState().spec;
+      const store = useSpecStore.getState();
 
-      // If we have both specs and they differ, show the diff modal
-      if (currentSpec && newSpec.content !== currentSpec.content) {
+      // Seed appliedSpec on first use (e.g. user never opened Spec tab)
+      if (!store.appliedSpec) {
+        store.setAppliedSpec(newSpec);
+      }
+
+      const appliedSpec = useSpecStore.getState().appliedSpec;
+
+      // If the disk spec differs from what the gateway last applied, show diff
+      if (appliedSpec && newSpec.content !== appliedSpec.content) {
         // Validate the new spec
         const result = await validateStackSpec(newSpec.content);
-        const errors = result.issues
+        const errors = (result.issues ?? [])
           .filter((i) => i.severity === 'error')
           .map((i) => `${i.field}: ${i.message}`);
         setValidationErrors(errors);
         useSpecStore.getState().openDiffModal(newSpec.content);
         return;
       }
+
     } catch {
       // If spec fetch fails, fall through to direct reload
     }
