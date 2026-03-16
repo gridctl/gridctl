@@ -8,10 +8,13 @@ import type {
 } from '../types';
 
 interface SpecState {
-  // Spec content
+  // Spec content (live from disk, updated by polling)
   spec: StackSpec | null;
   specLoading: boolean;
   specError: string | null;
+
+  // Last spec the gateway applied (stable baseline for diff)
+  appliedSpec: StackSpec | null;
 
   // Validation
   validation: ValidationResult | null;
@@ -31,6 +34,7 @@ interface SpecState {
 
   // Actions
   setSpec: (spec: StackSpec) => void;
+  setAppliedSpec: (spec: StackSpec) => void;
   setSpecLoading: (loading: boolean) => void;
   setSpecError: (error: string | null) => void;
   setValidation: (result: ValidationResult) => void;
@@ -45,6 +49,7 @@ interface SpecState {
 export const useSpecStore = create<SpecState>()(
   subscribeWithSelector((set) => ({
     spec: null,
+    appliedSpec: null,
     specLoading: false,
     specError: null,
     validation: null,
@@ -54,7 +59,13 @@ export const useSpecStore = create<SpecState>()(
     diffModalOpen: false,
     pendingSpec: null,
 
-    setSpec: (spec) => set({ spec, specError: null }),
+    setSpec: (spec) => set((s) => ({
+      spec,
+      specError: null,
+      // Set appliedSpec on first load so there's always a baseline
+      appliedSpec: s.appliedSpec ?? spec,
+    })),
+    setAppliedSpec: (spec) => set({ appliedSpec: spec }),
     setSpecLoading: (specLoading) => set({ specLoading }),
     setSpecError: (specError) => set({ specError }),
     setValidation: (validation) => set({ validation }),
