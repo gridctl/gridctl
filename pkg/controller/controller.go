@@ -56,6 +56,7 @@ type Config struct {
 	DaemonChild bool
 	CodeMode    bool   // Enable code mode via CLI flag
 	Runtime     string // Explicit runtime selection (docker, podman)
+	Replace     bool   // Stop a running stack before deploying (used by plan apply)
 }
 
 // StackController orchestrates the full deploy lifecycle.
@@ -171,6 +172,7 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 }
 
 // checkState acquires a lock, cleans stale state, and checks if already running.
+// When Replace is set, a running stack is stopped instead of returning an error.
 func (sc *StackController) checkState(stack *config.Stack) error {
 	var existingState *state.DaemonState
 	err := state.WithLock(stack.Name, 5*time.Second, func() error {
@@ -182,6 +184,24 @@ func (sc *StackController) checkState(stack *config.Stack) error {
 			fmt.Printf("Cleaned up stale state for '%s'\n", stack.Name)
 		}
 		existingState, _ = state.Load(stack.Name)
+
+		// Replace mode: stop the running stack within the lock
+		if sc.config.Replace && existingState != nil && state.IsRunning(existingState) {
+			// Preserve the running port for redeployment
+			if sc.config.Port == 0 {
+				sc.config.Port = existingState.Port
+			}
+
+			fmt.Printf("Stopping running stack '%s'...\n", stack.Name)
+			if killErr := state.KillDaemon(existingState); killErr != nil {
+				fmt.Printf("Warning: could not kill daemon: %v\n", killErr)
+			}
+			if delErr := state.Delete(stack.Name); delErr != nil {
+				return fmt.Errorf("deleting state: %w", delErr)
+			}
+			existingState = nil
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -191,6 +211,16 @@ func (sc *StackController) checkState(stack *config.Stack) error {
 		return fmt.Errorf("stack '%s' is already running on port %d (PID: %d)\nUse 'gridctl destroy %s' to stop it first",
 			stack.Name, existingState.Port, existingState.PID, sc.config.StackPath)
 	}
+
+	// Replace mode: also stop containers outside the lock
+	if sc.config.Replace && stack.NeedsContainerRuntime() {
+		rt, rtErr := sc.createRuntime()
+		if rtErr == nil {
+			_ = rt.Down(context.Background(), stack.Name)
+			rt.Close()
+		}
+	}
+
 	return nil
 }
 

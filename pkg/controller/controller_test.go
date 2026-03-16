@@ -3,12 +3,37 @@ package controller
 import (
 	"io/fs"
 	"os"
+	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
+
+// setTempHome overrides HOME so state files go to a temp directory.
+func setTempHome(t *testing.T) {
+	t.Helper()
+	origHome := os.Getenv("HOME")
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+	os.Setenv("HOME", t.TempDir())
+}
+
+// startDummyProcess starts a sleep process that can be safely killed in tests.
+func startDummyProcess(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting dummy process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	return cmd.Process.Pid
+}
 
 func TestNew(t *testing.T) {
 	cfg := Config{
@@ -492,4 +517,144 @@ func TestBuildWorkloadSummaries_ServerNotInConfig(t *testing.T) {
 	if summaries[0].Transport != "" {
 		t.Errorf("expected empty transport for orphan server, got '%s'", summaries[0].Transport)
 	}
+}
+
+func TestCheckState_NoExistingState(t *testing.T) {
+	setTempHome(t)
+
+	sc := New(Config{StackPath: "/tmp/stack.yaml"})
+	stack := &config.Stack{Name: "test-no-state"}
+
+	if err := sc.checkState(stack); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestCheckState_StaleState(t *testing.T) {
+	setTempHome(t)
+
+	// Save state with a dead PID
+	st := &state.DaemonState{
+		StackName: "test-stale",
+		StackFile: "/tmp/stack.yaml",
+		PID:       999999, // unlikely to be running
+		Port:      8180,
+		StartedAt: time.Now(),
+	}
+	if err := state.Save(st); err != nil {
+		t.Fatalf("saving state: %v", err)
+	}
+
+	sc := New(Config{StackPath: "/tmp/stack.yaml"})
+	stack := &config.Stack{Name: "test-stale"}
+
+	// Stale state should be cleaned up automatically
+	if err := sc.checkState(stack); err != nil {
+		t.Fatalf("expected no error for stale state, got: %v", err)
+	}
+}
+
+func TestCheckState_RunningWithoutReplace(t *testing.T) {
+	setTempHome(t)
+
+	pid := startDummyProcess(t)
+	st := &state.DaemonState{
+		StackName: "test-running",
+		StackFile: "/tmp/stack.yaml",
+		PID:       pid,
+		Port:      8180,
+		StartedAt: time.Now(),
+	}
+	if err := state.Save(st); err != nil {
+		t.Fatalf("saving state: %v", err)
+	}
+
+	sc := New(Config{StackPath: "/tmp/stack.yaml"})
+	stack := &config.Stack{Name: "test-running"}
+
+	err := sc.checkState(stack)
+	if err == nil {
+		t.Fatal("expected error for running stack without Replace")
+	}
+	if got := err.Error(); !contains(got, "already running") {
+		t.Errorf("expected 'already running' error, got: %s", got)
+	}
+}
+
+func TestCheckState_ReplaceStopsRunningStack(t *testing.T) {
+	setTempHome(t)
+
+	pid := startDummyProcess(t)
+	st := &state.DaemonState{
+		StackName: "test-replace",
+		StackFile: "/tmp/stack.yaml",
+		PID:       pid,
+		Port:      9999,
+		StartedAt: time.Now(),
+	}
+	if err := state.Save(st); err != nil {
+		t.Fatalf("saving state: %v", err)
+	}
+
+	sc := New(Config{StackPath: "/tmp/stack.yaml", Replace: true})
+	stack := &config.Stack{Name: "test-replace"}
+
+	err := sc.checkState(stack)
+	if err != nil {
+		t.Fatalf("expected no error with Replace=true, got: %v", err)
+	}
+
+	// Port should be preserved from the running state
+	if sc.config.Port != 9999 {
+		t.Errorf("expected port 9999, got %d", sc.config.Port)
+	}
+
+	// State file should be deleted
+	_, loadErr := state.Load("test-replace")
+	if loadErr == nil {
+		t.Error("expected state file to be deleted after replace")
+	}
+}
+
+func TestCheckState_ReplaceKeepsExplicitPort(t *testing.T) {
+	setTempHome(t)
+
+	pid := startDummyProcess(t)
+	st := &state.DaemonState{
+		StackName: "test-port",
+		StackFile: "/tmp/stack.yaml",
+		PID:       pid,
+		Port:      8180,
+		StartedAt: time.Now(),
+	}
+	if err := state.Save(st); err != nil {
+		t.Fatalf("saving state: %v", err)
+	}
+
+	// User explicitly set port 7777
+	sc := New(Config{StackPath: "/tmp/stack.yaml", Port: 7777, Replace: true})
+	stack := &config.Stack{Name: "test-port"}
+
+	err := sc.checkState(stack)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	// Explicit port should be preserved, not overwritten
+	if sc.config.Port != 7777 {
+		t.Errorf("expected port 7777 (explicit), got %d", sc.config.Port)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

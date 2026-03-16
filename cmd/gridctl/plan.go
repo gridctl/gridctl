@@ -83,7 +83,7 @@ func runPlan(stackPath string) error {
 		}
 	}
 
-	// Apply via deploy
+	// Apply via deploy with Replace to handle running stacks
 	fmt.Println("\nApplying changes...")
 	ctrl := controller.New(controller.Config{
 		StackPath:  stackPath,
@@ -91,6 +91,7 @@ func runPlan(stackPath string) error {
 		BasePort:   deployBasePort,
 		Foreground: deployForeground,
 		Runtime:    runtimeFlag,
+		Replace:    true,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
