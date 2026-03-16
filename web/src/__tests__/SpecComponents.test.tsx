@@ -10,6 +10,7 @@ describe('useSpecStore', () => {
   beforeEach(() => {
     useSpecStore.setState({
       spec: null,
+      appliedSpec: null,
       specLoading: false,
       specError: null,
       validation: null,
@@ -26,6 +27,29 @@ describe('useSpecStore', () => {
     useSpecStore.getState().setSpec(spec);
     expect(useSpecStore.getState().spec).toEqual(spec);
     expect(useSpecStore.getState().specError).toBeNull();
+  });
+
+  it('sets appliedSpec on first setSpec call', () => {
+    const spec: StackSpec = { path: '/tmp/stack.yaml', content: 'name: test' };
+    useSpecStore.getState().setSpec(spec);
+    expect(useSpecStore.getState().appliedSpec).toEqual(spec);
+  });
+
+  it('does not overwrite appliedSpec on subsequent setSpec calls', () => {
+    const first: StackSpec = { path: '/tmp/stack.yaml', content: 'name: first' };
+    const second: StackSpec = { path: '/tmp/stack.yaml', content: 'name: second' };
+    useSpecStore.getState().setSpec(first);
+    useSpecStore.getState().setSpec(second);
+    expect(useSpecStore.getState().spec).toEqual(second);
+    expect(useSpecStore.getState().appliedSpec).toEqual(first);
+  });
+
+  it('updates appliedSpec via setAppliedSpec', () => {
+    const first: StackSpec = { path: '/tmp/stack.yaml', content: 'name: first' };
+    const second: StackSpec = { path: '/tmp/stack.yaml', content: 'name: second' };
+    useSpecStore.getState().setSpec(first);
+    useSpecStore.getState().setAppliedSpec(second);
+    expect(useSpecStore.getState().appliedSpec).toEqual(second);
   });
 
   it('sets loading state', () => {
@@ -131,6 +155,7 @@ describe('SpecHealthBadge', () => {
     useSpecStore.setState({
       health: null,
       spec: null,
+      appliedSpec: null,
       specLoading: false,
       specError: null,
       validation: null,
@@ -203,6 +228,7 @@ describe('SpecDiffModal', () => {
   beforeEach(() => {
     useSpecStore.setState({
       spec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+      appliedSpec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
       diffModalOpen: false,
       pendingSpec: null,
       health: null,
