@@ -182,6 +182,24 @@ func TestAuthMiddleware_BearerEmptyToken(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware_StaticFilesBypass(t *testing.T) {
+	handler := authMiddleware("bearer", "mysecret", "", okHandler())
+
+	paths := []string{"/", "/index.html", "/assets/index-abc123.js", "/assets/index-abc123.css", "/vite.svg", "/favicon.ico"}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			// No auth header set
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("expected 200 for static path %s without auth, got %d", path, rec.Code)
+			}
+		})
+	}
+}
+
 func TestAuthMiddleware_TimingSafe(t *testing.T) {
 	// Verify that partial matches are rejected (not vulnerable to prefix attacks)
 	handler := authMiddleware("api_key", "mysecretkey", "", okHandler())
@@ -198,6 +216,22 @@ func TestAuthMiddleware_TimingSafe(t *testing.T) {
 				t.Errorf("expected 401 for partial token %q, got %d", partial, rec.Code)
 			}
 		})
+	}
+}
+
+func TestIsProtectedPath(t *testing.T) {
+	protected := []string{"/api/status", "/api/tools", "/api/mcp-servers", "/mcp", "/sse", "/message", "/a2a/agent1", "/.well-known/agent.json"}
+	for _, path := range protected {
+		if !isProtectedPath(path) {
+			t.Errorf("expected %s to be protected", path)
+		}
+	}
+
+	unprotected := []string{"/", "/index.html", "/assets/main.js", "/vite.svg", "/health", "/ready"}
+	for _, path := range unprotected {
+		if isProtectedPath(path) {
+			t.Errorf("expected %s to be unprotected", path)
+		}
 	}
 }
 
