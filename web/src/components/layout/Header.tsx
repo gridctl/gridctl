@@ -208,7 +208,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         onApply={executeReload}
         validationErrors={validationErrors}
       />
-      <CreationWizard />
+      <CreationWizard onOpenVault={() => setShowVault(true)} />
     </header>
   );
 }

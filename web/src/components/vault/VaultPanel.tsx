@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Plus,
@@ -299,7 +300,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
   const isEmpty = (secrets ?? []).length === 0 && (sets ?? []).length === 0;
 
-  return (
+  return createPortal(
     <div className="fixed inset-y-0 right-0 z-40 w-[380px] max-w-full flex flex-col bg-surface/95 backdrop-blur-xl border-l border-border/50 shadow-2xl animate-slide-in-right">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 flex-shrink-0">
@@ -642,7 +643,8 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

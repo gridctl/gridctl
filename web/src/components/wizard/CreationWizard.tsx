@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Layers,
   Server,
@@ -116,7 +117,11 @@ function getResourceCounts(
   };
 }
 
-export function CreationWizard() {
+interface CreationWizardProps {
+  onOpenVault?: () => void;
+}
+
+export function CreationWizard({ onOpenVault }: CreationWizardProps) {
   const {
     isOpen,
     close,
@@ -146,13 +151,18 @@ export function CreationWizard() {
     [mcpServers, agents, resources, skills],
   );
 
-  // Skill type skips template step — goes directly to the import wizard
+  // Skill skips template step; secret closes wizard and opens vault panel
   const handleTypeSelect = useCallback((type: ResourceType) => {
+    if (type === 'secret') {
+      close();
+      onOpenVault?.();
+      return;
+    }
     setSelectedType(type);
     if (type === 'skill') {
       setStep('form');
     }
-  }, [setSelectedType, setStep]);
+  }, [setSelectedType, setStep, close, onOpenVault]);
 
   const yamlDebounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const [generatedYaml, setGeneratedYaml] = useState('');
@@ -254,7 +264,7 @@ export function CreationWizard() {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 animate-fade-in-scale bg-background/80 backdrop-blur-sm flex items-center justify-center">
       {/* Backdrop */}
       <div className="absolute inset-0" onClick={close} />
@@ -374,7 +384,7 @@ export function CreationWizard() {
                 currentStep,
                 selectedType,
                 selectedTemplate,
-                setSelectedType,
+                handleTypeSelect,
                 setSelectedTemplate,
                 formData,
                 updateFormData,
@@ -416,7 +426,8 @@ export function CreationWizard() {
         </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
