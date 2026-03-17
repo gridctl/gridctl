@@ -22,6 +22,8 @@ export function BottomPanel() {
   const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
   const bottomPanelTab = useUIStore((s) => s.bottomPanelTab);
   const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
+  const logsDetached = useUIStore((s) => s.logsDetached);
+  const metricsDetached = useUIStore((s) => s.metricsDetached);
 
   return (
     <div
@@ -29,7 +31,8 @@ export function BottomPanel() {
         'h-full w-full',
         'bg-surface/90 backdrop-blur-xl border-t border-border/50',
         'flex flex-col relative',
-        'transition-all duration-300 ease-out'
+        // Skip transition when closing due to detachment
+        (logsDetached || metricsDetached) ? 'duration-0' : 'transition-all duration-300 ease-out'
       )}
     >
       {/* Top accent line */}
