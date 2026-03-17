@@ -9,7 +9,10 @@ const WINDOW_TITLES: Record<string, string> = {
   registry: 'Gridctl - Registry',
   workflow: 'Gridctl - Workflow Designer',
   metrics: 'Gridctl - Metrics',
+  vault: 'Gridctl - Vault',
 };
+
+type DetachableWindow = 'logs' | 'sidebar' | 'editor' | 'registry' | 'workflow' | 'metrics' | 'vault';
 
 export function useWindowManager() {
   const windowRefs = useRef<Map<string, Window | null>>(new Map());
@@ -20,6 +23,7 @@ export function useWindowManager() {
   const setRegistryDetached = useUIStore((s) => s.setRegistryDetached);
   const setWorkflowDetached = useUIStore((s) => s.setWorkflowDetached);
   const setMetricsDetached = useUIStore((s) => s.setMetricsDetached);
+  const setVaultDetached = useUIStore((s) => s.setVaultDetached);
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
@@ -44,6 +48,8 @@ export function useWindowManager() {
           setWorkflowDetached(true);
         } else if (payload?.windowType === 'metrics') {
           setMetricsDetached(true);
+        } else if (payload?.windowType === 'vault') {
+          setVaultDetached(true);
         }
       } else if (message.type === 'WINDOW_CLOSED') {
         if (payload?.windowType === 'logs') {
@@ -58,22 +64,45 @@ export function useWindowManager() {
           setWorkflowDetached(false);
         } else if (payload?.windowType === 'metrics') {
           setMetricsDetached(false);
+        } else if (payload?.windowType === 'vault') {
+          setVaultDetached(false);
         }
         windowRefs.current.delete(payload?.windowType ?? '');
       }
     }
-  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setWorkflowDetached, setMetricsDetached, setBottomPanelOpen, setSidebarOpen]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setWorkflowDetached, setMetricsDetached, setVaultDetached, setBottomPanelOpen, setSidebarOpen]);
 
   const { postMessage } = useBroadcastChannel({
     onMessage: handleMessage,
   });
 
   // Open a detached window
-  const openDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor' | 'registry' | 'workflow' | 'metrics', params?: string) => {
+  const openDetachedWindow = useCallback((type: DetachableWindow, params?: string) => {
     const existingWindow = windowRefs.current.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.focus();
       return;
+    }
+
+    // Immediately mark as detached and close associated panels
+    // so the main window updates in the same frame (no transition flicker)
+    if (type === 'logs') {
+      setLogsDetached(true);
+      setBottomPanelOpen(false);
+    } else if (type === 'sidebar') {
+      setSidebarDetached(true);
+      setSidebarOpen(false);
+    } else if (type === 'editor') {
+      setEditorDetached(true);
+    } else if (type === 'registry') {
+      setRegistryDetached(true);
+      setSidebarOpen(false);
+    } else if (type === 'workflow') {
+      setWorkflowDetached(true);
+    } else if (type === 'metrics') {
+      setMetricsDetached(true);
+    } else if (type === 'vault') {
+      setVaultDetached(true);
     }
 
     const url = params ? `/${type}?${params}` : `/${type}`;
@@ -104,14 +133,16 @@ export function useWindowManager() {
             setWorkflowDetached(false);
           } else if (type === 'metrics') {
             setMetricsDetached(false);
+          } else if (type === 'vault') {
+            setVaultDetached(false);
           }
         }
       }, 500);
     }
-  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setWorkflowDetached, setMetricsDetached]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setWorkflowDetached, setMetricsDetached, setVaultDetached, setBottomPanelOpen, setSidebarOpen]);
 
   // Close a detached window
-  const closeDetachedWindow = useCallback((type: 'logs' | 'sidebar' | 'editor' | 'registry' | 'workflow' | 'metrics') => {
+  const closeDetachedWindow = useCallback((type: DetachableWindow) => {
     const existingWindow = windowRefs.current.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.close();

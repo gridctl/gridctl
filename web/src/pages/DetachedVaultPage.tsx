@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState, useCallback, useRef, useMemo, Component, type ReactNode } from 'react';
 import {
-  X,
+  KeyRound,
   Plus,
   Eye,
   EyeOff,
@@ -9,7 +8,6 @@ import {
   Trash2,
   Check,
   XCircle,
-  KeyRound,
   FolderOpen,
   ChevronDown,
   ChevronRight,
@@ -17,15 +15,19 @@ import {
   Package,
   Lock,
   LockOpen,
+  RefreshCw,
   Search,
+  X,
 } from 'lucide-react';
-import { cn } from '../../lib/cn';
-import { Button } from '../ui/Button';
-import { ResizeHandle } from '../ui/ResizeHandle';
-import { PopoutButton } from '../ui/PopoutButton';
-import { useVaultStore } from '../../stores/useVaultStore';
-import { useUIStore } from '../../stores/useUIStore';
-import { showToast } from '../ui/Toast';
+import { cn } from '../lib/cn';
+import { IconButton } from '../components/ui/IconButton';
+import { Button } from '../components/ui/Button';
+import { ZoomControls } from '../components/log/ZoomControls';
+import { VaultLockPrompt } from '../components/vault/VaultLockPrompt';
+import { ToastContainer, showToast } from '../components/ui/Toast';
+import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
+import { useLogFontSize } from '../hooks/useLogFontSize';
+import { useVaultStore } from '../stores/useVaultStore';
 import {
   fetchVaultSecrets,
   fetchVaultSets,
@@ -39,29 +41,59 @@ import {
   fetchVaultStatus,
   unlockVault,
   lockVault,
-} from '../../lib/api';
-import type { VaultSecret } from '../../lib/api';
-import { VaultLockPrompt } from './VaultLockPrompt';
+} from '../lib/api';
+import type { VaultSecret } from '../lib/api';
+import { POLLING } from '../lib/constants';
 
-interface VaultPanelProps {
-  onClose: () => void;
+// Error boundary for detached window
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
 }
 
-export function VaultPanel({ onClose }: VaultPanelProps) {
-  const vaultDetached = useUIStore((s) => s.vaultDetached);
+class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen w-screen bg-background flex items-center justify-center">
+          <div className="text-center p-8 max-w-md">
+            <div className="p-4 rounded-xl bg-status-error/10 border border-status-error/20 inline-block mb-4">
+              <AlertCircle size={32} className="text-status-error" />
+            </div>
+            <h1 className="text-lg text-status-error mb-2">Something went wrong</h1>
+            <pre className="text-xs text-text-muted bg-surface p-4 rounded-lg overflow-auto max-h-32 mb-4">
+              {this.state.error?.message}
+            </pre>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-primary text-background rounded-lg font-medium hover:bg-primary/90 transition-colors"
+            >
+              Reload Window
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function DetachedVaultContent() {
   const secrets = useVaultStore((s) => s.secrets);
   const sets = useVaultStore((s) => s.sets);
   const loading = useVaultStore((s) => s.loading);
   const error = useVaultStore((s) => s.error);
   const locked = useVaultStore((s) => s.locked);
   const encrypted = useVaultStore((s) => s.encrypted);
-
-  // Panel width (resizable)
-  const [panelWidth, setPanelWidth] = useState(380);
-  const handleResize = useCallback((delta: number) => {
-    setPanelWidth((prev) => Math.min(600, Math.max(280, prev + delta)));
-  }, []);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -80,9 +112,8 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const [showNewValue, setShowNewValue] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  const keyInputRef = useRef<HTMLInputElement>(null);
 
-  // Reveal state: map of key -> revealed value
+  // Reveal state
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const revealTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -99,7 +130,15 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const [showNewSet, setShowNewSet] = useState(false);
   const [newSetName, setNewSetName] = useState('');
 
-  // Filtered secrets based on search
+  // Text zoom
+  const contentRef = useRef<HTMLElement>(null);
+  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } =
+    useLogFontSize(contentRef);
+
+  // Register with main window
+  useDetachedWindowSync('vault');
+
+  // Filtered secrets
   const allSecrets = secrets ?? [];
   const filteredSecrets = useMemo(() => {
     if (!searchQuery) return allSecrets;
@@ -109,7 +148,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     );
   }, [allSecrets, searchQuery]);
 
-  // Fetch data on mount
   const refresh = useCallback(async () => {
     useVaultStore.getState().setLoading(true);
     useVaultStore.getState().setError(null);
@@ -135,31 +173,12 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
   useEffect(() => {
     refresh();
+    const interval = window.setInterval(refresh, POLLING.STATUS);
     return () => {
+      clearInterval(interval);
       Object.values(revealTimers.current).forEach(clearTimeout);
     };
   }, [refresh]);
-
-  // Handle Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        const tag = (e.target as HTMLElement)?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA') {
-          (e.target as HTMLElement).blur();
-          return;
-        }
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  const handlePopout = useCallback(() => {
-    window.open('/vault', 'gridctl-vault');
-    onClose();
-  }, [onClose]);
 
   const handleUnlock = useCallback(async (passphrase: string): Promise<boolean> => {
     try {
@@ -179,7 +198,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
       setLockError('Passphrases do not match');
       return;
     }
-
     setIsLocking(true);
     setLockError(null);
     try {
@@ -209,7 +227,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
       }
       return;
     }
-
     try {
       const data = await getVaultSecret(key);
       setRevealed((prev) => ({ ...prev, [key]: data.value }));
@@ -229,7 +246,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const handleAdd = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKey.trim() || !newValue) return;
-
     const key = newKey.trim();
     setIsAdding(true);
     setAddError(null);
@@ -321,62 +337,67 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     setExpandedSets((prev) => ({ ...prev, [name]: !prev[name] }));
   }, []);
 
-  // Group secrets by set
   const unassigned = filteredSecrets.filter((s) => !s.set);
   const setNames = (sets ?? []).map((s) => s.name);
-
   const isEmpty = allSecrets.length === 0 && (sets ?? []).length === 0;
 
-  return createPortal(
-    <div
-      className="fixed inset-y-0 right-0 z-40 max-w-full flex flex-row bg-surface/95 backdrop-blur-xl border-l border-border/50 shadow-2xl animate-slide-in-right"
-      style={{ width: panelWidth }}
-    >
-      {/* Resize handle on left edge */}
-      <ResizeHandle
-        direction="vertical"
-        onResize={handleResize}
-        className="flex-shrink-0"
+  return (
+    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden relative">
+      {/* Background grain */}
+      <div
+        className="fixed inset-0 pointer-events-none z-0 opacity-[0.015]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+        }}
       />
 
-      {/* Content column */}
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30 flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="p-2 rounded-xl flex-shrink-0 border bg-primary/10 border-primary/20">
-            <KeyRound size={16} className="text-primary" />
+      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-10 relative">
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20">
+            <KeyRound size={14} className="text-primary" />
           </div>
-          <div className="min-w-0">
-            <h2 className="font-semibold text-text-primary truncate tracking-tight">Vault</h2>
-            <div className="flex items-center gap-1.5">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider">Secrets</p>
-              {encrypted && !locked && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-0.5">
-                  <LockOpen size={8} />
-                  Encrypted
-                </span>
-              )}
-              {locked && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-0.5">
-                  <Lock size={8} />
-                  Locked
-                </span>
-              )}
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-text-primary tracking-tight">Vault</span>
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">Secrets</span>
+            {encrypted && !locked && (
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1">
+                <LockOpen size={10} />
+                Encrypted
+              </span>
+            )}
+            {locked && (
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">
+                <Lock size={10} />
+                Locked
+              </span>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <PopoutButton
-            onClick={handlePopout}
-            disabled={vaultDetached}
+
+        <div className="flex items-center gap-2">
+          <ZoomControls
+            fontSize={fontSize}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onReset={resetZoom}
+            isMin={isMin}
+            isMax={isMax}
+            isDefault={isDefault}
           />
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
-            <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
-          </button>
+          {!locked && !encrypted && allSecrets.length > 0 && (
+            <button
+              onClick={() => setShowLockForm(!showLockForm)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+            >
+              <Lock size={12} /> Encrypt
+            </button>
+          )}
+          <IconButton icon={RefreshCw} onClick={refresh} tooltip="Refresh" size="sm" variant="ghost" />
         </div>
-      </div>
+      </header>
 
       {/* Lock prompt */}
       {locked && (
@@ -386,36 +407,26 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
       {/* Unlocked content */}
       {!locked && (
         <>
-          {/* Item count + actions bar */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-border/20 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-text-muted">
-                {searchQuery
-                  ? `${filteredSecrets.length} of ${allSecrets.length} secrets`
-                  : `${allSecrets.length} secrets`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {!encrypted && allSecrets.length > 0 && (
-                <button
-                  onClick={() => setShowLockForm(!showLockForm)}
-                  className="flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors"
-                >
-                  <Lock size={10} /> Encrypt
-                </button>
-              )}
-              <button
-                onClick={() => keyInputRef.current?.focus()}
-                className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
-              >
-                <Plus size={10} /> New
-              </button>
+          {/* Item count + New button */}
+          <div className="border-b border-border/20 flex-shrink-0 z-10 relative px-4 py-2">
+            <div className="max-w-2xl mx-auto flex items-center justify-between">
+            <span className="text-[10px] text-text-muted">
+              {searchQuery
+                ? `${filteredSecrets.length} of ${allSecrets.length} secrets`
+                : `${allSecrets.length} secrets`}
+            </span>
+            <button
+              onClick={() => {/* scroll to add form */}}
+              className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+            >
+              <Plus size={10} /> New
+            </button>
             </div>
           </div>
 
           {/* Search */}
-          <div className="px-2 py-1.5 border-b border-border/20 flex-shrink-0" role="search">
-            <div className="relative">
+          <div className="px-2 py-1.5 border-b border-border/20 flex-shrink-0 z-10 relative" role="search">
+            <div className="max-w-2xl mx-auto relative">
               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/50" />
               <input
                 value={searchQuery}
@@ -436,10 +447,14 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
           </div>
 
           {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
+          <main
+            ref={contentRef}
+            className="flex-1 overflow-y-auto scrollbar-dark relative z-10"
+            style={{ '--log-font-size': `${fontSize}px` } as React.CSSProperties}
+          >
             {/* Lock form */}
             {showLockForm && (
-              <div className="px-4 pt-3 pb-2 border-b border-border-subtle/50">
+              <div className="px-4 pt-3 pb-2 border-b border-border-subtle/50 max-w-2xl mx-auto">
                 <div className="space-y-2">
                   <div className="text-xs text-text-secondary mb-2">Encrypt vault with a passphrase:</div>
                   <input
@@ -479,7 +494,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
             {/* Error */}
             {error && (
-              <div className="mx-4 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error">
+              <div className="max-w-2xl mx-auto mt-3 px-4 flex items-center gap-2 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error">
                 <AlertCircle size={12} className="flex-shrink-0" />
                 <span>{error}</span>
               </div>
@@ -487,7 +502,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
             {/* Loading skeleton */}
             {loading && !secrets && (
-              <div className="p-4 space-y-3">
+              <div className="p-4 space-y-3 max-w-2xl mx-auto">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="h-10 rounded-lg bg-surface-elevated animate-pulse" />
                 ))}
@@ -495,16 +510,15 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
             )}
 
             {/* Quick-add form */}
-            <form onSubmit={handleAdd} className="px-4 pt-3 pb-2 border-b border-border-subtle/50">
+            <form onSubmit={handleAdd} className="px-4 pt-3 pb-2 border-b border-border-subtle/50 max-w-2xl mx-auto">
               <div className="space-y-2">
                 <input
-                  ref={keyInputRef}
                   type="text"
                   value={newKey}
                   onChange={(e) => { setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '')); setAddError(null); }}
                   placeholder="KEY_NAME"
                   className={cn(
-                    'w-full bg-surface border rounded-lg px-3 py-2 text-xs font-mono text-text-primary',
+                    'w-full bg-surface border rounded-lg px-3 py-2 text-xs font-mono text-text-primary log-text',
                     'placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors',
                     addError ? 'border-status-error/50' : 'border-border'
                   )}
@@ -515,7 +529,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
                     placeholder="Secret value"
-                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 pr-10 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
+                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 pr-10 text-xs font-mono text-text-primary log-text placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
                   />
                   <button
                     type="button"
@@ -549,7 +563,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
             {/* Empty state */}
             {!loading && isEmpty && (
-              <div className="px-4 py-8 text-center">
+              <div className="px-4 py-8 text-center max-w-md mx-auto">
                 <div className="mx-auto w-12 h-12 mb-4 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
                   <KeyRound size={20} className="text-primary/60" />
                 </div>
@@ -570,7 +584,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
             {/* Search empty state */}
             {!loading && !isEmpty && filteredSecrets.length === 0 && searchQuery && (
-              <div className="p-6 text-center">
+              <div className="p-6 text-center max-w-md mx-auto">
                 <KeyRound size={24} className="text-text-muted/30 mx-auto mb-2" />
                 <p className="text-text-muted text-xs">No matching secrets</p>
               </div>
@@ -578,7 +592,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
             {/* Unassigned secrets */}
             {!loading && unassigned.length > 0 && (
-              <div className="p-2 space-y-1">
+              <div className="p-3 space-y-2 max-w-2xl mx-auto">
                 {unassigned.map((secret) => (
                   <SecretItem
                     key={secret.key}
@@ -603,7 +617,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
             {/* Variable sets */}
             {!loading && (sets ?? []).length > 0 && (
-              <div className="px-2 py-2">
+              <div className="px-3 py-2 max-w-2xl mx-auto">
                 <div className="flex items-center justify-between px-2 mb-2">
                   <div className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
                     Variable Sets
@@ -626,7 +640,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                   className="mb-2 px-2"
                 />
 
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {(sets ?? []).map((set) => {
                     const setSecrets = filteredSecrets.filter((s) => s.set === set.name);
                     const isExpanded = expandedSets[set.name] ?? false;
@@ -639,7 +653,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                           <div className="flex items-center gap-2">
                             {isExpanded ? <ChevronDown size={12} className="text-text-muted" /> : <ChevronRight size={12} className="text-text-muted" />}
                             <FolderOpen size={12} className="text-secondary" />
-                            <span className="text-xs font-mono text-text-primary">{set.name}</span>
+                            <span className="text-xs font-mono text-text-primary log-text">{set.name}</span>
                             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/10 text-secondary">
                               {set.count}
                             </span>
@@ -690,7 +704,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
             {/* Create set button when no sets exist */}
             {!loading && !isEmpty && (sets ?? []).length === 0 && (
-              <div className="px-4 py-2">
+              <div className="px-4 py-2 max-w-2xl mx-auto">
                 <button
                   onClick={() => setShowNewSet(true)}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border/50 text-xs text-text-muted hover:text-text-secondary hover:border-border transition-colors"
@@ -708,21 +722,24 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                 />
               </div>
             )}
-          </div>
-
-          {/* Status footer */}
-          <div className="px-4 py-2 border-t border-border/30 bg-surface/30 flex-shrink-0">
-            <div className="flex items-center justify-between text-[10px] text-text-muted">
-              <span>{allSecrets.length} total</span>
-              <span>
-                {(sets ?? []).length > 0 && (
-                  <span className="text-secondary">{(sets ?? []).length} sets</span>
-                )}
-              </span>
-            </div>
-          </div>
+          </main>
         </>
       )}
+
+      {/* Status footer */}
+      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center px-4 z-10">
+        <div className="max-w-2xl mx-auto w-full flex items-center justify-between text-[10px] text-text-muted">
+          <span>
+            {allSecrets.length > 0 ? `${allSecrets.length} secrets` : ''}
+            {(sets ?? []).length > 0 ? ` \u00B7 ${(sets ?? []).length} sets` : ''}
+            {locked ? 'Vault locked' : ''}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+            Detached Window
+          </span>
+        </div>
+      </footer>
 
       {/* Delete confirmation overlay */}
       {confirmDelete && (
@@ -746,44 +763,8 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
           </div>
         </div>
       )}
-      </div>{/* end content column */}
-    </div>,
-    document.body,
-  );
-}
 
-// NewSetForm renders the inline set creation form
-interface NewSetFormProps {
-  show: boolean;
-  value: string;
-  onChange: (val: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  className?: string;
-}
-
-function NewSetForm({ show, value, onChange, onSave, onCancel, className }: NewSetFormProps) {
-  if (!show) return null;
-  return (
-    <div className={cn('flex gap-2', className)}>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-        placeholder="set-name"
-        autoFocus
-        className="flex-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onSave();
-          if (e.key === 'Escape') onCancel();
-        }}
-      />
-      <button onClick={onSave} className="p-1 rounded hover:bg-surface-highlight transition-colors" disabled={!value.trim()}>
-        <Check size={12} className="text-status-running" />
-      </button>
-      <button onClick={onCancel} className="p-1 rounded hover:bg-surface-highlight transition-colors">
-        <XCircle size={12} className="text-text-muted" />
-      </button>
+      <ToastContainer />
     </div>
   );
 }
@@ -829,7 +810,7 @@ function SecretItem({
   if (isEditing) {
     return (
       <div className="rounded-lg bg-surface-elevated/50 border border-primary/20 p-2 space-y-2">
-        <div className="text-xs font-mono text-primary">{secret.key}</div>
+        <div className="text-xs font-mono text-primary log-text">{secret.key}</div>
         <div className="relative">
           <input
             type={showEditValue ? 'text' : 'password'}
@@ -837,7 +818,7 @@ function SecretItem({
             onChange={(e) => onEditValueChange(e.target.value)}
             placeholder="New value"
             autoFocus
-            className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 pr-8 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors"
+            className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 pr-8 text-xs font-mono text-text-primary log-text placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors"
             onKeyDown={(e) => {
               if (e.key === 'Enter') onEditSave();
               if (e.key === 'Escape') onEditCancel();
@@ -880,10 +861,10 @@ function SecretItem({
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </div>
         <KeyRound size={12} className="text-primary/60 flex-shrink-0" />
-        <span className="text-xs font-mono font-medium text-text-primary flex-1 text-left truncate">
+        <span className="text-xs font-mono font-medium text-text-primary flex-1 text-left truncate log-text">
           {secret.key}
         </span>
-        <span className="text-[10px] font-mono text-text-muted truncate max-w-[100px]">
+        <span className="text-[10px] font-mono text-text-muted truncate max-w-[100px] log-text-detail">
           {revealed !== undefined ? revealed : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
         </span>
       </button>
@@ -894,7 +875,7 @@ function SecretItem({
           {/* Value display */}
           <div className="mt-2 mb-2">
             <div className="text-[10px] text-text-muted mb-1">Value</div>
-            <div className="text-xs font-mono text-text-secondary bg-background/60 px-2 py-1.5 rounded break-all">
+            <div className="text-xs font-mono text-text-secondary bg-background/60 px-2 py-1.5 rounded break-all log-text">
               {revealed !== undefined ? revealed : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
             </div>
           </div>
@@ -946,5 +927,49 @@ function SecretItem({
         </div>
       )}
     </div>
+  );
+}
+
+// NewSetForm
+interface NewSetFormProps {
+  show: boolean;
+  value: string;
+  onChange: (val: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  className?: string;
+}
+
+function NewSetForm({ show, value, onChange, onSave, onCancel, className }: NewSetFormProps) {
+  if (!show) return null;
+  return (
+    <div className={cn('flex gap-2', className)}>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+        placeholder="set-name"
+        autoFocus
+        className="flex-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-mono text-text-primary log-text placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSave();
+          if (e.key === 'Escape') onCancel();
+        }}
+      />
+      <button onClick={onSave} className="p-1 rounded hover:bg-surface-highlight transition-colors" disabled={!value.trim()}>
+        <Check size={12} className="text-status-running" />
+      </button>
+      <button onClick={onCancel} className="p-1 rounded hover:bg-surface-highlight transition-colors">
+        <XCircle size={12} className="text-text-muted" />
+      </button>
+    </div>
+  );
+}
+
+export function DetachedVaultPage() {
+  return (
+    <DetachedErrorBoundary>
+      <DetachedVaultContent />
+    </DetachedErrorBoundary>
   );
 }

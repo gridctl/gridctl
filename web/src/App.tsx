@@ -84,6 +84,8 @@ function AppContent() {
   const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
   const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const sidebarDetached = useUIStore((s) => s.sidebarDetached);
+  const registryDetached = useUIStore((s) => s.registryDetached);
   const authRequired = useAuthStore((s) => s.authRequired);
 
   const [isShuttingDown, setIsShuttingDown] = useState(false);
@@ -223,8 +225,10 @@ function AppContent() {
           className={cn(
             'absolute top-0 right-0 bottom-0 z-20',
             'bg-surface/80 backdrop-blur-xl border-l border-border/50',
-            'transform transition-transform duration-300 ease-out',
+            'transform ease-out',
             'flex flex-row overflow-hidden',
+            // Skip transition when closing due to detachment
+            (sidebarDetached || registryDetached) ? 'duration-0' : 'transition-transform duration-300',
             sidebarOpen ? 'translate-x-0' : 'translate-x-full'
           )}
           style={{ width: sidebarWidth }}

@@ -22,11 +22,14 @@ const DetachedWorkflowPage = lazy(() =>
 const DetachedMetricsPage = lazy(() =>
   import('./pages/DetachedMetricsPage.tsx').then(m => ({ default: m.DetachedMetricsPage }))
 );
+const DetachedVaultPage = lazy(() =>
+  import('./pages/DetachedVaultPage.tsx').then(m => ({ default: m.DetachedVaultPage }))
+);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <Suspense>
+      <Suspense fallback={<div className="h-screen w-screen" style={{ background: '#08080a' }} />}>
         <Routes>
           <Route path="/" element={<App />} />
           <Route path="/logs" element={<DetachedLogsPage />} />
@@ -35,6 +38,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/registry" element={<DetachedRegistryPage />} />
           <Route path="/workflow" element={<DetachedWorkflowPage />} />
           <Route path="/metrics" element={<DetachedMetricsPage />} />
+          <Route path="/vault" element={<DetachedVaultPage />} />
         </Routes>
       </Suspense>
     </BrowserRouter>
