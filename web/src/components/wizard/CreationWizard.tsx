@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Layers,
   Server,
@@ -254,7 +255,7 @@ export function CreationWizard() {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 animate-fade-in-scale bg-background/80 backdrop-blur-sm flex items-center justify-center">
       {/* Backdrop */}
       <div className="absolute inset-0" onClick={close} />
@@ -416,7 +417,8 @@ export function CreationWizard() {
         </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
