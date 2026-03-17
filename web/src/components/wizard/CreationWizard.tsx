@@ -375,7 +375,7 @@ export function CreationWizard() {
                 currentStep,
                 selectedType,
                 selectedTemplate,
-                setSelectedType,
+                handleTypeSelect,
                 setSelectedTemplate,
                 formData,
                 updateFormData,
