@@ -117,7 +117,11 @@ function getResourceCounts(
   };
 }
 
-export function CreationWizard() {
+interface CreationWizardProps {
+  onOpenVault?: () => void;
+}
+
+export function CreationWizard({ onOpenVault }: CreationWizardProps) {
   const {
     isOpen,
     close,
@@ -147,13 +151,18 @@ export function CreationWizard() {
     [mcpServers, agents, resources, skills],
   );
 
-  // Skill and secret types skip template step — go directly to form
+  // Skill skips template step; secret closes wizard and opens vault panel
   const handleTypeSelect = useCallback((type: ResourceType) => {
+    if (type === 'secret') {
+      close();
+      onOpenVault?.();
+      return;
+    }
     setSelectedType(type);
-    if (type === 'skill' || type === 'secret') {
+    if (type === 'skill') {
       setStep('form');
     }
-  }, [setSelectedType, setStep]);
+  }, [setSelectedType, setStep, close, onOpenVault]);
 
   const yamlDebounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const [generatedYaml, setGeneratedYaml] = useState('');
