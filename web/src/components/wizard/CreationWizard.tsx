@@ -147,10 +147,10 @@ export function CreationWizard() {
     [mcpServers, agents, resources, skills],
   );
 
-  // Skill type skips template step — goes directly to the import wizard
+  // Skill and secret types skip template step — go directly to form
   const handleTypeSelect = useCallback((type: ResourceType) => {
     setSelectedType(type);
-    if (type === 'skill') {
+    if (type === 'skill' || type === 'secret') {
       setStep('form');
     }
   }, [setSelectedType, setStep]);
