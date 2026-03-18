@@ -18,8 +18,8 @@ func newTestStdioClient(name string, logger *slog.Logger) *StdioClient {
 	c := &StdioClient{
 		responses: make(map[int64]chan *jsonrpc.Response),
 	}
-	c.RPCClient.name = name
-	c.RPCClient.logger = logger
+	c.name = name
+	c.logger = logger
 	return c
 }
 

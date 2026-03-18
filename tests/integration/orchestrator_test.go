@@ -220,9 +220,10 @@ func TestOrchestrator_Up_ExternalServer(t *testing.T) {
 	var externalServer *runtime.MCPServerResult
 	var containerServer *runtime.MCPServerResult
 	for i := range result.MCPServers {
-		if result.MCPServers[i].Name == "external-api" {
+		switch result.MCPServers[i].Name {
+		case "external-api":
 			externalServer = &result.MCPServers[i]
-		} else if result.MCPServers[i].Name == "container-server" {
+		case "container-server":
 			containerServer = &result.MCPServers[i]
 		}
 	}
