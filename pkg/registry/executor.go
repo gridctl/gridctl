@@ -771,11 +771,14 @@ func (e *Executor) buildResult(skillName, status string, startedAt time.Time, st
 		Error:      errMsg,
 	}
 
-	logLevel := slog.LevelInfo
-	if status == "failed" {
+	var logLevel slog.Level
+	switch status {
+	case "failed":
 		logLevel = slog.LevelError
-	} else if status == "partial" {
+	case "partial":
 		logLevel = slog.LevelWarn
+	default:
+		logLevel = slog.LevelInfo
 	}
 	e.logger.Log(context.Background(), logLevel, "workflow execution complete",
 		slog.String("skill", record.Skill),

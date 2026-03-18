@@ -155,22 +155,24 @@ func (h *BufferHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	// Add handler-level attrs first
 	for _, attr := range h.attrs {
-		if attr.Key == "component" {
+		switch attr.Key {
+		case "component":
 			entry.Component = attr.Value.String()
-		} else if attr.Key == "trace_id" {
+		case "trace_id":
 			entry.TraceID = attr.Value.String()
-		} else {
+		default:
 			entry.Attrs[attr.Key] = attrValue(attr.Value)
 		}
 	}
 
 	// Add record-level attrs
 	r.Attrs(func(a slog.Attr) bool {
-		if a.Key == "component" {
+		switch a.Key {
+		case "component":
 			entry.Component = a.Value.String()
-		} else if a.Key == "trace_id" {
+		case "trace_id":
 			entry.TraceID = a.Value.String()
-		} else {
+		default:
 			key := a.Key
 			if h.group != "" {
 				key = h.group + "." + key

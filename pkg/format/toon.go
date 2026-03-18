@@ -73,7 +73,7 @@ func writeTOONTopArray(b *strings.Builder, indent string, arr []any) error {
 	if fields, ok := uniformObjectFields(arr); ok {
 		// Tabular format
 		b.WriteString(indent)
-		b.WriteString(fmt.Sprintf("[%d]{%s}:\n", len(arr), strings.Join(fields, ",")))
+		fmt.Fprintf(b, "[%d]{%s}:\n", len(arr), strings.Join(fields, ","))
 		childIndent := indent + "  "
 		for _, item := range arr {
 			m := item.(map[string]any)
@@ -86,7 +86,7 @@ func writeTOONTopArray(b *strings.Builder, indent string, arr []any) error {
 
 	if allPrimitive(arr) {
 		b.WriteString(indent)
-		b.WriteString(fmt.Sprintf("[%d]: ", len(arr)))
+		fmt.Fprintf(b, "[%d]: ", len(arr))
 		writeTOONPrimitiveList(b, arr)
 		b.WriteByte('\n')
 		return nil
@@ -94,7 +94,7 @@ func writeTOONTopArray(b *strings.Builder, indent string, arr []any) error {
 
 	// Mixed array — write each element indented
 	b.WriteString(indent)
-	b.WriteString(fmt.Sprintf("[%d]:\n", len(arr)))
+	fmt.Fprintf(b, "[%d]:\n", len(arr))
 	childIndent := indent + "  "
 	for _, item := range arr {
 		if err := writeTOON(b, childIndent, item); err != nil {
@@ -116,7 +116,7 @@ func writeTOONArray(b *strings.Builder, indent, key string, arr []any) error {
 	// Check for tabular (uniform objects)
 	if fields, ok := uniformObjectFields(arr); ok {
 		b.WriteString(indent)
-		b.WriteString(fmt.Sprintf("%s[%d]{%s}:\n", key, len(arr), strings.Join(fields, ",")))
+		fmt.Fprintf(b, "%s[%d]{%s}:\n", key, len(arr), strings.Join(fields, ","))
 		childIndent := indent + "  "
 		for _, item := range arr {
 			m := item.(map[string]any)
@@ -130,7 +130,7 @@ func writeTOONArray(b *strings.Builder, indent, key string, arr []any) error {
 	// Check for simple primitive array
 	if allPrimitive(arr) {
 		b.WriteString(indent)
-		b.WriteString(fmt.Sprintf("%s[%d]: ", key, len(arr)))
+		fmt.Fprintf(b, "%s[%d]: ", key, len(arr))
 		writeTOONPrimitiveList(b, arr)
 		b.WriteByte('\n')
 		return nil
@@ -138,7 +138,7 @@ func writeTOONArray(b *strings.Builder, indent, key string, arr []any) error {
 
 	// Mixed array — write each element indented
 	b.WriteString(indent)
-	b.WriteString(fmt.Sprintf("%s[%d]:\n", key, len(arr)))
+	fmt.Fprintf(b, "%s[%d]:\n", key, len(arr))
 	childIndent := indent + "  "
 	for _, item := range arr {
 		if err := writeTOON(b, childIndent, item); err != nil {

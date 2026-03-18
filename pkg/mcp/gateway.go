@@ -394,7 +394,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 		switch cfg.Transport {
 		case TransportStdio:
 			if g.dockerCli == nil {
-				return fmt.Errorf("Docker client not set for stdio transport")
+				return fmt.Errorf("docker client not set for stdio transport")
 			}
 			stdioClient := NewStdioClient(cfg.Name, cfg.ContainerID, g.dockerCli)
 			stdioClient.SetLogger(clientLogger)

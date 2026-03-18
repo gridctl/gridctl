@@ -22,8 +22,8 @@ func newTestProcessClient(name string, logger *slog.Logger) *ProcessClient {
 	c := &ProcessClient{
 		responses: make(map[int64]chan *jsonrpc.Response),
 	}
-	c.RPCClient.name = name
-	c.RPCClient.logger = logger
+	c.name = name
+	c.logger = logger
 	return c
 }
 

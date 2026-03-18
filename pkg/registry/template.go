@@ -93,7 +93,7 @@ func ResolveString(s string, ctx *TemplateContext) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		b.WriteString(fmt.Sprintf("%v", val))
+		fmt.Fprintf(&b, "%v", val)
 		prev = m[1]
 	}
 	b.WriteString(s[prev:])
@@ -113,7 +113,7 @@ func ResolveTemplate(tmpl string, ctx *TemplateContext) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		b.WriteString(fmt.Sprintf("%v", val))
+		fmt.Fprintf(&b, "%v", val)
 		prev = m[1]
 	}
 	b.WriteString(tmpl[prev:])
@@ -258,7 +258,7 @@ func resolveJSONPath(step *StepResult, path string, fullExpr string) (any, error
 		return nil, fmt.Errorf("template: JSON path exceeds maximum depth of %d in expression %q", maxJSONPathDepth, fullExpr)
 	}
 
-	var current any = step.Raw
+	current := step.Raw
 	for _, seg := range segments {
 		switch val := current.(type) {
 		case map[string]any:

@@ -1,20 +1,42 @@
+version: "2"
+
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
   disable:
     - depguard
-
-linters-settings:
-  errcheck:
-    check-blank: false
-
-issues:
-  exclude-use-default: true
+  settings:
+    errcheck:
+      check-blank: false
+  exclusions:
+    rules:
+      # Close/Flush in cleanup paths — errors are not actionable
+      - linters:
+          - errcheck
+        text: ".*(Close|Flush).* is not checked"
+      # fmt.Fprint* to writers — client disconnect errors are not actionable
+      - linters:
+          - errcheck
+        text: "`fmt\\.(Fprint|Fprintf|Fprintln)` is not checked"
+      # os env/file manipulation in tests — cleaned up by other means
+      - linters:
+          - errcheck
+        path: "_test\\.go"
+        text: "`os\\.(Setenv|Unsetenv|Remove)` is not checked"
+      # os.Remove in cleanup error paths — not actionable
+      - linters:
+          - errcheck
+        text: "`os\\.(Remove|RemoveAll)` is not checked"
+      # SA5011: false positive — t.Fatal terminates execution but staticcheck
+      # doesn't model runtime.Goexit(), so nil checks before field access trigger
+      - linters:
+          - staticcheck
+        path: "_test\\.go"
+        text: "SA5011"
 
 run:
   timeout: 3m

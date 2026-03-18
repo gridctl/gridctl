@@ -115,8 +115,8 @@ func colorizeFlagPart(flagPart string) string {
 	i := 0
 
 	for i < len(flagPart) {
-		// Check for flag starting with -
-		if flagPart[i] == '-' {
+		switch flagPart[i] {
+		case '-':
 			result.WriteString(colorTeal)
 			// Consume the flag name (until space or comma)
 			for i < len(flagPart) && flagPart[i] != ' ' && flagPart[i] != ',' {
@@ -124,10 +124,10 @@ func colorizeFlagPart(flagPart string) string {
 				i++
 			}
 			result.WriteString(colorReset)
-		} else if flagPart[i] == ' ' || flagPart[i] == ',' {
+		case ' ', ',':
 			result.WriteByte(flagPart[i])
 			i++
-		} else {
+		default:
 			// Type indicator (e.g., "string", "int")
 			result.WriteString(colorPurple)
 			for i < len(flagPart) && flagPart[i] != ' ' {
