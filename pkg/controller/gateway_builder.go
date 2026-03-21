@@ -152,7 +152,11 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	inst.RegistryServer = registryServer
 
 	// Phase 2: Configure logging
-	inst.LogBuffer, inst.Handler = b.buildLogging(verbose)
+	var logErr error
+	inst.LogBuffer, inst.Handler, logErr = b.buildLogging(verbose)
+	if logErr != nil {
+		return nil, logErr
+	}
 	inst.Gateway.SetLogger(slog.New(inst.Handler))
 	registryServer.SetLogger(slog.New(inst.Handler))
 
@@ -254,10 +258,10 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 }
 
 // buildLogging creates or reuses the log buffer and handler.
-// The returned handler chain is: RedactingHandler → BufferHandler → inner (JSON/Text).
-func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Handler) {
+// The returned handler chain is: RedactingHandler → BufferHandler → inner (JSON/Text [+ file]).
+func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Handler, error) {
 	if b.existingBuffer != nil && b.existingHandler != nil {
-		return b.existingBuffer, b.existingHandler
+		return b.existingBuffer, b.existingHandler, nil
 	}
 
 	logBuffer := logging.NewLogBuffer(1000)
@@ -274,6 +278,29 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 		innerHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 	}
 
+	// Wire file output: CLI flag takes precedence over stack.yaml logging.file.
+	logFilePath := b.config.LogFile
+	if logFilePath == "" && b.stack.Logging != nil {
+		logFilePath = b.stack.Logging.File
+	}
+	if logFilePath != "" {
+		fileOpts := logging.FileOpts{}
+		if b.stack.Logging != nil {
+			fileOpts.MaxSizeMB = b.stack.Logging.MaxSizeMB
+			fileOpts.MaxAgeDays = b.stack.Logging.MaxAgeDays
+			fileOpts.MaxBackups = b.stack.Logging.MaxBackups
+		}
+		fileHandler, err := logging.NewFileHandler(logFilePath, fileOpts)
+		if err != nil {
+			return nil, nil, err
+		}
+		if innerHandler != nil {
+			innerHandler = logging.NewMultiHandler(innerHandler, fileHandler)
+		} else {
+			innerHandler = fileHandler
+		}
+	}
+
 	bufferHandler := logging.NewBufferHandler(logBuffer, innerHandler)
 	redactHandler := logging.NewRedactingHandler(bufferHandler)
 
@@ -282,7 +309,18 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 		redactHandler.RegisterRedactValues(b.vaultStore.Values())
 	}
 
-	return logBuffer, redactHandler
+	// Log startup entry when writing to a file
+	if logFilePath != "" {
+		maxSizeMB := 100
+		if b.stack.Logging != nil && b.stack.Logging.MaxSizeMB > 0 {
+			maxSizeMB = b.stack.Logging.MaxSizeMB
+		}
+		slog.New(redactHandler).Info("log file opened",
+			"path", logFilePath,
+			"rotation", fmt.Sprintf("%dMB", maxSizeMB))
+	}
+
+	return logBuffer, redactHandler, nil
 }
 
 // buildA2AGateway creates an A2A gateway if the stack has A2A-enabled agents.
