@@ -136,6 +136,11 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		inst.Gateway.SetDefaultOutputFormat(b.stack.Gateway.OutputFormat)
 	}
 
+	// Phase 1a3: Set max tool result bytes if configured
+	if b.stack.Gateway != nil && b.stack.Gateway.MaxToolResultBytes != 0 {
+		inst.Gateway.SetMaxToolResultBytes(b.stack.Gateway.MaxToolResultBytes)
+	}
+
 	// Phase 1b: Create registry server (internal MCP server)
 	regDir := filepath.Join(state.BaseDir(), "registry")
 	if b.registryDir != "" {
