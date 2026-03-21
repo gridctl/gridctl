@@ -337,7 +337,12 @@ gridctl deploy <stack.yaml> -p 9000  # Custom gateway port
 gridctl deploy <stack.yaml> --watch  # Watch for changes and hot reload
 gridctl deploy <stack.yaml> --flash  # Deploy and auto-link LLM clients
 gridctl deploy <stack.yaml> --code-mode  # Enable code mode (search + execute)
+gridctl deploy <stack.yaml> --no-cache   # Force rebuild of source-based images
+gridctl deploy <stack.yaml> -v       # Print full stack as JSON
+gridctl deploy <stack.yaml> -q       # Suppress progress output
+gridctl deploy <stack.yaml> --log-file <path>  # Structured JSON log output with rotation
 gridctl export                       # Reverse-engineer stack.yaml from running stack
+gridctl serve                        # Start the web UI without managing a stack
 gridctl status                       # Show running stacks
 gridctl info                         # Show detected container runtime
 gridctl link                         # Connect an LLM client to the gateway
@@ -349,7 +354,12 @@ gridctl vault get <key>              # Retrieve a secret from the vault
 gridctl vault list                   # List all vault keys
 gridctl vault lock / unlock          # Lock or unlock the vault
 gridctl skill list                   # List skills in the registry
-gridctl skill import <url>           # Import skills from a remote git repository
+gridctl skill add <repo-url>         # Import skills from a remote git repository
+gridctl skill update [name]          # Update imported skills (all if no name given)
+gridctl skill remove <name>          # Remove an imported skill
+gridctl skill pin <name> <ref>       # Pin a skill to a specific git ref
+gridctl skill info <name>            # Show skill origin and update status
+gridctl skill try <repo-url>         # Temporarily import a skill for evaluation
 ```
 
 ## 🖥️ Connect LLM Application
@@ -444,7 +454,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | Stack export (export) | Experimental | May change without notice |
 | Spec drift detection | Experimental | May change without notice |
 | Visual spec builder | Experimental | May change without notice |
-| Skills import (skill import) | Experimental | May change without notice |
+| Skills import (skill add) | Experimental | May change without notice |
 
 ## ⚠️ Known Limitations
 
