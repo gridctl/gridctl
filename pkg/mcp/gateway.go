@@ -774,10 +774,10 @@ func (g *Gateway) waitForHTTPServer(ctx context.Context, client *Client) error {
 	}
 }
 
-// HandleInitialize handles the initialize request.
-func (g *Gateway) HandleInitialize(params InitializeParams) (*InitializeResult, error) {
-	// Create a session for this client
-	g.sessions.Create(params.ClientInfo)
+// HandleInitialize handles the initialize request. It creates a new session and
+// returns both the result and the session so callers can use the session ID.
+func (g *Gateway) HandleInitialize(params InitializeParams) (*InitializeResult, *Session, error) {
+	session := g.sessions.Create(params.ClientInfo)
 
 	caps := Capabilities{
 		Tools: &ToolsCapability{
@@ -799,7 +799,7 @@ func (g *Gateway) HandleInitialize(params InitializeParams) (*InitializeResult, 
 		ProtocolVersion: MCPProtocolVersion,
 		ServerInfo:      g.ServerInfo(),
 		Capabilities:    caps,
-	}, nil
+	}, session, nil
 }
 
 // HandleToolsList returns all aggregated tools.
