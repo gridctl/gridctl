@@ -26,6 +26,7 @@ var (
 	deployWatch       bool
 	deployFlash       bool
 	deployCodeMode    bool
+	deployLogFile     string
 )
 
 var deployCmd = &cobra.Command{
@@ -57,6 +58,7 @@ func init() {
 	deployCmd.Flags().BoolVarP(&deployWatch, "watch", "w", false, "Watch stack file for changes and hot reload")
 	deployCmd.Flags().BoolVar(&deployFlash, "flash", false, "Auto-link detected LLM clients after deploy")
 	deployCmd.Flags().BoolVar(&deployCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools) (experimental)")
+	deployCmd.Flags().StringVar(&deployLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
 }
 
 func runDeploy(stackPath string) error {
@@ -73,6 +75,7 @@ func runDeploy(stackPath string) error {
 		DaemonChild: deployDaemonChild,
 		CodeMode:    deployCodeMode,
 		Runtime:     runtimeFlag,
+		LogFile:     deployLogFile,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
