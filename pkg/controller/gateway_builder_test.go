@@ -20,7 +20,7 @@ func TestGatewayBuilder_BuildLogging_Fresh(t *testing.T) {
 	stack := &config.Stack{Name: "test"}
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", nil, &runtime.UpResult{})
 
-	logBuffer, handler := builder.buildLogging(true)
+	logBuffer, handler, _ := builder.buildLogging(true)
 	if logBuffer == nil {
 		t.Fatal("expected logBuffer to be non-nil")
 	}
@@ -38,7 +38,7 @@ func TestGatewayBuilder_BuildLogging_Existing(t *testing.T) {
 	existingHandler := logging.NewRedactingHandler(logging.NewBufferHandler(existingBuffer, nil))
 	builder.SetExistingLogInfra(existingBuffer, existingHandler)
 
-	logBuffer, handler := builder.buildLogging(false)
+	logBuffer, handler, _ := builder.buildLogging(false)
 	if logBuffer != existingBuffer {
 		t.Error("expected existing buffer to be returned")
 	}
@@ -217,7 +217,7 @@ func TestGatewayBuilder_BuildLogging_DaemonChild(t *testing.T) {
 	stack := &config.Stack{Name: "test"}
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", nil, &runtime.UpResult{})
 
-	logBuffer, handler := builder.buildLogging(false)
+	logBuffer, handler, _ := builder.buildLogging(false)
 	if logBuffer == nil {
 		t.Fatal("expected non-nil logBuffer")
 	}
@@ -231,7 +231,7 @@ func TestGatewayBuilder_BuildLogging_NeitherVerboseNorDaemon(t *testing.T) {
 	stack := &config.Stack{Name: "test"}
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", nil, &runtime.UpResult{})
 
-	logBuffer, handler := builder.buildLogging(false)
+	logBuffer, handler, _ := builder.buildLogging(false)
 	if logBuffer == nil {
 		t.Fatal("expected non-nil logBuffer")
 	}
@@ -246,7 +246,7 @@ func TestGatewayBuilder_BuildLogging_WithVaultStore(t *testing.T) {
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", nil, &runtime.UpResult{})
 	builder.SetVaultStore(vault.NewStore(t.TempDir()))
 
-	logBuffer, handler := builder.buildLogging(true)
+	logBuffer, handler, _ := builder.buildLogging(true)
 	if logBuffer == nil {
 		t.Fatal("expected non-nil logBuffer")
 	}

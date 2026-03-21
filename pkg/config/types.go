@@ -8,16 +8,30 @@ import (
 
 // Stack represents the complete gridctl configuration.
 type Stack struct {
-	Version    string         `yaml:"version"`
-	Name       string         `yaml:"name"`
-	Gateway    *GatewayConfig `yaml:"gateway,omitempty"`
-	Secrets    *Secrets       `yaml:"secrets,omitempty"`     // Variable set references
-	Network    Network        `yaml:"network"`               // Single network (simple mode)
-	Networks   []Network      `yaml:"networks,omitempty"`    // Multiple networks (advanced mode)
-	MCPServers []MCPServer    `yaml:"mcp-servers"`
-	Agents     []Agent        `yaml:"agents,omitempty"`      // Active agents that consume MCP tools
-	Resources  []Resource     `yaml:"resources,omitempty"`
-	A2AAgents  []A2AAgent     `yaml:"a2a-agents,omitempty"` // External A2A agents for agent-to-agent communication
+	Version    string          `yaml:"version"`
+	Name       string          `yaml:"name"`
+	Gateway    *GatewayConfig  `yaml:"gateway,omitempty"`
+	Logging    *LoggingConfig  `yaml:"logging,omitempty"`
+	Secrets    *Secrets        `yaml:"secrets,omitempty"`     // Variable set references
+	Network    Network         `yaml:"network"`               // Single network (simple mode)
+	Networks   []Network       `yaml:"networks,omitempty"`    // Multiple networks (advanced mode)
+	MCPServers []MCPServer     `yaml:"mcp-servers"`
+	Agents     []Agent         `yaml:"agents,omitempty"`      // Active agents that consume MCP tools
+	Resources  []Resource      `yaml:"resources,omitempty"`
+	A2AAgents  []A2AAgent      `yaml:"a2a-agents,omitempty"` // External A2A agents for agent-to-agent communication
+}
+
+// LoggingConfig configures log file output with automatic rotation.
+type LoggingConfig struct {
+	// File is the path to the log file. When set, logs are written to both the
+	// in-memory ring buffer (web UI) and this file simultaneously.
+	File string `yaml:"file,omitempty" json:"file,omitempty"`
+	// MaxSizeMB is the maximum log file size in megabytes before rotation (default: 100).
+	MaxSizeMB int `yaml:"maxSizeMB,omitempty" json:"maxSizeMB,omitempty"`
+	// MaxAgeDays is the maximum number of days to retain old log files (default: 7).
+	MaxAgeDays int `yaml:"maxAgeDays,omitempty" json:"maxAgeDays,omitempty"`
+	// MaxBackups is the maximum number of compressed old log files to keep (default: 3).
+	MaxBackups int `yaml:"maxBackups,omitempty" json:"maxBackups,omitempty"`
 }
 
 // Secrets configures automatic secret injection from variable sets.

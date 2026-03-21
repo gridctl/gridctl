@@ -51,6 +51,9 @@ func (d *DaemonManager) Fork(stack *config.Stack) (int, error) {
 	if d.config.Watch {
 		args = append(args, "--watch")
 	}
+	if d.config.LogFile != "" {
+		args = append(args, "--log-file", d.config.LogFile)
+	}
 	cmd := exec.Command(exe, args...)
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{

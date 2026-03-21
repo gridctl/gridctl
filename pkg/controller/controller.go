@@ -57,6 +57,7 @@ type Config struct {
 	CodeMode    bool   // Enable code mode via CLI flag
 	Runtime     string // Explicit runtime selection (docker, podman)
 	Replace     bool   // Stop a running stack before deploying (used by plan apply)
+	LogFile     string // Path to log file (overrides stack.yaml logging.file)
 }
 
 // StackController orchestrates the full deploy lifecycle.
