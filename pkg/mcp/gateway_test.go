@@ -78,7 +78,7 @@ func TestGateway_HandleInitialize(t *testing.T) {
 		Capabilities:    Capabilities{},
 	}
 
-	result, err := g.HandleInitialize(params)
+	result, _, err := g.HandleInitialize(params)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,12 +94,6 @@ func TestGateway_HandleInitialize(t *testing.T) {
 	}
 	if !result.Capabilities.Tools.ListChanged {
 		t.Error("expected Tools.ListChanged to be true")
-	}
-
-	// Should create a session
-	sessions := g.Sessions().List()
-	if len(sessions) != 1 {
-		t.Errorf("expected 1 session, got %d", len(sessions))
 	}
 }
 
@@ -651,7 +645,7 @@ func TestGateway_SessionCount(t *testing.T) {
 		t.Errorf("expected 0 sessions, got %d", g.SessionCount())
 	}
 
-	_, err := g.HandleInitialize(InitializeParams{
+	_, _, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo:      ClientInfo{Name: "client1", Version: "1.0"},
 	})
@@ -1318,7 +1312,7 @@ func TestGateway_HandleInitialize_WithRegistry(t *testing.T) {
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
 	}
 
-	result, err := g.HandleInitialize(params)
+	result, _, err := g.HandleInitialize(params)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1348,7 +1342,7 @@ func TestGateway_HandleInitialize_WithoutRegistry(t *testing.T) {
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
 	}
 
-	result, err := g.HandleInitialize(params)
+	result, _, err := g.HandleInitialize(params)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
