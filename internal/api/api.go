@@ -21,6 +21,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
+	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
 
 	"github.com/docker/docker/api/types/container"
@@ -45,6 +46,7 @@ type Server struct {
 	registryServer *registry.Server
 	vaultStore         *vault.Store
 	metricsAccumulator *metrics.Accumulator
+	traceBuffer        *tracing.Buffer
 	stackFile          string
 	allowedOrigins     []string
 	authType       string
@@ -147,6 +149,11 @@ func (s *Server) MetricsAccumulator() *metrics.Accumulator {
 	return s.metricsAccumulator
 }
 
+// SetTraceBuffer sets the distributed tracing ring buffer.
+func (s *Server) SetTraceBuffer(buf *tracing.Buffer) {
+	s.traceBuffer = buf
+}
+
 // RegistryServer returns the registry server.
 func (s *Server) RegistryServer() *registry.Server {
 	return s.registryServer
@@ -188,6 +195,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
 	mux.HandleFunc("/api/metrics/tokens", s.handleMetricsTokens)
+	mux.HandleFunc("/api/traces/", s.handleTraces)
+	mux.HandleFunc("/api/traces", s.handleTraces)
 	mux.HandleFunc("/api/clients", s.handleClients)
 	mux.HandleFunc("/api/reload", s.handleReload)
 	mux.HandleFunc("/health", s.handleHealth)

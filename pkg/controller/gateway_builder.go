@@ -26,6 +26,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/token"
+	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
 
@@ -183,7 +184,7 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	}
 
 	// Phase 5: Create API server
-	inst.APIServer = b.buildAPIServer(inst.Gateway, inst.A2AGateway, inst.LogBuffer, webFS, inst.RegistryServer)
+	inst.APIServer = b.buildAPIServer(inst.Gateway, inst.A2AGateway, inst.LogBuffer, webFS, inst.RegistryServer, inst.Handler)
 
 	// Phase 6: Create HTTP server
 	inst.HTTPServer = &http.Server{
@@ -343,7 +344,7 @@ func (b *GatewayBuilder) buildA2AGateway(handler slog.Handler) *a2a.Gateway {
 }
 
 // buildAPIServer creates and configures the API server.
-func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server) *api.Server {
+func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server, handler slog.Handler) *api.Server {
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(b.rt.DockerClient())
 	server.SetStackName(b.stack.Name)
@@ -382,7 +383,37 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Ga
 	gateway.SetFormatSavingsRecorder(accumulator)
 	server.SetMetricsAccumulator(accumulator)
 
+	// Wire distributed tracing
+	tracingCfg := buildTracingConfig(b.stack.Gateway)
+	tracingProvider := tracing.NewProvider(tracingCfg)
+	if handler != nil {
+		tracingProvider.SetLogger(slog.New(handler))
+	}
+	if err := tracingProvider.Init(context.Background()); err != nil {
+		slog.New(handler).Warn("tracing init failed", "error", err)
+	}
+	server.SetTraceBuffer(tracingProvider.Buffer)
+
 	return server
+}
+
+// buildTracingConfig extracts tracing config from gateway config with defaults.
+func buildTracingConfig(gw *config.GatewayConfig) *tracing.Config {
+	cfg := tracing.DefaultConfig()
+	if gw == nil || gw.Tracing == nil {
+		return cfg
+	}
+	t := gw.Tracing
+	cfg.Enabled = t.Enabled
+	if t.Sampling > 0 {
+		cfg.Sampling = t.Sampling
+	}
+	if t.Retention != "" {
+		cfg.Retention = t.Retention
+	}
+	cfg.Export = t.Export
+	cfg.Endpoint = t.Endpoint
+	return cfg
 }
 
 // registerAgents registers agents with their access permissions.

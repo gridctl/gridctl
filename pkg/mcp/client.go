@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
@@ -109,6 +112,9 @@ func (c *Client) sendHTTP(ctx context.Context, req jsonrpc.Request) (*jsonrpc.Re
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+
+	// Inject W3C traceparent/tracestate into outgoing request headers.
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(httpReq.Header))
 
 	// Include session ID if we have one (for stateful MCP servers)
 	c.mu.RLock()

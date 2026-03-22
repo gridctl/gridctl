@@ -39,6 +39,20 @@ type Secrets struct {
 	Sets []string `yaml:"sets,omitempty" json:"sets,omitempty"`
 }
 
+// TracingConfig configures distributed tracing for the gateway.
+type TracingConfig struct {
+	// Enabled controls whether tracing is active. Default: true.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Sampling is the head-based sampling rate [0.0, 1.0]. Default: 1.0.
+	Sampling float64 `yaml:"sampling,omitempty" json:"sampling,omitempty"`
+	// Retention is how long completed traces are kept in memory (e.g. "24h"). Default: "24h".
+	Retention string `yaml:"retention,omitempty" json:"retention,omitempty"`
+	// Export selects an exporter: "otlp" or "" (none).
+	Export string `yaml:"export,omitempty" json:"export,omitempty"`
+	// Endpoint is the OTLP endpoint URL (e.g. "http://localhost:4318").
+	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+}
+
 // GatewayConfig holds optional gateway-level configuration.
 type GatewayConfig struct {
 	// AllowedOrigins lists origins for CORS.
@@ -64,6 +78,9 @@ type GatewayConfig struct {
 	// Results exceeding this limit are truncated with a suffix indicating the original size.
 	// Default: 65536 (64KB). Set to 0 to use the default.
 	MaxToolResultBytes int `yaml:"maxToolResultBytes,omitempty" json:"maxToolResultBytes,omitempty"`
+
+	// Tracing configures distributed tracing. When nil, tracing is enabled with defaults.
+	Tracing *TracingConfig `yaml:"tracing,omitempty" json:"tracing,omitempty"`
 }
 
 // AuthConfig configures gateway authentication.

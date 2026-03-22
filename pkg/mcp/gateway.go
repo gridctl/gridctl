@@ -13,6 +13,11 @@ import (
 
 	"encoding/json"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/docker/docker/api/types/container"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
@@ -687,8 +692,21 @@ func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string,
 		}, nil
 	}
 
-	// Check if agent has access to this specific tool
-	if !g.isToolAllowedForAgent(agentName, serverName, originalToolName) {
+	// Child span: ACL check.
+	tracer := otel.Tracer("gridctl.gateway")
+	_, aclSpan := tracer.Start(ctx, "mcp.acl.check")
+	aclSpan.SetAttributes(
+		attribute.String("agent.name", agentName),
+		attribute.String("server.name", serverName),
+		attribute.String("tool.name", originalToolName),
+	)
+	allowed := g.isToolAllowedForAgent(agentName, serverName, originalToolName)
+	if !allowed {
+		aclSpan.SetStatus(codes.Error, "access denied")
+	}
+	aclSpan.End()
+
+	if !allowed {
 		g.logger.Warn("tool access denied", "agent", agentName, "tool", originalToolName, "server", serverName)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Access denied: agent '%s' cannot use tool '%s' from '%s'", agentName, originalToolName, serverName))},
@@ -830,35 +848,70 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		return cm.HandleCall(ctx, params, g, allTools)
 	}
 
+	// Child span: routing decision.
+	tracer := otel.Tracer("gridctl.gateway")
+	_, routeSpan := tracer.Start(ctx, "mcp.routing")
+	routeSpan.SetAttributes(attribute.String("tool.name", params.Name))
 	client, toolName, err := g.router.RouteToolCall(params.Name)
 	if err != nil {
+		routeSpan.SetStatus(codes.Error, err.Error())
+		routeSpan.End()
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error: %v", err))},
 			IsError: true,
 		}, nil
 	}
+	routeSpan.SetAttributes(attribute.String("server.name", client.Name()))
+	routeSpan.End()
 
-	g.logger.Info("tool call started", "server", client.Name(), "tool", toolName)
+	// Populate trace ID on the logger so structured logs are correlated.
+	logger := g.logger
+	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
+		logger = logging.WithTraceID(logger, sc.TraceID().String())
+	}
+
+	// Resolve actual transport type from server metadata.
+	g.mu.RLock()
+	serverCfg, hasMeta := g.serverMeta[client.Name()]
+	g.mu.RUnlock()
+	networkTransport := resolveNetworkTransport(serverCfg, hasMeta)
+
+	// Child span: downstream client call.
+	ctx, span := tracer.Start(ctx, "mcp.client.call_tool")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("mcp.method.name", "tools/call"),
+		attribute.String("server.name", client.Name()),
+		attribute.String("tool.name", toolName),
+		attribute.String("network.transport", networkTransport),
+	)
+
+	logger.Info("tool call started", "server", client.Name(), "tool", toolName)
 	start := time.Now()
 
 	result, err := client.CallTool(ctx, toolName, params.Arguments)
 	duration := time.Since(start)
 
 	if err != nil {
-		g.logger.Warn("tool call failed", "server", client.Name(), "tool", toolName, "duration", duration, "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		logger.Warn("tool call failed", "server", client.Name(), "tool", toolName, "duration", duration, "error", err)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error calling tool: %v", err))},
 			IsError: true,
 		}, nil
 	}
 
-	g.logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
+	if result.IsError {
+		span.SetStatus(codes.Error, "tool returned error result")
+	}
+	logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
 
 	// Truncation: clamp oversized results before logging or format conversion
 	g.applyTruncation(client.Name(), toolName, result)
 
 	// Format conversion: convert JSON content to the configured output format
-	g.applyFormatConversion(client.Name(), result)
+	g.applyFormatConversion(ctx, client.Name(), result)
 
 	// Notify observer asynchronously to avoid adding latency to tool calls
 	g.mu.RLock()
@@ -877,7 +930,7 @@ const maxFormatPayloadSize = 1 << 20
 
 // applyFormatConversion converts tool result content to the configured output format.
 // It modifies result.Content in place. On any failure, content is left unchanged.
-func (g *Gateway) applyFormatConversion(serverName string, result *ToolCallResult) {
+func (g *Gateway) applyFormatConversion(ctx context.Context, serverName string, result *ToolCallResult) {
 	if result == nil || result.IsError {
 		return
 	}
@@ -886,6 +939,14 @@ func (g *Gateway) applyFormatConversion(serverName string, result *ToolCallResul
 	if outputFormat == "" || outputFormat == "json" || outputFormat == "text" {
 		return
 	}
+
+	// Child span: format conversion.
+	_, fmtSpan := otel.Tracer("gridctl.gateway").Start(ctx, "mcp.format_conversion")
+	fmtSpan.SetAttributes(
+		attribute.String("server.name", serverName),
+		attribute.String("output.format", outputFormat),
+	)
+	defer fmtSpan.End()
 
 	g.mu.RLock()
 	counter := g.tokenCounter
@@ -1142,6 +1203,31 @@ type MCPServerStatus struct {
 	Healthy      *bool      `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
 	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
 	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
+}
+
+// resolveNetworkTransport returns the network.transport attribute value for a
+// downstream MCP server based on its registered configuration.
+func resolveNetworkTransport(cfg MCPServerConfig, hasMeta bool) string {
+	if !hasMeta {
+		return string(TransportHTTP)
+	}
+	if cfg.SSH {
+		return "ssh"
+	}
+	if cfg.LocalProcess {
+		return "process"
+	}
+	if cfg.OpenAPI {
+		return string(TransportHTTP)
+	}
+	switch cfg.Transport {
+	case TransportStdio:
+		return string(TransportStdio)
+	case TransportSSE:
+		return string(TransportSSE)
+	default:
+		return string(TransportHTTP)
+	}
 }
 
 // buildSSHCommand constructs the ssh command with all options.

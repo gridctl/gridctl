@@ -210,6 +210,9 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 		}
 	}
 
+	// Inject _meta.traceparent for downstream MCP servers that support it.
+	paramsBytes = injectMetaTraceparent(ctx, paramsBytes)
+
 	req := jsonrpc.Request{
 		JSONRPC: "2.0",
 		ID:      &rawID,
