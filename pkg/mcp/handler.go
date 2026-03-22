@@ -6,7 +6,13 @@ import (
 	"io"
 	"net/http"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
+	"github.com/gridctl/gridctl/pkg/tracing"
 )
 
 // Handler provides HTTP handlers for the MCP gateway.
@@ -56,6 +62,17 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, req.ID, jsonrpc.InvalidRequest, "Invalid JSON-RPC version")
 		return
 	}
+
+	// Extract W3C trace context from HTTP headers (traceparent/tracestate).
+	// Also check params._meta.traceparent for clients that propagate via MCP protocol.
+	propagator := otel.GetTextMapPropagator()
+	ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	if req.Params != nil {
+		if meta := extractMetaFromParams(req.Params); meta != nil {
+			ctx = propagator.Extract(ctx, tracing.NewMetaCarrier(meta))
+		}
+	}
+	r = r.WithContext(ctx)
 
 	// Route to handler based on method
 	resp := h.handleMethod(r, &req)
@@ -138,10 +155,23 @@ func (h *Handler) handleToolsCall(r *http.Request, req *jsonrpc.Request) jsonrpc
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid tools/call params")
 	}
 
+	// Start root span for this tools/call request.
+	tracer := otel.Tracer("gridctl.gateway")
+	ctx, span := tracer.Start(r.Context(), "tools/call")
+	defer span.End()
+	span.SetAttributes(attribute.String("mcp.method.name", "tools/call"))
+	if params.Name != "" {
+		span.SetAttributes(attribute.String("tool.name", params.Name))
+	}
+
 	// Check for agent identity header for access control
 	agentName := r.Header.Get("X-Agent-Name")
+	if agentName != "" {
+		span.SetAttributes(attribute.String("agent.name", agentName))
+	}
 
 	if agentName != "" && !h.gateway.HasAgent(agentName) {
+		span.SetStatus(codes.Error, "unknown agent")
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+agentName)
 	}
 
@@ -149,14 +179,19 @@ func (h *Handler) handleToolsCall(r *http.Request, req *jsonrpc.Request) jsonrpc
 	var err error
 	if agentName != "" {
 		// Validate agent has access to this tool's MCP server
-		result, err = h.gateway.HandleToolsCallForAgent(r.Context(), agentName, params)
+		result, err = h.gateway.HandleToolsCallForAgent(ctx, agentName, params)
 	} else {
 		// No agent header - allow all tools
-		result, err = h.gateway.HandleToolsCall(r.Context(), params)
+		result, err = h.gateway.HandleToolsCall(ctx, params)
 	}
 
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	if result != nil && result.IsError {
+		span.SetStatus(codes.Error, "tool returned error")
 	}
 
 	return jsonrpc.NewSuccessResponse(req.ID, result)
@@ -239,4 +274,25 @@ func (h *Handler) writeResponse(w http.ResponseWriter, resp jsonrpc.Response) {
 func (h *Handler) writeError(w http.ResponseWriter, id *json.RawMessage, code int, message string) {
 	resp := jsonrpc.NewErrorResponse(id, code, message)
 	h.writeResponse(w, resp)
+}
+
+// extractMetaFromParams parses params._meta from a JSON-RPC params payload.
+// Returns nil if params is null, not an object, or has no _meta key.
+func extractMetaFromParams(params json.RawMessage) map[string]any {
+	if len(params) == 0 {
+		return nil
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(params, &obj); err != nil {
+		return nil
+	}
+	meta, ok := obj["_meta"]
+	if !ok {
+		return nil
+	}
+	metaMap, ok := meta.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return metaMap
 }
