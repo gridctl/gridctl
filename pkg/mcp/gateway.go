@@ -864,6 +864,12 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	routeSpan.SetAttributes(attribute.String("server.name", client.Name()))
 	routeSpan.End()
 
+	// Propagate the resolved server name to the root span so the trace-level
+	// record (built from root span attrs) carries it for UI filtering.
+	if rootSpan := trace.SpanFromContext(ctx); rootSpan.IsRecording() {
+		rootSpan.SetAttributes(attribute.String("server.name", client.Name()))
+	}
+
 	// Populate trace ID on the logger so structured logs are correlated.
 	logger := g.logger
 	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
