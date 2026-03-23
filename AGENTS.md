@@ -81,6 +81,7 @@ gridctl/
 │   ├── unlink.go         # Remove gridctl from LLM clients
 │   ├── reload.go         # Hot reload stack configuration
 │   ├── vault.go          # Vault secret management commands
+│   ├── traces.go         # Distributed traces CLI command (table, waterfall, follow)
 │   ├── version.go        # Version command
 │   ├── help.go           # Custom help template
 │   ├── embed.go          # Embedded web assets
@@ -181,6 +182,11 @@ gridctl/
 │   ├── metrics/          # Metrics accumulation
 │   │   ├── accumulator.go # Atomic session/per-server counters, ring buffer time buckets, format savings
 │   │   └── observer.go   # Observer adapter bridging ToolCallObserver to counter + accumulator
+│   ├── tracing/          # Distributed tracing (OpenTelemetry)
+│   │   ├── provider.go   # OTel trace provider with in-process exporter
+│   │   ├── buffer.go     # Ring buffer (1000 traces) with filter API (server, errors, min_duration)
+│   │   ├── carrier.go    # W3C TraceContext propagation carrier for MCP transport boundaries
+│   │   └── config.go     # Tracing configuration types
 │   ├── vault/            # Secrets vault
 │   │   ├── types.go      # Secret, Set, EncryptedVault types
 │   │   ├── crypto.go     # XChaCha20-Poly1305 + Argon2id envelope encryption
@@ -267,6 +273,12 @@ make clean-mock-servers # Stop and remove mock MCP servers
 ./gridctl vault set API_KEY
 ./gridctl vault list
 ./gridctl vault import .env
+
+# View distributed traces
+./gridctl traces
+./gridctl traces <trace-id>
+./gridctl traces --follow
+./gridctl traces --server github --errors
 ```
 
 ### Command Reference
@@ -405,6 +417,7 @@ When `gridctl deploy` runs, it:
 - **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
 - **A2A:** `/.well-known/agent.json`, `/a2a/` (list agents), `/a2a/{agent}` (GET card, POST JSON-RPC)
 - **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`, `/api/registry/skills/{name}/workflow`, `/api/registry/skills/{name}/execute`, `/api/registry/skills/{name}/validate-workflow`
+- **Traces:** `/api/traces`, `/api/traces/{traceId}`
 - **Web UI:** `GET /`
 
 **Logs API:**
@@ -463,6 +476,13 @@ When `gridctl deploy` runs, it:
 - `POST /api/vault/import` - Bulk import (body: `{secrets: {key: value, ...}}`)
 
 When the vault is locked, all endpoints except `status`, `unlock`, and `lock` return HTTP 423 (Locked).
+
+**Traces API:**
+- `GET /api/traces` - List recent traces (ring buffer, newest first)
+  - Query params: `server` (filter by server name), `errors=true` (errors only), `min_duration` (e.g. `100ms`, `1s`), `limit` (default 100)
+  - Response: `TraceRecord[]` with fields: `trace_id`, `operation`, `start_time`, `duration_ms`, `span_count`, `is_error`, `spans`
+- `GET /api/traces/{traceId}` - Get a single trace with full span detail
+  - Response: `TraceRecord` with `spans[]` — each span has `span_id`, `name`, `start_time`, `duration_ms`, `is_error`, `attrs` (OTel attributes)
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)

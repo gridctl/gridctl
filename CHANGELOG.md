@@ -176,6 +176,20 @@ All notable changes to gridctl will be documented in this file.
 - Add vault route with dark suspense fallback
 - Rewrite vault panel with search, resize, and popout
 - Add detached vault page for pop-out window
+- Add OTel SDK trace provider with in-process exporter
+- Add TraceBuffer with ring buffer storage and filter API
+- Add TraceRecord and SpanRecord types with OTel attribute mapping
+- Add TraceCarrier for context propagation across transport boundaries
+- Add REST API endpoints for traces list and trace detail
+- Add gridctl traces command with table output and span waterfall
+- Add --follow flag to stream new traces as they arrive
+- Add --errors and --min-duration filters to traces command
+- Add --json flag for machine-readable traces output
+- Add Traces tab to web UI bottom panel
+- Add span waterfall visualization with timing bars
+- Add span detail panel for OTel attributes inspection
+- Add useLatencyHeat hook for canvas edge latency overlay
+- Add detached traces window with pop-out support
 
 ### Refactoring
 

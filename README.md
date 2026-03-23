@@ -326,6 +326,23 @@ output:
 
 Steps without dependencies run in parallel. Template expressions reference inputs (`{{ inputs.x }}`) and prior step results (`{{ steps.id.result }}`). Each step supports retry policies, timeouts, conditional execution, and configurable error handling (`fail` / `skip` / `continue`). The Web UI includes a visual workflow designer with Code, Visual, and Test modes. See [`examples/registry/`](examples/registry/) for working examples.
 
+### Distributed Tracing
+
+Every tool call through the gateway is captured as an OpenTelemetry trace. Spans record transport type, server name, duration, and error state. The last 1000 traces are kept in a ring buffer and are queryable via CLI or the Web UI.
+
+```bash
+# List recent traces
+gridctl traces
+
+# Inspect a single trace as a span waterfall
+gridctl traces <trace-id>
+
+# Stream traces in real time
+gridctl traces --follow
+```
+
+The Web UI includes a Traces tab in the bottom panel with an interactive waterfall view, span detail panel, and a pop-out window. Canvas edges light up with latency heat based on recent trace data.
+
 ## 📚 CLI Reference
 
 ```bash
@@ -360,6 +377,13 @@ gridctl skill remove <name>          # Remove an imported skill
 gridctl skill pin <name> <ref>       # Pin a skill to a specific git ref
 gridctl skill info <name>            # Show skill origin and update status
 gridctl skill try <repo-url>         # Temporarily import a skill for evaluation
+gridctl traces                       # Show recent distributed traces (table view)
+gridctl traces <trace-id>            # Show span waterfall for a single trace
+gridctl traces --follow              # Stream new traces as they arrive
+gridctl traces --server <name>       # Filter by MCP server name
+gridctl traces --errors              # Show only error traces
+gridctl traces --min-duration 100ms  # Filter by minimum duration
+gridctl traces --json                # Output as JSON
 ```
 
 ## 🖥️ Connect LLM Application
@@ -455,6 +479,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | Spec drift detection | Experimental | May change without notice |
 | Visual spec builder | Experimental | May change without notice |
 | Skills import (skill add) | Experimental | May change without notice |
+| Distributed tracing | Experimental | May change without notice |
 
 ## ⚠️ Known Limitations
 
