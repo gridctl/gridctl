@@ -113,42 +113,47 @@ export function useWindowManager() {
       setTracesDetached(true);
     }
 
+    // Defer window.open() to the next animation frame so React can paint the
+    // detached state (disabled button, collapsed panel) before the browser
+    // handles the new-window creation, preventing a visual flash.
     const url = params ? `/${type}?${params}` : `/${type}`;
-    const newWindow = window.open(url, `gridctl-${type}`);
+    requestAnimationFrame(() => {
+      const newWindow = window.open(url, `gridctl-${type}`);
 
-    if (newWindow) {
-      windowRefs.current.set(type, newWindow);
+      if (newWindow) {
+        windowRefs.current.set(type, newWindow);
 
-      // Update title after load
-      newWindow.addEventListener('load', () => {
-        newWindow.document.title = WINDOW_TITLES[type];
-      });
+        // Update title after load
+        newWindow.addEventListener('load', () => {
+          newWindow.document.title = WINDOW_TITLES[type];
+        });
 
-      // Track window close
-      const checkClosed = setInterval(() => {
-        if (newWindow.closed) {
-          clearInterval(checkClosed);
-          windowRefs.current.delete(type);
-          if (type === 'logs') {
-            setLogsDetached(false);
-          } else if (type === 'sidebar') {
-            setSidebarDetached(false);
-          } else if (type === 'editor') {
-            setEditorDetached(false);
-          } else if (type === 'registry') {
-            setRegistryDetached(false);
-          } else if (type === 'workflow') {
-            setWorkflowDetached(false);
-          } else if (type === 'metrics') {
-            setMetricsDetached(false);
-          } else if (type === 'vault') {
-            setVaultDetached(false);
-          } else if (type === 'traces') {
-            setTracesDetached(false);
+        // Track window close
+        const checkClosed = setInterval(() => {
+          if (newWindow.closed) {
+            clearInterval(checkClosed);
+            windowRefs.current.delete(type);
+            if (type === 'logs') {
+              setLogsDetached(false);
+            } else if (type === 'sidebar') {
+              setSidebarDetached(false);
+            } else if (type === 'editor') {
+              setEditorDetached(false);
+            } else if (type === 'registry') {
+              setRegistryDetached(false);
+            } else if (type === 'workflow') {
+              setWorkflowDetached(false);
+            } else if (type === 'metrics') {
+              setMetricsDetached(false);
+            } else if (type === 'vault') {
+              setVaultDetached(false);
+            } else if (type === 'traces') {
+              setTracesDetached(false);
+            }
           }
-        }
-      }, 500);
-    }
+        }, 500);
+      }
+    });
   }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setWorkflowDetached, setMetricsDetached, setVaultDetached, setTracesDetached, setBottomPanelOpen, setSidebarOpen]);
 
   // Close a detached window
