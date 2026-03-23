@@ -122,7 +122,32 @@ func runStatus(stack string) error {
 	printer.Gateways(gateways)
 	printer.Containers(containers)
 
+	// Show trace activity summary for each running gateway.
+	for _, s := range filteredStates {
+		if state.IsRunning(&s) {
+			if count := queryTraceCount(s.Port); count >= 0 {
+				printer.Info("traces recorded (last 24h)", "stack", s.StackName, "count", count)
+			}
+		}
+	}
+
 	return nil
+}
+
+// queryTraceCount queries a running gateway for the number of recorded traces.
+// Returns -1 if the gateway is unreachable or tracing is unavailable.
+func queryTraceCount(port int) int {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/traces", port))
+	if err != nil {
+		return -1
+	}
+	defer resp.Body.Close()
+	var traces []struct{}
+	if json.NewDecoder(resp.Body).Decode(&traces) == nil {
+		return len(traces)
+	}
+	return -1
 }
 
 // queryCodeMode queries a running gateway's API for code mode status.
