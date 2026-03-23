@@ -4,17 +4,20 @@ import {
   ScrollText,
   BarChart3,
   FileCode2,
+  Activity,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
 import { LogsTab } from '../log/LogsTab';
 import { MetricsTab } from '../metrics/MetricsTab';
 import { SpecTab } from '../spec/SpecTab';
+import { TracesTab } from '../traces/TracesTab';
 
 const TABS = [
   { id: 'logs' as const, label: 'Logs', icon: ScrollText },
   { id: 'metrics' as const, label: 'Metrics', icon: BarChart3 },
   { id: 'spec' as const, label: 'Spec', icon: FileCode2 },
+  { id: 'traces' as const, label: 'Traces', icon: Activity },
 ];
 
 export function BottomPanel() {
@@ -24,6 +27,7 @@ export function BottomPanel() {
   const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
   const logsDetached = useUIStore((s) => s.logsDetached);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
+  const tracesDetached = useUIStore((s) => s.tracesDetached);
 
   return (
     <div
@@ -32,7 +36,7 @@ export function BottomPanel() {
         'bg-surface/90 backdrop-blur-xl border-t border-border/50',
         'flex flex-col relative',
         // Skip transition when closing due to detachment
-        (logsDetached || metricsDetached) ? 'duration-0' : 'transition-all duration-300 ease-out'
+        (logsDetached || metricsDetached || tracesDetached) ? 'duration-0' : 'transition-all duration-300 ease-out'
       )}
     >
       {/* Top accent line */}
@@ -99,6 +103,9 @@ export function BottomPanel() {
           </div>
           <div id="panel-spec" role="tabpanel" aria-labelledby="tab-spec" className={cn('absolute inset-0', bottomPanelTab !== 'spec' && 'invisible')}>
             <SpecTab />
+          </div>
+          <div id="panel-traces" role="tabpanel" aria-labelledby="tab-traces" className={cn('absolute inset-0', bottomPanelTab !== 'traces' && 'invisible')}>
+            <TracesTab />
           </div>
         </div>
       )}
