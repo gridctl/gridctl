@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
-type BottomPanelTab = 'logs' | 'metrics' | 'spec';
+type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
 
 interface UIState {
@@ -28,6 +28,9 @@ interface UIState {
   // Secret heatmap overlay
   showSecretHeatmap: boolean;
 
+  // Latency heat overlay on canvas edges
+  showLatencyHeat: boolean;
+
   // Bottom panel state
   bottomPanelOpen: boolean;
   bottomPanelTab: BottomPanelTab;
@@ -40,6 +43,7 @@ interface UIState {
   workflowDetached: boolean;
   metricsDetached: boolean;
   vaultDetached: boolean;
+  tracesDetached: boolean;
 
   // Actions
   setSidebarOpen: (open: boolean) => void;
@@ -53,6 +57,7 @@ interface UIState {
   toggleSpecMode: () => void;
   toggleWiringMode: () => void;
   toggleSecretHeatmap: () => void;
+  toggleLatencyHeat: () => void;
 
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
@@ -67,6 +72,7 @@ interface UIState {
   setWorkflowDetached: (detached: boolean) => void;
   setMetricsDetached: (detached: boolean) => void;
   setVaultDetached: (detached: boolean) => void;
+  setTracesDetached: (detached: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -94,6 +100,9 @@ export const useUIStore = create<UIState>()(
       // Secret heatmap default
       showSecretHeatmap: false,
 
+      // Latency heat overlay default
+      showLatencyHeat: false,
+
       // Bottom panel defaults
       bottomPanelOpen: false,
       bottomPanelTab: 'logs',
@@ -106,6 +115,7 @@ export const useUIStore = create<UIState>()(
       workflowDetached: false,
       metricsDetached: false,
       vaultDetached: false,
+      tracesDetached: false,
 
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -127,6 +137,8 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ showWiringMode: !s.showWiringMode })),
       toggleSecretHeatmap: () =>
         set((s) => ({ showSecretHeatmap: !s.showSecretHeatmap })),
+      toggleLatencyHeat: () =>
+        set((s) => ({ showLatencyHeat: !s.showLatencyHeat })),
 
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
@@ -141,6 +153,7 @@ export const useUIStore = create<UIState>()(
       setWorkflowDetached: (workflowDetached) => set({ workflowDetached }),
       setMetricsDetached: (metricsDetached) => set({ metricsDetached }),
       setVaultDetached: (vaultDetached) => set({ vaultDetached }),
+      setTracesDetached: (tracesDetached) => set({ tracesDetached }),
     }),
     {
       name: 'gridctl-ui-storage',
