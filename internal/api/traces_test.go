@@ -29,12 +29,15 @@ func TestHandleTraces_emptyBuffer(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 
-	var result []tracing.TraceRecord
+	var result traceListDTO
 	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
-	if len(result) != 0 {
-		t.Errorf("expected empty slice, got %d items", len(result))
+	if len(result.Traces) != 0 {
+		t.Errorf("expected empty traces slice, got %d items", len(result.Traces))
+	}
+	if result.Total != 0 {
+		t.Errorf("expected total=0, got %d", result.Total)
 	}
 }
 
@@ -79,7 +82,7 @@ func TestHandleTraceDetail_notFound(t *testing.T) {
 }
 
 func TestHandleTraces_nilBuffer(t *testing.T) {
-	// When no trace buffer is set, should return empty array.
+	// When no trace buffer is set, should return empty envelope.
 	srv := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/traces", nil)
 	rec := httptest.NewRecorder()
@@ -88,12 +91,12 @@ func TestHandleTraces_nilBuffer(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	var result []tracing.TraceRecord
+	var result traceListDTO
 	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
-	if len(result) != 0 {
-		t.Errorf("expected empty slice, got %d items", len(result))
+	if len(result.Traces) != 0 {
+		t.Errorf("expected empty traces slice, got %d items", len(result.Traces))
 	}
 }
 
@@ -110,7 +113,7 @@ func TestHandleTraces_filterErrors(t *testing.T) {
 
 func TestHandleTraces_filterMinDuration(t *testing.T) {
 	srv := newTestServerWithTraces(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/traces?min_duration=500ms", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/traces?minDuration=500ms", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 

@@ -3,9 +3,12 @@ import { Activity, AlertCircle, RefreshCw, X, Filter } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
+import { ZoomControls } from '../log/ZoomControls';
 import { useUIStore } from '../../stores/useUIStore';
 import { useTracesStore } from '../../stores/useTracesStore';
+import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
+import { useTextZoom } from '../../hooks/useTextZoom';
 import { TraceWaterfall } from './TraceWaterfall';
 import { POLLING } from '../../lib/constants';
 
@@ -44,8 +47,17 @@ export function TracesTab() {
   const selectTrace = useTracesStore((s) => s.selectTrace);
   const loadTraces = useTracesStore((s) => s.loadTraces);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<number | null>(null);
   const isVisible = bottomPanelOpen && bottomPanelTab === 'traces';
+
+  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
+    storageKey: 'gridctl-traces-font-size',
+    defaultSize: 11,
+    minSize: 8,
+    maxSize: 20,
+    containerRef,
+  });
 
   const load = useCallback(() => {
     loadTraces();
@@ -81,11 +93,9 @@ export function TracesTab() {
     load();
   }, [filters, load, isVisible]);
 
-  // Unique server list from traces
-  const servers = useMemo(() => {
-    const set = new Set(traces.map((t) => t.server).filter(Boolean));
-    return Array.from(set).sort();
-  }, [traces]);
+  // Server list from deployed MCP servers (always populated when gateway is connected)
+  const mcpServers = useStackStore((s) => s.mcpServers);
+  const servers = useMemo(() => mcpServers.map((s) => s.name).sort(), [mcpServers]);
 
   // Client-side search filter
   const filteredTraces = useMemo(() => {
@@ -174,6 +184,16 @@ export function TracesTab() {
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
+          <ZoomControls
+            fontSize={fontSize}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onReset={resetZoom}
+            isMin={isMin}
+            isMax={isMax}
+            isDefault={isDefault}
+          />
+          <div className="w-px h-4 bg-border/50 mx-0.5" />
           <IconButton
             icon={RefreshCw}
             onClick={load}
@@ -232,8 +252,12 @@ export function TracesTab() {
 
           {/* Table */}
           {filteredTraces.length > 0 && (
-            <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
-              <table className="w-full text-xs">
+            <div
+              ref={containerRef}
+              className="flex-1 overflow-y-auto scrollbar-dark min-h-0"
+              style={{ '--text-zoom-size': `${fontSize}px` } as React.CSSProperties}
+            >
+              <table className="w-full">
                 <thead className="sticky top-0 z-10 bg-surface-elevated/95 backdrop-blur-sm">
                   <tr className="border-b border-border/30">
                     <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Time</th>
@@ -259,12 +283,12 @@ export function TracesTab() {
                             : 'hover:bg-surface-highlight/20'
                         )}
                       >
-                        <td className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap">{formatTime(trace.startTime)}</td>
-                        <td className="px-3 py-1.5 font-mono text-text-secondary">{trace.traceId.slice(0, 8)}</td>
-                        <td className="px-3 py-1.5 text-text-primary truncate max-w-[160px]">{trace.operation}</td>
-                        <td className="px-3 py-1.5 text-text-secondary font-mono">{trace.server}</td>
-                        <td className="px-3 py-1.5 text-right text-text-secondary tabular-nums font-mono">{formatDuration(trace.duration)}</td>
-                        <td className="px-3 py-1.5 text-right text-text-muted tabular-nums">{trace.spanCount}</td>
+                        <td className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap text-zoom">{formatTime(trace.startTime)}</td>
+                        <td className="px-3 py-1.5 font-mono text-text-secondary text-zoom">{trace.traceId.slice(0, 8)}</td>
+                        <td className="px-3 py-1.5 text-text-primary truncate max-w-[160px] text-zoom">{trace.operation}</td>
+                        <td className="px-3 py-1.5 text-text-secondary font-mono text-zoom">{trace.server}</td>
+                        <td className="px-3 py-1.5 text-right text-text-secondary tabular-nums font-mono text-zoom">{formatDuration(trace.duration)}</td>
+                        <td className="px-3 py-1.5 text-right text-text-muted tabular-nums text-zoom">{trace.spanCount}</td>
                         <td className="px-3 py-1.5">
                           <span
                             className={cn(

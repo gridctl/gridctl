@@ -301,5 +301,16 @@ func buildTraceRecord(root SpanRecord, allSpans []SpanRecord) TraceRecord {
 		}
 	}
 
+	// Fallback: scan child spans for a non-empty server.name in case the root
+	// span was emitted before the gateway could stamp it (e.g. error paths).
+	if tr.ServerName == "" {
+		for _, sp := range allSpans {
+			if v, ok := sp.Attrs["server.name"]; ok && v != "" {
+				tr.ServerName = v
+				break
+			}
+		}
+	}
+
 	return tr
 }

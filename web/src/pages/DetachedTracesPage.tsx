@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, Component, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useCallback, Component, type ReactNode } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -10,8 +10,10 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
+import { ZoomControls } from '../components/log/ZoomControls';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
-import { fetchTraces, fetchTraceDetail } from '../lib/api';
+import { useTextZoom } from '../hooks/useTextZoom';
+import { fetchTraces, fetchTraceDetail, fetchMCPServers } from '../lib/api';
 import type { TraceSummary, TraceDetail } from '../lib/api';
 import { TraceWaterfall } from '../components/traces/TraceWaterfall';
 import { POLLING } from '../lib/constants';
@@ -82,11 +84,21 @@ function DetachedTracesPageContent() {
   const [traceDetail, setTraceDetail] = useState<TraceDetail | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [serverFilter, setServerFilter] = useState('');
+  const [servers, setServers] = useState<string[]>([]);
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const tableRef = useRef<HTMLDivElement>(null);
 
   useDetachedWindowSync('traces');
+
+  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
+    storageKey: 'gridctl-traces-font-size',
+    defaultSize: 11,
+    minSize: 8,
+    maxSize: 20,
+    containerRef: tableRef,
+  });
 
   const load = useCallback(async () => {
     try {
@@ -115,6 +127,13 @@ function DetachedTracesPageContent() {
     const interval = window.setInterval(load, POLLING.STATUS);
     return () => clearInterval(interval);
   }, [load]);
+
+  // Load deployed server names for the filter dropdown
+  useEffect(() => {
+    fetchMCPServers()
+      .then((list) => setServers(list.map((s) => s.name).sort()))
+      .catch(() => {});
+  }, []);
 
   const selectTrace = useCallback(async (traceId: string | null) => {
     setSelectedTraceId(traceId);
@@ -146,8 +165,6 @@ function DetachedTracesPageContent() {
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
-
-  const servers = Array.from(new Set(traces.map((t) => t.server).filter(Boolean))).sort();
 
   const filteredTraces = search
     ? traces.filter(
@@ -185,7 +202,17 @@ function DetachedTracesPageContent() {
           </span>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <ZoomControls
+            fontSize={fontSize}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onReset={resetZoom}
+            isMin={isMin}
+            isMax={isMax}
+            isDefault={isDefault}
+          />
+          <div className="w-px h-4 bg-border/50" />
           <IconButton
             icon={RefreshCw}
             onClick={() => { setIsLoading(true); load(); }}
@@ -193,7 +220,7 @@ function DetachedTracesPageContent() {
             size="sm"
             variant="ghost"
           />
-          <div className="w-px h-4 bg-border/50 mx-1" />
+          <div className="w-px h-4 bg-border/50" />
           <IconButton
             icon={isFullscreen ? Minimize2 : Maximize2}
             onClick={toggleFullscreen}
@@ -285,8 +312,12 @@ function DetachedTracesPageContent() {
           )}
 
           {filteredTraces.length > 0 && (
-            <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
-              <table className="w-full text-xs">
+            <div
+              ref={tableRef}
+              className="flex-1 overflow-y-auto scrollbar-dark min-h-0"
+              style={{ '--text-zoom-size': `${fontSize}px` } as React.CSSProperties}
+            >
+              <table className="w-full">
                 <thead className="sticky top-0 bg-surface/95 backdrop-blur-sm">
                   <tr className="border-b border-border/30">
                     <th className="px-4 py-2 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Time</th>
@@ -309,11 +340,11 @@ function DetachedTracesPageContent() {
                           isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-surface-highlight/20'
                         )}
                       >
-                        <td className="px-4 py-2 text-text-muted font-mono whitespace-nowrap">{formatTime(trace.startTime)}</td>
-                        <td className="px-4 py-2 font-mono text-text-secondary">{trace.traceId.slice(0, 8)}</td>
-                        <td className="px-4 py-2 text-text-primary truncate max-w-[200px]">{trace.operation}</td>
-                        <td className="px-4 py-2 text-text-secondary font-mono">{trace.server}</td>
-                        <td className="px-4 py-2 text-right text-text-secondary tabular-nums font-mono">{formatDuration(trace.duration)}</td>
+                        <td className="px-4 py-2 text-text-muted font-mono whitespace-nowrap text-zoom">{formatTime(trace.startTime)}</td>
+                        <td className="px-4 py-2 font-mono text-text-secondary text-zoom">{trace.traceId.slice(0, 8)}</td>
+                        <td className="px-4 py-2 text-text-primary truncate max-w-[200px] text-zoom">{trace.operation}</td>
+                        <td className="px-4 py-2 text-text-secondary font-mono text-zoom">{trace.server}</td>
+                        <td className="px-4 py-2 text-right text-text-secondary tabular-nums font-mono text-zoom">{formatDuration(trace.duration)}</td>
                         <td className="px-4 py-2">
                           <span
                             className={cn(
