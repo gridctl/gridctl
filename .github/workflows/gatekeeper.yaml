@@ -67,8 +67,7 @@ jobs:
           failed=0
           for f in "${files[@]}"; do
             echo "Validating $f..."
-            go run ./cmd/gridctl validate "$f"
-            rc=$?
+            go run ./cmd/gridctl validate "$f" && rc=0 || rc=$?
             if [ $rc -eq 1 ]; then
               echo "  FAILED: $f"
               failed=1
