@@ -389,7 +389,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
             ticks={startEndOnly ? [data[0][index], data[data.length - 1][index]] : undefined}
             fill=""
             stroke=""
-            className="text-xs fill-text-muted"
+            className="text-xs fill-text-secondary"
             tickLine={false}
             axisLine={false}
             minTickGap={tickGap}
@@ -410,7 +410,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
             tick={{ transform: "translate(-3, 0)" }}
             fill=""
             stroke=""
-            className="text-xs fill-text-muted"
+            className="text-xs fill-text-secondary"
             tickFormatter={type === "percent" ? valueToPercent : valueFormatter}
             allowDecimals={allowDecimals}
           >
