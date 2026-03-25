@@ -26,12 +26,13 @@ type GatewaySummary struct {
 
 // ContainerSummary contains data for the container status table.
 type ContainerSummary struct {
-	ID      string
-	Name    string
-	Type    string // mcp-server, agent, resource
-	Image   string
-	State   string // running, exited, etc.
-	Message string // status message
+	ID        string
+	Name      string
+	Type      string // mcp-server, agent, resource
+	Image     string
+	State     string // running, exited, etc.
+	Message   string // status message
+	PinStatus string // pinned, drift, approved, unpinned, or empty to omit column
 }
 
 // Summary prints the final status table with amber styling.
@@ -133,18 +134,55 @@ func (p *Printer) Containers(containers []ContainerSummary) {
 	t.SetOutputMirror(p.out)
 	t.SetStyle(p.tableStyle())
 
-	t.AppendHeader(table.Row{"ID", "Name", "Type", "Image", "State", "Status"})
+	// Show PIN STATUS column only when at least one container has pin data.
+	hasPins := false
+	for _, c := range containers {
+		if c.PinStatus != "" {
+			hasPins = true
+			break
+		}
+	}
+
+	if hasPins {
+		t.AppendHeader(table.Row{"ID", "Name", "Type", "Image", "State", "Pin Status", "Status"})
+	} else {
+		t.AppendHeader(table.Row{"ID", "Name", "Type", "Image", "State", "Status"})
+	}
 
 	for _, c := range containers {
 		state := c.State
 		if p.isTTY {
 			state = colorState(c.State)
 		}
-		t.AppendRow(table.Row{c.ID, c.Name, c.Type, c.Image, state, c.Message})
+		if hasPins {
+			pinStatus := c.PinStatus
+			if p.isTTY {
+				pinStatus = colorPinStatus(c.PinStatus)
+			}
+			t.AppendRow(table.Row{c.ID, c.Name, c.Type, c.Image, state, pinStatus, c.Message})
+		} else {
+			t.AppendRow(table.Row{c.ID, c.Name, c.Type, c.Image, state, c.Message})
+		}
 	}
 
 	t.Render()
 	p.Println()
+}
+
+// colorPinStatus applies color to a pin status label for TTY output.
+func colorPinStatus(status string) string {
+	switch status {
+	case "✓ pinned":
+		return lipgloss.NewStyle().Foreground(ColorGreen).Render(status)
+	case "⚠ drift":
+		return lipgloss.NewStyle().Foreground(ColorRed).Render(status)
+	case "~ approved":
+		return lipgloss.NewStyle().Foreground(ColorAmber).Render(status)
+	case "— unpinned":
+		return lipgloss.NewStyle().Foreground(ColorMuted).Render(status)
+	default:
+		return lipgloss.NewStyle().Foreground(ColorGray).Render(status)
+	}
 }
 
 // tableStyle returns the standard amber-themed table style.
