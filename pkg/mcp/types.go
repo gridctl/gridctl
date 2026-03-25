@@ -90,6 +90,16 @@ type SchemaVerifier interface {
 	VerifyOrPin(serverName string, tools []Tool) ([]SchemaDrift, error)
 }
 
+// PinResetter is an optional extension of SchemaVerifier for clearing stored pin
+// records. Implementations that support this (e.g. pins.GatewayAdapter) satisfy
+// this interface. It is checked via type assertion, not embedded in SchemaVerifier,
+// so existing implementations remain compatible.
+type PinResetter interface {
+	// ResetServerPins deletes the pin record for serverName so the next
+	// VerifyOrPin call treats it as a first-use pin.
+	ResetServerPins(serverName string) error
+}
+
 // DefaultPingTimeout is the timeout for health check pings.
 const DefaultPingTimeout = 5 * time.Second
 
