@@ -81,6 +81,7 @@ gridctl/
 │   ├── unlink.go         # Remove gridctl from LLM clients
 │   ├── reload.go         # Hot reload stack configuration
 │   ├── vault.go          # Vault secret management commands
+│   ├── pins.go           # Schema pin management commands
 │   ├── traces.go         # Distributed traces CLI command (table, waterfall, follow)
 │   ├── version.go        # Version command
 │   ├── help.go           # Custom help template
@@ -92,7 +93,8 @@ gridctl/
 │       ├── api.go        # Server setup and route registration
 │       ├── auth.go       # Gateway authentication middleware
 │       ├── registry.go   # Registry CRUD endpoints
-│       └── vault.go      # Vault REST API endpoints
+│       ├── vault.go      # Vault REST API endpoints
+│       └── pins.go       # Schema pins REST API endpoints
 ├── pkg/
 │   ├── adapter/          # Protocol adapters
 │   │   └── a2a_client.go # A2A client adapter
@@ -191,6 +193,10 @@ gridctl/
 │   │   ├── types.go      # Secret, Set, EncryptedVault types
 │   │   ├── crypto.go     # XChaCha20-Poly1305 + Argon2id envelope encryption
 │   │   └── store.go      # CRUD, lock/unlock, variable sets, import/export
+│   ├── pins/             # TOFU schema pinning (rug pull protection)
+│   │   ├── types.go      # PinRecord, ServerPins, status constants
+│   │   ├── store.go      # PinStore: load/save (atomic), VerifyOrPin, Approve, Reset
+│   │   └── adapter.go    # GatewayAdapter: bridges PinStore to SchemaVerifier interface
 │   └── registry/         # Agent Skills registry (agentskills.io)
 │       ├── types.go      # AgentSkill, SkillFile, ItemState, workflow types
 │       ├── frontmatter.go # SKILL.md parsing (YAML frontmatter + markdown body)
@@ -279,6 +285,13 @@ make clean-mock-servers # Stop and remove mock MCP servers
 ./gridctl traces <trace-id>
 ./gridctl traces --follow
 ./gridctl traces --server github --errors
+
+# Manage schema pins (TOFU rug pull protection)
+./gridctl pins list
+./gridctl pins verify
+./gridctl pins verify --exit-code
+./gridctl pins approve github
+./gridctl pins reset github
 ```
 
 ### Command Reference
@@ -375,6 +388,24 @@ Manage secrets stored in `~/.gridctl/vault/`. Secrets can be referenced in stack
 
 The `GRIDCTL_VAULT_PASSPHRASE` environment variable can provide the passphrase non-interactively for `lock`, `unlock`, and `change-passphrase` commands. When the vault is locked, all other vault commands auto-prompt for the passphrase.
 
+#### `gridctl pins <subcommand>`
+
+Manage TOFU schema pins that protect against rug pull attacks (CVE-2025-54136 class). On first deploy, SHA256 hashes of all tool definitions are pinned to `~/.gridctl/pins/{stackName}.json`. Subsequent deploys and reconnects verify tool definitions against stored hashes and surface drift.
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | Table of all servers: tool count, status (pinned/drift/approved), last verified timestamp |
+| `verify [server]` | Show pin verification status for all servers or a specific server |
+| `approve <server>` | Re-pin current tool definitions for a server, clearing drift status |
+| `reset <server>` | Delete pins for a server (re-pinned on next deploy) |
+
+**Flags:**
+
+| Flag | Subcommand | Description |
+|------|------------|-------------|
+| `--stack` | all | Stack name (auto-detected when only one stack is deployed) |
+| `--exit-code` | `verify` | Exit 1 if any server has drift (CI use case) |
+
 ### Daemon Mode
 
 By default, `gridctl deploy` runs the MCP gateway as a background daemon:
@@ -396,6 +427,8 @@ Gridctl stores daemon state in `~/.gridctl/`:
 ├── vault/              # Secrets vault (0700 permissions)
 │   ├── secrets.json    # Plaintext secrets (when unlocked/unencrypted)
 │   └── secrets.enc     # Encrypted secrets (when locked)
+├── pins/               # TOFU schema pin files (one per stack)
+│   └── {name}.json     # SHA256 hashes of tool definitions per server
 └── cache/              # Build cache
     └── ...             # Git repos, Docker contexts
 ```
@@ -414,6 +447,7 @@ When `gridctl deploy` runs, it:
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
 - **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/health`, `/ready`
 - **Vault:** `/api/vault`, `/api/vault/status`, `/api/vault/unlock`, `/api/vault/lock`, `/api/vault/sets`, `/api/vault/import`
+- **Pins:** `/api/pins` (list all), `/api/pins/{server}` (get), `/api/pins/{server}/approve` (POST), `/api/pins/{server}` (DELETE)
 - **Agents:** `/api/agents/{name}/logs`, `/api/agents/{name}/restart`, `/api/agents/{name}/stop`
 - **A2A:** `/.well-known/agent.json`, `/a2a/` (list agents), `/a2a/{agent}` (GET card, POST JSON-RPC)
 - **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`, `/api/registry/skills/{name}/workflow`, `/api/registry/skills/{name}/execute`, `/api/registry/skills/{name}/validate-workflow`
@@ -509,6 +543,10 @@ gateway:                              # Optional: gateway-level configuration
   code_mode: "on"                     # Replace tools with search + execute meta-tools ("off" | "on")
   code_mode_timeout: 30               # Code execution timeout in seconds (default: 30)
   output_format: toon                 # Default output format for tool results: "json" (default), "toon", "csv", "text"
+  security:                           # Optional: security settings
+    schema_pinning:
+      enabled: true                   # Enable TOFU schema pinning (default: true)
+      action: warn                    # "warn" (log and continue) or "block" (reject tool calls on drift)
 
 secrets:                              # Optional: auto-inject vault secrets by set
   sets:                               # Variable sets to inject into all container env
@@ -533,6 +571,7 @@ mcp-servers:
     image: ghcr.io/org/stdio-mcp:latest
     transport: stdio                  # Uses Docker attach for stdin/stdout
     output_format: csv                # Per-server output format override (overrides gateway default)
+    pin_schemas: false                # Disable schema pinning for this server (default: inherits gateway setting)
     # port not required for stdio transport
 
   # External MCP server (no container, connects to existing URL)
