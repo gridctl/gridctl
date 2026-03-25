@@ -71,6 +71,25 @@ type FormatSavingsRecorder interface {
 	RecordFormatSavings(serverName string, originalTokens, formattedTokens int)
 }
 
+// SchemaDrift describes a single tool whose definition changed since it was pinned.
+type SchemaDrift struct {
+	Name           string
+	OldHash        string
+	NewHash        string
+	OldDescription string
+	NewDescription string
+}
+
+// SchemaVerifier performs TOFU schema pinning for MCP tool definitions.
+// It is defined in the mcp package (rather than importing pkg/pins) to avoid
+// an import cycle: pkg/pins already imports pkg/mcp for the Tool type.
+// pkg/pins.GatewayAdapter implements this interface.
+type SchemaVerifier interface {
+	// VerifyOrPin pins tools on first use and verifies them on subsequent calls.
+	// Returns the list of modified tools (empty = no drift) and any error.
+	VerifyOrPin(serverName string, tools []Tool) ([]SchemaDrift, error)
+}
+
 // DefaultPingTimeout is the timeout for health check pings.
 const DefaultPingTimeout = 5 * time.Second
 
