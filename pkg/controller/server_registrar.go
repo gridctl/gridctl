@@ -76,6 +76,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			External:     true,
 			Tools:        serverCfg.Tools,
 			OutputFormat: serverCfg.OutputFormat,
+			PinSchemas:   serverCfg.PinSchemas,
 		}
 	}
 	if server.LocalProcess {
@@ -87,6 +88,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			Env:          serverCfg.Env,
 			Tools:        serverCfg.Tools,
 			OutputFormat: serverCfg.OutputFormat,
+			PinSchemas:   serverCfg.PinSchemas,
 		}
 	}
 	if server.SSH {
@@ -101,11 +103,13 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			Env:             serverCfg.Env,
 			Tools:           serverCfg.Tools,
 			OutputFormat:    serverCfg.OutputFormat,
+			PinSchemas:      serverCfg.PinSchemas,
 		}
 	}
 	if server.OpenAPI {
 		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPIConfig, serverCfg.Tools)
 		cfg.OutputFormat = serverCfg.OutputFormat
+		cfg.PinSchemas = serverCfg.PinSchemas
 		return cfg
 	}
 	if transport == mcp.TransportStdio {
@@ -115,6 +119,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			ContainerID:  string(server.WorkloadID),
 			Tools:        serverCfg.Tools,
 			OutputFormat: serverCfg.OutputFormat,
+			PinSchemas:   serverCfg.PinSchemas,
 		}
 	}
 	// Container HTTP/SSE
@@ -124,6 +129,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 		Endpoint:     fmt.Sprintf("http://localhost:%d/mcp", server.HostPort),
 		Tools:        serverCfg.Tools,
 		OutputFormat: serverCfg.OutputFormat,
+		PinSchemas:   serverCfg.PinSchemas,
 	}
 }
 
@@ -140,6 +146,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			External:     true,
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
+			PinSchemas:   server.PinSchemas,
 		}
 	}
 	if server.IsLocalProcess() {
@@ -151,6 +158,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Env:          server.Env,
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
+			PinSchemas:   server.PinSchemas,
 		}
 	}
 	if server.IsSSH() {
@@ -165,11 +173,13 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Env:             server.Env,
 			Tools:           server.Tools,
 			OutputFormat:    server.OutputFormat,
+			PinSchemas:      server.PinSchemas,
 		}
 	}
 	if server.IsOpenAPI() {
 		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPI, server.Tools)
 		cfg.OutputFormat = server.OutputFormat
+		cfg.PinSchemas = server.PinSchemas
 		return cfg
 	}
 	if transport == mcp.TransportStdio {
@@ -180,6 +190,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Transport:    transport,
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
+			PinSchemas:   server.PinSchemas,
 		}
 	}
 	// Container HTTP/SSE
@@ -189,6 +200,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 		Endpoint:     fmt.Sprintf("http://localhost:%d/mcp", hostPort),
 		Tools:        server.Tools,
 		OutputFormat: server.OutputFormat,
+		PinSchemas:   server.PinSchemas,
 	}
 }
 

@@ -46,6 +46,7 @@ type MCPServerConfig struct {
 	OpenAPIConfig   *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
 	Tools           []string          // Tool whitelist (empty = all tools)
 	OutputFormat    string            // Output format: "json", "toon", "csv", "text"
+	PinSchemas      *bool             // Override gateway schema pinning (nil = inherit gateway default)
 }
 
 // OpenAPIClientConfig contains configuration for an OpenAPI-backed MCP client.
@@ -99,6 +100,11 @@ type Gateway struct {
 	maxToolResultBytes int // maximum tool result size before truncation (0 = default 64KB)
 
 	toolCountWarned bool // whether the tool count hint has been logged
+
+	schemaVerifier SchemaVerifier   // optional TOFU schema verifier (pins.GatewayAdapter)
+	pinAction      string           // "warn" | "block" on drift (default "warn")
+	blockedMu      sync.RWMutex
+	blockedServers map[string]bool  // servers blocked due to unacknowledged schema drift
 }
 
 // NewGateway creates a new MCP gateway.
@@ -111,9 +117,10 @@ func NewGateway() *Gateway {
 			Name:    "gridctl-gateway",
 			Version: "dev",
 		},
-		serverMeta:  make(map[string]MCPServerConfig),
-		agentAccess: make(map[string][]config.ToolSelector),
-		health:      make(map[string]*HealthStatus),
+		serverMeta:     make(map[string]MCPServerConfig),
+		agentAccess:    make(map[string][]config.ToolSelector),
+		health:         make(map[string]*HealthStatus),
+		blockedServers: make(map[string]bool),
 	}
 }
 
@@ -183,6 +190,71 @@ func (g *Gateway) SetFormatSavingsRecorder(recorder FormatSavingsRecorder) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.formatSavingsRecorder = recorder
+}
+
+// SetSchemaVerifier wires in a SchemaVerifier for TOFU schema pinning.
+// action must be "warn" (default) or "block".
+func (g *Gateway) SetSchemaVerifier(sv SchemaVerifier, action string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.schemaVerifier = sv
+	if action == "block" {
+		g.pinAction = "block"
+	} else {
+		g.pinAction = "warn"
+	}
+}
+
+// UnblockServer clears the block on a server that was blocked due to schema drift.
+// Called by the approve flow after the user accepts the updated tool definitions.
+func (g *Gateway) UnblockServer(serverName string) {
+	g.blockedMu.Lock()
+	defer g.blockedMu.Unlock()
+	delete(g.blockedServers, serverName)
+}
+
+// pinningEnabledForServer reports whether schema pinning should run for serverName.
+// Returns false if schemaVerifier is nil, or if the server's PinSchemas field is explicitly false.
+func (g *Gateway) pinningEnabledForServer(serverName string) bool {
+	if g.schemaVerifier == nil {
+		return false
+	}
+	g.mu.RLock()
+	cfg, ok := g.serverMeta[serverName]
+	g.mu.RUnlock()
+	if ok && cfg.PinSchemas != nil {
+		return *cfg.PinSchemas
+	}
+	return true
+}
+
+// handlePinDrift applies the configured drift policy to a list of schema changes.
+// In warn mode it logs a structured warning. In block mode it also marks the server blocked.
+func (g *Gateway) handlePinDrift(serverName string, drifts []SchemaDrift) {
+	if len(drifts) == 0 {
+		return
+	}
+	g.logger.Warn("schema drift detected",
+		"server", serverName,
+		"modified", len(drifts))
+	for _, d := range drifts {
+		g.logger.Warn("tool modified",
+			"server", serverName,
+			"tool", d.Name,
+			"old_description", d.OldDescription,
+			"new_description", d.NewDescription)
+	}
+	if g.pinAction == "block" {
+		g.blockedMu.Lock()
+		g.blockedServers[serverName] = true
+		g.blockedMu.Unlock()
+		g.logger.Warn("server blocked pending schema approval",
+			"server", serverName,
+			"hint", "run 'gridctl pins approve "+serverName+"' to resume")
+	} else {
+		g.logger.Warn("run 'gridctl pins approve "+serverName+"' to accept these changes or investigate the server",
+			"server", serverName)
+	}
 }
 
 // resolveOutputFormat returns the output format for the given server.
@@ -326,6 +398,16 @@ func (g *Gateway) checkHealth(ctx context.Context) {
 					g.healthMu.Unlock()
 					g.router.RefreshTools()
 					g.logger.Info("MCP server reconnected", "name", client.Name())
+
+					// Verify pins after reconnection; drift on reconnect is suspicious.
+					if g.pinningEnabledForServer(client.Name()) {
+						drifts, pinErr := g.schemaVerifier.VerifyOrPin(client.Name(), client.Tools())
+						if pinErr != nil {
+							g.logger.Warn("pins: verification failed after reconnect", "name", client.Name(), "error", pinErr)
+						} else {
+							g.handlePinDrift(client.Name(), drifts)
+						}
+					}
 				}
 			}
 		}
@@ -458,12 +540,22 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 		return fmt.Errorf("fetching tools from %s: %w", cfg.Name, err)
 	}
 
-	// Store metadata
+	// Store metadata before pin check so pinningEnabledForServer can read PinSchemas.
 	func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		g.serverMeta[cfg.Name] = cfg
 	}()
+
+	// Schema pinning: verify or pin on first registration.
+	if g.pinningEnabledForServer(cfg.Name) {
+		drifts, err := g.schemaVerifier.VerifyOrPin(cfg.Name, agentClient.Tools())
+		if err != nil {
+			g.logger.Warn("pins: verification failed", "server", cfg.Name, "error", err)
+		} else {
+			g.handlePinDrift(cfg.Name, drifts)
+		}
+	}
 
 	// Add to router
 	g.router.AddClient(agentClient)
@@ -863,6 +955,20 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	}
 	routeSpan.SetAttributes(attribute.String("server.name", client.Name()))
 	routeSpan.End()
+
+	// Reject calls to servers blocked due to schema drift.
+	g.blockedMu.RLock()
+	isBlocked := g.blockedServers[client.Name()]
+	g.blockedMu.RUnlock()
+	if isBlocked {
+		return &ToolCallResult{
+			Content: []Content{NewTextContent(fmt.Sprintf(
+				"server %q is blocked pending schema approval; run 'gridctl pins approve %s' to resume",
+				client.Name(), client.Name(),
+			))},
+			IsError: true,
+		}, nil
+	}
 
 	// Propagate the resolved server name to the root span so the trace-level
 	// record (built from root span attrs) carries it for UI filtering.
