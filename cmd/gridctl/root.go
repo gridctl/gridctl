@@ -37,6 +37,7 @@ func init() {
 	rootCmd.AddCommand(planCmd)
 	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(skillCmd)
+	rootCmd.AddCommand(pinsCmd)
 }
 
 func Execute() {
