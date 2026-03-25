@@ -41,6 +41,16 @@ func VaultDir() string {
 	return filepath.Join(BaseDir(), "vault")
 }
 
+// PinsDir returns the directory for schema pin files (~/.gridctl/pins/).
+func PinsDir() string {
+	return filepath.Join(BaseDir(), "pins")
+}
+
+// PinsPath returns the path to the pin file for a stack (~/.gridctl/pins/{name}.json).
+func PinsPath(name string) string {
+	return filepath.Join(PinsDir(), name+".json")
+}
+
 // StatePath returns the path to a state file for a stack.
 func StatePath(name string) string {
 	return filepath.Join(StateDir(), name+".json")
