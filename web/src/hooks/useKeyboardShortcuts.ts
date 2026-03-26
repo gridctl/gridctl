@@ -10,6 +10,7 @@ interface ShortcutOptions {
   onToggleBottomPanel?: () => void;
   onSwitchToLogs?: () => void;
   onSwitchToMetrics?: () => void;
+  onOpenPalette?: () => void;
 }
 
 export function useKeyboardShortcuts(options: ShortcutOptions) {
@@ -74,6 +75,12 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
       if (isMod && e.key === '2') {
         e.preventDefault();
         options.onSwitchToMetrics?.();
+      }
+
+      // Open command palette: Cmd/Ctrl+K
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        options.onOpenPalette?.();
       }
     };
 

@@ -73,6 +73,11 @@ interface UIState {
   setMetricsDetached: (detached: boolean) => void;
   setVaultDetached: (detached: boolean) => void;
   setTracesDetached: (detached: boolean) => void;
+
+  // Command palette state (not persisted)
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+  toggleCommandPalette: () => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -117,6 +122,9 @@ export const useUIStore = create<UIState>()(
       vaultDetached: false,
       tracesDetached: false,
 
+      // Command palette (always starts closed)
+      commandPaletteOpen: false,
+
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setActiveTab: (activeTab) => set({ activeTab }),
@@ -144,6 +152,9 @@ export const useUIStore = create<UIState>()(
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
       toggleBottomPanel: () => set((s) => ({ bottomPanelOpen: !s.bottomPanelOpen })),
       setBottomPanelTab: (bottomPanelTab) => set({ bottomPanelTab, bottomPanelOpen: true }),
+
+      setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
+      toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
 
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
