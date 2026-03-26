@@ -67,10 +67,24 @@ type ErrorData struct {
 	Message string `json:"message"`
 }
 
+// ToolCallBlock represents a single tool invocation within an assistant message.
+type ToolCallBlock struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // raw JSON string of the tool arguments
+}
+
 // Message is a single turn in the conversation history.
+// Simple text turns use Role+Content. Tool-use assistant turns additionally
+// populate ToolCalls. Tool-result turns use Role=="tool" with ToolCallID.
+// RawParam holds a provider-specific serialized message param for turns that
+// require accurate round-trip reconstruction (e.g. Anthropic tool-use turns).
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string          `json:"role"`
+	Content    string          `json:"content,omitempty"`
+	ToolCalls  []ToolCallBlock `json:"toolCalls,omitempty"`
+	ToolCallID string          `json:"toolCallId,omitempty"`
+	RawParam   json.RawMessage `json:"rawParam,omitempty"`
 }
 
 // Tool is a minimal MCP tool definition for LLM clients.
@@ -97,9 +111,11 @@ type ToolCaller interface {
 // LLMClient abstracts over LLM provider implementations.
 type LLMClient interface {
 	// Stream runs the full agentic loop (potentially multiple LLM calls due to tool use).
-	// It emits events to the channel and returns the final response text.
+	// It emits events to the channel, returns the final text response, and returns any
+	// intermediate tool turns (assistant tool-use + tool-result messages) for history
+	// persistence. The caller is responsible for persisting all turns to session history.
 	// The caller must not close events — Stream only writes to it.
-	Stream(ctx context.Context, systemPrompt string, history []Message, tools []Tool, caller ToolCaller, events chan<- LLMEvent) (finalResponse string, err error)
+	Stream(ctx context.Context, systemPrompt string, history []Message, tools []Tool, caller ToolCaller, events chan<- LLMEvent) (finalResponse string, toolTurns []Message, err error)
 	// Close releases any held resources.
 	Close() error
 }
@@ -150,11 +166,19 @@ func (s *TestFlightSession) History() []Message {
 	return h
 }
 
-// AddMessage appends a message to the conversation history.
+// AddMessage appends a plain text message to the conversation history.
 func (s *TestFlightSession) AddMessage(role, content string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.history = append(s.history, Message{Role: role, Content: content})
+}
+
+// AddTurn appends a structured message (including tool-use and tool-result turns)
+// to the conversation history.
+func (s *TestFlightSession) AddTurn(m Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.history = append(s.history, m)
 }
 
 // ResetHistory clears conversation history and creates a fresh event channel.
