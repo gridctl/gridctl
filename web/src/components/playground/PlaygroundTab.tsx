@@ -16,6 +16,7 @@ import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePlaygroundStore, type TurnMetrics, type WaterfallEntry } from '../../stores/usePlaygroundStore';
+import { ReasoningWaterfall } from './ReasoningWaterfall';
 import {
   fetchPlaygroundAuth,
   sendPlaygroundChat,
@@ -710,6 +711,9 @@ export function PlaygroundTab() {
           </div>
         )}
       </div>
+
+      {/* Reasoning waterfall — tool call timeline */}
+      <ReasoningWaterfall />
 
       {/* Inline error */}
       {error && (
