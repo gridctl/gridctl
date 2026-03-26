@@ -53,6 +53,9 @@ import { useAuthStore } from './stores/useAuthStore';
 import { usePolling } from './hooks/usePolling';
 import { useSSEShutdown } from './hooks/useSSEShutdown';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useGlobalCommands } from './hooks/useGlobalCommands';
+import { CommandRegistryProvider } from './hooks/useCommandRegistry';
+import { CommandPalette } from './components/palette/CommandPalette';
 import { ToastContainer } from './components/ui/Toast';
 import { cn } from './lib/cn';
 
@@ -83,6 +86,9 @@ function AppContent() {
   const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
   const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
   const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
+  const commandPaletteOpen = useUIStore((s) => s.commandPaletteOpen);
+  const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen);
+  const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const sidebarDetached = useUIStore((s) => s.sidebarDetached);
   const registryDetached = useUIStore((s) => s.registryDetached);
@@ -132,7 +138,11 @@ function AppContent() {
     onToggleBottomPanel: toggleBottomPanel,
     onSwitchToLogs: () => setBottomPanelTab('logs'),
     onSwitchToMetrics: () => setBottomPanelTab('metrics'),
+    onOpenPalette: toggleCommandPalette,
   });
+
+  // Register global and dynamic commands into the command registry
+  useGlobalCommands({ onRefresh: handleRefresh });
 
   // Calculate grid row height for bottom panel
   const bottomRowHeight = bottomPanelOpen ? bottomPanelHeight : BOTTOM_PANEL_COLLAPSED;
@@ -269,17 +279,25 @@ function AppContent() {
 
       {/* Toast notifications */}
       <ToastContainer />
+
+      {/* Command palette — z-60, above all other overlays */}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
     </div>
   );
 }
 
 function App() {
   return (
-    <ErrorBoundary>
-      <ReactFlowProvider>
-        <AppContent />
-      </ReactFlowProvider>
-    </ErrorBoundary>
+    <CommandRegistryProvider>
+      <ErrorBoundary>
+        <ReactFlowProvider>
+          <AppContent />
+        </ReactFlowProvider>
+      </ErrorBoundary>
+    </CommandRegistryProvider>
   );
 }
 
