@@ -104,8 +104,16 @@ const AgentNode = memo(({ data, selected }: AgentNodeProps) => {
           : undefined,
       }}
     >
+      {/* Thinking ring for playground test flight */}
+      {data.isThinking && (
+        <div
+          className="absolute inset-0 rounded-lg animate-ping bg-cyan-400/30 pointer-events-none"
+          style={{ animationDuration: '1.5s' }}
+        />
+      )}
+
       {/* Pulse ring for running agents */}
-      {data.status === 'running' && (
+      {data.status === 'running' && !data.isThinking && (
         <div
           className={cn(
             'absolute inset-0 rounded-lg border-2 animate-ping',

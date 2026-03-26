@@ -13,6 +13,7 @@ import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Lay
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
+import { usePlaygroundStore } from '../../stores/usePlaygroundStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { COLORS } from '../../lib/constants';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
@@ -45,6 +46,8 @@ export function Canvas() {
   const toggleWiringMode = useUIStore((s) => s.toggleWiringMode);
   const showSecretHeatmap = useUIStore((s) => s.showSecretHeatmap);
   const toggleSecretHeatmap = useUIStore((s) => s.toggleSecretHeatmap);
+  const agentIsThinking = usePlaygroundStore((s) => s.agentIsThinking);
+  const activeToolCallEdges = usePlaygroundStore((s) => s.activeToolCallEdges);
 
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -75,20 +78,36 @@ export function Canvas() {
     },
   }), [edgeStyle]);
 
-  // Apply highlighting classes to nodes
+  // Apply highlighting classes and playground animation state to nodes
   const styledNodes = useMemo(() => {
-    if (!highlightState.hasSelection) return nodes ?? [];
+    const hasPlaygroundActivity = agentIsThinking || activeToolCallEdges.size > 0;
+    if (!highlightState.hasSelection && !hasPlaygroundActivity) return nodes ?? [];
 
-    return (nodes ?? []).map((node) => ({
-      ...node,
-      className: cn(
-        node.className,
-        highlightState.highlightedNodeIds.has(node.id) ? 'highlighted' : 'dimmed'
-      ),
-    }));
-  }, [nodes, highlightState]);
+    return (nodes ?? []).map((node) => {
+      const nodeData = node.data as { type?: string; name?: string };
+      let updatedData = node.data;
 
-  // Apply highlighting classes to edges
+      if (nodeData.type === 'agent') {
+        updatedData = { ...updatedData, isThinking: agentIsThinking };
+      } else if (nodeData.type === 'mcp-server') {
+        updatedData = { ...updatedData, isProcessing: activeToolCallEdges.has(nodeData.name ?? '') };
+      }
+
+      const base = updatedData !== node.data ? { ...node, data: updatedData } : node;
+
+      if (!highlightState.hasSelection) return base;
+
+      return {
+        ...base,
+        className: cn(
+          node.className,
+          highlightState.highlightedNodeIds.has(node.id) ? 'highlighted' : 'dimmed'
+        ),
+      };
+    });
+  }, [nodes, highlightState, agentIsThinking, activeToolCallEdges]);
+
+  // Apply highlighting classes and playground animation to edges
   // Uses edges (Agent → Server) are always hidden - we show the path through Gateway instead
   const styledEdges = useMemo(() => {
     return (edges ?? []).map((edge) => {
@@ -103,19 +122,32 @@ export function Canvas() {
         };
       }
 
-      // No selection: show all butterfly edges normally
+      // Animate edges to servers with active tool calls
+      // Gateway→server edge IDs follow: edge-gateway-mcp-${serverName}
+      let isAnimated = false;
+      if (activeToolCallEdges.size > 0) {
+        for (const serverName of activeToolCallEdges) {
+          if (edge.id === `edge-gateway-mcp-${serverName}`) {
+            isAnimated = true;
+            break;
+          }
+        }
+      }
+
+      // No selection: show edges with animation applied
       if (!highlightState.hasSelection) {
-        return edge;
+        return isAnimated ? { ...edge, animated: true } : edge;
       }
 
       // With selection: highlight the path, dim everything else
       const isHighlighted = highlightState.highlightedEdgeIds.has(edge.id);
       return {
         ...edge,
+        animated: isAnimated,
         className: cn(edge.className, isHighlighted ? 'highlighted' : 'dimmed'),
       };
     });
-  }, [edges, highlightState]);
+  }, [edges, highlightState, activeToolCallEdges]);
 
   // Handle node selection
   const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string }) => {

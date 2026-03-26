@@ -101,6 +101,13 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Processing indicator for active playground tool calls */}
+          {isServer && (data as MCPServerNodeData).isProcessing && (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-400/10 border border-cyan-400/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="text-[9px] text-cyan-400 font-medium">active</span>
+            </div>
+          )}
           {/* Inline tool count in compact mode */}
           {isCompact && isServer && toolCount !== null && toolCount !== undefined && (
             <span className="text-[10px] text-text-muted font-mono">

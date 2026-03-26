@@ -192,6 +192,7 @@ export interface MCPServerNodeData extends NodeDataBase {
   openapi?: boolean; // True for OpenAPI-backed servers
   openapiSpec?: string; // OpenAPI spec URL or file path
   outputFormat?: string; // Configured output format (e.g. "toon", "csv")
+  isProcessing?: boolean; // Playground: true when this server has an active tool call
 }
 
 export interface ResourceNodeData extends NodeDataBase {
@@ -224,6 +225,9 @@ export interface AgentNodeData extends NodeDataBase {
   skillCount?: number;
   skills?: string[];
   description?: string;
+
+  // Playground: true while test flight session is actively processing
+  isThinking?: boolean;
 }
 
 // Linked LLM client node data
