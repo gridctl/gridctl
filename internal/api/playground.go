@@ -28,13 +28,22 @@ type playgroundChatRequest struct {
 // playgroundAuthResponse is returned by POST /api/playground/auth.
 type playgroundAuthResponse struct {
 	Providers map[string]providerAuth `json:"providers"`
+	Ollama    ollamaAuth              `json:"ollama"`
 }
 
-// providerAuth describes auth availability for one provider.
+// providerAuth describes auth availability for one LLM provider.
+// KeyName is the vault/env key name found (nil if none). CLIPath is the
+// absolute path to a detected CLI binary (nil if not on PATH).
 type providerAuth struct {
-	Available bool   `json:"available"`
-	AuthMode  string `json:"authMode,omitempty"`
-	Error     string `json:"error,omitempty"`
+	APIKey  bool    `json:"apiKey"`
+	KeyName *string `json:"keyName"`
+	CLIPath *string `json:"cliPath"`
+}
+
+// ollamaAuth describes Ollama reachability.
+type ollamaAuth struct {
+	Reachable bool   `json:"reachable"`
+	Endpoint  string `json:"endpoint"`
 }
 
 // handlePlaygroundAuth detects available auth methods for each LLM provider.
@@ -49,61 +58,73 @@ func (s *Server) handlePlaygroundAuth(w http.ResponseWriter, r *http.Request) {
 		Providers: make(map[string]providerAuth),
 	}
 
-	// Check vault API keys
-	if s.vaultStore != nil && !s.vaultStore.IsLocked() {
-		if key, ok := s.vaultStore.Get("ANTHROPIC_API_KEY"); ok && key != "" {
-			resp.Providers["anthropic"] = providerAuth{Available: true, AuthMode: "API_KEY"}
+	// findKey checks vault (if available and unlocked) then env for the first
+	// matching key name. Returns a pointer to the matched key name, or nil.
+	findKey := func(keyNames ...string) *string {
+		if s.vaultStore != nil && !s.vaultStore.IsLocked() {
+			for _, k := range keyNames {
+				if v, ok := s.vaultStore.Get(k); ok && v != "" {
+					name := k
+					return &name
+				}
+			}
 		} else {
-			resp.Providers["anthropic"] = providerAuth{Available: false, Error: "ANTHROPIC_API_KEY not found in vault"}
-		}
-		if key, ok := s.vaultStore.Get("OPENAI_API_KEY"); ok && key != "" {
-			resp.Providers["openai"] = providerAuth{Available: true, AuthMode: "API_KEY"}
-		} else {
-			resp.Providers["openai"] = providerAuth{Available: false, Error: "OPENAI_API_KEY not found in vault"}
-		}
-		if key, ok := s.vaultStore.Get("GEMINI_API_KEY"); ok && key != "" {
-			resp.Providers["gemini"] = providerAuth{Available: true, AuthMode: "API_KEY"}
-		} else {
-			resp.Providers["gemini"] = providerAuth{Available: false, Error: "GEMINI_API_KEY not found in vault"}
-		}
-	} else {
-		// Vault locked or unavailable — check env vars as fallback
-		for _, pair := range []struct{ provider, env string }{
-			{"anthropic", "ANTHROPIC_API_KEY"},
-			{"openai", "OPENAI_API_KEY"},
-			{"gemini", "GEMINI_API_KEY"},
-		} {
-			if val := os.Getenv(pair.env); val != "" {
-				resp.Providers[pair.provider] = providerAuth{Available: true, AuthMode: "API_KEY"}
-			} else {
-				resp.Providers[pair.provider] = providerAuth{Available: false, Error: pair.env + " not set"}
+			for _, k := range keyNames {
+				if os.Getenv(k) != "" {
+					name := k
+					return &name
+				}
 			}
 		}
+		return nil
 	}
 
-	// Check Ollama reachability
-	ollamaURL := os.Getenv("OLLAMA_HOST")
-	if ollamaURL == "" {
-		ollamaURL = "http://localhost:11434"
+	// lookupCLI returns a pointer to the absolute CLI path, or nil if not found.
+	lookupCLI := func(name string) *string {
+		if p, err := exec.LookPath(name); err == nil {
+			return &p
+		}
+		return nil
 	}
+
+	// Anthropic: API key + claude CLI
+	anthropicKey := findKey("ANTHROPIC_API_KEY")
+	claudePath := lookupCLI("claude")
+	resp.Providers["anthropic"] = providerAuth{
+		APIKey:  anthropicKey != nil,
+		KeyName: anthropicKey,
+		CLIPath: claudePath,
+	}
+
+	// OpenAI: API key only (no first-party CLI to detect)
+	openaiKey := findKey("OPENAI_API_KEY")
+	resp.Providers["openai"] = providerAuth{
+		APIKey:  openaiKey != nil,
+		KeyName: openaiKey,
+	}
+
+	// Gemini: check both GEMINI_API_KEY and GOOGLE_API_KEY + gemini CLI
+	geminiKey := findKey("GEMINI_API_KEY", "GOOGLE_API_KEY")
+	geminiPath := lookupCLI("gemini")
+	resp.Providers["gemini"] = providerAuth{
+		APIKey:  geminiKey != nil,
+		KeyName: geminiKey,
+		CLIPath: geminiPath,
+	}
+
+	// Ollama: probe the /api/tags endpoint with a short timeout
+	ollamaEndpoint := os.Getenv("OLLAMA_HOST")
+	if ollamaEndpoint == "" {
+		ollamaEndpoint = "http://localhost:11434"
+	}
+	resp.Ollama = ollamaAuth{Endpoint: ollamaEndpoint}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ollamaURL+"/api/tags", nil)
-	if err == nil {
-		resp2, err2 := http.DefaultClient.Do(req)
-		if err2 == nil {
-			resp2.Body.Close()
-			resp.Providers["ollama"] = providerAuth{Available: true, AuthMode: "LOCAL_LLM"}
-		} else {
-			resp.Providers["ollama"] = providerAuth{Available: false, Error: "Ollama not reachable at " + ollamaURL}
+	if req, err := http.NewRequestWithContext(ctx, http.MethodGet, ollamaEndpoint+"/api/tags", nil); err == nil {
+		if res, err := http.DefaultClient.Do(req); err == nil {
+			res.Body.Close()
+			resp.Ollama.Reachable = res.StatusCode == http.StatusOK
 		}
-	} else {
-		resp.Providers["ollama"] = providerAuth{Available: false, Error: "failed to build Ollama request"}
-	}
-
-	// Check for CLI availability (for informational purposes)
-	if path, err := exec.LookPath("claude"); err == nil {
-		resp.Providers["claude-cli"] = providerAuth{Available: true, AuthMode: "CLI_PROXY", Error: path}
 	}
 
 	writeJSON(w, resp)

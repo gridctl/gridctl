@@ -132,8 +132,115 @@ func TestHandlePlaygroundAuth_NoVaultNoEnv(t *testing.T) {
 		t.Fatal("providers map should not be nil")
 	}
 	// Anthropic should be unavailable (no key)
-	if p, ok := resp.Providers["anthropic"]; !ok || p.Available {
+	if p, ok := resp.Providers["anthropic"]; !ok || p.APIKey {
 		t.Errorf("anthropic should be unavailable without env var; got %+v", resp.Providers["anthropic"])
+	}
+}
+
+func TestHandlePlaygroundAuth_ResponseShape(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/playground/auth", nil)
+	rec := httptest.NewRecorder()
+	srv.handlePlaygroundAuth(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp playgroundAuthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	// All three providers must be present
+	for _, provider := range []string{"anthropic", "openai", "gemini"} {
+		if _, ok := resp.Providers[provider]; !ok {
+			t.Errorf("missing provider %q in response", provider)
+		}
+	}
+	// Ollama field must be present (endpoint always set)
+	if resp.Ollama.Endpoint == "" {
+		t.Error("ollama.endpoint should not be empty")
+	}
+}
+
+func TestHandlePlaygroundAuth_WithVaultKey(t *testing.T) {
+	srv, store := setupVaultServer(t)
+	if err := store.Set("ANTHROPIC_API_KEY", "sk-test-value"); err != nil {
+		t.Fatalf("failed to set vault key: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/playground/auth", nil)
+	rec := httptest.NewRecorder()
+	srv.handlePlaygroundAuth(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp playgroundAuthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+	p := resp.Providers["anthropic"]
+	if !p.APIKey {
+		t.Error("anthropic.apiKey should be true when vault key is set")
+	}
+	if p.KeyName == nil || *p.KeyName != "ANTHROPIC_API_KEY" {
+		t.Errorf("anthropic.keyName should be ANTHROPIC_API_KEY, got %v", p.KeyName)
+	}
+}
+
+func TestHandlePlaygroundAuth_GeminiDualKeys(t *testing.T) {
+	// GEMINI_API_KEY takes precedence; GOOGLE_API_KEY is the fallback.
+	t.Run("GEMINI_API_KEY", func(t *testing.T) {
+		t.Setenv("GEMINI_API_KEY", "gk-test")
+		t.Setenv("GOOGLE_API_KEY", "")
+		srv := newTestServer(t)
+		req := httptest.NewRequest(http.MethodPost, "/api/playground/auth", nil)
+		rec := httptest.NewRecorder()
+		srv.handlePlaygroundAuth(rec, req)
+		var resp playgroundAuthResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		p := resp.Providers["gemini"]
+		if !p.APIKey {
+			t.Error("gemini.apiKey should be true with GEMINI_API_KEY set")
+		}
+		if p.KeyName == nil || *p.KeyName != "GEMINI_API_KEY" {
+			t.Errorf("expected keyName GEMINI_API_KEY, got %v", p.KeyName)
+		}
+	})
+
+	t.Run("GOOGLE_API_KEY_fallback", func(t *testing.T) {
+		t.Setenv("GEMINI_API_KEY", "")
+		t.Setenv("GOOGLE_API_KEY", "gk-test")
+		srv := newTestServer(t)
+		req := httptest.NewRequest(http.MethodPost, "/api/playground/auth", nil)
+		rec := httptest.NewRecorder()
+		srv.handlePlaygroundAuth(rec, req)
+		var resp playgroundAuthResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		p := resp.Providers["gemini"]
+		if !p.APIKey {
+			t.Error("gemini.apiKey should be true with GOOGLE_API_KEY set")
+		}
+		if p.KeyName == nil || *p.KeyName != "GOOGLE_API_KEY" {
+			t.Errorf("expected keyName GOOGLE_API_KEY, got %v", p.KeyName)
+		}
+	})
+}
+
+func TestHandlePlaygroundAuth_OllamaEndpoint(t *testing.T) {
+	// Custom OLLAMA_HOST should appear in the response.
+	t.Setenv("OLLAMA_HOST", "http://custom-host:11434")
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/playground/auth", nil)
+	rec := httptest.NewRecorder()
+	srv.handlePlaygroundAuth(rec, req)
+	var resp playgroundAuthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Ollama.Endpoint != "http://custom-host:11434" {
+		t.Errorf("expected custom ollama endpoint, got %q", resp.Ollama.Endpoint)
 	}
 }
 
