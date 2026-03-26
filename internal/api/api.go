@@ -21,6 +21,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
+	"github.com/gridctl/gridctl/pkg/runtime/agent"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -54,15 +55,18 @@ type Server struct {
 	authType       string
 	authToken      string
 	authHeader     string
+
+	playgroundSessions *agent.SessionRegistry
 }
 
 // NewServer creates a new API server.
 func NewServer(gateway *mcp.Gateway, staticFS fs.FS) *Server {
 	return &Server{
-		gateway:          gateway,
-		streamableServer: mcp.NewStreamableHTTPServer(gateway, nil),
-		sseServer:        mcp.NewSSEServer(gateway),
-		staticFS:         staticFS,
+		gateway:            gateway,
+		streamableServer:   mcp.NewStreamableHTTPServer(gateway, nil),
+		sseServer:          mcp.NewSSEServer(gateway),
+		staticFS:           staticFS,
+		playgroundSessions: agent.NewSessionRegistry(),
 	}
 }
 
@@ -231,6 +235,9 @@ func (s *Server) Handler() http.Handler {
 
 	// Registry endpoints (always registered, even when registry is empty)
 	mux.HandleFunc("/api/registry/", s.handleRegistry)
+
+	// Playground endpoints (Test Flight)
+	mux.HandleFunc("/api/playground/", s.handlePlayground)
 
 	// Static files (UI) - served at root
 	if s.staticFS != nil {
