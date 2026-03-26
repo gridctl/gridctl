@@ -78,6 +78,11 @@ interface UIState {
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
   toggleCommandPalette: () => void;
+
+  // Vault panel visibility (lifted from Header local state for command palette access)
+  showVault: boolean;
+  setShowVault: (show: boolean) => void;
+  toggleVault: () => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -155,6 +160,10 @@ export const useUIStore = create<UIState>()(
 
       setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
       toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
+
+      showVault: false,
+      setShowVault: (showVault) => set({ showVault }),
+      toggleVault: () => set((s) => ({ showVault: !s.showVault })),
 
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),

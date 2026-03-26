@@ -1,9 +1,10 @@
-import { RefreshCw, Settings, Zap, RotateCcw, Plus } from 'lucide-react';
+import { RefreshCw, Settings, Zap, RotateCcw, Plus, Command } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
+import { useUIStore } from '../../stores/useUIStore';
 import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api';
 import { VaultPanel } from '../vault/VaultPanel';
 import { SpecDiffModal } from '../spec/SpecDiffModal';
@@ -22,7 +23,9 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
-  const [showVault, setShowVault] = useState(false);
+  const showVault = useUIStore((s) => s.showVault);
+  const setShowVault = useUIStore((s) => s.setShowVault);
+  const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
   const [isReloading, setIsReloading] = useState(false);
   const [reloadMessage, setReloadMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -167,6 +170,12 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
+        <IconButton
+          icon={Command}
+          onClick={toggleCommandPalette}
+          tooltip="Command Palette (⌘K)"
+          className="hover:text-primary hover:border-primary/30"
+        />
         <IconButton
           icon={Plus}
           onClick={() => useWizardStore.getState().open()}
