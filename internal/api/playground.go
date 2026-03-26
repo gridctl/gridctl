@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/runtime/agent"
+	"gopkg.in/yaml.v3"
 )
 
 // playgroundChatRequest is the body for POST /api/playground/chat.
@@ -293,6 +294,8 @@ func (s *Server) handlePlayground(w http.ResponseWriter, r *http.Request) {
 		s.handlePlaygroundChat(w, r)
 	case path == "stream":
 		s.handlePlaygroundStream(w, r)
+	case path == "agent" && r.Method == http.MethodPatch:
+		s.handlePlaygroundAgentPatch(w, r)
 	case strings.HasPrefix(path, "session/"):
 		s.handlePlaygroundSessionDelete(w, r)
 	default:
@@ -436,6 +439,74 @@ func (g *gatewayToolCaller) CallTool(ctx context.Context, name string, args map[
 		ServerName: serverName,
 		IsError:    result.IsError,
 	}, nil
+}
+
+// marshalStackYAML serializes the stack to YAML bytes.
+func marshalStackYAML(stack *config.Stack) ([]byte, error) {
+	return yaml.Marshal(stack)
+}
+
+// patchAgentRequest is the body for PATCH /api/playground/agent.
+type patchAgentRequest struct {
+	AgentID string               `json:"agentId"`
+	Prompt  string               `json:"prompt"`
+	Uses    []config.ToolSelector `json:"uses"`
+}
+
+// handlePlaygroundAgentPatch updates an agent's prompt and uses in the stack YAML.
+// PATCH /api/playground/agent
+func (s *Server) handlePlaygroundAgentPatch(w http.ResponseWriter, r *http.Request) {
+	if s.stackFile == "" {
+		writeJSONError(w, "no stack file configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req patchAgentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.AgentID == "" {
+		writeJSONError(w, "agentId is required", http.StatusBadRequest)
+		return
+	}
+
+	stack, err := config.LoadStack(s.stackFile)
+	if err != nil {
+		writeJSONError(w, "failed to load stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	found := false
+	for i := range stack.Agents {
+		if stack.Agents[i].Name != req.AgentID {
+			continue
+		}
+		stack.Agents[i].Prompt = req.Prompt
+		if req.Uses != nil {
+			stack.Agents[i].Uses = req.Uses
+		}
+		found = true
+		break
+	}
+
+	if !found {
+		writeJSONError(w, "agent not found: "+req.AgentID, http.StatusNotFound)
+		return
+	}
+
+	data, err := marshalStackYAML(stack)
+	if err != nil {
+		writeJSONError(w, "failed to serialize stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(s.stackFile, data, 0o644); err != nil {
+		writeJSONError(w, "failed to write stack file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 // extractTextFromContent concatenates text content from MCP tool result content blocks.
