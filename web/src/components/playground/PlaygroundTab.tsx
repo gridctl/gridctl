@@ -15,7 +15,7 @@ import { marked } from 'marked';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { useUIStore } from '../../stores/useUIStore';
-import { usePlaygroundStore } from '../../stores/usePlaygroundStore';
+import { usePlaygroundStore, type TurnMetrics, type WaterfallEntry } from '../../stores/usePlaygroundStore';
 import {
   fetchPlaygroundAuth,
   sendPlaygroundChat,
@@ -184,9 +184,41 @@ function AuthBanner({
   );
 }
 
+// ─── Session divider ──────────────────────────────────────────────────────────
+
+function SessionDivider({ timestamp }: { timestamp: string }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-2">
+      <div className="flex-1 h-px bg-border/20" />
+      <span className="text-[9px] text-text-muted/50 tabular-nums tracking-wide uppercase">
+        Session started · {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </span>
+      <div className="flex-1 h-px bg-border/20" />
+    </div>
+  );
+}
+
+// ─── Metrics badge ────────────────────────────────────────────────────────────
+
+function MetricsBadge({ metrics }: { metrics: TurnMetrics }) {
+  return (
+    <div className="flex items-center gap-2 mt-1 text-[9px] text-text-muted/50 tabular-nums">
+      <span>{metrics.tokensIn.toLocaleString()} in</span>
+      <span className="text-border/40">·</span>
+      <span>{metrics.tokensOut.toLocaleString()} out</span>
+      {metrics.formatSavingsPct > 0 && (
+        <>
+          <span className="text-border/40">·</span>
+          <span className="text-status-running/60">{metrics.formatSavingsPct.toFixed(1)}% savings</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Message bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ msg }: { msg: { id: string; role: string; content: string; timestamp: string; isStreaming?: boolean; error?: boolean } }) {
+function MessageBubble({ msg }: { msg: { id: string; role: string; content: string; timestamp: string; isStreaming?: boolean; error?: boolean; metrics?: TurnMetrics } }) {
   const isUser = msg.role === 'user';
   const isEmpty = !msg.content && msg.isStreaming;
 
@@ -216,65 +248,105 @@ function MessageBubble({ msg }: { msg: { id: string; role: string; content: stri
       </div>
 
       {/* Bubble */}
-      <div
-        className={cn(
-          'max-w-[75%] rounded-lg px-3 py-2 text-xs leading-relaxed',
-          isUser
-            ? 'bg-primary/8 border border-primary/15 text-text-primary text-right'
-            : msg.error
-              ? 'bg-status-error/8 border border-status-error/20 text-status-error'
-              : 'bg-surface-elevated border border-border/40 text-text-primary',
-          isEmpty && 'min-w-[60px]'
-        )}
-      >
-        {isEmpty ? (
-          /* Thinking animation */
-          <span className="flex items-center gap-1 h-3">
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="w-1 h-1 rounded-full bg-secondary/60 animate-bounce"
-                style={{ animationDelay: `${i * 150}ms` }}
-              />
-            ))}
-          </span>
-        ) : msg.error && !msg.content ? (
-          <span className="flex items-center gap-1.5">
-            <AlertCircle size={11} />
-            Request failed
-          </span>
-        ) : isUser ? (
-          <span className="whitespace-pre-wrap">{msg.content}</span>
-        ) : html ? (
-          <div
-            className="prose-playground"
-            // marked output is safe for this use case (our own API responses)
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        ) : (
-          <span>{msg.content}</span>
-        )}
-
-        {/* Timestamp */}
+      <div className={cn('flex flex-col', isUser ? 'items-end' : 'items-start', 'max-w-[75%]')}>
         <div
           className={cn(
-            'text-[9px] mt-1 tabular-nums',
-            isUser ? 'text-primary/40 text-right' : 'text-text-muted/50'
+            'rounded-lg px-3 py-2 text-xs leading-relaxed w-full',
+            isUser
+              ? 'bg-primary/8 border border-primary/15 text-text-primary text-right'
+              : msg.error
+                ? 'bg-status-error/8 border border-status-error/20 text-status-error'
+                : 'bg-surface-elevated border border-border/40 text-text-primary',
+            isEmpty && 'min-w-[60px]'
           )}
         >
-          {new Date(msg.timestamp).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          })}
-          {msg.isStreaming && !isEmpty && (
-            <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-secondary animate-pulse align-middle" />
+          {isEmpty ? (
+            /* Thinking animation */
+            <span className="flex items-center gap-1 h-3">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="w-1 h-1 rounded-full bg-secondary/60 animate-bounce"
+                  style={{ animationDelay: `${i * 150}ms` }}
+                />
+              ))}
+            </span>
+          ) : msg.error && !msg.content ? (
+            <span className="flex items-center gap-1.5">
+              <AlertCircle size={11} />
+              Request failed
+            </span>
+          ) : isUser ? (
+            <span className="whitespace-pre-wrap">{msg.content}</span>
+          ) : html ? (
+            <div
+              className="prose-playground"
+              // marked output is safe for this use case (our own API responses)
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          ) : (
+            <span>{msg.content}</span>
           )}
+
+          {/* Timestamp */}
+          <div
+            className={cn(
+              'text-[9px] mt-1 tabular-nums',
+              isUser ? 'text-primary/40 text-right' : 'text-text-muted/50'
+            )}
+          >
+            {new Date(msg.timestamp).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })}
+            {msg.isStreaming && !isEmpty && (
+              <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-secondary animate-pulse align-middle" />
+            )}
+          </div>
         </div>
+
+        {/* Metrics — shown below assistant message after streaming completes */}
+        {!isUser && !msg.isStreaming && msg.metrics && (
+          <MetricsBadge metrics={msg.metrics} />
+        )}
       </div>
     </div>
   );
 }
+
+// ─── SSE event types ──────────────────────────────────────────────────────────
+
+interface TokenEvent {
+  type: 'token';
+  data: { text: string };
+}
+
+interface ToolCallStartEvent {
+  type: 'tool_call_start';
+  data: { toolName: string; serverName: string; input: unknown };
+}
+
+interface ToolCallEndEvent {
+  type: 'tool_call_end';
+  data: { toolName: string; output: unknown; durationMs: number };
+}
+
+interface MetricsEvent {
+  type: 'metrics';
+  data: { tokens_in: number; tokens_out: number; format_savings_pct: number };
+}
+
+interface DoneEvent {
+  type: 'done';
+}
+
+interface ErrorEvent {
+  type: 'error';
+  data: { message: string };
+}
+
+type SSEEvent = TokenEvent | ToolCallStartEvent | ToolCallEndEvent | MetricsEvent | DoneEvent | ErrorEvent;
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -297,12 +369,20 @@ export function PlaygroundTab() {
   const setAuthStatus = usePlaygroundStore((s) => s.setAuthStatus);
   const setAuthLoading = usePlaygroundStore((s) => s.setAuthLoading);
   const clearMessages = usePlaygroundStore((s) => s.clearMessages);
+  const setAgentIsThinking = usePlaygroundStore((s) => s.setAgentIsThinking);
+  const addActiveToolCallEdge = usePlaygroundStore((s) => s.addActiveToolCallEdge);
+  const removeActiveToolCallEdge = usePlaygroundStore((s) => s.removeActiveToolCallEdge);
+  const addWaterfallEntry = usePlaygroundStore((s) => s.addWaterfallEntry);
+  const updateWaterfallEntry = usePlaygroundStore((s) => s.updateWaterfallEntry);
+  const clearWaterfall = usePlaygroundStore((s) => s.clearWaterfall);
 
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const streamingMsgIdRef = useRef<string | null>(null);
   const streamContentRef = useRef<string>('');
+  const pendingMetricsRef = useRef<TurnMetrics | null>(null);
+  const pendingToolCallsRef = useRef<Map<string, WaterfallEntry>>(new Map());
   const sseControllerRef = useRef<AbortController | null>(null);
 
   const resolvedAuth = resolveAuth(authStatus);
@@ -363,6 +443,19 @@ export function PlaygroundTab() {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      const cleanup = (isError: boolean) => {
+        const msgId = streamingMsgIdRef.current;
+        if (msgId) {
+          finalizeMessage(msgId, streamContentRef.current || '', pendingMetricsRef.current, isError);
+          streamingMsgIdRef.current = null;
+          streamContentRef.current = '';
+          pendingMetricsRef.current = null;
+          pendingToolCallsRef.current.clear();
+          setAgentIsThinking(false);
+          setLoading(false);
+        }
+      };
+
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -377,52 +470,109 @@ export function PlaygroundTab() {
             const raw = line.slice(6).trim();
             if (!raw) continue;
 
-            let event: { type: string; data?: { text?: string; message?: string } };
+            let event: SSEEvent;
             try {
-              event = JSON.parse(raw);
+              event = JSON.parse(raw) as SSEEvent;
             } catch {
               continue;
             }
 
             const msgId = streamingMsgIdRef.current;
-            if (!msgId) continue;
 
             switch (event.type) {
-              case 'token':
-                streamContentRef.current += event.data?.text ?? '';
+              case 'token': {
+                if (!msgId) continue;
+                streamContentRef.current += event.data.text;
                 updateStreamingMessage(msgId, streamContentRef.current);
                 break;
+              }
 
-              case 'done':
-                finalizeMessage(msgId, streamContentRef.current);
-                streamingMsgIdRef.current = null;
-                streamContentRef.current = '';
-                setLoading(false);
+              case 'tool_call_start': {
+                const entryId = crypto.randomUUID();
+                const entry: WaterfallEntry = {
+                  id: entryId,
+                  toolName: event.data.toolName,
+                  serverName: event.data.serverName,
+                  input: event.data.input,
+                  status: 'pending',
+                  startedAt: new Date().toISOString(),
+                };
+                pendingToolCallsRef.current.set(event.data.toolName, entry);
+                addWaterfallEntry(entry);
+                addActiveToolCallEdge(event.data.serverName);
+                setAgentIsThinking(true);
+                break;
+              }
+
+              case 'tool_call_end': {
+                const pending = pendingToolCallsRef.current.get(event.data.toolName);
+                if (pending) {
+                  updateWaterfallEntry(pending.id, {
+                    output: event.data.output,
+                    durationMs: event.data.durationMs,
+                    status: 'complete',
+                  });
+                  removeActiveToolCallEdge(pending.serverName);
+                  pendingToolCallsRef.current.delete(event.data.toolName);
+                }
+                break;
+              }
+
+              case 'metrics': {
+                pendingMetricsRef.current = {
+                  tokensIn: event.data.tokens_in,
+                  tokensOut: event.data.tokens_out,
+                  formatSavingsPct: event.data.format_savings_pct,
+                };
+                break;
+              }
+
+              case 'done': {
+                if (msgId) {
+                  finalizeMessage(msgId, streamContentRef.current, pendingMetricsRef.current ?? undefined);
+                  streamingMsgIdRef.current = null;
+                  streamContentRef.current = '';
+                  pendingMetricsRef.current = null;
+                  pendingToolCallsRef.current.clear();
+                  setAgentIsThinking(false);
+                  setLoading(false);
+                }
                 sseControllerRef.current?.abort();
                 return;
+              }
 
-              case 'error':
-                finalizeMessage(msgId, event.data?.message ?? 'Inference failed', true);
-                streamingMsgIdRef.current = null;
-                streamContentRef.current = '';
-                setLoading(false);
+              case 'error': {
+                if (msgId) {
+                  finalizeMessage(msgId, event.data.message || streamContentRef.current, null, true);
+                  streamingMsgIdRef.current = null;
+                  streamContentRef.current = '';
+                  pendingMetricsRef.current = null;
+                  pendingToolCallsRef.current.clear();
+                  setAgentIsThinking(false);
+                  setLoading(false);
+                }
                 sseControllerRef.current?.abort();
                 return;
+              }
             }
           }
         }
       } catch {
         // AbortError or read failure — clean up if we were still streaming
-        const msgId = streamingMsgIdRef.current;
-        if (msgId) {
-          finalizeMessage(msgId, streamContentRef.current || '', true);
-          streamingMsgIdRef.current = null;
-          streamContentRef.current = '';
-          setLoading(false);
-        }
+        cleanup(true);
       }
     },
-    [sessionId, updateStreamingMessage, finalizeMessage, setLoading]
+    [
+      sessionId,
+      updateStreamingMessage,
+      finalizeMessage,
+      setLoading,
+      setAgentIsThinking,
+      addWaterfallEntry,
+      updateWaterfallEntry,
+      addActiveToolCallEdge,
+      removeActiveToolCallEdge,
+    ]
   );
 
   // ── Send message ────────────────────────────────────────────────────────
@@ -433,6 +583,18 @@ export function PlaygroundTab() {
 
     setInput('');
     setError(null);
+
+    // Add "Session started" divider at the beginning of each session
+    const isFirstMessage = messages.length === 0;
+    if (isFirstMessage) {
+      addMessage({
+        id: crypto.randomUUID(),
+        role: 'session-start',
+        content: '',
+        timestamp: new Date().toISOString(),
+      });
+      clearWaterfall();
+    }
 
     // Add user message
     addMessage({
@@ -446,6 +608,7 @@ export function PlaygroundTab() {
     const assistantId = crypto.randomUUID();
     streamingMsgIdRef.current = assistantId;
     streamContentRef.current = '';
+    pendingMetricsRef.current = null;
     addMessage({
       id: assistantId,
       role: 'assistant',
@@ -455,6 +618,7 @@ export function PlaygroundTab() {
     });
 
     setLoading(true);
+    setAgentIsThinking(true);
 
     // Open SSE connection before posting
     const controller = new AbortController();
@@ -475,7 +639,8 @@ export function PlaygroundTab() {
     } catch (err: unknown) {
       controller.abort();
       setLoading(false);
-      finalizeMessage(assistantId, '', true);
+      setAgentIsThinking(false);
+      finalizeMessage(assistantId, '', null, true);
       streamingMsgIdRef.current = null;
       setError(err instanceof Error ? err.message : 'Failed to send message');
     }
@@ -484,10 +649,13 @@ export function PlaygroundTab() {
     isLoading,
     resolvedAuth,
     sessionId,
+    messages.length,
     addMessage,
     finalizeMessage,
     setLoading,
     setError,
+    setAgentIsThinking,
+    clearWaterfall,
     readSse,
   ]);
 
@@ -531,9 +699,13 @@ export function PlaygroundTab() {
           </div>
         ) : (
           <div className="space-y-0.5">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} />
-            ))}
+            {messages.map((msg) =>
+              msg.role === 'session-start' ? (
+                <SessionDivider key={msg.id} timestamp={msg.timestamp} />
+              ) : (
+                <MessageBubble key={msg.id} msg={msg} />
+              )
+            )}
             <div ref={messagesEndRef} />
           </div>
         )}

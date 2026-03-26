@@ -1,12 +1,30 @@
 import { create } from 'zustand';
 
+export interface TurnMetrics {
+  tokensIn: number;
+  tokensOut: number;
+  formatSavingsPct: number;
+}
+
+export interface WaterfallEntry {
+  id: string;
+  toolName: string;
+  serverName: string;
+  input?: unknown;
+  output?: unknown;
+  durationMs?: number;
+  status: 'pending' | 'complete';
+  startedAt: string;
+}
+
 export interface PlaygroundMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'session-start';
   content: string;
   timestamp: string;
   isStreaming?: boolean;
   error?: boolean;
+  metrics?: TurnMetrics;
 }
 
 export interface ProviderAuth {
@@ -28,14 +46,27 @@ interface PlaygroundState {
   authLoading: boolean;
   sessionId: string;
 
+  // SSE / inference state
+  agentIsThinking: boolean;
+  activeToolCallEdges: Set<string>; // server names of active tool calls (mapped to edges in Phase 6)
+  waterfallEntries: WaterfallEntry[];
+
   addMessage: (msg: PlaygroundMessage) => void;
   updateStreamingMessage: (id: string, content: string) => void;
-  finalizeMessage: (id: string, content: string, error?: boolean) => void;
+  finalizeMessage: (id: string, content: string, metrics?: TurnMetrics | null, error?: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setAuthStatus: (status: PlaygroundAuthStatus | null) => void;
   setAuthLoading: (loading: boolean) => void;
   clearMessages: () => void;
+
+  setAgentIsThinking: (thinking: boolean) => void;
+  addActiveToolCallEdge: (serverName: string) => void;
+  removeActiveToolCallEdge: (serverName: string) => void;
+  addWaterfallEntry: (entry: WaterfallEntry) => void;
+  updateWaterfallEntry: (id: string, update: Partial<WaterfallEntry>) => void;
+  clearWaterfall: () => void;
+  resetSession: () => void;
 }
 
 function makeSessionId(): string {
@@ -53,6 +84,10 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
   authLoading: false,
   sessionId: makeSessionId(),
 
+  agentIsThinking: false,
+  activeToolCallEdges: new Set<string>(),
+  waterfallEntries: [],
+
   addMessage: (msg) =>
     set((s) => ({ messages: [...s.messages, msg] })),
 
@@ -61,10 +96,18 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
       messages: s.messages.map((m) => (m.id === id ? { ...m, content } : m)),
     })),
 
-  finalizeMessage: (id, content, error) =>
+  finalizeMessage: (id, content, metrics, error) =>
     set((s) => ({
       messages: s.messages.map((m) =>
-        m.id === id ? { ...m, content, isStreaming: false, ...(error ? { error: true } : {}) } : m
+        m.id === id
+          ? {
+              ...m,
+              content,
+              isStreaming: false,
+              ...(metrics ? { metrics } : {}),
+              ...(error ? { error: true } : {}),
+            }
+          : m
       ),
     })),
 
@@ -72,5 +115,38 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
   setError: (error) => set({ error }),
   setAuthStatus: (authStatus) => set({ authStatus }),
   setAuthLoading: (authLoading) => set({ authLoading }),
-  clearMessages: () => set({ messages: [], error: null }),
+  clearMessages: () => set({ messages: [], error: null, waterfallEntries: [], agentIsThinking: false, activeToolCallEdges: new Set() }),
+
+  setAgentIsThinking: (agentIsThinking) => set({ agentIsThinking }),
+
+  addActiveToolCallEdge: (serverName) =>
+    set((s) => ({ activeToolCallEdges: new Set([...s.activeToolCallEdges, serverName]) })),
+
+  removeActiveToolCallEdge: (serverName) =>
+    set((s) => {
+      const next = new Set(s.activeToolCallEdges);
+      next.delete(serverName);
+      return { activeToolCallEdges: next };
+    }),
+
+  addWaterfallEntry: (entry) =>
+    set((s) => ({ waterfallEntries: [...s.waterfallEntries, entry] })),
+
+  updateWaterfallEntry: (id, update) =>
+    set((s) => ({
+      waterfallEntries: s.waterfallEntries.map((e) => (e.id === id ? { ...e, ...update } : e)),
+    })),
+
+  clearWaterfall: () => set({ waterfallEntries: [] }),
+
+  resetSession: () =>
+    set({
+      messages: [],
+      error: null,
+      waterfallEntries: [],
+      agentIsThinking: false,
+      activeToolCallEdges: new Set(),
+      isLoading: false,
+      sessionId: makeSessionId(),
+    }),
 }));
