@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -22,8 +22,10 @@ import { DriftOverlay } from '../spec/DriftOverlay';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { SecretHeatmapOverlay } from '../spec/SecretHeatmapOverlay';
 import { WiringModeOverlay } from './WiringModeOverlay';
+import { AgentBuilderInspector } from './AgentBuilderInspector';
 
 export function Canvas() {
+  const [inspectorAgentId, setInspectorAgentId] = useState<string | null>(null);
   const nodes = useStackStore((s) => s.nodes);
   const edges = useStackStore((s) => s.edges);
   const onNodesChange = useStackStore((s) => s.onNodesChange);
@@ -46,6 +48,8 @@ export function Canvas() {
   const toggleWiringMode = useUIStore((s) => s.toggleWiringMode);
   const showSecretHeatmap = useUIStore((s) => s.showSecretHeatmap);
   const toggleSecretHeatmap = useUIStore((s) => s.toggleSecretHeatmap);
+  const showAgentBuilderMode = useUIStore((s) => s.showAgentBuilderMode);
+  const toggleAgentBuilderMode = useUIStore((s) => s.toggleAgentBuilderMode);
   const agentIsThinking = usePlaygroundStore((s) => s.agentIsThinking);
   const activeToolCallEdges = usePlaygroundStore((s) => s.activeToolCallEdges);
 
@@ -161,6 +165,18 @@ export function Canvas() {
     setSidebarOpen(false);
   }, [selectNode, setSidebarOpen]);
 
+  // Handle double-click on agent node in builder mode
+  const onNodeDoubleClick = useCallback(
+    (_: React.MouseEvent, node: { id: string; data: unknown }) => {
+      if (!showAgentBuilderMode) return;
+      const data = node.data as { type?: string; name?: string };
+      if (data.type === 'agent' && data.name) {
+        setInspectorAgentId(data.name);
+      }
+    },
+    [showAgentBuilderMode],
+  );
+
   const isEmpty = !nodes || nodes.length === 0;
 
   return (
@@ -224,6 +240,7 @@ export function Canvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={onPaneClick}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
@@ -358,6 +375,16 @@ export function Canvas() {
           >
             <KeyRound className="w-4 h-4" />
           </button>
+          <button
+            onClick={toggleAgentBuilderMode}
+            className={cn(
+              'control-button',
+              showAgentBuilderMode && 'ring-1 ring-secondary/30'
+            )}
+            title={showAgentBuilderMode ? 'Exit agent builder' : 'Enter agent builder'}
+          >
+            <Bot className="w-4 h-4" />
+          </button>
         </Panel>
       </ReactFlow>
       {showDriftOverlay && (
@@ -383,6 +410,22 @@ export function Canvas() {
           <div className="absolute inset-0 pointer-events-none bg-tertiary/[0.02] z-10" />
           <SecretHeatmapOverlay className="absolute inset-0 z-20" />
         </>
+      )}
+      {showAgentBuilderMode && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center gap-2 border border-secondary/30 bg-secondary/5">
+            <Bot size={12} className="text-secondary" />
+            <span className="text-[10px] font-medium text-secondary">
+              Agent Builder — double-click an agent to configure
+            </span>
+          </div>
+        </div>
+      )}
+      {showAgentBuilderMode && inspectorAgentId && (
+        <AgentBuilderInspector
+          agentId={inspectorAgentId}
+          onClose={() => setInspectorAgentId(null)}
+        />
       )}
     </div>
   );
