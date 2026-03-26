@@ -171,19 +171,89 @@ func TestSessionRegistryConcurrentAccess(t *testing.T) {
 
 // mockLLMClient is a minimal LLMClient for testing.
 type mockLLMClient struct {
-	streamFn func(ctx context.Context, events chan<- agent.LLMEvent) (string, error)
+	streamFn func(ctx context.Context, events chan<- agent.LLMEvent) (string, []agent.Message, error)
 }
 
-func (m *mockLLMClient) Stream(ctx context.Context, systemPrompt string, history []agent.Message, tools []agent.Tool, caller agent.ToolCaller, events chan<- agent.LLMEvent) (string, error) {
+func (m *mockLLMClient) Stream(ctx context.Context, systemPrompt string, history []agent.Message, tools []agent.Tool, caller agent.ToolCaller, events chan<- agent.LLMEvent) (string, []agent.Message, error) {
 	if m.streamFn != nil {
 		return m.streamFn(ctx, events)
 	}
 	events <- agent.LLMEvent{Type: agent.EventTypeDone}
-	return "response", nil
+	return "response", nil, nil
 }
 
 func (m *mockLLMClient) Close() error { return nil }
 
 func TestLLMClientInterface(t *testing.T) {
 	var _ agent.LLMClient = &mockLLMClient{}
+}
+
+func TestAddTurn(t *testing.T) {
+	s := agent.NewSession("s7")
+	s.AddTurn(agent.Message{
+		Role: "assistant",
+		ToolCalls: []agent.ToolCallBlock{
+			{ID: "tc1", Name: "my_tool", Arguments: `{"key":"val"}`},
+		},
+	})
+	s.AddTurn(agent.Message{
+		Role:       "tool",
+		ToolCallID: "tc1",
+		Content:    "tool output",
+	})
+	s.AddMessage("assistant", "final answer")
+
+	h := s.History()
+	if len(h) != 3 {
+		t.Fatalf("expected 3 turns, got %d", len(h))
+	}
+	if len(h[0].ToolCalls) != 1 {
+		t.Errorf("expected 1 tool call, got %d", len(h[0].ToolCalls))
+	}
+	if h[0].ToolCalls[0].Name != "my_tool" {
+		t.Errorf("unexpected tool name: %s", h[0].ToolCalls[0].Name)
+	}
+	if h[1].Role != "tool" || h[1].ToolCallID != "tc1" {
+		t.Errorf("unexpected tool result: %+v", h[1])
+	}
+	if h[2].Content != "final answer" {
+		t.Errorf("unexpected final response: %s", h[2].Content)
+	}
+}
+
+func TestToolCallBlockFields(t *testing.T) {
+	tc := agent.ToolCallBlock{
+		ID:        "id1",
+		Name:      "search",
+		Arguments: `{"query":"test"}`,
+	}
+	if tc.ID != "id1" || tc.Name != "search" || tc.Arguments != `{"query":"test"}` {
+		t.Errorf("unexpected ToolCallBlock: %+v", tc)
+	}
+}
+
+func TestMessageWithRawParam(t *testing.T) {
+	raw := []byte(`{"role":"assistant","content":[{"type":"tool_use","id":"x","name":"foo","input":{}}]}`)
+	s := agent.NewSession("s8")
+	s.AddTurn(agent.Message{
+		Role:     "assistant",
+		RawParam: raw,
+		ToolCalls: []agent.ToolCallBlock{
+			{ID: "x", Name: "foo", Arguments: "{}"},
+		},
+	})
+	h := s.History()
+	if len(h[0].RawParam) == 0 {
+		t.Fatal("RawParam should be preserved in history")
+	}
+}
+
+func TestResetHistoryCreatesNewChannel(t *testing.T) {
+	s := agent.NewSession("s9")
+	ch1 := s.Events()
+	s.ResetHistory()
+	ch2 := s.Events()
+	if ch1 == ch2 {
+		t.Fatal("ResetHistory should create a new event channel")
+	}
 }
