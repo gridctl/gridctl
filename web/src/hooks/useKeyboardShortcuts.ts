@@ -10,6 +10,9 @@ interface ShortcutOptions {
   onToggleBottomPanel?: () => void;
   onSwitchToLogs?: () => void;
   onSwitchToMetrics?: () => void;
+  onSwitchToSpec?: () => void;
+  onSwitchToTraces?: () => void;
+  onSwitchToPlayground?: () => void;
   onOpenPalette?: () => void;
 }
 
@@ -65,16 +68,26 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
         options.onToggleBottomPanel?.();
       }
 
-      // Switch to Logs tab: Cmd/Ctrl+1
+      // Tab switching: Cmd/Ctrl+1-5
       if (isMod && e.key === '1') {
         e.preventDefault();
         options.onSwitchToLogs?.();
       }
-
-      // Switch to Metrics tab: Cmd/Ctrl+2
       if (isMod && e.key === '2') {
         e.preventDefault();
         options.onSwitchToMetrics?.();
+      }
+      if (isMod && e.key === '3') {
+        e.preventDefault();
+        options.onSwitchToSpec?.();
+      }
+      if (isMod && e.key === '4') {
+        e.preventDefault();
+        options.onSwitchToTraces?.();
+      }
+      if (isMod && e.key === '5') {
+        e.preventDefault();
+        options.onSwitchToPlayground?.();
       }
 
       // Open command palette: Cmd/Ctrl+K

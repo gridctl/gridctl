@@ -138,6 +138,9 @@ function AppContent() {
     onToggleBottomPanel: toggleBottomPanel,
     onSwitchToLogs: () => setBottomPanelTab('logs'),
     onSwitchToMetrics: () => setBottomPanelTab('metrics'),
+    onSwitchToSpec: () => setBottomPanelTab('spec'),
+    onSwitchToTraces: () => setBottomPanelTab('traces'),
+    onSwitchToPlayground: () => setBottomPanelTab('playground'),
     onOpenPalette: toggleCommandPalette,
   });
 
