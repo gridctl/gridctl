@@ -169,6 +169,32 @@ func TestSessionRegistryConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
+func TestSessionRegistryGetOrCreate_DoubleCheck(t *testing.T) {
+	// Force many concurrent goroutines to race through GetOrCreate for the same
+	// key, maximising the chance that the double-check inside the write lock is hit.
+	reg := agent.NewSessionRegistry()
+	const n = 500
+	results := make([]*agent.TestFlightSession, n)
+	ready := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-ready // wait for all goroutines to be ready before racing
+			results[idx] = reg.GetOrCreate("race-key")
+		}(i)
+	}
+	close(ready) // release all goroutines simultaneously
+	wg.Wait()
+	// Every goroutine must receive the exact same session pointer.
+	for i := 1; i < n; i++ {
+		if results[i] != results[0] {
+			t.Fatal("GetOrCreate returned different sessions for the same key")
+		}
+	}
+}
+
 // mockLLMClient is a minimal LLMClient for testing.
 type mockLLMClient struct {
 	streamFn func(ctx context.Context, events chan<- agent.LLMEvent) (string, []agent.Message, error)

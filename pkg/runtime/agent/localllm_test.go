@@ -240,3 +240,33 @@ func TestLocalLLMClientClose(t *testing.T) {
 		t.Errorf("Close returned error: %v", err)
 	}
 }
+
+func TestHistoryToOpenAIMessages_UnknownRoleIgnored(t *testing.T) {
+	history := []Message{
+		{Role: "system", Content: "should be ignored"},
+		{Role: "user", Content: "real"},
+	}
+	msgs := historyToOpenAIMessages("", history)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message (unknown role ignored), got %d", len(msgs))
+	}
+}
+
+func TestHistoryToOpenAIMessages_FullConversation(t *testing.T) {
+	history := []Message{
+		{Role: "user", Content: "what is 2+2?"},
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCallBlock{
+				{ID: "c1", Name: "calc", Arguments: `{"op":"add","a":2,"b":2}`},
+			},
+		},
+		{Role: "tool", ToolCallID: "c1", Content: "4"},
+		{Role: "assistant", Content: "The answer is 4."},
+	}
+	msgs := historyToOpenAIMessages("sys", history)
+	// system + user + assistant(tool) + tool + assistant(text) = 5
+	if len(msgs) != 5 {
+		t.Fatalf("expected 5 messages, got %d", len(msgs))
+	}
+}

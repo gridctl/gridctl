@@ -172,3 +172,41 @@ func TestAnthropicClientClose(t *testing.T) {
 		t.Errorf("Close returned error: %v", err)
 	}
 }
+
+func TestHistoryToAnthropicMessages_RawParamInvalidJSON(t *testing.T) {
+	// Invalid JSON in RawParam: unmarshal fails, message is silently skipped.
+	history := []Message{
+		{Role: "assistant", RawParam: json.RawMessage(`{invalid}`)},
+		{Role: "user", Content: "after"},
+	}
+	msgs := historyToAnthropicMessages(history)
+	// The invalid RawParam message is skipped; only the user message remains.
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message (invalid RawParam skipped), got %d", len(msgs))
+	}
+	if msgs[0].Role != anthropic.MessageParamRoleUser {
+		t.Errorf("expected user role, got %s", msgs[0].Role)
+	}
+}
+
+func TestHistoryToAnthropicMessages_ToolResultsOnly(t *testing.T) {
+	// Tool results without a preceding assistant message are still grouped.
+	history := []Message{
+		{Role: "tool", ToolCallID: "t1", Content: "result"},
+	}
+	msgs := historyToAnthropicMessages(history)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 batched user message, got %d", len(msgs))
+	}
+}
+
+func TestConvertToolsForAnthropic_RequiredArray(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"integer"}},"required":["a","b"]}`)
+	tools := []Tool{
+		{Name: "multi", InputSchema: schema},
+	}
+	result := convertToolsForAnthropic(tools)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(result))
+	}
+}

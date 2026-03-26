@@ -520,6 +520,22 @@ func writeFileForTest(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
+// --- Server setters used by playground ---
+
+func TestSetVaultStore(t *testing.T) {
+	srv := newTestServer(t)
+	srv.SetVaultStore(nil)
+	// nil vault → auth falls back to env vars; no panic
+}
+
+func TestSetStackFile(t *testing.T) {
+	srv := newTestServer(t)
+	srv.SetStackFile("/some/path.yaml")
+	if srv.stackFile != "/some/path.yaml" {
+		t.Errorf("unexpected stackFile: %s", srv.stackFile)
+	}
+}
+
 // --- handlePlayground routing coverage ---
 
 func TestHandlePlayground_RoutesChatPost(t *testing.T) {
