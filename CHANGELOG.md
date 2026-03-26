@@ -8,6 +8,112 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- Suppress errcheck for cleanup chmod in test
+- Resolve golangci-lint issues in mcp tests
+- Resolve golangci-lint errors in tracing package
+- Add response DTOs to align traces API with frontend contract
+- Defer window.open to next frame to prevent popout flash
+- Eager-import detached pages to eliminate Suspense flash on popout
+- Extract server.name from child spans when root span lacks it
+- Improve server.name fallback scan in buffer
+- Propagate server.name to root span for trace filtering
+- Populate server dropdown from deployed MCP servers
+- Populate server dropdown in detached traces window
+- Improve metrics graph axis label contrast
+- Use state.PinsPath, normalize null/empty schemas to {}
+
+### Features
+
+
+- Add MaxToolResultBytes to GatewayConfig
+- Validate MaxToolResultBytes in gateway config
+- Add TruncateResult with UTF-8 safe truncation
+- Wire tool result truncation into gateway
+- Configure max tool result bytes from stack.yaml
+- Add LoggingConfig to stack config
+- Add LogFile field to controller Config
+- Add file handler and multi-handler for log output
+- Add --log-file flag to deploy command
+- Pass --log-file through to daemon child process
+- Wire log file output into gateway logging init
+- Implement MCP Streamable HTTP transport
+- Wire StreamableHTTPServer and add /api/sessions endpoint
+- Add TracingConfig to GatewayConfig
+- Add tracing package with OTel provider and buffer
+- Add _meta traceparent injection for stdio transports
+- Extract W3C trace context in MCP HTTP handler
+- Create OTel child spans in gateway tool call path
+- Inject traceparent header into outgoing HTTP requests
+- Inject _meta traceparent into stdio/process transports
+- Add /api/traces REST endpoints
+- Initialize tracing provider in gateway builder
+- Add root spans for all MCP methods and fix semantic conventions
+- Add mcp.format_conversion child span
+- Add trace activity summary to gridctl status
+- Add gridctl traces command with table and waterfall output
+- Add traces API types and fetch functions
+- Extend UI store with traces detached and latency heat state
+- Add useTracesStore with polling, filters, and trace detail
+- Add SpanDetail panel with timing, attributes, and events
+- Add TraceWaterfall with server colors, error and p95 highlighting
+- Add TracesTab with filterable table and inline waterfall
+- Add Traces tab to bottom panel
+- Add DetachedTracesPage for pop-out traces window
+- Add useLatencyHeat hook for canvas edge latency overlay
+- Add traces to window manager and broadcast channel
+- Add /traces route for detached traces window
+- Add font size zoom controls to traces tab
+- Add font size zoom controls to detached traces window
+- Add AcceptanceCriteria field to AgentSkill
+- Serialize AcceptanceCriteria in RenderSkillMD
+- Warn on executable skills with no acceptance criteria
+- Add skill validate command and acceptance criteria display
+- Add pins package data types and constants
+- Add PinStore with TOFU hashing and atomic persistence
+- Add PinsDir and PinsPath to state package
+- Add GatewaySecurityConfig and SchemaPinningConfig to gateway
+- Add SchemaDrift and SchemaVerifier types for TOFU pinning
+- Add GatewayAdapter to bridge PinStore to SchemaVerifier
+- Wire SchemaVerifier into Gateway with drift policy enforcement
+- Propagate PinSchemas field through MCPServerConfig builders
+- Add PinResetter interface for optional pin store clearing
+- Add ResetServerPins to Gateway for hot reload pin invalidation
+- Implement PinResetter on GatewayAdapter
+- Reset schema pins on server removal and config change during reload
+- Add pins CLI subcommands for schema pin management
+- Add pins CRUD API handler
+- Wire pin store and register pins endpoints
+- Inject pin store into API server via gateway builder
+- Add pin status column to server output table
+- Load and display pin status in status command
+- Add commandPaletteOpen state to useUIStore
+- Add Cmd+K binding to useKeyboardShortcuts
+- Add PaletteCommand type definitions
+- Add useCommandRegistry hook with frecency scoring
+- Add showVault state to useUIStore for palette access
+- Add CommandPalette component using cmdk
+- Add useGlobalCommands hook for static and dynamic commands
+- Add command palette trigger button to Header
+- Wire CommandPalette and CommandRegistryProvider into App
+- Add unavailable flag to PaletteCommand type
+- Add unavailable command state with toast error and enhanced empty state
+
+### Refactoring
+
+
+- Return session from HandleInitialize
+- Update handler to consume new HandleInitialize signature
+- Strip sse.go to legacy negotiation redirect only
+
+### Revert
+
+
+- Restore synchronous window.open for trusted gesture context## [0.1.0-beta.3] - 2026-03-18
+
+
+### Bug Fixes
+
+
 - Add missing MarkerType to xyflow mock in CustomNode tests
 - Resolve strict type errors in test mocks and form
 - Remove unused registryDir method
@@ -176,20 +282,6 @@ All notable changes to gridctl will be documented in this file.
 - Add vault route with dark suspense fallback
 - Rewrite vault panel with search, resize, and popout
 - Add detached vault page for pop-out window
-- Add OTel SDK trace provider with in-process exporter
-- Add TraceBuffer with ring buffer storage and filter API
-- Add TraceRecord and SpanRecord types with OTel attribute mapping
-- Add TraceCarrier for context propagation across transport boundaries
-- Add REST API endpoints for traces list and trace detail
-- Add gridctl traces command with table output and span waterfall
-- Add --follow flag to stream new traces as they arrive
-- Add --errors and --min-duration filters to traces command
-- Add --json flag for machine-readable traces output
-- Add Traces tab to web UI bottom panel
-- Add span waterfall visualization with timing bars
-- Add span detail panel for OTel attributes inspection
-- Add useLatencyHeat hook for canvas edge latency overlay
-- Add detached traces window with pop-out support
 
 ### Refactoring
 
