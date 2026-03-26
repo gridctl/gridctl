@@ -806,3 +806,68 @@ body::before {
   font-size: var(--text-zoom-size, 12px);
   line-height: 1.5;
 }
+
+/* ============================================
+   PLAYGROUND - Markdown prose rendering
+   ============================================ */
+
+.prose-playground {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+
+.prose-playground p { margin: 0 0 0.5em; }
+.prose-playground p:last-child { margin-bottom: 0; }
+.prose-playground strong { color: var(--color-text-primary); font-weight: 600; }
+.prose-playground em { color: var(--color-text-secondary); font-style: italic; }
+.prose-playground code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: rgba(13, 148, 136, 0.08);
+  border: 1px solid rgba(13, 148, 136, 0.15);
+  color: var(--color-secondary-light);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.prose-playground pre {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.5em 0.75em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.prose-playground pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+.prose-playground ul, .prose-playground ol {
+  margin: 0.25em 0 0.5em;
+  padding-left: 1.25em;
+}
+.prose-playground li { margin: 0.15em 0; }
+.prose-playground h1, .prose-playground h2, .prose-playground h3 {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  margin: 0.75em 0 0.25em;
+  line-height: 1.3;
+}
+.prose-playground h1 { font-size: 14px; }
+.prose-playground h2 { font-size: 13px; }
+.prose-playground h3 { font-size: 12px; }
+.prose-playground a {
+  color: var(--color-secondary-light);
+  text-decoration: underline;
+  text-decoration-color: rgba(13, 148, 136, 0.3);
+}
+.prose-playground blockquote {
+  border-left: 2px solid var(--color-secondary);
+  margin: 0.5em 0;
+  padding-left: 0.75em;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
