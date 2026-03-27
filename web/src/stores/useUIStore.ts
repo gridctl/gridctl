@@ -22,7 +22,7 @@ interface UIState {
   // Canvas spec mode — shows ghost nodes for undeployed spec items
   showSpecMode: boolean;
 
-  // Canvas wiring mode — drag connections between agents and servers
+  // Canvas wiring mode — drag connections between nodes
   showWiringMode: boolean;
 
   // Secret heatmap overlay
@@ -30,9 +30,6 @@ interface UIState {
 
   // Latency heat overlay on canvas edges
   showLatencyHeat: boolean;
-
-  // Agent builder mode — double-click AgentNode to open inspector
-  showAgentBuilderMode: boolean;
 
   // Bottom panel state
   bottomPanelOpen: boolean;
@@ -61,7 +58,6 @@ interface UIState {
   toggleWiringMode: () => void;
   toggleSecretHeatmap: () => void;
   toggleLatencyHeat: () => void;
-  toggleAgentBuilderMode: () => void;
 
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
@@ -117,9 +113,6 @@ export const useUIStore = create<UIState>()(
       // Latency heat overlay default
       showLatencyHeat: false,
 
-      // Agent builder mode default
-      showAgentBuilderMode: false,
-
       // Bottom panel defaults
       bottomPanelOpen: false,
       bottomPanelTab: 'logs',
@@ -159,8 +152,6 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ showSecretHeatmap: !s.showSecretHeatmap })),
       toggleLatencyHeat: () =>
         set((s) => ({ showLatencyHeat: !s.showLatencyHeat })),
-      toggleAgentBuilderMode: () =>
-        set((s) => ({ showAgentBuilderMode: !s.showAgentBuilderMode })),
 
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
