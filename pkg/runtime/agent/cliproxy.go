@@ -60,7 +60,7 @@ func (c *CLIProxyClient) Stream(
 		return "", nil, fmt.Errorf("no user message in history")
 	}
 
-	args := []string{"--print", "--output-format", "stream-json"}
+	args := []string{"--print", "--verbose", "--output-format", "stream-json"}
 	if systemPrompt != "" {
 		args = append(args, "--system-prompt", systemPrompt)
 	}
@@ -73,7 +73,7 @@ func (c *CLIProxyClient) Stream(
 	cmdCtx, cancel := context.WithCancel(ctx)
 
 	cmd := exec.CommandContext(cmdCtx, c.cliPath, args...)
-	cmd.Env = os.Environ()
+	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
 	c.mu.Lock()
 	c.cmd = cmd
@@ -85,7 +85,8 @@ func (c *CLIProxyClient) Stream(
 		cancel()
 		return "", nil, fmt.Errorf("stdout pipe: %w", err)
 	}
-	cmd.Stderr = io.Discard
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
 		cancel()
@@ -98,6 +99,11 @@ func (c *CLIProxyClient) Stream(
 
 	_ = cmd.Wait()
 	cancel()
+
+	// If nothing was produced, treat stderr output as the error message.
+	if parseErr == nil && sb.Len() == 0 && stderrBuf.Len() > 0 {
+		parseErr = fmt.Errorf("claude CLI: %s", strings.TrimSpace(stderrBuf.String()))
+	}
 
 	if parseErr != nil && ctx.Err() != nil {
 		return sb.String(), nil, nil // context cancelled — clean exit
@@ -166,45 +172,37 @@ func (c *CLIProxyClient) Close() error {
 
 // ─── stream-json parsing ──────────────────────────────────────────────────────
 
-// cliStreamEvent is a single line of stream-json output from the claude CLI.
-// Fields are populated based on the event type.
+// The claude CLI --verbose --output-format stream-json emits turn-level events,
+// not the Anthropic API's content_block_delta SSE format.
+//
+// Relevant event shapes:
+//
+//	{"type":"assistant","message":{"content":[{"type":"text","text":"..."},{"type":"tool_use","id":"...","name":"...","input":{...}}],...}}
+//	{"type":"result","result":"...","usage":{"input_tokens":N,"output_tokens":N,"cache_creation_input_tokens":N,"cache_read_input_tokens":N,...}}
+
 type cliStreamEvent struct {
-	Type         string           `json:"type"`
-	Message      *cliMessageStart `json:"message,omitempty"`      // message_start
-	Index        int              `json:"index"`                   // content_block_*
-	ContentBlock *cliContentBlock `json:"content_block,omitempty"` // content_block_start
-	Delta        *cliDelta        `json:"delta,omitempty"`         // content_block_delta / message_delta
-	Usage        *cliUsage        `json:"usage,omitempty"`         // message_delta
+	Type    string      `json:"type"`
+	Message *cliMessage `json:"message,omitempty"` // "assistant" events
+	Usage   *cliUsage   `json:"usage,omitempty"`   // "result" events
 }
 
-type cliMessageStart struct {
-	Usage cliUsage `json:"usage"`
+type cliMessage struct {
+	Content []cliContentItem `json:"content"`
 }
 
-type cliContentBlock struct {
-	Type string `json:"type"` // "text" or "tool_use"
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type cliDelta struct {
-	Type        string `json:"type"`
-	Text        string `json:"text,omitempty"`         // text_delta
-	StopReason  string `json:"stop_reason,omitempty"`  // message_delta
-	PartialJSON string `json:"partial_json,omitempty"` // input_json_delta
+type cliContentItem struct {
+	Type  string          `json:"type"`            // "text" or "tool_use"
+	Text  string          `json:"text,omitempty"`  // text blocks
+	ID    string          `json:"id,omitempty"`    // tool_use blocks
+	Name  string          `json:"name,omitempty"`  // tool_use blocks
+	Input json.RawMessage `json:"input,omitempty"` // tool_use blocks
 }
 
 type cliUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-}
-
-// pendingToolCall tracks an in-flight tool use block.
-type pendingToolCall struct {
-	id        string
-	name      string
-	inputBuf  strings.Builder
-	startTime time.Time
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
 // parseStreamJSON reads newline-delimited stream-json events from the claude CLI stdout,
@@ -220,9 +218,6 @@ func parseStreamJSON(
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
-	// Track tool use blocks by content block index
-	pending := map[int]*pendingToolCall{}
-
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -237,81 +232,58 @@ func parseStreamJSON(
 
 		var ev cliStreamEvent
 		if err := json.Unmarshal(line, &ev); err != nil {
-			continue // skip non-JSON lines (stderr bleed-through, etc.)
+			continue // skip non-JSON lines
 		}
 
 		switch ev.Type {
-		case "message_start":
-			if ev.Message != nil {
-				*inputTokens += ev.Message.Usage.InputTokens
-			}
-
-		case "content_block_start":
-			if ev.ContentBlock == nil {
+		case "assistant":
+			if ev.Message == nil {
 				continue
 			}
-			if ev.ContentBlock.Type == "tool_use" {
-				pending[ev.Index] = &pendingToolCall{
-					id:        ev.ContentBlock.ID,
-					name:      ev.ContentBlock.Name,
-					startTime: time.Now(),
-				}
-			}
-
-		case "content_block_delta":
-			if ev.Delta == nil {
-				continue
-			}
-			switch ev.Delta.Type {
-			case "text_delta":
-				if ev.Delta.Text != "" {
-					sb.WriteString(ev.Delta.Text)
+			for _, block := range ev.Message.Content {
+				switch block.Type {
+				case "text":
+					if block.Text == "" {
+						continue
+					}
+					sb.WriteString(block.Text)
 					select {
-					case events <- LLMEvent{Type: EventTypeToken, Data: TokenData{Text: ev.Delta.Text}}:
+					case events <- LLMEvent{Type: EventTypeToken, Data: TokenData{Text: block.Text}}:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				case "tool_use":
+					var input any
+					if len(block.Input) > 0 {
+						_ = json.Unmarshal(block.Input, &input)
+					}
+					serverName := serverNameFromPrefix(block.Name)
+					start := time.Now()
+					select {
+					case events <- LLMEvent{Type: EventTypeToolCallStart, Data: ToolCallStartData{
+						ToolName:   block.Name,
+						ServerName: serverName,
+						Input:      input,
+					}}:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+					select {
+					case events <- LLMEvent{Type: EventTypeToolCallEnd, Data: ToolCallEndData{
+						ToolName:   block.Name,
+						Output:     "handled by CLI proxy",
+						DurationMs: time.Since(start).Milliseconds(),
+					}}:
 					case <-ctx.Done():
 						return ctx.Err()
 					}
 				}
-			case "input_json_delta":
-				if p, ok := pending[ev.Index]; ok {
-					p.inputBuf.WriteString(ev.Delta.PartialJSON)
-				}
 			}
 
-		case "content_block_stop":
-			if p, ok := pending[ev.Index]; ok {
-				// Emit start + end together once input is fully assembled.
-				// ServerName is extracted from the prefixed tool name (server__tool format).
-				var input any
-				if p.inputBuf.Len() > 0 {
-					_ = json.Unmarshal([]byte(p.inputBuf.String()), &input)
-				}
-				serverName := serverNameFromPrefix(p.name)
-				durationMs := time.Since(p.startTime).Milliseconds()
-				select {
-				case events <- LLMEvent{Type: EventTypeToolCallStart, Data: ToolCallStartData{
-					ToolName:   p.name,
-					ServerName: serverName,
-					Input:      input,
-				}}:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-				select {
-				case events <- LLMEvent{Type: EventTypeToolCallEnd, Data: ToolCallEndData{
-					ToolName:   p.name,
-					Output:     "handled by CLI proxy",
-					DurationMs: durationMs,
-				}}:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-				delete(pending, ev.Index)
-			}
-
-		case "message_delta":
+		case "result":
 			if ev.Usage != nil {
-				*outputTokens += ev.Usage.OutputTokens
+				*inputTokens = ev.Usage.InputTokens + ev.Usage.CacheReadInputTokens + ev.Usage.CacheCreationInputTokens
+				*outputTokens = ev.Usage.OutputTokens
 			}
 		}
 	}
@@ -340,6 +312,26 @@ func lastUserMsg(history []Message) string {
 	return ""
 }
 
+// filterEnv returns a copy of env with any entries whose key matches one of the
+// given names removed. Used to prevent variables like CLAUDECODE from leaking
+// into spawned subprocesses.
+func filterEnv(env []string, keys ...string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, e := range env {
+		exclude := false
+		for _, k := range keys {
+			if strings.HasPrefix(e, k+"=") {
+				exclude = true
+				break
+			}
+		}
+		if !exclude {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
 // writeTempMCPConfig writes a JSON MCP config to a temporary file and returns its path.
 func writeTempMCPConfig(jsonContent string) (string, error) {
 	f, err := os.CreateTemp("", "gridctl-mcp-config-*.json")
@@ -359,7 +351,8 @@ func MCPConfigJSON(sseURL string) string {
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
 			"gridctl": map[string]any{
-				"url": sseURL,
+				"type": "sse",
+				"url":  sseURL,
 			},
 		},
 	}

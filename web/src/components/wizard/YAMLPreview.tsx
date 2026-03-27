@@ -13,16 +13,16 @@ interface YAMLPreviewProps {
 function highlightYAML(yaml: string): Array<{ lineNum: number; html: string }> {
   return yaml.split('\n').map((line, i) => {
     let html = line
+      // Vault references (most specific — process before anything else)
+      .replace(/(\$\{vault:[^}]+\})/, '<span class="text-tertiary font-medium">$1</span>')
+      // Quoted strings (must run before key regex to avoid matching HTML class names)
+      .replace(/"([^"]*)"/, '<span class="text-status-running">"$1"</span>')
       // Comments
       .replace(/(#.*)$/, '<span class="text-text-muted/50 italic">$1</span>')
       // Keys (word followed by colon)
       .replace(/^(\s*)([\w][\w.-]*)(:)/, '$1<span class="text-secondary">$2</span><span class="text-text-muted">$3</span>')
       // Array items
       .replace(/^(\s*)(-)(\s)/, '$1<span class="text-primary">$2</span>$3')
-      // Quoted strings
-      .replace(/"([^"]*)"/, '<span class="text-status-running">"$1"</span>')
-      // Vault references
-      .replace(/(\$\{vault:[^}]+\})/, '<span class="text-tertiary font-medium">$1</span>')
       // Numbers
       .replace(/:\s+(\d+)$/gm, ': <span class="text-primary-light">$1</span>')
       // Booleans

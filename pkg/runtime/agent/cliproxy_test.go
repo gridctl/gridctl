@@ -198,27 +198,20 @@ func makeStreamLine(t string, extra map[string]any) string {
 
 func TestParseStreamJSON_TextTokens(t *testing.T) {
 	lines := []string{
-		makeStreamLine("message_start", map[string]any{
-			"message": map[string]any{"usage": map[string]any{"input_tokens": 10}},
+		makeStreamLine("assistant", map[string]any{
+			"message": map[string]any{
+				"content": []map[string]any{
+					{"type": "text", "text": "Hello world"},
+				},
+			},
 		}),
-		makeStreamLine("content_block_start", map[string]any{
-			"index":         0,
-			"content_block": map[string]any{"type": "text"},
+		makeStreamLine("result", map[string]any{
+			"result": "Hello world",
+			"usage": map[string]any{
+				"input_tokens":  10,
+				"output_tokens": 5,
+			},
 		}),
-		makeStreamLine("content_block_delta", map[string]any{
-			"index": 0,
-			"delta": map[string]any{"type": "text_delta", "text": "Hello"},
-		}),
-		makeStreamLine("content_block_delta", map[string]any{
-			"index": 0,
-			"delta": map[string]any{"type": "text_delta", "text": " world"},
-		}),
-		makeStreamLine("content_block_stop", map[string]any{"index": 0}),
-		makeStreamLine("message_delta", map[string]any{
-			"delta": map[string]any{"stop_reason": "end_turn"},
-			"usage": map[string]any{"output_tokens": 5},
-		}),
-		makeStreamLine("message_stop", nil),
 	}
 	input := strings.NewReader(strings.Join(lines, "\n") + "\n")
 
@@ -254,23 +247,22 @@ func TestParseStreamJSON_TextTokens(t *testing.T) {
 
 func TestParseStreamJSON_ToolUseBlock(t *testing.T) {
 	lines := []string{
-		makeStreamLine("content_block_start", map[string]any{
-			"index": 0,
-			"content_block": map[string]any{
-				"type": "tool_use",
-				"id":   "toolu_01",
-				"name": "fs__read_file",
+		makeStreamLine("assistant", map[string]any{
+			"message": map[string]any{
+				"content": []map[string]any{
+					{
+						"type":  "tool_use",
+						"id":    "toolu_01",
+						"name":  "fs__read_file",
+						"input": map[string]any{"path": "/tmp/foo"},
+					},
+				},
 			},
 		}),
-		makeStreamLine("content_block_delta", map[string]any{
-			"index": 0,
-			"delta": map[string]any{"type": "input_json_delta", "partial_json": `{"path":"/tmp`},
+		makeStreamLine("result", map[string]any{
+			"result": "",
+			"usage":  map[string]any{"input_tokens": 0, "output_tokens": 0},
 		}),
-		makeStreamLine("content_block_delta", map[string]any{
-			"index": 0,
-			"delta": map[string]any{"type": "input_json_delta", "partial_json": `/foo"}`},
-		}),
-		makeStreamLine("content_block_stop", map[string]any{"index": 0}),
 	}
 	input := strings.NewReader(strings.Join(lines, "\n") + "\n")
 
@@ -333,9 +325,10 @@ func TestParseStreamJSON_ContextCancelled(t *testing.T) {
 
 func TestParseStreamJSON_SkipsInvalidJSON(t *testing.T) {
 	lines := "not json at all\n" +
-		makeStreamLine("content_block_delta", map[string]any{
-			"index": 0,
-			"delta": map[string]any{"type": "text_delta", "text": "ok"},
+		makeStreamLine("assistant", map[string]any{
+			"message": map[string]any{
+				"content": []map[string]any{{"type": "text", "text": "ok"}},
+			},
 		}) + "\n"
 
 	var sb strings.Builder

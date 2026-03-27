@@ -295,14 +295,24 @@ function buildResource(data: ResourceFormData, indentLevel = 2): string {
   return lines.join('\n');
 }
 
+// stripListItem removes the leading "- " from a list-item YAML block and dedents
+// all lines by 2 spaces so the result is valid root-level YAML.
+function stripListItem(yaml: string): string {
+  return yaml
+    .replace(/^- /, '')
+    .split('\n')
+    .map((line) => line.replace(/^  /, ''))
+    .join('\n');
+}
+
 export function buildYAML(form: WizardFormData): string {
   switch (form.type) {
     case 'mcp-server':
-      return buildMCPServer(form.data, 0).replace(/^- /, '');
+      return stripListItem(buildMCPServer(form.data, 0));
     case 'agent':
-      return buildAgent(form.data, 0).replace(/^- /, '');
+      return stripListItem(buildAgent(form.data, 0));
     case 'resource':
-      return buildResource(form.data, 0).replace(/^- /, '');
+      return stripListItem(buildResource(form.data, 0));
     case 'stack':
       return buildStack(form.data);
   }
