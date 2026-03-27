@@ -7,7 +7,6 @@ import (
 // ConfigDiff represents the differences between two stack configurations.
 type ConfigDiff struct {
 	MCPServers MCPServerDiff
-	Agents     AgentDiff
 	Resources  ResourceDiff
 	// NetworkChanged indicates if the network config changed (requires full restart)
 	NetworkChanged bool
@@ -25,20 +24,6 @@ type MCPServerChange struct {
 	Name string
 	Old  config.MCPServer
 	New  config.MCPServer
-}
-
-// AgentDiff contains changes to agents.
-type AgentDiff struct {
-	Added    []config.Agent
-	Removed  []config.Agent
-	Modified []AgentChange
-}
-
-// AgentChange represents a modification to an existing agent.
-type AgentChange struct {
-	Name string
-	Old  config.Agent
-	New  config.Agent
 }
 
 // ResourceDiff contains changes to resources.
@@ -60,9 +45,6 @@ func (d *ConfigDiff) IsEmpty() bool {
 	return len(d.MCPServers.Added) == 0 &&
 		len(d.MCPServers.Removed) == 0 &&
 		len(d.MCPServers.Modified) == 0 &&
-		len(d.Agents.Added) == 0 &&
-		len(d.Agents.Removed) == 0 &&
-		len(d.Agents.Modified) == 0 &&
 		len(d.Resources.Added) == 0 &&
 		len(d.Resources.Removed) == 0 &&
 		len(d.Resources.Modified) == 0 &&
@@ -78,9 +60,6 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 
 	// Diff MCP servers
 	diff.MCPServers = diffMCPServers(old.MCPServers, new.MCPServers)
-
-	// Diff agents
-	diff.Agents = diffAgents(old.Agents, new.Agents)
 
 	// Diff resources
 	diff.Resources = diffResources(old.Resources, new.Resources)
@@ -145,43 +124,6 @@ func diffMCPServers(oldServers, newServers []config.MCPServer) MCPServerDiff {
 	for _, oldServer := range oldServers {
 		if _, exists := newMap[oldServer.Name]; !exists {
 			diff.Removed = append(diff.Removed, oldServer)
-		}
-	}
-
-	return diff
-}
-
-func diffAgents(oldAgents, newAgents []config.Agent) AgentDiff {
-	diff := AgentDiff{}
-
-	oldMap := make(map[string]config.Agent)
-	for _, a := range oldAgents {
-		oldMap[a.Name] = a
-	}
-
-	newMap := make(map[string]config.Agent)
-	for _, a := range newAgents {
-		newMap[a.Name] = a
-	}
-
-	// Find added and modified
-	for _, newAgent := range newAgents {
-		oldAgent, exists := oldMap[newAgent.Name]
-		if !exists {
-			diff.Added = append(diff.Added, newAgent)
-		} else if !agentEqual(oldAgent, newAgent) {
-			diff.Modified = append(diff.Modified, AgentChange{
-				Name: newAgent.Name,
-				Old:  oldAgent,
-				New:  newAgent,
-			})
-		}
-	}
-
-	// Find removed
-	for _, oldAgent := range oldAgents {
-		if _, exists := newMap[oldAgent.Name]; !exists {
-			diff.Removed = append(diff.Removed, oldAgent)
 		}
 	}
 
@@ -266,48 +208,6 @@ func mcpServerEqual(a, b config.MCPServer) bool {
 	return true
 }
 
-// agentEqual checks if two agent configs are equivalent.
-func agentEqual(a, b config.Agent) bool {
-	if a.Name != b.Name || a.Image != b.Image ||
-		a.Description != b.Description || a.Network != b.Network {
-		return false
-	}
-
-	if !stringSliceEqual(a.Command, b.Command) {
-		return false
-	}
-
-	if !stringMapEqual(a.Env, b.Env) {
-		return false
-	}
-
-	if !sourceEqual(a.Source, b.Source) {
-		return false
-	}
-
-	// Compare uses (tool selectors) - order independent
-	if !toolSelectorsEqual(a.Uses, b.Uses) {
-		return false
-	}
-
-	// Compare capabilities
-	if !stringSliceEqual(a.Capabilities, b.Capabilities) {
-		return false
-	}
-
-	// Compare build args
-	if !stringMapEqual(a.BuildArgs, b.BuildArgs) {
-		return false
-	}
-
-	// Compare A2A config
-	if !a2aEqual(a.A2A, b.A2A) {
-		return false
-	}
-
-	return true
-}
-
 // resourceEqual checks if two resource configs are equivalent.
 func resourceEqual(a, b config.Resource) bool {
 	if a.Name != b.Name || a.Image != b.Image || a.Network != b.Network {
@@ -343,49 +243,6 @@ func stringMapEqual(a, b map[string]string) bool {
 	}
 	for k, v := range a {
 		if b[k] != v {
-			return false
-		}
-	}
-	return true
-}
-
-// toolSelectorsEqual compares tool selectors in an order-independent way.
-func toolSelectorsEqual(a, b []config.ToolSelector) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	// Build map of a's selectors
-	aMap := make(map[string][]string)
-	for _, s := range a {
-		aMap[s.Server] = s.Tools
-	}
-
-	// Check all of b's selectors exist in a with same tools
-	for _, s := range b {
-		aTools, ok := aMap[s.Server]
-		if !ok {
-			return false
-		}
-		if !stringSliceSetEqual(aTools, s.Tools) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// stringSliceSetEqual compares two string slices as sets (order-independent).
-func stringSliceSetEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	aSet := make(map[string]bool)
-	for _, s := range a {
-		aSet[s] = true
-	}
-	for _, s := range b {
-		if !aSet[s] {
 			return false
 		}
 	}
@@ -447,35 +304,3 @@ func openAPIEqual(a, b *config.OpenAPIConfig) bool {
 	return true
 }
 
-func a2aEqual(a, b *config.A2AConfig) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	if a.Enabled != b.Enabled || a.Version != b.Version {
-		return false
-	}
-	// Compare skills - order independent
-	if len(a.Skills) != len(b.Skills) {
-		return false
-	}
-	aSkills := make(map[string]config.A2ASkill)
-	for _, s := range a.Skills {
-		aSkills[s.ID] = s
-	}
-	for _, bSkill := range b.Skills {
-		aSkill, ok := aSkills[bSkill.ID]
-		if !ok {
-			return false
-		}
-		if aSkill.Name != bSkill.Name || aSkill.Description != bSkill.Description {
-			return false
-		}
-		if !stringSliceSetEqual(aSkill.Tags, bSkill.Tags) {
-			return false
-		}
-	}
-	return true
-}
