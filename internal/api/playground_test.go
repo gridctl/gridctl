@@ -310,7 +310,7 @@ func TestHandlePlaygroundChat_UnsupportedAuthMode(t *testing.T) {
 	body, _ := json.Marshal(map[string]string{
 		"sessionId": "sess-3",
 		"message":   "hello",
-		"authMode":  "CLI_PROXY", // not yet supported in buildLLMClient
+		"authMode":  "UNKNOWN_MODE",
 		"model":     "claude-3-5-sonnet-latest",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/playground/chat", bytes.NewReader(body))
@@ -318,6 +318,25 @@ func TestHandlePlaygroundChat_UnsupportedAuthMode(t *testing.T) {
 	srv.handlePlaygroundChat(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for unsupported auth mode, got %d", rec.Code)
+	}
+}
+
+func TestHandlePlaygroundChat_CLIProxyNotFound(t *testing.T) {
+	// CLI_PROXY is a supported auth mode; returns 400 only if claude binary is not on PATH.
+	// In CI environments without claude installed, this should return 400.
+	srv := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{
+		"sessionId": "sess-cli",
+		"message":   "hello",
+		"authMode":  "CLI_PROXY",
+		"model":     "claude-3-5-sonnet-latest",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/playground/chat", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.handlePlaygroundChat(rec, req)
+	// Acceptable outcomes: 400 (claude not on PATH) or 200 (claude found and inference started)
+	if rec.Code != http.StatusBadRequest && rec.Code != http.StatusOK {
+		t.Errorf("unexpected status for CLI_PROXY: %d", rec.Code)
 	}
 }
 
