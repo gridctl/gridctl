@@ -404,6 +404,12 @@ func (s *Server) buildAPIKeyClient(model string) (agent.LLMClient, error) {
 			return nil, err
 		}
 		return agent.NewLocalLLMClientWithKey("https://api.openai.com/v1", model, key), nil
+	case "gemini":
+		apiKey, err := getKey("GEMINI_API_KEY", "GOOGLE_API_KEY")
+		if err != nil {
+			return nil, err
+		}
+		return agent.NewGeminiClient(context.Background(), apiKey, model)
 	default:
 		return nil, fmt.Errorf("cannot determine provider for model %q", model)
 	}
@@ -448,9 +454,10 @@ func marshalStackYAML(stack *config.Stack) ([]byte, error) {
 
 // patchAgentRequest is the body for PATCH /api/playground/agent.
 type patchAgentRequest struct {
-	AgentID string               `json:"agentId"`
-	Prompt  string               `json:"prompt"`
-	Uses    []config.ToolSelector `json:"uses"`
+	AgentID        string                `json:"agentId"`
+	Prompt         string                `json:"prompt"`
+	Uses           []config.ToolSelector `json:"uses"`
+	EquippedSkills []config.ToolSelector `json:"equippedSkills,omitempty"` // A2A peer agents
 }
 
 // handlePlaygroundAgentPatch updates an agent's prompt and uses in the stack YAML.
@@ -485,6 +492,9 @@ func (s *Server) handlePlaygroundAgentPatch(w http.ResponseWriter, r *http.Reque
 		stack.Agents[i].Prompt = req.Prompt
 		if req.Uses != nil {
 			stack.Agents[i].Uses = req.Uses
+		}
+		if req.EquippedSkills != nil {
+			stack.Agents[i].EquippedSkills = req.EquippedSkills
 		}
 		found = true
 		break
