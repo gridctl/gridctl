@@ -6,7 +6,6 @@ import type {
   GatewayStatus,
   MCPServerStatus,
   ResourceStatus,
-  AgentStatus,
   ClientStatus,
   Tool,
   TokenUsage,
@@ -21,11 +20,9 @@ interface StackState {
   gatewayInfo: { name: string; version: string } | null;
   mcpServers: MCPServerStatus[];
   resources: ResourceStatus[];
-  agents: AgentStatus[];  // Unified: includes both local and remote agents with A2A info
   clients: ClientStatus[];  // Detected/linked LLM clients
   tools: Tool[];
   sessions: number;
-  a2aTasks: number | null;
   codeMode: string | null;  // Gateway code mode status ("on" when active)
   tokenUsage: TokenUsage | null; // Token usage metrics from status response
 
@@ -41,9 +38,6 @@ interface StackState {
   isLoading: boolean;
   error: string | null;
 
-  // A2A wiring draft state (Agent Builder Mode)
-  draftEquippedSkills: Map<string, Set<string>>; // sourceAgentId → Set<targetAgentId>
-
   // === Actions ===
   setGatewayStatus: (status: GatewayStatus) => void;
   setClients: (clients: ClientStatus[]) => void;
@@ -54,8 +48,6 @@ interface StackState {
   selectNode: (nodeId: string | null) => void;
   refreshNodesAndEdges: () => void;
   resetLayout: () => void;
-  addDraftEquippedSkill: (sourceAgentId: string, targetAgentId: string) => void;
-  removeDraftEquippedSkill: (sourceAgentId: string, targetAgentId: string) => void;
 
   // React Flow callbacks
   onNodesChange: (changes: NodeChange[]) => void;
@@ -68,11 +60,9 @@ export const useStackStore = create<StackState>()(
     gatewayInfo: null,
     mcpServers: [],
     resources: [],
-    agents: [],
     clients: [],
     tools: [],
     sessions: 0,
-    a2aTasks: null,
     codeMode: null,
     tokenUsage: null,
     nodes: [],
@@ -83,7 +73,6 @@ export const useStackStore = create<StackState>()(
     lastUpdated: null,
     isLoading: true,
     error: null,
-    draftEquippedSkills: new Map(),
 
     // Actions
     setGatewayStatus: (status) => {
@@ -91,9 +80,7 @@ export const useStackStore = create<StackState>()(
         gatewayInfo: status.gateway,
         mcpServers: status['mcp-servers'] || [],
         resources: status.resources || [],
-        agents: status.agents || [],  // Unified agents (includes A2A info)
         sessions: status.sessions ?? 0,
-        a2aTasks: status.a2a_tasks ?? null,
         codeMode: status.code_mode || null,
         tokenUsage: status.token_usage ?? null,
         lastUpdated: new Date(),
@@ -125,7 +112,7 @@ export const useStackStore = create<StackState>()(
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks, codeMode, draggedPositions } = get();
+      const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode, draggedPositions } = get();
       if (!gatewayInfo) return;
 
       const registryStatus = useRegistryStore.getState().status;
@@ -136,10 +123,8 @@ export const useStackStore = create<StackState>()(
         gatewayInfo,
         mcpServers,
         resources,
-        agents,
         draggedPositions.size > 0 ? draggedPositions : undefined,
         sessions,
-        a2aTasks,
         clients,
         registryStatus,
         codeMode,
@@ -149,7 +134,7 @@ export const useStackStore = create<StackState>()(
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources, agents, clients, sessions, a2aTasks, codeMode } = get();
+      const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode } = get();
       if (!gatewayInfo) return;
 
       const registryStatus = useRegistryStore.getState().status;
@@ -160,10 +145,8 @@ export const useStackStore = create<StackState>()(
         gatewayInfo,
         mcpServers,
         resources,
-        agents,
         undefined,
         sessions,
-        a2aTasks,
         clients,
         registryStatus,
         codeMode,
@@ -171,30 +154,6 @@ export const useStackStore = create<StackState>()(
       );
       set({ nodes, edges, draggedPositions: new Map() });
     },
-
-    addDraftEquippedSkill: (sourceAgentId, targetAgentId) =>
-      set((s) => {
-        const next = new Map(s.draftEquippedSkills);
-        const existing = next.get(sourceAgentId) ?? new Set<string>();
-        next.set(sourceAgentId, new Set([...existing, targetAgentId]));
-        return { draftEquippedSkills: next };
-      }),
-
-    removeDraftEquippedSkill: (sourceAgentId, targetAgentId) =>
-      set((s) => {
-        const next = new Map(s.draftEquippedSkills);
-        const existing = next.get(sourceAgentId);
-        if (existing) {
-          const updated = new Set(existing);
-          updated.delete(targetAgentId);
-          if (updated.size === 0) {
-            next.delete(sourceAgentId);
-          } else {
-            next.set(sourceAgentId, updated);
-          }
-        }
-        return { draftEquippedSkills: next };
-      }),
 
     onNodesChange: (changes) => {
       const nodes = applyNodeChanges(changes, get().nodes);
