@@ -12,19 +12,21 @@ import {
 import { cn } from '../../../lib/cn';
 import { Button } from '../../ui/Button';
 import { showToast } from '../../ui/Toast';
-import { validateStackSpec } from '../../../lib/api';
+import { validateStackSpec, appendToStack } from '../../../lib/api';
 import type { ValidationIssue } from '../../../types';
 
 interface ReviewStepProps {
   yaml: string;
   resourceType: string;
   resourceName: string;
+  onDeploy?: () => void;
 }
 
-export function ReviewStep({ yaml, resourceType, resourceName }: ReviewStepProps) {
+export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: ReviewStepProps) {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [validating, setValidating] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [deploying, setDeploying] = useState(false);
 
   const validate = useCallback(async () => {
     if (!yaml.trim()) {
@@ -76,6 +78,19 @@ export function ReviewStep({ yaml, resourceType, resourceName }: ReviewStepProps
       setTimeout(() => setCopied(false), 2000);
     } catch {
       showToast('error', 'Failed to copy to clipboard');
+    }
+  };
+
+  const handleDeploy = async () => {
+    setDeploying(true);
+    try {
+      const result = await appendToStack(yaml, resourceType);
+      showToast('success', `${result.resourceType} '${result.resourceName}' deployed to stack`);
+      onDeploy?.();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Deploy failed');
+    } finally {
+      setDeploying(false);
     }
   };
 
@@ -222,11 +237,12 @@ export function ReviewStep({ yaml, resourceType, resourceName }: ReviewStepProps
         <Button
           variant="primary"
           size="sm"
-          disabled={hasErrors || validating}
+          onClick={handleDeploy}
+          disabled={hasErrors || validating || deploying}
           className="ml-auto"
         >
-          <Rocket size={14} />
-          Deploy
+          {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+          {deploying ? 'Deploying...' : 'Deploy'}
         </Button>
       </div>
     </div>

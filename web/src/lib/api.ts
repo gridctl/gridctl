@@ -524,6 +524,27 @@ export async function validateStackSpec(yamlContent: string): Promise<Validation
 }
 
 /**
+ * Append a resource to the current stack.yaml
+ * POST /api/stack/append
+ */
+export async function appendToStack(yaml: string, resourceType: string): Promise<{ success: boolean; resourceType: string; resourceName: string }> {
+  const response = await fetch(`${API_BASE}/api/stack/append`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ yaml, resourceType }),
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `Deploy failed: ${response.status}`);
+  }
+
+  return data;
+}
+
+/**
  * Get spec plan diff (spec vs running state)
  * GET /api/stack/plan
  */

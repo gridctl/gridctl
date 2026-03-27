@@ -366,6 +366,7 @@ export function CreationWizard({ onOpenVault }: CreationWizardProps) {
                     yamlError,
                     generatedYaml,
                     counts,
+                    close,
                   )}
                 </div>
               </Panel>
@@ -394,6 +395,7 @@ export function CreationWizard({ onOpenVault }: CreationWizardProps) {
                 yamlError,
                 generatedYaml,
                 counts,
+                close,
               )}
             </div>
           )}
@@ -445,6 +447,7 @@ function renderStepContent(
   yamlError: string | null,
   generatedYaml: string,
   counts: Record<ResourceType, number>,
+  onDeploy: () => void,
 ) {
   switch (step) {
     case 'type':
@@ -486,6 +489,7 @@ function renderStepContent(
               ? (formData[selectedType as keyof typeof formData] as { name?: string })?.name || ''
               : ''
           }
+          onDeploy={onDeploy}
         />
       );
   }

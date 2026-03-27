@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -32,6 +33,8 @@ func (s *Server) handleStack(w http.ResponseWriter, r *http.Request) {
 		s.handleStackSecretsMap(w, r)
 	case path == "recipes" && r.Method == http.MethodGet:
 		s.handleStackRecipes(w, r)
+	case path == "append" && r.Method == http.MethodPost:
+		s.handleStackAppend(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -472,6 +475,83 @@ agents:
       - server: researcher
 `,
 	},
+}
+
+// handleStackAppend appends a resource to the current stack.yaml.
+// POST /api/stack/append
+func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
+	if s.stackFile == "" {
+		writeJSONError(w, "No stack file configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeJSONError(w, "Failed to read request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		YAML         string `json:"yaml"`
+		ResourceType string `json:"resourceType"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	stack, _, err := config.ValidateStackFile(s.stackFile)
+	if err != nil {
+		writeJSONError(w, "Failed to load stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var name string
+	switch req.ResourceType {
+	case "agent":
+		var res config.Agent
+		if err := yaml.Unmarshal([]byte(req.YAML), &res); err != nil {
+			writeJSONError(w, "Invalid agent YAML: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		stack.Agents = append(stack.Agents, res)
+		name = res.Name
+	case "mcp-server":
+		var res config.MCPServer
+		if err := yaml.Unmarshal([]byte(req.YAML), &res); err != nil {
+			writeJSONError(w, "Invalid mcp-server YAML: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		stack.MCPServers = append(stack.MCPServers, res)
+		name = res.Name
+	case "resource":
+		var res config.Resource
+		if err := yaml.Unmarshal([]byte(req.YAML), &res); err != nil {
+			writeJSONError(w, "Invalid resource YAML: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		stack.Resources = append(stack.Resources, res)
+		name = res.Name
+	default:
+		writeJSONError(w, "Unsupported resourceType: "+req.ResourceType, http.StatusBadRequest)
+		return
+	}
+
+	out, err := yaml.Marshal(stack)
+	if err != nil {
+		writeJSONError(w, "Failed to marshal stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := os.WriteFile(s.stackFile, out, 0o644); err != nil {
+		writeJSONError(w, "Failed to write stack file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"success":      true,
+		"resourceType": req.ResourceType,
+		"resourceName": name,
+	})
 }
 
 // loadRunningSpec returns the stack config that was loaded at deploy time.
