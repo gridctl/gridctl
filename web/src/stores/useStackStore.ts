@@ -41,6 +41,9 @@ interface StackState {
   isLoading: boolean;
   error: string | null;
 
+  // A2A wiring draft state (Agent Builder Mode)
+  draftEquippedSkills: Map<string, Set<string>>; // sourceAgentId → Set<targetAgentId>
+
   // === Actions ===
   setGatewayStatus: (status: GatewayStatus) => void;
   setClients: (clients: ClientStatus[]) => void;
@@ -51,6 +54,8 @@ interface StackState {
   selectNode: (nodeId: string | null) => void;
   refreshNodesAndEdges: () => void;
   resetLayout: () => void;
+  addDraftEquippedSkill: (sourceAgentId: string, targetAgentId: string) => void;
+  removeDraftEquippedSkill: (sourceAgentId: string, targetAgentId: string) => void;
 
   // React Flow callbacks
   onNodesChange: (changes: NodeChange[]) => void;
@@ -78,6 +83,7 @@ export const useStackStore = create<StackState>()(
     lastUpdated: null,
     isLoading: true,
     error: null,
+    draftEquippedSkills: new Map(),
 
     // Actions
     setGatewayStatus: (status) => {
@@ -165,6 +171,30 @@ export const useStackStore = create<StackState>()(
       );
       set({ nodes, edges, draggedPositions: new Map() });
     },
+
+    addDraftEquippedSkill: (sourceAgentId, targetAgentId) =>
+      set((s) => {
+        const next = new Map(s.draftEquippedSkills);
+        const existing = next.get(sourceAgentId) ?? new Set<string>();
+        next.set(sourceAgentId, new Set([...existing, targetAgentId]));
+        return { draftEquippedSkills: next };
+      }),
+
+    removeDraftEquippedSkill: (sourceAgentId, targetAgentId) =>
+      set((s) => {
+        const next = new Map(s.draftEquippedSkills);
+        const existing = next.get(sourceAgentId);
+        if (existing) {
+          const updated = new Set(existing);
+          updated.delete(targetAgentId);
+          if (updated.size === 0) {
+            next.delete(sourceAgentId);
+          } else {
+            next.set(sourceAgentId, updated);
+          }
+        }
+        return { draftEquippedSkills: next };
+      }),
 
     onNodesChange: (changes) => {
       const nodes = applyNodeChanges(changes, get().nodes);
