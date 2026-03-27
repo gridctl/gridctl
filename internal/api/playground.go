@@ -12,6 +12,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/runtime/agent"
 	"gopkg.in/yaml.v3"
 )
@@ -189,11 +190,37 @@ func (s *Server) handlePlaygroundChat(w http.ResponseWriter, r *http.Request) {
 	session.AddMessage("user", req.Message)
 	historySnapshot := session.History()
 
+	// Snapshot format savings before inference so we can compute the per-turn delta.
+	var beforeSavings metrics.FormatSavings
+	if s.metricsAccumulator != nil {
+		beforeSavings = s.metricsAccumulator.Snapshot().FormatSavings
+	}
+
 	go func() {
 		defer session.FinishInference()
 		defer llmClient.Close()
 
-		finalResponse, toolTurns, err := llmClient.Stream(ctx, systemPrompt, historySnapshot, tools, &gatewayToolCaller{gateway: s.gateway}, session.WriteChan())
+		// proxyEvents intercepts the metrics event emitted by the LLMClient and
+		// replaces FormatSavingsPct with the actual per-turn delta from the
+		// gateway's format conversion accumulator (pkg/metrics). This gives
+		// accurate savings data regardless of which LLM provider is used.
+		proxyEvents := make(chan agent.LLMEvent, 512)
+		go func() {
+			for ev := range proxyEvents {
+				if ev.Type == agent.EventTypeMetrics && s.metricsAccumulator != nil {
+					if data, ok := ev.Data.(agent.MetricsData); ok {
+						after := s.metricsAccumulator.Snapshot().FormatSavings
+						data.FormatSavingsPct = formatSavingsDelta(beforeSavings, after)
+						ev.Data = data
+					}
+				}
+				session.Send(ev)
+			}
+		}()
+
+		finalResponse, toolTurns, err := llmClient.Stream(ctx, systemPrompt, historySnapshot, tools, &gatewayToolCaller{gateway: s.gateway}, proxyEvents)
+		close(proxyEvents)
+
 		if err != nil && ctx.Err() == nil {
 			// Ensure error is visible via SSE if not already sent
 			session.Send(agent.LLMEvent{Type: agent.EventTypeError, Data: agent.ErrorData{Message: err.Error()}})
@@ -365,9 +392,28 @@ func (s *Server) buildLLMClient(authMode agent.AuthMode, model, ollamaURL string
 		return s.buildAPIKeyClient(model)
 	case agent.AuthModeLocalLLM:
 		return agent.NewLocalLLMClient(ollamaURL, model), nil
+	case agent.AuthModeCLIProxy:
+		return s.buildCLIProxyClient()
 	default:
 		return nil, fmt.Errorf("unsupported auth mode: %s", authMode)
 	}
+}
+
+// buildCLIProxyClient detects the claude CLI on PATH and returns a CLIProxyClient.
+// If the gateway address is configured, an MCP config JSON is generated so the CLI
+// can reach gridctl's MCP tools via the SSE endpoint.
+func (s *Server) buildCLIProxyClient() (agent.LLMClient, error) {
+	cliPath, err := exec.LookPath("claude")
+	if err != nil {
+		return nil, fmt.Errorf("claude CLI not found on PATH: %w", err)
+	}
+
+	mcpConfigJSON := ""
+	if s.gatewayAddr != "" {
+		mcpConfigJSON = agent.MCPConfigJSON(s.gatewayAddr + "/sse")
+	}
+
+	return agent.NewCLIProxyClient(cliPath, mcpConfigJSON), nil
 }
 
 // buildAPIKeyClient resolves API keys from vault and creates the appropriate provider client.
@@ -517,6 +563,20 @@ func (s *Server) handlePlaygroundAgentPatch(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+// formatSavingsDelta computes the per-turn format savings percentage from two accumulator
+// snapshots taken before and after inference. Returns 0 if no tool calls produced savings.
+func formatSavingsDelta(before, after metrics.FormatSavings) float64 {
+	origDelta := after.OriginalTokens - before.OriginalTokens
+	if origDelta <= 0 {
+		return 0
+	}
+	savedDelta := after.SavedTokens - before.SavedTokens
+	if savedDelta <= 0 {
+		return 0
+	}
+	return float64(savedDelta) / float64(origDelta) * 100
 }
 
 // extractTextFromContent concatenates text content from MCP tool result content blocks.

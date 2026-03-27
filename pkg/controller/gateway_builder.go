@@ -360,6 +360,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Ga
 	server.SetStackFile(b.config.StackPath)
 	server.SetLogBuffer(logBuffer)
 	server.SetProvisionerRegistry(provisioner.NewRegistry(), "gridctl")
+	server.SetGatewayAddr(fmt.Sprintf("http://localhost:%d", b.config.Port))
 
 	if b.stack.Gateway != nil && len(b.stack.Gateway.AllowedOrigins) > 0 {
 		server.SetAllowedOrigins(b.stack.Gateway.AllowedOrigins)

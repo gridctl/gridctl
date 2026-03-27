@@ -57,6 +57,7 @@ type Server struct {
 	authHeader     string
 
 	playgroundSessions *agent.SessionRegistry
+	gatewayAddr        string // e.g. "http://localhost:8180" — used to build MCP config for CLI proxy
 }
 
 // NewServer creates a new API server.
@@ -163,6 +164,13 @@ func (s *Server) MetricsAccumulator() *metrics.Accumulator {
 // SetTraceBuffer sets the distributed tracing ring buffer.
 func (s *Server) SetTraceBuffer(buf *tracing.Buffer) {
 	s.traceBuffer = buf
+}
+
+// SetGatewayAddr sets the base URL of this server (e.g. "http://localhost:8180").
+// Used to build the MCP config JSON for CLI proxy sessions so the claude CLI can
+// reach gridctl's MCP gateway at <gatewayAddr>/sse.
+func (s *Server) SetGatewayAddr(addr string) {
+	s.gatewayAddr = addr
 }
 
 // RegistryServer returns the registry server.

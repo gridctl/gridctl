@@ -43,6 +43,7 @@ const MODEL_OPTIONS: ModelOption[] = [
   { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', shortLabel: '2.0 Flash', provider: 'gemini' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', shortLabel: '2.5 Pro', provider: 'gemini' },
   { value: 'ollama', label: 'Ollama (local)', shortLabel: 'Ollama', provider: 'ollama' },
+  { value: 'cli-proxy-claude', label: 'Claude CLI Proxy', shortLabel: 'CLI Proxy', provider: 'cli-proxy' },
 ];
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -50,10 +51,12 @@ const PROVIDER_COLORS: Record<string, string> = {
   openai: 'text-green-400',
   gemini: 'text-blue-400',
   ollama: 'text-secondary',
+  'cli-proxy': 'text-purple-400',
 };
 
 function inferAuthModeFromModel(model: string): string {
   if (model === 'ollama') return 'LOCAL_LLM';
+  if (model.startsWith('cli-proxy')) return 'CLI_PROXY';
   return 'API_KEY';
 }
 
@@ -65,12 +68,14 @@ function ModelSelector({
   onSelectModel,
   onOllamaEndpointChange,
   defaultLabel,
+  claudeCliPath,
 }: {
   selectedModel: string | null;
   ollamaEndpoint: string;
   onSelectModel: (model: string | null) => void;
   onOllamaEndpointChange: (endpoint: string) => void;
   defaultLabel: string;
+  claudeCliPath?: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -82,6 +87,9 @@ function ModelSelector({
     if (!grouped[m.provider]) grouped[m.provider] = [];
     grouped[m.provider].push(m);
   }
+
+  const isCliProxySelected = selectedModel?.startsWith('cli-proxy') ?? false;
+  const cliAvailable = !!claudeCliPath;
 
   return (
     <div className="relative">
@@ -119,44 +127,59 @@ function ModelSelector({
           {Object.entries(grouped).map(([provider, models]) => (
             <div key={provider}>
               <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-text-muted/50 font-medium">
-                {provider}
+                {provider === 'cli-proxy' ? 'cli proxy' : provider}
               </div>
-              {models.map((m) => (
-                <button
-                  key={m.value}
-                  onClick={() => { onSelectModel(m.value); setOpen(false); }}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-left transition-colors',
-                    'hover:bg-surface-highlight/40',
-                    selectedModel === m.value ? PROVIDER_COLORS[provider] + ' bg-surface-elevated/40' : 'text-text-secondary',
-                  )}
-                >
-                  <span className="font-mono">{m.label}</span>
-                  {selectedModel === m.value && <span className="ml-auto text-[9px]">✓</span>}
-                </button>
-              ))}
+              {models.map((m) => {
+                const isCliProxy = m.provider === 'cli-proxy';
+                const disabled = isCliProxy && !cliAvailable;
+                return (
+                  <button
+                    key={m.value}
+                    disabled={disabled}
+                    onClick={() => { if (!disabled) { onSelectModel(m.value); setOpen(false); } }}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-left transition-colors',
+                      disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-surface-highlight/40',
+                      selectedModel === m.value ? PROVIDER_COLORS[provider] + ' bg-surface-elevated/40' : 'text-text-secondary',
+                    )}
+                  >
+                    <span className="font-mono">{m.label}</span>
+                    {isCliProxy && !cliAvailable && (
+                      <span className="ml-auto text-[9px] text-text-muted/50">not found</span>
+                    )}
+                    {selectedModel === m.value && <span className="ml-auto text-[9px]">✓</span>}
+                  </button>
+                );
+              })}
             </div>
           ))}
 
           {/* Ollama endpoint field */}
           {selectedModel === 'ollama' && (
-            <>
-              <div className="border-t border-border/30 px-3 py-2">
-                <label className="block text-[9px] text-text-muted mb-1">Endpoint URL</label>
-                <input
-                  type="text"
-                  value={ollamaEndpoint}
-                  onChange={(e) => onOllamaEndpointChange(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  placeholder="http://localhost:11434/v1"
-                  className={cn(
-                    'w-full bg-surface-elevated border border-border/40 rounded px-2 py-1',
-                    'text-[10px] font-mono text-text-primary outline-none',
-                    'focus:border-secondary/40 transition-colors',
-                  )}
-                />
-              </div>
-            </>
+            <div className="border-t border-border/30 px-3 py-2">
+              <label className="block text-[9px] text-text-muted mb-1">Endpoint URL</label>
+              <input
+                type="text"
+                value={ollamaEndpoint}
+                onChange={(e) => onOllamaEndpointChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="http://localhost:11434/v1"
+                className={cn(
+                  'w-full bg-surface-elevated border border-border/40 rounded px-2 py-1',
+                  'text-[10px] font-mono text-text-primary outline-none',
+                  'focus:border-secondary/40 transition-colors',
+                )}
+              />
+            </div>
+          )}
+
+          {/* CLI proxy path info */}
+          {isCliProxySelected && cliAvailable && (
+            <div className="border-t border-border/30 px-3 py-2">
+              <p className="text-[9px] text-text-muted/60 font-mono truncate" title={claudeCliPath ?? ''}>
+                {claudeCliPath}
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -850,6 +873,24 @@ export function PlaygroundTab() {
                   : 'Send a message to start a test flight session'}
               </p>
             </div>
+            {resolvedAuth.level !== 'none' && (
+              <div className="flex flex-col gap-1.5 w-full max-w-xs">
+                {['What tools do you have?', 'Summarize the network status', 'List active MCP servers'].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => setInput(prompt)}
+                    className={cn(
+                      'w-full text-left px-3 py-2 rounded-lg text-[10px]',
+                      'bg-surface-elevated/40 border border-border/30',
+                      'hover:bg-surface-elevated/70 hover:border-secondary/30 transition-colors',
+                      'text-text-muted hover:text-text-secondary',
+                    )}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -886,6 +927,7 @@ export function PlaygroundTab() {
             onSelectModel={setSelectedModel}
             onOllamaEndpointChange={setOllamaEndpoint}
             defaultLabel={resolvedAuth.model}
+            claudeCliPath={authStatus?.providers?.anthropic?.cliPath}
           />
           {selectedModel && (
             <span className="text-[9px] text-text-muted/50">
