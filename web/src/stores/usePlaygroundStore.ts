@@ -46,6 +46,10 @@ interface PlaygroundState {
   authLoading: boolean;
   sessionId: string;
 
+  // Model selector state
+  selectedModel: string | null; // null = use auto-detected default from auth
+  ollamaEndpoint: string;       // configurable Ollama base URL
+
   // SSE / inference state
   agentIsThinking: boolean;
   activeToolCallEdges: Set<string>; // server names of active tool calls (mapped to edges in Phase 6)
@@ -59,6 +63,8 @@ interface PlaygroundState {
   setAuthStatus: (status: PlaygroundAuthStatus | null) => void;
   setAuthLoading: (loading: boolean) => void;
   clearMessages: () => void;
+  setSelectedModel: (model: string | null) => void;
+  setOllamaEndpoint: (endpoint: string) => void;
 
   setAgentIsThinking: (thinking: boolean) => void;
   addActiveToolCallEdge: (serverName: string) => void;
@@ -83,6 +89,9 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
   authStatus: null,
   authLoading: false,
   sessionId: makeSessionId(),
+
+  selectedModel: null,
+  ollamaEndpoint: 'http://localhost:11434/v1',
 
   agentIsThinking: false,
   activeToolCallEdges: new Set<string>(),
@@ -116,6 +125,8 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
   setAuthStatus: (authStatus) => set({ authStatus }),
   setAuthLoading: (authLoading) => set({ authLoading }),
   clearMessages: () => set({ messages: [], error: null, waterfallEntries: [], agentIsThinking: false, activeToolCallEdges: new Set() }),
+  setSelectedModel: (selectedModel) => set({ selectedModel }),
+  setOllamaEndpoint: (ollamaEndpoint) => set({ ollamaEndpoint }),
 
   setAgentIsThinking: (agentIsThinking) => set({ agentIsThinking }),
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Bot, Settings, Wrench, Eye, Rocket, Save, Check } from 'lucide-react';
+import { X, Bot, Settings, Wrench, Eye, Rocket, Save, Check, Link } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -28,6 +28,7 @@ function serializeAgentYAML(
   agent: AgentStatus,
   prompt: string,
   toolEntries: ToolEntry[],
+  a2aPeers?: string[],
 ): string {
   const lines: string[] = [];
 
@@ -80,6 +81,14 @@ function serializeAgentYAML(
           lines.push(`      - ${t}`);
         }
       }
+    }
+  }
+
+  // A2A peer agents go in equipped_skills
+  if (a2aPeers && a2aPeers.length > 0) {
+    lines.push('equipped_skills:');
+    for (const peer of a2aPeers) {
+      lines.push(`  - server: ${peer}`);
     }
   }
 
@@ -161,6 +170,7 @@ export function AgentBuilderInspector({ agentId, onClose }: AgentBuilderInspecto
 
   const agents = useStackStore((s) => s.agents);
   const mcpServers = useStackStore((s) => s.mcpServers);
+  const draftEquippedSkills = useStackStore((s) => s.draftEquippedSkills);
   const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
 
   const agent = agents.find((a) => a.name === agentId);
@@ -290,10 +300,17 @@ export function AgentBuilderInspector({ agentId, onClose }: AgentBuilderInspecto
 
     try {
       const uses = buildUsesFromEntries(agent, toolEntries);
+      const peers = Array.from(draftEquippedSkills.get(agent.name) ?? []);
+      const equippedSkills = peers.map((p) => ({ server: p }));
       const res = await fetch('/api/playground/agent', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: agent.name, prompt: draftPrompt, uses }),
+        body: JSON.stringify({
+          agentId: agent.name,
+          prompt: draftPrompt,
+          uses,
+          ...(equippedSkills.length > 0 ? { equippedSkills } : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -308,14 +325,15 @@ export function AgentBuilderInspector({ agentId, onClose }: AgentBuilderInspecto
     } finally {
       setSaving(false);
     }
-  }, [agent, draftPrompt, toolEntries]);
+  }, [agent, draftPrompt, toolEntries, draftEquippedSkills]);
 
   const filteredVaultKeys = vaultKeys.filter((k) =>
     k.key.toLowerCase().includes(vaultQuery.toLowerCase()),
   );
 
+  const a2aPeers = agent ? Array.from(draftEquippedSkills.get(agent.name) ?? []) : [];
   const yamlPreview = agent
-    ? serializeAgentYAML(agent, draftPrompt, toolEntries)
+    ? serializeAgentYAML(agent, draftPrompt, toolEntries, a2aPeers)
     : '';
 
   // Group tool entries by server for the tools tab.
@@ -484,7 +502,34 @@ export function AgentBuilderInspector({ agentId, onClose }: AgentBuilderInspecto
         {/* Tools tab */}
         {tab === 'tools' && (
           <div className="p-4 space-y-4">
-            {Object.keys(toolsByServer).length === 0 ? (
+            {/* A2A peers wired via Agent Builder Mode */}
+            {a2aPeers.length > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-medium text-tertiary/80 uppercase tracking-wider flex items-center gap-1.5">
+                    <Link size={9} />
+                    A2A Peers
+                  </span>
+                  <span className="text-[9px] text-text-muted">agent-to-agent</span>
+                </div>
+                <div className="space-y-0.5">
+                  {a2aPeers.map((peer) => (
+                    <div
+                      key={peer}
+                      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md bg-tertiary/5 border border-tertiary/15"
+                    >
+                      <Bot size={10} className="text-tertiary flex-shrink-0" />
+                      <span className="text-[11px] font-mono text-text-primary">{peer}</span>
+                      <span className="ml-auto text-[9px] text-tertiary/60">equipped_skill</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[9px] text-text-muted/50 mt-1">
+                  Wired via Agent Builder Mode. Saved to <code className="font-mono">equipped_skills</code>.
+                </p>
+              </div>
+            )}
+            {Object.keys(toolsByServer).length === 0 && a2aPeers.length === 0 ? (
               <div className="text-center py-8">
                 <Wrench size={20} className="text-text-muted mx-auto mb-2 opacity-50" />
                 <p className="text-[11px] text-text-muted">
@@ -494,7 +539,7 @@ export function AgentBuilderInspector({ agentId, onClose }: AgentBuilderInspecto
                   Add connections via Wiring Mode or edit the stack YAML.
                 </p>
               </div>
-            ) : (
+            ) : Object.keys(toolsByServer).length === 0 ? null : (
               Object.entries(toolsByServer).map(([serverName, tools]) => {
                 const enabledCount = tools.filter((t) => t.enabled).length;
                 const totalCount = tools.length;

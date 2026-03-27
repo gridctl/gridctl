@@ -6,6 +6,7 @@ import {
   BackgroundVariant,
   useReactFlow,
   useViewport,
+  type Connection,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Bot, Database, GitCompareArrows, Eye, Cable, KeyRound } from 'lucide-react';
@@ -50,6 +51,7 @@ export function Canvas() {
   const toggleSecretHeatmap = useUIStore((s) => s.toggleSecretHeatmap);
   const showAgentBuilderMode = useUIStore((s) => s.showAgentBuilderMode);
   const toggleAgentBuilderMode = useUIStore((s) => s.toggleAgentBuilderMode);
+  const addDraftEquippedSkill = useStackStore((s) => s.addDraftEquippedSkill);
   const agentIsThinking = usePlaygroundStore((s) => s.agentIsThinking);
   const activeToolCallEdges = usePlaygroundStore((s) => s.activeToolCallEdges);
 
@@ -165,6 +167,22 @@ export function Canvas() {
     setSidebarOpen(false);
   }, [selectNode, setSidebarOpen]);
 
+  // Handle new edge connections — detect AgentNode→AgentNode for A2A wiring
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!showAgentBuilderMode) return;
+      const currentNodes = useStackStore.getState().nodes;
+      const sourceNode = currentNodes.find((n) => n.id === connection.source);
+      const targetNode = currentNodes.find((n) => n.id === connection.target);
+      const sourceData = sourceNode?.data as { type?: string; name?: string } | undefined;
+      const targetData = targetNode?.data as { type?: string; name?: string } | undefined;
+      if (sourceData?.type === 'agent' && targetData?.type === 'agent' && sourceData.name && targetData.name) {
+        addDraftEquippedSkill(sourceData.name, targetData.name);
+      }
+    },
+    [showAgentBuilderMode, addDraftEquippedSkill],
+  );
+
   // Handle double-click on agent node in builder mode
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: { id: string; data: unknown }) => {
@@ -241,6 +259,7 @@ export function Canvas() {
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
+        onConnect={onConnect}
         onPaneClick={onPaneClick}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
