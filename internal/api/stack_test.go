@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 )
 
 // writeTestStack creates a temporary stack.yaml and returns its path.
@@ -284,6 +286,121 @@ func TestSanitizeStackSecrets_AllTypes(t *testing.T) {
 	assert.Equal(t, "${vault:res_AUTH_TOKEN}", stack.Resources[0].Env["AUTH_TOKEN"])
 }
 
+func TestHandleStackAppend_Agent(t *testing.T) {
+	sf := writeTestStack(t)
+	s := &Server{stackFile: sf}
+
+	body, _ := json.Marshal(map[string]string{
+		"yaml":         "name: agent-new\nruntime: claude-code\nprompt: test\n",
+		"resourceType": "agent",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	w := httptest.NewRecorder()
+
+	s.handleStackAppend(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"success":true`)
+	assert.Contains(t, w.Body.String(), `"resourceName":"agent-new"`)
+
+	data, err := os.ReadFile(sf)
+	assert.NoError(t, err)
+	var stack config.Stack
+	assert.NoError(t, yaml.Unmarshal(data, &stack))
+	assert.Equal(t, 2, len(stack.Agents))
+	assert.Equal(t, "agent-new", stack.Agents[1].Name)
+}
+
+func TestHandleStackAppend_MCPServer(t *testing.T) {
+	sf := writeTestStack(t)
+	s := &Server{stackFile: sf}
+
+	body, _ := json.Marshal(map[string]string{
+		"yaml":         "name: server-new\nimage: nginx\nport: 9000\n",
+		"resourceType": "mcp-server",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	w := httptest.NewRecorder()
+
+	s.handleStackAppend(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"resourceName":"server-new"`)
+
+	data, err := os.ReadFile(sf)
+	assert.NoError(t, err)
+	var stack config.Stack
+	assert.NoError(t, yaml.Unmarshal(data, &stack))
+	assert.Equal(t, 3, len(stack.MCPServers))
+	assert.Equal(t, "server-new", stack.MCPServers[2].Name)
+}
+
+func TestHandleStackAppend_Resource(t *testing.T) {
+	sf := writeTestStack(t)
+	s := &Server{stackFile: sf}
+
+	body, _ := json.Marshal(map[string]string{
+		"yaml":         "name: redis\nimage: redis:7\n",
+		"resourceType": "resource",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	w := httptest.NewRecorder()
+
+	s.handleStackAppend(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"resourceName":"redis"`)
+
+	data, err := os.ReadFile(sf)
+	assert.NoError(t, err)
+	var stack config.Stack
+	assert.NoError(t, yaml.Unmarshal(data, &stack))
+	assert.Equal(t, 1, len(stack.Resources))
+	assert.Equal(t, "redis", stack.Resources[0].Name)
+}
+
+func TestHandleStackAppend_NoStackFile(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+
+	s.handleStackAppend(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+func TestHandleStackAppend_InvalidResourceType(t *testing.T) {
+	sf := writeTestStack(t)
+	s := &Server{stackFile: sf}
+
+	body, _ := json.Marshal(map[string]string{
+		"yaml":         "name: test\n",
+		"resourceType": "stack",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	w := httptest.NewRecorder()
+
+	s.handleStackAppend(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandleStackAppend_InvalidYAML(t *testing.T) {
+	sf := writeTestStack(t)
+	s := &Server{stackFile: sf}
+
+	body, _ := json.Marshal(map[string]string{
+		"yaml":         "[unclosed bracket",
+		"resourceType": "agent",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	w := httptest.NewRecorder()
+
+	s.handleStackAppend(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestHandleStack_Routing(t *testing.T) {
 	s := &Server{}
 
@@ -302,6 +419,7 @@ func TestHandleStack_Routing(t *testing.T) {
 		{"recipes GET", http.MethodGet, "/api/stack/recipes", http.StatusOK},
 		{"unknown path", http.MethodGet, "/api/stack/unknown", http.StatusMethodNotAllowed},
 		{"validate wrong method", http.MethodGet, "/api/stack/validate", http.StatusMethodNotAllowed},
+		{"append POST no stack", http.MethodPost, "/api/stack/append", http.StatusServiceUnavailable},
 	}
 
 	for _, tc := range tests {
