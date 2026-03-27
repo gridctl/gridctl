@@ -43,14 +43,8 @@ func ComputePlan(proposed, current *Stack) *PlanDiff {
 	// Compare MCP servers
 	diffNamedItems(diff, "mcp-server", mcpServerMap(proposed), mcpServerMap(current), compareMCPServers)
 
-	// Compare agents
-	diffNamedItems(diff, "agent", agentMap(proposed), agentMap(current), compareAgents)
-
 	// Compare resources
 	diffNamedItems(diff, "resource", resourceMap(proposed), resourceMap(current), compareResources)
-
-	// Compare A2A agents
-	diffNamedItems(diff, "a2a-agent", a2aAgentMap(proposed), a2aAgentMap(current), compareA2AAgents)
 
 	// Compare gateway config
 	diffGateway(diff, proposed.Gateway, current.Gateway)
@@ -113,26 +107,10 @@ func mcpServerMap(s *Stack) map[string]MCPServer {
 	return m
 }
 
-func agentMap(s *Stack) map[string]Agent {
-	m := make(map[string]Agent, len(s.Agents))
-	for _, a := range s.Agents {
-		m[a.Name] = a
-	}
-	return m
-}
-
 func resourceMap(s *Stack) map[string]Resource {
 	m := make(map[string]Resource, len(s.Resources))
 	for _, r := range s.Resources {
 		m[r.Name] = r
-	}
-	return m
-}
-
-func a2aAgentMap(s *Stack) map[string]A2AAgent {
-	m := make(map[string]A2AAgent, len(s.A2AAgents))
-	for _, a := range s.A2AAgents {
-		m[a.Name] = a
 	}
 	return m
 }
@@ -171,32 +149,6 @@ func compareMCPServers(a, b MCPServer) []string {
 	return details
 }
 
-func compareAgents(a, b Agent) []string {
-	var details []string
-	if a.Image != b.Image {
-		details = append(details, fmt.Sprintf("image: %s → %s", b.Image, a.Image))
-	}
-	if a.Runtime != b.Runtime {
-		details = append(details, fmt.Sprintf("runtime: %s → %s", b.Runtime, a.Runtime))
-	}
-	if a.Prompt != b.Prompt {
-		details = append(details, "prompt changed")
-	}
-	if a.Network != b.Network {
-		details = append(details, fmt.Sprintf("network: %s → %s", b.Network, a.Network))
-	}
-	if !envEqual(a.Env, b.Env) {
-		details = append(details, "env changed")
-	}
-	if !usesEqual(a.Uses, b.Uses) {
-		details = append(details, "uses changed")
-	}
-	if compareSource(a.Source, b.Source) {
-		details = append(details, "source changed")
-	}
-	return details
-}
-
 func compareResources(a, b Resource) []string {
 	var details []string
 	if a.Image != b.Image {
@@ -213,14 +165,6 @@ func compareResources(a, b Resource) []string {
 	}
 	if !stringSliceEqual(a.Volumes, b.Volumes) {
 		details = append(details, "volumes changed")
-	}
-	return details
-}
-
-func compareA2AAgents(a, b A2AAgent) []string {
-	var details []string
-	if a.URL != b.URL {
-		details = append(details, fmt.Sprintf("url: %s → %s", b.URL, a.URL))
 	}
 	return details
 }
@@ -314,27 +258,6 @@ func stringSliceEqual(a, b []string) bool {
 	}
 	for i := range a {
 		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func usesEqual(a, b []ToolSelector) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	// Build lookup from both sides and compare
-	aMap := make(map[string]string, len(a))
-	for _, ts := range a {
-		aMap[ts.Server] = strings.Join(ts.Tools, ",")
-	}
-	bMap := make(map[string]string, len(b))
-	for _, ts := range b {
-		bMap[ts.Server] = strings.Join(ts.Tools, ",")
-	}
-	for k, v := range aMap {
-		if bMap[k] != v {
 			return false
 		}
 	}
