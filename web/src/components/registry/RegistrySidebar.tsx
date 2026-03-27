@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Library,
   BookOpen,
@@ -15,6 +15,10 @@ import {
   GitBranch,
   Download,
   ArrowUpCircle,
+  CheckCircle2,
+  XCircle,
+  MinusCircle,
+  FlaskConical,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useRegistryStore } from '../../stores/useRegistryStore';
@@ -32,10 +36,11 @@ import {
   disableRegistrySkill,
   fetchSkillUpdates,
   updateSkillSource,
+  getSkillTestResult,
 } from '../../lib/api';
 import { hasWorkflowBlock } from '../../lib/workflowSync';
 import { useWizardStore } from '../../stores/useWizardStore';
-import type { AgentSkill, ItemState, UpdateSummary } from '../../types';
+import type { AgentSkill, ItemState, UpdateSummary, SkillTestResult } from '../../types';
 
 export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {}) {
   const skills = useRegistryStore((s) => s.skills);
@@ -388,7 +393,16 @@ function SkillItem({
   onOpenWorkflow: (name: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [testResult, setTestResult] = useState<SkillTestResult | null>(null);
+  const [showTestDetails, setShowTestDetails] = useState(false);
   const isExecutable = hasWorkflowBlock(skill.body ?? '');
+
+  useEffect(() => {
+    if (!expanded) return;
+    getSkillTestResult(skill.name)
+      .then(setTestResult)
+      .catch(() => setTestResult(null));
+  }, [expanded, skill.name]);
 
   return (
     <div className="rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
@@ -462,6 +476,46 @@ function SkillItem({
             )}
           </div>
 
+          {/* Test status badge */}
+          <div className="mt-2">
+            <TestStatusBadge
+              result={testResult}
+              onClick={() => setShowTestDetails(!showTestDetails)}
+            />
+          </div>
+
+          {/* Per-criterion details */}
+          {showTestDetails && testResult && testResult.results.length > 0 && (
+            <div className="mt-2 space-y-1.5 rounded-lg border border-border/30 bg-background/40 p-2">
+              {testResult.results.map((r, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  {r.skipped ? (
+                    <MinusCircle size={10} className="text-text-muted/50 flex-shrink-0 mt-0.5" />
+                  ) : r.passed ? (
+                    <CheckCircle2 size={10} className="text-status-running flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <XCircle size={10} className="text-status-error flex-shrink-0 mt-0.5" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-text-muted font-mono leading-relaxed truncate">
+                      {r.criterion}
+                    </p>
+                    {!r.passed && !r.skipped && r.actual && (
+                      <p className="text-[9px] text-status-error mt-0.5 font-mono truncate">
+                        actual: {r.actual}
+                      </p>
+                    )}
+                    {r.skipped && r.skipReason && (
+                      <p className="text-[9px] text-text-muted/50 mt-0.5 italic">
+                        {r.skipReason}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-border-subtle/50">
             <button
@@ -492,6 +546,51 @@ function SkillItem({
         </div>
       )}
     </div>
+  );
+}
+
+// --- TestStatusBadge ---
+
+function TestStatusBadge({ result, onClick }: { result: SkillTestResult | null; onClick: () => void }) {
+  if (!result || result.status === 'untested') {
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        className="flex items-center gap-1 text-[9px] text-text-muted/60 hover:text-text-muted transition-colors"
+        title="No test run yet"
+      >
+        <MinusCircle size={9} />
+        <span>— untested</span>
+      </button>
+    );
+  }
+
+  const allPassed = result.failed === 0;
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className={cn(
+        'flex items-center gap-1 text-[9px] transition-colors',
+        allPassed
+          ? 'text-status-running hover:text-status-running/80'
+          : 'text-status-error hover:text-status-error/80',
+      )}
+      title={allPassed ? `${result.passed} passed` : `${result.failed} failed`}
+    >
+      {allPassed ? (
+        <>
+          <CheckCircle2 size={9} />
+          <span>✓ tested</span>
+        </>
+      ) : (
+        <>
+          <XCircle size={9} />
+          <span>✗ failing</span>
+        </>
+      )}
+      <FlaskConical size={8} className="opacity-40 ml-0.5" />
+    </button>
   );
 }
 

@@ -193,9 +193,29 @@ export interface AgentSkill {
   compatibility?: string;
   metadata?: Record<string, string>;
   allowedTools?: string;
+  acceptanceCriteria?: string[]; // Given/When/Then scenarios (gridctl extension)
   state: ItemState;
   body: string;          // Markdown content (after frontmatter)
   fileCount: number;     // Supporting files count
+}
+
+// CriterionResult holds the outcome of a single acceptance criterion test
+export interface CriterionResult {
+  criterion: string;
+  passed: boolean;
+  actual?: string;       // Set when failed
+  skipped?: boolean;
+  skipReason?: string;   // Set when skipped
+}
+
+// SkillTestResult holds the full result of running a skill's acceptance criteria
+export interface SkillTestResult {
+  skill: string;
+  passed: number;
+  failed: number;
+  skipped?: number;
+  results: CriterionResult[];
+  status?: 'untested'; // Set when no test has been run yet
 }
 
 // SkillFile represents a file within a skill directory

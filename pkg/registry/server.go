@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
@@ -154,6 +155,23 @@ func (s *Server) Store() *Store {
 // HasContent returns true if the registry has any skills.
 func (s *Server) HasContent() bool {
 	return s.store.HasContent()
+}
+
+// TestSkill runs acceptance criteria for a skill against live MCP tools and stores the result.
+func (s *Server) TestSkill(ctx context.Context, name string, criterionTimeout time.Duration) (*SkillTestResult, error) {
+	sk, err := s.store.GetSkill(name)
+	if err != nil {
+		return nil, fmt.Errorf("skill %q: %w", name, err)
+	}
+	if s.executor == nil {
+		return nil, fmt.Errorf("workflow execution not available (no ToolCaller configured)")
+	}
+	result, err := s.executor.RunAcceptanceCriteria(ctx, sk, criterionTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("running acceptance criteria for %s: %w", name, err)
+	}
+	s.store.SaveTestResult(name, result)
+	return result, nil
 }
 
 // ListPromptData returns active Agent Skills as MCP PromptData.

@@ -916,6 +916,178 @@ func TestHandleRegistry_ValidateWorkflow_NotFound(t *testing.T) {
 	}
 }
 
+// --- Test endpoint ---
+
+func TestHandleRegistry_SkillTest_Untested(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "my-skill", registry.StateDraft)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/my-skill/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result["status"] != "untested" {
+		t.Errorf("expected status=untested, got %v", result["status"])
+	}
+}
+
+func TestHandleRegistry_SkillTest_GetWithResult(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "my-skill", registry.StateDraft)
+
+	// Seed a test result directly into the store
+	regServer.Store().SaveTestResult("my-skill", &registry.SkillTestResult{
+		Skill:  "my-skill",
+		Passed: 2,
+		Failed: 0,
+		Results: []registry.CriterionResult{
+			{Criterion: "GIVEN x WHEN the skill is called THEN contains result", Passed: true},
+		},
+	})
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/my-skill/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result registry.SkillTestResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if result.Passed != 2 {
+		t.Errorf("expected passed=2, got %d", result.Passed)
+	}
+}
+
+func TestHandleRegistry_SkillTest_NotFound(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/nonexistent/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegistry_SkillTest_NoCriteria(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "no-criteria-skill", registry.StateDraft)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/no-criteria-skill/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRegistry_SkillTest_NoExecutor(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+
+	// Seed skill with acceptance criteria but no executor configured
+	sk := &registry.AgentSkill{
+		Name:               "criteria-skill",
+		Description:        "skill with criteria",
+		State:              registry.StateDraft,
+		Body:               "# instructions",
+		AcceptanceCriteria: []string{"GIVEN x WHEN the skill is called THEN contains result"},
+	}
+	if err := regServer.Store().SaveSkill(sk); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/criteria-skill/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	// Without a ToolCaller, executor is nil → 500
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRegistry_SkillTest_MethodNotAllowed(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "my-skill", registry.StateDraft)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/my-skill/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rec.Code)
+	}
+}
+
+// --- Activate enforcement ---
+
+func seedExecutableSkill(t *testing.T, regServer *registry.Server, name string, criteria []string) {
+	t.Helper()
+	sk := &registry.AgentSkill{
+		Name:        name,
+		Description: "Executable skill: " + name,
+		State:       registry.StateDraft,
+		Body:        "# " + name,
+		Workflow: []registry.WorkflowStep{
+			{ID: "step1", Tool: "server__do_thing"},
+		},
+		AcceptanceCriteria: criteria,
+	}
+	if err := regServer.Store().SaveSkill(sk); err != nil {
+		t.Fatalf("failed to seed executable skill: %v", err)
+	}
+}
+
+func TestHandleRegistry_ActivateExecutableSkill_WithoutCriteria(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedExecutableSkill(t, regServer, "exec-skill", nil)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/exec-skill/activate", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when activating executable skill without criteria, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRegistry_ActivateExecutableSkill_WithCriteria(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedExecutableSkill(t, regServer, "exec-skill", []string{
+		"GIVEN valid input WHEN the skill is called THEN is not empty",
+	})
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/exec-skill/activate", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 when activating executable skill with criteria, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // --- Content type detection ---
 
 func TestDetectContentType(t *testing.T) {

@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SkillTestResult } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -352,6 +352,14 @@ export async function activateRegistrySkill(name: string): Promise<AgentSkill> {
 
 export async function disableRegistrySkill(name: string): Promise<AgentSkill> {
   return mutateJSON<AgentSkill>(`/api/registry/skills/${encodeURIComponent(name)}/disable`, 'POST');
+}
+
+export async function runSkillTest(name: string): Promise<SkillTestResult> {
+  return mutateJSON<SkillTestResult>(`/api/registry/skills/${encodeURIComponent(name)}/test`, 'POST');
+}
+
+export async function getSkillTestResult(name: string): Promise<SkillTestResult> {
+  return fetchJSON<SkillTestResult>(`/api/registry/skills/${encodeURIComponent(name)}/test`);
 }
 
 // --- Skill File Management ---

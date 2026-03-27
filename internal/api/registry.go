@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/registry"
 )
@@ -126,6 +127,10 @@ func (s *Server) handleRegistrySkillAction(w http.ResponseWriter, r *http.Reques
 		s.handleRegistrySkillValidateWorkflow(w, r, name)
 		return
 	}
+	if action == "test" {
+		s.handleRegistrySkillTest(w, r, name)
+		return
+	}
 
 	// File management
 	if action == "files" || strings.HasPrefix(action, "files/") {
@@ -191,6 +196,13 @@ func (s *Server) handleRegistrySkillStateChange(w http.ResponseWriter, name, act
 	}
 	switch action {
 	case "activate":
+		// Executable skills must have acceptance criteria before activation.
+		if sk.IsExecutable() && len(sk.AcceptanceCriteria) == 0 {
+			writeJSONError(w,
+				"cannot activate executable skill without acceptance criteria: add acceptance_criteria to the skill frontmatter",
+				http.StatusBadRequest)
+			return
+		}
 		sk.State = registry.StateActive
 	case "disable":
 		sk.State = registry.StateDisabled
@@ -519,6 +531,42 @@ func (s *Server) handleRegistrySkillValidateWorkflow(w http.ResponseWriter, r *h
 		"errors":       validationErrors,
 		"warnings":     warnings,
 	})
+}
+
+// handleRegistrySkillTest runs or retrieves acceptance criteria test results for a skill.
+// POST /api/registry/skills/{name}/test  — run tests, return results
+// GET  /api/registry/skills/{name}/test  — return last test result (or untested status)
+func (s *Server) handleRegistrySkillTest(w http.ResponseWriter, r *http.Request, name string) {
+	sk, err := s.registryServer.Store().GetSkill(name)
+	if err != nil {
+		writeJSONError(w, "Skill not found: "+name, http.StatusNotFound)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		result := s.registryServer.Store().GetTestResult(name)
+		if result == nil {
+			writeJSON(w, map[string]any{"skill": name, "status": "untested"})
+		} else {
+			writeJSON(w, result)
+		}
+
+	case http.MethodPost:
+		if len(sk.AcceptanceCriteria) == 0 {
+			writeJSONError(w, "no acceptance criteria defined for skill: "+name, http.StatusBadRequest)
+			return
+		}
+		result, err := s.registryServer.TestSkill(r.Context(), name, 30*time.Second)
+		if err != nil {
+			writeJSONError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, result)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // refreshRegistryRouter refreshes the registry and re-registers with the gateway router.

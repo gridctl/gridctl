@@ -34,6 +34,13 @@ interface MetadataEntry {
   value: string;
 }
 
+interface CriterionEntry {
+  id: number;
+  given: string;
+  when: string;
+  then: string;
+}
+
 // --- Frontmatter builder ---
 
 function buildSkillMDContent(fields: {
@@ -43,6 +50,7 @@ function buildSkillMDContent(fields: {
   compatibility?: string;
   allowedTools?: string;
   metadata?: Record<string, string>;
+  acceptanceCriteria?: string[];
   state: string;
   body: string;
 }): string {
@@ -56,6 +64,12 @@ function buildSkillMDContent(fields: {
     lines.push('metadata:');
     for (const [k, v] of Object.entries(fields.metadata)) {
       if (k) lines.push(`  ${k}: "${v}"`);
+    }
+  }
+  if (fields.acceptanceCriteria && fields.acceptanceCriteria.length > 0) {
+    lines.push('acceptance_criteria:');
+    for (const c of fields.acceptanceCriteria) {
+      lines.push(`  - ${c}`);
     }
   }
   if (fields.state) lines.push(`state: ${fields.state}`);
@@ -77,6 +91,7 @@ interface ValidationFields {
   compatibility: string;
   allowedTools: string;
   metadata: MetadataEntry[];
+  criteria: CriterionEntry[];
   state: string;
   body: string;
 }
@@ -94,6 +109,9 @@ function createDebouncedValidator(
         for (const entry of fields.metadata ?? []) {
           if (entry.key) metaRecord[entry.key] = entry.value;
         }
+        const criteriaStrings = (fields.criteria ?? [])
+          .filter((c) => c.given && c.when && c.then)
+          .map((c) => `GIVEN ${c.given} WHEN ${c.when} THEN ${c.then}`);
         const content = buildSkillMDContent({
           name: fields.name,
           description: fields.description,
@@ -101,6 +119,7 @@ function createDebouncedValidator(
           compatibility: fields.compatibility,
           allowedTools: fields.allowedTools,
           metadata: metaRecord,
+          acceptanceCriteria: criteriaStrings.length > 0 ? criteriaStrings : undefined,
           state: fields.state,
           body: fields.body,
         });
@@ -204,6 +223,84 @@ function MetadataEditor({
             >
               <X size={12} />
             </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- AcceptanceCriteriaEditor ---
+
+function AcceptanceCriteriaEditor({
+  entries,
+  onAdd,
+  onRemove,
+  onUpdate,
+}: {
+  entries: CriterionEntry[];
+  onAdd: () => void;
+  onRemove: (id: number) => void;
+  onUpdate: (id: number, field: 'given' | 'when' | 'then', val: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-xs text-text-muted uppercase tracking-wider">Acceptance Criteria</label>
+        <button
+          onClick={onAdd}
+          className="text-xs text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
+        >
+          <Plus size={12} /> Add
+        </button>
+      </div>
+      {(entries ?? []).length === 0 && (
+        <p className="text-xs text-text-muted/50 italic">No acceptance criteria defined</p>
+      )}
+      <div className="space-y-3">
+        {(entries ?? []).map((entry) => (
+          <div key={entry.id} className="rounded-lg border border-border/30 bg-background/40 p-3 space-y-2">
+            <div className="flex items-start gap-2">
+              <span className="text-[10px] text-text-muted/60 uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+                GIVEN
+              </span>
+              <input
+                value={entry.given}
+                onChange={(e) => onUpdate(entry.id, 'given', e.target.value)}
+                placeholder="a valid input is provided"
+                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              <button
+                onClick={() => onRemove(entry.id)}
+                className="p-1 text-text-muted hover:text-status-error transition-colors mt-1 flex-shrink-0"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-[10px] text-text-muted/60 uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+                WHEN
+              </span>
+              <input
+                value={entry.when}
+                onChange={(e) => onUpdate(entry.id, 'when', e.target.value)}
+                placeholder="the skill is called"
+                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              <div className="w-6 flex-shrink-0" />
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-[10px] text-text-muted/60 uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+                THEN
+              </span>
+              <input
+                value={entry.then}
+                onChange={(e) => onUpdate(entry.id, 'then', e.target.value)}
+                placeholder="contains expected_output"
+                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              <div className="w-6 flex-shrink-0" />
+            </div>
           </div>
         ))}
       </div>
@@ -342,6 +439,7 @@ export function SkillEditor({
   const [compatibility, setCompatibility] = useState('');
   const [metadata, setMetadata] = useState<MetadataEntry[]>([]);
   const [allowedTools, setAllowedTools] = useState('');
+  const [criteria, setCriteria] = useState<CriterionEntry[]>([]);
   const [state, setState] = useState<ItemState>('draft');
   const [body, setBody] = useState('');
 
@@ -398,6 +496,17 @@ export function SkillEditor({
         })),
       );
       setAllowedTools(skill.allowedTools ?? '');
+      setCriteria(
+        (skill.acceptanceCriteria ?? []).map((c) => {
+          const m = c.match(/GIVEN\s+(.+?)\s+WHEN\s+(.+?)\s+THEN\s+(.+)/i);
+          return {
+            id: ++idCounter.current,
+            given: m?.[1] ?? c,
+            when: m?.[2] ?? '',
+            then: m?.[3] ?? '',
+          };
+        }),
+      );
       setState(skill.state);
       setBody(skill.body ?? '');
     } else {
@@ -407,6 +516,7 @@ export function SkillEditor({
       setCompatibility('');
       setMetadata([]);
       setAllowedTools('');
+      setCriteria([{ id: ++idCounter.current, given: '', when: 'the skill is called', then: '' }]);
       setState('draft');
       setBody('');
     }
@@ -428,6 +538,20 @@ export function SkillEditor({
     setMetadata((prev) => prev.map((m) => (m.id === entryId ? { ...m, [field]: val } : m)));
   }, []);
 
+  // --- Criteria management ---
+
+  const addCriterion = useCallback(() => {
+    setCriteria((prev) => [...prev, { id: ++idCounter.current, given: '', when: 'the skill is called', then: '' }]);
+  }, []);
+
+  const removeCriterion = useCallback((entryId: number) => {
+    setCriteria((prev) => prev.filter((c) => c.id !== entryId));
+  }, []);
+
+  const updateCriterion = useCallback((entryId: number, field: 'given' | 'when' | 'then', val: string) => {
+    setCriteria((prev) => prev.map((c) => (c.id === entryId ? { ...c, [field]: val } : c)));
+  }, []);
+
   // --- Debounced validation ---
 
   const validator = useMemo(
@@ -437,10 +561,10 @@ export function SkillEditor({
 
   useEffect(() => {
     if (name || description || body) {
-      validator.trigger({ name, description, license, compatibility, allowedTools, metadata, state, body });
+      validator.trigger({ name, description, license, compatibility, allowedTools, metadata, criteria, state, body });
     }
     return () => validator.cancel();
-  }, [name, description, body, license, compatibility, allowedTools, metadata, state, validator]);
+  }, [name, description, body, license, compatibility, allowedTools, metadata, criteria, state, validator]);
 
   // --- Save handler ---
 
@@ -454,6 +578,10 @@ export function SkillEditor({
         if (entry.key) metadataRecord[entry.key] = entry.value;
       }
 
+      const criteriaStrings = criteria
+        .filter((c) => c.given && c.when && c.then)
+        .map((c) => `GIVEN ${c.given} WHEN ${c.when} THEN ${c.then}`);
+
       const skillData: AgentSkill = {
         name,
         description,
@@ -464,6 +592,7 @@ export function SkillEditor({
         ...(compatibility && { compatibility }),
         ...(Object.keys(metadataRecord).length > 0 && { metadata: metadataRecord }),
         ...(allowedTools && { allowedTools }),
+        ...(criteriaStrings.length > 0 && { acceptanceCriteria: criteriaStrings }),
       };
 
       if (isNew) {
@@ -482,7 +611,7 @@ export function SkillEditor({
     } finally {
       setSaving(false);
     }
-  }, [saving, name, description, metadata, body, state, skill, license, compatibility, allowedTools, isNew, onSaved, onClose]);
+  }, [saving, name, description, metadata, criteria, body, state, skill, license, compatibility, allowedTools, isNew, onSaved, onClose]);
 
   // --- Keyboard shortcut: Cmd/Ctrl+S to save ---
 
@@ -720,6 +849,14 @@ export function SkillEditor({
                   onAdd={addMetadata}
                   onRemove={removeMetadata}
                   onUpdate={updateMetadata}
+                />
+
+                {/* Acceptance Criteria */}
+                <AcceptanceCriteriaEditor
+                  entries={criteria}
+                  onAdd={addCriterion}
+                  onRemove={removeCriterion}
+                  onUpdate={updateCriterion}
                 />
               </div>
             </div>

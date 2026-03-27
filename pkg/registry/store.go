@@ -19,17 +19,39 @@ var ErrNotFound = errors.New("not found")
 // Each skill is a directory containing a required SKILL.md and optional
 // supporting files (scripts/, references/, assets/).
 type Store struct {
-	baseDir string
-	mu      sync.RWMutex
-	skills  map[string]*AgentSkill
+	baseDir     string
+	mu          sync.RWMutex
+	skills      map[string]*AgentSkill
+	testResults map[string]*SkillTestResult // in-memory last test results per skill
 }
 
 // NewStore creates a store rooted at the given directory.
 func NewStore(baseDir string) *Store {
 	return &Store{
-		baseDir: baseDir,
-		skills:  make(map[string]*AgentSkill),
+		baseDir:     baseDir,
+		skills:      make(map[string]*AgentSkill),
+		testResults: make(map[string]*SkillTestResult),
 	}
+}
+
+// SaveTestResult stores the last test result for a skill in memory.
+func (s *Store) SaveTestResult(name string, result *SkillTestResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := *result
+	s.testResults[name] = &cp
+}
+
+// GetTestResult returns the last test result for a skill, or nil if none has been run.
+func (s *Store) GetTestResult(name string) *SkillTestResult {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result, ok := s.testResults[name]
+	if !ok {
+		return nil
+	}
+	cp := *result
+	return &cp
 }
 
 // Dir returns the store's base directory path.
