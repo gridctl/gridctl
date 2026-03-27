@@ -10,6 +10,8 @@ import {
   Zap,
   Bot,
   User,
+  ChevronDown,
+  Cpu,
 } from 'lucide-react';
 import { marked } from 'marked';
 import { cn } from '../../lib/cn';
@@ -23,6 +25,144 @@ import {
   buildStreamHeaders,
   type PlaygroundAuthResponse,
 } from '../../lib/api';
+
+// ─── Model selector constants ─────────────────────────────────────────────────
+
+interface ModelOption {
+  value: string;
+  label: string;
+  provider: string;
+  shortLabel: string;
+}
+
+const MODEL_OPTIONS: ModelOption[] = [
+  { value: 'claude-3-5-sonnet-latest', label: 'Claude 3.5 Sonnet', shortLabel: '3.5 Sonnet', provider: 'anthropic' },
+  { value: 'claude-3-7-sonnet-latest', label: 'Claude 3.7 Sonnet', shortLabel: '3.7 Sonnet', provider: 'anthropic' },
+  { value: 'gpt-4o', label: 'GPT-4o', shortLabel: 'GPT-4o', provider: 'openai' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini', shortLabel: '4o-mini', provider: 'openai' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', shortLabel: '2.0 Flash', provider: 'gemini' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', shortLabel: '2.5 Pro', provider: 'gemini' },
+  { value: 'ollama', label: 'Ollama (local)', shortLabel: 'Ollama', provider: 'ollama' },
+];
+
+const PROVIDER_COLORS: Record<string, string> = {
+  anthropic: 'text-amber-400',
+  openai: 'text-green-400',
+  gemini: 'text-blue-400',
+  ollama: 'text-secondary',
+};
+
+function inferAuthModeFromModel(model: string): string {
+  if (model === 'ollama') return 'LOCAL_LLM';
+  return 'API_KEY';
+}
+
+// ─── Model selector component ─────────────────────────────────────────────────
+
+function ModelSelector({
+  selectedModel,
+  ollamaEndpoint,
+  onSelectModel,
+  onOllamaEndpointChange,
+  defaultLabel,
+}: {
+  selectedModel: string | null;
+  ollamaEndpoint: string;
+  onSelectModel: (model: string | null) => void;
+  onOllamaEndpointChange: (endpoint: string) => void;
+  defaultLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const active = MODEL_OPTIONS.find((m) => m.value === selectedModel);
+  const providerColor = active ? (PROVIDER_COLORS[active.provider] ?? 'text-text-secondary') : 'text-text-muted';
+
+  const grouped: Record<string, ModelOption[]> = {};
+  for (const m of MODEL_OPTIONS) {
+    if (!grouped[m.provider]) grouped[m.provider] = [];
+    grouped[m.provider].push(m);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] transition-colors',
+          'bg-surface-elevated/40 border border-border/30 hover:border-border/60',
+          open && 'border-secondary/30 bg-surface-elevated/60',
+        )}
+      >
+        <Cpu size={9} className={providerColor} />
+        <span className={cn('font-medium', providerColor)}>
+          {active ? active.shortLabel : defaultLabel}
+        </span>
+        <ChevronDown size={9} className="text-text-muted/60" />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 mb-1 z-50 w-52 glass-panel rounded-lg border border-border/50 shadow-xl overflow-hidden">
+          {/* Auto-detect option */}
+          <button
+            onClick={() => { onSelectModel(null); setOpen(false); }}
+            className={cn(
+              'w-full flex items-center gap-2 px-3 py-2 text-[10px] text-left transition-colors',
+              'hover:bg-surface-highlight/40',
+              selectedModel === null ? 'text-secondary' : 'text-text-muted',
+            )}
+          >
+            <span className="font-medium">Auto-detect</span>
+            <span className="ml-auto text-[9px] text-text-muted/50">from auth</span>
+          </button>
+          <div className="border-t border-border/30" />
+
+          {Object.entries(grouped).map(([provider, models]) => (
+            <div key={provider}>
+              <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-text-muted/50 font-medium">
+                {provider}
+              </div>
+              {models.map((m) => (
+                <button
+                  key={m.value}
+                  onClick={() => { onSelectModel(m.value); setOpen(false); }}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-left transition-colors',
+                    'hover:bg-surface-highlight/40',
+                    selectedModel === m.value ? PROVIDER_COLORS[provider] + ' bg-surface-elevated/40' : 'text-text-secondary',
+                  )}
+                >
+                  <span className="font-mono">{m.label}</span>
+                  {selectedModel === m.value && <span className="ml-auto text-[9px]">✓</span>}
+                </button>
+              ))}
+            </div>
+          ))}
+
+          {/* Ollama endpoint field */}
+          {selectedModel === 'ollama' && (
+            <>
+              <div className="border-t border-border/30 px-3 py-2">
+                <label className="block text-[9px] text-text-muted mb-1">Endpoint URL</label>
+                <input
+                  type="text"
+                  value={ollamaEndpoint}
+                  onChange={(e) => onOllamaEndpointChange(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  placeholder="http://localhost:11434/v1"
+                  className={cn(
+                    'w-full bg-surface-elevated border border-border/40 rounded px-2 py-1',
+                    'text-[10px] font-mono text-text-primary outline-none',
+                    'focus:border-secondary/40 transition-colors',
+                  )}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Auth helpers ────────────────────────────────────────────────────────────
 
@@ -362,6 +502,10 @@ export function PlaygroundTab() {
   const authStatus = usePlaygroundStore((s) => s.authStatus);
   const authLoading = usePlaygroundStore((s) => s.authLoading);
   const sessionId = usePlaygroundStore((s) => s.sessionId);
+  const selectedModel = usePlaygroundStore((s) => s.selectedModel);
+  const ollamaEndpoint = usePlaygroundStore((s) => s.ollamaEndpoint);
+  const setSelectedModel = usePlaygroundStore((s) => s.setSelectedModel);
+  const setOllamaEndpoint = usePlaygroundStore((s) => s.setOllamaEndpoint);
   const addMessage = usePlaygroundStore((s) => s.addMessage);
   const updateStreamingMessage = usePlaygroundStore((s) => s.updateStreamingMessage);
   const finalizeMessage = usePlaygroundStore((s) => s.finalizeMessage);
@@ -387,6 +531,12 @@ export function PlaygroundTab() {
   const sseControllerRef = useRef<AbortController | null>(null);
 
   const resolvedAuth = resolveAuth(authStatus);
+
+  // Override auth/model when user has explicitly selected a model
+  const effectiveModel = selectedModel ?? resolvedAuth.model;
+  const effectiveAuthMode = selectedModel ? inferAuthModeFromModel(selectedModel) : resolvedAuth.authMode;
+  const effectiveOllamaUrl = selectedModel === 'ollama' ? ollamaEndpoint : resolvedAuth.ollamaUrl;
+
   const canSend = !isLoading && resolvedAuth.level !== 'none' && input.trim().length > 0;
 
   // ── Auth check ──────────────────────────────────────────────────────────
@@ -633,9 +783,9 @@ export function PlaygroundTab() {
       await sendPlaygroundChat({
         message: text,
         sessionId,
-        authMode: resolvedAuth.authMode,
-        model: resolvedAuth.model,
-        ...(resolvedAuth.ollamaUrl ? { ollamaUrl: resolvedAuth.ollamaUrl } : {}),
+        authMode: effectiveAuthMode,
+        model: effectiveModel,
+        ...(effectiveOllamaUrl ? { ollamaUrl: effectiveOllamaUrl } : {}),
       });
     } catch (err: unknown) {
       controller.abort();
@@ -649,6 +799,9 @@ export function PlaygroundTab() {
     input,
     isLoading,
     resolvedAuth,
+    effectiveModel,
+    effectiveAuthMode,
+    effectiveOllamaUrl,
     sessionId,
     messages.length,
     addMessage,
@@ -725,6 +878,21 @@ export function PlaygroundTab() {
 
       {/* Input area */}
       <div className="flex-shrink-0 border-t border-border/30 bg-surface/40 px-3 py-2">
+        {/* Model selector row */}
+        <div className="flex items-center gap-2 mb-2">
+          <ModelSelector
+            selectedModel={selectedModel}
+            ollamaEndpoint={ollamaEndpoint}
+            onSelectModel={setSelectedModel}
+            onOllamaEndpointChange={setOllamaEndpoint}
+            defaultLabel={resolvedAuth.model}
+          />
+          {selectedModel && (
+            <span className="text-[9px] text-text-muted/50">
+              Override active
+            </span>
+          )}
+        </div>
         <div
           className={cn(
             'flex items-end gap-2 rounded-lg border transition-colors',
