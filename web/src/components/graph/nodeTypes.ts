@@ -1,7 +1,6 @@
 import type { ComponentType } from 'react';
 import CustomNode from './CustomNode';
 import GatewayNode from './GatewayNode';
-import AgentNode from './AgentNode';
 import ClientNode from './ClientNode';
 
 // Use 'any' to bypass React Flow's strict typing
@@ -10,6 +9,5 @@ export const nodeTypes: Record<string, ComponentType<any>> = {
   mcpServer: CustomNode,
   resource: CustomNode,
   gateway: GatewayNode,
-  agent: AgentNode,
   client: ClientNode,
 };
