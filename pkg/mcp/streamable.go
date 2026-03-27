@@ -25,10 +25,9 @@ type streamableEvent struct {
 
 // StreamableSession represents an active Streamable HTTP session.
 type StreamableSession struct {
-	ID        string
-	AgentName string
+	ID string
 
-	histMu  sync.Mutex
+	histMu sync.Mutex
 	history []*streamableEvent
 	nextID  atomic.Int64
 
@@ -37,11 +36,10 @@ type StreamableSession struct {
 	sseCancel context.CancelFunc // cancels the active GET SSE stream; nil if none
 }
 
-func newStreamableSession(id, agentName string) *StreamableSession {
+func newStreamableSession(id string) *StreamableSession {
 	return &StreamableSession{
-		ID:        id,
-		AgentName: agentName,
-		events:    make(chan streamableEvent, maxEventHistory),
+		ID:     id,
+		events: make(chan streamableEvent, maxEventHistory),
 	}
 }
 
@@ -210,12 +208,6 @@ func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.R
 		_ = json.Unmarshal(req.Params, &params)
 	}
 
-	// Capture agent identity for access control
-	agentName := r.URL.Query().Get("agent")
-	if agentName == "" {
-		agentName = r.Header.Get("X-Agent-Name")
-	}
-
 	result, gSession, err := s.gateway.HandleInitialize(params)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -224,7 +216,7 @@ func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.R
 	}
 
 	// Create transport-level session using the gateway-assigned session ID
-	session := newStreamableSession(gSession.ID, agentName)
+	session := newStreamableSession(gSession.ID)
 	s.mu.Lock()
 	s.sessions[gSession.ID] = session
 	s.mu.Unlock()
@@ -366,42 +358,20 @@ func (s *StreamableHTTPServer) handleRequest(ctx context.Context, session *Strea
 	}
 }
 
-func (s *StreamableHTTPServer) handleToolsList(session *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
-	if session.AgentName != "" && !s.gateway.HasAgent(session.AgentName) {
-		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+session.AgentName)
-	}
-	var (
-		result *ToolsListResult
-		err    error
-	)
-	if session.AgentName != "" {
-		result, err = s.gateway.HandleToolsListForAgent(session.AgentName)
-	} else {
-		result, err = s.gateway.HandleToolsList()
-	}
+func (s *StreamableHTTPServer) handleToolsList(_ *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
+	result, err := s.gateway.HandleToolsList()
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
 	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
-func (s *StreamableHTTPServer) handleToolsCall(ctx context.Context, session *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
+func (s *StreamableHTTPServer) handleToolsCall(ctx context.Context, _ *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
 	var params ToolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid tools/call params")
 	}
-	if session.AgentName != "" && !s.gateway.HasAgent(session.AgentName) {
-		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+session.AgentName)
-	}
-	var (
-		result *ToolCallResult
-		err    error
-	)
-	if session.AgentName != "" {
-		result, err = s.gateway.HandleToolsCallForAgent(ctx, session.AgentName, params)
-	} else {
-		result, err = s.gateway.HandleToolsCall(ctx, params)
-	}
+	result, err := s.gateway.HandleToolsCall(ctx, params)
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
