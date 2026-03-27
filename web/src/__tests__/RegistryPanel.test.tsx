@@ -47,6 +47,9 @@ vi.mock('../lib/api', () => ({
   deleteRegistrySkill: vi.fn(),
   activateRegistrySkill: vi.fn(),
   disableRegistrySkill: vi.fn(),
+  fetchSkillUpdates: vi.fn().mockResolvedValue({ available: 0, sources: [] }),
+  updateSkillSource: vi.fn(),
+  getSkillTestResult: vi.fn().mockResolvedValue({ skill: '', passed: 0, failed: 0, results: [], status: 'untested' }),
 }));
 
 vi.mock('../lib/workflowSync', () => ({
