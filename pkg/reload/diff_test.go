@@ -160,37 +160,6 @@ func TestComputeDiff_NetworkChanged(t *testing.T) {
 	}
 }
 
-func TestComputeDiff_AgentChanges(t *testing.T) {
-	old := &config.Stack{
-		Name: "test",
-		Network: config.Network{
-			Name:   "test-net",
-			Driver: "bridge",
-		},
-		Agents: []config.Agent{
-			{Name: "agent1", Image: "agent-image1"},
-		},
-	}
-	new := &config.Stack{
-		Name: "test",
-		Network: config.Network{
-			Name:   "test-net",
-			Driver: "bridge",
-		},
-		Agents: []config.Agent{
-			{Name: "agent1", Image: "agent-image1"},
-			{Name: "agent2", Image: "agent-image2"},
-		},
-	}
-
-	diff := ComputeDiff(old, new)
-	if len(diff.Agents.Added) != 1 {
-		t.Fatalf("expected 1 added agent, got %d", len(diff.Agents.Added))
-	}
-	if diff.Agents.Added[0].Name != "agent2" {
-		t.Errorf("expected added agent 'agent2', got '%s'", diff.Agents.Added[0].Name)
-	}
-}
 
 func TestComputeDiff_ResourceChanges(t *testing.T) {
 	old := &config.Stack{
@@ -261,64 +230,3 @@ func TestMCPServerEqual_ToolsChanges(t *testing.T) {
 	}
 }
 
-func TestToolSelectorsEqual_OrderIndependent(t *testing.T) {
-	a := []config.ToolSelector{
-		{Server: "server1", Tools: []string{"tool1", "tool2"}},
-		{Server: "server2", Tools: []string{"tool3"}},
-	}
-	b := []config.ToolSelector{
-		{Server: "server2", Tools: []string{"tool3"}},
-		{Server: "server1", Tools: []string{"tool2", "tool1"}}, // Different order
-	}
-
-	if !toolSelectorsEqual(a, b) {
-		t.Error("expected order-independent comparison to return true")
-	}
-}
-
-func TestToolSelectorsEqual_Different(t *testing.T) {
-	a := []config.ToolSelector{
-		{Server: "server1", Tools: []string{"tool1"}},
-	}
-	b := []config.ToolSelector{
-		{Server: "server1", Tools: []string{"tool2"}},
-	}
-
-	if toolSelectorsEqual(a, b) {
-		t.Error("expected different tool selectors to return false")
-	}
-}
-
-func TestAgentEqual_CapabilitiesChange(t *testing.T) {
-	a := config.Agent{
-		Name:         "agent1",
-		Image:        "image1",
-		Capabilities: []string{"cap1", "cap2"},
-	}
-	b := config.Agent{
-		Name:         "agent1",
-		Image:        "image1",
-		Capabilities: []string{"cap1"},
-	}
-
-	if agentEqual(a, b) {
-		t.Error("expected agents with different capabilities to be not equal")
-	}
-}
-
-func TestAgentEqual_BuildArgsChange(t *testing.T) {
-	a := config.Agent{
-		Name:      "agent1",
-		Image:     "image1",
-		BuildArgs: map[string]string{"KEY": "value1"},
-	}
-	b := config.Agent{
-		Name:      "agent1",
-		Image:     "image1",
-		BuildArgs: map[string]string{"KEY": "value2"},
-	}
-
-	if agentEqual(a, b) {
-		t.Error("expected agents with different build args to be not equal")
-	}
-}

@@ -151,29 +151,6 @@ func TestBuildWorkloadSummaries_DefaultTransport(t *testing.T) {
 	}
 }
 
-func TestBuildWorkloadSummaries_Agents(t *testing.T) {
-	stack := &config.Stack{}
-	result := &runtime.UpResult{
-		Agents: []runtime.AgentResult{
-			{Name: "agent-1"},
-			{Name: "agent-2"},
-		},
-	}
-
-	summaries := BuildWorkloadSummaries(stack, result)
-	if len(summaries) != 2 {
-		t.Fatalf("expected 2 summaries, got %d", len(summaries))
-	}
-
-	for _, s := range summaries {
-		if s.Type != "agent" {
-			t.Errorf("expected type 'agent', got '%s'", s.Type)
-		}
-		if s.Transport != "container" {
-			t.Errorf("expected transport 'container', got '%s'", s.Transport)
-		}
-	}
-}
 
 func TestBuildWorkloadSummaries_Resources(t *testing.T) {
 	stack := &config.Stack{
@@ -212,14 +189,11 @@ func TestBuildWorkloadSummaries_Mixed(t *testing.T) {
 		MCPServers: []runtime.MCPServerResult{
 			{Name: "server1"},
 		},
-		Agents: []runtime.AgentResult{
-			{Name: "agent1"},
-		},
 	}
 
 	summaries := BuildWorkloadSummaries(stack, result)
-	if len(summaries) != 3 {
-		t.Fatalf("expected 3 summaries, got %d", len(summaries))
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 summaries, got %d", len(summaries))
 	}
 
 	types := make(map[string]int)
@@ -228,9 +202,6 @@ func TestBuildWorkloadSummaries_Mixed(t *testing.T) {
 	}
 	if types["mcp-server"] != 1 {
 		t.Errorf("expected 1 mcp-server, got %d", types["mcp-server"])
-	}
-	if types["agent"] != 1 {
-		t.Errorf("expected 1 agent, got %d", types["agent"])
 	}
 	if types["resource"] != 1 {
 		t.Errorf("expected 1 resource, got %d", types["resource"])

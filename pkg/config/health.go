@@ -111,18 +111,6 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 		}
 	}
 
-	// Warn about empty uses on agents
-	for i, agent := range s.Agents {
-		if len(agent.Uses) == 0 {
-			r.Issues = append(r.Issues, ValidationIssue{
-				Field:    fmt.Sprintf("agents[%d].uses", i),
-				Message:  "agent has no tool dependencies configured",
-				Severity: SeverityWarning,
-			})
-			r.WarningCount++
-		}
-	}
-
 	// Warn about gateway without auth
 	if s.Gateway != nil && s.Gateway.Auth == nil {
 		r.Issues = append(r.Issues, ValidationIssue{
@@ -132,11 +120,6 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 		})
 		r.WarningCount++
 	}
-}
-
-// MergeEquippedSkills merges equipped_skills alias into uses for API callers.
-func MergeEquippedSkills(s *Stack) {
-	mergeEquippedSkills(s)
 }
 
 // ExpandStackVarsWithEnv expands environment variable references in stack fields.
@@ -156,9 +139,6 @@ func ValidateStackFile(path string) (*Stack, *ValidationResult, error) {
 	if err := yaml.Unmarshal(data, &stack); err != nil {
 		return nil, nil, fmt.Errorf("parsing stack YAML: %w", err)
 	}
-
-	// Merge equipped_skills alias
-	mergeEquippedSkills(&stack)
 
 	// Expand env vars (no vault — validate-only doesn't need secrets)
 	expandStackVars(&stack, EnvResolver())

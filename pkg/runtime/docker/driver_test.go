@@ -455,39 +455,6 @@ func TestDockerRuntime_Status_ResourceType(t *testing.T) {
 	}
 }
 
-func TestDockerRuntime_Status_AgentType(t *testing.T) {
-	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
-			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
-					Name:  "/gridctl-test-my-agent",
-					State: &types.ContainerState{Status: "running"},
-				},
-				Config: &container.Config{
-					Labels: map[string]string{
-						LabelManaged: "true",
-						LabelStack:   "test",
-						LabelAgent:   "my-agent",
-					},
-				},
-				NetworkSettings: &types.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{Ports: nat.PortMap{}},
-				},
-			},
-		},
-	}
-	rt := NewWithClient(mock)
-
-	status, err := rt.Status(context.Background(), runtime.WorkloadID("c1"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if status.Type != runtime.WorkloadTypeAgent {
-		t.Errorf("expected type 'agent', got %q", status.Type)
-	}
-}
 
 func TestDockerRuntime_Status_NoPort(t *testing.T) {
 	mock := &MockDockerClient{

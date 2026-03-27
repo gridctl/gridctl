@@ -19,7 +19,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/format"
 	"github.com/gridctl/gridctl/pkg/logging"
@@ -83,9 +82,8 @@ type Gateway struct {
 
 	mu          sync.RWMutex
 	serverInfo  ServerInfo
-	serverMeta  map[string]MCPServerConfig       // name -> config for status reporting
-	agentAccess map[string][]config.ToolSelector // agent name -> allowed MCP servers with tool filtering
-	codeMode    *CodeMode                        // nil when code mode is off
+	serverMeta  map[string]MCPServerConfig // name -> config for status reporting
+	codeMode    *CodeMode                  // nil when code mode is off
 	codeModeStr string                           // "off", "on" — for status reporting
 
 	healthMu sync.RWMutex
@@ -118,7 +116,6 @@ func NewGateway() *Gateway {
 			Version: "dev",
 		},
 		serverMeta:     make(map[string]MCPServerConfig),
-		agentAccess:    make(map[string][]config.ToolSelector),
 		health:         make(map[string]*HealthStatus),
 		blockedServers: make(map[string]bool),
 	}
@@ -648,222 +645,6 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 
 	g.logger.Info("MCP server restarted", "name", name)
 	return nil
-}
-
-// RegisterAgent registers an agent and its allowed MCP servers with optional tool filtering.
-func (g *Gateway) RegisterAgent(name string, uses []config.ToolSelector) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.agentAccess[name] = uses
-}
-
-// UnregisterAgent removes an agent's access configuration.
-func (g *Gateway) UnregisterAgent(name string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.agentAccess, name)
-}
-
-// HasAgent returns true if the named agent is registered with the gateway.
-func (g *Gateway) HasAgent(name string) bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	_, ok := g.agentAccess[name]
-	return ok
-}
-
-// GetAgentAllowedServers returns the MCP servers an agent can access.
-// Returns nil if the agent is not registered (allows all for backward compatibility).
-func (g *Gateway) GetAgentAllowedServers(agentName string) []config.ToolSelector {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.agentAccess[agentName]
-}
-
-// getAgentServerAccess returns the ToolSelector for a specific server if the agent has access.
-// Returns nil if the agent doesn't have access to this server, or if the agent is not registered
-// (in which case all access is allowed for backward compatibility).
-func (g *Gateway) getAgentServerAccess(agentName, serverName string) (*config.ToolSelector, bool) {
-	allowed := g.GetAgentAllowedServers(agentName)
-	if allowed == nil {
-		// Agent not registered - allow all (backward compatibility)
-		return nil, true
-	}
-	for i := range allowed {
-		if allowed[i].Server == serverName {
-			return &allowed[i], true
-		}
-	}
-	return nil, false
-}
-
-// isToolAllowedForAgent checks if an agent can access a specific tool from a server.
-// This checks both server-level access and tool-level filtering.
-func (g *Gateway) isToolAllowedForAgent(agentName, serverName, toolName string) bool {
-	selector, allowed := g.getAgentServerAccess(agentName, serverName)
-	if !allowed {
-		return false
-	}
-	if selector == nil {
-		// Agent not registered - allow all (backward compatibility)
-		return true
-	}
-	// If no tool list specified, all tools from this server are allowed
-	if len(selector.Tools) == 0 {
-		return true
-	}
-	// Check if tool is in the whitelist
-	for _, t := range selector.Tools {
-		if t == toolName {
-			return true
-		}
-	}
-	return false
-}
-
-// HandleToolsListForAgent returns tools filtered by agent access permissions.
-// This applies both server-level and tool-level filtering.
-// When code mode is active, returns the two meta-tools instead.
-func (g *Gateway) HandleToolsListForAgent(agentName string) (*ToolsListResult, error) {
-	g.mu.RLock()
-	cm := g.codeMode
-	g.mu.RUnlock()
-
-	if cm != nil {
-		return cm.ToolsList(), nil
-	}
-
-	allowed := g.GetAgentAllowedServers(agentName)
-	if allowed == nil {
-		// Agent not registered - return all tools
-		return g.HandleToolsList()
-	}
-
-	// Build map of allowed servers to their tool selectors for fast lookup
-	serverSelectors := make(map[string]config.ToolSelector)
-	for _, selector := range allowed {
-		serverSelectors[selector.Server] = selector
-	}
-
-	// Filter tools by allowed MCP servers and tool whitelists
-	allTools := g.router.AggregatedTools()
-	var filteredTools []Tool
-	for _, tool := range allTools {
-		serverName, originalToolName, err := ParsePrefixedTool(tool.Name)
-		if err != nil {
-			g.logger.Warn("skipping tool with invalid name format", "name", tool.Name, "error", err)
-			continue
-		}
-
-		selector, hasServer := serverSelectors[serverName]
-		if !hasServer {
-			continue
-		}
-
-		// If no tool whitelist, include all tools from this server
-		if len(selector.Tools) == 0 {
-			filteredTools = append(filteredTools, tool)
-			continue
-		}
-
-		// Check if this specific tool is in the whitelist
-		for _, allowedTool := range selector.Tools {
-			if allowedTool == originalToolName {
-				filteredTools = append(filteredTools, tool)
-				break
-			}
-		}
-	}
-
-	return &ToolsListResult{Tools: filteredTools}, nil
-}
-
-// HandleToolsCallForAgent routes a tool call with agent access validation.
-// This validates both server-level and tool-level access.
-// When code mode is active, passes the agent-scoped tool list to the sandbox.
-func (g *Gateway) HandleToolsCallForAgent(ctx context.Context, agentName string, params ToolCallParams) (*ToolCallResult, error) {
-	g.mu.RLock()
-	cm := g.codeMode
-	g.mu.RUnlock()
-
-	if cm != nil && cm.IsMetaTool(params.Name) {
-		// Build agent-scoped tool list for the sandbox
-		agentTools, _ := g.getAgentFilteredTools(agentName)
-		return cm.HandleCallWithScope(ctx, params, g, agentTools)
-	}
-
-	// Parse the tool name to get the MCP server and original tool name
-	serverName, originalToolName, err := ParsePrefixedTool(params.Name)
-	if err != nil {
-		return &ToolCallResult{
-			Content: []Content{NewTextContent(fmt.Sprintf("Invalid tool name: %v", err))},
-			IsError: true,
-		}, nil
-	}
-
-	// Child span: ACL check.
-	tracer := otel.Tracer("gridctl.gateway")
-	_, aclSpan := tracer.Start(ctx, "mcp.acl.check")
-	aclSpan.SetAttributes(
-		attribute.String("agent.name", agentName),
-		attribute.String("server.name", serverName),
-		attribute.String("tool.name", originalToolName),
-	)
-	allowed := g.isToolAllowedForAgent(agentName, serverName, originalToolName)
-	if !allowed {
-		aclSpan.SetStatus(codes.Error, "access denied")
-	}
-	aclSpan.End()
-
-	if !allowed {
-		g.logger.Warn("tool access denied", "agent", agentName, "tool", originalToolName, "server", serverName)
-		return &ToolCallResult{
-			Content: []Content{NewTextContent(fmt.Sprintf("Access denied: agent '%s' cannot use tool '%s' from '%s'", agentName, originalToolName, serverName))},
-			IsError: true,
-		}, nil
-	}
-
-	// Proceed with the tool call
-	return g.HandleToolsCall(ctx, params)
-}
-
-// getAgentFilteredTools returns the aggregated tools filtered by agent access permissions.
-// This is used by code mode to build a scoped tool set for the sandbox.
-// Unlike HandleToolsListForAgent, this always returns real tools (not meta-tools).
-func (g *Gateway) getAgentFilteredTools(agentName string) ([]Tool, error) {
-	allowed := g.GetAgentAllowedServers(agentName)
-	if allowed == nil {
-		return g.router.AggregatedTools(), nil
-	}
-
-	serverSelectors := make(map[string]config.ToolSelector)
-	for _, selector := range allowed {
-		serverSelectors[selector.Server] = selector
-	}
-
-	allTools := g.router.AggregatedTools()
-	var filteredTools []Tool
-	for _, tool := range allTools {
-		serverName, originalToolName, err := ParsePrefixedTool(tool.Name)
-		if err != nil {
-			continue
-		}
-		selector, hasServer := serverSelectors[serverName]
-		if !hasServer {
-			continue
-		}
-		if len(selector.Tools) == 0 {
-			filteredTools = append(filteredTools, tool)
-			continue
-		}
-		for _, allowedTool := range selector.Tools {
-			if allowedTool == originalToolName {
-				filteredTools = append(filteredTools, tool)
-				break
-			}
-		}
-	}
-	return filteredTools, nil
 }
 
 // logToolCountHint logs an INFO message suggesting code_mode when tool count exceeds 50.

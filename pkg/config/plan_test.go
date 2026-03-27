@@ -117,26 +117,6 @@ func TestComputePlan_ChangeServerPort(t *testing.T) {
 	assert.Contains(t, diff.Items[0].Details[0], "4000")
 }
 
-func TestComputePlan_AddAgent(t *testing.T) {
-	current := &Stack{
-		Name:    "test",
-		Network: Network{Name: "test-net"},
-	}
-	proposed := &Stack{
-		Name:    "test",
-		Network: Network{Name: "test-net"},
-		Agents: []Agent{
-			{Name: "agent1", Image: "agent:latest"},
-		},
-	}
-
-	diff := ComputePlan(proposed, current)
-	assert.True(t, diff.HasChanges)
-	assert.Len(t, diff.Items, 1)
-	assert.Equal(t, DiffAdd, diff.Items[0].Action)
-	assert.Equal(t, "agent", diff.Items[0].Kind)
-	assert.Equal(t, "agent1", diff.Items[0].Name)
-}
 
 func TestComputePlan_AddResource(t *testing.T) {
 	current := &Stack{
@@ -156,27 +136,6 @@ func TestComputePlan_AddResource(t *testing.T) {
 	assert.Equal(t, "resource", diff.Items[0].Kind)
 }
 
-func TestComputePlan_ChangeAgentUses(t *testing.T) {
-	current := &Stack{
-		Name:    "test",
-		Network: Network{Name: "test-net"},
-		Agents: []Agent{
-			{Name: "a1", Image: "agent:1", Uses: []ToolSelector{{Server: "s1"}}},
-		},
-	}
-	proposed := &Stack{
-		Name:    "test",
-		Network: Network{Name: "test-net"},
-		Agents: []Agent{
-			{Name: "a1", Image: "agent:1", Uses: []ToolSelector{{Server: "s1"}, {Server: "s2"}}},
-		},
-	}
-
-	diff := ComputePlan(proposed, current)
-	assert.True(t, diff.HasChanges)
-	assert.Equal(t, DiffChange, diff.Items[0].Action)
-	assert.Contains(t, diff.Items[0].Details, "uses changed")
-}
 
 func TestComputePlan_ChangeEnv(t *testing.T) {
 	current := &Stack{
@@ -278,27 +237,6 @@ func TestComputePlan_AdvancedNetworkAddRemove(t *testing.T) {
 	assert.True(t, removed, "expected net2 removed")
 }
 
-func TestComputePlan_A2AAgentChange(t *testing.T) {
-	current := &Stack{
-		Name:    "test",
-		Network: Network{Name: "test-net"},
-		A2AAgents: []A2AAgent{
-			{Name: "remote1", URL: "http://old.example.com"},
-		},
-	}
-	proposed := &Stack{
-		Name:    "test",
-		Network: Network{Name: "test-net"},
-		A2AAgents: []A2AAgent{
-			{Name: "remote1", URL: "http://new.example.com"},
-		},
-	}
-
-	diff := ComputePlan(proposed, current)
-	assert.True(t, diff.HasChanges)
-	assert.Equal(t, "a2a-agent", diff.Items[0].Kind)
-	assert.Equal(t, DiffChange, diff.Items[0].Action)
-}
 
 func TestComputePlan_MultipleChanges(t *testing.T) {
 	current := &Stack{
@@ -402,14 +340,3 @@ func TestStringSliceEqual(t *testing.T) {
 	assert.False(t, stringSliceEqual([]string{"a"}, []string{"a", "b"}))
 }
 
-func TestUsesEqual(t *testing.T) {
-	a := []ToolSelector{{Server: "s1", Tools: []string{"t1"}}}
-	b := []ToolSelector{{Server: "s1", Tools: []string{"t1"}}}
-	assert.True(t, usesEqual(a, b))
-
-	c := []ToolSelector{{Server: "s1", Tools: []string{"t2"}}}
-	assert.False(t, usesEqual(a, c))
-
-	d := []ToolSelector{{Server: "s1"}, {Server: "s2"}}
-	assert.False(t, usesEqual(a, d))
-}

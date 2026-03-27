@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useSpecStore } from '../stores/useSpecStore';
-import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 
 // Mock API
@@ -35,9 +34,6 @@ describe('SpecModeOverlay', () => {
     useSpecStore.setState({
       health: null,
       plan: null,
-    });
-    useStackStore.setState({
-      agents: [],
     });
   });
 

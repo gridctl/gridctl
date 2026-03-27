@@ -17,9 +17,6 @@ func TestValidateWithIssues_ValidStack(t *testing.T) {
 		MCPServers: []MCPServer{
 			{Name: "s1", Image: "alpine", Port: 3000},
 		},
-		Agents: []Agent{
-			{Name: "a1", Image: "agent:1", Uses: []ToolSelector{{Server: "s1"}}},
-		},
 	}
 
 	result := ValidateWithIssues(stack)
@@ -72,29 +69,6 @@ func TestValidateWithIssues_WarningNoAuth(t *testing.T) {
 	assert.True(t, found, "expected warning about missing auth")
 }
 
-func TestValidateWithIssues_WarningEmptyUses(t *testing.T) {
-	stack := &Stack{
-		Name:    "test",
-		Network: Network{Name: "test-net"},
-		MCPServers: []MCPServer{
-			{Name: "s1", Image: "alpine", Port: 3000},
-		},
-		Agents: []Agent{
-			{Name: "a1", Image: "agent:1", Uses: nil}, // No uses
-		},
-	}
-
-	result := ValidateWithIssues(stack)
-	assert.True(t, result.Valid) // Still valid, just a warning
-
-	found := false
-	for _, issue := range result.Issues {
-		if issue.Severity == SeverityWarning && issue.Field == "agents[0].uses" {
-			found = true
-		}
-	}
-	assert.True(t, found, "expected warning about empty uses")
-}
 
 func TestValidateWithIssues_MixedErrorsAndWarnings(t *testing.T) {
 	stack := &Stack{

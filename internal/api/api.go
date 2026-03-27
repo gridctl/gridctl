@@ -1,18 +1,14 @@
 package api
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gridctl/gridctl/pkg/a2a"
-	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -21,12 +17,9 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
-	"github.com/gridctl/gridctl/pkg/runtime/agent"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
-
-	"github.com/docker/docker/api/types/container"
 )
 
 // HTTP status code for locked vault.
@@ -37,7 +30,6 @@ type Server struct {
 	gateway          *mcp.Gateway
 	streamableServer *mcp.StreamableHTTPServer
 	sseServer        *mcp.SSEServer
-	a2aGateway       *a2a.Gateway
 	staticFS       fs.FS
 	dockerClient   dockerclient.DockerClient
 	stackName      string
@@ -56,7 +48,6 @@ type Server struct {
 	authToken      string
 	authHeader     string
 
-	playgroundSessions *agent.SessionRegistry
 	gatewayAddr        string // e.g. "http://localhost:8180" — used to build MCP config for CLI proxy
 }
 
@@ -67,18 +58,7 @@ func NewServer(gateway *mcp.Gateway, staticFS fs.FS) *Server {
 		streamableServer:   mcp.NewStreamableHTTPServer(gateway, nil),
 		sseServer:          mcp.NewSSEServer(gateway),
 		staticFS:           staticFS,
-		playgroundSessions: agent.NewSessionRegistry(),
 	}
-}
-
-// SetA2AGateway sets the A2A gateway for agent-to-agent communication.
-func (s *Server) SetA2AGateway(a2aGateway *a2a.Gateway) {
-	s.a2aGateway = a2aGateway
-}
-
-// A2AGateway returns the A2A gateway.
-func (s *Server) A2AGateway() *a2a.Gateway {
-	return s.a2aGateway
 }
 
 // SetDockerClient sets the Docker client for container operations.
@@ -200,12 +180,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/sse", s.sseServer)                        // Legacy negotiation redirect
 	mux.HandleFunc("/message", s.sseServer.HandleMessage)  // Legacy endpoint (410 Gone)
 
-	// A2A endpoints
-	if s.a2aGateway != nil {
-		mux.HandleFunc("/.well-known/agent.json", s.handleA2AAgentCards)
-		mux.Handle("/a2a/", s.a2aGateway.Handler())
-	}
-
 	// API endpoints
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
@@ -220,9 +194,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/reload", s.handleReload)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ready", s.handleReady)
-
-	// Agent control endpoints (pattern: /api/agents/{name}/action)
-	mux.HandleFunc("/api/agents/", s.handleAgentAction)
 
 	// Pins endpoints
 	mux.HandleFunc("/api/pins/", s.handlePins)
@@ -244,9 +215,6 @@ func (s *Server) Handler() http.Handler {
 	// Registry endpoints (always registered, even when registry is empty)
 	mux.HandleFunc("/api/registry/", s.handleRegistry)
 
-	// Playground endpoints (Test Flight)
-	mux.HandleFunc("/api/playground/", s.handlePlayground)
-
 	// Static files (UI) - served at root
 	if s.staticFS != nil {
 		fileServer := http.FileServer(http.FS(s.staticFS))
@@ -264,7 +232,6 @@ func (s *Server) Handler() http.Handler {
 }
 
 // handleStatus returns the overall gateway status.
-// Agents are returned as a unified list that merges container and A2A status.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -272,31 +239,24 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := struct {
-		Gateway    ServerInfo                `json:"gateway"`
-		MCPServers []MCPServerStatus         `json:"mcp-servers"`
-		Agents     []AgentStatus             `json:"agents"`
-		Resources  []ResourceStatus          `json:"resources"`
-		Sessions   int                       `json:"sessions"`
-		A2ATasks   *int                      `json:"a2a_tasks,omitempty"`
-		Registry   *registry.RegistryStatus  `json:"registry,omitempty"`
-		CodeMode   string                    `json:"code_mode,omitempty"`
-		TokenUsage *metrics.TokenUsage       `json:"token_usage,omitempty"`
+		Gateway    ServerInfo               `json:"gateway"`
+		MCPServers []MCPServerStatus        `json:"mcp-servers"`
+		Resources  []ResourceStatus         `json:"resources"`
+		Sessions   int                      `json:"sessions"`
+		Registry   *registry.RegistryStatus `json:"registry,omitempty"`
+		CodeMode   string                   `json:"code_mode,omitempty"`
+		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:    s.gateway.ServerInfo().Name,
 			Version: s.gateway.ServerInfo().Version,
 		},
 		MCPServers: s.getMCPServerStatuses(),
-		Agents:     s.getAgentStatuses(),
 		Resources:  s.getResourceStatuses(),
 		Sessions:   s.gateway.SessionCount(),
 	}
 	if cm := s.gateway.CodeModeStatus(); cm != "off" {
 		status.CodeMode = cm
-	}
-	if s.a2aGateway != nil {
-		count := s.a2aGateway.TaskCount()
-		status.A2ATasks = &count
 	}
 	if s.registryServer != nil && s.registryServer.HasContent() {
 		regStatus := s.registryServer.Store().Status()
@@ -325,27 +285,6 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Sessions: s.streamableServer.SessionIDs(),
 	}
 	writeJSON(w, response)
-}
-
-// handleA2AAgentCards returns all agent cards for A2A discovery.
-func (s *Server) handleA2AAgentCards(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.a2aGateway == nil {
-		http.Error(w, "A2A not enabled", http.StatusNotFound)
-		return
-	}
-
-	cards := s.a2aGateway.Handler().ListLocalAgents()
-
-	w.Header().Set("Content-Type", "application/json")
-	response := map[string]any{
-		"agents": cards,
-	}
-	_ = json.NewEncoder(w).Encode(response)
 }
 
 // handleMCPServers returns information about registered MCP servers.
@@ -496,31 +435,6 @@ type ResourceStatus struct {
 	Status string `json:"status"`
 }
 
-// AgentStatus contains unified status for all agents (local containers and remote A2A).
-// This merges container state with A2A protocol state into a single representation.
-type AgentStatus struct {
-	// Core identification
-	Name   string `json:"name"`
-	Status string `json:"status"` // "running", "stopped", "error", "unavailable"
-
-	// Variant: "local" (container-based) or "remote" (A2A only)
-	Variant string `json:"variant"`
-
-	// Container fields (populated for local/container-based agents)
-	Image       string                `json:"image,omitempty"`
-	ContainerID string                `json:"containerId,omitempty"`
-	Uses        []config.ToolSelector `json:"uses,omitempty"`
-
-	// A2A fields (populated when agent has A2A capability)
-	HasA2A      bool     `json:"hasA2A"`
-	Role        string   `json:"role,omitempty"`        // "local" or "remote"
-	URL         string   `json:"url,omitempty"`         // A2A endpoint URL
-	Endpoint    string   `json:"endpoint,omitempty"`    // A2A RPC endpoint
-	SkillCount  int      `json:"skillCount,omitempty"`  // Number of A2A skills
-	Skills      []string `json:"skills,omitempty"`      // A2A skill names
-	Description string   `json:"description,omitempty"` // Agent description
-}
-
 // getResourceStatuses returns status of all resource containers.
 func (s *Server) getResourceStatuses() []ResourceStatus {
 	if s.dockerClient == nil || s.stackName == "" {
@@ -553,326 +467,6 @@ func (s *Server) getResourceStatuses() []ResourceStatus {
 	}
 
 	return resources
-}
-
-// containerAgentInfo holds container-specific info for an agent.
-type containerAgentInfo struct {
-	Name        string
-	Image       string
-	Status      string
-	ContainerID string
-	Uses        []config.ToolSelector
-}
-
-// getContainerAgents returns a map of container agent info keyed by name.
-func (s *Server) getContainerAgents() map[string]containerAgentInfo {
-	result := make(map[string]containerAgentInfo)
-
-	if s.dockerClient == nil || s.stackName == "" {
-		return result
-	}
-
-	ctx := context.Background()
-	containers, err := docker.ListManagedContainers(ctx, s.dockerClient, s.stackName)
-	if err != nil {
-		return result
-	}
-
-	for _, c := range containers {
-		// Only include agent containers
-		if agentName, ok := c.Labels[docker.LabelAgent]; ok {
-			status := "stopped"
-			if c.State == "running" {
-				status = "running"
-			} else if c.State != "exited" {
-				status = c.State
-			}
-
-			// Get the agent's uses/dependencies from the gateway
-			selectors := s.gateway.GetAgentAllowedServers(agentName)
-
-			result[agentName] = containerAgentInfo{
-				Name:        agentName,
-				Image:       c.Image,
-				Status:      status,
-				ContainerID: c.ID[:12],
-				Uses:        selectors,
-			}
-		}
-	}
-
-	return result
-}
-
-// getAgentStatuses returns unified status for all agents (local + remote).
-// It merges container state with A2A protocol state.
-func (s *Server) getAgentStatuses() []AgentStatus {
-	// Get container agents as a map for quick lookup
-	containerAgents := s.getContainerAgents()
-
-	// Get A2A agent statuses
-	var a2aStatuses []a2a.A2AAgentStatus
-	if s.a2aGateway != nil {
-		a2aStatuses = s.a2aGateway.Status()
-	}
-
-	// Build unified list
-	var unified []AgentStatus
-	seen := make(map[string]bool)
-
-	// Process A2A agents first (they may have container counterparts)
-	for _, a2aAgent := range a2aStatuses {
-		agent := AgentStatus{
-			Name:        a2aAgent.Name,
-			HasA2A:      true,
-			Role:        a2aAgent.Role,
-			URL:         a2aAgent.URL,
-			Endpoint:    a2aAgent.Endpoint,
-			SkillCount:  a2aAgent.SkillCount,
-			Skills:      a2aAgent.Skills,
-			Description: a2aAgent.Description,
-		}
-
-		if a2aAgent.Role == "local" {
-			// Local A2A agent - merge with container info if available
-			agent.Variant = "local"
-			if container, ok := containerAgents[a2aAgent.Name]; ok {
-				agent.Image = container.Image
-				agent.Status = container.Status
-				agent.ContainerID = container.ContainerID
-				agent.Uses = container.Uses
-			} else {
-				// Container not found - might be starting or crashed
-				if a2aAgent.Available {
-					agent.Status = "running"
-				} else {
-					agent.Status = "unavailable"
-				}
-			}
-		} else {
-			// Remote A2A agent - no container, derive status from availability
-			agent.Variant = "remote"
-			if a2aAgent.Available {
-				agent.Status = "running"
-			} else {
-				agent.Status = "unavailable"
-			}
-		}
-
-		unified = append(unified, agent)
-		seen[a2aAgent.Name] = true
-	}
-
-	// Add container-only agents (not A2A enabled) - sort names for deterministic output
-	containerNames := make([]string, 0, len(containerAgents))
-	for name := range containerAgents {
-		containerNames = append(containerNames, name)
-	}
-	sort.Strings(containerNames)
-
-	for _, name := range containerNames {
-		container := containerAgents[name]
-		if !seen[name] {
-			unified = append(unified, AgentStatus{
-				Name:        name,
-				Variant:     "local",
-				Image:       container.Image,
-				Status:      container.Status,
-				ContainerID: container.ContainerID,
-				Uses:        container.Uses,
-				HasA2A:      false,
-			})
-		}
-	}
-
-	// Include config-only agents (defined in stack file but not yet running or registered with A2A)
-	if s.stackFile != "" {
-		if stack, _, err := config.ValidateStackFile(s.stackFile); err == nil {
-			for _, cfgAgent := range stack.Agents {
-				if !seen[cfgAgent.Name] {
-					if _, hasContainer := containerAgents[cfgAgent.Name]; !hasContainer {
-						unified = append(unified, AgentStatus{
-							Name:    cfgAgent.Name,
-							Status:  "pending",
-							Variant: "local",
-							Uses:    cfgAgent.Uses,
-						})
-					}
-				}
-			}
-		}
-	}
-
-	sort.Slice(unified, func(i, j int) bool { return unified[i].Name < unified[j].Name })
-	return unified
-}
-
-// handleAgentAction routes agent control requests.
-// URL pattern: /api/agents/{name}/{action}
-func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
-	// Parse URL path: /api/agents/{name}/{action}
-	path := strings.TrimPrefix(r.URL.Path, "/api/agents/")
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 {
-		http.Error(w, "Invalid path: expected /api/agents/{name}/{action}", http.StatusBadRequest)
-		return
-	}
-
-	agentName := parts[0]
-	action := parts[1]
-
-	switch action {
-	case "logs":
-		s.handleAgentLogs(w, r, agentName)
-	case "restart":
-		s.handleAgentRestart(w, r, agentName)
-	case "stop":
-		s.handleAgentStop(w, r, agentName)
-	default:
-		http.Error(w, "Unknown action: "+action, http.StatusBadRequest)
-	}
-}
-
-// handleAgentLogs returns container logs for an agent.
-func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentName string) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.dockerClient == nil || s.stackName == "" {
-		writeJSONError(w, "Container runtime not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Get number of lines from query param (default 100)
-	lines := 100
-	if linesParam := r.URL.Query().Get("lines"); linesParam != "" {
-		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
-			lines = n
-		}
-	}
-
-	// Find container by name
-	containerName := docker.ContainerName(s.stackName, agentName)
-	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
-	if err != nil {
-		writeJSONError(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if !exists {
-		// No container - might be an external MCP server, local process, SSH, or remote A2A agent
-		// Return a friendly message instead of an error so the UI can display it
-		writeJSON(w, []string{
-			"═══════════════════════════════════════════════════════════════",
-			"  Container logs are not available for this node.",
-			"",
-			"  This node is configured as an external MCP server, local",
-			"  process, SSH connection, or remote A2A agent - it does not",
-			"  have a container managed by Gridctl.",
-			"",
-			"  To view logs for external services, check the source directly:",
-			"    • Container: docker logs / podman logs <container-name>",
-			"    • Local process: Check stdout/stderr or log files",
-			"    • SSH: Check logs on the remote host",
-			"═══════════════════════════════════════════════════════════════",
-		})
-		return
-	}
-
-	// Get container logs
-	logsReader, err := s.dockerClient.ContainerLogs(r.Context(), containerID, container.LogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Tail:       strconv.Itoa(lines),
-		Timestamps: true,
-	})
-	if err != nil {
-		http.Error(w, "Failed to get logs: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer logsReader.Close()
-
-	// Read and parse logs
-	var logLines []string
-	scanner := bufio.NewScanner(logsReader)
-	for scanner.Scan() {
-		line := scanner.Text()
-		// Docker logs have an 8-byte header we need to skip
-		if len(line) > 8 {
-			line = line[8:]
-		}
-		logLines = append(logLines, line)
-	}
-
-	writeJSON(w, logLines)
-}
-
-// handleAgentRestart restarts an agent container.
-func (s *Server) handleAgentRestart(w http.ResponseWriter, r *http.Request, agentName string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.dockerClient == nil || s.stackName == "" {
-		http.Error(w, "Container runtime not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Find container by name
-	containerName := docker.ContainerName(s.stackName, agentName)
-	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
-	if err != nil {
-		http.Error(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if !exists {
-		http.Error(w, "Container not found: "+agentName, http.StatusNotFound)
-		return
-	}
-
-	// Restart container
-	timeout := 10
-	if err := s.dockerClient.ContainerRestart(r.Context(), containerID, container.StopOptions{Timeout: &timeout}); err != nil {
-		http.Error(w, "Failed to restart container: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, map[string]string{"status": "restarted", "agent": agentName})
-}
-
-// handleAgentStop stops an agent container.
-func (s *Server) handleAgentStop(w http.ResponseWriter, r *http.Request, agentName string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.dockerClient == nil || s.stackName == "" {
-		http.Error(w, "Container runtime not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Find container by name
-	containerName := docker.ContainerName(s.stackName, agentName)
-	exists, containerID, err := docker.ContainerExists(r.Context(), s.dockerClient, containerName)
-	if err != nil {
-		http.Error(w, "Failed to find container: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if !exists {
-		http.Error(w, "Container not found: "+agentName, http.StatusNotFound)
-		return
-	}
-
-	// Stop container
-	if err := docker.StopContainer(r.Context(), s.dockerClient, containerID, 10); err != nil {
-		http.Error(w, "Failed to stop container: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, map[string]string{"status": "stopped", "agent": agentName})
 }
 
 // handleMCPServerAction routes MCP server control requests.

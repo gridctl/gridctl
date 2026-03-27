@@ -7,9 +7,6 @@ export const LAYOUT = {
   NODE_WIDTH: 256,
   NODE_HEIGHT: 140,
   NODE_HEIGHT_COMPACT: 48,    // Compact mode: header only
-  AGENT_WIDTH: 160,    // Agent node width (matches client for column alignment)
-  AGENT_HEIGHT: 144,   // Agent node height
-  AGENT_HEIGHT_COMPACT: 48,   // Agent compact mode height
   CLIENT_WIDTH: 160,   // Linked client node width
   CLIENT_HEIGHT: 120,  // Linked client node height
   CLIENT_HEIGHT_COMPACT: 48,  // Client compact mode height
@@ -24,7 +21,6 @@ export const LAYOUT = {
   CENTER_Y: 300,
   MCP_RADIUS: 280,
   RESOURCE_RADIUS: 420,
-  AGENT_RADIUS: 350,
 } as const;
 
 // ============================================
@@ -88,7 +84,6 @@ export const NODE_TYPES = {
   GATEWAY: 'gateway',
   MCP_SERVER: 'mcpServer',
   RESOURCE: 'resource',
-  AGENT: 'agent',
   CLIENT: 'client',
 } as const;
 

@@ -1,29 +1,24 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Layers,
   Shield,
   Network,
   KeyRound,
   Server,
-  Bot,
   Database,
   ChevronDown,
   ChevronRight,
   Plus,
   X,
   Trash2,
-  Container,
-  Cpu,
-  Zap,
   AlertCircle,
-  Check,
+  Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type {
   StackFormData,
   MCPServerFormData,
-  AgentFormData,
   ResourceFormData,
 } from '../../../lib/yaml-builder';
 import { SecretsPopover } from '../SecretsPopover';
@@ -352,246 +347,6 @@ function ItemHeader({
   );
 }
 
-// --- Inline Agent Form ---
-
-function InlineAgentForm({
-  data,
-  onChange,
-  availableServers,
-}: {
-  data: AgentFormData;
-  onChange: (data: Partial<AgentFormData>) => void;
-  availableServers: string[];
-}) {
-  const isHeadless = data.agentType === 'headless';
-
-  return (
-    <div className="space-y-3 px-3 pb-3">
-      {/* Name */}
-      <div>
-        <label className={labelClass}>
-          Name <span className="text-status-error">*</span>
-        </label>
-        <input
-          type="text"
-          value={data.name}
-          onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
-          placeholder="my-agent"
-          className={cn(inputClass, 'font-mono')}
-        />
-      </div>
-
-      {/* Agent Type Toggle */}
-      <div>
-        <label className={labelClass}>Type</label>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { type: 'container' as const, icon: Container, label: 'Container' },
-            { type: 'headless' as const, icon: Cpu, label: 'Headless' },
-          ].map((opt) => {
-            const Icon = opt.icon;
-            const selected = data.agentType === opt.type;
-            return (
-              <button
-                key={opt.type}
-                type="button"
-                onClick={() => onChange({ agentType: opt.type })}
-                className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all duration-200',
-                  selected
-                    ? 'bg-tertiary/[0.08] border-tertiary/30 text-tertiary'
-                    : 'bg-white/[0.02] border-white/[0.06] text-text-muted hover:text-text-secondary hover:border-white/[0.1]',
-                )}
-              >
-                <Icon size={13} />
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Container fields */}
-      {!isHeadless && (
-        <div>
-          <label className={labelClass}>Image</label>
-          <input
-            type="text"
-            value={data.image ?? ''}
-            onChange={(e) => onChange({ image: e.target.value })}
-            placeholder="my-agent:latest"
-            className={cn(inputClass, 'font-mono')}
-          />
-        </div>
-      )}
-
-      {/* Headless fields */}
-      {isHeadless && (
-        <>
-          <div>
-            <label className={labelClass}>Runtime</label>
-            <select
-              value={data.runtime ?? ''}
-              onChange={(e) => onChange({ runtime: e.target.value || undefined })}
-              className={inputClass}
-            >
-              <option value="">Select runtime</option>
-              <option value="node">Node.js</option>
-              <option value="python">Python</option>
-              <option value="deno">Deno</option>
-              <option value="bun">Bun</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>
-              Prompt <span className="text-status-error">*</span>
-            </label>
-            <textarea
-              value={data.prompt ?? ''}
-              onChange={(e) => onChange({ prompt: e.target.value })}
-              placeholder="Agent system prompt..."
-              rows={3}
-              className={cn(inputClass, 'resize-none')}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Uses — server selection */}
-      {availableServers.length > 0 && (
-        <div>
-          <label className={labelClass}>Tool Access (MCP Servers)</label>
-          <div className="space-y-1">
-            {availableServers.map((serverName) => {
-              const isUsed = data.uses?.some((u) => u.server === serverName) ?? false;
-              return (
-                <button
-                  key={serverName}
-                  type="button"
-                  onClick={() => {
-                    const currentUses = data.uses ?? [];
-                    if (isUsed) {
-                      onChange({ uses: currentUses.filter((u) => u.server !== serverName) });
-                    } else {
-                      onChange({ uses: [...currentUses, { server: serverName }] });
-                    }
-                  }}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all duration-200 border',
-                    isUsed
-                      ? 'bg-primary/[0.06] border-primary/20 text-primary'
-                      : 'bg-white/[0.02] border-white/[0.04] text-text-muted hover:text-text-secondary hover:border-white/[0.08]',
-                  )}
-                >
-                  <div className={cn(
-                    'w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors',
-                    isUsed ? 'bg-primary/20 border-primary/40' : 'border-border/40',
-                  )}>
-                    {isUsed && <Check size={9} className="text-primary" />}
-                  </div>
-                  <Server size={11} className="flex-shrink-0" />
-                  <span className="font-mono truncate">{serverName}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Env */}
-      <KeyValueEditor
-        label="Environment Variables"
-        value={data.env ?? {}}
-        onChange={(env) => onChange({ env })}
-        placeholder={{ key: 'ENV_VAR', value: 'value' }}
-        showSecrets
-      />
-
-      {/* A2A Toggle */}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() =>
-            onChange({ a2a: { enabled: !(data.a2a?.enabled ?? false), skills: data.a2a?.skills } })
-          }
-          className={cn(
-            'relative w-8 h-4 rounded-full transition-colors duration-200',
-            data.a2a?.enabled ? 'bg-tertiary/40' : 'bg-border/40',
-          )}
-        >
-          <div
-            className={cn(
-              'absolute top-0.5 w-3 h-3 rounded-full transition-all duration-200',
-              data.a2a?.enabled ? 'left-4.5 bg-tertiary' : 'left-0.5 bg-text-muted',
-            )}
-          />
-        </button>
-        <span className="text-xs text-text-secondary">A2A Protocol</span>
-      </div>
-
-      {data.a2a?.enabled && (
-        <div className="space-y-2 p-3 rounded-xl bg-tertiary/[0.03] border border-tertiary/10">
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-[10px] text-tertiary/80 uppercase tracking-wider font-medium">A2A Skills</label>
-            <button
-              type="button"
-              onClick={() => {
-                const skills = [...(data.a2a?.skills ?? []), { id: '', name: '', description: '' }];
-                onChange({ a2a: { enabled: true, skills } });
-              }}
-              className="flex items-center gap-1 text-[10px] text-tertiary hover:text-tertiary/80 transition-colors"
-            >
-              <Plus size={10} />
-              Add skill
-            </button>
-          </div>
-          {(!data.a2a?.skills || data.a2a.skills.length === 0) && (
-            <p className="text-[10px] text-text-muted/60 italic py-1">No A2A skills configured</p>
-          )}
-          {data.a2a?.skills?.map((skill, i) => (
-            <div key={i} className="flex items-start gap-1.5">
-              <div className="flex-1 space-y-1">
-                <input
-                  type="text"
-                  value={skill.id}
-                  onChange={(e) => {
-                    const skills = [...(data.a2a?.skills ?? [])];
-                    skills[i] = { ...skills[i], id: e.target.value };
-                    onChange({ a2a: { enabled: true, skills } });
-                  }}
-                  placeholder="skill-id"
-                  className={cn(inputClass, 'font-mono')}
-                />
-                <input
-                  type="text"
-                  value={skill.name}
-                  onChange={(e) => {
-                    const skills = [...(data.a2a?.skills ?? [])];
-                    skills[i] = { ...skills[i], name: e.target.value };
-                    onChange({ a2a: { enabled: true, skills } });
-                  }}
-                  placeholder="Skill Name"
-                  className={inputClass}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const skills = (data.a2a?.skills ?? []).filter((_, j) => j !== i);
-                  onChange({ a2a: { enabled: true, skills } });
-                }}
-                className="p-1 mt-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // --- Inline Resource Form ---
 
 function InlineResourceForm({
@@ -710,7 +465,6 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
     new Set(['identity']),
   );
   const [expandedServers, setExpandedServers] = useState<Set<number>>(new Set());
-  const [expandedAgents, setExpandedAgents] = useState<Set<number>>(new Set());
   const [expandedResources, setExpandedResources] = useState<Set<number>>(new Set());
   const [showResourcePresets, setShowResourcePresets] = useState(false);
 
@@ -732,15 +486,6 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
     });
   }, []);
 
-  const toggleAgent = useCallback((idx: number) => {
-    setExpandedAgents((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
-  }, []);
-
   const toggleResource = useCallback((idx: number) => {
     setExpandedResources((prev) => {
       const next = new Set(prev);
@@ -750,15 +495,8 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
     });
   }, []);
 
-  // Compute available server names for agent "uses" selection
-  const availableServers = useMemo(
-    () => (data.mcpServers ?? []).map((s) => s.name).filter(Boolean),
-    [data.mcpServers],
-  );
-
   // Counts for badges
   const serverCount = data.mcpServers?.length ?? 0;
-  const agentCount = data.agents?.length ?? 0;
   const resourceCount = data.resources?.length ?? 0;
   const gatewayFieldCount =
     (data.gateway?.allowedOrigins?.length ? 1 : 0) +
@@ -785,31 +523,6 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
     const servers = (data.mcpServers ?? []).filter((_, i) => i !== idx);
     onChange({ mcpServers: servers });
     setExpandedServers((prev) => {
-      const next = new Set<number>();
-      prev.forEach((v) => {
-        if (v < idx) next.add(v);
-        else if (v > idx) next.add(v - 1);
-      });
-      return next;
-    });
-  };
-
-  const addAgent = () => {
-    const agents = [...(data.agents ?? []), { name: '', agentType: 'container' as const }];
-    onChange({ agents });
-    setExpandedAgents((prev) => new Set([...prev, agents.length - 1]));
-  };
-
-  const updateAgent = (idx: number, partial: Partial<AgentFormData>) => {
-    const agents = [...(data.agents ?? [])];
-    agents[idx] = { ...agents[idx], ...partial };
-    onChange({ agents });
-  };
-
-  const removeAgent = (idx: number) => {
-    const agents = (data.agents ?? []).filter((_, i) => i !== idx);
-    onChange({ agents });
-    setExpandedAgents((prev) => {
       const next = new Set<number>();
       prev.forEach((v) => {
         if (v < idx) next.add(v);
@@ -1109,52 +822,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         </button>
       </Section>
 
-      {/* Section 6: Agents */}
-      <Section
-        title="Agents"
-        icon={Bot}
-        expanded={expandedSections.has('agents')}
-        onToggle={() => toggleSection('agents')}
-        badge={agentCount > 0 ? `${agentCount}` : undefined}
-      >
-        {agentCount === 0 && (
-          <p className="text-[10px] text-text-muted/60 italic py-2">No agents configured</p>
-        )}
-        <div className="space-y-2">
-          {(data.agents ?? []).map((agent, i) => (
-            <div key={i} className="space-y-0">
-              <ItemHeader
-                icon={Bot}
-                name={agent.name}
-                label={`Agent ${i + 1}`}
-                expanded={expandedAgents.has(i)}
-                onToggle={() => toggleAgent(i)}
-                onRemove={() => removeAgent(i)}
-                iconColor="text-tertiary"
-              />
-              {expandedAgents.has(i) && (
-                <div className="mt-1 border border-border/15 rounded-lg overflow-hidden">
-                  <InlineAgentForm
-                    data={agent}
-                    onChange={(partial) => updateAgent(i, partial)}
-                    availableServers={availableServers}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={addAgent}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-border/30 text-xs text-tertiary hover:text-tertiary/80 hover:border-tertiary/30 transition-all duration-200"
-        >
-          <Plus size={12} />
-          Add Agent
-        </button>
-      </Section>
-
-      {/* Section 7: Resources */}
+      {/* Section 6: Resources */}
       <Section
         title="Resources"
         icon={Database}

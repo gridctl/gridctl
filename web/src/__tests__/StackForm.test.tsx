@@ -26,14 +26,13 @@ describe('StackForm', () => {
     onChange = vi.fn<typeof noop>();
   });
 
-  it('renders all 7 accordion sections', () => {
+  it('renders all 6 accordion sections', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
     expect(screen.getByText('Identity')).toBeInTheDocument();
     expect(screen.getByText('Gateway')).toBeInTheDocument();
     expect(screen.getByText('Network')).toBeInTheDocument();
     expect(screen.getByText('Secrets')).toBeInTheDocument();
     expect(screen.getByText('MCP Servers')).toBeInTheDocument();
-    expect(screen.getByText('Agents')).toBeInTheDocument();
     expect(screen.getByText('Resources')).toBeInTheDocument();
   });
 
@@ -108,34 +107,6 @@ describe('StackForm', () => {
     });
   });
 
-  it('can add agents', () => {
-    render(<StackForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('Agents'));
-    fireEvent.click(screen.getByText('Add Agent'));
-    expect(onChange).toHaveBeenCalledWith({
-      agents: [{ name: '', agentType: 'container' }],
-    });
-  });
-
-  it('shows available servers in agent uses selection', () => {
-    const data = defaultData({
-      mcpServers: [
-        { name: 'filesystem', serverType: 'container' },
-        { name: 'github', serverType: 'container' },
-      ],
-      agents: [{ name: 'my-agent', agentType: 'container' }],
-    });
-    render(<StackForm data={data} onChange={onChange} />);
-    fireEvent.click(screen.getByText('Agents'));
-
-    // Expand the agent
-    fireEvent.click(screen.getByText('my-agent'));
-
-    // Server names should appear as selectable options
-    expect(screen.getByText('filesystem')).toBeInTheDocument();
-    expect(screen.getByText('github')).toBeInTheDocument();
-  });
-
   it('can add resources with presets', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
     fireEvent.click(screen.getByText('Resources'));
@@ -168,12 +139,10 @@ describe('StackForm', () => {
   it('shows badge counts for populated sections', () => {
     const data = defaultData({
       mcpServers: [{ name: 's1', serverType: 'container' }, { name: 's2', serverType: 'container' }],
-      agents: [{ name: 'a1', agentType: 'container' }, { name: 'a2', agentType: 'headless' }, { name: 'a3', agentType: 'container' }],
     });
     render(<StackForm data={data} onChange={onChange} />);
-    // Server count badge should show "2", agent count badge should show "3"
+    // Server count badge should show "2"
     expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   it('displays gateway auth token field when bearer is selected', () => {
@@ -196,23 +165,6 @@ describe('StackForm', () => {
     render(<StackForm data={data} onChange={onChange} />);
     fireEvent.click(screen.getByText('Gateway'));
     expect(screen.getByPlaceholderText('X-API-Key')).toBeInTheDocument();
-  });
-
-  it('can remove agents', () => {
-    const data = defaultData({
-      agents: [
-        { name: 'agent-1', agentType: 'container' },
-        { name: 'agent-2', agentType: 'headless' },
-      ],
-    });
-    render(<StackForm data={data} onChange={onChange} />);
-    fireEvent.click(screen.getByText('Agents'));
-
-    const removeButtons = screen.getAllByTitle('Remove');
-    fireEvent.click(removeButtons[0]);
-    expect(onChange).toHaveBeenCalledWith({
-      agents: [{ name: 'agent-2', agentType: 'headless' }],
-    });
   });
 
   it('can remove resources', () => {

@@ -63,8 +63,7 @@ func (s *Server) handleStackValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Match CLI validation: merge aliases, expand env vars, apply defaults
-	config.MergeEquippedSkills(&stack)
+	// Match CLI validation: expand env vars, apply defaults
 	config.ExpandStackVarsWithEnv(&stack)
 	stack.SetDefaults()
 	result := config.ValidateWithIssues(&stack)
@@ -233,9 +232,6 @@ func sanitizeStackSecrets(stack *config.Stack) {
 	for i := range stack.MCPServers {
 		sanitize(stack.MCPServers[i].Env, stack.MCPServers[i].Name)
 	}
-	for i := range stack.Agents {
-		sanitize(stack.Agents[i].Env, stack.Agents[i].Name)
-	}
 	for i := range stack.Resources {
 		sanitize(stack.Resources[i].Env, stack.Resources[i].Name)
 	}
@@ -274,9 +270,6 @@ func (s *Server) handleStackSecretsMap(w http.ResponseWriter, r *http.Request) {
 
 	for _, srv := range stack.MCPServers {
 		extractVaultRefs(srv.Env, srv.Name)
-	}
-	for _, agent := range stack.Agents {
-		extractVaultRefs(agent.Env, agent.Name)
 	}
 	for _, res := range stack.Resources {
 		extractVaultRefs(res.Env, res.Name)
@@ -434,47 +427,6 @@ resources:
       - "3100:3100"
 `,
 	},
-	{
-		ID:          "multi-agent",
-		Name:        "Multi-Agent Collaboration",
-		Description: "Multiple agents with A2A protocol for coordinated task execution",
-		Category:    "ai",
-		Spec: `version: "1"
-name: multi-agent
-network:
-  name: agent-net
-  driver: bridge
-mcp-servers:
-  - name: filesystem
-    image: ghcr.io/modelcontextprotocol/mcp-filesystem:latest
-    port: 8080
-    transport: http
-  - name: web-search
-    image: ghcr.io/modelcontextprotocol/mcp-brave-search:latest
-    port: 8081
-    transport: http
-    env:
-      BRAVE_API_KEY: "${vault:BRAVE_API_KEY}"
-agents:
-  - name: researcher
-    runtime: claude-code
-    prompt: "You are a research agent. Find information and compile reports."
-    uses:
-      - server: web-search
-    a2a:
-      enabled: true
-      skills:
-        - id: research
-          name: Research
-          description: "Research a topic and compile findings"
-  - name: writer
-    runtime: claude-code
-    prompt: "You are a writing agent. Create documents from research."
-    uses:
-      - server: filesystem
-      - server: researcher
-`,
-	},
 }
 
 // handleStackAppend appends a resource to the current stack.yaml.
@@ -508,14 +460,6 @@ func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 
 	var name string
 	switch req.ResourceType {
-	case "agent":
-		var res config.Agent
-		if err := yaml.Unmarshal([]byte(req.YAML), &res); err != nil {
-			writeJSONError(w, "Invalid agent YAML: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		stack.Agents = append(stack.Agents, res)
-		name = res.Name
 	case "mcp-server":
 		var res config.MCPServer
 		if err := yaml.Unmarshal([]byte(req.YAML), &res); err != nil {

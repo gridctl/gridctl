@@ -46,8 +46,6 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 		return nil, fmt.Errorf("parsing stack YAML: %w", err)
 	}
 
-	// Merge equipped_skills alias into uses for each agent
-	mergeEquippedSkills(&stack)
 
 	// Build resolver
 	var resolve Resolver
@@ -117,18 +115,6 @@ func injectSetSecrets(s *Stack, vault VaultSetLookup) {
 		for k, v := range setSecrets {
 			if _, exists := s.MCPServers[i].Env[k]; !exists {
 				s.MCPServers[i].Env[k] = v
-			}
-		}
-	}
-
-	// Inject into agents
-	for i := range s.Agents {
-		if s.Agents[i].Env == nil {
-			s.Agents[i].Env = make(map[string]string)
-		}
-		for k, v := range setSecrets {
-			if _, exists := s.Agents[i].Env[k]; !exists {
-				s.Agents[i].Env[k] = v
 			}
 		}
 	}
@@ -218,35 +204,6 @@ func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, empt
 		}
 	}
 
-	for i := range s.A2AAgents {
-		s.A2AAgents[i].Name = expand(s.A2AAgents[i].Name)
-		s.A2AAgents[i].URL = expand(s.A2AAgents[i].URL)
-	}
-
-	for i := range s.Agents {
-		s.Agents[i].Name = expand(s.Agents[i].Name)
-		s.Agents[i].Image = expand(s.Agents[i].Image)
-		s.Agents[i].Description = expand(s.Agents[i].Description)
-		s.Agents[i].Network = expand(s.Agents[i].Network)
-
-		for j := range s.Agents[i].Command {
-			s.Agents[i].Command[j] = expand(s.Agents[i].Command[j])
-		}
-
-		if s.Agents[i].Source != nil {
-			s.Agents[i].Source.URL = expand(s.Agents[i].Source.URL)
-			s.Agents[i].Source.Path = expand(s.Agents[i].Source.Path)
-			s.Agents[i].Source.Ref = expand(s.Agents[i].Source.Ref)
-		}
-
-		for k, v := range s.Agents[i].Env {
-			s.Agents[i].Env[k] = expand(v)
-		}
-		for k, v := range s.Agents[i].BuildArgs {
-			s.Agents[i].BuildArgs[k] = expand(v)
-		}
-	}
-
 	return unresolvedVault, emptyEnvVars
 }
 
@@ -272,13 +229,6 @@ func resolveRelativePaths(s *Stack, basePath string) {
 		}
 	}
 
-	for i := range s.Agents {
-		if s.Agents[i].Source != nil && s.Agents[i].Source.Type == "local" {
-			if !filepath.IsAbs(s.Agents[i].Source.Path) {
-				s.Agents[i].Source.Path = filepath.Join(basePath, s.Agents[i].Source.Path)
-			}
-		}
-	}
 }
 
 // expandTildeAndResolvePath expands ~ to home directory and resolves relative paths.
@@ -307,24 +257,3 @@ func isURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
-// mergeEquippedSkills merges the equipped_skills YAML alias into uses.
-// This allows users to use either field name in their stack files.
-func mergeEquippedSkills(s *Stack) {
-	for i := range s.Agents {
-		if len(s.Agents[i].EquippedSkills) > 0 {
-			// Merge without duplicates (based on server name)
-			seen := make(map[string]bool)
-			for _, u := range s.Agents[i].Uses {
-				seen[u.Server] = true
-			}
-			for _, skill := range s.Agents[i].EquippedSkills {
-				if !seen[skill.Server] {
-					s.Agents[i].Uses = append(s.Agents[i].Uses, skill)
-					seen[skill.Server] = true
-				}
-			}
-			// Clear the alias field after merging
-			s.Agents[i].EquippedSkills = nil
-		}
-	}
-}

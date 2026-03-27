@@ -6,10 +6,10 @@
  */
 
 import type { Node, Edge } from '@xyflow/react';
-import type { MCPServerStatus, ResourceStatus, AgentStatus, ClientStatus, RegistryStatus } from '../../types';
+import type { MCPServerStatus, ResourceStatus, ClientStatus, RegistryStatus } from '../../types';
 import type { LayoutEngine, LayoutOptions } from './types';
 import { createAllNodes } from './nodes';
-import { createAllEdges, buildNodeTypeSets } from './edges';
+import { createAllEdges } from './edges';
 import { ButterflyLayoutEngine } from './butterfly';
 
 /**
@@ -19,9 +19,7 @@ export interface TransformInput {
   gatewayInfo: { name: string; version: string };
   mcpServers: MCPServerStatus[];
   resources: ResourceStatus[];
-  agents: AgentStatus[];
   sessions?: number;
-  a2aTasks?: number | null;
   clients?: ClientStatus[];
   registryStatus?: RegistryStatus | null;
   codeMode?: string | null;
@@ -64,28 +62,22 @@ export function transformToGraph(
   input: TransformInput,
   options: TransformOptions = {}
 ): TransformOutput {
-  const { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients = [], registryStatus, codeMode } = input;
+  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode } = input;
   const { layoutEngine = defaultLayoutEngine, preservedPositions, compact } = options;
-
-  // Build lookup sets for edge routing
-  const { usedByOtherAgents } = buildNodeTypeSets(mcpServers, agents);
 
   // Create nodes
   const nodes = createAllNodes(
     gatewayInfo,
     mcpServers,
     resources,
-    agents,
-    usedByOtherAgents,
     sessions,
-    a2aTasks,
     clients,
     registryStatus,
     codeMode
   );
 
   // Create edges
-  const edges = createAllEdges(mcpServers, resources, agents, clients);
+  const edges = createAllEdges(mcpServers, resources, clients);
 
   // Apply layout
   const layoutOptions: LayoutOptions = { preservedPositions, compact };
@@ -106,24 +98,21 @@ export function transformToGraph(
  * @param gatewayInfo - Gateway name and version
  * @param mcpServers - MCP servers
  * @param resources - Resources
- * @param agents - Agents
  * @param existingPositions - Optional map to preserve user-dragged positions
  */
 export function transformToNodesAndEdges(
   gatewayInfo: { name: string; version: string },
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[] = [],
-  agents: AgentStatus[] = [],
   existingPositions?: Map<string, { x: number; y: number }>,
   sessions?: number,
-  a2aTasks?: number | null,
   clients?: ClientStatus[],
   registryStatus?: RegistryStatus | null,
   codeMode?: string | null,
   compact?: boolean
 ): TransformOutput {
   return transformToGraph(
-    { gatewayInfo, mcpServers, resources, agents, sessions, a2aTasks, clients, registryStatus, codeMode },
+    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode },
     { preservedPositions: existingPositions, compact }
   );
 }

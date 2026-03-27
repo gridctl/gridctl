@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   Layers,
   Server,
-  Bot,
   Database,
   Puzzle,
   KeyRound,
@@ -28,7 +27,6 @@ import { DraftManager } from './DraftManager';
 import { ReviewStep } from './steps/ReviewStep';
 import { MCPServerForm } from './steps/MCPServerForm';
 import { StackForm } from './steps/StackForm';
-import { AgentForm } from './steps/AgentForm';
 import { ResourceForm } from './steps/ResourceForm';
 import { SkillImportWizard } from './steps/SkillImportWizard';
 
@@ -46,7 +44,7 @@ const resourceTypes: ResourceTypeCard[] = [
     type: 'stack',
     icon: Layers,
     label: 'Stack',
-    description: 'Complete stack with servers, agents, and resources',
+    description: 'Complete stack with servers and resources',
     color: 'text-primary',
     glowColor: 'rgba(245, 158, 11, 0.1)',
   },
@@ -57,14 +55,6 @@ const resourceTypes: ResourceTypeCard[] = [
     description: 'Container, external, SSH, or OpenAPI server',
     color: 'text-primary',
     glowColor: 'rgba(245, 158, 11, 0.1)',
-  },
-  {
-    type: 'agent',
-    icon: Bot,
-    label: 'Agent',
-    description: 'Container or headless agent with tool access',
-    color: 'text-tertiary',
-    glowColor: 'rgba(139, 92, 246, 0.1)',
   },
   {
     type: 'resource',
@@ -103,14 +93,12 @@ const stepOrder: WizardStep[] = ['type', 'template', 'form', 'review'];
 
 function getResourceCounts(
   mcpServers: { name: string }[],
-  agents: { name: string }[],
   resources: { name: string }[],
   skills: { name: string }[] | null,
 ): Record<ResourceType, number> {
   return {
     stack: 0, // Not a countable entity
     'mcp-server': mcpServers.length,
-    agent: agents.length,
     resource: resources.length,
     skill: (skills ?? []).length,
     secret: 0, // Vault count not easily available
@@ -144,12 +132,11 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
   } = useWizardStore();
 
   const mcpServers = useStackStore((s) => s.mcpServers) ?? [];
-  const agents = useStackStore((s) => s.agents) ?? [];
   const resources = useStackStore((s) => s.resources) ?? [];
   const skills = useRegistryStore((s) => s.skills);
   const counts = useMemo(
-    () => getResourceCounts(mcpServers, agents, resources, skills),
-    [mcpServers, agents, resources, skills],
+    () => getResourceCounts(mcpServers, resources, skills),
+    [mcpServers, resources, skills],
   );
 
   // Skill skips template step; secret closes wizard and opens vault panel
@@ -600,16 +587,6 @@ function FormRenderer({
       <StackForm
         data={formData['stack']}
         onChange={(partial) => updateFormData('stack', partial as Record<string, unknown>)}
-      />
-    );
-  }
-
-  // Agent — full form
-  if (resourceType === 'agent') {
-    return (
-      <AgentForm
-        data={formData['agent']}
-        onChange={(partial) => updateFormData('agent', partial as Record<string, unknown>)}
       />
     );
   }

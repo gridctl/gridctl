@@ -78,9 +78,6 @@ func sanitizeSecrets(stack *config.Stack) {
 	for i := range stack.MCPServers {
 		sanitizeEnvMap(stack.MCPServers[i].Env, stack.MCPServers[i].Name)
 	}
-	for i := range stack.Agents {
-		sanitizeEnvMap(stack.Agents[i].Env, stack.Agents[i].Name)
-	}
 	for i := range stack.Resources {
 		sanitizeEnvMap(stack.Resources[i].Env, stack.Resources[i].Name)
 	}

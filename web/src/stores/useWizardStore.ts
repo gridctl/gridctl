@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { ResourceType, MCPServerFormData, AgentFormData, ResourceFormData, StackFormData } from '../lib/yaml-builder';
+import type { ResourceType, MCPServerFormData, ResourceFormData, StackFormData } from '../lib/yaml-builder';
 
 export type WizardStep = 'type' | 'template' | 'form' | 'review';
 
@@ -26,7 +26,6 @@ interface WizardState {
   formData: {
     stack: StackFormData;
     'mcp-server': MCPServerFormData;
-    agent: AgentFormData;
     resource: ResourceFormData;
   };
 
@@ -62,7 +61,6 @@ const SESSION_KEY = 'gridctl-wizard-state';
 const defaultFormData: WizardState['formData'] = {
   stack: { name: '', version: '1' },
   'mcp-server': { name: '', serverType: 'container' },
-  agent: { name: '', agentType: 'container' },
   resource: { name: '', image: '' },
 };
 

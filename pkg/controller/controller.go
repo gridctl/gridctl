@@ -153,9 +153,8 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 
 	// Run workloads
 	result, err := rt.Up(ctx, stack, runtime.UpOptions{
-		NoCache:     cfg.NoCache,
-		BasePort:    cfg.BasePort,
-		GatewayPort: cfg.Port,
+		NoCache:  cfg.NoCache,
+		BasePort: cfg.BasePort,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to start stack: %w", err)
@@ -404,15 +403,6 @@ func BuildWorkloadSummaries(stack *config.Stack, result *runtime.UpResult) []out
 		})
 	}
 
-	for _, agent := range result.Agents {
-		summaries = append(summaries, output.WorkloadSummary{
-			Name:      agent.Name,
-			Type:      "agent",
-			Transport: "container",
-			State:     "running",
-		})
-	}
-
 	for _, res := range stack.Resources {
 		summaries = append(summaries, output.WorkloadSummary{
 			Name:      res.Name,
@@ -447,8 +437,6 @@ func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *
 				workloadName = name
 			} else if name, ok := status.Labels[runtime.LabelResource]; ok {
 				workloadName = name
-			} else if name, ok := status.Labels[runtime.LabelAgent]; ok {
-				workloadName = name
 			}
 		}
 
@@ -469,20 +457,6 @@ func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *
 				HostPort:   hostPort,
 			})
 			foundServers[workloadName] = true
-		} else if status.Type == runtime.WorkloadTypeAgent {
-			var uses []config.ToolSelector
-			for _, a := range stack.Agents {
-				if a.Name == workloadName {
-					uses = a.Uses
-					break
-				}
-			}
-
-			result.Agents = append(result.Agents, runtime.AgentResult{
-				Name:       workloadName,
-				WorkloadID: status.ID,
-				Uses:       uses,
-			})
 		}
 	}
 

@@ -1,12 +1,12 @@
 /**
- * Butterfly layout engine - Hub-and-Spoke with 5 zones
+ * Butterfly layout engine - Hub-and-Spoke with 4 zones
  *
  * Implements a clean, logic-driven layout where the Gateway acts as
  * the central hub with zones arranged left-to-right:
  *
- * Zone 0 (Left):      Agents & Clients - consumers/drivers and linked LLM clients
+ * Zone 0 (Left):      Clients - linked LLM clients
  * Zone 1 (Center):    Gateway - central hub/router
- * Zone 2 (Right):     MCP Servers & A2A Agents - providers/tools
+ * Zone 2 (Right):     MCP Servers - providers/tools
  * Zone 3 (Far Right): Resources - infrastructure/databases
  */
 
@@ -25,7 +25,7 @@ import { getNodeDimensions } from './utils';
 /**
  * Default zone configuration
  * X positions create clear visual separation between zones
- * Zones: 0=AGENTS+CLIENTS, 1=GATEWAY, 2=SERVERS, 3=RESOURCES
+ * Zones: 0=CLIENTS, 1=GATEWAY, 2=SERVERS, 3=RESOURCES
  */
 const DEFAULT_ZONE_CONFIGS: Record<ButterflyZone, ZoneConfig> = {
   [4]: { zone: 4, baseX: -400, nodeSpacing: 80 },       // CLIENTS (far left)
@@ -44,18 +44,10 @@ function getNodeZone(node: Node): ButterflyZone {
 
   switch (nodeType) {
     case 'client':
-      return 0; // AGENTS zone (stacked with agents)
+      return 0; // CLIENTS zone (far left)
 
     case 'gateway':
       return 1; // GATEWAY zone
-
-    case 'agent':
-      // A2A agents (remote) go to SERVERS zone (index 2)
-      // Local agents go to AGENTS zone (index 0)
-      if (nodeData?.variant === 'remote') {
-        return 2; // SERVERS zone
-      }
-      return 0; // AGENTS zone
 
     case 'mcp-server':
       return 2; // SERVERS zone

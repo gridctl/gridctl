@@ -394,67 +394,6 @@ func TestOrchestrator_Up_SSHServer(t *testing.T) {
 
 // TestOrchestrator_Up_AgentDependencyOrder tests that agents are started in correct dependency order.
 // Agents that depend on other agents should be started after their dependencies.
-func TestOrchestrator_Up_AgentDependencyOrder(t *testing.T) {
-	mockRT := NewMockWorkloadRuntime()
-	mockBuilder := &MockBuilder{}
-
-	orch := runtime.NewOrchestrator(mockRT, mockBuilder)
-
-	// Create stack with agents that have dependencies
-	// agent-c depends on agent-b, agent-b depends on agent-a
-	topo := &config.Stack{
-		Version: "1",
-		Name:    "test-deps",
-		Network: config.Network{
-			Name:   "test-net",
-			Driver: "bridge",
-		},
-		Agents: []config.Agent{
-			{
-				Name:  "agent-c",
-				Image: "agent:latest",
-				Uses:  []config.ToolSelector{{Server: "agent-b"}}, // Depends on agent-b
-				A2A:   &config.A2AConfig{Enabled: true},
-			},
-			{
-				Name:  "agent-a",
-				Image: "agent:latest",
-				Uses:  []config.ToolSelector{}, // No dependencies
-				A2A:   &config.A2AConfig{Enabled: true},
-			},
-			{
-				Name:  "agent-b",
-				Image: "agent:latest",
-				Uses:  []config.ToolSelector{{Server: "agent-a"}}, // Depends on agent-a
-				A2A:   &config.A2AConfig{Enabled: true},
-			},
-		},
-	}
-
-	ctx := context.Background()
-	result, err := orch.Up(ctx, topo, runtime.UpOptions{BasePort: 9000})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Should have 3 agents
-	if len(result.Agents) != 3 {
-		t.Fatalf("expected 3 agents, got %d", len(result.Agents))
-	}
-
-	// Verify start order: agent-a should be before agent-b, agent-b before agent-c
-	startOrder := make(map[string]int)
-	for i, w := range mockRT.StartedWorkloads {
-		startOrder[w.Name] = i
-	}
-
-	if startOrder["agent-a"] >= startOrder["agent-b"] {
-		t.Errorf("agent-a (pos %d) should start before agent-b (pos %d)", startOrder["agent-a"], startOrder["agent-b"])
-	}
-	if startOrder["agent-b"] >= startOrder["agent-c"] {
-		t.Errorf("agent-b (pos %d) should start before agent-c (pos %d)", startOrder["agent-b"], startOrder["agent-c"])
-	}
-}
 
 // TestOrchestrator_Up_MixedServerTypes tests a stack with all server types.
 func TestOrchestrator_Up_MixedServerTypes(t *testing.T) {

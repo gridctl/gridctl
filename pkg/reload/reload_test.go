@@ -88,7 +88,7 @@ func setupHandler(t *testing.T, stackPath string, cfg *config.Stack) (*Handler, 
 	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
 	gw := mcp.NewGateway()
 
-	h := NewHandler(stackPath, cfg, gw, orch, 8180, 9000, 8180, nil, nil)
+	h := NewHandler(stackPath, cfg, gw, orch, 8180, 9000, nil, nil)
 	return h, mockRT
 }
 
@@ -98,7 +98,7 @@ func TestNewHandler(t *testing.T) {
 	mockRT := newMockWorkloadRuntime()
 	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
 
-	h := NewHandler("/path/to/stack.yaml", cfg, gw, orch, 8180, 9000, 8180, nil, nil)
+	h := NewHandler("/path/to/stack.yaml", cfg, gw, orch, 8180, 9000, nil, nil)
 	if h == nil {
 		t.Fatal("NewHandler returned nil")
 	}
@@ -116,7 +116,7 @@ func TestHandler_SettersAndGetters(t *testing.T) {
 	mockRT := newMockWorkloadRuntime()
 	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
 
-	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180, nil, nil)
+	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, nil, nil)
 
 	// SetNoExpand
 	h.SetNoExpand(true)
@@ -378,45 +378,6 @@ resources:
 	assertContains(t, result.Added, "resource:redis")
 }
 
-func TestHandler_Reload_AgentAddedAndRemoved(t *testing.T) {
-	content := `
-name: test
-network:
-  name: test-net
-mcp-servers:
-  - name: server1
-    image: alpine:latest
-    port: 3000
-agents:
-  - name: agent2
-    image: nginx:latest
-    uses:
-      - server1
-`
-	stackPath := writeStackFile(t, content)
-
-	initialCfg := &config.Stack{
-		Name:       "test",
-		Network:    config.Network{Name: "test-net", Driver: "bridge"},
-		MCPServers: []config.MCPServer{{Name: "server1", Image: "alpine:latest", Port: 3000}},
-		Agents: []config.Agent{
-			{Name: "agent1", Image: "alpine:latest", Uses: []config.ToolSelector{{Server: "server1"}}},
-		},
-	}
-
-	h, _ := setupHandler(t, stackPath, initialCfg)
-
-	result, err := h.Reload(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Success {
-		t.Errorf("expected success, got: %s", result.Message)
-	}
-
-	assertContains(t, result.Removed, "agent:agent1")
-	assertContains(t, result.Added, "agent:agent2")
-}
 
 func TestHandler_Reload_PartialFailure(t *testing.T) {
 	content := `
@@ -460,7 +421,7 @@ func TestHandler_StopAndRemoveContainer_NonExistent(t *testing.T) {
 	gw := mcp.NewGateway()
 	cfg := &config.Stack{Name: "test"}
 
-	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180, nil, nil)
+	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, nil, nil)
 
 	err := h.stopAndRemoveContainer(context.Background(), "gridctl-test-nonexistent")
 	if err != nil {
@@ -474,7 +435,7 @@ func TestHandler_AllocatePort(t *testing.T) {
 	gw := mcp.NewGateway()
 	cfg := &config.Stack{Name: "test"}
 
-	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, 8180, nil, nil)
+	h := NewHandler("/path", cfg, gw, orch, 8180, 9000, nil, nil)
 
 	port := h.allocatePort(context.Background())
 	if port != 9000 {
@@ -566,43 +527,6 @@ resources:
 	assertContains(t, result.Modified, "resource:postgres")
 }
 
-func TestHandler_Reload_AgentModified(t *testing.T) {
-	content := `
-name: test
-network:
-  name: test-net
-mcp-servers:
-  - name: server1
-    image: alpine:latest
-    port: 3000
-agents:
-  - name: agent1
-    image: nginx:latest
-    uses:
-      - server1
-`
-	stackPath := writeStackFile(t, content)
-
-	initialCfg := &config.Stack{
-		Name:       "test",
-		Network:    config.Network{Name: "test-net", Driver: "bridge"},
-		MCPServers: []config.MCPServer{{Name: "server1", Image: "alpine:latest", Port: 3000}},
-		Agents: []config.Agent{
-			{Name: "agent1", Image: "alpine:latest", Uses: []config.ToolSelector{{Server: "server1"}}},
-		},
-	}
-
-	h, _ := setupHandler(t, stackPath, initialCfg)
-
-	result, err := h.Reload(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Success {
-		t.Errorf("expected success, got: %s", result.Message)
-	}
-	assertContains(t, result.Modified, "agent:agent1")
-}
 
 // mockVault implements config.VaultLookup for testing.
 type mockVault struct {
@@ -641,7 +565,7 @@ mcp-servers:
 	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
 	gw := mcp.NewGateway()
 
-	h := NewHandler(stackPath, initialCfg, gw, orch, 8180, 9000, 8180, vault, nil)
+	h := NewHandler(stackPath, initialCfg, gw, orch, 8180, 9000, vault, nil)
 
 	result, err := h.Reload(context.Background())
 	if err != nil {

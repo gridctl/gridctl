@@ -95,22 +95,6 @@ func TestStack_NeedsContainerRuntime(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "has agents",
-			stack: Stack{
-				Name:   "with-agents",
-				Agents: []Agent{{Name: "helper", Image: "agent:latest"}},
-			},
-			want: true,
-		},
-		{
-			name: "has headless agent",
-			stack: Stack{
-				Name:   "with-headless",
-				Agents: []Agent{{Name: "helper", Runtime: "claude-code", Image: "agent:latest"}},
-			},
-			want: true,
-		},
-		{
 			name: "mixed container and non-container",
 			stack: Stack{
 				Name: "mixed",
@@ -143,14 +127,11 @@ func TestStack_ContainerWorkloads(t *testing.T) {
 		Resources: []Resource{
 			{Name: "postgres", Image: "postgres:16"},
 		},
-		Agents: []Agent{
-			{Name: "helper", Image: "agent:latest"},
-		},
 	}
 
 	workloads := stack.ContainerWorkloads()
-	if len(workloads) != 3 {
-		t.Fatalf("expected 3 container workloads, got %d", len(workloads))
+	if len(workloads) != 2 {
+		t.Fatalf("expected 2 container workloads, got %d", len(workloads))
 	}
 }
 

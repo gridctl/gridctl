@@ -2,7 +2,7 @@
 // Converts structured wizard form data into valid YAML strings.
 // Never includes raw secrets — only ${vault:KEY} references.
 
-export type ResourceType = 'stack' | 'mcp-server' | 'agent' | 'resource' | 'skill' | 'secret';
+export type ResourceType = 'stack' | 'mcp-server' | 'resource' | 'skill' | 'secret';
 
 export type ServerType = 'container' | 'source' | 'external' | 'local' | 'ssh' | 'openapi';
 
@@ -54,28 +54,6 @@ export interface MCPServerFormData {
   network?: string;
 }
 
-export interface AgentFormData {
-  name: string;
-  agentType: 'container' | 'headless';
-  image?: string;
-  source?: {
-    type: string;
-    url?: string;
-    ref?: string;
-    path?: string;
-    dockerfile?: string;
-  };
-  runtime?: string;
-  prompt?: string;
-  uses?: Array<{ server: string; tools?: string[] }>;
-  env?: Record<string, string>;
-  command?: string[];
-  a2a?: {
-    enabled: boolean;
-    skills?: Array<{ id: string; name: string; description?: string }>;
-  };
-}
-
 export interface ResourceFormData {
   name: string;
   image: string;
@@ -97,14 +75,12 @@ export interface StackFormData {
   network?: { name: string; driver: string };
   secrets?: { sets: string[] };
   mcpServers?: MCPServerFormData[];
-  agents?: AgentFormData[];
   resources?: ResourceFormData[];
 }
 
 export type WizardFormData =
   | { type: 'stack'; data: StackFormData }
   | { type: 'mcp-server'; data: MCPServerFormData }
-  | { type: 'agent'; data: AgentFormData }
   | { type: 'resource'; data: ResourceFormData };
 
 // Serialize a value that might need quoting
@@ -215,62 +191,6 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
   return lines.join('\n');
 }
 
-function buildAgent(data: AgentFormData, indentLevel = 2): string {
-  const pad = ' '.repeat(indentLevel);
-  const inner = ' '.repeat(indentLevel + 2);
-  const lines: string[] = [];
-  lines.push(`${pad}- name: ${yamlValue(data.name)}`);
-
-  if (data.agentType === 'headless') {
-    if (data.runtime) lines.push(`${inner}runtime: ${data.runtime}`);
-    if (data.prompt) lines.push(`${inner}prompt: ${yamlValue(data.prompt)}`);
-  } else {
-    if (data.image) lines.push(`${inner}image: ${yamlValue(data.image)}`);
-    if (data.source) {
-      lines.push(`${inner}source:`);
-      lines.push(`${inner}  type: ${data.source.type}`);
-      if (data.source.url) lines.push(`${inner}  url: ${yamlValue(data.source.url)}`);
-      if (data.source.ref) lines.push(`${inner}  ref: ${data.source.ref}`);
-    }
-  }
-
-  if (data.uses?.length) {
-    lines.push(`${inner}uses:`);
-    data.uses.forEach((u) => {
-      if (u.tools?.length) {
-        lines.push(`${inner}  - server: ${u.server}`);
-        lines.push(`${inner}    tools:`);
-        u.tools.forEach((t) => lines.push(`${inner}      - ${yamlValue(t)}`));
-      } else {
-        lines.push(`${inner}  - ${u.server}`);
-      }
-    });
-  }
-
-  if (data.env && Object.keys(data.env).length > 0) {
-    lines.push(`${inner}env:`);
-    lines.push(serializeMap(data.env, indentLevel + 4));
-  }
-  if (data.command?.length) {
-    lines.push(`${inner}command:`);
-    data.command.forEach((c) => lines.push(`${inner}  - ${yamlValue(c)}`));
-  }
-  if (data.a2a?.enabled) {
-    lines.push(`${inner}a2a:`);
-    lines.push(`${inner}  enabled: true`);
-    if (data.a2a.skills?.length) {
-      lines.push(`${inner}  skills:`);
-      data.a2a.skills.forEach((s) => {
-        lines.push(`${inner}    - id: ${s.id}`);
-        lines.push(`${inner}      name: ${yamlValue(s.name)}`);
-        if (s.description) lines.push(`${inner}      description: ${yamlValue(s.description)}`);
-      });
-    }
-  }
-
-  return lines.join('\n');
-}
-
 function buildResource(data: ResourceFormData, indentLevel = 2): string {
   const pad = ' '.repeat(indentLevel);
   const inner = ' '.repeat(indentLevel + 2);
@@ -309,8 +229,6 @@ export function buildYAML(form: WizardFormData): string {
   switch (form.type) {
     case 'mcp-server':
       return stripListItem(buildMCPServer(form.data, 0));
-    case 'agent':
-      return stripListItem(buildAgent(form.data, 0));
     case 'resource':
       return stripListItem(buildResource(form.data, 0));
     case 'stack':
@@ -360,12 +278,6 @@ function buildStack(data: StackFormData): string {
     data.mcpServers.forEach((s) => lines.push(buildMCPServer(s, 2)));
   }
 
-  if (data.agents?.length) {
-    lines.push('');
-    lines.push('agents:');
-    data.agents.forEach((a) => lines.push(buildAgent(a, 2)));
-  }
-
   if (data.resources?.length) {
     lines.push('');
     lines.push('resources:');
@@ -403,16 +315,6 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
             serverType: 'container',
             image: result.image as string,
             transport: result.transport as string,
-          },
-        };
-      case 'agent':
-        return {
-          type: 'agent',
-          data: {
-            name: (result.name as string) || '',
-            agentType: result.runtime ? 'headless' : 'container',
-            image: result.image as string,
-            runtime: result.runtime as string,
           },
         };
       case 'resource':

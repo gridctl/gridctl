@@ -3,19 +3,15 @@ import {
   X,
   Terminal,
   Box,
-  Bot,
   ChevronDown,
   ChevronRight,
   Wrench,
   FileText,
   Sparkles,
   Globe,
-  Server,
-  Zap,
   Cpu,
   KeyRound,
   FileJson,
-  Network,
   HeartPulse,
   Monitor,
   Gauge,
@@ -33,7 +29,7 @@ import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatRelativeTime } from '../../lib/time';
-import type { MCPServerNodeData, ResourceNodeData, AgentNodeData, ClientNodeData, ToolSelector } from '../../types';
+import type { MCPServerNodeData, ResourceNodeData, ClientNodeData } from '../../types';
 
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
@@ -59,9 +55,8 @@ export function Sidebar() {
   }
 
   const isServer = selectedData.type === 'mcp-server';
-  const isAgent = selectedData.type === 'agent';
   const isClient = selectedData.type === 'client';
-  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData;
+  const data = selectedData as unknown as MCPServerNodeData | ResourceNodeData | ClientNodeData;
 
   // For MCP servers, determine if external, local process, or SSH
   const serverData = isServer ? (data as MCPServerNodeData) : null;
@@ -69,11 +64,6 @@ export function Sidebar() {
   const isLocalProcess = serverData?.localProcess ?? false;
   const isSSH = serverData?.ssh ?? false;
   const isOpenAPI = serverData?.openapi ?? false;
-
-  // For agents, determine variant and A2A capability
-  const agentData = isAgent ? (data as AgentNodeData) : null;
-  const isRemote = agentData?.variant === 'remote';
-  const hasA2A = agentData?.hasA2A ?? false;
 
   // Client-specific data
   const clientData = isClient ? (data as ClientNodeData) : null;
@@ -91,12 +81,10 @@ export function Sidebar() {
             : isOpenAPI
               ? FileJson
               : Terminal
-      : isAgent
-        ? Bot
-        : Box;
+      : Box;
 
-  // Color logic: primary (amber) for clients, violet for MCP servers, purple for local agents, teal for remote agents/resources
-  const colorClass = isClient ? 'primary' : isServer ? 'violet' : isAgent ? (isRemote ? 'secondary' : 'tertiary') : 'secondary';
+  // Color logic: primary (amber) for clients, violet for MCP servers, teal for resources
+  const colorClass = isClient ? 'primary' : isServer ? 'violet' : 'secondary';
 
   const handleShowLogs = () => {
     setBottomPanelOpen(true);
@@ -119,7 +107,6 @@ export function Sidebar() {
           'absolute top-0 left-0 bottom-0 w-px',
           colorClass === 'primary' && 'bg-gradient-to-b from-primary/40 via-primary/20 to-transparent',
           colorClass === 'violet' && 'bg-gradient-to-b from-violet-500/40 via-violet-500/20 to-transparent',
-          colorClass === 'tertiary' && 'bg-gradient-to-b from-tertiary/40 via-tertiary/20 to-transparent',
           colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
         )}
       />
@@ -132,7 +119,6 @@ export function Sidebar() {
               'p-2 rounded-xl flex-shrink-0 border relative',
               colorClass === 'primary' && 'bg-primary/10 border-primary/20',
               colorClass === 'violet' && 'bg-violet-500/10 border-violet-500/20',
-              colorClass === 'tertiary' && 'bg-tertiary/10 border-tertiary/20',
               colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
             )}
           >
@@ -141,22 +127,15 @@ export function Sidebar() {
               className={cn(
                 colorClass === 'primary' && 'text-primary',
                 colorClass === 'violet' && 'text-violet-400',
-                colorClass === 'tertiary' && 'text-tertiary',
                 colorClass === 'secondary' && 'text-secondary'
               )}
             />
-            {/* A2A indicator on icon */}
-            {hasA2A && !isRemote && (
-              <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-secondary/20 border border-secondary/40">
-                <Zap size={6} className="text-secondary" />
-              </div>
-            )}
           </div>
           <div className="min-w-0">
             <h2 className="font-semibold text-text-primary truncate tracking-tight">{data.name}</h2>
             <div className="flex items-center gap-1.5">
               <p className="text-[10px] text-text-muted uppercase tracking-wider">
-                {isClient ? 'LLM Client' : isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
+                {isClient ? 'LLM Client' : isServer ? 'MCP Server' : 'Resource'}
               </p>
               {isServer && isExternal && (
                 <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-violet-500/10 text-violet-400 flex items-center gap-0.5">
@@ -180,23 +159,6 @@ export function Sidebar() {
                 <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
                   <FileJson size={8} />
                   OpenAPI
-                </span>
-              )}
-              {isAgent && (
-                <span
-                  className={cn(
-                    'text-[9px] px-1 py-0.5 rounded font-medium uppercase flex items-center gap-0.5',
-                    isRemote ? 'bg-secondary/10 text-secondary' : 'bg-tertiary/10 text-tertiary'
-                  )}
-                >
-                  {isRemote ? <Globe size={8} /> : <Server size={8} />}
-                  {agentData?.variant}
-                </span>
-              )}
-              {hasA2A && (
-                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-secondary/10 text-secondary flex items-center gap-0.5">
-                  <Zap size={8} />
-                  A2A
                 </span>
               )}
             </div>
@@ -325,85 +287,6 @@ export function Sidebar() {
               </>
             )}
 
-            {/* Agent fields - Container info (local variant) */}
-            {isAgent && agentData?.image && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">Image</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={agentData.image}
-                >
-                  {agentData.image}
-                </span>
-              </div>
-            )}
-
-            {isAgent && agentData?.containerId && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">Container</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={agentData.containerId}
-                >
-                  {agentData.containerId}
-                </span>
-              </div>
-            )}
-
-            {/* Agent fields - A2A info (when hasA2A) */}
-            {isAgent && hasA2A && agentData?.role && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-text-muted">A2A Role</span>
-                <span
-                  className={cn(
-                    'text-xs px-2 py-0.5 rounded-md font-medium uppercase tracking-wider flex items-center gap-1',
-                    'bg-secondary/10 text-secondary'
-                  )}
-                >
-                  {agentData.role === 'remote' ? <Globe size={10} /> : <Server size={10} />}
-                  {agentData.role}
-                </span>
-              </div>
-            )}
-
-            {isAgent && hasA2A && agentData?.url && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">URL</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={agentData.url}
-                >
-                  {agentData.url}
-                </span>
-              </div>
-            )}
-
-            {isAgent && hasA2A && agentData?.endpoint && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">A2A Endpoint</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={agentData.endpoint}
-                >
-                  {agentData.endpoint}
-                </span>
-              </div>
-            )}
-
-            {isAgent && hasA2A && (agentData?.skillCount ?? 0) > 0 && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-text-muted">Skills</span>
-                <span className="text-sm text-secondary font-bold tabular-nums">{agentData?.skillCount}</span>
-              </div>
-            )}
-
-            {isAgent && hasA2A && agentData?.description && (
-              <div className="mt-2 pt-2 border-t border-border/30">
-                <span className="text-sm text-text-muted block mb-1">Description</span>
-                <p className="text-xs text-text-secondary leading-relaxed">{agentData.description}</p>
-              </div>
-            )}
-
             {/* Client fields */}
             {isClient && clientData?.transport && (
               <div className="flex justify-between items-center">
@@ -427,7 +310,7 @@ export function Sidebar() {
             )}
 
             {/* Resource fields */}
-            {!isServer && !isAgent && !isClient && (data as ResourceNodeData).image && (
+            {!isServer && !isClient && (data as ResourceNodeData).image && (
               <div className="flex justify-between items-center gap-4">
                 <span className="text-sm text-text-muted">Image</span>
                 <span
@@ -439,7 +322,7 @@ export function Sidebar() {
               </div>
             )}
 
-            {!isServer && !isAgent && !isClient && (data as ResourceNodeData).network && (
+            {!isServer && !isClient && (data as ResourceNodeData).network && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Network</span>
                 <span className="text-sm text-secondary font-medium">{(data as ResourceNodeData).network}</span>
@@ -458,7 +341,7 @@ export function Sidebar() {
         {/* Controls Section (not for clients - they aren't containers) */}
         {!isClient && (
           <Section title="Actions" icon={Terminal} defaultOpen>
-            <ControlBar name={data.name} variant={isServer ? 'mcp-server' : 'agent'} />
+            <ControlBar name={data.name} variant={isServer ? 'mcp-server' : 'mcp-server'} />
             <button
               onClick={handleShowLogs}
               className={cn(
@@ -481,29 +364,6 @@ export function Sidebar() {
           </Section>
         )}
 
-        {/* Skills Section (Agents with A2A) */}
-        {isAgent && hasA2A && (agentData?.skills?.length ?? 0) > 0 && (
-          <Section title="Skills" icon={Sparkles} count={agentData?.skillCount} defaultOpen>
-            <div className="space-y-2">
-              {agentData?.skills?.map((skill, idx) => (
-                <div key={idx} className="px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30">
-                  <span className="text-sm text-text-primary font-medium">{skill}</span>
-                </div>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* Access Section (Agents only - shows MCP server dependencies) */}
-        {isAgent && agentData?.uses && (agentData.uses?.length ?? 0) > 0 && (
-          <Section title="Access" icon={Network} count={agentData.uses?.length ?? 0} defaultOpen>
-            <div className="space-y-3">
-              {(agentData.uses ?? []).map((selector: ToolSelector) => (
-                <AccessItem key={selector.server} selector={selector} />
-              ))}
-            </div>
-          </Section>
-        )}
       </div>
     </div>
   );
@@ -555,49 +415,3 @@ function Section({ title, icon: Icon, count, defaultOpen = false, children }: Se
   );
 }
 
-// Access item component for showing agent's MCP server dependencies
-interface AccessItemProps {
-  selector: ToolSelector;
-}
-
-function AccessItem({ selector }: AccessItemProps) {
-  const isRestricted = selector.tools && (selector.tools?.length ?? 0) > 0;
-
-  return (
-    <div className="rounded-lg bg-surface-elevated border border-border/40 overflow-hidden">
-      {/* Server Header */}
-      <div className="px-3 py-2 bg-violet-500/10 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Server size={12} className="text-violet-400" />
-          <span className="text-xs font-medium text-violet-100">{selector.server}</span>
-        </div>
-        <span
-          className={cn(
-            'text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wider border',
-            isRestricted
-              ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
-              : 'border-violet-500/30 text-violet-400 bg-violet-500/5'
-          )}
-        >
-          {isRestricted ? 'Restricted' : 'Full Access'}
-        </span>
-      </div>
-
-      {/* Tool List */}
-      <div className="p-2">
-        {isRestricted ? (
-          <div className="space-y-1">
-            {selector.tools?.map((toolName) => (
-              <div key={toolName} className="flex items-center gap-2 px-2 py-1.5 rounded bg-background/50">
-                <Wrench size={10} className="text-primary flex-shrink-0" />
-                <span className="text-xs font-mono text-text-primary truncate">{toolName}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <span className="text-xs text-text-muted italic px-2">Access to all available tools</span>
-        )}
-      </div>
-    </div>
-  );
-}

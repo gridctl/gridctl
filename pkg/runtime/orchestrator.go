@@ -50,15 +50,13 @@ type BuildResult struct {
 
 // UpOptions contains options for the Up operation.
 type UpOptions struct {
-	NoCache     bool // Force rebuild of source-based images
-	BasePort    int  // Base port for host port allocation (default: 9000)
-	GatewayPort int  // Port for MCP gateway (for agent MCP_ENDPOINT injection)
+	NoCache  bool // Force rebuild of source-based images
+	BasePort int  // Base port for host port allocation (default: 9000)
 }
 
 // UpResult contains the result of starting a stack.
 type UpResult struct {
 	MCPServers []MCPServerResult
-	Agents     []AgentResult
 }
 
 // MCPServerResult is the runtime-agnostic result for an MCP server.
@@ -84,13 +82,6 @@ type MCPServerResult struct {
 
 	// For OpenAPI servers
 	OpenAPIConfig *config.OpenAPIConfig // OpenAPI configuration for gateway to use
-}
-
-// AgentResult is the runtime-agnostic result for an agent.
-type AgentResult struct {
-	Name       string               // Logical name
-	WorkloadID WorkloadID           // Runtime ID
-	Uses       []config.ToolSelector // MCP servers this agent depends on
 }
 
 // NewOrchestrator creates an Orchestrator with the given runtime and builder.
@@ -244,20 +235,6 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 			return nil, fmt.Errorf("starting MCP server %s: %w", server.Name, err)
 		}
 		result.MCPServers = append(result.MCPServers, *info)
-	}
-
-	// Start agents in dependency order (topologically sorted)
-	sortedAgents, err := sortAgentsByDependency(stack)
-	if err != nil {
-		return nil, fmt.Errorf("resolving agent dependencies: %w", err)
-	}
-
-	for _, agent := range sortedAgents {
-		info, err := o.startAgent(ctx, stack, &agent, opts)
-		if err != nil {
-			return nil, fmt.Errorf("starting agent %s: %w", agent.Name, err)
-		}
-		result.Agents = append(result.Agents, *info)
 	}
 
 	o.logger.Info("all workloads started successfully")
@@ -416,105 +393,6 @@ func (o *Orchestrator) startResource(ctx context.Context, stack *config.Stack, r
 	return err
 }
 
-func (o *Orchestrator) startAgent(ctx context.Context, stack *config.Stack, agent *config.Agent, opts UpOptions) (*AgentResult, error) {
-	containerName := containerName(stack.Name, agent.Name)
-
-	// Check if container already exists
-	exists, workloadID, err := o.runtime.Exists(ctx, containerName)
-	if err != nil {
-		return nil, err
-	}
-
-	if exists {
-		o.logger.Info("agent already exists, starting", "name", agent.Name)
-		return &AgentResult{
-			Name:       agent.Name,
-			WorkloadID: workloadID,
-			Uses:       agent.Uses,
-		}, nil
-	}
-
-	// Determine image
-	var imageName string
-	if agent.Source != nil {
-		// Build from source
-		o.logger.Info("building agent from source", "name", agent.Name, "sourceType", agent.Source.Type)
-
-		buildOpts := BuildOptions{
-			SourceType: agent.Source.Type,
-			URL:        agent.Source.URL,
-			Ref:        agent.Source.Ref,
-			Path:       agent.Source.Path,
-			Dockerfile: agent.Source.Dockerfile,
-			Tag:        generateTag(stack.Name, agent.Name),
-			BuildArgs:  agent.BuildArgs,
-			NoCache:    opts.NoCache,
-			Logger:     o.logger,
-		}
-
-		result, err := o.builder.Build(ctx, buildOpts)
-		if err != nil {
-			return nil, fmt.Errorf("building image: %w", err)
-		}
-		imageName = result.ImageTag
-	} else {
-		imageName = agent.Image
-		o.logger.Info("starting agent", "name", agent.Name, "image", imageName)
-
-		// Pull image if needed
-		if err := o.runtime.EnsureImage(ctx, imageName); err != nil {
-			return nil, err
-		}
-	}
-
-	// Determine network name
-	networkName := stack.Network.Name
-	if len(stack.Networks) > 0 && agent.Network != "" {
-		networkName = agent.Network
-	}
-
-	// Build environment with MCP_ENDPOINT injection
-	env := make(map[string]string)
-	for k, v := range agent.Env {
-		env[k] = v
-	}
-	// Inject MCP gateway endpoint for agent to connect to (includes agent identity for SSE access control)
-	if opts.GatewayPort > 0 {
-		hostAlias := "host.docker.internal"
-		if o.runtimeInfo != nil {
-			hostAlias = o.runtimeInfo.HostAliasHostname()
-		}
-		env["MCP_ENDPOINT"] = fmt.Sprintf("http://%s:%d?agent=%s", hostAlias, opts.GatewayPort, agent.Name)
-	}
-
-	// Create workload config
-	// Note: Name is the logical name, the runtime generates the container name
-	cfg := WorkloadConfig{
-		Name:        agent.Name,
-		Stack:       stack.Name,
-		Type:        WorkloadTypeAgent,
-		Image:       imageName,
-		Command:     agent.Command,
-		Env:         env,
-		NetworkName: networkName,
-		ExposedPort: 0, // Agents don't expose ports
-		Labels:      agentLabels(stack.Name, agent.Name),
-	}
-
-	status, err := o.runtime.Start(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	o.logger.Info("agent started", "name", agent.Name, "uses", agent.Uses)
-
-	return &AgentResult{
-		Name:       agent.Name,
-		WorkloadID: status.ID,
-		Uses:       agent.Uses,
-	}, nil
-}
-
 // Down stops and removes all managed workloads and networks for a stack.
 func (o *Orchestrator) Down(ctx context.Context, stack string) error {
 	// Check runtime
@@ -573,52 +451,6 @@ func (o *Orchestrator) Status(ctx context.Context, stack string) ([]WorkloadStat
 	return o.runtime.List(ctx, WorkloadFilter{Stack: stack})
 }
 
-// sortAgentsByDependency returns agents sorted in dependency order.
-// Agents with no agent dependencies come first, dependent agents come later.
-func sortAgentsByDependency(stack *config.Stack) ([]config.Agent, error) {
-	if len(stack.Agents) == 0 {
-		return nil, nil
-	}
-
-	// Build set of A2A-enabled agent names (these are the only valid agent dependencies)
-	a2aAgents := make(map[string]bool)
-	for _, agent := range stack.Agents {
-		if agent.IsA2AEnabled() {
-			a2aAgents[agent.Name] = true
-		}
-	}
-
-	// Build dependency graph
-	graph := NewDependencyGraph()
-	agentsByName := make(map[string]config.Agent)
-
-	for _, agent := range stack.Agents {
-		graph.AddNode(agent.Name)
-		agentsByName[agent.Name] = agent
-
-		// Add edges for agent-to-agent dependencies only (not MCP server dependencies)
-		for _, selector := range agent.Uses {
-			if a2aAgents[selector.Server] {
-				graph.AddEdge(agent.Name, selector.Server)
-			}
-		}
-	}
-
-	// Topological sort
-	sortedNames, err := graph.Sort()
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert sorted names back to agent configs
-	sortedAgents := make([]config.Agent, len(sortedNames))
-	for i, name := range sortedNames {
-		sortedAgents[i] = agentsByName[name]
-	}
-
-	return sortedAgents, nil
-}
-
 // Helper functions that don't need Docker-specific code
 
 func containerName(stack, name string) string {
@@ -640,14 +472,6 @@ func managedLabels(stack, name string, isMCPServer bool) map[string]string {
 		labels["gridctl.resource"] = name
 	}
 	return labels
-}
-
-func agentLabels(stack, name string) map[string]string {
-	return map[string]string{
-		"gridctl.managed": "true",
-		"gridctl.stack":   stack,
-		"gridctl.agent":   name,
-	}
 }
 
 // runtimeRequiredError builds an actionable error message listing which workloads need a container runtime.

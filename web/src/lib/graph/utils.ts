@@ -19,11 +19,6 @@ export function getNodeDimensions(node: Node, compact = false): { width: number;
         width: LAYOUT.NODE_WIDTH,
         height: compact ? LAYOUT.NODE_HEIGHT_COMPACT : LAYOUT.NODE_HEIGHT,
       };
-    case 'agent':
-      return {
-        width: LAYOUT.AGENT_WIDTH,
-        height: compact ? LAYOUT.AGENT_HEIGHT_COMPACT : LAYOUT.AGENT_HEIGHT,
-      };
     case 'client':
       return {
         width: LAYOUT.CLIENT_WIDTH,

@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Database, Wrench, Zap, Bot, Users, Radio, ListChecks, Monitor, Code, Library } from 'lucide-react';
+import { Activity, Server, Database, Wrench, Zap, Radio, Monitor, Code, Library } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import type { GatewayNodeData } from '../../types';
@@ -59,36 +59,6 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
           </span>
         </div>
 
-        {/* Agents */}
-        {data.agentCount > 0 && (
-          <div className="flex items-center justify-between group">
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Bot size={12} className="text-primary" />
-              </div>
-              <span className="text-xs text-text-secondary font-medium">Agents</span>
-            </div>
-            <span className="text-sm font-bold text-text-primary tabular-nums">
-              {data.agentCount}
-            </span>
-          </div>
-        )}
-
-        {/* A2A Agents */}
-        {data.a2aAgentCount > 0 && (
-          <div className="flex items-center justify-between group">
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Users size={12} className="text-primary" />
-              </div>
-              <span className="text-xs text-text-secondary font-medium">A2A Agents</span>
-            </div>
-            <span className="text-sm font-bold text-text-primary tabular-nums">
-              {data.a2aAgentCount}
-            </span>
-          </div>
-        )}
-
         {/* Resources */}
         {data.resourceCount > 0 && (
           <div className="flex items-center justify-between group">
@@ -130,21 +100,6 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             </div>
             <span className="text-sm font-bold text-text-primary tabular-nums">
               {data.clientCount}
-            </span>
-          </div>
-        )}
-
-        {/* A2A Tasks */}
-        {data.a2aTasks != null && data.a2aTasks > 0 && (
-          <div className="flex items-center justify-between group">
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <ListChecks size={12} className="text-primary" />
-              </div>
-              <span className="text-xs text-text-secondary font-medium">A2A Tasks</span>
-            </div>
-            <span className="text-sm font-bold text-text-primary tabular-nums">
-              {data.a2aTasks}
             </span>
           </div>
         )}

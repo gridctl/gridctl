@@ -33,7 +33,6 @@ export { getNodeDimensions } from './utils';
 export {
   createGatewayNode,
   createMCPServerNodes,
-  createAgentNodes,
   createResourceNodes,
   createClientNodes,
   createAllNodes,
@@ -43,12 +42,9 @@ export {
 export {
   GATEWAY_NODE_ID,
   createClientToGatewayEdges,
-  createAgentToGatewayEdges,
   createGatewayToServerEdges,
   createGatewayToResourceEdges,
-  createAgentUsesEdges,
   createAllEdges,
-  buildNodeTypeSets,
 } from './edges';
 export type { EnhancedEdge } from './edges';
 

@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/internal/api"
-	"github.com/gridctl/gridctl/pkg/a2a"
-	"github.com/gridctl/gridctl/pkg/adapter"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -40,7 +38,6 @@ type GatewayInstance struct {
 	Gateway        *mcp.Gateway
 	APIServer      *api.Server
 	HTTPServer     *http.Server
-	A2AGateway     *a2a.Gateway
 	LogBuffer      *logging.LogBuffer
 	Handler        slog.Handler
 	RegistryServer *registry.Server // Internal registry MCP server (nil if empty)
@@ -179,9 +176,6 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		inst.Gateway.Router().RefreshTools()
 	}
 
-	// Phase 3: Create A2A gateway if needed
-	inst.A2AGateway = b.buildA2AGateway(inst.Handler)
-
 	// Phase 4: Get embedded web files
 	var webFS fs.FS
 	if b.webFS != nil {
@@ -193,7 +187,7 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	}
 
 	// Phase 5: Create API server
-	inst.APIServer = b.buildAPIServer(inst.Gateway, inst.A2AGateway, inst.LogBuffer, webFS, inst.RegistryServer, inst.Handler)
+	inst.APIServer = b.buildAPIServer(inst.Gateway, inst.LogBuffer, webFS, inst.RegistryServer, inst.Handler)
 
 	// Phase 6: Create HTTP server
 	inst.HTTPServer = &http.Server{
@@ -238,17 +232,6 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 
 	// Start periodic health monitoring
 	gateway.StartHealthMonitor(ctx, mcp.DefaultHealthCheckInterval)
-
-	// Register agents with access permissions
-	b.registerAgents(gateway, verbose)
-
-	// Register A2A agents
-	b.registerA2AAgents(ctx, inst.A2AGateway, bufferHandler, verbose)
-
-	// Register agent-to-agent adapters (A2A agents as MCP tool providers)
-	if err := b.registerAgentAdapters(ctx, gateway, verbose); err != nil {
-		return fmt.Errorf("registering agent adapters: %w", err)
-	}
 
 	// Start background skill update check (non-blocking)
 	skills.CheckUpdatesBackground(
@@ -333,27 +316,8 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 	return logBuffer, redactHandler, nil
 }
 
-// buildA2AGateway creates an A2A gateway if the stack has A2A-enabled agents.
-func (b *GatewayBuilder) buildA2AGateway(handler slog.Handler) *a2a.Gateway {
-	hasA2A := len(b.stack.A2AAgents) > 0
-	if !hasA2A {
-		for _, agent := range b.stack.Agents {
-			if agent.IsA2AEnabled() {
-				hasA2A = true
-				break
-			}
-		}
-	}
-	if !hasA2A {
-		return nil
-	}
-
-	baseURL := fmt.Sprintf("http://localhost:%d", b.config.Port)
-	return a2a.NewGateway(baseURL, slog.New(handler))
-}
-
 // buildAPIServer creates and configures the API server.
-func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server, handler slog.Handler) *api.Server {
+func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server, handler slog.Handler) *api.Server {
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(b.rt.DockerClient())
 	server.SetStackName(b.stack.Name)
@@ -370,10 +334,6 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, a2aGateway *a2a.Ga
 
 	if b.stack.Gateway != nil && b.stack.Gateway.Auth != nil {
 		server.SetAuth(b.stack.Gateway.Auth.Type, b.stack.Gateway.Auth.Token, b.stack.Gateway.Auth.Header)
-	}
-
-	if a2aGateway != nil {
-		server.SetA2AGateway(a2aGateway)
 	}
 
 	if registryServer != nil {
@@ -430,153 +390,6 @@ func buildTracingConfig(gw *config.GatewayConfig) *tracing.Config {
 	return cfg
 }
 
-// registerAgents registers agents with their access permissions.
-func (b *GatewayBuilder) registerAgents(gateway *mcp.Gateway, verbose bool) {
-	if len(b.result.Agents) == 0 {
-		return
-	}
-
-	if verbose {
-		fmt.Println("\nRegistering agents with gateway...")
-	}
-	for _, agent := range b.result.Agents {
-		gateway.RegisterAgent(agent.Name, agent.Uses)
-		if verbose {
-			serverNames := config.ServerNames(agent.Uses)
-			fmt.Printf("  Registered agent '%s' with access to: %v\n", agent.Name, serverNames)
-		}
-	}
-}
-
-// registerA2AAgents registers local and external A2A agents.
-func (b *GatewayBuilder) registerA2AAgents(ctx context.Context, a2aGateway *a2a.Gateway, handler slog.Handler, verbose bool) {
-	if a2aGateway == nil {
-		return
-	}
-
-	if verbose {
-		fmt.Println("\nRegistering A2A agents...")
-	}
-
-	// Register local A2A agents (agents with a2a config)
-	for _, agent := range b.stack.Agents {
-		if agent.IsA2AEnabled() {
-			ver := "1.0.0"
-			if agent.A2A.Version != "" {
-				ver = agent.A2A.Version
-			}
-
-			skills := make([]a2a.Skill, len(agent.A2A.Skills))
-			for i, s := range agent.A2A.Skills {
-				skills[i] = a2a.Skill{
-					ID:          s.ID,
-					Name:        s.Name,
-					Description: s.Description,
-					Tags:        s.Tags,
-				}
-			}
-
-			card := a2a.AgentCard{
-				Name:         agent.Name,
-				Description:  agent.Description,
-				Version:      ver,
-				Skills:       skills,
-				Capabilities: a2a.AgentCapabilities{},
-			}
-
-			a2aGateway.RegisterLocalAgent(agent.Name, card, nil)
-			if verbose {
-				fmt.Printf("  Registered local A2A agent '%s' with %d skills\n", agent.Name, len(skills))
-			}
-		}
-	}
-
-	// Register external A2A agents
-	for _, a2aAgent := range b.stack.A2AAgents {
-		authType := ""
-		authToken := ""
-		authHeader := ""
-
-		if a2aAgent.Auth != nil {
-			authType = a2aAgent.Auth.Type
-			if a2aAgent.Auth.TokenEnv != "" {
-				authToken = os.Getenv(a2aAgent.Auth.TokenEnv)
-			}
-			authHeader = a2aAgent.Auth.HeaderName
-		}
-
-		if err := a2aGateway.RegisterRemoteAgent(ctx, a2aAgent.Name, a2aAgent.URL, authType, authToken, authHeader); err != nil {
-			if verbose {
-				fmt.Printf("  Warning: failed to register A2A agent %s: %v\n", a2aAgent.Name, err)
-			}
-		}
-	}
-
-	// Start periodic A2A task cleanup
-	a2aGateway.StartCleanup(ctx)
-}
-
-// registerAgentAdapters creates A2A client adapters for agents used by other agents.
-func (b *GatewayBuilder) registerAgentAdapters(_ context.Context, mcpGateway *mcp.Gateway, verbose bool) error {
-	// Build map of A2A-enabled agents
-	a2aAgentConfigs := make(map[string]*config.Agent)
-	for i := range b.stack.Agents {
-		agent := &b.stack.Agents[i]
-		if agent.IsA2AEnabled() {
-			a2aAgentConfigs[agent.Name] = agent
-		}
-	}
-
-	// Find agents "used" by other agents
-	usedAgents := make(map[string]bool)
-	for _, agent := range b.stack.Agents {
-		for _, selector := range agent.Uses {
-			if _, isA2A := a2aAgentConfigs[selector.Server]; isA2A {
-				usedAgents[selector.Server] = true
-			}
-		}
-	}
-
-	if len(usedAgents) == 0 {
-		return nil
-	}
-
-	if verbose {
-		fmt.Println("\nRegistering agent-to-agent adapters...")
-	}
-
-	for agentName := range usedAgents {
-		agentCfg := a2aAgentConfigs[agentName]
-		endpoint := fmt.Sprintf("http://localhost:%d", b.config.Port)
-		a2aAdapter := adapter.NewA2AClientAdapter(agentName, endpoint)
-
-		ver := "1.0.0"
-		if agentCfg.A2A.Version != "" {
-			ver = agentCfg.A2A.Version
-		}
-
-		skills := make([]a2a.Skill, len(agentCfg.A2A.Skills))
-		for i, s := range agentCfg.A2A.Skills {
-			skills[i] = a2a.Skill{
-				ID:          s.ID,
-				Name:        s.Name,
-				Description: s.Description,
-				Tags:        s.Tags,
-			}
-		}
-
-		a2aAdapter.InitializeFromSkills(ver, skills)
-		mcpGateway.Router().AddClient(a2aAdapter)
-
-		if verbose {
-			fmt.Printf("  Registered agent '%s' as skill provider with %d tools\n", agentName, len(a2aAdapter.Tools()))
-		}
-	}
-
-	mcpGateway.Router().RefreshTools()
-	return nil
-}
-
 // setupHotReload configures file watching and reload for the stack.
 func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstance, registrar *ServerRegistrar, handler slog.Handler, verbose bool) {
 	var vaultLookup config.VaultLookup
@@ -585,7 +398,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		vaultLookup = b.vaultStore
 		vaultSetLookup = newVaultSetAdapter(b.vaultStore)
 	}
-	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, b.config.Port, vaultLookup, vaultSetLookup)
+	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, vaultLookup, vaultSetLookup)
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
 	reloadHandler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {
@@ -641,12 +454,6 @@ func (b *GatewayBuilder) printEndpoints(inst *GatewayInstance) {
 	fmt.Printf("  POST /mcp         - JSON-RPC endpoint\n")
 	fmt.Printf("  GET  /sse         - SSE endpoint (for Claude Desktop)\n")
 	fmt.Printf("  POST /message     - SSE message endpoint\n")
-	if inst.A2AGateway != nil {
-		fmt.Printf("\nA2A Protocol endpoints:\n")
-		fmt.Printf("  GET  /.well-known/agent.json - Agent discovery\n")
-		fmt.Printf("  GET  /a2a/{agent}            - Agent card\n")
-		fmt.Printf("  POST /a2a/{agent}            - JSON-RPC endpoint\n")
-	}
 	fmt.Printf("\nWeb UI available at http://localhost%s/\n", addr)
 	fmt.Printf("API endpoints:\n")
 	fmt.Printf("  GET  /api/status      - Gateway status (includes unified agents)\n")

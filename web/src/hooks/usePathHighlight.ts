@@ -2,13 +2,11 @@
  * Path highlighting hook for butterfly layout
  *
  * Computes which nodes and edges should be highlighted based on
- * the selected node. When an agent is selected, traces the path:
- * Agent -> Gateway -> used servers
+ * the selected node. For clients, traces the path: Client -> Gateway.
  */
 
 import { useMemo } from 'react';
 import type { Node, Edge } from '@xyflow/react';
-import type { EdgeMetadata } from '../lib/graph/types';
 
 /**
  * Highlight state returned by the hook
@@ -25,16 +23,8 @@ export interface HighlightState {
 /**
  * Compute path highlighting based on selected node
  *
- * When an agent is selected:
- * 1. Highlight the agent node
- * 2. Highlight Agent -> Gateway edge
- * 3. Highlight Gateway node
- * 4. Find all servers this agent uses (from agent.data.uses)
- * 5. Highlight Gateway -> those servers edges
- * 6. Highlight those server nodes
- * 7. Highlight Agent -> Server/Agent edges (uses relationships)
- *
- * Everything not highlighted should be dimmed.
+ * When a client is selected: highlight client -> gateway path.
+ * For other node types: just highlight the selected node.
  *
  * @param nodes - All nodes in the graph
  * @param edges - All edges in the graph
@@ -84,79 +74,10 @@ export function usePathHighlight(
       return { highlightedNodeIds, highlightedEdgeIds, hasSelection: true };
     }
 
-    // Only agents trigger full path highlighting
-    if (nodeData?.type !== 'agent') {
-      // For non-agents (servers, resources), just highlight the selected node
-      return {
-        highlightedNodeIds: new Set([selectedNodeId]),
-        highlightedEdgeIds: new Set<string>(),
-        hasSelection: true,
-      };
-    }
-
-    // Build highlight sets for agent path
-    const highlightedNodeIds = new Set<string>();
-    const highlightedEdgeIds = new Set<string>();
-
-    // 1. Highlight selected agent
-    highlightedNodeIds.add(selectedNodeId);
-
-    // Get agent name for matching edges
-    const agentName = nodeData.name as string;
-
-    // 2. Find and highlight Agent -> Gateway edge
-    for (const edge of edges) {
-      const metadata = edge.data as EdgeMetadata | undefined;
-
-      if (
-        metadata?.relationType === 'agent-to-gateway' &&
-        metadata?.sourceAgent === agentName
-      ) {
-        highlightedEdgeIds.add(edge.id);
-        highlightedNodeIds.add(edge.target); // Gateway
-        break;
-      }
-    }
-
-    // 3. Find servers this agent uses
-    const uses = nodeData.uses as Array<{ server: string }> | undefined;
-    const usedServerIds = new Set<string>();
-
-    if (uses) {
-      for (const selector of uses) {
-        // Could be MCP server or another agent
-        usedServerIds.add(`mcp-${selector.server}`);
-        usedServerIds.add(`agent-${selector.server}`);
-      }
-    }
-
-    // 4. Find and highlight Gateway -> used servers edges AND Agent -> used server/agent edges
-    for (const edge of edges) {
-      const metadata = edge.data as EdgeMetadata | undefined;
-
-      // Gateway -> Server edges for servers this agent uses
-      if (
-        metadata?.relationType === 'gateway-to-server' &&
-        usedServerIds.has(edge.target)
-      ) {
-        highlightedEdgeIds.add(edge.id);
-        highlightedNodeIds.add(edge.target);
-      }
-
-      // Agent -> Server/Agent edges (uses relationships)
-      if (
-        (metadata?.relationType === 'agent-uses-server' ||
-          metadata?.relationType === 'agent-uses-agent') &&
-        metadata?.sourceAgent === agentName
-      ) {
-        highlightedEdgeIds.add(edge.id);
-        highlightedNodeIds.add(edge.target);
-      }
-    }
-
+    // For all other node types, just highlight the selected node
     return {
-      highlightedNodeIds,
-      highlightedEdgeIds,
+      highlightedNodeIds: new Set([selectedNodeId]),
+      highlightedEdgeIds: new Set<string>(),
       hasSelection: true,
     };
   }, [nodes, edges, selectedNodeId]);

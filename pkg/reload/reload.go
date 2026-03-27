@@ -31,7 +31,6 @@ type Handler struct {
 	runtime     *runtime.Orchestrator
 	port        int
 	basePort    int
-	gatewayPort int
 	logger      *slog.Logger
 	noExpand    bool
 	vault       config.VaultLookup
@@ -42,18 +41,17 @@ type Handler struct {
 }
 
 // NewHandler creates a reload handler.
-func NewHandler(stackPath string, currentCfg *config.Stack, gateway *mcp.Gateway, rt *runtime.Orchestrator, port, basePort, gatewayPort int, v config.VaultLookup, vs config.VaultSetLookup) *Handler {
+func NewHandler(stackPath string, currentCfg *config.Stack, gateway *mcp.Gateway, rt *runtime.Orchestrator, port, basePort int, v config.VaultLookup, vs config.VaultSetLookup) *Handler {
 	return &Handler{
-		stackPath:   stackPath,
-		currentCfg:  currentCfg,
-		gateway:     gateway,
-		runtime:     rt,
-		port:        port,
-		basePort:    basePort,
-		gatewayPort: gatewayPort,
-		logger:      logging.NewDiscardLogger(),
-		vault:       v,
-		vaultSet:    vs,
+		stackPath:  stackPath,
+		currentCfg: currentCfg,
+		gateway:    gateway,
+		runtime:    rt,
+		port:       port,
+		basePort:   basePort,
+		logger:     logging.NewDiscardLogger(),
+		vault:      v,
+		vaultSet:   vs,
 	}
 }
 
@@ -138,13 +136,6 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	if err := h.applyResourceChanges(ctx, diff.Resources, newCfg, result); err != nil {
 		result.Success = false
 		result.Message = fmt.Sprintf("failed to apply resource changes: %v", err)
-		return result, nil
-	}
-
-	// Apply agent changes
-	if err := h.applyAgentChanges(ctx, diff.Agents, newCfg, result); err != nil {
-		result.Success = false
-		result.Message = fmt.Sprintf("failed to apply agent changes: %v", err)
 		return result, nil
 	}
 
@@ -279,58 +270,6 @@ func (h *Handler) applyResourceChanges(ctx context.Context, diff ResourceDiff, n
 	return nil
 }
 
-func (h *Handler) applyAgentChanges(ctx context.Context, diff AgentDiff, newCfg *config.Stack, result *ReloadResult) error {
-	// Remove old agents
-	for _, agent := range diff.Removed {
-		h.logger.Info("removing agent", "name", agent.Name)
-
-		// Unregister from gateway
-		h.gateway.UnregisterAgent(agent.Name)
-
-		containerName := containerName(h.currentCfg.Name, agent.Name)
-		if err := h.stopAndRemoveContainer(ctx, containerName); err != nil {
-			h.logger.Warn("failed to remove container", "name", agent.Name, "error", err)
-			result.Errors = append(result.Errors, fmt.Sprintf("failed to remove agent %s: %v", agent.Name, err))
-		}
-
-		result.Removed = append(result.Removed, "agent:"+agent.Name)
-	}
-
-	// Handle modified agents
-	for _, change := range diff.Modified {
-		h.logger.Info("reloading agent", "name", change.Name)
-
-		// Unregister from gateway
-		h.gateway.UnregisterAgent(change.Name)
-
-		containerName := containerName(h.currentCfg.Name, change.Name)
-		if err := h.stopAndRemoveContainer(ctx, containerName); err != nil {
-			h.logger.Warn("failed to stop container", "name", change.Name, "error", err)
-		}
-
-		if err := h.startAgent(ctx, change.New, newCfg); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("failed to reload %s: %v", change.Name, err))
-			continue
-		}
-
-		result.Modified = append(result.Modified, "agent:"+change.Name)
-	}
-
-	// Add new agents
-	for _, agent := range diff.Added {
-		h.logger.Info("adding agent", "name", agent.Name)
-
-		if err := h.startAgent(ctx, agent, newCfg); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("failed to add %s: %v", agent.Name, err))
-			continue
-		}
-
-		result.Added = append(result.Added, "agent:"+agent.Name)
-	}
-
-	return nil
-}
-
 func (h *Handler) stopAndRemoveContainer(ctx context.Context, containerName string) error {
 	rt := h.runtime.Runtime()
 
@@ -451,60 +390,6 @@ func (h *Handler) startResource(ctx context.Context, res config.Resource, stack 
 
 	_, err := rt.Start(ctx, cfg)
 	return err
-}
-
-func (h *Handler) startAgent(ctx context.Context, agent config.Agent, stack *config.Stack) error {
-	rt := h.runtime.Runtime()
-
-	// Pull image
-	imageName := agent.Image
-	if err := rt.EnsureImage(ctx, imageName); err != nil {
-		return fmt.Errorf("ensuring image: %w", err)
-	}
-
-	// Determine network name
-	networkName := stack.Network.Name
-	if len(stack.Networks) > 0 && agent.Network != "" {
-		networkName = agent.Network
-	}
-
-	// Build environment with MCP_ENDPOINT injection
-	env := make(map[string]string)
-	for k, v := range agent.Env {
-		env[k] = v
-	}
-	if h.gatewayPort > 0 {
-		hostAlias := "host.docker.internal"
-		if ri := h.runtime.RuntimeInfo(); ri != nil {
-			hostAlias = ri.HostAliasHostname()
-		}
-		env["MCP_ENDPOINT"] = fmt.Sprintf("http://%s:%d?agent=%s", hostAlias, h.gatewayPort, agent.Name)
-	}
-
-	cfg := runtime.WorkloadConfig{
-		Name:        agent.Name,
-		Stack:       stack.Name,
-		Type:        runtime.WorkloadTypeAgent,
-		Image:       imageName,
-		Command:     agent.Command,
-		Env:         env,
-		NetworkName: networkName,
-		Labels: map[string]string{
-			"gridctl.managed": "true",
-			"gridctl.stack":   stack.Name,
-			"gridctl.agent":   agent.Name,
-		},
-	}
-
-	_, err := rt.Start(ctx, cfg)
-	if err != nil {
-		return err
-	}
-
-	// Register agent with gateway
-	h.gateway.RegisterAgent(agent.Name, agent.Uses)
-
-	return nil
 }
 
 func (h *Handler) allocatePort(ctx context.Context) int {

@@ -43,33 +43,6 @@ export interface ResourceStatus {
   network?: string;
 }
 
-// Agent variant discriminator
-export type AgentVariant = 'local' | 'remote';
-
-// Unified agent status - merges container and A2A protocol state
-export interface AgentStatus {
-  // Core identification
-  name: string;
-  status: 'running' | 'stopped' | 'error' | 'unavailable';
-
-  // Variant: "local" (container-based) or "remote" (A2A only)
-  variant: AgentVariant;
-
-  // Container fields (populated for local/container-based agents)
-  image?: string;
-  containerId?: string;
-  uses?: ToolSelector[];
-
-  // A2A fields (populated when hasA2A is true)
-  hasA2A: boolean;
-  role?: 'local' | 'remote';
-  url?: string;
-  endpoint?: string;
-  skillCount?: number;
-  skills?: string[];
-  description?: string;
-}
-
 // LLM client status from GET /api/clients
 export interface ClientStatus {
   name: string;       // Human-readable name (e.g., "Claude Desktop")
@@ -122,10 +95,8 @@ export interface TokenMetricsResponse {
 export interface GatewayStatus {
   gateway: ServerInfo;
   'mcp-servers': MCPServerStatus[];
-  agents?: AgentStatus[];
   resources?: ResourceStatus[];
   sessions?: number;       // Active MCP session count
-  a2a_tasks?: number;      // Active A2A task count (omitted if no A2A gateway)
   code_mode?: string;      // "on" when code mode is active (omitted when off)
   token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
 }
@@ -161,12 +132,9 @@ export interface GatewayNodeData extends NodeDataBase {
   version: string;
   serverCount: number;
   resourceCount: number;
-  agentCount: number;
-  a2aAgentCount: number;
   clientCount: number;
   totalToolCount: number;
   sessions: number;
-  a2aTasks: number | null;
   codeMode: string | null;
   totalSkills: number;
   activeSkills: number;
@@ -201,33 +169,6 @@ export interface ResourceNodeData extends NodeDataBase {
   image: string;
   network?: string;
   status: NodeStatus;
-}
-
-// Unified agent node data - handles both local (container) and remote (A2A) agents
-export interface AgentNodeData extends NodeDataBase {
-  type: 'agent';
-  name: string;
-  status: NodeStatus;
-
-  // Variant determines primary behavior and visual style
-  variant: AgentVariant;
-
-  // Container fields (local variant only)
-  image?: string;
-  containerId?: string;
-  uses?: ToolSelector[];
-
-  // A2A fields (when hasA2A is true)
-  hasA2A: boolean;
-  role?: 'local' | 'remote';
-  url?: string;
-  endpoint?: string;
-  skillCount?: number;
-  skills?: string[];
-  description?: string;
-
-  // Playground: true while test flight session is actively processing
-  isThinking?: boolean;
 }
 
 // Linked LLM client node data
@@ -277,7 +218,7 @@ export interface RegistryStatus {
   activeSkills: number;
 }
 
-export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | AgentNodeData | ClientNodeData;
+export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | ClientNodeData;
 
 // --- Workflow Types ---
 

@@ -145,23 +145,7 @@ func (h *Handler) handleInitialize(req *jsonrpc.Request) jsonrpc.Response {
 
 // handleToolsList handles the tools/list request.
 func (h *Handler) handleToolsList(r *http.Request, req *jsonrpc.Request) jsonrpc.Response {
-	// Check for agent identity header for access control
-	agentName := r.Header.Get("X-Agent-Name")
-
-	if agentName != "" && !h.gateway.HasAgent(agentName) {
-		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+agentName)
-	}
-
-	var result *ToolsListResult
-	var err error
-	if agentName != "" {
-		// Filter tools based on agent's allowed MCP servers
-		result, err = h.gateway.HandleToolsListForAgent(agentName)
-	} else {
-		// No agent header - return all tools
-		result, err = h.gateway.HandleToolsList()
-	}
-
+	result, err := h.gateway.HandleToolsList()
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
@@ -181,25 +165,7 @@ func (h *Handler) handleToolsCall(r *http.Request, req *jsonrpc.Request) jsonrpc
 		span.SetAttributes(attribute.String("tool.name", params.Name))
 	}
 
-	// Check for agent identity header for access control
-	agentName := r.Header.Get("X-Agent-Name")
-	if agentName != "" {
-		span.SetAttributes(attribute.String("agent.name", agentName))
-	}
-
-	if agentName != "" && !h.gateway.HasAgent(agentName) {
-		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "unknown agent: "+agentName)
-	}
-
-	var result *ToolCallResult
-	var err error
-	if agentName != "" {
-		// Validate agent has access to this tool's MCP server
-		result, err = h.gateway.HandleToolsCallForAgent(r.Context(), agentName, params)
-	} else {
-		// No agent header - allow all tools
-		result, err = h.gateway.HandleToolsCall(r.Context(), params)
-	}
+	result, err := h.gateway.HandleToolsCall(r.Context(), params)
 
 	if err != nil {
 		span.RecordError(err)

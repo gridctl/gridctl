@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -9,7 +9,7 @@ import {
   type Connection,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Bot, Database, GitCompareArrows, Eye, Cable, KeyRound } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Database, GitCompareArrows, Eye, Cable, KeyRound } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
@@ -23,10 +23,8 @@ import { DriftOverlay } from '../spec/DriftOverlay';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { SecretHeatmapOverlay } from '../spec/SecretHeatmapOverlay';
 import { WiringModeOverlay } from './WiringModeOverlay';
-import { AgentBuilderInspector } from './AgentBuilderInspector';
 
 export function Canvas() {
-  const [inspectorAgentId, setInspectorAgentId] = useState<string | null>(null);
   const nodes = useStackStore((s) => s.nodes);
   const edges = useStackStore((s) => s.edges);
   const onNodesChange = useStackStore((s) => s.onNodesChange);
@@ -49,9 +47,6 @@ export function Canvas() {
   const toggleWiringMode = useUIStore((s) => s.toggleWiringMode);
   const showSecretHeatmap = useUIStore((s) => s.showSecretHeatmap);
   const toggleSecretHeatmap = useUIStore((s) => s.toggleSecretHeatmap);
-  const showAgentBuilderMode = useUIStore((s) => s.showAgentBuilderMode);
-  const toggleAgentBuilderMode = useUIStore((s) => s.toggleAgentBuilderMode);
-  const addDraftEquippedSkill = useStackStore((s) => s.addDraftEquippedSkill);
   const agentIsThinking = usePlaygroundStore((s) => s.agentIsThinking);
   const activeToolCallEdges = usePlaygroundStore((s) => s.activeToolCallEdges);
 
@@ -93,9 +88,7 @@ export function Canvas() {
       const nodeData = node.data as { type?: string; name?: string };
       let updatedData = node.data;
 
-      if (nodeData.type === 'agent') {
-        updatedData = { ...updatedData, isThinking: agentIsThinking };
-      } else if (nodeData.type === 'mcp-server') {
+      if (nodeData.type === 'mcp-server') {
         updatedData = { ...updatedData, isProcessing: activeToolCallEdges.has(nodeData.name ?? '') };
       }
 
@@ -167,33 +160,8 @@ export function Canvas() {
     setSidebarOpen(false);
   }, [selectNode, setSidebarOpen]);
 
-  // Handle new edge connections — detect AgentNode→AgentNode for A2A wiring
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      if (!showAgentBuilderMode) return;
-      const currentNodes = useStackStore.getState().nodes;
-      const sourceNode = currentNodes.find((n) => n.id === connection.source);
-      const targetNode = currentNodes.find((n) => n.id === connection.target);
-      const sourceData = sourceNode?.data as { type?: string; name?: string } | undefined;
-      const targetData = targetNode?.data as { type?: string; name?: string } | undefined;
-      if (sourceData?.type === 'agent' && targetData?.type === 'agent' && sourceData.name && targetData.name) {
-        addDraftEquippedSkill(sourceData.name, targetData.name);
-      }
-    },
-    [showAgentBuilderMode, addDraftEquippedSkill],
-  );
-
-  // Handle double-click on agent node in builder mode
-  const onNodeDoubleClick = useCallback(
-    (_: React.MouseEvent, node: { id: string; data: unknown }) => {
-      if (!showAgentBuilderMode) return;
-      const data = node.data as { type?: string; name?: string };
-      if (data.type === 'agent' && data.name) {
-        setInspectorAgentId(data.name);
-      }
-    },
-    [showAgentBuilderMode],
-  );
+  // No-op connect handler (wiring mode no longer supports agent connections)
+  const onConnect = useCallback((_connection: Connection) => {}, []);
 
   const isEmpty = !nodes || nodes.length === 0;
 
@@ -212,7 +180,7 @@ export function Canvas() {
               Create your first stack
             </h3>
             <p className="text-xs text-text-muted mb-5 leading-relaxed">
-              Define MCP servers, agents, and resources in a guided wizard to generate your stack spec.
+              Define MCP servers and resources in a guided wizard to generate your stack spec.
             </p>
             <button
               onClick={() => useWizardStore.getState().open('stack')}
@@ -230,7 +198,6 @@ export function Canvas() {
               <span className="text-[10px] text-text-muted">or add:</span>
               {[
                 { type: 'mcp-server' as const, icon: Server, label: 'Server', color: 'text-primary hover:text-primary/80' },
-                { type: 'agent' as const, icon: Bot, label: 'Agent', color: 'text-tertiary hover:text-tertiary/80' },
                 { type: 'resource' as const, icon: Database, label: 'Resource', color: 'text-secondary hover:text-secondary/80' },
               ].map((item) => (
                 <button
@@ -258,7 +225,6 @@ export function Canvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
-        onNodeDoubleClick={onNodeDoubleClick}
         onConnect={onConnect}
         onPaneClick={onPaneClick}
         defaultEdgeOptions={defaultEdgeOptions}
@@ -394,16 +360,6 @@ export function Canvas() {
           >
             <KeyRound className="w-4 h-4" />
           </button>
-          <button
-            onClick={toggleAgentBuilderMode}
-            className={cn(
-              'control-button',
-              showAgentBuilderMode && 'ring-1 ring-secondary/30'
-            )}
-            title={showAgentBuilderMode ? 'Exit agent builder' : 'Enter agent builder'}
-          >
-            <Bot className="w-4 h-4" />
-          </button>
         </Panel>
       </ReactFlow>
       {showDriftOverlay && (
@@ -429,22 +385,6 @@ export function Canvas() {
           <div className="absolute inset-0 pointer-events-none bg-tertiary/[0.02] z-10" />
           <SecretHeatmapOverlay className="absolute inset-0 z-20" />
         </>
-      )}
-      {showAgentBuilderMode && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center gap-2 border border-secondary/30 bg-secondary/5">
-            <Bot size={12} className="text-secondary" />
-            <span className="text-[10px] font-medium text-secondary">
-              Agent Builder — double-click an agent to configure
-            </span>
-          </div>
-        </div>
-      )}
-      {showAgentBuilderMode && inspectorAgentId && (
-        <AgentBuilderInspector
-          agentId={inspectorAgentId}
-          onClose={() => setInspectorAgentId(null)}
-        />
       )}
     </div>
   );

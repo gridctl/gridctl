@@ -67,7 +67,7 @@ class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 
 interface NodeOption {
   name: string;
-  type: 'gateway' | 'mcp-server' | 'agent' | 'resource';
+  type: 'gateway' | 'mcp-server' | 'resource';
 }
 
 function DetachedLogsPageContent() {
@@ -111,7 +111,6 @@ function DetachedLogsPageContent() {
           // Gateway option at the top
           { name: 'Gateway', type: 'gateway' as const },
           ...(status['mcp-servers'] ?? []).map((s) => ({ name: s.name, type: 'mcp-server' as const })),
-          ...(status.agents ?? []).map((a) => ({ name: a.name, type: 'agent' as const })),
           ...(status.resources ?? []).map((r) => ({ name: r.name, type: 'resource' as const })),
         ];
         setNodes(nodeList);
@@ -357,7 +356,6 @@ function DetachedLogsPageContent() {
                           'w-1.5 h-1.5 rounded-full',
                           node.type === 'gateway' && 'bg-primary',
                           node.type === 'mcp-server' && 'bg-violet-400',
-                          node.type === 'agent' && 'bg-tertiary',
                           node.type === 'resource' && 'bg-secondary'
                         )}
                       />
