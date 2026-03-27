@@ -685,6 +685,24 @@ func (s *Server) getAgentStatuses() []AgentStatus {
 		}
 	}
 
+	// Include config-only agents (defined in stack file but not yet running or registered with A2A)
+	if s.stackFile != "" {
+		if stack, _, err := config.ValidateStackFile(s.stackFile); err == nil {
+			for _, cfgAgent := range stack.Agents {
+				if !seen[cfgAgent.Name] {
+					if _, hasContainer := containerAgents[cfgAgent.Name]; !hasContainer {
+						unified = append(unified, AgentStatus{
+							Name:    cfgAgent.Name,
+							Status:  "pending",
+							Variant: "local",
+							Uses:    cfgAgent.Uses,
+						})
+					}
+				}
+			}
+		}
+	}
+
 	sort.Slice(unified, func(i, j int) bool { return unified[i].Name < unified[j].Name })
 	return unified
 }
