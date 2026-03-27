@@ -3,20 +3,18 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Terminal,
   Box,
-  Bot,
   ChevronDown,
   ChevronRight,
   Wrench,
   Sparkles,
   Globe,
-  Server,
-  Zap,
   Cpu,
   KeyRound,
-  Network,
   RefreshCw,
   ChevronUp,
   AlertCircle,
+  Server,
+  Layers,
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { Badge } from '../components/ui/Badge';
@@ -30,9 +28,7 @@ import { POLLING } from '../lib/constants';
 import type {
   MCPServerStatus,
   ResourceStatus,
-  AgentStatus,
   Tool,
-  ToolSelector,
 } from '../types';
 
 // Error boundary for detached window
@@ -79,8 +75,8 @@ class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 
 interface NodeOption {
   name: string;
-  type: 'mcp-server' | 'agent' | 'resource';
-  data: MCPServerStatus | AgentStatus | ResourceStatus;
+  type: 'mcp-server' | 'resource';
+  data: MCPServerStatus | ResourceStatus;
 }
 
 function DetachedSidebarPageContent() {
@@ -111,11 +107,6 @@ function DetachedSidebarPageContent() {
           name: s.name,
           type: 'mcp-server' as const,
           data: s,
-        })),
-        ...(status.agents ?? []).map((a) => ({
-          name: a.name,
-          type: 'agent' as const,
-          data: a,
         })),
         ...(status.resources ?? []).map((r) => ({
           name: r.name,
@@ -174,7 +165,7 @@ function DetachedSidebarPageContent() {
 
         <div className="flex items-center gap-3">
           <div className="p-1.5 rounded-lg bg-tertiary/10 border border-tertiary/20">
-            <Bot size={14} className="text-tertiary" />
+            <Server size={14} className="text-tertiary" />
           </div>
 
           {/* Node selector dropdown */}
@@ -219,7 +210,6 @@ function DetachedSidebarPageContent() {
                         className={cn(
                           'w-1.5 h-1.5 rounded-full',
                           node.type === 'mcp-server' && 'bg-violet-400',
-                          node.type === 'agent' && 'bg-tertiary',
                           node.type === 'resource' && 'bg-secondary'
                         )}
                       />
@@ -264,7 +254,7 @@ function DetachedSidebarPageContent() {
         {!isLoading && !selectedData && (
           <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale">
             <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
-              <Bot size={32} className="text-text-muted/50" />
+              <Layers size={32} className="text-text-muted/50" />
             </div>
             <span className="text-sm">Select a node to view details</span>
           </div>
@@ -278,7 +268,7 @@ function DetachedSidebarPageContent() {
       {/* Footer */}
       <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
         <span>
-          {selectedData?.type === 'mcp-server' ? 'MCP Server' : selectedData?.type === 'agent' ? 'Agent' : selectedData?.type === 'resource' ? 'Resource' : ''}
+          {selectedData?.type === 'mcp-server' ? 'MCP Server' : selectedData?.type === 'resource' ? 'Resource' : ''}
         </span>
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
@@ -301,17 +291,13 @@ export function DetachedSidebarPage() {
 // Node details component
 function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
   const isServer = node.type === 'mcp-server';
-  const isAgent = node.type === 'agent';
 
   const serverData = isServer ? (node.data as MCPServerStatus) : null;
-  const agentData = isAgent ? (node.data as AgentStatus) : null;
-  const resourceData = !isServer && !isAgent ? (node.data as ResourceStatus) : null;
+  const resourceData = !isServer ? (node.data as ResourceStatus) : null;
 
   const isExternal = serverData?.external ?? false;
   const isLocalProcess = serverData?.localProcess ?? false;
   const isSSH = serverData?.ssh ?? false;
-  const isRemote = agentData?.variant === 'remote';
-  const hasA2A = agentData?.hasA2A ?? false;
 
   const Icon = isServer
     ? isExternal
@@ -321,21 +307,15 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
         : isSSH
           ? KeyRound
           : Terminal
-    : isAgent
-      ? Bot
-      : Box;
+    : Box;
 
-  const colorClass = isServer ? 'violet' : isAgent ? (isRemote ? 'secondary' : 'tertiary') : 'secondary';
+  const colorClass = isServer ? 'violet' : 'secondary';
 
   const status = isServer
     ? serverData?.initialized
       ? 'running'
       : 'stopped'
-    : isAgent
-      ? agentData?.status === 'running'
-        ? 'running'
-        : agentData?.status
-      : resourceData?.status;
+    : resourceData?.status;
 
   // Filter tools for this server
   const serverTools = isServer
@@ -348,9 +328,8 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
       <div className="flex items-center gap-3 p-4 border-b border-border/50 bg-surface-elevated/30">
         <div
           className={cn(
-            'p-2.5 rounded-xl flex-shrink-0 border relative',
+            'p-2.5 rounded-xl flex-shrink-0 border',
             colorClass === 'violet' && 'bg-violet-500/10 border-violet-500/20',
-            colorClass === 'tertiary' && 'bg-tertiary/10 border-tertiary/20',
             colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
           )}
         >
@@ -358,28 +337,16 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
             size={18}
             className={cn(
               colorClass === 'violet' && 'text-violet-400',
-              colorClass === 'tertiary' && 'text-tertiary',
               colorClass === 'secondary' && 'text-secondary'
             )}
           />
-          {hasA2A && !isRemote && (
-            <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-secondary/20 border border-secondary/40">
-              <Zap size={8} className="text-secondary" />
-            </div>
-          )}
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold text-text-primary truncate text-lg">{node.name}</h2>
           <div className="flex items-center gap-1.5 mt-0.5">
             <p className="text-[10px] text-text-muted uppercase tracking-wider">
-              {isServer ? 'MCP Server' : isAgent ? 'Agent' : 'Resource'}
+              {isServer ? 'MCP Server' : 'Resource'}
             </p>
-            {hasA2A && (
-              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-secondary/10 text-secondary flex items-center gap-0.5">
-                <Zap size={8} />
-                A2A
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -422,30 +389,6 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
             </div>
           )}
 
-          {isAgent && agentData?.image && (
-            <div className="flex justify-between items-center gap-4">
-              <span className="log-text text-text-muted">Image</span>
-              <span
-                className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
-                title={agentData.image}
-              >
-                {agentData.image}
-              </span>
-            </div>
-          )}
-
-          {isAgent && agentData?.containerId && (
-            <div className="flex justify-between items-center gap-4">
-              <span className="log-text text-text-muted">Container</span>
-              <span
-                className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
-                title={agentData.containerId}
-              >
-                {agentData.containerId}
-              </span>
-            </div>
-          )}
-
           {resourceData?.image && (
             <div className="flex justify-between items-center gap-4">
               <span className="log-text text-text-muted">Image</span>
@@ -479,30 +422,6 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
               ))}
             </div>
           )}
-        </Section>
-      )}
-
-      {/* Skills Section (Agents with A2A) */}
-      {isAgent && hasA2A && (agentData?.skills?.length ?? 0) > 0 && (
-        <Section title="Skills" icon={Sparkles} count={agentData?.skillCount} defaultOpen>
-          <div className="space-y-2">
-            {agentData?.skills?.map((skill, idx) => (
-              <div key={idx} className="px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30">
-                <span className="log-text text-text-primary font-medium">{skill}</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {/* Access Section (Agents only) */}
-      {isAgent && agentData?.uses && (agentData.uses?.length ?? 0) > 0 && (
-        <Section title="Access" icon={Network} count={agentData.uses?.length ?? 0} defaultOpen>
-          <div className="space-y-3">
-            {(agentData.uses ?? []).map((selector: ToolSelector) => (
-              <AccessItem key={selector.server} selector={selector} />
-            ))}
-          </div>
         </Section>
       )}
     </div>
@@ -590,42 +509,3 @@ function ToolItem({ tool, serverName }: { tool: Tool; serverName: string }) {
   );
 }
 
-// Access item component
-function AccessItem({ selector }: { selector: ToolSelector }) {
-  const isRestricted = selector.tools && (selector.tools?.length ?? 0) > 0;
-
-  return (
-    <div className="rounded-lg bg-surface-elevated border border-border/40 overflow-hidden">
-      <div className="px-3 py-2 bg-violet-500/10 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Server size={12} className="text-violet-400" />
-          <span className="text-xs font-medium text-violet-100">{selector.server}</span>
-        </div>
-        <span
-          className={cn(
-            'text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wider border',
-            isRestricted
-              ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
-              : 'border-violet-500/30 text-violet-400 bg-violet-500/5'
-          )}
-        >
-          {isRestricted ? 'Restricted' : 'Full Access'}
-        </span>
-      </div>
-      <div className="p-2">
-        {isRestricted ? (
-          <div className="space-y-1">
-            {selector.tools?.map((toolName) => (
-              <div key={toolName} className="flex items-center gap-2 px-2 py-1.5 rounded bg-background/50">
-                <Wrench size={10} className="text-primary flex-shrink-0" />
-                <span className="text-xs font-mono text-text-primary truncate">{toolName}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <span className="log-text-detail text-text-muted italic px-2">Access to all available tools</span>
-        )}
-      </div>
-    </div>
-  );
-}
