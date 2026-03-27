@@ -119,9 +119,10 @@ function getResourceCounts(
 
 interface CreationWizardProps {
   onOpenVault?: () => void;
+  onDeploy?: () => void;
 }
 
-export function CreationWizard({ onOpenVault }: CreationWizardProps) {
+export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
   const {
     isOpen,
     close,
@@ -231,6 +232,11 @@ export function CreationWizard({ onOpenVault }: CreationWizardProps) {
     }
     setExpertMode(enabled);
   };
+
+  const handleDeploy = useCallback(() => {
+    close();
+    onDeploy?.();
+  }, [close, onDeploy]);
 
   const canGoNext = () => {
     switch (currentStep) {
@@ -366,7 +372,7 @@ export function CreationWizard({ onOpenVault }: CreationWizardProps) {
                     yamlError,
                     generatedYaml,
                     counts,
-                    close,
+                    handleDeploy,
                   )}
                 </div>
               </Panel>
@@ -395,7 +401,7 @@ export function CreationWizard({ onOpenVault }: CreationWizardProps) {
                 yamlError,
                 generatedYaml,
                 counts,
-                close,
+                handleDeploy,
               )}
             </div>
           )}

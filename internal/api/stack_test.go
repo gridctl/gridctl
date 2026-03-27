@@ -439,3 +439,37 @@ func TestHandleStack_Routing(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentAppearsInStatusAfterAppend(t *testing.T) {
+	sf := writeTestStack(t)
+	s := &Server{stackFile: sf}
+
+	// Append a new agent to the stack
+	body, _ := json.Marshal(map[string]string{
+		"yaml":         "name: test-agent\nruntime: node\nprompt: test\n",
+		"resourceType": "agent",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	w := httptest.NewRecorder()
+	s.handleStackAppend(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Agent should now appear in getAgentStatuses with status "pending"
+	agents := s.getAgentStatuses()
+
+	var names []string
+	for _, a := range agents {
+		names = append(names, a.Name)
+	}
+	assert.Contains(t, names, "test-agent", "newly appended agent should appear in status")
+
+	var found *AgentStatus
+	for i := range agents {
+		if agents[i].Name == "test-agent" {
+			found = &agents[i]
+			break
+		}
+	}
+	assert.NotNil(t, found)
+	assert.Equal(t, "pending", found.Status)
+}
