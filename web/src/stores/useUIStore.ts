@@ -31,9 +31,6 @@ interface UIState {
   // Latency heat overlay on canvas edges
   showLatencyHeat: boolean;
 
-  // Skill group nodes visibility on canvas
-  showSkillsOnCanvas: boolean;
-
   // Bottom panel state
   bottomPanelOpen: boolean;
   bottomPanelTab: BottomPanelTab;
@@ -61,7 +58,6 @@ interface UIState {
   toggleWiringMode: () => void;
   toggleSecretHeatmap: () => void;
   toggleLatencyHeat: () => void;
-  toggleSkillsOnCanvas: () => void;
 
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
@@ -117,9 +113,6 @@ export const useUIStore = create<UIState>()(
       // Latency heat overlay default
       showLatencyHeat: false,
 
-      // Skill group nodes hidden on canvas by default
-      showSkillsOnCanvas: false,
-
       // Bottom panel defaults
       bottomPanelOpen: false,
       bottomPanelTab: 'logs',
@@ -159,8 +152,6 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ showSecretHeatmap: !s.showSecretHeatmap })),
       toggleLatencyHeat: () =>
         set((s) => ({ showLatencyHeat: !s.showLatencyHeat })),
-      toggleSkillsOnCanvas: () =>
-        set((s) => ({ showSkillsOnCanvas: !s.showSkillsOnCanvas })),
 
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
