@@ -186,7 +186,8 @@ export function createAllNodes(
   clients: ClientStatus[] = [],
   registryStatus?: RegistryStatus | null,
   codeMode?: string | null,
-  skills: AgentSkill[] = []
+  skills: AgentSkill[] = [],
+  showSkillsOnCanvas = false
 ): Node[] {
   const linkedClients = clients.filter((c) => c.linked);
   const nodes: Node[] = [
@@ -194,7 +195,7 @@ export function createAllNodes(
     ...createClientNodes(clients),
     ...createMCPServerNodes(mcpServers),
     ...createResourceNodes(resources),
-    ...createSkillGroupNodes(skills),
+    ...(showSkillsOnCanvas ? createSkillGroupNodes(skills) : []),
   ];
 
   return nodes;
