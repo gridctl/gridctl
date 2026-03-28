@@ -1,4 +1,4 @@
 [tools]
-go = "1.24"
+go = "1.25.8"
 node = "20"
 goreleaser = "2.13"
