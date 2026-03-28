@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -21,7 +22,7 @@ import (
 
 // mockDockerClient is a mock implementation of DockerClient for builder tests.
 type mockDockerClient struct {
-	imageBuildFn    func(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error)
+	imageBuildFn    func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error)
 	imageBuildError error
 	calls           []string
 }
@@ -30,17 +31,17 @@ func (m *mockDockerClient) recordCall(name string) {
 	m.calls = append(m.calls, name)
 }
 
-func (m *mockDockerClient) ImageBuild(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error) {
+func (m *mockDockerClient) ImageBuild(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
 	m.recordCall("ImageBuild")
 	if m.imageBuildFn != nil {
 		return m.imageBuildFn(ctx, buildContext, options)
 	}
 	if m.imageBuildError != nil {
-		return types.ImageBuildResponse{}, m.imageBuildError
+		return build.ImageBuildResponse{}, m.imageBuildError
 	}
 	body := `{"aux":{"ID":"sha256:mock123"}}
 {"stream":"Successfully built mock123\n"}`
-	return types.ImageBuildResponse{
+	return build.ImageBuildResponse{
 		Body: io.NopCloser(strings.NewReader(body)),
 	}, nil
 }
@@ -61,11 +62,11 @@ func (m *mockDockerClient) ContainerRestart(context.Context, string, container.S
 func (m *mockDockerClient) ContainerRemove(context.Context, string, container.RemoveOptions) error {
 	return nil
 }
-func (m *mockDockerClient) ContainerList(context.Context, container.ListOptions) ([]types.Container, error) {
+func (m *mockDockerClient) ContainerList(context.Context, container.ListOptions) ([]container.Summary, error) {
 	return nil, nil
 }
-func (m *mockDockerClient) ContainerInspect(context.Context, string) (types.ContainerJSON, error) {
-	return types.ContainerJSON{}, nil
+func (m *mockDockerClient) ContainerInspect(context.Context, string) (container.InspectResponse, error) {
+	return container.InspectResponse{}, nil
 }
 func (m *mockDockerClient) ContainerAttach(context.Context, string, container.AttachOptions) (types.HijackedResponse, error) {
 	return types.HijackedResponse{}, nil
@@ -318,12 +319,12 @@ func TestBuild_WithBuildArgs(t *testing.T) {
 		t.Fatalf("write Dockerfile: %v", err)
 	}
 
-	var capturedOptions types.ImageBuildOptions
+	var capturedOptions build.ImageBuildOptions
 	mock := &mockDockerClient{
-		imageBuildFn: func(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error) {
+		imageBuildFn: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
 			capturedOptions = options
 			body := `{"aux":{"ID":"sha256:mock123"}}`
-			return types.ImageBuildResponse{
+			return build.ImageBuildResponse{
 				Body: io.NopCloser(strings.NewReader(body)),
 			}, nil
 		},
@@ -357,12 +358,12 @@ func TestBuild_NoCache(t *testing.T) {
 		t.Fatalf("write Dockerfile: %v", err)
 	}
 
-	var capturedOptions types.ImageBuildOptions
+	var capturedOptions build.ImageBuildOptions
 	mock := &mockDockerClient{
-		imageBuildFn: func(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error) {
+		imageBuildFn: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
 			capturedOptions = options
 			body := `{"aux":{"ID":"sha256:mock123"}}`
-			return types.ImageBuildResponse{
+			return build.ImageBuildResponse{
 				Body: io.NopCloser(strings.NewReader(body)),
 			}, nil
 		},

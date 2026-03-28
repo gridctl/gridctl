@@ -7,7 +7,6 @@ import (
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/runtime"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
@@ -150,7 +149,7 @@ func ContainerExists(ctx context.Context, cli dockerclient.DockerClient, name st
 }
 
 // ListManagedContainers returns all containers managed by gridctl.
-func ListManagedContainers(ctx context.Context, cli dockerclient.DockerClient, stack string) ([]types.Container, error) {
+func ListManagedContainers(ctx context.Context, cli dockerclient.DockerClient, stack string) ([]container.Summary, error) {
 	filterArgs := filters.NewArgs(
 		filters.Arg("label", LabelManaged+"=true"),
 	)

@@ -13,7 +13,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/build"
 )
 
 // BuildImage builds a Docker image from a context directory.
@@ -41,7 +41,7 @@ func BuildImage(ctx context.Context, cli dockerclient.DockerClient, contextPath,
 	}
 
 	// Build the image
-	resp, err := cli.ImageBuild(ctx, buildContext, types.ImageBuildOptions{
+	resp, err := cli.ImageBuild(ctx, buildContext, build.ImageBuildOptions{
 		Dockerfile: dockerfile,
 		Tags:       []string{tag},
 		BuildArgs:  dockerBuildArgs,

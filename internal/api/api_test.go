@@ -16,6 +16,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -904,7 +905,7 @@ func (m *mockAgentClient) ServerInfo() mcp.ServerInfo  { return mcp.ServerInfo{N
 // mockDockerClient is a minimal Docker client mock for API tests.
 // It only implements the methods used by the API handlers.
 type mockDockerClient struct {
-	containers     []types.Container
+	containers     []container.Summary
 	logOutput      string
 	lastLogOptions container.LogsOptions
 	restartCalled  bool
@@ -915,7 +916,7 @@ type mockDockerClient struct {
 	stopError      error
 }
 
-func (m *mockDockerClient) ContainerList(_ context.Context, opts container.ListOptions) ([]types.Container, error) {
+func (m *mockDockerClient) ContainerList(_ context.Context, opts container.ListOptions) ([]container.Summary, error) {
 	if m.listError != nil {
 		return nil, m.listError
 	}
@@ -950,8 +951,8 @@ func (m *mockDockerClient) ContainerStart(_ context.Context, _ string, _ contain
 func (m *mockDockerClient) ContainerRemove(_ context.Context, _ string, _ container.RemoveOptions) error {
 	return nil
 }
-func (m *mockDockerClient) ContainerInspect(_ context.Context, _ string) (types.ContainerJSON, error) {
-	return types.ContainerJSON{}, nil
+func (m *mockDockerClient) ContainerInspect(_ context.Context, _ string) (container.InspectResponse, error) {
+	return container.InspectResponse{}, nil
 }
 func (m *mockDockerClient) ContainerAttach(_ context.Context, _ string, _ container.AttachOptions) (types.HijackedResponse, error) {
 	return types.HijackedResponse{}, nil
@@ -969,8 +970,8 @@ func (m *mockDockerClient) ImageList(_ context.Context, _ image.ListOptions) ([]
 func (m *mockDockerClient) ImagePull(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
 	return nil, nil
 }
-func (m *mockDockerClient) ImageBuild(_ context.Context, _ io.Reader, _ types.ImageBuildOptions) (types.ImageBuildResponse, error) {
-	return types.ImageBuildResponse{}, nil
+func (m *mockDockerClient) ImageBuild(_ context.Context, _ io.Reader, _ build.ImageBuildOptions) (build.ImageBuildResponse, error) {
+	return build.ImageBuildResponse{}, nil
 }
 func (m *mockDockerClient) Ping(_ context.Context) (types.Ping, error) { return types.Ping{}, nil }
 func (m *mockDockerClient) Close() error                               { return nil }

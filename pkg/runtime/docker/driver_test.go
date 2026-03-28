@@ -8,7 +8,6 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/runtime"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
@@ -117,7 +116,7 @@ func TestDockerRuntime_Start_NewContainer(t *testing.T) {
 func TestDockerRuntime_Start_ExistingContainer(t *testing.T) {
 	containerName := ContainerName("test-stack", "server1")
 	mock := &MockDockerClient{
-		Containers: []types.Container{
+		Containers: []container.Summary{
 			{
 				ID:    "existing-container-id",
 				Names: []string{"/" + containerName},
@@ -244,11 +243,11 @@ func TestDockerRuntime_Remove_Error(t *testing.T) {
 
 func TestDockerRuntime_Status_Running(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-server1",
-					State: &types.ContainerState{Status: "running"},
+					State: &container.State{Status: "running"},
 				},
 				Config: &container.Config{
 					Image: "mcp:latest",
@@ -258,9 +257,9 @@ func TestDockerRuntime_Status_Running(t *testing.T) {
 						LabelMCPServer: "server1",
 					},
 				},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{
+					NetworkSettingsBase: container.NetworkSettingsBase{
 						Ports: nat.PortMap{
 							"3000/tcp": []nat.PortBinding{
 								{HostIP: "0.0.0.0", HostPort: "9000"},
@@ -303,18 +302,18 @@ func TestDockerRuntime_Status_Running(t *testing.T) {
 
 func TestDockerRuntime_Status_Stopped(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-server1",
-					State: &types.ContainerState{Status: "exited"},
+					State: &container.State{Status: "exited"},
 				},
 				Config: &container.Config{
 					Labels: map[string]string{},
 				},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{Ports: nat.PortMap{}},
+					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -333,18 +332,18 @@ func TestDockerRuntime_Status_Stopped(t *testing.T) {
 
 func TestDockerRuntime_Status_Creating(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-server1",
-					State: &types.ContainerState{Status: "created"},
+					State: &container.State{Status: "created"},
 				},
 				Config: &container.Config{
 					Labels: map[string]string{},
 				},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{Ports: nat.PortMap{}},
+					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -363,18 +362,18 @@ func TestDockerRuntime_Status_Creating(t *testing.T) {
 
 func TestDockerRuntime_Status_Dead(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-server1",
-					State: &types.ContainerState{Status: "dead"},
+					State: &container.State{Status: "dead"},
 				},
 				Config: &container.Config{
 					Labels: map[string]string{},
 				},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{Ports: nat.PortMap{}},
+					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -393,18 +392,18 @@ func TestDockerRuntime_Status_Dead(t *testing.T) {
 
 func TestDockerRuntime_Status_Unknown(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-server1",
-					State: &types.ContainerState{Status: "paused"},
+					State: &container.State{Status: "paused"},
 				},
 				Config: &container.Config{
 					Labels: map[string]string{},
 				},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{Ports: nat.PortMap{}},
+					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -423,11 +422,11 @@ func TestDockerRuntime_Status_Unknown(t *testing.T) {
 
 func TestDockerRuntime_Status_ResourceType(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-postgres",
-					State: &types.ContainerState{Status: "running"},
+					State: &container.State{Status: "running"},
 				},
 				Config: &container.Config{
 					Labels: map[string]string{
@@ -436,9 +435,9 @@ func TestDockerRuntime_Status_ResourceType(t *testing.T) {
 						LabelResource: "postgres",
 					},
 				},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{Ports: nat.PortMap{}},
+					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -458,18 +457,18 @@ func TestDockerRuntime_Status_ResourceType(t *testing.T) {
 
 func TestDockerRuntime_Status_NoPort(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-server1",
-					State: &types.ContainerState{Status: "running"},
+					State: &container.State{Status: "running"},
 				},
 				Config: &container.Config{
 					Labels: map[string]string{},
 				},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{Ports: nat.PortMap{}},
+					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -504,7 +503,7 @@ func TestDockerRuntime_Status_InspectError(t *testing.T) {
 func TestDockerRuntime_Exists(t *testing.T) {
 	containerName := ContainerName("test", "server1")
 	mock := &MockDockerClient{
-		Containers: []types.Container{
+		Containers: []container.Summary{
 			{
 				ID:    "abc123",
 				Names: []string{"/" + containerName},
@@ -540,7 +539,7 @@ func TestDockerRuntime_Exists_NotFound(t *testing.T) {
 
 func TestDockerRuntime_List(t *testing.T) {
 	mock := &MockDockerClient{
-		Containers: []types.Container{
+		Containers: []container.Summary{
 			{
 				ID:    "c1",
 				Names: []string{"/gridctl-test-server1"},
@@ -598,7 +597,7 @@ func TestDockerRuntime_List(t *testing.T) {
 
 func TestDockerRuntime_List_StoppedContainers(t *testing.T) {
 	mock := &MockDockerClient{
-		Containers: []types.Container{
+		Containers: []container.Summary{
 			{
 				ID:     "c1",
 				Names:  []string{"/gridctl-test-server1"},
@@ -650,16 +649,16 @@ func TestDockerRuntime_List_Error(t *testing.T) {
 
 func TestDockerRuntime_GetHostPort(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-server1",
-					State: &types.ContainerState{Status: "running"},
+					State: &container.State{Status: "running"},
 				},
 				Config: &container.Config{Labels: map[string]string{}},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{
+					NetworkSettingsBase: container.NetworkSettingsBase{
 						Ports: nat.PortMap{
 							"3000/tcp": []nat.PortBinding{
 								{HostIP: "0.0.0.0", HostPort: "9000"},
@@ -683,16 +682,16 @@ func TestDockerRuntime_GetHostPort(t *testing.T) {
 
 func TestDockerRuntime_GetHostPort_NotMapped(t *testing.T) {
 	mock := &MockDockerClient{
-		ContainerDetails: map[string]types.ContainerJSON{
+		ContainerDetails: map[string]container.InspectResponse{
 			"c1": {
-				ContainerJSONBase: &types.ContainerJSONBase{
+				ContainerJSONBase: &container.ContainerJSONBase{
 					Name:  "/gridctl-test-server1",
-					State: &types.ContainerState{Status: "running"},
+					State: &container.State{Status: "running"},
 				},
 				Config: &container.Config{Labels: map[string]string{}},
-				NetworkSettings: &types.NetworkSettings{
+				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: types.NetworkSettingsBase{Ports: nat.PortMap{}},
+					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
