@@ -6,7 +6,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/react';
-import type { MCPServerStatus, ResourceStatus, ClientStatus, RegistryStatus } from '../../types';
+import type { MCPServerStatus, ResourceStatus, ClientStatus, RegistryStatus, AgentSkill } from '../../types';
 import type { LayoutEngine, LayoutOptions } from './types';
 import { createAllNodes } from './nodes';
 import { createAllEdges } from './edges';
@@ -23,6 +23,7 @@ export interface TransformInput {
   clients?: ClientStatus[];
   registryStatus?: RegistryStatus | null;
   codeMode?: string | null;
+  skills?: AgentSkill[];
 }
 
 /**
@@ -62,7 +63,7 @@ export function transformToGraph(
   input: TransformInput,
   options: TransformOptions = {}
 ): TransformOutput {
-  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode } = input;
+  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode, skills = [] } = input;
   const { layoutEngine = defaultLayoutEngine, preservedPositions, compact } = options;
 
   // Create nodes
@@ -73,11 +74,12 @@ export function transformToGraph(
     sessions,
     clients,
     registryStatus,
-    codeMode
+    codeMode,
+    skills
   );
 
   // Create edges
-  const edges = createAllEdges(mcpServers, resources, clients);
+  const edges = createAllEdges(mcpServers, resources, clients, skills);
 
   // Apply layout
   const layoutOptions: LayoutOptions = { preservedPositions, compact };
@@ -109,10 +111,11 @@ export function transformToNodesAndEdges(
   clients?: ClientStatus[],
   registryStatus?: RegistryStatus | null,
   codeMode?: string | null,
-  compact?: boolean
+  compact?: boolean,
+  skills?: AgentSkill[]
 ): TransformOutput {
   return transformToGraph(
-    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode },
+    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode, skills },
     { preservedPositions: existingPositions, compact }
   );
 }
