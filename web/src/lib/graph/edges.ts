@@ -96,22 +96,23 @@ export function createClientToGatewayEdges(
 }
 
 /**
- * Create edges from gateway to active skill nodes
+ * Create edges from gateway to skill group nodes (one per top-level directory)
  */
-export function createGatewayToSkillEdges(skills: AgentSkill[]): EnhancedEdge[] {
-  return skills
-    .filter((s) => s.state === 'active')
-    .map((skill) => ({
-      id: `edge-gateway-skill-${skill.name}`,
-      source: GATEWAY_NODE_ID,
-      target: `skill-${skill.name}`,
-      animated: true,
-      markerEnd: { ...arrowMarker, color: COLORS.tertiary },
-      data: {
-        relationType: 'gateway-to-skill' as const,
-        isHighlightable: false,
-      },
-    }));
+export function createGatewayToSkillGroupEdges(skills: AgentSkill[]): EnhancedEdge[] {
+  const active = skills.filter((s) => s.state === 'active');
+  const groupNames = new Set(active.map((s) => (s.dir ? s.dir.split('/')[0] : s.name)));
+
+  return Array.from(groupNames).map((groupName) => ({
+    id: `edge-gateway-skill-group-${groupName}`,
+    source: GATEWAY_NODE_ID,
+    target: `skill-group-${groupName}`,
+    animated: true,
+    markerEnd: { ...arrowMarker, color: COLORS.tertiary },
+    data: {
+      relationType: 'gateway-to-skill-group' as const,
+      isHighlightable: false,
+    },
+  }));
 }
 
 /**
@@ -133,6 +134,6 @@ export function createAllEdges(
     ...createClientToGatewayEdges(clients),
     ...createGatewayToServerEdges(mcpServers),
     ...createGatewayToResourceEdges(resources),
-    ...createGatewayToSkillEdges(skills),
+    ...createGatewayToSkillGroupEdges(skills),
   ];
 }
