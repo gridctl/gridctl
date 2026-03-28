@@ -396,9 +396,6 @@ func TestGetContainerIP(t *testing.T) {
 					Networks: map[string]*network.EndpointSettings{
 						"test-net": {IPAddress: "172.18.0.2"},
 					},
-					NetworkSettingsBase: container.NetworkSettingsBase{
-						Ports: nat.PortMap{},
-					},
 				},
 			},
 		},
@@ -423,8 +420,7 @@ func TestGetContainerIP_NetworkNotFound(t *testing.T) {
 				},
 				Config: &container.Config{Labels: map[string]string{}},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},
@@ -458,7 +454,7 @@ func TestGetContainerHostPort(t *testing.T) {
 				Config: &container.Config{Labels: map[string]string{}},
 				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{
+					NetworkSettingsBase: container.NetworkSettingsBase{ //nolint:staticcheck
 						Ports: nat.PortMap{
 							"3000/tcp": []nat.PortBinding{
 								{HostIP: "0.0.0.0", HostPort: "9000"},
@@ -489,8 +485,7 @@ func TestGetContainerHostPort_NotMapped(t *testing.T) {
 				},
 				Config: &container.Config{Labels: map[string]string{}},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},

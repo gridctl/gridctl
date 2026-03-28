@@ -12,7 +12,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/go-connections/nat"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -144,9 +143,6 @@ func (m *MockDockerClient) ContainerInspect(ctx context.Context, containerID str
 		},
 		NetworkSettings: &container.NetworkSettings{
 			Networks: make(map[string]*network.EndpointSettings),
-			NetworkSettingsBase: container.NetworkSettingsBase{
-				Ports: nat.PortMap{},
-			},
 		},
 	}, nil
 }

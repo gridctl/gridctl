@@ -259,7 +259,7 @@ func TestDockerRuntime_Status_Running(t *testing.T) {
 				},
 				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{
+					NetworkSettingsBase: container.NetworkSettingsBase{ //nolint:staticcheck
 						Ports: nat.PortMap{
 							"3000/tcp": []nat.PortBinding{
 								{HostIP: "0.0.0.0", HostPort: "9000"},
@@ -313,7 +313,6 @@ func TestDockerRuntime_Status_Stopped(t *testing.T) {
 				},
 				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -343,7 +342,6 @@ func TestDockerRuntime_Status_Creating(t *testing.T) {
 				},
 				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -373,7 +371,6 @@ func TestDockerRuntime_Status_Dead(t *testing.T) {
 				},
 				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -403,7 +400,6 @@ func TestDockerRuntime_Status_Unknown(t *testing.T) {
 				},
 				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -437,7 +433,6 @@ func TestDockerRuntime_Status_ResourceType(t *testing.T) {
 				},
 				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -468,7 +463,6 @@ func TestDockerRuntime_Status_NoPort(t *testing.T) {
 				},
 				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
@@ -658,7 +652,7 @@ func TestDockerRuntime_GetHostPort(t *testing.T) {
 				Config: &container.Config{Labels: map[string]string{}},
 				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{
+					NetworkSettingsBase: container.NetworkSettingsBase{ //nolint:staticcheck
 						Ports: nat.PortMap{
 							"3000/tcp": []nat.PortBinding{
 								{HostIP: "0.0.0.0", HostPort: "9000"},
@@ -691,7 +685,6 @@ func TestDockerRuntime_GetHostPort_NotMapped(t *testing.T) {
 				Config: &container.Config{Labels: map[string]string{}},
 				NetworkSettings: &container.NetworkSettings{
 					Networks:           map[string]*network.EndpointSettings{},
-					NetworkSettingsBase: container.NetworkSettingsBase{Ports: nat.PortMap{}},
 				},
 			},
 		},
