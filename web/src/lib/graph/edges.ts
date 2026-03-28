@@ -9,7 +9,7 @@
 
 import type { Edge } from '@xyflow/react';
 import { MarkerType } from '@xyflow/react';
-import type { MCPServerStatus, ResourceStatus, ClientStatus } from '../../types';
+import type { MCPServerStatus, ResourceStatus, ClientStatus, AgentSkill } from '../../types';
 import type { EdgeMetadata } from './types';
 import { COLORS } from '../constants';
 
@@ -96,21 +96,43 @@ export function createClientToGatewayEdges(
 }
 
 /**
+ * Create edges from gateway to active skill nodes
+ */
+export function createGatewayToSkillEdges(skills: AgentSkill[]): EnhancedEdge[] {
+  return skills
+    .filter((s) => s.state === 'active')
+    .map((skill) => ({
+      id: `edge-gateway-skill-${skill.name}`,
+      source: GATEWAY_NODE_ID,
+      target: `skill-${skill.name}`,
+      animated: true,
+      markerEnd: { ...arrowMarker, color: COLORS.tertiary },
+      data: {
+        relationType: 'gateway-to-skill' as const,
+        isHighlightable: false,
+      },
+    }));
+}
+
+/**
  * Create all edges for the butterfly layout
  *
  * Combines all edge types:
  * - Client -> Gateway (linked LLM clients)
  * - Gateway -> MCP Servers
  * - Gateway -> Resources
+ * - Gateway -> Skills
  */
 export function createAllEdges(
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[],
-  clients: ClientStatus[] = []
+  clients: ClientStatus[] = [],
+  skills: AgentSkill[] = []
 ): EnhancedEdge[] {
   return [
     ...createClientToGatewayEdges(clients),
     ...createGatewayToServerEdges(mcpServers),
     ...createGatewayToResourceEdges(resources),
+    ...createGatewayToSkillEdges(skills),
   ];
 }
