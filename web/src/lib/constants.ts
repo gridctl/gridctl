@@ -86,6 +86,7 @@ export const NODE_TYPES = {
   RESOURCE: 'resource',
   CLIENT: 'client',
   SKILL: 'skill',
+  SKILL_GROUP: 'skillGroup',
 } as const;
 
 // Edge type identifiers
