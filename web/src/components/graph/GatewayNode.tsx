@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Database, Wrench, Zap, Radio, Monitor, Code, Library } from 'lucide-react';
+import { Activity, Server, Database, Wrench, Zap, Radio, Monitor, Code, Library, ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -133,9 +133,12 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
               </div>
               <span className="text-xs text-text-secondary font-medium">Skills</span>
             </div>
-            <span className="text-sm font-bold text-text-primary tabular-nums">
-              {data.activeSkills ?? 0}<span className="text-text-muted font-normal">/{data.totalSkills}</span>
-            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-bold text-text-primary tabular-nums">
+                {data.activeSkills ?? 0}<span className="text-text-muted font-normal">/{data.totalSkills}</span>
+              </span>
+              <ExternalLink size={9} className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
           </div>
         )}
 
