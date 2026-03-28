@@ -49,8 +49,8 @@ export function Sidebar() {
     return null;
   }
 
-  // Gateway gets its own sidebar with embedded registry
-  if (selectedData.type === 'gateway') {
+  // Gateway and skill groups get the registry sidebar
+  if (selectedData.type === 'gateway' || selectedData.type === 'skill-group') {
     return <GatewaySidebar onClose={handleClose} />;
   }
 
