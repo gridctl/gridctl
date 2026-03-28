@@ -1,13 +1,14 @@
 /**
- * Butterfly layout engine - Hub-and-Spoke with 4 zones
+ * Butterfly layout engine - Hub-and-Spoke with 5 zones
  *
  * Implements a clean, logic-driven layout where the Gateway acts as
  * the central hub with zones arranged left-to-right:
  *
- * Zone 0 (Left):      Clients - linked LLM clients
- * Zone 1 (Center):    Gateway - central hub/router
- * Zone 2 (Right):     MCP Servers - providers/tools
- * Zone 3 (Far Right): Resources - infrastructure/databases
+ * Zone 0 (Left):           Clients - linked LLM clients
+ * Zone 1 (Center):         Gateway - central hub/router
+ * Zone 2 (Right):          MCP Servers - providers/tools
+ * Zone 3 (Far Right):      Resources - infrastructure/databases
+ * Zone 5 (Far Far Right):  Skills - registered active skills
  */
 
 import type { Node } from '@xyflow/react';
@@ -16,9 +17,9 @@ import type {
   LayoutInput,
   LayoutOutput,
   LayoutOptions,
-  ButterflyZone,
   ZoneConfig,
 } from './types';
+import { ButterflyZone } from './types';
 import { LAYOUT } from '../constants';
 import { getNodeDimensions } from './utils';
 
@@ -29,10 +30,11 @@ import { getNodeDimensions } from './utils';
  */
 const DEFAULT_ZONE_CONFIGS: Record<ButterflyZone, ZoneConfig> = {
   [4]: { zone: 4, baseX: -400, nodeSpacing: 80 },       // CLIENTS (far left)
-  [0]: { zone: 0, baseX: 0, nodeSpacing: 80 },          // AGENTS (left)
+  [0]: { zone: 0, baseX: 0, nodeSpacing: 80 },          // AGENTS (left, reserved)
   [1]: { zone: 1, baseX: 400, nodeSpacing: 0 },         // GATEWAY (center)
   [2]: { zone: 2, baseX: 800, nodeSpacing: 80 },        // SERVERS (right)
   [3]: { zone: 3, baseX: 1200, nodeSpacing: 80 },       // RESOURCES (far right)
+  [5]: { zone: 5, baseX: 1600, nodeSpacing: 80 }, // SKILLS (far far right)
 };
 
 /**
@@ -54,6 +56,9 @@ function getNodeZone(node: Node): ButterflyZone {
 
     case 'resource':
       return 3; // RESOURCES zone
+
+    case 'skill':
+      return ButterflyZone.SKILLS; // SKILLS zone
 
     default:
       return 2; // Default to SERVERS zone
