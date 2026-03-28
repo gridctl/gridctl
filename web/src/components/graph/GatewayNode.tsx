@@ -3,6 +3,7 @@ import { Handle, Position } from '@xyflow/react';
 import { Activity, Server, Database, Wrench, Zap, Radio, Monitor, Code, Library } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
+import { useWindowManager } from '../../hooks/useWindowManager';
 import type { GatewayNodeData } from '../../types';
 
 interface GatewayNodeProps {
@@ -11,6 +12,8 @@ interface GatewayNodeProps {
 }
 
 const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
+  const { openDetachedWindow } = useWindowManager();
+
   return (
     <div
       className={cn(
@@ -119,7 +122,11 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
 
         {/* Skills (Registry) */}
         {(data.totalSkills ?? 0) > 0 && (
-          <div className="flex items-center justify-between group">
+          <div
+            className="flex items-center justify-between group cursor-pointer hover:bg-primary/5 rounded-md transition-colors px-1 -mx-1"
+            onClick={(e) => { e.stopPropagation(); openDetachedWindow('registry'); }}
+            title="Open skills dashboard"
+          >
             <div className="flex items-center gap-2.5">
               <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
                 <Library size={12} className="text-primary" />
