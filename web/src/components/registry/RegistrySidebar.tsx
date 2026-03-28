@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Library,
   BookOpen,
@@ -25,6 +25,7 @@ import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
+import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { PopoutButton } from '../ui/PopoutButton';
 import { SkillEditor } from './SkillEditor';
 import { showToast } from '../ui/Toast';
@@ -79,14 +80,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
 
   const openWizard = useWizardStore((s) => s.open);
 
-  const filteredSkills = useMemo(() => {
-    const all = skills ?? [];
-    if (!searchQuery) return all;
-    const lower = searchQuery.toLowerCase();
-    return all.filter(
-      (s) => s.name.toLowerCase().includes(lower) || (s.description ?? '').toLowerCase().includes(lower),
-    );
-  }, [skills, searchQuery]);
+  const filteredSkills = useFuzzySearch(skills ?? [], searchQuery);
 
   // Delete confirmation
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
