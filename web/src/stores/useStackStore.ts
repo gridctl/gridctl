@@ -118,6 +118,7 @@ export const useStackStore = create<StackState>()(
       const registryStatus = useRegistryStore.getState().status;
       const skills = useRegistryStore.getState().skills ?? [];
       const isCompact = useUIStore.getState().compactCards;
+      const showSkillsOnCanvas = useUIStore.getState().showSkillsOnCanvas;
 
       // Only preserve positions for nodes the user has explicitly dragged
       const { nodes, edges } = transformToNodesAndEdges(
@@ -130,7 +131,8 @@ export const useStackStore = create<StackState>()(
         registryStatus,
         codeMode,
         isCompact,
-        skills
+        skills,
+        showSkillsOnCanvas
       );
       set({ nodes, edges });
     },
@@ -142,6 +144,7 @@ export const useStackStore = create<StackState>()(
       const registryStatus = useRegistryStore.getState().status;
       const skills = useRegistryStore.getState().skills ?? [];
       const isCompact = useUIStore.getState().compactCards;
+      const showSkillsOnCanvas = useUIStore.getState().showSkillsOnCanvas;
 
       // Clear dragged positions and recalculate from scratch
       const { nodes, edges } = transformToNodesAndEdges(
@@ -154,7 +157,8 @@ export const useStackStore = create<StackState>()(
         registryStatus,
         codeMode,
         isCompact,
-        skills
+        skills,
+        showSkillsOnCanvas
       );
       set({ nodes, edges, draggedPositions: new Map() });
     },

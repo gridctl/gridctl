@@ -128,12 +128,13 @@ export function createAllEdges(
   mcpServers: MCPServerStatus[],
   resources: ResourceStatus[],
   clients: ClientStatus[] = [],
-  skills: AgentSkill[] = []
+  skills: AgentSkill[] = [],
+  showSkillsOnCanvas = false
 ): EnhancedEdge[] {
   return [
     ...createClientToGatewayEdges(clients),
     ...createGatewayToServerEdges(mcpServers),
     ...createGatewayToResourceEdges(resources),
-    ...createGatewayToSkillGroupEdges(skills),
+    ...(showSkillsOnCanvas ? createGatewayToSkillGroupEdges(skills) : []),
   ];
 }
