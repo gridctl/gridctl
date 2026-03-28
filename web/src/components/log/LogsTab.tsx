@@ -51,7 +51,9 @@ export function LogsTab() {
   // Determine log source: gateway or agent
   const isGateway = selectedData?.type === 'gateway';
   const agentName: string | null =
-    selectedData && selectedData.type !== 'gateway' ? selectedData.name : null;
+    selectedData && selectedData.type !== 'gateway' && selectedData.type !== 'skill-group' && selectedData.type !== 'skill'
+      ? (selectedData as { name: string }).name
+      : null;
   const hasSource = isGateway || agentName !== null;
 
   const fetchLogs = useCallback(async () => {
