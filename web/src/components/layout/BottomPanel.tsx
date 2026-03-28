@@ -5,7 +5,6 @@ import {
   BarChart3,
   FileCode2,
   Activity,
-  FlaskConical,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
@@ -13,14 +12,12 @@ import { LogsTab } from '../log/LogsTab';
 import { MetricsTab } from '../metrics/MetricsTab';
 import { SpecTab } from '../spec/SpecTab';
 import { TracesTab } from '../traces/TracesTab';
-import { PlaygroundTab } from '../playground/PlaygroundTab';
 
 const TABS = [
   { id: 'logs' as const, label: 'Logs', icon: ScrollText },
   { id: 'metrics' as const, label: 'Metrics', icon: BarChart3 },
   { id: 'spec' as const, label: 'Spec', icon: FileCode2 },
   { id: 'traces' as const, label: 'Traces', icon: Activity },
-  { id: 'playground' as const, label: 'Playground', icon: FlaskConical },
 ];
 
 export function BottomPanel() {
@@ -109,9 +106,6 @@ export function BottomPanel() {
           </div>
           <div id="panel-traces" role="tabpanel" aria-labelledby="tab-traces" className={cn('absolute inset-0', bottomPanelTab !== 'traces' && 'invisible')}>
             <TracesTab />
-          </div>
-          <div id="panel-playground" role="tabpanel" aria-labelledby="tab-playground" className={cn('absolute inset-0', bottomPanelTab !== 'playground' && 'invisible')}>
-            <PlaygroundTab />
           </div>
         </div>
       )}
