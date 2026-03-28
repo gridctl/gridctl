@@ -48,7 +48,7 @@ type AgentSkill struct {
 
 	// --- Computed fields (not serialized to YAML) ---
 	FileCount int    `yaml:"-" json:"fileCount"` // Number of supporting files (scripts/, references/, assets/)
-	Dir       string `yaml:"-" json:"-"`          // Relative path from skills/ root (e.g., "git-workflow/branch-fork")
+	Dir       string `yaml:"-" json:"dir,omitempty"` // Relative path from skills/ root (e.g., "git-workflow/branch-fork")
 }
 
 // IsExecutable returns true if the skill has a workflow definition.
