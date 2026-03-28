@@ -24,6 +24,7 @@ export interface TransformInput {
   registryStatus?: RegistryStatus | null;
   codeMode?: string | null;
   skills?: AgentSkill[];
+  showSkillsOnCanvas?: boolean;
 }
 
 /**
@@ -63,7 +64,7 @@ export function transformToGraph(
   input: TransformInput,
   options: TransformOptions = {}
 ): TransformOutput {
-  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode, skills = [] } = input;
+  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode, skills = [], showSkillsOnCanvas = false } = input;
   const { layoutEngine = defaultLayoutEngine, preservedPositions, compact } = options;
 
   // Create nodes
@@ -75,11 +76,12 @@ export function transformToGraph(
     clients,
     registryStatus,
     codeMode,
-    skills
+    skills,
+    showSkillsOnCanvas
   );
 
   // Create edges
-  const edges = createAllEdges(mcpServers, resources, clients, skills);
+  const edges = createAllEdges(mcpServers, resources, clients, skills, showSkillsOnCanvas);
 
   // Apply layout
   const layoutOptions: LayoutOptions = { preservedPositions, compact };
@@ -112,10 +114,11 @@ export function transformToNodesAndEdges(
   registryStatus?: RegistryStatus | null,
   codeMode?: string | null,
   compact?: boolean,
-  skills?: AgentSkill[]
+  skills?: AgentSkill[],
+  showSkillsOnCanvas = false
 ): TransformOutput {
   return transformToGraph(
-    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode, skills },
+    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode, skills, showSkillsOnCanvas },
     { preservedPositions: existingPositions, compact }
   );
 }
