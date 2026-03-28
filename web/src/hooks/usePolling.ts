@@ -44,15 +44,15 @@ export function usePolling() {
           fetchRegistryStatus(),
           fetchRegistrySkills(),
         ]);
-        const prevStatus = useRegistryStore.getState().status;
+        const prevSkills = useRegistryStore.getState().skills;
         useRegistryStore.getState().setStatus(regStatus);
         useRegistryStore.getState().setSkills(regSkills);
         useRegistryStore.getState().setError(null);
 
-        // Refresh graph when registry content changes (node appears/disappears)
-        const hadContent = prevStatus && (prevStatus.totalSkills ?? 0) > 0;
-        const hasContent = (regStatus.totalSkills ?? 0) > 0;
-        if (hadContent !== hasContent) {
+        // Refresh graph when skill count changes so skill nodes appear/disappear
+        const prevActiveCount = (prevSkills ?? []).filter((s) => s.state === 'active').length;
+        const nextActiveCount = regSkills.filter((s) => s.state === 'active').length;
+        if (prevActiveCount !== nextActiveCount) {
           refreshNodesAndEdges();
         }
       } catch {
