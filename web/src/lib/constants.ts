@@ -85,6 +85,7 @@ export const NODE_TYPES = {
   MCP_SERVER: 'mcpServer',
   RESOURCE: 'resource',
   CLIENT: 'client',
+  SKILL: 'skill',
 } as const;
 
 // Edge type identifiers
