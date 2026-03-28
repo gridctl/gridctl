@@ -81,13 +81,14 @@ export interface ZoneConfig {
  * Edge relationship types for path highlighting
  */
 export type EdgeRelationType =
-  | 'client-to-gateway'    // LLM client connects to gateway
-  | 'agent-to-gateway'     // Agent initiates connection to gateway
-  | 'gateway-to-server'    // Gateway exposes MCP server
-  | 'gateway-to-resource'  // Gateway manages resource
-  | 'gateway-to-skill'     // Gateway serves a registered skill
-  | 'agent-uses-server'    // Agent uses specific MCP server (via uses field)
-  | 'agent-uses-agent';    // Agent delegates to another agent (A2A)
+  | 'client-to-gateway'       // LLM client connects to gateway
+  | 'agent-to-gateway'        // Agent initiates connection to gateway
+  | 'gateway-to-server'       // Gateway exposes MCP server
+  | 'gateway-to-resource'     // Gateway manages resource
+  | 'gateway-to-skill'        // Gateway serves a registered skill
+  | 'gateway-to-skill-group'  // Gateway serves a skill directory group
+  | 'agent-uses-server'       // Agent uses specific MCP server (via uses field)
+  | 'agent-uses-agent';       // Agent delegates to another agent (A2A)
 
 /**
  * Metadata attached to edges for highlighting and path tracing
