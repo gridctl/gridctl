@@ -95,7 +95,7 @@ Example: `feature/add-ssh-transport` or `fix/container-timeout`
 
 ### Testing Requirements
 
-- New exported functions must have tests
+- New functionality, features, and behavior changes must include tests — not just new exported functions
 - Use the `TestFunctionName_Scenario` naming pattern
 - Table-driven tests are preferred for multiple test cases
 - Maintain existing coverage levels
