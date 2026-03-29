@@ -7,6 +7,7 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+    - gosec
   disable:
     - depguard
   settings:
@@ -37,6 +38,71 @@ linters:
           - staticcheck
         path: "_test\\.go"
         text: "SA5011"
+      # G204: subprocess launched with variable args — intentional, CLI execs container runtimes
+      - linters:
+          - gosec
+        text: "G204"
+      # G304: file path as taint input — intentional, CLI reads user-specified config files
+      - linters:
+          - gosec
+        text: "G304"
+      # G703: path traversal taint — CLI operates on user-controlled trusted paths throughout
+      - linters:
+          - gosec
+        text: "G703"
+      # G704: SSRF taint — CLI connects to user-configured endpoints (MCP servers, container runtimes)
+      - linters:
+          - gosec
+        text: "G704"
+      # G115: uintptr->int or int->rune — safe conversions mandated by OS/syscall APIs
+      - linters:
+          - gosec
+        text: "G115"
+      # G104: unhandled errors — already covered by errcheck linter
+      - linters:
+          - gosec
+        text: "G104"
+      # G122: WalkDir callback path race — trusted internal CLI paths, os.Root refactor not warranted
+      - linters:
+          - gosec
+        text: "G122"
+      # G301: directory permissions 0755 — acceptable for user-facing CLI data directories
+      - linters:
+          - gosec
+        text: "G301"
+      # G302: file permissions — acceptable in test scenarios and for CLI operational files
+      - linters:
+          - gosec
+        text: "G302"
+      # G306: WriteFile permissions 0644 — acceptable for user skill/config files in CLI tool
+      - linters:
+          - gosec
+        text: "G306"
+      # G705: XSS taint — local API server serving file bytes to localhost client, not browser-facing
+      - linters:
+          - gosec
+        path: "internal/api/registry.go"
+        text: "G705"
+      # G101: YAML template placeholders ($RAG_TOKEN, ${vault:...}) are not hardcoded credentials
+      - linters:
+          - gosec
+        path: "internal/api/stack.go"
+        text: "G101"
+      # G114: http.ListenAndServe without timeout — intentional for local embedded UI server
+      - linters:
+          - gosec
+        path: "internal/server/server.go"
+        text: "G114"
+      # G101 in tests: hardcoded credentials in test fixtures are standard practice
+      - linters:
+          - gosec
+        path: "_test\\.go"
+        text: "G101"
+      # G118: context cancel stored in c.cancel and called on process shutdown — not a leak
+      - linters:
+          - gosec
+        path: "pkg/mcp/process.go"
+        text: "G118"
 
 run:
   timeout: 3m
