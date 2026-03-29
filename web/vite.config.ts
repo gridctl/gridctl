@@ -9,10 +9,16 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-graph': ['@xyflow/react', '@dagrejs/dagre'],
-          'vendor-charts': ['recharts'],
+        manualChunks(id) {
+          if (['react', 'react-dom', 'react-router-dom'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {
+            return 'vendor-react'
+          }
+          if (['@xyflow/react', '@dagrejs/dagre'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {
+            return 'vendor-graph'
+          }
+          if (id.includes('/node_modules/recharts/')) {
+            return 'vendor-charts'
+          }
         },
       },
     },
