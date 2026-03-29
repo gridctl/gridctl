@@ -47,7 +47,6 @@ jobs:
         run: bash scripts/check-coverage.sh
 
       - name: Go vulnerability check
-        continue-on-error: true
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
@@ -159,7 +158,6 @@ jobs:
         working-directory: web
 
       - name: Security audit
-        continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: web
 
