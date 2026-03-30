@@ -183,6 +183,7 @@ func (s *Server) Handler() http.Handler {
 	// API endpoints
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
+	mux.HandleFunc("/api/agents/", s.handleAgentAction)
 	mux.HandleFunc("/api/mcp-servers/", s.handleMCPServerAction)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
@@ -467,6 +468,62 @@ func (s *Server) getResourceStatuses() []ResourceStatus {
 	}
 
 	return resources
+}
+
+// handleAgentAction routes agent control requests.
+// URL pattern: /api/agents/{name}/{action}
+func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/agents/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 {
+		http.Error(w, "Invalid path: expected /api/agents/{name}/{action}", http.StatusBadRequest)
+		return
+	}
+
+	name := parts[0]
+	action := parts[1]
+
+	switch action {
+	case "logs":
+		s.handleAgentLogs(w, r, name)
+	default:
+		http.Error(w, "Unknown action: "+action, http.StatusBadRequest)
+	}
+}
+
+// handleAgentLogs returns structured logs from the global buffer filtered by server name.
+// GET /api/agents/{name}/logs?lines=100
+func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.logBuffer == nil {
+		writeJSON(w, []logging.BufferedEntry{})
+		return
+	}
+
+	// Get number of lines from query param (default 100)
+	lines := 100
+	if linesParam := r.URL.Query().Get("lines"); linesParam != "" {
+		if n, err := strconv.Atoi(linesParam); err == nil && n > 0 {
+			lines = n
+		}
+	}
+
+	// Over-fetch to account for filtering — most entries may belong to other servers
+	all := s.logBuffer.GetRecent(lines * 10)
+	filtered := make([]logging.BufferedEntry, 0)
+	for _, entry := range all {
+		if entry.Attrs["server"] == name {
+			filtered = append(filtered, entry)
+		}
+	}
+	if len(filtered) > lines {
+		filtered = filtered[len(filtered)-lines:]
+	}
+	writeJSON(w, filtered)
 }
 
 // handleMCPServerAction routes MCP server control requests.
