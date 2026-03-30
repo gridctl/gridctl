@@ -6,7 +6,7 @@
 # - Environment variable expansion
 #
 # Usage:
-#   gridctl deploy examples/getting-started/mcp-basic.yaml
+#   gridctl apply examples/getting-started/mcp-basic.yaml
 #
 version: "1"
 name: mcp-basic

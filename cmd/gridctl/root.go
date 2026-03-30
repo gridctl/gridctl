@@ -26,7 +26,7 @@ func init() {
 
 	initHelp()
 
-	rootCmd.AddCommand(deployCmd)
+	rootCmd.AddCommand(applyCmd)
 	rootCmd.AddCommand(destroyCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(serveCmd)

@@ -14,7 +14,7 @@
 # - platforms/github-mcp.yaml (real third-party MCP server)
 #
 # Usage:
-#   gridctl deploy examples/getting-started/mcp-basic.yaml
+#   gridctl apply examples/getting-started/mcp-basic.yaml
 #
 version: "1"
 name: mcp-demo

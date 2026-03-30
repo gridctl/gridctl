@@ -5,7 +5,7 @@
 # (and as MCP tools if they have a workflow block).
 #
 # Usage:
-#   gridctl deploy examples/getting-started/skills-basic.yaml
+#   gridctl apply examples/getting-started/skills-basic.yaml
 #   gridctl skill list
 #   gridctl activate my-skill
 #   gridctl test my-skill

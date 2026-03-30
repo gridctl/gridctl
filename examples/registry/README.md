@@ -50,7 +50,7 @@ make mock-servers
 cp -r examples/registry/items/* ~/.gridctl/registry/skills/
 
 # Deploy the stack
-gridctl deploy examples/registry/registry-basic.yaml
+gridctl apply examples/registry/registry-basic.yaml
 
 # Activate a skill
 curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/activate
@@ -60,7 +60,7 @@ curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/activate
 
 ```bash
 # Deploy the stack first
-gridctl deploy examples/registry/registry-basic.yaml
+gridctl apply examples/registry/registry-basic.yaml
 
 # Create a skill via API
 curl -X POST http://localhost:8180/api/registry/skills \

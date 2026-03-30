@@ -5,7 +5,7 @@ Example stacks demonstrating Gridctl patterns and capabilities.
 ## 🚀 Quick Start
 
 ```bash
-gridctl deploy examples/getting-started/mcp-basic.yaml
+gridctl apply examples/getting-started/mcp-basic.yaml
 ```
 
 ## 📁 Categories
@@ -68,10 +68,10 @@ All examples follow the same deployment pattern:
 
 ```bash
 # Deploy a stack
-gridctl deploy examples/<category>/<file>.yaml
+gridctl apply examples/<category>/<file>.yaml
 
 # Force recreate containers
-gridctl deploy examples/<category>/<file>.yaml
+gridctl apply examples/<category>/<file>.yaml
 
 # View status
 gridctl status

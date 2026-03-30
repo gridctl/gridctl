@@ -25,6 +25,8 @@ All notable changes to gridctl will be documented in this file.
 ### Features
 
 
+- Rename `deploy` command to `apply` — hard rename with no backward-compatibility shim; `gridctl deploy` is removed, use `gridctl apply` going forward (breaking change)
+- Add `--auto-approve` flag to `plan` command as a CI/CD-friendly alias for `-y`/`--yes`
 - Add MaxToolResultBytes to GatewayConfig
 - Validate MaxToolResultBytes in gateway config
 - Add TruncateResult with UTF-8 safe truncation

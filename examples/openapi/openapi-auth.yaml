@@ -18,7 +18,7 @@
 #     export EXAMPLE_API_KEY=your-api-key
 #
 # Usage:
-#   gridctl deploy examples/openapi/openapi-auth.yaml
+#   gridctl apply examples/openapi/openapi-auth.yaml
 
 version: "1"
 name: openapi-auth-demo

@@ -60,11 +60,11 @@ Requires a Zapier account and Node.js installed. OAuth authentication is handled
 ## 💻 Usage
 
 ```bash
-gridctl deploy examples/platforms/atlassian-mcp.yaml
-gridctl deploy examples/platforms/chrome-devtools-mcp.yaml
-gridctl deploy examples/platforms/context7-mcp.yaml
-gridctl deploy examples/platforms/github-mcp.yaml
-gridctl deploy examples/platforms/zapier-mcp.yaml
+gridctl apply examples/platforms/atlassian-mcp.yaml
+gridctl apply examples/platforms/chrome-devtools-mcp.yaml
+gridctl apply examples/platforms/context7-mcp.yaml
+gridctl apply examples/platforms/github-mcp.yaml
+gridctl apply examples/platforms/zapier-mcp.yaml
 ```
 
 ## 🔗 References

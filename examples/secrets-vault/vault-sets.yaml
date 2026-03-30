@@ -10,7 +10,7 @@
 #   gridctl vault set API_KEY --set production
 #
 # Usage:
-#   gridctl deploy examples/secrets-vault/vault-sets.yaml
+#   gridctl apply examples/secrets-vault/vault-sets.yaml
 
 version: "1"
 name: vault-sets

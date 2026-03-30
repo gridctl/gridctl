@@ -8,7 +8,7 @@
 #   Run `make mock-servers` from the project root to build the mock server.
 #
 # Usage:
-#   gridctl deploy examples/registry/registry-advanced.yaml
+#   gridctl apply examples/registry/registry-advanced.yaml
 #
 # After deploying, copy the cross-server skill:
 #   cp -r examples/registry/items/chained-calculation ~/.gridctl/registry/skills/

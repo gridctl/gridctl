@@ -27,5 +27,5 @@ This is the primary mechanism for reducing context window consumption and preven
 ## 💻 Usage
 
 ```bash
-gridctl deploy examples/access-control/tool-filtering.yaml
+gridctl apply examples/access-control/tool-filtering.yaml
 ```

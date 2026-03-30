@@ -13,7 +13,7 @@ Basic examples demonstrating core Gridctl features.
 
 ```bash
 # Deploy the basic stack
-gridctl deploy examples/getting-started/mcp-basic.yaml
+gridctl apply examples/getting-started/mcp-basic.yaml
 
 # Check status
 gridctl status

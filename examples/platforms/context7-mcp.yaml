@@ -10,7 +10,7 @@
 #     export CONTEXT7_API_KEY=your_api_key
 #
 # Usage:
-#   gridctl deploy examples/platforms/context7-mcp.yaml
+#   gridctl apply examples/platforms/context7-mcp.yaml
 #
 # Reference:
 #   https://github.com/upstash/context7

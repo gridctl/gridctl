@@ -9,7 +9,7 @@
 #   Run `make mock-servers` from the project root to build the mock server.
 #
 # Usage:
-#   gridctl deploy examples/registry/registry-basic.yaml
+#   gridctl apply examples/registry/registry-basic.yaml
 #
 # After deploying, copy pre-made skills into the registry:
 #   cp -r examples/registry/items/* ~/.gridctl/registry/skills/

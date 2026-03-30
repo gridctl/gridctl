@@ -19,7 +19,7 @@
 # every operation in the spec would be exposed.
 #
 # Usage:
-#   gridctl deploy examples/openapi/openapi-basic.yaml
+#   gridctl apply examples/openapi/openapi-basic.yaml
 #
 # After deploying, connect your LLM client and try:
 #   "Find pet with ID 1"

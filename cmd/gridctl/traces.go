@@ -80,7 +80,7 @@ func resolveTracesPort(stackName string) (int, error) {
 	if stackName != "" {
 		return 0, fmt.Errorf("traces: stack %q not found or not running", stackName)
 	}
-	return 0, fmt.Errorf("traces: no running gateway — start one with 'gridctl deploy'")
+	return 0, fmt.Errorf("traces: no running gateway — start one with 'gridctl apply'")
 }
 
 // buildTracesURL constructs the /api/traces URL with the current filter flags.

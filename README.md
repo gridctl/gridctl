@@ -20,10 +20,10 @@
 
 Gridctl aggregates tools from multiple [MCP](https://modelcontextprotocol.io/) servers into a single gateway. Connect Claude Desktop - or any MCP client - to your grid through one endpoint and start building.
 
-Define your stack in YAML. Deploy with one command. Done.
+Define your stack in YAML. Apply with one command. Done.
 
 ```bash
-gridctl deploy stack.yaml
+gridctl apply stack.yaml
 ```
 
 > [!NOTE]
@@ -106,9 +106,9 @@ Gridctl auto-detects your runtime by probing sockets in this order:
 Override detection with the `--runtime` flag or `GRIDCTL_RUNTIME` environment variable:
 
 ```bash
-gridctl deploy stack.yaml --runtime podman
+gridctl apply stack.yaml --runtime podman
 # or
-GRIDCTL_RUNTIME=podman gridctl deploy stack.yaml
+GRIDCTL_RUNTIME=podman gridctl apply stack.yaml
 ```
 
 ### Using Podman
@@ -138,8 +138,8 @@ Podman 4.7+ is recommended for full `host.containers.internal` support. Older ve
 ## 🚦 Quick Start
 
 ```bash
-# Deploy the example stack
-gridctl deploy examples/getting-started/skills-basic.yaml
+# Apply the example stack
+gridctl apply examples/getting-started/skills-basic.yaml
 
 # Check what's running
 gridctl status
@@ -159,12 +159,12 @@ Fast, consistent, ephemeral, flexible, and version controlled! Many practitioner
 
 ### Spec-Driven Workflow
 
-The `stack.yaml` file has always been your source of truth. Now you have the full lifecycle tooling to match — validate before you commit, preview before you deploy, and detect the moment your environment drifts from what's in version control:
+The `stack.yaml` file has always been your source of truth. Now you have the full lifecycle tooling to match — validate before you commit, preview before you apply, and detect the moment your environment drifts from what's in version control:
 
 ```bash
 gridctl validate stack.yaml    # Lint and schema-check the spec (exit 0/1/2)
 gridctl plan stack.yaml        # Diff against running state — see exactly what changes
-gridctl deploy stack.yaml      # Apply the spec
+gridctl apply stack.yaml       # Apply the spec
 gridctl export                 # Reverse-engineer stack.yaml from a running stack
 gridctl test <skill>           # Run acceptance criteria for a skill (exit 0/1/2)
 gridctl activate <skill>       # Promote a skill from draft to active
@@ -244,7 +244,7 @@ gateway:
 Or enable via CLI flag:
 
 ```bash
-gridctl deploy stack.yaml --code-mode
+gridctl apply stack.yaml --code-mode
 ```
 
 The sandbox provides `mcp.callTool(serverName, toolName, args)` for synchronous tool calls and `console.log/warn/error` for output capture. Modern JavaScript syntax (arrow functions, destructuring, template literals) is supported via esbuild transpilation. See [`examples/code-mode/`](examples/code-mode/) for a working example.
@@ -306,18 +306,18 @@ The Web UI includes a Traces tab in the bottom panel with an interactive waterfa
 ## 📚 CLI Reference
 
 ```bash
-gridctl validate <stack.yaml>        # Validate stack YAML before deploying (exit 0/1/2)
+gridctl validate <stack.yaml>        # Validate stack YAML (exit 0/1/2)
 gridctl plan <stack.yaml>            # Preview changes against running state
-gridctl deploy <stack.yaml>          # Start containers and gateway
-gridctl deploy <stack.yaml> -f       # Run in foreground (debug mode)
-gridctl deploy <stack.yaml> -p 9000  # Custom gateway port
-gridctl deploy <stack.yaml> --watch  # Watch for changes and hot reload
-gridctl deploy <stack.yaml> --flash  # Deploy and auto-link LLM clients
-gridctl deploy <stack.yaml> --code-mode  # Enable code mode (search + execute)
-gridctl deploy <stack.yaml> --no-cache   # Force rebuild of source-based images
-gridctl deploy <stack.yaml> -v       # Print full stack as JSON
-gridctl deploy <stack.yaml> -q       # Suppress progress output
-gridctl deploy <stack.yaml> --log-file <path>  # Structured JSON log output with rotation
+gridctl apply <stack.yaml>           # Start containers and gateway
+gridctl apply <stack.yaml> -f        # Run in foreground (debug mode)
+gridctl apply <stack.yaml> -p 9000   # Custom gateway port
+gridctl apply <stack.yaml> --watch   # Watch for changes and hot reload
+gridctl apply <stack.yaml> --flash   # Apply and auto-link LLM clients
+gridctl apply <stack.yaml> --code-mode   # Enable code mode (search + execute)
+gridctl apply <stack.yaml> --no-cache    # Force rebuild of source-based images
+gridctl apply <stack.yaml> -v        # Print full stack as JSON
+gridctl apply <stack.yaml> -q        # Suppress progress output
+gridctl apply <stack.yaml> --log-file <path>  # Structured JSON log output with rotation
 gridctl export                       # Reverse-engineer stack.yaml from running stack
 gridctl serve                        # Start the web UI without managing a stack
 gridctl status                       # Show running stacks

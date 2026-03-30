@@ -15,22 +15,22 @@ import (
 )
 
 var (
-	deployVerbose     bool
-	deployQuiet       bool
-	deployNoCache     bool
-	deployPort        int
-	deployBasePort    int
-	deployForeground  bool
-	deployDaemonChild bool
-	deployNoExpand    bool
-	deployWatch       bool
-	deployFlash       bool
-	deployCodeMode    bool
-	deployLogFile     string
+	applyVerbose     bool
+	applyQuiet       bool
+	applyNoCache     bool
+	applyPort        int
+	applyBasePort    int
+	applyForeground  bool
+	applyDaemonChild bool
+	applyNoExpand    bool
+	applyWatch       bool
+	applyFlash       bool
+	applyCodeMode    bool
+	applyLogFile     string
 )
 
-var deployCmd = &cobra.Command{
-	Use:   "deploy <stack.yaml>",
+var applyCmd = &cobra.Command{
+	Use:   "apply <stack.yaml>",
 	Short: "Start MCP servers defined in a stack file",
 	Long: `Reads a stack YAML file and starts all defined MCP servers and resources.
 
@@ -38,44 +38,44 @@ Creates a Docker network, pulls/builds images as needed, and starts containers.
 The MCP gateway runs as a background daemon by default.
 
 Use --foreground (-f) to run in foreground with verbose output.
-Use --flash to auto-link detected LLM clients after deploy.`,
+Use --flash to auto-link detected LLM clients after apply.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDeploy(args[0])
+		return runApply(args[0])
 	},
 }
 
 func init() {
-	deployCmd.Flags().BoolVarP(&deployVerbose, "verbose", "v", false, "Print full stack as JSON")
-	deployCmd.Flags().BoolVarP(&deployQuiet, "quiet", "q", false, "Suppress progress output (show only final result)")
-	deployCmd.Flags().BoolVar(&deployNoCache, "no-cache", false, "Force rebuild of source-based images")
-	deployCmd.Flags().IntVarP(&deployPort, "port", "p", 8180, "Port for MCP gateway")
-	deployCmd.Flags().IntVar(&deployBasePort, "base-port", 9000, "Base port for MCP server host port allocation")
-	deployCmd.Flags().BoolVarP(&deployForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
-	deployCmd.Flags().BoolVar(&deployDaemonChild, "daemon-child", false, "Internal flag for daemon process")
-	_ = deployCmd.Flags().MarkHidden("daemon-child")
-	deployCmd.Flags().BoolVar(&deployNoExpand, "no-expand", false, "Disable environment variable expansion in OpenAPI spec files")
-	deployCmd.Flags().BoolVarP(&deployWatch, "watch", "w", false, "Watch stack file for changes and hot reload")
-	deployCmd.Flags().BoolVar(&deployFlash, "flash", false, "Auto-link detected LLM clients after deploy")
-	deployCmd.Flags().BoolVar(&deployCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools) (experimental)")
-	deployCmd.Flags().StringVar(&deployLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
+	applyCmd.Flags().BoolVarP(&applyVerbose, "verbose", "v", false, "Print full stack as JSON")
+	applyCmd.Flags().BoolVarP(&applyQuiet, "quiet", "q", false, "Suppress progress output (show only final result)")
+	applyCmd.Flags().BoolVar(&applyNoCache, "no-cache", false, "Force rebuild of source-based images")
+	applyCmd.Flags().IntVarP(&applyPort, "port", "p", 8180, "Port for MCP gateway")
+	applyCmd.Flags().IntVar(&applyBasePort, "base-port", 9000, "Base port for MCP server host port allocation")
+	applyCmd.Flags().BoolVarP(&applyForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
+	applyCmd.Flags().BoolVar(&applyDaemonChild, "daemon-child", false, "Internal flag for daemon process")
+	_ = applyCmd.Flags().MarkHidden("daemon-child")
+	applyCmd.Flags().BoolVar(&applyNoExpand, "no-expand", false, "Disable environment variable expansion in OpenAPI spec files")
+	applyCmd.Flags().BoolVarP(&applyWatch, "watch", "w", false, "Watch stack file for changes and hot reload")
+	applyCmd.Flags().BoolVar(&applyFlash, "flash", false, "Auto-link detected LLM clients after apply")
+	applyCmd.Flags().BoolVar(&applyCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools) (experimental)")
+	applyCmd.Flags().StringVar(&applyLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
 }
 
-func runDeploy(stackPath string) error {
+func runApply(stackPath string) error {
 	ctrl := controller.New(controller.Config{
 		StackPath:   stackPath,
-		Port:        deployPort,
-		BasePort:    deployBasePort,
-		Verbose:     deployVerbose,
-		Quiet:       deployQuiet,
-		NoCache:     deployNoCache,
-		NoExpand:    deployNoExpand,
-		Foreground:  deployForeground,
-		Watch:       deployWatch,
-		DaemonChild: deployDaemonChild,
-		CodeMode:    deployCodeMode,
+		Port:        applyPort,
+		BasePort:    applyBasePort,
+		Verbose:     applyVerbose,
+		Quiet:       applyQuiet,
+		NoCache:     applyNoCache,
+		NoExpand:    applyNoExpand,
+		Foreground:  applyForeground,
+		Watch:       applyWatch,
+		DaemonChild: applyDaemonChild,
+		CodeMode:    applyCodeMode,
 		Runtime:     runtimeFlag,
-		LogFile:     deployLogFile,
+		LogFile:     applyLogFile,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
@@ -84,19 +84,19 @@ func runDeploy(stackPath string) error {
 		return err
 	}
 
-	// Post-deploy: --flash auto-links all detected clients
-	if deployFlash && !deployDaemonChild {
-		flashLinkClients(deployPort)
+	// Post-apply: --flash auto-links all detected clients
+	if applyFlash && !applyDaemonChild {
+		flashLinkClients(applyPort)
 		return nil
 	}
 
-	// Post-deploy hint: suggest `gridctl link` if no clients are linked
-	if !deployQuiet && !deployFlash && !deployDaemonChild && !deployForeground {
+	// Post-apply hint: suggest `gridctl link` if no clients are linked
+	if !applyQuiet && !applyFlash && !applyDaemonChild && !applyForeground {
 		showLinkHint()
 	}
 
 	// Show pending skill update notice (non-blocking read from cache)
-	if !deployQuiet && !deployDaemonChild {
+	if !applyQuiet && !applyDaemonChild {
 		if notice := skills.FormatUpdateNotice(); notice != "" {
 			fmt.Print(notice)
 		}
@@ -105,7 +105,7 @@ func runDeploy(stackPath string) error {
 	return nil
 }
 
-// flashLinkClients links all detected LLM clients after a successful deploy.
+// flashLinkClients links all detected LLM clients after a successful apply.
 func flashLinkClients(port int) {
 	printer := output.New()
 	registry := provisioner.NewRegistry()

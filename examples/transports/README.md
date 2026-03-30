@@ -55,7 +55,7 @@ Requires SSH access to a remote host running an MCP server.
 ## 💻 Usage
 
 ```bash
-gridctl deploy examples/transports/local-mcp.yaml
-gridctl deploy examples/transports/ssh-mcp.yaml
-gridctl deploy examples/transports/external-mcp.yaml
+gridctl apply examples/transports/local-mcp.yaml
+gridctl apply examples/transports/ssh-mcp.yaml
+gridctl apply examples/transports/external-mcp.yaml
 ```

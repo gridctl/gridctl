@@ -119,7 +119,7 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	if diff.NetworkChanged {
 		return &ReloadResult{
 			Success: false,
-			Message: "network configuration changed - full restart required (run gridctl destroy && gridctl deploy)",
+			Message: "network configuration changed - full restart required (run gridctl destroy && gridctl apply)",
 		}, nil
 	}
 

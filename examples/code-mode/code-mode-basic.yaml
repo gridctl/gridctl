@@ -18,10 +18,10 @@
 #   - 64KB max code size, configurable timeout (default: 30s)
 #
 # Usage:
-#   gridctl deploy examples/code-mode/code-mode-basic.yaml
+#   gridctl apply examples/code-mode/code-mode-basic.yaml
 #
 #   Or enable code mode on any stack via CLI flag:
-#   gridctl deploy stack.yaml --code-mode
+#   gridctl apply stack.yaml --code-mode
 #
 # Note: This example uses placeholder containers to demonstrate the gateway
 # configuration. Replace with real MCP server images for actual usage.

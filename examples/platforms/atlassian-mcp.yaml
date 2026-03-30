@@ -8,7 +8,7 @@
 #   - OAuth authentication is handled automatically via browser flow on first use
 #
 # Usage:
-#   gridctl deploy examples/platforms/atlassian-mcp.yaml
+#   gridctl apply examples/platforms/atlassian-mcp.yaml
 #
 # Reference:
 #   https://github.com/atlassian/atlassian-mcp-server

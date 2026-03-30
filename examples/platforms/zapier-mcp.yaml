@@ -14,7 +14,7 @@
 #   3. OAuth authentication is handled automatically via browser flow on first use
 #
 # Usage:
-#   gridctl deploy examples/platforms/zapier-mcp.yaml
+#   gridctl apply examples/platforms/zapier-mcp.yaml
 #
 # Note:
 #   Uses mcp-remote to bridge Zapier's HTTP endpoint to stdio. On first

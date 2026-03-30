@@ -10,7 +10,7 @@
 # the wrong server) and reduces context window consumption.
 #
 # Usage:
-#   gridctl deploy examples/access-control/tool-filtering.yaml
+#   gridctl apply examples/access-control/tool-filtering.yaml
 #
 version: "1"
 name: tool-filtering-demo

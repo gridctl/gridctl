@@ -16,8 +16,9 @@ import (
 )
 
 var (
-	planAutoApprove bool
-	planFormat      string
+	planAutoApprove   bool
+	planAutoApproveCI bool
+	planFormat        string
 )
 
 var planCmd = &cobra.Command{
@@ -27,7 +28,7 @@ var planCmd = &cobra.Command{
 running deployment. Shows a structured diff of what would change:
 added, removed, and modified servers, agents, and resources.
 
-Use -y to auto-approve and apply changes via deploy.`,
+Use -y or --auto-approve to auto-approve and apply changes.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runPlan(args[0])
@@ -36,6 +37,7 @@ Use -y to auto-approve and apply changes via deploy.`,
 
 func init() {
 	planCmd.Flags().BoolVarP(&planAutoApprove, "yes", "y", false, "Auto-approve and apply changes")
+	planCmd.Flags().BoolVar(&planAutoApproveCI, "auto-approve", false, "Auto-approve and apply changes (CI/CD equivalent of -y)")
 	planCmd.Flags().StringVar(&planFormat, "format", "", "Output format: json for machine-readable output")
 }
 
@@ -72,7 +74,7 @@ func runPlan(stackPath string) error {
 	}
 
 	// Confirm or auto-approve
-	if !planAutoApprove {
+	if !planAutoApprove && !planAutoApproveCI {
 		fmt.Print("\nApply these changes? [y/N] ")
 		reader := bufio.NewReader(os.Stdin)
 		answer, _ := reader.ReadString('\n')
@@ -83,13 +85,13 @@ func runPlan(stackPath string) error {
 		}
 	}
 
-	// Apply via deploy with Replace to handle running stacks
+	// Apply with Replace to handle running stacks
 	fmt.Println("\nApplying changes...")
 	ctrl := controller.New(controller.Config{
 		StackPath:  stackPath,
-		Port:       deployPort,
-		BasePort:   deployBasePort,
-		Foreground: deployForeground,
+		Port:       applyPort,
+		BasePort:   applyBasePort,
+		Foreground: applyForeground,
 		Runtime:    runtimeFlag,
 		Replace:    true,
 	})

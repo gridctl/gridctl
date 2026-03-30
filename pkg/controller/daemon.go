@@ -41,7 +41,7 @@ func (d *DaemonManager) Fork(stack *config.Stack) (int, error) {
 		return 0, fmt.Errorf("opening log file: %w", err)
 	}
 
-	args := []string{"deploy", d.config.StackPath,
+	args := []string{"apply", d.config.StackPath,
 		"--daemon-child",
 		"--port", strconv.Itoa(d.config.Port),
 		"--base-port", strconv.Itoa(d.config.BasePort)}
