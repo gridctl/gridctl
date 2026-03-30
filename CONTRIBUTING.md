@@ -160,7 +160,8 @@ Your pull request should:
 ### CI Checks
 
 Pull requests are automatically checked for:
-- Go linting (`golangci-lint`)
+- Go linting (`golangci-lint` with `gosec`)
+- Vulnerability scanning (`govulncheck`, `npm audit`)
 - Unit tests with race detection
 - Successful binary build
 
@@ -193,9 +194,10 @@ gridctl/
 │   ├── config/            # Stack YAML parsing
 │   ├── runtime/           # Container orchestration
 │   ├── mcp/               # MCP protocol implementation
-│   └── a2a/               # A2A protocol implementation
+│   ├── registry/          # Skills registry (agentskills.io spec)
+│   └── skills/            # Remote skill management (import, update)
 ├── web/                   # React frontend
-├── examples/              # Example topologies
+├── examples/              # Example stacks
 └── tests/integration/     # Integration tests
 ```
 
