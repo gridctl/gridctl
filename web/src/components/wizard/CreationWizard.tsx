@@ -19,7 +19,7 @@ import { Button } from '../ui/Button';
 import { useWizardStore, type WizardStep } from '../../stores/useWizardStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
-import { buildYAML, parseYAMLToForm, type ResourceType, type WizardFormData } from '../../lib/yaml-builder';
+import { buildYAML, parseYAMLToForm, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
 import { TemplateGrid } from './TemplateGrid';
 import { YAMLPreview } from './YAMLPreview';
 import { ExpertModeToggle } from './ExpertModeToggle';
@@ -138,6 +138,23 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
     () => getResourceCounts(mcpServers, resources, skills),
     [mcpServers, resources, skills],
   );
+
+  // Map template ID to mcp-server form data so the Configure screen reflects the chosen template
+  const mcpTemplateFormData: Record<string, Partial<MCPServerFormData>> = {
+    'blank':          { serverType: 'container' },
+    'container-http': { serverType: 'container', transport: 'http' },
+    'container-stdio':{ serverType: 'container', transport: 'stdio' },
+    'external-url':   { serverType: 'external',  transport: 'sse' },
+    'local-process':  { serverType: 'local',     transport: 'stdio' },
+    'from-source':    { serverType: 'source',    transport: 'http' },
+  };
+
+  const handleTemplateSelect = useCallback((templateId: string | null) => {
+    if (selectedType === 'mcp-server' && templateId && mcpTemplateFormData[templateId]) {
+      updateFormData('mcp-server', mcpTemplateFormData[templateId] as Record<string, unknown>);
+    }
+    setSelectedTemplate(templateId);
+  }, [selectedType, setSelectedTemplate, updateFormData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Skill skips template step; secret closes wizard and opens vault panel
   const handleTypeSelect = useCallback((type: ResourceType) => {
@@ -350,7 +367,7 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
                     selectedType,
                     selectedTemplate,
                     handleTypeSelect,
-                    setSelectedTemplate,
+                    handleTemplateSelect,
                     formData,
                     updateFormData,
                     expertMode,
@@ -379,7 +396,7 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
                 selectedType,
                 selectedTemplate,
                 handleTypeSelect,
-                setSelectedTemplate,
+                handleTemplateSelect,
                 formData,
                 updateFormData,
                 expertMode,
