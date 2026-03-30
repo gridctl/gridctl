@@ -34,7 +34,7 @@ An MCP server running and accessible via HTTP or SSE.
 
 ```bash
 # Update the url in the file to match your MCP server
-gridctl deploy examples/gateways/gateway-basic.yaml
+gridctl apply examples/gateways/gateway-basic.yaml
 ```
 
 ## 🖥️ gateway-remote.yaml
@@ -50,7 +50,7 @@ Exposes Gridctl's gateway on all interfaces for remote MCP clients.
 
 ```bash
 # Deploy on the server
-gridctl deploy examples/gateways/gateway-remote.yaml
+gridctl apply examples/gateways/gateway-remote.yaml
 
 # Find server IP
 ip addr show | grep "inet " | grep -v 127.0.0.1

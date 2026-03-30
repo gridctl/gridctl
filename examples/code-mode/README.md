@@ -58,11 +58,11 @@ gateway:
 Or via CLI flag on any stack:
 
 ```bash
-gridctl deploy stack.yaml --code-mode
+gridctl apply stack.yaml --code-mode
 ```
 
 ## 💻 Usage
 
 ```bash
-gridctl deploy examples/code-mode/code-mode-basic.yaml
+gridctl apply examples/code-mode/code-mode-basic.yaml
 ```

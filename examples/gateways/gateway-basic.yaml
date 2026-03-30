@@ -14,7 +14,7 @@
 #   Update the url below to match your server's endpoint.
 #
 # Usage:
-#   gridctl deploy examples/gateways/gateway-basic.yaml
+#   gridctl apply examples/gateways/gateway-basic.yaml
 #
 #   Then connect clients to Gridctl's gateway URL:
 #   http://localhost:8080/sse

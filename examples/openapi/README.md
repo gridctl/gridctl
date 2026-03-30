@@ -89,7 +89,7 @@ openapi:
 
 ### Environment Variable Expansion
 
-Local spec files support `${VAR}` and `${VAR:-default}` syntax for dynamic values. Disable with the `--no-expand` flag on `gridctl deploy`.
+Local spec files support `${VAR}` and `${VAR:-default}` syntax for dynamic values. Disable with the `--no-expand` flag on `gridctl apply`.
 
 ## 💡 When to Use OpenAPI vs Other Transports
 
@@ -103,6 +103,6 @@ Local spec files support `${VAR}` and `${VAR:-default}` syntax for dynamic value
 ## 💻 Usage
 
 ```bash
-gridctl deploy examples/openapi/openapi-basic.yaml
-gridctl deploy examples/openapi/openapi-auth.yaml
+gridctl apply examples/openapi/openapi-basic.yaml
+gridctl apply examples/openapi/openapi-auth.yaml
 ```

@@ -109,12 +109,12 @@ gridctl vault set GITHUB_TOKEN
 gridctl vault set OPENAI_API_KEY
 
 # Deploy the basic example
-gridctl deploy examples/secrets-vault/vault-basic.yaml
+gridctl apply examples/secrets-vault/vault-basic.yaml
 
 # Or set up variable sets and deploy
 gridctl vault sets create production
 gridctl vault set DB_HOST --value "db.example.com" --set production
 gridctl vault set DB_PASSWORD --set production
 gridctl vault set API_KEY --set production
-gridctl deploy examples/secrets-vault/vault-sets.yaml
+gridctl apply examples/secrets-vault/vault-sets.yaml
 ```

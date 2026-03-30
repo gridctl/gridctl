@@ -19,7 +19,7 @@
 #     go run main.go -port 9002 -sse      # SSE mode
 #
 # Usage:
-#   gridctl deploy examples/transports/external-mcp.yaml
+#   gridctl apply examples/transports/external-mcp.yaml
 #
 # Note: External servers don't require Docker and skip container creation.
 # The gateway connects directly to the provided URL.

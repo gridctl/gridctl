@@ -9,7 +9,7 @@
 #   - Google Chrome installed on the host
 #
 # Usage:
-#   gridctl deploy examples/platforms/chrome-devtools-mcp.yaml
+#   gridctl apply examples/platforms/chrome-devtools-mcp.yaml
 #
 # Note:
 #   On first run, Chrome will launch automatically. To connect to an

@@ -8,7 +8,7 @@
 #   gridctl vault set OPENAI_API_KEY
 #
 # Usage:
-#   gridctl deploy examples/secrets-vault/vault-basic.yaml
+#   gridctl apply examples/secrets-vault/vault-basic.yaml
 
 version: "1"
 name: vault-basic
