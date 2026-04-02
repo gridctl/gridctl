@@ -22,6 +22,28 @@
 version: "1"
 name: gateway-basic
 
+# Optional gateway configuration.
+# All fields are optional — omit the gateway section entirely for defaults.
+gateway:
+  # tokenizer controls how token counts are measured for the Metrics tab,
+  # sparklines, and format savings percentages.
+  #
+  # "embedded" (default): uses the cl100k_base BPE vocabulary (pure Go, no
+  # network access, no API key required). Accurate for English and code content;
+  # approximately 10-15% variance for Claude models, whose vocabulary is unpublished.
+  # A significant improvement over the previous 4-bytes/token heuristic.
+  #
+  # "api": routes counting through Anthropic's count_tokens endpoint for exact
+  # results. Requires ANTHROPIC_API_KEY (or tokenizer_api_key below) and network
+  # access to api.anthropic.com. Anthropic-specific — returns incorrect results
+  # when routing to non-Anthropic models (Gemini, local endpoints, etc.).
+  #
+  tokenizer: embedded
+
+  # tokenizer_api_key overrides the ANTHROPIC_API_KEY environment variable when
+  # tokenizer is set to "api". Leave unset to use the environment variable.
+  # tokenizer_api_key: "${MY_ANTHROPIC_KEY}"
+
 mcp-servers:
   # Connect to an existing MCP server
   # Replace with your MCP server's URL and transport
