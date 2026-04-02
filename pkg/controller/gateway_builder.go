@@ -187,7 +187,11 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	}
 
 	// Phase 5: Create API server
-	inst.APIServer = b.buildAPIServer(inst.Gateway, inst.LogBuffer, webFS, inst.RegistryServer, inst.Handler)
+	var apiErr error
+	inst.APIServer, apiErr = b.buildAPIServer(inst.Gateway, inst.LogBuffer, webFS, inst.RegistryServer, inst.Handler)
+	if apiErr != nil {
+		return nil, apiErr
+	}
 
 	// Phase 6: Create HTTP server
 	inst.HTTPServer = &http.Server{
@@ -317,7 +321,7 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 }
 
 // buildAPIServer creates and configures the API server.
-func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server, handler slog.Handler) *api.Server {
+func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server, handler slog.Handler) (*api.Server, error) {
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(b.rt.DockerClient())
 	server.SetStackName(b.stack.Name)
@@ -349,13 +353,17 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	}
 
 	// Wire token usage metrics
-	counter := token.NewHeuristicCounter(4)
+	counter, err := b.buildTokenCounter()
+	if err != nil {
+		return nil, err
+	}
 	accumulator := metrics.NewAccumulator(10000)
 	observer := metrics.NewObserver(counter, accumulator)
 	gateway.SetToolCallObserver(observer)
 	gateway.SetTokenCounter(counter)
 	gateway.SetFormatSavingsRecorder(accumulator)
 	server.SetMetricsAccumulator(accumulator)
+	server.SetTokenizerName(b.tokenizerName())
 
 	// Wire distributed tracing
 	tracingCfg := buildTracingConfig(b.stack.Gateway)
@@ -368,7 +376,36 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	}
 	server.SetTraceBuffer(tracingProvider.Buffer)
 
-	return server
+	return server, nil
+}
+
+// tokenizerName returns the configured tokenizer mode, defaulting to "embedded".
+func (b *GatewayBuilder) tokenizerName() string {
+	if b.stack.Gateway != nil && b.stack.Gateway.Tokenizer != "" {
+		return b.stack.Gateway.Tokenizer
+	}
+	return "embedded"
+}
+
+// buildTokenCounter creates the token counter based on the stack gateway config.
+// The default "embedded" mode uses the cl100k_base BPE vocabulary (pure Go, no network).
+// The "api" mode (Phase 2) will route counting through Anthropic's count_tokens endpoint.
+func (b *GatewayBuilder) buildTokenCounter() (token.Counter, error) {
+	switch b.tokenizerName() {
+	case "embedded", "":
+		c, err := token.NewTiktokenCounter()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize embedded tokenizer: %w", err)
+		}
+		return c, nil
+	default:
+		// Unknown values fall back to embedded rather than failing.
+		c, err := token.NewTiktokenCounter()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize embedded tokenizer: %w", err)
+		}
+		return c, nil
+	}
 }
 
 // buildTracingConfig extracts tracing config from gateway config with defaults.
