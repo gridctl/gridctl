@@ -388,10 +388,22 @@ func (b *GatewayBuilder) tokenizerName() string {
 }
 
 // buildTokenCounter creates the token counter based on the stack gateway config.
-// The default "embedded" mode uses the cl100k_base BPE vocabulary (pure Go, no network).
-// The "api" mode (Phase 2) will route counting through Anthropic's count_tokens endpoint.
+// "embedded" (default): cl100k_base BPE vocabulary, pure Go, no network.
+// "api": Anthropic count_tokens endpoint — Anthropic-specific, requires a key.
 func (b *GatewayBuilder) buildTokenCounter() (token.Counter, error) {
 	switch b.tokenizerName() {
+	case "api":
+		apiKey := ""
+		if b.stack.Gateway != nil {
+			apiKey = b.stack.Gateway.TokenizerAPIKey
+		}
+		if apiKey == "" {
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		}
+		if apiKey == "" {
+			return nil, fmt.Errorf("gateway.tokenizer is \"api\" but no API key is configured: set ANTHROPIC_API_KEY or add tokenizer_api_key to stack.yaml")
+		}
+		return token.NewAPICounter(apiKey)
 	case "embedded", "":
 		c, err := token.NewTiktokenCounter()
 		if err != nil {
