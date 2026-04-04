@@ -24,7 +24,8 @@ var testCmd = &cobra.Command{
 Exit codes:
   0  All criteria passed
   1  One or more criteria failed (or no acceptance criteria defined)
-  2  Infrastructure error (gateway unreachable, skill not found)`,
+  2  Infrastructure error (gateway unreachable, skill not found)
+  3  Criteria present but none parseable (all criteria were skipped)`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTestCmd(args[0])
@@ -101,6 +102,10 @@ func runTestCmd(skillName string) error {
 
 	if result.Failed > 0 {
 		os.Exit(1)
+	}
+	total := result.Passed + result.Failed + result.Skipped
+	if total > 0 && result.Passed == 0 && result.Failed == 0 {
+		os.Exit(3)
 	}
 	return nil
 }
