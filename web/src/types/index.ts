@@ -162,6 +162,8 @@ export interface MCPServerNodeData extends NodeDataBase {
   openapiSpec?: string; // OpenAPI spec URL or file path
   outputFormat?: string; // Configured output format (e.g. "toon", "csv")
   isProcessing?: boolean; // Playground: true when this server has an active tool call
+  pinStatus?: 'pinned' | 'drift' | 'blocked' | 'approved_pending_redeploy';
+  pinDriftCount?: number;
 }
 
 export interface ResourceNodeData extends NodeDataBase {

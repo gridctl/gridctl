@@ -2,7 +2,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { fetchStatus, fetchTools, fetchClients, fetchRegistryStatus, fetchRegistrySkills, AuthError } from '../lib/api';
+import { usePinsStore } from '../stores/usePinsStore';
+import { fetchStatus, fetchTools, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchServerPins, AuthError } from '../lib/api';
 import { POLLING } from '../lib/constants';
 
 export function usePolling() {
@@ -36,6 +37,16 @@ export function usePolling() {
         setClients(clients);
       } catch {
         // Client endpoint may not be available; ignore gracefully
+      }
+
+      // Fetch pins — progressive disclosure, never blocks main cycle
+      try {
+        const pins = await fetchServerPins();
+        usePinsStore.getState().setPins(pins);
+        // Re-apply pin state to nodes built from the status fetch above
+        useStackStore.getState().refreshNodesAndEdges();
+      } catch {
+        // Pins endpoint unavailable (feature not enabled) — suppress silently
       }
 
       // Fetch registry data — progressive disclosure, never blocks main cycle

@@ -870,6 +870,45 @@ export function buildStreamHeaders(): Record<string, string> {
   return buildHeaders();
 }
 
+// === Pins API ===
+
+export interface PinRecord {
+  hash: string;
+  name: string;
+  description?: string;
+  pinned_at: string;
+}
+
+export interface ServerPins {
+  server_hash: string;
+  pinned_at: string;
+  last_verified_at: string;
+  tool_count: number;
+  status: 'pinned' | 'drift' | 'approved_pending_redeploy';
+  tools: Record<string, PinRecord>;
+}
+
+/**
+ * Fetch pin state for all servers
+ * GET /api/pins
+ */
+export async function fetchServerPins(): Promise<Record<string, ServerPins>> {
+  return fetchJSON<Record<string, ServerPins>>('/api/pins');
+}
+
+/**
+ * Approve current tool definitions for a server, clearing drift
+ * POST /api/pins/{server}/approve
+ */
+export async function approveServerPins(serverName: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/pins/${encodeURIComponent(serverName)}/approve`, {
+    method: 'POST',
+    headers: buildHeaders(),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) throw new Error(`API error: ${response.status} ${response.statusText}`);
+}
+
 // === JSON-RPC Helper (for MCP protocol calls) ===
 
 interface JSONRPCRequest {

@@ -15,6 +15,7 @@ import type {
 import { transformToNodesAndEdges } from '../lib/transform';
 import { useRegistryStore } from './useRegistryStore';
 import { useUIStore } from './useUIStore';
+import { usePinsStore } from './usePinsStore';
 
 interface StackState {
   // === Raw API Data ===
@@ -131,6 +132,22 @@ export const useStackStore = create<StackState>()(
         codeMode,
         isCompact,
       );
+
+      // Cross-reference pins store to annotate MCP server nodes with pin state
+      const pins = usePinsStore.getState().pins;
+      if (pins) {
+        for (const node of nodes) {
+          const d = node.data as Record<string, unknown>;
+          if (d.type === 'mcp-server' && typeof d.name === 'string') {
+            const sp = pins[d.name];
+            if (sp) {
+              d.pinStatus = sp.status;
+              d.pinDriftCount = sp.tool_count;
+            }
+          }
+        }
+      }
+
       set({ nodes, edges });
     },
 
