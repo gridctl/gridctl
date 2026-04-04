@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, LockOpen, Lock } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
@@ -219,6 +219,25 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             <div className="flex items-center gap-1.5 text-xs text-text-muted">
               <HeartPulse size={10} className="text-status-running" />
               <span>Healthy</span>
+            </div>
+          )}
+
+          {/* Pin drift indicator */}
+          {isServer && !isCompact && (data as MCPServerNodeData).pinStatus === 'drift' && (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-pending/5 border border-status-pending/15">
+              <LockOpen size={11} className="text-status-pending flex-shrink-0" />
+              <span className="text-xs text-status-pending/80 font-mono truncate">
+                Schema drift detected
+              </span>
+            </div>
+          )}
+          {/* Pin blocked indicator */}
+          {isServer && !isCompact && (data as MCPServerNodeData).pinStatus === 'blocked' && (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-error/5 border border-status-error/15">
+              <Lock size={11} className="text-status-error flex-shrink-0" />
+              <span className="text-xs text-status-error/80 font-mono truncate">
+                Blocked — schema drift
+              </span>
             </div>
           )}
 
