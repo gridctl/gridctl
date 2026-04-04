@@ -13,7 +13,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getkin/kin-openapi v0.134.0
 	github.com/go-git/go-git/v5 v5.17.2
-	github.com/jedib0t/go-pretty/v6 v6.7.8
+	github.com/jedib0t/go-pretty/v6 v6.7.9
 	github.com/mattn/go-isatty v0.0.20
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/spf13/cobra v1.10.2
