@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/gridctl/gridctl/pkg/registry"
@@ -14,12 +15,12 @@ var activateCmd = &cobra.Command{
 	Long: `Transition a skill from draft to active state.
 
 Executable skills (those with a workflow) must have acceptance criteria
-defined before they can be activated. Add acceptance_criteria to the
-skill's SKILL.md frontmatter to satisfy this requirement.
+defined before they can be activated. At least one criterion must match
+the GIVEN <context> WHEN <action> THEN <assertion> format.
 
 Exit codes:
   0  Skill activated successfully
-  1  Activation failed (missing acceptance criteria or validation error)`,
+  1  Activation failed (missing or malformed acceptance criteria)`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runActivate(args[0])
@@ -46,6 +47,14 @@ func runActivate(skillName string) error {
 		os.Exit(1)
 	}
 
+	if sk.IsExecutable() {
+		parseable := countParseableCriteria(sk.AcceptanceCriteria)
+		if parseable == 0 {
+			printMalformedCriteriaError(os.Stderr, skillName, sk.AcceptanceCriteria)
+			os.Exit(1)
+		}
+	}
+
 	sk.State = registry.StateActive
 	if err := store.SaveSkill(sk); err != nil {
 		return fmt.Errorf("saving skill: %w", err)
@@ -53,4 +62,25 @@ func runActivate(skillName string) error {
 
 	fmt.Printf("✓ Skill %q activated\n", skillName)
 	return nil
+}
+
+// countParseableCriteria returns the number of criteria that match GIVEN ... WHEN ... THEN.
+func countParseableCriteria(criteria []string) int {
+	n := 0
+	for _, c := range criteria {
+		if registry.ParseCriterion(c) != nil {
+			n++
+		}
+	}
+	return n
+}
+
+// printMalformedCriteriaError writes the per-criterion error report to w.
+func printMalformedCriteriaError(w io.Writer, skillName string, criteria []string) {
+	fmt.Fprintf(w, "✗ cannot activate %q: 0 of %d criteria match GIVEN ... WHEN ... THEN\n\n", skillName, len(criteria))
+	for i, c := range criteria {
+		fmt.Fprintf(w, "  [%d] ✗  %s\n", i+1, c)
+		fmt.Fprintf(w, "         does not match GIVEN ... WHEN ... THEN\n")
+	}
+	fmt.Fprintf(w, "\n  Fix the malformed criteria and re-run: gridctl activate %s\n", skillName)
 }
