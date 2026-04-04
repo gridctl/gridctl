@@ -12,7 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^1.1.4",
+    "@dagrejs/dagre": "^3.0.0",
     "@xyflow/react": "^12.10.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
