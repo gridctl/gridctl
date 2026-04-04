@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -202,6 +203,21 @@ func (s *Server) handleRegistrySkillStateChange(w http.ResponseWriter, name, act
 				"cannot activate executable skill without acceptance criteria: add acceptance_criteria to the skill frontmatter",
 				http.StatusBadRequest)
 			return
+		}
+		// At least one criterion must match GIVEN ... WHEN ... THEN.
+		if sk.IsExecutable() {
+			parseable := 0
+			for _, c := range sk.AcceptanceCriteria {
+				if registry.ParseCriterion(c) != nil {
+					parseable++
+				}
+			}
+			if parseable == 0 {
+				writeJSONError(w,
+					fmt.Sprintf("cannot activate %q: 0 of %d criteria match GIVEN ... WHEN ... THEN — fix the malformed acceptance criteria", sk.Name, len(sk.AcceptanceCriteria)),
+					http.StatusBadRequest)
+				return
+			}
 		}
 		sk.State = registry.StateActive
 	case "disable":
