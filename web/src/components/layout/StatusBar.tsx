@@ -4,6 +4,7 @@ import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';
 import { formatCompactNumber } from '../../lib/format';
 import { SpecHealthBadge } from '../spec/SpecHealthBadge';
+import { PinDriftBadge } from '../pins/PinDriftBadge';
 
 export function StatusBar() {
   const mcpServers = useStackStore((s) => s.mcpServers);
@@ -127,6 +128,10 @@ export function StatusBar() {
 
         {/* Spec health badge */}
         <SpecHealthBadge />
+
+        {/* Divider before pin drift */}
+        <div className="w-px h-3 bg-border/50" />
+        <PinDriftBadge />
       </div>
 
       {/* Last update */}
