@@ -15,6 +15,7 @@ import (
 )
 
 var testStack string
+var testDryRun bool
 
 var testCmd = &cobra.Command{
 	Use:   "test <skill-name>",
@@ -34,6 +35,7 @@ Exit codes:
 
 func init() {
 	testCmd.Flags().StringVarP(&testStack, "stack", "s", "", "Stack to test against (auto-detect if only one running)")
+	testCmd.Flags().BoolVar(&testDryRun, "dry-run", false, "Show which criteria would run without executing against live tools")
 }
 
 func runTestCmd(skillName string) error {
@@ -41,6 +43,10 @@ func runTestCmd(skillName string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gateway not reachable: %v\n", err)
 		os.Exit(2)
+	}
+
+	if testDryRun {
+		return runTestDryRun(skillName, st.Port)
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/api/registry/skills/%s/test", st.Port, skillName)
@@ -180,4 +186,118 @@ func printTestResult(result *registry.SkillTestResult, port int) {
 	default:
 		fmt.Println("Skill status: PASSING")
 	}
+}
+
+// runTestDryRun fetches the skill definition and reports which criteria would
+// parse without invoking any MCP tools.
+func runTestDryRun(skillName string, port int) error {
+	url := fmt.Sprintf("http://localhost:%d/api/registry/skills/%s", port, skillName)
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gateway not reachable: %v\n", err)
+		os.Exit(2)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		fmt.Fprintf(os.Stderr, "skill not found: %s\n", skillName)
+		os.Exit(2)
+	case http.StatusServiceUnavailable:
+		fmt.Fprintln(os.Stderr, "registry not available on this gateway")
+		os.Exit(2)
+	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "unexpected status %d\n", resp.StatusCode)
+		os.Exit(2)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "reading response: %v\n", err)
+		os.Exit(2)
+	}
+	var sk registry.AgentSkill
+	if err := json.Unmarshal(body, &sk); err != nil {
+		fmt.Fprintf(os.Stderr, "parsing response: %v\n", err)
+		os.Exit(2)
+	}
+
+	printDryRunResult(os.Stdout, &sk, port)
+
+	total := len(sk.AcceptanceCriteria)
+	if total == 0 {
+		os.Exit(1)
+	}
+	wouldRun := 0
+	for _, c := range sk.AcceptanceCriteria {
+		if registry.ParseCriterion(c) != nil {
+			wouldRun++
+		}
+	}
+	if wouldRun == 0 {
+		os.Exit(3)
+	}
+	if wouldRun < total {
+		os.Exit(1)
+	}
+	return nil
+}
+
+func printDryRunResult(w io.Writer, sk *registry.AgentSkill, port int) {
+	fmt.Fprintf(w, "\nDry-run: acceptance criteria parse results for skill: %s\n", sk.Name)
+	fmt.Fprintf(w, "Gateway: http://localhost:%d\n\n", port)
+
+	wouldRun := 0
+	wouldSkip := 0
+	for _, criterion := range sk.AcceptanceCriteria {
+		given, when, then := parseCriterionDisplay(criterion)
+		if when == "" {
+			fmt.Fprintf(w, "  %q\n", criterion)
+			fmt.Fprintf(w, "  → would skip: does not match GIVEN ... WHEN ... THEN\n\n")
+			wouldSkip++
+		} else {
+			fmt.Fprintf(w, "  GIVEN %s\n", given)
+			fmt.Fprintf(w, "  WHEN  %s\n", when)
+			fmt.Fprintf(w, "  THEN  %s\n", then)
+			toolName := resolveToolNameDisplay(when, sk.Name)
+			fmt.Fprintf(w, "  → would run (tool: %s)\n\n", toolName)
+			wouldRun++
+		}
+	}
+
+	total := wouldRun + wouldSkip
+	fmt.Fprintf(w, "%d of %d criteria would run", wouldRun, total)
+	if wouldSkip > 0 {
+		fmt.Fprintf(w, ", %d would be skipped", wouldSkip)
+	}
+	fmt.Fprintln(w)
+	if wouldSkip > 0 || total == 0 {
+		fmt.Fprintln(w, "Run without --dry-run to execute against live tools.")
+	}
+	fmt.Fprintln(w)
+}
+
+// resolveToolNameDisplay returns the tool name that would be called for the WHEN clause.
+// Mirrors resolveToolName() in pkg/registry/tester.go for dry-run display.
+func resolveToolNameDisplay(when, skillName string) string {
+	lower := strings.ToLower(strings.TrimSpace(when))
+	if strings.Contains(lower, "the skill is called") {
+		return skillName
+	}
+	if idx := strings.LastIndex(lower, " is called"); idx != -1 {
+		candidate := strings.TrimSpace(when[:idx])
+		if candidate != "" {
+			return candidate
+		}
+	}
+	for _, f := range strings.Fields(when) {
+		clean := strings.Trim(f, ".,;:()")
+		if strings.Contains(clean, "__") {
+			return clean
+		}
+	}
+	return skillName
 }
