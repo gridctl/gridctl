@@ -183,6 +183,8 @@ func printTestResult(result *registry.SkillTestResult, port int) {
 		fmt.Println("Skill status: FAILING")
 	case result.Skipped == total:
 		fmt.Println("Skill status: UNTESTED (no parseable criteria)")
+	case result.Skipped > 0:
+		fmt.Printf("Skill status: PASSING (%d skipped)\n", result.Skipped)
 	default:
 		fmt.Println("Skill status: PASSING")
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -48,6 +49,19 @@ func TestPrintTestResult_statusLine(t *testing.T) {
 			},
 			wantStatus: "Skill status: UNTESTED (no parseable criteria)",
 		},
+		{
+			name: "partial skip — passing with skipped count",
+			result: registry.SkillTestResult{
+				Skill:   "my-skill",
+				Passed:  1,
+				Skipped: 1,
+				Results: []registry.CriterionResult{
+					{Criterion: "GIVEN a WHEN b THEN c", Passed: true},
+					{Criterion: "the skill is fast", Skipped: true, SkipReason: "does not match GIVEN ... WHEN ... THEN pattern"},
+				},
+			},
+			wantStatus: "Skill status: PASSING (1 skipped)",
+		},
 	}
 
 	for _, tc := range tests {
@@ -66,6 +80,8 @@ func TestPrintTestResult_statusLine(t *testing.T) {
 				got = "Skill status: FAILING"
 			case tc.result.Skipped == total && total > 0:
 				got = "Skill status: UNTESTED (no parseable criteria)"
+			case tc.result.Skipped > 0:
+				got = fmt.Sprintf("Skill status: PASSING (%d skipped)", tc.result.Skipped)
 			default:
 				got = "Skill status: PASSING"
 			}
