@@ -32,6 +32,8 @@ gridctl apply stack.yaml
 
 ## ⚡️ Why Gridctl
 
+[![SafeSkill 83/100](https://img.shields.io/badge/SafeSkill-83%2F100_Passes%20with%20Notes-yellow)](https://safeskill.dev/scan/gridctl-gridctl)
+
 MCP servers are everywhere. Running them shouldn't require a PhD in container orchestration. Or, is the MCP server not running in a container? Is a single endpoint exposed behind an existing platform? Is another team hosting and managing an MCP server that is on a different machine on the same network? Different transport types, methods of hosting, and `.json` files start to accumulate like dust. 
 
 I originally built this project to have a way to leverage a single configuration in my application, that I never have to update, while still building various combinations of MCP servers for rapid prototyping and learning.
