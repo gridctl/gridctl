@@ -49,3 +49,62 @@ func TestProviderBuffer_populated(t *testing.T) {
 		t.Errorf("Buffer.Count() = %d, want 0", p.Buffer.Count())
 	}
 }
+
+func TestProviderInit_otlpHTTP(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Export = "otlp"
+	cfg.Endpoint = "http://localhost:4318"
+	p := NewProvider(cfg)
+	if err := p.Init(context.Background()); err != nil {
+		t.Fatalf("Init with OTLP HTTP endpoint returned error: %v", err)
+	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	if p.provider == nil {
+		t.Error("provider should be non-nil after Init with OTLP config")
+	}
+}
+
+func TestProviderInit_otlpMissingEndpoint(t *testing.T) {
+	// Export set to "otlp" but no endpoint — OTLP branch is skipped,
+	// ring buffer still initialises normally.
+	cfg := DefaultConfig()
+	cfg.Export = "otlp"
+	cfg.Endpoint = ""
+	p := NewProvider(cfg)
+	if err := p.Init(context.Background()); err != nil {
+		t.Fatalf("Init with missing endpoint returned error: %v", err)
+	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	if p.provider == nil {
+		t.Error("provider should be non-nil even when OTLP endpoint is empty")
+	}
+}
+
+func TestProviderShutdown_afterOTLPInit(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Export = "otlp"
+	cfg.Endpoint = "http://localhost:4318"
+	p := NewProvider(cfg)
+	if err := p.Init(context.Background()); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	if err := p.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown after OTLP init returned error: %v", err)
+	}
+}
+
+func TestProviderInit_unreachableCollector(t *testing.T) {
+	// The OTel SDK dials lazily — Init must succeed even when the collector
+	// is not listening. Span export failures are handled at export time.
+	cfg := DefaultConfig()
+	cfg.Export = "otlp"
+	cfg.Endpoint = "http://localhost:19999"
+	p := NewProvider(cfg)
+	if err := p.Init(context.Background()); err != nil {
+		t.Fatalf("Init with unreachable collector returned error: %v", err)
+	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	if p.provider == nil {
+		t.Error("provider should be non-nil even with unreachable collector")
+	}
+}
