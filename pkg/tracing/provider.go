@@ -60,8 +60,7 @@ func (p *Provider) Init(ctx context.Context) error {
 	// Optional OTLP exporter.
 	if p.cfg.Export == "otlp" && p.cfg.Endpoint != "" {
 		exp, err := otlptracehttp.New(ctx,
-			otlptracehttp.WithEndpoint(p.cfg.Endpoint),
-			otlptracehttp.WithInsecure(),
+			otlptracehttp.WithEndpointURL(p.cfg.Endpoint),
 			otlptracehttp.WithTimeout(5*time.Second),
 		)
 		if err != nil {
