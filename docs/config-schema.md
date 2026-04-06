@@ -278,6 +278,8 @@ mcp-servers:
       user: deploy
       port: 22
       identityFile: ~/.ssh/id_ed25519
+      knownHostsFile: ~/.ssh/gridctl_known_hosts  # enables strict host key checking
+      jumpHost: bastion.example.com               # route through a bastion host
     command: ["/usr/local/bin/mcp-server"]
 ```
 
@@ -356,6 +358,8 @@ SSH connection parameters for remote MCP servers.
 | `user` | string | **Yes** | — | SSH username |
 | `port` | int | No | `22` | SSH port (0–65535) |
 | `identityFile` | string | No | — | Path to SSH private key. Supports `~` expansion. Falls back to SSH agent |
+| `knownHostsFile` | string | No | — | Path to a known_hosts file. When set, enables `StrictHostKeyChecking=yes` instead of the default TOFU (`accept-new`). Supports `~` expansion. Pre-populate with `ssh-keyscan <host> >> <file>` |
+| `jumpHost` | string | No | — | Bastion/jump host to route the connection through (`[user@]host[:port]`). Maps to the SSH `-J` flag |
 
 ### OpenAPI
 

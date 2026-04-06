@@ -47,6 +47,27 @@ mcp-servers:
   #     port: 2222
   #     identityFile: "~/.ssh/id_ed25519"
 
+  # SSH MCP server with strict host key checking
+  # Enables StrictHostKeyChecking=yes using the specified known_hosts file.
+  # Pre-populate the file with: ssh-keyscan <host> >> ~/.ssh/gridctl_known_hosts
+  # - name: secure-server
+  #   command: ["/opt/mcp-server/bin/server"]
+  #   ssh:
+  #     host: "prod.internal"
+  #     user: "mcp"
+  #     identityFile: "~/.ssh/id_ed25519"
+  #     knownHostsFile: "~/.ssh/gridctl_known_hosts"
+
+  # SSH MCP server routed through a bastion/jump host
+  # Use jumpHost when direct SSH access to the target is firewalled.
+  # - name: internal-server
+  #   command: ["/opt/mcp-server/bin/server"]
+  #   ssh:
+  #     host: "10.0.0.50"
+  #     user: "mcp"
+  #     jumpHost: "bastion.example.com"        # or user@bastion.example.com
+  #     knownHostsFile: "~/.ssh/gridctl_known_hosts"
+
   # SSH MCP server with environment variables
   # Environment variables are passed to the remote command
   # - name: configured-server
