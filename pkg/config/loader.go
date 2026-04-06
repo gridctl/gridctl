@@ -195,6 +195,8 @@ func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, empt
 			s.MCPServers[i].SSH.Host = expand(s.MCPServers[i].SSH.Host)
 			s.MCPServers[i].SSH.User = expand(s.MCPServers[i].SSH.User)
 			s.MCPServers[i].SSH.IdentityFile = expand(s.MCPServers[i].SSH.IdentityFile)
+			s.MCPServers[i].SSH.KnownHostsFile = expand(s.MCPServers[i].SSH.KnownHostsFile)
+			s.MCPServers[i].SSH.JumpHost = expand(s.MCPServers[i].SSH.JumpHost)
 		}
 
 		if s.MCPServers[i].OpenAPI != nil {
@@ -228,6 +230,9 @@ func resolveRelativePaths(s *Stack, basePath string) {
 		// Resolve SSH identity file paths
 		if s.MCPServers[i].SSH != nil && s.MCPServers[i].SSH.IdentityFile != "" {
 			s.MCPServers[i].SSH.IdentityFile = expandTildeAndResolvePath(s.MCPServers[i].SSH.IdentityFile, basePath)
+		}
+		if s.MCPServers[i].SSH != nil && s.MCPServers[i].SSH.KnownHostsFile != "" {
+			s.MCPServers[i].SSH.KnownHostsFile = expandTildeAndResolvePath(s.MCPServers[i].SSH.KnownHostsFile, basePath)
 		}
 
 		// Resolve OpenAPI spec paths (if not a URL)
