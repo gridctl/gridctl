@@ -92,7 +92,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 		}
 	}
 	if server.SSH {
-		return mcp.MCPServerConfig{
+		cfg := mcp.MCPServerConfig{
 			Name:            server.Name,
 			SSH:             true,
 			Command:         server.Command,
@@ -105,6 +105,11 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			OutputFormat:    serverCfg.OutputFormat,
 			PinSchemas:      serverCfg.PinSchemas,
 		}
+		if serverCfg.SSH != nil {
+			cfg.SSHKnownHostsFile = serverCfg.SSH.KnownHostsFile
+			cfg.SSHJumpHost = serverCfg.SSH.JumpHost
+		}
+		return cfg
 	}
 	if server.OpenAPI {
 		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPIConfig, serverCfg.Tools)
@@ -163,17 +168,19 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 	}
 	if server.IsSSH() {
 		return mcp.MCPServerConfig{
-			Name:            server.Name,
-			SSH:             true,
-			Command:         server.Command,
-			SSHHost:         server.SSH.Host,
-			SSHUser:         server.SSH.User,
-			SSHPort:         server.SSH.Port,
-			SSHIdentityFile: server.SSH.IdentityFile,
-			Env:             server.Env,
-			Tools:           server.Tools,
-			OutputFormat:    server.OutputFormat,
-			PinSchemas:      server.PinSchemas,
+			Name:               server.Name,
+			SSH:                true,
+			Command:            server.Command,
+			SSHHost:            server.SSH.Host,
+			SSHUser:            server.SSH.User,
+			SSHPort:            server.SSH.Port,
+			SSHIdentityFile:    server.SSH.IdentityFile,
+			SSHKnownHostsFile:  server.SSH.KnownHostsFile,
+			SSHJumpHost:        server.SSH.JumpHost,
+			Env:                server.Env,
+			Tools:              server.Tools,
+			OutputFormat:       server.OutputFormat,
+			PinSchemas:         server.PinSchemas,
 		}
 	}
 	if server.IsOpenAPI() {
