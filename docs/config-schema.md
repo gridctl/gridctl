@@ -48,6 +48,9 @@ gateway:
   code_mode: "on"
   code_mode_timeout: 30
   output_format: toon
+  tracing:
+    export: otlp
+    endpoint: http://localhost:4318
 ```
 
 | Field | Type | Required | Default | Description |
@@ -60,6 +63,7 @@ gateway:
 | `security` | object | No | — | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
 | `tokenizer_api_key` | string | No | — | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${vault:KEY}` references |
+| `tracing` | object | No | — | Distributed tracing configuration (see [Tracing](#tracing)) |
 
 ### Auth
 
@@ -108,6 +112,49 @@ Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definit
 | `action` | string | No | `"warn"` | Drift response: `"warn"` logs the diff and continues; `"block"` rejects tool calls from the drifted server until approved |
 
 Pin files are stored in `~/.gridctl/pins/{stackName}.json`. Use `gridctl pins` subcommands to inspect, approve, or reset pins. Per-server opt-out is available via the `pin_schemas: false` field on any `mcp-servers` entry.
+
+### Tracing
+
+Configures distributed tracing for the gateway. When omitted, tracing is enabled with defaults (in-memory ring buffer, no OTLP export). Completed traces are always available in the web UI Traces tab via the ring buffer.
+
+```yaml
+gateway:
+  tracing:
+    export: otlp
+    endpoint: http://localhost:4318
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | No | `true` | Enable or disable tracing |
+| `sampling` | float | No | `1.0` | Head-based sampling rate `[0.0–1.0]`. `1.0` samples all traces |
+| `retention` | string | No | `"24h"` | How long completed traces are kept in the ring buffer. Accepts Go duration strings (e.g. `"1h"`, `"24h"`) |
+| `export` | string | No | `""` | Exporter type: `"otlp"` to enable OTLP HTTP export, or `""` to disable |
+| `endpoint` | string | No | `""` | OTLP HTTP endpoint URL. Required when `export` is `"otlp"`. `http://` uses plain HTTP; `https://` uses TLS |
+| `max_traces` | int | No | `1000` | Ring buffer capacity in number of traces |
+
+**Example — local Jaeger:**
+
+```yaml
+gateway:
+  tracing:
+    export: otlp
+    endpoint: http://localhost:4318
+```
+
+Start Jaeger: `docker run --rm -p 4318:4318 -p 16686:16686 jaegertracing/jaeger:latest`
+
+**Example — Honeycomb or Grafana Cloud (HTTPS):**
+
+```yaml
+gateway:
+  tracing:
+    export: otlp
+    endpoint: https://api.honeycomb.io/v1/traces
+```
+
+> Cloud backends typically require auth headers (e.g. `x-honeycomb-team` for Honeycomb).
+> Use an OTel Collector as a proxy to inject headers without embedding credentials in `stack.yaml`.
 
 ---
 
