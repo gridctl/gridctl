@@ -1,0 +1,32 @@
+# Distributed Tracing with Jaeger
+#
+# Exports traces from the gridctl gateway to a local Jaeger instance via OTLP HTTP.
+# Traces are also kept in the in-memory ring buffer for the web UI Traces tab.
+#
+# Start Jaeger (OTLP HTTP on :4318, UI on :16686):
+#   docker run --rm -p 4318:4318 -p 16686:16686 jaegertracing/jaeger:latest
+#
+# Then run: gridctl up -f examples/tracing/otlp-jaeger.yaml
+# Open Jaeger UI: http://localhost:16686
+#
+# For HTTPS backends (Honeycomb, Grafana Cloud, Grafana Tempo Cloud), set
+# endpoint to an https:// URL — TLS is enabled automatically by the scheme:
+#   endpoint: https://api.honeycomb.io/v1/traces
+#
+# Note: most cloud backends require auth headers (e.g. x-honeycomb-team).
+# Use an OTel Collector as a proxy to inject headers without embedding
+# credentials in stack.yaml.
+
+version: "1"
+name: otlp-jaeger-example
+
+gateway:
+  tracing:
+    export: otlp
+    endpoint: http://localhost:4318
+
+network:
+  name: otlp-jaeger-net
+  driver: bridge
+
+mcp-servers: []
