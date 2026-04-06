@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -774,4 +775,393 @@ func writeTempFile(t *testing.T, content string) string {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 	return path
+}
+
+// writeFile writes content to a specific path (for multi-file extends tests).
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write file %s: %v", path, err)
+	}
+}
+
+func TestLoadStack_Extends_BasicInheritance(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "base.yaml"), `
+version: "1"
+name: base
+network:
+  name: base-net
+mcp-servers:
+  - name: auth-server
+    url: https://auth.internal/mcp
+  - name: logging
+    image: myorg/mcp-logging:latest
+    port: 8080
+`)
+	writeFile(t, filepath.Join(dir, "dev.yaml"), `
+version: "1"
+name: dev
+extends: ./base.yaml
+mcp-servers:
+  - name: logging
+    image: myorg/mcp-logging:dev
+    port: 8080
+  - name: github
+    image: ghcr.io/github/mcp:latest
+    port: 9000
+`)
+
+	stack, err := LoadStack(filepath.Join(dir, "dev.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stack.Name != "dev" {
+		t.Errorf("expected name 'dev', got %q", stack.Name)
+	}
+	// Child servers first, then parent-only servers appended
+	if len(stack.MCPServers) != 3 {
+		t.Fatalf("expected 3 servers, got %d", len(stack.MCPServers))
+	}
+	if stack.MCPServers[0].Name != "logging" || stack.MCPServers[0].Image != "myorg/mcp-logging:dev" {
+		t.Errorf("expected child override of logging, got %+v", stack.MCPServers[0])
+	}
+	if stack.MCPServers[1].Name != "github" {
+		t.Errorf("expected github at index 1, got %q", stack.MCPServers[1].Name)
+	}
+	if stack.MCPServers[2].Name != "auth-server" {
+		t.Errorf("expected auth-server (inherited) at index 2, got %q", stack.MCPServers[2].Name)
+	}
+	// Extends directive consumed
+	if stack.Extends != "" {
+		t.Errorf("expected extends cleared, got %q", stack.Extends)
+	}
+}
+
+func TestLoadStack_Extends_GatewayInheritance(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "base.yaml"), `
+version: "1"
+name: base
+network:
+  name: base-net
+gateway:
+  auth:
+    type: bearer
+    token: secret-token
+mcp-servers:
+  - name: server1
+    url: https://api.example.com/mcp
+`)
+	writeFile(t, filepath.Join(dir, "child.yaml"), `
+version: "1"
+name: child
+extends: ./base.yaml
+mcp-servers:
+  - name: server2
+    url: https://api2.example.com/mcp
+`)
+
+	stack, err := LoadStack(filepath.Join(dir, "child.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Child should inherit parent gateway
+	if stack.Gateway == nil || stack.Gateway.Auth == nil {
+		t.Fatal("expected inherited gateway with auth")
+	}
+	if stack.Gateway.Auth.Token != "secret-token" {
+		t.Errorf("expected inherited token, got %q", stack.Gateway.Auth.Token)
+	}
+	// Child's own servers come first, parent-only appended
+	if len(stack.MCPServers) != 2 {
+		t.Fatalf("expected 2 servers, got %d", len(stack.MCPServers))
+	}
+	if stack.MCPServers[0].Name != "server2" {
+		t.Errorf("expected child server first, got %q", stack.MCPServers[0].Name)
+	}
+}
+
+func TestLoadStack_Extends_GatewayOverride(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "base.yaml"), `
+version: "1"
+name: base
+network:
+  name: base-net
+gateway:
+  auth:
+    type: bearer
+    token: parent-token
+mcp-servers:
+  - name: server1
+    url: https://api.example.com/mcp
+`)
+	writeFile(t, filepath.Join(dir, "child.yaml"), `
+version: "1"
+name: child
+extends: ./base.yaml
+gateway:
+  auth:
+    type: bearer
+    token: child-token
+mcp-servers:
+  - name: server2
+    url: https://api2.example.com/mcp
+`)
+
+	stack, err := LoadStack(filepath.Join(dir, "child.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Child's gateway wins
+	if stack.Gateway.Auth.Token != "child-token" {
+		t.Errorf("expected child token, got %q", stack.Gateway.Auth.Token)
+	}
+}
+
+func TestLoadStack_Extends_NetworkInheritance(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "base.yaml"), `
+version: "1"
+name: base
+network:
+  name: shared-net
+  driver: bridge
+mcp-servers:
+  - name: server1
+    url: https://api.example.com/mcp
+`)
+	writeFile(t, filepath.Join(dir, "child.yaml"), `
+version: "1"
+name: child
+extends: ./base.yaml
+mcp-servers:
+  - name: server2
+    url: https://api2.example.com/mcp
+`)
+
+	stack, err := LoadStack(filepath.Join(dir, "child.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stack.Network.Name != "shared-net" {
+		t.Errorf("expected inherited network 'shared-net', got %q", stack.Network.Name)
+	}
+}
+
+func TestLoadStack_Extends_MultiLevel(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "grandparent.yaml"), `
+version: "1"
+name: grandparent
+network:
+  name: gp-net
+mcp-servers:
+  - name: gp-server
+    url: https://gp.example.com/mcp
+`)
+	writeFile(t, filepath.Join(dir, "parent.yaml"), `
+version: "1"
+name: parent
+extends: ./grandparent.yaml
+mcp-servers:
+  - name: parent-server
+    url: https://parent.example.com/mcp
+`)
+	writeFile(t, filepath.Join(dir, "child.yaml"), `
+version: "1"
+name: child
+extends: ./parent.yaml
+mcp-servers:
+  - name: child-server
+    url: https://child.example.com/mcp
+`)
+
+	stack, err := LoadStack(filepath.Join(dir, "child.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(stack.MCPServers) != 3 {
+		t.Fatalf("expected 3 servers, got %d", len(stack.MCPServers))
+	}
+	names := map[string]bool{}
+	for _, s := range stack.MCPServers {
+		names[s.Name] = true
+	}
+	for _, want := range []string{"child-server", "parent-server", "gp-server"} {
+		if !names[want] {
+			t.Errorf("expected server %q in merged stack", want)
+		}
+	}
+}
+
+func TestLoadStack_Extends_CircularDependency(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "a.yaml"), `
+version: "1"
+name: a
+extends: ./b.yaml
+mcp-servers:
+  - name: server-a
+    url: https://a.example.com/mcp
+`)
+	writeFile(t, filepath.Join(dir, "b.yaml"), `
+version: "1"
+name: b
+extends: ./a.yaml
+mcp-servers:
+  - name: server-b
+    url: https://b.example.com/mcp
+`)
+
+	_, err := LoadStack(filepath.Join(dir, "a.yaml"))
+	if err == nil {
+		t.Fatal("expected error for circular dependency")
+	}
+	if !contains(err.Error(), "circular dependency") {
+		t.Errorf("expected 'circular dependency' in error, got: %v", err)
+	}
+}
+
+func TestLoadStack_Extends_MissingParent(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "child.yaml"), `
+version: "1"
+name: child
+extends: ./nonexistent.yaml
+mcp-servers:
+  - name: server1
+    url: https://api.example.com/mcp
+`)
+
+	_, err := LoadStack(filepath.Join(dir, "child.yaml"))
+	if err == nil {
+		t.Fatal("expected error for missing parent")
+	}
+	if !contains(err.Error(), "nonexistent.yaml") {
+		t.Errorf("expected missing file path in error, got: %v", err)
+	}
+}
+
+func TestLoadStack_Extends_DepthLimit(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a chain of 12 files (exceeds maxExtendsDepth=10)
+	for i := 11; i >= 0; i-- {
+		var content string
+		if i == 11 {
+			// Leaf: no extends
+			content = `
+version: "1"
+name: leaf
+network:
+  name: leaf-net
+mcp-servers:
+  - name: leaf-server
+    url: https://leaf.example.com/mcp
+`
+		} else {
+			content = fmt.Sprintf(`
+version: "1"
+name: level-%d
+extends: ./level-%d.yaml
+mcp-servers:
+  - name: server-%d
+    url: https://level%d.example.com/mcp
+`, i, i+1, i, i)
+		}
+		name := fmt.Sprintf("level-%d.yaml", i)
+		if i == 11 {
+			name = "level-11.yaml"
+		}
+		writeFile(t, filepath.Join(dir, name), content)
+	}
+
+	_, err := LoadStack(filepath.Join(dir, "level-0.yaml"))
+	if err == nil {
+		t.Fatal("expected error for depth limit exceeded")
+	}
+	if !contains(err.Error(), "maximum inheritance depth") {
+		t.Errorf("expected 'maximum inheritance depth' in error, got: %v", err)
+	}
+}
+
+func TestLoadStack_Extends_ExtendsFieldCleared(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "base.yaml"), `
+version: "1"
+name: base
+network:
+  name: base-net
+mcp-servers:
+  - name: base-server
+    url: https://base.example.com/mcp
+`)
+	writeFile(t, filepath.Join(dir, "child.yaml"), `
+version: "1"
+name: child
+extends: ./base.yaml
+mcp-servers:
+  - name: child-server
+    url: https://child.example.com/mcp
+`)
+
+	stack, err := LoadStack(filepath.Join(dir, "child.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stack.Extends != "" {
+		t.Errorf("expected extends field cleared after load, got %q", stack.Extends)
+	}
+}
+
+func TestLoadStack_Extends_ResourceInheritance(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "base.yaml"), `
+version: "1"
+name: base
+network:
+  name: base-net
+mcp-servers:
+  - name: server1
+    url: https://api.example.com/mcp
+resources:
+  - name: postgres
+    image: postgres:16
+    env:
+      POSTGRES_PASSWORD: secret
+`)
+	writeFile(t, filepath.Join(dir, "child.yaml"), `
+version: "1"
+name: child
+extends: ./base.yaml
+mcp-servers:
+  - name: server2
+    url: https://api2.example.com/mcp
+`)
+
+	stack, err := LoadStack(filepath.Join(dir, "child.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(stack.Resources) != 1 || stack.Resources[0].Name != "postgres" {
+		t.Errorf("expected inherited postgres resource, got %v", stack.Resources)
+	}
 }
