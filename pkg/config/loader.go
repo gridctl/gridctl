@@ -46,6 +46,15 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 		return nil, fmt.Errorf("parsing stack YAML: %w", err)
 	}
 
+	// Resolve extends chain before variable expansion
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolving stack path: %w", err)
+	}
+	visited := map[string]bool{absPath: true}
+	if err := resolveExtends(&stack, absPath, visited, 0); err != nil {
+		return nil, err
+	}
 
 	// Build resolver
 	var resolve Resolver
@@ -255,5 +264,101 @@ func expandTildeAndResolvePath(path, basePath string) string {
 // isURL checks if a string looks like a URL (http:// or https://).
 func isURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+const maxExtendsDepth = 10
+
+// resolveExtends loads the parent stack referenced by child.Extends, merges it into
+// child, and clears child.Extends. Called recursively to support multi-level inheritance.
+// visited tracks absolute paths already in the chain to detect cycles.
+func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, depth int) error {
+	if child.Extends == "" {
+		return nil
+	}
+	if depth >= maxExtendsDepth {
+		return fmt.Errorf("extends: maximum inheritance depth (%d) exceeded", maxExtendsDepth)
+	}
+
+	// Resolve parent path relative to the child file's directory
+	parentPath := child.Extends
+	if !filepath.IsAbs(parentPath) {
+		parentPath = filepath.Join(filepath.Dir(childAbsPath), parentPath)
+	}
+	absParentPath, err := filepath.Abs(parentPath)
+	if err != nil {
+		return fmt.Errorf("extends: resolving path %q: %w", child.Extends, err)
+	}
+
+	// Cycle detection
+	if visited[absParentPath] {
+		return fmt.Errorf("extends: circular dependency detected: %s → %s", childAbsPath, absParentPath)
+	}
+	visited[absParentPath] = true
+
+	// Read and unmarshal parent
+	data, err := os.ReadFile(absParentPath)
+	if err != nil {
+		return fmt.Errorf("extends: reading parent stack: %w", err)
+	}
+
+	var parent Stack
+	if err := yaml.Unmarshal(data, &parent); err != nil {
+		return fmt.Errorf("extends: parsing parent stack: %w", err)
+	}
+
+	// Recurse before merging so the full ancestor chain is resolved first
+	if err := resolveExtends(&parent, absParentPath, visited, depth+1); err != nil {
+		return err
+	}
+
+	mergeStacks(child, &parent)
+	child.Extends = ""
+	return nil
+}
+
+// mergeStacks merges parent into child using child-wins semantics:
+//   - MCPServers and Resources: child entries kept as-is; parent-only entries appended
+//   - Gateway, Logging, Secrets, Network/Networks: inherited from parent when child omits them
+func mergeStacks(child, parent *Stack) {
+	// MCPServers: child wins on name collision; parent-only servers appended
+	if len(parent.MCPServers) > 0 {
+		childNames := make(map[string]bool, len(child.MCPServers))
+		for _, s := range child.MCPServers {
+			childNames[s.Name] = true
+		}
+		for _, s := range parent.MCPServers {
+			if !childNames[s.Name] {
+				child.MCPServers = append(child.MCPServers, s)
+			}
+		}
+	}
+
+	// Resources: same merge-by-name algorithm
+	if len(parent.Resources) > 0 {
+		childResourceNames := make(map[string]bool, len(child.Resources))
+		for _, r := range child.Resources {
+			childResourceNames[r.Name] = true
+		}
+		for _, r := range parent.Resources {
+			if !childResourceNames[r.Name] {
+				child.Resources = append(child.Resources, r)
+			}
+		}
+	}
+
+	// Top-level blocks: inherit from parent when child has no value
+	if child.Gateway == nil {
+		child.Gateway = parent.Gateway
+	}
+	if child.Logging == nil {
+		child.Logging = parent.Logging
+	}
+	if child.Secrets == nil {
+		child.Secrets = parent.Secrets
+	}
+	if child.Network.Name == "" && len(child.Networks) == 0 {
+		child.Network = parent.Network
+		child.Networks = parent.Networks
+	}
 }
 

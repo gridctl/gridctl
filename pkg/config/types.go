@@ -8,6 +8,7 @@ import (
 type Stack struct {
 	Version    string          `yaml:"version"`
 	Name       string          `yaml:"name"`
+	Extends    string          `yaml:"extends,omitempty"`    // Path to a parent stack file for composition
 	Gateway    *GatewayConfig  `yaml:"gateway,omitempty"`
 	Logging    *LoggingConfig  `yaml:"logging,omitempty"`
 	Secrets    *Secrets        `yaml:"secrets,omitempty"`     // Variable set references
