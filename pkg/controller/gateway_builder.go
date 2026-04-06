@@ -66,6 +66,9 @@ type GatewayBuilder struct {
 
 	// pinStore for API server injection (schema pin management).
 	pinStore *pins.PinStore
+
+	// tracingProvider is retained so Shutdown() can be called on gateway exit.
+	tracingProvider *tracing.Provider
 }
 
 // NewGatewayBuilder creates a GatewayBuilder.
@@ -374,6 +377,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	if err := tracingProvider.Init(context.Background()); err != nil {
 		slog.New(handler).Warn("tracing init failed", "error", err)
 	}
+	b.tracingProvider = tracingProvider
 	server.SetTraceBuffer(tracingProvider.Buffer)
 
 	return server, nil
@@ -538,6 +542,12 @@ func (b *GatewayBuilder) waitForShutdown(inst *GatewayInstance, handler slog.Han
 
 		if err := inst.HTTPServer.Shutdown(shutdownCtx); err != nil {
 			logger.Error("HTTP server shutdown error", "error", err)
+		}
+
+		if b.tracingProvider != nil {
+			if err := b.tracingProvider.Shutdown(shutdownCtx); err != nil {
+				logger.Error("tracing shutdown error", "error", err)
+			}
 		}
 
 		_ = state.Delete(b.stack.Name)
