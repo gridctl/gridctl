@@ -209,8 +209,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/pins/{server}", s.handleResetPins)
 
 	// Vault endpoints
-	mux.HandleFunc("/api/vault/", s.handleVault)
-	mux.HandleFunc("/api/vault", s.handleVault)
+	mux.HandleFunc("GET /api/vault", s.handleVaultList)
+	mux.HandleFunc("POST /api/vault", s.handleVaultCreate)
+	mux.HandleFunc("POST /api/vault/import", s.handleVaultImport)
+	mux.HandleFunc("GET /api/vault/status", s.handleVaultStatus)
+	mux.HandleFunc("POST /api/vault/unlock", s.handleVaultUnlock)
+	mux.HandleFunc("POST /api/vault/lock", s.handleVaultLock)
+	mux.HandleFunc("GET /api/vault/sets", s.handleVaultSetsList)
+	mux.HandleFunc("POST /api/vault/sets", s.handleVaultSetsCreate)
+	mux.HandleFunc("DELETE /api/vault/sets/{name}", s.handleVaultSetsDelete)
+	mux.HandleFunc("GET /api/vault/{key}", s.handleVaultKeyGet)
+	mux.HandleFunc("PUT /api/vault/{key}", s.handleVaultKeyPut)
+	mux.HandleFunc("DELETE /api/vault/{key}", s.handleVaultKeyDelete)
+	mux.HandleFunc("PUT /api/vault/{key}/set", s.handleVaultAssignSet)
 
 	// Stack spec endpoints
 	mux.HandleFunc("POST /api/stack/validate", s.handleStackValidate)

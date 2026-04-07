@@ -15,73 +15,24 @@ var validKeyRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 // validSetNameRegex matches valid variable set names.
 var validSetNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// handleVault routes all /api/vault requests.
-func (s *Server) handleVault(w http.ResponseWriter, r *http.Request) {
+// writeLocked writes the standard 423 vault-locked response.
+func writeLocked(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusLocked)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": "vault is locked",
+		"hint":  "POST /api/vault/unlock with passphrase",
+	})
+}
+
+// handleVaultStatus returns the lock state and counts.
+// GET /api/vault/status
+func (s *Server) handleVaultStatus(w http.ResponseWriter, _ *http.Request) {
 	if s.vaultStore == nil {
 		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	path := strings.TrimPrefix(r.URL.Path, "/api/vault")
-	path = strings.TrimPrefix(path, "/")
-
-	// Split into segments for clean routing
-	segments := strings.SplitN(path, "/", 3)
-	first := segments[0]
-	second := ""
-	if len(segments) > 1 {
-		second = segments[1]
-	}
-
-	// Routes that work regardless of lock state
-	switch {
-	case first == "status" && r.Method == http.MethodGet:
-		s.handleVaultStatus(w, r)
-		return
-	case first == "unlock" && r.Method == http.MethodPost:
-		s.handleVaultUnlock(w, r)
-		return
-	case first == "lock" && r.Method == http.MethodPost:
-		s.handleVaultLock(w, r)
-		return
-	}
-
-	// All other routes require the vault to be unlocked
-	if s.vaultStore.IsLocked() {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(statusLocked)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"error": "vault is locked",
-			"hint":  "POST /api/vault/unlock with passphrase",
-		})
-		return
-	}
-
-	switch {
-	case first == "" && r.Method == http.MethodGet:
-		s.handleVaultList(w, r)
-	case first == "" && r.Method == http.MethodPost:
-		s.handleVaultCreate(w, r)
-	case first == "import" && r.Method == http.MethodPost:
-		s.handleVaultImport(w, r)
-	case first == "sets" && second == "" && r.Method == http.MethodGet:
-		s.handleVaultSetsList(w, r)
-	case first == "sets" && second == "" && r.Method == http.MethodPost:
-		s.handleVaultSetsCreate(w, r)
-	case first == "sets" && second != "" && r.Method == http.MethodDelete:
-		s.handleVaultSetsDelete(w, r, second)
-	case first != "" && second == "set" && r.Method == http.MethodPut:
-		s.handleVaultAssignSet(w, r, first)
-	case first != "" && first != "import" && first != "sets" && first != "status" && first != "unlock" && first != "lock":
-		s.handleVaultKey(w, r, first)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// handleVaultStatus returns the lock state and counts.
-// GET /api/vault/status
-func (s *Server) handleVaultStatus(w http.ResponseWriter, r *http.Request) {
 	status := map[string]any{
 		"locked":    s.vaultStore.IsLocked(),
 		"encrypted": s.vaultStore.IsEncrypted(),
@@ -98,6 +49,11 @@ func (s *Server) handleVaultStatus(w http.ResponseWriter, r *http.Request) {
 // handleVaultUnlock unlocks the vault with a passphrase.
 // POST /api/vault/unlock
 func (s *Server) handleVaultUnlock(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	var req struct {
 		Passphrase string `json:"passphrase"`
 	}
@@ -127,6 +83,11 @@ func (s *Server) handleVaultUnlock(w http.ResponseWriter, r *http.Request) {
 // handleVaultLock encrypts the vault with a passphrase.
 // POST /api/vault/lock
 func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	var req struct {
 		Passphrase string `json:"passphrase"`
 	}
@@ -150,7 +111,16 @@ func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
 
 // handleVaultList returns all vault keys with set assignments (no values).
 // GET /api/vault
-func (s *Server) handleVaultList(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVaultList(w http.ResponseWriter, _ *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
 	secrets := s.vaultStore.List()
 
 	type keyEntry struct {
@@ -169,6 +139,15 @@ func (s *Server) handleVaultList(w http.ResponseWriter, r *http.Request) {
 // handleVaultCreate creates a new secret.
 // POST /api/vault
 func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
 	var req struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
@@ -204,49 +183,86 @@ func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"key": req.Key, "status": "created"})
 }
 
-// handleVaultKey handles individual key operations.
-// GET    /api/vault/{key}
-// PUT    /api/vault/{key}
-// DELETE /api/vault/{key}
-func (s *Server) handleVaultKey(w http.ResponseWriter, r *http.Request, key string) {
-	switch r.Method {
-	case http.MethodGet:
-		value, ok := s.vaultStore.Get(key)
-		if !ok {
-			writeJSONError(w, "Secret not found: "+key, http.StatusNotFound)
-			return
-		}
-		writeJSON(w, map[string]string{"key": key, "value": value})
-
-	case http.MethodPut:
-		var req struct {
-			Value string `json:"value"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := s.vaultStore.Set(key, req.Value); err != nil {
-			writeJSONError(w, "Failed to update secret: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, map[string]string{"key": key, "status": "updated"})
-
-	case http.MethodDelete:
-		if err := s.vaultStore.Delete(key); err != nil {
-			writeJSONError(w, "Failed to delete secret: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+// handleVaultKeyGet returns the value of a secret.
+// GET /api/vault/{key}
+func (s *Server) handleVaultKeyGet(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
 	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
+	key := r.PathValue("key")
+	value, ok := s.vaultStore.Get(key)
+	if !ok {
+		writeJSONError(w, "Secret not found: "+key, http.StatusNotFound)
+		return
+	}
+	writeJSON(w, map[string]string{"key": key, "value": value})
+}
+
+// handleVaultKeyPut updates the value of a secret.
+// PUT /api/vault/{key}
+func (s *Server) handleVaultKeyPut(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
+	key := r.PathValue("key")
+	var req struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.vaultStore.Set(key, req.Value); err != nil {
+		writeJSONError(w, "Failed to update secret: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"key": key, "status": "updated"})
+}
+
+// handleVaultKeyDelete deletes a secret.
+// DELETE /api/vault/{key}
+func (s *Server) handleVaultKeyDelete(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
+	key := r.PathValue("key")
+	if err := s.vaultStore.Delete(key); err != nil {
+		writeJSONError(w, "Failed to delete secret: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleVaultSetsList returns all variable sets with member counts.
 // GET /api/vault/sets
-func (s *Server) handleVaultSetsList(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVaultSetsList(w http.ResponseWriter, _ *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
 	sets := s.vaultStore.ListSets()
 	if sets == nil {
 		sets = []vault.SetSummary{}
@@ -257,6 +273,15 @@ func (s *Server) handleVaultSetsList(w http.ResponseWriter, r *http.Request) {
 // handleVaultSetsCreate creates a new variable set.
 // POST /api/vault/sets
 func (s *Server) handleVaultSetsCreate(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -289,7 +314,17 @@ func (s *Server) handleVaultSetsCreate(w http.ResponseWriter, r *http.Request) {
 
 // handleVaultSetsDelete deletes a variable set.
 // DELETE /api/vault/sets/{name}
-func (s *Server) handleVaultSetsDelete(w http.ResponseWriter, r *http.Request, name string) {
+func (s *Server) handleVaultSetsDelete(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
+	name := r.PathValue("name")
 	if err := s.vaultStore.DeleteSet(name); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeJSONError(w, err.Error(), http.StatusNotFound)
@@ -303,7 +338,17 @@ func (s *Server) handleVaultSetsDelete(w http.ResponseWriter, r *http.Request, n
 
 // handleVaultAssignSet assigns or unassigns a secret to a set.
 // PUT /api/vault/{key}/set
-func (s *Server) handleVaultAssignSet(w http.ResponseWriter, r *http.Request, key string) {
+func (s *Server) handleVaultAssignSet(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
+	key := r.PathValue("key")
 	var req struct {
 		Set string `json:"set"`
 	}
@@ -323,6 +368,15 @@ func (s *Server) handleVaultAssignSet(w http.ResponseWriter, r *http.Request, ke
 // handleVaultImport bulk imports secrets.
 // POST /api/vault/import
 func (s *Server) handleVaultImport(w http.ResponseWriter, r *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Vault not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.vaultStore.IsLocked() {
+		writeLocked(w)
+		return
+	}
+
 	var req struct {
 		Secrets map[string]string `json:"secrets"`
 	}
