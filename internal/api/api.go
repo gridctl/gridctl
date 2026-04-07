@@ -211,7 +211,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/vault", s.handleVault)
 
 	// Stack spec endpoints
-	mux.HandleFunc("/api/stack/", s.handleStack)
+	mux.HandleFunc("POST /api/stack/validate", s.handleStackValidate)
+	mux.HandleFunc("GET /api/stack/plan", s.handleStackPlan)
+	mux.HandleFunc("GET /api/stack/health", s.handleStackHealth)
+	mux.HandleFunc("GET /api/stack/spec", s.handleStackSpec)
+	mux.HandleFunc("GET /api/stack/export", s.handleStackExport)
+	mux.HandleFunc("GET /api/stack/secrets-map", s.handleStackSecretsMap)
+	mux.HandleFunc("GET /api/stack/recipes", s.handleStackRecipes)
+	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
 
 	// Skills endpoints (remote skill import)
 	mux.HandleFunc("/api/skills/", s.handleSkills)
