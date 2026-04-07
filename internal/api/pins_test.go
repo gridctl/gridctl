@@ -22,11 +22,11 @@ func setupPinsServer(t *testing.T) (*Server, *pins.PinStore) {
 }
 
 func TestHandlePins_NoStore(t *testing.T) {
-	server := &Server{}
+	server := &Server{gateway: mcp.NewGateway()}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/pins", nil)
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
@@ -38,7 +38,7 @@ func TestHandlePins_ListEmpty(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/pins", nil)
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
@@ -57,9 +57,8 @@ func TestHandlePins_GetServer_NotFound(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/pins/unknown-server", nil)
-	req.URL.Path = "/api/pins/unknown-server"
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
@@ -70,9 +69,8 @@ func TestHandlePins_Approve_PinsNotFound(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/pins/unknown-server/approve", nil)
-	req.URL.Path = "/api/pins/unknown-server/approve"
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
@@ -83,9 +81,8 @@ func TestHandlePins_Reset_NotFound(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/pins/unknown-server", nil)
-	req.URL.Path = "/api/pins/unknown-server"
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
@@ -96,9 +93,8 @@ func TestHandlePins_MethodNotAllowed(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/pins", nil)
-	req.URL.Path = "/api/pins"
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
@@ -115,9 +111,8 @@ func TestHandlePins_GetServer_Found(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver", nil)
-	req.URL.Path = "/api/pins/myserver"
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
@@ -143,9 +138,8 @@ func TestHandlePins_Approve_ServerNotInGateway(t *testing.T) {
 
 	// Gateway has no registered clients, so GetClient returns nil → 404.
 	req := httptest.NewRequest(http.MethodPost, "/api/pins/myserver/approve", nil)
-	req.URL.Path = "/api/pins/myserver/approve"
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
@@ -161,9 +155,8 @@ func TestHandlePins_Reset_Success(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/pins/myserver", nil)
-	req.URL.Path = "/api/pins/myserver"
 	w := httptest.NewRecorder()
-	server.handlePins(w, req)
+	server.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusNoContent {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNoContent)
