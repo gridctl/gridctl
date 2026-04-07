@@ -316,6 +316,10 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 		return err
 	}
 
+	// Resolve parent's relative paths against parent's directory before merging into child.
+	// Without this, inherited paths would be re-resolved against the child's directory.
+	resolveRelativePaths(&parent, filepath.Dir(absParentPath))
+
 	mergeStacks(child, &parent)
 	child.Extends = ""
 	return nil
