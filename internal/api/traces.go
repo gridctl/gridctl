@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/tracing"
@@ -55,21 +54,13 @@ type traceDetailDTO struct {
 
 // handleTraces handles GET /api/traces and GET /api/traces/{traceId}.
 func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	if s.traceBuffer == nil {
 		writeJSON(w, traceListDTO{Traces: []traceSummaryDTO{}, Total: 0})
 		return
 	}
 
-	// Check for trace ID in path: /api/traces/{traceId}
-	path := strings.TrimPrefix(r.URL.Path, "/api/traces")
-	path = strings.TrimPrefix(path, "/")
-	if path != "" {
-		s.handleTraceDetail(w, r, path)
+	if traceID := r.PathValue("traceId"); traceID != "" {
+		s.handleTraceDetail(w, r, traceID)
 		return
 	}
 
