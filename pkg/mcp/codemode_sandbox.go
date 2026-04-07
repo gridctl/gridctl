@@ -20,15 +20,24 @@ const DefaultCodeModeTimeout = 30 * time.Second
 
 // Sandbox executes JavaScript code in a goja runtime with MCP tool bindings.
 type Sandbox struct {
-	timeout time.Duration
+	timeout     time.Duration
+	fetchConfig FetchConfig
 }
 
-// NewSandbox creates a sandbox with the given execution timeout.
+// NewSandbox creates a sandbox with the given execution timeout and default fetch config.
 func NewSandbox(timeout time.Duration) *Sandbox {
 	if timeout <= 0 {
 		timeout = DefaultCodeModeTimeout
 	}
-	return &Sandbox{timeout: timeout}
+	return &Sandbox{timeout: timeout, fetchConfig: DefaultFetchConfig()}
+}
+
+// NewSandboxWithConfig creates a sandbox with the given execution timeout and fetch config.
+func NewSandboxWithConfig(timeout time.Duration, fetchConfig FetchConfig) *Sandbox {
+	if timeout <= 0 {
+		timeout = DefaultCodeModeTimeout
+	}
+	return &Sandbox{timeout: timeout, fetchConfig: fetchConfig}
 }
 
 // ExecuteResult contains the output of a sandbox execution.
@@ -185,7 +194,45 @@ func (s *Sandbox) Execute(ctx context.Context, code string, caller ToolCaller, a
 			return vm.ToValue(promise)
 		})
 
-		val, runErr = vm.RunString(transpiled)
+		// Inject fetch(url, options) — sandboxed HTTP client with SSRF mitigations
+		sf := newSandboxedFetch(s.fetchConfig)
+		sf.inject(vm, loop)
+
+		rawVal, runStringErr := vm.RunString(transpiled)
+		if runStringErr != nil {
+			runErr = runStringErr
+			return
+		}
+
+		// If the returned value is a thenable (Promise from an async function or
+		// explicit new Promise), attach .then/.catch handlers to capture the
+		// settled value. The event loop will call the handlers when the Promise
+		// settles, driven by whatever timers or RunOnLoop callbacks are pending.
+		if rawVal != nil && !goja.IsUndefined(rawVal) && !goja.IsNull(rawVal) {
+			rawObj := rawVal.ToObject(vm)
+			thenFn := rawObj.Get("then")
+			if thenFn != nil && !goja.IsUndefined(thenFn) {
+				if thenCallable, ok := goja.AssertFunction(thenFn); ok {
+					_, _ = thenCallable(rawVal,
+						vm.ToValue(func(call goja.FunctionCall) goja.Value {
+							if len(call.Arguments) > 0 {
+								val = call.Arguments[0]
+							}
+							return goja.Undefined()
+						}),
+						vm.ToValue(func(call goja.FunctionCall) goja.Value {
+							if len(call.Arguments) > 0 {
+								runErr = fmt.Errorf("runtime error: %s", call.Arguments[0].String())
+							}
+							return goja.Undefined()
+						}),
+					)
+					return // val will be set by .then callback once Promise settles
+				}
+			}
+		}
+
+		val = rawVal
 	})
 
 	if runErr != nil {
