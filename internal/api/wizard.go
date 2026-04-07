@@ -32,24 +32,6 @@ func wizardDraftsDir() string {
 	return filepath.Join(home, ".gridctl", "cache", "wizard-drafts")
 }
 
-// handleWizard routes /api/wizard/ requests.
-func (s *Server) handleWizard(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/wizard/")
-	path = strings.TrimPrefix(path, "/")
-
-	switch {
-	case path == "drafts" && r.Method == http.MethodGet:
-		s.handleWizardDraftsList(w, r)
-	case path == "drafts" && r.Method == http.MethodPost:
-		s.handleWizardDraftCreate(w, r)
-	case strings.HasPrefix(path, "drafts/") && r.Method == http.MethodDelete:
-		id := strings.TrimPrefix(path, "drafts/")
-		s.handleWizardDraftDelete(w, r, id)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 // handleWizardDraftsList returns all saved wizard drafts.
 // GET /api/wizard/drafts
 func (s *Server) handleWizardDraftsList(w http.ResponseWriter, _ *http.Request) {
@@ -167,7 +149,8 @@ func (s *Server) handleWizardDraftCreate(w http.ResponseWriter, r *http.Request)
 
 // handleWizardDraftDelete removes a wizard draft.
 // DELETE /api/wizard/drafts/{id}
-func (s *Server) handleWizardDraftDelete(w http.ResponseWriter, _ *http.Request, id string) {
+func (s *Server) handleWizardDraftDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	if id == "" {
 		writeJSONError(w, "Draft ID is required", http.StatusBadRequest)
 		return
