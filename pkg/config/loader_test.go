@@ -1165,3 +1165,103 @@ mcp-servers:
 		t.Errorf("expected inherited postgres resource, got %v", stack.Resources)
 	}
 }
+
+func TestLoadStack_Extends_CrossDirectory_LocalSource(t *testing.T) {
+	tmpRoot := t.TempDir()
+	parentsDir := filepath.Join(tmpRoot, "parents")
+	childrenDir := filepath.Join(tmpRoot, "children")
+
+	// Create directories (writeFile does not create intermediate dirs)
+	if err := os.MkdirAll(filepath.Join(parentsDir, "src", "server"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(childrenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, filepath.Join(parentsDir, "base.yaml"), `
+version: "1"
+name: base
+mcp-servers:
+  - name: my-server
+    source:
+      type: local
+      path: ./src/server
+    port: 3000
+`)
+	writeFile(t, filepath.Join(childrenDir, "child.yaml"), `
+version: "1"
+name: child
+extends: ../parents/base.yaml
+`)
+
+	stack, err := LoadStack(filepath.Join(childrenDir, "child.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var inherited *MCPServer
+	for i := range stack.MCPServers {
+		if stack.MCPServers[i].Name == "my-server" {
+			inherited = &stack.MCPServers[i]
+		}
+	}
+	if inherited == nil {
+		t.Fatal("inherited server 'my-server' not found")
+	}
+
+	want := filepath.Join(parentsDir, "src", "server")
+	if inherited.Source.Path != want {
+		t.Errorf("inherited source.path resolved against wrong directory:\n  got  %q\n  want %q", inherited.Source.Path, want)
+	}
+}
+
+func TestLoadStack_Extends_CrossDirectory_SSHIdentityFile(t *testing.T) {
+	tmpRoot := t.TempDir()
+	parentsDir := filepath.Join(tmpRoot, "parents")
+	childrenDir := filepath.Join(tmpRoot, "children")
+
+	if err := os.MkdirAll(parentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(childrenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, filepath.Join(parentsDir, "base.yaml"), `
+version: "1"
+name: base
+mcp-servers:
+  - name: remote-server
+    ssh:
+      host: example.com
+      user: git
+      identityFile: ./keys/id_rsa
+    command: [mcp-server]
+`)
+	writeFile(t, filepath.Join(childrenDir, "child.yaml"), `
+version: "1"
+name: child
+extends: ../parents/base.yaml
+`)
+
+	stack, err := LoadStack(filepath.Join(childrenDir, "child.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var inherited *MCPServer
+	for i := range stack.MCPServers {
+		if stack.MCPServers[i].Name == "remote-server" {
+			inherited = &stack.MCPServers[i]
+		}
+	}
+	if inherited == nil {
+		t.Fatal("inherited server 'remote-server' not found")
+	}
+
+	want := filepath.Join(parentsDir, "keys", "id_rsa")
+	if inherited.SSH.IdentityFile != want {
+		t.Errorf("inherited ssh.identityFile resolved against wrong directory:\n  got  %q\n  want %q", inherited.SSH.IdentityFile, want)
+	}
+}
