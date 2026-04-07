@@ -13,33 +13,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// handleStack routes /api/stack/ requests.
-func (s *Server) handleStack(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/stack/")
-	path = strings.TrimPrefix(path, "/")
-
-	switch {
-	case path == "validate" && r.Method == http.MethodPost:
-		s.handleStackValidate(w, r)
-	case path == "plan" && r.Method == http.MethodGet:
-		s.handleStackPlan(w, r)
-	case path == "health" && r.Method == http.MethodGet:
-		s.handleStackHealth(w, r)
-	case path == "spec" && r.Method == http.MethodGet:
-		s.handleStackSpec(w, r)
-	case path == "export" && r.Method == http.MethodGet:
-		s.handleStackExport(w, r)
-	case path == "secrets-map" && r.Method == http.MethodGet:
-		s.handleStackSecretsMap(w, r)
-	case path == "recipes" && r.Method == http.MethodGet:
-		s.handleStackRecipes(w, r)
-	case path == "append" && r.Method == http.MethodPost:
-		s.handleStackAppend(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 // handleStackValidate validates a stack YAML body.
 // POST /api/stack/validate
 func (s *Server) handleStackValidate(w http.ResponseWriter, r *http.Request) {

@@ -390,7 +390,7 @@ func TestHandleStack_Routing(t *testing.T) {
 		{"export GET no stack", http.MethodGet, "/api/stack/export", http.StatusServiceUnavailable},
 		{"secrets-map GET", http.MethodGet, "/api/stack/secrets-map", http.StatusOK},
 		{"recipes GET", http.MethodGet, "/api/stack/recipes", http.StatusOK},
-		{"unknown path", http.MethodGet, "/api/stack/unknown", http.StatusMethodNotAllowed},
+		{"unknown path", http.MethodGet, "/api/stack/unknown", http.StatusNotFound},
 		{"validate wrong method", http.MethodGet, "/api/stack/validate", http.StatusMethodNotAllowed},
 		{"append POST no stack", http.MethodPost, "/api/stack/append", http.StatusServiceUnavailable},
 	}
@@ -406,7 +406,7 @@ func TestHandleStack_Routing(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, body)
 			w := httptest.NewRecorder()
 
-			s.handleStack(w, req)
+			s.Handler().ServeHTTP(w, req)
 
 			assert.Equal(t, tc.expectedStatus, w.Code)
 		})
