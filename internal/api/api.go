@@ -223,7 +223,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
 
 	// Skills endpoints (remote skill import)
-	mux.HandleFunc("/api/skills/", s.handleSkills)
+	mux.HandleFunc("GET /api/skills/sources", s.handleSkillSourcesList)
+	mux.HandleFunc("POST /api/skills/sources", s.handleSkillSourceAdd)
+	mux.HandleFunc("GET /api/skills/updates", s.handleSkillUpdates)
+	mux.HandleFunc("DELETE /api/skills/sources/{name}", s.handleSkillSourceRemove)
+	mux.HandleFunc("POST /api/skills/sources/{name}/check", s.handleSkillSourceCheck)
+	mux.HandleFunc("POST /api/skills/sources/{name}/update", s.handleSkillSourceUpdate)
+	mux.HandleFunc("GET /api/skills/sources/{name}/preview", s.handleSkillSourcePreview)
 
 	// Wizard endpoints
 	mux.HandleFunc("GET /api/wizard/drafts", s.handleWizardDraftsList)
