@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -415,6 +416,53 @@ func TestGateway_CodeMode_Off(t *testing.T) {
 	if len(result.Tools) != 0 {
 		t.Fatalf("Expected 0 tools, got %d", len(result.Tools))
 	}
+}
+
+func TestSandbox_CryptoRandomUUID(t *testing.T) {
+	sandbox := NewSandbox(5 * time.Second)
+	caller := &mockToolCaller{
+		callFn: func(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{}, nil
+		},
+	}
+
+	uuidRE := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
+	t.Run("valid UUID v4 format", func(t *testing.T) {
+		result, err := sandbox.Execute(context.Background(), `crypto.randomUUID()`, caller, nil)
+		if err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+		// Result is JSON-encoded string, strip quotes
+		uuid := strings.Trim(result.Value, `"`)
+		if !uuidRE.MatchString(uuid) {
+			t.Errorf("Expected RFC 4122 v4 UUID, got: %s", uuid)
+		}
+	})
+
+	t.Run("uniqueness", func(t *testing.T) {
+		r1, err := sandbox.Execute(context.Background(), `crypto.randomUUID()`, caller, nil)
+		if err != nil {
+			t.Fatalf("First Execute failed: %v", err)
+		}
+		r2, err := sandbox.Execute(context.Background(), `crypto.randomUUID()`, caller, nil)
+		if err != nil {
+			t.Fatalf("Second Execute failed: %v", err)
+		}
+		if r1.Value == r2.Value {
+			t.Errorf("Expected different UUIDs, got same: %s", r1.Value)
+		}
+	})
+
+	t.Run("no other crypto methods exposed", func(t *testing.T) {
+		result, err := sandbox.Execute(context.Background(), `typeof crypto.subtle`, caller, nil)
+		if err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+		if result.Value != `"undefined"` {
+			t.Errorf("Expected crypto.subtle to be undefined, got: %s", result.Value)
+		}
+	})
 }
 
 func TestGateway_CodeModeStatus(t *testing.T) {

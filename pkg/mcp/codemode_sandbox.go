@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -142,6 +143,20 @@ func (s *Sandbox) Execute(ctx context.Context, code string, caller ToolCaller, a
 		return goja.Undefined()
 	})
 	_ = vm.Set("mcp", mcpObj)
+
+	// Inject crypto object with randomUUID()
+	cryptoObj := vm.NewObject()
+	_ = cryptoObj.Set("randomUUID", func(call goja.FunctionCall) goja.Value {
+		var b [16]byte
+		if _, err := crand.Read(b[:]); err != nil {
+			panic(vm.NewGoError(fmt.Errorf("crypto.randomUUID: %w", err)))
+		}
+		b[6] = (b[6] & 0x0f) | 0x40 // version 4
+		b[8] = (b[8] & 0x3f) | 0x80 // variant bits
+		uuid := fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+		return vm.ToValue(uuid)
+	})
+	_ = vm.Set("crypto", cryptoObj)
 
 	// Execute the transpiled code
 	val, err := vm.RunString(transpiled)
