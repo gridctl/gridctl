@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -61,33 +60,13 @@ type SourceUpdateSummary struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// handleSkills routes /api/skills/ requests.
-func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/skills/")
-	path = strings.TrimPrefix(path, "/")
-
+// handleSkillSourcesList returns all configured skill sources with update status.
+// GET /api/skills/sources
+func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) {
 	if s.registryServer == nil {
 		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
 		return
 	}
-
-	switch {
-	case path == "sources" && r.Method == http.MethodGet:
-		s.handleSkillSourcesList(w, r)
-	case path == "sources" && r.Method == http.MethodPost:
-		s.handleSkillSourceAdd(w, r)
-	case path == "updates" && r.Method == http.MethodGet:
-		s.handleSkillUpdates(w, r)
-	case strings.HasPrefix(path, "sources/"):
-		s.handleSkillSourceAction(w, r, strings.TrimPrefix(path, "sources/"))
-	default:
-		http.NotFound(w, r)
-	}
-}
-
-// handleSkillSourcesList returns all configured skill sources with update status.
-// GET /api/skills/sources
-func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) {
 	store := s.registryServer.Store()
 	lockPath := skills.LockFilePath()
 	lf, _ := skills.ReadLockFile(lockPath)
@@ -149,6 +128,11 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) 
 // handleSkillSourceAdd adds a new skill source (triggers clone + import).
 // POST /api/skills/sources
 func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	var req struct {
 		Repo       string `json:"repo"`
 		Ref        string `json:"ref,omitempty"`
@@ -190,32 +174,16 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, result)
 }
 
-// handleSkillSourceAction routes individual source operations.
-func (s *Server) handleSkillSourceAction(w http.ResponseWriter, r *http.Request, subpath string) {
-	parts := strings.SplitN(subpath, "/", 2)
-	sourceName := parts[0]
-	action := ""
-	if len(parts) > 1 {
-		action = parts[1]
-	}
-
-	switch {
-	case action == "" && r.Method == http.MethodDelete:
-		s.handleSkillSourceRemove(w, r, sourceName)
-	case action == "check" && r.Method == http.MethodPost:
-		s.handleSkillSourceCheck(w, r, sourceName)
-	case action == "update" && r.Method == http.MethodPost:
-		s.handleSkillSourceUpdate(w, r, sourceName)
-	case action == "preview" && r.Method == http.MethodGet:
-		s.handleSkillSourcePreview(w, r, sourceName)
-	default:
-		http.NotFound(w, r)
-	}
-}
-
 // handleSkillSourceRemove removes a skill source and its imported skills.
 // DELETE /api/skills/sources/{name}
-func (s *Server) handleSkillSourceRemove(w http.ResponseWriter, _ *http.Request, sourceName string) {
+func (s *Server) handleSkillSourceRemove(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.PathValue("name")
+
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	lockPath := skills.LockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
@@ -253,7 +221,9 @@ func (s *Server) handleSkillSourceRemove(w http.ResponseWriter, _ *http.Request,
 
 // handleSkillSourceCheck triggers an update check for a source.
 // POST /api/skills/sources/{name}/check
-func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, _ *http.Request, sourceName string) {
+func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.PathValue("name")
+
 	lockPath := skills.LockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
@@ -284,7 +254,14 @@ func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, _ *http.Request, 
 
 // handleSkillSourceUpdate applies available updates for a source.
 // POST /api/skills/sources/{name}/update
-func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, _ *http.Request, sourceName string) {
+func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.PathValue("name")
+
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	lockPath := skills.LockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
@@ -326,7 +303,14 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, _ *http.Request,
 
 // handleSkillSourcePreview previews skills in a source without importing.
 // GET /api/skills/sources/{name}/preview
-func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request, sourceName string) {
+func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.PathValue("name")
+
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	// Get repo URL from query params or lock file
 	repo := r.URL.Query().Get("repo")
 	ref := r.URL.Query().Get("ref")
