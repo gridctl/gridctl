@@ -2,51 +2,27 @@ package api
 
 import (
 	"net/http"
-	"strings"
 )
-
-// handlePins routes all /api/pins requests.
-func (s *Server) handlePins(w http.ResponseWriter, r *http.Request) {
-	if s.pinStore == nil {
-		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	path := strings.TrimPrefix(r.URL.Path, "/api/pins")
-	path = strings.TrimPrefix(path, "/")
-
-	// Split into segments: "", "{server}", "{server}/approve"
-	segments := strings.SplitN(path, "/", 3)
-	first := segments[0]
-	second := ""
-	if len(segments) > 1 {
-		second = segments[1]
-	}
-
-	switch {
-	case first == "" && r.Method == http.MethodGet:
-		s.handleListPins(w, r)
-	case first != "" && second == "" && r.Method == http.MethodGet:
-		s.handleGetServerPins(w, r, first)
-	case first != "" && second == "approve" && r.Method == http.MethodPost:
-		s.handleApprovePins(w, r, first)
-	case first != "" && second == "" && r.Method == http.MethodDelete:
-		s.handleResetPins(w, r, first)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
 
 // handleListPins returns all servers' pin records.
 // GET /api/pins
 func (s *Server) handleListPins(w http.ResponseWriter, r *http.Request) {
+	if s.pinStore == nil {
+		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
+		return
+	}
 	servers := s.pinStore.GetAll()
 	writeJSON(w, servers)
 }
 
 // handleGetServerPins returns the pin record for a single server.
 // GET /api/pins/{server}
-func (s *Server) handleGetServerPins(w http.ResponseWriter, r *http.Request, serverName string) {
+func (s *Server) handleGetServerPins(w http.ResponseWriter, r *http.Request) {
+	if s.pinStore == nil {
+		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
+		return
+	}
+	serverName := r.PathValue("server")
 	sp, ok := s.pinStore.GetServer(serverName)
 	if !ok {
 		writeJSONError(w, "No pins found for server: "+serverName, http.StatusNotFound)
@@ -57,7 +33,13 @@ func (s *Server) handleGetServerPins(w http.ResponseWriter, r *http.Request, ser
 
 // handleApprovePins re-pins the current tool definitions for a server, clearing drift.
 // POST /api/pins/{server}/approve
-func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request, serverName string) {
+func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
+	if s.pinStore == nil {
+		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
+		return
+	}
+	serverName := r.PathValue("server")
+
 	// Verify the server has existing pins before approving.
 	if _, ok := s.pinStore.GetServer(serverName); !ok {
 		writeJSONError(w, "No pins found for server: "+serverName, http.StatusNotFound)
@@ -86,7 +68,13 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request, serve
 
 // handleResetPins deletes the pin record for a server.
 // DELETE /api/pins/{server}
-func (s *Server) handleResetPins(w http.ResponseWriter, r *http.Request, serverName string) {
+func (s *Server) handleResetPins(w http.ResponseWriter, r *http.Request) {
+	if s.pinStore == nil {
+		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
+		return
+	}
+	serverName := r.PathValue("server")
+
 	if _, ok := s.pinStore.GetServer(serverName); !ok {
 		writeJSONError(w, "No pins found for server: "+serverName, http.StatusNotFound)
 		return
