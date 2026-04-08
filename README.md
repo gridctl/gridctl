@@ -308,6 +308,7 @@ The Web UI includes a Traces tab in the bottom panel with an interactive waterfa
 
 ```bash
 gridctl validate <stack.yaml>        # Validate stack YAML (exit 0/1/2)
+gridctl validate <stack.yaml> --format json  # Machine-readable output
 gridctl plan <stack.yaml>            # Preview changes against running state
 gridctl apply <stack.yaml>           # Start containers and gateway
 gridctl apply <stack.yaml> -f        # Run in foreground (debug mode)
@@ -320,6 +321,8 @@ gridctl apply <stack.yaml> -v        # Print full stack as JSON
 gridctl apply <stack.yaml> -q        # Suppress progress output
 gridctl apply <stack.yaml> --log-file <path>  # Structured JSON log output with rotation
 gridctl export                       # Reverse-engineer stack.yaml from running stack
+gridctl export -o ./output           # Write to directory instead of stdout
+gridctl export --format json         # Output as JSON instead of YAML
 gridctl serve                        # Start the web UI without managing a stack
 gridctl status                       # Show running stacks
 gridctl info                         # Show detected container runtime
@@ -338,6 +341,7 @@ gridctl skill remove <name>          # Remove an imported skill
 gridctl skill pin <name> <ref>       # Pin a skill to a specific git ref
 gridctl skill info <name>            # Show skill origin and update status
 gridctl skill try <repo-url>         # Temporarily import a skill for evaluation
+gridctl skill validate <name>        # Validate a skill definition
 gridctl test <skill-name>            # Run acceptance criteria for a skill (exit 0/1/2)
 gridctl activate <skill-name>        # Promote a skill from draft to active state
 gridctl traces                       # Show recent distributed traces (table view)
@@ -415,6 +419,9 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | [`workflow-basic`](examples/registry/items/workflow-basic/SKILL.md) | Executable skill workflow with sequential steps |
 | [`workflow-parallel`](examples/registry/items/workflow-parallel/SKILL.md) | Fan-out parallel execution with fan-in merge |
 | [`workflow-conditional`](examples/registry/items/workflow-conditional/SKILL.md) | Retry policies and error handling strategies |
+| [`vault-basic.yaml`](examples/secrets-vault/vault-basic.yaml) | Reference vault secrets with `${vault:KEY}` syntax |
+| [`vault-sets.yaml`](examples/secrets-vault/vault-sets.yaml) | Auto-inject grouped secrets via variable sets |
+| [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 
 ## 📐 Stability
 
