@@ -8,6 +8,241 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- Persist tool turns to history and populate FormatSavingsPct
+- Persist tool turns to history and capture streaming usage metrics
+- Persist intermediate tool turns in handlePlaygroundChat goroutine
+- Strip CLAUDECODE env var and fix CLI proxy stream parsing
+- Reorder YAML highlight regexes to prevent HTML class name corruption
+- Dedent standalone agent/mcp-server/resource YAML to valid root level
+- Add POST /api/stack/append endpoint
+- Add appendToStack API client function
+- Wire deploy button onClick in ReviewStep
+- Pass onDeploy callback from wizard to ReviewStep
+- Show pending agents on canvas after wizard deploy
+- Refresh graph when active skill count changes
+- Remove playground from BottomPanelTab type
+- Remove Playground tab from bottom panel
+- Remove playground keyboard shortcut and App binding
+- Cast tab comparison to avoid orphaned type error
+- Exclude skill and skill-group from log agent name lookup
+- Import IFuseOptions directly to avoid namespace error
+- Remove showSkillsOnCanvas toggle from UIStore
+- Remove showSkillsOnCanvas gate from createAllNodes
+- Remove showSkillsOnCanvas gate from createAllEdges
+- Remove showSkillsOnCanvas from graph transform pipeline
+- Stop passing showSkillsOnCanvas in stack store refresh
+- Remove skills canvas toggle button and handler
+- Add ExternalLink hint on GatewayNode skills row hover
+- Remove docker pkg/archive dependency broken in v28
+- Update deprecated docker API types for v28 compatibility
+- Remove deprecated NetworkSettingsBase from test composite literals
+- Update daemon child spawn to use apply command
+- Update deploy references to apply in error messages
+- Add missing agent logs endpoint
+- Apply template selection to mcp-server form data
+- Suppress gosec G101 false positives on url path and model name
+- Report PASSING (N skipped) when criteria are partially skipped
+- Use WithEndpointURL for scheme-aware OTLP TLS
+- Flush tracing spans on gateway shutdown
+- Stabilize useDriftedServers selector reference
+- Correct template expression syntax in multi-step DAG test
+- Resolve parent relative paths before merging into child
+- Correct gridctl apply command in tracing example comment
+- Populate InitializeResult instructions for gateway discoverability
+- Set Title to prefixed name and strengthen Description in AggregatedTools
+- Bump MCPProtocolVersion to 2025-11-25
+
+### Features
+
+
+- Add TestFlightSession, LLMClient interface, and SessionRegistry
+- Add Anthropic LLM client with streaming agentic loop
+- Add OpenAI-compatible LLM client for Ollama and hosted APIs
+- Register playground routes and session registry on Server
+- Add playground HTTP handlers for auth, chat, stream, and session
+- Add ToolCallBlock and multi-turn tool history persistence
+- Implement playground auth detection endpoint
+- Add playground API client functions
+- Add usePlaygroundStore for session and message state
+- Add PlaygroundTab with auth banner and SSE chat
+- Register playground as bottom panel tab
+- Add keyboard shortcuts for spec, traces, and playground tabs
+- Add SSE streaming state to usePlaygroundStore
+- Wire SSE events and render streaming tokens in PlaygroundTab
+- Add ReasoningWaterfall component with expand/collapse
+- Integrate ReasoningWaterfall into PlaygroundTab
+- Add isThinking and isProcessing to node data types
+- Animate edges and nodes during playground tool calls
+- Add thinking ring to AgentNode during test flight
+- Add processing badge to CustomNode during active tool calls
+- Add showAgentBuilderMode state to useUIStore
+- Add PATCH /api/playground/agent endpoint for agent config updates
+- Add AgentBuilderInspector with Config/Tools/Preview tabs
+- Add agent builder mode toggle and inspector to Canvas
+- Add GeminiClient LLM implementation for Gemini API
+- Add Gemini routing and equippedSkills to playground API
+- Add selectedModel and ollamaEndpoint to usePlaygroundStore
+- Add draftEquippedSkills state for A2A edge wiring
+- Add multi-provider model selector to PlaygroundTab
+- Add A2A edge wiring handler in Agent Builder Mode
+- Show A2A peers and equipped_skills in AgentBuilderInspector
+- Add CLIProxyClient for Path B claude CLI subprocess
+- Add gatewayAddr field and SetGatewayAddr to API server
+- Set gateway addr on API server during build
+- Wire CLI proxy auth mode and fix format savings metrics
+- Add CLI proxy option and example prompts to PlaygroundTab
+- Add acceptance criteria and test result types
+- Add acceptance criteria runner to registry executor
+- Add in-memory test result persistence to registry store
+- Add TestSkill method to registry server
+- Add POST /api/registry/skills/{name}/test endpoint
+- Add gridctl activate command with criteria enforcement
+- Add gridctl test command for acceptance criteria runner
+- Add runSkillTest and getSkillTestResult API functions
+- Add acceptance criteria editor to skill form
+- Add test status badge to skill items in registry sidebar
+- Add skill node type constant
+- Add SkillNodeData type and SkillTestStatus
+- Add SKILLS zone and gateway-to-skill edge type
+- Add skill node dimensions to layout utils
+- Add skills zone to butterfly layout engine
+- Add createSkillNodes and wire skills into createAllNodes
+- Add createGatewayToSkillEdges and wire into createAllEdges
+- Thread skills through graph transform pipeline
+- Add SkillNode canvas component with state and test badges
+- Register SkillNode in React Flow node type map
+- Pass active skills to graph transform on refresh
+- Expose AgentSkill.Dir field in API responses
+- Add dir field to AgentSkill and SkillGroupNodeData type
+- Add SKILL_GROUP to NODE_TYPES constant
+- Add gateway-to-skill-group edge relation type
+- Replace createSkillNodes with createSkillGroupNodes
+- Replace skill edges with group-based edge creator
+- Map skill-group type to SKILLS zone in butterfly layout
+- Add SkillGroupNode component for directory-based grouping
+- Register skillGroup node type
+- Open registry sidebar when skill-group node is clicked
+- Add showSkillsOnCanvas toggle to useUIStore
+- Gate skill group nodes behind showSkillsOnCanvas flag
+- Gate skill group edges behind showSkillsOnCanvas flag
+- Thread showSkillsOnCanvas through graph transform pipeline
+- Pass showSkillsOnCanvas to graph refresh in useStackStore
+- Add BookOpen toggle button for skills canvas visibility
+- Make GatewayNode skills row clickable to open registry
+- Add useFuzzySearch hook with fuse.js
+- Add SkillCard component with all variants
+- Upgrade DetachedRegistryPage to card grid dashboard
+- Add mcp-basic.yaml as canonical getting-started example
+- Add apply command (rename from deploy)
+- Remove deploy command
+- Register apply command in root
+- Add --auto-approve flag to plan command
+- Add tokenizer field to GatewayConfig
+- Replace heuristic counter with cl100k embedded tokenizer
+- Wire buildTokenCounter from gateway config
+- Expose active tokenizer in /api/status response
+- Add tokenizer badge to StatusBar
+- Implement APICounter with Anthropic count_tokens endpoint
+- Wire api tokenizer mode in buildTokenCounter
+- Add pinStatus and pinDriftCount to MCPServerNodeData
+- Add ServerPins types and pins API functions
+- Add usePinsStore with drift server selector
+- Annotate MCP nodes with pin state in refreshNodesAndEdges
+- Poll GET /api/pins and refresh nodes on each cycle
+- Extend Toast with warning type and action prop
+- Add pins tab to BottomPanelTab type
+- Add PinDriftBadge status bar component
+- Add PinsPanel bottom panel tab
+- Wire PinDriftBadge into StatusBar
+- Register pins tab in BottomPanel
+- Add drift and blocked indicators to CustomNode
+- Fire drift toast on first schema drift detection
+- Add exit code 3 for all-skipped test result
+- Add parseable-criteria gate to activate command
+- Mirror parseable-criteria gate in API activate endpoint
+- Add --dry-run flag to gridctl test command
+- Add Extends field to Stack struct for composition
+- Implement stack composition via extends field
+- Add KnownHostsFile and JumpHost fields to SSHConfig
+- Expand and resolve new SSH fields in loader
+- Validate knownHostsFile and jumpHost SSH fields
+- Add knownHostsFile and jumpHost support to buildSSHCommand
+- Pass SSHKnownHostsFile and SSHJumpHost through registration paths
+- Add crypto.randomUUID() to code mode sandbox
+- Add setTimeout, clearTimeout, and sleep() to sandbox
+- Add fetch config field and Promise unwrapping to sandbox
+- Add sandboxed fetch with SSRF mitigations
+
+### Refactoring
+
+
+- Remove pkg/runtime/agent package
+- Remove pkg/a2a package
+- Remove pkg/adapter package
+- Remove agent types from config
+- Remove agent validation from config
+- Remove agent health checks from config
+- Remove agent loading from config loader
+- Remove agent plan diff logic
+- Remove agent scoping from mcp gateway
+- Remove agent references from mcp handler
+- Remove agent streaming from mcp
+- Remove agent diff from reload
+- Remove agent startup from reload handler
+- Remove agent orchestration from runtime
+- Remove agent wiring from controller
+- Remove agent registration from gateway builder
+- Remove agent api handlers and routes
+- Remove playground feature
+- Remove agent handling from stack api
+- Remove agent sanitization from export
+- Remove agent types from frontend
+- Remove agent constants
+- Remove agent node creation from graph
+- Remove agent edge creation from graph
+- Remove agent transform from graph
+- Remove agent zone from butterfly layout
+- Remove agent graph utilities
+- Remove agent yaml generation
+- Remove agent state from stack store
+- Remove agent form data from wizard store
+- Remove agent ui state
+- Delete agent graph components
+- Remove agent node type from canvas registry
+- Remove agent builder from canvas
+- Remove agent stats from gateway node
+- Remove agent wiring from overlay
+- Delete agent wizard form
+- Remove agent option from creation wizard
+- Remove agent references from stack form
+- Remove agent panel from sidebar
+- Remove agent controls from control bar
+- Remove agent references from spec overlay
+- Remove agent path highlight logic
+- Remove agent panel from detached sidebar
+- Remove agent references from detached logs
+- Upgrade RegistrySidebar search to fuse.js
+- Remove mock-based test file from integration package
+- Register stack routes with Go 1.22 method+path patterns
+- Remove handleStack dispatcher, use direct route handlers
+- Register traces routes with Go 1.22 method+path patterns
+- Replace manual path parsing with PathValue in handleTraces
+- Register wizard routes with Go 1.22 method+path patterns
+- Remove handleWizard dispatcher, use PathValue for draft ID
+- Register pins routes with Go 1.22 method+path patterns
+- Remove handlePins dispatcher, use PathValue for server name
+- Remove handleAgentAction and handleMCPServerAction dispatchers, use PathValue
+- Register skills routes with Go 1.22 method+path patterns
+- Remove handleSkills dispatcher, use PathValue for source name
+- Register vault routes with Go 1.22 method+path patterns
+- Remove handleVault dispatcher, use PathValue for key and name
+- Register registry routes with Go 1.22 method+path patterns
+- Remove handleRegistry dispatcher, use PathValue for skill routes## [0.1.0-beta.4] - 2026-03-26
+
+
+### Bug Fixes
+
+
 - Suppress errcheck for cleanup chmod in test
 - Resolve golangci-lint issues in mcp tests
 - Resolve golangci-lint errors in tracing package
@@ -25,8 +260,6 @@ All notable changes to gridctl will be documented in this file.
 ### Features
 
 
-- Rename `deploy` command to `apply` — hard rename with no backward-compatibility shim; `gridctl deploy` is removed, use `gridctl apply` going forward (breaking change)
-- Add `--auto-approve` flag to `plan` command as a CI/CD-friendly alias for `-y`/`--yes`
 - Add MaxToolResultBytes to GatewayConfig
 - Validate MaxToolResultBytes in gateway config
 - Add TruncateResult with UTF-8 safe truncation
