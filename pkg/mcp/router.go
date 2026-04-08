@@ -95,15 +95,11 @@ func (r *Router) AggregatedTools() []Tool {
 	for _, name := range names {
 		client := r.clients[name]
 		for _, tool := range client.Tools() {
-			// Use original tool name as title for UI display
-			title := tool.Name
-			if tool.Title != "" {
-				title = tool.Title
-			}
+			prefixedName := PrefixTool(name, tool.Name)
 			prefixedTool := Tool{
-				Name:        PrefixTool(name, tool.Name),
-				Title:       title,
-				Description: fmt.Sprintf("[%s] %s", name, tool.Description),
+				Name:        prefixedName,
+				Title:       prefixedName,
+				Description: fmt.Sprintf("MCP server: %s. Call using the exact tool name %q. %s", name, prefixedName, tool.Description),
 				InputSchema: tool.InputSchema,
 			}
 			tools = append(tools, prefixedTool)

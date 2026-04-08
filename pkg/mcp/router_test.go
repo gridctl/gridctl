@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
@@ -144,10 +145,10 @@ func TestRouter_AggregatedTools(t *testing.T) {
 	if tool.Name != expectedName {
 		t.Errorf("expected prefixed name '%s', got '%s'", expectedName, tool.Name)
 	}
-	if tool.Title != "My Tool" {
-		t.Errorf("expected title 'My Tool', got '%s'", tool.Title)
+	if tool.Title != "myagent__mytool" {
+		t.Errorf("expected title 'myagent__mytool', got '%s'", tool.Title)
 	}
-	expectedDesc := "[myagent] A test tool"
+	expectedDesc := `MCP server: myagent. Call using the exact tool name "myagent__mytool". A test tool`
 	if tool.Description != expectedDesc {
 		t.Errorf("expected description '%s', got '%s'", expectedDesc, tool.Description)
 	}
@@ -168,9 +169,12 @@ func TestRouter_AggregatedTools_NoTitle(t *testing.T) {
 		t.Fatalf("expected 1 tool, got %d", len(tools))
 	}
 
-	// When no title, should use original name as title
-	if tools[0].Title != "notitle" {
-		t.Errorf("expected title 'notitle' (from name), got '%s'", tools[0].Title)
+	// Title must be the prefixed name, never the original un-prefixed tool name
+	if tools[0].Title != "agent__notitle" {
+		t.Errorf("expected title 'agent__notitle', got '%s'", tools[0].Title)
+	}
+	if tools[0].Title == "notitle" {
+		t.Error("Title must not leak the un-prefixed tool name")
 	}
 }
 
@@ -310,4 +314,59 @@ func TestRouter_Concurrent(t *testing.T) {
 	wg.Wait()
 
 	// If we get here without deadlock or panic, test passes
+}
+
+func TestRouter_AggregatedTools_TitleNeverLeaks(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	r := NewRouter()
+	c1 := setupMockAgentClient(ctrl, "server-a", []Tool{
+		{Name: "tool_one", Description: "Tool one"},
+		{Name: "tool_two", Description: "Tool two"},
+	})
+	c2 := setupMockAgentClient(ctrl, "server-b", []Tool{
+		{Name: "tool_three", Description: "Tool three"},
+	})
+
+	r.AddClient(c1)
+	r.AddClient(c2)
+	r.RefreshTools()
+
+	tools := r.AggregatedTools()
+	unprefixed := map[string]bool{"tool_one": true, "tool_two": true, "tool_three": true}
+
+	for _, tool := range tools {
+		if unprefixed[tool.Title] {
+			t.Errorf("Title %q leaks the un-prefixed tool name", tool.Title)
+		}
+		if tool.Title != tool.Name {
+			t.Errorf("expected Title == Name (%q), got Title %q", tool.Name, tool.Title)
+		}
+	}
+}
+
+func TestRouter_AggregatedTools_DescriptionComplete(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	r := NewRouter()
+	client := setupMockAgentClient(ctrl, "gridctl-local", []Tool{
+		{Name: "list_devices", Description: "List all devices"},
+	})
+
+	r.AddClient(client)
+	r.RefreshTools()
+
+	tools := r.AggregatedTools()
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(tools))
+	}
+
+	tool := tools[0]
+	if !strings.Contains(tool.Description, "gridctl-local") {
+		t.Errorf("Description missing server name: %q", tool.Description)
+	}
+	if !strings.Contains(tool.Description, "gridctl-local__list_devices") {
+		t.Errorf("Description missing prefixed tool name: %q", tool.Description)
+	}
+	if !strings.Contains(tool.Description, "List all devices") {
+		t.Errorf("Description missing original description text: %q", tool.Description)
+	}
 }
