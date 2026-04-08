@@ -1,6 +1,6 @@
 module github.com/gridctl/gridctl
 
-go 1.25.8
+go 1.25.9
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
@@ -9,6 +9,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
+	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/evanw/esbuild v0.27.3
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getkin/kin-openapi v0.134.0
@@ -51,7 +52,6 @@ require (
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
