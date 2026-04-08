@@ -38,6 +38,15 @@ interface ToolListProps {
 
 export function ToolList({ serverName, whitelist }: ToolListProps) {
   const tools = useStackStore((s) => s.tools);
+  const codeMode = useStackStore((s) => s.codeMode);
+
+  if (codeMode && codeMode !== 'off') {
+    return (
+      <p className="text-sm text-text-muted italic px-4 py-2">
+        Code mode active — tools accessible via search and execute meta-tools.
+      </p>
+    );
+  }
 
   // Filter tools for this server (prefixed with serverName__)
   let serverTools = (tools ?? []).filter((t) =>
