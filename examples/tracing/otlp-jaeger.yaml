@@ -6,7 +6,7 @@
 # Start Jaeger (OTLP HTTP on :4318, UI on :16686):
 #   docker run --rm -p 4318:4318 -p 16686:16686 jaegertracing/jaeger:latest
 #
-# Then run: gridctl up -f examples/tracing/otlp-jaeger.yaml
+# Then run: gridctl apply -f examples/tracing/otlp-jaeger.yaml
 # Open Jaeger UI: http://localhost:16686
 #
 # For HTTPS backends (Honeycomb, Grafana Cloud, Grafana Tempo Cloud), set
