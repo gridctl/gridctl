@@ -36,7 +36,7 @@ func runInfo() error {
 		fmt.Println("SELinux:  enforcing")
 	}
 	if info.IsRootless() {
-		netstack := "unknown"
+		var netstack string
 		if info.HasNetavark && info.HasAardvarkDNS {
 			netstack = "netavark + aardvark-dns"
 		} else if info.HasNetavark {
