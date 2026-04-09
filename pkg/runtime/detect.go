@@ -24,11 +24,13 @@ const (
 
 // RuntimeInfo holds detected runtime configuration.
 type RuntimeInfo struct {
-	Type       RuntimeType
-	SocketPath string
-	HostAlias  string // "host.docker.internal" or "host.containers.internal"
-	Version    string // Runtime version for feature gating
-	SELinux    bool   // Whether SELinux is enforcing
+	Type           RuntimeType
+	SocketPath     string
+	HostAlias      string // "host.docker.internal" or "host.containers.internal"
+	Version        string // Runtime version for feature gating
+	SELinux        bool   // Whether SELinux is enforcing
+	HasNetavark    bool   // Whether netavark is available (rootless inter-container networking)
+	HasAardvarkDNS bool   // Whether aardvark-dns is available (inter-container DNS resolution)
 }
 
 // DetectOptions configures runtime detection.
@@ -203,6 +205,12 @@ func buildRuntimeInfo(rt RuntimeType, socketPath string) (*RuntimeInfo, error) {
 		info.SELinux = detectSELinux()
 	}
 
+	// Detect netavark/aardvark-dns for rootless Podman
+	if rt == RuntimePodman && info.IsRootless() {
+		info.HasNetavark = detectNetavark()
+		info.HasAardvarkDNS = detectAardvarkDNS()
+	}
+
 	return info, nil
 }
 
@@ -245,6 +253,32 @@ func resolveHostAlias(rt RuntimeType, version string) string {
 	}
 	// Older Podman: use Docker-compatible alias (supported as compatibility shim)
 	return "host.docker.internal"
+}
+
+// detectNetavark checks if netavark is available for rootless bridge networking.
+func detectNetavark() bool {
+	if _, err := exec.LookPath("netavark"); err == nil {
+		return true
+	}
+	for _, p := range []string{"/usr/libexec/podman/netavark", "/usr/lib/podman/netavark"} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// detectAardvarkDNS checks if aardvark-dns is available for inter-container DNS.
+func detectAardvarkDNS() bool {
+	if _, err := exec.LookPath("aardvark-dns"); err == nil {
+		return true
+	}
+	for _, p := range []string{"/usr/libexec/podman/aardvark-dns", "/usr/lib/podman/aardvark-dns"} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // detectSELinux checks if SELinux is in enforcing mode.
@@ -333,7 +367,7 @@ func (info *RuntimeInfo) HostAliasHostname() string {
 func (info *RuntimeInfo) DisplayName() string {
 	switch info.Type {
 	case RuntimePodman:
-		return "podman (experimental)"
+		return "podman"
 	default:
 		return "docker"
 	}
@@ -346,7 +380,15 @@ func (info *RuntimeInfo) CLIName() string {
 
 // IsExperimental returns true if this runtime is experimental.
 func (info *RuntimeInfo) IsExperimental() bool {
-	return info.Type == RuntimePodman
+	return false
+}
+
+// IsSupportedPodmanVersion returns true if the Podman version supports netavark (4.0+).
+func (info *RuntimeInfo) IsSupportedPodmanVersion() bool {
+	if info.Type != RuntimePodman {
+		return true
+	}
+	return compareSemver(info.Version, "4.0.0") >= 0
 }
 
 // IsRootless returns true if this appears to be a rootless Podman socket.
