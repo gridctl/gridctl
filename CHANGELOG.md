@@ -8,6 +8,7 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- Register logical container name as DNS alias for inter-container resolution in Podman and Docker stacks
 - Persist tool turns to history and populate FormatSavingsPct
 - Persist tool turns to history and capture streaming usage metrics
 - Persist intermediate tool turns in handlePlaygroundChat goroutine
@@ -55,6 +56,11 @@ All notable changes to gridctl will be documented in this file.
 ### Features
 
 
+- Graduate Podman runtime from experimental to stable; `gridctl info` and `--runtime` help no longer show experimental status
+- Add netavark and aardvark-dns detection for rootless Podman; `gridctl apply` warns with install instructions when either is missing
+- Add Podman 4.0+ version gate warning for rootless multi-container networking
+- Add `gridctl info` network stack display for rootless Podman (shows netavark + aardvark-dns status)
+- Add multi-container networking integration test proving rootless Podman inter-container DNS works on a shared named network
 - Add TestFlightSession, LLMClient interface, and SessionRegistry
 - Add Anthropic LLM client with streaming agentic loop
 - Add OpenAI-compatible LLM client for Ollama and hosted APIs
