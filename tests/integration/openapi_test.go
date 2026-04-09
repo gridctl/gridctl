@@ -2,12 +2,21 @@ package integration
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
@@ -1045,4 +1054,388 @@ func TestOpenAPIClient_EnvVarExpansion(t *testing.T) {
 			t.Error("Expected initialization to fail with unexpanded variable, but it succeeded")
 		}
 	})
+}
+
+// createTestServerWithQueryAuth creates a test server requiring an API key query parameter.
+func createTestServerWithQueryAuth(t *testing.T, paramName, expectedKey string) *httptest.Server {
+	t.Helper()
+
+	mux := http.NewServeMux()
+
+	authMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/openapi.json" {
+				next(w, r)
+				return
+			}
+			if r.URL.Query().Get(paramName) != expectedKey {
+				http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			next(w, r)
+		}
+	}
+
+	mux.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(testOpenAPISpec))
+	})
+
+	mux.HandleFunc("GET /items", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockItems)
+	}))
+
+	return httptest.NewServer(mux)
+}
+
+func TestOpenAPIClient_WithQueryAuth(t *testing.T) {
+	server := createTestServerWithQueryAuth(t, "api_key", "secret-key-123")
+	defer server.Close()
+
+	spec := strings.ReplaceAll(testOpenAPISpec, "SERVER_URL_PLACEHOLDER", server.URL)
+	_ = spec
+
+	cfg := &mcp.OpenAPIClientConfig{
+		Spec:           server.URL + "/openapi.json",
+		BaseURL:        server.URL,
+		AuthType:       "query",
+		AuthQueryParam: "api_key",
+		AuthQueryValue: "secret-key-123",
+	}
+
+	client, err := mcp.NewOpenAPIClient("test-api", cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAPIClient failed: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if err := client.RefreshTools(ctx); err != nil {
+		t.Fatalf("RefreshTools failed: %v", err)
+	}
+
+	result, err := client.CallTool(ctx, "listItems", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("CallTool failed: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected successful result, got error: %v", result.Content)
+	}
+}
+
+func TestOpenAPIClient_WithQueryAuth_MissingKey(t *testing.T) {
+	server := createTestServerWithQueryAuth(t, "api_key", "secret-key-123")
+	defer server.Close()
+
+	cfg := &mcp.OpenAPIClientConfig{
+		Spec:           server.URL + "/openapi.json",
+		BaseURL:        server.URL,
+		AuthType:       "query",
+		AuthQueryParam: "api_key",
+		AuthQueryValue: "wrong-key",
+	}
+
+	client, err := mcp.NewOpenAPIClient("test-api", cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAPIClient failed: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if err := client.RefreshTools(ctx); err != nil {
+		t.Fatalf("RefreshTools failed: %v", err)
+	}
+
+	result, err := client.CallTool(ctx, "listItems", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("CallTool failed: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected isError=true for 401 response")
+	}
+}
+
+func TestOpenAPIClient_WithOAuth2(t *testing.T) {
+	const testToken = "oauth2-access-token-xyz"
+
+	// Mock OAuth2 token endpoint
+	tokenCalled := 0
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokenCalled++
+		if r.Method != "POST" {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if err := r.ParseForm(); err != nil || r.Form.Get("grant_type") != "client_credentials" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"` + testToken + `","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer tokenServer.Close()
+
+	// API server that requires the OAuth2 token
+	apiServer := createTestServerWithAuth(t, testToken)
+	defer apiServer.Close()
+
+	cfg := &mcp.OpenAPIClientConfig{
+		Spec:               apiServer.URL + "/openapi.json",
+		BaseURL:            apiServer.URL,
+		AuthType:           "oauth2",
+		OAuth2ClientID:     "my-client-id",
+		OAuth2ClientSecret: "my-client-secret",
+		OAuth2TokenURL:     tokenServer.URL + "/token",
+	}
+
+	client, err := mcp.NewOpenAPIClient("test-api", cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAPIClient failed: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if err := client.RefreshTools(ctx); err != nil {
+		t.Fatalf("RefreshTools failed: %v", err)
+	}
+
+	result, err := client.CallTool(ctx, "listItems", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("CallTool failed: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected successful result with OAuth2, got error: %v", result.Content)
+	}
+	if tokenCalled == 0 {
+		t.Error("expected token endpoint to be called")
+	}
+}
+
+// generateTestCerts generates a self-signed CA and client cert/key for mTLS testing.
+// Returns (caCertPEM, clientCertPEM, clientKeyPEM).
+func generateTestCerts(t *testing.T) ([]byte, []byte, []byte) {
+	t.Helper()
+
+	// Generate CA key and cert
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating CA key: %v", err)
+	}
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("creating CA cert: %v", err)
+	}
+	caCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+
+	// Generate client key and cert signed by CA
+	clientKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+	clientTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: "Test Client"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("parsing CA cert: %v", err)
+	}
+	clientDER, err := x509.CreateCertificate(rand.Reader, clientTemplate, caCert, &clientKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("creating client cert: %v", err)
+	}
+	clientCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: clientDER})
+
+	clientKeyDER, err := x509.MarshalECPrivateKey(clientKey)
+	if err != nil {
+		t.Fatalf("marshaling client key: %v", err)
+	}
+	clientKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: clientKeyDER})
+
+	return caCertPEM, clientCertPEM, clientKeyPEM
+}
+
+func TestOpenAPIClient_WithMTLS(t *testing.T) {
+	caCertPEM, clientCertPEM, clientKeyPEM := generateTestCerts(t)
+
+	// Write cert files to temp dir
+	dir := t.TempDir()
+	caFile := dir + "/ca.pem"
+	certFile := dir + "/client.pem"
+	keyFile := dir + "/client-key.pem"
+	if err := os.WriteFile(caFile, caCertPEM, 0600); err != nil {
+		t.Fatalf("writing CA: %v", err)
+	}
+	if err := os.WriteFile(certFile, clientCertPEM, 0600); err != nil {
+		t.Fatalf("writing client cert: %v", err)
+	}
+	if err := os.WriteFile(keyFile, clientKeyPEM, 0600); err != nil {
+		t.Fatalf("writing client key: %v", err)
+	}
+
+	// Build mTLS server that requires client cert
+	caCert, err := x509.ParseCertificate(func() []byte {
+		block, _ := pem.Decode(caCertPEM)
+		return block.Bytes
+	}())
+	if err != nil {
+		t.Fatalf("parsing CA cert: %v", err)
+	}
+	caPool := x509.NewCertPool()
+	caPool.AddCert(caCert)
+
+	clientCertReceived := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(testOpenAPISpec))
+	})
+	mux.HandleFunc("GET /items", func(w http.ResponseWriter, r *http.Request) {
+		if len(r.TLS.PeerCertificates) > 0 {
+			clientCertReceived = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockItems)
+	})
+
+	tlsServer := httptest.NewUnstartedServer(mux)
+	tlsServer.TLS = &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		ClientCAs:  caPool,
+	}
+	tlsServer.StartTLS()
+	defer tlsServer.Close()
+
+	// The test TLS server uses a self-signed cert; skip server verification
+	cfg := &mcp.OpenAPIClientConfig{
+		Spec:                  tlsServer.URL + "/openapi.json",
+		BaseURL:               tlsServer.URL,
+		TLSCertFile:           certFile,
+		TLSKeyFile:            keyFile,
+		TLSInsecureSkipVerify: true, // test server has self-signed cert
+	}
+
+	client, err := mcp.NewOpenAPIClient("test-api", cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAPIClient failed: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if err := client.RefreshTools(ctx); err != nil {
+		t.Fatalf("RefreshTools failed: %v", err)
+	}
+
+	result, err := client.CallTool(ctx, "listItems", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("CallTool failed: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected successful result with mTLS, got error: %v", result.Content)
+	}
+	if !clientCertReceived {
+		t.Error("server did not receive client certificate")
+	}
+}
+
+func TestOpenAPIClient_WithMTLSAndBearer(t *testing.T) {
+	const expectedToken = "bearer-plus-mtls"
+	caCertPEM, clientCertPEM, clientKeyPEM := generateTestCerts(t)
+
+	dir := t.TempDir()
+	certFile := dir + "/client.pem"
+	keyFile := dir + "/client-key.pem"
+	if err := os.WriteFile(certFile, clientCertPEM, 0600); err != nil {
+		t.Fatalf("writing client cert: %v", err)
+	}
+	if err := os.WriteFile(keyFile, clientKeyPEM, 0600); err != nil {
+		t.Fatalf("writing client key: %v", err)
+	}
+
+	// Parse CA for server
+	block, _ := pem.Decode(caCertPEM)
+	caCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parsing CA cert: %v", err)
+	}
+	caPool := x509.NewCertPool()
+	caPool.AddCert(caCert)
+
+	bothPresent := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(testOpenAPISpec))
+	})
+	mux.HandleFunc("GET /items", func(w http.ResponseWriter, r *http.Request) {
+		hasClientCert := r.TLS != nil && len(r.TLS.PeerCertificates) > 0
+		hasBearer := r.Header.Get("Authorization") == "Bearer "+expectedToken
+		if hasClientCert && hasBearer {
+			bothPresent = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockItems)
+	})
+
+	tlsServer := httptest.NewUnstartedServer(mux)
+	tlsServer.TLS = &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		ClientCAs:  caPool,
+	}
+	tlsServer.StartTLS()
+	defer tlsServer.Close()
+
+	cfg := &mcp.OpenAPIClientConfig{
+		Spec:                  tlsServer.URL + "/openapi.json",
+		BaseURL:               tlsServer.URL,
+		AuthType:              "bearer",
+		AuthToken:             expectedToken,
+		TLSCertFile:           certFile,
+		TLSKeyFile:            keyFile,
+		TLSInsecureSkipVerify: true,
+	}
+
+	client, err := mcp.NewOpenAPIClient("test-api", cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAPIClient failed: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if err := client.RefreshTools(ctx); err != nil {
+		t.Fatalf("RefreshTools failed: %v", err)
+	}
+
+	result, err := client.CallTool(ctx, "listItems", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("CallTool failed: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected successful result, got error: %v", result.Content)
+	}
+	if !bothPresent {
+		t.Error("expected both mTLS client cert and Bearer header to be present")
+	}
 }
