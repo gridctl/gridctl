@@ -385,28 +385,41 @@ wrong passphrase or corrupted vault
 
 **Symptoms:**
 
-Containers cannot communicate with each other in rootless Podman mode.
+Containers cannot resolve each other by name in rootless Podman mode (DNS resolution fails, `nslookup` exits non-zero).
 
 **Causes:**
 
-Rootless Podman requires `slirp4netns` or `pasta` for inter-container networking.
+Rootless Podman inter-container DNS requires `netavark` (the network backend) and `aardvark-dns` (the DNS resolver). These are separate from `pasta`/`slirp4netns`, which are egress transports used only for container-to-internet traffic, not container-to-container communication.
+
+Gridctl automatically creates named netavark bridge networks (`gridctl apply` calls `EnsureNetwork` before starting containers). If `netavark` or `aardvark-dns` is missing, container name resolution will fail even though containers start successfully.
 
 **Resolution:**
 
-1. Install the networking helper:
-   ```bash
-   # Fedora/RHEL
-   sudo dnf install slirp4netns
+Install netavark and aardvark-dns:
 
-   # Debian/Ubuntu
-   sudo apt install slirp4netns
-   ```
+```bash
+# Fedora/RHEL
+sudo dnf install netavark aardvark-dns
 
-2. Alternatively, use `pasta` (newer, better performance):
-   ```bash
-   sudo dnf install passt    # Fedora
-   sudo apt install passt    # Debian/Ubuntu
-   ```
+# Debian/Ubuntu
+sudo apt install netavark aardvark-dns
+```
+
+Then verify Podman is using the netavark backend:
+
+```bash
+podman info --format 'network_backend={{.Host.NetworkBackend}}'
+# Expected: network_backend=netavark
+```
+
+If the backend shows `cni`, configure Podman to use netavark by editing `/etc/containers/containers.conf`:
+
+```ini
+[network]
+network_backend = "netavark"
+```
+
+> **Note:** `pasta` and `slirp4netns` provide container-to-host (egress) connectivity only. Inter-container networking uses netavark bridge networks — these are separate concerns.
 
 ### SELinux volume mount errors
 
