@@ -36,7 +36,16 @@ func runInfo() error {
 		fmt.Println("SELinux:  enforcing")
 	}
 	if info.IsRootless() {
-		fmt.Println("Mode:     rootless (networking limitations may apply)")
+		netstack := "unknown"
+		if info.HasNetavark && info.HasAardvarkDNS {
+			netstack = "netavark + aardvark-dns"
+		} else if info.HasNetavark {
+			netstack = "netavark (aardvark-dns missing)"
+		} else {
+			netstack = "netavark not found"
+		}
+		fmt.Printf("Mode:     rootless\n")
+		fmt.Printf("Network:  %s\n", netstack)
 	}
 
 	return nil
