@@ -1,21 +1,19 @@
 # OpenAPI Authentication Example
 #
-# Most real APIs require authentication. Gridctl supports two auth methods
-# for OpenAPI-backed MCP servers:
+# Gridctl supports five auth methods for OpenAPI-backed MCP servers:
 #
-#   1. Bearer Token — sends "Authorization: Bearer <token>" header
+#   1. Bearer Token  — sends "Authorization: Bearer <token>" header
 #   2. Custom Header — sends any header name with a value (e.g., X-API-Key)
+#   3. Query Param   — appends an API key as a URL query parameter
+#   4. OAuth2 CC     — fetches a short-lived token via client credentials flow
+#   5. Basic Auth    — sends "Authorization: Basic <base64(user:password)>"
 #
-# Auth tokens are read from environment variables at deploy time. This keeps
-# secrets out of your stack files and works with .env files, CI/CD, and
-# secret managers.
+# All secret values are read from environment variables at deploy time.
+# This keeps secrets out of your stack files and works with .env files,
+# CI/CD pipelines, and secret managers.
 #
-# Prerequisites:
-#   Set the environment variables referenced in tokenEnv / valueEnv before
-#   deploying. For example:
-#
-#     export EXAMPLE_API_TOKEN=your-bearer-token
-#     export EXAMPLE_API_KEY=your-api-key
+# Additionally, mTLS (client certificate) can be configured as a separate
+# `tls:` block and combined with any auth type.
 #
 # Usage:
 #   gridctl apply examples/openapi/openapi-auth.yaml
@@ -25,8 +23,9 @@ name: openapi-auth-demo
 
 mcp-servers:
 
-  # Bearer token authentication
+  # 1. Bearer token authentication
   # Sends: Authorization: Bearer <value of EXAMPLE_API_TOKEN>
+  # Use for: GitHub API, OpenAI, Stripe, and most REST APIs
   - name: bearer-api
     openapi:
       spec: https://petstore3.swagger.io/api/v3/openapi.json
@@ -38,9 +37,10 @@ mcp-servers:
           - getPetById
           - findPetsByStatus
 
-  # Custom header authentication (API key style)
+  # 2. Custom header authentication
   # Sends: X-API-Key: <value of EXAMPLE_API_KEY>
-  - name: apikey-api
+  # Use for: APIs that use a custom header name instead of Authorization
+  - name: apikey-header-api
     openapi:
       spec: https://petstore3.swagger.io/api/v3/openapi.json
       auth:
@@ -50,20 +50,75 @@ mcp-servers:
       operations:
         include:
           - getPetById
-          - findPetsByStatus
 
-# Combine OpenAPI servers with container-based servers in the same stack:
+  # 3. Query parameter API key
+  # Appends: ?appid=<value of OPENWEATHER_API_KEY> to every request URL
+  # Use for: OpenWeatherMap, many geocoding and finance APIs
+  - name: query-param-api
+    openapi:
+      spec: https://petstore3.swagger.io/api/v3/openapi.json
+      auth:
+        type: query
+        paramName: appid
+        valueEnv: OPENWEATHER_API_KEY
+      operations:
+        include:
+          - getPetById
+
+  # 4. OAuth2 client credentials (machine-to-machine)
+  # Fetches a short-lived token from tokenUrl, injects Authorization: Bearer
+  # Tokens are cached and automatically refreshed on expiry
+  # Use for: Salesforce, Microsoft Graph, Workday, ServiceNow
+  - name: oauth2-api
+    openapi:
+      spec: https://petstore3.swagger.io/api/v3/openapi.json
+      auth:
+        type: oauth2
+        clientIdEnv: OAUTH_CLIENT_ID
+        clientSecretEnv: OAUTH_CLIENT_SECRET
+        tokenUrl: https://auth.example.com/oauth/token
+        scopes:
+          - read:data
+          - write:data
+      operations:
+        include:
+          - getPetById
+
+  # 5. HTTP Basic authentication
+  # Sends: Authorization: Basic <base64(username:password)>
+  # Use for: legacy APIs and internal services that use HTTP Basic
+  - name: basic-auth-api
+    openapi:
+      spec: https://petstore3.swagger.io/api/v3/openapi.json
+      auth:
+        type: basic
+        usernameEnv: API_USERNAME
+        passwordEnv: API_PASSWORD
+      operations:
+        include:
+          - getPetById
+
+  # mTLS: Bearer token + client certificate (combined)
+  # The `tls:` block is transport-layer and works with any auth type.
+  # Use for: financial services, zero-trust enterprise APIs
+  - name: mtls-api
+    openapi:
+      spec: https://secure-api.example.com/openapi.json
+      auth:
+        type: bearer
+        tokenEnv: SECURE_API_TOKEN
+      tls:
+        certFile: ~/.gridctl/certs/client.pem
+        keyFile: ~/.gridctl/certs/client-key.pem
+        caFile: ~/.gridctl/certs/ca.pem
+
+# Environment variable reference:
 #
-# mcp-servers:
-#   - name: company-api
-#     openapi:
-#       spec: https://api.example.com/openapi.json
-#       auth:
-#         type: bearer
-#         tokenEnv: COMPANY_TOKEN
-#
-#   - name: github
-#     image: ghcr.io/github/github-mcp-server:latest
-#     transport: stdio
-#     env:
-#       GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+#   export EXAMPLE_API_TOKEN=your-bearer-token
+#   export EXAMPLE_API_KEY=your-api-key
+#   export OPENWEATHER_API_KEY=your-openweather-key
+#   export OAUTH_CLIENT_ID=your-client-id
+#   export OAUTH_CLIENT_SECRET=your-client-secret
+#   export API_USERNAME=your-username
+#   export API_PASSWORD=your-password
+#   export SECURE_API_TOKEN=your-secure-token
