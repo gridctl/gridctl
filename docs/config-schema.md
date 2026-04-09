@@ -376,10 +376,28 @@ OpenAPI specification configuration for API-backed MCP servers.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `type` | string | **Yes** | — | `"bearer"` or `"header"` |
+| `type` | string | **Yes** | — | `"bearer"`, `"header"`, `"query"`, `"oauth2"`, or `"basic"` |
 | `tokenEnv` | string | Conditional | — | Env var name for bearer token (required when type is `"bearer"`) |
 | `header` | string | Conditional | — | Header name (required when type is `"header"`) |
-| `valueEnv` | string | Conditional | — | Env var name for header value (required when type is `"header"`) |
+| `valueEnv` | string | Conditional | — | Env var name for header/query value (required when type is `"header"` or `"query"`) |
+| `paramName` | string | Conditional | — | Query parameter name (required when type is `"query"`) |
+| `clientIdEnv` | string | Conditional | — | Env var name for OAuth2 client ID (required when type is `"oauth2"`) |
+| `clientSecretEnv` | string | Conditional | — | Env var name for OAuth2 client secret (required when type is `"oauth2"`) |
+| `tokenUrl` | string | Conditional | — | OAuth2 token endpoint URL (required when type is `"oauth2"`) |
+| `scopes` | []string | No | — | OAuth2 scopes to request (optional, for type `"oauth2"`) |
+| `usernameEnv` | string | Conditional | — | Env var name for username (required when type is `"basic"`) |
+| `passwordEnv` | string | Conditional | — | Env var name for password (required when type is `"basic"`) |
+
+**OpenAPI TLS (mTLS):**
+
+Transport-layer TLS configuration. Can be combined with any `auth` type.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `certFile` | string | Conditional | — | Client certificate file path (required for mTLS, must be set with `keyFile`) |
+| `keyFile` | string | Conditional | — | Client private key file path (required for mTLS, must be set with `certFile`) |
+| `caFile` | string | No | — | Custom CA certificate file path for server verification |
+| `insecureSkipVerify` | bool | No | `false` | Skip server certificate verification (not recommended for production) |
 
 **Operations Filter:**
 
