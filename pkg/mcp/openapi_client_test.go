@@ -477,7 +477,9 @@ func TestApplyAuth_Bearer(t *testing.T) {
 	})
 
 	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
-	c.applyAuth(req)
+	if err := c.applyAuth(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if req.Header.Get("Authorization") != "Bearer my-token" {
 		t.Errorf("expected 'Bearer my-token', got %q", req.Header.Get("Authorization"))
@@ -494,7 +496,9 @@ func TestApplyAuth_Header(t *testing.T) {
 	})
 
 	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
-	c.applyAuth(req)
+	if err := c.applyAuth(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if req.Header.Get("X-API-Key") != "secret123" {
 		t.Errorf("expected 'secret123', got %q", req.Header.Get("X-API-Key"))
@@ -508,10 +512,102 @@ func TestApplyAuth_NoAuth(t *testing.T) {
 	})
 
 	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
-	c.applyAuth(req)
+	if err := c.applyAuth(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if req.Header.Get("Authorization") != "" {
 		t.Error("expected no Authorization header")
+	}
+}
+
+func TestApplyAuth_Query(t *testing.T) {
+	c, _ := NewOpenAPIClient("test", &OpenAPIClientConfig{
+		Spec:           "http://example.com/spec.json",
+		BaseURL:        "http://example.com",
+		AuthType:       "query",
+		AuthQueryParam: "api_key",
+		AuthQueryValue: "myapikey",
+	})
+
+	req, _ := http.NewRequest("GET", "http://example.com/test?existing=1", nil)
+	if err := c.applyAuth(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	q := req.URL.Query()
+	if q.Get("api_key") != "myapikey" {
+		t.Errorf("expected api_key=myapikey, got %q", q.Get("api_key"))
+	}
+	// Existing query params must be preserved
+	if q.Get("existing") != "1" {
+		t.Errorf("existing query param lost; got %q", q.Get("existing"))
+	}
+}
+
+func TestApplyAuth_Basic(t *testing.T) {
+	c, _ := NewOpenAPIClient("test", &OpenAPIClientConfig{
+		Spec:          "http://example.com/spec.json",
+		BaseURL:       "http://example.com",
+		AuthType:      "basic",
+		BasicUsername: "alice",
+		BasicPassword: "s3cr3t",
+	})
+
+	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+	if err := c.applyAuth(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	user, pass, ok := req.BasicAuth()
+	if !ok {
+		t.Fatal("expected Basic auth header")
+	}
+	if user != "alice" || pass != "s3cr3t" {
+		t.Errorf("expected alice/s3cr3t, got %q/%q", user, pass)
+	}
+}
+
+func TestApplyAuth_OAuth2(t *testing.T) {
+	// Mock token endpoint
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if r.Form.Get("grant_type") != "client_credentials" {
+			http.Error(w, "invalid grant_type", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"test-oauth-token","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer tokenServer.Close()
+
+	c, err := NewOpenAPIClient("test", &OpenAPIClientConfig{
+		Spec:               "http://example.com/spec.json",
+		BaseURL:            "http://example.com",
+		AuthType:           "oauth2",
+		OAuth2ClientID:     "client-id",
+		OAuth2ClientSecret: "client-secret",
+		OAuth2TokenURL:     tokenServer.URL + "/token",
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAPIClient failed: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+	if err := c.applyAuth(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if req.Header.Get("Authorization") != "Bearer test-oauth-token" {
+		t.Errorf("expected 'Bearer test-oauth-token', got %q", req.Header.Get("Authorization"))
 	}
 }
 
