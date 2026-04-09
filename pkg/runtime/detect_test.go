@@ -125,8 +125,8 @@ func TestRuntimeInfo_DisplayName(t *testing.T) {
 	}
 
 	podman := &RuntimeInfo{Type: RuntimePodman}
-	if podman.DisplayName() != "podman (experimental)" {
-		t.Errorf("expected 'podman (experimental)', got %q", podman.DisplayName())
+	if podman.DisplayName() != "podman" {
+		t.Errorf("expected 'podman', got %q", podman.DisplayName())
 	}
 }
 
