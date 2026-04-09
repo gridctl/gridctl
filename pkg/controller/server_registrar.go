@@ -226,14 +226,45 @@ func (r *ServerRegistrar) buildOpenAPIConfig(name string, openAPICfg *config.Ope
 
 	if openAPICfg.Auth != nil {
 		cfg.OpenAPIConfig.AuthType = openAPICfg.Auth.Type
-		if openAPICfg.Auth.Type == "bearer" && openAPICfg.Auth.TokenEnv != "" {
-			cfg.OpenAPIConfig.AuthToken = os.Getenv(openAPICfg.Auth.TokenEnv)
-		} else if openAPICfg.Auth.Type == "header" {
+		switch openAPICfg.Auth.Type {
+		case "bearer":
+			if openAPICfg.Auth.TokenEnv != "" {
+				cfg.OpenAPIConfig.AuthToken = os.Getenv(openAPICfg.Auth.TokenEnv)
+			}
+		case "header":
 			cfg.OpenAPIConfig.AuthHeader = openAPICfg.Auth.Header
 			if openAPICfg.Auth.ValueEnv != "" {
 				cfg.OpenAPIConfig.AuthValue = os.Getenv(openAPICfg.Auth.ValueEnv)
 			}
+		case "query":
+			cfg.OpenAPIConfig.AuthQueryParam = openAPICfg.Auth.ParamName
+			if openAPICfg.Auth.ValueEnv != "" {
+				cfg.OpenAPIConfig.AuthQueryValue = os.Getenv(openAPICfg.Auth.ValueEnv)
+			}
+		case "oauth2":
+			if openAPICfg.Auth.ClientIdEnv != "" {
+				cfg.OpenAPIConfig.OAuth2ClientID = os.Getenv(openAPICfg.Auth.ClientIdEnv)
+			}
+			if openAPICfg.Auth.ClientSecretEnv != "" {
+				cfg.OpenAPIConfig.OAuth2ClientSecret = os.Getenv(openAPICfg.Auth.ClientSecretEnv)
+			}
+			cfg.OpenAPIConfig.OAuth2TokenURL = openAPICfg.Auth.TokenUrl
+			cfg.OpenAPIConfig.OAuth2Scopes = openAPICfg.Auth.Scopes
+		case "basic":
+			if openAPICfg.Auth.UsernameEnv != "" {
+				cfg.OpenAPIConfig.BasicUsername = os.Getenv(openAPICfg.Auth.UsernameEnv)
+			}
+			if openAPICfg.Auth.PasswordEnv != "" {
+				cfg.OpenAPIConfig.BasicPassword = os.Getenv(openAPICfg.Auth.PasswordEnv)
+			}
 		}
+	}
+
+	if openAPICfg.TLS != nil {
+		cfg.OpenAPIConfig.TLSCertFile = openAPICfg.TLS.CertFile
+		cfg.OpenAPIConfig.TLSKeyFile = openAPICfg.TLS.KeyFile
+		cfg.OpenAPIConfig.TLSCAFile = openAPICfg.TLS.CaFile
+		cfg.OpenAPIConfig.TLSInsecureSkipVerify = openAPICfg.TLS.InsecureSkipVerify
 	}
 
 	if openAPICfg.Operations != nil {
