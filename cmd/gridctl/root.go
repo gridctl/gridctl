@@ -22,7 +22,7 @@ them via a single MCP gateway.`,
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&runtimeFlag, "runtime", "", "Container runtime to use (docker, podman) (experimental for podman). Auto-detected if not set.")
+	rootCmd.PersistentFlags().StringVar(&runtimeFlag, "runtime", "", "Container runtime to use (docker, podman). Auto-detected if not set.")
 
 	initHelp()
 
