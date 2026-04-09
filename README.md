@@ -93,7 +93,7 @@ cd gridctl && make build
 
 ## 🐋 Container Runtime
 
-Gridctl requires a container runtime for workloads that run in containers (MCP servers with `image` and resources). Docker is detected by default; [Podman](https://podman.io) is supported as an experimental alternative.
+Gridctl requires a container runtime for workloads that run in containers (MCP servers with `image` and resources). Docker is detected by default; [Podman](https://podman.io) is also fully supported.
 
 ### Runtime Detection
 
@@ -131,10 +131,7 @@ systemctl --user enable --now podman.socket
 gridctl info
 ```
 
-Podman 4.7+ is recommended for full `host.containers.internal` support. Older versions fall back to the Docker-compatible `host.docker.internal` alias. SELinux volume labels (`:Z`) are applied automatically when Podman is running on an SELinux-enforcing system.
-
-> [!NOTE]
-> Podman support is **experimental**. File issues at [github.com/gridctl/gridctl/issues](https://github.com/gridctl/gridctl/issues) if you encounter problems.
+Podman 4.0+ is required for rootless multi-container networking (netavark + aardvark-dns). Podman 4.7+ is recommended for full `host.containers.internal` support. Older versions fall back to the Docker-compatible `host.docker.internal` alias. SELinux volume labels (`:Z`) are applied automatically when Podman is running on an SELinux-enforcing system.
 
 ## 🚦 Quick Start
 
@@ -439,7 +436,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | Stack validation (validate) | Stable | Backward compatible in 0.x |
 | Stack planning (plan) | Stable | Backward compatible in 0.x |
 | Code mode | Experimental | May change without notice |
-| Podman runtime | Experimental | May change without notice |
+| Podman runtime | Stable | Backward compatible in 0.x |
 | Skills registry workflows | Experimental | May change without notice |
 | Skill acceptance criteria (test) | Experimental | May change without notice |
 | Stack export (export) | Experimental | May change without notice |
@@ -450,7 +447,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 
 ## ⚠️ Known Limitations
 
-- Podman rootless networking requires `slirp4netns` or `pasta` for inter-container communication
+- Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication
 - Code mode sandbox has no filesystem access (by design)
 - Skills registry is local-only with no remote discovery
 - Web UI requires a modern browser (no IE11 support)
