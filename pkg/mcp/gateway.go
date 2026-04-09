@@ -54,13 +54,33 @@ type MCPServerConfig struct {
 type OpenAPIClientConfig struct {
 	Spec       string   // URL or local file path to OpenAPI spec
 	BaseURL    string   // Override server URL from spec
-	AuthType   string   // "bearer" or "header"
+	AuthType   string   // "bearer", "header", "query", "oauth2", or "basic"
 	AuthToken  string   // Resolved bearer token (from env)
 	AuthHeader string   // Header name for header-based auth
 	AuthValue  string   // Resolved header value (from env)
 	Include    []string // Operation IDs to include
 	Exclude    []string // Operation IDs to exclude
 	NoExpand   bool     // If true, skip environment variable expansion in spec file
+
+	// Query param auth fields
+	AuthQueryParam string // Query parameter name for type: query
+	AuthQueryValue string // Resolved query parameter value (from env)
+
+	// OAuth2 client credentials fields
+	OAuth2ClientID     string   // Resolved OAuth2 client ID (from env)
+	OAuth2ClientSecret string   // Resolved OAuth2 client secret (from env)
+	OAuth2TokenURL     string   // OAuth2 token endpoint URL
+	OAuth2Scopes       []string // OAuth2 scopes to request
+
+	// Basic auth fields
+	BasicUsername string // Resolved username (from env)
+	BasicPassword string // Resolved password (from env)
+
+	// TLS/mTLS fields
+	TLSCertFile           string // Client certificate file path
+	TLSKeyFile            string // Client private key file path
+	TLSCAFile             string // Custom CA certificate file path
+	TLSInsecureSkipVerify bool   // Skip server certificate verification
 }
 
 // HealthStatus tracks the health state of a downstream MCP server.
