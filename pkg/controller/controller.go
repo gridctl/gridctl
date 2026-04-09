@@ -143,7 +143,18 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 		if info := rt.RuntimeInfo(); info != nil {
 			printer.Info("Runtime detected", "runtime", info.DisplayName())
 			if info.IsRootless() {
-				printer.Warn("Rootless Podman detected — container-to-host networking may be limited")
+				if !info.IsSupportedPodmanVersion() {
+					printer.Warn(fmt.Sprintf("Podman %s detected — upgrade to 4.0+ for multi-container networking support", info.Version))
+				}
+				if !info.HasNetavark {
+					printer.Warn("netavark not found — rootless multi-container networking requires netavark",
+						"install_fedora_rhel", "sudo dnf install netavark aardvark-dns",
+						"install_debian_ubuntu", "sudo apt install netavark")
+				} else if !info.HasAardvarkDNS {
+					printer.Warn("aardvark-dns not found — inter-container DNS requires aardvark-dns",
+						"install_fedora_rhel", "sudo dnf install aardvark-dns",
+						"install_debian_ubuntu", "sudo apt install aardvark-dns")
+				}
 			}
 		}
 	}
