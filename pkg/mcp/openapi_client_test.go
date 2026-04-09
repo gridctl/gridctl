@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -651,5 +652,88 @@ func TestRefreshTools(t *testing.T) {
 	tools := client.Tools()
 	if len(tools) != 1 {
 		t.Errorf("expected 1 tool after refresh, got %d", len(tools))
+	}
+}
+
+func TestPing_NoBaseURL(t *testing.T) {
+	c, _ := NewOpenAPIClient("test", &OpenAPIClientConfig{
+		Spec: "http://example.com/spec.json",
+	})
+	err := c.Ping(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no base URL") {
+		t.Errorf("expected 'no base URL' error, got %v", err)
+	}
+}
+
+func TestPing_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, _ := NewOpenAPIClient("test", &OpenAPIClientConfig{
+		Spec:    srv.URL + "/spec.json",
+		BaseURL: srv.URL,
+	})
+	if err := c.Ping(context.Background()); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestPing_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c, _ := NewOpenAPIClient("test", &OpenAPIClientConfig{
+		Spec:    srv.URL + "/spec.json",
+		BaseURL: srv.URL,
+	})
+	if err := c.Ping(context.Background()); err == nil {
+		t.Error("expected error for 500 response")
+	}
+}
+
+func TestPing_WithBearerAuth(t *testing.T) {
+	const token = "ping-test-token"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, _ := NewOpenAPIClient("test", &OpenAPIClientConfig{
+		Spec:      srv.URL + "/spec.json",
+		BaseURL:   srv.URL,
+		AuthType:  "bearer",
+		AuthToken: token,
+	})
+	if err := c.Ping(context.Background()); err != nil {
+		t.Errorf("unexpected error with valid bearer token: %v", err)
+	}
+}
+
+func TestNewOpenAPIClient_TLSInvalidCert(t *testing.T) {
+	dir := t.TempDir()
+	certFile := dir + "/cert.pem"
+	keyFile := dir + "/key.pem"
+	if err := os.WriteFile(certFile, []byte("not a cert"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, []byte("not a key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewOpenAPIClient("test", &OpenAPIClientConfig{
+		Spec:        "http://example.com/spec.json",
+		TLSCertFile: certFile,
+		TLSKeyFile:  keyFile,
+	})
+	if err == nil || !strings.Contains(err.Error(), "loading TLS client certificate") {
+		t.Errorf("expected TLS cert error, got %v", err)
 	}
 }
