@@ -3,6 +3,8 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +18,8 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gridctl/gridctl/pkg/logging"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
 
 // Default HTTP timeout for OpenAPI requests
@@ -42,6 +46,17 @@ type OpenAPIClient struct {
 	logger     *slog.Logger
 	noExpand   bool // If true, skip environment variable expansion in spec file
 
+	// Query param auth
+	authQueryParam string
+	authQueryValue string
+
+	// Basic auth
+	basicUsername string
+	basicPassword string
+
+	// OAuth2 client credentials — non-nil when authType == "oauth2"
+	tokenSource oauth2.TokenSource
+
 	operations map[string]*OpenAPIOperation // toolName -> operation (protected by ClientBase.mu)
 	cachedDoc  *openapi3.T                  // Cached OpenAPI document (protected by ClientBase.mu)
 }
@@ -59,17 +74,20 @@ type OpenAPIOperation struct {
 // NewOpenAPIClient creates an OpenAPI-based MCP client.
 func NewOpenAPIClient(name string, cfg *OpenAPIClientConfig) (*OpenAPIClient, error) {
 	c := &OpenAPIClient{
-		name:       name,
-		spec:       cfg.Spec,
-		baseURL:    cfg.BaseURL,
-		authType:   cfg.AuthType,
-		authToken:  cfg.AuthToken,
-		authHeader: cfg.AuthHeader,
-		authValue:  cfg.AuthValue,
-		httpClient: &http.Client{Timeout: defaultOpenAPITimeout},
-		logger:     logging.NewDiscardLogger(),
-		operations: make(map[string]*OpenAPIOperation),
-		noExpand:   cfg.NoExpand,
+		name:           name,
+		spec:           cfg.Spec,
+		baseURL:        cfg.BaseURL,
+		authType:       cfg.AuthType,
+		authToken:      cfg.AuthToken,
+		authHeader:     cfg.AuthHeader,
+		authValue:      cfg.AuthValue,
+		authQueryParam: cfg.AuthQueryParam,
+		authQueryValue: cfg.AuthQueryValue,
+		basicUsername:  cfg.BasicUsername,
+		basicPassword:  cfg.BasicPassword,
+		logger:         logging.NewDiscardLogger(),
+		operations:     make(map[string]*OpenAPIOperation),
+		noExpand:       cfg.NoExpand,
 	}
 
 	if len(cfg.Include) > 0 {
@@ -83,6 +101,47 @@ func NewOpenAPIClient(name string, cfg *OpenAPIClientConfig) (*OpenAPIClient, er
 		for _, op := range cfg.Exclude {
 			c.excludeOps[op] = true
 		}
+	}
+
+	// Build HTTP transport — clone default to avoid mutating shared state
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	// Configure TLS if cert files are provided
+	if cfg.TLSCertFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading TLS client certificate: %w", err)
+		}
+		tlsCfg := &tls.Config{
+			Certificates:       []tls.Certificate{cert},
+			InsecureSkipVerify: cfg.TLSInsecureSkipVerify, //nolint:gosec // user-controlled config
+		}
+		if cfg.TLSCAFile != "" {
+			caCert, err := os.ReadFile(cfg.TLSCAFile)
+			if err != nil {
+				return nil, fmt.Errorf("reading TLS CA file: %w", err)
+			}
+			caPool := x509.NewCertPool()
+			if !caPool.AppendCertsFromPEM(caCert) {
+				return nil, fmt.Errorf("parsing TLS CA certificate: no valid certificates found in %s", cfg.TLSCAFile)
+			}
+			tlsCfg.RootCAs = caPool
+		}
+		transport.TLSClientConfig = tlsCfg
+	}
+
+	c.httpClient = &http.Client{Timeout: defaultOpenAPITimeout, Transport: transport}
+
+	// Build OAuth2 token source for client credentials flow
+	if cfg.AuthType == "oauth2" {
+		ccCfg := &clientcredentials.Config{
+			ClientID:     cfg.OAuth2ClientID,
+			ClientSecret: cfg.OAuth2ClientSecret,
+			TokenURL:     cfg.OAuth2TokenURL,
+			Scopes:       cfg.OAuth2Scopes,
+		}
+		// Use background context so the token source outlives individual requests
+		c.tokenSource = ccCfg.TokenSource(context.Background())
 	}
 
 	return c, nil
@@ -277,7 +336,9 @@ func (c *OpenAPIClient) Ping(ctx context.Context) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	c.applyAuth(req)
+	if err := c.applyAuth(req); err != nil {
+		return err
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -632,7 +693,9 @@ func (c *OpenAPIClient) executeOperation(ctx context.Context, op *OpenAPIOperati
 	}
 
 	// Apply authentication
-	c.applyAuth(req)
+	if err := c.applyAuth(req); err != nil {
+		return "", 0, err
+	}
 
 	// Execute request
 	resp, err := c.httpClient.Do(req)
@@ -651,8 +714,8 @@ func (c *OpenAPIClient) executeOperation(ctx context.Context, op *OpenAPIOperati
 	return string(respBody), resp.StatusCode, nil
 }
 
-// applyAuth applies authentication headers to the request.
-func (c *OpenAPIClient) applyAuth(req *http.Request) {
+// applyAuth applies authentication to the request.
+func (c *OpenAPIClient) applyAuth(req *http.Request) error {
 	switch c.authType {
 	case "bearer":
 		if c.authToken != "" {
@@ -662,7 +725,22 @@ func (c *OpenAPIClient) applyAuth(req *http.Request) {
 		if c.authHeader != "" && c.authValue != "" {
 			req.Header.Set(c.authHeader, c.authValue)
 		}
+	case "query":
+		if c.authQueryParam != "" {
+			q := req.URL.Query()
+			q.Set(c.authQueryParam, c.authQueryValue)
+			req.URL.RawQuery = q.Encode()
+		}
+	case "basic":
+		req.SetBasicAuth(c.basicUsername, c.basicPassword)
+	case "oauth2":
+		tok, err := c.tokenSource.Token()
+		if err != nil {
+			return fmt.Errorf("fetching OAuth2 token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
 	}
+	return nil
 }
 
 // sanitizeOpenAPIToolName ensures the tool name is valid for MCP.
