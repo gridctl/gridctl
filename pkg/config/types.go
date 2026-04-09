@@ -150,15 +150,38 @@ type OpenAPIConfig struct {
 	Spec       string            `yaml:"spec"`                 // URL or local file path to OpenAPI spec (JSON or YAML)
 	BaseURL    string            `yaml:"baseUrl,omitempty"`    // Override the server URL from the spec
 	Auth       *OpenAPIAuth      `yaml:"auth,omitempty"`       // Authentication configuration
+	TLS        *OpenAPITLS       `yaml:"tls,omitempty"`        // TLS/mTLS configuration (transport-layer)
 	Operations *OperationsFilter `yaml:"operations,omitempty"` // Filter which operations become tools
 }
 
 // OpenAPIAuth defines authentication for OpenAPI HTTP requests.
 type OpenAPIAuth struct {
-	Type     string `yaml:"type"`               // "bearer" or "header"
+	Type     string `yaml:"type"`               // "bearer", "header", "query", "oauth2", or "basic"
 	TokenEnv string `yaml:"tokenEnv,omitempty"` // Env var name containing bearer token (for type: bearer)
 	Header   string `yaml:"header,omitempty"`   // Header name (for type: header, e.g., "X-API-Key")
-	ValueEnv string `yaml:"valueEnv,omitempty"` // Env var name containing header value (for type: header)
+	ValueEnv string `yaml:"valueEnv,omitempty"` // Env var name containing header value (for type: header or query)
+
+	// Query param auth (type: query)
+	ParamName string `yaml:"paramName,omitempty"` // Query parameter name (for type: query)
+
+	// OAuth2 client credentials (type: oauth2)
+	ClientIdEnv     string   `yaml:"clientIdEnv,omitempty"`     // Env var name containing OAuth2 client ID
+	ClientSecretEnv string   `yaml:"clientSecretEnv,omitempty"` // Env var name containing OAuth2 client secret
+	TokenUrl        string   `yaml:"tokenUrl,omitempty"`        // OAuth2 token endpoint URL
+	Scopes          []string `yaml:"scopes,omitempty"`          // OAuth2 scopes to request
+
+	// Basic auth (type: basic)
+	UsernameEnv string `yaml:"usernameEnv,omitempty"` // Env var name containing username
+	PasswordEnv string `yaml:"passwordEnv,omitempty"` // Env var name containing password
+}
+
+// OpenAPITLS defines TLS/mTLS configuration for OpenAPI HTTP connections.
+// This is transport-layer config and can be combined with any auth type.
+type OpenAPITLS struct {
+	CertFile           string `yaml:"certFile,omitempty"`           // Client certificate file path (required for mTLS)
+	KeyFile            string `yaml:"keyFile,omitempty"`            // Client private key file path (required for mTLS)
+	CaFile             string `yaml:"caFile,omitempty"`             // Custom CA certificate file path
+	InsecureSkipVerify bool   `yaml:"insecureSkipVerify,omitempty"` // Skip server certificate verification (dangerous)
 }
 
 // OperationsFilter defines which OpenAPI operations to include or exclude.
