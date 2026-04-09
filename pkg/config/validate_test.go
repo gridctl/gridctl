@@ -699,6 +699,147 @@ func TestValidate_MCPServer(t *testing.T) {
 				{Name: "s1", OpenAPI: &OpenAPIConfig{Spec: "https://example.com/spec.json"}},
 			}),
 		},
+		// OpenAPI query auth
+		{
+			name: "OpenAPI query auth missing paramName",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "query", ValueEnv: "API_KEY"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.auth.paramName",
+		},
+		{
+			name: "OpenAPI query auth missing valueEnv",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "query", ParamName: "api_key"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.auth.valueEnv",
+		},
+		{
+			name: "valid OpenAPI query auth",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "query", ParamName: "api_key", ValueEnv: "API_KEY"},
+				}},
+			}),
+		},
+		// OpenAPI oauth2 auth
+		{
+			name: "OpenAPI oauth2 missing clientIdEnv",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "oauth2", ClientSecretEnv: "SEC", TokenUrl: "https://auth.example.com/token"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.auth.clientIdEnv",
+		},
+		{
+			name: "OpenAPI oauth2 missing clientSecretEnv",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "oauth2", ClientIdEnv: "ID", TokenUrl: "https://auth.example.com/token"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.auth.clientSecretEnv",
+		},
+		{
+			name: "OpenAPI oauth2 missing tokenUrl",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "oauth2", ClientIdEnv: "ID", ClientSecretEnv: "SEC"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.auth.tokenUrl",
+		},
+		{
+			name: "valid OpenAPI oauth2 auth",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "oauth2", ClientIdEnv: "ID", ClientSecretEnv: "SEC", TokenUrl: "https://auth.example.com/token"},
+				}},
+			}),
+		},
+		// OpenAPI basic auth
+		{
+			name: "OpenAPI basic auth missing usernameEnv",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "basic", PasswordEnv: "PASS"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.auth.usernameEnv",
+		},
+		{
+			name: "OpenAPI basic auth missing passwordEnv",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "basic", UsernameEnv: "USER"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.auth.passwordEnv",
+		},
+		{
+			name: "valid OpenAPI basic auth",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					Auth: &OpenAPIAuth{Type: "basic", UsernameEnv: "USER", PasswordEnv: "PASS"},
+				}},
+			}),
+		},
+		// OpenAPI TLS validation
+		{
+			name: "OpenAPI TLS certFile without keyFile",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					TLS:  &OpenAPITLS{CertFile: "/nonexistent/cert.pem"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.tls.keyFile",
+		},
+		{
+			name: "OpenAPI TLS keyFile without certFile",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					TLS:  &OpenAPITLS{KeyFile: "/nonexistent/key.pem"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.tls.certFile",
+		},
+		{
+			name: "OpenAPI TLS certFile not found",
+			stack: base([]MCPServer{
+				{Name: "s1", OpenAPI: &OpenAPIConfig{
+					Spec: "https://example.com/spec.json",
+					TLS:  &OpenAPITLS{CertFile: "/nonexistent/cert.pem", KeyFile: "/nonexistent/key.pem"},
+				}},
+			}),
+			wantErr: true,
+			errMsg:  "openapi.tls.certFile",
+		},
 		// Container server validation
 		{
 			name: "container invalid transport",
