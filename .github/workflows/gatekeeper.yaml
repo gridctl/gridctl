@@ -111,7 +111,7 @@ jobs:
       - name: Install Podman
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq podman
+          sudo apt-get install -y -qq podman netavark aardvark-dns
 
       - name: Start Podman socket
         run: |
@@ -121,7 +121,9 @@ jobs:
           echo "DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock" >> "$GITHUB_ENV"
 
       - name: Verify Podman
-        run: podman info --format '{{.Version.Version}}'
+        run: |
+          podman info --format '{{.Version.Version}}'
+          podman info --format 'network_backend={{.Host.NetworkBackend}}'
 
       - name: Install Go dependencies
         run: go mod download

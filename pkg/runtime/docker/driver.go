@@ -80,6 +80,7 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 	// Create container config from WorkloadConfig
 	dockerCfg := ContainerConfig{
 		Name:        containerName,
+		LogicalName: cfg.Name, // short name used as DNS alias on the network
 		Image:       cfg.Image,
 		Command:     cfg.Command,
 		Env:         cfg.Env,

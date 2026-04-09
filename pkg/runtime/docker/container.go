@@ -16,6 +16,7 @@ import (
 // ContainerConfig holds the configuration for creating a container.
 type ContainerConfig struct {
 	Name        string
+	LogicalName string // Short logical name used as DNS alias (e.g. "my-server"); Name is the full prefixed name
 	Image       string
 	Command     []string // Override container command
 	Env         map[string]string
@@ -87,10 +88,18 @@ func CreateContainer(ctx context.Context, cli dockerclient.DockerClient, cfg Con
 		ExtraHosts:   []string{hostAlias + ":host-gateway"},
 	}
 
+	// Build DNS aliases: always include the full container name; also include the
+	// logical short name (e.g. "my-server") so containers can resolve each other by
+	// the name they were given in the stack, not the prefixed runtime name.
+	aliases := []string{cfg.Name}
+	if cfg.LogicalName != "" && cfg.LogicalName != cfg.Name {
+		aliases = append(aliases, cfg.LogicalName)
+	}
+
 	networkConfig := &network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
 			cfg.NetworkName: {
-				Aliases: []string{cfg.Name}, // DNS name within network
+				Aliases: aliases,
 			},
 		},
 	}
