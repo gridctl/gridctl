@@ -27,12 +27,13 @@ describe('StackForm', () => {
     onChange = vi.fn<typeof noop>();
   });
 
-  it('renders all 7 accordion sections', () => {
+  it('renders all 8 accordion sections', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
     expect(screen.getByText('Identity')).toBeInTheDocument();
     expect(screen.getByText('Gateway')).toBeInTheDocument();
     expect(screen.getByText('Gateway Advanced')).toBeInTheDocument();
     expect(screen.getByText('Network')).toBeInTheDocument();
+    expect(screen.getByText('Logging')).toBeInTheDocument();
     expect(screen.getByText('Secrets')).toBeInTheDocument();
     expect(screen.getByText('MCP Servers')).toBeInTheDocument();
     expect(screen.getByText('Resources')).toBeInTheDocument();
@@ -428,5 +429,82 @@ describe('YAML serialization — gateway advanced fields', () => {
     });
     expect(yaml).toContain('code_mode_timeout: 60');
     expect(yaml).toContain('maxToolResultBytes: 32768');
+  });
+});
+
+describe('StackForm Logging section', () => {
+  let onChange: typeof noop;
+  beforeEach(() => { onChange = vi.fn<typeof noop>(); });
+
+  it('renders Logging accordion collapsed by default', () => {
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    expect(screen.getByText('Logging')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('/var/log/gridctl.log')).not.toBeInTheDocument();
+  });
+
+  it('reveals all four fields when expanded', () => {
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    fireEvent.click(screen.getByText('Logging'));
+    expect(screen.getByPlaceholderText('/var/log/gridctl.log')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('100')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('7')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('3')).toBeInTheDocument();
+  });
+
+  it('shows configured badge when file is set', () => {
+    render(
+      <StackForm
+        data={defaultData({ logging: { file: '/var/log/gridctl.log' } })}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByText('configured')).toBeInTheDocument();
+  });
+
+  it('shows no badge when file is not set', () => {
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    expect(screen.queryByText('configured')).not.toBeInTheDocument();
+  });
+});
+
+describe('YAML serialization — logging fields', () => {
+  it('emits logging block when file is set', () => {
+    const yaml = buildYAML({
+      type: 'stack',
+      data: { name: 'my-stack', logging: { file: '/var/log/gridctl.log' } },
+    });
+    expect(yaml).toContain('logging:');
+    expect(yaml).toContain('file: /var/log/gridctl.log');
+  });
+
+  it('omits logging block when file is not set', () => {
+    const yaml = buildYAML({
+      type: 'stack',
+      data: { name: 'my-stack', logging: { maxSizeMB: 200 } },
+    });
+    expect(yaml).not.toContain('logging:');
+  });
+
+  it('includes rotation fields when set alongside file', () => {
+    const yaml = buildYAML({
+      type: 'stack',
+      data: {
+        name: 'my-stack',
+        logging: { file: '/var/log/gridctl.log', maxSizeMB: 200, maxAgeDays: 14, maxBackups: 5 },
+      },
+    });
+    expect(yaml).toContain('maxSizeMB: 200');
+    expect(yaml).toContain('maxAgeDays: 14');
+    expect(yaml).toContain('maxBackups: 5');
+  });
+
+  it('omits rotation fields when not set', () => {
+    const yaml = buildYAML({
+      type: 'stack',
+      data: { name: 'my-stack', logging: { file: '/var/log/gridctl.log' } },
+    });
+    expect(yaml).not.toContain('maxSizeMB');
+    expect(yaml).not.toContain('maxAgeDays');
+    expect(yaml).not.toContain('maxBackups');
   });
 });
