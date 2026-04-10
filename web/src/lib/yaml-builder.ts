@@ -105,6 +105,12 @@ export interface StackFormData {
   };
   network?: { name: string; driver: string };
   secrets?: { sets: string[] };
+  logging?: {
+    file?: string;
+    maxSizeMB?: number;
+    maxAgeDays?: number;
+    maxBackups?: number;
+  };
   mcpServers?: MCPServerFormData[];
   resources?: ResourceFormData[];
 }
@@ -349,6 +355,15 @@ function buildStack(data: StackFormData): string {
     lines.push('network:');
     lines.push(`  name: ${data.network.name}`);
     lines.push(`  driver: ${data.network.driver}`);
+  }
+
+  if (data.logging?.file) {
+    lines.push('');
+    lines.push('logging:');
+    lines.push(`  file: ${yamlValue(data.logging.file)}`);
+    if (data.logging.maxSizeMB) lines.push(`  maxSizeMB: ${data.logging.maxSizeMB}`);
+    if (data.logging.maxAgeDays) lines.push(`  maxAgeDays: ${data.logging.maxAgeDays}`);
+    if (data.logging.maxBackups) lines.push(`  maxBackups: ${data.logging.maxBackups}`);
   }
 
   if (data.mcpServers?.length) {
