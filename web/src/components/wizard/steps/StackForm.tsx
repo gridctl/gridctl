@@ -1002,7 +1002,74 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         </div>
       </Section>
 
-      {/* Section 4: Secrets */}
+      {/* Section 4: Logging */}
+      <Section
+        title="Logging"
+        icon={Database}
+        expanded={expandedSections.has('logging')}
+        onToggle={() => toggleSection('logging')}
+        badge={data.logging?.file ? 'configured' : undefined}
+      >
+        <div className="space-y-3">
+          <div>
+            <label className={labelClass}>Log File Path</label>
+            <input
+              type="text"
+              value={data.logging?.file ?? ''}
+              placeholder="/var/log/gridctl.log"
+              className={cn(inputClass, 'font-mono')}
+              onChange={(e) => onChange({ logging: { ...data.logging, file: e.target.value || undefined } })}
+            />
+            <p className="text-[10px] text-text-muted mt-1">When set, logs are written to this file and the web UI ring buffer</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className={labelClass}>Max Size (MB)</label>
+              <input
+                type="number"
+                min="1"
+                value={data.logging?.maxSizeMB ?? ''}
+                placeholder="100"
+                className={inputClass}
+                onChange={(e) =>
+                  onChange({ logging: { ...data.logging, maxSizeMB: e.target.value ? Number(e.target.value) : undefined } })
+                }
+              />
+              <p className="text-[10px] text-text-muted mt-1">Default: 100</p>
+            </div>
+            <div>
+              <label className={labelClass}>Max Age (Days)</label>
+              <input
+                type="number"
+                min="1"
+                value={data.logging?.maxAgeDays ?? ''}
+                placeholder="7"
+                className={inputClass}
+                onChange={(e) =>
+                  onChange({ logging: { ...data.logging, maxAgeDays: e.target.value ? Number(e.target.value) : undefined } })
+                }
+              />
+              <p className="text-[10px] text-text-muted mt-1">Default: 7</p>
+            </div>
+            <div>
+              <label className={labelClass}>Max Backups</label>
+              <input
+                type="number"
+                min="1"
+                value={data.logging?.maxBackups ?? ''}
+                placeholder="3"
+                className={inputClass}
+                onChange={(e) =>
+                  onChange({ logging: { ...data.logging, maxBackups: e.target.value ? Number(e.target.value) : undefined } })
+                }
+              />
+              <p className="text-[10px] text-text-muted mt-1">Default: 3</p>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* Section 5: Secrets */}
       <Section
         title="Secrets"
         icon={KeyRound}
