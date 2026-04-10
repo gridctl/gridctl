@@ -30,6 +30,8 @@ export interface MCPServerFormData {
     user: string;
     port?: number;
     identityFile?: string;
+    knownHostsFile?: string;
+    jumpHost?: string;
   };
   // OpenAPI
   openapi?: {
@@ -40,6 +42,19 @@ export interface MCPServerFormData {
       tokenEnv?: string;
       header?: string;
       valueEnv?: string;
+      paramName?: string;
+      clientIdEnv?: string;
+      clientSecretEnv?: string;
+      tokenUrl?: string;
+      scopes?: string[];
+      usernameEnv?: string;
+      passwordEnv?: string;
+    };
+    tls?: {
+      certFile?: string;
+      keyFile?: string;
+      caFile?: string;
+      insecureSkipVerify?: boolean;
     };
     operations?: {
       include?: string[];
@@ -52,6 +67,7 @@ export interface MCPServerFormData {
   tools?: string[];
   outputFormat?: string;
   network?: string;
+  pinSchemas?: boolean;
 }
 
 export interface ResourceFormData {
@@ -151,6 +167,8 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
         lines.push(`${inner}  user: ${data.ssh.user}`);
         if (data.ssh.port && data.ssh.port !== 22) lines.push(`${inner}  port: ${data.ssh.port}`);
         if (data.ssh.identityFile) lines.push(`${inner}  identityFile: ${data.ssh.identityFile}`);
+        if (data.ssh.knownHostsFile) lines.push(`${inner}  knownHostsFile: ${data.ssh.knownHostsFile}`);
+        if (data.ssh.jumpHost) lines.push(`${inner}  jumpHost: ${data.ssh.jumpHost}`);
       }
       if (data.command?.length) {
         lines.push(`${inner}command:`);
@@ -163,11 +181,32 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
         lines.push(`${inner}  spec: ${yamlValue(data.openapi.spec)}`);
         if (data.openapi.baseUrl) lines.push(`${inner}  baseUrl: ${yamlValue(data.openapi.baseUrl)}`);
         if (data.openapi.auth) {
+          const auth = data.openapi.auth;
           lines.push(`${inner}  auth:`);
-          lines.push(`${inner}    type: ${data.openapi.auth.type}`);
-          if (data.openapi.auth.tokenEnv) lines.push(`${inner}    tokenEnv: ${data.openapi.auth.tokenEnv}`);
-          if (data.openapi.auth.header) lines.push(`${inner}    header: ${data.openapi.auth.header}`);
-          if (data.openapi.auth.valueEnv) lines.push(`${inner}    valueEnv: ${data.openapi.auth.valueEnv}`);
+          lines.push(`${inner}    type: ${auth.type}`);
+          if (auth.tokenEnv) lines.push(`${inner}    tokenEnv: ${auth.tokenEnv}`);
+          if (auth.header) lines.push(`${inner}    header: ${auth.header}`);
+          if (auth.valueEnv) lines.push(`${inner}    valueEnv: ${auth.valueEnv}`);
+          if (auth.paramName) lines.push(`${inner}    paramName: ${auth.paramName}`);
+          if (auth.clientIdEnv) lines.push(`${inner}    clientIdEnv: ${auth.clientIdEnv}`);
+          if (auth.clientSecretEnv) lines.push(`${inner}    clientSecretEnv: ${auth.clientSecretEnv}`);
+          if (auth.tokenUrl) lines.push(`${inner}    tokenUrl: ${yamlValue(auth.tokenUrl)}`);
+          if (auth.scopes?.length) {
+            lines.push(`${inner}    scopes:`);
+            lines.push(serializeArray(auth.scopes, indentLevel + 6));
+          }
+          if (auth.usernameEnv) lines.push(`${inner}    usernameEnv: ${auth.usernameEnv}`);
+          if (auth.passwordEnv) lines.push(`${inner}    passwordEnv: ${auth.passwordEnv}`);
+        }
+        if (data.openapi.tls) {
+          const tls = data.openapi.tls;
+          if (tls.certFile || tls.keyFile || tls.caFile || tls.insecureSkipVerify) {
+            lines.push(`${inner}  tls:`);
+            if (tls.certFile) lines.push(`${inner}    certFile: ${tls.certFile}`);
+            if (tls.keyFile) lines.push(`${inner}    keyFile: ${tls.keyFile}`);
+            if (tls.caFile) lines.push(`${inner}    caFile: ${tls.caFile}`);
+            if (tls.insecureSkipVerify === true) lines.push(`${inner}    insecureSkipVerify: true`);
+          }
         }
       }
       break;
@@ -187,6 +226,7 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
   }
   if (data.outputFormat) lines.push(`${inner}output_format: ${data.outputFormat}`);
   if (data.network) lines.push(`${inner}network: ${data.network}`);
+  if (data.pinSchemas !== undefined) lines.push(`${inner}pin_schemas: ${data.pinSchemas}`);
 
   return lines.join('\n');
 }

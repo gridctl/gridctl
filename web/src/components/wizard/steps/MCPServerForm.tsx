@@ -477,7 +477,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
   };
 
   const envCount = data.env ? Object.keys(data.env).length : 0;
-  const advancedCount = (data.tools?.length ?? 0) + (data.outputFormat ? 1 : 0) + (data.buildArgs ? Object.keys(data.buildArgs).length : 0) + (data.network ? 1 : 0);
+  const advancedCount = (data.tools?.length ?? 0) + (data.outputFormat ? 1 : 0) + (data.buildArgs ? Object.keys(data.buildArgs).length : 0) + (data.network ? 1 : 0) + (data.pinSchemas !== undefined ? 1 : 0);
 
   return (
     <div className="space-y-3">
@@ -781,6 +781,46 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                   />
                 </div>
               </div>
+              <div>
+                <label className={labelClass}>Known Hosts File</label>
+                <input
+                  type="text"
+                  value={data.ssh?.knownHostsFile ?? ''}
+                  onChange={(e) =>
+                    onChange({
+                      ssh: {
+                        ...data.ssh,
+                        host: data.ssh?.host ?? '',
+                        user: data.ssh?.user ?? '',
+                        knownHostsFile: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="~/.ssh/known_hosts"
+                  className={cn(inputClass, 'font-mono')}
+                />
+                <p className="text-[10px] text-text-muted mt-1">Optional — enables StrictHostKeyChecking=yes</p>
+              </div>
+              <div>
+                <label className={labelClass}>Jump Host</label>
+                <input
+                  type="text"
+                  value={data.ssh?.jumpHost ?? ''}
+                  onChange={(e) =>
+                    onChange({
+                      ssh: {
+                        ...data.ssh,
+                        host: data.ssh?.host ?? '',
+                        user: data.ssh?.user ?? '',
+                        jumpHost: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="[user@]bastion.example.com[:22]"
+                  className={cn(inputClass, 'font-mono')}
+                />
+                <p className="text-[10px] text-text-muted mt-1">Optional — bastion/jump host for multi-hop SSH</p>
+              </div>
             </div>
           )}
 
@@ -838,6 +878,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                   <option value="">None</option>
                   <option value="bearer">Bearer Token</option>
                   <option value="header">Custom Header</option>
+                  <option value="query">Query Parameter</option>
+                  <option value="oauth2">OAuth2 Client Credentials</option>
+                  <option value="basic">Basic Auth</option>
                 </select>
               </div>
               {data.openapi?.auth?.type === 'bearer' && (
@@ -895,6 +938,168 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                         })
                       }
                       placeholder="API_KEY"
+                      className={cn(inputClass, 'font-mono')}
+                    />
+                  </div>
+                </div>
+              )}
+              {data.openapi?.auth?.type === 'query' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelClass}>Parameter Name</label>
+                    <input
+                      type="text"
+                      value={data.openapi.auth.paramName ?? ''}
+                      onChange={(e) =>
+                        onChange({
+                          openapi: {
+                            ...data.openapi,
+                            spec: data.openapi?.spec ?? '',
+                            auth: { ...data.openapi!.auth!, paramName: e.target.value },
+                          },
+                        })
+                      }
+                      placeholder="appid"
+                      className={cn(inputClass, 'font-mono')}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Value Environment Variable</label>
+                    <input
+                      type="text"
+                      value={data.openapi.auth.valueEnv ?? ''}
+                      onChange={(e) =>
+                        onChange({
+                          openapi: {
+                            ...data.openapi,
+                            spec: data.openapi?.spec ?? '',
+                            auth: { ...data.openapi!.auth!, valueEnv: e.target.value },
+                          },
+                        })
+                      }
+                      placeholder="WEATHER_API_KEY"
+                      className={cn(inputClass, 'font-mono')}
+                    />
+                  </div>
+                </div>
+              )}
+              {data.openapi?.auth?.type === 'oauth2' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className={labelClass}>Client ID Env Var</label>
+                      <input
+                        type="text"
+                        value={data.openapi.auth.clientIdEnv ?? ''}
+                        onChange={(e) =>
+                          onChange({
+                            openapi: {
+                              ...data.openapi,
+                              spec: data.openapi?.spec ?? '',
+                              auth: { ...data.openapi!.auth!, clientIdEnv: e.target.value },
+                            },
+                          })
+                        }
+                        placeholder="OAUTH2_CLIENT_ID"
+                        className={cn(inputClass, 'font-mono')}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Client Secret Env Var</label>
+                      <input
+                        type="text"
+                        value={data.openapi.auth.clientSecretEnv ?? ''}
+                        onChange={(e) =>
+                          onChange({
+                            openapi: {
+                              ...data.openapi,
+                              spec: data.openapi?.spec ?? '',
+                              auth: { ...data.openapi!.auth!, clientSecretEnv: e.target.value },
+                            },
+                          })
+                        }
+                        placeholder="OAUTH2_CLIENT_SECRET"
+                        className={cn(inputClass, 'font-mono')}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Token URL</label>
+                    <input
+                      type="url"
+                      value={data.openapi.auth.tokenUrl ?? ''}
+                      onChange={(e) =>
+                        onChange({
+                          openapi: {
+                            ...data.openapi,
+                            spec: data.openapi?.spec ?? '',
+                            auth: { ...data.openapi!.auth!, tokenUrl: e.target.value },
+                          },
+                        })
+                      }
+                      placeholder="https://auth.example.com/oauth/token"
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Scopes</label>
+                    <input
+                      type="text"
+                      value={(data.openapi.auth.scopes ?? []).join(' ')}
+                      onChange={(e) =>
+                        onChange({
+                          openapi: {
+                            ...data.openapi,
+                            spec: data.openapi?.spec ?? '',
+                            auth: {
+                              ...data.openapi!.auth!,
+                              scopes: e.target.value ? e.target.value.split(/[\s,]+/).filter(Boolean) : undefined,
+                            },
+                          },
+                        })
+                      }
+                      placeholder="read:data write:data"
+                      className={inputClass}
+                    />
+                    <p className="text-[10px] text-text-muted mt-1">Space or comma-separated</p>
+                  </div>
+                </div>
+              )}
+              {data.openapi?.auth?.type === 'basic' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelClass}>Username Env Var</label>
+                    <input
+                      type="text"
+                      value={data.openapi.auth.usernameEnv ?? ''}
+                      onChange={(e) =>
+                        onChange({
+                          openapi: {
+                            ...data.openapi,
+                            spec: data.openapi?.spec ?? '',
+                            auth: { ...data.openapi!.auth!, usernameEnv: e.target.value },
+                          },
+                        })
+                      }
+                      placeholder="API_USERNAME"
+                      className={cn(inputClass, 'font-mono')}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Password Env Var</label>
+                    <input
+                      type="text"
+                      value={data.openapi.auth.passwordEnv ?? ''}
+                      onChange={(e) =>
+                        onChange({
+                          openapi: {
+                            ...data.openapi,
+                            spec: data.openapi?.spec ?? '',
+                            auth: { ...data.openapi!.auth!, passwordEnv: e.target.value },
+                          },
+                        })
+                      }
+                      placeholder="API_PASSWORD"
                       className={cn(inputClass, 'font-mono')}
                     />
                   </div>
@@ -975,6 +1180,97 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 )}
               </div>
             </div>
+          )}
+
+          {/* TLS / mTLS section for OpenAPI */}
+          {visibility.openapi && (
+            <Section
+              title="TLS / mTLS"
+              icon={KeyRound}
+              expanded={expandedSections.has('tls')}
+              onToggle={() => toggleSection('tls')}
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelClass}>Client Cert File</label>
+                  <input
+                    type="text"
+                    value={data.openapi?.tls?.certFile ?? ''}
+                    onChange={(e) =>
+                      onChange({
+                        openapi: {
+                          ...data.openapi,
+                          spec: data.openapi?.spec ?? '',
+                          tls: { ...data.openapi?.tls, certFile: e.target.value },
+                        },
+                      })
+                    }
+                    placeholder="./certs/client.crt"
+                    className={cn(inputClass, 'font-mono')}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Client Key File</label>
+                  <input
+                    type="text"
+                    value={data.openapi?.tls?.keyFile ?? ''}
+                    onChange={(e) =>
+                      onChange({
+                        openapi: {
+                          ...data.openapi,
+                          spec: data.openapi?.spec ?? '',
+                          tls: { ...data.openapi?.tls, keyFile: e.target.value },
+                        },
+                      })
+                    }
+                    placeholder="./certs/client.key"
+                    className={cn(inputClass, 'font-mono')}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>CA File</label>
+                <input
+                  type="text"
+                  value={data.openapi?.tls?.caFile ?? ''}
+                  onChange={(e) =>
+                    onChange({
+                      openapi: {
+                        ...data.openapi,
+                        spec: data.openapi?.spec ?? '',
+                        tls: { ...data.openapi?.tls, caFile: e.target.value },
+                      },
+                    })
+                  }
+                  placeholder="./certs/ca.crt"
+                  className={cn(inputClass, 'font-mono')}
+                />
+              </div>
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="insecureSkipVerify"
+                  checked={data.openapi?.tls?.insecureSkipVerify ?? false}
+                  onChange={(e) =>
+                    onChange({
+                      openapi: {
+                        ...data.openapi,
+                        spec: data.openapi?.spec ?? '',
+                        tls: { ...data.openapi?.tls, insecureSkipVerify: e.target.checked || undefined },
+                      },
+                    })
+                  }
+                  className="mt-0.5 accent-primary"
+                />
+                <div>
+                  <label htmlFor="insecureSkipVerify" className="text-xs text-text-secondary cursor-pointer">
+                    Skip TLS Verification
+                    <span className="ml-2 text-[10px] text-status-error font-medium">Dangerous — dev only</span>
+                  </label>
+                  <p className="text-[10px] text-text-muted mt-0.5">Disables certificate validation. Never use in production.</p>
+                </div>
+              </div>
+            </Section>
           )}
 
           {/* Command (local + ssh) */}
@@ -1109,6 +1405,23 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
             />
           </div>
         )}
+
+        <div>
+          <label className={labelClass}>Schema Pinning</label>
+          <select
+            value={data.pinSchemas === undefined ? '' : String(data.pinSchemas)}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange({ pinSchemas: v === '' ? undefined : v === 'true' });
+            }}
+            className={inputClass}
+          >
+            <option value="">Inherit from gateway</option>
+            <option value="true">Enable</option>
+            <option value="false">Disable</option>
+          </select>
+          <p className="text-[10px] text-text-muted mt-1">Override the gateway-level schema pinning setting for this server</p>
+        </div>
       </Section>
     </div>
   );
