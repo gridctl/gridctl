@@ -360,24 +360,26 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
           ) : showPreviewPanel ? (
             <PanelGroup orientation="horizontal" className="h-full">
               {/* Form Panel */}
-              <Panel defaultSize={55} minSize={40} style={{ display: 'flex', flexDirection: 'column' }}>
-                <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-6 py-4">
-                  {renderStepContent(
-                    currentStep,
-                    selectedType,
-                    selectedTemplate,
-                    handleTypeSelect,
-                    handleTemplateSelect,
-                    formData,
-                    updateFormData,
-                    expertMode,
-                    yamlContent,
-                    setYamlContent,
-                    yamlError,
-                    generatedYaml,
-                    counts,
-                    handleDeploy,
-                  )}
+              <Panel defaultSize={55} minSize={40}>
+                <div className="flex flex-col h-full">
+                  <div className="flex-1 overflow-y-auto scrollbar-dark px-6 py-4">
+                    {renderStepContent(
+                      currentStep,
+                      selectedType,
+                      selectedTemplate,
+                      handleTypeSelect,
+                      handleTemplateSelect,
+                      formData,
+                      updateFormData,
+                      expertMode,
+                      yamlContent,
+                      setYamlContent,
+                      yamlError,
+                      generatedYaml,
+                      counts,
+                      handleDeploy,
+                    )}
+                  </div>
                 </div>
               </Panel>
 
