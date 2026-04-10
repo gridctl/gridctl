@@ -503,6 +503,17 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
     (data.gateway?.auth ? 1 : 0) +
     (data.gateway?.codeMode ? 1 : 0) +
     (data.gateway?.outputFormat ? 1 : 0);
+  const advancedGatewayCount =
+    (data.gateway?.tracing?.enabled !== undefined ? 1 : 0) +
+    (data.gateway?.tracing?.sampling !== undefined ? 1 : 0) +
+    (data.gateway?.tracing?.retention ? 1 : 0) +
+    (data.gateway?.tracing?.export ? 1 : 0) +
+    (data.gateway?.tracing?.endpoint ? 1 : 0) +
+    (data.gateway?.security?.schemaPinning?.enabled ? 1 : 0) +
+    (data.gateway?.security?.schemaPinning?.action ? 1 : 0) +
+    (data.gateway?.codeModeTimeout ? 1 : 0) +
+    (data.gateway?.maxToolResultBytes ? 1 : 0);
+  const advancedGatewayBadge = advancedGatewayCount > 0 ? `${advancedGatewayCount}` : undefined;
   const secretSetCount = data.secrets?.sets?.length ?? 0;
 
   // --- Handlers for nested arrays ---
@@ -641,6 +652,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             <option value="">None</option>
             <option value="bearer">Bearer Token</option>
             <option value="header">Custom Header</option>
+            <option value="api_key">API Key</option>
           </select>
         </div>
 
@@ -685,6 +697,21 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                 />
               </div>
             )}
+            {data.gateway.auth.type === 'api_key' && (
+              <div>
+                <label className={labelClass}>Header Name</label>
+                <input
+                  type="text"
+                  value={data.gateway.auth.header ?? ''}
+                  onChange={(e) =>
+                    onChange({ gateway: { ...data.gateway, auth: { ...data.gateway!.auth!, header: e.target.value } } })
+                  }
+                  placeholder="X-API-Key"
+                  className={cn(inputClass, 'font-mono')}
+                />
+                <p className="text-[10px] text-text-muted mt-1">Header that carries the API key value</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -717,6 +744,222 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                 <option key={f} value={f}>{f}</option>
               ))}
             </select>
+          </div>
+        </div>
+      </Section>
+
+      {/* Section 2b: Gateway Advanced */}
+      <Section
+        title="Gateway Advanced"
+        icon={Zap}
+        expanded={expandedSections.has('gateway-advanced')}
+        onToggle={() => toggleSection('gateway-advanced')}
+        badge={advancedGatewayBadge}
+      >
+        {/* Tracing sub-group */}
+        <div className="space-y-3">
+          <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Tracing</p>
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="tracing-enabled"
+              checked={data.gateway?.tracing?.enabled ?? false}
+              onChange={(e) =>
+                onChange({
+                  gateway: {
+                    ...data.gateway,
+                    tracing: { ...data.gateway?.tracing, enabled: e.target.checked || undefined },
+                  },
+                })
+              }
+              className="accent-primary"
+            />
+            <label htmlFor="tracing-enabled" className="text-xs text-text-secondary cursor-pointer">
+              Enabled
+            </label>
+            <p className="text-[10px] text-text-muted">Default: on</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelClass}>Sampling Rate</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                value={data.gateway?.tracing?.sampling ?? ''}
+                placeholder="1.0"
+                className={inputClass}
+                onChange={(e) =>
+                  onChange({
+                    gateway: {
+                      ...data.gateway,
+                      tracing: {
+                        ...data.gateway?.tracing,
+                        sampling: e.target.value ? Number(e.target.value) : undefined,
+                      },
+                    },
+                  })
+                }
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Retention</label>
+              <input
+                type="text"
+                value={data.gateway?.tracing?.retention ?? ''}
+                placeholder="24h"
+                className={inputClass}
+                onChange={(e) =>
+                  onChange({
+                    gateway: {
+                      ...data.gateway,
+                      tracing: { ...data.gateway?.tracing, retention: e.target.value || undefined },
+                    },
+                  })
+                }
+              />
+              <p className="text-[10px] text-text-muted mt-1">e.g. 12h, 48h, 7d</p>
+            </div>
+          </div>
+          <div>
+            <label className={labelClass}>Export</label>
+            <select
+              value={data.gateway?.tracing?.export ?? ''}
+              onChange={(e) =>
+                onChange({
+                  gateway: {
+                    ...data.gateway,
+                    tracing: { ...data.gateway?.tracing, export: e.target.value || undefined },
+                  },
+                })
+              }
+              className={inputClass}
+            >
+              <option value="">None</option>
+              <option value="otlp">OTLP</option>
+            </select>
+          </div>
+          {data.gateway?.tracing?.export === 'otlp' && (
+            <div>
+              <label className={labelClass}>OTLP Endpoint</label>
+              <input
+                type="url"
+                value={data.gateway?.tracing?.endpoint ?? ''}
+                placeholder="http://localhost:4318"
+                className={inputClass}
+                onChange={(e) =>
+                  onChange({
+                    gateway: {
+                      ...data.gateway,
+                      tracing: { ...data.gateway?.tracing, endpoint: e.target.value || undefined },
+                    },
+                  })
+                }
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Schema Pinning sub-group */}
+        <div className="space-y-3 mt-4">
+          <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Schema Pinning</p>
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="schema-pinning-enabled"
+              checked={data.gateway?.security?.schemaPinning?.enabled ?? false}
+              onChange={(e) =>
+                onChange({
+                  gateway: {
+                    ...data.gateway,
+                    security: {
+                      ...data.gateway?.security,
+                      schemaPinning: {
+                        ...data.gateway?.security?.schemaPinning,
+                        enabled: e.target.checked || undefined,
+                      },
+                    },
+                  },
+                })
+              }
+              className="accent-primary"
+            />
+            <label htmlFor="schema-pinning-enabled" className="text-xs text-text-secondary cursor-pointer">
+              Enabled
+            </label>
+          </div>
+          {data.gateway?.security?.schemaPinning?.enabled && (
+            <div>
+              <label className={labelClass}>Action</label>
+              <select
+                value={data.gateway?.security?.schemaPinning?.action ?? ''}
+                onChange={(e) =>
+                  onChange({
+                    gateway: {
+                      ...data.gateway,
+                      security: {
+                        ...data.gateway?.security,
+                        schemaPinning: {
+                          ...data.gateway?.security?.schemaPinning,
+                          action: e.target.value || undefined,
+                        },
+                      },
+                    },
+                  })
+                }
+                className={inputClass}
+              >
+                <option value="">Default (warn)</option>
+                <option value="warn">Warn (log and continue)</option>
+                <option value="block">Block (reject tool calls)</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Performance sub-group */}
+        <div className="space-y-3 mt-4">
+          <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Performance</p>
+          {data.gateway?.codeMode === 'on' && (
+            <div>
+              <label className={labelClass}>Code Mode Timeout</label>
+              <input
+                type="number"
+                min="1"
+                value={data.gateway?.codeModeTimeout ?? ''}
+                placeholder="30"
+                className={inputClass}
+                onChange={(e) =>
+                  onChange({
+                    gateway: {
+                      ...data.gateway,
+                      codeModeTimeout: e.target.value ? Number(e.target.value) : undefined,
+                    },
+                  })
+                }
+              />
+              <p className="text-[10px] text-text-muted mt-1">Seconds. Default: 30</p>
+            </div>
+          )}
+          <div>
+            <label className={labelClass}>Max Tool Result Bytes</label>
+            <input
+              type="number"
+              min="1"
+              value={data.gateway?.maxToolResultBytes ?? ''}
+              placeholder="65536"
+              className={inputClass}
+              onChange={(e) =>
+                onChange({
+                  gateway: {
+                    ...data.gateway,
+                    maxToolResultBytes: e.target.value ? Number(e.target.value) : undefined,
+                  },
+                })
+              }
+            />
+            <p className="text-[10px] text-text-muted mt-1">Bytes. Default: 64KB (65536)</p>
           </div>
         </div>
       </Section>

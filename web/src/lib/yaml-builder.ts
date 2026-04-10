@@ -86,7 +86,22 @@ export interface StackFormData {
     allowedOrigins?: string[];
     auth?: { type: string; token: string; header?: string };
     codeMode?: string;
+    codeModeTimeout?: number;
     outputFormat?: string;
+    maxToolResultBytes?: number;
+    tracing?: {
+      enabled?: boolean;
+      sampling?: number;
+      retention?: string;
+      export?: string;
+      endpoint?: string;
+    };
+    security?: {
+      schemaPinning?: {
+        enabled?: boolean;
+        action?: string;
+      };
+    };
   };
   network?: { name: string; driver: string };
   secrets?: { sets: string[] };
@@ -295,7 +310,31 @@ function buildStack(data: StackFormData): string {
       if (data.gateway.auth.header) lines.push(`    header: ${data.gateway.auth.header}`);
     }
     if (data.gateway.codeMode) lines.push(`  code_mode: ${data.gateway.codeMode}`);
+    if (data.gateway.codeModeTimeout) lines.push(`  code_mode_timeout: ${data.gateway.codeModeTimeout}`);
     if (data.gateway.outputFormat) lines.push(`  output_format: ${data.gateway.outputFormat}`);
+    if (data.gateway.maxToolResultBytes) lines.push(`  maxToolResultBytes: ${data.gateway.maxToolResultBytes}`);
+
+    const gw = data.gateway;
+    if (gw.tracing) {
+      const t = gw.tracing;
+      if (t.enabled !== undefined || t.sampling !== undefined || t.retention || t.export || t.endpoint) {
+        lines.push('  tracing:');
+        if (t.enabled !== undefined) lines.push(`    enabled: ${t.enabled}`);
+        if (t.sampling !== undefined && t.sampling !== 1.0) lines.push(`    sampling: ${t.sampling}`);
+        if (t.retention && t.retention !== '24h') lines.push(`    retention: ${t.retention}`);
+        if (t.export) lines.push(`    export: ${t.export}`);
+        if (t.endpoint) lines.push(`    endpoint: ${yamlValue(t.endpoint)}`);
+      }
+    }
+
+    if (gw.security?.schemaPinning?.enabled) {
+      lines.push('  security:');
+      lines.push('    schema_pinning:');
+      lines.push(`      enabled: ${gw.security.schemaPinning.enabled}`);
+      if (gw.security.schemaPinning.action) {
+        lines.push(`      action: ${gw.security.schemaPinning.action}`);
+      }
+    }
   }
 
   if (data.secrets?.sets?.length) {
