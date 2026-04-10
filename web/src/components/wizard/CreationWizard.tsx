@@ -360,7 +360,7 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
           ) : showPreviewPanel ? (
             <PanelGroup orientation="horizontal" className="h-full">
               {/* Form Panel */}
-              <Panel defaultSize={55} minSize={40}>
+              <Panel defaultSize={55} minSize={40} style={{ overflow: 'hidden' }}>
                 <div className="h-full overflow-y-auto scrollbar-dark px-6 py-4">
                   {renderStepContent(
                     currentStep,
