@@ -280,7 +280,7 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
       <div className="absolute inset-0" onClick={close} />
 
       {/* Panel */}
-      <div className="relative flex flex-col glass-panel-elevated rounded-xl w-full max-w-5xl mx-4 max-h-[85vh] shadow-lg transition-[max-width] duration-300 ease-out">
+      <div className="relative flex flex-col glass-panel-elevated rounded-xl w-full max-w-5xl mx-4 h-[85vh] shadow-lg transition-[max-width] duration-300 ease-out">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/30 flex-shrink-0">
           <div className="flex items-center gap-4">
@@ -361,23 +361,25 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
             <PanelGroup orientation="horizontal" className="h-full">
               {/* Form Panel */}
               <Panel defaultSize={55} minSize={40}>
-                <div className="h-full overflow-y-auto scrollbar-dark px-6 py-4">
-                  {renderStepContent(
-                    currentStep,
-                    selectedType,
-                    selectedTemplate,
-                    handleTypeSelect,
-                    handleTemplateSelect,
-                    formData,
-                    updateFormData,
-                    expertMode,
-                    yamlContent,
-                    setYamlContent,
-                    yamlError,
-                    generatedYaml,
-                    counts,
-                    handleDeploy,
-                  )}
+                <div className="flex flex-col h-full">
+                  <div className="flex-1 overflow-y-auto scrollbar-dark px-6 py-4">
+                    {renderStepContent(
+                      currentStep,
+                      selectedType,
+                      selectedTemplate,
+                      handleTypeSelect,
+                      handleTemplateSelect,
+                      formData,
+                      updateFormData,
+                      expertMode,
+                      yamlContent,
+                      setYamlContent,
+                      yamlError,
+                      generatedYaml,
+                      counts,
+                      handleDeploy,
+                    )}
+                  </div>
                 </div>
               </Panel>
 

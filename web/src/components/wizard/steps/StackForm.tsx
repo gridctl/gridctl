@@ -35,7 +35,7 @@ function toKebabCase(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+    .replace(/^-/, ''); // strip leading hyphen only; trailing stripped on blur
 }
 
 function FieldError({ error }: { error?: string }) {
@@ -590,6 +590,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
               type="text"
               value={data.name}
               onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
+              onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
               placeholder="my-stack"
               className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
             />

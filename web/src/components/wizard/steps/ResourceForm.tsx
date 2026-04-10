@@ -82,7 +82,7 @@ function toKebabCase(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+    .replace(/^-/, ''); // strip leading hyphen only; trailing stripped on blur
 }
 
 // --- Accordion section ---
@@ -423,6 +423,7 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
               type="text"
               value={data.name}
               onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
+              onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
               placeholder="my-resource"
               className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
             />
