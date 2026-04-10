@@ -54,6 +54,20 @@ describe('StackForm', () => {
     expect(onChange).toHaveBeenCalledWith({ name: 'my-stack-name' });
   });
 
+  it('preserves trailing hyphen mid-type', () => {
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    const nameInput = screen.getByPlaceholderText('my-stack');
+    fireEvent.change(nameInput, { target: { value: 'test-' } });
+    expect(onChange).toHaveBeenCalledWith({ name: 'test-' });
+  });
+
+  it('strips trailing hyphen on blur', () => {
+    render(<StackForm data={defaultData({ name: 'test-' })} onChange={onChange} />);
+    const nameInput = screen.getByPlaceholderText('my-stack');
+    fireEvent.blur(nameInput);
+    expect(onChange).toHaveBeenCalledWith({ name: 'test' });
+  });
+
   it('shows gateway section with auth fields when expanded', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
     // Click to expand Gateway section
