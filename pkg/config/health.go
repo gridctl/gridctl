@@ -111,6 +111,32 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 		}
 	}
 
+	// Warn about TLS cert/key/ca files that don't exist yet (may be created before apply)
+	for i, srv := range s.MCPServers {
+		if srv.OpenAPI == nil || srv.OpenAPI.TLS == nil {
+			continue
+		}
+		tlsPrefix := fmt.Sprintf("mcp-servers[%d].openapi.tls", i)
+		tls := srv.OpenAPI.TLS
+		for _, f := range []struct{ field, path string }{
+			{tlsPrefix + ".certFile", tls.CertFile},
+			{tlsPrefix + ".keyFile", tls.KeyFile},
+			{tlsPrefix + ".caFile", tls.CaFile},
+		} {
+			if f.path == "" {
+				continue
+			}
+			if _, err := os.Stat(f.path); err != nil {
+				r.Issues = append(r.Issues, ValidationIssue{
+					Field:    f.field,
+					Message:  fmt.Sprintf("file not found or not readable: %s", f.path),
+					Severity: SeverityWarning,
+				})
+				r.WarningCount++
+			}
+		}
+	}
+
 	// Warn about gateway without auth
 	if s.Gateway != nil && s.Gateway.Auth == nil {
 		r.Issues = append(r.Issues, ValidationIssue{

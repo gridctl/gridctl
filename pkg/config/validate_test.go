@@ -829,17 +829,6 @@ func TestValidate_MCPServer(t *testing.T) {
 			wantErr: true,
 			errMsg:  "openapi.tls.certFile",
 		},
-		{
-			name: "OpenAPI TLS certFile not found",
-			stack: base([]MCPServer{
-				{Name: "s1", OpenAPI: &OpenAPIConfig{
-					Spec: "https://example.com/spec.json",
-					TLS:  &OpenAPITLS{CertFile: "/nonexistent/cert.pem", KeyFile: "/nonexistent/key.pem"},
-				}},
-			}),
-			wantErr: true,
-			errMsg:  "openapi.tls.certFile",
-		},
 		// Container server validation
 		{
 			name: "container invalid transport",

@@ -289,22 +289,7 @@ func Validate(s *Stack) error {
 				if server.OpenAPI.TLS.KeyFile != "" && server.OpenAPI.TLS.CertFile == "" {
 					errs = append(errs, ValidationError{tlsPrefix + ".certFile", "required when keyFile is set"})
 				}
-				if server.OpenAPI.TLS.CertFile != "" {
-					if _, err := os.Stat(server.OpenAPI.TLS.CertFile); err != nil {
-						errs = append(errs, ValidationError{tlsPrefix + ".certFile", fmt.Sprintf("file not found or not readable: %s", server.OpenAPI.TLS.CertFile)})
-					}
 				}
-				if server.OpenAPI.TLS.KeyFile != "" {
-					if _, err := os.Stat(server.OpenAPI.TLS.KeyFile); err != nil {
-						errs = append(errs, ValidationError{tlsPrefix + ".keyFile", fmt.Sprintf("file not found or not readable: %s", server.OpenAPI.TLS.KeyFile)})
-					}
-				}
-				if server.OpenAPI.TLS.CaFile != "" {
-					if _, err := os.Stat(server.OpenAPI.TLS.CaFile); err != nil {
-						errs = append(errs, ValidationError{tlsPrefix + ".caFile", fmt.Sprintf("file not found or not readable: %s", server.OpenAPI.TLS.CaFile)})
-					}
-				}
-			}
 			// Operations filter validation
 			if server.OpenAPI.Operations != nil {
 				if len(server.OpenAPI.Operations.Include) > 0 && len(server.OpenAPI.Operations.Exclude) > 0 {

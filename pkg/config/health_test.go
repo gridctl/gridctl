@@ -160,6 +160,35 @@ mcp-servers:
 	assert.Equal(t, "test-net", stack.Network.Name)
 }
 
+func TestValidateWithIssues_WarningTLSFilesNotFound(t *testing.T) {
+	stack := &Stack{
+		Name:    "test",
+		Network: Network{Name: "test-net"},
+		Gateway: &GatewayConfig{Auth: &AuthConfig{Type: "bearer", Token: "secret"}},
+		MCPServers: []MCPServer{
+			{Name: "s1", OpenAPI: &OpenAPIConfig{
+				Spec: "https://example.com/spec.json",
+				TLS:  &OpenAPITLS{CertFile: "/nonexistent/cert.pem", KeyFile: "/nonexistent/key.pem", CaFile: "/nonexistent/ca.pem"},
+			}},
+		},
+	}
+
+	result := ValidateWithIssues(stack)
+	assert.True(t, result.Valid) // warnings don't make it invalid
+	assert.Equal(t, 0, result.ErrorCount)
+	assert.Equal(t, 3, result.WarningCount)
+
+	fields := make(map[string]bool)
+	for _, issue := range result.Issues {
+		if issue.Severity == SeverityWarning {
+			fields[issue.Field] = true
+		}
+	}
+	assert.True(t, fields["mcp-servers[0].openapi.tls.certFile"])
+	assert.True(t, fields["mcp-servers[0].openapi.tls.keyFile"])
+	assert.True(t, fields["mcp-servers[0].openapi.tls.caFile"])
+}
+
 func TestValidationResult_Counts(t *testing.T) {
 	result := &ValidationResult{Valid: true}
 	result.Issues = []ValidationIssue{
