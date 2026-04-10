@@ -45,6 +45,20 @@ describe('MCPServerForm', () => {
     expect(onChange).toHaveBeenCalledWith({ name: 'my-server-name' });
   });
 
+  it('preserves trailing hyphen mid-type', () => {
+    render(<MCPServerForm data={defaultData()} onChange={onChange} />);
+    const nameInput = screen.getByPlaceholderText('my-server');
+    fireEvent.change(nameInput, { target: { value: 'test-' } });
+    expect(onChange).toHaveBeenCalledWith({ name: 'test-' });
+  });
+
+  it('strips trailing hyphen on blur', () => {
+    render(<MCPServerForm data={defaultData({ name: 'test-' })} onChange={onChange} />);
+    const nameInput = screen.getByPlaceholderText('my-server');
+    fireEvent.blur(nameInput);
+    expect(onChange).toHaveBeenCalledWith({ name: 'test' });
+  });
+
   it('shows image field for container type', () => {
     render(<MCPServerForm data={defaultData({ serverType: 'container' })} onChange={onChange} />);
     expect(screen.getByPlaceholderText('image:tag')).toBeInTheDocument();
