@@ -21,7 +21,7 @@
     "marked": "^17.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-resizable-panels": "^4.5.8",
+    "react-resizable-panels": "^4.9.0",
     "react-router-dom": "^7.13.0",
     "recharts": "^3.8.0",
     "tailwind-merge": "^3.5.0",
