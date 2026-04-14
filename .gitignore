@@ -64,6 +64,7 @@ examples/_mock-servers/mock-mcp-server/.pid-*
 
 # New features
 plan/
+proto/
 
 # Release artifacts
 web/.release-version
