@@ -50,6 +50,10 @@ type Server struct {
 
 	gatewayAddr        string // e.g. "http://localhost:8180" — used to build MCP config for CLI proxy
 	tokenizerName      string // active tokenizer mode: "embedded" or "api"
+
+	// startWatcher, when set, starts a file watcher on the given stack path.
+	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
+	startWatcher func(stackPath string)
 }
 
 // NewServer creates a new API server.
@@ -159,6 +163,12 @@ func (s *Server) SetTokenizerName(name string) {
 	s.tokenizerName = name
 }
 
+// SetStartWatcher sets a callback that activates live-reload file watching for
+// the given stack path. Called by POST /api/stack/initialize after cold-loading.
+func (s *Server) SetStartWatcher(fn func(stackPath string)) {
+	s.startWatcher = fn
+}
+
 // RegistryServer returns the registry server.
 func (s *Server) RegistryServer() *registry.Server {
 	return s.registryServer
@@ -232,6 +242,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stack/secrets-map", s.handleStackSecretsMap)
 	mux.HandleFunc("GET /api/stack/recipes", s.handleStackRecipes)
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
+	mux.HandleFunc("POST /api/stack/initialize", s.handleStackInitialize)
+
+	// Stack library endpoints
+	mux.HandleFunc("GET /api/stacks", s.handleStacksList)
+	mux.HandleFunc("POST /api/stacks", s.handleStacksSave)
 
 	// Skills endpoints (remote skill import)
 	mux.HandleFunc("GET /api/skills/sources", s.handleSkillSourcesList)
