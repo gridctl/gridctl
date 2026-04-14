@@ -32,6 +32,8 @@ export function Canvas() {
   const selectNode = useStackStore((s) => s.selectNode);
   const selectedNodeId = useStackStore((s) => s.selectedNodeId);
   const resetLayout = useStackStore((s) => s.resetLayout);
+  const connectionStatus = useStackStore((s) => s.connectionStatus);
+  const gatewayInfo = useStackStore((s) => s.gatewayInfo);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const edgeStyle = useUIStore((s) => s.edgeStyle);
   const toggleEdgeStyle = useUIStore((s) => s.toggleEdgeStyle);
@@ -164,6 +166,7 @@ export function Canvas() {
   const onConnect = useCallback((_connection: Connection) => {}, []);
 
   const isEmpty = !nodes || nodes.length === 0;
+  const hasActiveStack = connectionStatus === 'connected' && gatewayInfo !== null;
 
   return (
     <div className="absolute inset-0 canvas-wrapper">
@@ -193,28 +196,30 @@ export function Canvas() {
               <Plus size={14} />
               New Stack
             </button>
-            {/* Quick-add links */}
-            <div className="flex items-center gap-2 mt-3">
-              <span className="text-[10px] text-text-muted">or add:</span>
-              {[
-                { type: 'mcp-server' as const, icon: Server, label: 'Server', color: 'text-primary hover:text-primary/80' },
-                { type: 'resource' as const, icon: Database, label: 'Resource', color: 'text-secondary hover:text-secondary/80' },
-              ].map((item) => (
-                <button
-                  key={item.type}
-                  onClick={() => useWizardStore.getState().open(item.type)}
-                  className={cn(
-                    'inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium',
-                    'bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12]',
-                    'transition-all duration-200',
-                    item.color,
-                  )}
-                >
-                  <item.icon size={10} />
-                  {item.label}
-                </button>
-              ))}
-            </div>
+            {/* Quick-add links — only when a stack is active */}
+            {hasActiveStack && (
+              <div className="flex items-center gap-2 mt-3">
+                <span className="text-[10px] text-text-muted">or add:</span>
+                {[
+                  { type: 'mcp-server' as const, icon: Server, label: 'Server', color: 'text-primary hover:text-primary/80' },
+                  { type: 'resource' as const, icon: Database, label: 'Resource', color: 'text-secondary hover:text-secondary/80' },
+                ].map((item) => (
+                  <button
+                    key={item.type}
+                    onClick={() => useWizardStore.getState().open(item.type)}
+                    className={cn(
+                      'inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium',
+                      'bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12]',
+                      'transition-all duration-200',
+                      item.color,
+                    )}
+                  >
+                    <item.icon size={10} />
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
