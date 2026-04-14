@@ -46,6 +46,11 @@ func PinsDir() string {
 	return filepath.Join(BaseDir(), "pins")
 }
 
+// StacksDir returns the directory for saved stack files (~/.gridctl/stacks/).
+func StacksDir() string {
+	return filepath.Join(BaseDir(), "stacks")
+}
+
 // PinsPath returns the path to the pin file for a stack (~/.gridctl/pins/{name}.json).
 func PinsPath(name string) string {
 	return filepath.Join(PinsDir(), name+".json")
