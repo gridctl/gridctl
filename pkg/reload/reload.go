@@ -79,6 +79,17 @@ func (h *Handler) CurrentConfig() *config.Stack {
 	return h.currentCfg
 }
 
+// Initialize cold-loads a stack into a running stackless daemon.
+// It sets the stack path, resets currentCfg to nil so that ComputeDiff treats
+// every server and resource as newly added, then calls Reload.
+func (h *Handler) Initialize(ctx context.Context, stackPath string) (*ReloadResult, error) {
+	h.mu.Lock()
+	h.stackPath = stackPath
+	h.currentCfg = nil
+	h.mu.Unlock()
+	return h.Reload(ctx)
+}
+
 // Reload reloads the configuration from disk and applies changes.
 func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	h.mu.Lock()
@@ -104,8 +115,13 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 		}, nil
 	}
 
-	// Compute diff
-	diff := ComputeDiff(h.currentCfg, newCfg)
+	// Compute diff; treat a nil currentCfg as an empty stack (initial load).
+	isInitial := h.currentCfg == nil
+	prevCfg := h.currentCfg
+	if isInitial {
+		prevCfg = &config.Stack{}
+	}
+	diff := ComputeDiff(prevCfg, newCfg)
 
 	if diff.IsEmpty() {
 		h.logger.Info("no configuration changes detected")
@@ -115,8 +131,9 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 		}, nil
 	}
 
-	// Network changes require full restart
-	if diff.NetworkChanged {
+	// Network changes require full restart — skip this check on initial load
+	// because there is no previous network config to compare against.
+	if diff.NetworkChanged && !isInitial {
 		return &ReloadResult{
 			Success: false,
 			Message: "network configuration changed - full restart required (run gridctl destroy && gridctl apply)",
