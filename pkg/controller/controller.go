@@ -83,6 +83,34 @@ func (sc *StackController) SetWebFS(fn WebFSFunc) {
 	sc.webFS = fn
 }
 
+// Serve starts the API server and web UI in stackless mode.
+// No stack file is required; no container runtime is started.
+// Vault and wizard endpoints are fully functional; stack-dependent endpoints
+// return 503 until a stack is deployed.
+func (sc *StackController) Serve(ctx context.Context) error {
+	// Load vault (best-effort; errors are non-fatal in stackless mode)
+	vaultStore := vault.NewStore(state.VaultDir())
+	if err := vaultStore.Load(); err == nil {
+		if vaultStore.IsLocked() {
+			if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
+				_ = vaultStore.Unlock(pass)
+			}
+		}
+		sc.vaultStore = vaultStore
+	}
+
+	// Build and run the gateway without a runtime or stack file.
+	rt := runtime.NewOrchestrator(nil, nil)
+	stack := &config.Stack{Name: "gridctl"}
+	builder := NewGatewayBuilder(sc.config, stack, "", rt, &runtime.UpResult{})
+	builder.SetVersion(sc.version)
+	builder.SetWebFS(sc.webFS)
+	if sc.vaultStore != nil {
+		builder.SetVaultStore(sc.vaultStore)
+	}
+	return builder.BuildAndRun(ctx, !sc.config.Quiet)
+}
+
 // Deploy orchestrates the full stack lifecycle.
 func (sc *StackController) Deploy(ctx context.Context) error {
 	cfg := sc.config
