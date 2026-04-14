@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gridctl/gridctl/internal/server"
-
 	"github.com/spf13/cobra"
 )
 
@@ -51,25 +49,16 @@ func Execute() {
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Start the web UI server",
-	Long:  "Starts the Gridctl web UI server without managing any stack.",
+	Short: "Start the API server and web UI without a stack",
+	Long: `Starts the gridctl API server and web UI in stackless mode.
+
+Vault and wizard endpoints are fully functional. Stack-dependent endpoints
+return 503 until a stack is loaded via 'gridctl apply <stack.yaml>'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runServe()
+		return runServeStackless()
 	},
 }
 
-func runServe() error {
-	addr := ":8180"
-	if port := os.Getenv("PORT"); port != "" {
-		addr = ":" + port
-	}
-
-	webFS, err := WebFS()
-	if err != nil {
-		return fmt.Errorf("failed to load embedded web files: %w", err)
-	}
-
-	srv := server.New(addr, webFS)
-	fmt.Printf("Gridctl UI starting on http://localhost%s\n", addr)
-	return srv.ListenAndServe()
+func init() {
+	serveCmd.Flags().IntVarP(&applyPort, "port", "p", 8180, "Port for the API server and web UI")
 }
