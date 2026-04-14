@@ -30,17 +30,24 @@ var (
 )
 
 var applyCmd = &cobra.Command{
-	Use:   "apply <stack.yaml>",
+	Use:   "apply [stack.yaml]",
 	Short: "Start MCP servers defined in a stack file",
 	Long: `Reads a stack YAML file and starts all defined MCP servers and resources.
 
 Creates a Docker network, pulls/builds images as needed, and starts containers.
 The MCP gateway runs as a background daemon by default.
 
+When called without a stack file, starts the API server and web UI in stackless
+mode. Vault and wizard endpoints are fully functional; stack-dependent endpoints
+return 503 until a stack is loaded.
+
 Use --foreground (-f) to run in foreground with verbose output.
 Use --flash to auto-link detected LLM clients after apply.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return runServeStackless()
+		}
 		return runApply(args[0])
 	},
 }
@@ -59,6 +66,20 @@ func init() {
 	applyCmd.Flags().BoolVar(&applyFlash, "flash", false, "Auto-link detected LLM clients after apply")
 	applyCmd.Flags().BoolVar(&applyCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools) (experimental)")
 	applyCmd.Flags().StringVar(&applyLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
+}
+
+// runServeStackless starts the API server and web UI without a stack file.
+// Vault and wizard endpoints are active; stack-dependent endpoints return 503.
+func runServeStackless() error {
+	ctrl := controller.New(controller.Config{
+		Port:        applyPort,
+		Foreground:  true,
+		DaemonChild: applyDaemonChild,
+		LogFile:     applyLogFile,
+	})
+	ctrl.SetVersion(version)
+	ctrl.SetWebFS(WebFS)
+	return ctrl.Serve(context.Background())
 }
 
 func runApply(stackPath string) error {
