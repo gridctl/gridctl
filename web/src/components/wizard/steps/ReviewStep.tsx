@@ -234,17 +234,24 @@ export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: Revie
           {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
           {copied ? 'Copied' : 'Copy'}
         </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={handleDeploy}
-          disabled={hasErrors || validating || deploying}
-          className="ml-auto"
-        >
-          {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
-          {deploying ? 'Deploying...' : 'Deploy'}
-        </Button>
+        {resourceType !== 'stack' && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleDeploy}
+            disabled={hasErrors || validating || deploying}
+            className="ml-auto"
+          >
+            {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+            {deploying ? 'Deploying...' : 'Deploy'}
+          </Button>
+        )}
       </div>
+      {resourceType === 'stack' && (
+        <p className="text-xs text-text-muted text-center">
+          Save this file as <code className="font-mono text-text-secondary">stack.yaml</code> in your project directory to get started.
+        </p>
+      )}
     </div>
   );
 }
