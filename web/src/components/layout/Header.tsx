@@ -1,4 +1,4 @@
-import { RefreshCw, Settings, Zap, RotateCcw, Plus, Command } from 'lucide-react';
+import { RefreshCw, Settings, Zap, RotateCcw, Plus, Command, Layers } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
@@ -134,6 +134,16 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
             {isConnected ? 'Connected' : 'Disconnected'}
           </span>
         </div>
+
+        {/* Active Stack Name */}
+        {isConnected && gatewayInfo?.name && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-elevated/60 backdrop-blur-sm border border-border/50">
+            <Layers size={12} className="text-primary" />
+            <span className="text-xs font-medium text-text-secondary font-mono">
+              {gatewayInfo.name}
+            </span>
+          </div>
+        )}
 
         {/* Server Count */}
         {totalCount > 0 && (
