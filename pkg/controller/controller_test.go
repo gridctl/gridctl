@@ -2,6 +2,7 @@ package controller
 
 import (
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"testing"
@@ -651,56 +652,80 @@ func TestCheckState_ReplaceKeepsExplicitPort(t *testing.T) {
 	}
 }
 
-func TestStackController_Serve_ForegroundBranch(t *testing.T) {
-	setTempHome(t)
-
-	// Verify Serve() routes correctly: Foreground=true, DaemonChild=false
-	// should NOT enter the DaemonChild branch.
-	ctrl := New(Config{Port: 18180, Foreground: true, Quiet: true, DaemonChild: false})
-	if ctrl.config.Foreground != true {
-		t.Error("expected Foreground=true")
+// occupiedPort starts a listener on all interfaces on a random port and returns
+// the port number. The HTTP server uses ":PORT" (all interfaces), so this
+// listener blocks it. The caller is responsible for closing the listener.
+func occupiedPort(t *testing.T) (int, func()) {
+	t.Helper()
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatalf("could not listen: %v", err)
 	}
-	if ctrl.config.DaemonChild != false {
-		t.Error("expected DaemonChild=false")
-	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	return port, func() { ln.Close() }
 }
 
-func TestStackController_Serve_DaemonChildBranch(t *testing.T) {
+func TestStackController_Serve_Foreground_PortInUse(t *testing.T) {
 	setTempHome(t)
 
-	// Verify DaemonChild config is wired correctly.
-	ctrl := New(Config{Port: 18181, DaemonChild: true, Quiet: true})
-	if !ctrl.config.DaemonChild {
-		t.Error("expected DaemonChild=true")
-	}
-}
+	port, closeListener := occupiedPort(t)
+	defer closeListener()
 
-func TestStackController_BuildAndRunStackless_Config(t *testing.T) {
-	setTempHome(t)
-
-	// Verify buildAndRunStackless uses the correct stack name and no stack file.
-	ctrl := New(Config{Port: 18182, Quiet: true})
+	ctrl := New(Config{Port: port, Foreground: true, Quiet: true})
 	ctrl.SetWebFS(func() (fs.FS, error) { return nil, nil })
 
-	// The function creates a stack with name "gridctl" — verify the controller
-	// is properly configured before invoking it.
-	if ctrl.config.StackPath != "" {
-		t.Error("expected empty StackPath for stackless config")
+	// Port is occupied so BuildAndRun fails after ~100ms grace period.
+	err := ctrl.Serve(t.Context())
+	if err == nil {
+		t.Fatal("expected error from occupied port")
 	}
 }
 
-func TestStackController_RunStacklessDaemonChild_SavesState(t *testing.T) {
+func TestStackController_Serve_DaemonChild_PortInUse(t *testing.T) {
 	setTempHome(t)
 
-	// Verify runStacklessDaemonChild saves DaemonState with correct fields
-	// by checking that state.Save would be called with the right StackName.
-	// We test the precondition: the controller has no stack path.
-	ctrl := New(Config{Port: 18183, Quiet: true})
-	if ctrl.config.StackPath != "" {
-		t.Error("expected empty StackPath before daemon child run")
+	port, closeListener := occupiedPort(t)
+	defer closeListener()
+
+	ctrl := New(Config{Port: port, DaemonChild: true, Quiet: true})
+	ctrl.SetWebFS(func() (fs.FS, error) { return nil, nil })
+
+	// DaemonChild path: saves state, then buildAndRunStackless fails on occupied port.
+	err := ctrl.Serve(t.Context())
+	if err == nil {
+		t.Fatal("expected error from occupied port")
 	}
-	if ctrl.config.Port != 18183 {
-		t.Errorf("expected port 18183, got %d", ctrl.config.Port)
+}
+
+func TestStackController_BuildAndRunStackless_PortInUse(t *testing.T) {
+	setTempHome(t)
+
+	port, closeListener := occupiedPort(t)
+	defer closeListener()
+
+	ctrl := New(Config{Port: port, Quiet: true})
+	ctrl.SetWebFS(func() (fs.FS, error) { return nil, nil })
+
+	err := ctrl.buildAndRunStackless(t.Context(), false)
+	if err == nil {
+		t.Fatal("expected error from occupied port")
+	}
+}
+
+func TestStackController_RunStacklessDaemonChild_PortInUse(t *testing.T) {
+	setTempHome(t)
+
+	port, closeListener := occupiedPort(t)
+	defer closeListener()
+
+	ctrl := New(Config{Port: port, Quiet: true})
+	ctrl.SetWebFS(func() (fs.FS, error) { return nil, nil })
+
+	// runStacklessDaemonChild saves state then calls buildAndRunStackless.
+	// The port is in use so buildAndRunStackless returns quickly with an error.
+	err := ctrl.runStacklessDaemonChild(t.Context())
+	if err == nil {
+		t.Fatal("expected error from occupied port")
 	}
 }
 
