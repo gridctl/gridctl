@@ -657,7 +657,7 @@ func TestCheckState_ReplaceKeepsExplicitPort(t *testing.T) {
 // listener blocks it. The caller is responsible for closing the listener.
 func occupiedPort(t *testing.T) (int, func()) {
 	t.Helper()
-	ln, err := net.Listen("tcp", ":0")
+	ln, err := net.Listen("tcp", ":0") //nolint:gosec // intentionally binding all interfaces to block the HTTP server in tests
 	if err != nil {
 		t.Fatalf("could not listen: %v", err)
 	}
