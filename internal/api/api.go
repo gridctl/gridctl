@@ -732,11 +732,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("OK"))
 }
 
-// handleReady returns 200 OK only when all MCP servers are connected and initialized.
-// This is a readiness check for verifying the gateway is fully operational.
+// handleReady returns 200 OK only when a stack is loaded and all MCP servers
+// are connected and initialized. Returns 503 when no stack is loaded (stackless
+// mode) or when any MCP server has not yet initialized.
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Not ready until a stack is loaded
+	if s.stackFile == "" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("No stack loaded"))
 		return
 	}
 
