@@ -463,7 +463,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// It is called immediately when --watch is active, and exposed via SetStartWatcher
 	// so POST /api/stack/initialize can activate watching after cold-loading.
 	startWatcher := func(stackPath string) {
-		watchCtx, _ := context.WithCancel(ctx) //nolint:govet // cancel called on process exit via ctx
+		watchCtx, _ := context.WithCancel(ctx) //nolint:govet,gosec // cancel called on process exit via ctx
 
 		watcher := reload.NewWatcher(stackPath, func() error {
 			result, err := reloadHandler.Reload(watchCtx)
