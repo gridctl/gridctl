@@ -553,6 +553,57 @@ export async function appendToStack(yaml: string, resourceType: string): Promise
 }
 
 /**
+ * Save a stack spec to the library (~/.gridctl/stacks/<name>.yaml)
+ * POST /api/stacks
+ */
+export async function saveStack(yaml: string, name: string): Promise<{ success: boolean; path: string; name: string }> {
+  const response = await fetch(`${API_BASE}/api/stacks`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ yaml, name }),
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `Save failed: ${response.status}`);
+  }
+
+  return data;
+}
+
+/**
+ * Cold-load a saved stack into the running daemon.
+ * Returns 409 if a stack is already active — callers must check for this.
+ * POST /api/stack/initialize
+ */
+export class StackAlreadyActiveError extends Error {
+  constructor() {
+    super('Stack already active');
+    this.name = 'StackAlreadyActiveError';
+  }
+}
+
+export async function initializeStack(name: string): Promise<{ success: boolean; name: string }> {
+  const response = await fetch(`${API_BASE}/api/stack/initialize`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ name }),
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (response.status === 409) throw new StackAlreadyActiveError();
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `Initialize failed: ${response.status}`);
+  }
+
+  return data;
+}
+
+/**
  * Get spec plan diff (spec vs running state)
  * GET /api/stack/plan
  */
