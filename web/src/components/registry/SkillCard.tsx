@@ -90,7 +90,7 @@ export const SkillCard = memo(({
           <div className="p-1.5 rounded-md border bg-primary/10 border-primary/20 flex-shrink-0 mt-0.5">
             <BookOpen size={14} className="text-primary/70" />
           </div>
-          <span className="font-semibold text-sm text-text-primary truncate flex-1 min-w-0 leading-tight mt-0.5">
+          <span className="font-semibold log-text text-text-primary truncate flex-1 min-w-0 leading-tight mt-0.5">
             {skill.name}
           </span>
           <StateBadge state={skill.state} />
@@ -98,7 +98,7 @@ export const SkillCard = memo(({
 
         {/* Description */}
         <p className={cn(
-          'text-xs leading-relaxed line-clamp-2',
+          'log-text leading-relaxed line-clamp-2',
           skill.description ? 'text-text-secondary' : 'text-text-muted/40 italic',
         )}>
           {skill.description || 'No description'}
