@@ -168,7 +168,7 @@ gridctl test <skill>           # Run acceptance criteria for a skill (exit 0/1/2
 gridctl activate <skill>       # Promote a skill from draft to active
 ```
 
-Drift detection runs in the background: the canvas flags servers that are running but absent from your spec, and declarations in your spec that haven't been deployed — so your YAML and your environment stay in sync. Need to build a stack from scratch? The visual spec builder lets you compose `stack.yaml` through a guided wizard and export the result.
+Drift detection runs in the background: the canvas flags servers that are running but absent from your spec, and declarations in your spec that haven't been deployed — so your YAML and your environment stay in sync. Need to build a stack from scratch? Start the UI with `gridctl serve`, use the visual spec builder to compose your stack through a guided wizard, then **Save & Load** it directly into the running daemon — no YAML file required to get started.
 
 Executable skills (those with a `workflow` block) must define `acceptance_criteria` before `gridctl activate` will promote them — ensuring every deployed skill has a machine-checkable definition of done.
 
