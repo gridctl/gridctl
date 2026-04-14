@@ -133,6 +133,8 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
 
   const mcpServers = useStackStore((s) => s.mcpServers) ?? [];
   const resources = useStackStore((s) => s.resources) ?? [];
+  const connectionStatus = useStackStore((s) => s.connectionStatus);
+  const hasStack = connectionStatus === 'connected';
   const skills = useRegistryStore((s) => s.skills);
   const counts = useMemo(
     () => getResourceCounts(mcpServers, resources, skills),
@@ -378,6 +380,7 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
                       generatedYaml,
                       counts,
                       handleDeploy,
+                      hasStack,
                     )}
                   </div>
                 </div>
@@ -408,6 +411,7 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
                 generatedYaml,
                 counts,
                 handleDeploy,
+                hasStack,
               )}
             </div>
           )}
@@ -460,10 +464,11 @@ function renderStepContent(
   generatedYaml: string,
   counts: Record<ResourceType, number>,
   onDeploy: () => void,
+  hasStack: boolean,
 ) {
   switch (step) {
     case 'type':
-      return <TypePicker selected={selectedType} onSelect={setSelectedType} counts={counts} />;
+      return <TypePicker selected={selectedType} onSelect={setSelectedType} counts={counts} hasStack={hasStack} />;
     case 'template':
       if (!selectedType) return null;
       return (
@@ -507,15 +512,20 @@ function renderStepContent(
   }
 }
 
+// Resource types that require an active stack to append into
+const REQUIRES_STACK: ResourceType[] = ['mcp-server', 'resource'];
+
 // Resource Type Picker — 3x2 glass-panel grid
 function TypePicker({
   selected,
   onSelect,
   counts,
+  hasStack,
 }: {
   selected: ResourceType | null;
   onSelect: (type: ResourceType) => void;
   counts: Record<ResourceType, number>;
+  hasStack: boolean;
 }) {
   return (
     <div className="py-4">
@@ -532,17 +542,23 @@ function TypePicker({
           const Icon = rt.icon;
           const isSelected = selected === rt.type;
           const count = counts[rt.type];
+          const isDisabled = !hasStack && REQUIRES_STACK.includes(rt.type);
           return (
             <button
               key={rt.type}
-              onClick={() => onSelect(rt.type)}
+              onClick={() => !isDisabled && onSelect(rt.type)}
+              title={isDisabled ? 'Requires an existing stack — create a Stack first' : undefined}
               className={cn(
                 'group relative flex flex-col items-center text-center p-5 rounded-xl border transition-all duration-200',
-                'bg-white/[0.03] hover:bg-white/[0.06]',
                 'animate-fade-in-up',
-                isSelected
-                  ? 'border-primary/50 shadow-[0_0_24px_rgba(245,158,11,0.1)]'
-                  : 'border-white/[0.06] hover:border-white/[0.12]',
+                isDisabled
+                  ? 'opacity-40 cursor-not-allowed bg-white/[0.03] border-white/[0.06]'
+                  : [
+                      'bg-white/[0.03] hover:bg-white/[0.06]',
+                      isSelected
+                        ? 'border-primary/50 shadow-[0_0_24px_rgba(245,158,11,0.1)]'
+                        : 'border-white/[0.06] hover:border-white/[0.12]',
+                    ],
               )}
               style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'backwards' }}
             >
@@ -555,7 +571,7 @@ function TypePicker({
                 className={cn(
                   'w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-all duration-200',
                   'bg-surface-elevated border border-border/40',
-                  'group-hover:border-white/[0.12]',
+                  !isDisabled && 'group-hover:border-white/[0.12]',
                   isSelected && 'border-primary/30',
                 )}
                 style={
@@ -564,7 +580,7 @@ function TypePicker({
                     : undefined
                 }
               >
-                <Icon size={18} className={cn(rt.color, 'transition-transform duration-200 group-hover:scale-110')} />
+                <Icon size={18} className={cn(rt.color, !isDisabled && 'transition-transform duration-200 group-hover:scale-110')} />
               </div>
               <div className="text-sm font-medium text-text-primary mb-1">
                 {rt.label}
