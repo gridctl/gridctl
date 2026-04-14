@@ -672,6 +672,7 @@ export async function addSkillSource(source: {
   path?: string;
   trust?: boolean;
   noActivate?: boolean;
+  selected?: string[];
 }): Promise<ImportResult> {
   return mutateJSON<ImportResult>('/api/skills/sources', 'POST', source);
 }

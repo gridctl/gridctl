@@ -78,6 +78,7 @@ export function SkillImportWizard() {
         path: path || undefined,
         trust: hasFlagged,
         noActivate: false,
+        selected: [...selected],
       });
 
       const imported = (result.imported ?? []).map((i) => i.name);

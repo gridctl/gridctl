@@ -14,31 +14,32 @@ type ImportOptions struct {
 	Repo       string
 	Ref        string
 	Path       string
-	Trust      bool // Skip security scan confirmation
-	NoActivate bool // Import as draft instead of active
-	Force      bool // Overwrite existing skills
-	Rename     string // Rename the skill on import
+	Trust      bool     // Skip security scan confirmation
+	NoActivate bool     // Import as draft instead of active
+	Force      bool     // Overwrite existing skills
+	Rename     string   // Rename the skill on import
+	Selected   []string // Only import skills with these names (empty = import all)
 }
 
 // ImportResult contains the results of an import operation.
 type ImportResult struct {
-	Imported []ImportedSkill
-	Skipped  []SkippedSkill
-	Warnings []string
+	Imported []ImportedSkill `json:"imported"`
+	Skipped  []SkippedSkill  `json:"skipped"`
+	Warnings []string        `json:"warnings"`
 }
 
 // ImportedSkill records a successfully imported skill.
 type ImportedSkill struct {
-	Name      string
-	Path      string
-	Origin    *Origin
-	Findings  []SecurityFinding
+	Name     string            `json:"name"`
+	Path     string            `json:"path"`
+	Origin   *Origin           `json:"origin,omitempty"`
+	Findings []SecurityFinding `json:"findings,omitempty"`
 }
 
 // SkippedSkill records a skill that was skipped during import.
 type SkippedSkill struct {
-	Name   string
-	Reason string
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
 }
 
 // Importer orchestrates the skill import process.
@@ -86,6 +87,12 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		return nil, fmt.Errorf("reading lock file: %w", err)
 	}
 
+	// Build selection set for O(1) lookup (empty = import all)
+	selectedSet := make(map[string]bool, len(opts.Selected))
+	for _, name := range opts.Selected {
+		selectedSet[name] = true
+	}
+
 	lockedSkills := make(map[string]LockedSkill)
 
 	for _, discovered := range result.Skills {
@@ -94,9 +101,15 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			skillName = opts.Rename
 		}
 
-		// Check for existing skill
+		// Filter to user-selected skills when a selection is provided
+		if len(opts.Selected) > 0 && !selectedSet[skillName] {
+			continue
+		}
+
+		// Check for existing skill; treat explicitly selected skills as force-overwrite
 		if _, err := imp.store.GetSkill(skillName); err == nil {
-			if !opts.Force {
+			force := opts.Force || (len(opts.Selected) > 0 && selectedSet[skillName])
+			if !force {
 				importResult.Skipped = append(importResult.Skipped, SkippedSkill{
 					Name:   skillName,
 					Reason: fmt.Sprintf("skill %q already exists (use --force to overwrite or --rename to import with a different name)", skillName),

@@ -134,11 +134,12 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Repo       string `json:"repo"`
-		Ref        string `json:"ref,omitempty"`
-		Path       string `json:"path,omitempty"`
-		Trust      bool   `json:"trust,omitempty"`
-		NoActivate bool   `json:"noActivate,omitempty"`
+		Repo       string   `json:"repo"`
+		Ref        string   `json:"ref,omitempty"`
+		Path       string   `json:"path,omitempty"`
+		Trust      bool     `json:"trust,omitempty"`
+		NoActivate bool     `json:"noActivate,omitempty"`
+		Selected   []string `json:"selected,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -162,6 +163,7 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 		Path:       req.Path,
 		Trust:      req.Trust,
 		NoActivate: req.NoActivate,
+		Selected:   req.Selected,
 	})
 	if err != nil {
 		writeJSONError(w, "Import failed: "+err.Error(), http.StatusBadRequest)
