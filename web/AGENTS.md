@@ -599,7 +599,62 @@ Vault-specific: `fetchVaultSecrets`, `createVaultSecret`, `getVaultSecret`, `upd
 - Monospace font (`font-mono`) for secret keys and values
 - Error states use `status-error` color token
 
-## 18. Checklist for New Components
+## 18. Creation Wizard
+
+The creation wizard is a multi-step modal for adding MCP servers, resources, stacks, and skills to the running configuration.
+
+### Components (`src/components/wizard/`)
+
+- **CreationWizard**: Root wizard modal — routes to the appropriate step flow based on resource type
+- **RecipePicker**: First step — resource type selection cards (Stack, MCP Server, Resource, Agent, Skill)
+- **BrowseStep**: Registry browser for importing skills
+- **AddSourceStep**: Transport/source configuration for MCP servers
+- **MCPServerForm**: MCP server detail form
+- **ResourceForm**: Resource (non-MCP container) form
+- **StackForm**: Stack spec builder
+- **ReviewStep**: Final review and deploy step (all resource types); for stacks, shows **Save & Load** instead of Deploy
+- **SkillImportWizard**: Dedicated wizard flow for importing skills from git
+- **DraftManager**: Draft persistence for wizard in-progress state
+- **ExpertModeToggle**: Toggle between guided and expert (raw YAML) modes
+- **SecretsPopover**: Inline vault secret picker for form fields
+- **TransportAdvisor**: Guided transport selector with recommendation logic
+- **TemplateGrid**: Template browser component
+- **YAMLPreview**: Live YAML preview panel
+
+### Stackless Mode Gating
+
+When no stack is active (stackless mode), the wizard gates stack-dependent resource types:
+
+| Resource Type | Stackless Behavior |
+|---------------|-------------------|
+| **Stack** | Always enabled — the mechanism for loading a stack |
+| **MCP Server** | `opacity-40 cursor-not-allowed`; clicking is a no-op with tooltip "Requires an active stack" |
+| **Resource** | `opacity-40 cursor-not-allowed`; clicking is a no-op with tooltip "Requires an active stack" |
+| **Agent** | Always enabled |
+| **Skill** | Always enabled |
+
+### Stack Save & Load Flow
+
+When `resourceType === 'stack'`, the ReviewStep shows a **Save & Load** button instead of **Deploy**:
+
+1. Calls `POST /api/stacks` to persist the stack spec to `~/.gridctl/stacks/{name}.yaml`
+2. Calls `POST /api/stack/initialize` to cold-load it into the running daemon
+3. If a stack is already active (409 response), shows a "Stack saved to library" toast instead
+
+### Header Stack Indicator
+
+When a stack is active and the daemon is connected, the Header shows an active stack name pill:
+- **Icon:** `Layers` (Lucide)
+- **Styling:** `bg-primary/10 border border-primary/20 text-primary` pill with stack name
+- **Hidden:** When no stack is loaded (stackless mode)
+
+### Canvas Stackless Empty State
+
+The Canvas empty state conditionally renders quick-add links based on stack status:
+- **Always visible:** "Create your first stack" CTA (navigates to stack wizard)
+- **Hidden until stack active:** Quick-add "Add MCP Server" and "Add Resource" links
+
+## 19. Checklist for New Components
 
 1. Use Tailwind color tokens (no hardcoded hex values)
 2. Use `font-mono` for technical data, `font-sans` for UI
