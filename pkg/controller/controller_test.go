@@ -47,6 +47,40 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestStackController_Serve_StacklessConfig(t *testing.T) {
+	setTempHome(t)
+
+	// Verify that a controller configured for stackless mode has no StackPath,
+	// which is the precondition for Serve() to skip stack loading.
+	ctrl := New(Config{
+		Port:  8190,
+		Quiet: true,
+	})
+	ctrl.SetWebFS(func() (fs.FS, error) { return nil, nil })
+
+	if ctrl.config.StackPath != "" {
+		t.Errorf("expected empty StackPath for stackless config, got %q", ctrl.config.StackPath)
+	}
+	if ctrl.webFS == nil {
+		t.Error("expected webFS to be set")
+	}
+}
+
+func TestStackController_Serve_LoadsVaultBestEffort(t *testing.T) {
+	setTempHome(t)
+
+	// Verify vaultStore is nil before Serve() and that vault dir is resolvable.
+	ctrl := New(Config{Port: 8191, Quiet: true})
+	if ctrl.vaultStore != nil {
+		t.Error("expected nil vaultStore before Serve()")
+	}
+
+	vaultDir := state.VaultDir()
+	if vaultDir == "" {
+		t.Error("expected non-empty vault dir from state.VaultDir()")
+	}
+}
+
 func TestStackController_SetVersion(t *testing.T) {
 	ctrl := New(Config{})
 	ctrl.SetVersion("v1.0.0")
