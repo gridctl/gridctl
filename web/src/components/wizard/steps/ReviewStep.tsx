@@ -8,11 +8,12 @@ import {
   Rocket,
   Loader2,
   FileCode2,
+  Library,
 } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { Button } from '../../ui/Button';
 import { showToast } from '../../ui/Toast';
-import { validateStackSpec, appendToStack } from '../../../lib/api';
+import { validateStackSpec, appendToStack, saveStack, initializeStack, StackAlreadyActiveError } from '../../../lib/api';
 import type { ValidationIssue } from '../../../types';
 
 interface ReviewStepProps {
@@ -89,6 +90,41 @@ export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: Revie
       onDeploy?.();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Deploy failed');
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  /** Extract name from YAML spec (looks for a top-level `name:` field). */
+  const extractStackName = (): string => {
+    const match = yaml.match(/^name:\s*(.+)$/m);
+    if (match) return match[1].trim();
+    // Fallback: timestamp-based name
+    return `stack-${Date.now()}`;
+  };
+
+  const handleSaveAndLoad = async () => {
+    setDeploying(true);
+    const name = extractStackName();
+    try {
+      await saveStack(yaml, name);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Save failed');
+      setDeploying(false);
+      return;
+    }
+
+    try {
+      await initializeStack(name);
+      showToast('success', `Stack loaded — ${name} is now active`);
+      onDeploy?.();
+    } catch (err) {
+      if (err instanceof StackAlreadyActiveError) {
+        showToast('success', 'Stack saved to library');
+        onDeploy?.();
+      } else {
+        showToast('error', `Saved but could not load — restart with \`gridctl apply ~/.gridctl/stacks/${name}.yaml\``);
+      }
     } finally {
       setDeploying(false);
     }
@@ -234,16 +270,29 @@ export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: Revie
           {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
           {copied ? 'Copied' : 'Copy'}
         </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={handleDeploy}
-          disabled={hasErrors || validating || deploying}
-          className="ml-auto"
-        >
-          {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
-          {deploying ? 'Deploying...' : 'Deploy'}
-        </Button>
+        {resourceType === 'stack' ? (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSaveAndLoad}
+            disabled={hasErrors || validating || deploying}
+            className="ml-auto"
+          >
+            {deploying ? <Loader2 size={14} className="animate-spin" /> : <Library size={14} />}
+            {deploying ? 'Saving...' : 'Save & Load'}
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleDeploy}
+            disabled={hasErrors || validating || deploying}
+            className="ml-auto"
+          >
+            {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+            {deploying ? 'Deploying...' : 'Deploy'}
+          </Button>
+        )}
       </div>
     </div>
   );
