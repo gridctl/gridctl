@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -12,6 +14,165 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// validStackName matches names that are safe to use as filenames (alphanumeric, hyphens, underscores).
+var validStackName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// stackEntry describes a saved stack in the library.
+type stackEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// handleStacksList lists all saved stacks in ~/.gridctl/stacks/.
+// GET /api/stacks
+func (s *Server) handleStacksList(w http.ResponseWriter, r *http.Request) {
+	dir := state.StacksDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, map[string]any{"stacks": []stackEntry{}})
+			return
+		}
+		writeJSONError(w, "Failed to read stacks directory: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	stacks := make([]stackEntry, 0)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".yaml")
+		stacks = append(stacks, stackEntry{
+			Name: name,
+			Path: filepath.Join(dir, e.Name()),
+		})
+	}
+
+	writeJSON(w, map[string]any{"stacks": stacks})
+}
+
+// handleStacksSave saves a stack YAML to ~/.gridctl/stacks/<name>.yaml.
+// POST /api/stacks
+func (s *Server) handleStacksSave(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeJSONError(w, "Failed to read request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		YAML string `json:"yaml"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		writeJSONError(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if !validStackName.MatchString(req.Name) {
+		writeJSONError(w, "invalid name: use only letters, numbers, hyphens, and underscores", http.StatusBadRequest)
+		return
+	}
+	if req.YAML == "" {
+		writeJSONError(w, "yaml is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate YAML parses into a Stack
+	var stack config.Stack
+	if err := yaml.Unmarshal([]byte(req.YAML), &stack); err != nil {
+		writeJSONError(w, "Invalid YAML: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	dir := state.StacksDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		writeJSONError(w, "Failed to create stacks directory: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	destPath := filepath.Join(dir, req.Name+".yaml")
+	if err := os.WriteFile(destPath, []byte(req.YAML), 0644); err != nil {
+		writeJSONError(w, "Failed to write stack file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"success": true,
+		"path":    destPath,
+		"name":    req.Name,
+	})
+}
+
+// handleStackInitialize cold-loads a named stack into a running stackless daemon.
+// POST /api/stack/initialize
+func (s *Server) handleStackInitialize(w http.ResponseWriter, r *http.Request) {
+	if s.stackFile != "" {
+		writeJSONError(w, "A stack is already loaded; use reload for subsequent changes", http.StatusConflict)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeJSONError(w, "Failed to read request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		writeJSONError(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	stackPath := filepath.Join(state.StacksDir(), req.Name+".yaml")
+	if _, err := os.Stat(stackPath); os.IsNotExist(err) {
+		writeJSONError(w, "Stack not found: "+req.Name, http.StatusNotFound)
+		return
+	}
+
+	watching := false
+
+	if s.reloadHandler != nil {
+		result, err := s.reloadHandler.Initialize(r.Context(), stackPath)
+		if err != nil {
+			writeJSONError(w, "Failed to initialize stack: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !result.Success {
+			writeJSONError(w, "Stack initialization failed: "+result.Message, http.StatusBadRequest)
+			return
+		}
+
+		// Start file watcher if a callback was provided
+		if s.startWatcher != nil {
+			s.startWatcher(stackPath)
+			watching = true
+		}
+	}
+
+	// Persist stack file and name on the server so /ready and other endpoints work
+	s.stackFile = stackPath
+	s.stackName = req.Name
+
+	writeJSON(w, map[string]any{
+		"success":  true,
+		"name":     req.Name,
+		"watching": watching,
+	})
+}
 
 // handleStackValidate validates a stack YAML body.
 // POST /api/stack/validate
