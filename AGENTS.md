@@ -101,7 +101,8 @@ gridctl/
 │       ├── auth.go       # Gateway authentication middleware
 │       ├── registry.go   # Registry CRUD endpoints
 │       ├── vault.go      # Vault REST API endpoints
-│       └── pins.go       # Schema pins REST API endpoints
+│       ├── pins.go       # Schema pins REST API endpoints
+│       └── stack.go      # Stack library endpoints (list, save, initialize)
 ├── pkg/
 │   ├── config/           # Stack YAML parsing
 │   │   ├── types.go      # Stack, Agent, Resource structs
@@ -153,11 +154,11 @@ gridctl/
 │   │   ├── windsurf.go   # Windsurf provisioner
 │   │   └── ...           # Other client provisioners
 │   ├── reload/           # Hot reload support
-│   │   ├── reload.go     # Reload handler and result types
+│   │   ├── reload.go     # Reload handler, Initialize() for stackless cold-load, and result types
 │   │   ├── diff.go       # Stack diff computation
 │   │   └── watcher.go    # File watcher for --watch mode
 │   ├── state/            # Daemon state management
-│   │   └── state.go      # ~/.gridctl/state/ and ~/.gridctl/logs/
+│   │   └── state.go      # ~/.gridctl/state/, ~/.gridctl/logs/, StacksDir()
 │   ├── mcp/              # MCP protocol
 │   │   ├── types.go      # JSON-RPC, MCP types, AgentClient interface
 │   │   ├── client.go     # HTTP transport client
@@ -253,8 +254,15 @@ make clean-mock-servers # Stop and remove mock MCP servers
 ## CLI Usage
 
 ```bash
+# Start the web UI and API server without a stack (stackless mode)
+./gridctl serve
+./gridctl serve --port 8180 --foreground
+
 # Start a stack (runs as daemon, returns immediately)
 ./gridctl apply examples/getting-started/mcp-basic.yaml
+
+# Start in stackless mode (same as serve; stack loaded later via wizard)
+./gridctl apply
 
 # Start with options
 ./gridctl apply stack.yaml --port 8180 --no-cache
@@ -395,7 +403,14 @@ Triggers a hot reload of the stack configuration. The stack must be running with
 
 #### `gridctl serve`
 
-Starts the web UI server without managing any stack. Listens on port 8180 by default (override with `PORT` environment variable).
+Starts the API server and web UI in stackless mode — no stack file required. Stack-dependent endpoints return 503 until a stack is loaded via the wizard. Vault and wizard endpoints are always available.
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--port` | `-p` | Port for the API server and web UI (default: 8180) |
+| `--foreground` | `-f` | Run in foreground (don't daemonize) |
+
+`gridctl apply` (with no arguments) is equivalent to `gridctl serve`.
 
 #### `gridctl vault <subcommand>`
 
@@ -482,6 +497,8 @@ Gridctl stores daemon state in `~/.gridctl/`:
 │   └── {name}.json     # PID, port, start time per stack
 ├── logs/               # Daemon log files
 │   └── {name}.log      # stdout/stderr from daemon
+├── stacks/             # Saved stack library (created by wizard Save & Load)
+│   └── {name}.yaml     # Saved stack specs (loaded via POST /api/stack/initialize)
 ├── vault/              # Secrets vault (0700 permissions)
 │   ├── secrets.json    # Plaintext secrets (when unlocked/unencrypted)
 │   └── secrets.enc     # Encrypted secrets (when locked)
@@ -504,6 +521,7 @@ When `gridctl apply` runs, it:
 **Endpoints:**
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
 - **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/health`, `/ready`
+- **Stack Library:** `/api/stacks` (list/save), `/api/stack/initialize` (cold-load a saved stack into a stackless daemon)
 - **Vault:** `/api/vault`, `/api/vault/status`, `/api/vault/unlock`, `/api/vault/lock`, `/api/vault/sets`, `/api/vault/import`
 - **Pins:** `/api/pins` (list all), `/api/pins/{server}` (get), `/api/pins/{server}/approve` (POST), `/api/pins/{server}` (DELETE)
 - **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`, `/api/registry/skills/{name}/workflow`, `/api/registry/skills/{name}/execute`, `/api/registry/skills/{name}/validate-workflow`, `/api/registry/skills/{name}/test`
@@ -575,6 +593,15 @@ When the vault is locked, all endpoints except `status`, `unlock`, and `lock` re
   - Response: `TraceRecord[]` with fields: `trace_id`, `operation`, `start_time`, `duration_ms`, `span_count`, `is_error`, `spans`
 - `GET /api/traces/{traceId}` - Get a single trace with full span detail
   - Response: `TraceRecord` with `spans[]` — each span has `span_id`, `name`, `start_time`, `duration_ms`, `is_error`, `attrs` (OTel attributes)
+
+**Stack Library API:**
+- `GET /api/stacks` - List saved stacks from `~/.gridctl/stacks/`; returns `{stacks: [{name, path, size, modTime}]}`
+- `POST /api/stacks` - Save a stack spec to the library; body: `{name, content}` (YAML string); returns `{name, path}`
+- `POST /api/stack/initialize` - Cold-load a named saved stack into a running stackless daemon; body: `{name}`; returns 409 (`StackAlreadyActiveError`) if a stack is already running
+
+**`/ready` behavior:**
+- Returns `200 OK` when a stack is fully initialized
+- Returns `503 Service Unavailable` in stackless mode (no stack loaded yet)
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
