@@ -88,6 +88,13 @@ func (sc *StackController) SetWebFS(fn WebFSFunc) {
 // Vault and wizard endpoints are fully functional; stack-dependent endpoints
 // return 503 until a stack is deployed.
 func (sc *StackController) Serve(ctx context.Context) error {
+	cfg := sc.config
+
+	// Daemon child path: run gateway directly, save state.
+	if cfg.DaemonChild {
+		return sc.runStacklessDaemonChild(ctx)
+	}
+
 	// Load vault (best-effort; errors are non-fatal in stackless mode)
 	vaultStore := vault.NewStore(state.VaultDir())
 	if err := vaultStore.Load(); err == nil {
@@ -99,7 +106,65 @@ func (sc *StackController) Serve(ctx context.Context) error {
 		sc.vaultStore = vaultStore
 	}
 
-	// Build and run the gateway without a runtime or stack file.
+	// Foreground mode: run gateway directly without daemonizing.
+	if cfg.Foreground {
+		return sc.buildAndRunStackless(ctx, !cfg.Quiet)
+	}
+
+	// Daemon mode: fork child process, wait for health, print summary.
+	return sc.runStacklessDaemonMode()
+}
+
+// runStacklessDaemonChild is the daemon child path for stackless mode.
+// It saves state and runs the gateway directly.
+func (sc *StackController) runStacklessDaemonChild(ctx context.Context) error {
+	// Load vault best-effort
+	vaultStore := vault.NewStore(state.VaultDir())
+	if err := vaultStore.Load(); err == nil {
+		if vaultStore.IsLocked() {
+			if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
+				_ = vaultStore.Unlock(pass)
+			}
+		}
+		sc.vaultStore = vaultStore
+	}
+
+	st := &state.DaemonState{
+		StackName: "gridctl",
+		StackFile: "",
+		PID:       os.Getpid(),
+		Port:      sc.config.Port,
+		StartedAt: time.Now(),
+	}
+	if err := state.Save(st); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
+	}
+
+	return sc.buildAndRunStackless(ctx, false)
+}
+
+// runStacklessDaemonMode forks a stackless child and waits for health.
+func (sc *StackController) runStacklessDaemonMode() error {
+	daemon := NewDaemonManager(sc.config)
+	pid, err := daemon.ForkStackless()
+	if err != nil {
+		return fmt.Errorf("failed to start daemon: %w", err)
+	}
+
+	if err := daemon.WaitForHealth(sc.config.Port, 30*time.Second); err != nil {
+		return fmt.Errorf("daemon failed to start: %w\nCheck logs at %s", err, state.LogPath("gridctl"))
+	}
+
+	fmt.Printf("gridctl started in stackless mode\n")
+	fmt.Printf("  Web UI: http://localhost:%d\n", sc.config.Port)
+	fmt.Printf("  PID:    %d\n", pid)
+	fmt.Printf("  Logs:   %s\n", state.LogPath("gridctl"))
+	fmt.Printf("\nUse 'gridctl stop' to stop.\n")
+	return nil
+}
+
+// buildAndRunStackless builds and runs the gateway in stackless mode.
+func (sc *StackController) buildAndRunStackless(ctx context.Context, verbose bool) error {
 	rt := runtime.NewOrchestrator(nil, nil)
 	stack := &config.Stack{Name: "gridctl"}
 	builder := NewGatewayBuilder(sc.config, stack, "", rt, &runtime.UpResult{})
@@ -108,7 +173,7 @@ func (sc *StackController) Serve(ctx context.Context) error {
 	if sc.vaultStore != nil {
 		builder.SetVaultStore(sc.vaultStore)
 	}
-	return builder.BuildAndRun(ctx, !sc.config.Quiet)
+	return builder.BuildAndRun(ctx, verbose)
 }
 
 // Deploy orchestrates the full stack lifecycle.

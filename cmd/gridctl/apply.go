@@ -73,7 +73,7 @@ func init() {
 func runServeStackless() error {
 	ctrl := controller.New(controller.Config{
 		Port:        applyPort,
-		Foreground:  true,
+		Foreground:  applyForeground,
 		DaemonChild: applyDaemonChild,
 		LogFile:     applyLogFile,
 	})

@@ -28,6 +28,7 @@ func init() {
 	rootCmd.AddCommand(destroyCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(linkCmd)
 	rootCmd.AddCommand(unlinkCmd)
 	rootCmd.AddCommand(vaultCmd)
@@ -61,4 +62,7 @@ return 503 until a stack is loaded via 'gridctl apply <stack.yaml>'.`,
 
 func init() {
 	serveCmd.Flags().IntVarP(&applyPort, "port", "p", 8180, "Port for the API server and web UI")
+	serveCmd.Flags().BoolVarP(&applyForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
+	serveCmd.Flags().BoolVar(&applyDaemonChild, "daemon-child", false, "Internal flag for daemon process")
+	_ = serveCmd.Flags().MarkHidden("daemon-child")
 }
