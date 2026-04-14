@@ -40,7 +40,7 @@ OK
 
 #### `GET /ready`
 
-Readiness check. Returns `200 OK` only when all MCP servers are connected and initialized. Returns `503 Service Unavailable` if any server is not ready.
+Readiness check. Returns `200 OK` only when all MCP servers are connected and initialized. Returns `503 Service Unavailable` in two cases: any MCP server is not yet ready, or the daemon is running in stackless mode (no stack loaded yet — use `POST /api/stack/initialize` or the wizard to load one).
 
 **Auth:** No
 
