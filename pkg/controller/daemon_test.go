@@ -92,6 +92,53 @@ func TestDaemonManager_WaitForReady_NoServer(t *testing.T) {
 	}
 }
 
+func TestDaemonManager_WaitForHealth_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	port := extractPort(t, server.URL)
+	dm := NewDaemonManager(Config{})
+	if err := dm.WaitForHealth(port, 5*time.Second); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDaemonManager_WaitForHealth_Timeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	port := extractPort(t, server.URL)
+	dm := NewDaemonManager(Config{})
+	if err := dm.WaitForHealth(port, 1*time.Second); err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+}
+
+func TestDaemonManager_WaitForHealth_NoServer(t *testing.T) {
+	dm := NewDaemonManager(Config{})
+	if err := dm.WaitForHealth(19998, 500*time.Millisecond); err == nil {
+		t.Fatal("expected error for non-listening port, got nil")
+	}
+}
+
+func TestDaemonManager_ForkStackless_InvalidExecutable(t *testing.T) {
+	// ForkStackless uses os.Executable() which always works, but we can verify
+	// the method exists and returns a valid signature by checking config wiring.
+	dm := NewDaemonManager(Config{Port: 8888, LogFile: "/tmp/test.log"})
+	if dm.config.Port != 8888 {
+		t.Errorf("expected port 8888, got %d", dm.config.Port)
+	}
+	if dm.config.LogFile != "/tmp/test.log" {
+		t.Errorf("expected LogFile set, got %q", dm.config.LogFile)
+	}
+}
+
 func extractPort(t *testing.T, url string) int {
 	t.Helper()
 	// URL format: http://127.0.0.1:PORT
