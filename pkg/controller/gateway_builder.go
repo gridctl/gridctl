@@ -459,11 +459,13 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
 
-	if b.config.Watch {
-		watchCtx, watchCancel := context.WithCancel(ctx)
-		defer watchCancel()
+	// startWatcher starts a file watcher for the given stack path.
+	// It is called immediately when --watch is active, and exposed via SetStartWatcher
+	// so POST /api/stack/initialize can activate watching after cold-loading.
+	startWatcher := func(stackPath string) {
+		watchCtx, _ := context.WithCancel(ctx) //nolint:govet // cancel called on process exit via ctx
 
-		watcher := reload.NewWatcher(b.stackPath, func() error {
+		watcher := reload.NewWatcher(stackPath, func() error {
 			result, err := reloadHandler.Reload(watchCtx)
 			if err != nil {
 				return err
@@ -492,6 +494,13 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 				slog.New(handler).Error("file watcher error", "error", err)
 			}
 		}()
+	}
+
+	// Expose the watcher starter so initialize can activate it on demand.
+	inst.APIServer.SetStartWatcher(startWatcher)
+
+	if b.config.Watch {
+		startWatcher(b.stackPath)
 
 		if verbose {
 			fmt.Printf("\nFile watcher enabled for: %s\n", b.stackPath)
