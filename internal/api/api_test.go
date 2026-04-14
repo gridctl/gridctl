@@ -83,17 +83,47 @@ func TestHandleReady_NoServers(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	// No MCP servers registered -> all initialized (vacuously true) -> 200
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
+	// No stack file configured (stackless mode) -> 503
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", rec.Code)
 	}
-	if body := rec.Body.String(); body != "OK" {
-		t.Errorf("expected body %q, got %q", "OK", body)
+	if body := rec.Body.String(); !strings.Contains(body, "No stack loaded") {
+		t.Errorf("expected body to contain 'No stack loaded', got %q", body)
+	}
+}
+
+func TestHandleReady_StacklessMode(t *testing.T) {
+	srv := newTestServer(t)
+	// No stackFile set — stackless mode
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 in stackless mode, got %d", rec.Code)
+	}
+}
+
+func TestHandleReady_StackFileSetNoServers(t *testing.T) {
+	srv := newTestServer(t)
+	srv.SetStackFile("/some/stack.yaml")
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	// Stack file set, no MCP servers registered: vacuously all initialized -> 200
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 when stack file set and no servers registered, got %d", rec.Code)
 	}
 }
 
 func TestHandleReady_AllInitialized(t *testing.T) {
 	srv := newTestServer(t)
+	srv.SetStackFile("/stack.yaml") // stack file required for ready
 
 	// Add an initialized mock client
 	mock := newMockAgentClient("test-server", []mcp.Tool{
@@ -115,6 +145,7 @@ func TestHandleReady_AllInitialized(t *testing.T) {
 
 func TestHandleReady_NotInitialized(t *testing.T) {
 	srv := newTestServer(t)
+	srv.SetStackFile("/stack.yaml") // stack file required for ready check
 
 	// Create a mock client that is NOT initialized
 	mock := &mockAgentClient{name: "unready-server", initialized: false}
