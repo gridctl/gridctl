@@ -21,7 +21,7 @@ export function IconButton({
   variant = 'default',
 }: IconButtonProps) {
   const sizeClasses = {
-    sm: 'p-1.5',
+    sm: 'p-2',
     md: 'p-2',
   };
   const iconSize = size === 'sm' ? 14 : 16;
