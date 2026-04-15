@@ -13,6 +13,7 @@ import { IconButton } from '../components/ui/IconButton';
 import { ZoomControls } from '../components/log/ZoomControls';
 import { SkillEditor } from '../components/registry/SkillEditor';
 import { SkillCard } from '../components/registry/SkillCard';
+import { SkillCardSkeleton } from '../components/registry/SkillCardSkeleton';
 import { ToastContainer, showToast } from '../components/ui/Toast';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useLogFontSize } from '../hooks/useLogFontSize';
@@ -77,6 +78,105 @@ const TABS: { key: FilterTab; label: string }[] = [
   { key: 'draft', label: 'Draft' },
   { key: 'disabled', label: 'Disabled' },
 ];
+
+function getGroupKey(dir?: string): string {
+  if (!dir) return '';
+  return dir.split('/')[0];
+}
+
+function groupSkills(skills: AgentSkill[]): Map<string, AgentSkill[]> {
+  const groups = new Map<string, AgentSkill[]>();
+  for (const skill of skills) {
+    const key = getGroupKey(skill.dir);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(skill);
+  }
+  return groups;
+}
+
+function toTitleCase(key: string): string {
+  return key.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+interface GroupedSkillGridProps {
+  skills: AgentSkill[];
+  hasSearch: boolean;
+  onEnable: (skill: AgentSkill) => void;
+  onDisable: (skill: AgentSkill) => void;
+  onEdit: (skill: AgentSkill) => void;
+  onDelete: (skill: AgentSkill) => void;
+}
+
+function GroupedSkillGrid({ skills, hasSearch, onEnable, onDisable, onEdit, onDelete }: GroupedSkillGridProps) {
+  const groups = groupSkills(skills);
+  const showHeaders = groups.size > 1;
+
+  const gridStyle: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: '12px',
+  };
+
+  return (
+    <div className="p-4" style={gridStyle}>
+      {Array.from(groups.entries()).map(([key, groupSkillList]) => (
+        <GroupSection
+          key={key || '__ungrouped__'}
+          groupKey={key}
+          skills={groupSkillList}
+          showHeader={showHeaders}
+          hasSearch={hasSearch}
+          onEnable={onEnable}
+          onDisable={onDisable}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface GroupSectionProps {
+  groupKey: string;
+  skills: AgentSkill[];
+  showHeader: boolean;
+  hasSearch: boolean;
+  onEnable: (skill: AgentSkill) => void;
+  onDisable: (skill: AgentSkill) => void;
+  onEdit: (skill: AgentSkill) => void;
+  onDelete: (skill: AgentSkill) => void;
+}
+
+function GroupSection({ groupKey, skills, showHeader, hasSearch, onEnable, onDisable, onEdit, onDelete }: GroupSectionProps) {
+  return (
+    <>
+      {showHeader && (
+        <div style={{ gridColumn: '1 / -1' }} className="flex flex-col gap-1 mt-2 first:mt-0 animate-fade-in-scale">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-widest text-text-muted font-medium">
+              {groupKey ? toTitleCase(groupKey) : 'Other'}
+            </span>
+            <span className="text-[10px] px-1.5 rounded-full bg-surface-highlight text-text-muted">
+              {skills.length} {hasSearch ? 'matched' : 'skills'}
+            </span>
+          </div>
+          <div className="border-b border-border/30" />
+        </div>
+      )}
+      {skills.map((skill) => (
+        <SkillCard
+          key={skill.name}
+          skill={skill}
+          className={cn('animate-fade-in-scale', skill.metadata?.colspan === '2' ? 'col-span-2' : undefined)}
+          onEnable={onEnable}
+          onDisable={onDisable}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
+    </>
+  );
+}
 
 function DetachedRegistryContent() {
   const [skills, setSkills] = useState<AgentSkill[] | null>(null);
@@ -277,8 +377,17 @@ function DetachedRegistryContent() {
         style={{ '--log-font-size': `${fontSize}px` } as React.CSSProperties}
       >
         {isLoading && (
-          <div className="h-full flex items-center justify-center">
-            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <div
+            className="p-4"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkillCardSkeleton key={i} />
+            ))}
           </div>
         )}
 
@@ -315,25 +424,14 @@ function DetachedRegistryContent() {
 
         {/* Card grid */}
         {!isLoading && displayedSkills.length > 0 && (
-          <div
-            className="p-4"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-              gap: '12px',
-            }}
-          >
-            {displayedSkills.map((skill) => (
-              <SkillCard
-                key={skill.name}
-                skill={skill}
-                onEnable={handleEnable}
-                onDisable={handleDisable}
-                onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
-                onDelete={(s) => setConfirmDelete(s.name)}
-              />
-            ))}
-          </div>
+          <GroupedSkillGrid
+            skills={displayedSkills}
+            hasSearch={searchQuery.length > 0}
+            onEnable={handleEnable}
+            onDisable={handleDisable}
+            onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
+            onDelete={(s) => setConfirmDelete(s.name)}
+          />
         )}
       </main>
 
