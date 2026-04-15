@@ -27,6 +27,7 @@ interface StackState {
   sessions: number;
   codeMode: string | null;  // Gateway code mode status ("on" when active)
   tokenUsage: TokenUsage | null; // Token usage metrics from status response
+  stackName: string;        // Active stack name; empty string in stackless mode
 
   // === React Flow State ===
   nodes: Node[];
@@ -67,6 +68,7 @@ export const useStackStore = create<StackState>()(
     sessions: 0,
     codeMode: null,
     tokenUsage: null,
+    stackName: '',
     nodes: [],
     edges: [],
     draggedPositions: new Map(),
@@ -85,6 +87,7 @@ export const useStackStore = create<StackState>()(
         sessions: status.sessions ?? 0,
         codeMode: status.code_mode || null,
         tokenUsage: status.token_usage ?? null,
+        stackName: status.stack_name || '',
         lastUpdated: new Date(),
         isLoading: false,
         error: null,

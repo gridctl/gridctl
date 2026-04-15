@@ -100,6 +100,7 @@ export interface GatewayStatus {
   sessions?: number;       // Active MCP session count
   code_mode?: string;      // "on" when code mode is active (omitted when off)
   token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
+  stack_name?: string;     // Active stack name; omitted in stackless mode
 }
 
 // Tool definition matching mcp.Tool
