@@ -20,6 +20,7 @@ export interface SkillCardProps {
   onDisable: (skill: AgentSkill) => void;
   onEdit: (skill: AgentSkill) => void;
   onDelete: (skill: AgentSkill) => void;
+  className?: string;
 }
 
 function StateBadge({ state }: { state: ItemState }) {
@@ -39,8 +40,8 @@ function StateBadge({ state }: { state: ItemState }) {
 function TestStatusBadge({ testResult }: { testResult?: SkillTestResult | null }) {
   if (!testResult || testResult.status === 'untested') {
     return (
-      <span className="flex items-center gap-1 text-[10px] font-medium text-text-muted/60">
-        <Minus size={11} />
+      <span className="flex items-center gap-1 text-[10px] font-medium text-amber-400/80 bg-amber-400/8 border border-amber-400/20 rounded px-1.5 py-0.5">
+        <Minus size={10} />
         untested
       </span>
     );
@@ -70,6 +71,7 @@ export const SkillCard = memo(({
   onDisable,
   onEdit,
   onDelete,
+  className,
 }: SkillCardProps) => {
   return (
     <div
@@ -77,7 +79,8 @@ export const SkillCard = memo(({
         'relative rounded-xl overflow-hidden flex flex-col',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.02]',
-        'border-border/40 hover:border-primary/40 hover:shadow-node-hover',
+        'border-border/60 hover:border-primary/40 hover:shadow-node-hover',
+        className,
       )}
     >
       {/* Top accent line */}
