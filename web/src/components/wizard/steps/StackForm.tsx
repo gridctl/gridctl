@@ -22,6 +22,7 @@ import type {
   ResourceFormData,
 } from '../../../lib/yaml-builder';
 import { SecretsPopover } from '../SecretsPopover';
+import { VaultSetSelector } from '../VaultSetSelector';
 import { MCPServerForm } from './MCPServerForm';
 
 // --- Shared form primitives ---
@@ -1078,15 +1079,11 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         onToggle={() => toggleSection('secrets')}
         badge={secretSetCount > 0 ? `${secretSetCount}` : undefined}
       >
-        <StringArrayEditor
-          label="Variable Sets"
+        <VaultSetSelector
           value={data.secrets?.sets ?? []}
           onChange={(sets) =>
             onChange({ secrets: sets.length > 0 ? { sets } : undefined })
           }
-          placeholder="secret-set-name"
-          addLabel="Add set"
-          emptyText="No secret sets referenced"
         />
       </Section>
 
