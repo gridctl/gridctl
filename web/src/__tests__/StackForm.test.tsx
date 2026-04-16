@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { StackForm } from '../components/wizard/steps/StackForm';
 import type { StackFormData } from '../lib/yaml-builder';
 import { buildYAML } from '../lib/yaml-builder';
+import { fetchVaultSets } from '../lib/api';
 
 // Mock SecretsPopover to avoid vault API calls
 vi.mock('../components/wizard/SecretsPopover', () => ({
@@ -12,6 +13,11 @@ vi.mock('../components/wizard/SecretsPopover', () => ({
       vault
     </button>
   ),
+}));
+
+// Mock vault API — default to empty sets; individual tests override as needed
+vi.mock('../lib/api', () => ({
+  fetchVaultSets: vi.fn().mockResolvedValue([]),
 }));
 
 function defaultData(overrides?: Partial<StackFormData>): StackFormData {
@@ -91,6 +97,22 @@ describe('StackForm', () => {
     fireEvent.click(screen.getByText('Secrets'));
     expect(screen.getByText('Variable Sets')).toBeInTheDocument();
     expect(screen.getByText('Add set')).toBeInTheDocument();
+  });
+
+  it('shows vault set dropdown with existing sets when Add set is clicked', async () => {
+    vi.mocked(fetchVaultSets).mockResolvedValueOnce([
+      { name: 'dev', count: 2 },
+      { name: 'prod', count: 5 },
+    ]);
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    fireEvent.click(screen.getByText('Secrets'));
+    fireEvent.click(screen.getByText('Add set'));
+    await waitFor(() => {
+      expect(screen.getByText('dev')).toBeInTheDocument();
+      expect(screen.getByText('prod')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('dev'));
+    expect(onChange).toHaveBeenCalledWith({ secrets: { sets: ['dev'] } });
   });
 
   it('can add MCP servers', () => {
