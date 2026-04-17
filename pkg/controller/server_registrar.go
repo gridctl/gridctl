@@ -57,8 +57,10 @@ func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpRes
 
 // RegisterOne registers a single MCP server with the gateway.
 // Used by the reload handler to register newly added servers.
-func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, hostPort int, stackPath string) error {
-	cfg := r.buildConfigFromMCPServer(server, hostPort, stackPath)
+// containerID is the runtime container ID for stdio transport; pass "" for
+// non-container servers (External, LocalProcess, SSH, OpenAPI, HTTP/SSE).
+func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	cfg := r.buildConfigFromMCPServer(server, hostPort, containerID, stackPath)
 	return r.gateway.RegisterMCPServer(ctx, cfg)
 }
 
@@ -140,7 +142,9 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 
 // buildConfigFromMCPServer constructs an MCPServerConfig from a config.MCPServer.
 // This is the single-server registration path used by the reload handler.
-func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, hostPort int, stackPath string) mcp.MCPServerConfig {
+// containerID is consumed only by the stdio container branch; other branches
+// ignore it.
+func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, hostPort int, containerID, stackPath string) mcp.MCPServerConfig {
 	transport := resolveTransport(server.Transport)
 
 	if server.IsExternal() {
@@ -190,11 +194,10 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 		return cfg
 	}
 	if transport == mcp.TransportStdio {
-		// Stdio containers need container ID which requires full reload
-		// Return a config that will error on registration with a clear message
 		return mcp.MCPServerConfig{
 			Name:         server.Name,
 			Transport:    transport,
+			ContainerID:  containerID,
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
 			PinSchemas:   server.PinSchemas,
