@@ -228,7 +228,7 @@ func TestServerRegistrar_BuildConfigFromMCPServer_External(t *testing.T) {
 		Tools:     []string{"search"},
 	}
 
-	cfg := r.buildConfigFromMCPServer(server, 0, "/path/stack.yaml")
+	cfg := r.buildConfigFromMCPServer(server, 0, "", "/path/stack.yaml")
 
 	if !cfg.External {
 		t.Error("expected External to be true")
@@ -250,7 +250,7 @@ func TestServerRegistrar_BuildConfigFromMCPServer_LocalProcess(t *testing.T) {
 		Env:     map[string]string{"MODE": "dev"},
 	}
 
-	cfg := r.buildConfigFromMCPServer(server, 0, "/home/user/stacks/stack.yaml")
+	cfg := r.buildConfigFromMCPServer(server, 0, "", "/home/user/stacks/stack.yaml")
 
 	if !cfg.LocalProcess {
 		t.Error("expected LocalProcess to be true")
@@ -274,7 +274,7 @@ func TestServerRegistrar_BuildConfigFromMCPServer_SSH(t *testing.T) {
 		},
 	}
 
-	cfg := r.buildConfigFromMCPServer(server, 0, "/path/stack.yaml")
+	cfg := r.buildConfigFromMCPServer(server, 0, "", "/path/stack.yaml")
 
 	if !cfg.SSH {
 		t.Error("expected SSH to be true")
@@ -295,7 +295,7 @@ func TestServerRegistrar_BuildConfigFromMCPServer_ContainerHTTP(t *testing.T) {
 		Tools:     []string{"get", "post"},
 	}
 
-	cfg := r.buildConfigFromMCPServer(server, 9005, "/path/stack.yaml")
+	cfg := r.buildConfigFromMCPServer(server, 9005, "", "/path/stack.yaml")
 
 	if cfg.Transport != mcp.TransportHTTP {
 		t.Errorf("expected transport HTTP, got '%s'", cfg.Transport)
@@ -389,12 +389,36 @@ func TestServerRegistrar_BuildConfigFromMCPServer_Stdio(t *testing.T) {
 		Tools:     []string{"exec"},
 	}
 
-	cfg := r.buildConfigFromMCPServer(server, 0, "/path/stack.yaml")
+	cfg := r.buildConfigFromMCPServer(server, 0, "container-abc", "/path/stack.yaml")
 
 	if cfg.Transport != mcp.TransportStdio {
 		t.Errorf("expected transport stdio, got '%s'", cfg.Transport)
 	}
-	// Stdio containers don't get a container ID from this path
+	if cfg.ContainerID != "container-abc" {
+		t.Errorf("expected container ID 'container-abc', got '%s'", cfg.ContainerID)
+	}
+	if len(cfg.Tools) != 1 || cfg.Tools[0] != "exec" {
+		t.Errorf("unexpected tools: %v", cfg.Tools)
+	}
+}
+
+func TestServerRegistrar_BuildConfigFromMCPServer_StdioWithoutContainerID(t *testing.T) {
+	r := NewServerRegistrar(mcp.NewGateway(), false)
+
+	server := config.MCPServer{
+		Name:      "stdio-server",
+		Image:     "my-image:latest",
+		Transport: "stdio",
+	}
+
+	// Passing an empty container ID builds the config but the resulting
+	// registration will fail downstream in gateway.RegisterMCPServer — this is
+	// an intentional fail-fast rather than a silent success.
+	cfg := r.buildConfigFromMCPServer(server, 0, "", "/path/stack.yaml")
+
+	if cfg.Transport != mcp.TransportStdio {
+		t.Errorf("expected transport stdio, got '%s'", cfg.Transport)
+	}
 	if cfg.ContainerID != "" {
 		t.Errorf("expected empty container ID, got '%s'", cfg.ContainerID)
 	}
@@ -412,7 +436,7 @@ func TestServerRegistrar_BuildConfigFromMCPServer_OpenAPI(t *testing.T) {
 		Tools: []string{"getUser"},
 	}
 
-	cfg := r.buildConfigFromMCPServer(server, 0, "/path/stack.yaml")
+	cfg := r.buildConfigFromMCPServer(server, 0, "", "/path/stack.yaml")
 
 	if !cfg.OpenAPI {
 		t.Error("expected OpenAPI to be true")
@@ -515,7 +539,7 @@ func TestServerRegistrar_BuildConfigFromMCPServer_OutputFormat(t *testing.T) {
 		OutputFormat: "csv",
 	}
 
-	cfg := r.buildConfigFromMCPServer(server, 0, "/path/stack.yaml")
+	cfg := r.buildConfigFromMCPServer(server, 0, "", "/path/stack.yaml")
 
 	if cfg.OutputFormat != "csv" {
 		t.Errorf("expected OutputFormat 'csv', got '%s'", cfg.OutputFormat)
@@ -571,7 +595,7 @@ func TestServerRegistrar_BuildConfigFromMCPServer_SSE(t *testing.T) {
 		Transport: "sse",
 	}
 
-	cfg := r.buildConfigFromMCPServer(server, 0, "/path/stack.yaml")
+	cfg := r.buildConfigFromMCPServer(server, 0, "", "/path/stack.yaml")
 
 	if !cfg.External {
 		t.Error("expected External to be true")
@@ -626,7 +650,7 @@ func TestServerRegistrar_RegisterOne_External(t *testing.T) {
 	cancel()
 
 	// Will fail to connect but exercises the code path
-	err := r.RegisterOne(ctx, server, 0, "/path/stack.yaml")
+	err := r.RegisterOne(ctx, server, 0, "", "/path/stack.yaml")
 	if err == nil {
 		t.Error("expected error for unreachable server")
 	}
