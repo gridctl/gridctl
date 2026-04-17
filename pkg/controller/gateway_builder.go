@@ -454,8 +454,14 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, vaultLookup, vaultSetLookup)
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
-	reloadHandler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {
-		return registrar.RegisterOne(ctx, server, hostPort, b.stackPath)
+	// stackPath is threaded through the callback by the reload handler rather
+	// than captured from b.stackPath: in stackless mode b.stackPath starts
+	// empty and is only populated once POST /api/stack/initialize runs, which
+	// updates reloadHandler.stackPath. The handler already holds its mutex
+	// when invoking this callback, so reading h.stackPath there is safe and
+	// avoids a reentrant-lock deadlock a getter-based approach would cause.
+	reloadHandler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+		return registrar.RegisterOne(ctx, server, hostPort, containerID, stackPath)
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
 
