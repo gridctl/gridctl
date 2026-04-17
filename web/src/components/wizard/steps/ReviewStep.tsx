@@ -123,7 +123,14 @@ export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: Revie
         showToast('success', 'Stack saved to library');
         onDeploy?.();
       } else {
-        showToast('error', `Saved but could not load — restart with \`gridctl apply ~/.gridctl/stacks/${name}.yaml\``);
+        // Save succeeded, load did not — close the modal so the user isn't trapped,
+        // and give the recovery toast enough time to be read and acted on.
+        showToast(
+          'error',
+          `Saved but could not load — restart with \`gridctl apply ~/.gridctl/stacks/${name}.yaml\``,
+          { duration: 10000 },
+        );
+        onDeploy?.();
       }
     } finally {
       setDeploying(false);
