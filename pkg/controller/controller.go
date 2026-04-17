@@ -165,7 +165,14 @@ func (sc *StackController) runStacklessDaemonMode() error {
 
 // buildAndRunStackless builds and runs the gateway in stackless mode.
 func (sc *StackController) buildAndRunStackless(ctx context.Context, verbose bool) error {
-	rt := runtime.NewOrchestrator(nil, nil)
+	// Try to create a real container runtime so Save & Load can actually bring up
+	// containers once the user loads a stack via POST /api/stack/initialize. Fall
+	// back to an empty orchestrator if detection fails — the daemon still starts;
+	// initialize will surface a clear error instead of panicking.
+	rt, err := sc.createRuntime()
+	if err != nil {
+		rt = runtime.NewOrchestrator(nil, nil)
+	}
 	stack := &config.Stack{Name: "gridctl"}
 	builder := NewGatewayBuilder(sc.config, stack, "", rt, &runtime.UpResult{})
 	builder.SetVersion(sc.version)
