@@ -36,8 +36,12 @@ type Handler struct {
 	vault       config.VaultLookup
 	vaultSet    config.VaultSetLookup
 
-	// Callback for registering new MCP servers with gateway
-	registerServer func(ctx context.Context, server config.MCPServer, hostPort int) error
+	// Callback for registering new MCP servers with gateway. containerID is the
+	// runtime container ID for stdio transport (empty for non-container servers).
+	// stackPath is the live active stack path; passed through to the registrar
+	// so the gateway_builder closure does not need to re-enter the Handler
+	// mutex to look it up.
+	registerServer func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error
 }
 
 // NewHandler creates a reload handler.
@@ -68,7 +72,7 @@ func (h *Handler) SetNoExpand(noExpand bool) {
 }
 
 // SetRegisterServerFunc sets the callback for registering MCP servers.
-func (h *Handler) SetRegisterServerFunc(fn func(ctx context.Context, server config.MCPServer, hostPort int) error) {
+func (h *Handler) SetRegisterServerFunc(fn func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error) {
 	h.registerServer = fn
 }
 
@@ -142,6 +146,20 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 
 	result := &ReloadResult{Success: true}
 
+	// On initial load (stackless serve → /api/stack/initialize), the daemon
+	// started without running orchestrator.Up, so the stack's network(s) have
+	// never been created. Ensure them now before applyMCPServerChanges tries
+	// to start any container — otherwise Docker rejects ContainerCreate with
+	// "network X not found".
+	if isInitial && newCfg.NeedsContainerRuntime() {
+		if err := h.ensureNetworks(ctx, newCfg); err != nil {
+			return &ReloadResult{
+				Success: false,
+				Message: fmt.Sprintf("failed to ensure network: %v", err),
+			}, nil
+		}
+	}
+
 	// Apply MCP server changes
 	if err := h.applyMCPServerChanges(ctx, diff.MCPServers, newCfg, result); err != nil {
 		result.Success = false
@@ -159,7 +177,19 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	// Update current config
 	h.currentCfg = newCfg
 
-	if result.Message == "" {
+	// Per-item failures collected during applyMCPServerChanges /
+	// applyResourceChanges must flip Success so callers (HTTP handler, file
+	// watcher) see the reload as failed instead of a silent green 200.
+	if len(result.Errors) > 0 {
+		result.Success = false
+		if result.Message == "" {
+			if len(result.Errors) == 1 {
+				result.Message = result.Errors[0]
+			} else {
+				result.Message = fmt.Sprintf("%d errors during reload", len(result.Errors))
+			}
+		}
+	} else if result.Message == "" {
 		result.Message = "configuration reloaded successfully"
 	}
 
@@ -291,6 +321,41 @@ func (h *Handler) applyResourceChanges(ctx context.Context, diff ResourceDiff, n
 	return nil
 }
 
+// ensureNetworks creates the stack's network(s) if they do not already exist.
+// Mirrors the network setup in pkg/runtime/orchestrator.go Up, but is only
+// invoked during the stackless initial-load path where Up was never called.
+func (h *Handler) ensureNetworks(ctx context.Context, stack *config.Stack) error {
+	if h.runtime == nil {
+		return fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
+	}
+	rt := h.runtime.Runtime()
+	if rt == nil {
+		return fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
+	}
+
+	if len(stack.Networks) > 0 {
+		for _, net := range stack.Networks {
+			h.logger.Info("creating network", "name", net.Name)
+			if err := rt.EnsureNetwork(ctx, net.Name, runtime.NetworkOptions{
+				Driver: net.Driver,
+				Stack:  stack.Name,
+			}); err != nil {
+				return fmt.Errorf("ensuring network %s: %w", net.Name, err)
+			}
+		}
+		return nil
+	}
+
+	h.logger.Info("creating network", "name", stack.Network.Name)
+	if err := rt.EnsureNetwork(ctx, stack.Network.Name, runtime.NetworkOptions{
+		Driver: stack.Network.Driver,
+		Stack:  stack.Name,
+	}); err != nil {
+		return fmt.Errorf("ensuring network: %w", err)
+	}
+	return nil
+}
+
 func (h *Handler) stopAndRemoveContainer(ctx context.Context, containerName string) error {
 	rt := h.runtime.Runtime()
 
@@ -314,7 +379,7 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 	if server.IsExternal() || server.IsLocalProcess() || server.IsSSH() || server.IsOpenAPI() {
 		// Just register with gateway
 		if h.registerServer != nil {
-			return h.registerServer(ctx, server, 0)
+			return h.registerServer(ctx, server, 0, "", h.stackPath)
 		}
 		return nil
 	}
@@ -380,7 +445,7 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 
 	// Register with gateway
 	if h.registerServer != nil {
-		return h.registerServer(ctx, server, actualHostPort)
+		return h.registerServer(ctx, server, actualHostPort, string(status.ID), h.stackPath)
 	}
 
 	return nil
