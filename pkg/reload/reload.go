@@ -166,7 +166,11 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	h.logger.Info("reload complete",
 		"added", len(result.Added),
 		"removed", len(result.Removed),
-		"modified", len(result.Modified))
+		"modified", len(result.Modified),
+		"errors", len(result.Errors))
+	for _, e := range result.Errors {
+		h.logger.Warn("reload: per-item error", "error", e)
+	}
 
 	return result, nil
 }
@@ -316,7 +320,13 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 	}
 
 	// Start container
+	if h.runtime == nil {
+		return fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
+	}
 	rt := h.runtime.Runtime()
+	if rt == nil {
+		return fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
+	}
 
 	// Pull image if needed
 	imageName := server.Image
@@ -377,7 +387,13 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 }
 
 func (h *Handler) startResource(ctx context.Context, res config.Resource, stack *config.Stack) error {
+	if h.runtime == nil {
+		return fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
+	}
 	rt := h.runtime.Runtime()
+	if rt == nil {
+		return fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
+	}
 
 	// Pull image
 	if err := rt.EnsureImage(ctx, res.Image); err != nil {
