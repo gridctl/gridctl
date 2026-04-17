@@ -14,8 +14,10 @@ import (
 
 // mockWorkloadRuntime implements runtime.WorkloadRuntime for testing.
 type mockWorkloadRuntime struct {
-	startFn  func(ctx context.Context, cfg runtime.WorkloadConfig) (*runtime.WorkloadStatus, error)
-	existsFn func(ctx context.Context, name string) (bool, runtime.WorkloadID, error)
+	startFn          func(ctx context.Context, cfg runtime.WorkloadConfig) (*runtime.WorkloadStatus, error)
+	existsFn         func(ctx context.Context, name string) (bool, runtime.WorkloadID, error)
+	ensureNetworkFn  func(ctx context.Context, name string, opts runtime.NetworkOptions) error
+	ensureNetworkLog []string
 }
 
 func newMockWorkloadRuntime() *mockWorkloadRuntime {
@@ -52,6 +54,10 @@ func (m *mockWorkloadRuntime) GetHostPort(ctx context.Context, id runtime.Worklo
 	return 0, nil
 }
 func (m *mockWorkloadRuntime) EnsureNetwork(ctx context.Context, name string, opts runtime.NetworkOptions) error {
+	m.ensureNetworkLog = append(m.ensureNetworkLog, name)
+	if m.ensureNetworkFn != nil {
+		return m.ensureNetworkFn(ctx, name, opts)
+	}
 	return nil
 }
 func (m *mockWorkloadRuntime) ListNetworks(ctx context.Context, stack string) ([]string, error) {
@@ -125,7 +131,7 @@ func TestHandler_SettersAndGetters(t *testing.T) {
 	}
 
 	// SetRegisterServerFunc
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
 		return nil
 	})
 	if h.registerServer == nil {
@@ -246,7 +252,7 @@ mcp-servers:
 	h, _ := setupHandler(t, stackPath, initialCfg)
 
 	registerCalled := false
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
 		registerCalled = true
 		return nil
 	})
@@ -322,7 +328,7 @@ mcp-servers:
 	h, _ := setupHandler(t, stackPath, initialCfg)
 
 	registerCalled := false
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
 		registerCalled = true
 		return nil
 	})
@@ -402,7 +408,7 @@ mcp-servers:
 
 	h, _ := setupHandler(t, stackPath, initialCfg)
 
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
 		return fmt.Errorf("registration failed")
 	})
 
@@ -412,6 +418,141 @@ mcp-servers:
 	}
 	if len(result.Errors) == 0 {
 		t.Error("expected partial failure errors")
+	}
+	if result.Success {
+		t.Error("expected Success=false when per-item errors accumulate")
+	}
+	if result.Message == "" {
+		t.Error("expected non-empty Message summarizing the failure")
+	}
+}
+
+// TestHandler_Initialize_Stdio_PassesContainerID guards the primary stackless
+// Save & Load bug: Initialize must pass the runtime container ID from rt.Start
+// through to the registerServer callback so stdio containers can be attached.
+func TestHandler_Initialize_Stdio_PassesContainerID(t *testing.T) {
+	content := `
+name: daily
+network:
+  name: daily-net
+mcp-servers:
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    transport: stdio
+`
+	stackPath := writeStackFile(t, content)
+
+	// Stackless bootstrap: initial cfg is a placeholder with a different name,
+	// matching pkg/controller/controller.go buildAndRunStackless.
+	placeholder := &config.Stack{Name: "gridctl"}
+	mockRT := newMockWorkloadRuntime()
+	mockRT.startFn = func(ctx context.Context, cfg runtime.WorkloadConfig) (*runtime.WorkloadStatus, error) {
+		return &runtime.WorkloadStatus{
+			ID:       runtime.WorkloadID("real-container-id-123"),
+			Name:     cfg.Name,
+			State:    runtime.WorkloadStateRunning,
+			HostPort: cfg.HostPort,
+		}, nil
+	}
+	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
+	gw := mcp.NewGateway()
+	h := NewHandler("", placeholder, gw, orch, 8180, 9000, nil, nil)
+
+	var capturedContainerID string
+	var capturedServerName string
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+		capturedServerName = server.Name
+		capturedContainerID = containerID
+		return nil
+	})
+
+	result, err := h.Initialize(context.Background(), stackPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("expected success, got: %s (errors=%v)", result.Message, result.Errors)
+	}
+	if capturedServerName != "github" {
+		t.Errorf("expected callback for server 'github', got %q", capturedServerName)
+	}
+	if capturedContainerID != "real-container-id-123" {
+		t.Errorf("expected callback to receive container ID from rt.Start, got %q", capturedContainerID)
+	}
+	if len(mockRT.ensureNetworkLog) != 1 || mockRT.ensureNetworkLog[0] != "daily-net" {
+		t.Errorf("expected EnsureNetwork called once for 'daily-net' before container start, got %v", mockRT.ensureNetworkLog)
+	}
+}
+
+// TestHandler_Initialize_NoNetworkEnsuredForExternalOnlyStack confirms we do
+// not incur a Docker/Podman call when the stack has no container workloads.
+func TestHandler_Initialize_NoNetworkEnsuredForExternalOnlyStack(t *testing.T) {
+	content := `
+name: ext-only
+network:
+  name: never-used-net
+mcp-servers:
+  - name: ext
+    url: https://example.com/mcp
+    transport: http
+`
+	stackPath := writeStackFile(t, content)
+
+	placeholder := &config.Stack{Name: "gridctl"}
+	mockRT := newMockWorkloadRuntime()
+	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
+	gw := mcp.NewGateway()
+	h := NewHandler("", placeholder, gw, orch, 8180, 9000, nil, nil)
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+		return nil
+	})
+
+	result, err := h.Initialize(context.Background(), stackPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("expected success, got: %s", result.Message)
+	}
+	if len(mockRT.ensureNetworkLog) != 0 {
+		t.Errorf("expected no EnsureNetwork calls for external-only stack, got %v", mockRT.ensureNetworkLog)
+	}
+}
+
+// TestHandler_Initialize_CallbackReceivesStackPath confirms that the
+// registerServer callback receives the live post-Initialize stackPath rather
+// than the placeholder value the handler was constructed with. This is what
+// lets gateway_builder's setupHotReload closure avoid capturing b.stackPath
+// (which is "" in stackless mode at wire-up time).
+func TestHandler_Initialize_CallbackReceivesStackPath(t *testing.T) {
+	content := `
+name: ext-only
+network:
+  name: net
+mcp-servers:
+  - name: ext
+    url: https://example.com/mcp
+    transport: http
+`
+	stackPath := writeStackFile(t, content)
+
+	h, _ := setupHandler(t, "", &config.Stack{Name: "gridctl"})
+
+	var capturedStackPath string
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+		capturedStackPath = stackPath
+		return nil
+	})
+
+	result, err := h.Initialize(context.Background(), stackPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("expected success, got: %s", result.Message)
+	}
+	if capturedStackPath != stackPath {
+		t.Errorf("expected callback to receive stackPath %q, got %q", stackPath, capturedStackPath)
 	}
 }
 
@@ -476,7 +617,7 @@ mcp-servers:
 	h, _ := setupHandler(t, stackPath, initialCfg)
 
 	registerCalls := 0
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
 		registerCalls++
 		return nil
 	})
