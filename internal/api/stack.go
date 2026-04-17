@@ -152,7 +152,15 @@ func (s *Server) handleStackInitialize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !result.Success {
-			writeJSONError(w, "Stack initialization failed: "+result.Message, http.StatusBadRequest)
+			// Include per-item errors in the body so the wizard can surface
+			// individual server registration failures instead of a single
+			// opaque message.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":  "Stack initialization failed: " + result.Message,
+				"errors": result.Errors,
+			})
 			return
 		}
 
