@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +12,9 @@ import (
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/reload"
+	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 )
@@ -634,6 +639,61 @@ func TestHandleStackInitialize_SuccessNoReloadHandler(t *testing.T) {
 	// Verify server state was updated
 	assert.Equal(t, stackPath, s.stackFile)
 	assert.Equal(t, stackName, s.stackName)
+}
+
+// TestHandleStackInitialize_SurfacesPerServerErrors verifies that when the
+// reload handler reports per-server registration failures, the HTTP handler
+// returns HTTP 400 with an errors array in the body instead of 200 OK. This
+// guards the stackless Save & Load silent-green failure mode.
+func TestHandleStackInitialize_SurfacesPerServerErrors(t *testing.T) {
+	stacksDir := func() string {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, ".gridctl", "stacks")
+	}()
+
+	if err := os.MkdirAll(stacksDir, 0755); err != nil {
+		t.Skipf("cannot create stacks dir: %v", err)
+	}
+
+	stackName := "gridctl-test-init-partial-failure"
+	stackPath := filepath.Join(stacksDir, stackName+".yaml")
+	content := `name: ` + stackName + `
+network:
+  name: test-net
+mcp-servers:
+  - name: ext
+    url: https://example.com/mcp
+    transport: http
+`
+	if err := os.WriteFile(stackPath, []byte(content), 0644); err != nil {
+		t.Skipf("cannot write test stack: %v", err)
+	}
+	defer os.Remove(stackPath)
+
+	gw := mcp.NewGateway()
+	orch := runtime.NewOrchestrator(nil, nil)
+	rh := reload.NewHandler("", &config.Stack{Name: "gridctl"}, gw, orch, 8180, 9000, nil, nil)
+	rh.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+		return fmt.Errorf("simulated registration failure for %s", server.Name)
+	})
+
+	s := &Server{}
+	s.SetReloadHandler(rh)
+
+	body, _ := json.Marshal(map[string]string{"name": stackName})
+	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
+	w := httptest.NewRecorder()
+
+	s.handleStackInitialize(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Stack initialization failed")
+	assert.Contains(t, w.Body.String(), `"errors"`)
+	assert.Contains(t, w.Body.String(), "simulated registration failure for ext")
+
+	// stackFile must NOT have been persisted since the initialization failed
+	assert.Empty(t, s.stackFile, "stackFile should not be set on failure")
+	assert.Empty(t, s.stackName, "stackName should not be set on failure")
 }
 
 func TestHandleStacksList_WithFiles(t *testing.T) {
