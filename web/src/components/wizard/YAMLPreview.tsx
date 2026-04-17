@@ -119,7 +119,7 @@ export function YAMLPreview({ yaml, className }: YAMLPreviewProps) {
                   {lineNum}
                 </span>
                 <span
-                  className="flex-1 px-2"
+                  className="flex-1 px-2 whitespace-pre"
                   dangerouslySetInnerHTML={{ __html: html || '&nbsp;' }}
                 />
               </div>
