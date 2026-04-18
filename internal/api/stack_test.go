@@ -673,7 +673,7 @@ mcp-servers:
 	gw := mcp.NewGateway()
 	orch := runtime.NewOrchestrator(nil, nil)
 	rh := reload.NewHandler("", &config.Stack{Name: "gridctl"}, gw, orch, 8180, 9000, nil, nil)
-	rh.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	rh.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []reload.ReplicaRuntime, stackPath string) error {
 		return fmt.Errorf("simulated registration failure for %s", server.Name)
 	})
 
