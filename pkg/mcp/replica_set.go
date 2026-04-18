@@ -109,6 +109,9 @@ type Replica struct {
 	healthy  atomic.Bool
 	inFlight atomic.Int64
 	restart  *backoffState
+
+	startedMu sync.Mutex
+	startedAt time.Time
 }
 
 // ID returns the zero-indexed replica id within its ReplicaSet.
@@ -135,6 +138,23 @@ func (r *Replica) InFlight() int64 { return r.inFlight.Load() }
 // Restart returns the replica's restart-backoff state. Never nil.
 func (r *Replica) Restart() *backoffState { return r.restart }
 
+// StartedAt returns the time this replica was initialized or most recently
+// restarted. Zero value means the replica has not yet started.
+func (r *Replica) StartedAt() time.Time {
+	r.startedMu.Lock()
+	defer r.startedMu.Unlock()
+	return r.startedAt
+}
+
+// MarkStarted records the current time as the replica's start time. Called
+// from NewReplicaSet and from the reconnect path so uptime reflects the
+// lifetime of the currently-running backing process.
+func (r *Replica) MarkStarted(now time.Time) {
+	r.startedMu.Lock()
+	defer r.startedMu.Unlock()
+	r.startedAt = now
+}
+
 // ReplicaSet is a pool of AgentClient replicas for a single logical MCP server.
 // Dispatch is determined by the set's policy. A single-replica set behaves
 // identically to a direct AgentClient (its Pick always returns that one
@@ -159,11 +179,13 @@ func NewReplicaSet(name, policy string, clients []AgentClient) *ReplicaSet {
 		policy:   policy,
 		replicas: make([]*Replica, 0, len(clients)),
 	}
+	now := time.Now()
 	for i, c := range clients {
 		r := &Replica{
-			id:      i,
-			client:  c,
-			restart: &backoffState{},
+			id:        i,
+			client:    c,
+			restart:   &backoffState{},
+			startedAt: now,
 		}
 		r.healthy.Store(true)
 		set.replicas = append(set.replicas, r)
