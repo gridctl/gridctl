@@ -36,12 +36,20 @@ type Handler struct {
 	vault       config.VaultLookup
 	vaultSet    config.VaultSetLookup
 
-	// Callback for registering new MCP servers with gateway. containerID is the
-	// runtime container ID for stdio transport (empty for non-container servers).
-	// stackPath is the live active stack path; passed through to the registrar
-	// so the gateway_builder closure does not need to re-enter the Handler
-	// mutex to look it up.
-	registerServer func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error
+	// Callback for registering new MCP servers with gateway. replicas carries
+	// one entry per replica in replica-id order (ContainerID and HostPort per
+	// replica, empty for non-container replicas). stackPath is the live active
+	// stack path; passed through to the registrar so the gateway_builder closure
+	// does not need to re-enter the Handler mutex to look it up.
+	registerServer func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error
+}
+
+// ReplicaRuntime carries runtime handles for one replica that the reload
+// handler has provisioned. Container replicas populate both fields; local-
+// process, SSH, external, and OpenAPI replicas pass zero-valued entries.
+type ReplicaRuntime struct {
+	HostPort    int
+	ContainerID string
 }
 
 // NewHandler creates a reload handler.
@@ -72,7 +80,7 @@ func (h *Handler) SetNoExpand(noExpand bool) {
 }
 
 // SetRegisterServerFunc sets the callback for registering MCP servers.
-func (h *Handler) SetRegisterServerFunc(fn func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error) {
+func (h *Handler) SetRegisterServerFunc(fn func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error) {
 	h.registerServer = fn
 }
 
@@ -218,12 +226,15 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 			h.logger.Warn("failed to reset schema pins for removed server", "name", server.Name, "error", err)
 		}
 
-		// Stop and remove container if it exists
+		// Stop and remove container(s) if the server was container-based. For
+		// multi-replica servers we iterate replica containers; single-replica
+		// preserves the pre-replicas naming (no suffix).
 		if !server.IsExternal() && !server.IsLocalProcess() && !server.IsSSH() && !server.IsOpenAPI() {
-			containerName := containerName(h.currentCfg.Name, server.Name)
-			if err := h.stopAndRemoveContainer(ctx, containerName); err != nil {
-				h.logger.Warn("failed to remove container", "name", server.Name, "error", err)
-				result.Errors = append(result.Errors, fmt.Sprintf("failed to remove container %s: %v", server.Name, err))
+			for _, name := range replicaContainerNames(h.currentCfg.Name, &server) {
+				if err := h.stopAndRemoveContainer(ctx, name); err != nil {
+					h.logger.Warn("failed to remove container", "name", name, "error", err)
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to remove container %s: %v", name, err))
+				}
 			}
 		}
 
@@ -237,11 +248,12 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		// Unregister from gateway
 		h.gateway.UnregisterMCPServer(change.Name)
 
-		// Stop old container if it was container-based
+		// Stop old container(s) if it was container-based.
 		if !change.Old.IsExternal() && !change.Old.IsLocalProcess() && !change.Old.IsSSH() && !change.Old.IsOpenAPI() {
-			containerName := containerName(h.currentCfg.Name, change.Name)
-			if err := h.stopAndRemoveContainer(ctx, containerName); err != nil {
-				h.logger.Warn("failed to stop container", "name", change.Name, "error", err)
+			for _, name := range replicaContainerNames(h.currentCfg.Name, &change.Old) {
+				if err := h.stopAndRemoveContainer(ctx, name); err != nil {
+					h.logger.Warn("failed to stop container", "name", name, "error", err)
+				}
 			}
 		}
 
@@ -375,11 +387,13 @@ func (h *Handler) stopAndRemoveContainer(ctx context.Context, containerName stri
 }
 
 func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, stack *config.Stack) error {
-	// Skip container creation for non-container servers
+	replicas := effectiveReplicas(&server)
+
+	// Skip container creation for non-container servers. Still produce N
+	// placeholder ReplicaRuntime entries so the registrar creates N clients.
 	if server.IsExternal() || server.IsLocalProcess() || server.IsSSH() || server.IsOpenAPI() {
-		// Just register with gateway
 		if h.registerServer != nil {
-			return h.registerServer(ctx, server, 0, "", h.stackPath)
+			return h.registerServer(ctx, server, make([]ReplicaRuntime, replicas), h.stackPath)
 		}
 		return nil
 	}
@@ -411,44 +425,59 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 		networkName = server.Network
 	}
 
-	// Allocate port - find next available port
-	hostPort := h.allocatePort(ctx)
+	// Start one container per replica. Each replica gets its own host port;
+	// for multi-replica servers the workload name gets a "-replica-<id>"
+	// suffix so container names don't collide.
+	runtimes := make([]ReplicaRuntime, 0, replicas)
+	for replicaID := 0; replicaID < replicas; replicaID++ {
+		hostPort := h.allocatePort(ctx)
+		workloadName := server.Name
+		if replicas > 1 {
+			workloadName = fmt.Sprintf("%s-replica-%d", server.Name, replicaID)
+		}
+		cfg := runtime.WorkloadConfig{
+			Name:        workloadName,
+			Stack:       stack.Name,
+			Type:        runtime.WorkloadTypeMCPServer,
+			Image:       imageName,
+			Command:     server.Command,
+			Env:         server.Env,
+			NetworkName: networkName,
+			ExposedPort: server.Port,
+			HostPort:    hostPort,
+			Transport:   server.Transport,
+			Labels: map[string]string{
+				"gridctl.managed":    "true",
+				"gridctl.stack":      stack.Name,
+				"gridctl.mcp-server": server.Name,
+			},
+		}
 
-	// Create workload config
-	cfg := runtime.WorkloadConfig{
-		Name:        server.Name,
-		Stack:       stack.Name,
-		Type:        runtime.WorkloadTypeMCPServer,
-		Image:       imageName,
-		Command:     server.Command,
-		Env:         server.Env,
-		NetworkName: networkName,
-		ExposedPort: server.Port,
-		HostPort:    hostPort,
-		Transport:   server.Transport,
-		Labels: map[string]string{
-			"gridctl.managed":    "true",
-			"gridctl.stack":      stack.Name,
-			"gridctl.mcp-server": server.Name,
-		},
+		status, err := rt.Start(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("starting container replica %d: %w", replicaID, err)
+		}
+
+		actualHostPort := status.HostPort
+		if actualHostPort == 0 {
+			actualHostPort = hostPort
+		}
+		runtimes = append(runtimes, ReplicaRuntime{HostPort: actualHostPort, ContainerID: string(status.ID)})
 	}
 
-	status, err := rt.Start(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("starting container: %w", err)
-	}
-
-	actualHostPort := status.HostPort
-	if actualHostPort == 0 {
-		actualHostPort = hostPort
-	}
-
-	// Register with gateway
 	if h.registerServer != nil {
-		return h.registerServer(ctx, server, actualHostPort, string(status.ID), h.stackPath)
+		return h.registerServer(ctx, server, runtimes, h.stackPath)
 	}
 
 	return nil
+}
+
+// effectiveReplicas returns the replica count, treating zero/negative as 1.
+func effectiveReplicas(server *config.MCPServer) int {
+	if server.Replicas <= 0 {
+		return 1
+	}
+	return server.Replicas
 }
 
 func (h *Handler) startResource(ctx context.Context, res config.Resource, stack *config.Stack) error {
@@ -512,4 +541,20 @@ func (h *Handler) allocatePort(ctx context.Context) int {
 
 func containerName(stack, name string) string {
 	return "gridctl-" + stack + "-" + name
+}
+
+// replicaContainerNames returns the container names for each replica of a
+// server. Single-replica servers keep the pre-replicas name (no suffix) so
+// backward-compatible stacks see no change.
+func replicaContainerNames(stack string, server *config.MCPServer) []string {
+	n := effectiveReplicas(server)
+	if n <= 1 {
+		return []string{containerName(stack, server.Name)}
+	}
+	names := make([]string, 0, n)
+	base := containerName(stack, server.Name)
+	for i := 0; i < n; i++ {
+		names = append(names, fmt.Sprintf("%s-replica-%d", base, i))
+	}
+	return names
 }
