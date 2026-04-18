@@ -116,22 +116,23 @@ interface FieldVisibility {
   openapi: boolean;
   buildArgs: boolean;
   network: boolean;
+  replicas: boolean;
 }
 
 function getFieldVisibility(serverType: ServerType): FieldVisibility {
   switch (serverType) {
     case 'container':
-      return { image: true, port: true, transport: true, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: true };
+      return { image: true, port: true, transport: true, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: true, replicas: true };
     case 'source':
-      return { image: false, port: true, transport: true, command: false, source: true, url: false, ssh: false, openapi: false, buildArgs: true, network: true };
+      return { image: false, port: true, transport: true, command: false, source: true, url: false, ssh: false, openapi: false, buildArgs: true, network: true, replicas: true };
     case 'external':
-      return { image: false, port: false, transport: true, command: false, source: false, url: true, ssh: false, openapi: false, buildArgs: false, network: false };
+      return { image: false, port: false, transport: true, command: false, source: false, url: true, ssh: false, openapi: false, buildArgs: false, network: false, replicas: false };
     case 'local':
-      return { image: false, port: false, transport: false, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: false };
+      return { image: false, port: false, transport: false, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: false, replicas: true };
     case 'ssh':
-      return { image: false, port: false, transport: false, command: true, source: false, url: false, ssh: true, openapi: false, buildArgs: false, network: false };
+      return { image: false, port: false, transport: false, command: true, source: false, url: false, ssh: true, openapi: false, buildArgs: false, network: false, replicas: true };
     case 'openapi':
-      return { image: false, port: false, transport: false, command: false, source: false, url: false, ssh: false, openapi: true, buildArgs: false, network: false };
+      return { image: false, port: false, transport: false, command: false, source: false, url: false, ssh: false, openapi: true, buildArgs: false, network: false, replicas: false };
   }
 }
 
@@ -477,7 +478,13 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
   };
 
   const envCount = data.env ? Object.keys(data.env).length : 0;
-  const advancedCount = (data.tools?.length ?? 0) + (data.outputFormat ? 1 : 0) + (data.buildArgs ? Object.keys(data.buildArgs).length : 0) + (data.network ? 1 : 0) + (data.pinSchemas !== undefined ? 1 : 0);
+  const advancedCount =
+    (data.tools?.length ?? 0) +
+    (data.outputFormat ? 1 : 0) +
+    (data.buildArgs ? Object.keys(data.buildArgs).length : 0) +
+    (data.network ? 1 : 0) +
+    (data.pinSchemas !== undefined ? 1 : 0) +
+    (data.replicas !== undefined && data.replicas !== 1 ? 1 : 0);
 
   return (
     <div className="space-y-3">
@@ -1423,6 +1430,47 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           </select>
           <p className="text-[10px] text-text-muted mt-1">Override the gateway-level schema pinning setting for this server</p>
         </div>
+
+        {visibility.replicas && (
+          <div>
+            <label className={labelClass}>Replicas</label>
+            <input
+              type="number"
+              aria-label="Replicas"
+              value={data.replicas ?? 1}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (!Number.isFinite(n)) return;
+                const clamped = Math.max(1, Math.min(32, Math.trunc(n)));
+                onChange({ replicas: clamped === 1 ? undefined : clamped });
+              }}
+              placeholder="1"
+              min={1}
+              max={32}
+              className={cn(inputClass, errors?.replicas && 'border-status-error/50')}
+            />
+            <FieldError error={errors?.replicas} />
+            <p className="text-[10px] text-text-muted mt-1">Number of parallel instances to run (1–32). Supported for container, local-process, and SSH transports.</p>
+            {data.replicas !== undefined && data.replicas > 1 && (
+              <div className="mt-3">
+                <label className={labelClass}>Replica Policy</label>
+                <select
+                  aria-label="Replica Policy"
+                  value={data.replicaPolicy ?? 'round-robin'}
+                  onChange={(e) => {
+                    const v = e.target.value as 'round-robin' | 'least-connections';
+                    onChange({ replicaPolicy: v === 'round-robin' ? undefined : v });
+                  }}
+                  className={inputClass}
+                >
+                  <option value="round-robin">Round-robin</option>
+                  <option value="least-connections">Least connections</option>
+                </select>
+                <p className="text-[10px] text-text-muted mt-1">How tool calls are distributed across replicas</p>
+              </div>
+            )}
+          </div>
+        )}
       </Section>
     </div>
   );
