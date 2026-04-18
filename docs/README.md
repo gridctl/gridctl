@@ -13,6 +13,7 @@ Guides and references for gridctl.
 
 | Document | Description |
 |----------|-------------|
+| [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server — policies, trade-offs, observability |
 | [Troubleshooting](troubleshooting.md) | Common errors and resolutions — runtime, networking, vault, hot reload |
 
 ## Quick Links
