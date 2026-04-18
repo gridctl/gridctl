@@ -33,6 +33,8 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const transport = isServer ? (data as MCPServerNodeData).transport : null;
   const TransportIcon = getTransportIcon(transport);
   const toolCount = isServer ? (data as MCPServerNodeData).toolCount : null;
+  const replicaCount = isServer ? (data as MCPServerNodeData).replicaCount ?? 1 : 1;
+  const hasReplicas = isServer && replicaCount > 1;
 
   // Get endpoint/containerId for MCP servers
   const endpoint = isServer ? (data as MCPServerNodeData).endpoint : null;
@@ -107,6 +109,17 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               <span className="text-[9px] text-cyan-400 font-medium">active</span>
             </div>
+          )}
+          {/* Inline replica count when > 1. Shown in both compact and full modes
+              so horizontal-scale servers are recognisable at a glance. */}
+          {hasReplicas && (
+            <span
+              className="text-[10px] text-violet-300/80 font-mono tracking-tight"
+              title={`${replicaCount} replicas`}
+              aria-label={`${replicaCount} replicas`}
+            >
+              ×{replicaCount}
+            </span>
           )}
           {/* Inline tool count in compact mode */}
           {isCompact && isServer && toolCount !== null && toolCount !== undefined && (
