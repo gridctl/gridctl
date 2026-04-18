@@ -15,6 +15,24 @@ export interface ServerInfo {
   tokenizer?: string; // active tokenizer mode: "embedded" or "api"
 }
 
+// Per-replica runtime status matching mcp.ReplicaStatus on the Go side.
+// Present only when a server has a replica set; single-replica servers may
+// still populate a single-element array.
+export interface ReplicaStatus {
+  replicaId: number;
+  state: 'healthy' | 'unhealthy' | 'restarting' | string;
+  healthy: boolean;
+  inFlight: number;
+  startedAt?: string; // RFC3339 timestamp
+  lastCheck?: string;
+  lastHealthy?: string;
+  lastError?: string;
+  restartAttempts?: number;
+  nextRetryAt?: string;
+  pid?: number;
+  containerId?: string;
+}
+
 // MCP Server status matching mcp.MCPServerStatus
 export interface MCPServerStatus {
   name: string;
@@ -34,6 +52,7 @@ export interface MCPServerStatus {
   openapi?: boolean; // True for OpenAPI-backed servers
   openapiSpec?: string; // OpenAPI spec URL or file path
   outputFormat?: string; // Configured output format (e.g. "toon", "csv")
+  replicas?: ReplicaStatus[]; // Per-replica runtime status
 }
 
 // Resource status for non-MCP containers
@@ -165,6 +184,7 @@ export interface MCPServerNodeData extends NodeDataBase {
   isProcessing?: boolean; // Playground: true when this server has an active tool call
   pinStatus?: 'pinned' | 'drift' | 'blocked' | 'approved_pending_redeploy';
   pinDriftCount?: number;
+  replicaCount?: number; // Number of replicas (omitted or 1 = single-replica)
 }
 
 export interface ResourceNodeData extends NodeDataBase {
