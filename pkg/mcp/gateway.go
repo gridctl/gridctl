@@ -124,8 +124,9 @@ type Gateway struct {
 	codeMode    *CodeMode                  // nil when code mode is off
 	codeModeStr string                           // "off", "on" — for status reporting
 
-	healthMu sync.RWMutex
-	health   map[string]*HealthStatus // name -> health status
+	healthMu      sync.RWMutex
+	health        map[string]*HealthStatus         // name -> rollup health (public API)
+	replicaHealth map[string]map[int]*HealthStatus // name -> replica_id -> health
 
 	toolCallObserver ToolCallObserver // optional observer for tool call metrics
 
@@ -155,6 +156,7 @@ func NewGateway() *Gateway {
 		},
 		serverMeta:     make(map[string]MCPServerConfig),
 		health:         make(map[string]*HealthStatus),
+		replicaHealth:  make(map[string]map[int]*HealthStatus),
 		blockedServers: make(map[string]bool),
 	}
 }
@@ -385,85 +387,188 @@ func (g *Gateway) StartHealthMonitor(ctx context.Context, interval time.Duration
 	}()
 }
 
-// checkHealth pings all registered MCP servers and updates their health status.
-// If a server is unhealthy and implements Reconnectable, it attempts reconnection.
+// checkHealth pings every replica of every registered MCP server and updates
+// per-replica health state plus a per-server rollup. Replicas that implement
+// Reconnectable are restarted on failure, gated by an exponential backoff so
+// a crashing replica does not spin.
 func (g *Gateway) checkHealth(ctx context.Context) {
-	clients := g.router.Clients()
+	for _, set := range g.router.ReplicaSets() {
+		name := set.Name()
 
-	for _, client := range clients {
-		// Only check clients that have server metadata (actual MCP servers)
+		// Only check sets that have server metadata (actual MCP servers,
+		// not the registry or other non-MCP routed clients).
 		g.mu.RLock()
-		_, isMCPServer := g.serverMeta[client.Name()]
+		_, isMCPServer := g.serverMeta[name]
 		g.mu.RUnlock()
 		if !isMCPServer {
 			continue
 		}
 
-		pingable, ok := client.(Pingable)
-		if !ok {
-			continue
+		for _, replica := range set.Replicas() {
+			g.checkReplicaHealth(ctx, name, replica)
 		}
+		g.recomputeRollup(name, set)
+	}
+}
 
-		now := time.Now()
-		err := pingable.Ping(ctx)
+// checkReplicaHealth runs one health cycle for a single replica: ping, update
+// per-replica status, and optionally trigger a backoff-gated Reconnect.
+func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, replica *Replica) {
+	client := replica.Client()
+	pingable, ok := client.(Pingable)
+	if !ok {
+		// Not pingable (e.g. pure HTTP without ping) — treat as healthy and
+		// let tool calls surface real failures. Keep the replica in rotation.
+		return
+	}
 
-		g.healthMu.Lock()
-		prev := g.health[client.Name()]
+	now := time.Now()
+	err := pingable.Ping(ctx)
 
-		status := &HealthStatus{
-			Healthy:   err == nil,
-			LastCheck: now,
+	g.healthMu.Lock()
+	prev := g.replicaStatusLocked(serverName, replica.ID())
+	status := &HealthStatus{
+		Healthy:   err == nil,
+		LastCheck: now,
+	}
+	if err == nil {
+		status.LastHealthy = now
+		if prev != nil && !prev.Healthy {
+			g.logger.Info("MCP server recovered", "name", serverName)
 		}
-
-		if err == nil {
-			status.LastHealthy = now
-			if prev != nil && !prev.Healthy {
-				g.logger.Info("MCP server recovered", "name", client.Name())
-			}
-		} else {
-			status.Error = err.Error()
-			if prev != nil {
-				status.LastHealthy = prev.LastHealthy
-			}
-			if prev == nil || prev.Healthy {
-				g.logger.Warn("MCP server unhealthy", "name", client.Name(), "error", err)
-			}
+	} else {
+		status.Error = err.Error()
+		if prev != nil {
+			status.LastHealthy = prev.LastHealthy
 		}
-
-		g.health[client.Name()] = status
-		g.healthMu.Unlock()
-
-		// Attempt reconnection for unhealthy clients that support it
-		if err != nil {
-			if rc, ok := client.(Reconnectable); ok {
-				g.logger.Info("attempting reconnection", "name", client.Name())
-				if reconnErr := rc.Reconnect(ctx); reconnErr != nil {
-					g.logger.Warn("reconnection failed", "name", client.Name(), "error", reconnErr)
-				} else {
-					// Reconnection succeeded — update health status and refresh router
-					g.healthMu.Lock()
-					g.health[client.Name()] = &HealthStatus{
-						Healthy:     true,
-						LastCheck:   time.Now(),
-						LastHealthy: time.Now(),
-					}
-					g.healthMu.Unlock()
-					g.router.RefreshTools()
-					g.logger.Info("MCP server reconnected", "name", client.Name())
-
-					// Verify pins after reconnection; drift on reconnect is suspicious.
-					if g.pinningEnabledForServer(client.Name()) {
-						drifts, pinErr := g.schemaVerifier.VerifyOrPin(client.Name(), client.Tools())
-						if pinErr != nil {
-							g.logger.Warn("pins: verification failed after reconnect", "name", client.Name(), "error", pinErr)
-						} else {
-							g.handlePinDrift(client.Name(), drifts)
-						}
-					}
-				}
-			}
+		if prev == nil || prev.Healthy {
+			g.logger.Warn("MCP server unhealthy", "name", serverName, "error", err)
 		}
 	}
+	g.setReplicaStatusLocked(serverName, replica.ID(), status)
+	g.healthMu.Unlock()
+
+	if err == nil {
+		replica.SetHealthy(true)
+		replica.Restart().Reset()
+		return
+	}
+
+	// Unhealthy: exclude from dispatch and try to restart if eligible.
+	replica.SetHealthy(false)
+
+	rc, reconnectable := client.(Reconnectable)
+	if !reconnectable {
+		return
+	}
+	if !replica.Restart().ShouldTry(now) {
+		// Still in backoff window; wait for next check.
+		return
+	}
+
+	g.logger.Info("attempting reconnection", "name", serverName)
+	if reconnErr := rc.Reconnect(ctx); reconnErr != nil {
+		delay := replica.Restart().Advance(now)
+		g.logger.Warn("reconnection failed", "name", serverName, "error", reconnErr, "next_retry_in", delay)
+		return
+	}
+
+	// Reconnect succeeded — back in rotation.
+	replica.Restart().Reset()
+	replica.SetHealthy(true)
+
+	g.healthMu.Lock()
+	g.setReplicaStatusLocked(serverName, replica.ID(), &HealthStatus{
+		Healthy:     true,
+		LastCheck:   time.Now(),
+		LastHealthy: time.Now(),
+	})
+	g.healthMu.Unlock()
+
+	g.router.RefreshTools()
+	g.logger.Info("MCP server reconnected", "name", serverName)
+
+	// Verify pins after reconnection using replica-0's tool surface if we
+	// can get it; otherwise use this replica's tools. Drift on reconnect is
+	// suspicious but pinning stays per-server, not per-replica.
+	if g.pinningEnabledForServer(serverName) {
+		drifts, pinErr := g.schemaVerifier.VerifyOrPin(serverName, client.Tools())
+		if pinErr != nil {
+			g.logger.Warn("pins: verification failed after reconnect", "name", serverName, "error", pinErr)
+		} else {
+			g.handlePinDrift(serverName, drifts)
+		}
+	}
+}
+
+// replicaStatusLocked returns the stored replica health. Callers must hold
+// g.healthMu (read or write).
+func (g *Gateway) replicaStatusLocked(serverName string, replicaID int) *HealthStatus {
+	if g.replicaHealth == nil {
+		return nil
+	}
+	m := g.replicaHealth[serverName]
+	if m == nil {
+		return nil
+	}
+	return m[replicaID]
+}
+
+// setReplicaStatusLocked stores replica health. Callers must hold g.healthMu
+// (write).
+func (g *Gateway) setReplicaStatusLocked(serverName string, replicaID int, status *HealthStatus) {
+	m := g.replicaHealth[serverName]
+	if m == nil {
+		m = make(map[int]*HealthStatus)
+		g.replicaHealth[serverName] = m
+	}
+	m[replicaID] = status
+}
+
+// recomputeRollup updates the per-server rollup HealthStatus from the latest
+// per-replica statuses. The rollup is healthy when at least one replica is
+// healthy; error is the most recent replica error otherwise.
+func (g *Gateway) recomputeRollup(serverName string, set *ReplicaSet) {
+	g.healthMu.Lock()
+	defer g.healthMu.Unlock()
+
+	anyHealthy := false
+	sawAny := false
+	var lastCheck, lastHealthy time.Time
+	var lastErr string
+	for _, r := range set.Replicas() {
+		s := g.replicaStatusLocked(serverName, r.ID())
+		if s == nil {
+			continue
+		}
+		sawAny = true
+		if s.LastCheck.After(lastCheck) {
+			lastCheck = s.LastCheck
+		}
+		if s.LastHealthy.After(lastHealthy) {
+			lastHealthy = s.LastHealthy
+		}
+		if s.Healthy {
+			anyHealthy = true
+		} else if s.Error != "" {
+			lastErr = s.Error
+		}
+	}
+
+	// Non-pingable replicas produce no status; don't fabricate a rollup for them.
+	if !sawAny {
+		return
+	}
+
+	rollup := &HealthStatus{
+		Healthy:     anyHealthy,
+		LastCheck:   lastCheck,
+		LastHealthy: lastHealthy,
+	}
+	if !anyHealthy {
+		rollup.Error = lastErr
+	}
+	g.health[serverName] = rollup
 }
 
 // GetHealthStatus returns the health status for a named MCP server.
@@ -494,10 +599,81 @@ func (g *Gateway) ServerInfo() ServerInfo {
 	return g.serverInfo
 }
 
-// RegisterMCPServer registers and initializes an MCP server.
+// RegisterMCPServer registers and initializes a single-replica MCP server.
+// Equivalent to RegisterMCPReplicaSet with one config and round-robin policy.
 func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) error {
-	g.logger.Info("connecting to MCP server", "name", cfg.Name, "transport", cfg.Transport)
+	return g.RegisterMCPReplicaSet(ctx, cfg.Name, ReplicaPolicyRoundRobin, []MCPServerConfig{cfg})
+}
+
+// RegisterMCPReplicaSet initializes one AgentClient per config and registers
+// them as a single replica set under the given server name. All configs must
+// be for the same logical server (same Name, same transport, same tool list);
+// only the per-replica runtime handles (ContainerID / Endpoint) should differ.
+// For len(cfgs) == 1 this is byte-identical to the old single-client path.
+//
+// Partial-startup tolerance: if some replicas fail to initialize, the server
+// is still registered with the successful ones. The call only returns an
+// error when every replica failed, or when the single-replica case fails
+// (in which case the caller sees the same error shape as before).
+func (g *Gateway) RegisterMCPReplicaSet(ctx context.Context, name, policy string, cfgs []MCPServerConfig) error {
+	if len(cfgs) == 0 {
+		return fmt.Errorf("register %s: no replica configs", name)
+	}
 	start := time.Now()
+	clients := make([]AgentClient, 0, len(cfgs))
+	var firstErr error
+	for i := range cfgs {
+		client, err := g.buildAgentClient(ctx, cfgs[i])
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			if len(cfgs) > 1 {
+				g.logger.Warn("replica registration failed; skipping", "name", name, "replica", i, "error", err)
+				continue
+			}
+			return err
+		}
+		clients = append(clients, client)
+	}
+	if len(clients) == 0 {
+		return fmt.Errorf("register %s: all %d replicas failed: %w", name, len(cfgs), firstErr)
+	}
+
+	// Store metadata before pin check so pinningEnabledForServer can read PinSchemas.
+	// For a replica set, we store cfgs[0] as canonical — all replicas share the
+	// same logical config modulo per-replica runtime handles.
+	canonical := cfgs[0]
+	canonical.Name = name
+	func() {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		g.serverMeta[name] = canonical
+	}()
+
+	// Schema pinning: verify or pin on first registration. Pins are per-server
+	// (not per-replica) — all replicas should expose the same tools.
+	if g.pinningEnabledForServer(name) {
+		drifts, err := g.schemaVerifier.VerifyOrPin(name, clients[0].Tools())
+		if err != nil {
+			g.logger.Warn("pins: verification failed", "server", name, "error", err)
+		} else {
+			g.handlePinDrift(name, drifts)
+		}
+	}
+
+	g.router.AddReplicaSet(NewReplicaSet(name, policy, clients))
+	g.router.RefreshTools()
+
+	g.logger.Info("registered MCP server", "name", name, "transport", cfgs[0].Transport, "replicas", len(clients), "tools", len(clients[0].Tools()), "duration", time.Since(start))
+	return nil
+}
+
+// buildAgentClient creates, connects, and initializes an AgentClient from a
+// single MCPServerConfig. It does NOT touch serverMeta, pins, health, or the
+// router — callers compose that separately.
+func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (AgentClient, error) {
+	g.logger.Info("connecting to MCP server", "name", cfg.Name, "transport", cfg.Transport)
 
 	var agentClient AgentClient
 	clientLogger := g.logger.With("server", cfg.Name)
@@ -505,11 +681,11 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 	// Handle OpenAPI servers
 	if cfg.OpenAPI {
 		if cfg.OpenAPIConfig == nil {
-			return fmt.Errorf("OpenAPI config required for OpenAPI server %s", cfg.Name)
+			return nil, fmt.Errorf("OpenAPI config required for OpenAPI server %s", cfg.Name)
 		}
 		openAPIClient, err := NewOpenAPIClient(cfg.Name, cfg.OpenAPIConfig)
 		if err != nil {
-			return fmt.Errorf("creating OpenAPI client %s: %w", cfg.Name, err)
+			return nil, fmt.Errorf("creating OpenAPI client %s: %w", cfg.Name, err)
 		}
 		openAPIClient.SetLogger(clientLogger)
 		if len(cfg.Tools) > 0 {
@@ -525,7 +701,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 			processClient.SetToolWhitelist(cfg.Tools)
 		}
 		if err := processClient.Connect(ctx); err != nil {
-			return fmt.Errorf("starting SSH process %s: %w", cfg.Name, err)
+			return nil, fmt.Errorf("starting SSH process %s: %w", cfg.Name, err)
 		}
 		agentClient = processClient
 	} else if cfg.LocalProcess {
@@ -536,14 +712,14 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 			processClient.SetToolWhitelist(cfg.Tools)
 		}
 		if err := processClient.Connect(ctx); err != nil {
-			return fmt.Errorf("starting process %s: %w", cfg.Name, err)
+			return nil, fmt.Errorf("starting process %s: %w", cfg.Name, err)
 		}
 		agentClient = processClient
 	} else {
 		switch cfg.Transport {
 		case TransportStdio:
 			if g.dockerCli == nil {
-				return fmt.Errorf("docker client not set for stdio transport")
+				return nil, fmt.Errorf("docker client not set for stdio transport")
 			}
 			stdioClient := NewStdioClient(cfg.Name, cfg.ContainerID, g.dockerCli)
 			stdioClient.SetLogger(clientLogger)
@@ -551,7 +727,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 				stdioClient.SetToolWhitelist(cfg.Tools)
 			}
 			if err := stdioClient.Connect(ctx); err != nil {
-				return fmt.Errorf("connecting to container: %w", err)
+				return nil, fmt.Errorf("connecting to container: %w", err)
 			}
 			agentClient = stdioClient
 		case TransportSSE:
@@ -564,7 +740,7 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 			// Wait for MCP server to be ready with retries
 			if err := g.waitForHTTPServer(ctx, httpClient, cfg.ReadyTimeout); err != nil {
 				g.handleReadyFailure(ctx, cfg, err)
-				return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
+				return nil, fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
 			}
 			agentClient = httpClient
 		case TransportHTTP, "": // Default to HTTP
@@ -576,47 +752,25 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 			// Wait for MCP server to be ready with retries
 			if err := g.waitForHTTPServer(ctx, httpClient, cfg.ReadyTimeout); err != nil {
 				g.handleReadyFailure(ctx, cfg, err)
-				return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
+				return nil, fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
 			}
 			agentClient = httpClient
 		default:
-			return fmt.Errorf("unknown transport: %s", cfg.Transport)
+			return nil, fmt.Errorf("unknown transport: %s", cfg.Transport)
 		}
 	}
 
 	// Initialize MCP connection
 	if err := agentClient.Initialize(ctx); err != nil {
-		return fmt.Errorf("initializing MCP server %s: %w", cfg.Name, err)
+		return nil, fmt.Errorf("initializing MCP server %s: %w", cfg.Name, err)
 	}
 
 	// Fetch tools (will be filtered by whitelist if set)
 	if err := agentClient.RefreshTools(ctx); err != nil {
-		return fmt.Errorf("fetching tools from %s: %w", cfg.Name, err)
+		return nil, fmt.Errorf("fetching tools from %s: %w", cfg.Name, err)
 	}
 
-	// Store metadata before pin check so pinningEnabledForServer can read PinSchemas.
-	func() {
-		g.mu.Lock()
-		defer g.mu.Unlock()
-		g.serverMeta[cfg.Name] = cfg
-	}()
-
-	// Schema pinning: verify or pin on first registration.
-	if g.pinningEnabledForServer(cfg.Name) {
-		drifts, err := g.schemaVerifier.VerifyOrPin(cfg.Name, agentClient.Tools())
-		if err != nil {
-			g.logger.Warn("pins: verification failed", "server", cfg.Name, "error", err)
-		} else {
-			g.handlePinDrift(cfg.Name, drifts)
-		}
-	}
-
-	// Add to router
-	g.router.AddClient(agentClient)
-	g.router.RefreshTools()
-
-	g.logger.Info("registered MCP server", "name", cfg.Name, "transport", cfg.Transport, "tools", len(agentClient.Tools()), "duration", time.Since(start))
-	return nil
+	return agentClient, nil
 }
 
 // SetServerMeta stores metadata for an MCP server without connecting to it.
