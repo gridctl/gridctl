@@ -123,6 +123,13 @@ func WithComponent(logger *slog.Logger, component string) *slog.Logger {
 	return logger.With(slog.String("component", component))
 }
 
+// WithReplicaID returns a new logger scoped to the given replica id. Use on
+// the tool-call and health/reconnect paths so every line emitted for a
+// replica carries its zero-indexed id alongside the server name.
+func WithReplicaID(logger *slog.Logger, replicaID int) *slog.Logger {
+	return logger.With(slog.Int("replica_id", replicaID))
+}
+
 // LogEntry represents a structured log entry for frontend consumption.
 // This is the schema that the frontend expects when parsing logs.
 type LogEntry struct {
