@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // ValidationError represents a configuration validation error.
@@ -342,6 +343,18 @@ func Validate(s *Stack) error {
 		// Per-server output_format validation
 		if server.OutputFormat != "" && !validOutputFormats[server.OutputFormat] {
 			errs = append(errs, ValidationError{prefix + ".output_format", "must be one of: json, toon, csv, text"})
+		}
+
+		// ready_timeout validation: must parse as a duration and be non-negative.
+		// Only meaningful for container-based HTTP/SSE servers; accepted (but unused)
+		// on other types to avoid a cliff when templates share fields.
+		if server.ReadyTimeout != "" {
+			d, err := time.ParseDuration(server.ReadyTimeout)
+			if err != nil {
+				errs = append(errs, ValidationError{prefix + ".ready_timeout", fmt.Sprintf("invalid duration %q (expected e.g. \"60s\" or \"2m\")", server.ReadyTimeout)})
+			} else if d < 0 {
+				errs = append(errs, ValidationError{prefix + ".ready_timeout", "must be non-negative"})
+			}
 		}
 
 		// In simple mode, server.Network is ignored (per design decision)
