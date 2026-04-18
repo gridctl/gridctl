@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
 
 func TestStack_NeedsContainerRuntime(t *testing.T) {
 	tests := []struct {
@@ -132,6 +136,63 @@ func TestStack_ContainerWorkloads(t *testing.T) {
 	workloads := stack.ContainerWorkloads()
 	if len(workloads) != 2 {
 		t.Fatalf("expected 2 container workloads, got %d", len(workloads))
+	}
+}
+
+func TestMCPServer_ReplicasYAMLRoundTrip(t *testing.T) {
+	tests := []struct {
+		name         string
+		yamlIn       string
+		wantReplicas int
+		wantPolicy   string
+	}{
+		{
+			name: "no replica fields",
+			yamlIn: `name: s
+image: alpine
+port: 3000
+`,
+			wantReplicas: 0,
+			wantPolicy:   "",
+		},
+		{
+			name: "explicit replicas and policy",
+			yamlIn: `name: s
+image: alpine
+port: 3000
+replicas: 3
+replica_policy: least-connections
+`,
+			wantReplicas: 3,
+			wantPolicy:   "least-connections",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var s MCPServer
+			if err := yaml.Unmarshal([]byte(tc.yamlIn), &s); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if s.Replicas != tc.wantReplicas {
+				t.Errorf("Replicas = %d, want %d", s.Replicas, tc.wantReplicas)
+			}
+			if s.ReplicaPolicy != tc.wantPolicy {
+				t.Errorf("ReplicaPolicy = %q, want %q", s.ReplicaPolicy, tc.wantPolicy)
+			}
+
+			out, err := yaml.Marshal(&s)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var got MCPServer
+			if err := yaml.Unmarshal(out, &got); err != nil {
+				t.Fatalf("re-unmarshal: %v", err)
+			}
+			if got.Replicas != s.Replicas || got.ReplicaPolicy != s.ReplicaPolicy {
+				t.Errorf("round-trip mismatch: got %+v, want %+v", got, s)
+			}
+		})
 	}
 }
 
