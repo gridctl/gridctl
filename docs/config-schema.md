@@ -321,6 +321,7 @@ mcp-servers:
 | `tools` | []string | No | — | Tool whitelist. Empty exposes all tools |
 | `output_format` | string | No | — | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | — | Override schema pinning for this server. `false` disables pinning regardless of gateway setting. Omit to inherit from `gateway.security.schema_pinning.enabled` |
+| `ready_timeout` | duration | No | `30s` | Readiness wait for container-based HTTP/SSE servers. Accepts any `time.Duration` string (e.g. `"60s"`, `"2m"`). When a container does not become ready within this window, the container is stopped and removed so a retry starts clean. Ignored for stdio, external, local process, SSH, and OpenAPI servers |
 
 **Type determination rules:**
 - Must have exactly one of: `image`, `source`, `url`, `command` (alone), `ssh` + `command`, or `openapi`
