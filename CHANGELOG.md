@@ -8,6 +8,7 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- Make MCP HTTP/SSE readiness timeout configurable via `ready_timeout` and remove orphan containers on timeout
 - Register logical container name as DNS alias for inter-container resolution in Podman and Docker stacks
 - Persist tool turns to history and populate FormatSavingsPct
 - Persist tool turns to history and capture streaming usage metrics

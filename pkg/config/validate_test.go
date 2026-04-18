@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidate_StackLevel(t *testing.T) {
@@ -885,6 +886,29 @@ func TestValidate_MCPServer(t *testing.T) {
 			wantErr: true,
 			errMsg:  "not found in networks list",
 		},
+		{
+			name: "ready_timeout: valid duration accepted",
+			stack: base([]MCPServer{
+				{Name: "s1", Image: "alpine", Port: 3000, ReadyTimeout: "90s"},
+			}),
+			wantErr: false,
+		},
+		{
+			name: "ready_timeout: malformed value rejected",
+			stack: base([]MCPServer{
+				{Name: "s1", Image: "alpine", Port: 3000, ReadyTimeout: "90 seconds"},
+			}),
+			wantErr: true,
+			errMsg:  "invalid duration",
+		},
+		{
+			name: "ready_timeout: negative duration rejected",
+			stack: base([]MCPServer{
+				{Name: "s1", Image: "alpine", Port: 3000, ReadyTimeout: "-5s"},
+			}),
+			wantErr: true,
+			errMsg:  "must be non-negative",
+		},
 	}
 
 	for _, tc := range tests {
@@ -899,6 +923,28 @@ func TestValidate_MCPServer(t *testing.T) {
 				}
 			} else if err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestMCPServer_ResolvedReadyTimeout(t *testing.T) {
+	cases := []struct {
+		in   string
+		want time.Duration
+	}{
+		{"", 0},
+		{"0s", 0},
+		{"30s", 30 * time.Second},
+		{"2m", 2 * time.Minute},
+		{"garbage", 0},   // graceful fallback (pre-validated anyway)
+		{"-5s", 0},       // graceful fallback (pre-validated anyway)
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			s := &MCPServer{ReadyTimeout: tc.in}
+			if got := s.ResolvedReadyTimeout(); got != tc.want {
+				t.Errorf("ResolvedReadyTimeout(%q) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
 	}

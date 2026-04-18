@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,6 +25,11 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/token"
 )
+
+// ErrReadyTimeout indicates that an HTTP/SSE MCP server did not become reachable
+// within the configured readiness window. Callers can use errors.Is to distinguish
+// this from context cancellation or other registration errors.
+var ErrReadyTimeout = errors.New("ready timeout")
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
 type MCPServerConfig struct {
@@ -48,6 +54,16 @@ type MCPServerConfig struct {
 	Tools           []string          // Tool whitelist (empty = all tools)
 	OutputFormat    string            // Output format: "json", "toon", "csv", "text"
 	PinSchemas      *bool             // Override gateway schema pinning (nil = inherit gateway default)
+
+	// ReadyTimeout overrides the HTTP/SSE readiness wait. Zero uses DefaultReadyTimeout.
+	// Applies only to HTTP and SSE transports; stdio and other paths ignore it.
+	ReadyTimeout time.Duration
+
+	// CleanupOnReadyFailure runs when waitForHTTPServer returns ErrReadyTimeout.
+	// Callers that manage the underlying container populate this with a closure
+	// that stops and removes it, so a retry starts from a clean slate. nil means
+	// "no cleanup" (e.g. external servers, tests).
+	CleanupOnReadyFailure func(ctx context.Context) error
 }
 
 // OpenAPIClientConfig contains configuration for an OpenAPI-backed MCP client.
@@ -546,7 +562,8 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}
 			// Wait for MCP server to be ready with retries
-			if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
+			if err := g.waitForHTTPServer(ctx, httpClient, cfg.ReadyTimeout); err != nil {
+				g.handleReadyFailure(ctx, cfg, err)
 				return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
 			}
 			agentClient = httpClient
@@ -557,7 +574,8 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}
 			// Wait for MCP server to be ready with retries
-			if err := g.waitForHTTPServer(ctx, httpClient); err != nil {
+			if err := g.waitForHTTPServer(ctx, httpClient, cfg.ReadyTimeout); err != nil {
+				g.handleReadyFailure(ctx, cfg, err)
 				return fmt.Errorf("MCP server %s not ready: %w", cfg.Name, err)
 			}
 			agentClient = httpClient
@@ -681,20 +699,53 @@ func (g *Gateway) logToolCountHint(toolCount int) {
 	)
 }
 
+// handleReadyFailure invokes the configured cleanup callback when the readiness
+// wait failed with ErrReadyTimeout. It intentionally runs only on a true
+// ready-timeout — context cancellation and other error paths leave the workload
+// alone so the caller can decide what to do.
+func (g *Gateway) handleReadyFailure(ctx context.Context, cfg MCPServerConfig, waitErr error) {
+	if !errors.Is(waitErr, ErrReadyTimeout) || cfg.CleanupOnReadyFailure == nil {
+		return
+	}
+	g.logger.Warn("MCP server failed readiness wait; removing container",
+		"name", cfg.Name,
+		"ready_timeout", effectiveReadyTimeout(cfg.ReadyTimeout),
+	)
+	if err := cfg.CleanupOnReadyFailure(ctx); err != nil {
+		g.logger.Warn("cleanup after ready timeout failed; orphan may remain",
+			"name", cfg.Name, "error", err)
+	}
+}
+
+// effectiveReadyTimeout reports the duration waitForHTTPServer will actually use
+// for the given config value. Centralised so logs and errors stay consistent.
+func effectiveReadyTimeout(configured time.Duration) time.Duration {
+	if configured <= 0 {
+		return DefaultReadyTimeout
+	}
+	return configured
+}
+
 // waitForHTTPServer waits for an HTTP MCP server to become available.
-func (g *Gateway) waitForHTTPServer(ctx context.Context, client *Client) error {
+// timeout <= 0 falls back to DefaultReadyTimeout so callers can pass the
+// per-server override straight through without a nil check.
+// Returns an error wrapping ErrReadyTimeout on the ready-poll deadline so
+// callers can distinguish it from context cancellation.
+func (g *Gateway) waitForHTTPServer(ctx context.Context, client *Client, timeout time.Duration) error {
+	timeout = effectiveReadyTimeout(timeout)
 	start := time.Now()
 	ticker := time.NewTicker(DefaultReadyPollInterval)
 	defer ticker.Stop()
 
-	timeout := time.After(DefaultReadyTimeout)
+	timeoutCh := time.After(timeout)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("timeout waiting for MCP server")
+		case <-timeoutCh:
+			return fmt.Errorf("%w after %s (ready_timeout=%s); set ready_timeout on the server config to wait longer",
+				ErrReadyTimeout, time.Since(start).Round(time.Millisecond), timeout)
 		case <-ticker.C:
 			if err := client.Ping(ctx); err == nil {
 				g.logger.Debug("MCP server ready", "name", client.Name(), "wait", time.Since(start))

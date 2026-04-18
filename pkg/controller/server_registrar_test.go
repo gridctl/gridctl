@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -653,5 +654,144 @@ func TestServerRegistrar_RegisterOne_External(t *testing.T) {
 	err := r.RegisterOne(ctx, server, 0, "", "/path/stack.yaml")
 	if err == nil {
 		t.Error("expected error for unreachable server")
+	}
+}
+
+// recordingRuntime records Stop/Remove calls so tests can assert cleanup behavior
+// without spinning up a real Docker daemon.
+type recordingRuntime struct {
+	runtime.WorkloadRuntime // embed for unused methods; nil-panic signals unexpected calls
+	stopCalls   []runtime.WorkloadID
+	removeCalls []runtime.WorkloadID
+}
+
+func (r *recordingRuntime) Stop(_ context.Context, id runtime.WorkloadID) error {
+	r.stopCalls = append(r.stopCalls, id)
+	return nil
+}
+
+func (r *recordingRuntime) Remove(_ context.Context, id runtime.WorkloadID) error {
+	r.removeCalls = append(r.removeCalls, id)
+	return nil
+}
+
+func TestServerRegistrar_BuildServerConfig_ContainerHTTP_PopulatesReadyTimeoutAndCleanup(t *testing.T) {
+	rec := &recordingRuntime{}
+	r := NewServerRegistrar(mcp.NewGateway(), false)
+	r.SetRuntime(rec)
+
+	server := runtime.MCPServerResult{
+		Name:       "slow-http",
+		WorkloadID: runtime.WorkloadID("container-slow"),
+		HostPort:   9100,
+	}
+	serverCfg := config.MCPServer{
+		Name:         "slow-http",
+		Transport:    "http",
+		ReadyTimeout: "90s",
+	}
+
+	cfg := r.buildServerConfig(server, serverCfg, "/path/stack.yaml")
+
+	if cfg.ReadyTimeout != 90*time.Second {
+		t.Errorf("expected ReadyTimeout 90s, got %v", cfg.ReadyTimeout)
+	}
+	if cfg.CleanupOnReadyFailure == nil {
+		t.Fatal("expected CleanupOnReadyFailure to be populated for container HTTP")
+	}
+	if err := cfg.CleanupOnReadyFailure(context.Background()); err != nil {
+		t.Fatalf("cleanup closure returned error: %v", err)
+	}
+	if len(rec.stopCalls) != 1 || rec.stopCalls[0] != "container-slow" {
+		t.Errorf("expected one Stop(container-slow), got %v", rec.stopCalls)
+	}
+	if len(rec.removeCalls) != 1 || rec.removeCalls[0] != "container-slow" {
+		t.Errorf("expected one Remove(container-slow), got %v", rec.removeCalls)
+	}
+}
+
+func TestServerRegistrar_BuildServerConfig_ContainerStdio_NoCleanup(t *testing.T) {
+	// Stdio containers attach immediately and never call waitForHTTPServer, so
+	// populating CleanupOnReadyFailure would be dead code — verify we skip it.
+	r := NewServerRegistrar(mcp.NewGateway(), false)
+	r.SetRuntime(&recordingRuntime{})
+
+	server := runtime.MCPServerResult{
+		Name:       "stdio",
+		WorkloadID: runtime.WorkloadID("c"),
+	}
+	serverCfg := config.MCPServer{Name: "stdio", Transport: "stdio"}
+
+	cfg := r.buildServerConfig(server, serverCfg, "/path/stack.yaml")
+	if cfg.CleanupOnReadyFailure != nil {
+		t.Error("stdio transport should not carry a cleanup callback")
+	}
+	if cfg.ReadyTimeout != 0 {
+		t.Errorf("stdio transport should not carry a ready timeout, got %v", cfg.ReadyTimeout)
+	}
+}
+
+func TestServerRegistrar_BuildConfigFromMCPServer_ContainerHTTP_PopulatesCleanup(t *testing.T) {
+	rec := &recordingRuntime{}
+	r := NewServerRegistrar(mcp.NewGateway(), false)
+	r.SetRuntime(rec)
+
+	server := config.MCPServer{
+		Name:         "reload-http",
+		Image:        "example:latest",
+		Port:         3000,
+		Transport:    "http",
+		ReadyTimeout: "2m",
+	}
+
+	cfg := r.buildConfigFromMCPServer(server, 9200, "container-reload", "/path/stack.yaml")
+
+	if cfg.ReadyTimeout != 2*time.Minute {
+		t.Errorf("expected ReadyTimeout 2m, got %v", cfg.ReadyTimeout)
+	}
+	if cfg.CleanupOnReadyFailure == nil {
+		t.Fatal("expected CleanupOnReadyFailure to be populated for reload path")
+	}
+	_ = cfg.CleanupOnReadyFailure(context.Background())
+	if len(rec.removeCalls) != 1 || rec.removeCalls[0] != "container-reload" {
+		t.Errorf("expected Remove(container-reload), got %v", rec.removeCalls)
+	}
+}
+
+func TestServerRegistrar_BuildServerConfig_ContainerHTTP_NoCleanupWithoutRuntime(t *testing.T) {
+	// Tests and CI paths often construct a registrar without a runtime.
+	// The gateway treats a nil callback as "leave the container alone," so
+	// the closure must be nil when no runtime was wired.
+	r := NewServerRegistrar(mcp.NewGateway(), false)
+
+	server := runtime.MCPServerResult{
+		Name:       "http",
+		WorkloadID: runtime.WorkloadID("c1"),
+		HostPort:   9101,
+	}
+	cfg := r.buildServerConfig(server, config.MCPServer{Name: "http"}, "/path/stack.yaml")
+
+	if cfg.CleanupOnReadyFailure != nil {
+		t.Error("cleanup closure must be nil when no runtime is wired")
+	}
+}
+
+func TestServerRegistrar_BuildConfigFromMCPServer_ContainerHTTP_NoCleanupWithoutWorkloadID(t *testing.T) {
+	// The reload path passes an empty containerID for non-container transports.
+	// Ensure we don't construct a closure that would call Stop("") and panic.
+	rec := &recordingRuntime{}
+	r := NewServerRegistrar(mcp.NewGateway(), false)
+	r.SetRuntime(rec)
+
+	server := config.MCPServer{
+		Name:      "no-id",
+		Image:     "example:latest",
+		Port:      3000,
+		Transport: "http",
+	}
+
+	cfg := r.buildConfigFromMCPServer(server, 9201, "", "/path/stack.yaml")
+	if cfg.CleanupOnReadyFailure != nil {
+		t.Error("cleanup closure must be nil without a workload id")
 	}
 }
