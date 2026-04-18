@@ -3,8 +3,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -2767,6 +2770,202 @@ func TestGateway_HandleInitialize_InstructionsFiltersNonMCP(t *testing.T) {
 	}
 	if strings.Contains(result.Instructions, "a2a-adapter") {
 		t.Errorf("Instructions must not include A2A adapter: %q", result.Instructions)
+	}
+}
+
+// slowMCPServer returns an httptest.Server whose GET handler sleeps `delay`
+// before responding 200. It deliberately ignores the request body so it works
+// for both the client's Ping (HEAD-like GET) and a full MCP initialize probe.
+func slowMCPServer(t *testing.T, delay time.Duration) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(delay):
+			w.WriteHeader(http.StatusOK)
+		case <-r.Context().Done():
+			return
+		}
+	}))
+}
+
+func TestWaitForHTTPServer_RespectsCustomTimeout(t *testing.T) {
+	// Server would respond eventually, but the per-call timeout is much shorter.
+	srv := slowMCPServer(t, 5*time.Second)
+	defer srv.Close()
+
+	g := NewGateway()
+	client := NewClient("slow", srv.URL)
+
+	start := time.Now()
+	err := g.waitForHTTPServer(context.Background(), client, 100*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !errors.Is(err, ErrReadyTimeout) {
+		t.Fatalf("expected ErrReadyTimeout, got %v", err)
+	}
+	// The poll interval is 500ms, so the timeoutCh (100ms) wins before the first poll.
+	// Allow generous slack for CI jitter.
+	if elapsed > 2*time.Second {
+		t.Fatalf("timeout fired too late: %v", elapsed)
+	}
+	if !strings.Contains(err.Error(), "ready_timeout=") {
+		t.Errorf("error text should mention ready_timeout hint, got: %v", err)
+	}
+}
+
+func TestWaitForHTTPServer_FallsBackToDefaultWhenZero(t *testing.T) {
+	// Fast server: a zero timeout should still succeed via DefaultReadyTimeout.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	g := NewGateway()
+	client := NewClient("fast", srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := g.waitForHTTPServer(ctx, client, 0); err != nil {
+		t.Fatalf("expected success with zero timeout (falls back to default), got %v", err)
+	}
+}
+
+func TestWaitForHTTPServer_CancelNotReadyTimeout(t *testing.T) {
+	// Canceling the caller ctx must not be reported as a ready-timeout,
+	// because the gateway skips cleanup on cancel but runs it on timeout.
+	srv := slowMCPServer(t, 5*time.Second)
+	defer srv.Close()
+
+	g := NewGateway()
+	client := NewClient("cancelled", srv.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	err := g.waitForHTTPServer(ctx, client, time.Hour)
+	if err == nil {
+		t.Fatal("expected error from cancelled context, got nil")
+	}
+	if errors.Is(err, ErrReadyTimeout) {
+		t.Fatalf("cancellation must not surface as ErrReadyTimeout, got %v", err)
+	}
+}
+
+func TestHandleReadyFailure_InvokesCleanupOnTimeout(t *testing.T) {
+	var called int32
+	cfg := MCPServerConfig{
+		Name:         "slow-http",
+		Transport:    TransportHTTP,
+		ReadyTimeout: 10 * time.Millisecond,
+		CleanupOnReadyFailure: func(ctx context.Context) error {
+			atomic.AddInt32(&called, 1)
+			return nil
+		},
+	}
+
+	timeoutErr := fmt.Errorf("wrapped: %w", ErrReadyTimeout)
+
+	g := NewGateway()
+	g.handleReadyFailure(context.Background(), cfg, timeoutErr)
+
+	if got := atomic.LoadInt32(&called); got != 1 {
+		t.Fatalf("expected cleanup to be invoked exactly once on ready-timeout, got %d", got)
+	}
+}
+
+func TestHandleReadyFailure_SkipsCleanupOnNonTimeout(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"context cancelled", context.Canceled},
+		{"generic error", errors.New("boom")},
+		{"nil cleanup on timeout", nil}, // ensures we do not panic on nil cleanup
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var called int32
+			cleanup := func(ctx context.Context) error {
+				atomic.AddInt32(&called, 1)
+				return nil
+			}
+			cfg := MCPServerConfig{
+				Name:                  "srv",
+				CleanupOnReadyFailure: cleanup,
+			}
+			inputErr := tc.err
+			if tc.name == "nil cleanup on timeout" {
+				cfg.CleanupOnReadyFailure = nil
+				inputErr = ErrReadyTimeout
+			}
+
+			g := NewGateway()
+			g.handleReadyFailure(context.Background(), cfg, inputErr)
+
+			if got := atomic.LoadInt32(&called); got != 0 {
+				t.Fatalf("cleanup must not fire for %s, got call count %d", tc.name, got)
+			}
+		})
+	}
+}
+
+func TestHandleReadyFailure_SwallowsCleanupError(t *testing.T) {
+	// A cleanup error must not panic or re-bubble — the original timeout
+	// error is what the caller will report.
+	cfg := MCPServerConfig{
+		Name:         "srv",
+		ReadyTimeout: 10 * time.Millisecond,
+		CleanupOnReadyFailure: func(ctx context.Context) error {
+			return errors.New("runtime unavailable")
+		},
+	}
+	g := NewGateway()
+	g.handleReadyFailure(context.Background(), cfg, fmt.Errorf("%w: waited 10ms", ErrReadyTimeout))
+	// No assertions: if this returns cleanly, the test passes.
+}
+
+func TestRegisterMCPServer_DoesNotCleanupOnInitializeError(t *testing.T) {
+	// Stand up a fast HTTP server so waitForHTTPServer succeeds. The client
+	// will then fail Initialize (the endpoint returns 200 to Ping but does not
+	// speak MCP). That error path must NOT invoke the cleanup callback — only
+	// ready-timeouts should trigger cleanup.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	var cleanupCalled int32
+	cfg := MCPServerConfig{
+		Name:         "init-fails",
+		Transport:    TransportHTTP,
+		Endpoint:     srv.URL,
+		ReadyTimeout: time.Second,
+		CleanupOnReadyFailure: func(ctx context.Context) error {
+			atomic.AddInt32(&cleanupCalled, 1)
+			return nil
+		},
+	}
+
+	g := NewGateway()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := g.RegisterMCPServer(ctx, cfg)
+	if err == nil {
+		t.Fatal("expected Initialize/RefreshTools to fail against the fake HTTP server")
+	}
+	if errors.Is(err, ErrReadyTimeout) {
+		t.Fatalf("registration error should not carry ErrReadyTimeout: %v", err)
+	}
+	if got := atomic.LoadInt32(&cleanupCalled); got != 0 {
+		t.Errorf("cleanup must NOT fire when waitForHTTPServer succeeded and a later step failed, got %d calls", got)
 	}
 }
 
