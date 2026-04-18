@@ -51,6 +51,8 @@ func (r *ServerRegistrar) SetRuntime(rt runtime.WorkloadRuntime) {
 }
 
 // RegisterAll registers all MCP servers from the UpResult with the gateway.
+// For each server it builds one MCPServerConfig per replica and registers
+// them as a single ReplicaSet under the server's logical name.
 func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpResult, stack *config.Stack, stackPath string) {
 	serverConfigs := make(map[string]config.MCPServer)
 	for _, s := range stack.MCPServers {
@@ -59,21 +61,82 @@ func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpRes
 
 	for _, server := range result.MCPServers {
 		serverCfg := serverConfigs[server.Name]
-		cfg := r.buildServerConfig(server, serverCfg, stackPath)
-		if err := r.gateway.RegisterMCPServer(ctx, cfg); err != nil {
+		cfgs := r.buildReplicaConfigs(server, serverCfg, stackPath)
+		if len(cfgs) == 0 {
+			r.logger.Warn("no replica configs built", "name", server.Name)
+			continue
+		}
+		policy := serverCfg.ReplicaPolicy
+		if policy == "" {
+			policy = mcp.ReplicaPolicyRoundRobin
+		}
+		if err := r.gateway.RegisterMCPReplicaSet(ctx, server.Name, policy, cfgs); err != nil {
 			r.logger.Warn("failed to register MCP server", "name", server.Name, "error", err)
 		}
 	}
 }
 
-// RegisterOne registers a single MCP server with the gateway.
-// Used by the reload handler to register newly added servers.
-// containerID is the runtime container ID for any container-backed server
-// (stdio or HTTP/SSE). Pass "" for External, LocalProcess, SSH, and OpenAPI —
-// the container HTTP/SSE branch uses it to wire up the readiness-failure cleanup.
-func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
-	cfg := r.buildConfigFromMCPServer(server, hostPort, containerID, stackPath)
-	return r.gateway.RegisterMCPServer(ctx, cfg)
+// ReplicaRuntime carries the runtime handles for one replica that the reload
+// handler has already provisioned. For non-container replicas, ContainerID is
+// "" and HostPort may be 0.
+type ReplicaRuntime struct {
+	HostPort    int
+	ContainerID string
+}
+
+// RegisterOne registers a single MCP server (with one or more replicas) with
+// the gateway. Used by the reload handler to register newly added servers.
+// replicas carries the runtime handles the caller has already provisioned —
+// one entry per replica, in replica-id order. For External / LocalProcess /
+// SSH / OpenAPI servers that were not container-provisioned, pass a slice of
+// zero-valued ReplicaRuntime entries of the desired length (or a single-entry
+// slice for the single-replica case).
+func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
+	if len(replicas) == 0 {
+		replicas = []ReplicaRuntime{{}}
+	}
+	cfgs := make([]mcp.MCPServerConfig, 0, len(replicas))
+	for _, rep := range replicas {
+		cfgs = append(cfgs, r.buildConfigFromMCPServer(server, rep.HostPort, rep.ContainerID, stackPath))
+	}
+	policy := server.ReplicaPolicy
+	if policy == "" {
+		policy = mcp.ReplicaPolicyRoundRobin
+	}
+	return r.gateway.RegisterMCPReplicaSet(ctx, server.Name, policy, cfgs)
+}
+
+// buildReplicaConfigs fans out an UpResult's per-replica handles into one
+// MCPServerConfig per replica, reusing the existing single-server config
+// builder for each.
+func (r *ServerRegistrar) buildReplicaConfigs(server runtime.MCPServerResult, serverCfg config.MCPServer, stackPath string) []mcp.MCPServerConfig {
+	replicas := server.Replicas
+	if len(replicas) == 0 {
+		// Defensive: treat as single-replica if the orchestrator didn't set it.
+		replicas = []runtime.MCPServerReplica{{ReplicaID: 0, WorkloadID: server.WorkloadID, Endpoint: server.Endpoint, HostPort: server.HostPort}}
+	}
+	cfgs := make([]mcp.MCPServerConfig, 0, len(replicas))
+	for _, rep := range replicas {
+		perReplica := runtime.MCPServerResult{
+			Name:            server.Name,
+			WorkloadID:      rep.WorkloadID,
+			Endpoint:        rep.Endpoint,
+			HostPort:        rep.HostPort,
+			External:        server.External,
+			LocalProcess:    server.LocalProcess,
+			SSH:             server.SSH,
+			OpenAPI:         server.OpenAPI,
+			URL:             server.URL,
+			Command:         server.Command,
+			SSHHost:         server.SSHHost,
+			SSHUser:         server.SSHUser,
+			SSHPort:         server.SSHPort,
+			SSHIdentityFile: server.SSHIdentityFile,
+			OpenAPIConfig:   server.OpenAPIConfig,
+		}
+		cfgs = append(cfgs, r.buildServerConfig(perReplica, serverCfg, stackPath))
+	}
+	return cfgs
 }
 
 // buildServerConfig constructs an MCPServerConfig from an UpResult server entry
