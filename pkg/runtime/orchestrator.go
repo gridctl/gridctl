@@ -62,9 +62,14 @@ type UpResult struct {
 // MCPServerResult is the runtime-agnostic result for an MCP server.
 type MCPServerResult struct {
 	Name       string     // Logical name
-	WorkloadID WorkloadID // Runtime ID (empty for external/local/SSH/OpenAPI)
-	Endpoint   string     // How to reach it (URL or host:port)
-	HostPort   int        // Host port if applicable
+	WorkloadID WorkloadID // Runtime ID (empty for external/local/SSH/OpenAPI). Mirrors Replicas[0].WorkloadID.
+	Endpoint   string     // How to reach it (URL or host:port). Mirrors Replicas[0].Endpoint.
+	HostPort   int        // Host port if applicable. Mirrors Replicas[0].HostPort.
+
+	// Replicas carries per-replica runtime handles. Always non-empty after Up()
+	// returns: a server with no replicas field (or Replicas=1) gets a single entry
+	// whose top-level fields match the mirrored fields above.
+	Replicas []MCPServerReplica
 
 	// Server type flags (exactly one should be true for non-container servers)
 	External     bool // URL-based external server
@@ -82,6 +87,16 @@ type MCPServerResult struct {
 
 	// For OpenAPI servers
 	OpenAPIConfig *config.OpenAPIConfig // OpenAPI configuration for gateway to use
+}
+
+// MCPServerReplica is one replica's runtime handle. For non-container replicas
+// (external, local process, SSH, OpenAPI) only ReplicaID is meaningful —
+// WorkloadID, Endpoint, and HostPort are empty/zero.
+type MCPServerReplica struct {
+	ReplicaID  int        // zero-indexed within the server
+	WorkloadID WorkloadID // runtime ID for container replicas
+	Endpoint   string     // host:port or URL
+	HostPort   int        // host port if applicable
 }
 
 // NewOrchestrator creates an Orchestrator with the given runtime and builder.
@@ -174,6 +189,8 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 	result := &UpResult{}
 	containerIndex := 0 // Track container-based servers for port allocation
 	for _, server := range stack.MCPServers {
+		replicas := replicaCount(&server)
+
 		// Skip container creation for external servers
 		if server.IsExternal() {
 			o.logger.Info("registering external MCP server", "name", server.Name, "url", server.URL)
@@ -181,17 +198,19 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 				Name:     server.Name,
 				External: true,
 				URL:      server.URL,
+				Replicas: singleReplicaPlaceholder(),
 			})
 			continue
 		}
 
 		// Skip container creation for local process servers
 		if server.IsLocalProcess() {
-			o.logger.Info("registering local process MCP server", "name", server.Name, "command", server.Command)
+			o.logger.Info("registering local process MCP server", "name", server.Name, "command", server.Command, "replicas", replicas)
 			result.MCPServers = append(result.MCPServers, MCPServerResult{
 				Name:         server.Name,
 				LocalProcess: true,
 				Command:      server.Command,
+				Replicas:     nReplicaPlaceholders(replicas),
 			})
 			continue
 		}
@@ -202,7 +221,8 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 				"name", server.Name,
 				"host", server.SSH.Host,
 				"user", server.SSH.User,
-				"command", server.Command)
+				"command", server.Command,
+				"replicas", replicas)
 			result.MCPServers = append(result.MCPServers, MCPServerResult{
 				Name:            server.Name,
 				SSH:             true,
@@ -211,11 +231,13 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 				SSHUser:         server.SSH.User,
 				SSHPort:         server.SSH.Port,
 				SSHIdentityFile: server.SSH.IdentityFile,
+				Replicas:        nReplicaPlaceholders(replicas),
 			})
 			continue
 		}
 
-		// Skip container creation for OpenAPI servers
+		// Skip container creation for OpenAPI servers (already validated
+		// to reject replicas > 1; singleReplicaPlaceholder is enough).
 		if server.IsOpenAPI() {
 			o.logger.Info("registering OpenAPI MCP server",
 				"name", server.Name,
@@ -224,34 +246,80 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 				Name:          server.Name,
 				OpenAPI:       true,
 				OpenAPIConfig: server.OpenAPI,
+				Replicas:      singleReplicaPlaceholder(),
 			})
 			continue
 		}
 
-		hostPort := opts.BasePort + containerIndex
-		containerIndex++
-		info, err := o.startMCPServer(ctx, stack, &server, opts, hostPort)
-		if err != nil {
-			return nil, fmt.Errorf("starting MCP server %s: %w", server.Name, err)
+		// Container-based server: start one container per replica.
+		replicaHandles := make([]MCPServerReplica, 0, replicas)
+		for replicaID := 0; replicaID < replicas; replicaID++ {
+			hostPort := opts.BasePort + containerIndex
+			containerIndex++
+			info, err := o.startMCPServer(ctx, stack, &server, opts, hostPort, replicaID, replicas)
+			if err != nil {
+				return nil, fmt.Errorf("starting MCP server %s replica %d: %w", server.Name, replicaID, err)
+			}
+			replicaHandles = append(replicaHandles, MCPServerReplica{
+				ReplicaID:  replicaID,
+				WorkloadID: info.WorkloadID,
+				Endpoint:   info.Endpoint,
+				HostPort:   info.HostPort,
+			})
 		}
-		result.MCPServers = append(result.MCPServers, *info)
+		result.MCPServers = append(result.MCPServers, MCPServerResult{
+			Name:       server.Name,
+			WorkloadID: replicaHandles[0].WorkloadID,
+			Endpoint:   replicaHandles[0].Endpoint,
+			HostPort:   replicaHandles[0].HostPort,
+			Replicas:   replicaHandles,
+		})
 	}
 
 	o.logger.Info("all workloads started successfully")
 	return result, nil
 }
 
-func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, server *config.MCPServer, opts UpOptions, hostPort int) (*MCPServerResult, error) {
-	containerName := containerName(stack.Name, server.Name)
+// replicaCount returns the effective replica count for a server, treating any
+// value <= 0 as 1 so callers can use the result directly as a loop bound.
+func replicaCount(server *config.MCPServer) int {
+	if server.Replicas <= 0 {
+		return 1
+	}
+	return server.Replicas
+}
+
+// singleReplicaPlaceholder returns a one-element placeholder slice used by
+// non-container server results where the orchestrator has nothing runtime-
+// provisioned to carry. The registrar only reads ReplicaID from these.
+func singleReplicaPlaceholder() []MCPServerReplica {
+	return []MCPServerReplica{{ReplicaID: 0}}
+}
+
+// nReplicaPlaceholders returns n placeholders for non-container servers that
+// still want N independent replica registrations (local process, SSH).
+func nReplicaPlaceholders(n int) []MCPServerReplica {
+	if n <= 1 {
+		return singleReplicaPlaceholder()
+	}
+	out := make([]MCPServerReplica, n)
+	for i := range out {
+		out[i].ReplicaID = i
+	}
+	return out
+}
+
+func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, server *config.MCPServer, opts UpOptions, hostPort, replicaID, totalReplicas int) (*MCPServerResult, error) {
+	runtimeName := ReplicaContainerName(stack.Name, server.Name, replicaID, totalReplicas)
 
 	// Check if container already exists
-	exists, workloadID, err := o.runtime.Exists(ctx, containerName)
+	exists, workloadID, err := o.runtime.Exists(ctx, runtimeName)
 	if err != nil {
 		return nil, err
 	}
 
 	if exists {
-		o.logger.Info("MCP server already exists, starting", "name", server.Name)
+		o.logger.Info("MCP server already exists, starting", "name", server.Name, "replica", replicaID)
 		// Get actual host port
 		actualHostPort, _ := o.runtime.GetHostPort(ctx, workloadID, server.Port)
 		return &MCPServerResult{
@@ -301,10 +369,15 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		networkName = server.Network
 	}
 
-	// Create workload config
-	// Note: Name is the logical name, the runtime generates the container name
+	// Create workload config. Name drives both container name and DNS alias;
+	// for multi-replica servers we suffix it so replicas don't collide. Labels
+	// still carry the logical server name so Down/List filters by stack work.
+	workloadName := server.Name
+	if totalReplicas > 1 {
+		workloadName = fmt.Sprintf("%s-replica-%d", server.Name, replicaID)
+	}
 	cfg := WorkloadConfig{
-		Name:        server.Name,
+		Name:        workloadName,
 		Stack:       stack.Name,
 		Type:        WorkloadTypeMCPServer,
 		Image:       imageName,
@@ -328,7 +401,7 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		actualHostPort = hostPort
 	}
 
-	o.logger.Info("MCP server listening", "name", server.Name, "port", actualHostPort)
+	o.logger.Info("MCP server listening", "name", server.Name, "replica", replicaID, "port", actualHostPort)
 
 	return &MCPServerResult{
 		Name:       server.Name,
@@ -455,6 +528,19 @@ func (o *Orchestrator) Status(ctx context.Context, stack string) ([]WorkloadStat
 
 func containerName(stack, name string) string {
 	return "gridctl-" + stack + "-" + name
+}
+
+// ReplicaContainerName returns the container name for a specific replica.
+// For single-replica servers (totalReplicas <= 1) it returns the same name
+// containerName produces, so backward-compatible stacks see zero diff.
+// For totalReplicas > 1 it appends a "-replica-<id>" suffix so distinct
+// replicas of the same logical server never collide in the runtime.
+func ReplicaContainerName(stack, name string, replicaID, totalReplicas int) string {
+	base := containerName(stack, name)
+	if totalReplicas <= 1 {
+		return base
+	}
+	return fmt.Sprintf("%s-replica-%d", base, replicaID)
 }
 
 func generateTag(stack, name string) string {
