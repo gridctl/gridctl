@@ -131,7 +131,7 @@ func TestHandler_SettersAndGetters(t *testing.T) {
 	}
 
 	// SetRegisterServerFunc
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
 		return nil
 	})
 	if h.registerServer == nil {
@@ -252,7 +252,7 @@ mcp-servers:
 	h, _ := setupHandler(t, stackPath, initialCfg)
 
 	registerCalled := false
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
 		registerCalled = true
 		return nil
 	})
@@ -328,7 +328,7 @@ mcp-servers:
 	h, _ := setupHandler(t, stackPath, initialCfg)
 
 	registerCalled := false
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
 		registerCalled = true
 		return nil
 	})
@@ -408,7 +408,7 @@ mcp-servers:
 
 	h, _ := setupHandler(t, stackPath, initialCfg)
 
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
 		return fmt.Errorf("registration failed")
 	})
 
@@ -460,9 +460,11 @@ mcp-servers:
 
 	var capturedContainerID string
 	var capturedServerName string
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
 		capturedServerName = server.Name
-		capturedContainerID = containerID
+		if len(replicas) > 0 {
+			capturedContainerID = replicas[0].ContainerID
+		}
 		return nil
 	})
 
@@ -503,7 +505,7 @@ mcp-servers:
 	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
 	gw := mcp.NewGateway()
 	h := NewHandler("", placeholder, gw, orch, 8180, 9000, nil, nil)
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
 		return nil
 	})
 
@@ -539,7 +541,7 @@ mcp-servers:
 	h, _ := setupHandler(t, "", &config.Stack{Name: "gridctl"})
 
 	var capturedStackPath string
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
 		capturedStackPath = stackPath
 		return nil
 	})
@@ -617,7 +619,7 @@ mcp-servers:
 	h, _ := setupHandler(t, stackPath, initialCfg)
 
 	registerCalls := 0
-	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
 		registerCalls++
 		return nil
 	})
