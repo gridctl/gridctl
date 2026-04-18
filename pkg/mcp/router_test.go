@@ -344,6 +344,98 @@ func TestRouter_AggregatedTools_TitleNeverLeaks(t *testing.T) {
 	}
 }
 
+func TestRouter_AddReplicaSet_RoutesAcrossReplicas(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	c0 := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	c1 := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	c2 := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin, []AgentClient{c0, c1, c2})
+
+	r := NewRouter()
+	r.AddReplicaSet(set)
+	r.RefreshTools()
+
+	// Route the same prefixed tool name repeatedly; every replica should
+	// eventually return as the chosen client.
+	seen := map[AgentClient]bool{}
+	for i := 0; i < 10; i++ {
+		client, tool, err := r.RouteToolCall("svc__t")
+		if err != nil {
+			t.Fatalf("RouteToolCall: %v", err)
+		}
+		if tool != "t" {
+			t.Errorf("tool = %q, want %q", tool, "t")
+		}
+		seen[client] = true
+	}
+	if len(seen) != 3 {
+		t.Errorf("expected all 3 replicas to be routed to, got %d distinct clients", len(seen))
+	}
+}
+
+func TestRouter_ReplicaSet_TopologyHidden(t *testing.T) {
+	// Tool namespace must not leak replica ids.
+	ctrl := gomock.NewController(t)
+	c0 := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	c1 := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin, []AgentClient{c0, c1})
+
+	r := NewRouter()
+	r.AddReplicaSet(set)
+	r.RefreshTools()
+
+	tools := r.AggregatedTools()
+	if len(tools) != 1 {
+		t.Fatalf("replicas must not multiply advertised tools: got %d, want 1", len(tools))
+	}
+	if tools[0].Name != "svc__t" {
+		t.Errorf("leaked replica id in tool name: %q", tools[0].Name)
+	}
+}
+
+func TestRouter_RemoveClient_RemovesSet(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin, []AgentClient{
+		setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}}),
+		setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}}),
+	})
+
+	r := NewRouter()
+	r.AddReplicaSet(set)
+	r.RefreshTools()
+
+	if r.GetReplicaSet("svc") == nil {
+		t.Fatal("set should exist before removal")
+	}
+	r.RemoveClient("svc")
+	if r.GetReplicaSet("svc") != nil {
+		t.Error("set should be removed")
+	}
+	if len(r.AggregatedTools()) != 0 {
+		t.Error("tools should be cleared after removal")
+	}
+}
+
+func TestRouter_RouteToolCall_AllReplicasUnhealthy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin, []AgentClient{
+		setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}}),
+		setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}}),
+	})
+	for _, rep := range set.Replicas() {
+		rep.SetHealthy(false)
+	}
+
+	r := NewRouter()
+	r.AddReplicaSet(set)
+	r.RefreshTools()
+
+	_, _, err := r.RouteToolCall("svc__t")
+	if err == nil {
+		t.Fatal("expected error when all replicas unhealthy")
+	}
+}
+
 func TestRouter_AggregatedTools_DescriptionComplete(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	r := NewRouter()
