@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// maxReplicas is the sanity cap on MCPServer.Replicas. Values above this
+// are almost certainly a config error; the cap also bounds per-server
+// fan-out costs for things like health checking and least-connections scans.
+const maxReplicas = 32
+
 // ValidationError represents a configuration validation error.
 type ValidationError struct {
 	Field   string
@@ -355,6 +360,23 @@ func Validate(s *Stack) error {
 			} else if d < 0 {
 				errs = append(errs, ValidationError{prefix + ".ready_timeout", "must be non-negative"})
 			}
+		}
+
+		// Replica validation.
+		// Zero is accepted as "unspecified" and defaulted to 1 by Stack.SetDefaults;
+		// only reject truly invalid values here.
+		if server.Replicas < 0 {
+			errs = append(errs, ValidationError{prefix + ".replicas", "must be >= 0"})
+		} else if server.Replicas > maxReplicas {
+			errs = append(errs, ValidationError{prefix + ".replicas", fmt.Sprintf("must be <= %d", maxReplicas)})
+		}
+		if server.ReplicaPolicy != "" &&
+			server.ReplicaPolicy != "round-robin" &&
+			server.ReplicaPolicy != "least-connections" {
+			errs = append(errs, ValidationError{prefix + ".replica_policy", "must be 'round-robin' or 'least-connections'"})
+		}
+		if server.Replicas > 1 && (server.IsExternal() || server.IsOpenAPI()) {
+			errs = append(errs, ValidationError{prefix + ".replicas", "not supported for external URL or OpenAPI servers (already external/stateless — scale them at the HTTP tier)"})
 		}
 
 		// In simple mode, server.Network is ignored (per design decision)
