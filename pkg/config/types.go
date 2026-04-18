@@ -147,6 +147,15 @@ type MCPServer struct {
 	// Accepts any time.Duration string (e.g. "60s", "2m"). Empty/"0" inherits the gateway default (30s).
 	// Ignored for stdio, local process, SSH, OpenAPI, and external transports.
 	ReadyTimeout string `yaml:"ready_timeout,omitempty"`
+
+	// Replicas is the number of independent processes to spawn for this server.
+	// Defaults to 1. Values >1 load-balance JSON-RPC tool calls across replicas
+	// using ReplicaPolicy. Not supported for external URL or OpenAPI transports.
+	Replicas int `yaml:"replicas,omitempty" json:"replicas,omitempty"`
+
+	// ReplicaPolicy selects the dispatch policy when Replicas > 1.
+	// Valid values: "round-robin" (default), "least-connections".
+	ReplicaPolicy string `yaml:"replica_policy,omitempty" json:"replica_policy,omitempty"`
 }
 
 // ResolvedReadyTimeout parses ReadyTimeout; returns 0 when unset or invalid
@@ -356,6 +365,12 @@ func (s *Stack) SetDefaults() {
 			if s.MCPServers[i].Source.Type == "git" && s.MCPServers[i].Source.Ref == "" {
 				s.MCPServers[i].Source.Ref = "main"
 			}
+		}
+		if s.MCPServers[i].Replicas <= 0 {
+			s.MCPServers[i].Replicas = 1
+		}
+		if s.MCPServers[i].ReplicaPolicy == "" {
+			s.MCPServers[i].ReplicaPolicy = "round-robin"
 		}
 	}
 
