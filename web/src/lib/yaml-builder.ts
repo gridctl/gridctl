@@ -68,6 +68,9 @@ export interface MCPServerFormData {
   outputFormat?: string;
   network?: string;
   pinSchemas?: boolean;
+  // Replicas
+  replicas?: number;
+  replicaPolicy?: 'round-robin' | 'least-connections';
 }
 
 export interface ResourceFormData {
@@ -249,6 +252,15 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
   if (data.network) lines.push(`${inner}network: ${data.network}`);
   if (data.pinSchemas !== undefined) lines.push(`${inner}pin_schemas: ${data.pinSchemas}`);
 
+  // Replicas: mirror Go's omitempty semantics — skip the default (1) and the
+  // default policy (round-robin) so single-replica specs stay byte-identical.
+  if (data.replicas && data.replicas !== 1) {
+    lines.push(`${inner}replicas: ${data.replicas}`);
+  }
+  if (data.replicaPolicy && data.replicaPolicy !== 'round-robin') {
+    lines.push(`${inner}replica_policy: ${data.replicaPolicy}`);
+  }
+
   return lines.join('\n');
 }
 
@@ -401,7 +413,13 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
 
     // Return minimal parsed data based on type
     switch (resourceType) {
-      case 'mcp-server':
+      case 'mcp-server': {
+        const parsedReplicas = Number(result.replicas);
+        const rawPolicy = result.replica_policy as string | undefined;
+        const replicaPolicy =
+          rawPolicy === 'least-connections' || rawPolicy === 'round-robin'
+            ? rawPolicy
+            : undefined;
         return {
           type: 'mcp-server',
           data: {
@@ -409,8 +427,11 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
             serverType: 'container',
             image: result.image as string,
             transport: result.transport as string,
+            replicas: Number.isFinite(parsedReplicas) && parsedReplicas > 0 ? parsedReplicas : undefined,
+            replicaPolicy,
           },
         };
+      }
       case 'resource':
         return {
           type: 'resource',
