@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 )
 
 // Stack represents the complete gridctl configuration.
@@ -142,6 +143,23 @@ type MCPServer struct {
 	Tools        []string          `yaml:"tools,omitempty"`          // Tool whitelist (empty = all tools exposed)
 	OutputFormat string            `yaml:"output_format,omitempty"`  // Output format override: "json", "toon", "csv", "text"
 	PinSchemas   *bool             `yaml:"pin_schemas,omitempty"`    // Override gateway schema pinning for this server (nil = inherit)
+	// ReadyTimeout overrides the HTTP/SSE readiness wait for container-based servers.
+	// Accepts any time.Duration string (e.g. "60s", "2m"). Empty/"0" inherits the gateway default (30s).
+	// Ignored for stdio, local process, SSH, OpenAPI, and external transports.
+	ReadyTimeout string `yaml:"ready_timeout,omitempty"`
+}
+
+// ResolvedReadyTimeout parses ReadyTimeout; returns 0 when unset or invalid
+// so the gateway falls back to its default.
+func (s *MCPServer) ResolvedReadyTimeout() time.Duration {
+	if s.ReadyTimeout == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(s.ReadyTimeout)
+	if err != nil || d < 0 {
+		return 0
+	}
+	return d
 }
 
 // OpenAPIConfig defines an MCP server backed by an OpenAPI specification.
