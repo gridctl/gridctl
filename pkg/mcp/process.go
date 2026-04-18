@@ -340,6 +340,17 @@ func (c *ProcessClient) Reconnect(ctx context.Context) error {
 	return nil
 }
 
+// PID returns the operating-system process id of the running child. Returns 0
+// when the process has not been started (or has exited and been cleared).
+func (c *ProcessClient) PID() int {
+	c.procMu.Lock()
+	defer c.procMu.Unlock()
+	if c.cmd == nil || c.cmd.Process == nil {
+		return 0
+	}
+	return c.cmd.Process.Pid
+}
+
 // Ping checks if the process is alive by verifying it's still running
 // and sending a JSON-RPC ping.
 func (c *ProcessClient) Ping(ctx context.Context) error {
