@@ -651,7 +651,7 @@ func TestServerRegistrar_RegisterOne_External(t *testing.T) {
 	cancel()
 
 	// Will fail to connect but exercises the code path
-	err := r.RegisterOne(ctx, server, 0, "", "/path/stack.yaml")
+	err := r.RegisterOne(ctx, server, []ReplicaRuntime{{}}, "/path/stack.yaml")
 	if err == nil {
 		t.Error("expected error for unreachable server")
 	}
