@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"gopkg.in/yaml.v3"
@@ -297,7 +299,62 @@ func (s *Server) handleStackHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Per-replica health for servers with replicas > 1. Single-replica servers
+	// are intentionally omitted so the response shape is unchanged when no
+	// server is configured for horizontal scaling.
+	health.Replicas = s.collectReplicaHealth()
+
 	writeJSON(w, health)
+}
+
+// collectReplicaHealth returns per-replica health for every registered MCP
+// server with more than one replica. Returns nil when the gateway is absent
+// or no multi-replica servers exist.
+func (s *Server) collectReplicaHealth() map[string][]config.ReplicaHealth {
+	if s.gateway == nil {
+		return nil
+	}
+	var out map[string][]config.ReplicaHealth
+	now := time.Now()
+	for _, st := range s.gateway.Status() {
+		if len(st.Replicas) <= 1 {
+			continue
+		}
+		healths := make([]config.ReplicaHealth, 0, len(st.Replicas))
+		for _, r := range st.Replicas {
+			healths = append(healths, toReplicaHealth(r, now))
+		}
+		if out == nil {
+			out = make(map[string][]config.ReplicaHealth)
+		}
+		out[st.Name] = healths
+	}
+	return out
+}
+
+// toReplicaHealth projects an mcp.ReplicaStatus to the API-facing
+// config.ReplicaHealth shape.
+func toReplicaHealth(r mcp.ReplicaStatus, now time.Time) config.ReplicaHealth {
+	h := config.ReplicaHealth{
+		ReplicaID:       r.ReplicaID,
+		State:           r.State,
+		InFlight:        r.InFlight,
+		LastError:       r.LastError,
+		RestartAttempts: r.RestartAttempts,
+		PID:             r.PID,
+		ContainerID:     r.ContainerID,
+	}
+	if !r.StartedAt.IsZero() && r.Healthy {
+		if d := now.Sub(r.StartedAt); d > 0 {
+			h.UptimeSeconds = int64(d / time.Second)
+		}
+	}
+	if r.NextRetryAt != nil && !r.NextRetryAt.IsZero() {
+		if d := r.NextRetryAt.Sub(now); d > 0 {
+			h.NextRetrySeconds = int64(d / time.Second)
+		}
+	}
+	return h
 }
 
 // handleStackSpec returns the current stack.yaml content.
