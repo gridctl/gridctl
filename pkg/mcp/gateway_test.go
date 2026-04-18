@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -2966,6 +2967,195 @@ func TestRegisterMCPServer_DoesNotCleanupOnInitializeError(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&cleanupCalled); got != 0 {
 		t.Errorf("cleanup must NOT fire when waitForHTTPServer succeeded and a later step failed, got %d calls", got)
+	}
+}
+
+// Phase-2 replicas: multi-replica health isolation and backoff.
+
+// installReplicaSet builds a fake multi-replica set using reconnectableClient
+// fakes so tests can drive per-replica Ping/Reconnect behavior.
+func installReplicaSet(t *testing.T, g *Gateway, name string, clients []AgentClient) *ReplicaSet {
+	t.Helper()
+	set := NewReplicaSet(name, ReplicaPolicyRoundRobin, clients)
+	g.Router().AddReplicaSet(set)
+	g.SetServerMeta(MCPServerConfig{Name: name, Transport: TransportStdio})
+	return set
+}
+
+func TestGateway_HealthMonitor_MultiReplica_IsolatesFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	var pings [3]atomic.Int32
+	makeReplica := func(id int, pingFn func(context.Context) error) AgentClient {
+		mock := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+		return &reconnectableClient{
+			AgentClient: mock,
+			pingFn: func(ctx context.Context) error {
+				pings[id].Add(1)
+				return pingFn(ctx)
+			},
+			reconnectFn: func(ctx context.Context) error { return fmt.Errorf("still broken") },
+		}
+	}
+
+	clients := []AgentClient{
+		makeReplica(0, func(ctx context.Context) error { return nil }),
+		makeReplica(1, func(ctx context.Context) error { return fmt.Errorf("replica-1 down") }),
+		makeReplica(2, func(ctx context.Context) error { return nil }),
+	}
+	set := installReplicaSet(t, g, "svc", clients)
+
+	g.checkHealth(context.Background())
+
+	// Replica-1 must be marked unhealthy and excluded from dispatch.
+	if set.Replicas()[1].Healthy() {
+		t.Error("replica-1 should be unhealthy")
+	}
+	if !set.Replicas()[0].Healthy() || !set.Replicas()[2].Healthy() {
+		t.Error("replicas 0 and 2 should be healthy")
+	}
+
+	// Server-level rollup is healthy because replicas 0 and 2 are up.
+	hs := g.GetHealthStatus("svc")
+	if hs == nil || !hs.Healthy {
+		t.Errorf("rollup should be healthy when any replica is healthy: %+v", hs)
+	}
+
+	// Tool-call routing must never return replica-1 while it's unhealthy.
+	for i := 0; i < 20; i++ {
+		client, _, err := g.Router().RouteToolCall("svc__t")
+		if err != nil {
+			t.Fatalf("RouteToolCall %d: %v", i, err)
+		}
+		if client == clients[1] {
+			t.Fatal("router returned unhealthy replica-1")
+		}
+	}
+}
+
+func TestGateway_HealthMonitor_MultiReplica_RecoversReplica(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	var (
+		pingMu       sync.Mutex
+		replica1Down = true
+	)
+	replica1Ping := func(ctx context.Context) error {
+		pingMu.Lock()
+		defer pingMu.Unlock()
+		if replica1Down {
+			return fmt.Errorf("replica-1 down")
+		}
+		return nil
+	}
+
+	mk := func(pingFn func(context.Context) error) AgentClient {
+		mock := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+		return &reconnectableClient{
+			AgentClient: mock,
+			pingFn:      pingFn,
+			// Reconnect fails so replica-1 stays excluded until Ping itself
+			// succeeds — this isolates the "recovery via successful Ping"
+			// path from the "recovery via successful Reconnect" path.
+			reconnectFn: func(ctx context.Context) error { return fmt.Errorf("reconnect failed") },
+		}
+	}
+
+	clients := []AgentClient{
+		mk(func(ctx context.Context) error { return nil }),
+		mk(replica1Ping),
+	}
+	set := installReplicaSet(t, g, "svc", clients)
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+	if set.Replicas()[1].Healthy() {
+		t.Fatal("replica-1 should be unhealthy after first check (ping + reconnect both fail)")
+	}
+	if attempts := set.Replicas()[1].Restart().Attempts(); attempts != 1 {
+		t.Errorf("expected backoff attempts=1 after failed reconnect, got %d", attempts)
+	}
+
+	// Simulate the replica coming back: flip Ping to succeed and bypass the
+	// backoff window by resetting it. The next health check sees a healthy
+	// replica directly (no reconnect needed) and puts it back in rotation.
+	pingMu.Lock()
+	replica1Down = false
+	pingMu.Unlock()
+	set.Replicas()[1].Restart().Reset()
+
+	g.checkHealth(ctx)
+
+	if !set.Replicas()[1].Healthy() {
+		t.Error("replica-1 should be healthy again after Ping recovers")
+	}
+	if attempts := set.Replicas()[1].Restart().Attempts(); attempts != 0 {
+		t.Errorf("backoff should remain reset after recovery, got attempts=%d", attempts)
+	}
+}
+
+func TestGateway_HealthMonitor_BackoffGatesReconnect(t *testing.T) {
+	// A replica whose ping always fails and reconnect always fails must NOT
+	// spin: within one health check the reconnect fires at most once, and the
+	// backoff has advanced afterwards.
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	var reconnectCount atomic.Int32
+	mock := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	client := &reconnectableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return fmt.Errorf("dead") },
+		reconnectFn: func(ctx context.Context) error {
+			reconnectCount.Add(1)
+			return fmt.Errorf("still dead")
+		},
+	}
+	set := installReplicaSet(t, g, "svc", []AgentClient{client})
+
+	ctx := context.Background()
+	// Two consecutive health checks — backoff should gate the second attempt
+	// since the first just advanced the delay above zero.
+	g.checkHealth(ctx)
+	g.checkHealth(ctx)
+
+	got := reconnectCount.Load()
+	if got != 1 {
+		t.Errorf("expected exactly 1 reconnect attempt (backoff gates the second), got %d", got)
+	}
+	if attempts := set.Replicas()[0].Restart().Attempts(); attempts != 1 {
+		t.Errorf("expected backoff attempts=1 after first failure, got %d", attempts)
+	}
+	if !set.Replicas()[0].Restart().NextAt().After(time.Now()) {
+		t.Error("backoff NextAt should be in the future after a failed reconnect")
+	}
+}
+
+func TestGateway_HealthMonitor_SingleReplica_UnchangedBehavior(t *testing.T) {
+	// A single-replica server must produce the same public health rollup as
+	// pre-replicas gridctl: healthy rollup, no stray per-replica leakage in
+	// the GetHealthStatus API.
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	mock := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	client := &pingableClient{
+		AgentClient: mock,
+		pingFn:      func(ctx context.Context) error { return nil },
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "svc", Transport: TransportHTTP})
+
+	g.checkHealth(context.Background())
+
+	hs := g.GetHealthStatus("svc")
+	if hs == nil || !hs.Healthy {
+		t.Fatal("single-replica rollup should be healthy")
+	}
+	if hs.Error != "" {
+		t.Errorf("healthy rollup should have empty Error, got %q", hs.Error)
 	}
 }
 
