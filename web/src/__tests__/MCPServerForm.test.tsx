@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MCPServerForm } from '../components/wizard/steps/MCPServerForm';
 import type { MCPServerFormData } from '../lib/yaml-builder';
-import { buildYAML } from '../lib/yaml-builder';
+import { buildYAML, parseYAMLToForm } from '../lib/yaml-builder';
 
 function defaultData(overrides?: Partial<MCPServerFormData>): MCPServerFormData {
   return { name: '', serverType: 'container', ...overrides };
@@ -520,5 +520,149 @@ describe('YAML serialization — new fields', () => {
       data: { name: 'my-server', serverType: 'container', image: 'test:latest' },
     });
     expect(yaml).not.toContain('pin_schemas');
+  });
+
+  it('serializes replicas when > 1', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: { name: 'junos', serverType: 'local', command: ['python', 'srv.py'], replicas: 3 },
+    });
+    expect(yaml).toContain('replicas: 3');
+  });
+
+  it('omits replicas: 1 (matches Go omitempty)', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: { name: 'junos', serverType: 'container', image: 'test:latest', replicas: 1 },
+    });
+    expect(yaml).not.toContain('replicas');
+  });
+
+  it('serializes replica_policy only when non-default', () => {
+    const withDefault = buildYAML({
+      type: 'mcp-server',
+      data: { name: 'junos', serverType: 'container', image: 'test:latest', replicas: 3, replicaPolicy: 'round-robin' },
+    });
+    expect(withDefault).not.toContain('replica_policy');
+
+    const withCustom = buildYAML({
+      type: 'mcp-server',
+      data: { name: 'junos', serverType: 'container', image: 'test:latest', replicas: 3, replicaPolicy: 'least-connections' },
+    });
+    expect(withCustom).toContain('replica_policy: least-connections');
+  });
+
+  it('round-trips replicas + least-connections policy through YAML', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'junos',
+        serverType: 'local',
+        command: ['python', 'jmcp.py'],
+        replicas: 3,
+        replicaPolicy: 'least-connections',
+      },
+    });
+    const parsed = parseYAMLToForm(yaml, 'mcp-server');
+    expect('error' in parsed).toBe(false);
+    if ('error' in parsed) return;
+    expect(parsed.data.name).toBe('junos');
+    expect((parsed.data as MCPServerFormData).replicas).toBe(3);
+    expect((parsed.data as MCPServerFormData).replicaPolicy).toBe('least-connections');
+  });
+});
+
+describe('MCPServerForm — replicas UI', () => {
+  it('shows replicas input for container serverType', () => {
+    render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'container', image: 'test:latest' })}
+        onChange={() => {}}
+      />,
+    );
+    // Expand Advanced section
+    fireEvent.click(screen.getByText('Advanced'));
+    expect(screen.getByText('Replicas')).toBeInTheDocument();
+  });
+
+  it('shows replicas input for local and ssh serverTypes', () => {
+    const { rerender } = render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'local' })}
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    expect(screen.getByText('Replicas')).toBeInTheDocument();
+
+    rerender(
+      <MCPServerForm
+        data={defaultData({ serverType: 'ssh', ssh: { host: 'h', user: 'u' } })}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText('Replicas')).toBeInTheDocument();
+  });
+
+  it('hides replicas input for external and openapi serverTypes', () => {
+    const { rerender } = render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'external', url: 'http://x' })}
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    expect(screen.queryByText('Replicas')).not.toBeInTheDocument();
+
+    rerender(
+      <MCPServerForm
+        data={defaultData({ serverType: 'openapi', openapi: { spec: 'https://x/y.yaml' } })}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.queryByText('Replicas')).not.toBeInTheDocument();
+  });
+
+  it('clamps replicas input to [1, 32] and omits default via onChange', () => {
+    const onChange = vi.fn();
+    render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'container', image: 'test:latest' })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    const input = screen.getByLabelText('Replicas') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '50' } });
+    expect(onChange).toHaveBeenLastCalledWith({ replicas: 32 });
+
+    fireEvent.change(input, { target: { value: '0' } });
+    expect(onChange).toHaveBeenLastCalledWith({ replicas: undefined });
+
+    fireEvent.change(input, { target: { value: '1' } });
+    expect(onChange).toHaveBeenLastCalledWith({ replicas: undefined });
+
+    fireEvent.change(input, { target: { value: '4' } });
+    expect(onChange).toHaveBeenLastCalledWith({ replicas: 4 });
+  });
+
+  it('shows replica policy selector only when replicas > 1', () => {
+    const { rerender } = render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'container', image: 'test:latest', replicas: 1 })}
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    expect(screen.queryByText('Replica Policy')).not.toBeInTheDocument();
+
+    rerender(
+      <MCPServerForm
+        data={defaultData({ serverType: 'container', image: 'test:latest', replicas: 3 })}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText('Replica Policy')).toBeInTheDocument();
   });
 });
