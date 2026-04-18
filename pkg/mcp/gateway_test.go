@@ -3159,3 +3159,58 @@ func TestGateway_HealthMonitor_SingleReplica_UnchangedBehavior(t *testing.T) {
 	}
 }
 
+func TestGateway_ReplicaStatuses_PopulatesFromReplicaSet(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+
+	c0 := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	c1 := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "t"}})
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin, []AgentClient{c0, c1})
+	// Simulate unhealthy replica-1 with a backoff in flight.
+	set.Replicas()[1].SetHealthy(false)
+	set.Replicas()[1].Restart().Advance(time.Now())
+	set.Replicas()[0].IncInFlight()
+
+	g.Router().AddReplicaSet(set)
+	g.SetServerMeta(MCPServerConfig{Name: "svc", Transport: TransportHTTP})
+
+	statuses := g.ReplicaStatuses("svc")
+	if len(statuses) != 2 {
+		t.Fatalf("expected 2 replica statuses, got %d", len(statuses))
+	}
+	if statuses[0].ReplicaID != 0 || !statuses[0].Healthy || statuses[0].State != "healthy" {
+		t.Errorf("replica 0 unexpected: %+v", statuses[0])
+	}
+	if statuses[0].InFlight != 1 {
+		t.Errorf("replica 0 inflight = %d, want 1", statuses[0].InFlight)
+	}
+	if statuses[1].ReplicaID != 1 || statuses[1].Healthy {
+		t.Errorf("replica 1 should be unhealthy: %+v", statuses[1])
+	}
+	if statuses[1].State != "restarting" {
+		t.Errorf("replica 1 state = %q, want restarting", statuses[1].State)
+	}
+	if statuses[1].RestartAttempts == 0 {
+		t.Error("replica 1 should carry restart attempts after Advance()")
+	}
+	if statuses[1].NextRetryAt == nil {
+		t.Error("replica 1 should carry NextRetryAt after Advance()")
+	}
+
+	// Status() should thread the same per-replica info through the API shape.
+	srvStatuses := g.Status()
+	if len(srvStatuses) != 1 {
+		t.Fatalf("expected 1 server status, got %d", len(srvStatuses))
+	}
+	if len(srvStatuses[0].Replicas) != 2 {
+		t.Fatalf("expected 2 replicas on MCPServerStatus, got %d", len(srvStatuses[0].Replicas))
+	}
+}
+
+func TestGateway_ReplicaStatuses_UnknownServer(t *testing.T) {
+	g := NewGateway()
+	if got := g.ReplicaStatuses("nope"); got != nil {
+		t.Errorf("unknown server should return nil, got %+v", got)
+	}
+}
+
