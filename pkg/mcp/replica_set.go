@@ -2,8 +2,17 @@ package mcp
 
 import (
 	"errors"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
+	"time"
+)
+
+// Restart-backoff constants for a failing replica.
+const (
+	restartBackoffInitial    = 1 * time.Second
+	restartBackoffCap        = 30 * time.Second
+	restartBackoffJitterFrac = 0.25 // ±25%
 )
 
 // Dispatch policies for a ReplicaSet.
@@ -16,11 +25,80 @@ const (
 // the set is marked unhealthy.
 var ErrNoHealthyReplicas = errors.New("no healthy replicas")
 
-// backoffState carries exponential-backoff bookkeeping for per-replica
-// restart scheduling. Fields and methods are introduced alongside the
-// restart loop in a later phase; the type is declared here so the Replica
-// layout is stable.
-type backoffState struct{}
+// backoffState tracks exponential-backoff bookkeeping for a failing replica.
+// Delays start at restartBackoffInitial, double on each Advance, and cap at
+// restartBackoffCap. Every delay is jittered by ±restartBackoffJitterFrac so a
+// fleet of replicas that all fail together do not resynchronize their retries.
+type backoffState struct {
+	mu       sync.Mutex
+	attempts uint32
+	nextAt   time.Time // zero value = eligible now
+}
+
+// Attempts returns the number of consecutive failures observed.
+func (b *backoffState) Attempts() uint32 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.attempts
+}
+
+// ShouldTry reports whether now is at or past the scheduled next attempt.
+// A zero nextAt (fresh state or after Reset) is always eligible.
+func (b *backoffState) ShouldTry(now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.nextAt.IsZero() {
+		return true
+	}
+	return !now.Before(b.nextAt)
+}
+
+// Advance records a failed attempt, computes the next delay (capped, jittered),
+// and schedules the next eligible try. Returns the chosen delay so callers can
+// log the retry window. Attempts saturates at math.MaxUint32.
+func (b *backoffState) Advance(now time.Time) time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delay := computeBackoff(b.attempts)
+	if b.attempts < ^uint32(0) {
+		b.attempts++
+	}
+	b.nextAt = now.Add(delay)
+	return delay
+}
+
+// Reset clears the backoff: next attempt is eligible immediately.
+func (b *backoffState) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.attempts = 0
+	b.nextAt = time.Time{}
+}
+
+// NextAt returns the scheduled next attempt time. Zero value means "now".
+func (b *backoffState) NextAt() time.Time {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.nextAt
+}
+
+// computeBackoff returns the jittered delay for the given attempt index.
+// attempts=0 yields the initial delay; attempts=1 yields 2× initial; etc.
+// Capped at restartBackoffCap before jitter is applied.
+func computeBackoff(attempts uint32) time.Duration {
+	base := restartBackoffInitial
+	for i := uint32(0); i < attempts && base < restartBackoffCap; i++ {
+		base *= 2
+	}
+	if base > restartBackoffCap {
+		base = restartBackoffCap
+	}
+	// Symmetric jitter: delay in [base*(1-frac), base*(1+frac)].
+	// Non-cryptographic RNG is deliberate — this is retry-timing jitter.
+	span := float64(base) * restartBackoffJitterFrac
+	offset := (rand.Float64()*2 - 1) * span //nolint:gosec // retry jitter, not security-sensitive
+	return base + time.Duration(offset)
+}
 
 // Replica is a single member of a ReplicaSet. It wraps one AgentClient (the
 // concrete transport — ProcessClient, StdioClient, Client, etc.) and tracks
@@ -53,6 +131,9 @@ func (r *Replica) DecInFlight() { r.inFlight.Add(-1) }
 
 // InFlight returns the current in-flight request count.
 func (r *Replica) InFlight() int64 { return r.inFlight.Load() }
+
+// Restart returns the replica's restart-backoff state. Never nil.
+func (r *Replica) Restart() *backoffState { return r.restart }
 
 // ReplicaSet is a pool of AgentClient replicas for a single logical MCP server.
 // Dispatch is determined by the set's policy. A single-replica set behaves
