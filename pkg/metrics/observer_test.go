@@ -19,7 +19,7 @@ func TestObserver_ObserveToolCall(t *testing.T) {
 		},
 	}
 
-	obs.ObserveToolCall("test-server", args, result)
+	obs.ObserveToolCall("test-server", -1, args, result)
 
 	snap := acc.Snapshot()
 	if snap.Session.InputTokens == 0 {
@@ -41,12 +41,45 @@ func TestObserver_ObserveToolCall(t *testing.T) {
 	}
 }
 
+func TestObserver_PerReplica(t *testing.T) {
+	counter := token.NewHeuristicCounter(4)
+	acc := NewAccumulator(100)
+	obs := NewObserver(counter, acc)
+
+	args := map[string]any{"query": "hello"}
+	result := &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("response")}}
+
+	obs.ObserveToolCall("multi", 0, args, result)
+	obs.ObserveToolCall("multi", 1, args, result)
+	obs.ObserveToolCall("multi", 1, args, result)
+
+	snap := acc.Snapshot()
+	serverTotal, ok := snap.PerServer["multi"]
+	if !ok {
+		t.Fatal("expected per-server entry for multi")
+	}
+	replicaMap, ok := snap.PerReplica["multi"]
+	if !ok {
+		t.Fatalf("expected per-replica entry for multi; got %+v", snap.PerReplica)
+	}
+	if len(replicaMap) != 2 {
+		t.Fatalf("expected 2 replicas, got %d", len(replicaMap))
+	}
+	if replicaMap[1].TotalTokens != 2*replicaMap[0].TotalTokens {
+		t.Errorf("replica 1 should have 2× the tokens of replica 0; got %d vs %d",
+			replicaMap[1].TotalTokens, replicaMap[0].TotalTokens)
+	}
+	if sum := replicaMap[0].TotalTokens + replicaMap[1].TotalTokens; sum != serverTotal.TotalTokens {
+		t.Errorf("replica totals should sum to server total: %d vs %d", sum, serverTotal.TotalTokens)
+	}
+}
+
 func TestObserver_NilResult(t *testing.T) {
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)
 	obs := NewObserver(counter, acc)
 
-	obs.ObserveToolCall("test-server", map[string]any{"key": "val"}, nil)
+	obs.ObserveToolCall("test-server", -1, map[string]any{"key": "val"}, nil)
 
 	snap := acc.Snapshot()
 	if snap.Session.InputTokens == 0 {

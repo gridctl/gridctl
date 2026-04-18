@@ -171,6 +171,17 @@ func (r *Router) AggregatedTools() []Tool {
 // RouteToolCall routes a tool call to the appropriate agent. The concrete
 // replica is chosen by the set's dispatch policy.
 func (r *Router) RouteToolCall(prefixedName string) (AgentClient, string, error) {
+	replica, toolName, err := r.RouteToolCallReplica(prefixedName)
+	if err != nil {
+		return nil, "", err
+	}
+	return replica.Client(), toolName, nil
+}
+
+// RouteToolCallReplica behaves like RouteToolCall but returns the chosen
+// replica itself. Callers that need the replica id (for per-replica logging,
+// tracing, and in-flight accounting) should use this variant.
+func (r *Router) RouteToolCallReplica(prefixedName string) (*Replica, string, error) {
 	agentName, toolName, err := ParsePrefixedTool(prefixedName)
 	if err != nil {
 		return nil, "", err
@@ -187,7 +198,7 @@ func (r *Router) RouteToolCall(prefixedName string) (AgentClient, string, error)
 	if err != nil {
 		return nil, "", fmt.Errorf("agent %s: %w", agentName, err)
 	}
-	return replica.Client(), toolName, nil
+	return replica, toolName, nil
 }
 
 // ToolNameDelimiter is the separator between agent name and tool name in prefixed tool names.

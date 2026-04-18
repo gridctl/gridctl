@@ -39,6 +39,11 @@ type StdioClient struct {
 	responsesMu sync.Mutex
 }
 
+// ContainerID returns the docker container id this client was bound to.
+func (c *StdioClient) ContainerID() string {
+	return c.containerID
+}
+
 // NewStdioClient creates a new stdio-based MCP client.
 func NewStdioClient(name, containerID string, cli dockerclient.DockerClient) *StdioClient {
 	c := &StdioClient{

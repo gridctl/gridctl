@@ -1,6 +1,8 @@
 package output
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
@@ -22,6 +24,26 @@ type GatewaySummary struct {
 	Status   string // running, stopped
 	Started  string // human-readable duration
 	CodeMode string // "on" or empty
+}
+
+// MCPServerRollup is one row of the rolled-up MCP-servers table shown by
+// `gridctl status`. A server with a single replica uses "—" in the Replicas
+// column to match the UX spec.
+type MCPServerRollup struct {
+	Name     string
+	Type     string // transport label: local-process, container, ssh, external, openapi
+	Replicas string // "N/M" for sets with replicas > 1, "—" for single-replica servers
+	State    string // "healthy", "degraded (replica-N restarting, next in 4s)", "unhealthy"
+}
+
+// ReplicaDetail is one row of the expanded `gridctl status --replicas` view.
+type ReplicaDetail struct {
+	Server   string
+	Replica  int
+	Handle   string // PID for local-process, container id prefix for container-backed
+	State    string
+	Uptime   string
+	InFlight int64
 }
 
 // ContainerSummary contains data for the container status table.
@@ -167,6 +189,70 @@ func (p *Printer) Containers(containers []ContainerSummary) {
 
 	t.Render()
 	p.Println()
+}
+
+// MCPServers prints the rolled-up MCP-server status table.
+func (p *Printer) MCPServers(rows []MCPServerRollup) {
+	if len(rows) == 0 {
+		return
+	}
+
+	p.Section("MCP SERVERS")
+
+	t := table.NewWriter()
+	t.SetOutputMirror(p.out)
+	t.SetStyle(p.tableStyle())
+
+	t.AppendHeader(table.Row{"Name", "Type", "Replicas", "State"})
+	for _, r := range rows {
+		state := r.State
+		if p.isTTY {
+			state = colorReplicaState(r.State)
+		}
+		t.AppendRow(table.Row{r.Name, r.Type, r.Replicas, state})
+	}
+	t.Render()
+	p.Println()
+}
+
+// Replicas prints the per-replica detail table used by `gridctl status --replicas`.
+func (p *Printer) Replicas(rows []ReplicaDetail) {
+	if len(rows) == 0 {
+		return
+	}
+
+	p.Section("REPLICAS")
+
+	t := table.NewWriter()
+	t.SetOutputMirror(p.out)
+	t.SetStyle(p.tableStyle())
+
+	t.AppendHeader(table.Row{"Server", "Replica", "PID/Container", "State", "Uptime", "In-Flight"})
+	for _, r := range rows {
+		state := r.State
+		if p.isTTY {
+			state = colorReplicaState(r.State)
+		}
+		t.AppendRow(table.Row{r.Server, fmt.Sprintf("%d", r.Replica), r.Handle, state, r.Uptime, r.InFlight})
+	}
+	t.Render()
+	p.Println()
+}
+
+// colorReplicaState colours rollup/expanded replica states. "degraded" starts
+// with the token "degraded" so the prefix match catches the full annotation
+// ("degraded (replica-1 restarting, next in 4s)").
+func colorReplicaState(state string) string {
+	switch {
+	case state == "healthy":
+		return lipgloss.NewStyle().Foreground(ColorGreen).Render(state)
+	case state == "restarting", state == "unhealthy":
+		return lipgloss.NewStyle().Foreground(ColorRed).Render(state)
+	case len(state) >= 8 && state[:8] == "degraded":
+		return lipgloss.NewStyle().Foreground(ColorAmber).Render(state)
+	default:
+		return lipgloss.NewStyle().Foreground(ColorGray).Render(state)
+	}
 }
 
 // colorPinStatus applies color to a pin status label for TTY output.

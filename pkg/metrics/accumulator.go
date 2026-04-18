@@ -24,9 +24,10 @@ type FormatSavings struct {
 
 // TokenUsage is the top-level token usage snapshot returned by the API.
 type TokenUsage struct {
-	Session       TokenCounts            `json:"session"`
-	PerServer     map[string]TokenCounts `json:"per_server"`
-	FormatSavings FormatSavings          `json:"format_savings"`
+	Session       TokenCounts                        `json:"session"`
+	PerServer     map[string]TokenCounts             `json:"per_server"`
+	PerReplica    map[string]map[int]TokenCounts     `json:"per_replica,omitempty"`
+	FormatSavings FormatSavings                      `json:"format_savings"`
 }
 
 // DataPoint is a single time-series data point with token counts.
@@ -63,6 +64,14 @@ type serverCounters struct {
 	outputTokens atomic.Int64
 }
 
+// replicaCounters holds atomic counters for a single replica. Keyed by
+// (serverName, replicaID) in the accumulator so existing per-server aggregates
+// stay untouched.
+type replicaCounters struct {
+	inputTokens  atomic.Int64
+	outputTokens atomic.Int64
+}
+
 // Accumulator collects token usage metrics with thread-safe operations.
 // Session totals use atomic counters. Historical data is stored in a ring buffer
 // of pre-aggregated 1-minute time buckets.
@@ -74,6 +83,12 @@ type Accumulator struct {
 	// Per-server totals
 	serverMu sync.RWMutex
 	servers  map[string]*serverCounters
+
+	// Per-replica totals. Cardinality is bounded by the server replica limit
+	// (config validation caps replicas at 32) so the outer map scales with
+	// server count and the inner map with replica count — a small product.
+	replicaMu sync.RWMutex
+	replicas  map[string]map[int]*replicaCounters
 
 	// Ring buffer of 1-minute buckets
 	bufMu    sync.RWMutex
@@ -107,14 +122,24 @@ func NewAccumulator(maxDataPoints int) *Accumulator {
 	}
 	return &Accumulator{
 		servers:    make(map[string]*serverCounters),
+		replicas:   make(map[string]map[int]*replicaCounters),
 		buckets:    make([]bucket, maxDataPoints),
 		maxSize:    maxDataPoints,
 		serverBufs: make(map[string]*serverBuffer),
 	}
 }
 
-// Record adds a token usage observation from a tool call.
+// Record adds a token usage observation from a tool call. Equivalent to
+// RecordReplica with replicaID=-1 (i.e. do not attribute to a replica).
 func (a *Accumulator) Record(serverName string, inputTokens, outputTokens int) {
+	a.RecordReplica(serverName, -1, inputTokens, outputTokens)
+}
+
+// RecordReplica adds a token usage observation attributed to a specific
+// replica. Per-server aggregates are updated in all cases. Pass replicaID < 0
+// to skip the per-replica update (used for servers that are not part of a
+// replica set).
+func (a *Accumulator) RecordReplica(serverName string, replicaID, inputTokens, outputTokens int) {
 	input := int64(inputTokens)
 	output := int64(outputTokens)
 
@@ -139,10 +164,43 @@ func (a *Accumulator) Record(serverName string, inputTokens, outputTokens int) {
 	sc.inputTokens.Add(input)
 	sc.outputTokens.Add(output)
 
+	if replicaID >= 0 {
+		rc := a.getOrCreateReplicaCounters(serverName, replicaID)
+		rc.inputTokens.Add(input)
+		rc.outputTokens.Add(output)
+	}
+
 	// Update time-series ring buffer
 	now := bucketKey(time.Now())
 	a.addToBucket(now, input, output)
 	a.addToServerBucket(serverName, now, input, output)
+}
+
+// getOrCreateReplicaCounters returns the per-replica counter bucket, creating
+// it on first use. Safe for concurrent access.
+func (a *Accumulator) getOrCreateReplicaCounters(serverName string, replicaID int) *replicaCounters {
+	a.replicaMu.RLock()
+	if m, ok := a.replicas[serverName]; ok {
+		if rc, ok := m[replicaID]; ok {
+			a.replicaMu.RUnlock()
+			return rc
+		}
+	}
+	a.replicaMu.RUnlock()
+
+	a.replicaMu.Lock()
+	defer a.replicaMu.Unlock()
+	m, ok := a.replicas[serverName]
+	if !ok {
+		m = make(map[int]*replicaCounters)
+		a.replicas[serverName] = m
+	}
+	rc, ok := m[replicaID]
+	if !ok {
+		rc = &replicaCounters{}
+		m[replicaID] = rc
+	}
+	return rc
 }
 
 // RecordFormatSavings records token counts before and after format conversion.
@@ -251,6 +309,26 @@ func (a *Accumulator) Snapshot() TokenUsage {
 	}
 	a.serverMu.RUnlock()
 
+	a.replicaMu.RLock()
+	var perReplica map[string]map[int]TokenCounts
+	if len(a.replicas) > 0 {
+		perReplica = make(map[string]map[int]TokenCounts, len(a.replicas))
+		for name, m := range a.replicas {
+			inner := make(map[int]TokenCounts, len(m))
+			for id, rc := range m {
+				ri := rc.inputTokens.Load()
+				ro := rc.outputTokens.Load()
+				inner[id] = TokenCounts{
+					InputTokens:  ri,
+					OutputTokens: ro,
+					TotalTokens:  ri + ro,
+				}
+			}
+			perReplica[name] = inner
+		}
+	}
+	a.replicaMu.RUnlock()
+
 	// Compute format savings
 	origTokens := a.savingsOriginal.Load()
 	fmtTokens := a.savingsFormatted.Load()
@@ -266,7 +344,8 @@ func (a *Accumulator) Snapshot() TokenUsage {
 			OutputTokens: output,
 			TotalTokens:  input + output,
 		},
-		PerServer: perServer,
+		PerServer:  perServer,
+		PerReplica: perReplica,
 		FormatSavings: FormatSavings{
 			OriginalTokens:  origTokens,
 			FormattedTokens: fmtTokens,
@@ -404,6 +483,10 @@ func (a *Accumulator) Clear() {
 	a.serverMu.Lock()
 	a.servers = make(map[string]*serverCounters)
 	a.serverMu.Unlock()
+
+	a.replicaMu.Lock()
+	a.replicas = make(map[string]map[int]*replicaCounters)
+	a.replicaMu.Unlock()
 
 	a.bufMu.Lock()
 	a.buckets = make([]bucket, a.maxSize)

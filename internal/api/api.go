@@ -408,6 +408,8 @@ type MCPServerStatus struct {
 	Healthy      *bool    `json:"healthy,omitempty"`
 	LastCheck    *string  `json:"lastCheck,omitempty"`
 	HealthError  string   `json:"healthError,omitempty"`
+
+	Replicas []mcp.ReplicaStatus `json:"replicas,omitempty"`
 }
 
 func (s *Server) getMCPServerStatuses() []MCPServerStatus {
@@ -430,6 +432,7 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 			OutputFormat: ms.OutputFormat,
 			Healthy:      ms.Healthy,
 			HealthError:  ms.HealthError,
+			Replicas:     ms.Replicas,
 		}
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)

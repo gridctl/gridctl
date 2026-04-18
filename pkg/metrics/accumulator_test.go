@@ -42,6 +42,7 @@ func TestAccumulator_Record(t *testing.T) {
 func TestAccumulator_Clear(t *testing.T) {
 	acc := NewAccumulator(100)
 	acc.Record("server-a", 100, 50)
+	acc.RecordReplica("server-a", 0, 10, 5)
 
 	acc.Clear()
 
@@ -51,6 +52,57 @@ func TestAccumulator_Clear(t *testing.T) {
 	}
 	if len(snap.PerServer) != 0 {
 		t.Errorf("per-server count after clear = %d, want 0", len(snap.PerServer))
+	}
+	if len(snap.PerReplica) != 0 {
+		t.Errorf("per-replica count after clear = %d, want 0", len(snap.PerReplica))
+	}
+}
+
+func TestAccumulator_RecordReplica(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	// Two replicas of the same server + one server without replicas.
+	acc.RecordReplica("junos", 0, 100, 50)
+	acc.RecordReplica("junos", 0, 40, 20)
+	acc.RecordReplica("junos", 1, 60, 30)
+	acc.Record("github", 10, 5) // no replica_id — should not produce a per-replica entry
+
+	snap := acc.Snapshot()
+
+	// Per-server aggregates still sum across replicas.
+	junos := snap.PerServer["junos"]
+	if junos.InputTokens != 200 || junos.OutputTokens != 100 {
+		t.Errorf("per-server junos = %+v, want input=200 output=100", junos)
+	}
+
+	// Per-replica map is keyed by (server, replica_id).
+	replicaMap, ok := snap.PerReplica["junos"]
+	if !ok {
+		t.Fatalf("expected junos in per_replica; got %+v", snap.PerReplica)
+	}
+	if got := replicaMap[0].InputTokens; got != 140 {
+		t.Errorf("junos replica 0 input = %d, want 140", got)
+	}
+	if got := replicaMap[1].InputTokens; got != 60 {
+		t.Errorf("junos replica 1 input = %d, want 60", got)
+	}
+
+	// Servers without replica_id should not appear under per_replica.
+	if _, ok := snap.PerReplica["github"]; ok {
+		t.Errorf("expected github absent from per_replica when recorded without replica_id")
+	}
+}
+
+func TestAccumulator_RecordNegativeReplicaIDSkipsReplicaMap(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordReplica("server-a", -1, 100, 50)
+
+	snap := acc.Snapshot()
+	if _, ok := snap.PerServer["server-a"]; !ok {
+		t.Error("expected per-server entry for server-a even when replicaID=-1")
+	}
+	if _, ok := snap.PerReplica["server-a"]; ok {
+		t.Error("expected no per-replica entry when replicaID=-1")
 	}
 }
 

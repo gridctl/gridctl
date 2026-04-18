@@ -422,6 +422,7 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 		return
 	}
 
+	logger := logging.WithReplicaID(g.logger, replica.ID())
 	now := time.Now()
 	err := pingable.Ping(ctx)
 
@@ -434,7 +435,7 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	if err == nil {
 		status.LastHealthy = now
 		if prev != nil && !prev.Healthy {
-			g.logger.Info("MCP server recovered", "name", serverName)
+			logger.Info("MCP server recovered", "name", serverName)
 		}
 	} else {
 		status.Error = err.Error()
@@ -442,7 +443,7 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 			status.LastHealthy = prev.LastHealthy
 		}
 		if prev == nil || prev.Healthy {
-			g.logger.Warn("MCP server unhealthy", "name", serverName, "error", err)
+			logger.Warn("MCP server unhealthy", "name", serverName, "error", err)
 		}
 	}
 	g.setReplicaStatusLocked(serverName, replica.ID(), status)
@@ -466,16 +467,17 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 		return
 	}
 
-	g.logger.Info("attempting reconnection", "name", serverName)
+	logger.Info("attempting reconnection", "name", serverName)
 	if reconnErr := rc.Reconnect(ctx); reconnErr != nil {
 		delay := replica.Restart().Advance(now)
-		g.logger.Warn("reconnection failed", "name", serverName, "error", reconnErr, "next_retry_in", delay)
+		logger.Warn("reconnection failed", "name", serverName, "error", reconnErr, "next_retry_in", delay)
 		return
 	}
 
 	// Reconnect succeeded — back in rotation.
 	replica.Restart().Reset()
 	replica.SetHealthy(true)
+	replica.MarkStarted(time.Now())
 
 	g.healthMu.Lock()
 	g.setReplicaStatusLocked(serverName, replica.ID(), &HealthStatus{
@@ -486,7 +488,7 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	g.healthMu.Unlock()
 
 	g.router.RefreshTools()
-	g.logger.Info("MCP server reconnected", "name", serverName)
+	logger.Info("MCP server reconnected", "name", serverName)
 
 	// Verify pins after reconnection using replica-0's tool surface if we
 	// can get it; otherwise use this replica's tools. Drift on reconnect is
@@ -494,7 +496,7 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	if g.pinningEnabledForServer(serverName) {
 		drifts, pinErr := g.schemaVerifier.VerifyOrPin(serverName, client.Tools())
 		if pinErr != nil {
-			g.logger.Warn("pins: verification failed after reconnect", "name", serverName, "error", pinErr)
+			logger.Warn("pins: verification failed after reconnect", "name", serverName, "error", pinErr)
 		} else {
 			g.handlePinDrift(serverName, drifts)
 		}
@@ -577,6 +579,72 @@ func (g *Gateway) GetHealthStatus(name string) *HealthStatus {
 	g.healthMu.RLock()
 	defer g.healthMu.RUnlock()
 	return g.health[name]
+}
+
+// ReplicaStatuses returns per-replica status for the named server, ordered by
+// replica id. Returns nil if the server is not registered.
+func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
+	set := g.router.GetReplicaSet(serverName)
+	if set == nil {
+		return nil
+	}
+	replicas := set.Replicas()
+	out := make([]ReplicaStatus, 0, len(replicas))
+
+	g.healthMu.RLock()
+	replicaHealthMap := g.replicaHealth[serverName]
+	g.healthMu.RUnlock()
+
+	for _, r := range replicas {
+		rs := ReplicaStatus{
+			ReplicaID: r.ID(),
+			Healthy:   r.Healthy(),
+			InFlight:  r.InFlight(),
+			StartedAt: r.StartedAt(),
+		}
+		attempts := r.Restart().Attempts()
+		rs.RestartAttempts = attempts
+		if nextAt := r.Restart().NextAt(); !nextAt.IsZero() {
+			t := nextAt
+			rs.NextRetryAt = &t
+		}
+		if replicaHealthMap != nil {
+			if hs, ok := replicaHealthMap[r.ID()]; ok && hs != nil {
+				if !hs.LastCheck.IsZero() {
+					t := hs.LastCheck
+					rs.LastCheck = &t
+				}
+				if !hs.LastHealthy.IsZero() {
+					t := hs.LastHealthy
+					rs.LastHealthy = &t
+				}
+				rs.LastError = hs.Error
+			}
+		}
+		switch client := r.Client().(type) {
+		case *ProcessClient:
+			rs.PID = client.PID()
+		case *StdioClient:
+			rs.ContainerID = client.ContainerID()
+		}
+		rs.State = replicaStateString(rs.Healthy, attempts > 0)
+		out = append(out, rs)
+	}
+	return out
+}
+
+// replicaStateString maps a replica's health flag and restart-attempt counter
+// to a short state label: "healthy", "restarting" (unhealthy but currently
+// backing off a retry), or "unhealthy" (unhealthy with no retry pending).
+func replicaStateString(healthy bool, hasAttempts bool) string {
+	switch {
+	case healthy:
+		return "healthy"
+	case hasAttempts:
+		return "restarting"
+	default:
+		return "unhealthy"
+	}
 }
 
 // Close stops the cleanup goroutine and closes all agent client connections.
@@ -1018,7 +1086,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	tracer := otel.Tracer("gridctl.gateway")
 	_, routeSpan := tracer.Start(ctx, "mcp.routing")
 	routeSpan.SetAttributes(attribute.String("tool.name", params.Name))
-	client, toolName, err := g.router.RouteToolCall(params.Name)
+	replica, toolName, err := g.router.RouteToolCallReplica(params.Name)
 	if err != nil {
 		routeSpan.SetStatus(codes.Error, err.Error())
 		routeSpan.End()
@@ -1027,7 +1095,12 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 			IsError: true,
 		}, nil
 	}
-	routeSpan.SetAttributes(attribute.String("server.name", client.Name()))
+	client := replica.Client()
+	replicaID := replica.ID()
+	routeSpan.SetAttributes(
+		attribute.String("server.name", client.Name()),
+		attribute.Int("mcp.replica.id", replicaID),
+	)
 	routeSpan.End()
 
 	// Reject calls to servers blocked due to schema drift.
@@ -1047,11 +1120,14 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	// Propagate the resolved server name to the root span so the trace-level
 	// record (built from root span attrs) carries it for UI filtering.
 	if rootSpan := trace.SpanFromContext(ctx); rootSpan.IsRecording() {
-		rootSpan.SetAttributes(attribute.String("server.name", client.Name()))
+		rootSpan.SetAttributes(
+			attribute.String("server.name", client.Name()),
+			attribute.Int("mcp.replica.id", replicaID),
+		)
 	}
 
-	// Populate trace ID on the logger so structured logs are correlated.
-	logger := g.logger
+	// Populate trace ID and replica id on the logger so structured logs are correlated.
+	logger := logging.WithReplicaID(g.logger, replicaID)
 	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
 		logger = logging.WithTraceID(logger, sc.TraceID().String())
 	}
@@ -1068,6 +1144,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	span.SetAttributes(
 		attribute.String("mcp.method.name", "tools/call"),
 		attribute.String("server.name", client.Name()),
+		attribute.Int("mcp.replica.id", replicaID),
 		attribute.String("tool.name", toolName),
 		attribute.String("network.transport", networkTransport),
 	)
@@ -1075,7 +1152,9 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	logger.Info("tool call started", "server", client.Name(), "tool", toolName)
 	start := time.Now()
 
+	replica.IncInFlight()
 	result, err := client.CallTool(ctx, toolName, params.Arguments)
+	replica.DecInFlight()
 	duration := time.Since(start)
 
 	if err != nil {
@@ -1104,7 +1183,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	obs := g.toolCallObserver
 	g.mu.RUnlock()
 	if obs != nil {
-		go obs.ObserveToolCall(client.Name(), params.Arguments, result)
+		go obs.ObserveToolCall(client.Name(), replicaID, params.Arguments, result)
 	}
 
 	return result, nil
@@ -1389,6 +1468,25 @@ type MCPServerStatus struct {
 	Healthy      *bool      `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
 	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
 	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
+
+	Replicas []ReplicaStatus `json:"replicas,omitempty"` // Per-replica status; always populated
+}
+
+// ReplicaStatus reports the live state of a single replica within a
+// ReplicaSet. Uptime is derived from StartedAt at read time by the consumer.
+type ReplicaStatus struct {
+	ReplicaID       int        `json:"replicaId"`
+	State           string     `json:"state"`                     // "healthy" | "unhealthy" | "restarting"
+	Healthy         bool       `json:"healthy"`
+	InFlight        int64      `json:"inFlight"`
+	StartedAt       time.Time  `json:"startedAt,omitempty"`
+	LastCheck       *time.Time `json:"lastCheck,omitempty"`
+	LastHealthy     *time.Time `json:"lastHealthy,omitempty"`
+	LastError       string     `json:"lastError,omitempty"`
+	RestartAttempts uint32     `json:"restartAttempts,omitempty"`
+	NextRetryAt     *time.Time `json:"nextRetryAt,omitempty"`
+	PID             int        `json:"pid,omitempty"`
+	ContainerID     string     `json:"containerId,omitempty"`
 }
 
 // resolveNetworkTransport returns the network.transport attribute value for a
@@ -1509,6 +1607,8 @@ func (g *Gateway) Status() []MCPServerStatus {
 			status.HealthError = hs.Error
 		}
 		g.healthMu.RUnlock()
+
+		status.Replicas = g.ReplicaStatuses(client.Name())
 
 		statuses = append(statuses, status)
 	}

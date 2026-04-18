@@ -55,9 +55,11 @@ type ToolCaller interface {
 type ToolCallObserver interface {
 	// ObserveToolCall is called after a tool call completes.
 	// serverName is the MCP server that handled the call.
+	// replicaID is the zero-indexed replica within that server's set, or -1
+	// when the caller did not dispatch through a ReplicaSet.
 	// arguments are the tool call arguments (input).
 	// result is the tool call response (output). May be nil on error.
-	ObserveToolCall(serverName string, arguments map[string]any, result *ToolCallResult)
+	ObserveToolCall(serverName string, replicaID int, arguments map[string]any, result *ToolCallResult)
 }
 
 // FormatSavingsRecorder receives format savings observations.

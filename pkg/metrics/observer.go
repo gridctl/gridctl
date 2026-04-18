@@ -21,7 +21,7 @@ func NewObserver(counter token.Counter, accumulator *Accumulator) *Observer {
 }
 
 // ObserveToolCall counts input/output tokens and records them.
-func (o *Observer) ObserveToolCall(serverName string, arguments map[string]any, result *mcp.ToolCallResult) {
+func (o *Observer) ObserveToolCall(serverName string, replicaID int, arguments map[string]any, result *mcp.ToolCallResult) {
 	inputTokens := token.CountJSON(o.counter, arguments)
 
 	outputTokens := 0
@@ -31,5 +31,5 @@ func (o *Observer) ObserveToolCall(serverName string, arguments map[string]any, 
 		}
 	}
 
-	o.accumulator.Record(serverName, inputTokens, outputTokens)
+	o.accumulator.RecordReplica(serverName, replicaID, inputTokens, outputTokens)
 }

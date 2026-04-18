@@ -18,7 +18,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var statusStack string
+var (
+	statusStack          string
+	statusShowReplicas   bool
+)
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
@@ -26,17 +29,19 @@ var statusCmd = &cobra.Command{
 	Long: `Displays the current status of gridctl-managed gateways and containers.
 
 Shows running gateways with their ports, and container states.
-Use --stack to filter by a specific stack.`,
+Use --stack to filter by a specific stack.
+Use --replicas to expand multi-replica servers to one row per replica.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus(statusStack)
+		return runStatus(statusStack, statusShowReplicas)
 	},
 }
 
 func init() {
 	statusCmd.Flags().StringVarP(&statusStack, "stack", "s", "", "Only show containers from this stack")
+	statusCmd.Flags().BoolVar(&statusShowReplicas, "replicas", false, "Expand to one row per replica instead of rolled-up per-server state")
 }
 
-func runStatus(stack string) error {
+func runStatus(stack string, showReplicas bool) error {
 	printer := output.New()
 
 	// Show gateway status from state files
@@ -128,6 +133,23 @@ func runStatus(stack string) error {
 	printer.Gateways(gateways)
 	printer.Containers(containers)
 
+	// MCP server tables: query each running gateway for replica info. If
+	// --replicas is set, render one row per replica instead of a rollup.
+	for _, s := range filteredStates {
+		if !state.IsRunning(&s) {
+			continue
+		}
+		servers := queryMCPServers(s.Port)
+		if len(servers) == 0 {
+			continue
+		}
+		if showReplicas {
+			printer.Replicas(buildReplicaDetails(servers))
+		} else {
+			printer.MCPServers(buildMCPRollup(servers))
+		}
+	}
+
 	// Show trace activity summary for each running gateway.
 	for _, s := range filteredStates {
 		if state.IsRunning(&s) {
@@ -154,6 +176,192 @@ func queryTraceCount(port int) int {
 		return len(traces)
 	}
 	return -1
+}
+
+// mcpServerAPI mirrors the subset of internal/api.MCPServerStatus the CLI needs
+// to render rolled-up and per-replica views. Defined locally so the CLI does
+// not pull in the internal/api package.
+type mcpServerAPI struct {
+	Name         string            `json:"name"`
+	Transport    string            `json:"transport"`
+	External     bool              `json:"external"`
+	LocalProcess bool              `json:"localProcess"`
+	SSH          bool              `json:"ssh"`
+	OpenAPI      bool              `json:"openapi"`
+	Replicas     []mcpReplicaAPI   `json:"replicas,omitempty"`
+}
+
+// mcpReplicaAPI is the per-replica slice of mcpServerAPI.
+type mcpReplicaAPI struct {
+	ReplicaID       int        `json:"replicaId"`
+	State           string     `json:"state"`
+	Healthy         bool       `json:"healthy"`
+	InFlight        int64      `json:"inFlight"`
+	StartedAt       time.Time  `json:"startedAt,omitempty"`
+	RestartAttempts uint32     `json:"restartAttempts,omitempty"`
+	NextRetryAt     *time.Time `json:"nextRetryAt,omitempty"`
+	PID             int        `json:"pid,omitempty"`
+	ContainerID     string     `json:"containerId,omitempty"`
+}
+
+// queryMCPServers fetches the /api/mcp-servers payload from a running
+// gateway. Returns nil if the gateway is unreachable or the response is
+// malformed — the CLI renders whatever it can.
+func queryMCPServers(port int) []mcpServerAPI {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/mcp-servers", port))
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var servers []mcpServerAPI
+	if err := json.NewDecoder(resp.Body).Decode(&servers); err != nil {
+		return nil
+	}
+	return servers
+}
+
+// buildMCPRollup converts API statuses into the rolled-up table rows shown
+// by `gridctl status`.
+func buildMCPRollup(servers []mcpServerAPI) []output.MCPServerRollup {
+	rows := make([]output.MCPServerRollup, 0, len(servers))
+	now := time.Now()
+	for _, srv := range servers {
+		row := output.MCPServerRollup{
+			Name:     srv.Name,
+			Type:     mcpServerType(srv),
+			Replicas: "—",
+			State:    "healthy",
+		}
+		n := len(srv.Replicas)
+		if n == 0 {
+			// No replica info (e.g. pre-phase-3 daemon, or external transport).
+			row.State = "unknown"
+			rows = append(rows, row)
+			continue
+		}
+		healthy := 0
+		var firstRestarting *mcpReplicaAPI
+		for i := range srv.Replicas {
+			r := &srv.Replicas[i]
+			if r.Healthy {
+				healthy++
+			} else if firstRestarting == nil && r.State == "restarting" {
+				firstRestarting = r
+			}
+		}
+		if n > 1 {
+			row.Replicas = fmt.Sprintf("%d/%d", healthy, n)
+		}
+		switch healthy {
+		case n:
+			row.State = "healthy"
+		case 0:
+			row.State = "unhealthy"
+		default:
+			row.State = formatDegradedState(firstRestarting, now)
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// buildReplicaDetails converts API statuses into the per-replica rows for
+// `gridctl status --replicas`. Servers with no replica data are skipped.
+func buildReplicaDetails(servers []mcpServerAPI) []output.ReplicaDetail {
+	var rows []output.ReplicaDetail
+	now := time.Now()
+	for _, srv := range servers {
+		for _, r := range srv.Replicas {
+			row := output.ReplicaDetail{
+				Server:   srv.Name,
+				Replica:  r.ReplicaID,
+				Handle:   replicaHandle(r),
+				State:    r.State,
+				InFlight: r.InFlight,
+			}
+			if r.Healthy && !r.StartedAt.IsZero() {
+				row.Uptime = formatUptime(now.Sub(r.StartedAt))
+			} else {
+				row.Uptime = "—"
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+// mcpServerType returns the transport label shown in the rollup view.
+func mcpServerType(srv mcpServerAPI) string {
+	switch {
+	case srv.External:
+		return "external"
+	case srv.OpenAPI:
+		return "openapi"
+	case srv.LocalProcess:
+		return "local-process"
+	case srv.SSH:
+		return "ssh"
+	case srv.Transport != "":
+		return srv.Transport
+	default:
+		return "container"
+	}
+}
+
+// replicaHandle returns a short handle for the replica row's PID/container
+// column. Prefers PID for local-process replicas, a truncated container id
+// otherwise, or "—" when neither is known.
+func replicaHandle(r mcpReplicaAPI) string {
+	if r.PID > 0 {
+		return fmt.Sprintf("%d", r.PID)
+	}
+	if r.ContainerID != "" {
+		if len(r.ContainerID) > 12 {
+			return r.ContainerID[:12]
+		}
+		return r.ContainerID
+	}
+	return "—"
+}
+
+// formatDegradedState composes the "degraded" annotation including next-retry
+// info for the first restarting replica, matching the UX spec.
+func formatDegradedState(r *mcpReplicaAPI, now time.Time) string {
+	if r == nil {
+		return "degraded"
+	}
+	if r.NextRetryAt != nil && !r.NextRetryAt.IsZero() {
+		d := r.NextRetryAt.Sub(now)
+		if d > 0 {
+			return fmt.Sprintf("degraded (replica-%d restarting, next in %s)", r.ReplicaID, formatRetry(d))
+		}
+	}
+	return fmt.Sprintf("degraded (replica-%d restarting)", r.ReplicaID)
+}
+
+// formatRetry formats a retry delay compactly ("4s" / "1m20s").
+func formatRetry(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	return d.String()
+}
+
+// formatUptime formats a duration as human-readable uptime ("12m", "3h", "2d").
+func formatUptime(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 // queryCodeMode queries a running gateway's API for code mode status.
