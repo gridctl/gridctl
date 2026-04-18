@@ -463,8 +463,12 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// updates reloadHandler.stackPath. The handler already holds its mutex
 	// when invoking this callback, so reading h.stackPath there is safe and
 	// avoids a reentrant-lock deadlock a getter-based approach would cause.
-	reloadHandler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, hostPort int, containerID, stackPath string) error {
-		return registrar.RegisterOne(ctx, server, hostPort, containerID, stackPath)
+	reloadHandler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []reload.ReplicaRuntime, stackPath string) error {
+		runtimes := make([]ReplicaRuntime, 0, len(replicas))
+		for _, rep := range replicas {
+			runtimes = append(runtimes, ReplicaRuntime{HostPort: rep.HostPort, ContainerID: rep.ContainerID})
+		}
+		return registrar.RegisterOne(ctx, server, runtimes, stackPath)
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
 
