@@ -591,8 +591,17 @@ func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
 	replicas := set.Replicas()
 	out := make([]ReplicaStatus, 0, len(replicas))
 
+	// Snapshot per-replica health under the lock so later iteration cannot
+	// race with the health monitor's concurrent writes to replicaHealth[...].
+	replicaHealthSnap := make(map[int]HealthStatus, len(replicas))
 	g.healthMu.RLock()
-	replicaHealthMap := g.replicaHealth[serverName]
+	if m := g.replicaHealth[serverName]; m != nil {
+		for id, hs := range m {
+			if hs != nil {
+				replicaHealthSnap[id] = *hs
+			}
+		}
+	}
 	g.healthMu.RUnlock()
 
 	for _, r := range replicas {
@@ -608,18 +617,16 @@ func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
 			t := nextAt
 			rs.NextRetryAt = &t
 		}
-		if replicaHealthMap != nil {
-			if hs, ok := replicaHealthMap[r.ID()]; ok && hs != nil {
-				if !hs.LastCheck.IsZero() {
-					t := hs.LastCheck
-					rs.LastCheck = &t
-				}
-				if !hs.LastHealthy.IsZero() {
-					t := hs.LastHealthy
-					rs.LastHealthy = &t
-				}
-				rs.LastError = hs.Error
+		if hs, ok := replicaHealthSnap[r.ID()]; ok {
+			if !hs.LastCheck.IsZero() {
+				t := hs.LastCheck
+				rs.LastCheck = &t
 			}
+			if !hs.LastHealthy.IsZero() {
+				t := hs.LastHealthy
+				rs.LastHealthy = &t
+			}
+			rs.LastError = hs.Error
 		}
 		switch client := r.Client().(type) {
 		case *ProcessClient:
