@@ -255,6 +255,21 @@ func TestHandleStackHealth_WithStackFile(t *testing.T) {
 	body := w.Body.String()
 	// Should have validation status
 	assert.Contains(t, body, `"status"`)
+	// Single-replica servers MUST NOT bloat the shape with a replicas map.
+	assert.NotContains(t, body, `"replicas"`)
+}
+
+func TestHandleStackHealth_OmitsReplicasWhenSingleReplica(t *testing.T) {
+	// No gateway and no stack means no replicas map in the response.
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/stack/health", nil)
+	w := httptest.NewRecorder()
+
+	s.handleStackHealth(w, req)
+
+	var got config.SpecHealth
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	assert.Nil(t, got.Replicas, "single-replica deployments must omit the replicas field")
 }
 
 func TestHandleStackPlan_WithStackFile(t *testing.T) {
