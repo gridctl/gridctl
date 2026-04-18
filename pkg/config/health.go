@@ -36,6 +36,27 @@ type SpecHealth struct {
 	Validation  ValidationStatus  `json:"validation"`
 	Drift       DriftStatus       `json:"drift"`
 	Dependencies DependencyStatus `json:"dependencies"`
+
+	// Replicas reports live per-replica health for every server that has
+	// more than one replica registered. Servers with replicas <= 1 are
+	// omitted so the shape is backward compatible with single-replica
+	// deployments. Keyed by server name.
+	Replicas map[string][]ReplicaHealth `json:"replicas,omitempty"`
+}
+
+// ReplicaHealth describes the live state of one replica in a server's
+// ReplicaSet. Durations use seconds so the JSON representation does not
+// depend on Go's time formatting.
+type ReplicaHealth struct {
+	ReplicaID        int    `json:"replicaId"`
+	State            string `json:"state"` // "healthy" | "unhealthy" | "restarting"
+	InFlight         int64  `json:"inFlight"`
+	UptimeSeconds    int64  `json:"uptimeSeconds,omitempty"`
+	LastError        string `json:"lastError,omitempty"`
+	NextRetrySeconds int64  `json:"nextRetrySeconds,omitempty"`
+	RestartAttempts  uint32 `json:"restartAttempts,omitempty"`
+	PID              int    `json:"pid,omitempty"`
+	ContainerID      string `json:"containerId,omitempty"`
 }
 
 // ValidationStatus summarizes the spec validation state.
