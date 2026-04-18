@@ -167,8 +167,9 @@ gridctl/
 │   │   ├── openapi_client.go # OpenAPI-backed MCP client
 │   │   ├── sse.go        # SSE server (northbound)
 │   │   ├── session.go    # Session management
-│   │   ├── router.go     # Tool routing
-│   │   ├── gateway.go    # Protocol bridge logic
+│   │   ├── router.go     # Tool routing (name → ReplicaSet)
+│   │   ├── replica_set.go # Replica pool (round-robin / least-connections dispatch + restart backoff 1s → 30s cap, ±25% jitter)
+│   │   ├── gateway.go    # Protocol bridge logic, per-replica health monitor + reconnect
 │   │   ├── handler.go    # HTTP handlers
 │   │   ├── expand.go     # Environment variable expansion
 │   │   ├── codemode.go       # Code mode orchestrator
@@ -228,9 +229,18 @@ gridctl/
 │   └── _mock-servers/    # Mock MCP servers for testing
 └── tests/
     └── integration/      # Integration tests (build tag: integration)
-        ├── orchestrator_test.go
-        ├── runtime_test.go
-        └── openapi_test.go
+        ├── transport_test.go         # TestMain, mock-server harness, freePort/startMockServer/waitForPort
+        ├── gateway_lifecycle_test.go # Gateway register/unregister/health monitor/shutdown
+        ├── hot_reload_test.go        # Reload handler: add/remove/modify servers
+        ├── runtime_test.go           # Full stack lifecycle, resources, networks
+        ├── podman_test.go            # Podman rootless networking
+        ├── skills_executor_test.go   # Skill execution workflows (DAGs, timeouts)
+        ├── openapi_test.go           # OpenAPI spec parsing + auth
+        ├── replica_kill_one_test.go       # Kill one replica, verify exclusion + survivors
+        ├── replica_all_down_test.go       # All replicas down → structured error
+        ├── replica_restart_storm_test.go  # Backoff prevents reconnect spin
+        ├── replica_stackless_mode_test.go # Multi-replica register in stackless mode
+        └── replica_mixed_counts_test.go   # 1-replica + 3-replica server in one gateway
 ```
 
 ## Build Commands
@@ -605,6 +615,8 @@ When the vault is locked, all endpoints except `status`, `unlock`, and `lock` re
 
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
+
+**Replica sets:** Each registered server is a `ReplicaSet` in the router — a pool of 1..N `AgentClient` replicas sharing one server name and one tool namespace. Set `replicas: N` (and optionally `replica_policy: round-robin | least-connections`) in `mcp-servers[]` to spawn N independent processes. Validation caps at 32 and rejects replicas on `external` / `openapi` transports. Per-replica health monitor pings each replica independently, excludes failures from dispatch, and reconnects with exponential backoff (1s → 30s cap, ±25% jitter, reset on success). When every replica is unhealthy, tool calls fail with `no healthy replicas: <server>`. Every log line and trace span on the tool-call path carries a `replica_id`; `gridctl status --replicas` and `/api/stack/health` expose the per-replica breakdown. See [docs/scaling.md](docs/scaling.md).
 
 ## Stack YAML Schema
 
