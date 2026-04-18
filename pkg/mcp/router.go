@@ -8,32 +8,45 @@ import (
 )
 
 // Router routes tool calls to the appropriate agent.
+//
+// Internally the Router keys on server name and stores a *ReplicaSet per name.
+// A single-client registration (via AddClient) is wrapped in a
+// single-replica round-robin set so callers outside this package observe the
+// same behavior as before replicas existed.
 type Router struct {
-	mu      sync.RWMutex
-	clients map[string]AgentClient // agentName -> client
-	tools   map[string]string      // prefixedToolName -> agentName
+	mu    sync.RWMutex
+	sets  map[string]*ReplicaSet // agentName -> replica set
+	tools map[string]string      // prefixedToolName -> agentName
 }
 
 // NewRouter creates a new tool router.
 func NewRouter() *Router {
 	return &Router{
-		clients: make(map[string]AgentClient),
-		tools:   make(map[string]string),
+		sets:  make(map[string]*ReplicaSet),
+		tools: make(map[string]string),
 	}
 }
 
-// AddClient adds an agent client to the router.
+// AddClient adds an agent client to the router as a single-replica set.
+// Preserves the pre-replicas API so existing callers keep working unchanged.
 func (r *Router) AddClient(client AgentClient) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.clients[client.Name()] = client
+	set := NewReplicaSet(client.Name(), ReplicaPolicyRoundRobin, []AgentClient{client})
+	r.AddReplicaSet(set)
 }
 
-// RemoveClient removes an agent client from the router.
+// AddReplicaSet registers a replica set under its logical server name.
+// Replaces any existing set with the same name.
+func (r *Router) AddReplicaSet(set *ReplicaSet) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sets[set.Name()] = set
+}
+
+// RemoveClient removes an agent (replica set) and its tools from the router.
 func (r *Router) RemoveClient(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.clients, name)
+	delete(r.sets, name)
 
 	// Remove tools for this agent
 	for tool, agent := range r.tools {
@@ -43,23 +56,73 @@ func (r *Router) RemoveClient(name string) {
 	}
 }
 
-// GetClient returns a client by agent name.
+// GetClient returns one client for the named agent, chosen by the set's
+// dispatch policy. Returns nil if the agent is not registered or no replica
+// is currently healthy.
 func (r *Router) GetClient(name string) AgentClient {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.clients[name]
+	set, ok := r.sets[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	return set.Client()
 }
 
-// Clients returns all registered clients.
+// GetReplicaSet returns the replica set for the named agent, or nil if the
+// agent is not registered. Useful for callers that need per-replica access
+// (health monitor, status reporting).
+func (r *Router) GetReplicaSet(name string) *ReplicaSet {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.sets[name]
+}
+
+// Clients returns one representative AgentClient per registered agent,
+// sorted by agent name. Each representative is chosen via the set's policy,
+// so a single-replica set returns its only client. Skips sets with no
+// currently-healthy replica.
 func (r *Router) Clients() []AgentClient {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	clients := make([]AgentClient, 0, len(r.clients))
-	for _, c := range r.clients {
-		clients = append(clients, c)
+	names := make([]string, 0, len(r.sets))
+	for n := range r.sets {
+		names = append(names, n)
 	}
-	sort.Slice(clients, func(i, j int) bool { return clients[i].Name() < clients[j].Name() })
+	sort.Strings(names)
+	clients := make([]AgentClient, 0, len(names))
+	for _, n := range names {
+		if c := r.sets[n].Client(); c != nil {
+			clients = append(clients, c)
+		}
+	}
 	return clients
+}
+
+// ReplicaSets returns all registered replica sets, sorted by agent name.
+func (r *Router) ReplicaSets() []*ReplicaSet {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	names := make([]string, 0, len(r.sets))
+	for n := range r.sets {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make([]*ReplicaSet, 0, len(names))
+	for _, n := range names {
+		out = append(out, r.sets[n])
+	}
+	return out
+}
+
+// toolsOf returns the Tools list to advertise for a set. All replicas share
+// the same tool surface, so reading from replica-0 is sufficient.
+func toolsOf(set *ReplicaSet) []Tool {
+	reps := set.Replicas()
+	if len(reps) == 0 {
+		return nil
+	}
+	return reps[0].Client().Tools()
 }
 
 // RefreshTools updates the tool registry from all agents.
@@ -70,9 +133,8 @@ func (r *Router) RefreshTools() {
 	// Clear existing tool mappings
 	r.tools = make(map[string]string)
 
-	// Register tools from each agent with prefixes
-	for name, client := range r.clients {
-		for _, tool := range client.Tools() {
+	for name, set := range r.sets {
+		for _, tool := range toolsOf(set) {
 			prefixedName := PrefixTool(name, tool.Name)
 			r.tools[prefixedName] = name
 		}
@@ -84,17 +146,15 @@ func (r *Router) AggregatedTools() []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Collect client names and sort for deterministic output
-	names := make([]string, 0, len(r.clients))
-	for name := range r.clients {
+	names := make([]string, 0, len(r.sets))
+	for name := range r.sets {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 
 	var tools []Tool
 	for _, name := range names {
-		client := r.clients[name]
-		for _, tool := range client.Tools() {
+		for _, tool := range toolsOf(r.sets[name]) {
 			prefixedName := PrefixTool(name, tool.Name)
 			prefixedTool := Tool{
 				Name:        prefixedName,
@@ -108,22 +168,26 @@ func (r *Router) AggregatedTools() []Tool {
 	return tools
 }
 
-// RouteToolCall routes a tool call to the appropriate agent.
+// RouteToolCall routes a tool call to the appropriate agent. The concrete
+// replica is chosen by the set's dispatch policy.
 func (r *Router) RouteToolCall(prefixedName string) (AgentClient, string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	agentName, toolName, err := ParsePrefixedTool(prefixedName)
 	if err != nil {
 		return nil, "", err
 	}
 
-	client, ok := r.clients[agentName]
+	r.mu.RLock()
+	set, ok := r.sets[agentName]
+	r.mu.RUnlock()
 	if !ok {
 		return nil, "", fmt.Errorf("unknown agent: %s", agentName)
 	}
 
-	return client, toolName, nil
+	replica, err := set.Pick()
+	if err != nil {
+		return nil, "", fmt.Errorf("agent %s: %w", agentName, err)
+	}
+	return replica.Client(), toolName, nil
 }
 
 // ToolNameDelimiter is the separator between agent name and tool name in prefixed tool names.
