@@ -71,6 +71,21 @@ describe('CustomNode', () => {
     expect(screen.getByText('OpenAPI')).toBeInTheDocument();
   });
 
+  it('renders ×N replica badge when replicaCount > 1', () => {
+    render(<CustomNode data={makeServerData({ replicaCount: 3 })} />);
+    expect(screen.getByText('×3')).toBeInTheDocument();
+  });
+
+  it('omits replica badge for single-replica servers', () => {
+    render(<CustomNode data={makeServerData({ replicaCount: 1 })} />);
+    expect(screen.queryByText(/^×/)).not.toBeInTheDocument();
+  });
+
+  it('omits replica badge when replicaCount is undefined', () => {
+    render(<CustomNode data={makeServerData()} />);
+    expect(screen.queryByText(/^×/)).not.toBeInTheDocument();
+  });
+
   it('renders resource node with image', () => {
     const data: ResourceNodeData = {
       type: 'resource',
