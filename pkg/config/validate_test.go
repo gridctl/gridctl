@@ -1219,3 +1219,128 @@ func TestValidate_SSH_NewFields(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_Replicas(t *testing.T) {
+	baseContainer := func(replicas int, policy string) *Stack {
+		return &Stack{
+			Name:    "test",
+			Network: Network{Name: "test-net"},
+			MCPServers: []MCPServer{{
+				Name:          "c",
+				Image:         "alpine",
+				Port:          3000,
+				Replicas:      replicas,
+				ReplicaPolicy: policy,
+			}},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		stack   *Stack
+		wantErr bool
+		errMsg  string
+	}{
+		{name: "replicas unspecified valid", stack: baseContainer(0, "round-robin")}, // zero = unspecified, SetDefaults handles it
+		{name: "replicas 1 valid", stack: baseContainer(1, "round-robin")},
+		{name: "replicas 3 valid", stack: baseContainer(3, "round-robin")},
+		{name: "replicas 32 valid", stack: baseContainer(32, "least-connections")},
+		{name: "replicas negative rejected", stack: baseContainer(-1, "round-robin"), wantErr: true, errMsg: "replicas"},
+		{name: "replicas 33 rejected", stack: baseContainer(33, "round-robin"), wantErr: true, errMsg: "<= 32"},
+		{name: "policy empty valid", stack: baseContainer(1, "")},
+		{name: "policy unknown rejected", stack: baseContainer(2, "random"), wantErr: true, errMsg: "replica_policy"},
+		{
+			name: "replicas > 1 on external URL rejected",
+			stack: &Stack{
+				Name:    "test",
+				Network: Network{Name: "n"},
+				MCPServers: []MCPServer{{
+					Name:     "ext",
+					URL:      "http://localhost:8080",
+					Replicas: 3,
+				}},
+			},
+			wantErr: true,
+			errMsg:  "not supported for external",
+		},
+		{
+			name: "replicas 1 on external URL valid",
+			stack: &Stack{
+				Name:    "test",
+				Network: Network{Name: "n"},
+				MCPServers: []MCPServer{{
+					Name:     "ext",
+					URL:      "http://localhost:8080",
+					Replicas: 1,
+				}},
+			},
+		},
+		{
+			name: "replicas > 1 on openapi rejected",
+			stack: &Stack{
+				Name:    "test",
+				Network: Network{Name: "n"},
+				MCPServers: []MCPServer{{
+					Name:     "api",
+					OpenAPI:  &OpenAPIConfig{Spec: "spec.yaml"},
+					Replicas: 2,
+				}},
+			},
+			wantErr: true,
+			errMsg:  "OpenAPI",
+		},
+		{
+			name: "replicas > 1 on local process valid",
+			stack: &Stack{
+				Name:    "test",
+				Network: Network{Name: "n"},
+				MCPServers: []MCPServer{{
+					Name:     "local",
+					Command:  []string{"npx", "server"},
+					Replicas: 4,
+				}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(tc.stack)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.errMsg != "" && !strings.Contains(err.Error(), tc.errMsg) {
+					t.Errorf("expected error containing %q, got %q", tc.errMsg, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestStack_SetDefaults_Replicas(t *testing.T) {
+	s := &Stack{
+		Name:    "test",
+		Network: Network{Name: "n"},
+		MCPServers: []MCPServer{
+			{Name: "a", Image: "alpine", Port: 3000},                               // unspecified
+			{Name: "b", Image: "alpine", Port: 3000, Replicas: 0},                  // explicit zero
+			{Name: "c", Image: "alpine", Port: 3000, Replicas: 3},                  // explicit
+			{Name: "d", Image: "alpine", Port: 3000, ReplicaPolicy: "round-robin"}, // policy only
+		},
+	}
+	s.SetDefaults()
+
+	for i, want := range []int{1, 1, 3, 1} {
+		if got := s.MCPServers[i].Replicas; got != want {
+			t.Errorf("server %s: Replicas = %d, want %d", s.MCPServers[i].Name, got, want)
+		}
+	}
+	for i, want := range []string{"round-robin", "round-robin", "round-robin", "round-robin"} {
+		if got := s.MCPServers[i].ReplicaPolicy; got != want {
+			t.Errorf("server %s: ReplicaPolicy = %q, want %q", s.MCPServers[i].Name, got, want)
+		}
+	}
+}
