@@ -13,7 +13,7 @@ require (
 	github.com/evanw/esbuild v0.28.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getkin/kin-openapi v0.135.0
-	github.com/go-git/go-git/v5 v5.17.2
+	github.com/go-git/go-git/v5 v5.18.0
 	github.com/jedib0t/go-pretty/v6 v6.7.9
 	github.com/mattn/go-isatty v0.0.21
 	github.com/opencontainers/image-spec v1.1.1
