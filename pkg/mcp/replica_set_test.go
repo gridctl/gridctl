@@ -4,9 +4,100 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 )
+
+func TestBackoff_ProgressionAndCap(t *testing.T) {
+	// Expected unjittered bases for attempts 0..7: 1s, 2s, 4s, 8s, 16s, 30s (cap), 30s, 30s.
+	expected := []time.Duration{
+		1 * time.Second,
+		2 * time.Second,
+		4 * time.Second,
+		8 * time.Second,
+		16 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+	}
+
+	b := &backoffState{}
+	for i, want := range expected {
+		got := computeBackoff(b.Attempts())
+		low := time.Duration(float64(want) * (1 - restartBackoffJitterFrac))
+		high := time.Duration(float64(want) * (1 + restartBackoffJitterFrac))
+		if got < low || got > high {
+			t.Errorf("attempt %d: delay %v not in jitter envelope [%v, %v] around base %v", i, got, low, high, want)
+		}
+		b.Advance(time.Now())
+	}
+}
+
+func TestBackoff_ResetReturnsToInitial(t *testing.T) {
+	b := &backoffState{}
+	for i := 0; i < 5; i++ {
+		b.Advance(time.Now())
+	}
+	if b.Attempts() != 5 {
+		t.Fatalf("expected 5 attempts, got %d", b.Attempts())
+	}
+	b.Reset()
+	if got := b.Attempts(); got != 0 {
+		t.Errorf("after Reset: attempts = %d, want 0", got)
+	}
+	if !b.NextAt().IsZero() {
+		t.Error("after Reset: NextAt should be zero")
+	}
+	if !b.ShouldTry(time.Now()) {
+		t.Error("after Reset: ShouldTry should be true")
+	}
+}
+
+func TestBackoff_ShouldTry(t *testing.T) {
+	b := &backoffState{}
+
+	now := time.Now()
+	if !b.ShouldTry(now) {
+		t.Error("fresh backoff: ShouldTry should be true")
+	}
+
+	b.Advance(now)
+	if b.ShouldTry(now) {
+		t.Error("immediately after Advance: ShouldTry should be false")
+	}
+	// The delay at attempt 0 is 1s ± 25%, so at now+2s it must be eligible.
+	if !b.ShouldTry(now.Add(2 * time.Second)) {
+		t.Error("2s after Advance on attempt 0: ShouldTry should be true")
+	}
+}
+
+func TestBackoff_JitterEnvelope(t *testing.T) {
+	// With attempts=0 the base is 1s; jitter should keep delays in [0.75s, 1.25s].
+	for i := 0; i < 200; i++ {
+		got := computeBackoff(0)
+		if got < 750*time.Millisecond || got > 1250*time.Millisecond {
+			t.Fatalf("jitter escaped envelope: got %v", got)
+		}
+	}
+}
+
+func TestBackoff_Concurrent(t *testing.T) {
+	b := &backoffState{}
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				_ = b.ShouldTry(time.Now())
+				b.Advance(time.Now())
+			}
+		}()
+	}
+	wg.Wait()
+	// If we get here without -race flagging, we're good.
+}
 
 func newTestReplicaSet(t *testing.T, policy string, names ...string) *ReplicaSet {
 	t.Helper()
