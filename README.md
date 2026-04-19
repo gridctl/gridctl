@@ -307,6 +307,7 @@ The Web UI includes a Traces tab in the bottom panel with an interactive waterfa
 gridctl validate <stack.yaml>        # Validate stack YAML (exit 0/1/2)
 gridctl validate <stack.yaml> --format json  # Machine-readable output
 gridctl plan <stack.yaml>            # Preview changes against running state
+gridctl plan <stack.yaml> -y         # Auto-approve and apply planned changes
 gridctl apply <stack.yaml>           # Start containers and gateway
 gridctl apply <stack.yaml> -f        # Run in foreground (debug mode)
 gridctl apply <stack.yaml> -p 9000   # Custom gateway port
@@ -321,16 +322,23 @@ gridctl export                       # Reverse-engineer stack.yaml from running 
 gridctl export -o ./output           # Write to directory instead of stdout
 gridctl export --format json         # Output as JSON instead of YAML
 gridctl serve                        # Start the web UI without managing a stack
+gridctl stop                         # Stop the stackless gridctl daemon
 gridctl status                       # Show running stacks
+gridctl status --replicas            # Expand to one row per replica
 gridctl info                         # Show detected container runtime
+gridctl version                      # Print version information
 gridctl link                         # Connect an LLM client to the gateway
 gridctl unlink                       # Remove gridctl from an LLM client
 gridctl reload                       # Hot reload a running stack
 gridctl destroy <stack.yaml>         # Stop and remove containers
-gridctl vault set <key> <value>      # Store a secret in the encrypted vault
-gridctl vault get <key>              # Retrieve a secret from the vault
+gridctl vault set <key>              # Store a secret (interactive prompt, or use --value)
+gridctl vault get <key>              # Retrieve a secret (masked by default, use --plain)
 gridctl vault list                   # List all vault keys
+gridctl vault delete <key>           # Remove a secret from the vault
+gridctl vault import <file>          # Import secrets from .env or .json
+gridctl vault export                 # Export secrets (default: env format)
 gridctl vault lock / unlock          # Lock or unlock the vault
+gridctl vault change-passphrase      # Change the vault encryption passphrase
 gridctl skill list                   # List skills in the registry
 gridctl skill add <repo-url>         # Import skills from a remote git repository
 gridctl skill update [name]          # Update imported skills (all if no name given)
@@ -456,6 +464,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 
 - [Configuration Reference](docs/config-schema.md) — every field in `stack.yaml`
 - [REST API Reference](docs/api-reference.md) — all gateway endpoints
+- [Scaling stdio servers](docs/scaling.md) — run multiple replicas with policies and trade-offs
 - [Troubleshooting](docs/troubleshooting.md) — common issues and resolutions
 
 ## 🤝 Contributing
