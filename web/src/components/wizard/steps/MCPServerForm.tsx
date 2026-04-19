@@ -17,6 +17,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
+import type { ProbeServerConfig } from '../../../lib/api';
 import { SecretsPopover } from '../SecretsPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
@@ -154,6 +155,30 @@ function getAvailableTransports(serverType: ServerType): string[] {
 function showPortField(serverType: ServerType, transport: string): boolean {
   if (serverType === 'external' || serverType === 'local' || serverType === 'ssh' || serverType === 'openapi') return false;
   return transport !== 'stdio';
+}
+
+// Translate the wizard form into the probe endpoint's wire shape. Returns null
+// for configs the backend would refuse (SSH / OpenAPI / incomplete), so the
+// picker can hide the "Discover tools" button instead of surfacing a confusing
+// 400 on click.
+function buildProbeConfig(data: MCPServerFormData): ProbeServerConfig | null {
+  if (data.serverType === 'openapi' || data.serverType === 'ssh') return null;
+  const transport = data.transport || '';
+  const hasAddressableTarget =
+    (data.serverType === 'container' && !!data.image) ||
+    (data.serverType === 'external' && !!data.url) ||
+    (data.serverType === 'local' && !!data.command && data.command.length > 0);
+  if (!hasAddressableTarget) return null;
+  return {
+    name: data.name,
+    image: data.image,
+    url: data.url,
+    port: data.port,
+    transport,
+    command: data.command,
+    env: data.env,
+    build_args: data.buildArgs,
+  };
 }
 
 // --- Kebab-case validation ---
@@ -418,6 +443,8 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
     // Auto-expand config section on type change
     setExpandedSections((prev) => new Set([...prev, 'config']));
   };
+
+  const probeConfig = useMemo(() => buildProbeConfig(data), [data]);
 
   const envCount = data.env ? Object.keys(data.env).length : 0;
   const advancedCount =
@@ -1317,6 +1344,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           value={data.tools ?? []}
           onChange={(tools) => onChange({ tools })}
           serverName={data.name}
+          probeConfig={probeConfig}
         />
 
         <div>
