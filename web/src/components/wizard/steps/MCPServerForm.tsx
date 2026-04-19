@@ -19,6 +19,7 @@ import { cn } from '../../../lib/cn';
 import type { MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
 import { SecretsPopover } from '../SecretsPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
+import { ToolsPicker } from './ToolsPicker';
 
 // --- Server type definitions ---
 
@@ -365,65 +366,6 @@ function CommandArrayBuilder({
               value={item}
               onChange={(e) => updateItem(i, e.target.value)}
               placeholder={i === 0 ? 'command' : `arg ${i}`}
-              className={cn(inputClass, 'flex-1 font-mono')}
-            />
-            <button
-              type="button"
-              onClick={() => removeItem(i)}
-              className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// --- Tools Whitelist ---
-
-function ToolsWhitelist({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (val: string[]) => void;
-}) {
-  const addItem = () => onChange([...value, '']);
-  const updateItem = (idx: number, val: string) => {
-    const next = [...value];
-    next[idx] = val;
-    onChange(next);
-  };
-  const removeItem = (idx: number) => {
-    onChange(value.filter((_, i) => i !== idx));
-  };
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className={labelClass}>Tools Whitelist</label>
-        <button
-          type="button"
-          onClick={addItem}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
-        >
-          <Plus size={10} />
-          Add tool
-        </button>
-      </div>
-      {value.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">All tools exposed (no whitelist)</p>
-      )}
-      <div className="space-y-1.5">
-        {value.map((item, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <input
-              type="text"
-              value={item}
-              onChange={(e) => updateItem(i, e.target.value)}
-              placeholder="tool-name"
               className={cn(inputClass, 'flex-1 font-mono')}
             />
             <button
@@ -1371,9 +1313,10 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         onToggle={() => toggleSection('advanced')}
         badge={advancedCount > 0 ? `${advancedCount}` : undefined}
       >
-        <ToolsWhitelist
+        <ToolsPicker
           value={data.tools ?? []}
           onChange={(tools) => onChange({ tools })}
+          serverName={data.name}
         />
 
         <div>
