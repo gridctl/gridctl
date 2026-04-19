@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/internal/api"
+	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -370,6 +371,20 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	gateway.SetFormatSavingsRecorder(accumulator)
 	server.SetMetricsAccumulator(accumulator)
 	server.SetTokenizerName(b.tokenizerName())
+
+	// Wire the wizard's "Discover tools" probe. The cache lives for the life
+	// of the daemon; the runtime spawner lets the probe spawn ephemeral
+	// containers for greenfield servers.
+	probeCache := probe.NewCache(probe.DefaultTTL)
+	spawner := probe.NewRuntimeSpawner(b.rt.Runtime())
+	if handler != nil {
+		spawner.SetLogger(slog.New(handler).With("subsystem", "probe"))
+	}
+	prober := probe.NewProber(probeCache, spawner)
+	if handler != nil {
+		prober.SetLogger(slog.New(handler).With("subsystem", "probe"))
+	}
+	server.SetProber(prober)
 
 	// Wire distributed tracing
 	tracingCfg := buildTracingConfig(b.stack.Gateway)
