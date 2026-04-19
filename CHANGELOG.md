@@ -8,8 +8,40 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
-- Make MCP HTTP/SSE readiness timeout configurable via `ready_timeout` and remove orphan containers on timeout
-- Register logical container name as DNS alias for inter-container resolution in Podman and Docker stacks
+- Register logical name as DNS alias for inter-container resolution
+- Wizard form name hyphen stripping and panel scroll ([#435](https://github.com/gridctl/gridctl/pull/435))
+- Secrets dropdown cannot scroll in StackForm env var section ([#437](https://github.com/gridctl/gridctl/pull/437))
+- Revert eslint to v9 to restore frontend CI ([#450](https://github.com/gridctl/gridctl/pull/450))
+- Restore skill import wizard functionality ([#452](https://github.com/gridctl/gridctl/pull/452))
+- Apply log-text class to skill card name and description ([#454](https://github.com/gridctl/gridctl/pull/454))
+- Gate wizard cards on active stack in stackless mode ([#467](https://github.com/gridctl/gridctl/pull/467))
+- Replace StringArrayEditor with VaultSetSelector in secrets wizard ([#469](https://github.com/gridctl/gridctl/pull/469))
+- Wizard YAML preview indentation and Save & Load UX ([#472](https://github.com/gridctl/gridctl/pull/472))
+- Register stdio container MCP servers via stackless initialize ([#474](https://github.com/gridctl/gridctl/pull/474))
+- Make MCP HTTP/SSE ready timeout configurable ([#476](https://github.com/gridctl/gridctl/pull/476))
+
+### Features
+
+
+- Graduate Podman runtime to stable ([#424](https://github.com/gridctl/gridctl/pull/424))
+- Expand OpenAPI auth to support OAuth2 CC, query-param keys, mTLS, and basic auth ([#427](https://github.com/gridctl/gridctl/pull/427))
+- Complete wizard spec for SSH advanced fields, OpenAPI auth types, mTLS, and pin_schemas ([#429](https://github.com/gridctl/gridctl/pull/429))
+- Add api_key auth and Gateway Advanced accordion to StackForm ([#431](https://github.com/gridctl/gridctl/pull/431))
+- Add Logging accordion section to StackForm ([#433](https://github.com/gridctl/gridctl/pull/433))
+- Add stackless startup mode for apply and serve ([#458](https://github.com/gridctl/gridctl/pull/458))
+- Add stack library backend with initialize endpoint ([#459](https://github.com/gridctl/gridctl/pull/459))
+- Add Save & Load action to wizard ReviewStep for stacks ([#460](https://github.com/gridctl/gridctl/pull/460))
+- Wizard gating and UX polish ([#461](https://github.com/gridctl/gridctl/pull/461))
+- Skills registry UI polish ([#465](https://github.com/gridctl/gridctl/pull/465))
+- Add MCP replicas schema and router (phase 1 of #470) ([#477](https://github.com/gridctl/gridctl/pull/477))
+- Wire MCP replicas runtime and health (phase 2 of #470) ([#478](https://github.com/gridctl/gridctl/pull/478))
+- Replicas observability, status, and API (phase 3 of #470) ([#479](https://github.com/gridctl/gridctl/pull/479))
+- Replicas wizard input and canvas badge (phase 4 of #470) ([#480](https://github.com/gridctl/gridctl/pull/480))## [0.1.0-beta.5] - 2026-04-08
+
+
+### Bug Fixes
+
+
 - Persist tool turns to history and populate FormatSavingsPct
 - Persist tool turns to history and capture streaming usage metrics
 - Persist intermediate tool turns in handlePlaygroundChat goroutine
@@ -57,11 +89,6 @@ All notable changes to gridctl will be documented in this file.
 ### Features
 
 
-- Graduate Podman runtime from experimental to stable; `gridctl info` and `--runtime` help no longer show experimental status
-- Add netavark and aardvark-dns detection for rootless Podman; `gridctl apply` warns with install instructions when either is missing
-- Add Podman 4.0+ version gate warning for rootless multi-container networking
-- Add `gridctl info` network stack display for rootless Podman (shows netavark + aardvark-dns status)
-- Add multi-container networking integration test proving rootless Podman inter-container DNS works on a shared named network
 - Add TestFlightSession, LLMClient interface, and SessionRegistry
 - Add Anthropic LLM client with streaming agentic loop
 - Add OpenAI-compatible LLM client for Ollama and hosted APIs
