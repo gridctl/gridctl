@@ -1476,6 +1476,13 @@ type MCPServerStatus struct {
 	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
 	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
 
+	// ToolWhitelist is the tools: field from the stack YAML for this server.
+	// Empty (nil) means no whitelist is configured and the server is exposing
+	// every tool it advertises. The UI uses this to distinguish "curated" from
+	// "full-list" without needing to diff tools against a hidden pre-filter
+	// set that the gateway doesn't retain.
+	ToolWhitelist []string `json:"toolWhitelist,omitempty"`
+
 	Replicas []ReplicaStatus `json:"replicas,omitempty"` // Per-replica status; always populated
 }
 
@@ -1556,6 +1563,23 @@ func buildSSHCommand(cfg MCPServerConfig) []string {
 	return args
 }
 
+// allToolsSource is implemented by clients that can report their full
+// pre-whitelist tool set. Every built-in client embeds ClientBase which
+// satisfies this interface; mocks or future clients that don't are handled
+// by falling back to the filtered Tools().
+type allToolsSource interface {
+	AllTools() []Tool
+}
+
+// allToolsOf returns the downstream server's full tool inventory when the
+// client exposes it, or the filtered view as a fallback.
+func allToolsOf(client AgentClient) []Tool {
+	if ats, ok := client.(allToolsSource); ok {
+		return ats.AllTools()
+	}
+	return client.Tools()
+}
+
 // Status returns status of all registered MCP servers.
 // Note: This only returns actual MCP servers, not A2A adapters or other
 // clients added directly to the router.
@@ -1575,7 +1599,10 @@ func (g *Gateway) Status() []MCPServerStatus {
 			continue
 		}
 
-		tools := client.Tools()
+		// Report every tool the downstream server advertises, not just the
+		// currently-whitelisted subset. The UI tool editor needs the full
+		// set so operators can widen a curated whitelist.
+		tools := allToolsOf(client)
 		toolNames := make([]string, len(tools))
 		for i, t := range tools {
 			toolNames[i] = t.Name
@@ -1588,19 +1615,20 @@ func (g *Gateway) Status() []MCPServerStatus {
 		}
 
 		status := MCPServerStatus{
-			Name:         client.Name(),
-			Transport:    meta.Transport,
-			Endpoint:     meta.Endpoint,
-			ContainerID:  meta.ContainerID,
-			Initialized:  client.IsInitialized(),
-			ToolCount:    len(tools),
-			Tools:        toolNames,
-			External:     meta.External,
-			LocalProcess: meta.LocalProcess,
-			SSH:          meta.SSH,
-			SSHHost:      meta.SSHHost,
-			OpenAPI:      meta.OpenAPI,
-			OutputFormat: outputFormat,
+			Name:          client.Name(),
+			Transport:     meta.Transport,
+			Endpoint:      meta.Endpoint,
+			ContainerID:   meta.ContainerID,
+			Initialized:   client.IsInitialized(),
+			ToolCount:     len(tools),
+			Tools:         toolNames,
+			External:      meta.External,
+			LocalProcess:  meta.LocalProcess,
+			SSH:           meta.SSH,
+			SSHHost:       meta.SSHHost,
+			OpenAPI:       meta.OpenAPI,
+			OutputFormat:  outputFormat,
+			ToolWhitelist: meta.Tools,
 		}
 		if meta.OpenAPIConfig != nil {
 			status.OpenAPISpec = meta.OpenAPIConfig.Spec
