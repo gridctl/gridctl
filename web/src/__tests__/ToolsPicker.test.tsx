@@ -229,6 +229,36 @@ describe('ToolsPicker', () => {
       ).not.toBeInTheDocument();
     });
 
+    it('hides the Discover tools button for container-only configs', () => {
+      // Post-descope: container/local-process configs are curated from the
+      // topology sidebar after deploy, not from the wizard.
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ image: 'mcp/foo:latest', port: 8080, transport: 'http' }}
+        />,
+      );
+      expect(
+        screen.queryByRole('button', { name: /discover tools/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('hides the Discover tools button for local-process configs', () => {
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ command: ['/usr/bin/mcp'] }}
+        />,
+      );
+      expect(
+        screen.queryByRole('button', { name: /discover tools/i }),
+      ).not.toBeInTheDocument();
+    });
+
     it('clicking Discover tools populates the checklist on success', async () => {
       vi.mocked(apiModule.probeServer).mockResolvedValueOnce({
         tools: [
