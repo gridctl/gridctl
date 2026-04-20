@@ -157,27 +157,18 @@ function showPortField(serverType: ServerType, transport: string): boolean {
   return transport !== 'stdio';
 }
 
-// Translate the wizard form into the probe endpoint's wire shape. Returns null
-// for configs the backend would refuse (SSH / OpenAPI / incomplete), so the
-// picker can hide the "Discover tools" button instead of surfacing a confusing
-// 400 on click.
+// Translate the wizard form into the probe endpoint's wire shape. Returns
+// null for every transport the probe does not support — which, after the
+// descope, is everything except external URL. Container / local-process /
+// SSH / OpenAPI servers are curated from the topology sidebar after deploy.
 function buildProbeConfig(data: MCPServerFormData): ProbeServerConfig | null {
-  if (data.serverType === 'openapi' || data.serverType === 'ssh') return null;
-  const transport = data.transport || '';
-  const hasAddressableTarget =
-    (data.serverType === 'container' && !!data.image) ||
-    (data.serverType === 'external' && !!data.url) ||
-    (data.serverType === 'local' && !!data.command && data.command.length > 0);
-  if (!hasAddressableTarget) return null;
+  if (data.serverType !== 'external') return null;
+  if (!data.url) return null;
   return {
     name: data.name,
-    image: data.image,
     url: data.url,
-    port: data.port,
-    transport,
-    command: data.command,
+    transport: data.transport || '',
     env: data.env,
-    build_args: data.buildArgs,
   };
 }
 
