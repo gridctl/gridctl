@@ -372,15 +372,11 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	server.SetMetricsAccumulator(accumulator)
 	server.SetTokenizerName(b.tokenizerName())
 
-	// Wire the wizard's "Discover tools" probe. The cache lives for the life
-	// of the daemon; the runtime spawner lets the probe spawn ephemeral
-	// containers for greenfield servers.
+	// Wire the wizard's "Discover tools" probe. Scope: external URL
+	// servers only — container / stdio / local-process / SSH / OpenAPI are
+	// curated post-deploy from the topology sidebar.
 	probeCache := probe.NewCache(probe.DefaultTTL)
-	spawner := probe.NewRuntimeSpawner(b.rt.Runtime())
-	if handler != nil {
-		spawner.SetLogger(slog.New(handler).With("subsystem", "probe"))
-	}
-	prober := probe.NewProber(probeCache, spawner)
+	prober := probe.NewProber(probeCache)
 	if handler != nil {
 		prober.SetLogger(slog.New(handler).With("subsystem", "probe"))
 	}
