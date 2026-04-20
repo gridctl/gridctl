@@ -56,7 +56,7 @@ func (f fixedFactory) NewProcess(string, []string, string, map[string]string) mc
 func newProbeServer(t *testing.T, client mcp.AgentClient) *Server {
 	t.Helper()
 	srv := newTestServer(t)
-	p := probe.NewProber(probe.NewCache(time.Minute), nil)
+	p := probe.NewProber(probe.NewCache(time.Minute))
 	p.SetClientFactory(fixedFactory{client: client})
 	srv.SetProber(p)
 	return srv
@@ -134,16 +134,53 @@ func TestProbeHandler_InitializeFailure_422WithCode(t *testing.T) {
 	}
 }
 
-func TestProbeHandler_InvalidConfig_400(t *testing.T) {
+func TestProbeHandler_NoTransport_Unsupported422(t *testing.T) {
+	// A request with no url, no image, no command, and no ssh/openapi hint
+	// classifies as "container" by elimination — which is unsupported in this
+	// release. The handler surfaces a 422 unsupported_transport rather than a
+	// 400, because the descoped probe doesn't validate fields it will never
+	// use.
 	srv := newProbeServer(t, &recordingClient{})
 	rec := postProbe(t, srv.Handler(), map[string]any{"name": "no-transport"}, "")
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("want 400, got %d (body=%s)", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d (body=%s)", rec.Code, rec.Body.String())
 	}
 	var errBody probeErrorWire
 	_ = json.Unmarshal(rec.Body.Bytes(), &errBody)
-	if errBody.Error.Code != probe.CodeInvalidConfig {
-		t.Fatalf("want %q, got %q", probe.CodeInvalidConfig, errBody.Error.Code)
+	if errBody.Error.Code != probe.CodeUnsupportedTransport {
+		t.Fatalf("want %q, got %q", probe.CodeUnsupportedTransport, errBody.Error.Code)
+	}
+}
+
+func TestProbeHandler_ContainerHTTP_Unsupported422(t *testing.T) {
+	srv := newProbeServer(t, &recordingClient{})
+	rec := postProbe(t, srv.Handler(), map[string]any{
+		"image":     "mcp/foo:latest",
+		"port":      8080,
+		"transport": "http",
+	}, "")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d", rec.Code)
+	}
+	var errBody probeErrorWire
+	_ = json.Unmarshal(rec.Body.Bytes(), &errBody)
+	if errBody.Error.Code != probe.CodeUnsupportedTransport {
+		t.Fatalf("want %q, got %q", probe.CodeUnsupportedTransport, errBody.Error.Code)
+	}
+}
+
+func TestProbeHandler_LocalProcess_Unsupported422(t *testing.T) {
+	srv := newProbeServer(t, &recordingClient{})
+	rec := postProbe(t, srv.Handler(), map[string]any{
+		"command": []string{"/usr/bin/mcp"},
+	}, "")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d", rec.Code)
+	}
+	var errBody probeErrorWire
+	_ = json.Unmarshal(rec.Body.Bytes(), &errBody)
+	if errBody.Error.Code != probe.CodeUnsupportedTransport {
+		t.Fatalf("want %q, got %q", probe.CodeUnsupportedTransport, errBody.Error.Code)
 	}
 }
 
