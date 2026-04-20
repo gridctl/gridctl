@@ -207,6 +207,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("GET /api/agents/{name}/logs", s.handleAgentLogs)
 	mux.HandleFunc("POST /api/mcp-servers/{name}/restart", s.handleMCPServerRestart)
+	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
@@ -402,22 +403,23 @@ type ServerInfo struct {
 
 // MCPServerStatus mirrors the mcp.MCPServerStatus type for API responses.
 type MCPServerStatus struct {
-	Name         string   `json:"name"`
-	Transport    string   `json:"transport"`
-	Endpoint     string   `json:"endpoint"`
-	Initialized  bool     `json:"initialized"`
-	ToolCount    int      `json:"toolCount"`
-	Tools        []string `json:"tools"`
-	External     bool     `json:"external"`
-	LocalProcess bool     `json:"localProcess"`
-	SSH          bool     `json:"ssh"`
-	SSHHost      string   `json:"sshHost,omitempty"`
-	OpenAPI      bool     `json:"openapi"`
-	OpenAPISpec  string   `json:"openapiSpec,omitempty"`
-	OutputFormat string   `json:"outputFormat,omitempty"`
-	Healthy      *bool    `json:"healthy,omitempty"`
-	LastCheck    *string  `json:"lastCheck,omitempty"`
-	HealthError  string   `json:"healthError,omitempty"`
+	Name          string   `json:"name"`
+	Transport     string   `json:"transport"`
+	Endpoint      string   `json:"endpoint"`
+	Initialized   bool     `json:"initialized"`
+	ToolCount     int      `json:"toolCount"`
+	Tools         []string `json:"tools"`
+	External      bool     `json:"external"`
+	LocalProcess  bool     `json:"localProcess"`
+	SSH           bool     `json:"ssh"`
+	SSHHost       string   `json:"sshHost,omitempty"`
+	OpenAPI       bool     `json:"openapi"`
+	OpenAPISpec   string   `json:"openapiSpec,omitempty"`
+	OutputFormat  string   `json:"outputFormat,omitempty"`
+	Healthy       *bool    `json:"healthy,omitempty"`
+	LastCheck     *string  `json:"lastCheck,omitempty"`
+	HealthError   string   `json:"healthError,omitempty"`
+	ToolWhitelist []string `json:"toolWhitelist,omitempty"`
 
 	Replicas []mcp.ReplicaStatus `json:"replicas,omitempty"`
 }
@@ -427,22 +429,23 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
 		status := MCPServerStatus{
-			Name:         ms.Name,
-			Transport:    string(ms.Transport),
-			Endpoint:     ms.Endpoint,
-			Initialized:  ms.Initialized,
-			ToolCount:    ms.ToolCount,
-			Tools:        ms.Tools,
-			External:     ms.External,
-			LocalProcess: ms.LocalProcess,
-			SSH:          ms.SSH,
-			SSHHost:      ms.SSHHost,
-			OpenAPI:      ms.OpenAPI,
-			OpenAPISpec:  ms.OpenAPISpec,
-			OutputFormat: ms.OutputFormat,
-			Healthy:      ms.Healthy,
-			HealthError:  ms.HealthError,
-			Replicas:     ms.Replicas,
+			Name:          ms.Name,
+			Transport:     string(ms.Transport),
+			Endpoint:      ms.Endpoint,
+			Initialized:   ms.Initialized,
+			ToolCount:     ms.ToolCount,
+			Tools:         ms.Tools,
+			External:      ms.External,
+			LocalProcess:  ms.LocalProcess,
+			SSH:           ms.SSH,
+			SSHHost:       ms.SSHHost,
+			OpenAPI:       ms.OpenAPI,
+			OpenAPISpec:   ms.OpenAPISpec,
+			OutputFormat:  ms.OutputFormat,
+			Healthy:       ms.Healthy,
+			HealthError:   ms.HealthError,
+			ToolWhitelist: ms.ToolWhitelist,
+			Replicas:      ms.Replicas,
 		}
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)
