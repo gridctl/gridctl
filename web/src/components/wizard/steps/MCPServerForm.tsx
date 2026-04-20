@@ -17,6 +17,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
+import type { ProbeServerConfig } from '../../../lib/api';
 import { SecretsPopover } from '../SecretsPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
@@ -154,6 +155,21 @@ function getAvailableTransports(serverType: ServerType): string[] {
 function showPortField(serverType: ServerType, transport: string): boolean {
   if (serverType === 'external' || serverType === 'local' || serverType === 'ssh' || serverType === 'openapi') return false;
   return transport !== 'stdio';
+}
+
+// Translate the wizard form into the probe endpoint's wire shape. Returns
+// null for every transport the probe does not support — which, after the
+// descope, is everything except external URL. Container / local-process /
+// SSH / OpenAPI servers are curated from the topology sidebar after deploy.
+function buildProbeConfig(data: MCPServerFormData): ProbeServerConfig | null {
+  if (data.serverType !== 'external') return null;
+  if (!data.url) return null;
+  return {
+    name: data.name,
+    url: data.url,
+    transport: data.transport || '',
+    env: data.env,
+  };
 }
 
 // --- Kebab-case validation ---
@@ -418,6 +434,8 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
     // Auto-expand config section on type change
     setExpandedSections((prev) => new Set([...prev, 'config']));
   };
+
+  const probeConfig = useMemo(() => buildProbeConfig(data), [data]);
 
   const envCount = data.env ? Object.keys(data.env).length : 0;
   const advancedCount =
@@ -1317,6 +1335,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           value={data.tools ?? []}
           onChange={(tools) => onChange({ tools })}
           serverName={data.name}
+          probeConfig={probeConfig}
         />
 
         <div>

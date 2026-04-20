@@ -1,10 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useState } from 'react';
 import { ToolsPicker } from '../components/wizard/steps/ToolsPicker';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import type { Tool } from '../types';
+import * as apiModule from '../lib/api';
+import { ProbeError } from '../lib/api';
+
+vi.mock('../components/ui/Toast', () => ({
+  showToast: vi.fn(),
+}));
 
 const mockStoreState: { tools: Tool[] } = { tools: [] };
 
@@ -191,6 +197,176 @@ describe('ToolsPicker', () => {
       expect(
         screen.queryByRole('button', { name: /back to search/i }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('probe integration', () => {
+    beforeEach(() => {
+      vi.spyOn(apiModule, 'probeServer');
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('hides the Discover tools button when no probeConfig is provided', () => {
+      render(<Harness />);
+      expect(
+        screen.queryByRole('button', { name: /discover tools/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('hides the Discover tools button for unsupported transports', () => {
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ ssh: { host: 'h', user: 'u' }, command: ['/bin/sh'] }}
+        />,
+      );
+      expect(
+        screen.queryByRole('button', { name: /discover tools/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('hides the Discover tools button for container-only configs', () => {
+      // Post-descope: container/local-process configs are curated from the
+      // topology sidebar after deploy, not from the wizard.
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ image: 'mcp/foo:latest', port: 8080, transport: 'http' }}
+        />,
+      );
+      expect(
+        screen.queryByRole('button', { name: /discover tools/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('hides the Discover tools button for local-process configs', () => {
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ command: ['/usr/bin/mcp'] }}
+        />,
+      );
+      expect(
+        screen.queryByRole('button', { name: /discover tools/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('clicking Discover tools populates the checklist on success', async () => {
+      vi.mocked(apiModule.probeServer).mockResolvedValueOnce({
+        tools: [
+          { name: 'hello', description: 'say hi', inputSchema: {} },
+          { name: 'goodbye', description: 'say bye', inputSchema: {} },
+        ],
+        probedAt: new Date().toISOString(),
+        cached: false,
+      });
+
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ url: 'https://example.com/mcp' }}
+        />,
+      );
+
+      fireEvent.click(
+        screen.getByRole('button', { name: /discover tools by probing/i }),
+      );
+      // The discovered tools appear as checklist options.
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'hello' })).toBeInTheDocument();
+      });
+      expect(screen.getByRole('option', { name: 'goodbye' })).toBeInTheDocument();
+    });
+
+    it('renders an inline error with Retry on probe failure and keeps manual-entry reachable', async () => {
+      vi.mocked(apiModule.probeServer).mockRejectedValueOnce(
+        new ProbeError('initialize_failed', 'Server failed to initialize', 'check env', 422),
+      );
+
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ url: 'https://example.com/mcp' }}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: /discover tools by probing/i }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent('Server failed to initialize');
+      expect(screen.getByRole('alert')).toHaveTextContent('check env');
+      expect(
+        screen.getByRole('button', { name: /retry probing the server/i }),
+      ).toBeInTheDocument();
+      // Manual-entry fallback is still offered
+      expect(
+        screen.getByRole('button', { name: /enter tool names manually/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('invalid_config errors do NOT show a Retry (the form needs fixing)', async () => {
+      vi.mocked(apiModule.probeServer).mockRejectedValueOnce(
+        new ProbeError('invalid_config', 'Config incomplete', undefined, 400),
+      );
+
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ url: 'https://example.com/mcp' }}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: /discover tools by probing/i }),
+      );
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByRole('button', { name: /retry probing the server/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('sets aria-busy on the picker while a probe is in flight', () => {
+      let resolve: (v: apiModule.ProbeSuccess) => void = () => {};
+      vi.mocked(apiModule.probeServer).mockReturnValueOnce(
+        new Promise((r) => {
+          resolve = r;
+        }),
+      );
+
+      const { container } = render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ url: 'https://example.com/mcp' }}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: /discover tools by probing/i }),
+      );
+      const picker = container.querySelector('[aria-label="Tools Picker"]');
+      expect(picker).toHaveAttribute('aria-busy', 'true');
+
+      // Let the promise resolve so the test doesn't leak a pending fetch.
+      resolve({ tools: [], probedAt: new Date().toISOString(), cached: false });
     });
   });
 

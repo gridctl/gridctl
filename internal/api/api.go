@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -54,6 +55,11 @@ type Server struct {
 	// startWatcher, when set, starts a file watcher on the given stack path.
 	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
 	startWatcher func(stackPath string)
+
+	// prober enumerates an MCP server's tool list ephemerally (not registered
+	// with the gateway). Nil disables the /api/servers/probe endpoint.
+	prober       *probe.Prober
+	probeLimiter *probeLimiter
 }
 
 // NewServer creates a new API server.
@@ -261,6 +267,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/wizard/drafts", s.handleWizardDraftsList)
 	mux.HandleFunc("POST /api/wizard/drafts", s.handleWizardDraftCreate)
 	mux.HandleFunc("DELETE /api/wizard/drafts/{id}", s.handleWizardDraftDelete)
+
+	// Server probe — ephemeral tool enumeration used by the wizard's
+	// "Discover tools" flow for servers not yet loaded in the topology.
+	mux.HandleFunc("POST /api/servers/probe", s.handleProbe)
 
 	// Registry endpoints
 	mux.HandleFunc("GET /api/registry/status", s.handleRegistryStatus)

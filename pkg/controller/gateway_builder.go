@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/internal/api"
+	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -370,6 +371,16 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	gateway.SetFormatSavingsRecorder(accumulator)
 	server.SetMetricsAccumulator(accumulator)
 	server.SetTokenizerName(b.tokenizerName())
+
+	// Wire the wizard's "Discover tools" probe. Scope: external URL
+	// servers only — container / stdio / local-process / SSH / OpenAPI are
+	// curated post-deploy from the topology sidebar.
+	probeCache := probe.NewCache(probe.DefaultTTL)
+	prober := probe.NewProber(probeCache)
+	if handler != nil {
+		prober.SetLogger(slog.New(handler).With("subsystem", "probe"))
+	}
+	server.SetProber(prober)
 
 	// Wire distributed tracing
 	tracingCfg := buildTracingConfig(b.stack.Gateway)

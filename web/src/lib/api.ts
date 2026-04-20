@@ -981,6 +981,86 @@ interface JSONRPCResponse<T = unknown> {
   };
 }
 
+// === Server Probe API ===
+
+// Wire shape accepted by POST /api/servers/probe. Mirrors the subset of
+// config.MCPServer relevant to tool discovery — snake_case fields match the
+// stack YAML schema.
+export interface ProbeServerConfig {
+  name?: string;
+  image?: string;
+  url?: string;
+  port?: number;
+  transport?: string;
+  command?: string[];
+  env?: Record<string, string>;
+  build_args?: Record<string, string>;
+  ssh?: { host: string; user: string; port?: number; identity_file?: string };
+  openapi?: { spec: string };
+  ready_timeout?: string;
+}
+
+export interface ProbedTool {
+  name: string;
+  description?: string;
+  inputSchema: unknown;
+}
+
+export interface ProbeSuccess {
+  tools: ProbedTool[];
+  probedAt: string;
+  cached: boolean;
+}
+
+// ProbeError exposes the structured error payload returned by the backend so
+// the UI can render stable copy per `code`.
+export class ProbeError extends Error {
+  code: string;
+  hint?: string;
+  httpStatus: number;
+
+  constructor(code: string, message: string, hint: string | undefined, httpStatus: number) {
+    super(message);
+    this.name = 'ProbeError';
+    this.code = code;
+    this.hint = hint;
+    this.httpStatus = httpStatus;
+  }
+}
+
+/**
+ * Ephemerally probe an MCP server to enumerate its tools before deploying it.
+ * The backend spawns the server (when applicable), runs the MCP initialize +
+ * tools/list handshake, tears down, and caches the result for 5 minutes.
+ *
+ * Rejects with ProbeError on structured failures (422 / 400), AuthError on
+ * 401, or a plain Error for transport issues.
+ * POST /api/servers/probe
+ */
+export async function probeServer(config: ProbeServerConfig, sessionId?: string): Promise<ProbeSuccess> {
+  const headers = buildHeaders({ 'Content-Type': 'application/json' });
+  if (sessionId) headers['X-Session-ID'] = sessionId;
+  const response = await fetch(`${API_BASE}/api/servers/probe`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(config),
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err.code === 'string') {
+      throw new ProbeError(err.code, err.message ?? 'Probe failed', err.hint, response.status);
+    }
+    throw new Error(`Probe failed: ${response.status} ${response.statusText}`);
+  }
+
+  return data as ProbeSuccess;
+}
+
 let requestId = 0;
 
 export async function mcpRequest<T>(
