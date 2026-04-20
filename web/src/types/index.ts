@@ -52,6 +52,10 @@ export interface MCPServerStatus {
   openapi?: boolean; // True for OpenAPI-backed servers
   openapiSpec?: string; // OpenAPI spec URL or file path
   outputFormat?: string; // Configured output format (e.g. "toon", "csv")
+  // Tool whitelist from the stack YAML's tools: field. Empty/absent means "no
+  // whitelist" (expose all tools the gateway loaded). Present and non-empty
+  // means the operator has curated a subset.
+  toolWhitelist?: string[];
   replicas?: ReplicaStatus[]; // Per-replica runtime status
 }
 
@@ -185,6 +189,9 @@ export interface MCPServerNodeData extends NodeDataBase {
   pinStatus?: 'pinned' | 'drift' | 'blocked' | 'approved_pending_redeploy';
   pinDriftCount?: number;
   replicaCount?: number; // Number of replicas (omitted or 1 = single-replica)
+  // Tool whitelist from the stack YAML — present when the operator has
+  // curated a subset of the server's tools. Drives the canvas "curated" badge.
+  toolWhitelist?: string[];
 }
 
 export interface ResourceNodeData extends NodeDataBase {
