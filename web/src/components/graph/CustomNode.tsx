@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, LockOpen, Lock } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, LockOpen, Lock } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
@@ -203,11 +203,27 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
                   </div>
                 )}
               </div>
-              {toolCount !== null && toolCount !== undefined && (
-                <span className="text-text-secondary font-mono text-[11px]">
-                  {toolCount} tools
-                </span>
-              )}
+              <div className="flex items-center gap-1.5">
+                {/* Curated-whitelist badge: present only when the stack YAML
+                    has a non-empty tools: field for this server. Signals that
+                    the operator has narrowed the tool surface from the full
+                    set the server advertised. */}
+                {isServer && ((data as MCPServerNodeData).toolWhitelist?.length ?? 0) > 0 && (
+                  <span
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-mono"
+                    title="Curated tool whitelist"
+                    aria-label={`Curated whitelist: ${(data as MCPServerNodeData).toolWhitelist?.length ?? 0} of ${toolCount ?? 0} tools`}
+                  >
+                    <Filter size={9} />
+                    {(data as MCPServerNodeData).toolWhitelist?.length ?? 0}/{toolCount ?? 0}
+                  </span>
+                )}
+                {toolCount !== null && toolCount !== undefined && (
+                  <span className="text-text-secondary font-mono text-[11px]">
+                    {toolCount} tools
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
