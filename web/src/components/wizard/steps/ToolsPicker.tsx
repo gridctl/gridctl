@@ -374,13 +374,16 @@ function ProbeErrorPanel({
   );
 }
 
-// isProbeSupported filters out configs the backend will refuse before we even
-// send them. SSH and OpenAPI are explicitly out of scope; probes without any
-// addressable target (no image, url, or command) are also skipped.
+// isProbeSupported filters out configs the backend will refuse. The probe
+// endpoint only handles external URL servers — every other transport is
+// curated post-deploy from the topology sidebar, so the wizard hides the
+// button rather than offering a click that will 422.
 function isProbeSupported(cfg: ProbeServerConfig): boolean {
   if (cfg.ssh) return false;
   if (cfg.openapi) return false;
-  return !!(cfg.image || cfg.url || (cfg.command && cfg.command.length > 0));
+  if (cfg.image) return false;
+  if (cfg.command && cfg.command.length > 0) return false;
+  return !!cfg.url;
 }
 
 function formatRelativeTime(iso: string): string {
