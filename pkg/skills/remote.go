@@ -10,10 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+
 	"github.com/gridctl/gridctl/pkg/builder"
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/registry"
 )
 
@@ -32,6 +33,17 @@ type DiscoveredSkill struct {
 	ContentHash string
 }
 
+// skillsAuth returns a transport.AuthMethod built from the GITHUB_TOKEN env
+// var, or nil if the env var is not set. The token-backed flow will be
+// replaced by a pluggable Auther interface in a follow-up change; keeping it
+// as a private helper here preserves the current behavior.
+func skillsAuth() transport.AuthMethod {
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		return &http.BasicAuth{Username: token, Password: ""}
+	}
+	return nil
+}
+
 // CloneAndDiscover clones a repo and discovers all SKILL.md files.
 func CloneAndDiscover(repo, ref, subPath string, logger *slog.Logger) (*CloneResult, error) {
 	repoPath, err := cloneShallow(repo, ref, logger)
@@ -39,7 +51,7 @@ func CloneAndDiscover(repo, ref, subPath string, logger *slog.Logger) (*CloneRes
 		return nil, fmt.Errorf("cloning repository: %w", err)
 	}
 
-	commitSHA, err := getHeadCommit(repoPath)
+	commitSHA, err := gitpkg.HeadCommit(repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("getting HEAD commit: %w", err)
 	}
@@ -71,24 +83,23 @@ func FetchAndCompare(repo, ref string, currentSHA string, logger *slog.Logger) (
 		return "", false, fmt.Errorf("getting cache path: %w", err)
 	}
 
-	r, err := git.PlainOpen(repoPath)
-	if err != nil {
+	if _, err := os.Stat(repoPath); err != nil {
 		// Repo not cached, needs full clone
 		return "", true, nil
 	}
 
-	fetchOpts := &git.FetchOptions{Force: true}
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		fetchOpts.Auth = &http.BasicAuth{Username: token, Password: ""}
-	}
-
-	if err := r.Fetch(fetchOpts); err != nil && err != git.NoErrAlreadyUpToDate {
+	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{Auth: skillsAuth()}, logger); err != nil {
 		logger.Warn("fetch failed", "error", err)
 		return currentSHA, false, nil
 	}
 
+	r, err := gitpkg.Open(repoPath)
+	if err != nil {
+		return currentSHA, false, nil
+	}
+
 	if ref != "" {
-		newSHA, err := resolveRef(r, ref)
+		newSHA, err := gitpkg.ResolveRef(r, ref)
 		if err != nil {
 			return currentSHA, false, nil
 		}
@@ -103,27 +114,9 @@ func FetchAndCompare(repo, ref string, currentSHA string, logger *slog.Logger) (
 	return newSHA, newSHA != currentSHA, nil
 }
 
-// ListRemoteTags returns all tags from a remote repository.
+// ListRemoteTags returns all tags from a cached repository.
 func ListRemoteTags(repoPath string) ([]string, error) {
-	r, err := git.PlainOpen(repoPath)
-	if err != nil {
-		return nil, fmt.Errorf("opening repository: %w", err)
-	}
-
-	tagIter, err := r.Tags()
-	if err != nil {
-		return nil, fmt.Errorf("listing tags: %w", err)
-	}
-
-	var tags []string
-	if err := tagIter.ForEach(func(ref *plumbing.Reference) error {
-		tags = append(tags, ref.Name().Short())
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("iterating tags: %w", err)
-	}
-
-	return tags, nil
+	return gitpkg.ListTags(repoPath)
 }
 
 func cloneShallow(url, ref string, logger *slog.Logger) (string, error) {
@@ -136,46 +129,30 @@ func cloneShallow(url, ref string, logger *slog.Logger) (string, error) {
 		return "", fmt.Errorf("getting cache path: %w", err)
 	}
 
-	cloneOpts := &git.CloneOptions{
-		URL:   url,
-		Depth: 1,
-		Tags:  git.AllTags,
-	}
-
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		cloneOpts.Auth = &http.BasicAuth{Username: token, Password: ""}
-	}
-
 	// If repo exists, fetch updates instead
 	if _, err := os.Stat(repoPath); err == nil {
 		return updateExisting(repoPath, ref, logger)
 	}
 
-	logger.Info("cloning repository", "url", url)
-
-	if ref != "" && !IsSemVerConstraint(ref) {
-		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ref)
-		cloneOpts.SingleBranch = true
+	cloneRef := ref
+	if IsSemVerConstraint(ref) {
+		// Semver constraints require a full clone so tags are available.
+		cloneRef = ""
 	}
-
-	r, err := git.PlainClone(repoPath, false, cloneOpts)
+	r, err := gitpkg.Clone(repoPath, gitpkg.CloneOptions{
+		URL:     url,
+		Ref:     cloneRef,
+		Depth:   1,
+		AllTags: true,
+		Auth:    skillsAuth(),
+	}, logger)
 	if err != nil {
-		// Retry without single-branch restriction
-		if ref != "" {
-			_ = os.RemoveAll(repoPath)
-			cloneOpts.SingleBranch = false
-			cloneOpts.ReferenceName = ""
-			r, err = git.PlainClone(repoPath, false, cloneOpts)
-		}
-		if err != nil {
-			return "", fmt.Errorf("cloning: %w", err)
-		}
+		return "", fmt.Errorf("cloning: %w", err)
 	}
 
-	// Handle semver constraints or specific refs
 	if ref != "" {
 		if IsSemVerConstraint(ref) {
-			tags, err := ListRemoteTags(repoPath)
+			tags, err := gitpkg.ListTags(repoPath)
 			if err != nil {
 				return "", err
 			}
@@ -183,11 +160,11 @@ func cloneShallow(url, ref string, logger *slog.Logger) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			if err := checkoutRef(r, resolvedTag); err != nil {
+			if err := gitpkg.Checkout(r, resolvedTag); err != nil {
 				return "", err
 			}
 		} else {
-			if err := checkoutRef(r, ref); err != nil {
+			if err := gitpkg.Checkout(r, ref); err != nil {
 				return "", err
 			}
 		}
@@ -199,24 +176,20 @@ func cloneShallow(url, ref string, logger *slog.Logger) (string, error) {
 func updateExisting(repoPath, ref string, logger *slog.Logger) (string, error) {
 	logger.Info("updating cached repository")
 
-	r, err := git.PlainOpen(repoPath)
+	// Fail fast on a corrupt cache (mirrors previous behavior).
+	r, err := gitpkg.Open(repoPath)
 	if err != nil {
 		_ = os.RemoveAll(repoPath)
 		return "", fmt.Errorf("opening cached repo (removed): %w", err)
 	}
 
-	fetchOpts := &git.FetchOptions{Force: true, Tags: git.AllTags}
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		fetchOpts.Auth = &http.BasicAuth{Username: token, Password: ""}
-	}
-
-	if err := r.Fetch(fetchOpts); err != nil && err != git.NoErrAlreadyUpToDate {
+	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{AllTags: true, Auth: skillsAuth()}, logger); err != nil {
 		logger.Warn("fetch failed, using cached", "error", err)
 	}
 
 	if ref != "" {
 		if IsSemVerConstraint(ref) {
-			tags, err := ListRemoteTags(repoPath)
+			tags, err := gitpkg.ListTags(repoPath)
 			if err != nil {
 				logger.Warn("failed to list tags, using cached", "error", err)
 				return repoPath, nil
@@ -226,87 +199,18 @@ func updateExisting(repoPath, ref string, logger *slog.Logger) (string, error) {
 				logger.Warn("failed to resolve constraint, using cached", "constraint", ref, "error", err)
 				return repoPath, nil
 			}
-			if err := checkoutRef(r, resolvedTag); err != nil {
+			if err := gitpkg.Checkout(r, resolvedTag); err != nil {
 				logger.Warn("failed to checkout tag, using cached", "tag", resolvedTag, "error", err)
 				return repoPath, nil
 			}
 		} else {
-			if err := checkoutRef(r, ref); err != nil {
+			if err := gitpkg.Checkout(r, ref); err != nil {
 				logger.Warn("failed to checkout ref, using cached", "ref", ref, "error", err)
 			}
 		}
 	}
 
 	return repoPath, nil
-}
-
-func checkoutRef(r *git.Repository, ref string) error {
-	wt, err := r.Worktree()
-	if err != nil {
-		return fmt.Errorf("getting worktree: %w", err)
-	}
-
-	// Try tag first
-	tagRef := plumbing.NewTagReferenceName(ref)
-	if err := wt.Checkout(&git.CheckoutOptions{Branch: tagRef, Force: true}); err == nil {
-		return nil
-	}
-
-	// Try branch
-	branchRef := plumbing.NewBranchReferenceName(ref)
-	if err := wt.Checkout(&git.CheckoutOptions{Branch: branchRef, Force: true}); err == nil {
-		return nil
-	}
-
-	// Try remote branch
-	remoteRef := plumbing.NewRemoteReferenceName("origin", ref)
-	if err := wt.Checkout(&git.CheckoutOptions{Branch: remoteRef, Force: true}); err == nil {
-		return nil
-	}
-
-	// Try commit hash
-	hash := plumbing.NewHash(ref)
-	if !hash.IsZero() {
-		if err := wt.Checkout(&git.CheckoutOptions{Hash: hash, Force: true}); err == nil {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("unable to checkout ref %q", ref)
-}
-
-func resolveRef(r *git.Repository, ref string) (string, error) {
-	// Try tag
-	tagRef, err := r.Tag(ref)
-	if err == nil {
-		return tagRef.Hash().String(), nil
-	}
-
-	// Try remote branch
-	remoteRef, err := r.Reference(plumbing.NewRemoteReferenceName("origin", ref), true)
-	if err == nil {
-		return remoteRef.Hash().String(), nil
-	}
-
-	// Try branch
-	branchRef, err := r.Reference(plumbing.NewBranchReferenceName(ref), true)
-	if err == nil {
-		return branchRef.Hash().String(), nil
-	}
-
-	return "", fmt.Errorf("unable to resolve ref %q", ref)
-}
-
-func getHeadCommit(repoPath string) (string, error) {
-	r, err := git.PlainOpen(repoPath)
-	if err != nil {
-		return "", err
-	}
-	head, err := r.Head()
-	if err != nil {
-		return "", err
-	}
-	return head.Hash().String(), nil
 }
 
 func discoverSkills(searchDir, repoRoot string) ([]DiscoveredSkill, error) {

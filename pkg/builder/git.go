@@ -5,8 +5,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
+	gogit "github.com/go-git/go-git/v5"
+
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 )
 
 // CloneOrUpdate clones a git repository or updates it if it already exists.
@@ -32,42 +33,23 @@ func CloneOrUpdate(url, ref string, logger *slog.Logger) (string, error) {
 }
 
 func cloneRepo(url, ref, destPath string, logger *slog.Logger) (string, error) {
-	logger.Info("cloning repository", "url", url)
-
-	cloneOpts := &git.CloneOptions{
-		URL:      url,
-		Progress: nil, // Could add os.Stdout for progress
-	}
-
-	// If ref is specified and looks like a branch, set it
-	if ref != "" {
-		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ref)
-		cloneOpts.SingleBranch = true
-	}
-
-	repo, err := git.PlainClone(destPath, false, cloneOpts)
+	repo, err := gitpkg.Clone(destPath, gitpkg.CloneOptions{
+		URL: url,
+		Ref: ref,
+	}, logger)
 	if err != nil {
-		// If branch clone failed, try without SingleBranch
-		if ref != "" {
-			os.RemoveAll(destPath)
-			cloneOpts.SingleBranch = false
-			cloneOpts.ReferenceName = ""
-			repo, err = git.PlainClone(destPath, false, cloneOpts)
-			if err != nil {
-				return "", fmt.Errorf("cloning repository: %w", err)
-			}
-			// Checkout the specific ref
-			if err := checkoutRef(repo, ref); err != nil {
-				return "", err
-			}
-		} else {
-			return "", fmt.Errorf("cloning repository: %w", err)
+		return "", fmt.Errorf("cloning repository: %w", err)
+	}
+
+	// Land on ref explicitly so the single-branch fallback path ends in the
+	// right worktree state. On the happy path this is a no-op.
+	if ref != "" {
+		if err := gitpkg.Checkout(repo, ref); err != nil {
+			return "", err
 		}
 	}
 
-	// Get current commit for logging
-	head, err := repo.Head()
-	if err == nil {
+	if head, err := repo.Head(); err == nil {
 		logger.Info("cloned repository", "commit", head.Hash().String()[:8])
 	}
 
@@ -77,104 +59,33 @@ func cloneRepo(url, ref, destPath string, logger *slog.Logger) (string, error) {
 func updateRepo(repoPath, ref string, logger *slog.Logger) (string, error) {
 	logger.Info("updating cached repository")
 
-	repo, err := git.PlainOpen(repoPath)
+	repo, err := gitpkg.Open(repoPath)
 	if err != nil {
-		// If we can't open, remove and re-clone
-		os.RemoveAll(repoPath)
+		_ = os.RemoveAll(repoPath)
 		return "", fmt.Errorf("opening repository (will need to re-clone): %w", err)
 	}
 
-	// Get the worktree
-	wt, err := repo.Worktree()
-	if err != nil {
-		return "", fmt.Errorf("getting worktree: %w", err)
-	}
-
-	// Fetch updates
-	err = repo.Fetch(&git.FetchOptions{
-		Force: true,
-	})
-	if err != nil && err != git.NoErrAlreadyUpToDate {
-		// Non-fatal, continue with what we have
+	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{}, logger); err != nil {
 		logger.Warn("fetch failed, using existing", "error", err)
 	}
 
-	// Checkout the ref
 	if ref != "" {
-		if err := checkoutRef(repo, ref); err != nil {
+		if err := gitpkg.Checkout(repo, ref); err != nil {
 			return "", err
 		}
 	}
 
-	// Pull latest
-	err = wt.Pull(&git.PullOptions{
-		Force: true,
-	})
-	if err != nil && err != git.NoErrAlreadyUpToDate {
-		// Non-fatal for detached HEAD
-		if err != git.ErrNonFastForwardUpdate {
+	// Pull latest (best-effort; a detached HEAD or non-fast-forward is non-fatal)
+	if wt, wtErr := repo.Worktree(); wtErr == nil {
+		err := wt.Pull(&gogit.PullOptions{Force: true})
+		if err != nil && err != gogit.NoErrAlreadyUpToDate && err != gogit.ErrNonFastForwardUpdate {
 			logger.Warn("pull failed, using existing", "error", err)
 		}
 	}
 
-	// Get current commit for logging
-	head, err := repo.Head()
-	if err == nil {
+	if head, err := repo.Head(); err == nil {
 		logger.Info("repository at commit", "commit", head.Hash().String()[:8])
 	}
 
 	return repoPath, nil
-}
-
-func checkoutRef(repo *git.Repository, ref string) error {
-	wt, err := repo.Worktree()
-	if err != nil {
-		return fmt.Errorf("getting worktree: %w", err)
-	}
-
-	// Try as branch first
-	branchRef := plumbing.NewBranchReferenceName(ref)
-	err = wt.Checkout(&git.CheckoutOptions{
-		Branch: branchRef,
-		Force:  true,
-	})
-	if err == nil {
-		return nil
-	}
-
-	// Try as remote branch
-	remoteBranchRef := plumbing.NewRemoteReferenceName("origin", ref)
-	err = wt.Checkout(&git.CheckoutOptions{
-		Branch: remoteBranchRef,
-		Force:  true,
-	})
-	if err == nil {
-		return nil
-	}
-
-	// Try as tag
-	tagRef := plumbing.NewTagReferenceName(ref)
-	err = wt.Checkout(&git.CheckoutOptions{
-		Branch: tagRef,
-		Force:  true,
-	})
-	if err == nil {
-		return nil
-	}
-
-	// Try as commit hash
-	hash := plumbing.NewHash(ref)
-	if hash.IsZero() {
-		return fmt.Errorf("invalid ref: %s", ref)
-	}
-
-	err = wt.Checkout(&git.CheckoutOptions{
-		Hash:  hash,
-		Force: true,
-	})
-	if err != nil {
-		return fmt.Errorf("checking out ref %s: %w", ref, err)
-	}
-
-	return nil
 }
