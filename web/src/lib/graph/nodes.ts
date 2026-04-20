@@ -95,6 +95,7 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       openapiSpec: server.openapiSpec,
       outputFormat: server.outputFormat,
       replicaCount: server.replicas?.length,
+      toolWhitelist: server.toolWhitelist,
     },
     draggable: true,
   }));

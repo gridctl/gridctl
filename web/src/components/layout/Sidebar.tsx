@@ -19,11 +19,11 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
-import { ToolList } from '../ui/ToolList';
 import { ControlBar } from '../ui/ControlBar';
 import { PopoutButton } from '../ui/PopoutButton';
 import { GatewaySidebar } from '../gateway/GatewaySidebar';
 import { TokenUsageSection } from '../sidebar/TokenUsageSection';
+import { ToolsEditor } from '../sidebar/ToolsEditor';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -360,7 +360,11 @@ export function Sidebar() {
         {/* Tools Section (MCP servers only) */}
         {isServer && (
           <Section title="Tools" icon={Wrench} count={(data as MCPServerNodeData).toolCount}>
-            <ToolList serverName={data.name} />
+            <ToolsEditor
+              serverName={data.name}
+              savedTools={(data as MCPServerNodeData).toolWhitelist ?? []}
+              serverTools={(data as MCPServerNodeData).tools ?? []}
+            />
           </Section>
         )}
 

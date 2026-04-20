@@ -194,6 +194,85 @@ export async function restartMCPServer(name: string): Promise<void> {
   }
 }
 
+// Response payload for PUT /api/mcp-servers/{name}/tools on success.
+export interface SetServerToolsResponse {
+  server: string;
+  tools: string[];
+  reloaded: boolean;
+  reloadedAt?: string; // RFC3339 timestamp, only present when reloaded is true
+}
+
+// SetServerToolsError is thrown when the backend returns a structured error
+// envelope ({error: {code, message, hint?}}) for the tool-whitelist update
+// endpoint. It lets the UI branch on `code` to show stable copy.
+//
+// Known codes:
+//   - "stack_modified" (409): the YAML on disk changed since the handler read
+//     it. The UI should offer a "Reload file" affordance and preserve the
+//     user's pending selection on top of the refreshed state.
+//   - "reload_failed" (502): the YAML write succeeded but the hot reload
+//     returned an error. The save persisted; only the reload failed.
+//   - "unknown_tool" (400): a tool name in the request is not advertised by
+//     the server. Surface the message directly so the operator can fix it.
+export class SetServerToolsError extends Error {
+  code: string;
+  hint?: string;
+  httpStatus: number;
+
+  constructor(code: string, message: string, hint: string | undefined, httpStatus: number) {
+    super(message);
+    this.name = 'SetServerToolsError';
+    this.code = code;
+    this.hint = hint;
+    this.httpStatus = httpStatus;
+  }
+}
+
+/**
+ * Update the tool whitelist for an MCP server in the live stack YAML and
+ * trigger a hot reload. An empty array clears the whitelist (exposing all
+ * tools, matching stack YAML semantics).
+ *
+ * Rejects with SetServerToolsError on 400/409/502 (structured envelope),
+ * AuthError on 401, or a plain Error for other failures.
+ * PUT /api/mcp-servers/{name}/tools
+ */
+export async function setServerTools(
+  name: string,
+  tools: string[],
+): Promise<SetServerToolsResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/mcp-servers/${encodeURIComponent(name)}/tools`,
+    {
+      method: 'PUT',
+      headers: buildHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ tools }),
+    },
+  );
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err === 'object' && typeof err.code === 'string') {
+      throw new SetServerToolsError(
+        err.code,
+        err.message ?? 'Set tools failed',
+        err.hint,
+        response.status,
+      );
+    }
+    // Plain {error: "..."} envelope — fall through to a generic Error.
+    const msg =
+      typeof err === 'string' ? err : `Set tools failed: ${response.status} ${response.statusText}`;
+    throw new Error(msg);
+  }
+
+  return data as SetServerToolsResponse;
+}
+
 // === Structured Log Entry (from gateway) ===
 
 export interface LogEntry {

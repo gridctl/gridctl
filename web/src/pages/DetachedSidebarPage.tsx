@@ -11,7 +11,6 @@ import {
   Cpu,
   KeyRound,
   RefreshCw,
-  ChevronUp,
   AlertCircle,
   Server,
   Layers,
@@ -25,10 +24,11 @@ import { useLogFontSize } from '../hooks/useLogFontSize';
 import { fetchStatus, fetchTools } from '../lib/api';
 import { getTransportIcon, getTransportColorClasses } from '../lib/transport';
 import { POLLING } from '../lib/constants';
+import { useStackStore } from '../stores/useStackStore';
+import { ToolsEditor } from '../components/sidebar/ToolsEditor';
 import type {
   MCPServerStatus,
   ResourceStatus,
-  Tool,
 } from '../types';
 
 // Error boundary for detached window
@@ -84,7 +84,6 @@ function DetachedSidebarPageContent() {
   const initialNode = searchParams.get('node');
 
   const [nodes, setNodes] = useState<NodeOption[]>([]);
-  const [tools, setTools] = useState<Tool[]>([]);
   const [selectedNode, setSelectedNode] = useState<string | null>(initialNode);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -116,7 +115,10 @@ function DetachedSidebarPageContent() {
       ];
 
       setNodes(nodeList);
-      setTools(toolsResult.tools ?? []);
+      // Mirror into the shared store so ToolsEditor (which reads from the
+      // store) has the same tool descriptions as the primary sidebar.
+      useStackStore.getState().setGatewayStatus(status);
+      useStackStore.getState().setTools(toolsResult.tools ?? []);
       setIsLoading(false);
     } catch {
       setIsLoading(false);
@@ -261,7 +263,7 @@ function DetachedSidebarPageContent() {
         )}
 
         {!isLoading && selectedData && (
-          <NodeDetails node={selectedData} tools={tools} />
+          <NodeDetails node={selectedData} />
         )}
       </main>
 
@@ -289,7 +291,7 @@ export function DetachedSidebarPage() {
 }
 
 // Node details component
-function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
+function NodeDetails({ node }: { node: NodeOption }) {
   const isServer = node.type === 'mcp-server';
 
   const serverData = isServer ? (node.data as MCPServerStatus) : null;
@@ -317,10 +319,7 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
       : 'stopped'
     : resourceData?.status;
 
-  // Filter tools for this server
-  const serverTools = isServer
-    ? (tools ?? []).filter((t) => t.name.startsWith(`${node.name}__`))
-    : [];
+  const advertisedTools = isServer ? (serverData?.tools ?? []) : [];
 
   return (
     <div className="animate-fade-in-up">
@@ -412,15 +411,15 @@ function NodeDetails({ node, tools }: { node: NodeOption; tools: Tool[] }) {
 
       {/* Tools Section (MCP servers only) */}
       {isServer && (
-        <Section title="Tools" icon={Wrench} count={serverTools.length}>
-          {serverTools.length === 0 ? (
+        <Section title="Tools" icon={Wrench} count={advertisedTools.length}>
+          {advertisedTools.length === 0 ? (
             <p className="log-text text-text-muted italic">No tools registered</p>
           ) : (
-            <div className="space-y-2">
-              {serverTools.map((tool) => (
-                <ToolItem key={tool.name} tool={tool} serverName={node.name} />
-              ))}
-            </div>
+            <ToolsEditor
+              serverName={node.name}
+              savedTools={serverData?.toolWhitelist ?? []}
+              serverTools={advertisedTools}
+            />
           )}
         </Section>
       )}
@@ -483,29 +482,4 @@ function Section({
   );
 }
 
-// Tool item component
-function ToolItem({ tool, serverName }: { tool: Tool; serverName: string }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const displayName = tool.name.replace(`${serverName}__`, '');
-
-  return (
-    <div className="rounded-lg bg-surface-elevated/60 border border-border/30 overflow-hidden">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-highlight/50 transition-colors"
-      >
-        <Wrench size={12} className="text-primary flex-shrink-0" />
-        <span className="log-text font-mono text-text-primary truncate flex-1 text-left">{displayName}</span>
-        {isExpanded ? (
-          <ChevronUp size={12} className="text-text-muted" />
-        ) : (
-          <ChevronDown size={12} className="text-text-muted" />
-        )}
-      </button>
-      {isExpanded && tool.description && (
-        <div className="px-3 pb-2 log-text-detail text-text-muted">{tool.description}</div>
-      )}
-    </div>
-  );
-}
 

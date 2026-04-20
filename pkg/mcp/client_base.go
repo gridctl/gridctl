@@ -13,19 +13,37 @@ import (
 
 // ClientBase provides shared state and accessor methods for all AgentClient implementations.
 // Embed this struct to get Tools(), IsInitialized(), ServerInfo(), and SetToolWhitelist().
+//
+// The embedded tool list stores every tool the downstream server advertises
+// (post include/exclude for OpenAPI, raw otherwise). The whitelist filter is
+// applied at read time by Tools() so operators can widen the whitelist beyond
+// the currently-exposed subset without losing the superset.
 type ClientBase struct {
 	mu            sync.RWMutex
 	initialized   bool
-	tools         []Tool
+	allTools      []Tool
 	serverInfo    ServerInfo
 	toolWhitelist []string
 }
 
-// Tools returns the cached tool list.
+// Tools returns the cached tool list filtered by the whitelist, if any.
+// This is what the router exposes to LLM clients.
 func (b *ClientBase) Tools() []Tool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.tools
+	if len(b.toolWhitelist) == 0 {
+		return b.allTools
+	}
+	return filterTools(b.allTools, b.toolWhitelist)
+}
+
+// AllTools returns every tool the downstream server advertises, ignoring
+// any configured whitelist. Used by the management UI so operators can see
+// the full selectable set regardless of the currently-applied curation.
+func (b *ClientBase) AllTools() []Tool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.allTools
 }
 
 // IsInitialized returns whether the client has been initialized.
@@ -51,15 +69,12 @@ func (b *ClientBase) SetToolWhitelist(tools []string) {
 	b.toolWhitelist = tools
 }
 
-// SetTools updates the cached tools, applying the whitelist filter.
+// SetTools updates the cached tools. The full set is retained; the whitelist
+// filter is applied on read by Tools().
 func (b *ClientBase) SetTools(tools []Tool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.toolWhitelist) > 0 {
-		b.tools = filterTools(tools, b.toolWhitelist)
-	} else {
-		b.tools = tools
-	}
+	b.allTools = tools
 }
 
 // SetInitialized marks the client as initialized with the given server info.

@@ -198,13 +198,12 @@ func (c *OpenAPIClient) Initialize(ctx context.Context) error {
 }
 
 // RefreshTools builds MCP tools from OpenAPI operations.
-// OpenAPIClient has custom include/exclude filtering in addition to the whitelist,
-// so it manages tool storage directly rather than using ClientBase.SetTools().
+// OpenAPIClient applies config-time include/exclude filters here. The runtime
+// whitelist is applied at read time by ClientBase.Tools(), so the full
+// post-include/exclude set is cached to let the UI widen the whitelist.
 func (c *OpenAPIClient) RefreshTools(ctx context.Context) error {
-	// Read shared state under lock
 	c.mu.RLock()
 	doc := c.cachedDoc
-	whitelist := c.toolWhitelist
 	c.mu.RUnlock()
 
 	if doc == nil {
@@ -220,16 +219,10 @@ func (c *OpenAPIClient) RefreshTools(ctx context.Context) error {
 
 	if doc.Paths == nil {
 		c.mu.Lock()
-		c.tools = tools
+		c.allTools = tools
 		c.operations = operations
 		c.mu.Unlock()
 		return nil
-	}
-
-	// Build whitelist map for O(1) lookup
-	whitelistMap := make(map[string]bool)
-	for _, name := range whitelist {
-		whitelistMap[name] = true
 	}
 
 	for path, pathItem := range doc.Paths.Map() {
@@ -254,18 +247,13 @@ func (c *OpenAPIClient) RefreshTools(ctx context.Context) error {
 				continue
 			}
 
-			// Apply whitelist filter (using pre-built map)
-			if len(whitelistMap) > 0 && !whitelistMap[tool.Name] {
-				continue
-			}
-
 			tools = append(tools, tool)
 			operations[tool.Name] = operation
 		}
 	}
 
 	c.mu.Lock()
-	c.tools = tools
+	c.allTools = tools
 	c.operations = operations
 	c.mu.Unlock()
 

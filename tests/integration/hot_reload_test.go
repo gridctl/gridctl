@@ -363,3 +363,86 @@ func TestHotReload_Idempotent(t *testing.T) {
 		}
 	}
 }
+
+// TestHotReload_ToolWhitelistPersists verifies that a change to the tools:
+// field on an external URL server is detected as Modified by the reload
+// handler, survives a simulated daemon restart (fresh Handler over the same
+// stack file), and is picked up on the subsequent Reload without mutating
+// any other server. This is the persistence guarantee the sidebar Tools
+// Editor relies on — once the YAML is updated, the whitelist stays even if
+// the daemon process exits and comes back up.
+func TestHotReload_ToolWhitelistPersists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	stackName := "inttest-" + sanitizeName(t.Name())
+	netName := stackName + "-net"
+	stackPath := t.TempDir() + "/stack.yaml"
+
+	topo := &config.Stack{
+		Version: "1",
+		Name:    stackName,
+		Network: config.Network{Name: netName, Driver: "bridge"},
+		MCPServers: []config.MCPServer{
+			{Name: "ext", URL: "https://example.com/mcp", Transport: "http"},
+		},
+	}
+	writeStackYAML(t, stackPath, topo)
+
+	// External servers skip container creation, so the test does not require
+	// Docker. That keeps the whitelist-persistence check runnable in any CI.
+	handler := reload.NewHandler(stackPath, topo, mcp.NewGateway(), nil, 0, 20610, nil, nil)
+	handler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []reload.ReplicaRuntime, stackPath string) error {
+		return nil
+	})
+
+	// Update only the tools: field. Every other field on every other server
+	// must remain untouched after the reload.
+	updated := &config.Stack{
+		Version:    topo.Version,
+		Name:       topo.Name,
+		Network:    topo.Network,
+		MCPServers: []config.MCPServer{{Name: "ext", URL: "https://example.com/mcp", Transport: "http", Tools: []string{"a", "b"}}},
+	}
+	writeStackYAML(t, stackPath, updated)
+
+	result, err := handler.Reload(ctx)
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected reload success, got: %s", result.Message)
+	}
+	if len(result.Modified) != 1 || result.Modified[0] != "mcp-server:ext" {
+		t.Fatalf("expected Modified=[mcp-server:ext], got: %v", result.Modified)
+	}
+
+	// Simulate a daemon restart: drop the handler and create a fresh one
+	// against the same stack file. The new handler starts with an empty
+	// currentCfg, so it should read the persisted whitelist on its first
+	// reload and classify the server as Added (cold load), not Modified.
+	freshHandler := reload.NewHandler(stackPath, nil, mcp.NewGateway(), nil, 0, 20611, nil, nil)
+
+	var registered []config.MCPServer
+	freshHandler.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []reload.ReplicaRuntime, stackPath string) error {
+		registered = append(registered, server)
+		return nil
+	})
+	freshResult, err := freshHandler.Reload(ctx)
+	if err != nil {
+		t.Fatalf("fresh Reload: %v", err)
+	}
+	if !freshResult.Success {
+		t.Fatalf("expected fresh reload success, got: %s", freshResult.Message)
+	}
+	if len(registered) != 1 {
+		t.Fatalf("expected exactly one server registration, got %d", len(registered))
+	}
+	if got := registered[0].Tools; len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("expected whitelist [a b] to survive daemon restart, got %v", got)
+	}
+}
