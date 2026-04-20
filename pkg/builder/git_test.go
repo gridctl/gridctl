@@ -195,27 +195,4 @@ func TestCloneOrUpdate_Update(t *testing.T) {
 	}
 }
 
-func TestCheckoutRef_InvalidRef(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping git test in short mode")
-	}
-
-	bareRepo := initBareRepo(t)
-	cloneDir := filepath.Join(t.TempDir(), "clone")
-	logger := newTestLogger()
-
-	_, err := cloneRepo(bareRepo, "", cloneDir, logger)
-	if err != nil {
-		t.Fatalf("clone: %v", err)
-	}
-
-	repo, err := git.PlainOpen(cloneDir)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-
-	err = checkoutRef(repo, "nonexistent-branch-xyz")
-	if err == nil {
-		t.Fatal("expected error for nonexistent ref")
-	}
-}
+// Checkout logic moved to pkg/git; see pkg/git/clone_test.go:TestCheckout_InvalidRef.
