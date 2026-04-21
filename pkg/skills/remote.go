@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
 
 	"github.com/gridctl/gridctl/pkg/builder"
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
@@ -33,22 +32,22 @@ type DiscoveredSkill struct {
 	ContentHash string
 }
 
-// skillsAuth returns a transport.AuthMethod built from the GITHUB_TOKEN env
-// var, or nil if the env var is not set. The token-backed flow will be
-// replaced by a pluggable Auther interface in a follow-up change; keeping it
-// as a private helper here preserves the current behavior.
-func skillsAuth() transport.AuthMethod {
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return &http.BasicAuth{Username: token, Password: ""}
+// authMethodFor maps an AuthConfig + URL into the concrete
+// transport.AuthMethod that go-git uses. Errors surface as-is from the
+// underlying Auther (e.g. ErrEmptyToken, ErrProtocolMismatch).
+func authMethodFor(cfg AuthConfig, url string) (transport.AuthMethod, error) {
+	auther, err := resolveAuther(cfg, url)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	return auther.AuthFor(url)
 }
 
 // CloneAndDiscover clones a repo and discovers all SKILL.md files.
-func CloneAndDiscover(repo, ref, subPath string, logger *slog.Logger) (*CloneResult, error) {
-	repoPath, err := cloneShallow(repo, ref, logger)
+func CloneAndDiscover(repo, ref, subPath string, auth AuthConfig, logger *slog.Logger) (*CloneResult, error) {
+	repoPath, err := cloneShallow(repo, ref, auth, logger)
 	if err != nil {
-		return nil, fmt.Errorf("cloning repository: %w", err)
+		return nil, fmt.Errorf("cloning repository: %w", gitpkg.RedactError(err))
 	}
 
 	commitSHA, err := gitpkg.HeadCommit(repoPath)
@@ -77,7 +76,7 @@ func CloneAndDiscover(repo, ref, subPath string, logger *slog.Logger) (*CloneRes
 }
 
 // FetchAndCompare fetches the latest from a remote and compares with current.
-func FetchAndCompare(repo, ref string, currentSHA string, logger *slog.Logger) (string, bool, error) {
+func FetchAndCompare(repo, ref, currentSHA string, auth AuthConfig, logger *slog.Logger) (string, bool, error) {
 	repoPath, err := builder.URLToPath(repo)
 	if err != nil {
 		return "", false, fmt.Errorf("getting cache path: %w", err)
@@ -88,8 +87,13 @@ func FetchAndCompare(repo, ref string, currentSHA string, logger *slog.Logger) (
 		return "", true, nil
 	}
 
-	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{Auth: skillsAuth()}, logger); err != nil {
-		logger.Warn("fetch failed", "error", err)
+	authMethod, err := authMethodFor(auth, repo)
+	if err != nil {
+		return currentSHA, false, gitpkg.RedactError(err)
+	}
+
+	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{Auth: authMethod}, logger); err != nil {
+		logger.Warn("fetch failed", "error", gitpkg.RedactError(err))
 		return currentSHA, false, nil
 	}
 
@@ -119,7 +123,7 @@ func ListRemoteTags(repoPath string) ([]string, error) {
 	return gitpkg.ListTags(repoPath)
 }
 
-func cloneShallow(url, ref string, logger *slog.Logger) (string, error) {
+func cloneShallow(url, ref string, auth AuthConfig, logger *slog.Logger) (string, error) {
 	if err := builder.EnsureReposCacheDir(); err != nil {
 		return "", fmt.Errorf("creating cache dir: %w", err)
 	}
@@ -131,7 +135,12 @@ func cloneShallow(url, ref string, logger *slog.Logger) (string, error) {
 
 	// If repo exists, fetch updates instead
 	if _, err := os.Stat(repoPath); err == nil {
-		return updateExisting(repoPath, ref, logger)
+		return updateExisting(repoPath, url, ref, auth, logger)
+	}
+
+	authMethod, err := authMethodFor(auth, url)
+	if err != nil {
+		return "", err
 	}
 
 	cloneRef := ref
@@ -144,7 +153,7 @@ func cloneShallow(url, ref string, logger *slog.Logger) (string, error) {
 		Ref:     cloneRef,
 		Depth:   1,
 		AllTags: true,
-		Auth:    skillsAuth(),
+		Auth:    authMethod,
 	}, logger)
 	if err != nil {
 		return "", fmt.Errorf("cloning: %w", err)
@@ -173,7 +182,7 @@ func cloneShallow(url, ref string, logger *slog.Logger) (string, error) {
 	return repoPath, nil
 }
 
-func updateExisting(repoPath, ref string, logger *slog.Logger) (string, error) {
+func updateExisting(repoPath, url, ref string, auth AuthConfig, logger *slog.Logger) (string, error) {
 	logger.Info("updating cached repository")
 
 	// Fail fast on a corrupt cache (mirrors previous behavior).
@@ -183,8 +192,13 @@ func updateExisting(repoPath, ref string, logger *slog.Logger) (string, error) {
 		return "", fmt.Errorf("opening cached repo (removed): %w", err)
 	}
 
-	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{AllTags: true, Auth: skillsAuth()}, logger); err != nil {
-		logger.Warn("fetch failed, using cached", "error", err)
+	authMethod, err := authMethodFor(auth, url)
+	if err != nil {
+		return "", err
+	}
+
+	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{AllTags: true, Auth: authMethod}, logger); err != nil {
+		logger.Warn("fetch failed, using cached", "error", gitpkg.RedactError(err))
 	}
 
 	if ref != "" {
