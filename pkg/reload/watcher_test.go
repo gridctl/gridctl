@@ -112,7 +112,10 @@ func TestWatcher_MultipleWritesDebounced(t *testing.T) {
 		callCount.Add(1)
 		return nil
 	})
-	watcher.SetDebounce(100 * time.Millisecond)
+	// Use a generous debounce window so the five rapid writes reliably
+	// coalesce even under slow CI runners and the -race detector, where
+	// each os.WriteFile + fsnotify propagation can take tens of ms.
+	watcher.SetDebounce(500 * time.Millisecond)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -134,8 +137,8 @@ func TestWatcher_MultipleWritesDebounced(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	// Wait for debounce
-	time.Sleep(300 * time.Millisecond)
+	// Wait for debounce + processing headroom.
+	time.Sleep(800 * time.Millisecond)
 
 	if callCount.Load() != 1 {
 		t.Errorf("expected rapid writes to be debounced to 1 call, got %d", callCount.Load())
