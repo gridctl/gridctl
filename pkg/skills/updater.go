@@ -127,7 +127,14 @@ func checkAllUpdates(registryDir string, logger *slog.Logger) *UpdateStatus {
 				return
 			}
 
-			newSHA, changed, err := FetchAndCompare(origin.Repo, origin.Ref, origin.CommitSHA, logger)
+			// Background check uses ambient auth only. A stored CredentialRef
+			// is recorded on origin, but resolving vault refs from a
+			// background goroutine requires a wired resolver — skip that
+			// source rather than fail loudly.
+			if origin.CredentialRef != "" {
+				return
+			}
+			newSHA, changed, err := FetchAndCompare(origin.Repo, origin.Ref, origin.CommitSHA, AuthConfig{}, logger)
 			if err != nil {
 				mu.Lock()
 				status.Errors = append(status.Errors, fmt.Sprintf("%s: %v", name, err))
