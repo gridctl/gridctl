@@ -2,25 +2,30 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
+	"github.com/gridctl/gridctl/pkg/config"
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 // SkillSourceStatus represents a skill source with its update status.
 type SkillSourceStatus struct {
-	Name           string              `json:"name"`
-	Repo           string              `json:"repo"`
-	Ref            string              `json:"ref,omitempty"`
-	Path           string              `json:"path,omitempty"`
-	AutoUpdate     bool                `json:"autoUpdate"`
-	UpdateInterval string              `json:"updateInterval"`
-	Skills         []SkillSourceEntry  `json:"skills"`
-	LastFetched    string              `json:"lastFetched,omitempty"`
-	CommitSHA      string              `json:"commitSha,omitempty"`
-	UpdateAvail    bool                `json:"updateAvailable"`
+	Name           string             `json:"name"`
+	Repo           string             `json:"repo"`
+	Ref            string             `json:"ref,omitempty"`
+	Path           string             `json:"path,omitempty"`
+	AutoUpdate     bool               `json:"autoUpdate"`
+	UpdateInterval string             `json:"updateInterval"`
+	Skills         []SkillSourceEntry `json:"skills"`
+	LastFetched    string             `json:"lastFetched,omitempty"`
+	CommitSHA      string             `json:"commitSha,omitempty"`
+	UpdateAvail    bool               `json:"updateAvailable"`
 }
 
 // SkillSourceEntry represents a single skill within a source.
@@ -46,8 +51,8 @@ type SkillPreview struct {
 
 // UpdateSummary represents pending updates across all sources.
 type UpdateSummary struct {
-	Available int                    `json:"available"`
-	Sources   []SourceUpdateSummary  `json:"sources"`
+	Available int                   `json:"available"`
+	Sources   []SourceUpdateSummary `json:"sources"`
 }
 
 // SourceUpdateSummary represents update status for a single source.
@@ -58,6 +63,103 @@ type SourceUpdateSummary struct {
 	Latest    string `json:"latestSha,omitempty"`
 	HasUpdate bool   `json:"hasUpdate"`
 	Error     string `json:"error,omitempty"`
+}
+
+// AuthRequest is the optional auth payload accepted on /api/skills/sources/*
+// endpoints. Raw Token values are transient; CredentialRef (e.g.
+// "${vault:GIT_TOKEN}") is resolved against the live vault on every request.
+type AuthRequest struct {
+	Method        string `json:"method,omitempty"`        // "token" | "ssh-agent" | "ssh-key" | ""
+	Token         string `json:"token,omitempty"`         // ephemeral plaintext
+	CredentialRef string `json:"credentialRef,omitempty"` // e.g. "${vault:GIT_TOKEN}"
+	SSHUser       string `json:"sshUser,omitempty"`
+	SSHKeyPath    string `json:"sshKeyPath,omitempty"`
+}
+
+// toAuthConfig converts a request-body AuthRequest into a skills.AuthConfig,
+// resolving any CredentialRef against the provided vault. An empty request
+// (no method, no ref, no token) yields a zero-valued AuthConfig that
+// signals ambient behavior.
+func (r *AuthRequest) toAuthConfig(v *vault.Store) (skills.AuthConfig, error) {
+	if r == nil || (r.Method == "" && r.Token == "" && r.CredentialRef == "" && r.SSHKeyPath == "") {
+		return skills.AuthConfig{}, nil
+	}
+
+	method := r.Method
+	if method == "" {
+		// Infer from provided fields: token-ish wins, then ssh-key.
+		switch {
+		case r.Token != "" || r.CredentialRef != "":
+			method = "token"
+		case r.SSHKeyPath != "":
+			method = "ssh-key"
+		}
+	}
+
+	token := r.Token
+	if r.CredentialRef != "" {
+		resolved, err := resolveCredentialRef(r.CredentialRef, v)
+		if err != nil {
+			return skills.AuthConfig{}, err
+		}
+		token = resolved
+	}
+
+	return skills.AuthConfig{
+		Method:        method,
+		Token:         token,
+		CredentialRef: r.CredentialRef,
+		SSHUser:       r.SSHUser,
+		SSHKeyPath:    r.SSHKeyPath,
+	}, nil
+}
+
+// resolveCredentialRef expands a "${vault:KEY}" reference against the live
+// vault. An unresolved reference is a hard error — we never fall through
+// to an unauthenticated clone.
+func resolveCredentialRef(ref string, v *vault.Store) (string, error) {
+	if v == nil {
+		return "", fmt.Errorf("vault not configured; cannot resolve %s", ref)
+	}
+	resolver := config.VaultResolver(v)
+	expanded, unresolved, _ := config.ExpandString(ref, resolver)
+	if len(unresolved) > 0 {
+		return "", fmt.Errorf("vault key %q not found", unresolved[0])
+	}
+	return expanded, nil
+}
+
+// credentialResolver returns a skills.CredentialResolver that expands
+// references against the server's live vault.
+func (s *Server) credentialResolver() skills.CredentialResolver {
+	return func(ref string) (string, error) {
+		return resolveCredentialRef(ref, s.vaultStore)
+	}
+}
+
+// gitErrorStatus maps a classified git error to an HTTP status code.
+func gitErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, gitpkg.ErrAuthRequired), errors.Is(err, gitpkg.ErrAuthFailed):
+		return http.StatusUnauthorized
+	case errors.Is(err, gitpkg.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, gitpkg.ErrProtocolMismatch),
+		errors.Is(err, gitpkg.ErrEmptyToken),
+		errors.Is(err, gitpkg.ErrHostKeyMismatch):
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+// writeGitError classifies and redacts an error from a git operation before
+// writing it to the response. Callers should use this rather than passing
+// raw go-git errors straight through writeJSONError.
+func writeGitError(w http.ResponseWriter, prefix string, err error) {
+	classified := gitpkg.ClassifyError(err)
+	redacted := gitpkg.RedactError(classified)
+	writeJSONError(w, prefix+redacted.Error(), gitErrorStatus(classified))
 }
 
 // handleSkillSourcesList returns all configured skill sources with update status.
@@ -134,12 +236,13 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Repo       string   `json:"repo"`
-		Ref        string   `json:"ref,omitempty"`
-		Path       string   `json:"path,omitempty"`
-		Trust      bool     `json:"trust,omitempty"`
-		NoActivate bool     `json:"noActivate,omitempty"`
-		Selected   []string `json:"selected,omitempty"`
+		Repo       string       `json:"repo"`
+		Ref        string       `json:"ref,omitempty"`
+		Path       string       `json:"path,omitempty"`
+		Trust      bool         `json:"trust,omitempty"`
+		NoActivate bool         `json:"noActivate,omitempty"`
+		Selected   []string     `json:"selected,omitempty"`
+		Auth       *AuthRequest `json:"auth,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -151,12 +254,19 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authCfg, err := req.Auth.toAuthConfig(s.vaultStore)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	store := s.registryServer.Store()
 	registryDir := store.Dir()
 	lockPath := skills.LockFilePath()
 	logger := slog.Default()
 
 	imp := skills.NewImporter(store, registryDir, lockPath, logger)
+	imp.SetCredentialResolver(s.credentialResolver())
 	result, err := imp.Import(skills.ImportOptions{
 		Repo:       req.Repo,
 		Ref:        req.Ref,
@@ -164,9 +274,10 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 		Trust:      req.Trust,
 		NoActivate: req.NoActivate,
 		Selected:   req.Selected,
+		Auth:       authCfg,
 	})
 	if err != nil {
-		writeJSONError(w, "Import failed: "+err.Error(), http.StatusBadRequest)
+		writeGitError(w, "Import failed: ", err)
 		return
 	}
 
@@ -239,10 +350,25 @@ func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	logger := slog.Default()
-	newSHA, changed, err := skills.FetchAndCompare(src.Repo, src.Ref, src.CommitSHA, logger)
+	var auth *AuthRequest
+	if r.Body != nil && r.ContentLength > 0 {
+		var req struct {
+			Auth *AuthRequest `json:"auth,omitempty"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		auth = req.Auth
+	}
+
+	authCfg, err := s.resolveCheckAuth(auth, src.CredentialRef)
 	if err != nil {
-		writeJSONError(w, "Check failed: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	logger := slog.Default()
+	newSHA, changed, err := skills.FetchAndCompare(src.Repo, src.Ref, src.CommitSHA, authCfg, logger)
+	if err != nil {
+		writeGitError(w, "Check failed: ", err)
 		return
 	}
 
@@ -252,6 +378,26 @@ func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, r *http.Request) 
 		"latestSha":  newSHA,
 		"hasUpdate":  changed,
 	})
+}
+
+// resolveCheckAuth prefers an explicit request-body auth; falls back to the
+// stored CredentialRef on the lock file entry when the request omits auth.
+func (s *Server) resolveCheckAuth(req *AuthRequest, storedRef string) (skills.AuthConfig, error) {
+	if req != nil {
+		return req.toAuthConfig(s.vaultStore)
+	}
+	if storedRef == "" {
+		return skills.AuthConfig{}, nil
+	}
+	token, err := resolveCredentialRef(storedRef, s.vaultStore)
+	if err != nil {
+		return skills.AuthConfig{}, err
+	}
+	return skills.AuthConfig{
+		Method:        "token",
+		Token:         token,
+		CredentialRef: storedRef,
+	}, nil
 }
 
 // handleSkillSourceUpdate applies available updates for a source.
@@ -280,14 +426,16 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 	store := s.registryServer.Store()
 	registryDir := store.Dir()
 	imp := skills.NewImporter(store, registryDir, lockPath, slog.Default())
+	imp.SetCredentialResolver(s.credentialResolver())
 
-	// Update each skill from this source
+	// Update each skill from this source. Importer.Update re-resolves the
+	// stored CredentialRef from the origin using the resolver we just set.
 	var results []map[string]any
 	for skillName := range src.Skills {
 		result, err := imp.Update(skillName, false, false)
 		entry := map[string]any{"skill": skillName}
 		if err != nil {
-			entry["error"] = err.Error()
+			entry["error"] = gitpkg.RedactError(err).Error()
 		} else {
 			entry["imported"] = len(result.Imported)
 			entry["warnings"] = result.Warnings
@@ -318,6 +466,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 	ref := r.URL.Query().Get("ref")
 	path := r.URL.Query().Get("path")
 
+	var storedRef string
 	if repo == "" {
 		lockPath := skills.LockFilePath()
 		lf, _ := skills.ReadLockFile(lockPath)
@@ -326,6 +475,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 			if ref == "" {
 				ref = src.Ref
 			}
+			storedRef = src.CredentialRef
 		}
 	}
 
@@ -334,10 +484,24 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	logger := slog.Default()
-	result, err := skills.CloneAndDiscover(repo, ref, path, logger)
+	// Optional auth can be supplied in the JSON body of POST; for GET,
+	// fall back to a stored CredentialRef if the lookup above found one.
+	var req struct {
+		Auth *AuthRequest `json:"auth,omitempty"`
+	}
+	if r.Body != nil && r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	authCfg, err := s.resolveCheckAuth(req.Auth, storedRef)
 	if err != nil {
-		writeJSONError(w, "Clone failed: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	logger := slog.Default()
+	result, err := skills.CloneAndDiscover(repo, ref, path, authCfg, logger)
+	if err != nil {
+		writeGitError(w, "Clone failed: ", err)
 		return
 	}
 
@@ -403,9 +567,16 @@ func (s *Server) handleSkillUpdates(w http.ResponseWriter, _ *http.Request) {
 			Current: src.CommitSHA,
 		}
 
-		newSHA, changed, err := skills.FetchAndCompare(src.Repo, src.Ref, src.CommitSHA, logger)
+		authCfg, authErr := s.resolveCheckAuth(nil, src.CredentialRef)
+		if authErr != nil {
+			entry.Error = authErr.Error()
+			summary.Sources = append(summary.Sources, entry)
+			continue
+		}
+
+		newSHA, changed, err := skills.FetchAndCompare(src.Repo, src.Ref, src.CommitSHA, authCfg, logger)
 		if err != nil {
-			entry.Error = err.Error()
+			entry.Error = gitpkg.RedactError(err).Error()
 		} else {
 			entry.Latest = newSHA
 			entry.HasUpdate = changed
