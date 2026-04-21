@@ -38,7 +38,7 @@ type FetchOptions struct {
 // a subsequent Checkout when they need to land on a non-branch ref (tag,
 // commit, remote branch) after the full-clone fallback.
 func Clone(destPath string, opts CloneOptions, logger *slog.Logger) (*gogit.Repository, error) {
-	logger.Info("cloning repository", "url", opts.URL)
+	logger.Info("cloning repository", "url", RedactURL(opts.URL))
 
 	cloneOpts := &gogit.CloneOptions{
 		URL:   opts.URL,
