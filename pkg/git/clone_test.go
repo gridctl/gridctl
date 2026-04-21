@@ -1,9 +1,11 @@
 package git
 
 import (
+	"bytes"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	gogit "github.com/go-git/go-git/v5"
@@ -14,6 +16,14 @@ import (
 
 func testLogger() *slog.Logger {
 	return logging.NewDiscardLogger()
+}
+
+// captureLogger returns a slog.Logger whose handler writes JSON records into
+// the returned buffer, for tests that assert on emitted log content.
+func captureLogger() (*slog.Logger, *bytes.Buffer) {
+	var buf bytes.Buffer
+	h := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	return slog.New(h), &buf
 }
 
 // initBareRepo creates a bare repo with one commit on master and one annotated
@@ -115,6 +125,31 @@ func TestClone_InvalidURL(t *testing.T) {
 	_, err := Clone(dest, CloneOptions{URL: "/nonexistent/path"}, testLogger())
 	if err == nil {
 		t.Fatal("expected error for invalid URL")
+	}
+}
+
+func TestClone_RedactsURLUserinfoInLog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping git test in short mode")
+	}
+
+	logger, buf := captureLogger()
+	dest := filepath.Join(t.TempDir(), "clone")
+	url := "https://ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@127.0.0.1:1/does-not-exist"
+
+	// Error is expected — we're only asserting on the log line the Clone
+	// helper emits before attempting the clone.
+	_, _ = Clone(dest, CloneOptions{URL: url}, logger)
+
+	got := buf.String()
+	if strings.Contains(got, "ghp_") {
+		t.Errorf("log leaked PAT userinfo: %s", got)
+	}
+	if strings.Contains(got, "@127.0.0.1") {
+		t.Errorf("log retained userinfo@host: %s", got)
+	}
+	if !strings.Contains(got, "https://127.0.0.1:1/does-not-exist") {
+		t.Errorf("expected redacted URL in log, got: %s", got)
 	}
 }
 
