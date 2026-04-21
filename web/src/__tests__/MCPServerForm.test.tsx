@@ -498,6 +498,57 @@ describe('YAML serialization — new fields', () => {
     expect(yaml).not.toContain('tls:');
   });
 
+  it('serializes source.auth as a credential_ref (vault reference)', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'my-server',
+        serverType: 'source',
+        source: {
+          type: 'git',
+          url: 'https://gitlab.internal/team/mcp-foo.git',
+          ref: 'main',
+          auth: { method: 'token', credentialRef: '${vault:GIT_TOKEN}' },
+        },
+      },
+    });
+    expect(yaml).toContain('auth:');
+    expect(yaml).toContain('method: token');
+    expect(yaml).toContain('credential_ref: "${vault:GIT_TOKEN}"');
+  });
+
+  it('never emits a raw token field under source.auth', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'my-server',
+        serverType: 'source',
+        source: {
+          type: 'git',
+          url: 'https://gitlab.internal/team/mcp-foo.git',
+          auth: { method: 'token', credentialRef: '${vault:GIT_TOKEN}' },
+        },
+      },
+    });
+    expect(yaml).not.toMatch(/\btoken:\s/);
+  });
+
+  it('omits the source.auth block entirely when credentialRef is missing', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'my-server',
+        serverType: 'source',
+        source: {
+          type: 'git',
+          url: 'https://github.com/public/repo.git',
+        },
+      },
+    });
+    expect(yaml).not.toContain('auth:');
+    expect(yaml).not.toContain('credential_ref');
+  });
+
   it('serializes pin_schemas: true when enabled', () => {
     const yaml = buildYAML({
       type: 'mcp-server',
