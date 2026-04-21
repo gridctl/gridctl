@@ -12,12 +12,39 @@ import (
 
 // SkillSource defines a remote skill source in skills.yaml.
 type SkillSource struct {
-	Name           string `yaml:"name" json:"name"`
-	Repo           string `yaml:"repo" json:"repo"`
-	Ref            string `yaml:"ref,omitempty" json:"ref,omitempty"`
-	Path           string `yaml:"path,omitempty" json:"path,omitempty"`
-	AutoUpdate     *bool  `yaml:"auto_update,omitempty" json:"autoUpdate,omitempty"`
-	UpdateInterval string `yaml:"update_interval,omitempty" json:"updateInterval,omitempty"`
+	Name           string      `yaml:"name" json:"name"`
+	Repo           string      `yaml:"repo" json:"repo"`
+	Ref            string      `yaml:"ref,omitempty" json:"ref,omitempty"`
+	Path           string      `yaml:"path,omitempty" json:"path,omitempty"`
+	AutoUpdate     *bool       `yaml:"auto_update,omitempty" json:"autoUpdate,omitempty"`
+	UpdateInterval string      `yaml:"update_interval,omitempty" json:"updateInterval,omitempty"`
+	Auth           *SourceAuth `yaml:"auth,omitempty" json:"auth,omitempty"`
+}
+
+// SourceAuth is the declarative auth block on a skills.yaml source.
+// Raw tokens must NOT appear here — use CredentialRef (e.g.
+// "${vault:GIT_TOKEN}") which is resolved against the live vault at
+// clone/fetch time.
+type SourceAuth struct {
+	Method        string `yaml:"method,omitempty" json:"method,omitempty"`
+	CredentialRef string `yaml:"credential_ref,omitempty" json:"credentialRef,omitempty"`
+	SSHUser       string `yaml:"ssh_user,omitempty" json:"sshUser,omitempty"`
+	SSHKeyPath    string `yaml:"ssh_key_path,omitempty" json:"sshKeyPath,omitempty"`
+}
+
+// ToAuthConfig converts the declarative block into a runtime AuthConfig.
+// CredentialRef is copied through unchanged; callers are responsible for
+// resolving it to a raw Token before invoking the importer.
+func (a *SourceAuth) ToAuthConfig() AuthConfig {
+	if a == nil {
+		return AuthConfig{}
+	}
+	return AuthConfig{
+		Method:        a.Method,
+		CredentialRef: a.CredentialRef,
+		SSHUser:       a.SSHUser,
+		SSHKeyPath:    a.SSHKeyPath,
+	}
 }
 
 // SkillsConfig represents the skills.yaml file.
