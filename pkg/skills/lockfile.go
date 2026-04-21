@@ -16,13 +16,16 @@ type LockFile struct {
 
 // LockedSource records the resolved state of a skill source.
 type LockedSource struct {
-	Repo        string                `yaml:"repo"`
-	Ref         string                `yaml:"ref"`
-	ResolvedRef string                `yaml:"resolved_ref,omitempty"`
-	CommitSHA   string                `yaml:"commit_sha"`
-	FetchedAt   time.Time             `yaml:"fetched_at"`
-	ContentHash string                `yaml:"content_hash"`
+	Repo        string                 `yaml:"repo"`
+	Ref         string                 `yaml:"ref"`
+	ResolvedRef string                 `yaml:"resolved_ref,omitempty"`
+	CommitSHA   string                 `yaml:"commit_sha"`
+	FetchedAt   time.Time              `yaml:"fetched_at"`
+	ContentHash string                 `yaml:"content_hash"`
 	Skills      map[string]LockedSkill `yaml:"skills"`
+	// CredentialRef is an opaque reference like "${vault:GIT_TOKEN}" used to
+	// re-resolve credentials on source update. Raw tokens are never stored.
+	CredentialRef string `yaml:"credential_ref,omitempty"`
 }
 
 // LockedSkill records per-skill metadata within a source.
