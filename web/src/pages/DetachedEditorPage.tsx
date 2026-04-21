@@ -170,7 +170,7 @@ function DetachedEditorContent() {
           {itemName ? `Editing: ${itemName}` : 'New skill'}
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
           Detached Editor
         </span>
       </div>
