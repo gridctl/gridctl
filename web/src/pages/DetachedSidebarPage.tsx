@@ -273,7 +273,7 @@ function DetachedSidebarPageContent() {
           {selectedData?.type === 'mcp-server' ? 'MCP Server' : selectedData?.type === 'resource' ? 'Resource' : ''}
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
           Detached Window
         </span>
       </footer>
