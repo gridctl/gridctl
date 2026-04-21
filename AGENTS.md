@@ -134,9 +134,15 @@ gridctl/
 │   ├── builder/          # Image building
 │   │   ├── types.go      # BuildOptions, BuildResult
 │   │   ├── cache.go      # ~/.gridctl/cache management
-│   │   ├── git.go        # Git clone/update
+│   │   ├── git.go        # Git clone/update (thin wrapper over pkg/git)
 │   │   ├── docker.go     # Docker build
 │   │   └── builder.go    # Main builder
+│   ├── git/              # Shared git helpers for skills + builder
+│   │   ├── clone.go      # Clone, Fetch, Checkout, ResolveRef, HeadCommit, ListTags
+│   │   ├── auth.go       # Auther interface: NoAuth, HTTPSTokenAuth, SSHAgentAuth, SSHKeyFileAuth
+│   │   ├── detect.go     # DetectProtocol (Protocol: HTTPS, SSH, Local, Unknown)
+│   │   ├── errors.go     # Sentinel errors + ClassifyError (maps go-git errors to ErrAuth*, ErrNotFound, ErrHostKeyMismatch, etc.)
+│   │   └── redact.go     # RedactURL, RedactString, RedactError — scrubs PATs and embedded userinfo
 │   ├── output/           # CLI output formatting
 │   │   ├── output.go     # Printer, banner display, and progress helpers
 │   │   ├── styles.go     # Color schemes
@@ -178,12 +184,12 @@ gridctl/
 │   │   ├── codemode_sandbox.go # goja JavaScript sandbox
 │   │   └── codemode_transpile.go # esbuild ES2020+ → ES2015 transpilation
 │   ├── skills/           # Remote skill management (import, update, lockfile)
-│   │   ├── config.go     # Skill source configuration
+│   │   ├── config.go     # Skill source configuration (+ SourceAuth declarative block)
 │   │   ├── fingerprint.go # Content fingerprinting for change detection
-│   │   ├── importer.go   # Remote skill import (git clone/pull)
-│   │   ├── lockfile.go   # Lock file for pinned skill refs
-│   │   ├── origin.go     # Origin tracking per skill
-│   │   ├── remote.go     # Remote git operations
+│   │   ├── importer.go   # Remote skill import (git clone/pull) + AuthConfig + CredentialResolver
+│   │   ├── lockfile.go   # Lock file for pinned skill refs (+ CredentialRef per source)
+│   │   ├── origin.go     # Origin tracking per skill (+ CredentialRef sidecar field)
+│   │   ├── remote.go     # Remote git operations (CloneAndDiscover, FetchAndCompare)
 │   │   ├── scanner.go    # Registry directory scanner
 │   │   └── updater.go    # Skill update orchestration
 │   ├── format/           # Output format converters
@@ -242,6 +248,49 @@ gridctl/
         ├── replica_stackless_mode_test.go # Multi-replica register in stackless mode
         └── replica_mixed_counts_test.go   # 1-replica + 3-replica server in one gateway
 ```
+
+## Private Git Auth
+
+Gridctl clones private git repositories in two places — skill imports (`pkg/skills`) and MCP server source builds (`pkg/builder`). Both go through the shared `pkg/git` package.
+
+**Layering:**
+
+```
+cmd/gridctl/skill.go              internal/api/skills.go
+    │ --auth-token / --vault-key       │ { "auth": { method, token, credentialRef, ... } }
+    └──────────────┬───────────────────┘
+                   │ skills.AuthConfig
+                   ▼
+            pkg/skills/importer.go          pkg/builder/git.go
+                   │ BuildAuther()                 │
+                   ▼                               ▼
+                                  pkg/git/auth.go (Auther interface)
+                                  ├── NoAuth                (public / ambient)
+                                  ├── HTTPSTokenAuth        (PAT → http.BasicAuth)
+                                  ├── SSHAgentAuth          (ambient SSH_AUTH_SOCK)
+                                  └── SSHKeyFileAuth        (on-disk key)
+                                           │
+                                           ▼
+                              go-git transport.AuthMethod → clone/fetch
+```
+
+**Auther interface.** `pkg/git.Auther.AuthFor(url)` returns the `transport.AuthMethod` go-git uses. Each implementation validates its own inputs eagerly (`ErrEmptyToken`, `ErrProtocolMismatch`, `ErrSSHAgentMissing`) so a misconfigured auth fails fast rather than falling through to an unauthenticated clone that returns a cryptic "not found". `pkg/git.DetectProtocol(url)` classifies URLs as `HTTPS`, `SSH`, `Local`, or `Unknown`; implementations reject URLs whose protocol doesn't match their mechanism.
+
+**Resolver threading — `${vault:KEY}` is resolved once, at the boundary.**
+
+- The **CLI** (`cmd/gridctl/skill.go`) resolves `--vault-key GIT_TOKEN` into a raw token in `buildAuthConfigFromFlags` before calling `Importer.Import`. It also registers a `skills.CredentialResolver` on the importer so `skill update` can re-resolve stored references automatically.
+- The **API** (`internal/api/skills.go`) does the same inside `AuthRequest.toAuthConfig`, consulting the live `vault.Store` on every request so rotated secrets take effect immediately.
+- `skills.AuthConfig` carries both the transient `Token` and the opaque `CredentialRef` (e.g. `${vault:GIT_TOKEN}`). The importer passes `CredentialRef` through to `Origin.CredentialRef` and `LockedSource.CredentialRef`; the `Token` never leaves the request/command lifecycle.
+
+**Credential-never-persisted-raw invariant.** Raw tokens and SSH passphrases live in exactly one place on disk: the encrypted vault (`pkg/vault`). Nothing else writes them.
+
+- `Origin.CredentialRef` and `LockedSource.CredentialRef` store only the reference string.
+- `skills.yaml` (`SourceAuth.CredentialRef`) stores only the reference string.
+- Error paths go through `git.RedactError` before reaching logs, API responses, or CLI stderr. `git.RedactString` scrubs known PAT patterns (`ghp_…`, `github_pat_…`, `glpat-…`) and embedded URL userinfo; `git.RedactURL` strips userinfo from a bare URL. Callers should prefer `credential_ref` + vault over embedding tokens in URLs, since redaction is a defense-in-depth layer, not a substitute for structured credential handling.
+
+**Error classification.** `git.ClassifyError` maps raw go-git errors into sentinels (`ErrAuthRequired`, `ErrAuthFailed`, `ErrNotFound`, `ErrHostKeyMismatch`, `ErrSSHAgentMissing`). The CLI turns these into human hints via `printSkillAuthHint`; the API maps them to HTTP status codes via `gitErrorStatus` (401, 404, 400, 500).
+
+**Scope.** v1 ships HTTPS PAT (via vault or ephemeral flag / env) and SSH-via-agent; SSH key-file auth is wired but lacks a stricter host-key policy — `SSHKeyFileAuth.KnownHostsPath` is reserved for follow-up work. Out of scope for v1: OAuth device flow, GitHub App tokens, OS keychain, 1Password/Bitwarden passthrough, credential templates, Git LFS auth.
 
 ## Build Commands
 

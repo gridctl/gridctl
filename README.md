@@ -284,6 +284,35 @@ output:
 
 Steps without dependencies run in parallel. Template expressions reference inputs (`{{ inputs.x }}`) and prior step results (`{{ steps.id.result }}`). Each step supports retry policies, timeouts, conditional execution, and configurable error handling (`fail` / `skip` / `continue`). The Web UI includes a visual workflow designer with Code, Visual, and Test modes. See [`examples/registry/`](examples/registry/) for working examples.
 
+### Private Repositories
+
+Both `gridctl skill add` and MCP server `source` blocks can clone private git repositories. Credentials come from one of three places, in priority order:
+
+1. **Vault reference** _(recommended)_ — the raw token stays in the encrypted vault; only a `${vault:KEY}` reference is persisted to the skill origin / lock file.
+2. **Ephemeral flag** — `--auth-token <PAT>` for one-shot CI use; never written to disk.
+3. **Ambient environment** — SSH URLs use ssh-agent + `~/.ssh/known_hosts`; HTTPS URLs fall back to `GITHUB_TOKEN` if set.
+
+```bash
+# Public repo (unchanged)
+gridctl skill add https://github.com/acme/public-skills
+
+# Private HTTPS with a vault-stored PAT (re-resolved on every update)
+gridctl vault set GIT_TOKEN ghp_xxxxxxxxxxxxxxxxxxxx
+gridctl skill add https://github.com/acme/private-skills --vault-key GIT_TOKEN
+
+# Private HTTPS with an ephemeral PAT (CI use; not persisted)
+gridctl skill add https://github.com/acme/private-skills --auth-token "$GIT_TOKEN"
+
+# Private SSH via ambient ssh-agent (no flags)
+gridctl skill add git@github.com:acme/private-skills.git
+```
+
+`--auth-token` and `--vault-key` are mutually exclusive. Both flags also work on `gridctl skill try`. `gridctl skill update` automatically re-resolves any stored `${vault:KEY}` reference.
+
+In the web wizard, the "Add skill source" step has an inline, collapsible **Authentication** card. It stays collapsed for public repos and auto-expands when a scan returns an auth-class error, offering two modes: pick an existing vault secret or paste a one-shot token. The same subsection is available in the MCP server form when the source type is `git`.
+
+Raw tokens are never written outside the encrypted vault — neither to the skill origin nor the lock file. Error and log paths strip embedded URL userinfo (`https://TOKEN@host/...`) and known PAT patterns (`ghp_…`, `github_pat_…`, `glpat-…`) before they reach the API or CLI.
+
 ### Distributed Tracing
 
 Every tool call through the gateway is captured as an OpenTelemetry trace. Spans record transport type, server name, duration, and error state. The last 1000 traces are kept in a ring buffer and are queryable via CLI or the Web UI.
@@ -341,6 +370,9 @@ gridctl vault lock / unlock          # Lock or unlock the vault
 gridctl vault change-passphrase      # Change the vault encryption passphrase
 gridctl skill list                   # List skills in the registry
 gridctl skill add <repo-url>         # Import skills from a remote git repository
+gridctl skill add <repo-url> --auth-token <pat>  # ...with ephemeral HTTPS PAT (CI; not persisted)
+gridctl skill add <repo-url> --vault-key <key>   # ...with a PAT resolved from ${vault:KEY}
+gridctl skill add <repo-url> --ssh-key <path>    # ...with an on-disk SSH private key
 gridctl skill update [name]          # Update imported skills (all if no name given)
 gridctl skill remove <name>          # Remove an imported skill
 gridctl skill pin <name> <ref>       # Pin a skill to a specific git ref
