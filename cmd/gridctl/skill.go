@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/config"
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -33,18 +36,25 @@ var (
 	skillAddTrust      bool
 	skillAddForce      bool
 	skillAddRename     string
+	skillAddAuthToken  string
+	skillAddVaultKey   string
+	skillAddSSHKey     string
 	skillListRemote    bool
 	skillListFormat    string
 	skillUpdateDryRun  bool
 	skillUpdateForce   bool
 	skillTryDuration   string
+	skillTryAuthToken  string
+	skillTryVaultKey   string
+	skillTrySSHKey     string
 )
 
 var skillAddCmd = &cobra.Command{
-	Use:   "add <repo-url>",
-	Short: "Import skills from a git repository",
-	Long:  "Clone a repository, discover SKILL.md files, and import them into the local registry.",
-	Args:  cobra.ExactArgs(1),
+	Use:     "add <repo-url>",
+	Short:   "Import skills from a git repository",
+	Long:    "Clone a repository, discover SKILL.md files, and import them into the local registry.",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: validateSkillAuthFlags(&skillAddAuthToken, &skillAddVaultKey),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSkillAdd(args[0])
 	},
@@ -114,10 +124,11 @@ var skillValidateCmd = &cobra.Command{
 }
 
 var skillTryCmd = &cobra.Command{
-	Use:   "try <repo-url>",
-	Short: "Temporarily import a skill",
-	Long:  "Import a skill temporarily for evaluation. Automatically removed after the specified duration.",
-	Args:  cobra.ExactArgs(1),
+	Use:     "try <repo-url>",
+	Short:   "Temporarily import a skill",
+	Long:    "Import a skill temporarily for evaluation. Automatically removed after the specified duration.",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: validateSkillAuthFlags(&skillTryAuthToken, &skillTryVaultKey),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSkillTry(args[0])
 	},
@@ -130,6 +141,9 @@ func init() {
 	skillAddCmd.Flags().BoolVar(&skillAddTrust, "trust", false, "Skip security scan confirmation")
 	skillAddCmd.Flags().BoolVar(&skillAddForce, "force", false, "Overwrite existing skills")
 	skillAddCmd.Flags().StringVar(&skillAddRename, "rename", "", "Rename the skill on import (single skill only)")
+	skillAddCmd.Flags().StringVar(&skillAddAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted; intended for CI use)")
+	skillAddCmd.Flags().StringVar(&skillAddVaultKey, "vault-key", "", "Resolve the PAT from this vault key (e.g. GIT_TOKEN)")
+	skillAddCmd.Flags().StringVar(&skillAddSSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
 
 	skillListCmd.Flags().BoolVar(&skillListRemote, "remote", false, "Show only remote (imported) skills")
 	skillListCmd.Flags().StringVar(&skillListFormat, "format", "", "Output format (json)")
@@ -138,6 +152,9 @@ func init() {
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateForce, "force", false, "Force update even if no changes detected")
 
 	skillTryCmd.Flags().StringVar(&skillTryDuration, "duration", "10m", "Duration before auto-cleanup")
+	skillTryCmd.Flags().StringVar(&skillTryAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted)")
+	skillTryCmd.Flags().StringVar(&skillTryVaultKey, "vault-key", "", "Resolve the PAT from this vault key")
+	skillTryCmd.Flags().StringVar(&skillTrySSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
 
 	skillCmd.AddCommand(skillAddCmd)
 	skillCmd.AddCommand(skillListCmd)
@@ -172,11 +189,92 @@ func skillDirPath(sk *registry.AgentSkill) string {
 
 func newImporter(store *registry.Store) *skills.Importer {
 	logger := slog.Default()
-	return skills.NewImporter(store, registryDir(), skills.LockFilePath(), logger)
+	imp := skills.NewImporter(store, registryDir(), skills.LockFilePath(), logger)
+	imp.SetCredentialResolver(cliCredentialResolver)
+	return imp
+}
+
+// validateSkillAuthFlags returns a PreRunE that rejects mutually exclusive
+// auth flag combinations.
+func validateSkillAuthFlags(token, vaultKey *string) func(*cobra.Command, []string) error {
+	return func(_ *cobra.Command, _ []string) error {
+		if *token != "" && *vaultKey != "" {
+			return errors.New("--auth-token and --vault-key are mutually exclusive")
+		}
+		return nil
+	}
+}
+
+// buildAuthConfigFromFlags translates CLI auth flags into skills.AuthConfig.
+// When --vault-key is set, the vault is unlocked (prompting if necessary)
+// and the reference is resolved immediately so Import sees a ready Token.
+func buildAuthConfigFromFlags(token, vaultKey, sshKey string) (skills.AuthConfig, error) {
+	switch {
+	case sshKey != "":
+		return skills.AuthConfig{
+			Method:        "ssh-key",
+			SSHKeyPath:    sshKey,
+			SSHPassphrase: os.Getenv("GRIDCTL_SSH_KEY_PASSPHRASE"),
+		}, nil
+	case token != "":
+		return skills.AuthConfig{Method: "token", Token: token}, nil
+	case vaultKey != "":
+		ref := fmt.Sprintf("${vault:%s}", vaultKey)
+		resolved, err := cliCredentialResolver(ref)
+		if err != nil {
+			return skills.AuthConfig{}, err
+		}
+		return skills.AuthConfig{Method: "token", Token: resolved, CredentialRef: ref}, nil
+	}
+	return skills.AuthConfig{}, nil
+}
+
+// cliCredentialResolver resolves a "${vault:KEY}" reference via the local
+// vault, unlocking it if necessary. Wired onto the CLI's Importer so
+// `skill update` can re-resolve stored references automatically.
+func cliCredentialResolver(ref string) (string, error) {
+	store, err := loadVault()
+	if err != nil {
+		return "", err
+	}
+	if err := ensureUnlocked(store); err != nil {
+		return "", err
+	}
+	resolver := config.VaultResolver(store)
+	expanded, unresolved, _ := config.ExpandString(ref, resolver)
+	if len(unresolved) > 0 {
+		return "", fmt.Errorf("vault key %q not found", unresolved[0])
+	}
+	return expanded, nil
+}
+
+// printSkillAuthHint emits an actionable suggestion for a classified git
+// auth error. Returns true when a hint was printed.
+func printSkillAuthHint(err error) bool {
+	switch {
+	case errors.Is(err, gitpkg.ErrAuthRequired), errors.Is(err, gitpkg.ErrNotFound):
+		fmt.Fprintln(os.Stderr, "hint: this repository may be private; add credentials with --auth-token or --vault-key")
+		return true
+	case errors.Is(err, gitpkg.ErrAuthFailed):
+		fmt.Fprintln(os.Stderr, "hint: credentials were rejected; verify the token has repo-read access")
+		return true
+	case errors.Is(err, gitpkg.ErrSSHAgentMissing):
+		fmt.Fprintln(os.Stderr, `hint: ssh-agent not detected; run eval "$(ssh-agent -s)" && ssh-add, or use --auth-token`)
+		return true
+	case errors.Is(err, gitpkg.ErrHostKeyMismatch):
+		fmt.Fprintln(os.Stderr, "hint: the SSH host key does not match ~/.ssh/known_hosts — investigate before retrying")
+		return true
+	}
+	return false
 }
 
 func runSkillAdd(repoURL string) error {
 	store, err := loadRegistry()
+	if err != nil {
+		return err
+	}
+
+	authCfg, err := buildAuthConfigFromFlags(skillAddAuthToken, skillAddVaultKey, skillAddSSHKey)
 	if err != nil {
 		return err
 	}
@@ -190,9 +288,12 @@ func runSkillAdd(repoURL string) error {
 		NoActivate: skillAddNoActivate,
 		Force:      skillAddForce,
 		Rename:     skillAddRename,
+		Auth:       authCfg,
 	})
 	if err != nil {
-		return err
+		classified := gitpkg.ClassifyError(err)
+		printSkillAuthHint(classified)
+		return gitpkg.RedactError(classified)
 	}
 
 	printer := output.New()
@@ -459,14 +560,22 @@ func runSkillTry(repoURL string) error {
 		return err
 	}
 
+	authCfg, err := buildAuthConfigFromFlags(skillTryAuthToken, skillTryVaultKey, skillTrySSHKey)
+	if err != nil {
+		return err
+	}
+
 	imp := newImporter(store)
 	result, err := imp.Import(skills.ImportOptions{
 		Repo:  repoURL,
 		Trust: true,
 		Force: true,
+		Auth:  authCfg,
 	})
 	if err != nil {
-		return err
+		classified := gitpkg.ClassifyError(err)
+		printSkillAuthHint(classified)
+		return gitpkg.RedactError(classified)
 	}
 
 	printer := output.New()
