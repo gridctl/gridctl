@@ -13,6 +13,7 @@ import {
   Zap,
   AlertCircle,
   KeyRound,
+  ShieldCheck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
@@ -641,6 +642,20 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                       />
                     </div>
                   </div>
+                  <SourceAuthField
+                    value={data.source?.auth?.credentialRef}
+                    onChange={(credentialRef) =>
+                      onChange({
+                        source: {
+                          ...data.source,
+                          type: 'git',
+                          auth: credentialRef
+                            ? { method: 'token', credentialRef }
+                            : undefined,
+                        } as MCPServerFormData['source'],
+                      })
+                    }
+                  />
                 </>
               ) : (
                 <div>
@@ -1434,6 +1449,71 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           </div>
         )}
       </Section>
+    </div>
+  );
+}
+
+// SourceAuthField — inline collapsible "Repository Authentication" block for
+// private git sources. Persisted to YAML as a vault reference only (no raw
+// tokens); the server resolves it against the live vault at clone time.
+function SourceAuthField({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange: (credentialRef: string | undefined) => void;
+}) {
+  const [open, setOpen] = useState(Boolean(value));
+  return (
+    <div
+      className={cn(
+        'rounded-lg border border-border/30 bg-white/[0.02] transition-colors',
+        open && 'border-border/50 bg-white/[0.03]',
+      )}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+      >
+        <ShieldCheck size={12} className="text-primary/70" />
+        <span className="font-medium">Repository Authentication</span>
+        <span className="text-text-muted text-[10px]">
+          {value ? '' : '(optional, for private repos)'}
+        </span>
+        <span className="ml-auto text-text-muted">
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border/20">
+          <p className="text-[10px] text-text-muted">
+            Choose a vault key that holds a Personal Access Token. The server
+            resolves it at clone time; the raw value never enters the YAML.
+          </p>
+          <div className="flex items-center gap-2">
+            {value ? (
+              <div className="flex-1 flex items-center justify-between gap-2 bg-background/60 border border-border/40 rounded-md px-2 py-1.5 text-[10px] font-mono text-text-primary">
+                <span className="truncate">{value}</span>
+                <button
+                  type="button"
+                  onClick={() => onChange(undefined)}
+                  className="text-text-muted hover:text-status-error transition-colors"
+                  aria-label="Clear vault selection"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex-1 text-[10px] text-text-muted italic px-1">
+                No credential selected
+              </div>
+            )}
+            <SecretsPopover onSelect={onChange} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
