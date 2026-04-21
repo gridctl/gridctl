@@ -582,6 +582,80 @@ a2a-agents:
 
 ---
 
+## Skill Sources
+
+Skill sources are declared in `~/.gridctl/skills.yaml`. Each source points at a git repository that gridctl clones to discover `SKILL.md` files. Sources may be public or authenticated.
+
+```yaml
+defaults:
+  auto_update: true
+  update_interval: 24h
+
+sources:
+  - name: public-skills
+    repo: https://github.com/acme/public-skills
+    ref: main
+
+  - name: private-skills
+    repo: https://github.com/acme/private-skills
+    ref: v1.2.0
+    auth:
+      method: token
+      credential_ref: "${vault:GIT_TOKEN}"
+
+  - name: private-ssh
+    repo: git@github.com:acme/private-skills.git
+    auth:
+      method: ssh-agent
+```
+
+### All Skill Source Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | No | Derived from repo URL | Unique source name |
+| `repo` | string | **Yes** | — | Git repository URL (HTTPS or SSH) |
+| `ref` | string | No | Default branch | Branch, tag, or semver constraint (e.g. `^1.2`) |
+| `path` | string | No | — | Subdirectory containing `SKILL.md` files |
+| `auto_update` | bool | No | Inherits `defaults.auto_update` | Enable background updates for this source |
+| `update_interval` | duration | No | Inherits `defaults.update_interval` | Poll interval (e.g. `1h`, `24h`) |
+| `auth` | object | No | — | Authentication block for private repos (see [Auth](#skill-source-auth)) |
+
+### Skill Source Auth
+
+Declares how gridctl authenticates when cloning or fetching this repository. Raw tokens must **never** appear in `skills.yaml` — use `credential_ref` to point at a vault key.
+
+```yaml
+auth:
+  method: token
+  credential_ref: "${vault:GIT_TOKEN}"
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `method` | string | **Yes** | — | One of `"token"`, `"ssh-agent"`, `"ssh-key"`, or `"none"` |
+| `credential_ref` | string | Conditional | — | `${vault:KEY}` reference resolved at clone/fetch time. Required for `"token"` |
+| `ssh_user` | string | No | `git` | SSH username used with `"ssh-agent"` or `"ssh-key"` |
+| `ssh_key_path` | string | Conditional | — | Path to a private key file. Required for `"ssh-key"` |
+
+**Method behavior:**
+
+| Method | Transport | Credential source | Persisted |
+|--------|-----------|-------------------|-----------|
+| `token` | HTTPS | `credential_ref` (vault) — resolved on every clone/fetch | Reference only |
+| `ssh-agent` | SSH | Ambient `SSH_AUTH_SOCK` | None |
+| `ssh-key` | SSH | `ssh_key_path` on disk (optionally decrypted with `GRIDCTL_SSH_KEY_PASSPHRASE`) | Path only |
+| `none` / omitted | HTTPS or SSH | Ambient `GITHUB_TOKEN` env for HTTPS; `SSH_AUTH_SOCK` for SSH | None |
+
+**Security rules:**
+
+- Raw PAT or SSH key material must never appear in `skills.yaml`, the lock file, or origin sidecars.
+- `credential_ref` is the only credential field persisted; the live vault is consulted on every remote operation so rotating a secret takes effect immediately.
+- Prefer `credential_ref` over embedding credentials in the `repo` URL (`https://TOKEN@host/...`). Any userinfo or known PAT patterns that do leak into errors and logs are scrubbed by the redaction layer, but vault references keep them out of on-disk state entirely.
+- The CLI equivalents are `--auth-token <pat>` (ephemeral), `--vault-key <key>` (persisted as `credential_ref`), and `--ssh-key <path>` on `skill add` / `skill try`.
+
+---
+
 ## Variable Expansion
 
 String values in the configuration support variable expansion:
