@@ -18,6 +18,10 @@ type Origin struct {
 	ImportedAt  time.Time    `json:"importedAt"`
 	ContentHash string       `json:"contentHash"`
 	Fingerprint *Fingerprint `json:"fingerprint,omitempty"`
+	// CredentialRef is an opaque reference like "${vault:GIT_TOKEN}" used to
+	// re-resolve credentials on skill update. Raw token values are never
+	// persisted — only the reference string.
+	CredentialRef string `json:"credentialRef,omitempty"`
 }
 
 const originFileName = ".origin.json"

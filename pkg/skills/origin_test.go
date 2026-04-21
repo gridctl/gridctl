@@ -76,3 +76,43 @@ func TestReadOriginInvalid(t *testing.T) {
 	_, err := ReadOrigin(dir)
 	assert.Error(t, err)
 }
+
+func TestOrigin_CredentialRefRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+
+	origin := &Origin{
+		Repo:          "https://github.com/org/private",
+		Ref:           "main",
+		CommitSHA:     "deadbeef",
+		ImportedAt:    time.Now().UTC(),
+		ContentHash:   "aabbcc",
+		CredentialRef: "${vault:GIT_TOKEN}",
+	}
+	require.NoError(t, WriteOrigin(dir, origin))
+
+	// Verify the token REFERENCE is persisted but no raw value ever is.
+	raw, err := os.ReadFile(filepath.Join(dir, ".origin.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "${vault:GIT_TOKEN}")
+
+	got, err := ReadOrigin(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "${vault:GIT_TOKEN}", got.CredentialRef)
+}
+
+func TestOrigin_NoCredentialRefOmitted(t *testing.T) {
+	dir := t.TempDir()
+
+	origin := &Origin{
+		Repo:        "https://github.com/org/public",
+		Ref:         "main",
+		CommitSHA:   "abc",
+		ImportedAt:  time.Now().UTC(),
+		ContentHash: "hash",
+	}
+	require.NoError(t, WriteOrigin(dir, origin))
+
+	raw, err := os.ReadFile(filepath.Join(dir, ".origin.json"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "credentialRef")
+}

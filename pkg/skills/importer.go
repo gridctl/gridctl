@@ -3,11 +3,74 @@ package skills
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/registry"
 )
+
+// AuthConfig carries authentication configuration for a git operation.
+// The Token and SSHPassphrase fields are transient — they must never be
+// persisted to disk. CredentialRef is the opaque reference string (e.g.
+// "${vault:GIT_TOKEN}") that gets stored in Origin/LockFile so that Update
+// can re-resolve it later.
+type AuthConfig struct {
+	Method         string // "", "none", "token", "ssh-agent", "ssh-key"
+	Token          string // resolved plaintext — transient, never persisted
+	CredentialRef  string // e.g. "${vault:GIT_TOKEN}" — persisted
+	SSHUser        string // defaults to "git" when empty
+	SSHKeyPath     string // required for method "ssh-key"
+	SSHPassphrase  string // transient
+	KnownHostsPath string // reserved for future host-key policy work
+}
+
+// BuildAuther constructs a git.Auther matching the AuthConfig's Method.
+// Returns an error for unknown methods. Individual Auther implementations
+// also validate their own inputs (e.g. HTTPSTokenAuth rejects empty tokens).
+func BuildAuther(cfg AuthConfig) (gitpkg.Auther, error) {
+	switch cfg.Method {
+	case "", "none":
+		return gitpkg.NoAuth{}, nil
+	case "token":
+		return gitpkg.HTTPSTokenAuth{Token: cfg.Token}, nil
+	case "ssh-agent":
+		return gitpkg.SSHAgentAuth{User: cfg.SSHUser}, nil
+	case "ssh-key":
+		return gitpkg.SSHKeyFileAuth{
+			User:           cfg.SSHUser,
+			KeyPath:        cfg.SSHKeyPath,
+			Passphrase:     cfg.SSHPassphrase,
+			KnownHostsPath: cfg.KnownHostsPath,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown auth method %q", cfg.Method)
+	}
+}
+
+// resolveAuther returns the Auther to use for a URL given an AuthConfig.
+// Precedence: explicit method > GITHUB_TOKEN env var (HTTPS only) > NoAuth.
+// This preserves backward compatibility with the pre-AuthConfig behavior.
+func resolveAuther(cfg AuthConfig, url string) (gitpkg.Auther, error) {
+	if cfg.Method != "" && cfg.Method != "none" {
+		return BuildAuther(cfg)
+	}
+	// Ambient fallback: GITHUB_TOKEN for HTTPS URLs.
+	if gitpkg.DetectProtocol(url) == gitpkg.ProtocolHTTPS {
+		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+			return gitpkg.HTTPSTokenAuth{Token: token}, nil
+		}
+	}
+	return gitpkg.NoAuth{}, nil
+}
+
+// CredentialResolver resolves an opaque reference like "${vault:GIT_TOKEN}"
+// to its raw value. Callers (CLI, HTTP API) register one via
+// Importer.SetCredentialResolver so that Update can re-resolve credentials
+// recorded in Origin/LockFile without the importer needing to know where
+// the values live.
+type CredentialResolver func(ref string) (string, error)
 
 // ImportOptions controls the import behavior.
 type ImportOptions struct {
@@ -19,6 +82,7 @@ type ImportOptions struct {
 	Force      bool     // Overwrite existing skills
 	Rename     string   // Rename the skill on import
 	Selected   []string // Only import skills with these names (empty = import all)
+	Auth       AuthConfig
 }
 
 // ImportResult contains the results of an import operation.
@@ -44,10 +108,11 @@ type SkippedSkill struct {
 
 // Importer orchestrates the skill import process.
 type Importer struct {
-	store       *registry.Store
-	registryDir string
-	lockPath    string
-	logger      *slog.Logger
+	store              *registry.Store
+	registryDir        string
+	lockPath           string
+	logger             *slog.Logger
+	credentialResolver CredentialResolver
 }
 
 // NewImporter creates a new skill importer.
@@ -60,6 +125,15 @@ func NewImporter(store *registry.Store, registryDir, lockPath string, logger *sl
 	}
 }
 
+// SetCredentialResolver registers a resolver used to expand CredentialRef
+// values stored in Origin/LockFile when Update fetches the latest state.
+// Without a resolver, Update can still run for sources that have no stored
+// reference (ambient GITHUB_TOKEN / public repos), but will fail fast for
+// sources that do.
+func (imp *Importer) SetCredentialResolver(r CredentialResolver) {
+	imp.credentialResolver = r
+}
+
 // Import clones a repo, discovers skills, validates, scans, and imports.
 func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	if opts.Path != "" {
@@ -68,9 +142,9 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		}
 	}
 
-	imp.logger.Info("importing skills", "repo", opts.Repo, "ref", opts.Ref)
+	imp.logger.Info("importing skills", "repo", gitpkg.RedactURL(opts.Repo), "ref", opts.Ref)
 
-	result, err := CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, imp.logger)
+	result, err := CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, opts.Auth, imp.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -160,15 +234,17 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		// Compute fingerprint
 		fp := ComputeFingerprint(discovered.Skill)
 
-		// Write origin sidecar
+		// Write origin sidecar. CredentialRef (if any) is persisted as an
+		// opaque reference string — the raw token is never written to disk.
 		origin := &Origin{
-			Repo:        opts.Repo,
-			Ref:         opts.Ref,
-			Path:        discovered.Path,
-			CommitSHA:   result.CommitSHA,
-			ImportedAt:  time.Now().UTC(),
-			ContentHash: discovered.ContentHash,
-			Fingerprint: fp,
+			Repo:          opts.Repo,
+			Ref:           opts.Ref,
+			Path:          discovered.Path,
+			CommitSHA:     result.CommitSHA,
+			ImportedAt:    time.Now().UTC(),
+			ContentHash:   discovered.ContentHash,
+			Fingerprint:   fp,
+			CredentialRef: opts.Auth.CredentialRef,
 		}
 
 		skillDir := imp.skillDir(skillName)
@@ -199,12 +275,13 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	if len(lockedSkills) > 0 {
 		sourceName := repoToName(opts.Repo)
 		lf.SetSource(sourceName, LockedSource{
-			Repo:        opts.Repo,
-			Ref:         opts.Ref,
-			CommitSHA:   result.CommitSHA,
-			FetchedAt:   time.Now().UTC(),
-			ContentHash: result.CommitSHA,
-			Skills:      lockedSkills,
+			Repo:          opts.Repo,
+			Ref:           opts.Ref,
+			CommitSHA:     result.CommitSHA,
+			FetchedAt:     time.Now().UTC(),
+			ContentHash:   result.CommitSHA,
+			Skills:        lockedSkills,
+			CredentialRef: opts.Auth.CredentialRef,
 		})
 
 		if err := WriteLockFile(imp.lockPath, lf); err != nil {
@@ -248,9 +325,15 @@ func (imp *Importer) Update(skillName string, dryRun, force bool) (*ImportResult
 		return nil, fmt.Errorf("skill %q has no origin (not an imported skill): %w", skillName, err)
 	}
 
-	imp.logger.Info("checking for updates", "skill", skillName, "repo", origin.Repo)
+	// Re-resolve any CredentialRef stored at import time.
+	auth, err := imp.authFromOrigin(origin)
+	if err != nil {
+		return nil, err
+	}
 
-	newSHA, changed, err := FetchAndCompare(origin.Repo, origin.Ref, origin.CommitSHA, imp.logger)
+	imp.logger.Info("checking for updates", "skill", skillName, "repo", gitpkg.RedactURL(origin.Repo))
+
+	newSHA, changed, err := FetchAndCompare(origin.Repo, origin.Ref, origin.CommitSHA, auth, imp.logger)
 	if err != nil {
 		return nil, fmt.Errorf("checking updates: %w", err)
 	}
@@ -278,6 +361,7 @@ func (imp *Importer) Update(skillName string, dryRun, force bool) (*ImportResult
 		Path:  origin.Path,
 		Trust: true,
 		Force: true,
+		Auth:  auth,
 	})
 	if err != nil {
 		return result, err
@@ -370,4 +454,29 @@ func (imp *Importer) skillDir(skillName string) string {
 		return filepath.Join(imp.registryDir, "skills", skillName)
 	}
 	return filepath.Join(imp.registryDir, "skills", sk.Dir)
+}
+
+// authFromOrigin builds an AuthConfig from a stored Origin. If the origin
+// carries a CredentialRef, the configured CredentialResolver is invoked
+// to obtain the raw token. Without a resolver, a stored CredentialRef is
+// a hard failure — we never silently fall through to an unauth clone.
+func (imp *Importer) authFromOrigin(origin *Origin) (AuthConfig, error) {
+	if origin.CredentialRef == "" {
+		return AuthConfig{}, nil
+	}
+	if imp.credentialResolver == nil {
+		return AuthConfig{}, fmt.Errorf("%w: credential %q requires a resolver; vault not available", gitpkg.ErrAuthFailed, origin.CredentialRef)
+	}
+	token, err := imp.credentialResolver(origin.CredentialRef)
+	if err != nil {
+		return AuthConfig{}, fmt.Errorf("%w: resolving %q: %w", gitpkg.ErrAuthFailed, origin.CredentialRef, err)
+	}
+	if token == "" {
+		return AuthConfig{}, fmt.Errorf("%w: %q resolved to empty value", gitpkg.ErrEmptyToken, origin.CredentialRef)
+	}
+	return AuthConfig{
+		Method:        "token",
+		Token:         token,
+		CredentialRef: origin.CredentialRef,
+	}, nil
 }

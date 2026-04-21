@@ -43,6 +43,33 @@ func TestLockFileReadWrite(t *testing.T) {
 	assert.Equal(t, "hash1", src.Skills["deploy"].ContentHash)
 }
 
+func TestLockFile_CredentialRefRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "skills.lock.yaml")
+
+	lf := &LockFile{
+		Sources: map[string]LockedSource{
+			"private": {
+				Repo:          "https://gitlab.internal/team/skills",
+				Ref:           "main",
+				CommitSHA:     "abc",
+				FetchedAt:     time.Now().UTC(),
+				CredentialRef: "${vault:GIT_TOKEN}",
+				Skills:        map[string]LockedSkill{"x": {Path: "x"}},
+			},
+		},
+	}
+	require.NoError(t, WriteLockFile(path, lf))
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "${vault:GIT_TOKEN}")
+
+	got, err := ReadLockFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "${vault:GIT_TOKEN}", got.Sources["private"].CredentialRef)
+}
+
 func TestLockFileReadNotFound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nonexistent.yaml")
