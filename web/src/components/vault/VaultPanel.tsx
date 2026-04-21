@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { PopoutButton } from '../ui/PopoutButton';
 import { useVaultStore } from '../../stores/useVaultStore';
@@ -724,28 +725,27 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
         </>
       )}
 
-      {/* Delete confirmation overlay */}
-      {confirmDelete && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="glass-panel-elevated rounded-xl p-5 max-w-xs mx-4 space-y-3">
-            <p className="text-sm text-text-primary">
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        isOpen={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete secret"
+        message={
+          <>
+            <p>
               Delete <span className="font-mono text-primary">{confirmDelete}</span>?
             </p>
-            <p className="text-xs text-text-muted">This action cannot be undone.</p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary bg-surface-elevated rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <Button variant="danger" size="sm" onClick={handleDeleteConfirm}>
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            <p>This action cannot be undone.</p>
+          </>
+        }
+        confirmLabel={
+          <span>
+            Delete <span className="font-mono">"{confirmDelete}"</span>
+          </span>
+        }
+        variant="danger"
+      />
       </div>{/* end content column */}
     </div>,
     document.body,
