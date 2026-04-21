@@ -12,7 +12,12 @@ import { Button } from '../../ui/Button';
 import { AddSourceStep } from './AddSourceStep';
 import { BrowseStep } from './BrowseStep';
 import { showToast } from '../../ui/Toast';
-import { addSkillSource, fetchRegistrySkills, fetchRegistryStatus } from '../../../lib/api';
+import {
+  addSkillSource,
+  fetchRegistrySkills,
+  fetchRegistryStatus,
+  type SkillAuth,
+} from '../../../lib/api';
 import { useRegistryStore } from '../../../stores/useRegistryStore';
 import type { SkillPreview } from '../../../types';
 
@@ -28,6 +33,7 @@ export function SkillImportWizard() {
   const [repoUrl, setRepoUrl] = useState('');
   const [ref, setRef] = useState('');
   const [path, setPath] = useState('');
+  const [auth, setAuth] = useState<SkillAuth | undefined>(undefined);
   const [previews, setPreviews] = useState<SkillPreview[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [configs, setConfigs] = useState<Map<string, SkillConfig>>(new Map());
@@ -43,25 +49,35 @@ export function SkillImportWizard() {
   const stepOrder: ImportStep[] = ['source', 'browse', 'configure', 'install'];
   const stepIdx = stepOrder.indexOf(step);
 
-  const handlePreviewLoaded = useCallback((skills: SkillPreview[], repo: string, refVal: string, pathVal: string) => {
-    setPreviews(skills);
-    setRepoUrl(repo);
-    setRef(refVal);
-    setPath(pathVal);
+  const handlePreviewLoaded = useCallback(
+    (
+      skills: SkillPreview[],
+      repo: string,
+      refVal: string,
+      pathVal: string,
+      authVal: SkillAuth | undefined,
+    ) => {
+      setPreviews(skills);
+      setRepoUrl(repo);
+      setRef(refVal);
+      setPath(pathVal);
+      setAuth(authVal);
 
-    // Auto-select valid skills that don't already exist
-    const autoSelected = new Set<string>();
-    const configMap = new Map<string, SkillConfig>();
-    for (const sk of skills) {
-      if (sk.valid && !sk.exists) {
-        autoSelected.add(sk.name);
+      // Auto-select valid skills that don't already exist
+      const autoSelected = new Set<string>();
+      const configMap = new Map<string, SkillConfig>();
+      for (const sk of skills) {
+        if (sk.valid && !sk.exists) {
+          autoSelected.add(sk.name);
+        }
+        configMap.set(sk.name, { name: sk.name, activate: true });
       }
-      configMap.set(sk.name, { name: sk.name, activate: true });
-    }
-    setSelected(autoSelected);
-    setConfigs(configMap);
-    setStep('browse');
-  }, []);
+      setSelected(autoSelected);
+      setConfigs(configMap);
+      setStep('browse');
+    },
+    [],
+  );
 
   const handleInstall = useCallback(async () => {
     setInstalling(true);
@@ -79,6 +95,7 @@ export function SkillImportWizard() {
         trust: hasFlagged,
         noActivate: false,
         selected: [...selected],
+        auth,
       });
 
       const imported = (result.imported ?? []).map((i) => i.name);
@@ -111,7 +128,7 @@ export function SkillImportWizard() {
       setInstalling(false);
       setStep('install');
     }
-  }, [repoUrl, ref, path, previews, selected]);
+  }, [repoUrl, ref, path, previews, selected, auth]);
 
   const canGoNext = () => {
     switch (step) {
