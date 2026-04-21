@@ -452,7 +452,8 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 }
 
 // handleSkillSourcePreview previews skills in a source without importing.
-// GET /api/skills/sources/{name}/preview
+// GET  /api/skills/sources/{name}/preview  — query-param driven, no auth
+// POST /api/skills/sources/{name}/preview  — JSON body with optional auth
 func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request) {
 	sourceName := r.PathValue("name")
 
@@ -461,10 +462,29 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Get repo URL from query params or lock file
+	// Query-param values are the GET path; POST bodies override/augment.
 	repo := r.URL.Query().Get("repo")
 	ref := r.URL.Query().Get("ref")
 	path := r.URL.Query().Get("path")
+
+	var reqBody struct {
+		Repo string       `json:"repo,omitempty"`
+		Ref  string       `json:"ref,omitempty"`
+		Path string       `json:"path,omitempty"`
+		Auth *AuthRequest `json:"auth,omitempty"`
+	}
+	if r.Method == http.MethodPost && r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+		if reqBody.Repo != "" {
+			repo = reqBody.Repo
+		}
+		if reqBody.Ref != "" {
+			ref = reqBody.Ref
+		}
+		if reqBody.Path != "" {
+			path = reqBody.Path
+		}
+	}
 
 	var storedRef string
 	if repo == "" {
@@ -480,19 +500,11 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 	}
 
 	if repo == "" {
-		writeJSONError(w, "repo URL required (query param or existing source)", http.StatusBadRequest)
+		writeJSONError(w, "repo URL required (query param, body, or existing source)", http.StatusBadRequest)
 		return
 	}
 
-	// Optional auth can be supplied in the JSON body of POST; for GET,
-	// fall back to a stored CredentialRef if the lookup above found one.
-	var req struct {
-		Auth *AuthRequest `json:"auth,omitempty"`
-	}
-	if r.Body != nil && r.ContentLength > 0 {
-		_ = json.NewDecoder(r.Body).Decode(&req)
-	}
-	authCfg, err := s.resolveCheckAuth(req.Auth, storedRef)
+	authCfg, err := s.resolveCheckAuth(reqBody.Auth, storedRef)
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return

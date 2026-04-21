@@ -262,7 +262,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/skills/sources/{name}", s.handleSkillSourceRemove)
 	mux.HandleFunc("POST /api/skills/sources/{name}/check", s.handleSkillSourceCheck)
 	mux.HandleFunc("POST /api/skills/sources/{name}/update", s.handleSkillSourceUpdate)
+	// Preview accepts either GET (query params, no auth) or POST (JSON body,
+	// with optional auth) so the wizard can pass credentials without
+	// leaking them into query strings or browser history.
 	mux.HandleFunc("GET /api/skills/sources/{name}/preview", s.handleSkillSourcePreview)
+	mux.HandleFunc("POST /api/skills/sources/{name}/preview", s.handleSkillSourcePreview)
 
 	// Wizard endpoints
 	mux.HandleFunc("GET /api/wizard/drafts", s.handleWizardDraftsList)
