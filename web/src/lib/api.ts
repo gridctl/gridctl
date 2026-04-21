@@ -14,6 +14,36 @@ export class AuthError extends Error {
   }
 }
 
+/**
+ * HTTPError carries the server response status alongside the error message
+ * so callers can branch on classified statuses (401/404/400) — e.g. the
+ * skill wizard auto-expanding its auth card on 401 or 404.
+ */
+export class HTTPError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'HTTPError';
+  }
+}
+
+/**
+ * Auth payload accepted by all /api/skills/sources/* endpoints. The raw
+ * Token is transient (used once, never persisted); CredentialRef is the
+ * "${vault:KEY}" reference that the server resolves against the live
+ * vault on every request and that gets recorded in lock/origin for
+ * subsequent updates.
+ */
+export type SkillAuthMethod = 'token' | 'ssh-agent' | 'ssh-key' | '';
+export interface SkillAuth {
+  method?: SkillAuthMethod;
+  token?: string;
+  credentialRef?: string;
+  sshUser?: string;
+  sshKeyPath?: string;
+}
+
 export function getStoredToken(): string | null {
   try {
     return localStorage.getItem(AUTH_STORAGE_KEY);
@@ -391,7 +421,10 @@ async function mutateJSON<T>(
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `${method} ${endpoint} failed: ${response.status}`);
+    throw new HTTPError(
+      response.status,
+      data.error || `${method} ${endpoint} failed: ${response.status}`,
+    );
   }
 
   // DELETE returns no body
@@ -803,6 +836,7 @@ export async function addSkillSource(source: {
   trust?: boolean;
   noActivate?: boolean;
   selected?: string[];
+  auth?: SkillAuth;
 }): Promise<ImportResult> {
   return mutateJSON<ImportResult>('/api/skills/sources', 'POST', source);
 }
@@ -841,20 +875,20 @@ export async function updateSkillSource(name: string): Promise<{ source: string;
 }
 
 /**
- * Preview skills in a source without importing
- * GET /api/skills/sources/{name}/preview
+ * Preview skills in a source without importing.
+ *
+ * Posts the request body (rather than query params) so optional auth
+ * credentials never surface in URLs, logs, or browser history.
+ * POST /api/skills/sources/{name}/preview
  */
 export async function previewSkillSource(
   name: string,
-  params?: { repo?: string; ref?: string; path?: string },
+  params?: { repo?: string; ref?: string; path?: string; auth?: SkillAuth },
 ): Promise<SkillPreviewResponse> {
-  const query = new URLSearchParams();
-  if (params?.repo) query.set('repo', params.repo);
-  if (params?.ref) query.set('ref', params.ref);
-  if (params?.path) query.set('path', params.path);
-  const qs = query.toString();
-  return fetchJSON<SkillPreviewResponse>(
-    `/api/skills/sources/${encodeURIComponent(name)}/preview${qs ? `?${qs}` : ''}`,
+  return mutateJSON<SkillPreviewResponse>(
+    `/api/skills/sources/${encodeURIComponent(name)}/preview`,
+    'POST',
+    params ?? {},
   );
 }
 
