@@ -139,8 +139,7 @@ gridctl/
 │   │   └── builder.go    # Main builder
 │   ├── git/              # Shared git helpers for skills + builder
 │   │   ├── clone.go      # Clone, Fetch, Checkout, ResolveRef, HeadCommit, ListTags
-│   │   ├── auth.go       # Auther interface: NoAuth, HTTPSTokenAuth, SSHAgentAuth, SSHKeyFileAuth
-│   │   ├── detect.go     # DetectProtocol (Protocol: HTTPS, SSH, Local, Unknown)
+│   │   ├── auth.go       # Auther interface + DetectProtocol: NoAuth, HTTPSTokenAuth, SSHAgentAuth, SSHKeyFileAuth
 │   │   ├── errors.go     # Sentinel errors + ClassifyError (maps go-git errors to ErrAuth*, ErrNotFound, ErrHostKeyMismatch, etc.)
 │   │   └── redact.go     # RedactURL, RedactString, RedactError — scrubs PATs and embedded userinfo
 │   ├── output/           # CLI output formatting
