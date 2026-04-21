@@ -21,6 +21,12 @@ export interface MCPServerFormData {
     ref?: string;
     path?: string;
     dockerfile?: string;
+    // Optional auth block for private git sources. Only accepts a vault
+    // reference (no raw tokens) since this block is persisted to YAML.
+    auth?: {
+      method?: 'token';
+      credentialRef?: string; // e.g. "${vault:GIT_TOKEN}"
+    };
   };
   // External
   url?: string;
@@ -169,6 +175,17 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
         if (data.source.ref) lines.push(`${inner}  ref: ${data.source.ref}`);
         if (data.source.path) lines.push(`${inner}  path: ${data.source.path}`);
         if (data.source.dockerfile) lines.push(`${inner}  dockerfile: ${data.source.dockerfile}`);
+        // Auth block: persisted as a vault reference. The resolver runs
+        // server-side at clone time; no raw credentials ever hit YAML.
+        if (data.source.auth?.credentialRef) {
+          lines.push(`${inner}  auth:`);
+          if (data.source.auth.method) {
+            lines.push(`${inner}    method: ${data.source.auth.method}`);
+          }
+          lines.push(
+            `${inner}    credential_ref: ${yamlValue(data.source.auth.credentialRef)}`,
+          );
+        }
       }
       if (data.port) lines.push(`${inner}port: ${data.port}`);
       if (data.transport) lines.push(`${inner}transport: ${data.transport}`);
