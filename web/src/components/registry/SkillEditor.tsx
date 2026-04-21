@@ -199,7 +199,7 @@ function MetadataEditor({
         </button>
       </div>
       {(entries ?? []).length === 0 && (
-        <p className="text-xs text-text-muted/50 italic">No metadata entries</p>
+        <p className="text-xs text-text-muted italic">No metadata entries</p>
       )}
       <div className="space-y-2">
         {(entries ?? []).map((entry) => (
@@ -255,13 +255,13 @@ function AcceptanceCriteriaEditor({
         </button>
       </div>
       {(entries ?? []).length === 0 && (
-        <p className="text-xs text-text-muted/50 italic">No acceptance criteria defined</p>
+        <p className="text-xs text-text-muted italic">No acceptance criteria defined</p>
       )}
       <div className="space-y-3">
         {(entries ?? []).map((entry) => (
           <div key={entry.id} className="rounded-lg border border-border/30 bg-background/40 p-3 space-y-2">
             <div className="flex items-start gap-2">
-              <span className="text-[10px] text-text-muted/60 uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+              <span className="text-[10px] text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
                 GIVEN
               </span>
               <input
@@ -278,7 +278,7 @@ function AcceptanceCriteriaEditor({
               </button>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-[10px] text-text-muted/60 uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+              <span className="text-[10px] text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
                 WHEN
               </span>
               <input
@@ -290,7 +290,7 @@ function AcceptanceCriteriaEditor({
               <div className="w-6 flex-shrink-0" />
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-[10px] text-text-muted/60 uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+              <span className="text-[10px] text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
                 THEN
               </span>
               <input
@@ -798,7 +798,7 @@ export function SkillEditor({
                 <div>
                   <label className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">
                     Description
-                    <span className="ml-2 text-text-muted/60 normal-case">{description.length}/1024</span>
+                    <span className="ml-2 text-text-muted normal-case">{description.length}/1024</span>
                   </label>
                   <textarea
                     value={description}
