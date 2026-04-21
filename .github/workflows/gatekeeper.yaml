@@ -58,7 +58,8 @@ jobs:
         run: |
           # Add example stack YAML files under examples/ to have them validated here.
           # Exit codes: 0=valid, 1=errors (fail), 2=warnings only (pass)
-          mapfile -t files < <(find examples -name "*.yaml" | sort)
+          # skills.yaml is a skill-source list (different schema) — not a stack.
+          mapfile -t files < <(find examples -name "*.yaml" -not -name "skills.yaml" | sort)
           if [ ${#files[@]} -eq 0 ]; then
             echo "No example stacks found, skipping validation"
             exit 0

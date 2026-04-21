@@ -1,0 +1,42 @@
+# Skill Sources Example
+#
+# Declares remote git repositories gridctl clones to discover SKILL.md files.
+# Place this at ~/.gridctl/skills.yaml and run:
+#
+#   gridctl skill update               # fetch all sources
+#   gridctl skill update private-skills # fetch a single source
+#
+# See docs/config-schema.md ("Skill Sources") for the full field reference.
+#
+# Security:
+#   - Raw PATs and SSH keys MUST NOT appear in this file.
+#   - Use credential_ref to point at a vault key. The raw value stays in
+#     ~/.gridctl/vault/ (XChaCha20-Poly1305 + Argon2id) and is resolved on
+#     every clone/fetch, so rotating a secret takes effect immediately.
+
+defaults:
+  auto_update: true
+  update_interval: 24h
+
+sources:
+  # Public repo — no auth needed.
+  - name: public-skills
+    repo: https://github.com/acme/public-skills
+    ref: main
+
+  # Private HTTPS repo — PAT resolved from the vault on every fetch.
+  # Pre-stage the secret first:
+  #   gridctl vault set GIT_TOKEN ghp_xxxxxxxxxxxxxxxxxxxx
+  - name: private-skills
+    repo: https://github.com/acme/private-skills
+    ref: v1.2.0
+    auth:
+      method: token
+      credential_ref: "${vault:GIT_TOKEN}"
+
+  # Private SSH repo — uses the user's ambient ssh-agent and ~/.ssh/known_hosts.
+  # No credentials travel through gridctl at all.
+  - name: private-ssh-skills
+    repo: git@github.com:acme/private-skills.git
+    auth:
+      method: ssh-agent
