@@ -22,6 +22,7 @@ import {
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
 import { Button } from '../components/ui/Button';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ZoomControls } from '../components/log/ZoomControls';
 import { VaultLockPrompt } from '../components/vault/VaultLockPrompt';
 import { ToastContainer, showToast } from '../components/ui/Toast';
@@ -735,34 +736,33 @@ function DetachedVaultContent() {
             {locked ? 'Vault locked' : ''}
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
             Detached Window
           </span>
         </div>
       </footer>
 
-      {/* Delete confirmation overlay */}
-      {confirmDelete && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="glass-panel-elevated rounded-xl p-5 max-w-xs mx-4 space-y-3">
-            <p className="text-sm text-text-primary">
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        isOpen={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete secret"
+        message={
+          <>
+            <p>
               Delete <span className="font-mono text-primary">{confirmDelete}</span>?
             </p>
-            <p className="text-xs text-text-muted">This action cannot be undone.</p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary bg-surface-elevated rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <Button variant="danger" size="sm" onClick={handleDeleteConfirm}>
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            <p>This action cannot be undone.</p>
+          </>
+        }
+        confirmLabel={
+          <span>
+            Delete <span className="font-mono">"{confirmDelete}"</span>
+          </span>
+        }
+        variant="danger"
+      />
 
       <ToastContainer />
     </div>

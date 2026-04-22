@@ -388,7 +388,7 @@ function DetachedTracesPageContent() {
       <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
         <span>{traces.length > 0 ? `${traces.length} trace${traces.length !== 1 ? 's' : ''}` : 'No data'}</span>
         <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
           Detached Window
         </span>
       </footer>

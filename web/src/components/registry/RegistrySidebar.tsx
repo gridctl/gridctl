@@ -27,6 +27,7 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { PopoutButton } from '../ui/PopoutButton';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { SkillEditor } from './SkillEditor';
 import { showToast } from '../ui/Toast';
 import {
@@ -196,21 +197,21 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
           </span>
           {(updateSummary?.available ?? 0) > 0 && (
             <>
-              <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium flex items-center gap-0.5 animate-fade-in-scale">
-                <ArrowUpCircle size={8} />
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium flex items-center gap-1 animate-fade-in-scale">
+                <ArrowUpCircle size={10} />
                 {updateSummary?.available} update{(updateSummary?.available ?? 0) !== 1 ? 's' : ''}
               </span>
               <button
                 onClick={handleUpdateAll}
                 disabled={updatingAll}
                 className={cn(
-                  'text-[8px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5 transition-colors',
+                  'text-[10px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1 transition-colors',
                   updatingAll
                     ? 'bg-text-muted/10 text-text-muted cursor-wait'
                     : 'bg-secondary/10 text-secondary hover:bg-secondary/20',
                 )}
               >
-                <ArrowUpCircle size={8} />
+                <ArrowUpCircle size={10} />
                 {updatingAll ? 'Updating...' : 'Update All'}
               </button>
             </>
@@ -276,31 +277,27 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
         </div>
       )}
 
-      {/* Delete confirmation overlay */}
-      {confirmDelete && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="glass-panel-elevated rounded-xl p-5 max-w-xs mx-4 space-y-3">
-            <p className="text-sm text-text-primary">
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        isOpen={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete skill"
+        message={
+          <>
+            <p>
               Delete <span className="font-mono text-primary">{confirmDelete}</span>?
             </p>
-            <p className="text-xs text-text-muted">This action cannot be undone.</p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary bg-surface-elevated rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteConfirm}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-status-error text-white hover:bg-status-error/90 transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <p>This action cannot be undone.</p>
+          </>
+        }
+        confirmLabel={
+          <span>
+            Delete <span className="font-mono">"{confirmDelete}"</span>
+          </span>
+        }
+        variant="danger"
+      />
 
       {/* Editor modal */}
       <SkillEditor
@@ -347,7 +344,7 @@ function SkillsList({
           {isFiltered ? 'No matching skills' : 'No skills registered'}
         </p>
         {!isFiltered && (
-          <p className="text-text-muted/60 text-[10px] mt-1">
+          <p className="text-text-muted text-[10px] mt-1">
             Create a SKILL.md to get started
           </p>
         )}
@@ -459,12 +456,12 @@ function SkillItem({
           {/* Metadata badges */}
           <div className="flex gap-1 mt-2 flex-wrap">
             {skill.license && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
                 {skill.license}
               </span>
             )}
             {skill.compatibility && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
                 {skill.compatibility}
               </span>
             )}
@@ -495,12 +492,12 @@ function SkillItem({
                       {r.criterion}
                     </p>
                     {!r.passed && !r.skipped && r.actual && (
-                      <p className="text-[9px] text-status-error mt-0.5 font-mono truncate">
+                      <p className="text-[10px] text-status-error mt-0.5 font-mono truncate">
                         actual: {r.actual}
                       </p>
                     )}
                     {r.skipped && r.skipReason && (
-                      <p className="text-[9px] text-text-muted/50 mt-0.5 italic">
+                      <p className="text-[10px] text-text-muted mt-0.5 italic">
                         {r.skipReason}
                       </p>
                     )}
@@ -532,7 +529,7 @@ function SkillItem({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(skill.name); }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gradient-to-r from-status-error to-rose-600 text-white shadow-[0_1px_8px_rgba(244,63,94,0.2)] hover:shadow-[0_2px_12px_rgba(244,63,94,0.3)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-status-error text-white hover:bg-status-error/90 focus:outline-none focus:ring-2 focus:ring-status-error/40 focus:ring-offset-2 focus:ring-offset-background transition-colors duration-150"
             >
               <Trash2 size={10} /> Delete
             </button>
@@ -550,10 +547,10 @@ function TestStatusBadge({ result, onClick }: { result: SkillTestResult | null; 
     return (
       <button
         onClick={(e) => { e.stopPropagation(); onClick(); }}
-        className="flex items-center gap-1 text-[9px] text-text-muted/60 hover:text-text-muted transition-colors"
+        className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
         title="No test run yet"
       >
-        <MinusCircle size={9} />
+        <MinusCircle size={10} />
         <span>— untested</span>
       </button>
     );
@@ -565,7 +562,7 @@ function TestStatusBadge({ result, onClick }: { result: SkillTestResult | null; 
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className={cn(
-        'flex items-center gap-1 text-[9px] transition-colors',
+        'flex items-center gap-1 text-[10px] transition-colors',
         allPassed
           ? 'text-status-running hover:text-status-running/80'
           : 'text-status-error hover:text-status-error/80',
@@ -574,16 +571,16 @@ function TestStatusBadge({ result, onClick }: { result: SkillTestResult | null; 
     >
       {allPassed ? (
         <>
-          <CheckCircle2 size={9} />
+          <CheckCircle2 size={10} />
           <span>✓ tested</span>
         </>
       ) : (
         <>
-          <XCircle size={9} />
+          <XCircle size={10} />
           <span>✗ failing</span>
         </>
       )}
-      <FlaskConical size={8} className="opacity-40 ml-0.5" />
+      <FlaskConical size={10} className="opacity-40 ml-0.5" />
     </button>
   );
 }
@@ -598,7 +595,7 @@ function StateBadge({ state }: { state: ItemState }) {
   };
 
   return (
-    <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-mono', styles[state] ?? styles.draft)}>
+    <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-mono', styles[state] ?? styles.draft)}>
       {state}
     </span>
   );

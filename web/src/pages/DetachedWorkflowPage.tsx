@@ -303,7 +303,7 @@ function DetachedWorkflowContent() {
             1/2/3 modes &middot; f follow &middot; &thinsp;run &middot; t toolbox &middot; i inspector
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
             Detached
           </span>
         </span>

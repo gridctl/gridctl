@@ -21,6 +21,7 @@ export interface SkillCardProps {
   onEdit: (skill: AgentSkill) => void;
   onDelete: (skill: AgentSkill) => void;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 function StateBadge({ state }: { state: ItemState }) {
@@ -31,7 +32,7 @@ function StateBadge({ state }: { state: ItemState }) {
   };
 
   return (
-    <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-mono flex-shrink-0', styles[state] ?? styles.draft)}>
+    <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0', styles[state] ?? styles.draft)}>
       {state}
     </span>
   );
@@ -72,9 +73,11 @@ export const SkillCard = memo(({
   onEdit,
   onDelete,
   className,
+  style,
 }: SkillCardProps) => {
   return (
     <div
+      style={style}
       className={cn(
         'relative rounded-xl overflow-hidden flex flex-col',
         'backdrop-blur-xl border transition-all duration-200 ease-out',

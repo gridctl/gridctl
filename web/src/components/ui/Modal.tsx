@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useId, type ReactNode } from 'react';
 import { X, Maximize2, Minimize2, ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 type ModalSize = 'default' | 'wide' | 'full';
 
@@ -39,6 +40,8 @@ export function Modal({
   flush,
 }: ModalProps) {
   const [expanded, setExpanded] = useState(false);
+  const titleId = useId();
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen });
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -84,6 +87,10 @@ export function Modal({
 
       {/* Panel */}
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className={cn(
           'relative flex flex-col',
           flush
@@ -97,7 +104,7 @@ export function Modal({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/30 flex-shrink-0">
-          <h2 className="text-sm font-medium text-text-primary">{title}</h2>
+          <h2 id={titleId} className="text-sm font-medium text-text-primary">{title}</h2>
           <div className="flex items-center gap-1">
             {expandable && (
               <button

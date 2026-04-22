@@ -108,7 +108,7 @@ export function SkillFileTree({ skillName, onSelectFile }: SkillFileTreeProps) {
 
       {/* File list */}
       {(files ?? []).length === 0 ? (
-        <p className="text-[10px] text-text-muted/50 px-3 pb-2 italic">No supporting files</p>
+        <p className="text-[10px] text-text-muted px-3 pb-2 italic">No supporting files</p>
       ) : (
         <div className="px-2 pb-2 space-y-0.5">
           {Object.entries(grouped).map(([dir, dirFiles]) => (
@@ -136,7 +136,7 @@ export function SkillFileTree({ skillName, onSelectFile }: SkillFileTreeProps) {
                       >
                         {file.path.split('/').pop()}
                       </button>
-                      <span className="text-[9px] text-text-muted font-mono">
+                      <span className="text-[10px] text-text-muted font-mono">
                         {formatFileSize(file.size)}
                       </span>
                       <button

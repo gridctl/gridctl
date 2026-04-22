@@ -14,6 +14,7 @@ import { ZoomControls } from '../components/log/ZoomControls';
 import { SkillEditor } from '../components/registry/SkillEditor';
 import { SkillCard } from '../components/registry/SkillCard';
 import { SkillCardSkeleton } from '../components/registry/SkillCardSkeleton';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ToastContainer, showToast } from '../components/ui/Toast';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useLogFontSize } from '../hooks/useLogFontSize';
@@ -109,13 +110,36 @@ interface GroupedSkillGridProps {
 
 function GroupedSkillGrid({ skills, hasSearch, onEnable, onDisable, onEdit, onDelete }: GroupedSkillGridProps) {
   const groups = groupSkills(skills);
-  const showHeaders = groups.size > 1;
+  // Only group when the structure is meaningful: 2+ groups AND at least one
+  // group has 2+ skills. Otherwise the full-width section headers just waste
+  // horizontal space (every skill becomes its own "group of one").
+  const hasMeaningfulGrouping =
+    groups.size > 1 && Array.from(groups.values()).some((g) => g.length > 1);
 
   const gridStyle: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
     gap: '12px',
   };
+
+  if (!hasMeaningfulGrouping) {
+    return (
+      <div className="p-4" style={gridStyle}>
+        {skills.map((skill, i) => (
+          <SkillCard
+            key={skill.name}
+            skill={skill}
+            className={cn('motion-safe:animate-fade-in-scale', skill.metadata?.colspan === '2' ? 'col-span-2' : undefined)}
+            style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
+            onEnable={onEnable}
+            onDisable={onDisable}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="p-4" style={gridStyle}>
@@ -124,7 +148,7 @@ function GroupedSkillGrid({ skills, hasSearch, onEnable, onDisable, onEdit, onDe
           key={key || '__ungrouped__'}
           groupKey={key}
           skills={groupSkillList}
-          showHeader={showHeaders}
+          showHeader
           hasSearch={hasSearch}
           onEnable={onEnable}
           onDisable={onDisable}
@@ -163,11 +187,12 @@ function GroupSection({ groupKey, skills, showHeader, hasSearch, onEnable, onDis
           <div className="border-b border-border/30" />
         </div>
       )}
-      {skills.map((skill) => (
+      {skills.map((skill, i) => (
         <SkillCard
           key={skill.name}
           skill={skill}
-          className={cn('animate-fade-in-scale', skill.metadata?.colspan === '2' ? 'col-span-2' : undefined)}
+          className={cn('motion-safe:animate-fade-in-scale', skill.metadata?.colspan === '2' ? 'col-span-2' : undefined)}
+          style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
           onEnable={onEnable}
           onDisable={onDisable}
           onEdit={onEdit}
@@ -398,7 +423,7 @@ function DetachedRegistryContent() {
               <BookOpen size={32} className="text-text-muted/50" />
             </div>
             <span className="text-sm">No skills registered</span>
-            <span className="text-[10px] text-text-muted/60">Create a SKILL.md to get started</span>
+            <span className="text-[10px] text-text-muted">Create a SKILL.md to get started</span>
           </div>
         )}
 
@@ -443,36 +468,32 @@ function DetachedRegistryContent() {
           <span className="text-status-running">{status?.activeSkills ?? 0} active</span>
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
           Detached Window
         </span>
       </footer>
 
-      {/* Delete confirmation overlay */}
-      {confirmDelete && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="glass-panel-elevated rounded-xl p-5 max-w-xs mx-4 space-y-3">
-            <p className="text-sm text-text-primary">
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        isOpen={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete skill"
+        message={
+          <>
+            <p>
               Delete <span className="font-mono text-primary">{confirmDelete}</span>?
             </p>
-            <p className="text-xs text-text-muted">This action cannot be undone.</p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary bg-surface-elevated rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteConfirm}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-status-error text-white hover:bg-status-error/90 transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <p>This action cannot be undone.</p>
+          </>
+        }
+        confirmLabel={
+          <span>
+            Delete <span className="font-mono">"{confirmDelete}"</span>
+          </span>
+        }
+        variant="danger"
+      />
 
       {/* Editor modal */}
       <SkillEditor
