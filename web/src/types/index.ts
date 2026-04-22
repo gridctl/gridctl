@@ -33,6 +33,25 @@ export interface ReplicaStatus {
   containerId?: string;
 }
 
+// Controller decision at the last autoscale tick.
+export type AutoscaleDecisionKind = 'up' | 'down' | 'noop';
+
+// Live autoscale snapshot matching mcp.AutoscaleStatus on the Go side.
+// Present only when a server has autoscale configured.
+export interface AutoscaleStatus {
+  min: number;
+  max: number;
+  current: number;
+  target: number;
+  targetInFlight: number;
+  medianInFlight: number;
+  lastScaleUpAt?: string;   // RFC3339
+  lastScaleDownAt?: string; // RFC3339
+  lastDecision: AutoscaleDecisionKind;
+  warmPool?: number;
+  idleToZero?: boolean;
+}
+
 // MCP Server status matching mcp.MCPServerStatus
 export interface MCPServerStatus {
   name: string;
@@ -57,6 +76,7 @@ export interface MCPServerStatus {
   // means the operator has curated a subset.
   toolWhitelist?: string[];
   replicas?: ReplicaStatus[]; // Per-replica runtime status
+  autoscale?: AutoscaleStatus; // Live autoscale snapshot (absent when not configured)
 }
 
 // Resource status for non-MCP containers
@@ -192,6 +212,9 @@ export interface MCPServerNodeData extends NodeDataBase {
   // Tool whitelist from the stack YAML — present when the operator has
   // curated a subset of the server's tools. Drives the canvas "curated" badge.
   toolWhitelist?: string[];
+  // Live autoscale snapshot — drives the ×current/target badge and decision ring
+  // on the canvas node, and powers the Sidebar Scaling section.
+  autoscale?: AutoscaleStatus;
 }
 
 export interface ResourceNodeData extends NodeDataBase {

@@ -16,6 +16,7 @@ import {
   Monitor,
   Gauge,
   FileOutput,
+  Activity,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
@@ -24,6 +25,7 @@ import { PopoutButton } from '../ui/PopoutButton';
 import { GatewaySidebar } from '../gateway/GatewaySidebar';
 import { TokenUsageSection } from '../sidebar/TokenUsageSection';
 import { ToolsEditor } from '../sidebar/ToolsEditor';
+import { AutoscalePanel } from '../status/AutoscalePanel';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -37,6 +39,8 @@ export function Sidebar() {
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const sidebarDetached = useUIStore((s) => s.sidebarDetached);
   const selectNode = useStackStore((s) => s.selectNode);
+  const autoscaleHistory = useStackStore((s) => s.autoscaleHistory);
+  const autoscaleDecisions = useStackStore((s) => s.autoscaleDecisions);
   const { openDetachedWindow } = useWindowManager();
 
   const handleClose = () => {
@@ -335,6 +339,17 @@ export function Sidebar() {
         {isServer && (
           <Section title="Token Usage" icon={Gauge}>
             <TokenUsageSection serverName={data.name} />
+          </Section>
+        )}
+
+        {/* Scaling Section (MCP servers with autoscale only) */}
+        {isServer && serverData?.autoscale && (
+          <Section title="Scaling" icon={Activity} defaultOpen>
+            <AutoscalePanel
+              status={serverData.autoscale}
+              history={autoscaleHistory[data.name] ?? []}
+              decisions={autoscaleDecisions[data.name] ?? []}
+            />
           </Section>
         )}
 
