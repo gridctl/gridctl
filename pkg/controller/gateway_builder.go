@@ -239,10 +239,12 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 	if b.rt != nil {
 		registrar.SetRuntime(b.rt.Runtime())
 	}
+	registrar.SetBasePort(b.config.BasePort)
 	registrar.RegisterAll(ctx, b.result, b.stack, b.stackPath)
 
-	// Start periodic health monitoring
+	// Start periodic health monitoring and autoscaler tick loop.
 	gateway.StartHealthMonitor(ctx, mcp.DefaultHealthCheckInterval)
+	gateway.StartAutoscaler(ctx, mcp.DefaultAutoscalerInterval)
 
 	// Start background skill update check (non-blocking)
 	skills.CheckUpdatesBackground(
