@@ -230,3 +230,73 @@ func TestMCPServerEqual_ToolsChanges(t *testing.T) {
 	}
 }
 
+func TestComputeDiff_AutoscalePolicyOnlyChange(t *testing.T) {
+	base := config.MCPServer{
+		Name:      "junos",
+		Command:   []string{"python", "j.py"},
+		Autoscale: &config.AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3},
+	}
+	updated := base
+	updated.Autoscale = &config.AutoscaleConfig{Min: 1, Max: 8, TargetInFlight: 2}
+
+	diff := ComputeDiff(
+		&config.Stack{MCPServers: []config.MCPServer{base}},
+		&config.Stack{MCPServers: []config.MCPServer{updated}},
+	)
+
+	if len(diff.MCPServers.AutoscalePolicyChanges) != 1 {
+		t.Fatalf("AutoscalePolicyChanges = %d, want 1", len(diff.MCPServers.AutoscalePolicyChanges))
+	}
+	if len(diff.MCPServers.Modified) != 0 {
+		t.Errorf("Modified = %d, want 0 (policy-only should not restart)", len(diff.MCPServers.Modified))
+	}
+}
+
+func TestComputeDiff_StaticToAutoscaleIsRestart(t *testing.T) {
+	oldS := config.MCPServer{Name: "junos", Command: []string{"python", "j.py"}, Replicas: 3}
+	newS := config.MCPServer{Name: "junos", Command: []string{"python", "j.py"},
+		Autoscale: &config.AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3}}
+
+	diff := ComputeDiff(
+		&config.Stack{MCPServers: []config.MCPServer{oldS}},
+		&config.Stack{MCPServers: []config.MCPServer{newS}},
+	)
+	if len(diff.MCPServers.Modified) != 1 {
+		t.Errorf("static->autoscale should restart: Modified = %d, want 1", len(diff.MCPServers.Modified))
+	}
+	if len(diff.MCPServers.AutoscalePolicyChanges) != 0 {
+		t.Errorf("static->autoscale must not be a policy update: AutoscalePolicyChanges = %d, want 0",
+			len(diff.MCPServers.AutoscalePolicyChanges))
+	}
+}
+
+func TestComputeDiff_AutoscaleToStaticIsRestart(t *testing.T) {
+	oldS := config.MCPServer{Name: "junos", Command: []string{"python", "j.py"},
+		Autoscale: &config.AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3}}
+	newS := config.MCPServer{Name: "junos", Command: []string{"python", "j.py"}, Replicas: 2}
+
+	diff := ComputeDiff(
+		&config.Stack{MCPServers: []config.MCPServer{oldS}},
+		&config.Stack{MCPServers: []config.MCPServer{newS}},
+	)
+	if len(diff.MCPServers.Modified) != 1 {
+		t.Errorf("autoscale->static should restart: Modified = %d, want 1", len(diff.MCPServers.Modified))
+	}
+}
+
+func TestComputeDiff_AutoscaleWithUnrelatedChangeIsRestart(t *testing.T) {
+	oldS := config.MCPServer{Name: "junos", Command: []string{"python", "j.py"},
+		Autoscale: &config.AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3}}
+	newS := config.MCPServer{Name: "junos", Command: []string{"python", "j_v2.py"},
+		Autoscale: &config.AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3}}
+
+	diff := ComputeDiff(
+		&config.Stack{MCPServers: []config.MCPServer{oldS}},
+		&config.Stack{MCPServers: []config.MCPServer{newS}},
+	)
+	if len(diff.MCPServers.Modified) != 1 {
+		t.Errorf("command change mixed with autoscale should restart: Modified = %d, want 1",
+			len(diff.MCPServers.Modified))
+	}
+}
+
