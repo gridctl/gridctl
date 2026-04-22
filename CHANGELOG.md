@@ -39,6 +39,7 @@ All notable changes to gridctl will be documented in this file.
 - Replicas observability, status, and API (phase 3 of #470) ([#479](https://github.com/gridctl/gridctl/pull/479))
 - Replicas wizard input and canvas badge (phase 4 of #470) ([#480](https://github.com/gridctl/gridctl/pull/480))
 - Wizard UI for reactive autoscaling. A new segmented "Scaling" control in the MCP server form lets users pick between static `replicas` and the `autoscale:` block shipped in [#512](https://github.com/gridctl/gridctl/pull/512); toggling between modes clears the opposite field group so the output YAML carries at most one. Defaults (min=1, max=5, target=10, scale_up=30s, scale_down=5m) keep the form valid on first view. Backend validation errors surface inline at apply time at the `mcp-servers[i].autoscale.*` paths.
+- Status observability for autoscaled MCP servers. Canvas nodes now render `×current/target` with an amber pulse ring while scaling up and a teal ring while scaling down. Selecting an autoscaled server reveals a Sidebar "Scaling" section with a live headline, dwell phrase, inline-SVG sparkline (current solid vs. target dashed), and a collapsible decision feed derived client-side from polling snapshots.
 
 ## [0.1.0-beta.5] - 2026-04-08
 
