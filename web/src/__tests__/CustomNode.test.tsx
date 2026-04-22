@@ -131,4 +131,54 @@ describe('CustomNode', () => {
     expect(screen.queryByText('toon')).not.toBeInTheDocument();
     expect(screen.queryByText('csv')).not.toBeInTheDocument();
   });
+
+  it('renders ×current/target badge when autoscale is present', () => {
+    render(
+      <CustomNode
+        data={makeServerData({
+          autoscale: {
+            min: 1,
+            max: 5,
+            current: 2,
+            target: 3,
+            targetInFlight: 10,
+            medianInFlight: 14,
+            lastDecision: 'up',
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText('×2/3')).toBeInTheDocument();
+  });
+
+  it('autoscale badge takes precedence over replicaCount badge', () => {
+    render(
+      <CustomNode
+        data={makeServerData({
+          replicaCount: 3,
+          autoscale: {
+            min: 1,
+            max: 5,
+            current: 2,
+            target: 3,
+            targetInFlight: 10,
+            medianInFlight: 14,
+            lastDecision: 'noop',
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText('×2/3')).toBeInTheDocument();
+    expect(screen.queryByText('×3')).not.toBeInTheDocument();
+  });
+
+  it('falls back to ×N when only replicaCount is set', () => {
+    render(<CustomNode data={makeServerData({ replicaCount: 4 })} />);
+    expect(screen.getByText('×4')).toBeInTheDocument();
+  });
+
+  it('renders no scale badge when neither autoscale nor replicaCount > 1', () => {
+    render(<CustomNode data={makeServerData()} />);
+    expect(screen.queryByText(/^×/)).not.toBeInTheDocument();
+  });
 });
