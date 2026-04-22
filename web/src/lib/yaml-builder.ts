@@ -74,9 +74,24 @@ export interface MCPServerFormData {
   outputFormat?: string;
   network?: string;
   pinSchemas?: boolean;
-  // Replicas
+  // Replicas (mutually exclusive with autoscale)
   replicas?: number;
   replicaPolicy?: 'round-robin' | 'least-connections';
+  // Autoscale (mutually exclusive with replicas)
+  autoscale?: AutoscaleFormData;
+}
+
+// AutoscaleFormData mirrors pkg/config.AutoscaleConfig. UI labels are
+// vocabulary-swapped (target_in_flight → "Target concurrent requests per
+// replica") but YAML keys match the backend exactly.
+export interface AutoscaleFormData {
+  min: number;
+  max: number;
+  targetInFlight: number;
+  scaleUpAfter?: string;
+  scaleDownAfter?: string;
+  warmPool?: number;
+  idleToZero?: boolean;
 }
 
 export interface ResourceFormData {
@@ -269,13 +284,27 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
   if (data.network) lines.push(`${inner}network: ${data.network}`);
   if (data.pinSchemas !== undefined) lines.push(`${inner}pin_schemas: ${data.pinSchemas}`);
 
-  // Replicas: mirror Go's omitempty semantics — skip the default (1) and the
-  // default policy (round-robin) so single-replica specs stay byte-identical.
-  if (data.replicas && data.replicas !== 1) {
-    lines.push(`${inner}replicas: ${data.replicas}`);
-  }
-  if (data.replicaPolicy && data.replicaPolicy !== 'round-robin') {
-    lines.push(`${inner}replica_policy: ${data.replicaPolicy}`);
+  // Scaling: autoscale and replicas are mutually exclusive on the backend.
+  // Prefer autoscale if present; otherwise fall through to the static replicas
+  // block, mirroring Go's omitempty semantics (skip replicas:1 and the default
+  // round-robin policy so single-replica specs stay byte-identical).
+  if (data.autoscale) {
+    const a = data.autoscale;
+    lines.push(`${inner}autoscale:`);
+    lines.push(`${inner}  min: ${a.min}`);
+    lines.push(`${inner}  max: ${a.max}`);
+    lines.push(`${inner}  target_in_flight: ${a.targetInFlight}`);
+    if (a.scaleUpAfter) lines.push(`${inner}  scale_up_after: ${a.scaleUpAfter}`);
+    if (a.scaleDownAfter) lines.push(`${inner}  scale_down_after: ${a.scaleDownAfter}`);
+    if (a.warmPool && a.warmPool > 0) lines.push(`${inner}  warm_pool: ${a.warmPool}`);
+    if (a.idleToZero) lines.push(`${inner}  idle_to_zero: true`);
+  } else {
+    if (data.replicas && data.replicas !== 1) {
+      lines.push(`${inner}replicas: ${data.replicas}`);
+    }
+    if (data.replicaPolicy && data.replicaPolicy !== 'round-robin') {
+      lines.push(`${inner}replica_policy: ${data.replicaPolicy}`);
+    }
   }
 
   return lines.join('\n');
@@ -418,19 +447,63 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
     const lines = yaml.split('\n');
     const result: Record<string, unknown> = {};
 
+    // Collect the `autoscale:` sub-block separately so nested keys (min, max,
+    // target_in_flight, ...) do not collide with top-level keys of the same
+    // name on other resources. Everything else stays flat — a pre-existing
+    // limitation of this best-effort parser.
+    let autoscaleIndent: number | null = null;
+    let autoscaleBlock: Record<string, string> | null = null;
+
     for (const line of lines) {
       const match = line.match(/^(\s*)(\w[\w-]*):\s*(.*)/);
-      if (match) {
-        const [, , key, value] = match;
-        if (value) {
-          result[key] = value.replace(/^["']|["']$/g, '');
+      if (!match) continue;
+      const [, indentStr, key, value] = match;
+      const indent = indentStr.length;
+
+      if (autoscaleBlock !== null && autoscaleIndent !== null) {
+        if (indent > autoscaleIndent) {
+          if (value) autoscaleBlock[key] = value.replace(/^["']|["']$/g, '');
+          continue;
         }
+        // Outer-level key again — commit the block and resume flat parsing.
+        result.__autoscale = autoscaleBlock;
+        autoscaleBlock = null;
+        autoscaleIndent = null;
       }
+
+      if (key === 'autoscale') {
+        autoscaleBlock = {};
+        autoscaleIndent = indent;
+        continue;
+      }
+
+      if (value) {
+        result[key] = value.replace(/^["']|["']$/g, '');
+      }
+    }
+    if (autoscaleBlock !== null) {
+      result.__autoscale = autoscaleBlock;
     }
 
     // Return minimal parsed data based on type
     switch (resourceType) {
       case 'mcp-server': {
+        const autoRaw = result.__autoscale as Record<string, string> | undefined;
+        const autoscale: AutoscaleFormData | undefined = autoRaw
+          ? {
+              min: Number(autoRaw.min ?? 1),
+              max: Number(autoRaw.max ?? 5),
+              targetInFlight: Number(autoRaw.target_in_flight ?? 10),
+              scaleUpAfter: autoRaw.scale_up_after,
+              scaleDownAfter: autoRaw.scale_down_after,
+              warmPool:
+                autoRaw.warm_pool !== undefined && Number(autoRaw.warm_pool) > 0
+                  ? Number(autoRaw.warm_pool)
+                  : undefined,
+              idleToZero: autoRaw.idle_to_zero === 'true' ? true : undefined,
+            }
+          : undefined;
+
         const parsedReplicas = Number(result.replicas);
         const rawPolicy = result.replica_policy as string | undefined;
         const replicaPolicy =
@@ -444,8 +517,15 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
             serverType: 'container',
             image: result.image as string,
             transport: result.transport as string,
-            replicas: Number.isFinite(parsedReplicas) && parsedReplicas > 0 ? parsedReplicas : undefined,
-            replicaPolicy,
+            // autoscale and replicas are mutually exclusive at the backend —
+            // don't surface stale replica fields if autoscale is present.
+            replicas: autoscale
+              ? undefined
+              : Number.isFinite(parsedReplicas) && parsedReplicas > 0
+                ? parsedReplicas
+                : undefined,
+            replicaPolicy: autoscale ? undefined : replicaPolicy,
+            autoscale,
           },
         };
       }
