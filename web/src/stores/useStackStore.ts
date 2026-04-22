@@ -11,11 +11,36 @@ import type {
   Tool,
   TokenUsage,
   ConnectionStatus,
+  AutoscaleDecisionKind,
 } from '../types';
 import { transformToNodesAndEdges } from '../lib/transform';
 import { useRegistryStore } from './useRegistryStore';
 import { useUIStore } from './useUIStore';
 import { usePinsStore } from './usePinsStore';
+
+// Per-server autoscale sample. Populated every poll cycle; capped at
+// AUTOSCALE_HISTORY_CAP entries so the ring buffer stays O(1) in memory.
+export interface AutoscaleSample {
+  t: number;              // ms since epoch (client-local)
+  current: number;
+  target: number;
+  medianInFlight: number;
+}
+
+// Client-derived scale event. The backend exposes only the last-decision
+// snapshot (lastScaleUpAt/lastScaleDownAt), not an event stream, so we
+// diff consecutive polls. Two scale events within one polling window
+// (3s) can be coalesced — that's a known limitation, not a bug.
+export interface AutoscaleDecision {
+  t: number;              // ms since epoch (client-local observation time)
+  kind: Exclude<AutoscaleDecisionKind, 'noop'>;
+  from: number;
+  to: number;
+  reason: string;
+}
+
+export const AUTOSCALE_HISTORY_CAP = 120; // 6 minutes at 3s polling
+export const AUTOSCALE_DECISIONS_CAP = 10;
 
 interface StackState {
   // === Raw API Data ===
@@ -33,6 +58,12 @@ interface StackState {
   nodes: Node[];
   edges: Edge[];
   draggedPositions: Map<string, { x: number; y: number }>;  // User-dragged node positions
+
+  // === Autoscale observability (client-derived from polling) ===
+  autoscaleHistory: Record<string, AutoscaleSample[]>;
+  autoscaleDecisions: Record<string, AutoscaleDecision[]>;
+  // Last-seen raw timestamps, used to diff polls and detect new scale events.
+  autoscaleLastSeen: Record<string, { upAt?: string; downAt?: string }>;
 
   // === UI State ===
   selectedNodeId: string | null;
@@ -72,6 +103,9 @@ export const useStackStore = create<StackState>()(
     nodes: [],
     edges: [],
     draggedPositions: new Map(),
+    autoscaleHistory: {},
+    autoscaleDecisions: {},
+    autoscaleLastSeen: {},
     selectedNodeId: null,
     connectionStatus: 'disconnected',
     lastUpdated: null,
@@ -80,14 +114,25 @@ export const useStackStore = create<StackState>()(
 
     // Actions
     setGatewayStatus: (status) => {
+      const mcpServers = status['mcp-servers'] || [];
+      const { autoscaleHistory, autoscaleDecisions, autoscaleLastSeen } = get();
+      const folded = updateAutoscaleObservability(
+        mcpServers,
+        autoscaleHistory,
+        autoscaleDecisions,
+        autoscaleLastSeen,
+      );
       set({
         gatewayInfo: status.gateway,
-        mcpServers: status['mcp-servers'] || [],
+        mcpServers,
         resources: status.resources || [],
         sessions: status.sessions ?? 0,
         codeMode: status.code_mode || null,
         tokenUsage: status.token_usage ?? null,
         stackName: status.stack_name || '',
+        autoscaleHistory: folded.history,
+        autoscaleDecisions: folded.decisions,
+        autoscaleLastSeen: folded.lastSeen,
         lastUpdated: new Date(),
         isLoading: false,
         error: null,
@@ -209,3 +254,79 @@ export const useSelectedNodeData = () => {
   const node = useSelectedNode();
   return node?.data as Record<string, unknown> | undefined;
 };
+
+// Fold the latest poll into the autoscale ring buffer and derived decision
+// feed. Exported for unit-testing; not intended for direct use from components.
+export function updateAutoscaleObservability(
+  mcpServers: MCPServerStatus[],
+  prevHistory: Record<string, AutoscaleSample[]>,
+  prevDecisions: Record<string, AutoscaleDecision[]>,
+  prevLastSeen: Record<string, { upAt?: string; downAt?: string }>,
+): {
+  history: Record<string, AutoscaleSample[]>;
+  decisions: Record<string, AutoscaleDecision[]>;
+  lastSeen: Record<string, { upAt?: string; downAt?: string }>;
+} {
+  const now = Date.now();
+  const history: Record<string, AutoscaleSample[]> = { ...prevHistory };
+  const decisions: Record<string, AutoscaleDecision[]> = { ...prevDecisions };
+  const lastSeen: Record<string, { upAt?: string; downAt?: string }> = { ...prevLastSeen };
+
+  for (const server of mcpServers) {
+    const as = server.autoscale;
+    if (!as) continue;
+
+    const prevSamples = history[server.name] ?? [];
+    const lastSample = prevSamples[prevSamples.length - 1];
+    const nextSample: AutoscaleSample = {
+      t: now,
+      current: as.current,
+      target: as.target,
+      medianInFlight: as.medianInFlight,
+    };
+    const nextSamples =
+      prevSamples.length >= AUTOSCALE_HISTORY_CAP
+        ? [...prevSamples.slice(prevSamples.length - AUTOSCALE_HISTORY_CAP + 1), nextSample]
+        : [...prevSamples, nextSample];
+    history[server.name] = nextSamples;
+
+    // Derive a decision entry when lastScaleUpAt/lastScaleDownAt advances vs.
+    // the last observation. First-sight values establish a baseline only —
+    // recording them would flood the feed with stale events on a page refresh.
+    // Two scale events inside one 3s polling window can coalesce — accepted
+    // limitation of snapshot-diff observation.
+    const seenBefore = server.name in prevLastSeen;
+    const seen = prevLastSeen[server.name] ?? {};
+    const newDecisions: AutoscaleDecision[] = [];
+    if (seenBefore && as.lastScaleUpAt && as.lastScaleUpAt !== seen.upAt) {
+      newDecisions.push({
+        t: Date.parse(as.lastScaleUpAt) || now,
+        kind: 'up',
+        from: lastSample?.current ?? as.current,
+        to: as.current,
+        reason: `median in-flight ${as.medianInFlight} ≥ target ${as.targetInFlight}`,
+      });
+    }
+    if (seenBefore && as.lastScaleDownAt && as.lastScaleDownAt !== seen.downAt) {
+      newDecisions.push({
+        t: Date.parse(as.lastScaleDownAt) || now,
+        kind: 'down',
+        from: lastSample?.current ?? as.current,
+        to: as.current,
+        reason: `median in-flight ${as.medianInFlight} below target ${as.targetInFlight}`,
+      });
+    }
+    if (newDecisions.length > 0) {
+      const prevServerDecisions = prevDecisions[server.name] ?? [];
+      // Newest first within this tick; then prepend to prior feed; cap.
+      newDecisions.sort((a, b) => b.t - a.t);
+      decisions[server.name] = [...newDecisions, ...prevServerDecisions].slice(0, AUTOSCALE_DECISIONS_CAP);
+    }
+    lastSeen[server.name] = {
+      upAt: as.lastScaleUpAt,
+      downAt: as.lastScaleDownAt,
+    };
+  }
+
+  return { history, decisions, lastSeen };
+}
