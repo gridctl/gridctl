@@ -156,6 +156,61 @@ type MCPServer struct {
 	// ReplicaPolicy selects the dispatch policy when Replicas > 1.
 	// Valid values: "round-robin" (default), "least-connections".
 	ReplicaPolicy string `yaml:"replica_policy,omitempty" json:"replica_policy,omitempty"`
+
+	// Autoscale, when set, replaces the static Replicas count with reactive
+	// autoscaling bounded by Min and Max. Mutually exclusive with Replicas.
+	// Not supported on external URL or OpenAPI transports.
+	Autoscale *AutoscaleConfig `yaml:"autoscale,omitempty" json:"autoscale,omitempty"`
+}
+
+// AutoscaleConfig controls reactive autoscaling of a ReplicaSet. All fields are
+// optional at the YAML layer only in the sense that SetDefaults fills missing
+// timings; Min, Max, and TargetInFlight are required for the block to validate.
+type AutoscaleConfig struct {
+	// Min is the minimum number of healthy replicas to maintain.
+	// >= 0. Must be >= 1 when IdleToZero is false.
+	Min int `yaml:"min" json:"min"`
+	// Max is the upper bound on replica count. >= 1, >= Min, <= 32.
+	Max int `yaml:"max" json:"max"`
+	// TargetInFlight is the per-replica in-flight request count the scaler
+	// tries to hold the median at or below. >= 1.
+	TargetInFlight int `yaml:"target_in_flight" json:"target_in_flight"`
+	// ScaleUpAfter is how long the window median must exceed the target
+	// before spawning a replica. Default 30s. Minimum 10s.
+	ScaleUpAfter string `yaml:"scale_up_after,omitempty" json:"scale_up_after,omitempty"`
+	// ScaleDownAfter is how long the window median must be below the target
+	// before reaping a replica. Default 5m. Minimum 1m.
+	ScaleDownAfter string `yaml:"scale_down_after,omitempty" json:"scale_down_after,omitempty"`
+	// WarmPool keeps this many extra idle-ready replicas above the load-derived
+	// target at all times. Default 0. Must satisfy Min + WarmPool <= Max.
+	WarmPool int `yaml:"warm_pool,omitempty" json:"warm_pool,omitempty"`
+	// IdleToZero allows the scaler to reap every replica after a sustained
+	// idle. Min may be 0 only when IdleToZero is true. Default false.
+	IdleToZero bool `yaml:"idle_to_zero,omitempty" json:"idle_to_zero,omitempty"`
+}
+
+// ResolvedScaleUpAfter parses ScaleUpAfter; returns 30s when unset or invalid.
+func (a *AutoscaleConfig) ResolvedScaleUpAfter() time.Duration {
+	if a == nil || a.ScaleUpAfter == "" {
+		return 30 * time.Second
+	}
+	d, err := time.ParseDuration(a.ScaleUpAfter)
+	if err != nil || d <= 0 {
+		return 30 * time.Second
+	}
+	return d
+}
+
+// ResolvedScaleDownAfter parses ScaleDownAfter; returns 5m when unset or invalid.
+func (a *AutoscaleConfig) ResolvedScaleDownAfter() time.Duration {
+	if a == nil || a.ScaleDownAfter == "" {
+		return 5 * time.Minute
+	}
+	d, err := time.ParseDuration(a.ScaleDownAfter)
+	if err != nil || d <= 0 {
+		return 5 * time.Minute
+	}
+	return d
 }
 
 // ResolvedReadyTimeout parses ReadyTimeout; returns 0 when unset or invalid
@@ -366,7 +421,9 @@ func (s *Stack) SetDefaults() {
 				s.MCPServers[i].Source.Ref = "main"
 			}
 		}
-		if s.MCPServers[i].Replicas <= 0 {
+		// When autoscale is configured the scaler owns replica count — leave
+		// Replicas at 0 so downstream code can distinguish static from elastic.
+		if s.MCPServers[i].Autoscale == nil && s.MCPServers[i].Replicas <= 0 {
 			s.MCPServers[i].Replicas = 1
 		}
 		if s.MCPServers[i].ReplicaPolicy == "" {
