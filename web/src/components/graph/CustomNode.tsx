@@ -34,7 +34,9 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const TransportIcon = getTransportIcon(transport);
   const toolCount = isServer ? (data as MCPServerNodeData).toolCount : null;
   const replicaCount = isServer ? (data as MCPServerNodeData).replicaCount ?? 1 : 1;
-  const hasReplicas = isServer && replicaCount > 1;
+  const autoscale = isServer ? (data as MCPServerNodeData).autoscale : undefined;
+  // Autoscale badge takes precedence over the static ×N badge.
+  const hasReplicas = isServer && !autoscale && replicaCount > 1;
 
   // Get endpoint/containerId for MCP servers
   const endpoint = isServer ? (data as MCPServerNodeData).endpoint : null;
@@ -56,6 +58,9 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           : 'bg-gradient-to-br from-surface/95 to-secondary/[0.02] border-border/50',
         selected && isServer && 'border-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.3)] ring-1 ring-violet-500/30',
         selected && !isServer && 'border-secondary shadow-glow-secondary ring-1 ring-secondary/30',
+        // Autoscale decision ring: inset so it does not fight selection highlighting.
+        autoscale?.lastDecision === 'up' && 'ring-2 ring-inset ring-primary/40 animate-pulse-glow',
+        autoscale?.lastDecision === 'down' && 'ring-2 ring-inset ring-secondary/40',
         !selected && 'hover:shadow-node-hover hover:border-text-muted/30'
       )}
       style={{
@@ -109,6 +114,17 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               <span className="text-[9px] text-cyan-400 font-medium">active</span>
             </div>
+          )}
+          {/* Autoscale live count: current/target. Takes precedence over the
+              static ×N badge so operators see reactive scale at a glance. */}
+          {isServer && autoscale && (
+            <span
+              className="text-[10px] text-violet-300/80 font-mono tracking-tight"
+              title={`Autoscale · current ${autoscale.current} / target ${autoscale.target}`}
+              aria-label={`Autoscale current ${autoscale.current} of target ${autoscale.target}`}
+            >
+              ×{autoscale.current}/{autoscale.target}
+            </span>
           )}
           {/* Inline replica count when > 1. Shown in both compact and full modes
               so horizontal-scale servers are recognisable at a glance. */}
