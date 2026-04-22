@@ -999,6 +999,9 @@ func (g *Gateway) UnregisterMCPServer(name string) {
 	g.router.RemoveClient(name)
 	g.router.RefreshTools()
 	g.unregisterAutoscaler(name)
+	g.mu.Lock()
+	delete(g.serverMeta, name)
+	g.mu.Unlock()
 }
 
 // RestartMCPServer restarts an individual MCP server by name.
