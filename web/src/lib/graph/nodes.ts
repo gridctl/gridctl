@@ -96,6 +96,7 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       outputFormat: server.outputFormat,
       replicaCount: server.replicas?.length,
       toolWhitelist: server.toolWhitelist,
+      autoscale: server.autoscale,
     },
     draggable: true,
   }));
