@@ -273,6 +273,171 @@ func TestReplicaSet_ClientIdentity(t *testing.T) {
 	}
 }
 
+func TestReplicaSet_AddReplica_MonotonicIDs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin,
+		[]AgentClient{setupMockAgentClient(ctrl, "r0", nil), setupMockAgentClient(ctrl, "r1", nil)})
+
+	if got := set.Replicas()[0].ID(); got != 0 {
+		t.Fatalf("replica-0 id = %d, want 0", got)
+	}
+	if got := set.Replicas()[1].ID(); got != 1 {
+		t.Fatalf("replica-1 id = %d, want 1", got)
+	}
+
+	// First AddReplica must hand out id=2.
+	id := set.AddReplica(setupMockAgentClient(ctrl, "added", nil))
+	if id != 2 {
+		t.Errorf("first AddReplica returned id %d, want 2", id)
+	}
+	id = set.AddReplica(setupMockAgentClient(ctrl, "added2", nil))
+	if id != 3 {
+		t.Errorf("second AddReplica returned id %d, want 3", id)
+	}
+	if got := set.Size(); got != 4 {
+		t.Errorf("Size() = %d, want 4", got)
+	}
+}
+
+func TestReplicaSet_RemoveReplica_IDsNeverReused(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin,
+		[]AgentClient{setupMockAgentClient(ctrl, "r0", nil), setupMockAgentClient(ctrl, "r1", nil)})
+
+	// Remove id=0.
+	r, err := set.RemoveReplica(0)
+	if err != nil {
+		t.Fatalf("RemoveReplica(0): %v", err)
+	}
+	if r.ID() != 0 {
+		t.Fatalf("removed replica id = %d, want 0", r.ID())
+	}
+
+	// Add a new replica — must NOT reuse id=0.
+	id := set.AddReplica(setupMockAgentClient(ctrl, "new", nil))
+	if id != 2 {
+		t.Errorf("after removal, new replica id = %d, want 2 (monotonic)", id)
+	}
+
+	// Remove unknown id returns an error.
+	if _, err := set.RemoveReplica(99); err == nil {
+		t.Error("RemoveReplica(99) returned nil error; want 'not in set'")
+	}
+}
+
+func TestReplicaSet_RemoveReplica_PreservesOthers(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin,
+		[]AgentClient{
+			setupMockAgentClient(ctrl, "r0", nil),
+			setupMockAgentClient(ctrl, "r1", nil),
+			setupMockAgentClient(ctrl, "r2", nil),
+		})
+	if _, err := set.RemoveReplica(1); err != nil {
+		t.Fatalf("RemoveReplica(1): %v", err)
+	}
+	ids := make([]int, 0, 2)
+	for _, r := range set.Replicas() {
+		ids = append(ids, r.ID())
+	}
+	if len(ids) != 2 || ids[0] != 0 || ids[1] != 2 {
+		t.Errorf("after removing id=1, remaining ids = %v, want [0 2]", ids)
+	}
+}
+
+func TestReplicaSet_MedianInFlight(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin,
+		[]AgentClient{
+			setupMockAgentClient(ctrl, "r0", nil),
+			setupMockAgentClient(ctrl, "r1", nil),
+			setupMockAgentClient(ctrl, "r2", nil),
+			setupMockAgentClient(ctrl, "r3", nil),
+		})
+	reps := set.Replicas()
+	reps[0].inFlight.Store(1)
+	reps[1].inFlight.Store(3)
+	reps[2].inFlight.Store(5)
+	reps[3].inFlight.Store(7)
+
+	// Even length: average of middle two = (3+5)/2 = 4.
+	if got := set.MedianInFlight(); got != 4 {
+		t.Errorf("even median = %v, want 4", got)
+	}
+
+	// Odd length: drop one; median of {1,3,7} = 3.
+	reps[2].SetHealthy(false)
+	if got := set.MedianInFlight(); got != 3 {
+		t.Errorf("odd median = %v, want 3", got)
+	}
+
+	// All unhealthy — median = 0.
+	for _, r := range reps {
+		r.SetHealthy(false)
+	}
+	if got := set.MedianInFlight(); got != 0 {
+		t.Errorf("no healthy: median = %v, want 0", got)
+	}
+}
+
+func TestReplicaSet_ToolCache_WarmOnInit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	tools := []Tool{{Name: "t0"}, {Name: "t1"}}
+	client := setupMockAgentClient(ctrl, "r0", tools)
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin, []AgentClient{client})
+
+	cached := set.CachedTools()
+	if len(cached) != 2 || cached[0].Name != "t0" {
+		t.Errorf("cached tools = %v, want [{t0} {t1}]", cached)
+	}
+
+	// After reaping every replica, the cache still serves the tool surface.
+	if _, err := set.RemoveReplica(0); err != nil {
+		t.Fatalf("RemoveReplica: %v", err)
+	}
+	stillCached := set.CachedTools()
+	if len(stillCached) != 2 {
+		t.Errorf("after scale-to-zero: cached tools len = %d, want 2", len(stillCached))
+	}
+}
+
+func TestReplicaSet_ToolCache_SetIgnoresEmpty(t *testing.T) {
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin, nil)
+	set.SetToolCache([]Tool{{Name: "keep"}})
+	set.SetToolCache(nil) // must not clear
+	if got := set.CachedTools(); len(got) != 1 || got[0].Name != "keep" {
+		t.Errorf("empty set call cleared cache; got %v", got)
+	}
+}
+
+func TestReplicaSet_AddReplica_ConcurrentIDs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	set := NewReplicaSet("svc", ReplicaPolicyRoundRobin, nil)
+
+	var wg sync.WaitGroup
+	ids := make(chan int, 64)
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ids <- set.AddReplica(setupMockAgentClient(ctrl, "x", nil))
+		}()
+	}
+	wg.Wait()
+	close(ids)
+
+	seen := make(map[int]bool, 64)
+	for id := range ids {
+		if seen[id] {
+			t.Fatalf("duplicate id %d returned from concurrent AddReplica", id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != 64 {
+		t.Errorf("got %d distinct ids, want 64", len(seen))
+	}
+}
+
 func TestReplica_InFlightCounters(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	set := NewReplicaSet("svc", ReplicaPolicyLeastConnections,
