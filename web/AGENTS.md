@@ -107,6 +107,8 @@ Implementation in `src/lib/graph/` (butterfly.ts, edges.ts, nodes.ts, transform.
 *   **Color:** Violet accents for all MCP server types (unified theme)
 *   **Content:** Name, transport type, endpoint/container ID, tool count, status
 *   **Format Badge:** Teal badge next to transport badge, shown only when `outputFormat` is non-default (not `json`). Displays format name (TOON, CSV, text).
+*   **Scale Badge:** Inline mono badge in the header row. When `data.autoscale` is present the badge renders `×<current>/<target>` (e.g. `×2/3`); otherwise, when `replicaCount > 1`, it falls back to `×N`; otherwise nothing. Autoscale takes precedence over static replicas.
+*   **Decision Ring:** Subtle inset ring driven by `data.autoscale.lastDecision`. `"up"` → amber `animate-pulse-glow`; `"down"` → `ring-secondary/40`; `"noop"` → no extra ring. The ring is inset (`ring-inset`) so it layers below the selection ring without fighting it.
 *   **Token Heat Overlay:** Amber glow proportional to relative token usage when heat map is enabled via Flame button in canvas controls.
 *   **Type Indicators:** Gray bordered badge next to status badge indicating server type:
     *   **Container:** Terminal icon + "Container" (for container-based servers)
@@ -151,6 +153,19 @@ Shows per-server token counts, sparkline trend chart, and conditional format sav
     *   `SparkChart` — Minimal Recharts-based sparkline (no axes, legends, or tooltips)
 *   **Visibility:** Only renders when token data exists for the selected server
 *   **Format Savings:** Conditional bar showing original vs formatted tokens and savings percentage
+
+### Scaling Section (Autoscaled MCP Servers Only)
+Live view of reactive-autoscale state. Renders whenever the selected server's `MCPServerStatus.autoscale` is populated.
+
+*   **Location:** Below Token Usage, above Actions (MCP server nodes only)
+*   **Icon:** Activity (Lucide), `defaultOpen`
+*   **Component:** `AutoscalePanel` (`web/src/components/status/AutoscalePanel.tsx`)
+*   **Layout (top-down):**
+    *   Headline: `Current <c> / Target <t> · Range <min>–<max>` (mono, violet emphasis)
+    *   Dwell phrase keyed off `lastDecision` (e.g. `Scaling up · median in-flight 14, target 10`; `Stable · …`; `Idle · scaled to zero`)
+    *   Inline-SVG sparkline — `current` solid violet, `target` dashed violet at 50%, min/max as faint horizontal guide lines at 15%. No chart library; path data memoized.
+    *   Collapsible **Recent Decisions** feed (closed by default) — last ≤10 client-derived entries with `HH:MM:SS · kind chip · from→to`
+*   **Derivation:** The decision feed is **not** streamed by the backend; it's reconstructed in the store by diffing `lastScaleUpAt` / `lastScaleDownAt` between polls. Two scale events within one 3s polling window can coalesce — accepted trade-off.
 
 ### Access Section (Agents Only)
 Shows the MCP server dependencies for an agent with tool-level access visualization.
@@ -609,7 +624,7 @@ The creation wizard is a multi-step modal for adding MCP servers, resources, sta
 - **RecipePicker**: First step — resource type selection cards (Stack, MCP Server, Resource, Agent, Skill)
 - **BrowseStep**: Registry browser for importing skills
 - **AddSourceStep**: Transport/source configuration for MCP servers
-- **MCPServerForm**: MCP server detail form
+- **MCPServerForm**: MCP server detail form. Advanced section includes a segmented **Scaling** control (Static replicas | Autoscale). The two branches share no state — toggling clears the opposite field group so the emitted YAML carries at most one of `replicas:` or `autoscale:`. Hidden on `external` and `openapi` server types (backend rejects both).
 - **ResourceForm**: Resource (non-MCP container) form
 - **StackForm**: Stack spec builder
 - **ReviewStep**: Final review and deploy step (all resource types); for stacks, shows **Save & Load** instead of Deploy
