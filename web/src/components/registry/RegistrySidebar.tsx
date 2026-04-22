@@ -1,12 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Library,
   BookOpen,
   ChevronDown,
   ChevronRight,
   Plus,
-  Pencil,
-  Trash2,
   Power,
   PowerOff,
   X,
@@ -18,7 +16,6 @@ import {
   CheckCircle2,
   XCircle,
   MinusCircle,
-  FlaskConical,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useRegistryStore } from '../../stores/useRegistryStore';
@@ -29,6 +26,10 @@ import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { PopoutButton } from '../ui/PopoutButton';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { SkillEditor } from './SkillEditor';
+import { StateBadge } from './StateBadge';
+import { TestStatusBadge } from './TestStatusBadge';
+import { SkillActions } from './SkillActions';
+import { useListNav } from '../../hooks/useListNav';
 import { showToast } from '../ui/Toast';
 import {
   fetchRegistryStatus,
@@ -42,7 +43,7 @@ import {
 } from '../../lib/api';
 import { hasWorkflowBlock } from '../../lib/workflowSync';
 import { useWizardStore } from '../../stores/useWizardStore';
-import type { AgentSkill, ItemState, UpdateSummary, SkillTestResult } from '../../types';
+import type { AgentSkill, UpdateSummary, SkillTestResult } from '../../types';
 
 export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {}) {
   const skills = useRegistryStore((s) => s.skills);
@@ -85,6 +86,11 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
 
   // Delete confirmation
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // Keyboard nav state
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const skillRowRefs = useRef<Array<HTMLElement | null>>([]);
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -153,6 +159,67 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       setConfirmDelete(null);
     }
   }, [confirmDelete, refreshRegistry]);
+
+  // Clamp selected index when the filtered list shrinks
+  useEffect(() => {
+    if (filteredSkills.length === 0) return;
+    if (selectedIndex >= filteredSkills.length) {
+      setSelectedIndex(filteredSkills.length - 1);
+    }
+  }, [filteredSkills.length, selectedIndex]);
+
+  // Scroll the selected row into view on change
+  useEffect(() => {
+    skillRowRefs.current[selectedIndex]?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex]);
+
+  const keyboardEnabled = !showEditor && confirmDelete === null;
+  const selectedSkill = filteredSkills[selectedIndex];
+
+  useListNav({
+    itemCount: filteredSkills.length,
+    selectedIndex: Math.max(0, selectedIndex),
+    setSelectedIndex,
+    onEnter: () => {
+      const el = skillRowRefs.current[selectedIndex];
+      el?.querySelector<HTMLElement>('[data-skill-header]')?.click();
+    },
+    onEdit: () => {
+      if (selectedSkill) {
+        setEditingSkill(selectedSkill);
+        setShowEditor(true);
+      }
+    },
+    onToggle: () => {
+      if (selectedSkill) handleToggleState(selectedSkill);
+    },
+    enabled: keyboardEnabled,
+  });
+
+  // Global '/' to focus search, 'n' to open new-skill editor
+  useEffect(() => {
+    if (!keyboardEnabled) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return;
+      if (target.closest('[role="dialog"], [role="alertdialog"]')) return;
+
+      if (e.key === '/') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (e.key === 'n') {
+        e.preventDefault();
+        setEditingSkill(undefined);
+        setShowEditor(true);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [keyboardEnabled]);
 
   return (
     <div className={cn('flex flex-col overflow-hidden', !embedded && 'h-full w-full')}>
@@ -238,6 +305,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
         <div className="relative">
           <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/50" />
           <input
+            ref={searchInputRef}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search skills..."
@@ -246,8 +314,10 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
           />
           {searchQuery && (
             <button
+              type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-highlight transition-colors"
+              title="Clear search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-surface-highlight transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <X size={12} className="text-text-muted" />
             </button>
@@ -260,6 +330,9 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
         <SkillsList
           skills={filteredSkills}
           isFiltered={!!searchQuery}
+          selectedIndex={selectedIndex}
+          onSelectIndex={setSelectedIndex}
+          rowRefs={skillRowRefs}
           onEdit={(skill) => { setEditingSkill(skill); setShowEditor(true); }}
           onDelete={(name) => setConfirmDelete(name)}
           onToggleState={handleToggleState}
@@ -324,6 +397,9 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
 function SkillsList({
   skills,
   isFiltered,
+  selectedIndex,
+  onSelectIndex,
+  rowRefs,
   onEdit,
   onDelete,
   onToggleState,
@@ -331,6 +407,9 @@ function SkillsList({
 }: {
   skills: AgentSkill[];
   isFiltered: boolean;
+  selectedIndex: number;
+  onSelectIndex: (i: number) => void;
+  rowRefs: React.RefObject<Array<HTMLElement | null>>;
   onEdit: (skill: AgentSkill) => void;
   onDelete: (name: string) => void;
   onToggleState: (skill: AgentSkill) => void;
@@ -354,10 +433,16 @@ function SkillsList({
 
   return (
     <div className="p-2 space-y-1">
-      {(skills ?? []).map((skill) => (
+      {(skills ?? []).map((skill, index) => (
         <SkillItem
           key={skill.name}
           skill={skill}
+          index={index}
+          isSelected={index === selectedIndex}
+          onSelect={() => onSelectIndex(index)}
+          rowRef={(el) => {
+            if (rowRefs.current) rowRefs.current[index] = el;
+          }}
           onEdit={onEdit}
           onDelete={onDelete}
           onToggleState={onToggleState}
@@ -372,12 +457,20 @@ function SkillsList({
 
 function SkillItem({
   skill,
+  index: _index,
+  isSelected,
+  onSelect,
+  rowRef,
   onEdit,
   onDelete,
   onToggleState,
   onOpenWorkflow,
 }: {
   skill: AgentSkill;
+  index: number;
+  isSelected: boolean;
+  onSelect: () => void;
+  rowRef: (el: HTMLElement | null) => void;
   onEdit: (skill: AgentSkill) => void;
   onDelete: (name: string) => void;
   onToggleState: (skill: AgentSkill) => void;
@@ -395,12 +488,28 @@ function SkillItem({
       .catch(() => setTestResult(null));
   }, [expanded, skill.name]);
 
+  const isActive = skill.state === 'active';
+
   return (
-    <div className="rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
+    <div
+      ref={rowRef}
+      className={cn(
+        'rounded-lg bg-surface-elevated/50 border overflow-hidden transition-colors',
+        isSelected ? 'border-primary/40 shadow-[0_0_0_1px_rgba(245,158,11,0.25)]' : 'border-border-subtle',
+      )}
+    >
       {/* Header row */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 p-3 hover:bg-surface-highlight/50 transition-colors"
+      <div
+        data-skill-header
+        className={cn(
+          'w-full flex items-center gap-2 p-3 hover:bg-surface-highlight/50 transition-colors',
+          // Keep the full row feeling clickable while hosting nested buttons.
+          'cursor-pointer',
+        )}
+        onClick={() => {
+          onSelect();
+          setExpanded(!expanded);
+        }}
       >
         <div className="p-0.5 text-text-muted">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -417,12 +526,13 @@ function SkillItem({
         <StateBadge state={skill.state} />
         {isExecutable && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onOpenWorkflow(skill.name);
             }}
             title="Open workflow designer"
-            className="p-1 rounded hover:bg-primary/10 transition-all duration-200 group"
+            className="p-2 rounded hover:bg-primary/10 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
             <GitBranch size={12} className="text-text-muted group-hover:text-primary transition-colors" />
           </button>
@@ -433,7 +543,26 @@ function SkillItem({
             {skill.fileCount}
           </span>
         )}
-      </button>
+        {/* Power toggle — most common action, promoted to collapsed row */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleState(skill);
+          }}
+          title={isActive ? 'Disable skill' : 'Activate skill'}
+          className={cn(
+            'p-2 rounded transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-primary/30',
+            isActive ? 'hover:bg-amber-400/10' : 'hover:bg-emerald-400/10',
+          )}
+        >
+          {isActive ? (
+            <PowerOff size={12} className="text-text-muted group-hover:text-amber-400 transition-colors" />
+          ) : (
+            <Power size={12} className="text-text-muted group-hover:text-emerald-400 transition-colors" />
+          )}
+        </button>
+      </div>
 
       {/* Expanded content */}
       {expanded && (
@@ -470,7 +599,8 @@ function SkillItem({
           {/* Test status badge */}
           <div className="mt-2">
             <TestStatusBadge
-              result={testResult}
+              testResult={testResult}
+              density="compact"
               onClick={() => setShowTestDetails(!showTestDetails)}
             />
           </div>
@@ -507,32 +637,15 @@ function SkillItem({
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-border-subtle/50">
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleState(skill); }}
-              className={cn(
-                'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all duration-200',
-                skill.state === 'active'
-                  ? 'bg-status-pending text-background shadow-[0_1px_8px_rgba(234,179,8,0.2)] hover:shadow-[0_2px_12px_rgba(234,179,8,0.3)] hover:-translate-y-0.5 active:translate-y-0'
-                  : 'bg-status-running text-background shadow-[0_1px_8px_rgba(16,185,129,0.2)] hover:shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:translate-y-0'
-              )}
-            >
-              {skill.state === 'active' ? <PowerOff size={10} /> : <Power size={10} />}
-              {skill.state === 'active' ? 'Disable' : 'Activate'}
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(skill); }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_8px_rgba(245,158,11,0.2)] hover:shadow-[0_2px_12px_rgba(245,158,11,0.3)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
-            >
-              <Pencil size={10} /> Edit
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(skill.name); }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-status-error text-white hover:bg-status-error/90 focus:outline-none focus:ring-2 focus:ring-status-error/40 focus:ring-offset-2 focus:ring-offset-background transition-colors duration-150"
-            >
-              <Trash2 size={10} /> Delete
-            </button>
+          {/* Actions — toggle lives on the collapsed row, so only edit + delete here */}
+          <div className="flex items-center justify-end gap-0.5 mt-3 pt-2 border-t border-border-subtle/50">
+            <SkillActions
+              skill={skill}
+              showToggle={false}
+              onToggle={onToggleState}
+              onEdit={onEdit}
+              onDelete={(s) => onDelete(s.name)}
+            />
           </div>
         </div>
       )}
@@ -540,63 +653,3 @@ function SkillItem({
   );
 }
 
-// --- TestStatusBadge ---
-
-function TestStatusBadge({ result, onClick }: { result: SkillTestResult | null; onClick: () => void }) {
-  if (!result || result.status === 'untested') {
-    return (
-      <button
-        onClick={(e) => { e.stopPropagation(); onClick(); }}
-        className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
-        title="No test run yet"
-      >
-        <MinusCircle size={10} />
-        <span>— untested</span>
-      </button>
-    );
-  }
-
-  const allPassed = result.failed === 0;
-
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className={cn(
-        'flex items-center gap-1 text-[10px] transition-colors',
-        allPassed
-          ? 'text-status-running hover:text-status-running/80'
-          : 'text-status-error hover:text-status-error/80',
-      )}
-      title={allPassed ? `${result.passed} passed` : `${result.failed} failed`}
-    >
-      {allPassed ? (
-        <>
-          <CheckCircle2 size={10} />
-          <span>✓ tested</span>
-        </>
-      ) : (
-        <>
-          <XCircle size={10} />
-          <span>✗ failing</span>
-        </>
-      )}
-      <FlaskConical size={10} className="opacity-40 ml-0.5" />
-    </button>
-  );
-}
-
-// --- StateBadge ---
-
-function StateBadge({ state }: { state: ItemState }) {
-  const styles: Record<ItemState, string> = {
-    active: 'bg-status-running/10 text-status-running',
-    draft: 'bg-status-pending/10 text-status-pending',
-    disabled: 'bg-surface-highlight text-text-muted',
-  };
-
-  return (
-    <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-mono', styles[state] ?? styles.draft)}>
-      {state}
-    </span>
-  );
-}

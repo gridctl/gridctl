@@ -24,6 +24,7 @@ import { WorkflowPanel } from '../workflow/WorkflowPanel';
 import { VisualDesigner } from '../workflow/VisualDesigner';
 import { createRegistrySkill, updateRegistrySkill, validateSkillContent } from '../../lib/api';
 import { cn } from '../../lib/cn';
+import { hasWorkflowBlock } from '../../lib/workflowSync';
 import type { AgentSkill, ItemState, SkillValidationResult, WorkflowStep, SkillInput, WorkflowOutput } from '../../types';
 
 // --- Types ---
@@ -378,18 +379,19 @@ function SplitPaneHandle({
     >
       {/* Hit area */}
       <div className="absolute inset-y-0 -inset-x-2" />
-      {/* Visible grip */}
+      {/* Visible grip — subtle at rest, fully visible on hover/drag so the
+          resize affordance is discoverable without a blind mouse-over */}
       <div
         className={cn(
           'flex flex-col gap-0.5 transition-opacity duration-150',
-          'opacity-0 group-hover/split:opacity-100',
+          'opacity-30 group-hover/split:opacity-100',
           isDragging && 'opacity-100',
         )}
       >
         <GripVertical
           size={12}
           className={cn(
-            'text-text-muted/40 transition-colors',
+            'text-text-muted transition-colors',
             isDragging ? 'text-primary' : 'hover:text-primary/60',
           )}
         />
@@ -456,21 +458,16 @@ export function SkillEditor({
   const [designerInputs, setDesignerInputs] = useState<Record<string, SkillInput>>({});
   const [designerOutput, setDesignerOutput] = useState<WorkflowOutput | undefined>();
 
-  // Detect if skill has a workflow block
-  const hasWorkflow = useMemo(() => {
-    if (!skill) return false;
-    const fullContent = buildSkillMDContent({
-      name: skill.name,
-      description: skill.description,
-      license: skill.license,
-      compatibility: skill.compatibility,
-      allowedTools: skill.allowedTools,
-      metadata: skill.metadata,
-      state: skill.state,
-      body: skill.body ?? '',
-    });
-    return /^workflow:/m.test(fullContent) || /\nworkflow:/m.test(skill.body ?? '');
-  }, [skill]);
+  // Detect if the editor currently has a workflow block. Debounce the check
+  // against `body` so Code/Visual/Test tabs can appear as soon as the user
+  // types `workflow:` without waiting for a save + reopen.
+  const [hasWorkflow, setHasWorkflow] = useState(() => hasWorkflowBlock(skill?.body ?? ''));
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setHasWorkflow(hasWorkflowBlock(body));
+    }, 300);
+    return () => clearTimeout(id);
+  }, [body]);
 
   // Resizable split pane
   const { ratio, containerRef, handleMouseDown: handleSplitMouseDown, isDragging: splitDragging } = useSplitPane(0.5, 0.25, 0.75);

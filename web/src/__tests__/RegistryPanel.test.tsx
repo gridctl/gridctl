@@ -168,9 +168,8 @@ describe('RegistrySidebar', () => {
     // Expand the skill item
     fireEvent.click(screen.getByText('my-skill'));
 
-    // Click delete button in expanded actions
-    const deleteButtons = screen.getAllByText('Delete');
-    fireEvent.click(deleteButtons[0]);
+    // Click delete icon button in expanded actions
+    fireEvent.click(screen.getByTitle('Delete skill'));
 
     expect(screen.getByText('This action cannot be undone.')).toBeInTheDocument();
   });
@@ -181,11 +180,11 @@ describe('RegistrySidebar', () => {
     });
     render(<RegistrySidebar />);
 
-    // Expand and click delete
+    // Expand and click delete icon button
     fireEvent.click(screen.getByText('my-skill'));
-    fireEvent.click(screen.getByText('Delete'));
+    fireEvent.click(screen.getByTitle('Delete skill'));
 
-    // Click cancel in the confirmation overlay
+    // Click cancel in the confirmation dialog
     fireEvent.click(screen.getByText('Cancel'));
 
     // Confirmation message should be gone

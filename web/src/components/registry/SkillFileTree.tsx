@@ -140,10 +140,12 @@ export function SkillFileTree({ skillName, onSelectFile }: SkillFileTreeProps) {
                         {formatFileSize(file.size)}
                       </span>
                       <button
+                        type="button"
                         onClick={() => handleDeleteFile(file.path)}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 text-text-muted hover:text-status-error transition-all"
+                        title="Delete file"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
                       >
-                        <Trash2 size={9} />
+                        <Trash2 size={10} />
                       </button>
                     </div>
                   ))}

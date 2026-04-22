@@ -1,17 +1,10 @@
 import { memo } from 'react';
-import {
-  BookOpen,
-  Power,
-  PowerOff,
-  Pencil,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  Minus,
-} from 'lucide-react';
+import { BookOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { IconButton } from '../ui/IconButton';
-import type { AgentSkill, ItemState, SkillTestResult } from '../../types';
+import { StateBadge } from './StateBadge';
+import { TestStatusBadge } from './TestStatusBadge';
+import { SkillActions } from './SkillActions';
+import type { AgentSkill, SkillTestResult } from '../../types';
 
 export interface SkillCardProps {
   skill: AgentSkill;
@@ -24,47 +17,6 @@ export interface SkillCardProps {
   style?: React.CSSProperties;
 }
 
-function StateBadge({ state }: { state: ItemState }) {
-  const styles: Record<ItemState, string> = {
-    active: 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/25',
-    draft: 'text-amber-400 bg-amber-400/10 border border-amber-400/25',
-    disabled: 'text-text-muted bg-surface border border-border/40',
-  };
-
-  return (
-    <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0', styles[state] ?? styles.draft)}>
-      {state}
-    </span>
-  );
-}
-
-function TestStatusBadge({ testResult }: { testResult?: SkillTestResult | null }) {
-  if (!testResult || testResult.status === 'untested') {
-    return (
-      <span className="flex items-center gap-1 text-[10px] font-medium text-amber-400/80 bg-amber-400/8 border border-amber-400/20 rounded px-1.5 py-0.5">
-        <Minus size={10} />
-        untested
-      </span>
-    );
-  }
-
-  if (testResult.failed > 0) {
-    return (
-      <span className="flex items-center gap-1 text-[10px] font-medium text-rose-400">
-        <XCircle size={11} />
-        {testResult.failed} failing
-      </span>
-    );
-  }
-
-  return (
-    <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400">
-      <CheckCircle size={11} />
-      {testResult.passed} passing
-    </span>
-  );
-}
-
 export const SkillCard = memo(({
   skill,
   testResult,
@@ -75,6 +27,11 @@ export const SkillCard = memo(({
   className,
   style,
 }: SkillCardProps) => {
+  const handleToggle = (s: AgentSkill) => {
+    if (s.state === 'active') onDisable(s);
+    else onEnable(s);
+  };
+
   return (
     <div
       style={style}
@@ -113,45 +70,13 @@ export const SkillCard = memo(({
 
       {/* Footer: test status + actions */}
       <div className="px-3 pb-3 pt-2 border-t border-border-subtle/50 flex items-center justify-between gap-2">
-        <TestStatusBadge testResult={testResult} />
-
-        <div className="flex items-center gap-0.5">
-          {skill.state === 'active' ? (
-            <IconButton
-              icon={PowerOff}
-              size="sm"
-              variant="ghost"
-              onClick={() => onDisable(skill)}
-              tooltip="Disable skill"
-              className="hover:text-amber-400"
-            />
-          ) : (
-            <IconButton
-              icon={Power}
-              size="sm"
-              variant="ghost"
-              onClick={() => onEnable(skill)}
-              tooltip="Activate skill"
-              className="hover:text-emerald-400"
-            />
-          )}
-          <IconButton
-            icon={Pencil}
-            size="sm"
-            variant="ghost"
-            onClick={() => onEdit(skill)}
-            tooltip="Edit skill"
-            className="hover:text-primary"
-          />
-          <IconButton
-            icon={Trash2}
-            size="sm"
-            variant="ghost"
-            onClick={() => onDelete(skill)}
-            tooltip="Delete skill"
-            className="hover:text-status-error"
-          />
-        </div>
+        <TestStatusBadge testResult={testResult} density="card" />
+        <SkillActions
+          skill={skill}
+          onToggle={handleToggle}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       </div>
     </div>
   );
