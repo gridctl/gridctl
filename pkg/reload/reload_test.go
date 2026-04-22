@@ -734,3 +734,139 @@ func assertContains(t *testing.T, items []string, expected string) {
 	}
 	t.Errorf("expected %q in %v", expected, items)
 }
+
+// fakeAutoscaleSpawner is a no-op Spawner the reload tests use to register an
+// autoscaler without touching real processes. Spawn always returns an error
+// so the initial tick skips — RegisterAutoscaler tolerates this.
+type fakeAutoscaleSpawner struct{}
+
+func (f *fakeAutoscaleSpawner) Spawn(context.Context) (mcp.AgentClient, error) {
+	return nil, fmt.Errorf("no-op spawner")
+}
+func (f *fakeAutoscaleSpawner) Reap(context.Context, *mcp.Replica) error { return nil }
+
+// TestHandler_Reload_AutoscalePolicyOnlyUpdate verifies that a change inside
+// an existing autoscale block is classified as a policy update (not a
+// restart) and is applied via Autoscaler.UpdatePolicy. No servers are
+// added/removed/modified in the restart sense.
+func TestHandler_Reload_AutoscalePolicyOnlyUpdate(t *testing.T) {
+	content := `
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: junos
+    command: [/bin/true]
+    autoscale:
+      min: 1
+      max: 8
+      target_in_flight: 2
+`
+	stackPath := writeStackFile(t, content)
+
+	// Initial config matches the stack file.
+	initialCfg := &config.Stack{
+		Name:    "test",
+		Network: config.Network{Name: "test-net", Driver: "bridge"},
+		MCPServers: []config.MCPServer{{
+			Name:      "junos",
+			Command:   []string{"/bin/true"},
+			Autoscale: &config.AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3},
+		}},
+	}
+
+	h, _ := setupHandler(t, stackPath, initialCfg)
+
+	// Pre-register an autoscaler on the gateway so the policy update has a
+	// live scaler to target. Initial tick fails (no-op spawner) but the
+	// scaler is still registered.
+	if err := h.gateway.RegisterAutoscaler(context.Background(),
+		mcp.MCPServerConfig{Name: "junos", LocalProcess: true, Command: []string{"/bin/true"}},
+		mcp.ReplicaPolicyRoundRobin, &fakeAutoscaleSpawner{},
+		mcp.AutoscalePolicy{Min: 1, Max: 4, TargetInFlight: 3}); err != nil {
+		t.Fatalf("pre-register: %v", err)
+	}
+	before := h.gateway.GetAutoscaler("junos").Policy()
+	if before.Max != 4 || before.TargetInFlight != 3 {
+		t.Fatalf("pre-reload policy = %+v", before)
+	}
+
+	result, err := h.Reload(context.Background())
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Reload.Success=false: %s (errors=%v)", result.Message, result.Errors)
+	}
+
+	// Autoscaler.Policy() must reflect the new YAML.
+	after := h.gateway.GetAutoscaler("junos").Policy()
+	if after.Max != 8 || after.TargetInFlight != 2 {
+		t.Errorf("post-reload policy = %+v, want Max=8 TargetInFlight=2", after)
+	}
+
+	// The reload result must report this as a modification annotated with
+	// "(autoscale policy)" — not an Added/Removed entry.
+	found := false
+	for _, m := range result.Modified {
+		if m == "mcp-server:junos (autoscale policy)" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected modified entry for autoscale policy update; got %v", result.Modified)
+	}
+}
+
+// TestHandler_Reload_AutoscalePolicyUpdate_MissingScaler records an error
+// when the YAML asks for a policy update but no scaler is registered (e.g.
+// the autoscaler failed to register on first apply).
+func TestHandler_Reload_AutoscalePolicyUpdate_MissingScaler(t *testing.T) {
+	content := `
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: junos
+    command: [/bin/true]
+    autoscale:
+      min: 1
+      max: 8
+      target_in_flight: 2
+`
+	stackPath := writeStackFile(t, content)
+
+	initialCfg := &config.Stack{
+		Name:    "test",
+		Network: config.Network{Name: "test-net", Driver: "bridge"},
+		MCPServers: []config.MCPServer{{
+			Name:      "junos",
+			Command:   []string{"/bin/true"},
+			Autoscale: &config.AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3},
+		}},
+	}
+
+	h, _ := setupHandler(t, stackPath, initialCfg)
+	// Intentionally do NOT call RegisterAutoscaler — simulates a scaler that
+	// failed to come up.
+
+	result, err := h.Reload(context.Background())
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	// Success=false because per-item errors were collected.
+	if result.Success {
+		t.Error("expected Reload.Success=false when scaler is missing")
+	}
+	found := false
+	for _, e := range result.Errors {
+		if e == "no autoscaler for junos" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'no autoscaler for junos' in Errors; got %v", result.Errors)
+	}
+}

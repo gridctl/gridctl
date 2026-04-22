@@ -189,6 +189,17 @@ type mcpServerAPI struct {
 	SSH          bool              `json:"ssh"`
 	OpenAPI      bool              `json:"openapi"`
 	Replicas     []mcpReplicaAPI   `json:"replicas,omitempty"`
+	Autoscale    *autoscaleAPI     `json:"autoscale,omitempty"`
+}
+
+// autoscaleAPI mirrors the subset of mcp.AutoscaleStatus the CLI renders in
+// the AUTOSCALE column.
+type autoscaleAPI struct {
+	Min            int `json:"min"`
+	Max            int `json:"max"`
+	Current        int `json:"current"`
+	Target         int `json:"target"`
+	TargetInFlight int `json:"targetInFlight"`
 }
 
 // mcpReplicaAPI is the per-replica slice of mcpServerAPI.
@@ -229,13 +240,21 @@ func buildMCPRollup(servers []mcpServerAPI) []output.MCPServerRollup {
 	now := time.Now()
 	for _, srv := range servers {
 		row := output.MCPServerRollup{
-			Name:     srv.Name,
-			Type:     mcpServerType(srv),
-			Replicas: "—",
-			State:    "healthy",
+			Name:      srv.Name,
+			Type:      mcpServerType(srv),
+			Replicas:  "—",
+			State:     "healthy",
+			Autoscale: formatAutoscaleCell(srv.Autoscale),
 		}
 		n := len(srv.Replicas)
 		if n == 0 {
+			// Autoscaled servers can legitimately report 0 replicas (scale-
+			// to-zero): show the autoscale stats but still label unknown.
+			if srv.Autoscale != nil {
+				row.State = "idle"
+				rows = append(rows, row)
+				continue
+			}
 			// No replica info (e.g. pre-phase-3 daemon, or external transport).
 			row.State = "unknown"
 			rows = append(rows, row)
@@ -267,19 +286,44 @@ func buildMCPRollup(servers []mcpServerAPI) []output.MCPServerRollup {
 	return rows
 }
 
+// formatAutoscaleCell produces the "min/current/max (target=N)" render used
+// in the AUTOSCALE column. Returns "" when the server is not autoscaled so
+// the column renderer can suppress it for static-only stacks.
+func formatAutoscaleCell(a *autoscaleAPI) string {
+	if a == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d/%d (target=%d)", a.Min, a.Current, a.Max, a.TargetInFlight)
+}
+
 // buildReplicaDetails converts API statuses into the per-replica rows for
-// `gridctl status --replicas`. Servers with no replica data are skipped.
+// `gridctl status --replicas`. Autoscaled servers with zero replicas still
+// produce one synthetic row so scale-to-zero state is visible.
 func buildReplicaDetails(servers []mcpServerAPI) []output.ReplicaDetail {
 	var rows []output.ReplicaDetail
 	now := time.Now()
 	for _, srv := range servers {
+		autoCell := formatAutoscaleCell(srv.Autoscale)
+		if len(srv.Replicas) == 0 && srv.Autoscale != nil {
+			rows = append(rows, output.ReplicaDetail{
+				Server:    srv.Name,
+				Replica:   0,
+				Handle:    "—",
+				State:     "idle",
+				Uptime:    "—",
+				InFlight:  0,
+				Autoscale: autoCell,
+			})
+			continue
+		}
 		for _, r := range srv.Replicas {
 			row := output.ReplicaDetail{
-				Server:   srv.Name,
-				Replica:  r.ReplicaID,
-				Handle:   replicaHandle(r),
-				State:    r.State,
-				InFlight: r.InFlight,
+				Server:    srv.Name,
+				Replica:   r.ReplicaID,
+				Handle:    replicaHandle(r),
+				State:     r.State,
+				InFlight:  r.InFlight,
+				Autoscale: autoCell,
 			}
 			if r.Healthy && !r.StartedAt.IsZero() {
 				row.Uptime = formatUptime(now.Sub(r.StartedAt))

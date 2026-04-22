@@ -142,6 +142,9 @@ type Gateway struct {
 	pinAction      string           // "warn" | "block" on drift (default "warn")
 	blockedMu      sync.RWMutex
 	blockedServers map[string]bool  // servers blocked due to unacknowledged schema drift
+
+	autoMu      sync.RWMutex
+	autoscalers map[string]*Autoscaler // name -> scaler for autoscaled replica sets
 }
 
 // NewGateway creates a new MCP gateway.
@@ -158,6 +161,7 @@ func NewGateway() *Gateway {
 		health:         make(map[string]*HealthStatus),
 		replicaHealth:  make(map[string]map[int]*HealthStatus),
 		blockedServers: make(map[string]bool),
+		autoscalers:    make(map[string]*Autoscaler),
 	}
 }
 
@@ -680,6 +684,131 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 	return g.RegisterMCPReplicaSet(ctx, cfg.Name, ReplicaPolicyRoundRobin, []MCPServerConfig{cfg})
 }
 
+// RegisterAutoscaler registers an autoscaled replica set for an MCP server.
+// The Spawner owns replica provisioning; the gateway only stores metadata and
+// wires the scaler into the router. One synchronous Tick is executed before
+// returning so Min (and WarmPool) replicas are available before the caller's
+// first tool call — except when IdleToZero=true and Min=0, in which case the
+// first tool call triggers a cold-start spawn instead.
+func (g *Gateway) RegisterAutoscaler(ctx context.Context, template MCPServerConfig, policy string, spawner Spawner, autoscale AutoscalePolicy) error {
+	if template.Name == "" {
+		return fmt.Errorf("register autoscaler: empty name")
+	}
+	if spawner == nil {
+		return fmt.Errorf("register autoscaler %s: nil spawner", template.Name)
+	}
+	if autoscale.Max < 1 {
+		return fmt.Errorf("register autoscaler %s: invalid policy (max=%d)", template.Name, autoscale.Max)
+	}
+	if policy == "" {
+		policy = ReplicaPolicyRoundRobin
+	}
+
+	// Register metadata up front so pinningEnabledForServer and health
+	// check iteration both recognise this as an MCP server.
+	func() {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		g.serverMeta[template.Name] = template
+	}()
+
+	set := NewReplicaSet(template.Name, policy, nil)
+	g.router.AddReplicaSet(set)
+
+	scaler := NewAutoscaler(template.Name, set, spawner, autoscale, g.logger)
+	g.autoMu.Lock()
+	g.autoscalers[template.Name] = scaler
+	g.autoMu.Unlock()
+
+	// Seed initial replicas synchronously so the set is warm before the
+	// first incoming tool call. Idle-to-zero with Min=0 and no warm pool
+	// intentionally stays cold until a tool call triggers the cold-start spawn.
+	skipInitialTick := autoscale.IdleToZero && autoscale.Min == 0 && autoscale.WarmPool == 0
+	if !skipInitialTick {
+		if _, err := scaler.Tick(ctx, time.Now()); err != nil {
+			g.logger.Warn("initial autoscaler tick failed",
+				"server", template.Name, "error", err)
+			// Do not fail the whole registration — the next periodic tick
+			// will retry; warm_pool ensures the cooldown doesn't block us.
+		}
+	}
+
+	g.logger.Info("registered autoscaled MCP server",
+		"name", template.Name,
+		"min", autoscale.Min,
+		"max", autoscale.Max,
+		"target_in_flight", autoscale.TargetInFlight,
+		"warm_pool", autoscale.WarmPool,
+		"idle_to_zero", autoscale.IdleToZero,
+	)
+	return nil
+}
+
+// GetAutoscaler returns the autoscaler registered for serverName, or nil if
+// the server is not autoscaled.
+func (g *Gateway) GetAutoscaler(serverName string) *Autoscaler {
+	g.autoMu.RLock()
+	defer g.autoMu.RUnlock()
+	return g.autoscalers[serverName]
+}
+
+// Autoscalers returns a snapshot slice of every registered autoscaler, sorted
+// by server name for deterministic iteration in the tick loop.
+func (g *Gateway) Autoscalers() []*Autoscaler {
+	g.autoMu.RLock()
+	names := make([]string, 0, len(g.autoscalers))
+	for n := range g.autoscalers {
+		names = append(names, n)
+	}
+	g.autoMu.RUnlock()
+	sort.Strings(names)
+
+	g.autoMu.RLock()
+	defer g.autoMu.RUnlock()
+	out := make([]*Autoscaler, 0, len(names))
+	for _, n := range names {
+		if s, ok := g.autoscalers[n]; ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// unregisterAutoscaler drops the autoscaler for a server (used during hot
+// reload when switching from autoscale back to static replicas, or when the
+// server is removed from the stack).
+func (g *Gateway) unregisterAutoscaler(serverName string) {
+	g.autoMu.Lock()
+	defer g.autoMu.Unlock()
+	delete(g.autoscalers, serverName)
+}
+
+// StartAutoscaler launches a background goroutine that ticks every registered
+// autoscaler on the given interval. Cancelling ctx stops the loop. Safe to
+// call alongside StartHealthMonitor and StartCleanup.
+func (g *Gateway) StartAutoscaler(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = DefaultAutoscalerInterval
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				for _, a := range g.Autoscalers() {
+					if _, err := a.Tick(ctx, now); err != nil {
+						g.logger.Debug("autoscaler tick error",
+							"server", a.Name(), "error", err)
+					}
+				}
+			}
+		}
+	}()
+}
+
 // RegisterMCPReplicaSet initializes one AgentClient per config and registers
 // them as a single replica set under the given server name. All configs must
 // be for the same logical server (same Name, same transport, same tool list);
@@ -742,6 +871,14 @@ func (g *Gateway) RegisterMCPReplicaSet(ctx context.Context, name, policy string
 
 	g.logger.Info("registered MCP server", "name", name, "transport", cfgs[0].Transport, "replicas", len(clients), "tools", len(clients[0].Tools()), "duration", time.Since(start))
 	return nil
+}
+
+// BuildAgentClient creates, connects, and initializes an AgentClient from a
+// single MCPServerConfig. It does NOT touch serverMeta, pins, health, or the
+// router — callers compose that separately. Exported so Spawner implementations
+// in pkg/controller can reuse the transport switch rather than duplicating it.
+func (g *Gateway) BuildAgentClient(ctx context.Context, cfg MCPServerConfig) (AgentClient, error) {
+	return g.buildAgentClient(ctx, cfg)
 }
 
 // buildAgentClient creates, connects, and initializes an AgentClient from a
@@ -861,6 +998,10 @@ func (g *Gateway) SetServerMeta(cfg MCPServerConfig) {
 func (g *Gateway) UnregisterMCPServer(name string) {
 	g.router.RemoveClient(name)
 	g.router.RefreshTools()
+	g.unregisterAutoscaler(name)
+	g.mu.Lock()
+	delete(g.serverMeta, name)
+	g.mu.Unlock()
 }
 
 // RestartMCPServer restarts an individual MCP server by name.
@@ -1095,12 +1236,27 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	routeSpan.SetAttributes(attribute.String("tool.name", params.Name))
 	replica, toolName, err := g.router.RouteToolCallReplica(params.Name)
 	if err != nil {
-		routeSpan.SetStatus(codes.Error, err.Error())
-		routeSpan.End()
-		return &ToolCallResult{
-			Content: []Content{NewTextContent(fmt.Sprintf("Error: %v", err))},
-			IsError: true,
-		}, nil
+		// Cold-start trigger: if the target server is autoscaled and currently
+		// at zero healthy replicas, synchronously spawn one before retrying.
+		// Bounded here by the caller's context (tool-call timeout) rather than
+		// by a hard-coded deadline so long-spin containers can complete.
+		if agentName, _, parseErr := ParsePrefixedTool(params.Name); parseErr == nil {
+			if scaler := g.GetAutoscaler(agentName); scaler != nil {
+				if cs := scaler.TriggerColdStart(ctx); cs == nil {
+					replica, toolName, err = g.router.RouteToolCallReplica(params.Name)
+				} else if err == nil {
+					err = cs
+				}
+			}
+		}
+		if err != nil {
+			routeSpan.SetStatus(codes.Error, err.Error())
+			routeSpan.End()
+			return &ToolCallResult{
+				Content: []Content{NewTextContent(fmt.Sprintf("Error: %v", err))},
+				IsError: true,
+			}, nil
+		}
 	}
 	client := replica.Client()
 	replicaID := replica.ID()
@@ -1484,6 +1640,11 @@ type MCPServerStatus struct {
 	ToolWhitelist []string `json:"toolWhitelist,omitempty"`
 
 	Replicas []ReplicaStatus `json:"replicas,omitempty"` // Per-replica status; always populated
+
+	// Autoscale is non-nil only for servers with an autoscale block in
+	// their stack YAML. Reports current min/max/target/median and the
+	// last scaler decision so operators can reason about scale events.
+	Autoscale *AutoscaleStatus `json:"autoscale,omitempty"`
 }
 
 // ReplicaStatus reports the live state of a single replica within a
@@ -1584,25 +1745,58 @@ func allToolsOf(client AgentClient) []Tool {
 // Note: This only returns actual MCP servers, not A2A adapters or other
 // clients added directly to the router.
 func (g *Gateway) Status() []MCPServerStatus {
-	clients := g.router.Clients()
-	statuses := make([]MCPServerStatus, 0, len(clients))
-
+	// Gather names from both the router (live replica sets) and the serverMeta
+	// map so autoscaled servers without any live replicas still appear.
 	g.mu.RLock()
-	defer g.mu.RUnlock()
+	metaSnapshot := make(map[string]MCPServerConfig, len(g.serverMeta))
+	for k, v := range g.serverMeta {
+		metaSnapshot[k] = v
+	}
+	defaultFormat := g.defaultOutputFormat
+	g.mu.RUnlock()
 
-	for _, client := range clients {
-		// Only include clients that were registered as MCP servers
-		// (have metadata). This filters out A2A adapters which are
-		// internal plumbing and shouldn't appear as MCP servers.
-		meta, isMCPServer := g.serverMeta[client.Name()]
-		if !isMCPServer {
+	// Build a name set combining router-registered clients and autoscaled
+	// metadata entries (which may have empty ReplicaSets at scale-to-zero).
+	routerClients := g.router.Clients()
+	seen := make(map[string]bool, len(routerClients)+len(metaSnapshot))
+	namesOrder := make([]string, 0, len(routerClients)+len(metaSnapshot))
+	clientByName := make(map[string]AgentClient, len(routerClients))
+	for _, c := range routerClients {
+		name := c.Name()
+		if _, ok := metaSnapshot[name]; !ok {
 			continue
 		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		namesOrder = append(namesOrder, name)
+		clientByName[name] = c
+	}
+	for name := range metaSnapshot {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		namesOrder = append(namesOrder, name)
+	}
 
-		// Report every tool the downstream server advertises, not just the
-		// currently-whitelisted subset. The UI tool editor needs the full
-		// set so operators can widen a curated whitelist.
-		tools := allToolsOf(client)
+	statuses := make([]MCPServerStatus, 0, len(namesOrder))
+
+	for _, name := range namesOrder {
+		meta := metaSnapshot[name]
+		client := clientByName[name] // may be nil for autoscaled servers at zero replicas
+
+		// Report every tool the downstream server advertises. When every
+		// replica has been reaped (scale-to-zero), client is nil and we
+		// fall back to the set's tool cache so the Status surface keeps
+		// its shape.
+		var tools []Tool
+		if client != nil {
+			tools = allToolsOf(client)
+		} else if set := g.router.GetReplicaSet(name); set != nil {
+			tools = set.CachedTools()
+		}
 		toolNames := make([]string, len(tools))
 		for i, t := range tools {
 			toolNames[i] = t.Name
@@ -1610,16 +1804,16 @@ func (g *Gateway) Status() []MCPServerStatus {
 
 		// Resolve effective output format: server override > gateway default
 		outputFormat := meta.OutputFormat
-		if outputFormat == "" && g.defaultOutputFormat != "" {
-			outputFormat = g.defaultOutputFormat
+		if outputFormat == "" && defaultFormat != "" {
+			outputFormat = defaultFormat
 		}
 
 		status := MCPServerStatus{
-			Name:          client.Name(),
+			Name:          name,
 			Transport:     meta.Transport,
 			Endpoint:      meta.Endpoint,
 			ContainerID:   meta.ContainerID,
-			Initialized:   client.IsInitialized(),
+			Initialized:   client != nil && client.IsInitialized(),
 			ToolCount:     len(tools),
 			Tools:         toolNames,
 			External:      meta.External,
@@ -1636,14 +1830,19 @@ func (g *Gateway) Status() []MCPServerStatus {
 
 		// Include health status if available
 		g.healthMu.RLock()
-		if hs, ok := g.health[client.Name()]; ok {
+		if hs, ok := g.health[name]; ok {
 			status.Healthy = &hs.Healthy
 			status.LastCheck = &hs.LastCheck
 			status.HealthError = hs.Error
 		}
 		g.healthMu.RUnlock()
 
-		status.Replicas = g.ReplicaStatuses(client.Name())
+		status.Replicas = g.ReplicaStatuses(name)
+
+		if scaler := g.GetAutoscaler(name); scaler != nil {
+			st := scaler.Status()
+			status.Autoscale = &st
+		}
 
 		statuses = append(statuses, status)
 	}

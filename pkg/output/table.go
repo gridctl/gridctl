@@ -30,20 +30,22 @@ type GatewaySummary struct {
 // `gridctl status`. A server with a single replica uses "—" in the Replicas
 // column to match the UX spec.
 type MCPServerRollup struct {
-	Name     string
-	Type     string // transport label: local-process, container, ssh, external, openapi
-	Replicas string // "N/M" for sets with replicas > 1, "—" for single-replica servers
-	State    string // "healthy", "degraded (replica-N restarting, next in 4s)", "unhealthy"
+	Name      string
+	Type      string // transport label: local-process, container, ssh, external, openapi
+	Replicas  string // "N/M" for sets with replicas > 1, "—" for single-replica servers
+	State     string // "healthy", "degraded (replica-N restarting, next in 4s)", "unhealthy"
+	Autoscale string // "min/current/max (target=N)" for autoscaled servers, empty for static
 }
 
 // ReplicaDetail is one row of the expanded `gridctl status --replicas` view.
 type ReplicaDetail struct {
-	Server   string
-	Replica  int
-	Handle   string // PID for local-process, container id prefix for container-backed
-	State    string
-	Uptime   string
-	InFlight int64
+	Server    string
+	Replica   int
+	Handle    string // PID for local-process, container id prefix for container-backed
+	State     string
+	Uptime    string
+	InFlight  int64
+	Autoscale string // "min/current/max (target=N)" — repeated per replica row for server-level info, empty for static servers
 }
 
 // ContainerSummary contains data for the container status table.
@@ -191,7 +193,9 @@ func (p *Printer) Containers(containers []ContainerSummary) {
 	p.Println()
 }
 
-// MCPServers prints the rolled-up MCP-server status table.
+// MCPServers prints the rolled-up MCP-server status table. The AUTOSCALE column
+// is shown only when at least one row has autoscale configured, so static-only
+// stacks see an unchanged table.
 func (p *Printer) MCPServers(rows []MCPServerRollup) {
 	if len(rows) == 0 {
 		return
@@ -203,19 +207,36 @@ func (p *Printer) MCPServers(rows []MCPServerRollup) {
 	t.SetOutputMirror(p.out)
 	t.SetStyle(p.tableStyle())
 
-	t.AppendHeader(table.Row{"Name", "Type", "Replicas", "State"})
+	hasAutoscale := false
+	for _, r := range rows {
+		if r.Autoscale != "" {
+			hasAutoscale = true
+			break
+		}
+	}
+
+	if hasAutoscale {
+		t.AppendHeader(table.Row{"Name", "Type", "Replicas", "Autoscale", "State"})
+	} else {
+		t.AppendHeader(table.Row{"Name", "Type", "Replicas", "State"})
+	}
 	for _, r := range rows {
 		state := r.State
 		if p.isTTY {
 			state = colorReplicaState(r.State)
 		}
-		t.AppendRow(table.Row{r.Name, r.Type, r.Replicas, state})
+		if hasAutoscale {
+			t.AppendRow(table.Row{r.Name, r.Type, r.Replicas, r.Autoscale, state})
+		} else {
+			t.AppendRow(table.Row{r.Name, r.Type, r.Replicas, state})
+		}
 	}
 	t.Render()
 	p.Println()
 }
 
 // Replicas prints the per-replica detail table used by `gridctl status --replicas`.
+// The AUTOSCALE column only appears when at least one row populates it.
 func (p *Printer) Replicas(rows []ReplicaDetail) {
 	if len(rows) == 0 {
 		return
@@ -227,13 +248,29 @@ func (p *Printer) Replicas(rows []ReplicaDetail) {
 	t.SetOutputMirror(p.out)
 	t.SetStyle(p.tableStyle())
 
-	t.AppendHeader(table.Row{"Server", "Replica", "PID/Container", "State", "Uptime", "In-Flight"})
+	hasAutoscale := false
+	for _, r := range rows {
+		if r.Autoscale != "" {
+			hasAutoscale = true
+			break
+		}
+	}
+
+	if hasAutoscale {
+		t.AppendHeader(table.Row{"Server", "Replica", "PID/Container", "State", "Uptime", "In-Flight", "Autoscale"})
+	} else {
+		t.AppendHeader(table.Row{"Server", "Replica", "PID/Container", "State", "Uptime", "In-Flight"})
+	}
 	for _, r := range rows {
 		state := r.State
 		if p.isTTY {
 			state = colorReplicaState(r.State)
 		}
-		t.AppendRow(table.Row{r.Server, fmt.Sprintf("%d", r.Replica), r.Handle, state, r.Uptime, r.InFlight})
+		if hasAutoscale {
+			t.AppendRow(table.Row{r.Server, fmt.Sprintf("%d", r.Replica), r.Handle, state, r.Uptime, r.InFlight, r.Autoscale})
+		} else {
+			t.AppendRow(table.Row{r.Server, fmt.Sprintf("%d", r.Replica), r.Handle, state, r.Uptime, r.InFlight})
+		}
 	}
 	t.Render()
 	p.Println()

@@ -191,6 +191,26 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 	for _, server := range stack.MCPServers {
 		replicas := replicaCount(&server)
 
+		// Autoscaled servers defer all replica provisioning to the Spawner.
+		// Emit a placeholder result entry so the registrar sees the server
+		// and routes it through RegisterAutoscaler.
+		if server.Autoscale != nil {
+			o.logger.Info("registering autoscaled MCP server",
+				"name", server.Name,
+				"min", server.Autoscale.Min,
+				"max", server.Autoscale.Max,
+				"target_in_flight", server.Autoscale.TargetInFlight,
+			)
+			result.MCPServers = append(result.MCPServers, MCPServerResult{
+				Name:         server.Name,
+				External:     server.IsExternal(),
+				LocalProcess: server.IsLocalProcess(),
+				SSH:          server.IsSSH(),
+				OpenAPI:      server.IsOpenAPI(),
+			})
+			continue
+		}
+
 		// Skip container creation for external servers
 		if server.IsExternal() {
 			o.logger.Info("registering external MCP server", "name", server.Name, "url", server.URL)

@@ -148,3 +148,127 @@ mcp-servers:
 ```
 
 Validation surfaces the exact path (`mcp-servers[N].replicas`) so CI can fail fast.
+
+---
+
+## Autoscaling
+
+A server can replace static `replicas: N` with an `autoscale` block that lets
+gridctl spawn and reap replicas reactively based on in-flight load. The same
+transport rules apply — autoscale is supported on container, local-process,
+and SSH servers, and rejected on external URL and OpenAPI transports.
+
+```yaml
+mcp-servers:
+  - name: junos
+    command:
+      - .venv/bin/python
+      - servers/junos-mcp-server/jmcp.py
+      - --transport
+      - stdio
+    replica_policy: least-connections
+    autoscale:
+      min: 1                    # >= 0; must be >= 1 unless idle_to_zero is true
+      max: 8                    # >= min; capped at 32
+      target_in_flight: 3       # per-replica in-flight the scaler tries to hold below
+      scale_up_after: 30s       # min 10s; default 30s
+      scale_down_after: 5m      # min 1m; default 5m
+      warm_pool: 0              # extra idle replicas kept above the load floor
+      idle_to_zero: false       # when true, min may be 0 (scale-to-zero)
+```
+
+`autoscale` and `replicas` are **mutually exclusive** on the same server.
+A server without an `autoscale` block behaves exactly as it did before; every
+new field is optional at the YAML layer.
+
+### Decision rules in plain prose
+
+Every 10s the scaler samples the median in-flight request count across the
+server's currently-healthy replicas, appends the sample to a rolling window
+at least 30s long, and decides:
+
+1. **Noop** — target is within the current set and no cooldown is pending.
+2. **Scale up** — target > current AND the rolling median has exceeded
+   `target_in_flight` for the full `scale_up_after` window. Spawns enough
+   replicas in one tick to reach target, clamped at `max`. Cooldown: no
+   further scale-up until `scale_up_after` has elapsed since the last one.
+   *Exception:* if `current < min + warm_pool`, the cooldown is skipped so
+   the warm pool recovers eagerly after a crash.
+3. **Scale down** — target < current AND the rolling median has been below
+   half the target for the full `scale_down_after` window. Reaps **at most
+   one replica per tick**, preferring the replica with the lowest in-flight
+   count (ties broken by oldest). Floored at `min + warm_pool`. Cooldown is
+   tracked separately from scale-up.
+4. **Idle-to-zero reap** — when `idle_to_zero: true` and `min: 0` and the
+   rolling window has been zero for the full `scale_down_after`, reap every
+   remaining replica through the same drain protocol.
+5. **Cold start** — a tool call that arrives while the set is at zero
+   replicas (`idle_to_zero: true` reaped everything) synchronously spawns
+   the first replica before returning. The tool call blocks on that spawn.
+
+Every decision emits exactly one structured log line with `direction`
+(up/down/noop), `current`, `target`, `median_in_flight`, and `reason`
+(`load` / `warm_pool` / `idle_to_zero` / `cooldown` / `cold_start`). Scale
+actions also produce trace spans (`mcp.autoscale.spawn` and `mcp.autoscale.reap`).
+
+Drain protocol: when a replica is picked for reap, it's removed from
+dispatch immediately, then the scaler waits up to 30s for its in-flight
+counter to reach zero before closing the client. Exceeding that deadline
+puts the replica back in rotation and aborts this tick's scale-down.
+
+### Operator trade-offs
+
+- **Memory cost scales with `max`.** Three Python replicas cost three
+  runtimes and three sets of imported libraries. Right-size `max` to your
+  peak-demand replica count; a very high `max` is almost always a config
+  error (the validator caps it at 32 as a sanity check).
+- **Cold-start latency.** When `idle_to_zero: true`, the first tool call
+  after an idle period pays the full transport-specific start cost (see the
+  Cold Start Penalty section below).
+- **WarmPool is an always-on buffer.** `min + warm_pool` is the floor the
+  scaler refuses to cross on scale-down. Useful to absorb brief spikes
+  without paying the scale-up cooldown every time.
+- **Shared upstream resources stay bottlenecked.** If the server pool shares
+  a single DB connection or API token, adding replicas distributes stdio
+  pipes but doesn't speed up serialisation at the bottleneck.
+
+### Cold Start Penalty
+
+`idle_to_zero: true, min: 0` reaps every replica after `scale_down_after`
+of zero traffic. The next tool call pays the full cold-start cost:
+
+| Transport | Rough cold-start cost |
+|-----------|-----------------------|
+| Local process | 100ms–1s |
+| SSH | 1–3s |
+| Container (stdio) | 2–10s |
+| Container (HTTP) | 5–30s (readiness poll) |
+
+**Configure client-side timeouts to tolerate this.** Most MCP clients
+(Claude Desktop, Cursor, Windsurf) default to 30–60s tool-call timeouts,
+which may be tight for container cold starts. When enabling `idle_to_zero`
+for a container-backed server, raise the client's tool-call timeout to at
+least **60s** or keep a permanent warm replica (`min: 0, warm_pool: 1`).
+
+### Hot reload
+
+- Changes *inside* an existing `autoscale` block are applied as a policy
+  update — the scaler swaps the policy atomically on the next tick and no
+  in-flight tool calls are disrupted.
+- Switching between `replicas: N` and `autoscale:` (or vice versa) is a
+  full server restart, same as any other structural change.
+
+### Observability
+
+- **Logs** — one `"autoscale decision"` line per tick per autoscaled server;
+  spawn/reap failures emit `autoscale spawn failed` / `autoscale reap failed`
+  at WARN with `server`, `direction`, `current`, `target`, `error` attrs.
+- **Traces** — `mcp.autoscale.spawn` / `mcp.autoscale.reap` spans with an
+  `mcp.autoscale.direction` attribute for UI filtering.
+- **CLI** — `gridctl status --replicas` shows an `AUTOSCALE` column rendering
+  `min/current/max (target=N)` for autoscaled servers; blank for static ones.
+- **REST** — `/api/mcp-servers` and the `/api/stack/health` payload include
+  an `autoscale` object per server: `{min, max, current, target, targetInFlight,
+  medianInFlight, lastDecision, lastScaleUpAt, lastScaleDownAt, warmPool,
+  idleToZero}`.
+

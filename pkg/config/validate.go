@@ -379,6 +379,11 @@ func Validate(s *Stack) error {
 			errs = append(errs, ValidationError{prefix + ".replicas", "not supported for external URL or OpenAPI servers (already external/stateless — scale them at the HTTP tier)"})
 		}
 
+		// Autoscale validation.
+		if server.Autoscale != nil {
+			errs = append(errs, validateAutoscale(server, prefix)...)
+		}
+
 		// In simple mode, server.Network is ignored (per design decision)
 	}
 
@@ -416,6 +421,74 @@ func Validate(s *Stack) error {
 		return errs
 	}
 	return nil
+}
+
+// validateAutoscale validates the autoscale block on one MCP server. prefix is
+// the YAML path of the server entry (e.g. "mcp-servers[2]") so every error
+// surfaces the full dotted path for CI / --format json consumers.
+func validateAutoscale(server MCPServer, prefix string) ValidationErrors {
+	var errs ValidationErrors
+	a := server.Autoscale
+	asPrefix := prefix + ".autoscale"
+
+	// Mutually exclusive with replicas.
+	if server.Replicas > 0 {
+		errs = append(errs, ValidationError{prefix, "cannot set both 'replicas' and 'autoscale' on the same server"})
+	}
+
+	// Not supported on external / openapi, matching the existing replicas rule.
+	if server.IsExternal() || server.IsOpenAPI() {
+		errs = append(errs, ValidationError{asPrefix, "not supported for external URL or OpenAPI servers (already external/stateless — scale them at the HTTP tier)"})
+		return errs
+	}
+
+	// Bounds on required fields.
+	if a.Min < 0 {
+		errs = append(errs, ValidationError{asPrefix + ".min", "must be >= 0"})
+	}
+	if a.Max < 1 {
+		errs = append(errs, ValidationError{asPrefix + ".max", "must be >= 1"})
+	}
+	if a.Max > maxReplicas {
+		errs = append(errs, ValidationError{asPrefix + ".max", fmt.Sprintf("must be <= %d", maxReplicas)})
+	}
+	if a.Max >= 1 && a.Max < a.Min {
+		errs = append(errs, ValidationError{asPrefix + ".max", "must be >= min"})
+	}
+	if !a.IdleToZero && a.Min < 1 {
+		errs = append(errs, ValidationError{asPrefix + ".min", "must be >= 1 unless idle_to_zero is true"})
+	}
+	if a.TargetInFlight < 1 {
+		errs = append(errs, ValidationError{asPrefix + ".target_in_flight", "must be >= 1"})
+	}
+
+	// Timings.
+	if a.ScaleUpAfter != "" {
+		d, err := time.ParseDuration(a.ScaleUpAfter)
+		if err != nil {
+			errs = append(errs, ValidationError{asPrefix + ".scale_up_after", fmt.Sprintf("invalid duration %q (expected e.g. \"30s\")", a.ScaleUpAfter)})
+		} else if d < 10*time.Second {
+			errs = append(errs, ValidationError{asPrefix + ".scale_up_after", "must be >= 10s"})
+		}
+	}
+	if a.ScaleDownAfter != "" {
+		d, err := time.ParseDuration(a.ScaleDownAfter)
+		if err != nil {
+			errs = append(errs, ValidationError{asPrefix + ".scale_down_after", fmt.Sprintf("invalid duration %q (expected e.g. \"5m\")", a.ScaleDownAfter)})
+		} else if d < time.Minute {
+			errs = append(errs, ValidationError{asPrefix + ".scale_down_after", "must be >= 1m"})
+		}
+	}
+
+	// Warm pool constraints.
+	if a.WarmPool < 0 {
+		errs = append(errs, ValidationError{asPrefix + ".warm_pool", "must be >= 0"})
+	}
+	if a.Max >= 1 && a.Min+a.WarmPool > a.Max {
+		errs = append(errs, ValidationError{asPrefix + ".warm_pool", "min + warm_pool must be <= max"})
+	}
+
+	return errs
 }
 
 func validateSource(s *Source, prefix string) ValidationErrors {

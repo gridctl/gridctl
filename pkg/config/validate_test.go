@@ -1344,3 +1344,213 @@ func TestStack_SetDefaults_Replicas(t *testing.T) {
 		}
 	}
 }
+
+func TestValidate_Autoscale(t *testing.T) {
+	// Minimal valid autoscale block on a local-process server.
+	base := func(a *AutoscaleConfig) *Stack {
+		return &Stack{
+			Name:    "test",
+			Network: Network{Name: "n"},
+			MCPServers: []MCPServer{{
+				Name:      "junos",
+				Command:   []string{"python", "j.py"},
+				Autoscale: a,
+			}},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		stack   *Stack
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:  "minimal valid",
+			stack: base(&AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3}),
+		},
+		{
+			name:  "valid with all timings",
+			stack: base(&AutoscaleConfig{Min: 2, Max: 8, TargetInFlight: 3, ScaleUpAfter: "30s", ScaleDownAfter: "5m", WarmPool: 1}),
+		},
+		{
+			name:  "idle_to_zero allows min 0",
+			stack: base(&AutoscaleConfig{Min: 0, Max: 4, TargetInFlight: 3, IdleToZero: true}),
+		},
+		{
+			name:    "min 0 without idle_to_zero rejected",
+			stack:   base(&AutoscaleConfig{Min: 0, Max: 4, TargetInFlight: 3}),
+			wantErr: true,
+			errMsg:  "autoscale.min",
+		},
+		{
+			name:    "max < min rejected",
+			stack:   base(&AutoscaleConfig{Min: 5, Max: 3, TargetInFlight: 1}),
+			wantErr: true,
+			errMsg:  "must be >= min",
+		},
+		{
+			name:    "max 0 rejected",
+			stack:   base(&AutoscaleConfig{Min: 0, Max: 0, TargetInFlight: 1, IdleToZero: true}),
+			wantErr: true,
+			errMsg:  "autoscale.max",
+		},
+		{
+			name:    "max 33 rejected",
+			stack:   base(&AutoscaleConfig{Min: 1, Max: 33, TargetInFlight: 3}),
+			wantErr: true,
+			errMsg:  "<= 32",
+		},
+		{
+			name:    "target_in_flight 0 rejected",
+			stack:   base(&AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 0}),
+			wantErr: true,
+			errMsg:  "target_in_flight",
+		},
+		{
+			name:    "scale_up_after below 10s rejected",
+			stack:   base(&AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3, ScaleUpAfter: "5s"}),
+			wantErr: true,
+			errMsg:  "scale_up_after",
+		},
+		{
+			name:    "scale_down_after below 1m rejected",
+			stack:   base(&AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3, ScaleDownAfter: "30s"}),
+			wantErr: true,
+			errMsg:  "scale_down_after",
+		},
+		{
+			name:    "warm_pool push exceeds max",
+			stack:   base(&AutoscaleConfig{Min: 3, Max: 4, TargetInFlight: 3, WarmPool: 2}),
+			wantErr: true,
+			errMsg:  "warm_pool",
+		},
+		{
+			name:    "warm_pool negative rejected",
+			stack:   base(&AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3, WarmPool: -1}),
+			wantErr: true,
+			errMsg:  "warm_pool",
+		},
+		{
+			name:    "scale_up_after invalid duration rejected",
+			stack:   base(&AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3, ScaleUpAfter: "not-a-duration"}),
+			wantErr: true,
+			errMsg:  "invalid duration",
+		},
+		{
+			name: "autoscale with replicas set rejected",
+			stack: &Stack{
+				Name:    "test",
+				Network: Network{Name: "n"},
+				MCPServers: []MCPServer{{
+					Name:      "junos",
+					Command:   []string{"python", "j.py"},
+					Replicas:  3,
+					Autoscale: &AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3},
+				}},
+			},
+			wantErr: true,
+			errMsg:  "cannot set both",
+		},
+		{
+			name: "autoscale on external rejected",
+			stack: &Stack{
+				Name:    "test",
+				Network: Network{Name: "n"},
+				MCPServers: []MCPServer{{
+					Name:      "ext",
+					URL:       "https://example.com/mcp",
+					Autoscale: &AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3},
+				}},
+			},
+			wantErr: true,
+			errMsg:  "external",
+		},
+		{
+			name: "autoscale on openapi rejected",
+			stack: &Stack{
+				Name:    "test",
+				Network: Network{Name: "n"},
+				MCPServers: []MCPServer{{
+					Name:      "api",
+					OpenAPI:   &OpenAPIConfig{Spec: "spec.yaml"},
+					Autoscale: &AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3},
+				}},
+			},
+			wantErr: true,
+			errMsg:  "external URL or OpenAPI",
+		},
+		{
+			name: "autoscale on container valid",
+			stack: &Stack{
+				Name:    "test",
+				Network: Network{Name: "n"},
+				MCPServers: []MCPServer{{
+					Name:      "ctr",
+					Image:     "alpine",
+					Port:      3000,
+					Autoscale: &AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3},
+				}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(tc.stack)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.errMsg != "" && !strings.Contains(err.Error(), tc.errMsg) {
+					t.Errorf("expected error containing %q, got %q", tc.errMsg, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestAutoscaleConfig_Resolved(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        *AutoscaleConfig
+		wantUp     time.Duration
+		wantDown   time.Duration
+	}{
+		{name: "nil returns defaults", cfg: nil, wantUp: 30 * time.Second, wantDown: 5 * time.Minute},
+		{name: "empty returns defaults", cfg: &AutoscaleConfig{}, wantUp: 30 * time.Second, wantDown: 5 * time.Minute},
+		{name: "valid durations parsed", cfg: &AutoscaleConfig{ScaleUpAfter: "45s", ScaleDownAfter: "10m"}, wantUp: 45 * time.Second, wantDown: 10 * time.Minute},
+		{name: "garbage falls back", cfg: &AutoscaleConfig{ScaleUpAfter: "oops"}, wantUp: 30 * time.Second, wantDown: 5 * time.Minute},
+		{name: "negative falls back", cfg: &AutoscaleConfig{ScaleUpAfter: "-10s"}, wantUp: 30 * time.Second, wantDown: 5 * time.Minute},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.ResolvedScaleUpAfter(); got != tc.wantUp {
+				t.Errorf("ResolvedScaleUpAfter() = %v, want %v", got, tc.wantUp)
+			}
+			if got := tc.cfg.ResolvedScaleDownAfter(); got != tc.wantDown {
+				t.Errorf("ResolvedScaleDownAfter() = %v, want %v", got, tc.wantDown)
+			}
+		})
+	}
+}
+
+func TestStack_SetDefaults_AutoscaleKeepsReplicasZero(t *testing.T) {
+	s := &Stack{
+		Name:    "test",
+		Network: Network{Name: "n"},
+		MCPServers: []MCPServer{
+			{Name: "a", Image: "alpine", Port: 3000, Autoscale: &AutoscaleConfig{Min: 2, Max: 6, TargetInFlight: 3}},
+			{Name: "b", Image: "alpine", Port: 3000}, // static: Replicas → 1
+		},
+	}
+	s.SetDefaults()
+	if got := s.MCPServers[0].Replicas; got != 0 {
+		t.Errorf("autoscaled server: Replicas = %d, want 0 (scaler owns count)", got)
+	}
+	if got := s.MCPServers[1].Replicas; got != 1 {
+		t.Errorf("static server: Replicas = %d, want 1", got)
+	}
+}

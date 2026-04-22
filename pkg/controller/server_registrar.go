@@ -25,6 +25,12 @@ type ServerRegistrar struct {
 	// receive a CleanupOnReadyFailure closure that removes the workload if the
 	// gateway's readiness wait times out. nil disables cleanup (e.g. in tests).
 	runtime runtime.WorkloadRuntime
+
+	// basePort is the starting host port for new container replicas spawned
+	// at runtime by the autoscaler. Defaults to runtime.DefaultBasePort when
+	// the caller omits it; collisions with ports assigned during static
+	// bring-up are avoided by the allocator's monotonic counter.
+	basePort int
 }
 
 // NewServerRegistrar creates a ServerRegistrar.
@@ -50,17 +56,44 @@ func (r *ServerRegistrar) SetRuntime(rt runtime.WorkloadRuntime) {
 	r.runtime = rt
 }
 
+// SetBasePort sets the starting host port for dynamic container spawns by the
+// autoscaler. Picks up where the initial bring-up left off.
+func (r *ServerRegistrar) SetBasePort(p int) {
+	r.basePort = p
+}
+
 // RegisterAll registers all MCP servers from the UpResult with the gateway.
 // For each server it builds one MCPServerConfig per replica and registers
-// them as a single ReplicaSet under the server's logical name.
+// them as a single ReplicaSet under the server's logical name. Autoscaled
+// servers are routed through registerAutoscaled instead so the Spawner owns
+// replica provisioning.
 func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpResult, stack *config.Stack, stackPath string) {
 	serverConfigs := make(map[string]config.MCPServer)
 	for _, s := range stack.MCPServers {
 		serverConfigs[s.Name] = s
 	}
 
+	// Container-based autoscaled servers need a post-bring-up port allocator
+	// that starts where the static containers left off.
+	nextHostPort := r.basePort
+	for _, s := range result.MCPServers {
+		for _, rep := range s.Replicas {
+			if rep.HostPort > nextHostPort {
+				nextHostPort = rep.HostPort
+			}
+		}
+	}
+
 	for _, server := range result.MCPServers {
 		serverCfg := serverConfigs[server.Name]
+
+		if serverCfg.Autoscale != nil {
+			if err := r.registerAutoscaled(ctx, serverCfg, stack, stackPath, nextHostPort); err != nil {
+				r.logger.Warn("failed to register autoscaled MCP server", "name", server.Name, "error", err)
+			}
+			continue
+		}
+
 		cfgs := r.buildReplicaConfigs(server, serverCfg, stackPath)
 		if len(cfgs) == 0 {
 			r.logger.Warn("no replica configs built", "name", server.Name)
@@ -92,6 +125,14 @@ type ReplicaRuntime struct {
 // zero-valued ReplicaRuntime entries of the desired length (or a single-entry
 // slice for the single-replica case).
 func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
+	// Autoscaled servers ignore the caller's replica slice — the Spawner
+	// owns provisioning. This path runs for hot-reload adds of autoscaled
+	// servers; the reload handler passes placeholder runtimes it wouldn't
+	// normally provision for us.
+	if server.Autoscale != nil {
+		return r.registerAutoscaled(ctx, server, nil, stackPath, r.basePort)
+	}
+
 	if len(replicas) == 0 {
 		replicas = []ReplicaRuntime{{}}
 	}
@@ -104,6 +145,84 @@ func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServ
 		policy = mcp.ReplicaPolicyRoundRobin
 	}
 	return r.gateway.RegisterMCPReplicaSet(ctx, server.Name, policy, cfgs)
+}
+
+// registerAutoscaled wires up a Spawner for the server transport and calls
+// Gateway.RegisterAutoscaler. stack may be nil when called from the hot-reload
+// path; it's only needed for container-backed servers to derive the network
+// name and resolved image.
+func (r *ServerRegistrar) registerAutoscaled(ctx context.Context, server config.MCPServer, stack *config.Stack, stackPath string, hostPortBase int) error {
+	if server.Autoscale == nil {
+		return fmt.Errorf("registerAutoscaled: %s has no autoscale block", server.Name)
+	}
+
+	template := r.buildConfigFromMCPServer(server, 0, "", stackPath)
+	template.CleanupOnReadyFailure = nil // spawner's own cleanup takes over
+
+	var spawner mcp.Spawner
+	switch {
+	case server.IsLocalProcess():
+		spawner = NewProcessSpawner(r.gateway, template)
+	case server.IsSSH():
+		spawner = NewSSHSpawner(r.gateway, template)
+	case server.IsContainerBased():
+		var networkName, imageName string
+		if stack != nil {
+			networkName = stack.Network.Name
+			if len(stack.Networks) > 0 && server.Network != "" {
+				networkName = server.Network
+			}
+		}
+		imageName = server.Image
+		if server.Source != nil && stack != nil {
+			imageName = fmt.Sprintf("gridctl-%s-%s:latest", stack.Name, server.Name)
+		}
+		transport := server.Transport
+		if transport == "" {
+			transport = "http"
+		}
+		spawner = NewContainerSpawner(ContainerSpawnerOptions{
+			Builder:   r.gateway,
+			Runtime:   r.runtime,
+			Stack:     stackNameOrEmpty(stack),
+			Server:    server,
+			Network:   networkName,
+			Image:     imageName,
+			Transport: transport,
+			Ports:     NewAtomicPortAllocator(hostPortBase),
+			Logger:    r.logger,
+			InitialID: 0,
+		})
+	default:
+		return fmt.Errorf("autoscale not supported for %s transport", server.Name)
+	}
+
+	policy := server.ReplicaPolicy
+	if policy == "" {
+		policy = mcp.ReplicaPolicyRoundRobin
+	}
+	return r.gateway.RegisterAutoscaler(ctx, template, policy, spawner, toAutoscalePolicy(server.Autoscale))
+}
+
+func stackNameOrEmpty(s *config.Stack) string {
+	if s == nil {
+		return ""
+	}
+	return s.Name
+}
+
+// toAutoscalePolicy converts the YAML AutoscaleConfig into the runtime
+// AutoscalePolicy used by the scaler.
+func toAutoscalePolicy(a *config.AutoscaleConfig) mcp.AutoscalePolicy {
+	return mcp.AutoscalePolicy{
+		Min:            a.Min,
+		Max:            a.Max,
+		TargetInFlight: a.TargetInFlight,
+		ScaleUpAfter:   a.ResolvedScaleUpAfter(),
+		ScaleDownAfter: a.ResolvedScaleDownAfter(),
+		WarmPool:       a.WarmPool,
+		IdleToZero:     a.IdleToZero,
+	}
 }
 
 // buildReplicaConfigs fans out an UpResult's per-replica handles into one

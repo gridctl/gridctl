@@ -175,6 +175,9 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 		return result, nil
 	}
 
+	// Apply autoscale policy-only updates in place — no restart required.
+	h.applyAutoscalePolicyUpdates(diff.MCPServers, result)
+
 	// Apply resource changes
 	if err := h.applyResourceChanges(ctx, diff.Resources, newCfg, result); err != nil {
 		result.Success = false
@@ -211,6 +214,31 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	}
 
 	return result, nil
+}
+
+// applyAutoscalePolicyUpdates swaps the live scaler policy for each affected
+// server without restarting. In-flight tool calls are not disrupted.
+func (h *Handler) applyAutoscalePolicyUpdates(diff MCPServerDiff, result *ReloadResult) {
+	for _, change := range diff.AutoscalePolicyChanges {
+		h.logger.Info("updating autoscale policy", "name", change.Name)
+		scaler := h.gateway.GetAutoscaler(change.Name)
+		if scaler == nil || change.New.Autoscale == nil {
+			h.logger.Warn("autoscale policy change requested but no scaler registered",
+				"name", change.Name)
+			result.Errors = append(result.Errors, fmt.Sprintf("no autoscaler for %s", change.Name))
+			continue
+		}
+		scaler.UpdatePolicy(mcp.AutoscalePolicy{
+			Min:            change.New.Autoscale.Min,
+			Max:            change.New.Autoscale.Max,
+			TargetInFlight: change.New.Autoscale.TargetInFlight,
+			ScaleUpAfter:   change.New.Autoscale.ResolvedScaleUpAfter(),
+			ScaleDownAfter: change.New.Autoscale.ResolvedScaleDownAfter(),
+			WarmPool:       change.New.Autoscale.WarmPool,
+			IdleToZero:     change.New.Autoscale.IdleToZero,
+		})
+		result.Modified = append(result.Modified, "mcp-server:"+change.Name+" (autoscale policy)")
+	}
 }
 
 func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff, newCfg *config.Stack, result *ReloadResult) error {

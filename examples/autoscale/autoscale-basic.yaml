@@ -1,0 +1,35 @@
+# Phase 1 reactive autoscaling example.
+#
+# The gateway keeps the median in-flight request count per replica at or below
+# `target_in_flight`. When demand rises, it spawns additional replicas of the
+# server up to `max`; when demand falls, it reaps replicas back down to `min`
+# after `scale_down_after` of sustained low load.
+#
+# `autoscale` and `replicas` are mutually exclusive. A server without an
+# `autoscale` block continues to behave exactly as it does today.
+#
+# Run with:
+#   gridctl validate examples/autoscale/autoscale-basic.yaml   # exits 0
+#   gridctl apply    examples/autoscale/autoscale-basic.yaml
+#   # In another terminal, burst traffic against it:
+#   gridctl status --replicas
+
+version: "1"
+name: autoscale-demo
+
+network:
+  name: autoscale-demo-net
+
+mcp-servers:
+  - name: junos
+    command:
+      - examples/_mock-servers/local-stdio-server/local-stdio-server
+    autoscale:
+      min: 1                    # always keep at least 1 replica healthy
+      max: 8                    # upper bound (sanity-capped at 32)
+      target_in_flight: 3       # scale out when median in-flight exceeds 3 per replica
+      scale_up_after: 30s       # wait 30s of sustained high load before spawning
+      scale_down_after: 5m      # wait 5m of sustained low load before reaping
+      warm_pool: 0              # keep 0 extra idle replicas above the load floor
+      idle_to_zero: false       # keep min healthy even during a complete lull
+    replica_policy: least-connections

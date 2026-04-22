@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"errors"
+	"fmt"
 	"math/rand/v2"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -165,11 +167,25 @@ type ReplicaSet struct {
 	mu       sync.RWMutex
 	replicas []*Replica
 	rrCursor atomic.Int64
+
+	// nextID is the next replica id to hand out. Monotonically increasing;
+	// ids are never reused, so removal never invalidates a stored id.
+	// Seeded to len(clients) by NewReplicaSet so existing static ids (0..n-1)
+	// remain untouched and dynamic adds pick up from n.
+	nextID atomic.Int64
+
+	// toolCache caches the last known tool surface (keyed by the canonical
+	// server name) so Router.AggregatedTools can still advertise tools when
+	// every replica has been reaped (e.g. scale-to-zero). A nil or empty
+	// value means the cache is cold.
+	toolCacheMu sync.RWMutex
+	toolCache   []Tool
 }
 
 // NewReplicaSet builds a ReplicaSet from an ordered slice of AgentClients. The
 // first client becomes replica-0, and so on. All replicas start healthy. An
-// unknown policy falls back to round-robin.
+// unknown policy falls back to round-robin. The id counter is seeded to
+// len(clients) so dynamic adds never collide with static ids.
 func NewReplicaSet(name, policy string, clients []AgentClient) *ReplicaSet {
 	if policy != ReplicaPolicyRoundRobin && policy != ReplicaPolicyLeastConnections {
 		policy = ReplicaPolicyRoundRobin
@@ -189,6 +205,12 @@ func NewReplicaSet(name, policy string, clients []AgentClient) *ReplicaSet {
 		}
 		r.healthy.Store(true)
 		set.replicas = append(set.replicas, r)
+	}
+	set.nextID.Store(int64(len(clients)))
+	// Seed the tool cache from replica-0 so even an immediate scale-to-zero
+	// preserves the tool surface advertised to clients.
+	if len(clients) > 0 {
+		set.SetToolCache(clients[0].Tools())
 	}
 	return set
 }
@@ -270,7 +292,8 @@ func (s *ReplicaSet) pickLeastConnectionsLocked() (*Replica, error) {
 			continue
 		}
 		inFlight := r.InFlight()
-		if chosen == nil || inFlight < chosenInFlight {
+		if chosen == nil || inFlight < chosenInFlight ||
+			(inFlight == chosenInFlight && r.id < chosen.id) {
 			chosen = r
 			chosenInFlight = inFlight
 		}
@@ -279,4 +302,131 @@ func (s *ReplicaSet) pickLeastConnectionsLocked() (*Replica, error) {
 		return nil, ErrNoHealthyReplicas
 	}
 	return chosen, nil
+}
+
+// AddReplica appends a new replica with a monotonically increasing id and
+// marks it healthy. Returns the new replica's id. Ids are never reused so
+// handles stored by observers (health monitor, status endpoints) remain
+// stable across scale events.
+func (s *ReplicaSet) AddReplica(client AgentClient) int {
+	s.mu.Lock()
+	id := int(s.nextID.Add(1) - 1)
+	r := &Replica{
+		id:        id,
+		client:    client,
+		restart:   &backoffState{},
+		startedAt: time.Now(),
+	}
+	r.healthy.Store(true)
+	s.replicas = append(s.replicas, r)
+	s.mu.Unlock()
+
+	// Keep the tool-definition cache warm for scale-to-zero. Done outside
+	// s.mu so client.Tools() (which may refresh under its own lock) does
+	// not block Pick / Replicas / HealthyCount callers on this replica.
+	if client != nil {
+		s.SetToolCache(client.Tools())
+	}
+	return id
+}
+
+// RemoveReplica removes the replica with the given id and returns it so the
+// caller can close its client. Returns an error if the id is not present.
+// The caller is responsible for policy checks (min floor, warm pool, etc.);
+// this method only enforces that the replica exists.
+func (s *ReplicaSet) RemoveReplica(id int) (*Replica, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, r := range s.replicas {
+		if r.id != id {
+			continue
+		}
+		s.replicas = append(s.replicas[:i], s.replicas[i+1:]...)
+		return r, nil
+	}
+	return nil, fmt.Errorf("replica %d not in set %q", id, s.name)
+}
+
+// ReinsertReplica puts a previously-removed replica back into the set
+// without minting a new id. Used by the autoscaler when a drain fails so
+// the in-flight counters and restart state the caller accumulated while
+// the replica was detached are preserved. Idempotent: if a replica with
+// the same id is already present, this is a no-op.
+func (s *ReplicaSet) ReinsertReplica(r *Replica) {
+	if r == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, existing := range s.replicas {
+		if existing.id == r.id {
+			return
+		}
+	}
+	r.SetHealthy(true)
+	s.replicas = append(s.replicas, r)
+}
+
+// HealthyCount returns the number of replicas currently marked healthy.
+func (s *ReplicaSet) HealthyCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for _, r := range s.replicas {
+		if r.Healthy() {
+			n++
+		}
+	}
+	return n
+}
+
+// MedianInFlight returns the median of in-flight counters across currently
+// healthy replicas. Returns 0 when no replica is healthy. Returns float64
+// for precision in small-scale clusters where one request can tilt the mean
+// noticeably.
+func (s *ReplicaSet) MedianInFlight() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	samples := make([]int64, 0, len(s.replicas))
+	for _, r := range s.replicas {
+		if r.Healthy() {
+			samples = append(samples, r.InFlight())
+		}
+	}
+	if len(samples) == 0 {
+		return 0
+	}
+	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	mid := len(samples) / 2
+	if len(samples)%2 == 1 {
+		return float64(samples[mid])
+	}
+	return float64(samples[mid-1]+samples[mid]) / 2
+}
+
+// SetToolCache replaces the tool-definition cache. Callers set this after
+// every successful refresh so Router.AggregatedTools can fall back to the
+// cached surface when every replica is currently reaped.
+func (s *ReplicaSet) SetToolCache(tools []Tool) {
+	if len(tools) == 0 {
+		return
+	}
+	s.toolCacheMu.Lock()
+	defer s.toolCacheMu.Unlock()
+	out := make([]Tool, len(tools))
+	copy(out, tools)
+	s.toolCache = out
+}
+
+// CachedTools returns a copy of the cached tool surface. Returns an empty
+// slice when the cache has not been primed.
+func (s *ReplicaSet) CachedTools() []Tool {
+	s.toolCacheMu.RLock()
+	defer s.toolCacheMu.RUnlock()
+	if len(s.toolCache) == 0 {
+		return nil
+	}
+	out := make([]Tool, len(s.toolCache))
+	copy(out, s.toolCache)
+	return out
 }

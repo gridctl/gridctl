@@ -116,13 +116,21 @@ func (r *Router) ReplicaSets() []*ReplicaSet {
 }
 
 // toolsOf returns the Tools list to advertise for a set. All replicas share
-// the same tool surface, so reading from replica-0 is sufficient.
+// the same tool surface, so reading from replica-0 is sufficient. When every
+// replica has been reaped (e.g. scale-to-zero), falls back to the set's tool
+// cache so clients still see the tool surface and can trigger a cold-start.
 func toolsOf(set *ReplicaSet) []Tool {
 	reps := set.Replicas()
 	if len(reps) == 0 {
-		return nil
+		return set.CachedTools()
 	}
-	return reps[0].Client().Tools()
+	tools := reps[0].Client().Tools()
+	// Opportunistically refresh the cache on every successful read so a
+	// subsequent scale-to-zero serves the most recent tool surface.
+	if len(tools) > 0 {
+		set.SetToolCache(tools)
+	}
+	return tools
 }
 
 // RefreshTools updates the tool registry from all agents.

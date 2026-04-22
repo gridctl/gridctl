@@ -17,6 +17,10 @@ type MCPServerDiff struct {
 	Added    []config.MCPServer
 	Removed  []config.MCPServer
 	Modified []MCPServerChange
+	// AutoscalePolicyChanges lists servers whose autoscale block fields
+	// changed but whose other config is stable. The reload handler applies
+	// these via Autoscaler.UpdatePolicy without restarting the server.
+	AutoscalePolicyChanges []MCPServerChange
 }
 
 // MCPServerChange represents a modification to an existing MCP server.
@@ -45,6 +49,7 @@ func (d *ConfigDiff) IsEmpty() bool {
 	return len(d.MCPServers.Added) == 0 &&
 		len(d.MCPServers.Removed) == 0 &&
 		len(d.MCPServers.Modified) == 0 &&
+		len(d.MCPServers.AutoscalePolicyChanges) == 0 &&
 		len(d.Resources.Added) == 0 &&
 		len(d.Resources.Removed) == 0 &&
 		len(d.Resources.Modified) == 0 &&
@@ -111,13 +116,27 @@ func diffMCPServers(oldServers, newServers []config.MCPServer) MCPServerDiff {
 		oldServer, exists := oldMap[newServer.Name]
 		if !exists {
 			diff.Added = append(diff.Added, newServer)
-		} else if !mcpServerEqual(oldServer, newServer) {
-			diff.Modified = append(diff.Modified, MCPServerChange{
+			continue
+		}
+		if mcpServerEqual(oldServer, newServer) {
+			continue
+		}
+		// Autoscale-only policy updates are applied in-place without
+		// restarting the server so in-flight tool calls are not disrupted.
+		// Switching between autoscale and static replicas is a full restart.
+		if isAutoscalePolicyOnlyChange(oldServer, newServer) {
+			diff.AutoscalePolicyChanges = append(diff.AutoscalePolicyChanges, MCPServerChange{
 				Name: newServer.Name,
 				Old:  oldServer,
 				New:  newServer,
 			})
+			continue
 		}
+		diff.Modified = append(diff.Modified, MCPServerChange{
+			Name: newServer.Name,
+			Old:  oldServer,
+			New:  newServer,
+		})
 	}
 
 	// Find removed
@@ -128,6 +147,45 @@ func diffMCPServers(oldServers, newServers []config.MCPServer) MCPServerDiff {
 	}
 
 	return diff
+}
+
+// isAutoscalePolicyOnlyChange reports whether the only difference between two
+// server configs is inside the autoscale block. Transitions between static
+// replicas and autoscale always return false so those are restarted cleanly.
+func isAutoscalePolicyOnlyChange(oldServer, newServer config.MCPServer) bool {
+	// Both must already be autoscaled; switching in/out is a restart.
+	if oldServer.Autoscale == nil || newServer.Autoscale == nil {
+		return false
+	}
+	// Ignore autoscale deltas while comparing everything else.
+	oldCopy := oldServer
+	newCopy := newServer
+	oldCopy.Autoscale = nil
+	newCopy.Autoscale = nil
+	if !mcpServerEqual(oldCopy, newCopy) {
+		return false
+	}
+	// Only an autoscale change remains — and we already know the configs
+	// differ overall, so the autoscale block must carry the diff.
+	return !autoscaleEqual(oldServer.Autoscale, newServer.Autoscale)
+}
+
+func autoscaleEqual(a, b *config.AutoscaleConfig) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	// Compare resolved durations so YAML strings that parse to the same
+	// duration ("30s" vs "30000ms") don't trigger a spurious policy update.
+	return a.Min == b.Min &&
+		a.Max == b.Max &&
+		a.TargetInFlight == b.TargetInFlight &&
+		a.ResolvedScaleUpAfter() == b.ResolvedScaleUpAfter() &&
+		a.ResolvedScaleDownAfter() == b.ResolvedScaleDownAfter() &&
+		a.WarmPool == b.WarmPool &&
+		a.IdleToZero == b.IdleToZero
 }
 
 func diffResources(oldResources, newResources []config.Resource) ResourceDiff {
@@ -172,6 +230,13 @@ func mcpServerEqual(a, b config.MCPServer) bool {
 	// Compare basic fields
 	if a.Name != b.Name || a.Image != b.Image || a.Port != b.Port ||
 		a.Transport != b.Transport || a.URL != b.URL || a.Network != b.Network {
+		return false
+	}
+	// Compare the autoscale block so transitions between static replicas and
+	// autoscale (or field changes inside an existing autoscale block) surface
+	// here. Static replicas count / policy are intentionally NOT compared to
+	// preserve pre-existing hot-reload behavior.
+	if !autoscaleEqual(a.Autoscale, b.Autoscale) {
 		return false
 	}
 

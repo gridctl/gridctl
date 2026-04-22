@@ -23,6 +23,7 @@ All notable changes to gridctl will be documented in this file.
 ### Features
 
 
+- **feat: reactive autoscaling for MCP ReplicaSet.** Replace static `replicas: N` with an `autoscale:` block (min/max/target_in_flight/scale_up_after/scale_down_after/warm_pool/idle_to_zero) and gridctl will spawn and reap replicas reactively based on median in-flight load. Supported on container, local-process, and SSH transports; rejected (with a precise YAML path) on external URL and OpenAPI. Adds a new `AUTOSCALE` column to `gridctl status --replicas`, an `autoscale` object to `/api/mcp-servers`, and structured log lines / trace spans per scaling decision. `autoscale` is mutually exclusive with `replicas`; servers without it behave identically to previous releases. See [docs/scaling.md](docs/scaling.md#autoscaling) and [examples/autoscale/](examples/autoscale/).
 - Graduate Podman runtime to stable ([#424](https://github.com/gridctl/gridctl/pull/424))
 - Expand OpenAPI auth to support OAuth2 CC, query-param keys, mTLS, and basic auth ([#427](https://github.com/gridctl/gridctl/pull/427))
 - Complete wizard spec for SSH advanced fields, OpenAPI auth types, mTLS, and pin_schemas ([#429](https://github.com/gridctl/gridctl/pull/429))

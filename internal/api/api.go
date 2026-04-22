@@ -425,7 +425,8 @@ type MCPServerStatus struct {
 	HealthError   string   `json:"healthError,omitempty"`
 	ToolWhitelist []string `json:"toolWhitelist,omitempty"`
 
-	Replicas []mcp.ReplicaStatus `json:"replicas,omitempty"`
+	Replicas  []mcp.ReplicaStatus  `json:"replicas,omitempty"`
+	Autoscale *mcp.AutoscaleStatus `json:"autoscale,omitempty"`
 }
 
 func (s *Server) getMCPServerStatuses() []MCPServerStatus {
@@ -450,6 +451,7 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 			HealthError:   ms.HealthError,
 			ToolWhitelist: ms.ToolWhitelist,
 			Replicas:      ms.Replicas,
+			Autoscale:     ms.Autoscale,
 		}
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)
