@@ -89,7 +89,17 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
       "openapiSpec": "",
       "healthy": true,
       "lastCheck": "2025-01-15T10:30:00Z",
-      "healthError": ""
+      "healthError": "",
+      "autoscale": {
+        "min": 1,
+        "max": 8,
+        "current": 2,
+        "target": 3,
+        "targetInFlight": 3,
+        "medianInFlight": 9,
+        "lastScaleUpAt": "2025-01-15T10:29:12Z",
+        "lastDecision": "up"
+      }
     }
   ],
   "agents": [
@@ -165,17 +175,33 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `per_server` | map | Token counts keyed by server name |
 | `format_savings` | object | Savings from output format conversion (`original_tokens`, `formatted_tokens`, `saved_tokens`, `savings_percent`) |
 
-**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server.
+**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server, and `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers).
 
 #### `GET /api/mcp-servers`
 
-Returns MCP server status details.
+Returns MCP server status details. Response fields match the `mcp-servers[]` entries under [`/api/status`](#get-apistatus).
 
 **Auth:** Yes
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-servers
 ```
+
+**Autoscale fields** — servers configured with an `autoscale` block (see [config-schema.md#autoscale](config-schema.md#autoscale)) include an `autoscale` object in their status:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `min` | int | Configured floor |
+| `max` | int | Configured ceiling |
+| `current` | int | Running replica count at the last controller tick |
+| `target` | int | Desired replica count at the last controller tick |
+| `targetInFlight` | int | Configured per-replica in-flight target |
+| `medianInFlight` | int | Rolling median in-flight request count across healthy replicas |
+| `lastScaleUpAt` | string | RFC3339 timestamp of the most recent scale-up (omitted when none) |
+| `lastScaleDownAt` | string | RFC3339 timestamp of the most recent scale-down (omitted when none) |
+| `lastDecision` | string | `"up"`, `"down"`, or `"noop"` — what the controller just decided |
+| `warmPool` | int | Configured warm-pool (omitted when 0) |
+| `idleToZero` | bool | Configured scale-to-zero (omitted when false) |
 
 #### `GET /api/tools`
 

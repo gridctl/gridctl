@@ -666,6 +666,8 @@ When the vault is locked, all endpoints except `status`, `unlock`, and `lock` re
 
 **Replica sets:** Each registered server is a `ReplicaSet` in the router — a pool of 1..N `AgentClient` replicas sharing one server name and one tool namespace. Set `replicas: N` (and optionally `replica_policy: round-robin | least-connections`) in `mcp-servers[]` to spawn N independent processes. Validation caps at 32 and rejects replicas on `external` / `openapi` transports. Per-replica health monitor pings each replica independently, excludes failures from dispatch, and reconnects with exponential backoff (1s → 30s cap, ±25% jitter, reset on success). When every replica is unhealthy, tool calls fail with `no healthy replicas: <server>`. Every log line and trace span on the tool-call path carries a `replica_id`; `gridctl status --replicas` and `/api/stack/health` expose the per-replica breakdown. See [docs/scaling.md](docs/scaling.md).
 
+**Autoscale:** A server can replace static `replicas: N` with a reactive `autoscale:` block — same transport rules, same replica-set plumbing, but with a per-set controller in `pkg/mcp/autoscaler` that spawns/reaps replicas based on rolling-median in-flight load (`min`, `max`, `target_in_flight`, `scale_up_after`, `scale_down_after`, `warm_pool`, `idle_to_zero`). `autoscale` and `replicas` are mutually exclusive on the same server. Live snapshots are published on `/api/status` and `/api/mcp-servers` as `autoscale?: AutoscaleStatus` (current, target, median, lastDecision, lastScaleUp/DownAt); `gridctl status --replicas` surfaces the same via an `AUTOSCALE` column. See [docs/scaling.md#autoscaling](docs/scaling.md#autoscaling).
+
 ## Stack YAML Schema
 
 Gridctl supports two network modes:
