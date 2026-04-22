@@ -322,8 +322,9 @@ mcp-servers:
 | `output_format` | string | No | — | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | — | Override schema pinning for this server. `false` disables pinning regardless of gateway setting. Omit to inherit from `gateway.security.schema_pinning.enabled` |
 | `ready_timeout` | duration | No | `30s` | Readiness wait for container-based HTTP/SSE servers. Accepts any `time.Duration` string (e.g. `"60s"`, `"2m"`). When a container does not become ready within this window, the container is stopped and removed so a retry starts clean. Ignored for stdio, external, local process, SSH, and OpenAPI servers |
-| `replicas` | int | No | `1` | Number of independent processes to spawn for this server. Values >1 load-balance JSON-RPC tool calls across replicas using `replica_policy`. Range: 1–32. Not supported for external URL or OpenAPI transports. See [Scaling stdio servers](scaling.md) |
-| `replica_policy` | string | No | `"round-robin"` | Dispatch policy when `replicas > 1`: `"round-robin"` or `"least-connections"` |
+| `replicas` | int | No | `1` | Number of independent processes to spawn for this server. Values >1 load-balance JSON-RPC tool calls across replicas using `replica_policy`. Range: 1–32. Not supported for external URL or OpenAPI transports. Mutually exclusive with `autoscale`. See [Scaling](scaling.md) |
+| `replica_policy` | string | No | `"round-robin"` | Dispatch policy when `replicas > 1` or `autoscale` is set: `"round-robin"` or `"least-connections"` |
+| `autoscale` | object | No | — | Reactive autoscaling block. Mutually exclusive with `replicas`. Not supported for external URL or OpenAPI transports. See [Autoscale](#autoscale) |
 
 **Type determination rules:**
 - Must have exactly one of: `image`, `source`, `url`, `command` (alone), `ssh` + `command`, or `openapi`
@@ -410,6 +411,37 @@ Transport-layer TLS configuration. Can be combined with any `auth` type.
 | `exclude` | []string | No | — | Operation IDs to exclude (blacklist) |
 
 Cannot use both `include` and `exclude`.
+
+### Autoscale
+
+Reactive autoscaling block — replaces the static `replicas: N` field with a policy that spawns and reaps replicas based on live in-flight load. Supported on container, local-process, and SSH servers. Rejected on external URL and OpenAPI transports with a precise YAML-path validation error. `autoscale` and `replicas` are mutually exclusive on the same server.
+
+```yaml
+mcp-servers:
+  - name: junos
+    command: [.venv/bin/python, servers/junos-mcp-server/jmcp.py, --transport, stdio]
+    replica_policy: least-connections
+    autoscale:
+      min: 1
+      max: 8
+      target_in_flight: 3
+      scale_up_after: 30s
+      scale_down_after: 5m
+      warm_pool: 0
+      idle_to_zero: false
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `min` | int | **Yes** | — | Floor on the replica count. Must be `>= 0`; must be `>= 1` unless `idle_to_zero` is true |
+| `max` | int | **Yes** | — | Ceiling on the replica count. Must be `>= 1`, `<= 32`, and `>= min` |
+| `target_in_flight` | int | **Yes** | — | Target per-replica in-flight request count. The scaler holds the rolling median at or below this. Must be `>= 1` |
+| `scale_up_after` | duration | No | `30s` | Window the rolling median must stay above `target_in_flight` before spawning. Minimum `10s` |
+| `scale_down_after` | duration | No | `5m` | Window the rolling median must stay below half the target before reaping. Minimum `1m` |
+| `warm_pool` | int | No | `0` | Extra idle replicas kept above the load-derived target. `min + warm_pool` is the scale-down floor. `min + warm_pool <= max` |
+| `idle_to_zero` | bool | No | `false` | When true, allows `min: 0` and reaps every replica after sustained idle. The first tool call after idle pays a cold-start penalty (see [docs/scaling.md#cold-start-penalty](scaling.md#cold-start-penalty)) |
+
+Full decision-rule walkthrough, cold-start trade-offs, and observability details live in [docs/scaling.md#autoscaling](scaling.md#autoscaling). Live state is exposed via `/api/status` and `/api/mcp-servers` (see [api-reference.md](api-reference.md#get-apistatus)) and the `AUTOSCALE` column of `gridctl status --replicas`.
 
 ---
 
