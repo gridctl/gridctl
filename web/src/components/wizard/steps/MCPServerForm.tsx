@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
-import type { MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
+import type { AutoscaleFormData, MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
 import type { ProbeServerConfig } from '../../../lib/api';
 import { SecretsPopover } from '../SecretsPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
@@ -120,22 +120,23 @@ interface FieldVisibility {
   buildArgs: boolean;
   network: boolean;
   replicas: boolean;
+  autoscale: boolean;
 }
 
 function getFieldVisibility(serverType: ServerType): FieldVisibility {
   switch (serverType) {
     case 'container':
-      return { image: true, port: true, transport: true, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: true, replicas: true };
+      return { image: true, port: true, transport: true, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: true, replicas: true, autoscale: true };
     case 'source':
-      return { image: false, port: true, transport: true, command: false, source: true, url: false, ssh: false, openapi: false, buildArgs: true, network: true, replicas: true };
+      return { image: false, port: true, transport: true, command: false, source: true, url: false, ssh: false, openapi: false, buildArgs: true, network: true, replicas: true, autoscale: true };
     case 'external':
-      return { image: false, port: false, transport: true, command: false, source: false, url: true, ssh: false, openapi: false, buildArgs: false, network: false, replicas: false };
+      return { image: false, port: false, transport: true, command: false, source: false, url: true, ssh: false, openapi: false, buildArgs: false, network: false, replicas: false, autoscale: false };
     case 'local':
-      return { image: false, port: false, transport: false, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: false, replicas: true };
+      return { image: false, port: false, transport: false, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: false, replicas: true, autoscale: true };
     case 'ssh':
-      return { image: false, port: false, transport: false, command: true, source: false, url: false, ssh: true, openapi: false, buildArgs: false, network: false, replicas: true };
+      return { image: false, port: false, transport: false, command: true, source: false, url: false, ssh: true, openapi: false, buildArgs: false, network: false, replicas: true, autoscale: true };
     case 'openapi':
-      return { image: false, port: false, transport: false, command: false, source: false, url: false, ssh: false, openapi: true, buildArgs: false, network: false, replicas: false };
+      return { image: false, port: false, transport: false, command: false, source: false, url: false, ssh: false, openapi: true, buildArgs: false, network: false, replicas: false, autoscale: false };
   }
 }
 
@@ -445,7 +446,8 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
     (data.buildArgs ? Object.keys(data.buildArgs).length : 0) +
     (data.network ? 1 : 0) +
     (data.pinSchemas !== undefined ? 1 : 0) +
-    (data.replicas !== undefined && data.replicas !== 1 ? 1 : 0);
+    (data.replicas !== undefined && data.replicas !== 1 ? 1 : 0) +
+    (data.autoscale ? 1 : 0);
 
   return (
     <div className="space-y-3">
@@ -1408,47 +1410,291 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           <p className="text-[10px] text-text-muted mt-1">Override the gateway-level schema pinning setting for this server</p>
         </div>
 
-        {visibility.replicas && (
-          <div>
-            <label className={labelClass}>Replicas</label>
-            <input
-              type="number"
-              aria-label="Replicas"
-              value={data.replicas ?? 1}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                if (!Number.isFinite(n)) return;
-                const clamped = Math.max(1, Math.min(32, Math.trunc(n)));
-                onChange({ replicas: clamped === 1 ? undefined : clamped });
-              }}
-              placeholder="1"
-              min={1}
-              max={32}
-              className={cn(inputClass, errors?.replicas && 'border-status-error/50')}
-            />
-            <FieldError error={errors?.replicas} />
-            <p className="text-[10px] text-text-muted mt-1">Number of parallel instances to run (1–32). Supported for container, local-process, and SSH transports.</p>
-            {data.replicas !== undefined && data.replicas > 1 && (
-              <div className="mt-3">
-                <label className={labelClass}>Replica Policy</label>
-                <select
-                  aria-label="Replica Policy"
-                  value={data.replicaPolicy ?? 'round-robin'}
-                  onChange={(e) => {
-                    const v = e.target.value as 'round-robin' | 'least-connections';
-                    onChange({ replicaPolicy: v === 'round-robin' ? undefined : v });
-                  }}
-                  className={inputClass}
-                >
-                  <option value="round-robin">Round-robin</option>
-                  <option value="least-connections">Least connections</option>
-                </select>
-                <p className="text-[10px] text-text-muted mt-1">How tool calls are distributed across replicas</p>
-              </div>
-            )}
-          </div>
+        {visibility.autoscale && (
+          <ScalingControl data={data} onChange={onChange} errors={errors} />
         )}
       </Section>
+    </div>
+  );
+}
+
+// --- Scaling control (Static replicas | Autoscale) ---
+
+const AUTOSCALE_DEFAULTS: AutoscaleFormData = {
+  min: 1,
+  max: 5,
+  targetInFlight: 10,
+  scaleUpAfter: '30s',
+  scaleDownAfter: '5m',
+};
+
+function clampInt(raw: number, min: number, max: number): number {
+  if (!Number.isFinite(raw)) return min;
+  return Math.max(min, Math.min(max, Math.trunc(raw)));
+}
+
+function ScalingControl({
+  data,
+  onChange,
+  errors,
+}: {
+  data: MCPServerFormData;
+  onChange: (data: Partial<MCPServerFormData>) => void;
+  errors?: Record<string, string>;
+}) {
+  const mode: 'static' | 'autoscale' = data.autoscale ? 'autoscale' : 'static';
+
+  const setMode = useCallback(
+    (next: 'static' | 'autoscale') => {
+      if (next === mode) return;
+      if (next === 'autoscale') {
+        onChange({
+          replicas: undefined,
+          replicaPolicy: undefined,
+          autoscale: { ...AUTOSCALE_DEFAULTS },
+        });
+      } else {
+        onChange({ autoscale: undefined });
+      }
+    },
+    [mode, onChange],
+  );
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      setMode(mode === 'static' ? 'autoscale' : 'static');
+    }
+  };
+
+  const updateAutoscale = (patch: Partial<AutoscaleFormData>) => {
+    onChange({ autoscale: { ...(data.autoscale as AutoscaleFormData), ...patch } });
+  };
+
+  return (
+    <div>
+      <label className={labelClass}>Scaling</label>
+      <div
+        role="radiogroup"
+        aria-label="Scaling mode"
+        onKeyDown={handleKeyDown}
+        className="inline-flex items-center rounded-lg border border-border/40 bg-background/60 p-0.5 mb-3"
+      >
+        {(['static', 'autoscale'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={mode === m}
+            tabIndex={mode === m ? 0 : -1}
+            onClick={() => setMode(m)}
+            className={cn(
+              'px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors',
+              mode === m
+                ? 'bg-primary/15 text-primary'
+                : 'text-text-muted hover:text-text-secondary',
+            )}
+          >
+            {m === 'static' ? 'Static replicas' : 'Autoscale'}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'static' ? (
+        <div>
+          <label className={labelClass}>Replicas</label>
+          <input
+            type="number"
+            aria-label="Replicas"
+            value={data.replicas ?? 1}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (!Number.isFinite(n)) return;
+              const clamped = Math.max(1, Math.min(32, Math.trunc(n)));
+              onChange({ replicas: clamped === 1 ? undefined : clamped });
+            }}
+            placeholder="1"
+            min={1}
+            max={32}
+            className={cn(inputClass, errors?.replicas && 'border-status-error/50')}
+          />
+          <FieldError error={errors?.replicas} />
+          <p className="text-[10px] text-text-muted mt-1">Number of parallel instances to run (1–32). Supported for container, local-process, and SSH transports.</p>
+          {data.replicas !== undefined && data.replicas > 1 && (
+            <div className="mt-3">
+              <label className={labelClass}>Replica Policy</label>
+              <select
+                aria-label="Replica Policy"
+                value={data.replicaPolicy ?? 'round-robin'}
+                onChange={(e) => {
+                  const v = e.target.value as 'round-robin' | 'least-connections';
+                  onChange({ replicaPolicy: v === 'round-robin' ? undefined : v });
+                }}
+                className={inputClass}
+              >
+                <option value="round-robin">Round-robin</option>
+                <option value="least-connections">Least connections</option>
+              </select>
+              <p className="text-[10px] text-text-muted mt-1">How tool calls are distributed across replicas</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <AutoscaleFields
+          data={data.autoscale ?? AUTOSCALE_DEFAULTS}
+          onChange={updateAutoscale}
+          errors={errors}
+        />
+      )}
+    </div>
+  );
+}
+
+function AutoscaleFields({
+  data,
+  onChange,
+  errors,
+}: {
+  data: AutoscaleFormData;
+  onChange: (patch: Partial<AutoscaleFormData>) => void;
+  errors?: Record<string, string>;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={labelClass}>Min replicas</label>
+          <input
+            type="number"
+            aria-label="Min replicas"
+            value={data.min}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (!Number.isFinite(n)) return;
+              onChange({ min: clampInt(n, 0, 32) });
+            }}
+            min={0}
+            max={32}
+            className={cn(inputClass, errors?.['autoscale.min'] && 'border-status-error/50')}
+          />
+          <FieldError error={errors?.['autoscale.min']} />
+        </div>
+        <div>
+          <label className={labelClass}>Max replicas</label>
+          <input
+            type="number"
+            aria-label="Max replicas"
+            value={data.max}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (!Number.isFinite(n)) return;
+              onChange({ max: clampInt(n, 1, 32) });
+            }}
+            min={1}
+            max={32}
+            className={cn(inputClass, errors?.['autoscale.max'] && 'border-status-error/50')}
+          />
+          <FieldError error={errors?.['autoscale.max']} />
+        </div>
+      </div>
+
+      <div>
+        <label className={labelClass}>Target concurrent requests per replica</label>
+        <input
+          type="number"
+          aria-label="Target concurrent requests per replica"
+          value={data.targetInFlight}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (!Number.isFinite(n)) return;
+            onChange({ targetInFlight: clampInt(n, 1, 10000) });
+          }}
+          min={1}
+          max={10000}
+          className={cn(inputClass, errors?.['autoscale.target_in_flight'] && 'border-status-error/50')}
+        />
+        <FieldError error={errors?.['autoscale.target_in_flight']} />
+        <p className="text-[10px] text-text-muted mt-1">
+          gridctl adds replicas when the average in-flight request count exceeds this.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={labelClass}>Scale up after</label>
+          <input
+            type="text"
+            aria-label="Scale up after"
+            value={data.scaleUpAfter ?? ''}
+            onChange={(e) => onChange({ scaleUpAfter: e.target.value || undefined })}
+            placeholder="30s"
+            className={cn(inputClass, 'font-mono', errors?.['autoscale.scale_up_after'] && 'border-status-error/50')}
+          />
+          <FieldError error={errors?.['autoscale.scale_up_after']} />
+          <p className="text-[10px] text-text-muted mt-1">
+            Wait this long while above target before spawning a replica (min 10s).
+          </p>
+        </div>
+        <div>
+          <label className={labelClass}>Scale down after</label>
+          <input
+            type="text"
+            aria-label="Scale down after"
+            value={data.scaleDownAfter ?? ''}
+            onChange={(e) => onChange({ scaleDownAfter: e.target.value || undefined })}
+            placeholder="5m"
+            className={cn(inputClass, 'font-mono', errors?.['autoscale.scale_down_after'] && 'border-status-error/50')}
+          />
+          <FieldError error={errors?.['autoscale.scale_down_after']} />
+          <p className="text-[10px] text-text-muted mt-1">
+            Wait this long while below target before reaping a replica (min 1m).
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <label className={labelClass}>Warm pool</label>
+        <input
+          type="number"
+          aria-label="Warm pool"
+          value={data.warmPool ?? 0}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (!Number.isFinite(n)) return;
+            const clamped = clampInt(n, 0, 32);
+            onChange({ warmPool: clamped === 0 ? undefined : clamped });
+          }}
+          min={0}
+          max={32}
+          className={cn(inputClass, errors?.['autoscale.warm_pool'] && 'border-status-error/50')}
+        />
+        <FieldError error={errors?.['autoscale.warm_pool']} />
+        <p className="text-[10px] text-text-muted mt-1">
+          Extra idle replicas kept above the load-derived target.
+        </p>
+      </div>
+
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          id="autoscale-idle-to-zero"
+          checked={data.idleToZero ?? false}
+          onChange={(e) => onChange({ idleToZero: e.target.checked ? true : undefined })}
+          className="mt-0.5 accent-primary"
+        />
+        <div>
+          <label htmlFor="autoscale-idle-to-zero" className="text-xs text-text-secondary cursor-pointer">
+            Scale to zero when idle
+          </label>
+          <p className="text-[10px] text-text-muted mt-0.5">
+            Allow reaping every replica after sustained idle. First request after idle may be slower.
+          </p>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-text-secondary border-t border-border/20 pt-2 font-mono">
+        Autoscale {data.min}–{data.max} replicas · {data.targetInFlight} concurrent/replica
+      </p>
     </div>
   );
 }

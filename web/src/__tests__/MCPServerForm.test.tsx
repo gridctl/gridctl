@@ -717,3 +717,267 @@ describe('MCPServerForm — replicas UI', () => {
     expect(screen.getByText('Replica Policy')).toBeInTheDocument();
   });
 });
+
+describe('MCPServerForm — scaling segmented control', () => {
+  it('renders the Scaling segmented control for supported types', () => {
+    render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'container', image: 'test:latest' })}
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    expect(screen.getByRole('radiogroup', { name: 'Scaling mode' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Static replicas' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Autoscale' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('does not render the scaling control for external/openapi types', () => {
+    const { rerender } = render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'external', url: 'http://x' })}
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    expect(screen.queryByRole('radiogroup', { name: 'Scaling mode' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Replicas')).not.toBeInTheDocument();
+
+    rerender(
+      <MCPServerForm
+        data={defaultData({ serverType: 'openapi', openapi: { spec: 'https://x/y.yaml' } })}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('radiogroup', { name: 'Scaling mode' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Replicas')).not.toBeInTheDocument();
+  });
+
+  it('selecting Autoscale clears replicas/replicaPolicy and seeds defaults', () => {
+    const onChange = vi.fn();
+    render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'container', image: 'test:latest', replicas: 3, replicaPolicy: 'least-connections' })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Autoscale' }));
+    expect(onChange).toHaveBeenCalledWith({
+      replicas: undefined,
+      replicaPolicy: undefined,
+      autoscale: { min: 1, max: 5, targetInFlight: 10, scaleUpAfter: '30s', scaleDownAfter: '5m' },
+    });
+  });
+
+  it('selecting Static clears autoscale', () => {
+    const onChange = vi.fn();
+    render(
+      <MCPServerForm
+        data={defaultData({
+          serverType: 'container',
+          image: 'test:latest',
+          autoscale: { min: 1, max: 5, targetInFlight: 10 },
+        })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Static replicas' }));
+    expect(onChange).toHaveBeenCalledWith({ autoscale: undefined });
+  });
+
+  it('in Autoscale mode renders six inputs, checkbox, and summary line', () => {
+    render(
+      <MCPServerForm
+        data={defaultData({
+          serverType: 'container',
+          image: 'test:latest',
+          autoscale: { min: 1, max: 5, targetInFlight: 10, scaleUpAfter: '30s', scaleDownAfter: '5m' },
+        })}
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    expect(screen.getByLabelText('Min replicas')).toHaveValue(1);
+    expect(screen.getByLabelText('Max replicas')).toHaveValue(5);
+    expect(screen.getByLabelText('Target concurrent requests per replica')).toHaveValue(10);
+    expect(screen.getByLabelText('Scale up after')).toHaveValue('30s');
+    expect(screen.getByLabelText('Scale down after')).toHaveValue('5m');
+    expect(screen.getByLabelText('Warm pool')).toHaveValue(0);
+    expect(screen.getByLabelText('Scale to zero when idle')).not.toBeChecked();
+    expect(
+      screen.getByText('Autoscale 1–5 replicas · 10 concurrent/replica'),
+    ).toBeInTheDocument();
+  });
+
+  it('clamps min/max to known-valid ranges', () => {
+    const onChange = vi.fn();
+    render(
+      <MCPServerForm
+        data={defaultData({
+          serverType: 'container',
+          image: 'test:latest',
+          autoscale: { min: 1, max: 5, targetInFlight: 10 },
+        })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByText('Advanced'));
+    const maxInput = screen.getByLabelText('Max replicas') as HTMLInputElement;
+    fireEvent.change(maxInput, { target: { value: '99' } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      autoscale: { min: 1, max: 32, targetInFlight: 10 },
+    });
+  });
+});
+
+describe('YAML serialization — autoscale', () => {
+  it('emits an autoscale block with required fields only when optionals are unset', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'junos',
+        serverType: 'local',
+        command: ['python', 'srv.py'],
+        autoscale: { min: 1, max: 5, targetInFlight: 10 },
+      },
+    });
+    expect(yaml).toContain('autoscale:');
+    expect(yaml).toContain('min: 1');
+    expect(yaml).toContain('max: 5');
+    expect(yaml).toContain('target_in_flight: 10');
+    expect(yaml).not.toContain('scale_up_after');
+    expect(yaml).not.toContain('scale_down_after');
+    expect(yaml).not.toContain('warm_pool');
+    expect(yaml).not.toContain('idle_to_zero');
+  });
+
+  it('emits optional fields when they are set', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'junos',
+        serverType: 'container',
+        image: 'test:latest',
+        autoscale: {
+          min: 1,
+          max: 8,
+          targetInFlight: 20,
+          scaleUpAfter: '45s',
+          scaleDownAfter: '2m',
+          warmPool: 2,
+          idleToZero: true,
+        },
+      },
+    });
+    expect(yaml).toContain('scale_up_after: 45s');
+    expect(yaml).toContain('scale_down_after: 2m');
+    expect(yaml).toContain('warm_pool: 2');
+    expect(yaml).toContain('idle_to_zero: true');
+  });
+
+  it('mirrors Go omitempty: skips warm_pool: 0 and idle_to_zero: false', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'junos',
+        serverType: 'container',
+        image: 'test:latest',
+        autoscale: {
+          min: 1,
+          max: 5,
+          targetInFlight: 10,
+          warmPool: 0,
+          idleToZero: false,
+        },
+      },
+    });
+    expect(yaml).not.toContain('warm_pool');
+    expect(yaml).not.toContain('idle_to_zero');
+  });
+
+  it('never emits both replicas and autoscale in the same entry', () => {
+    // When autoscale is present, the builder ignores replicas/replicaPolicy.
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'junos',
+        serverType: 'container',
+        image: 'test:latest',
+        replicas: 3,
+        replicaPolicy: 'least-connections',
+        autoscale: { min: 1, max: 5, targetInFlight: 10 },
+      },
+    });
+    expect(yaml).toContain('autoscale:');
+    expect(yaml).not.toMatch(/^\s*replicas:/m);
+    expect(yaml).not.toMatch(/^\s*replica_policy:/m);
+  });
+
+  it('parseYAMLToForm recognizes autoscale and leaves replicas undefined', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'junos',
+        serverType: 'container',
+        image: 'test:latest',
+        autoscale: {
+          min: 2,
+          max: 8,
+          targetInFlight: 15,
+          scaleUpAfter: '45s',
+          scaleDownAfter: '2m',
+          warmPool: 1,
+          idleToZero: true,
+        },
+      },
+    });
+    const parsed = parseYAMLToForm(yaml, 'mcp-server');
+    expect('error' in parsed).toBe(false);
+    if ('error' in parsed) return;
+    const d = parsed.data as MCPServerFormData;
+    expect(d.autoscale).toEqual({
+      min: 2,
+      max: 8,
+      targetInFlight: 15,
+      scaleUpAfter: '45s',
+      scaleDownAfter: '2m',
+      warmPool: 1,
+      idleToZero: true,
+    });
+    expect(d.replicas).toBeUndefined();
+    expect(d.replicaPolicy).toBeUndefined();
+  });
+
+  it('round-trips an autoscaled server YAML byte-identically', () => {
+    const data: MCPServerFormData = {
+      name: 'junos',
+      serverType: 'container',
+      image: 'test:latest',
+      autoscale: {
+        min: 1,
+        max: 5,
+        targetInFlight: 10,
+        scaleUpAfter: '30s',
+        scaleDownAfter: '5m',
+      },
+    };
+    const yaml = buildYAML({ type: 'mcp-server', data });
+    const parsed = parseYAMLToForm(yaml, 'mcp-server');
+    expect('error' in parsed).toBe(false);
+    if ('error' in parsed) return;
+    const rebuilt = buildYAML({
+      type: 'mcp-server',
+      data: {
+        ...(parsed.data as MCPServerFormData),
+        // parseYAMLToForm hard-codes serverType: 'container' and does not
+        // recover the image line; patch back so the rebuild matches what we
+        // started with.
+        serverType: 'container',
+        image: 'test:latest',
+      },
+    });
+    expect(rebuilt).toBe(yaml);
+  });
+});
