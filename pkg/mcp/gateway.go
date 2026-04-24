@@ -59,6 +59,11 @@ type MCPServerConfig struct {
 	// Applies only to HTTP and SSE transports; stdio and other paths ignore it.
 	ReadyTimeout time.Duration
 
+	// PingTimeout overrides the per-ping deadline used by the health monitor.
+	// Zero uses DefaultPingTimeout. Useful for slow upstreams (e.g. HTTP servers
+	// with many tools) where the 5s default can flake under autoscale spawn load.
+	PingTimeout time.Duration
+
 	// CleanupOnReadyFailure runs when waitForHTTPServer returns ErrReadyTimeout.
 	// Callers that manage the underlying container populate this with a closure
 	// that stops and removes it, so a retry starts from a clean slate. nil means
@@ -562,7 +567,11 @@ func (g *Gateway) recomputeRollup(serverName string, set *ReplicaSet) {
 	}
 
 	// Non-pingable replicas produce no status; don't fabricate a rollup for them.
+	// When the set is empty (scale-to-zero) the prior rollup must be cleared so a
+	// stale Unhealthy entry from before the reap does not persist forever.
 	if !sawAny {
+		delete(g.health, serverName)
+		delete(g.replicaHealth, serverName)
 		return
 	}
 
@@ -900,6 +909,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			return nil, fmt.Errorf("creating OpenAPI client %s: %w", cfg.Name, err)
 		}
 		openAPIClient.SetLogger(clientLogger)
+		openAPIClient.SetPingTimeout(cfg.PingTimeout)
 		if len(cfg.Tools) > 0 {
 			openAPIClient.SetToolWhitelist(cfg.Tools)
 		}
@@ -909,6 +919,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 		sshCommand := buildSSHCommand(cfg)
 		processClient := NewProcessClient(cfg.Name, sshCommand, cfg.WorkDir, cfg.Env)
 		processClient.SetLogger(clientLogger)
+		processClient.SetPingTimeout(cfg.PingTimeout)
 		if len(cfg.Tools) > 0 {
 			processClient.SetToolWhitelist(cfg.Tools)
 		}
@@ -920,6 +931,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 		// Handle local process servers (they use stdio but not Docker)
 		processClient := NewProcessClient(cfg.Name, cfg.Command, cfg.WorkDir, cfg.Env)
 		processClient.SetLogger(clientLogger)
+		processClient.SetPingTimeout(cfg.PingTimeout)
 		if len(cfg.Tools) > 0 {
 			processClient.SetToolWhitelist(cfg.Tools)
 		}
@@ -935,6 +947,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			}
 			stdioClient := NewStdioClient(cfg.Name, cfg.ContainerID, g.dockerCli)
 			stdioClient.SetLogger(clientLogger)
+			stdioClient.SetPingTimeout(cfg.PingTimeout)
 			if len(cfg.Tools) > 0 {
 				stdioClient.SetToolWhitelist(cfg.Tools)
 			}
@@ -946,6 +959,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			// SSE transport - uses same HTTP client which handles text/event-stream responses
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
 			httpClient.SetLogger(clientLogger)
+			httpClient.SetPingTimeout(cfg.PingTimeout)
 			if len(cfg.Tools) > 0 {
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}
@@ -958,6 +972,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 		case TransportHTTP, "": // Default to HTTP
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
 			httpClient.SetLogger(clientLogger)
+			httpClient.SetPingTimeout(cfg.PingTimeout)
 			if len(cfg.Tools) > 0 {
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}

@@ -163,7 +163,7 @@ export interface ToolsListResult {
 }
 
 // Node status for UI display
-export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing';
+export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle';
 
 // Base type for React Flow compatibility (requires index signature)
 interface NodeDataBase {

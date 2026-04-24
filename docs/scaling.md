@@ -90,6 +90,17 @@ If **every** replica is unhealthy, tool calls return a structured error naming t
 
 Restart storms are bounded by the backoff. A binary that crashes on startup will attempt reconnection a handful of times per minute, not once per health-check tick — the CPU cannot spin.
 
+### Tuning the ping timeout
+
+The default per-ping deadline is **5s**, applied by every pingable transport (HTTP, SSE, stdio, local process, SSH, OpenAPI). Tune it per server via `ping_timeout` when a legitimate `Ping` can exceed 5s — typically an HTTP upstream that exposes many tools, or any upstream under sustained autoscale spawn load where network contention widens the tail latency. A tight default plus a slow upstream shows up as intermittent `context deadline exceeded` in `/api/stack/health`; raising `ping_timeout` for just that server stops the flake without relaxing the default for everyone else. Leave it unset for fast local stdio servers.
+
+```yaml
+mcp_servers:
+  - name: zapier
+    url: https://mcp.zapier.com/api/mcp/...
+    ping_timeout: "10s"
+```
+
 ---
 
 ## Observability

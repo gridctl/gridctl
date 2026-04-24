@@ -792,13 +792,20 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check all MCP servers are initialized
+	// Check all MCP servers are initialized. Autoscaled servers that have
+	// scaled to zero deliberately have no client and therefore report
+	// Initialized=false; they can cold-start on demand and are not a failed
+	// state, so do not reject them here.
 	for _, status := range s.gateway.Status() {
-		if !status.Initialized {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte("MCP server not initialized: " + status.Name))
-			return
+		if status.Initialized {
+			continue
 		}
+		if status.Autoscale != nil && len(status.Replicas) == 0 {
+			continue
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("MCP server not initialized: " + status.Name))
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)

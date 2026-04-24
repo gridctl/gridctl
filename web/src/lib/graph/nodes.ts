@@ -12,7 +12,13 @@ import { GATEWAY_NODE_ID } from './edges';
 /**
  * Determine MCP server status based on its state and health
  */
-function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
+export function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
+  // Autoscaled server currently at zero replicas: deliberately idle, not
+  // initializing. This check must precede !initialized because scale-to-zero
+  // makes the backend emit initialized=false for these servers.
+  if (server.autoscale && (!server.replicas || server.replicas.length === 0)) {
+    return 'idle';
+  }
   if (!server.initialized) {
     return 'initializing';
   }

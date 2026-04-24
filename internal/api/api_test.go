@@ -165,6 +165,33 @@ func TestHandleReady_NotInitialized(t *testing.T) {
 	}
 }
 
+func TestHandleReady_IdleAutoscaled(t *testing.T) {
+	srv := newTestServer(t)
+	srv.SetStackFile("/stack.yaml") // stack file required for ready check
+
+	// Register an autoscaler configured for idle-to-zero with Min=0. This leaves
+	// the replica set empty after registration, producing a Status() entry with
+	// Initialized=false, Autoscale!=nil, Replicas=empty — the scaled-to-zero
+	// shape that /ready must treat as ready.
+	spawner := &noopSpawner{}
+	policy := mcp.AutoscalePolicy{Min: 0, Max: 2, TargetInFlight: 3, IdleToZero: true}
+	if err := srv.gateway.RegisterAutoscaler(context.Background(),
+		mcp.MCPServerConfig{Name: "idle-server", LocalProcess: true, Command: []string{"x"}},
+		mcp.ReplicaPolicyRoundRobin, spawner, policy); err != nil {
+		t.Fatalf("RegisterAutoscaler: %v", err)
+	}
+	t.Cleanup(srv.gateway.Close)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for idle autoscaled server, got %d (body=%q)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHandleReady_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
@@ -1038,6 +1065,14 @@ func assertContentType(t *testing.T, rec *httptest.ResponseRecorder, expected st
 		t.Errorf("expected Content-Type %q, got %q", expected, ct)
 	}
 }
+
+// noopSpawner is a Spawner that never spawns; the autoscaler only exercises it
+// when the policy actually requests replicas. Idle-to-zero with Min=0 never
+// calls Spawn at registration time.
+type noopSpawner struct{}
+
+func (noopSpawner) Spawn(_ context.Context) (mcp.AgentClient, error) { return nil, nil }
+func (noopSpawner) Reap(_ context.Context, _ *mcp.Replica) error     { return nil }
 
 // registerMockServerMeta registers metadata for a mock server so it appears in Gateway.Status().
 func registerMockServerMeta(g *mcp.Gateway, name string, transport mcp.Transport) {

@@ -37,6 +37,14 @@ type StdioClient struct {
 	// Response handling
 	responses   map[int64]chan *jsonrpc.Response
 	responsesMu sync.Mutex
+
+	pingTimeout time.Duration // 0 = use DefaultPingTimeout
+}
+
+// SetPingTimeout overrides the per-ping deadline used by Ping. Zero restores
+// the default (DefaultPingTimeout).
+func (c *StdioClient) SetPingTimeout(d time.Duration) {
+	c.pingTimeout = d
 }
 
 // ContainerID returns the docker container id this client was bound to.
@@ -300,7 +308,7 @@ func (c *StdioClient) Reconnect(ctx context.Context) error {
 
 // Ping checks if the container stdio connection is alive by sending a JSON-RPC ping.
 func (c *StdioClient) Ping(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, DefaultPingTimeout)
+	ctx, cancel := context.WithTimeout(ctx, pingTimeoutOrDefault(c.pingTimeout))
 	defer cancel()
 
 	// Verify connection state first

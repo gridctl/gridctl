@@ -148,6 +148,12 @@ type MCPServer struct {
 	// Ignored for stdio, local process, SSH, OpenAPI, and external transports.
 	ReadyTimeout string `yaml:"ready_timeout,omitempty"`
 
+	// PingTimeout overrides the per-ping deadline used by the gateway health monitor.
+	// Accepts any time.Duration string (e.g. "10s"). Empty/"0" inherits DefaultPingTimeout (5s).
+	// Tune this for slow upstreams (e.g. HTTP servers with many tools) where the
+	// 5s default can flake under autoscale spawn load.
+	PingTimeout string `yaml:"ping_timeout,omitempty"`
+
 	// Replicas is the number of independent processes to spawn for this server.
 	// Defaults to 1. Values >1 load-balance JSON-RPC tool calls across replicas
 	// using ReplicaPolicy. Not supported for external URL or OpenAPI transports.
@@ -220,6 +226,19 @@ func (s *MCPServer) ResolvedReadyTimeout() time.Duration {
 		return 0
 	}
 	d, err := time.ParseDuration(s.ReadyTimeout)
+	if err != nil || d < 0 {
+		return 0
+	}
+	return d
+}
+
+// ResolvedPingTimeout parses PingTimeout; returns 0 when unset or invalid so
+// the gateway falls back to DefaultPingTimeout (5s).
+func (s *MCPServer) ResolvedPingTimeout() time.Duration {
+	if s.PingTimeout == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(s.PingTimeout)
 	if err != nil || d < 0 {
 		return 0
 	}
