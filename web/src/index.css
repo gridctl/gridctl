@@ -42,6 +42,7 @@
   --color-status-error-glow: rgba(244, 63, 94, 0.2);
   --color-status-pending: #eab308;
   --color-status-pending-glow: rgba(234, 179, 8, 0.2);
+  --color-status-idle: #64748b;
 
   /* Text - Warm whites */
   --color-text-primary: #fafaf9;

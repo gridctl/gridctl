@@ -11,6 +11,7 @@ const dotStyles: Record<NodeStatus, string> = {
   stopped: 'bg-status-stopped',
   error: 'bg-status-error shadow-[0_0_8px_rgba(244,63,94,0.4)]',
   initializing: 'bg-status-pending shadow-[0_0_8px_rgba(234,179,8,0.4)]',
+  idle: 'bg-status-idle',
 };
 
 export function StatusDot({ status, size = 'sm' }: StatusDotProps) {
