@@ -782,6 +782,35 @@ func TestGateway_GetHealthStatus_NotFound(t *testing.T) {
 	}
 }
 
+func TestGateway_recomputeRollup_ClearsOnEmptySet(t *testing.T) {
+	g := NewGateway()
+	name := "server1"
+
+	// Seed prior state as if a replica had been unhealthy and then reaped.
+	g.healthMu.Lock()
+	g.health[name] = &HealthStatus{Healthy: false, Error: "context deadline exceeded"}
+	g.replicaHealth[name] = map[int]*HealthStatus{
+		0: {Healthy: false, Error: "context deadline exceeded"},
+	}
+	g.healthMu.Unlock()
+
+	// Empty set simulates scale-to-zero after the autoscaler reaps the last replica.
+	set := NewReplicaSet(name, ReplicaPolicyRoundRobin, nil)
+	g.recomputeRollup(name, set)
+
+	g.healthMu.RLock()
+	_, hasHealth := g.health[name]
+	_, hasReplicaHealth := g.replicaHealth[name]
+	g.healthMu.RUnlock()
+
+	if hasHealth {
+		t.Error("expected g.health[name] cleared after scale-to-zero; still present")
+	}
+	if hasReplicaHealth {
+		t.Error("expected g.replicaHealth[name] cleared after scale-to-zero; still present")
+	}
+}
+
 // reconnectableClient wraps a MockAgentClient to implement both Pingable and Reconnectable.
 type reconnectableClient struct {
 	AgentClient

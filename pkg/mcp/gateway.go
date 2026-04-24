@@ -562,7 +562,11 @@ func (g *Gateway) recomputeRollup(serverName string, set *ReplicaSet) {
 	}
 
 	// Non-pingable replicas produce no status; don't fabricate a rollup for them.
+	// When the set is empty (scale-to-zero) the prior rollup must be cleared so a
+	// stale Unhealthy entry from before the reap does not persist forever.
 	if !sawAny {
+		delete(g.health, serverName)
+		delete(g.replicaHealth, serverName)
 		return
 	}
 
