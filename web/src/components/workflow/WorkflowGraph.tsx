@@ -70,7 +70,7 @@ function buildFlowElements(
             stroke:
               depStatus === 'success' ? '#10b981' :
               depStatus === 'failed' ? '#f43f5e' :
-              '#27272a',
+              '#3f3f46',
             strokeWidth: 1.5,
             ...(isActive && { strokeDasharray: '5 5' }),
           },
@@ -137,7 +137,7 @@ export function WorkflowGraph() {
         nodesDraggable={false}
         nodesConnectable={false}
       >
-        <Background color="#27272a" gap={20} size={1} />
+        <Background color="#3f3f46" gap={20} size={1} />
         <Controls
           showInteractive={false}
           className="!bg-surface-elevated/80 !border-border/40 !rounded-lg !shadow-node"

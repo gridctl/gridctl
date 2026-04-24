@@ -69,7 +69,7 @@ function stepsToFlow(
           source: depId,
           target: step.id,
           type: 'smoothstep',
-          style: { stroke: '#27272a', strokeWidth: 1.5 },
+          style: { stroke: '#3f3f46', strokeWidth: 1.5 },
         });
       });
     });
@@ -160,7 +160,7 @@ export function DesignerGraph({
         return s;
       });
       onStepsChange(updatedSteps);
-      setEdges((eds) => addEdge({ ...connection, type: 'smoothstep', style: { stroke: '#27272a', strokeWidth: 1.5 } }, eds));
+      setEdges((eds) => addEdge({ ...connection, type: 'smoothstep', style: { stroke: '#3f3f46', strokeWidth: 1.5 } }, eds));
     },
     [steps, onStepsChange, setEdges],
   );
@@ -269,7 +269,7 @@ export function DesignerGraph({
         nodesDraggable={true}
         nodesConnectable={true}
       >
-        <Background color="#27272a" gap={20} size={1} />
+        <Background color="#3f3f46" gap={20} size={1} />
         <Controls
           showInteractive={false}
           className="!bg-surface-elevated/80 !border-border/40 !rounded-lg !shadow-node"
