@@ -59,6 +59,14 @@ type OpenAPIClient struct {
 
 	operations map[string]*OpenAPIOperation // toolName -> operation (protected by ClientBase.mu)
 	cachedDoc  *openapi3.T                  // Cached OpenAPI document (protected by ClientBase.mu)
+
+	pingTimeout time.Duration // 0 = use DefaultPingTimeout
+}
+
+// SetPingTimeout overrides the per-ping deadline used by Ping. Zero restores
+// the default (DefaultPingTimeout).
+func (c *OpenAPIClient) SetPingTimeout(d time.Duration) {
+	c.pingTimeout = d
 }
 
 // OpenAPIOperation holds parsed OpenAPI operation details for execution.
@@ -312,7 +320,7 @@ func (c *OpenAPIClient) CallTool(ctx context.Context, name string, args map[stri
 
 // Ping checks if the OpenAPI backend is reachable by making a HEAD request to the base URL.
 func (c *OpenAPIClient) Ping(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, DefaultPingTimeout)
+	ctx, cancel := context.WithTimeout(ctx, pingTimeoutOrDefault(c.pingTimeout))
 	defer cancel()
 
 	if c.baseURL == "" {

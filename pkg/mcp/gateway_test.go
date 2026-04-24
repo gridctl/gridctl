@@ -2818,6 +2818,30 @@ func slowMCPServer(t *testing.T, delay time.Duration) *httptest.Server {
 	}))
 }
 
+func TestClient_Ping_RespectsConfiguredTimeout(t *testing.T) {
+	srv := slowMCPServer(t, 6*time.Second)
+	defer srv.Close()
+
+	// Default (zero) PingTimeout falls back to DefaultPingTimeout=5s and must
+	// fail against a 6s server.
+	cDefault := NewClient("slow", srv.URL)
+	start := time.Now()
+	err := cDefault.Ping(context.Background())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("default timeout: expected DeadlineExceeded, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > DefaultPingTimeout+2*time.Second {
+		t.Fatalf("default timeout: ping ran too long (%v)", elapsed)
+	}
+
+	// Configured 10s PingTimeout succeeds against the same 6s server.
+	cTuned := NewClient("slow", srv.URL)
+	cTuned.SetPingTimeout(10 * time.Second)
+	if err := cTuned.Ping(context.Background()); err != nil {
+		t.Fatalf("configured timeout: expected success, got %v", err)
+	}
+}
+
 func TestWaitForHTTPServer_RespectsCustomTimeout(t *testing.T) {
 	// Server would respond eventually, but the per-call timeout is much shorter.
 	srv := slowMCPServer(t, 5*time.Second)

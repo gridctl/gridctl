@@ -105,6 +105,16 @@ type PinResetter interface {
 // DefaultPingTimeout is the timeout for health check pings.
 const DefaultPingTimeout = 5 * time.Second
 
+// pingTimeoutOrDefault returns d when it is positive, otherwise DefaultPingTimeout.
+// Clients store a configured PingTimeout that may be zero (unset) or negative
+// (treated as unset); this helper keeps the fallback rule in one place.
+func pingTimeoutOrDefault(d time.Duration) time.Duration {
+	if d > 0 {
+		return d
+	}
+	return DefaultPingTimeout
+}
+
 // MCPProtocolVersion is the MCP protocol version supported by this implementation.
 const MCPProtocolVersion = "2025-11-25"
 

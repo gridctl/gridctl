@@ -40,6 +40,14 @@ type ProcessClient struct {
 	// Response handling
 	responses   map[int64]chan *jsonrpc.Response
 	responsesMu sync.Mutex
+
+	pingTimeout time.Duration // 0 = use DefaultPingTimeout
+}
+
+// SetPingTimeout overrides the per-ping deadline used by Ping. Zero restores
+// the default (DefaultPingTimeout).
+func (c *ProcessClient) SetPingTimeout(d time.Duration) {
+	c.pingTimeout = d
 }
 
 // NewProcessClient creates a new process-based MCP client.
@@ -354,7 +362,7 @@ func (c *ProcessClient) PID() int {
 // Ping checks if the process is alive by verifying it's still running
 // and sending a JSON-RPC ping.
 func (c *ProcessClient) Ping(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, DefaultPingTimeout)
+	ctx, cancel := context.WithTimeout(ctx, pingTimeoutOrDefault(c.pingTimeout))
 	defer cancel()
 
 	// Check process is still running

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -19,10 +20,17 @@ import (
 // Client communicates with a downstream MCP server.
 type Client struct {
 	RPCClient
-	endpoint   string
-	httpClient *http.Client
-	requestID  atomic.Int64
-	sessionID  string // MCP session ID for stateful servers
+	endpoint    string
+	httpClient  *http.Client
+	requestID   atomic.Int64
+	sessionID   string // MCP session ID for stateful servers
+	pingTimeout time.Duration // 0 = use DefaultPingTimeout
+}
+
+// SetPingTimeout overrides the per-ping deadline used by Ping. Zero restores
+// the default (DefaultPingTimeout).
+func (c *Client) SetPingTimeout(d time.Duration) {
+	c.pingTimeout = d
 }
 
 // NewClient creates a new MCP client for a downstream agent.
@@ -189,7 +197,7 @@ func (c *Client) parseSSEResponse(body io.Reader) (*jsonrpc.Response, error) {
 
 // Ping checks if the agent is reachable.
 func (c *Client) Ping(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, DefaultPingTimeout)
+	ctx, cancel := context.WithTimeout(ctx, pingTimeoutOrDefault(c.pingTimeout))
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", c.endpoint, nil)

@@ -362,6 +362,18 @@ func Validate(s *Stack) error {
 			}
 		}
 
+		// ping_timeout validation: must parse as a duration and be non-negative.
+		// Applies to every pingable transport (HTTP, SSE, stdio, local process,
+		// SSH, OpenAPI). Empty is valid and falls back to DefaultPingTimeout.
+		if server.PingTimeout != "" {
+			d, err := time.ParseDuration(server.PingTimeout)
+			if err != nil {
+				errs = append(errs, ValidationError{prefix + ".ping_timeout", fmt.Sprintf("invalid duration %q (expected e.g. \"10s\")", server.PingTimeout)})
+			} else if d < 0 {
+				errs = append(errs, ValidationError{prefix + ".ping_timeout", "must be non-negative"})
+			}
+		}
+
 		// Replica validation.
 		// Zero is accepted as "unspecified" and defaulted to 1 by Stack.SetDefaults;
 		// only reject truly invalid values here.

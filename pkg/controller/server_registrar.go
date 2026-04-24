@@ -273,6 +273,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			Tools:        serverCfg.Tools,
 			OutputFormat: serverCfg.OutputFormat,
 			PinSchemas:   serverCfg.PinSchemas,
+			PingTimeout:  serverCfg.ResolvedPingTimeout(),
 		}
 	}
 	if server.LocalProcess {
@@ -285,6 +286,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			Tools:        serverCfg.Tools,
 			OutputFormat: serverCfg.OutputFormat,
 			PinSchemas:   serverCfg.PinSchemas,
+			PingTimeout:  serverCfg.ResolvedPingTimeout(),
 		}
 	}
 	if server.SSH {
@@ -300,6 +302,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			Tools:           serverCfg.Tools,
 			OutputFormat:    serverCfg.OutputFormat,
 			PinSchemas:      serverCfg.PinSchemas,
+			PingTimeout:     serverCfg.ResolvedPingTimeout(),
 		}
 		if serverCfg.SSH != nil {
 			cfg.SSHKnownHostsFile = serverCfg.SSH.KnownHostsFile
@@ -311,6 +314,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPIConfig, serverCfg.Tools)
 		cfg.OutputFormat = serverCfg.OutputFormat
 		cfg.PinSchemas = serverCfg.PinSchemas
+		cfg.PingTimeout = serverCfg.ResolvedPingTimeout()
 		return cfg
 	}
 	if transport == mcp.TransportStdio {
@@ -321,6 +325,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			Tools:        serverCfg.Tools,
 			OutputFormat: serverCfg.OutputFormat,
 			PinSchemas:   serverCfg.PinSchemas,
+			PingTimeout:  serverCfg.ResolvedPingTimeout(),
 		}
 	}
 	// Container HTTP/SSE
@@ -343,6 +348,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
 			PinSchemas:   server.PinSchemas,
+			PingTimeout:  server.ResolvedPingTimeout(),
 		}
 	}
 	if server.IsLocalProcess() {
@@ -355,6 +361,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
 			PinSchemas:   server.PinSchemas,
+			PingTimeout:  server.ResolvedPingTimeout(),
 		}
 	}
 	if server.IsSSH() {
@@ -372,12 +379,14 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Tools:              server.Tools,
 			OutputFormat:       server.OutputFormat,
 			PinSchemas:         server.PinSchemas,
+			PingTimeout:        server.ResolvedPingTimeout(),
 		}
 	}
 	if server.IsOpenAPI() {
 		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPI, server.Tools)
 		cfg.OutputFormat = server.OutputFormat
 		cfg.PinSchemas = server.PinSchemas
+		cfg.PingTimeout = server.ResolvedPingTimeout()
 		return cfg
 	}
 	if transport == mcp.TransportStdio {
@@ -388,6 +397,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
 			PinSchemas:   server.PinSchemas,
+			PingTimeout:  server.ResolvedPingTimeout(),
 		}
 	}
 	// Container HTTP/SSE
@@ -407,6 +417,7 @@ func (r *ServerRegistrar) buildContainerHTTPConfig(name string, transport mcp.Tr
 		OutputFormat:          serverCfg.OutputFormat,
 		PinSchemas:            serverCfg.PinSchemas,
 		ReadyTimeout:          serverCfg.ResolvedReadyTimeout(),
+		PingTimeout:           serverCfg.ResolvedPingTimeout(),
 		CleanupOnReadyFailure: r.cleanupClosure(name, id),
 	}
 }
