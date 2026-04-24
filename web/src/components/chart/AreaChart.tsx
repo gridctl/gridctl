@@ -385,11 +385,9 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
             hide={!showXAxis}
             dataKey={index}
             interval={startEndOnly ? "preserveStartEnd" : intervalType}
-            tick={{ transform: "translate(0, 6)" }}
+            tick={{ transform: "translate(0, 6)", fill: "var(--color-text-primary)" }}
             ticks={startEndOnly ? [data[0][index], data[data.length - 1][index]] : undefined}
-            fill=""
-            stroke=""
-            className="text-xs fill-text-secondary"
+            className="text-xs"
             tickLine={false}
             axisLine={false}
             minTickGap={tickGap}
@@ -407,10 +405,8 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
             tickLine={false}
             type="number"
             domain={yAxisDomain as AxisDomain}
-            tick={{ transform: "translate(-3, 0)" }}
-            fill=""
-            stroke=""
-            className="text-xs fill-text-secondary"
+            tick={{ transform: "translate(-3, 0)", fill: "var(--color-text-primary)" }}
+            className="text-xs"
             tickFormatter={type === "percent" ? valueToPercent : valueFormatter}
             allowDecimals={allowDecimals}
           >
@@ -430,7 +426,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
             wrapperStyle={{ outline: "none" }}
             isAnimationActive={true}
             animationDuration={100}
-            cursor={{ stroke: "#27272a", strokeWidth: 1 }}
+            cursor={{ stroke: "var(--color-text-muted)", strokeWidth: 1, strokeDasharray: "3 3" }}
             offset={20}
             position={{ y: 0 }}
             content={({ active, payload, label: rawLabel }) => {
