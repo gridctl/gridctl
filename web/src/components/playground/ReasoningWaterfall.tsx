@@ -96,7 +96,7 @@ function WaterfallRow({ entry }: { entry: WaterfallEntry }) {
               <p className="text-[9px] text-text-muted/40 uppercase tracking-wider mb-0.5 font-medium">
                 Input
               </p>
-              <pre className="text-[9px] font-mono text-text-muted/70 bg-background/60 border border-border/20 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-28 scrollbar-dark">
+              <pre className="text-[9px] font-mono text-text-secondary bg-background/60 border border-border/20 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-28 scrollbar-dark">
                 {JSON.stringify(entry.input, null, 2)}
               </pre>
             </div>
@@ -106,7 +106,7 @@ function WaterfallRow({ entry }: { entry: WaterfallEntry }) {
               <p className="text-[9px] text-text-muted/40 uppercase tracking-wider mb-0.5 font-medium">
                 Output
               </p>
-              <pre className="text-[9px] font-mono text-text-muted/70 bg-background/60 border border-border/20 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-32 scrollbar-dark">
+              <pre className="text-[9px] font-mono text-text-secondary bg-background/60 border border-border/20 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-32 scrollbar-dark">
                 {JSON.stringify(entry.output, null, 2)}
               </pre>
             </div>
