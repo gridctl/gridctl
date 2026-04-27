@@ -62,10 +62,20 @@ jobs:
           bash scripts/install.sh
           gridctl version
 
-      - name: Upgrade --check reports cleanly
+      - name: Set up Go (for upgrade subcommand smoke)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build PR binary and smoke `gridctl upgrade --check`
+        # The released binary referenced by install.sh predates this PR and
+        # does not contain the `upgrade` subcommand, so we exercise it
+        # against the PR's freshly-built binary instead. This becomes a
+        # no-op once a release containing `gridctl upgrade` ships.
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          gridctl upgrade --check
+          make build-go
+          ./gridctl upgrade --check
 
       - name: Uninstall removes the binary
         run: |

@@ -114,14 +114,16 @@ resolve_version() {
     else
         api="https://api.github.com/repos/${REPO}/releases?per_page=1"
         debug "fetching latest release from ${api}"
-        # Send a Bearer token when GITHUB_TOKEN is set (CI environments) to
-        # bypass the 60-req/hr unauthenticated rate limit. End users running
-        # curl | sh interactively don't need a token — a single IP making one
-        # request is well within the unauth limit.
+        # GitHub's API requires a User-Agent header and silently returns an
+        # empty array for bot-like defaults — identify ourselves.
+        # Bearer auth is added when GITHUB_TOKEN is set (CI environments) to
+        # bypass the 60-req/hr unauthenticated rate limit; interactive users
+        # don't need a token.
+        ua="gridctl-installer"
         if [ -n "${GITHUB_TOKEN:-}" ]; then
-            body="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "$api" 2>/dev/null)" || body=""
+            body="$(curl -fsSL -A "$ua" -H "Authorization: Bearer ${GITHUB_TOKEN}" "$api" 2>/dev/null)" || body=""
         else
-            body="$(curl -fsSL "$api" 2>/dev/null)" || body=""
+            body="$(curl -fsSL -A "$ua" "$api" 2>/dev/null)" || body=""
         fi
         if [ -z "$body" ]; then
             err "Could not reach api.github.com to resolve the latest version."

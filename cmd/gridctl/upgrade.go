@@ -227,6 +227,9 @@ func fetchLatestTag() (string, error) {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	// GitHub's API requires a User-Agent and silently returns an empty array
+	// for bot-like defaults (e.g. Go-http-client). Identify ourselves.
+	req.Header.Set("User-Agent", "gridctl/"+version)
 	// Send a Bearer token when GITHUB_TOKEN is present (CI environments) to
 	// bypass the unauthenticated rate limit. End users running interactively
 	// stay below the unauth limit easily and don't need to set this.
