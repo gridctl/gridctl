@@ -18,6 +18,7 @@ describe('useSpecStore', () => {
       plan: null,
       compareActive: false,
       diffModalOpen: false,
+      diffModalMode: 'apply',
       pendingSpec: null,
     });
   });
@@ -111,6 +112,7 @@ describe('useSpecStore', () => {
     useSpecStore.getState().openDiffModal('name: updated');
     expect(useSpecStore.getState().diffModalOpen).toBe(true);
     expect(useSpecStore.getState().pendingSpec).toBe('name: updated');
+    expect(useSpecStore.getState().diffModalMode).toBe('apply');
   });
 
   it('closes diff modal and clears pending spec', () => {
@@ -118,6 +120,20 @@ describe('useSpecStore', () => {
     useSpecStore.getState().closeDiffModal();
     expect(useSpecStore.getState().diffModalOpen).toBe(false);
     expect(useSpecStore.getState().pendingSpec).toBeNull();
+  });
+
+  it('opens compare modal in compare mode without pending spec', () => {
+    useSpecStore.getState().openCompareModal();
+    expect(useSpecStore.getState().diffModalOpen).toBe(true);
+    expect(useSpecStore.getState().diffModalMode).toBe('compare');
+    expect(useSpecStore.getState().pendingSpec).toBeNull();
+  });
+
+  it('resets diffModalMode to apply when modal is closed', () => {
+    useSpecStore.getState().openCompareModal();
+    expect(useSpecStore.getState().diffModalMode).toBe('compare');
+    useSpecStore.getState().closeDiffModal();
+    expect(useSpecStore.getState().diffModalMode).toBe('apply');
   });
 });
 
@@ -162,6 +178,7 @@ describe('SpecHealthBadge', () => {
       plan: null,
       compareActive: false,
       diffModalOpen: false,
+      diffModalMode: 'apply',
       pendingSpec: null,
     });
   });
@@ -230,6 +247,7 @@ describe('SpecDiffModal', () => {
       spec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
       appliedSpec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
       diffModalOpen: false,
+      diffModalMode: 'apply',
       pendingSpec: null,
       health: null,
       specLoading: false,
@@ -320,5 +338,112 @@ describe('SpecDiffModal', () => {
     expect(screen.getByText('Validation errors in new spec')).toBeInTheDocument();
     expect(screen.getByText('servers: at least one server required')).toBeInTheDocument();
     expect(screen.getByText('name: invalid format')).toBeInTheDocument();
+  });
+
+  it('renders compare-mode title and hides Apply button', () => {
+    useSpecStore.setState({
+      diffModalOpen: true,
+      diffModalMode: 'compare',
+      spec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "2"' },
+      appliedSpec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+    });
+    const onApply = vi.fn();
+    render(<SpecDiffModal onApply={onApply} />);
+    expect(screen.getByText('Compare to Running')).toBeInTheDocument();
+    expect(screen.queryByText('Apply Changes')).not.toBeInTheDocument();
+    expect(screen.getByText('Close')).toBeInTheDocument();
+  });
+
+  it('renders no-drift empty state in compare mode when specs match', () => {
+    useSpecStore.setState({
+      diffModalOpen: true,
+      diffModalMode: 'compare',
+      spec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+      appliedSpec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+    });
+    const onApply = vi.fn();
+    render(<SpecDiffModal onApply={onApply} />);
+    expect(
+      screen.getByText('No drift — on-disk spec matches the running gateway.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Apply Changes')).not.toBeInTheDocument();
+  });
+
+  it('renders diff content in compare mode when specs differ', () => {
+    useSpecStore.setState({
+      diffModalOpen: true,
+      diffModalMode: 'compare',
+      spec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "2"' },
+      appliedSpec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+    });
+    const onApply = vi.fn();
+    render(<SpecDiffModal onApply={onApply} />);
+    // Modal renders via createPortal — query the document root
+    expect(document.querySelector('.text-status-running')).not.toBeNull();
+    expect(document.querySelector('.line-through')).not.toBeNull();
+  });
+
+  it('renders missing-baseline state when appliedSpec is null in compare mode', () => {
+    useSpecStore.setState({
+      diffModalOpen: true,
+      diffModalMode: 'compare',
+      spec: { path: '/tmp/stack.yaml', content: 'name: test' },
+      appliedSpec: null,
+    });
+    const onApply = vi.fn();
+    render(<SpecDiffModal onApply={onApply} />);
+    expect(
+      screen.getByText('Waiting for the gateway baseline — reload once to capture it.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('No drift — on-disk spec matches the running gateway.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides validation errors block in compare mode', () => {
+    useSpecStore.setState({
+      diffModalOpen: true,
+      diffModalMode: 'compare',
+      spec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "2"' },
+      appliedSpec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+    });
+    const onApply = vi.fn();
+    render(
+      <SpecDiffModal
+        onApply={onApply}
+        validationErrors={['this should not appear']}
+      />,
+    );
+    expect(screen.queryByText('Validation errors in new spec')).not.toBeInTheDocument();
+    expect(screen.queryByText('this should not appear')).not.toBeInTheDocument();
+  });
+});
+
+// --- SpecTab tests ---
+
+import { SpecTab } from '../components/spec/SpecTab';
+
+describe('SpecTab', () => {
+  beforeEach(() => {
+    useSpecStore.setState({
+      spec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+      appliedSpec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+      diffModalOpen: false,
+      diffModalMode: 'apply',
+      pendingSpec: null,
+      health: null,
+      specLoading: false,
+      specError: null,
+      validation: { valid: true, errorCount: 0, warningCount: 0, issues: [] },
+      plan: null,
+      compareActive: false,
+    });
+  });
+
+  it('opens compare modal when "Compare to running" is clicked', () => {
+    render(<SpecTab />);
+    fireEvent.click(screen.getByText('Compare to running'));
+    expect(useSpecStore.getState().diffModalOpen).toBe(true);
+    expect(useSpecStore.getState().diffModalMode).toBe('compare');
   });
 });
