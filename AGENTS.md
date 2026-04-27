@@ -91,6 +91,7 @@ gridctl/
 │   ├── test.go           # Skill acceptance criteria runner (exit 0/1/2)
 │   ├── activate.go       # Skill activation with acceptance criteria enforcement
 │   ├── version.go        # Version command
+│   ├── upgrade.go        # In-place upgrade to the latest release (sha256-verified)
 │   ├── help.go           # Custom help template
 │   ├── embed.go          # Embedded web assets
 │   └── embed_stub.go     # Build stub for embed
@@ -309,6 +310,64 @@ make mock-servers    # Build and run mock MCP servers for examples
 make clean-mock-servers # Stop and remove mock MCP servers
 ```
 
+## Installation & Distribution
+
+Three install paths are supported. They all consume the same GoReleaser
+artifacts; only the front-end mechanism differs.
+
+| Path | Mechanism | Updates via |
+|---|---|---|
+| Curl one-liner | `scripts/install.sh` served from `raw.githubusercontent.com/gridctl/gridctl/main/install.sh` | `gridctl upgrade` (in-place, atomic rename) |
+| Homebrew | `gridctl/homebrew-tap` formula auto-published by GoReleaser post-release | `brew upgrade gridctl/tap/gridctl` |
+| Source | `git clone && make build` | `git pull && make build` |
+
+`gridctl upgrade` detects Homebrew-managed binaries (path contains
+`/Cellar/`, `/homebrew/`, or `/linuxbrew/`) and defers to `brew upgrade`
+unless `--force` is passed.
+
+### Release artifact contract
+
+Both `scripts/install.sh` and `cmd/gridctl/upgrade.go` consume two
+artifacts produced by GoReleaser. **Renaming either breaks both
+consumers silently for the next release.**
+
+| Artifact | Source | Consumed by |
+|---|---|---|
+| `gridctl_<version>_<os>_<arch>.tar.gz` | `.goreleaser.yaml` `archives.name_template` | install.sh `download()`, upgrade.go `extractGridctlBinary()` |
+| `checksums.txt` | `.goreleaser.yaml` `checksum.name_template` | install.sh `verify_checksum()`, upgrade.go `verifySHA256()` |
+
+Version strings in archive names omit the leading `v` (e.g.
+`gridctl_0.1.0-beta.6_darwin_arm64.tar.gz`); release tags include it
+(e.g. `v0.1.0-beta.6`). Both consumers handle the conversion explicitly.
+
+### Pre-release vs stable
+
+While the project is in `v0.1.0-beta.x`, both consumers resolve "latest"
+via the GitHub API path
+`https://api.github.com/repos/gridctl/gridctl/releases?per_page=1`,
+which returns the most recent release **including pre-releases**.
+
+When stable `v0.1.0` ships, the contract changes: switch both consumers
+to the lighter `releases/latest` redirect (which excludes pre-releases)
+so the curl installer and `gridctl upgrade` serve stable users a stable
+build. Affected lines:
+
+- `scripts/install.sh` — `resolve_version()`
+- `cmd/gridctl/upgrade.go` — `fetchLatestTag()`
+
+Both files have a `TODO` comment marking the call site.
+
+### Smoke test
+
+`.github/workflows/install-smoke.yaml` exercises the full lifecycle on
+Ubuntu and macOS (install → re-run for idempotency → `gridctl upgrade
+--check` → `--uninstall` → `--uninstall --purge`) plus a separate
+`shellcheck -s sh` job. Triggers:
+
+- PRs touching `scripts/install.sh` or the workflow itself
+- Pushes to `main` touching `scripts/install.sh`
+- Weekly cron (Monday 08:00 UTC) — surfaces release-artifact drift
+
 ## CLI Usage
 
 ```bash
@@ -371,6 +430,12 @@ make clean-mock-servers # Stop and remove mock MCP servers
 ./gridctl test my-skill            # Run acceptance criteria (exit 0/1/2)
 ./gridctl activate my-skill        # Promote from draft to active
 ./gridctl skill validate my-skill  # Validate skill definition and frontmatter
+
+# Upgrade an existing standalone install in place
+./gridctl upgrade --check          # Report current vs. latest version
+./gridctl upgrade --yes            # Non-interactive (CI / cron); refuses without --yes in non-TTY shells
+./gridctl upgrade --version v0.1.0-beta.6   # Pin a specific tag (allows downgrades)
+./gridctl upgrade --force          # Bypass Homebrew detection and the up-to-date short-circuit
 ```
 
 ### Command Reference

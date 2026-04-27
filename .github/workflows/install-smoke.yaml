@@ -1,0 +1,113 @@
+name: Install Smoke
+
+on:
+  pull_request:
+    paths:
+      - "scripts/install.sh"
+      - ".github/workflows/install-smoke.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/install.sh"
+  schedule:
+    # Catch GitHub Releases drift weekly (Monday 08:00 UTC).
+    - cron: "0 8 * * 1"
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    # GITHUB_TOKEN is forwarded to install.sh and `gridctl upgrade` so they
+    # use authenticated GitHub API calls (5000 req/hr) and don't hit the
+    # 60 req/hr unauth limit shared across hosted-runner IPs. We also pre-
+    # resolve the latest tag via gh-CLI (which auths reliably) and pass it
+    # through GRIDCTL_VERSION so the smoke is robust against transient
+    # api.github.com hiccups while still validating against the real
+    # latest release on every run.
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve latest release tag
+        id: latest
+        run: |
+          tag=$(gh release list --repo ${{ github.repository }} --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -z "$tag" ]; then
+            echo "no releases found in ${{ github.repository }}" >&2
+            exit 1
+          fi
+          echo "Latest release: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Run installer (latest release)
+        env:
+          GRIDCTL_VERSION: ${{ steps.latest.outputs.tag }}
+        run: bash scripts/install.sh
+
+      - name: Verify gridctl on PATH
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          gridctl version
+
+      - name: Re-run is idempotent
+        env:
+          GRIDCTL_VERSION: ${{ steps.latest.outputs.tag }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          bash scripts/install.sh
+          gridctl version
+
+      - name: Set up Go (for upgrade subcommand smoke)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build PR binary and smoke `gridctl upgrade --check`
+        # The released binary referenced by install.sh predates this PR and
+        # does not contain the `upgrade` subcommand, so we exercise the
+        # PR's freshly-built binary instead. We pin --version to the tag
+        # gh-CLI already resolved so the subcommand skips its own
+        # api.github.com call (hosted-runner IPs frequently get shaped
+        # responses for this endpoint that don't reflect actual content).
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          make build-go
+          ./gridctl upgrade --check --version "$TAG"
+
+      - name: Uninstall removes the binary
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          bash scripts/install.sh --uninstall
+          if [ -e "$HOME/.local/bin/gridctl" ]; then
+            echo "gridctl binary still present after uninstall" >&2
+            exit 1
+          fi
+
+      - name: Uninstall --purge removes config dir
+        env:
+          GRIDCTL_VERSION: ${{ steps.latest.outputs.tag }}
+        run: |
+          mkdir -p "$HOME/.gridctl"
+          touch "$HOME/.gridctl/sentinel"
+          bash scripts/install.sh
+          export PATH="$HOME/.local/bin:$PATH"
+          bash scripts/install.sh --uninstall --purge
+          if [ -e "$HOME/.gridctl/sentinel" ]; then
+            echo "config directory not purged" >&2
+            exit 1
+          fi
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck
+        run: shellcheck -s sh scripts/install.sh

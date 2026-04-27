@@ -70,26 +70,84 @@ Three servers. Three different transports. One endpoint. Navigate to [localhost:
 
 ## 🪛 Installation
 
+### Quick install (macOS, Linux, WSL2)
+
 ```bash
-# macOS / Linux
-brew install gridctl/tap/gridctl
+curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | sh
 ```
+
+Installs the latest release to `~/.local/bin/gridctl`. The script verifies the
+release checksum and prints the install path and next steps.
+
+The script can be inspected before running:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | less
+```
+
+> **Windows**: install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install), then run the command above inside your Linux distribution.
 
 ![Install Gridctl](assets/install.gif)
 
+### Package managers
+
 <details>
-<summary>Other installation methods</summary>
+<summary><strong>Homebrew</strong> (macOS, Linux)</summary>
 
 ```bash
-# From source
+brew install gridctl/tap/gridctl
+```
+
+Update with `brew upgrade gridctl/tap/gridctl`.
+
+</details>
+
+### Other options
+
+<details>
+<summary><strong>Pre-built binaries</strong></summary>
+
+Download the tarball for your platform from the [releases page](https://github.com/gridctl/gridctl/releases),
+verify it against `checksums.txt`, extract, and place `gridctl` on your `PATH`.
+
+</details>
+
+<details>
+<summary><strong>Build from source</strong></summary>
+
+Requires Go 1.26+ and Node 20+.
+
+```bash
 git clone https://github.com/gridctl/gridctl
 cd gridctl && make build
-
-# Binary releases available at:
-# https://github.com/gridctl/gridctl/releases
+./gridctl --help
 ```
 
 </details>
+
+### Updating
+
+```bash
+gridctl upgrade            # check + prompt + upgrade (standalone install)
+gridctl upgrade --check    # only check; do not install
+gridctl upgrade --yes      # non-interactive (CI)
+gridctl upgrade --version v0.1.0-beta.6   # install a specific version
+```
+
+If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recommends `brew upgrade gridctl/tap/gridctl` instead.
+
+### Uninstalling
+
+```bash
+# Standalone install
+curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | sh -s -- --uninstall
+
+# Also remove the config directory at ~/.gridctl
+curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | sh -s -- --uninstall --purge
+
+# Homebrew install
+brew uninstall gridctl/tap/gridctl
+```
 
 ## 🐋 Container Runtime
 
