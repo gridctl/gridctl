@@ -34,12 +34,18 @@ archives:
   - id: default
     formats:
       - tar.gz
+    # name_template is consumed by scripts/install.sh and cmd/gridctl/upgrade.go
+    # to construct download URLs. Changing it without updating both will break
+    # the curl installer and the `gridctl upgrade` subcommand.
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
       - LICENSE*
 
 checksum:
+  # checksums.txt is consumed by scripts/install.sh and cmd/gridctl/upgrade.go
+  # for SHA256 verification. Changing this filename will break checksum lookup
+  # in both consumers.
   name_template: "checksums.txt"
 
 changelog:
