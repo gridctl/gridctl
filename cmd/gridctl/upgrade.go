@@ -227,6 +227,12 @@ func fetchLatestTag() (string, error) {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	// Send a Bearer token when GITHUB_TOKEN is present (CI environments) to
+	// bypass the unauthenticated rate limit. End users running interactively
+	// stay below the unauth limit easily and don't need to set this.
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("contacting api.github.com: %w", err)

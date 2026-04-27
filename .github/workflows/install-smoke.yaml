@@ -21,6 +21,11 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    # GITHUB_TOKEN is forwarded to install.sh and `gridctl upgrade` so they
+    # use authenticated GitHub API calls (5000 req/hr) and don't hit the
+    # 60 req/hr unauth limit shared across hosted-runner IPs.
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 

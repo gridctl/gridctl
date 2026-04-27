@@ -114,15 +114,25 @@ resolve_version() {
     else
         api="https://api.github.com/repos/${REPO}/releases?per_page=1"
         debug "fetching latest release from ${api}"
-        body="$(curl -fsSL "$api" 2>/dev/null)" || {
+        # Send a Bearer token when GITHUB_TOKEN is set (CI environments) to
+        # bypass the 60-req/hr unauthenticated rate limit. End users running
+        # curl | sh interactively don't need a token — a single IP making one
+        # request is well within the unauth limit.
+        if [ -n "${GITHUB_TOKEN:-}" ]; then
+            body="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "$api" 2>/dev/null)" || body=""
+        else
+            body="$(curl -fsSL "$api" 2>/dev/null)" || body=""
+        fi
+        if [ -z "$body" ]; then
             err "Could not reach api.github.com to resolve the latest version."
             err "Check your network or pin a version with GRIDCTL_VERSION=v0.1.0-beta.6."
             exit 1
-        }
+        fi
         TAG="$(printf '%s\n' "$body" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
         if [ -z "$TAG" ]; then
             err "Could not parse the latest release tag from api.github.com."
-            err "Pin a version with GRIDCTL_VERSION=v0.1.0-beta.6 or see ${RELEASES_URL}."
+            err "(Possible rate limit — set GITHUB_TOKEN or pin GRIDCTL_VERSION=v0.1.0-beta.6.)"
+            err "See ${RELEASES_URL}."
             exit 1
         fi
         debug "latest tag: ${TAG}"
