@@ -65,9 +65,13 @@ interface SpecDiffModalProps {
 
 export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps) {
   const diffModalOpen = useSpecStore((s) => s.diffModalOpen);
+  const diffModalMode = useSpecStore((s) => s.diffModalMode);
   const closeDiffModal = useSpecStore((s) => s.closeDiffModal);
   const appliedSpec = useSpecStore((s) => s.appliedSpec);
   const pendingSpec = useSpecStore((s) => s.pendingSpec);
+  const spec = useSpecStore((s) => s.spec);
+
+  const isCompareMode = diffModalMode === 'compare';
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -83,13 +87,16 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
     }
   }, [diffModalOpen, handleKeyDown]);
 
-  const diffLines = useMemo(() => {
-    if (!appliedSpec || !pendingSpec) return [];
-    return computeLineDiff(appliedSpec.content, pendingSpec);
-  }, [appliedSpec, pendingSpec]);
+  const compareSource = isCompareMode ? spec?.content ?? null : pendingSpec;
 
+  const diffLines = useMemo(() => {
+    if (!appliedSpec || compareSource === null) return [];
+    return computeLineDiff(appliedSpec.content, compareSource);
+  }, [appliedSpec, compareSource]);
+
+  const missingBaseline = isCompareMode && !appliedSpec;
   const hasChanges = diffLines.some((l) => l.type !== 'context');
-  const hasErrors = validationErrors && validationErrors.length > 0;
+  const hasErrors = !isCompareMode && validationErrors && validationErrors.length > 0;
 
   const addedCount = diffLines.filter((l) => l.type === 'added').length;
   const removedCount = diffLines.filter((l) => l.type === 'removed').length;
@@ -102,7 +109,9 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
       {/* Header — pinned */}
       <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-border/50 bg-surface-elevated">
         <div className="flex items-center gap-4">
-          <h2 className="text-sm font-semibold text-text-primary">Configuration Changed</h2>
+          <h2 className="text-sm font-semibold text-text-primary">
+            {isCompareMode ? 'Compare to Running' : 'Configuration Changed'}
+          </h2>
           {hasChanges && (
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-running/10 text-status-running">
@@ -130,9 +139,15 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
 
       {/* Diff body — scrollable, takes all remaining space */}
       <div className="flex-1 min-h-0 overflow-auto scrollbar-dark">
-        {!hasChanges ? (
+        {missingBaseline ? (
           <div className="flex items-center justify-center h-full text-text-muted text-sm">
-            No changes detected
+            Waiting for the gateway baseline — reload once to capture it.
+          </div>
+        ) : !hasChanges ? (
+          <div className="flex items-center justify-center h-full text-text-muted text-sm">
+            {isCompareMode
+              ? 'No drift — on-disk spec matches the running gateway.'
+              : 'No changes detected'}
           </div>
         ) : (
           <table className="w-full font-mono text-xs border-collapse">
@@ -204,18 +219,20 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
 
         <div className="flex items-center justify-end gap-3">
           <Button variant="secondary" onClick={closeDiffModal}>
-            Cancel
+            {isCompareMode ? 'Close' : 'Cancel'}
           </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              onApply();
-              closeDiffModal();
-            }}
-            disabled={!!hasErrors}
-          >
-            Apply Changes
-          </Button>
+          {!isCompareMode && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                onApply();
+                closeDiffModal();
+              }}
+              disabled={!!hasErrors}
+            >
+              Apply Changes
+            </Button>
+          )}
         </div>
       </div>
     </div>,
