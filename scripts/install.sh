@@ -133,6 +133,10 @@ resolve_version() {
             err "Could not parse the latest release tag from api.github.com."
             err "(Possible rate limit — set GITHUB_TOKEN or pin GRIDCTL_VERSION=v0.1.0-beta.6.)"
             err "See ${RELEASES_URL}."
+            # Surface the first 200 chars of the response so API shape changes
+            # (rate-limit JSON, auth errors) are diagnosable without re-running.
+            snippet="$(printf '%s' "$body" | tr -d '\n' | cut -c1-200)"
+            err "response: ${snippet}"
             exit 1
         fi
         debug "latest tag: ${TAG}"

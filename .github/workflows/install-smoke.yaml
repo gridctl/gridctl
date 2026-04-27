@@ -23,13 +23,30 @@ jobs:
     timeout-minutes: 10
     # GITHUB_TOKEN is forwarded to install.sh and `gridctl upgrade` so they
     # use authenticated GitHub API calls (5000 req/hr) and don't hit the
-    # 60 req/hr unauth limit shared across hosted-runner IPs.
+    # 60 req/hr unauth limit shared across hosted-runner IPs. We also pre-
+    # resolve the latest tag via gh-CLI (which auths reliably) and pass it
+    # through GRIDCTL_VERSION so the smoke is robust against transient
+    # api.github.com hiccups while still validating against the real
+    # latest release on every run.
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve latest release tag
+        id: latest
+        run: |
+          tag=$(gh release list --repo ${{ github.repository }} --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -z "$tag" ]; then
+            echo "no releases found in ${{ github.repository }}" >&2
+            exit 1
+          fi
+          echo "Latest release: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Run installer (latest release)
+        env:
+          GRIDCTL_VERSION: ${{ steps.latest.outputs.tag }}
         run: bash scripts/install.sh
 
       - name: Verify gridctl on PATH
@@ -38,6 +55,8 @@ jobs:
           gridctl version
 
       - name: Re-run is idempotent
+        env:
+          GRIDCTL_VERSION: ${{ steps.latest.outputs.tag }}
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           bash scripts/install.sh
@@ -58,6 +77,8 @@ jobs:
           fi
 
       - name: Uninstall --purge removes config dir
+        env:
+          GRIDCTL_VERSION: ${{ steps.latest.outputs.tag }}
         run: |
           mkdir -p "$HOME/.gridctl"
           touch "$HOME/.gridctl/sentinel"
