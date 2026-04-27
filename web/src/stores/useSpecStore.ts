@@ -30,6 +30,7 @@ interface SpecState {
 
   // Diff modal
   diffModalOpen: boolean;
+  diffModalMode: 'apply' | 'compare';
   pendingSpec: string | null;
 
   // Actions
@@ -43,6 +44,7 @@ interface SpecState {
   toggleCompare: () => void;
   setCompareActive: (active: boolean) => void;
   openDiffModal: (pendingSpec: string) => void;
+  openCompareModal: () => void;
   closeDiffModal: () => void;
 }
 
@@ -57,6 +59,7 @@ export const useSpecStore = create<SpecState>()(
     plan: null,
     compareActive: false,
     diffModalOpen: false,
+    diffModalMode: 'apply',
     pendingSpec: null,
 
     setSpec: (spec) => set((s) => ({
@@ -73,8 +76,9 @@ export const useSpecStore = create<SpecState>()(
     setPlan: (plan) => set({ plan }),
     toggleCompare: () => set((s) => ({ compareActive: !s.compareActive })),
     setCompareActive: (compareActive) => set({ compareActive }),
-    openDiffModal: (pendingSpec) => set({ diffModalOpen: true, pendingSpec }),
-    closeDiffModal: () => set({ diffModalOpen: false, pendingSpec: null }),
+    openDiffModal: (pendingSpec) => set({ diffModalOpen: true, diffModalMode: 'apply', pendingSpec }),
+    openCompareModal: () => set({ diffModalOpen: true, diffModalMode: 'compare', pendingSpec: null }),
+    closeDiffModal: () => set({ diffModalOpen: false, diffModalMode: 'apply', pendingSpec: null }),
   }))
 );
 

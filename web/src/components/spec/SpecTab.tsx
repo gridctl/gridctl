@@ -1,9 +1,8 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { GitCompareArrows, AlertCircle, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
-import { cn } from '../../lib/cn';
 import { useSpecStore } from '../../stores/useSpecStore';
-import { fetchStackSpec, fetchStackHealth, fetchStackPlan, validateStackSpec } from '../../lib/api';
-import type { ValidationIssue, DiffItem, IssueSeverity } from '../../types';
+import { fetchStackSpec, fetchStackHealth, validateStackSpec } from '../../lib/api';
+import type { ValidationIssue, IssueSeverity } from '../../types';
 
 // YAML syntax highlighting tokens
 interface HighlightedToken {
@@ -85,28 +84,12 @@ function getLineIssues(lineNum: number, issues: ValidationIssue[]): ValidationIs
   });
 }
 
-function getDriftForLine(lineNum: number, content: string, plan: DiffItem[] | null): 'added' | 'removed' | 'changed' | null {
-  if (!plan || plan.length === 0) return null;
-  const line = content.split('\n')[lineNum - 1] ?? '';
-  const trimmed = line.trimStart();
-
-  for (const item of plan) {
-    // Check if line references a changed item by name
-    if (trimmed.includes(item.name)) {
-      return item.action === 'add' ? 'added' : item.action === 'remove' ? 'removed' : 'changed';
-    }
-  }
-  return null;
-}
-
 export function SpecTab() {
   const spec = useSpecStore((s) => s.spec);
   const specLoading = useSpecStore((s) => s.specLoading);
   const specError = useSpecStore((s) => s.specError);
   const validation = useSpecStore((s) => s.validation);
-  const plan = useSpecStore((s) => s.plan);
-  const compareActive = useSpecStore((s) => s.compareActive);
-  const toggleCompare = useSpecStore((s) => s.toggleCompare);
+  const openCompareModal = useSpecStore((s) => s.openCompareModal);
   const pollRef = useRef<ReturnType<typeof setInterval>>(null);
 
   const loadSpec = useCallback(async () => {
@@ -120,15 +103,8 @@ export function SpecTab() {
       store.setSpec(specData);
       store.setHealth(healthData);
 
-      // Run validation on spec content
       const validationResult = await validateStackSpec(specData.content);
       store.setValidation(validationResult);
-
-      // Load plan if compare is active
-      if (store.compareActive) {
-        const planData = await fetchStackPlan();
-        store.setPlan(planData);
-      }
     } catch (err) {
       store.setSpecError(err instanceof Error ? err.message : 'Failed to load spec');
     } finally {
@@ -138,19 +114,11 @@ export function SpecTab() {
 
   useEffect(() => {
     loadSpec();
-    // Poll every 10s
     pollRef.current = setInterval(loadSpec, 10000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [loadSpec]);
-
-  // Load plan when compare mode is toggled on
-  useEffect(() => {
-    if (compareActive && spec) {
-      fetchStackPlan().then((p) => useSpecStore.getState().setPlan(p)).catch(() => {});
-    }
-  }, [compareActive, spec]);
 
   if (specLoading && !spec) {
     return (
@@ -215,13 +183,8 @@ export function SpecTab() {
         </div>
 
         <button
-          onClick={toggleCompare}
-          className={cn(
-            'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200',
-            compareActive
-              ? 'bg-primary/15 text-primary border border-primary/30'
-              : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40'
-          )}
+          onClick={openCompareModal}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40"
         >
           <GitCompareArrows size={12} />
           Compare to running
@@ -235,7 +198,6 @@ export function SpecTab() {
             {lines.map((line, idx) => {
               const lineNum = idx + 1;
               const lineIssues = getLineIssues(lineNum, issues);
-              const drift = compareActive ? getDriftForLine(lineNum, spec.content, plan?.items ?? null) : null;
               const highestSeverity = lineIssues.length > 0
                 ? lineIssues.some((i) => i.severity === 'error') ? 'error'
                   : lineIssues.some((i) => i.severity === 'warning') ? 'warning'
@@ -245,12 +207,7 @@ export function SpecTab() {
               return (
                 <tr
                   key={lineNum}
-                  className={cn(
-                    'group',
-                    drift === 'changed' && 'bg-primary/[0.06]',
-                    drift === 'added' && 'border-l-2 border-l-status-running bg-status-running/[0.04]',
-                    drift === 'removed' && 'line-through opacity-50',
-                  )}
+                  className="group"
                 >
                   {/* Line number */}
                   <td className="w-12 pr-3 text-right text-text-muted/40 select-none align-top py-px">
