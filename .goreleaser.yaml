@@ -88,7 +88,12 @@ release:
     ---
     ## Installation
 
-    **Homebrew (macOS)**:
+    **Quick install (macOS / Linux / WSL2)**:
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | sh
+    ```
+
+    **Homebrew**:
     ```bash
     brew install gridctl/tap/gridctl
     ```
