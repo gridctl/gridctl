@@ -244,16 +244,29 @@ func fetchLatestTag() (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("api.github.com returned %s", resp.Status)
 	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, upgradeMaxChecksumsSize))
+	if err != nil {
+		return "", fmt.Errorf("reading release response: %w", err)
+	}
 	var releases []struct {
 		TagName string `json:"tag_name"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return "", fmt.Errorf("decoding release response: %w", err)
+	if err := json.Unmarshal(body, &releases); err != nil {
+		return "", fmt.Errorf("decoding release response: %w (body: %s)", err, snippet(body))
 	}
 	if len(releases) == 0 || releases[0].TagName == "" {
-		return "", fmt.Errorf("no releases returned by api.github.com")
+		return "", fmt.Errorf("no releases returned by api.github.com (body: %s)", snippet(body))
 	}
 	return releases[0].TagName, nil
+}
+
+// snippet returns the first 200 bytes of body for diagnostic error messages.
+func snippet(body []byte) string {
+	const max = 200
+	if len(body) > max {
+		return string(body[:max]) + "..."
+	}
+	return string(body)
 }
 
 // downloadFile streams url into dest, refusing to write more than maxBytes.

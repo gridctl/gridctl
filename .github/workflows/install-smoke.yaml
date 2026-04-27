@@ -70,12 +70,16 @@ jobs:
 
       - name: Build PR binary and smoke `gridctl upgrade --check`
         # The released binary referenced by install.sh predates this PR and
-        # does not contain the `upgrade` subcommand, so we exercise it
-        # against the PR's freshly-built binary instead. This becomes a
-        # no-op once a release containing `gridctl upgrade` ships.
+        # does not contain the `upgrade` subcommand, so we exercise the
+        # PR's freshly-built binary instead. We pin --version to the tag
+        # gh-CLI already resolved so the subcommand skips its own
+        # api.github.com call (hosted-runner IPs frequently get shaped
+        # responses for this endpoint that don't reflect actual content).
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
         run: |
           make build-go
-          ./gridctl upgrade --check
+          ./gridctl upgrade --check --version "$TAG"
 
       - name: Uninstall removes the binary
         run: |
