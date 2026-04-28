@@ -1,6 +1,10 @@
 package builder
 
-import "log/slog"
+import (
+	"log/slog"
+
+	"github.com/go-git/go-git/v5/plumbing/transport"
+)
 
 // BuildOptions contains options for building an image.
 type BuildOptions struct {
@@ -17,6 +21,12 @@ type BuildOptions struct {
 
 	// Cache control
 	NoCache bool // Force rebuild, ignore cache
+
+	// Auth carries an already-resolved git auth method for private repository
+	// clones. Nil means an unauthenticated clone (the public-repo default).
+	// Resolution from a declarative SourceAuth happens upstream so that this
+	// package never has to know about vaults or credential references.
+	Auth transport.AuthMethod
 
 	// Logger for build operations (optional, defaults to discard)
 	Logger *slog.Logger
