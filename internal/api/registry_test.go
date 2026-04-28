@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +15,8 @@ import (
 )
 
 // setupRegistryTestServer creates a Server with a temp registry store for testing.
+// Skill source paths are pinned to the temp dir so handlers don't read the
+// developer's real ~/.gridctl/skills.{lock.yaml,yaml}.
 func setupRegistryTestServer(t *testing.T) (*Server, *registry.Server) {
 	t.Helper()
 	dir := t.TempDir()
@@ -24,6 +27,10 @@ func setupRegistryTestServer(t *testing.T) (*Server, *registry.Server) {
 	gateway := mcp.NewGateway()
 	apiServer := NewServer(gateway, nil)
 	apiServer.SetRegistryServer(regServer)
+	apiServer.SetSkillSourcePaths(
+		filepath.Join(dir, "skills.lock.yaml"),
+		filepath.Join(dir, "skills.yaml"),
+	)
 	return apiServer, regServer
 }
 

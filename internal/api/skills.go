@@ -14,6 +14,24 @@ import (
 	"github.com/gridctl/gridctl/pkg/vault"
 )
 
+// lockFilePath returns the configured skill lock-file path, falling back to
+// the global default. Tests inject a temp path via SetSkillSourcePaths.
+func (s *Server) lockFilePath() string {
+	if s.skillLockPath != "" {
+		return s.skillLockPath
+	}
+	return skills.LockFilePath()
+}
+
+// configFilePath returns the configured skills.yaml path, falling back to the
+// global default. Tests inject a temp path via SetSkillSourcePaths.
+func (s *Server) configFilePath() string {
+	if s.skillsConfigPath != "" {
+		return s.skillsConfigPath
+	}
+	return skills.SkillsConfigPath()
+}
+
 // SkillSourceStatus represents a skill source with its update status.
 type SkillSourceStatus struct {
 	Name           string             `json:"name"`
@@ -170,11 +188,11 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) 
 		return
 	}
 	store := s.registryServer.Store()
-	lockPath := skills.LockFilePath()
+	lockPath := s.lockFilePath()
 	lf, _ := skills.ReadLockFile(lockPath)
 
 	// Load skills.yaml config
-	cfg, err := skills.LoadSkillsConfig(skills.SkillsConfigPath())
+	cfg, err := skills.LoadSkillsConfig(s.configFilePath())
 	if err != nil {
 		// No config = no sources; return lock file sources
 		cfg = skills.DefaultSkillsConfig()
@@ -262,7 +280,7 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 
 	store := s.registryServer.Store()
 	registryDir := store.Dir()
-	lockPath := skills.LockFilePath()
+	lockPath := s.lockFilePath()
 	logger := slog.Default()
 
 	imp := skills.NewImporter(store, registryDir, lockPath, logger)
@@ -297,7 +315,7 @@ func (s *Server) handleSkillSourceRemove(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	lockPath := skills.LockFilePath()
+	lockPath := s.lockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
 		writeJSONError(w, "Failed to read lock file: "+err.Error(), http.StatusInternalServerError)
@@ -337,7 +355,7 @@ func (s *Server) handleSkillSourceRemove(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, r *http.Request) {
 	sourceName := r.PathValue("name")
 
-	lockPath := skills.LockFilePath()
+	lockPath := s.lockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
 		writeJSONError(w, "Failed to read lock file: "+err.Error(), http.StatusInternalServerError)
@@ -410,7 +428,7 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	lockPath := skills.LockFilePath()
+	lockPath := s.lockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
 		writeJSONError(w, "Failed to read lock file: "+err.Error(), http.StatusInternalServerError)
@@ -488,7 +506,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 
 	var storedRef string
 	if repo == "" {
-		lockPath := skills.LockFilePath()
+		lockPath := s.lockFilePath()
 		lf, _ := skills.ReadLockFile(lockPath)
 		if src, ok := lf.Sources[sourceName]; ok {
 			repo = src.Repo
@@ -562,7 +580,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 // handleSkillUpdates returns pending update summary across all sources.
 // GET /api/skills/updates
 func (s *Server) handleSkillUpdates(w http.ResponseWriter, _ *http.Request) {
-	lockPath := skills.LockFilePath()
+	lockPath := s.lockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
 		writeJSONError(w, "Failed to read lock file: "+err.Error(), http.StatusInternalServerError)
