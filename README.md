@@ -398,10 +398,12 @@ gridctl plan <stack.yaml> -y         # Auto-approve and apply planned changes
 gridctl apply <stack.yaml>           # Start containers and gateway
 gridctl apply <stack.yaml> -f        # Run in foreground (debug mode)
 gridctl apply <stack.yaml> -p 9000   # Custom gateway port
+gridctl apply <stack.yaml> --base-port 9000  # Base port for MCP server host port allocation
 gridctl apply <stack.yaml> --watch   # Watch for changes and hot reload
 gridctl apply <stack.yaml> --flash   # Apply and auto-link LLM clients
 gridctl apply <stack.yaml> --code-mode   # Enable code mode (search + execute)
 gridctl apply <stack.yaml> --no-cache    # Force rebuild of source-based images
+gridctl apply <stack.yaml> --no-expand   # Disable env var expansion in OpenAPI specs
 gridctl apply <stack.yaml> -v        # Print full stack as JSON
 gridctl apply <stack.yaml> -q        # Suppress progress output
 gridctl apply <stack.yaml> --log-file <path>  # Structured JSON log output with rotation
@@ -414,6 +416,11 @@ gridctl status                       # Show running stacks
 gridctl status --replicas            # Expand to one row per replica
 gridctl info                         # Show detected container runtime
 gridctl version                      # Print version information
+gridctl upgrade                      # Check + prompt + upgrade (standalone install)
+gridctl upgrade --check              # Only check for updates; do not install
+gridctl upgrade --yes                # Non-interactive upgrade (CI)
+gridctl upgrade --version <tag>      # Install a specific release tag (allows downgrades)
+gridctl upgrade --force              # Bypass Homebrew detection and up-to-date short-circuit
 gridctl link                         # Connect an LLM client to the gateway
 gridctl unlink                       # Remove gridctl from an LLM client
 gridctl reload                       # Hot reload a running stack
@@ -533,6 +540,8 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | Token usage metrics | Stable | Backward compatible in 0.x |
 | Stack validation (validate) | Stable | Backward compatible in 0.x |
 | Stack planning (plan) | Stable | Backward compatible in 0.x |
+| Static replicas | Stable | Backward compatible in 0.x |
+| Reactive autoscaling | Experimental | May change without notice |
 | Code mode | Experimental | May change without notice |
 | Podman runtime | Stable | Backward compatible in 0.x |
 | Skills registry workflows | Experimental | May change without notice |

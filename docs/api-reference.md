@@ -438,6 +438,90 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-ser
 - `404` — Server name not found in gateway
 - `500` — Restart failed (container error, connection timeout, etc.)
 
+#### `PUT /api/mcp-servers/{name}/tools`
+
+Updates an MCP server's tool whitelist in the live `stack.yaml` and triggers a hot reload. Powers the live tool whitelist editor in the topology sidebar. The YAML write is atomic; concurrent external edits surface as `409` so the UI can re-fetch without clobbering changes.
+
+**Auth:** Yes
+
+**Request:**
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"tools": ["get_file_contents", "search_code"]}' \
+  http://localhost:8180/api/mcp-servers/github/tools
+```
+
+The body must be a JSON object with a `tools` field. An empty array (`[]`) clears the filter and exposes all server tools. The request body is capped at 64 KiB.
+
+**Response:**
+```json
+{
+  "server": "github",
+  "tools": ["get_file_contents", "search_code"],
+  "reloaded": true,
+  "reloadedAt": "2025-01-15T10:30:00Z"
+}
+```
+
+`reloaded` is `false` when the daemon is running without live-reload; the UI should hint the user to run `gridctl reload` manually. `reloadedAt` is omitted in that case.
+
+**Errors:**
+- `400 unknown_tool` — Tool name not advertised by the server (whitelist is stale)
+- `400` — Body missing `tools` array, or contains an empty tool name
+- `404` — Server not found in the stack file
+- `409 stack_modified` — Stack file changed on disk between read and write
+- `502 reload_failed` — YAML written but hot reload failed
+- `503` — No stack file configured (stackless mode)
+
+#### `POST /api/servers/probe`
+
+Probes an external URL (or any other) MCP server configuration ephemerally and returns its advertised tool list, without registering it with the gateway. Powers the wizard's "Discover tools" button on the MCP server form.
+
+**Auth:** Yes
+
+**Request:**
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: wizard-1" \
+  -d '{"name":"remote","url":"https://mcp.example.com/sse"}' \
+  http://localhost:8180/api/servers/probe
+```
+
+The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`). The body is capped at 64 KiB.
+
+`X-Session-ID` is optional; when absent, the remote address is used for per-session accounting. Concurrency is capped at **3 in-flight probes per session** and **10 globally** — excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
+
+**Response:**
+```json
+{
+  "tools": [
+    {
+      "name": "fetch_url",
+      "description": "Fetch the contents of a URL",
+      "inputSchema": { "type": "object", "properties": { "url": {"type": "string"} } }
+    }
+  ],
+  "probedAt": "2025-01-15T10:30:00Z",
+  "cached": false
+}
+```
+
+**Error envelope:**
+```json
+{ "error": { "code": "invalid_config", "message": "...", "hint": "..." } }
+```
+
+Error codes:
+- `invalid_config` (400) — Body malformed or required fields missing
+- `rate_limited` (429 / 503) — Session or global probe cap exceeded
+- `unsupported_transport` (503) — Probe is not configured on this daemon
+- `internal` (500) — Unexpected probe failure
+- Other codes (422) — Probe ran but the upstream rejected the handshake
+
+Env-var values present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
+
 ---
 
 ### Vault (Secrets Management)
