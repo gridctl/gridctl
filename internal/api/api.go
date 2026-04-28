@@ -60,6 +60,12 @@ type Server struct {
 	// with the gateway). Nil disables the /api/servers/probe endpoint.
 	prober       *probe.Prober
 	probeLimiter *probeLimiter
+
+	// Skill source paths. Empty values fall back to the global defaults
+	// (skills.LockFilePath / skills.SkillsConfigPath) so production code is
+	// unchanged; tests inject temp paths to stay isolated from $HOME.
+	skillLockPath    string
+	skillsConfigPath string
 }
 
 // NewServer creates a new API server.
@@ -173,6 +179,13 @@ func (s *Server) SetTokenizerName(name string) {
 // the given stack path. Called by POST /api/stack/initialize after cold-loading.
 func (s *Server) SetStartWatcher(fn func(stackPath string)) {
 	s.startWatcher = fn
+}
+
+// SetSkillSourcePaths overrides the skill lock-file and skills.yaml paths used
+// by /api/skills/* handlers. Empty values keep the global defaults.
+func (s *Server) SetSkillSourcePaths(lockPath, configPath string) {
+	s.skillLockPath = lockPath
+	s.skillsConfigPath = configPath
 }
 
 // RegistryServer returns the registry server.
