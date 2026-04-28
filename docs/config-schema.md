@@ -352,6 +352,47 @@ Build configuration for container images from source code.
 | `ref` | string | No | `"main"` | Git ref — branch, tag, or commit (git sources only) |
 | `path` | string | Conditional | — | Local path (required for `local`, not allowed for `git`). Relative paths are resolved from the stack file |
 | `dockerfile` | string | No | `"Dockerfile"` | Dockerfile path relative to source root |
+| `auth` | object | No | — | Authentication block for private git repositories (see [Source Auth](#source-auth)) |
+
+### Source Auth
+
+Declares how gridctl authenticates when cloning a private git repository at build time. Raw tokens must **never** appear in `stack.yaml` — use `credential_ref` to point at a vault key, which is resolved against the live vault on every clone.
+
+```yaml
+mcp-servers:
+  - name: private-mcp
+    source:
+      type: git
+      url: https://github.com/acme/private-mcp.git
+      ref: main
+      auth:
+        method: token
+        credential_ref: "${vault:GIT_TOKEN}"
+    port: 3000
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `method` | string | **Yes** | — | One of `"token"`, `"ssh-agent"`, `"ssh-key"`, or `"none"` |
+| `credential_ref` | string | Conditional | — | `${vault:KEY}` reference resolved at clone time. Required for `"token"` |
+| `ssh_user` | string | No | `git` | SSH username used with `"ssh-agent"` or `"ssh-key"` |
+| `ssh_key_path` | string | Conditional | — | Path to a private key file. Supports `~` expansion. Required for `"ssh-key"` |
+
+**Method behavior:**
+
+| Method | Transport | Credential source | Persisted |
+|--------|-----------|-------------------|-----------|
+| `token` | HTTPS | `credential_ref` (vault) — resolved on every clone | Reference only |
+| `ssh-agent` | SSH | Ambient `SSH_AUTH_SOCK` | None |
+| `ssh-key` | SSH | `ssh_key_path` on disk | Path only |
+| `none` / omitted | HTTPS or SSH | Unauthenticated clone (public-repo path) | None |
+
+**Security rules:**
+
+- Raw PAT or SSH key material must never appear in `stack.yaml`. `credential_ref` is the only credential field persisted to YAML.
+- The vault is consulted on every clone so rotating a secret takes effect immediately — there is no on-disk caching of the resolved token.
+- Vault references survive `stack.yaml` extends/merges and variable expansion as opaque strings; they are only resolved at apply time inside the orchestrator.
+- The skills registry uses the identical schema for `skills.yaml` source auth — see [Skill Source Auth](#skill-source-auth).
 
 ### SSH
 
