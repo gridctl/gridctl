@@ -92,7 +92,7 @@ func (b *Builder) prepareGitSource(opts BuildOptions, logger *slog.Logger) (stri
 		ref = "main"
 	}
 
-	return CloneOrUpdate(opts.URL, ref, logger)
+	return CloneOrUpdate(opts.URL, ref, opts.Auth, logger)
 }
 
 func (b *Builder) prepareLocalSource(opts BuildOptions) (string, error) {

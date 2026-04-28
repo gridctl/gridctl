@@ -82,6 +82,52 @@ mcp-servers:
 	}
 }
 
+// TestLoadStack_SourceAuth_PreservedRoundTrip locks in that the wizard-emitted
+// source.auth block survives YAML unmarshal end-to-end. Before the fix,
+// config.Source had no Auth field and the block was silently dropped — the
+// "auth-required" failure would surface only at clone time. The credential
+// reference must remain literal (no vault expansion at load time) so the
+// orchestrator can resolve it against the live vault on every clone/fetch.
+func TestLoadStack_SourceAuth_PreservedRoundTrip(t *testing.T) {
+	content := `
+version: "1"
+name: test
+mcp-servers:
+  - name: private-mcp
+    source:
+      type: git
+      url: https://github.com/example/repo.git
+      ref: main
+      auth:
+        method: token
+        credential_ref: "${vault:GIT_TOKEN}"
+    port: 3000
+`
+	path := writeTempFile(t, content)
+
+	stack, err := LoadStack(path)
+	if err != nil {
+		t.Fatalf("LoadStack: %v", err)
+	}
+
+	if len(stack.MCPServers) != 1 {
+		t.Fatalf("expected 1 MCP server, got %d", len(stack.MCPServers))
+	}
+	src := stack.MCPServers[0].Source
+	if src == nil {
+		t.Fatal("expected Source, got nil")
+	}
+	if src.Auth == nil {
+		t.Fatal("source.auth block was silently dropped")
+	}
+	if src.Auth.Method != "token" {
+		t.Errorf("Auth.Method: got %q, want %q", src.Auth.Method, "token")
+	}
+	if src.Auth.CredentialRef != "${vault:GIT_TOKEN}" {
+		t.Errorf("Auth.CredentialRef: got %q, want %q (must remain literal until clone time)", src.Auth.CredentialRef, "${vault:GIT_TOKEN}")
+	}
+}
+
 func TestLoadStack_EnvExpansion(t *testing.T) {
 	os.Setenv("TEST_API_KEY", "secret123")
 	defer os.Unsetenv("TEST_API_KEY")

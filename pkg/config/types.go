@@ -329,11 +329,23 @@ func (s *MCPServer) IsContainerBased() bool {
 
 // Source defines how to build an MCP server from source code.
 type Source struct {
-	Type       string `yaml:"type"` // "git" or "local"
-	URL        string `yaml:"url,omitempty"`
-	Ref        string `yaml:"ref,omitempty"`
-	Path       string `yaml:"path,omitempty"`
-	Dockerfile string `yaml:"dockerfile,omitempty"`
+	Type       string      `yaml:"type"` // "git" or "local"
+	URL        string      `yaml:"url,omitempty"`
+	Ref        string      `yaml:"ref,omitempty"`
+	Path       string      `yaml:"path,omitempty"`
+	Dockerfile string      `yaml:"dockerfile,omitempty"`
+	Auth       *SourceAuth `yaml:"auth,omitempty"`
+}
+
+// SourceAuth is the declarative auth block on an MCP server git source. Raw
+// tokens must NOT appear here — use CredentialRef (e.g. "${vault:GIT_TOKEN}")
+// which is resolved against the live vault at clone time. Never add a Token
+// field to this struct: anything with a yaml tag here gets persisted to disk.
+type SourceAuth struct {
+	Method        string `yaml:"method,omitempty"`         // "", "none", "token", "ssh-agent", "ssh-key"
+	CredentialRef string `yaml:"credential_ref,omitempty"` // e.g. "${vault:GIT_TOKEN}" — resolved on every clone/fetch
+	SSHUser       string `yaml:"ssh_user,omitempty"`       // defaults to "git" when empty
+	SSHKeyPath    string `yaml:"ssh_key_path,omitempty"`   // required for method "ssh-key"
 }
 
 // Resource defines a supporting container (database, cache, etc).

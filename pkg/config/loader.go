@@ -182,6 +182,13 @@ func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, empt
 			s.MCPServers[i].Source.URL = expand(s.MCPServers[i].Source.URL)
 			s.MCPServers[i].Source.Path = expand(s.MCPServers[i].Source.Path)
 			s.MCPServers[i].Source.Ref = expand(s.MCPServers[i].Source.Ref)
+			// Source.Auth.CredentialRef intentionally NOT expanded here:
+			// vault references stay literal until clone time so the
+			// orchestrator can resolve them against the live vault.
+			if s.MCPServers[i].Source.Auth != nil {
+				s.MCPServers[i].Source.Auth.SSHKeyPath = expand(s.MCPServers[i].Source.Auth.SSHKeyPath)
+				s.MCPServers[i].Source.Auth.SSHUser = expand(s.MCPServers[i].Source.Auth.SSHUser)
+			}
 		}
 
 		for k, v := range s.MCPServers[i].Env {
@@ -233,6 +240,11 @@ func resolveRelativePaths(s *Stack, basePath string) {
 		}
 		if s.MCPServers[i].SSH != nil && s.MCPServers[i].SSH.KnownHostsFile != "" {
 			s.MCPServers[i].SSH.KnownHostsFile = expandTildeAndResolvePath(s.MCPServers[i].SSH.KnownHostsFile, basePath)
+		}
+
+		// Resolve source.auth.ssh_key_path (mirrors SSH.IdentityFile handling).
+		if s.MCPServers[i].Source != nil && s.MCPServers[i].Source.Auth != nil && s.MCPServers[i].Source.Auth.SSHKeyPath != "" {
+			s.MCPServers[i].Source.Auth.SSHKeyPath = expandTildeAndResolvePath(s.MCPServers[i].Source.Auth.SSHKeyPath, basePath)
 		}
 
 		// Resolve OpenAPI spec paths (if not a URL)

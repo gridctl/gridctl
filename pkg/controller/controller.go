@@ -73,6 +73,24 @@ func New(cfg Config) *StackController {
 	return &StackController{config: cfg}
 }
 
+// credentialResolver returns a runtime.CredentialResolver that expands
+// references like "${vault:GIT_TOKEN}" against the controller's live vault.
+// An unresolved reference is a hard error — we never fall through to an
+// unauthenticated clone.
+func (sc *StackController) credentialResolver() runtime.CredentialResolver {
+	return func(ref string) (string, error) {
+		if sc.vaultStore == nil {
+			return "", fmt.Errorf("vault not configured; cannot resolve %s", ref)
+		}
+		resolver := config.VaultResolver(sc.vaultStore)
+		expanded, unresolved, _ := config.ExpandString(ref, resolver)
+		if len(unresolved) > 0 {
+			return "", fmt.Errorf("vault key %q not found", unresolved[0])
+		}
+		return expanded, nil
+	}
+}
+
 // SetVersion sets the version string for the gateway.
 func (sc *StackController) SetVersion(v string) {
 	sc.version = v
@@ -465,7 +483,21 @@ func (sc *StackController) newGatewayBuilder(stack *config.Stack, rt *runtime.Or
 }
 
 // createRuntime detects the container runtime and creates an Orchestrator.
+// The vault-backed credential resolver is wired in here so every caller —
+// Deploy, runDaemonChild, plan/replace flows — gets MCP source.auth
+// resolution without needing to remember the registration step.
 func (sc *StackController) createRuntime() (*runtime.Orchestrator, error) {
+	rt, err := sc.newRuntime()
+	if err != nil {
+		return nil, err
+	}
+	if sc.vaultStore != nil {
+		rt.SetCredentialResolver(sc.credentialResolver())
+	}
+	return rt, nil
+}
+
+func (sc *StackController) newRuntime() (*runtime.Orchestrator, error) {
 	if sc.config.Runtime != "" {
 		info, err := runtime.DetectRuntime(runtime.DetectOptions{Explicit: sc.config.Runtime})
 		if err != nil {

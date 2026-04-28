@@ -6,13 +6,14 @@ import (
 	"os"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 )
 
 // CloneOrUpdate clones a git repository or updates it if it already exists.
-// Returns the path to the cloned repository.
-func CloneOrUpdate(url, ref string, logger *slog.Logger) (string, error) {
+// Returns the path to the cloned repository. A nil auth means unauthenticated.
+func CloneOrUpdate(url, ref string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
 	if err := EnsureReposCacheDir(); err != nil {
 		return "", fmt.Errorf("creating cache dir: %w", err)
 	}
@@ -25,17 +26,18 @@ func CloneOrUpdate(url, ref string, logger *slog.Logger) (string, error) {
 	// Check if repo already exists
 	if _, err := os.Stat(repoPath); err == nil {
 		// Repo exists, try to update
-		return updateRepo(repoPath, ref, logger)
+		return updateRepo(repoPath, ref, auth, logger)
 	}
 
 	// Clone the repository
-	return cloneRepo(url, ref, repoPath, logger)
+	return cloneRepo(url, ref, repoPath, auth, logger)
 }
 
-func cloneRepo(url, ref, destPath string, logger *slog.Logger) (string, error) {
+func cloneRepo(url, ref, destPath string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
 	repo, err := gitpkg.Clone(destPath, gitpkg.CloneOptions{
-		URL: url,
-		Ref: ref,
+		URL:  url,
+		Ref:  ref,
+		Auth: auth,
 	}, logger)
 	if err != nil {
 		return "", fmt.Errorf("cloning repository: %w", err)
@@ -56,7 +58,7 @@ func cloneRepo(url, ref, destPath string, logger *slog.Logger) (string, error) {
 	return destPath, nil
 }
 
-func updateRepo(repoPath, ref string, logger *slog.Logger) (string, error) {
+func updateRepo(repoPath, ref string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
 	logger.Info("updating cached repository")
 
 	repo, err := gitpkg.Open(repoPath)
@@ -65,7 +67,7 @@ func updateRepo(repoPath, ref string, logger *slog.Logger) (string, error) {
 		return "", fmt.Errorf("opening repository (will need to re-clone): %w", err)
 	}
 
-	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{}, logger); err != nil {
+	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{Auth: auth}, logger); err != nil {
 		logger.Warn("fetch failed, using existing", "error", err)
 	}
 
