@@ -55,6 +55,7 @@ func (a *dockerBuilderAdapter) Build(ctx context.Context, opts runtime.BuildOpti
 		Tag:        opts.Tag,
 		BuildArgs:  opts.BuildArgs,
 		NoCache:    opts.NoCache,
+		Auth:       opts.Auth,
 		Logger:     opts.Logger,
 	})
 	if err != nil {

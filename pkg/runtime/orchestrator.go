@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/go-git/go-git/v5/plumbing/transport"
+
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 )
@@ -17,11 +19,18 @@ type LoggerSetter interface {
 // Orchestrator manages the lifecycle of gridctl workloads.
 // It uses a WorkloadRuntime to start/stop workloads and a Builder for image builds.
 type Orchestrator struct {
-	runtime     WorkloadRuntime
-	builder     Builder
-	logger      *slog.Logger
-	runtimeInfo *RuntimeInfo
+	runtime            WorkloadRuntime
+	builder            Builder
+	logger             *slog.Logger
+	runtimeInfo        *RuntimeInfo
+	credentialResolver CredentialResolver
 }
+
+// CredentialResolver expands a credential reference (e.g. "${vault:GIT_TOKEN}")
+// to its raw token. Set via SetCredentialResolver. Without one, MCP source
+// blocks that carry a CredentialRef fail fast at build time so the user sees
+// "missing vault secret" rather than a confusing 401 from the git server.
+type CredentialResolver func(ref string) (string, error)
 
 // Builder handles image/artifact building.
 // This is kept separate from WorkloadRuntime as image building is a distinct concern.
@@ -31,15 +40,16 @@ type Builder interface {
 
 // BuildOptions for the Builder interface.
 type BuildOptions struct {
-	SourceType string            // "git" or "local"
-	URL        string            // Git URL
-	Ref        string            // Git ref/branch
-	Path       string            // Local path
-	Dockerfile string            // Dockerfile path within context
-	Tag        string            // Image tag
-	BuildArgs  map[string]string // Build arguments
-	NoCache    bool              // Force rebuild
-	Logger     *slog.Logger      // Logger for build operations (optional)
+	SourceType string               // "git" or "local"
+	URL        string               // Git URL
+	Ref        string               // Git ref/branch
+	Path       string               // Local path
+	Dockerfile string               // Dockerfile path within context
+	Tag        string               // Image tag
+	BuildArgs  map[string]string    // Build arguments
+	NoCache    bool                 // Force rebuild
+	Auth       transport.AuthMethod // Resolved git auth (nil = unauthenticated)
+	Logger     *slog.Logger         // Logger for build operations (optional)
 }
 
 // BuildResult from a build operation.
@@ -124,6 +134,14 @@ func (o *Orchestrator) SetLogger(logger *slog.Logger) {
 func (o *Orchestrator) SetRuntimeInfo(info *RuntimeInfo) {
 	o.runtimeInfo = info
 }
+
+// SetCredentialResolver registers a resolver used to expand a CredentialRef
+// like "${vault:GIT_TOKEN}" into a raw token at clone time. Without a
+// resolver, MCP servers whose source carries a CredentialRef fail fast.
+func (o *Orchestrator) SetCredentialResolver(r CredentialResolver) {
+	o.credentialResolver = r
+}
+
 
 // RuntimeInfo returns the detected runtime info, or nil if not set.
 func (o *Orchestrator) RuntimeInfo() *RuntimeInfo {
@@ -366,6 +384,14 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 			BuildArgs:  server.BuildArgs,
 			NoCache:    opts.NoCache,
 			Logger:     o.logger,
+		}
+
+		if server.Source.Auth != nil {
+			authMethod, err := AuthForSource(server.Source.Auth, server.Source.URL, o.credentialResolver)
+			if err != nil {
+				return nil, fmt.Errorf("resolving source auth for %q: %w", server.Name, err)
+			}
+			buildOpts.Auth = authMethod
 		}
 
 		result, err := o.builder.Build(ctx, buildOpts)
