@@ -3,7 +3,7 @@ module github.com/gridctl/gridctl
 go 1.26
 
 require (
-	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/log v1.0.0
 	github.com/docker/docker v28.5.2+incompatible
