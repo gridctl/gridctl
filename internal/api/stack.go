@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -628,7 +629,17 @@ resources:
 	},
 }
 
-// handleStackAppend appends a resource to the current stack.yaml.
+// handleStackAppend appends a resource to the current stack.yaml. The
+// persistence path uses the same lock + hash + atomic-write pattern as
+// setServerTools so concurrent callers serialize, external edits between read
+// and write are detected (HTTP 409), and a mid-write crash leaves the
+// original file intact. The yaml.Node round-trip in patchAppendResource keeps
+// hand-written comments and key ordering — the previous implementation
+// re-emitted from a Go struct and silently destroyed both.
+//
+// Resource-name uniqueness is not enforced here; that is the validator's
+// concern and unchanged from prior behavior.
+//
 // POST /api/stack/append
 func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 	if s.stackFile == "" {
@@ -651,41 +662,99 @@ func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stack, _, err := config.ValidateStackFile(s.stackFile)
-	if err != nil {
-		writeJSONError(w, "Failed to load stack: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var name string
+	// Validate resourceType + snippet up front. Bad input never touches disk
+	// or takes the per-path lock.
+	var (
+		resourceName string
+		newServer    config.MCPServer
+		newResource  config.Resource
+	)
 	switch req.ResourceType {
 	case "mcp-server":
-		var res config.MCPServer
-		if err := yaml.Unmarshal([]byte(req.YAML), &res); err != nil {
+		if err := yaml.Unmarshal([]byte(req.YAML), &newServer); err != nil {
 			writeJSONError(w, "Invalid mcp-server YAML: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		stack.MCPServers = append(stack.MCPServers, res)
-		name = res.Name
+		if newServer.Name == "" {
+			writeJSONError(w, "mcp-server name is required", http.StatusBadRequest)
+			return
+		}
+		resourceName = newServer.Name
 	case "resource":
-		var res config.Resource
-		if err := yaml.Unmarshal([]byte(req.YAML), &res); err != nil {
+		if err := yaml.Unmarshal([]byte(req.YAML), &newResource); err != nil {
 			writeJSONError(w, "Invalid resource YAML: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		stack.Resources = append(stack.Resources, res)
-		name = res.Name
+		if newResource.Name == "" {
+			writeJSONError(w, "resource name is required", http.StatusBadRequest)
+			return
+		}
+		resourceName = newResource.Name
 	default:
 		writeJSONError(w, "Unsupported resourceType: "+req.ResourceType, http.StatusBadRequest)
 		return
 	}
 
-	out, err := yaml.Marshal(stack)
+	mu := stackFileLock(s.stackFile)
+	mu.Lock()
+	defer mu.Unlock()
+
+	original, err := os.ReadFile(s.stackFile)
 	if err != nil {
-		writeJSONError(w, "Failed to marshal stack: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, "Failed to read stack file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := os.WriteFile(s.stackFile, out, 0o644); err != nil {
+	originalHash := sha256.Sum256(original)
+
+	// Validate the post-append shape against the typed schema. We mutate a
+	// copy of the parsed struct so the YAML bytes the user wrote do not need
+	// to round-trip through canonical encoding for validation to run.
+	var stack config.Stack
+	if err := yaml.Unmarshal(original, &stack); err != nil {
+		writeJSONError(w, "Failed to parse stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	switch req.ResourceType {
+	case "mcp-server":
+		stack.MCPServers = append(stack.MCPServers, newServer)
+	case "resource":
+		stack.Resources = append(stack.Resources, newResource)
+	}
+	config.ExpandStackVarsWithEnv(&stack)
+	stack.SetDefaults()
+	if result := config.ValidateWithIssues(&stack); !result.Valid {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":      "stack validation failed after append",
+			"validation": result,
+		})
+		return
+	}
+
+	updated, err := patchAppendResource(original, req.ResourceType, []byte(req.YAML))
+	if err != nil {
+		writeJSONError(w, "Failed to patch stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fireBetweenReadsHook()
+
+	// Re-read right before write to catch any external edit that landed in
+	// the window between our initial read and the rename. With the per-path
+	// mutex this is a tight window, but external editors (vim, git) do not
+	// respect our lock.
+	current, err := os.ReadFile(s.stackFile)
+	if err != nil {
+		writeJSONError(w, "Failed to re-read stack file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if sha256.Sum256(current) != originalHash {
+		writeJSONError(w, "stack file was modified on disk since read; reload before retrying", http.StatusConflict)
+		return
+	}
+
+	if err := atomicWrite(s.stackFile, updated); err != nil {
 		writeJSONError(w, "Failed to write stack file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -693,7 +762,7 @@ func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"success":      true,
 		"resourceType": req.ResourceType,
-		"resourceName": name,
+		"resourceName": resourceName,
 	})
 }
 

@@ -26,18 +26,20 @@ var (
 // keeps the door open for multi-stack futures without a global chokepoint.
 var stackFileLocks sync.Map // map[string]*sync.Mutex
 
-// setServerToolsBetweenReadsHook fires after the initial read and before the
-// pre-write re-read. Production code leaves it nil; tests set it to simulate
-// an external edit landing in the narrow window between the two reads. The
-// atomic.Value wrapper keeps the race detector quiet when parallel tests run.
-var setServerToolsBetweenReadsHook atomic.Value // stores func()
+// stackEditBetweenReadsHook fires after the initial read and before the
+// pre-write re-read on every read-verify-write cycle in this package
+// (setServerTools, handleStackAppend). Production code leaves it nil; tests
+// set it to simulate an external edit landing in the narrow window between
+// the two reads. The atomic.Value wrapper keeps the race detector quiet when
+// parallel tests run.
+var stackEditBetweenReadsHook atomic.Value // stores func()
 
 func swapBetweenReadsHook(fn func()) func() {
-	prev := setServerToolsBetweenReadsHook.Load()
+	prev := stackEditBetweenReadsHook.Load()
 	if fn == nil {
-		setServerToolsBetweenReadsHook.Store((func())(nil))
+		stackEditBetweenReadsHook.Store((func())(nil))
 	} else {
-		setServerToolsBetweenReadsHook.Store(fn)
+		stackEditBetweenReadsHook.Store(fn)
 	}
 	if prev == nil {
 		return nil
@@ -46,7 +48,7 @@ func swapBetweenReadsHook(fn func()) func() {
 }
 
 func fireBetweenReadsHook() {
-	v := setServerToolsBetweenReadsHook.Load()
+	v := stackEditBetweenReadsHook.Load()
 	if v == nil {
 		return
 	}
