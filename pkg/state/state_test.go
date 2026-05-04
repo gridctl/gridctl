@@ -74,6 +74,62 @@ func TestLogPath(t *testing.T) {
 	}
 }
 
+func TestTelemetryDir(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	home := os.Getenv("HOME")
+	expected := filepath.Join(home, ".gridctl", "telemetry")
+	if got := TelemetryDir(); got != expected {
+		t.Errorf("TelemetryDir() = %q, want %q", got, expected)
+	}
+}
+
+func TestTelemetryServerPath(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	home := os.Getenv("HOME")
+	tests := []struct {
+		stack  string
+		server string
+		signal string
+		want   string
+	}{
+		{"my-stack", "github", "logs", filepath.Join(home, ".gridctl", "telemetry", "my-stack", "github", "logs.jsonl")},
+		{"my-stack", "github", "metrics", filepath.Join(home, ".gridctl", "telemetry", "my-stack", "github", "metrics.jsonl")},
+		{"my-stack", "github", "traces", filepath.Join(home, ".gridctl", "telemetry", "my-stack", "github", "traces.jsonl")},
+		{"prod", "weather-api", "logs", filepath.Join(home, ".gridctl", "telemetry", "prod", "weather-api", "logs.jsonl")},
+	}
+	for _, tc := range tests {
+		got := TelemetryServerPath(tc.stack, tc.server, tc.signal)
+		if got != tc.want {
+			t.Errorf("TelemetryServerPath(%q,%q,%q) = %q, want %q", tc.stack, tc.server, tc.signal, got, tc.want)
+		}
+	}
+}
+
+func TestEnsureTelemetryServerDir(t *testing.T) {
+	cleanup := setTempHome(t)
+	defer cleanup()
+
+	if err := EnsureTelemetryServerDir("my-stack", "github"); err != nil {
+		t.Fatalf("EnsureTelemetryServerDir: %v", err)
+	}
+	dir := TelemetryServerDir("my-stack", "github")
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected directory at %s", dir)
+	}
+	// Mode 0700 — leaf directory must match the vault/state convention.
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Errorf("dir mode = %v, want 0700", got)
+	}
+}
+
 func TestSave_CreatesFile(t *testing.T) {
 	cleanup := setTempHome(t)
 	defer cleanup()

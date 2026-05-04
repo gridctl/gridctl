@@ -1,12 +1,19 @@
 package tracing
 
 import (
+	"bufio"
 	"context"
+	"encoding/hex"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // SpanRecord is a completed OTel span stored in the trace buffer.
@@ -214,6 +221,133 @@ func (b *Buffer) Count() int {
 	b.bufMu.RLock()
 	defer b.bufMu.RUnlock()
 	return b.count()
+}
+
+// SeedFromFile reads up to the last n OTLP-JSON envelope lines from path and
+// rehydrates them into TraceRecords in the buffer. Used on daemon startup to
+// preload the in-memory ring with pre-restart trace history from a persisted
+// per-server traces.jsonl file. Missing or empty files return nil — that's
+// expected on the very first run with persistence enabled.
+//
+// The on-disk format is one tracepb.TracesData per line, written by
+// pkg/telemetry.TracesFileClient. Lines that fail to parse are skipped
+// without aborting the seed.
+func (b *Buffer) SeedFromFile(path string, n int) error {
+	if path == "" {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("seed trace buffer from %q: %w", path, err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("seed trace buffer scan %q: %w", path, err)
+	}
+
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+
+	// Group reconstructed spans by trace ID, then build TraceRecords. This
+	// mirrors ExportSpans's grouping and gives the same UX when tabs render
+	// pre-restart history.
+	byTrace := make(map[string][]SpanRecord)
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var td tracepb.TracesData
+		if err := protojson.Unmarshal([]byte(line), &td); err != nil {
+			continue
+		}
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				for _, sp := range ss.Spans {
+					rec := protoSpanToRecord(sp)
+					byTrace[rec.TraceID] = append(byTrace[rec.TraceID], rec)
+				}
+			}
+		}
+	}
+
+	for tid, spans := range byTrace {
+		if len(spans) == 0 {
+			continue
+		}
+		root := spans[0]
+		for _, s := range spans[1:] {
+			if s.StartTime.Before(root.StartTime) {
+				root = s
+			}
+		}
+		tr := buildTraceRecord(root, spans)
+		tr.TraceID = tid
+		b.addToBuffer(tr)
+	}
+	return nil
+}
+
+// protoSpanToRecord mirrors spanToRecord but for tracepb.Span (the OTLP
+// proto type produced by SeedFromFile's JSON decode). Only fields the UI
+// already exposes are copied — events, links, and dropped counts are
+// preserved by the OTLP file but not surfaced back into SpanRecord.
+func protoSpanToRecord(sp *tracepb.Span) SpanRecord {
+	traceID := hex.EncodeToString(sp.TraceId)
+	spanID := hex.EncodeToString(sp.SpanId)
+
+	rec := SpanRecord{
+		TraceID:   traceID,
+		SpanID:    spanID,
+		Name:      sp.Name,
+		StartTime: time.Unix(0, int64(sp.StartTimeUnixNano)),
+		EndTime:   time.Unix(0, int64(sp.EndTimeUnixNano)),
+	}
+	rec.DurationMs = rec.EndTime.Sub(rec.StartTime).Milliseconds()
+	if sp.Status != nil {
+		rec.Status = sp.Status.Code.String()
+		rec.IsError = strings.Contains(rec.Status, "Error")
+	}
+	if len(sp.ParentSpanId) > 0 {
+		rec.ParentID = hex.EncodeToString(sp.ParentSpanId)
+	}
+	if len(sp.Attributes) > 0 {
+		rec.Attrs = make(map[string]string, len(sp.Attributes))
+		for _, kv := range sp.Attributes {
+			if kv.Value == nil {
+				continue
+			}
+			rec.Attrs[kv.Key] = anyValueToString(kv.Value)
+		}
+	}
+	return rec
+}
+
+// anyValueToString flattens a proto AnyValue into the simple string shape
+// SpanRecord expects. Non-string scalars are formatted via fmt.
+func anyValueToString(v *commonpb.AnyValue) string {
+	switch x := v.Value.(type) {
+	case *commonpb.AnyValue_StringValue:
+		return x.StringValue
+	case *commonpb.AnyValue_BoolValue:
+		return fmt.Sprintf("%t", x.BoolValue)
+	case *commonpb.AnyValue_IntValue:
+		return fmt.Sprintf("%d", x.IntValue)
+	case *commonpb.AnyValue_DoubleValue:
+		return fmt.Sprintf("%g", x.DoubleValue)
+	default:
+		return ""
+	}
 }
 
 // addToBuffer appends a TraceRecord to the ring buffer. Thread-safe.

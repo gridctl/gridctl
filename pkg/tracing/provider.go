@@ -115,6 +115,18 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// RegisterExporter attaches an additional SpanExporter to the live
+// TracerProvider via a BatchSpanProcessor. Used by the telemetry persistence
+// layer to plug a per-server file exporter alongside the in-memory buffer
+// and the optional OTLP exporter without rebuilding the provider. No-op
+// when tracing is disabled or Init has not yet run.
+func (p *Provider) RegisterExporter(exp sdktrace.SpanExporter) {
+	if p == nil || p.provider == nil || exp == nil {
+		return
+	}
+	p.provider.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(exp))
+}
+
 // bufferSize returns the effective ring buffer capacity from config.
 func bufferSize(cfg *Config) int {
 	if cfg.MaxTraces > 0 {

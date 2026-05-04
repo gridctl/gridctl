@@ -2,9 +2,13 @@
 package logging
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -88,6 +92,97 @@ func (b *LogBuffer) GetRecent(n int) []BufferedEntry {
 	}
 
 	return result
+}
+
+// SeedFromFile reads up to the last n NDJSON entries from path and inserts
+// them into the buffer in chronological order. Used on daemon startup to
+// preload the in-memory ring with pre-restart entries from a persisted
+// per-server log file. Missing or empty files return nil — that's expected
+// on the very first run with persistence enabled.
+//
+// The on-disk format is the JSON-formatted output produced by
+// NewFileHandler: top-level keys "level" / "ts" / "msg" / "component" plus
+// arbitrary attrs. Lines that fail to parse are skipped without aborting
+// the seed; a single corrupt line should not lose the rest of the history.
+func (b *LogBuffer) SeedFromFile(path string, n int) error {
+	if path == "" {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("seed log buffer from %q: %w", path, err)
+	}
+	defer f.Close()
+
+	// Read every line — file size is bounded by lumberjack rotation, and
+	// scanner buffers grow on demand. Take the last n on a second pass.
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("seed log buffer scan %q: %w", path, err)
+	}
+
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		entry, ok := parseFileLogLine(line)
+		if !ok {
+			continue
+		}
+		b.Add(entry)
+	}
+	return nil
+}
+
+// parseFileLogLine converts one JSON log line written by NewFileHandler back
+// into a BufferedEntry. Returns ok=false on malformed input so callers can
+// skip and continue.
+func parseFileLogLine(line string) (BufferedEntry, bool) {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(line), &raw); err != nil {
+		return BufferedEntry{}, false
+	}
+	entry := BufferedEntry{
+		Attrs: make(map[string]any),
+	}
+	if v, ok := raw["level"].(string); ok {
+		entry.Level = v
+	}
+	if v, ok := raw["ts"].(string); ok {
+		entry.Timestamp = v
+	}
+	if v, ok := raw["msg"].(string); ok {
+		entry.Message = v
+	}
+	if v, ok := raw["component"].(string); ok {
+		entry.Component = v
+	}
+	if v, ok := raw["trace_id"].(string); ok {
+		entry.TraceID = v
+	}
+	for k, v := range raw {
+		switch k {
+		case "level", "ts", "msg", "component", "trace_id", "time", "subsystem":
+			continue
+		}
+		entry.Attrs[k] = v
+	}
+	if len(entry.Attrs) == 0 {
+		entry.Attrs = nil
+	}
+	return entry, true
 }
 
 // Clear removes all entries from the buffer.

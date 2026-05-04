@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+
 	"github.com/gridctl/gridctl/internal/api"
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/config"
@@ -25,6 +27,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
+	"github.com/gridctl/gridctl/pkg/telemetry"
 	"github.com/gridctl/gridctl/pkg/token"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -70,6 +73,20 @@ type GatewayBuilder struct {
 
 	// tracingProvider is retained so Shutdown() can be called on gateway exit.
 	tracingProvider *tracing.Provider
+
+	// telemetry holds the opt-in disk-persistence writers wired at Build
+	// time. Nil when no server in the stack opts in.
+	telemetry *telemetryWiring
+}
+
+// telemetryWiring bundles the three per-signal writers + the otlptrace
+// exporter that feeds TracesFileClient. Lifecycle is owned by GatewayBuilder
+// (Build/Run/waitForShutdown).
+type telemetryWiring struct {
+	logRouter      *telemetry.LogRouter
+	metricsFlusher *telemetry.MetricsFlusher
+	tracesClient   *telemetry.TracesFileClient
+	tracesExporter *otlptrace.Exporter // started lazily inside Provider.RegisterExporter
 }
 
 // NewGatewayBuilder creates a GatewayBuilder.
@@ -171,6 +188,12 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	inst.Gateway.SetLogger(slog.New(inst.Handler))
 	registryServer.SetLogger(slog.New(inst.Handler))
 
+	// Seed the in-memory log buffer from any pre-existing per-server
+	// logs.jsonl files BEFORE registry init or any other component starts
+	// emitting records. Otherwise live records can interleave with seeded
+	// history and scramble ring ordering.
+	b.seedLogsFromDisk(inst.LogBuffer, inst.Handler)
+
 	// Initialize registry after logging is configured so warnings are captured
 	if err := registryServer.Initialize(context.Background()); err != nil {
 		slog.New(inst.Handler).Warn("registry initialization failed", "error", err)
@@ -205,6 +228,53 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	}
 
 	return inst, nil
+}
+
+// telemetrySeedLimit caps the number of pre-restart entries replayed into a
+// ring buffer at startup. Leaves room for new live entries and bounds
+// startup I/O.
+const telemetrySeedLimit = 500
+
+// seedLogsFromDisk replays any existing per-server logs.jsonl into the
+// shared in-memory log buffer. Called early in Build (before registry init
+// or any other goroutine emits a record) so seeded history precedes live
+// records in the ring.
+func (b *GatewayBuilder) seedLogsFromDisk(buf *logging.LogBuffer, handler slog.Handler) {
+	if b.stack == nil || buf == nil {
+		return
+	}
+	logger := slog.New(handler)
+	for i := range b.stack.MCPServers {
+		srv := &b.stack.MCPServers[i]
+		if srv.Name == "" || !srv.PersistLogs(b.stack) {
+			continue
+		}
+		path := state.TelemetryServerPath(b.stack.Name, srv.Name, "logs")
+		if err := buf.SeedFromFile(path, telemetrySeedLimit); err != nil {
+			logger.Warn("telemetry: seed logs failed", "server", srv.Name, "path", path, "error", err)
+		}
+	}
+}
+
+// seedTracesFromDisk replays any existing per-server traces.jsonl into the
+// shared tracing buffer. Called immediately after tracingProvider.Init —
+// before the trace file exporter is registered and before registry init —
+// so seeded traces don't interleave with live spans.
+func (b *GatewayBuilder) seedTracesFromDisk(handler slog.Handler) {
+	if b.stack == nil || b.tracingProvider == nil || b.tracingProvider.Buffer == nil {
+		return
+	}
+	logger := slog.New(handler)
+	for i := range b.stack.MCPServers {
+		srv := &b.stack.MCPServers[i]
+		if srv.Name == "" || !srv.PersistTraces(b.stack) {
+			continue
+		}
+		path := state.TelemetryServerPath(b.stack.Name, srv.Name, "traces")
+		if err := b.tracingProvider.Buffer.SeedFromFile(path, telemetrySeedLimit); err != nil {
+			logger.Warn("telemetry: seed traces failed", "server", srv.Name, "path", path, "error", err)
+		}
+	}
 }
 
 // Run starts the HTTP server, registers MCP servers, and blocks until shutdown.
@@ -251,6 +321,11 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 		filepath.Join(state.BaseDir(), "registry"),
 		slog.New(bufferHandler),
 	)
+
+	// Start the telemetry metrics flusher (no-op when no server opts in).
+	if b.telemetry != nil && b.telemetry.metricsFlusher != nil {
+		b.telemetry.metricsFlusher.Start()
+	}
 
 	// Set up hot reload
 	b.setupHotReload(ctx, inst, registrar, bufferHandler, verbose)
@@ -326,7 +401,18 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 			"rotation", fmt.Sprintf("%dMB", maxSizeMB))
 	}
 
-	return logBuffer, redactHandler, nil
+	// Wrap the existing chain with the telemetry log router. The router is
+	// always installed; per-server file fan-out only kicks in when
+	// AddServer is called for a given component. This keeps the install
+	// cost zero for stacks that don't opt in.
+	router := telemetry.NewLogRouter(redactHandler)
+	if b.telemetry == nil {
+		b.telemetry = &telemetryWiring{}
+	}
+	b.telemetry.logRouter = router
+	router.SetSelfLogger(slog.New(redactHandler))
+
+	return logBuffer, router, nil
 }
 
 // buildAPIServer creates and configures the API server.
@@ -374,6 +460,17 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	server.SetMetricsAccumulator(accumulator)
 	server.SetTokenizerName(b.tokenizerName())
 
+	// Telemetry persistence: wire the metrics flusher. Adding per-server
+	// outputs happens in wireTelemetryPersistence after the tracing
+	// provider is initialized below — keeps all opt-in writers grouped.
+	if b.telemetry == nil {
+		b.telemetry = &telemetryWiring{}
+	}
+	b.telemetry.metricsFlusher = telemetry.NewMetricsFlusher(accumulator, 0)
+	if handler != nil {
+		b.telemetry.metricsFlusher.SetLogger(slog.New(handler))
+	}
+
 	// Wire the wizard's "Discover tools" probe. Scope: external URL
 	// servers only — container / stdio / local-process / SSH / OpenAPI are
 	// curated post-deploy from the topology sidebar.
@@ -396,7 +493,177 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	b.tracingProvider = tracingProvider
 	server.SetTraceBuffer(tracingProvider.Buffer)
 
+	// Seed the trace buffer from disk before live spans land in it. Done
+	// here (not later in Build) because registry init and other Build
+	// stages can begin emitting spans the moment the provider is live.
+	b.seedTracesFromDisk(handler)
+
+	// Telemetry persistence: register the trace file client as an extra
+	// span exporter alongside the in-memory buffer and the optional OTLP
+	// exporter. The exporter is started during otlptrace.NewUnstarted ->
+	// exporter.Start; failure is logged and the in-memory tracing path
+	// continues unaffected.
+	if tracingCfg.Enabled && b.telemetry != nil {
+		client := telemetry.NewTracesFileClient()
+		if handler != nil {
+			client.SetLogger(slog.New(handler))
+		}
+		exporter, err := otlptrace.New(context.Background(), client)
+		if err != nil {
+			slog.New(handler).Warn("telemetry trace exporter init failed; per-server traces.jsonl disabled",
+				"error", err)
+		} else {
+			b.telemetry.tracesClient = client
+			b.telemetry.tracesExporter = exporter
+			tracingProvider.RegisterExporter(exporter)
+		}
+	}
+
+	// Apply the current stack's per-server persistence settings.
+	b.applyTelemetryConfig(server, handler)
+
 	return server, nil
+}
+
+// applyTelemetryConfig walks the stack's MCP servers and registers per-
+// server file writers for every signal a server opts into. Idempotent:
+// re-running with a changed stack adds new writers and removes ones that
+// flipped to off. Used both at initial Build time and from the hot-reload
+// callback so a YAML change takes effect without restarting the daemon.
+func (b *GatewayBuilder) applyTelemetryConfig(apiServer *api.Server, handler slog.Handler) {
+	_ = apiServer // reserved for Phase 3 (inventory hookup); keeps callers stable
+	if b.telemetry == nil || b.stack == nil {
+		return
+	}
+
+	logger := slog.New(handler)
+	stack := b.stack
+
+	// Compute desired set per signal.
+	wantLogs := map[string]bool{}
+	wantMetrics := map[string]bool{}
+	wantTraces := map[string]bool{}
+	for i := range stack.MCPServers {
+		srv := &stack.MCPServers[i]
+		if srv.Name == "" {
+			continue
+		}
+		if srv.PersistLogs(stack) {
+			wantLogs[srv.Name] = true
+		}
+		if srv.PersistMetrics(stack) {
+			wantMetrics[srv.Name] = true
+		}
+		if srv.PersistTraces(stack) {
+			wantTraces[srv.Name] = true
+		}
+	}
+
+	if len(wantLogs)+len(wantMetrics)+len(wantTraces) == 0 {
+		// Nothing to persist; ensure any previously-registered writers
+		// are torn down (handles hot-reload "off").
+		if b.telemetry.logRouter != nil {
+			for _, n := range b.telemetry.logRouter.ConfiguredServers() {
+				b.telemetry.logRouter.RemoveServer(n)
+			}
+		}
+		if b.telemetry.metricsFlusher != nil {
+			for _, n := range b.telemetry.metricsFlusher.ConfiguredServers() {
+				b.telemetry.metricsFlusher.RemoveServer(n)
+			}
+		}
+		if b.telemetry.tracesClient != nil {
+			for _, n := range b.telemetry.tracesClient.ConfiguredServers() {
+				b.telemetry.tracesClient.RemoveServer(n)
+			}
+		}
+		return
+	}
+
+	opts := telemetryRotationOpts(stack)
+
+	// Logs.
+	if router := b.telemetry.logRouter; router != nil {
+		current := stringSet(router.ConfiguredServers())
+		for name := range wantLogs {
+			if err := state.EnsureTelemetryServerDir(stack.Name, name); err != nil {
+				logger.Warn("telemetry: cannot ensure dir", "server", name, "error", err)
+				continue
+			}
+			path := state.TelemetryServerPath(stack.Name, name, "logs")
+			if err := router.AddServer(name, path, opts); err != nil {
+				logger.Warn("telemetry: log writer install failed", "server", name, "path", path, "error", err)
+			}
+		}
+		for name := range current {
+			if !wantLogs[name] {
+				router.RemoveServer(name)
+			}
+		}
+	}
+
+	// Metrics.
+	if flusher := b.telemetry.metricsFlusher; flusher != nil {
+		current := stringSet(flusher.ConfiguredServers())
+		for name := range wantMetrics {
+			if err := state.EnsureTelemetryServerDir(stack.Name, name); err != nil {
+				logger.Warn("telemetry: cannot ensure dir", "server", name, "error", err)
+				continue
+			}
+			path := state.TelemetryServerPath(stack.Name, name, "metrics")
+			if err := flusher.AddServer(name, path, opts); err != nil {
+				logger.Warn("telemetry: metrics writer install failed", "server", name, "path", path, "error", err)
+			}
+		}
+		for name := range current {
+			if !wantMetrics[name] {
+				flusher.RemoveServer(name)
+			}
+		}
+	}
+
+	// Traces.
+	if tc := b.telemetry.tracesClient; tc != nil {
+		current := stringSet(tc.ConfiguredServers())
+		for name := range wantTraces {
+			if err := state.EnsureTelemetryServerDir(stack.Name, name); err != nil {
+				logger.Warn("telemetry: cannot ensure dir", "server", name, "error", err)
+				continue
+			}
+			path := state.TelemetryServerPath(stack.Name, name, "traces")
+			if err := tc.AddServer(name, path, opts); err != nil {
+				logger.Warn("telemetry: traces writer install failed", "server", name, "path", path, "error", err)
+			}
+		}
+		for name := range current {
+			if !wantTraces[name] {
+				tc.RemoveServer(name)
+			}
+		}
+	}
+}
+
+// telemetryRotationOpts pulls retention from stack config or falls back to
+// the lumberjack defaults. Phase 1's SetDefaults already fills retention
+// when telemetry is set, so the zero-value fallbacks are belt-and-braces.
+func telemetryRotationOpts(stack *config.Stack) telemetry.LogOpts {
+	if stack == nil || stack.Telemetry == nil || stack.Telemetry.Retention == nil {
+		return telemetry.LogOpts{}
+	}
+	r := stack.Telemetry.Retention
+	return telemetry.LogOpts{
+		MaxSizeMB:  r.MaxSizeMB,
+		MaxBackups: r.MaxBackups,
+		MaxAgeDays: r.MaxAgeDays,
+	}
+}
+
+func stringSet(in []string) map[string]bool {
+	out := make(map[string]bool, len(in))
+	for _, s := range in {
+		out[s] = true
+	}
+	return out
 }
 
 // tokenizerName returns the configured tokenizer mode, defaulting to "embedded".
@@ -482,6 +749,13 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			runtimes = append(runtimes, ReplicaRuntime{HostPort: rep.HostPort, ContainerID: rep.ContainerID})
 		}
 		return registrar.RegisterOne(ctx, server, runtimes, stackPath)
+	})
+	// After a successful reload, refresh per-server telemetry writers so a
+	// YAML-toggled persist setting takes effect without restart. The
+	// callback fires under reload.Handler.mu — keep it allocation-light.
+	reloadHandler.SetOnConfigApplied(func(newCfg *config.Stack) {
+		b.stack = newCfg
+		b.applyTelemetryConfig(inst.APIServer, handler)
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
 
@@ -579,10 +853,18 @@ func (b *GatewayBuilder) waitForShutdown(inst *GatewayInstance, handler slog.Han
 			logger.Error("HTTP server shutdown error", "error", err)
 		}
 
+		if b.telemetry != nil && b.telemetry.metricsFlusher != nil {
+			b.telemetry.metricsFlusher.Stop()
+		}
+
 		if b.tracingProvider != nil {
 			if err := b.tracingProvider.Shutdown(shutdownCtx); err != nil {
 				logger.Error("tracing shutdown error", "error", err)
 			}
+		}
+
+		if b.telemetry != nil && b.telemetry.logRouter != nil {
+			b.telemetry.logRouter.Close()
 		}
 
 		_ = state.Delete(b.stack.Name)
