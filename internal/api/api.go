@@ -263,6 +263,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stack/recipes", s.handleStackRecipes)
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
 	mux.HandleFunc("POST /api/stack/initialize", s.handleStackInitialize)
+	mux.HandleFunc("PATCH /api/stack/telemetry", s.handlePatchStackTelemetry)
+
+	// Telemetry persistence endpoints — opt-in disk persistence inventory
+	// and wipe; the per-server PATCH lives under /api/mcp-servers/{name}/.
+	mux.HandleFunc("PATCH /api/mcp-servers/{name}/telemetry", s.handlePatchServerTelemetry)
+	mux.HandleFunc("GET /api/telemetry/inventory", s.handleGetTelemetryInventory)
+	mux.HandleFunc("DELETE /api/telemetry", s.handleDeleteTelemetry)
 
 	// Stack library endpoints
 	mux.HandleFunc("GET /api/stacks", s.handleStacksList)
