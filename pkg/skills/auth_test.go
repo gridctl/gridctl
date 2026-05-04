@@ -55,8 +55,8 @@ func TestResolveAuther_ExplicitWins(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *http.BasicAuth, got %T", auth)
 	}
-	if ba.Username != "explicit" {
-		t.Errorf("expected explicit token to win over env, got %q", ba.Username)
+	if ba.Username != "x-access-token" || ba.Password != "explicit" {
+		t.Errorf("expected explicit token in password slot, got user=%q pass=%q", ba.Username, ba.Password)
 	}
 }
 
@@ -74,8 +74,8 @@ func TestResolveAuther_GitHubTokenFallback(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *http.BasicAuth, got %T", auth)
 	}
-	if ba.Username != "env-token" {
-		t.Errorf("expected GITHUB_TOKEN fallback, got %q", ba.Username)
+	if ba.Username != "x-access-token" || ba.Password != "env-token" {
+		t.Errorf("expected GITHUB_TOKEN fallback in password slot, got user=%q pass=%q", ba.Username, ba.Password)
 	}
 }
 
