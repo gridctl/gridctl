@@ -62,14 +62,15 @@ type NoAuth struct{}
 // AuthFor always returns (nil, nil).
 func (NoAuth) AuthFor(string) (transport.AuthMethod, error) { return nil, nil }
 
-// HTTPSTokenAuth sends a Personal Access Token as HTTP basic-auth username
-// with an empty password — the shape GitHub, GitLab, Bitbucket, and most
-// self-hosted servers accept for PAT-based authentication.
+// HTTPSTokenAuth sends a token as HTTP basic-auth using the literal username
+// "x-access-token" with the token in the password slot — the shape required
+// by GitHub App installation tokens and accepted uniformly by GitHub PATs,
+// GitLab, and Bitbucket.
 type HTTPSTokenAuth struct {
 	Token string
 }
 
-// AuthFor returns an *http.BasicAuth carrying the PAT, or an error if the
+// AuthFor returns an *http.BasicAuth carrying the token, or an error if the
 // token is empty or the URL is not HTTPS.
 func (a HTTPSTokenAuth) AuthFor(url string) (transport.AuthMethod, error) {
 	if a.Token == "" {
@@ -78,7 +79,7 @@ func (a HTTPSTokenAuth) AuthFor(url string) (transport.AuthMethod, error) {
 	if p := DetectProtocol(url); p != ProtocolHTTPS {
 		return nil, fmt.Errorf("%w: HTTPSTokenAuth requires an https:// URL, got %q (%s)", ErrProtocolMismatch, url, p)
 	}
-	return &http.BasicAuth{Username: a.Token, Password: ""}, nil
+	return &http.BasicAuth{Username: "x-access-token", Password: a.Token}, nil
 }
 
 // SSHAgentAuth delegates authentication to the user's running ssh-agent.
