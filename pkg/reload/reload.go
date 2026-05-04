@@ -42,6 +42,11 @@ type Handler struct {
 	// stack path; passed through to the registrar so the gateway_builder closure
 	// does not need to re-enter the Handler mutex to look it up.
 	registerServer func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error
+
+	// onConfigApplied fires after currentCfg has been swapped to newCfg and
+	// per-server diffs have applied. Used by gateway_builder to refresh
+	// telemetry persistence wiring without rebuilding the gateway.
+	onConfigApplied func(*config.Stack)
 }
 
 // ReplicaRuntime carries runtime handles for one replica that the reload
@@ -82,6 +87,15 @@ func (h *Handler) SetNoExpand(noExpand bool) {
 // SetRegisterServerFunc sets the callback for registering MCP servers.
 func (h *Handler) SetRegisterServerFunc(fn func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error) {
 	h.registerServer = fn
+}
+
+// SetOnConfigApplied registers a hook fired after a successful reload swaps
+// currentCfg. Today only the telemetry persistence layer hooks this — it
+// uses the new stack to refresh per-server file writers without restarting
+// the gateway. The hook runs while the handler still holds its mutex, so
+// callbacks must be quick and must not call back into Handler.
+func (h *Handler) SetOnConfigApplied(fn func(*config.Stack)) {
+	h.onConfigApplied = fn
 }
 
 // CurrentConfig returns the current stack configuration.
@@ -187,6 +201,12 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 
 	// Update current config
 	h.currentCfg = newCfg
+
+	// Notify any registered post-reload hook (telemetry writer refresh).
+	// Runs under h.mu — hooks must not re-enter the handler.
+	if h.onConfigApplied != nil {
+		h.onConfigApplied(newCfg)
+	}
 
 	// Per-item failures collected during applyMCPServerChanges /
 	// applyResourceChanges must flip Success so callers (HTTP handler, file
