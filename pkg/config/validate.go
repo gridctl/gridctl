@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +12,23 @@ import (
 // are almost certainly a config error; the cap also bounds per-server
 // fan-out costs for things like health checking and least-connections scans.
 const maxReplicas = 32
+
+// telemetryWarnBytesPerServer is the soft cap above which a stack-wide
+// retention block triggers a warning. 5 GiB matches the prompt and is large
+// enough that legitimate tuning rarely crosses it; users who explicitly
+// configure higher retention still get a load-time warning rather than a
+// hard reject.
+const telemetryWarnBytesPerServer = 5 * 1024 * 1024 * 1024
+
+// Hard upper bounds on retention values. These exist to defuse arithmetic
+// overflow on the per-server-bytes math and to catch obvious typos
+// (e.g. an extra zero). They are intentionally generous; the soft cap above
+// will warn long before these trip.
+const (
+	telemetryMaxSizeMBHardCap  = 1 << 20 // 1 TiB per file
+	telemetryMaxBackupsHardCap = 1024
+	telemetryMaxAgeDaysHardCap = 365 * 10 // 10 years
+)
 
 // ValidationError represents a configuration validation error.
 type ValidationError struct {
@@ -67,6 +85,11 @@ func Validate(s *Stack) error {
 	// Gateway maxToolResultBytes validation
 	if s.Gateway != nil && s.Gateway.MaxToolResultBytes < 0 {
 		errs = append(errs, ValidationError{"gateway.maxToolResultBytes", "must be a non-negative integer"})
+	}
+
+	// Telemetry retention validation
+	if s.Telemetry != nil && s.Telemetry.Retention != nil {
+		errs = append(errs, validateTelemetryRetention(s.Telemetry.Retention)...)
 	}
 
 	// Gateway auth validation
@@ -498,6 +521,47 @@ func validateAutoscale(server MCPServer, prefix string) ValidationErrors {
 	}
 	if a.Max >= 1 && a.Min+a.WarmPool > a.Max {
 		errs = append(errs, ValidationError{asPrefix + ".warm_pool", "min + warm_pool must be <= max"})
+	}
+
+	return errs
+}
+
+// validateTelemetryRetention enforces hard bounds on the telemetry.retention
+// block and emits a soft warning when the worst-case footprint per server
+// exceeds telemetryWarnBytesPerServer. Hard bounds: every field must be a
+// positive integer; max_size_mb must be >= 1.
+func validateTelemetryRetention(r *RetentionConfig) ValidationErrors {
+	var errs ValidationErrors
+	const prefix = "telemetry.retention"
+
+	if r.MaxSizeMB < 1 {
+		errs = append(errs, ValidationError{prefix + ".max_size_mb", "must be >= 1"})
+	} else if r.MaxSizeMB > telemetryMaxSizeMBHardCap {
+		errs = append(errs, ValidationError{prefix + ".max_size_mb", fmt.Sprintf("must be <= %d", telemetryMaxSizeMBHardCap)})
+	}
+	if r.MaxBackups < 1 {
+		errs = append(errs, ValidationError{prefix + ".max_backups", "must be >= 1"})
+	} else if r.MaxBackups > telemetryMaxBackupsHardCap {
+		errs = append(errs, ValidationError{prefix + ".max_backups", fmt.Sprintf("must be <= %d", telemetryMaxBackupsHardCap)})
+	}
+	if r.MaxAgeDays < 1 {
+		errs = append(errs, ValidationError{prefix + ".max_age_days", "must be >= 1"})
+	} else if r.MaxAgeDays > telemetryMaxAgeDaysHardCap {
+		errs = append(errs, ValidationError{prefix + ".max_age_days", fmt.Sprintf("must be <= %d", telemetryMaxAgeDaysHardCap)})
+	}
+
+	// Soft warning. Only meaningful when the hard bounds are satisfied so the
+	// product can't underflow into a misleading number.
+	if len(errs) == 0 {
+		bytesPerServer := int64(r.MaxSizeMB) * 1024 * 1024 * int64(r.MaxBackups)
+		if bytesPerServer > telemetryWarnBytesPerServer {
+			slog.Warn("telemetry retention exceeds soft cap; per-server footprint may grow large",
+				"max_size_mb", r.MaxSizeMB,
+				"max_backups", r.MaxBackups,
+				"per_server_bytes", bytesPerServer,
+				"soft_cap_bytes", telemetryWarnBytesPerServer,
+			)
+		}
 	}
 
 	return errs
