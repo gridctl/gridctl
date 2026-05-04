@@ -95,13 +95,13 @@ func startAuthedGitHTTPServer(t *testing.T, bareParent, validToken string) *http
 	}
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, _, ok := r.BasicAuth()
+		_, pass, ok := r.BasicAuth()
 		switch {
 		case !ok:
 			w.Header().Set("WWW-Authenticate", `Basic realm="gridctl-it"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
-		case user != validToken:
+		case pass != validToken:
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}

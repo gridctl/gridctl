@@ -49,8 +49,9 @@ func TestAuthForSource_Token_ResolvesCredentialRef(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *http.BasicAuth, got %T", got)
 	}
-	if basic.Username != "ghp_real_token" {
-		t.Errorf("username: got %q, want resolved token", basic.Username)
+	if basic.Username != "x-access-token" || basic.Password != "ghp_real_token" {
+		t.Errorf("basic auth: got user=%q pass=%q, want user=%q pass=%q",
+			basic.Username, basic.Password, "x-access-token", "ghp_real_token")
 	}
 }
 
