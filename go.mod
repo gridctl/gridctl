@@ -12,7 +12,7 @@ require (
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/evanw/esbuild v0.28.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/getkin/kin-openapi v0.136.0
+	github.com/getkin/kin-openapi v0.137.0
 	github.com/go-git/go-git/v5 v5.18.0
 	github.com/jedib0t/go-pretty/v6 v6.7.10
 	github.com/mattn/go-isatty v0.0.21
