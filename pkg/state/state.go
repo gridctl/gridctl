@@ -242,6 +242,33 @@ func EnsureLogDir() error {
 	return os.MkdirAll(LogDir(), 0755)
 }
 
+// TelemetryDir returns the root directory for opt-in telemetry persistence
+// (~/.gridctl/telemetry/). Subtree layout: <stack>/<server>/{logs,metrics,traces}.jsonl.
+func TelemetryDir() string {
+	return filepath.Join(BaseDir(), "telemetry")
+}
+
+// TelemetryServerDir returns the per-server directory under TelemetryDir for
+// the given stack and server.
+func TelemetryServerDir(stackName, serverName string) string {
+	return filepath.Join(TelemetryDir(), stackName, serverName)
+}
+
+// TelemetryServerPath returns the path to a single signal file for a server.
+// signal must be "logs", "metrics", or "traces"; any string is accepted but
+// only those three are produced by the daemon.
+func TelemetryServerPath(stackName, serverName, signal string) string {
+	return filepath.Join(TelemetryServerDir(stackName, serverName), signal+".jsonl")
+}
+
+// EnsureTelemetryServerDir creates the per-server telemetry directory with
+// mode 0700, matching the vault/state convention. Any new directories on the
+// path inherit the same restrictive permissions because lumberjack will not
+// chmod them on its own.
+func EnsureTelemetryServerDir(stackName, serverName string) error {
+	return os.MkdirAll(TelemetryServerDir(stackName, serverName), 0700)
+}
+
 // WithLock executes fn while holding an exclusive lock on the stack state.
 // Returns error if lock cannot be acquired within timeout.
 func WithLock(name string, timeout time.Duration, fn func() error) error {
