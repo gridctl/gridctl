@@ -63,7 +63,7 @@ func TestHTTPSTokenAuth_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *http.BasicAuth, got %T", auth)
 	}
-	if ba.Username != "abc123" || ba.Password != "" {
+	if ba.Username != "x-access-token" || ba.Password != "abc123" {
 		t.Errorf("unexpected basic auth: user=%q pass=%q", ba.Username, ba.Password)
 	}
 }
