@@ -7,16 +7,17 @@ import (
 
 // Stack represents the complete gridctl configuration.
 type Stack struct {
-	Version    string          `yaml:"version"`
-	Name       string          `yaml:"name"`
-	Extends    string          `yaml:"extends,omitempty"`    // Path to a parent stack file for composition
-	Gateway    *GatewayConfig  `yaml:"gateway,omitempty"`
-	Logging    *LoggingConfig  `yaml:"logging,omitempty"`
-	Secrets    *Secrets        `yaml:"secrets,omitempty"`     // Variable set references
-	Network    Network         `yaml:"network"`               // Single network (simple mode)
-	Networks   []Network       `yaml:"networks,omitempty"`    // Multiple networks (advanced mode)
-	MCPServers []MCPServer     `yaml:"mcp-servers"`
-	Resources  []Resource      `yaml:"resources,omitempty"`
+	Version    string           `yaml:"version"`
+	Name       string           `yaml:"name"`
+	Extends    string           `yaml:"extends,omitempty"` // Path to a parent stack file for composition
+	Gateway    *GatewayConfig   `yaml:"gateway,omitempty"`
+	Logging    *LoggingConfig   `yaml:"logging,omitempty"`
+	Telemetry  *TelemetryConfig `yaml:"telemetry,omitempty"` // Opt-in disk persistence for logs/metrics/traces
+	Secrets    *Secrets         `yaml:"secrets,omitempty"`   // Variable set references
+	Network    Network          `yaml:"network"`             // Single network (simple mode)
+	Networks   []Network        `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
+	MCPServers []MCPServer      `yaml:"mcp-servers"`
+	Resources  []Resource       `yaml:"resources,omitempty"`
 }
 
 // LoggingConfig configures log file output with automatic rotation.
@@ -30,6 +31,60 @@ type LoggingConfig struct {
 	MaxAgeDays int `yaml:"maxAgeDays,omitempty" json:"maxAgeDays,omitempty"`
 	// MaxBackups is the maximum number of compressed old log files to keep (default: 3).
 	MaxBackups int `yaml:"maxBackups,omitempty" json:"maxBackups,omitempty"`
+}
+
+// TelemetryConfig configures opt-in disk persistence for the three signals
+// gridctl already captures (logs, metrics, traces). All fields are optional;
+// when the block is omitted entirely, every signal stays ephemeral (today's
+// behavior). Per-server overrides on MCPServer.Telemetry can flip individual
+// signals on or off relative to these defaults.
+//
+// Stack-global Persist fields are plain bool (binary on/off). Per-server
+// MCPServerPersistence fields are *bool to express tri-state inheritance —
+// see MCPServerTelemetry.
+type TelemetryConfig struct {
+	// Persist names which signals are written to disk by default. Per-server
+	// blocks can override individual signals.
+	Persist TelemetryPersistence `yaml:"persist,omitempty" json:"persist,omitempty"`
+	// Retention controls lumberjack rotation for every persisted signal file.
+	// SetDefaults fills sensible defaults when this block is omitted.
+	Retention *RetentionConfig `yaml:"retention,omitempty" json:"retention,omitempty"`
+}
+
+// TelemetryPersistence is the stack-global signal toggle. Stack-global is
+// binary (a bool) — the per-server override carries the tri-state.
+type TelemetryPersistence struct {
+	Logs    bool `yaml:"logs,omitempty" json:"logs,omitempty"`
+	Metrics bool `yaml:"metrics,omitempty" json:"metrics,omitempty"`
+	Traces  bool `yaml:"traces,omitempty" json:"traces,omitempty"`
+}
+
+// RetentionConfig controls lumberjack rotation for persisted telemetry files.
+// One block per stack — per-signal retention is intentionally out of scope at
+// MVP. Defaults: 100MB / 5 backups / 7d. YAML tags use snake_case to match the
+// AutoscaleConfig precedent for control-plane structs (LoggingConfig uses
+// camelCase, but is closer to a runtime-rotation knob than a control-plane
+// resource).
+type RetentionConfig struct {
+	MaxSizeMB  int `yaml:"max_size_mb,omitempty" json:"max_size_mb,omitempty"`
+	MaxBackups int `yaml:"max_backups,omitempty" json:"max_backups,omitempty"`
+	MaxAgeDays int `yaml:"max_age_days,omitempty" json:"max_age_days,omitempty"`
+}
+
+// MCPServerTelemetry holds per-server telemetry persistence overrides. Each
+// *bool field uses tri-state semantics: nil = inherit stack-global, &true =
+// explicitly persist, &false = explicitly do not persist (overrides stack
+// global). Never default these to &false in SetDefaults — that would collapse
+// inherit and explicit-off into the same value.
+type MCPServerTelemetry struct {
+	Persist MCPServerPersistence `yaml:"persist,omitempty" json:"persist,omitempty"`
+}
+
+// MCPServerPersistence is the *bool tri-state mirror of TelemetryPersistence.
+type MCPServerPersistence struct {
+	Logs    *bool `yaml:"logs,omitempty" json:"logs,omitempty"`
+	Metrics *bool `yaml:"metrics,omitempty" json:"metrics,omitempty"`
+	Traces  *bool `yaml:"traces,omitempty" json:"traces,omitempty"`
 }
 
 // Secrets configures automatic secret injection from variable sets.
@@ -167,6 +222,10 @@ type MCPServer struct {
 	// autoscaling bounded by Min and Max. Mutually exclusive with Replicas.
 	// Not supported on external URL or OpenAPI transports.
 	Autoscale *AutoscaleConfig `yaml:"autoscale,omitempty" json:"autoscale,omitempty"`
+
+	// Telemetry, when set, overrides stack-global telemetry persistence for
+	// this server. nil fields inherit; *bool fields explicitly opt in or out.
+	Telemetry *MCPServerTelemetry `yaml:"telemetry,omitempty" json:"telemetry,omitempty"`
 }
 
 // AutoscaleConfig controls reactive autoscaling of a ReplicaSet. All fields are
@@ -327,6 +386,33 @@ func (s *MCPServer) IsContainerBased() bool {
 	return !s.IsExternal() && !s.IsLocalProcess() && !s.IsSSH() && !s.IsOpenAPI()
 }
 
+// PersistLogs reports whether log persistence is effectively enabled for this
+// server. An explicit per-server *bool override wins; otherwise the stack-
+// global default is returned. Returns false when both stack and server are
+// nil.
+func (s *MCPServer) PersistLogs(stack *Stack) bool {
+	if s != nil && s.Telemetry != nil && s.Telemetry.Persist.Logs != nil {
+		return *s.Telemetry.Persist.Logs
+	}
+	return stack != nil && stack.Telemetry != nil && stack.Telemetry.Persist.Logs
+}
+
+// PersistMetrics — see PersistLogs for inheritance semantics.
+func (s *MCPServer) PersistMetrics(stack *Stack) bool {
+	if s != nil && s.Telemetry != nil && s.Telemetry.Persist.Metrics != nil {
+		return *s.Telemetry.Persist.Metrics
+	}
+	return stack != nil && stack.Telemetry != nil && stack.Telemetry.Persist.Metrics
+}
+
+// PersistTraces — see PersistLogs for inheritance semantics.
+func (s *MCPServer) PersistTraces(stack *Stack) bool {
+	if s != nil && s.Telemetry != nil && s.Telemetry.Persist.Traces != nil {
+		return *s.Telemetry.Persist.Traces
+	}
+	return stack != nil && stack.Telemetry != nil && stack.Telemetry.Persist.Traces
+}
+
 // Source defines how to build an MCP server from source code.
 type Source struct {
 	Type       string      `yaml:"type"` // "git" or "local"
@@ -462,5 +548,22 @@ func (s *Stack) SetDefaults() {
 		}
 	}
 
+	// Telemetry retention defaults. Only fill when the stack opts in to
+	// telemetry; never synthesize a Telemetry block on stacks that omit one,
+	// since that would change parsed-config equality vs today's behavior.
+	if s.Telemetry != nil {
+		if s.Telemetry.Retention == nil {
+			s.Telemetry.Retention = &RetentionConfig{}
+		}
+		if s.Telemetry.Retention.MaxSizeMB == 0 {
+			s.Telemetry.Retention.MaxSizeMB = 100
+		}
+		if s.Telemetry.Retention.MaxBackups == 0 {
+			s.Telemetry.Retention.MaxBackups = 5
+		}
+		if s.Telemetry.Retention.MaxAgeDays == 0 {
+			s.Telemetry.Retention.MaxAgeDays = 7
+		}
+	}
 }
 
