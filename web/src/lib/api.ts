@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SkillTestResult } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SkillTestResult, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -1205,3 +1205,144 @@ export async function mcpRequest<T>(
 
   return result.result as T;
 }
+
+// === Telemetry Persistence (Phase 4) ===
+
+/**
+ * StackModifiedError surfaces the structured 409 envelope from the
+ * telemetry PATCH endpoints when the on-disk YAML changed between the
+ * handler reading it and the atomic write. Callers should toast the hint
+ * ("Reload the file to see the latest contents") and offer a refresh.
+ */
+export class StackModifiedError extends Error {
+  code: string;
+  hint?: string;
+  constructor(message: string, hint?: string) {
+    super(message);
+    this.name = 'StackModifiedError';
+    this.code = 'stack_modified';
+    this.hint = hint;
+  }
+}
+
+export interface UpdateStackTelemetryBody {
+  persist?: {
+    logs?: boolean | null;
+    metrics?: boolean | null;
+    traces?: boolean | null;
+  };
+  retention?: {
+    max_size_mb?: number;
+    max_backups?: number;
+    max_age_days?: number;
+  };
+}
+
+// Per-server PATCH body. Values are: undefined = no change, null = clear
+// override (revert to inherit), bool = set explicit override. The whole
+// `persist` field set to null deletes the entire telemetry block from the
+// server entry — matching the "clear all overrides" idiom.
+export interface UpdateServerTelemetryBody {
+  persist?: {
+    logs?: boolean | null;
+    metrics?: boolean | null;
+    traces?: boolean | null;
+  } | null;
+}
+
+export interface WipeTelemetryOpts {
+  server?: string;
+  signal?: 'logs' | 'metrics' | 'traces';
+}
+
+async function telemetryMutate<T>(
+  url: string,
+  init: RequestInit,
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${url}`, {
+    ...init,
+    headers: { ...buildHeaders({ 'Content-Type': 'application/json' }), ...(init.headers || {}) },
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  // The body is JSON for both success and structured-error responses.
+  // For 409 the server returns {error: {code, message, hint}}; for 422
+  // it returns {error, validation}; otherwise plain {error: "..."}.
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const err = (data as { error?: unknown } | null)?.error;
+    if (response.status === 409 && err && typeof err === 'object' && (err as { code?: string }).code === 'stack_modified') {
+      const e = err as { message?: string; hint?: string };
+      throw new StackModifiedError(
+        e.message ?? 'The stack file was modified outside the canvas.',
+        e.hint ?? 'Reload the file to see the latest contents, then re-apply your changes.',
+      );
+    }
+    const msg = typeof err === 'string' ? err : `Telemetry request failed: ${response.status}`;
+    throw new HTTPError(response.status, msg);
+  }
+  return data as T;
+}
+
+/**
+ * Update the stack-global telemetry block. Returns the refreshed inventory
+ * snapshot alongside the success flag so callers can update the store
+ * without a follow-up GET.
+ * PATCH /api/stack/telemetry
+ */
+export async function updateStackTelemetry(
+  body: UpdateStackTelemetryBody,
+): Promise<TelemetryMutationResponse> {
+  return telemetryMutate<TelemetryMutationResponse>('/api/stack/telemetry', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Update per-server telemetry overrides. `body.persist === null` clears
+ * the entire per-server telemetry block; per-signal `null` clears that
+ * single override; bool sets an explicit override.
+ * PATCH /api/mcp-servers/{name}/telemetry
+ */
+export async function updateServerTelemetry(
+  name: string,
+  body: UpdateServerTelemetryBody,
+): Promise<TelemetryMutationResponse> {
+  return telemetryMutate<TelemetryMutationResponse>(
+    `/api/mcp-servers/${encodeURIComponent(name)}/telemetry`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Fetch the current on-disk telemetry inventory. Returns one record per
+ * (server, signal) pair where at least one file exists.
+ * GET /api/telemetry/inventory
+ */
+export async function getTelemetryInventory(): Promise<InventoryRecord[]> {
+  return fetchJSON<InventoryRecord[]>('/api/telemetry/inventory');
+}
+
+/**
+ * Wipe persisted telemetry files. Empty server/signal acts as a wildcard;
+ * passing neither wipes everything for the active stack.
+ * DELETE /api/telemetry?server=&signal=
+ */
+export async function wipeTelemetry(
+  opts: WipeTelemetryOpts = {},
+): Promise<TelemetryMutationResponse> {
+  const params = new URLSearchParams();
+  if (opts.server) params.set('server', opts.server);
+  if (opts.signal) params.set('signal', opts.signal);
+  const query = params.toString();
+  const url = query ? `/api/telemetry?${query}` : '/api/telemetry';
+  return telemetryMutate<TelemetryMutationResponse>(url, { method: 'DELETE' });
+}
+
+// Re-export the types used in mutation arguments so callers do not need to
+// reach into the types module separately.
+export type { TelemetryPersistDefaults, TelemetryRetention };
