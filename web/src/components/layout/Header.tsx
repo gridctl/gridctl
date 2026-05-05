@@ -9,6 +9,7 @@ import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api'
 import { VaultPanel } from '../vault/VaultPanel';
 import { SpecDiffModal } from '../spec/SpecDiffModal';
 import { CreationWizard } from '../wizard/CreationWizard';
+import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import logoSvg from '../../assets/brand/logo.svg';
@@ -144,6 +145,9 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
             </span>
           </div>
         )}
+
+        {/* Telemetry Persistence Pill (between stack name and server count) */}
+        {isConnected && <HeaderTelemetryPill />}
 
         {/* Server Count */}
         {totalCount > 0 && (
