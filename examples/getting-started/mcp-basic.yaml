@@ -14,6 +14,22 @@ name: mcp-basic
 network:
   name: mcp-basic-net
 
+# Opt-in telemetry persistence. Without this block, logs/metrics/traces stay
+# in the in-memory ring buffers (today's behavior). Uncomment to write each
+# enabled signal to ~/.gridctl/telemetry/<stack>/<server>/<signal>.jsonl with
+# lumberjack rotation. Per-server `telemetry` blocks below can override any
+# signal — omit a field to inherit, set true/false to override.
+#
+# telemetry:
+#   persist:
+#     logs: true
+#     metrics: false
+#     traces: true
+#   retention:
+#     max_size_mb: 100
+#     max_backups: 5
+#     max_age_days: 7
+
 mcp-servers:
   # Primary server — exposes only specific tools (server-level filtering)
   - name: tools-server
@@ -22,6 +38,9 @@ mcp-servers:
     command: ["sh", "-c", "while true; do sleep 3600; done"]
     description: "Primary tools server"
     tools: ["read", "list", "search"]  # Only these tools are exposed to clients
+    # telemetry:
+    #   persist:
+    #     traces: false   # explicit override: skip traces for this server only
 
   # Secondary server — all tools exposed (no filtering)
   - name: secondary-server
