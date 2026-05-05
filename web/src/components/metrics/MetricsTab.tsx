@@ -20,6 +20,7 @@ import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatCompactNumber } from '../../lib/format';
 import { POLLING } from '../../lib/constants';
 import { AreaChart } from '../chart/AreaChart';
+import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import type { TokenMetricsResponse } from '../../types';
 
 type TimeRange = 'live' | '1h' | '6h' | '24h' | '7d';
@@ -294,6 +295,12 @@ export function MetricsTab() {
         {/* Data view — shown even while loading if we have stale data to prevent flash */}
         {!error && hasData && (
           <div className="space-y-4">
+            {/* Aggregate persisted-from boundary — only renders when at
+                least one server has metrics persistence enabled and files
+                exist on disk. Sits above the KPI cards so it reads as a
+                provenance hint for the data below. */}
+            <PersistedFromMarker serverName={null} signal="metrics" />
+
             {/* KPI Cards */}
             <div className={cn('grid gap-3', savingsPercent > 0 ? 'grid-cols-4' : 'grid-cols-3')}>
               <KPICard label="Input Tokens" value={sessionInput} colorClass="text-secondary" />
