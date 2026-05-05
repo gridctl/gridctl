@@ -2,24 +2,23 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-beta.8] - 2026-05-05
 
-
-### Features
-
-
-- Add telemetry persistence schema and resolvers (phase 1 of #550) ([#551](https://github.com/gridctl/gridctl/pull/551))
-- Add telemetry persistence backends (phase 2 of #550) ([#552](https://github.com/gridctl/gridctl/pull/552))
-- Add telemetry persistence API endpoints (phase 3 of #550) ([#553](https://github.com/gridctl/gridctl/pull/553))
-- Add telemetry persistence frontend (phase 4 of #550) ([#554](https://github.com/gridctl/gridctl/pull/554))
-- Add telemetry persistence CLI (phase 5 of #550) ([#555](https://github.com/gridctl/gridctl/pull/555))
 
 ### Bug Fixes
 
 
+- Make stack append safe (lock+TOCTOU+atomic) ([#547](https://github.com/gridctl/gridctl/pull/547))
 - Use x-access-token in HTTPS basic auth ([#549](https://github.com/gridctl/gridctl/pull/549))
 
-## [0.1.0-beta.7] - 2026-04-28
+### Features
+
+
+- Add telemetry persistence schema and resolvers ([#551](https://github.com/gridctl/gridctl/pull/551))
+- Add telemetry persistence backends ([#552](https://github.com/gridctl/gridctl/pull/552))
+- Add telemetry persistence API endpoints ([#553](https://github.com/gridctl/gridctl/pull/553))
+- Add telemetry persistence frontend ([#554](https://github.com/gridctl/gridctl/pull/554))
+- Add telemetry persistence CLI ([#555](https://github.com/gridctl/gridctl/pull/555))## [0.1.0-beta.7] - 2026-04-28
 
 
 ### Bug Fixes
