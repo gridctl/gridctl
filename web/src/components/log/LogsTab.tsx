@@ -12,6 +12,7 @@ import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
 import { LogLine, LevelFilter, ZoomControls, parseLogEntry, type LogLevel, type ParsedLog } from '../log';
+import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { useUIStore } from '../../stores/useUIStore';
 import { useSelectedNodeData } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -334,6 +335,16 @@ export function LogsTab() {
         {/* Log entries */}
         {hasSource && !isLoading && !error && (filteredLogs?.length ?? 0) > 0 && (
           <div className="divide-y divide-border/20">
+            {/* Boundary marker — visible only when the selected node is an
+                MCP server with logs persistence enabled and files on disk.
+                Marks where on-disk seeded data ends; live entries appear
+                below it. */}
+            {selectedData?.type === 'mcp-server' && (
+              <PersistedFromMarker
+                serverName={(selectedData as { name?: string }).name ?? null}
+                signal="logs"
+              />
+            )}
             {(filteredLogs ?? []).map((log, i) => (
               <LogLine
                 key={i}
