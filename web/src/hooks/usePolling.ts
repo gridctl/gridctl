@@ -4,7 +4,8 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { usePinsStore } from '../stores/usePinsStore';
 import { useUIStore } from '../stores/useUIStore';
-import { fetchStatus, fetchTools, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchServerPins, AuthError } from '../lib/api';
+import { useTelemetryStore } from '../stores/useTelemetryStore';
+import { fetchStatus, fetchTools, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 
@@ -60,6 +61,28 @@ export function usePolling() {
         _prevDriftCount = driftedCount;
       } catch {
         // Pins endpoint unavailable (feature not enabled) — suppress silently
+      }
+
+      // Fetch telemetry inventory + stack spec — progressive disclosure.
+      // Inventory drives the header pill / wipe modal / graph dot; the
+      // raw spec is parsed client-side to derive the per-server overrides
+      // the tri-state controls need. Both endpoints fail closed: an
+      // unrelated API error (or stackless mode) collapses to empty data
+      // without surfacing a global error.
+      try {
+        const records = await getTelemetryInventory();
+        useTelemetryStore.getState().setInventory(records);
+      } catch {
+        // Telemetry endpoint may be unreachable (stackless mode, older
+        // daemon); leave the prior snapshot in place silently.
+      }
+      try {
+        const spec = await fetchStackSpec();
+        useTelemetryStore.getState().setRawSpec(spec.content);
+      } catch {
+        // Stackless mode returns 503; clear so the UI does not show
+        // stale telemetry config from a previous stack.
+        useTelemetryStore.getState().setRawSpec(null);
       }
 
       // Fetch registry data — progressive disclosure, never blocks main cycle
