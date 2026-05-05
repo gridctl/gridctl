@@ -27,7 +27,13 @@ export function SkillActions({
   className,
 }: SkillActionsProps) {
   return (
-    <div className={cn('flex items-center gap-0.5', className)}>
+    <div
+      className={cn(
+        'flex items-center gap-0.5 opacity-60 transition-opacity duration-200',
+        'group-hover:opacity-100 group-focus-within:opacity-100 hover:opacity-100',
+        className,
+      )}
+    >
       {showToggle && (
         skill.state === 'active' ? (
           <IconButton
