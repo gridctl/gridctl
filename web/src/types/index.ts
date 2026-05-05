@@ -523,3 +523,76 @@ export interface UpdateSummary {
   available: number;
   sources: SourceUpdateSummary[];
 }
+
+// --- Telemetry Persistence Types (Phase 4) ---
+
+// Three signal types persisted to disk. Lower-case wire shape matches the
+// Go struct's YAML tags so request bodies round-trip without renaming.
+export type TelemetrySignal = 'logs' | 'metrics' | 'traces';
+
+// Stack-global persist defaults are plain bools (binary on/off). Per-server
+// overrides use *bool semantics — see ServerPersistOverride below.
+export interface TelemetryPersistDefaults {
+  logs?: boolean;
+  metrics?: boolean;
+  traces?: boolean;
+}
+
+// One block per stack — per-signal retention is intentionally out of scope
+// at MVP. Defaults filled by SetDefaults: 100MB / 5 backups / 7d.
+export interface TelemetryRetention {
+  max_size_mb?: number;
+  max_backups?: number;
+  max_age_days?: number;
+}
+
+export interface TelemetryConfig {
+  persist?: TelemetryPersistDefaults;
+  retention?: TelemetryRetention;
+}
+
+// Per-server overrides are tri-state in the YAML: absent (inherit),
+// explicit true, explicit false. We keep null for "explicitly absent"
+// after the parser drops the key, so the UI can distinguish a freshly
+// cleared override from one that was never set.
+export type OverrideValue = boolean | null;
+
+export interface ServerPersistOverride {
+  logs?: OverrideValue;
+  metrics?: OverrideValue;
+  traces?: OverrideValue;
+}
+
+export interface MCPServerTelemetryOverride {
+  persist?: ServerPersistOverride;
+}
+
+// Inventory record from GET /api/telemetry/inventory. One entry per (server,
+// signal) pair where at least one file exists. SizeBytes/FileCount aggregate
+// the active jsonl plus rotated lumberjack siblings.
+export interface InventoryRecord {
+  server: string;
+  signal: TelemetrySignal;
+  path: string;
+  sizeBytes: number;
+  oldestTime: string; // RFC3339
+  newestTime: string; // RFC3339
+  fileCount: number;
+}
+
+// Standard envelope for PATCH/DELETE telemetry endpoints. The refreshed
+// inventory snapshot lets callers update the store in-place without an
+// extra round-trip.
+export interface TelemetryMutationResponse {
+  success: boolean;
+  inventory: InventoryRecord[];
+}
+
+// Resolved view derived from the parsed stack YAML. global is the
+// stack.telemetry block; servers maps server name → its (possibly empty)
+// override block. retention is the stack-wide retention config.
+export interface ResolvedTelemetry {
+  global: TelemetryPersistDefaults;
+  retention?: TelemetryRetention;
+  servers: Record<string, ServerPersistOverride>;
+}
