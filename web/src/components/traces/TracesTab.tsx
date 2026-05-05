@@ -10,6 +10,7 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import { TraceWaterfall } from './TraceWaterfall';
+import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { POLLING } from '../../lib/constants';
 
 function formatTime(iso: string): string {
@@ -257,6 +258,9 @@ export function TracesTab() {
               className="flex-1 overflow-y-auto scrollbar-dark min-h-0"
               style={{ '--text-zoom-size': `${fontSize}px` } as React.CSSProperties}
             >
+              {/* Provenance boundary — top-of-list marker when any server
+                  has traces persistence enabled with files on disk. */}
+              <PersistedFromMarker serverName={null} signal="traces" />
               <table className="w-full">
                 <thead className="sticky top-0 z-10 bg-surface-elevated/95 backdrop-blur-sm">
                   <tr className="border-b border-border/30">
