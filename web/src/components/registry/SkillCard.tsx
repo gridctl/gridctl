@@ -36,22 +36,22 @@ export const SkillCard = memo(({
     <div
       style={style}
       className={cn(
-        'relative rounded-xl overflow-hidden flex flex-col',
+        'group relative rounded-xl overflow-hidden flex flex-col',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.02]',
-        'border-border/60 hover:border-primary/40 hover:shadow-node-hover',
+        'border-white/[0.08] hover:border-primary/40 focus-within:border-primary/40 hover:shadow-node-hover',
         className,
       )}
     >
-      {/* Top accent line */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+      {/* Top accent line — muted at rest, warms on hover/focus */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 group-hover:via-primary/40 group-focus-within:via-primary/40 to-transparent transition-colors duration-200" />
 
       {/* Card body */}
       <div className="p-3 flex flex-col gap-2 flex-1">
         {/* Header: icon + name + state badge */}
         <div className="flex items-start gap-2">
-          <div className="p-1.5 rounded-md border bg-primary/10 border-primary/20 flex-shrink-0 mt-0.5">
-            <BookOpen size={14} className="text-primary/70" />
+          <div className="p-1.5 rounded-md border bg-surface-highlight/60 border-border/40 flex-shrink-0 mt-0.5 transition-colors duration-200 group-hover:bg-primary/10 group-hover:border-primary/20 group-focus-within:bg-primary/10 group-focus-within:border-primary/20">
+            <BookOpen size={14} className="text-text-muted transition-colors duration-200 group-hover:text-primary/70 group-focus-within:text-primary/70" />
           </div>
           <span className="font-semibold log-text text-text-primary truncate flex-1 min-w-0 leading-tight mt-0.5">
             {skill.name}

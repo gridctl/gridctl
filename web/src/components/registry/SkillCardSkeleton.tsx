@@ -2,9 +2,9 @@ import { memo } from 'react';
 
 export const SkillCardSkeleton = memo(() => {
   return (
-    <div className="relative rounded-xl overflow-hidden flex flex-col backdrop-blur-xl border border-border/60 bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.02]">
-      {/* Top accent line */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+    <div className="relative rounded-xl overflow-hidden flex flex-col backdrop-blur-xl border border-white/[0.08] bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.02]">
+      {/* Top accent line — neutral to match the new muted card resting state */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
       {/* Card body */}
       <div className="p-3 flex flex-col gap-2 flex-1">

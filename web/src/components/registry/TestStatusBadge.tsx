@@ -30,7 +30,7 @@ export function TestStatusBadge({
   if (untested) {
     icon = <Minus size={11} />;
     label = 'untested';
-    color = 'text-amber-400/80 bg-amber-400/8 border-amber-400/20';
+    color = 'text-text-muted bg-surface-highlight/60 border-border/40';
     title = 'No test run yet';
   } else if (failed) {
     icon = <XCircle size={11} />;
