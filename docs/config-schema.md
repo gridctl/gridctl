@@ -158,6 +158,108 @@ gateway:
 
 ---
 
+## Telemetry Persistence
+
+Opt-in disk persistence for the three signals gridctl already captures: logs, metrics, and traces. Without a `telemetry` block every signal stays ephemeral (today's behavior); the runtime ring buffers, web UI, and OTLP exporter are unaffected.
+
+```yaml
+telemetry:
+  persist:
+    logs: true
+    metrics: false
+    traces: true
+  retention:
+    max_size_mb: 100
+    max_backups: 5
+    max_age_days: 7
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `persist` | object | No | all `false` | Stack-global toggles for each signal. Per-server blocks override individual signals |
+| `retention` | object | No | See below | Lumberjack rotation policy applied to every persisted signal file in this stack |
+
+### Persist
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `logs` | bool | No | `false` | Persist logs to `<server>/logs.jsonl` (NDJSON of buffered slog entries) |
+| `metrics` | bool | No | `false` | Persist metrics to `<server>/metrics.jsonl` (one diff snapshot per flush) |
+| `traces` | bool | No | `false` | Persist traces to `<server>/traces.jsonl` (OTLP-JSON envelopes per the [OpenTelemetry File Exporter spec](https://opentelemetry.io/docs/specs/otel/protocol/file-exporter/)) |
+
+### Retention
+
+Controls lumberjack rotation. One block per stack — per-signal retention is intentionally out of scope at MVP.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `max_size_mb` | int | No | `100` | Active file size in MB before rotation. Must be `>= 1` |
+| `max_backups` | int | No | `5` | Number of rotated siblings kept per signal. Must be `>= 1` |
+| `max_age_days` | int | No | `7` | Maximum age of rotated siblings before deletion. Must be `>= 1` |
+
+**Validation:**
+- All three retention values must be positive integers within their hard caps (1 TiB, 1024 backups, 10 years).
+- `max_size_mb * max_backups` exceeding 5 GB per server logs a soft-cap warning at apply time. Worst-case footprint per server is `(max_backups + 1) × max_size_mb` MB.
+
+### Per-server Overrides
+
+The `telemetry` field on any `mcp-servers` entry overrides individual signals for that server only. Each `*bool` field uses tri-state semantics:
+
+| Value | Meaning |
+|-------|---------|
+| omitted | Inherit the stack-global value for this signal |
+| `true` | Explicitly persist this signal regardless of the stack-global value |
+| `false` | Explicitly do not persist this signal regardless of the stack-global value |
+
+```yaml
+telemetry:
+  persist: { logs: true, metrics: true, traces: true }
+
+mcp-servers:
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    telemetry:
+      persist:
+        traces: false   # noisy server: keep logs+metrics, drop traces
+  - name: filesystem
+    image: my/filesystem-mcp:latest
+    telemetry:
+      persist:
+        logs: false     # PII risk: never persist logs for this server
+```
+
+Removing the per-server `telemetry` block entirely (or via `DELETE` semantics in the API) reverts every signal for that server to the stack-global default.
+
+### Storage Layout
+
+```
+~/.gridctl/telemetry/<stack>/<server>/
+  logs.jsonl                    # active file
+  logs-2026-04-30T12-00-00.000.jsonl[.gz]   # rotated sibling
+  metrics.jsonl
+  traces.jsonl
+```
+
+- Files use mode `0600`; the `<stack>/<server>/` directories are `0700`. Matches the vault and state conventions.
+- Rotation is performed by [lumberjack](https://github.com/natefinch/lumberjack) on size; the configured `max_age_days` and `max_backups` are enforced at rotation time.
+- `traces.jsonl` is consumable as-is by the OTel collector's [`otlpjsonfilereceiver`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/otlpjsonfilereceiver/README.md) for replay into a real backend.
+
+### Inspection and Wipe
+
+The `gridctl telemetry` CLI operates directly on these files:
+
+| Command | Purpose |
+|---------|---------|
+| `gridctl telemetry status [stack] [--json]` | Inventory of on-disk telemetry across one or all stacks |
+| `gridctl telemetry wipe [stack] [--server X] [--signal Y] [-y]` | Delete persisted files; scopes to server/signal when provided |
+| `gridctl telemetry tail <stack> <server> --signal logs\|metrics\|traces` | `tail -f` the active signal file with lumberjack-rotation handling |
+
+The same operations are available over the REST API (`GET /api/telemetry/inventory`, `DELETE /api/telemetry`) and through the web UI's header Persistence pill, sidebar Telemetry section, and graph node dot indicator.
+
+**Default off in beta.** The feature stays opt-in until v0.2 stable — stacks without a `telemetry` block continue to behave exactly as today.
+
+---
+
 ## Secrets
 
 References variable sets from the vault for automatic secret injection into containers.
@@ -326,6 +428,7 @@ mcp-servers:
 | `replicas` | int | No | `1` | Number of independent processes to spawn for this server. Values >1 load-balance JSON-RPC tool calls across replicas using `replica_policy`. Range: 1–32. Not supported for external URL or OpenAPI transports. Mutually exclusive with `autoscale`. See [Scaling](scaling.md) |
 | `replica_policy` | string | No | `"round-robin"` | Dispatch policy when `replicas > 1` or `autoscale` is set: `"round-robin"` or `"least-connections"` |
 | `autoscale` | object | No | — | Reactive autoscaling block. Mutually exclusive with `replicas`. Not supported for external URL or OpenAPI transports. See [Autoscale](#autoscale) |
+| `telemetry` | object | No | — | Per-server telemetry persistence overrides. See [Per-server Overrides](#per-server-overrides) |
 
 **Type determination rules:**
 - Must have exactly one of: `image`, `source`, `url`, `command` (alone), `ssh` + `command`, or `openapi`
