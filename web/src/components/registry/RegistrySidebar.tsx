@@ -494,7 +494,7 @@ function SkillItem({
     <div
       ref={rowRef}
       className={cn(
-        'rounded-lg bg-surface-elevated/50 border overflow-hidden transition-colors',
+        'group rounded-lg bg-surface-elevated/50 border overflow-hidden transition-colors',
         isSelected ? 'border-primary/40 shadow-[0_0_0_1px_rgba(245,158,11,0.25)]' : 'border-border-subtle',
       )}
     >
