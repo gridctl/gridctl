@@ -17,6 +17,7 @@ import {
   Gauge,
   FileOutput,
   Activity,
+  Database,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
@@ -26,6 +27,7 @@ import { GatewaySidebar } from '../gateway/GatewaySidebar';
 import { TokenUsageSection } from '../sidebar/TokenUsageSection';
 import { ToolsEditor } from '../sidebar/ToolsEditor';
 import { AutoscalePanel } from '../status/AutoscalePanel';
+import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -369,6 +371,13 @@ export function Sidebar() {
               <FileText size={14} />
               Show Logs Panel
             </button>
+          </Section>
+        )}
+
+        {/* Telemetry Section (MCP servers only) — between Actions and Tools */}
+        {isServer && (
+          <Section title="Telemetry" icon={Database}>
+            <SidebarTelemetrySection serverName={data.name} />
           </Section>
         )}
 
