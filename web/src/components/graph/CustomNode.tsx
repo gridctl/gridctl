@@ -8,6 +8,7 @@ import { getTransportIcon, getTransportColorClasses } from '../../lib/transport'
 import { useUIStore } from '../../stores/useUIStore';
 import { useTokenHeat } from '../../hooks/useTokenHeat';
 import { LAYOUT } from '../../lib/constants';
+import { TelemetryNodeDot } from '../telemetry/TelemetryNodeDot';
 import type { MCPServerNodeData, ResourceNodeData } from '../../types';
 
 export type CustomNodeData = MCPServerNodeData | ResourceNodeData;
@@ -344,6 +345,12 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           </div>
         </div>
       </div>
+
+      {/* Telemetry persistence dot indicator (MCP servers only).
+          Anchored to the node body so it tracks the card edge in both
+          compact and full modes. Hidden on resources — they don't have a
+          telemetry config of their own. */}
+      {isServer && <TelemetryNodeDot serverName={(data as MCPServerNodeData).name} />}
 
       {/* Connection Handles - match node color */}
       <Handle
