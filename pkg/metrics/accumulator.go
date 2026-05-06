@@ -481,10 +481,10 @@ func downsampleToHour(buckets []bucket) []DataPoint {
 // repopulate cumulative counters from a persisted metrics.jsonl file.
 //
 // Existing per-server counters are overwritten for any server present in the
-// map; servers absent from the map retain their current state. Replicas,
-// time-series buckets, and format-savings counters are not restored — those
-// carry no on-disk equivalent in the snapshot format and reset to zero
-// post-restart, accruing fresh data as live activity resumes.
+// map; servers absent from the map retain their current state. Replicas and
+// format-savings counters are not restored — those carry no on-disk
+// equivalent in the snapshot format. Time-series ring buckets are populated
+// separately via ReplaySnapshot.
 func (a *Accumulator) Restore(perServer map[string]TokenCounts) {
 	if len(perServer) == 0 {
 		return
@@ -510,6 +510,30 @@ func (a *Accumulator) Restore(perServer map[string]TokenCounts) {
 	}
 	a.sessionInput.Store(sessionIn)
 	a.sessionOutput.Store(sessionOut)
+}
+
+// ReplaySnapshot adds a historical observation to the time-series ring
+// buffers (aggregate + per-server) without touching cumulative counters.
+// Used by telemetry.MetricsFlusher.SeedFromFile to rehydrate per-minute
+// bucket history from each persisted Diff line — the chart shows pre-restart
+// activity continuously alongside live data instead of resetting to a single
+// post-restart point.
+//
+// Cumulative counters are restored separately via Restore. Calling both with
+// the same source data reproduces the on-disk state.
+//
+// ts is bucketed to the minute via the same key the live Record path uses,
+// so chronological replay produces one bucket per flush minute and live
+// observations after replay continue advancing the same ring naturally.
+func (a *Accumulator) ReplaySnapshot(serverName string, ts time.Time, inputTokens, outputTokens int64) {
+	if inputTokens == 0 && outputTokens == 0 {
+		return
+	}
+	bucket := bucketKey(ts)
+	a.addToBucket(bucket, inputTokens, outputTokens)
+	if serverName != "" {
+		a.addToServerBucket(serverName, bucket, inputTokens, outputTokens)
+	}
 }
 
 // Clear resets all metrics — session totals, per-server totals, and history.
