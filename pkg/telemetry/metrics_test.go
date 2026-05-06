@@ -333,6 +333,64 @@ func TestMetricsFlusher_SeedFromFile(t *testing.T) {
 		}
 	})
 
+	t.Run("non-reset diffs replay as time-series buckets", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		// Two flush windows, each with a real Diff. The first line is a
+		// Reset line (carry-over from previous session) — its Diff should
+		// NOT replay into the time-series. The next two lines are normal
+		// diffs and SHOULD show up in the per-minute ring.
+		base := time.Now().UTC().Truncate(time.Minute).Add(-3 * time.Minute)
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   base,
+			Server: "github",
+			Reset:  true,
+			Diff:   metrics.TokenCounts{InputTokens: 10000, OutputTokens: 5000, TotalTokens: 15000},
+			Total:  metrics.TokenCounts{InputTokens: 10000, OutputTokens: 5000, TotalTokens: 15000},
+		})
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   base.Add(time.Minute),
+			Server: "github",
+			Diff:   metrics.TokenCounts{InputTokens: 7, OutputTokens: 3, TotalTokens: 10},
+			Total:  metrics.TokenCounts{InputTokens: 10007, OutputTokens: 5003, TotalTokens: 15010},
+		})
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   base.Add(2 * time.Minute),
+			Server: "github",
+			Diff:   metrics.TokenCounts{InputTokens: 11, OutputTokens: 5, TotalTokens: 16},
+			Total:  metrics.TokenCounts{InputTokens: 10018, OutputTokens: 5008, TotalTokens: 15026},
+		})
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+
+		ts := acc.Query(10 * time.Minute)
+		points, ok := ts.PerServer["github"]
+		if !ok {
+			t.Fatalf("github time-series missing from Query: %+v", ts.PerServer)
+		}
+		// The Reset line must NOT show up — only the two real diffs.
+		if len(points) != 2 {
+			t.Errorf("github points = %d; want 2 (Reset Diff should be skipped). points=%+v", len(points), points)
+		}
+		var totalIn, totalOut int64
+		for _, p := range points {
+			totalIn += p.InputTokens
+			totalOut += p.OutputTokens
+		}
+		if totalIn != 18 || totalOut != 8 {
+			t.Errorf("replayed totals = (%d,%d); want (18, 8) — only the two non-reset Diffs", totalIn, totalOut)
+		}
+		// Aggregate ring should also have the same minute-buckets.
+		if len(ts.Points) != 2 {
+			t.Errorf("aggregate points = %d; want 2", len(ts.Points))
+		}
+	})
+
 	t.Run("post-seed flush emits diff not reset", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "metrics.jsonl")

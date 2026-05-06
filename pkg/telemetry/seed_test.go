@@ -199,6 +199,25 @@ func TestEndToEnd_MetricsPersistAndReseed(t *testing.T) {
 		t.Errorf("seeded session total = %d; want 185", got)
 	}
 
+	// Pre-restart time-series buckets should also come back so the Token
+	// Usage Over Time chart shows pre-restart history continuously rather
+	// than a single post-restart point. The first flush is a Reset line
+	// (carry-over) and is intentionally skipped; only the second flush's
+	// Diff (25 in / 10 out) replays into the per-minute ring.
+	ts := acc2.Query(time.Hour)
+	githubPoints := ts.PerServer["github"]
+	if len(githubPoints) == 0 {
+		t.Errorf("github time-series points = 0 after seed; chart would be empty")
+	}
+	var seriesIn, seriesOut int64
+	for _, p := range githubPoints {
+		seriesIn += p.InputTokens
+		seriesOut += p.OutputTokens
+	}
+	if seriesIn != 25 || seriesOut != 10 {
+		t.Errorf("seeded series totals = (%d,%d); want (25, 10) — only the non-reset Diff", seriesIn, seriesOut)
+	}
+
 	// Live activity post-restart. flushOnce must emit a non-reset diff
 	// against the seeded baseline rather than re-emitting the seeded
 	// totals as if they were fresh.
