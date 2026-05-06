@@ -1,10 +1,12 @@
 package telemetry
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -287,6 +289,113 @@ func isCounterReset(prev, current metrics.TokenCounts) bool {
 	return current.InputTokens < prev.InputTokens ||
 		current.OutputTokens < prev.OutputTokens ||
 		current.TotalTokens < prev.TotalTokens
+}
+
+// SeedFromFile reads up to the last n NDJSON entries from path and seeds
+// three surfaces atomically: cumulative per-server totals (via Restore),
+// per-minute time-series ring buckets (via ReplaySnapshot), and this
+// flusher's previous-snapshot map. The Token Usage Over Time chart in the
+// UI is backed by the time-series ring; without the bucket replay it would
+// show only a single post-restart point.
+//
+// On-disk format mirrors flushOnce's output: full MetricsSnapshotLine
+// entries plus lighter reset sentinels ({reset, ts, server} only). Reset
+// sentinels parse with a zero Total and are immediately followed by a full
+// reset line whose Total carries the post-reset state — so taking the most
+// recent Total per server yields the correct seed value in either case.
+//
+// For time-series, only non-reset lines are replayed: a Reset line's Diff
+// carries the carry-over from prior sessions (full snapshot), not a single
+// minute's activity, so replaying it would create a synthetic spike at the
+// reset boundary.
+//
+// Missing or empty files return nil (expected on first run with persistence
+// enabled). Malformed lines are skipped without aborting; a single corrupt
+// line should not lose the rest of the history.
+func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
+	if path == "" || f.acc == nil {
+		return nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("seed metrics from %q: %w", path, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("seed metrics scan %q: %w", path, err)
+	}
+
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+
+	type seriesPoint struct {
+		server string
+		ts     time.Time
+		input  int64
+		output int64
+	}
+
+	// Latest Total per server feeds Restore + prev. Non-reset Diff entries
+	// feed ReplaySnapshot in chronological file order so per-minute buckets
+	// appear in the same shape they had during live operation.
+	latest := make(map[string]metrics.TokenCounts)
+	var series []seriesPoint
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var rec MetricsSnapshotLine
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			continue
+		}
+		if rec.Server == "" {
+			continue
+		}
+		latest[rec.Server] = rec.Total
+		if rec.Reset {
+			continue
+		}
+		if rec.Diff.InputTokens == 0 && rec.Diff.OutputTokens == 0 {
+			continue
+		}
+		series = append(series, seriesPoint{
+			server: rec.Server,
+			ts:     rec.Time,
+			input:  rec.Diff.InputTokens,
+			output: rec.Diff.OutputTokens,
+		})
+	}
+
+	if len(latest) == 0 {
+		return nil
+	}
+
+	// Replay time-series buckets first so the ring buffer fills in
+	// chronological order; then restore cumulative counters; then seed
+	// the flusher's prev map under the lock so the next flushOnce
+	// computes a real diff against the seeded baseline.
+	for _, p := range series {
+		f.acc.ReplaySnapshot(p.server, p.ts, p.input, p.output)
+	}
+	f.acc.Restore(latest)
+	f.mu.Lock()
+	for name, counts := range latest {
+		f.prev[name] = counts
+	}
+	f.mu.Unlock()
+	return nil
 }
 
 // touchMode0600 ensures the file exists with mode 0600. lumberjack would

@@ -475,6 +475,67 @@ func downsampleToHour(buckets []bucket) []DataPoint {
 	return result
 }
 
+// Restore replaces per-server token totals with the supplied map and
+// recomputes session totals as the sum across all servers (matching the
+// invariant Record/RecordReplica maintains). Used on daemon startup to
+// repopulate cumulative counters from a persisted metrics.jsonl file.
+//
+// Existing per-server counters are overwritten for any server present in the
+// map; servers absent from the map retain their current state. Replicas and
+// format-savings counters are not restored — those carry no on-disk
+// equivalent in the snapshot format. Time-series ring buckets are populated
+// separately via ReplaySnapshot.
+func (a *Accumulator) Restore(perServer map[string]TokenCounts) {
+	if len(perServer) == 0 {
+		return
+	}
+
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+
+	for name, counts := range perServer {
+		sc, ok := a.servers[name]
+		if !ok {
+			sc = &serverCounters{}
+			a.servers[name] = sc
+		}
+		sc.inputTokens.Store(counts.InputTokens)
+		sc.outputTokens.Store(counts.OutputTokens)
+	}
+
+	var sessionIn, sessionOut int64
+	for _, sc := range a.servers {
+		sessionIn += sc.inputTokens.Load()
+		sessionOut += sc.outputTokens.Load()
+	}
+	a.sessionInput.Store(sessionIn)
+	a.sessionOutput.Store(sessionOut)
+}
+
+// ReplaySnapshot adds a historical observation to the time-series ring
+// buffers (aggregate + per-server) without touching cumulative counters.
+// Used by telemetry.MetricsFlusher.SeedFromFile to rehydrate per-minute
+// bucket history from each persisted Diff line — the chart shows pre-restart
+// activity continuously alongside live data instead of resetting to a single
+// post-restart point.
+//
+// Cumulative counters are restored separately via Restore. Calling both with
+// the same source data reproduces the on-disk state.
+//
+// ts is bucketed to the minute via the same key the live Record path uses,
+// so chronological replay produces one bucket per flush minute and live
+// observations after replay continue advancing the same ring naturally.
+func (a *Accumulator) ReplaySnapshot(serverName string, ts time.Time, inputTokens, outputTokens int64) {
+	if inputTokens == 0 && outputTokens == 0 {
+		return
+	}
+	bucket := bucketKey(ts)
+	a.addToBucket(bucket, inputTokens, outputTokens)
+	if serverName != "" {
+		a.addToServerBucket(serverName, bucket, inputTokens, outputTokens)
+	}
+}
+
 // Clear resets all metrics — session totals, per-server totals, and history.
 func (a *Accumulator) Clear() {
 	a.sessionInput.Store(0)

@@ -277,6 +277,29 @@ func (b *GatewayBuilder) seedTracesFromDisk(handler slog.Handler) {
 	}
 }
 
+// seedMetricsFromDisk replays any existing per-server metrics.jsonl into the
+// accumulator's per-server totals AND the flusher's previous-snapshot map.
+// Called from buildAPIServer after the flusher is constructed but before any
+// Build phase can drive live tool calls — so seeded counters precede live
+// observations and the first post-restart flush computes a real diff against
+// the seeded baseline.
+func (b *GatewayBuilder) seedMetricsFromDisk(handler slog.Handler) {
+	if b.stack == nil || b.telemetry == nil || b.telemetry.metricsFlusher == nil {
+		return
+	}
+	logger := slog.New(handler)
+	for i := range b.stack.MCPServers {
+		srv := &b.stack.MCPServers[i]
+		if srv.Name == "" || !srv.PersistMetrics(b.stack) {
+			continue
+		}
+		path := state.TelemetryServerPath(b.stack.Name, srv.Name, "metrics")
+		if err := b.telemetry.metricsFlusher.SeedFromFile(path, telemetrySeedLimit); err != nil {
+			logger.Warn("telemetry: seed metrics failed", "server", srv.Name, "path", path, "error", err)
+		}
+	}
+}
+
 // Run starts the HTTP server, registers MCP servers, and blocks until shutdown.
 func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose bool) error {
 	gateway := inst.Gateway
@@ -521,6 +544,14 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 
 	// Apply the current stack's per-server persistence settings.
 	b.applyTelemetryConfig(server, handler)
+
+	// Seed the metrics accumulator from disk after writers are registered
+	// (so per-server directories exist) and before the flusher goroutine
+	// starts in Run. The seed updates both the accumulator's per-server
+	// totals and the flusher's prev map atomically — so the first post-
+	// restart flush emits a real diff against the seeded baseline rather
+	// than a fresh reset.
+	b.seedMetricsFromDisk(handler)
 
 	return server, nil
 }

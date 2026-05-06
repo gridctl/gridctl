@@ -2,6 +2,14 @@
 
 All notable changes to gridctl will be documented in this file.
 
+## [Unreleased]
+
+
+### Bug Fixes
+
+
+- Telemetry persistence write and seed gaps (#550 follow-up)
+
 ## [0.1.0-beta.8] - 2026-05-05
 
 

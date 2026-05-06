@@ -213,6 +213,256 @@ func TestMetricsFlusher_StartStopFinalFlush(t *testing.T) {
 	}
 }
 
+func TestMetricsFlusher_SeedFromFile(t *testing.T) {
+	t.Run("missing file is no-op", func(t *testing.T) {
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(filepath.Join(t.TempDir(), "missing.jsonl"), 100); err != nil {
+			t.Errorf("missing file should not error: %v", err)
+		}
+		if got := acc.Snapshot().Session.TotalTokens; got != 0 {
+			t.Errorf("session total = %d after missing-file seed; want 0", got)
+		}
+	})
+
+	t.Run("empty file is no-op", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatalf("write empty file: %v", err)
+		}
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Errorf("empty file should not error: %v", err)
+		}
+		if got := acc.Snapshot().Session.TotalTokens; got != 0 {
+			t.Errorf("session total = %d after empty-file seed; want 0", got)
+		}
+	})
+
+	t.Run("single line seeds totals and prev", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		// Write a single full snapshot line for github.
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   time.Now().UTC(),
+			Server: "github",
+			Reset:  true,
+			Diff:   metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+			Total:  metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+		})
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+
+		snap := acc.Snapshot()
+		if got := snap.Session.TotalTokens; got != 150 {
+			t.Errorf("session total = %d; want 150", got)
+		}
+		if got, ok := snap.PerServer["github"]; !ok || got.TotalTokens != 150 {
+			t.Errorf("per-server github = %+v; want total 150", got)
+		}
+
+		// prev must mirror the seeded total so the next flushOnce produces a
+		// real diff rather than a fresh reset.
+		f.mu.Lock()
+		prev, ok := f.prev["github"]
+		f.mu.Unlock()
+		if !ok || prev.TotalTokens != 150 {
+			t.Errorf("prev[github] = %+v (ok=%v); want total 150", prev, ok)
+		}
+	})
+
+	t.Run("reset sentinel mid-stream uses post-reset totals", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		// Pre-reset history.
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   time.Now().UTC(),
+			Server: "github",
+			Reset:  true,
+			Diff:   metrics.TokenCounts{InputTokens: 1000, OutputTokens: 500, TotalTokens: 1500},
+			Total:  metrics.TokenCounts{InputTokens: 1000, OutputTokens: 500, TotalTokens: 1500},
+		})
+		// Reset sentinel (lightweight form — reset/ts/server only).
+		writeRawLine(t, path, `{"reset":true,"ts":"2026-05-06T00:00:00Z","server":"github"}`)
+		// Post-reset full line with smaller totals.
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   time.Now().UTC(),
+			Server: "github",
+			Reset:  true,
+			Diff:   metrics.TokenCounts{InputTokens: 25, OutputTokens: 10, TotalTokens: 35},
+			Total:  metrics.TokenCounts{InputTokens: 25, OutputTokens: 10, TotalTokens: 35},
+		})
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+		got := acc.Snapshot().PerServer["github"]
+		if got.TotalTokens != 35 {
+			t.Errorf("github total = %d after post-reset seed; want 35", got.TotalTokens)
+		}
+	})
+
+	t.Run("malformed line is skipped", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		writeRawLine(t, path, `{not json`)
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   time.Now().UTC(),
+			Server: "github",
+			Total:  metrics.TokenCounts{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+		})
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+		if got := acc.Snapshot().PerServer["github"].TotalTokens; got != 15 {
+			t.Errorf("github total = %d; want 15 (malformed line should not block valid one)", got)
+		}
+	})
+
+	t.Run("non-reset diffs replay as time-series buckets", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		// Two flush windows, each with a real Diff. The first line is a
+		// Reset line (carry-over from previous session) — its Diff should
+		// NOT replay into the time-series. The next two lines are normal
+		// diffs and SHOULD show up in the per-minute ring.
+		base := time.Now().UTC().Truncate(time.Minute).Add(-3 * time.Minute)
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   base,
+			Server: "github",
+			Reset:  true,
+			Diff:   metrics.TokenCounts{InputTokens: 10000, OutputTokens: 5000, TotalTokens: 15000},
+			Total:  metrics.TokenCounts{InputTokens: 10000, OutputTokens: 5000, TotalTokens: 15000},
+		})
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   base.Add(time.Minute),
+			Server: "github",
+			Diff:   metrics.TokenCounts{InputTokens: 7, OutputTokens: 3, TotalTokens: 10},
+			Total:  metrics.TokenCounts{InputTokens: 10007, OutputTokens: 5003, TotalTokens: 15010},
+		})
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   base.Add(2 * time.Minute),
+			Server: "github",
+			Diff:   metrics.TokenCounts{InputTokens: 11, OutputTokens: 5, TotalTokens: 16},
+			Total:  metrics.TokenCounts{InputTokens: 10018, OutputTokens: 5008, TotalTokens: 15026},
+		})
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+
+		ts := acc.Query(10 * time.Minute)
+		points, ok := ts.PerServer["github"]
+		if !ok {
+			t.Fatalf("github time-series missing from Query: %+v", ts.PerServer)
+		}
+		// The Reset line must NOT show up — only the two real diffs.
+		if len(points) != 2 {
+			t.Errorf("github points = %d; want 2 (Reset Diff should be skipped). points=%+v", len(points), points)
+		}
+		var totalIn, totalOut int64
+		for _, p := range points {
+			totalIn += p.InputTokens
+			totalOut += p.OutputTokens
+		}
+		if totalIn != 18 || totalOut != 8 {
+			t.Errorf("replayed totals = (%d,%d); want (18, 8) — only the two non-reset Diffs", totalIn, totalOut)
+		}
+		// Aggregate ring should also have the same minute-buckets.
+		if len(ts.Points) != 2 {
+			t.Errorf("aggregate points = %d; want 2", len(ts.Points))
+		}
+	})
+
+	t.Run("post-seed flush emits diff not reset", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		// Seed with a baseline.
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   time.Now().UTC(),
+			Server: "github",
+			Reset:  true,
+			Diff:   metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+			Total:  metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+		})
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.AddServer("github", path, LogOpts{}); err != nil {
+			t.Fatalf("AddServer: %v", err)
+		}
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+
+		// Live activity post-restart.
+		acc.Record("github", 25, 10)
+		f.flushOnce(time.Now())
+
+		lines := readMetricsLines(t, path)
+		// Expect exactly one new line appended (a non-reset diff). No
+		// extra reset sentinel — that would mean prev was not seeded.
+		// The seed line is the original one written; the new line is last.
+		if len(lines) < 2 {
+			t.Fatalf("expected at least 2 lines after post-seed flush, got %d: %v", len(lines), lines)
+		}
+		var last MetricsSnapshotLine
+		if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil {
+			t.Fatalf("unmarshal last line: %v", err)
+		}
+		if last.Reset {
+			t.Errorf("post-seed flush emitted reset=true; prev was not seeded correctly. line=%s", lines[len(lines)-1])
+		}
+		if last.Diff.InputTokens != 25 || last.Diff.OutputTokens != 10 {
+			t.Errorf("post-seed diff = %+v; want {25,10,35} (only the new activity)", last.Diff)
+		}
+		if last.Total.InputTokens != 125 || last.Total.OutputTokens != 60 {
+			t.Errorf("post-seed total = %+v; want {125,60,185} (seeded baseline + new activity)", last.Total)
+		}
+	})
+}
+
+// writeMetricsLine appends one MetricsSnapshotLine as NDJSON to path.
+func writeMetricsLine(t *testing.T, path string, line MetricsSnapshotLine) {
+	t.Helper()
+	data, err := json.Marshal(line)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	writeRawLine(t, path, string(data))
+}
+
+// writeRawLine appends a raw line + newline to path.
+func writeRawLine(t *testing.T, path, line string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
 func readMetricsLines(t *testing.T, path string) []string {
 	t.Helper()
 	f, err := os.Open(path)
