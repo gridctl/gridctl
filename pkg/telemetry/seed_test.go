@@ -2,13 +2,16 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -147,6 +150,94 @@ func TestTracingBuffer_SeedFromFile_MissingFileNoError(t *testing.T) {
 	if got := buf.Count(); got != 0 {
 		t.Errorf("seeded buffer count = %d, want 0", got)
 	}
+}
+
+// TestEndToEnd_MetricsPersistAndReseed simulates a daemon restart with
+// metrics persistence enabled: record token usage, flush to disk, throw
+// away the accumulator + flusher, seed a fresh accumulator + flusher from
+// the same file, and verify the totals come back AND the very next live
+// flush emits a real diff (no reset, no double-counting).
+func TestEndToEnd_MetricsPersistAndReseed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metrics.jsonl")
+
+	// === Daemon "instance 1" ===
+	acc1 := metrics.NewAccumulator(100)
+	f1 := NewMetricsFlusher(acc1, time.Hour)
+	if err := f1.AddServer("github", path, LogOpts{}); err != nil {
+		t.Fatalf("AddServer: %v", err)
+	}
+	acc1.Record("github", 100, 50)
+	f1.flushOnce(time.Now())
+	acc1.Record("github", 25, 10)
+	f1.flushOnce(time.Now())
+
+	// "Restart": close instance 1's writers so the file is fully flushed.
+	f1.mu.Lock()
+	for _, lj := range f1.writers {
+		_ = lj.Close()
+	}
+	f1.mu.Unlock()
+
+	// === Daemon "instance 2" ===
+	acc2 := metrics.NewAccumulator(100)
+	f2 := NewMetricsFlusher(acc2, time.Hour)
+	if err := f2.AddServer("github", path, LogOpts{}); err != nil {
+		t.Fatalf("AddServer: %v", err)
+	}
+	if err := f2.SeedFromFile(path, 100); err != nil {
+		t.Fatalf("SeedFromFile: %v", err)
+	}
+
+	// Pre-restart totals should be visible immediately via the snapshot —
+	// this is the user-visible fix for "No token data yet" after restart.
+	snap := acc2.Snapshot()
+	if got := snap.PerServer["github"].TotalTokens; got != 185 {
+		t.Errorf("seeded github total = %d; want 185 (100+50+25+10)", got)
+	}
+	if got := snap.Session.TotalTokens; got != 185 {
+		t.Errorf("seeded session total = %d; want 185", got)
+	}
+
+	// Live activity post-restart. flushOnce must emit a non-reset diff
+	// against the seeded baseline rather than re-emitting the seeded
+	// totals as if they were fresh.
+	acc2.Record("github", 7, 3)
+	f2.flushOnce(time.Now())
+
+	// Read everything that's on disk and inspect the last full payload.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	lines := splitNonEmpty(string(data))
+	if len(lines) < 1 {
+		t.Fatalf("expected at least one line on disk, got 0")
+	}
+	var last MetricsSnapshotLine
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil {
+		t.Fatalf("unmarshal last line: %v", err)
+	}
+	if last.Reset {
+		t.Errorf("post-seed flush emitted reset=true; prev map was not seeded. line=%s", lines[len(lines)-1])
+	}
+	if last.Diff.InputTokens != 7 || last.Diff.OutputTokens != 3 {
+		t.Errorf("post-seed diff = %+v; want {7,3,10} (only post-restart activity)", last.Diff)
+	}
+	if last.Total.InputTokens != 132 || last.Total.OutputTokens != 63 {
+		t.Errorf("post-seed total = %+v; want {132,63,195} (seeded + live)", last.Total)
+	}
+}
+
+// splitNonEmpty splits on '\n' and discards empty entries.
+func splitNonEmpty(s string) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // TestEndToEnd_PersistAndReseed simulates a daemon restart with persistence
