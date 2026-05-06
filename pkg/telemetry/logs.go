@@ -16,14 +16,14 @@ import (
 
 // LogRouter is a slog.Handler that fans every record out to the inner handler
 // (the existing buffer/redact chain that powers the UI) AND, when a record's
-// resolved `component` attribute matches a configured server, to a per-server
-// lumberjack file. The component attribute is set today by every server-bound
-// logger via `logger.With("component", serverName)` — slog stores that on the
-// derived handler, not on the record, so this router tracks its own
-// accumulated attrs across WithAttrs/WithGroup the way BufferHandler does.
+// resolved server attribute matches a configured server, to a per-server
+// lumberjack file. The routing key is `component` when present and `server`
+// otherwise — gridctl's older subsystems (e.g. pkg/mcp/gateway) tag per-server
+// loggers with `.With("server", name)`, while newer code uses
+// `.With("component", name)`. Both shapes route correctly; `component` wins
+// when both are present in the same logger view.
 //
-// Records without a configured component pass through to the inner handler
-// only.
+// Records without a routing-key match pass through to the inner handler only.
 type LogRouter struct {
 	inner slog.Handler
 
@@ -190,10 +190,16 @@ func (r *LogRouter) Handle(ctx context.Context, record slog.Record) error {
 	return innerErr
 }
 
-// resolveComponent looks up `component` in accumulated handler-level attrs
+// resolveComponent looks up the routing key in accumulated handler-level attrs
 // first (set via .With at construction time on the per-server logger), then
 // falls back to the record's own attrs. The router-level value wins because
 // .With is the canonical way every gridctl component tags itself.
+//
+// Both `component` and `server` are accepted as routing keys; `component`
+// takes precedence when both appear in a single attr surface. This bridges
+// the convention used by pkg/mcp/gateway (`.With("server", name)`) with the
+// canonical `component` key used by newer code without forcing either side
+// to change.
 //
 // Records emitted by the router's own self logger are tagged `subsystem=
 // telemetry`; routing those would feed write-failure warnings back into the
@@ -205,15 +211,20 @@ func (r *LogRouter) resolveComponent(record slog.Record) string {
 	if r.component != "" {
 		return r.component
 	}
-	var component string
+	var componentVal, serverVal string
 	record.Attrs(func(a slog.Attr) bool {
-		if a.Key == "component" {
-			component = a.Value.String()
-			return false
+		switch a.Key {
+		case "component":
+			componentVal = a.Value.String()
+		case "server":
+			serverVal = a.Value.String()
 		}
 		return true
 	})
-	return component
+	if componentVal != "" {
+		return componentVal
+	}
+	return serverVal
 }
 
 // isSelfLog returns true when this record was produced by the router's own
@@ -239,7 +250,9 @@ func (r *LogRouter) isSelfLog(record slog.Record) bool {
 
 // WithAttrs implements slog.Handler. Returns a derived router that carries
 // the additional attrs alongside the inner-with-attrs handler. The shared
-// per-server map is unchanged.
+// per-server map is unchanged. Both `component` and `server` are recognized
+// as routing keys; `component` takes precedence when both appear in the same
+// attrs slice.
 func (r *LogRouter) WithAttrs(attrs []slog.Attr) slog.Handler {
 	derived := &LogRouter{
 		inner:     r.inner.WithAttrs(attrs),
@@ -248,10 +261,19 @@ func (r *LogRouter) WithAttrs(attrs []slog.Attr) slog.Handler {
 		servers:   r.servers,
 		selfLog:   r.selfLog,
 	}
+	var componentVal, serverVal string
 	for _, a := range attrs {
-		if a.Key == "component" {
-			derived.component = a.Value.String()
+		switch a.Key {
+		case "component":
+			componentVal = a.Value.String()
+		case "server":
+			serverVal = a.Value.String()
 		}
+	}
+	if componentVal != "" {
+		derived.component = componentVal
+	} else if serverVal != "" {
+		derived.component = serverVal
 	}
 	return derived
 }
