@@ -475,6 +475,43 @@ func downsampleToHour(buckets []bucket) []DataPoint {
 	return result
 }
 
+// Restore replaces per-server token totals with the supplied map and
+// recomputes session totals as the sum across all servers (matching the
+// invariant Record/RecordReplica maintains). Used on daemon startup to
+// repopulate cumulative counters from a persisted metrics.jsonl file.
+//
+// Existing per-server counters are overwritten for any server present in the
+// map; servers absent from the map retain their current state. Replicas,
+// time-series buckets, and format-savings counters are not restored — those
+// carry no on-disk equivalent in the snapshot format and reset to zero
+// post-restart, accruing fresh data as live activity resumes.
+func (a *Accumulator) Restore(perServer map[string]TokenCounts) {
+	if len(perServer) == 0 {
+		return
+	}
+
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+
+	for name, counts := range perServer {
+		sc, ok := a.servers[name]
+		if !ok {
+			sc = &serverCounters{}
+			a.servers[name] = sc
+		}
+		sc.inputTokens.Store(counts.InputTokens)
+		sc.outputTokens.Store(counts.OutputTokens)
+	}
+
+	var sessionIn, sessionOut int64
+	for _, sc := range a.servers {
+		sessionIn += sc.inputTokens.Load()
+		sessionOut += sc.outputTokens.Load()
+	}
+	a.sessionInput.Store(sessionIn)
+	a.sessionOutput.Store(sessionOut)
+}
+
 // Clear resets all metrics — session totals, per-server totals, and history.
 func (a *Accumulator) Clear() {
 	a.sessionInput.Store(0)
