@@ -62,7 +62,7 @@ const SkillNode = memo(({ data, selected }: SkillNodeProps) => {
           'bg-gradient-to-b from-surface/95 via-surface/90 to-tertiary/[0.03]',
           'flex items-center px-2.5 gap-2',
           selected && 'border-tertiary shadow-glow-tertiary ring-2 ring-tertiary/20',
-          !selected && 'border-tertiary/25 hover:shadow-node-hover hover:border-tertiary/40'
+          !selected && 'border-border hover:shadow-node-hover hover:border-tertiary-light/60'
         )}
         style={{ height: LAYOUT.NODE_HEIGHT_COMPACT }}
       >

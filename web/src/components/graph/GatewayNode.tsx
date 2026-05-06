@@ -19,10 +19,10 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
       className={cn(
         'w-60 rounded-2xl',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
-        'backdrop-blur-xl border border-primary/20',
+        'backdrop-blur-xl border border-border',
         'shadow-lg transition-all duration-300 ease-out',
         selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
-        !selected && 'hover:shadow-node-hover hover:border-primary/40'
+        !selected && 'hover:shadow-node-hover hover:border-primary/60'
       )}
     >
       {/* Top accent gradient */}
@@ -53,7 +53,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-              <Server size={12} className="text-primary" />
+              <Server size={12} className="text-primary/70" />
             </div>
             <span className="text-xs text-text-secondary font-medium">MCP Servers</span>
           </div>
@@ -67,7 +67,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
               <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Database size={12} className="text-primary" />
+                <Database size={12} className="text-primary/70" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Resources</span>
             </div>
@@ -82,7 +82,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
               <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Radio size={12} className="text-primary" />
+                <Radio size={12} className="text-primary/70" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Sessions</span>
             </div>
@@ -97,7 +97,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
               <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Monitor size={12} className="text-primary" />
+                <Monitor size={12} className="text-primary/70" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Clients</span>
             </div>
@@ -111,7 +111,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-              <Wrench size={12} className="text-primary" />
+              <Wrench size={12} className="text-primary/70" />
             </div>
             <span className="text-xs text-text-secondary font-medium">Total Tools</span>
           </div>
@@ -129,7 +129,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
           >
             <div className="flex items-center gap-2.5">
               <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Library size={12} className="text-primary" />
+                <Library size={12} className="text-primary/70" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Skills</span>
             </div>
@@ -152,12 +152,10 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
 
         {/* Status indicator */}
         <div className="flex items-center gap-2.5 pt-2 mt-1 border-t border-border/50">
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-status-running/10 border border-status-running/20">
+          <span className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running">
             <StatusDot status="running" />
-            <span className="text-[11px] text-status-running font-semibold tracking-wide">
-              Gateway Active
-            </span>
-          </div>
+            Gateway Active
+          </span>
           <Zap size={14} className="text-primary animate-pulse" style={{ animationDuration: '2s' }} />
         </div>
       </div>
