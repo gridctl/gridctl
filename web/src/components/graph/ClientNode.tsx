@@ -24,7 +24,7 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
           'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
           'flex items-center px-2.5 gap-2',
           selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
-          !selected && 'border-primary/25 hover:shadow-node-hover hover:border-primary/40'
+          !selected && 'border-border hover:shadow-node-hover hover:border-primary/60'
         )}
         style={{ height: LAYOUT.CLIENT_HEIGHT_COMPACT }}
       >
@@ -83,10 +83,10 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
       </span>
 
       {/* Status */}
-      <div className="flex items-center gap-1">
+      <span className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running">
         <StatusDot status={data.status} />
-        <span className="text-[10px] text-status-running font-medium">Linked</span>
-      </div>
+        Linked
+      </span>
 
       {/* Source handle (connects to gateway on the right) */}
       <Handle
