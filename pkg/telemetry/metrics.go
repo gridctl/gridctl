@@ -1,10 +1,12 @@
 package telemetry
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -287,6 +289,82 @@ func isCounterReset(prev, current metrics.TokenCounts) bool {
 	return current.InputTokens < prev.InputTokens ||
 		current.OutputTokens < prev.OutputTokens ||
 		current.TotalTokens < prev.TotalTokens
+}
+
+// SeedFromFile reads up to the last n NDJSON entries from path and seeds
+// both the accumulator's per-server totals and this flusher's previous-
+// snapshot map. Both surfaces are updated atomically so the next flushOnce
+// computes a real diff against the seeded baseline rather than re-emitting
+// history as a fresh reset.
+//
+// On-disk format mirrors flushOnce's output: full MetricsSnapshotLine entries
+// plus lighter reset sentinels ({reset, ts, server} only). Reset sentinels
+// have a zero Total in the parsed line and are immediately followed by a full
+// reset line whose Total carries the post-reset state — so taking the most
+// recent Total per server yields the correct seed value in either case.
+//
+// Missing or empty files return nil (expected on first run with persistence
+// enabled). Malformed lines are skipped without aborting; a single corrupt
+// line should not lose the rest of the history.
+func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
+	if path == "" || f.acc == nil {
+		return nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("seed metrics from %q: %w", path, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("seed metrics scan %q: %w", path, err)
+	}
+
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+
+	// Latest Total per server. Reset sentinels parse with zero Total and are
+	// always followed by the matching full reset line — taking the most
+	// recent value lets the natural ordering produce the right answer.
+	latest := make(map[string]metrics.TokenCounts)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var rec MetricsSnapshotLine
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			continue
+		}
+		if rec.Server == "" {
+			continue
+		}
+		latest[rec.Server] = rec.Total
+	}
+
+	if len(latest) == 0 {
+		return nil
+	}
+
+	// Seed accumulator and prev map under the same lock so the next
+	// flushOnce sees a consistent baseline.
+	f.mu.Lock()
+	for name, counts := range latest {
+		f.prev[name] = counts
+	}
+	f.mu.Unlock()
+	f.acc.Restore(latest)
+	return nil
 }
 
 // touchMode0600 ensures the file exists with mode 0600. lumberjack would
