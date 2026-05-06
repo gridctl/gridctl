@@ -146,7 +146,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               {toolCount}t
             </span>
           )}
-          <StatusDot status={data.status} />
+          <StatusDot status={data.status} pulse={!isCompact} />
         </div>
       </div>
 
