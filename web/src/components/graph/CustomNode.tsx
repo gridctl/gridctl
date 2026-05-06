@@ -55,14 +55,16 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         'w-64 rounded-xl relative',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
         isServer
-          ? 'bg-gradient-to-br from-surface/95 to-violet-500/[0.03] border-violet-500/30'
-          : 'bg-gradient-to-br from-surface/95 to-secondary/[0.02] border-border/50',
-        selected && isServer && 'border-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.3)] ring-1 ring-violet-500/30',
-        selected && !isServer && 'border-secondary shadow-glow-secondary ring-1 ring-secondary/30',
+          ? 'bg-gradient-to-br from-surface/95 to-violet-500/[0.03] border-border'
+          : 'bg-gradient-to-br from-surface/95 to-secondary/[0.02] border-border',
+        selected && isServer && 'border-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.3)] ring-2 ring-violet-500/30',
+        selected && !isServer && 'border-secondary shadow-glow-secondary ring-2 ring-secondary/30',
         // Autoscale decision ring: inset so it does not fight selection highlighting.
         autoscale?.lastDecision === 'up' && 'ring-2 ring-inset ring-primary/40 animate-pulse-glow',
         autoscale?.lastDecision === 'down' && 'ring-2 ring-inset ring-secondary/40',
-        !selected && 'hover:shadow-node-hover hover:border-text-muted/30'
+        !selected && 'hover:shadow-node-hover',
+        !selected && isServer && 'hover:border-violet-400/60',
+        !selected && !isServer && 'hover:border-secondary/70'
       )}
       style={{
         height: isCompact ? LAYOUT.NODE_HEIGHT_COMPACT : undefined,
@@ -289,9 +291,16 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
 
           {/* Status Badge + Type indicator */}
           <div className="pt-1 flex items-center gap-2">
-            <Badge status={data.status}>
-              <span className="capitalize">{data.status}</span>
-            </Badge>
+            {data.status === 'running' ? (
+              <span className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running capitalize">
+                <span className="w-1.5 h-1.5 rounded-full bg-status-running" />
+                {data.status}
+              </span>
+            ) : (
+              <Badge status={data.status}>
+                <span className="capitalize">{data.status}</span>
+              </Badge>
+            )}
             {isServer && !isExternal && !isLocalProcess && !isSSH && !isOpenAPI && (
               <div className={cn(
                 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
