@@ -4,6 +4,7 @@ import type { NodeStatus } from '../../types';
 interface StatusDotProps {
   status: NodeStatus;
   size?: 'sm' | 'md';
+  pulse?: boolean;
 }
 
 const dotStyles: Record<NodeStatus, string> = {
@@ -14,7 +15,7 @@ const dotStyles: Record<NodeStatus, string> = {
   idle: 'bg-status-idle',
 };
 
-export function StatusDot({ status, size = 'sm' }: StatusDotProps) {
+export function StatusDot({ status, size = 'sm', pulse = true }: StatusDotProps) {
   const sizeClasses = {
     sm: 'w-2 h-2',
     md: 'w-2.5 h-2.5',
@@ -30,7 +31,7 @@ export function StatusDot({ status, size = 'sm' }: StatusDotProps) {
         )}
       />
       {/* Pulse ring for running status */}
-      {status === 'running' && (
+      {pulse && status === 'running' && (
         <span
           className={cn(
             'absolute inset-0 rounded-full bg-status-running animate-ping opacity-40',
