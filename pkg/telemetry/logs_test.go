@@ -105,6 +105,87 @@ func TestLogRouter_RemoveServerStopsWriting(t *testing.T) {
 	}
 }
 
+// TestLogRouter_RoutesByServerAttribute exercises the `server` routing-key
+// fallback. pkg/mcp/gateway tags per-server loggers with `.With("server", name)`
+// rather than `component`; without this fallback those records would never
+// reach the per-server file fan-out.
+func TestLogRouter_RoutesByServerAttribute(t *testing.T) {
+	dir := t.TempDir()
+	githubPath := filepath.Join(dir, "github.jsonl")
+
+	buf := logging.NewLogBuffer(10)
+	router := NewLogRouter(logging.NewBufferHandler(buf, nil))
+	t.Cleanup(router.Close)
+	if err := router.AddServer("github", githubPath, LogOpts{}); err != nil {
+		t.Fatalf("AddServer github: %v", err)
+	}
+
+	// Mirror the pattern at pkg/mcp/gateway.go: clientLogger := logger.With("server", name).
+	logger := slog.New(router).With("server", "github")
+	logger.Info("hit github tool", "tool", "list_repos")
+
+	lines := readJSONLines(t, githubPath)
+	if len(lines) != 1 {
+		t.Errorf("github file got %d lines, want 1; lines=%v", len(lines), lines)
+	} else if msg := lines[0]["msg"]; msg != "hit github tool" {
+		t.Errorf("github line msg = %v, want %q", msg, "hit github tool")
+	}
+}
+
+// TestLogRouter_RoutesByRecordLevelServerAttr covers the case where `server`
+// arrives only on the record itself (not via .With) — the resolveComponent
+// record-attrs scan must pick it up.
+func TestLogRouter_RoutesByRecordLevelServerAttr(t *testing.T) {
+	dir := t.TempDir()
+	githubPath := filepath.Join(dir, "github.jsonl")
+
+	buf := logging.NewLogBuffer(10)
+	router := NewLogRouter(logging.NewBufferHandler(buf, nil))
+	t.Cleanup(router.Close)
+	if err := router.AddServer("github", githubPath, LogOpts{}); err != nil {
+		t.Fatalf("AddServer: %v", err)
+	}
+
+	slog.New(router).Info("inline server attr", "server", "github")
+
+	lines := readJSONLines(t, githubPath)
+	if len(lines) != 1 {
+		t.Errorf("github file got %d lines, want 1; lines=%v", len(lines), lines)
+	}
+}
+
+// TestLogRouter_ComponentTakesPrecedenceOverServer verifies that when both
+// `component` and `server` are set, `component` wins. Belt-and-braces against
+// any caller that ever ends up tagging both.
+func TestLogRouter_ComponentTakesPrecedenceOverServer(t *testing.T) {
+	dir := t.TempDir()
+	githubPath := filepath.Join(dir, "github.jsonl")
+	weatherPath := filepath.Join(dir, "weather.jsonl")
+
+	buf := logging.NewLogBuffer(10)
+	router := NewLogRouter(logging.NewBufferHandler(buf, nil))
+	t.Cleanup(router.Close)
+	if err := router.AddServer("github", githubPath, LogOpts{}); err != nil {
+		t.Fatalf("AddServer github: %v", err)
+	}
+	if err := router.AddServer("weather", weatherPath, LogOpts{}); err != nil {
+		t.Fatalf("AddServer weather: %v", err)
+	}
+
+	// Both keys present in the same WithAttrs call — component must win.
+	logger := slog.New(router).With("component", "github", "server", "weather")
+	logger.Info("hi")
+
+	githubLines := readJSONLines(t, githubPath)
+	weatherLines := readJSONLines(t, weatherPath)
+	if len(githubLines) != 1 {
+		t.Errorf("github lines = %d, want 1 (component should win)", len(githubLines))
+	}
+	if len(weatherLines) != 0 {
+		t.Errorf("weather lines = %d, want 0 (component should win)", len(weatherLines))
+	}
+}
+
 func TestLogRouter_EnabledHandlesNilInner(t *testing.T) {
 	// Defensive — Enabled must not panic if a derived child handler ever
 	// has a nil inner. Today inner is always non-nil but the Handle path
