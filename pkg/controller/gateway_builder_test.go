@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +15,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
 
@@ -401,6 +405,71 @@ func TestGatewayBuilder_Build_WebFSSuccess(t *testing.T) {
 	}
 }
 
+
+// TestGatewayBuilder_PersistedLogsArriveOnDisk drives a record through the
+// canonical pkg/mcp/gateway pattern (clientLogger := g.logger.With("server", name))
+// and asserts the per-server logs.jsonl receives the entry. Locks in the
+// router-side fix that recognizes "server" as a routing key.
+func TestGatewayBuilder_PersistedLogsArriveOnDisk(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	regDir := t.TempDir()
+	stack := &config.Stack{
+		Name: "teststack",
+		Telemetry: &config.TelemetryConfig{
+			Persist: config.TelemetryPersistence{Logs: true},
+		},
+		MCPServers: []config.MCPServer{
+			{Name: "github"},
+		},
+	}
+	cfg := Config{Port: 8181}
+	rt := runtime.NewOrchestrator(nil, nil)
+	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", rt, &runtime.UpResult{})
+	builder.registryDir = regDir
+
+	inst, err := builder.Build(false)
+	if err != nil {
+		t.Fatalf("Build() returned error: %v", err)
+	}
+
+	// Mirror gateway.go:900: clientLogger := logger.With("server", name).
+	clientLogger := slog.New(inst.Handler).With("server", "github")
+	clientLogger.Info("server registered", "transport", "stdio")
+
+	// Lumberjack writes through synchronously inside slog handler, so the
+	// file should be non-empty by the time Handle returns. Read it and
+	// verify the message round-trips through JSON.
+	path := state.TelemetryServerPath(stack.Name, "github", "logs")
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	var entries []map[string]any
+	for scanner.Scan() {
+		var rec map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
+			t.Fatalf("malformed json line %q: %v", scanner.Text(), err)
+		}
+		entries = append(entries, rec)
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatalf("logs.jsonl is empty — record was not routed to disk via server attr")
+	}
+	if got := entries[0]["msg"]; got != "server registered" {
+		t.Errorf("msg = %v, want %q", got, "server registered")
+	}
+	if got := entries[0]["server"]; got != "github" {
+		t.Errorf("server attr lost on disk: %v", entries[0])
+	}
+}
 
 func TestNewGatewayBuilder_Fields(t *testing.T) {
 	cfg := Config{Port: 8080, NoExpand: true}
