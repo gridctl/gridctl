@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -249,6 +250,136 @@ func approxUSDEq(a, b float64) bool {
 		d = -d
 	}
 	return d < eps
+}
+
+// TestObserver_ImplementsClientObserver guarantees the Observer satisfies
+// the ClientObserver interface; the gateway type-asserts on this to opt
+// into synchronous, client-aware dispatch.
+func TestObserver_ImplementsClientObserver(t *testing.T) {
+	var _ mcp.ClientObserver = (*Observer)(nil)
+}
+
+// TestObserver_ObserveToolCallWithClient_AttributesPerClient verifies that
+// the new ClientObserver entry point routes both tokens and cost to the
+// per-client maps without breaking session/per-server aggregates.
+func TestObserver_ObserveToolCallWithClient_AttributesPerClient(t *testing.T) {
+	prev := pricing.CurrentSource()
+	defer pricing.SetSource(prev)
+
+	rates := pricing.Rates{InputPerToken: 1e-6, OutputPerToken: 2e-6}
+	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
+		"call-model": rates,
+	}})
+
+	counter := token.NewHeuristicCounter(4)
+	acc := NewAccumulator(100)
+	obs := NewObserver(counter, acc)
+
+	args := map[string]any{"q": "hello"}
+	result := &mcp.ToolCallResult{
+		Content: []mcp.Content{mcp.NewTextContent("answer")},
+		Usage:   &mcp.CallUsage{Model: "call-model"},
+	}
+	summary := obs.ObserveToolCallWithClient(context.Background(), mcp.ToolCallObservation{
+		ServerName: "server-a",
+		ReplicaID:  -1,
+		ClientID:   "claude-code",
+		ToolName:   "demo",
+		Arguments:  args,
+		Result:     result,
+	})
+
+	if summary.InputTokens == 0 || summary.OutputTokens == 0 {
+		t.Errorf("expected non-zero token counts; got %+v", summary)
+	}
+	if summary.Model != "call-model" {
+		t.Errorf("Model = %q, want %q", summary.Model, "call-model")
+	}
+	if !summary.HasCost || summary.CostUSD == 0 {
+		t.Errorf("expected HasCost=true and non-zero CostUSD; got %+v", summary)
+	}
+
+	tokens := acc.Snapshot()
+	clientTokens, ok := tokens.PerClient["claude-code"]
+	if !ok {
+		t.Fatal("expected per-client tokens for claude-code")
+	}
+	if clientTokens.TotalTokens != tokens.Session.TotalTokens {
+		t.Errorf("per-client tokens (%d) should equal session (%d) for single client",
+			clientTokens.TotalTokens, tokens.Session.TotalTokens)
+	}
+
+	costs := acc.CostSnapshot()
+	if _, ok := costs.PerClient["claude-code"]; !ok {
+		t.Fatal("expected per-client cost for claude-code")
+	}
+}
+
+// TestObserver_ObserveToolCallWithClient_EmptyClientNoAttribution covers
+// the case where a tool call carries no session attribution: tokens and
+// cost still record under session/per-server, but per-client maps stay
+// empty so anonymous traffic does not pollute attribution dimensions.
+func TestObserver_ObserveToolCallWithClient_EmptyClientNoAttribution(t *testing.T) {
+	counter := token.NewHeuristicCounter(4)
+	acc := NewAccumulator(100)
+	obs := NewObserver(counter, acc)
+
+	obs.ObserveToolCallWithClient(context.Background(), mcp.ToolCallObservation{
+		ServerName: "server-a",
+		ReplicaID:  -1,
+		ClientID:   "",
+		Arguments:  map[string]any{"q": 1},
+		Result:     &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("a")}},
+	})
+
+	snap := acc.Snapshot()
+	if len(snap.PerClient) != 0 {
+		t.Errorf("expected no per-client entries; got %v", snap.PerClient)
+	}
+	if snap.Session.TotalTokens == 0 {
+		t.Error("session totals should still update when client is unknown")
+	}
+}
+
+// TestObserver_ObserveToolCallWithClient_SummaryMatchesLegacyPath ensures
+// the legacy ObserveToolCall path and the new ObserveToolCallWithClient
+// path record identical aggregates for the same input — only attribution
+// dimensions differ.
+func TestObserver_ObserveToolCallWithClient_SummaryMatchesLegacyPath(t *testing.T) {
+	prev := pricing.CurrentSource()
+	defer pricing.SetSource(prev)
+	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
+		"m": {InputPerToken: 1, OutputPerToken: 2},
+	}})
+
+	counter := token.NewHeuristicCounter(4)
+	args := map[string]any{"q": "x"}
+	result := &mcp.ToolCallResult{
+		Content: []mcp.Content{mcp.NewTextContent("ok")},
+		Usage:   &mcp.CallUsage{Model: "m"},
+	}
+
+	accLegacy := NewAccumulator(100)
+	NewObserver(counter, accLegacy).ObserveToolCall("s", -1, args, result)
+
+	accV2 := NewAccumulator(100)
+	NewObserver(counter, accV2).ObserveToolCallWithClient(context.Background(), mcp.ToolCallObservation{
+		ServerName: "s",
+		ReplicaID:  -1,
+		Arguments:  args,
+		Result:     result,
+	})
+
+	if accLegacy.Snapshot().Session != accV2.Snapshot().Session {
+		t.Errorf("session token snapshots diverged: legacy=%v v2=%v",
+			accLegacy.Snapshot().Session, accV2.Snapshot().Session)
+	}
+	if !approxUSDEq(accLegacy.CostSnapshot().Session.TotalUSD,
+		accV2.CostSnapshot().Session.TotalUSD) {
+		t.Errorf("session cost snapshots diverged: legacy=%v v2=%v",
+			accLegacy.CostSnapshot().Session.TotalUSD,
+			accV2.CostSnapshot().Session.TotalUSD)
+	}
 }
 
 func TestObserver_NilResult(t *testing.T) {
