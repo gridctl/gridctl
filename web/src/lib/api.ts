@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, CostMetricsResponse, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SkillTestResult, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SkillTestResult, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -377,6 +377,25 @@ export async function fetchCostMetrics(
   const params = new URLSearchParams({ range });
   if (perClient) params.set('per_client', 'true');
   return fetchJSON<CostMetricsResponse>(`/api/metrics/cost?${params.toString()}`);
+}
+
+/**
+ * Fetch the optimize report (unused servers, unused tools, etc.) for
+ * the active stack. Mirrors fetchCostMetrics so the sidebar panel can
+ * poll on the same cadence as Token Usage / Cost.
+ * GET /api/optimize?min_impact=0.10&severity=warn,critical
+ */
+export async function fetchOptimizeReport(opts?: {
+  stack?: string;
+  minImpact?: number;
+  severity?: string[];
+}): Promise<OptimizeReport> {
+  const params = new URLSearchParams();
+  if (opts?.stack) params.set('stack', opts.stack);
+  if (opts?.minImpact && opts.minImpact > 0) params.set('min_impact', String(opts.minImpact));
+  if (opts?.severity && opts.severity.length > 0) params.set('severity', opts.severity.join(','));
+  const query = params.toString();
+  return fetchJSON<OptimizeReport>(`/api/optimize${query ? `?${query}` : ''}`);
 }
 
 /**
