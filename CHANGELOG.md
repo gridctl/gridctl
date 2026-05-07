@@ -5,6 +5,13 @@ All notable changes to gridctl will be documented in this file.
 ## [Unreleased]
 
 
+### Features
+
+
+- Add `pkg/pricing` with embedded LiteLLM rate table, model-ID normalization, and a swappable `Source` interface for cost lookup. The package prices input, output, cache-read, and cache-write tokens separately so providers like Anthropic are not mis-priced by an order of magnitude.
+- Wire cost accumulation into `pkg/metrics`: parallel atomic counters (session, per-server, per-replica), a per-minute cost ring buffer, `RecordCost`, `CostSnapshot`, `QueryCost`, and `ClearCost`. The `/api/metrics/tokens` JSON shape is unchanged; cost surfaces land in a follow-up PR.
+- Add `make update-pricing` to refresh the embedded LiteLLM pricing snapshot (weekly cadence recommended).
+
 ### Bug Fixes
 
 
