@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"context"
+
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/pricing"
 	"github.com/gridctl/gridctl/pkg/token"
@@ -12,9 +14,9 @@ import (
 // be safe for concurrent calls.
 type ModelResolver func(serverName string) string
 
-// Observer implements mcp.ToolCallObserver by counting tokens, pricing the
-// call against the active pricing.Source, and recording both into an
-// Accumulator.
+// Observer implements mcp.ToolCallObserver and mcp.ClientObserver by
+// counting tokens, pricing the call against the active pricing.Source,
+// and recording both into an Accumulator.
 type Observer struct {
 	counter       token.Counter
 	accumulator   *Accumulator
@@ -50,6 +52,22 @@ func (o *Observer) SetModelResolver(r ModelResolver) {
 // reported in result._meta (CallUsage) are priced via the provider's
 // cache rates rather than rolled into the input rate.
 func (o *Observer) ObserveToolCall(serverName string, replicaID int, arguments map[string]any, result *mcp.ToolCallResult) {
+	o.observe(serverName, replicaID, "", arguments, result)
+}
+
+// ObserveToolCallWithClient is the ClientObserver entry point. It records
+// the same tokens + cost as ObserveToolCall, additionally attributes
+// them to the supplied client, and returns a summary the gateway uses to
+// populate OTel GenAI semantic span attributes without re-counting tokens.
+func (o *Observer) ObserveToolCallWithClient(_ context.Context, obs mcp.ToolCallObservation) mcp.ToolCallSummary {
+	return o.observe(obs.ServerName, obs.ReplicaID, obs.ClientID, obs.Arguments, obs.Result)
+}
+
+// observe is the shared core of the legacy and client-aware observer entry
+// points. It returns the values needed to set OTel GenAI span attributes
+// for callers that pass the call through ObserveToolCallWithClient; the
+// legacy ObserveToolCall path discards the return value.
+func (o *Observer) observe(serverName string, replicaID int, clientID string, arguments map[string]any, result *mcp.ToolCallResult) mcp.ToolCallSummary {
 	inputTokens := token.CountJSON(o.counter, arguments)
 
 	outputTokens := 0
@@ -61,30 +79,42 @@ func (o *Observer) ObserveToolCall(serverName string, replicaID int, arguments m
 		usageMeta = result.Usage
 	}
 
-	o.accumulator.RecordReplica(serverName, replicaID, inputTokens, outputTokens)
+	o.accumulator.RecordReplicaWithClient(serverName, replicaID, clientID, inputTokens, outputTokens)
 
-	model := o.resolveModel(serverName, usageMeta)
-	if model == "" {
-		return
-	}
-	usage := pricing.Usage{
+	summary := mcp.ToolCallSummary{
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
 	}
 	if usageMeta != nil {
-		usage.CacheReadTokens = usageMeta.CacheReadTokens
-		usage.CacheWriteTokens = usageMeta.CacheCreationTokens
+		summary.CacheReadTokens = usageMeta.CacheReadTokens
+		summary.CacheCreationTokens = usageMeta.CacheCreationTokens
+	}
+
+	model := o.resolveModel(serverName, usageMeta)
+	if model == "" {
+		return summary
+	}
+	summary.Model = model
+
+	usage := pricing.Usage{
+		InputTokens:      inputTokens,
+		OutputTokens:     outputTokens,
+		CacheReadTokens:  summary.CacheReadTokens,
+		CacheWriteTokens: summary.CacheCreationTokens,
 	}
 	cost, ok := pricing.CalculateBreakdown(model, usage)
 	if !ok {
-		return
+		return summary
 	}
-	o.accumulator.RecordCost(serverName, replicaID, CostBreakdown{
+	o.accumulator.RecordCostWithClient(serverName, replicaID, clientID, CostBreakdown{
 		Input:      cost.Input,
 		Output:     cost.Output,
 		CacheRead:  cost.CacheRead,
 		CacheWrite: cost.CacheWrite,
 	})
+	summary.CostUSD = cost.Input + cost.Output + cost.CacheRead + cost.CacheWrite
+	summary.HasCost = summary.CostUSD > 0
+	return summary
 }
 
 // resolveModel picks the model ID for a call: the call-level model wins,
