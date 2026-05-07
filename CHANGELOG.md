@@ -11,6 +11,12 @@ All notable changes to gridctl will be documented in this file.
 - Add `pkg/pricing` with embedded LiteLLM rate table, model-ID normalization, and a swappable `Source` interface for cost lookup. The package prices input, output, cache-read, and cache-write tokens separately so providers like Anthropic are not mis-priced by an order of magnitude.
 - Wire cost accumulation into `pkg/metrics`: parallel atomic counters (session, per-server, per-replica), a per-minute cost ring buffer, `RecordCost`, `CostSnapshot`, `QueryCost`, and `ClearCost`. The `/api/metrics/tokens` JSON shape is unchanged; cost surfaces land in a follow-up PR.
 - Add `make update-pricing` to refresh the embedded LiteLLM pricing snapshot (weekly cadence recommended).
+- Capture and normalize the originating MCP client (`clientInfo.name`) on every session, propagate the normalized identifier through the tool-call path, and aggregate per-client tokens and cost in `pkg/metrics`. `TokenUsage` and `CostUsage` gain an additive `per_client` field (omitempty); pre-existing JSON consumers see no shape change.
+- Tag tool-call OpenTelemetry spans with the GenAI semantic-convention attributes `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens` (only when reported), `gen_ai.usage.cache_creation.input_tokens` (only when reported), `gen_ai.request.model`, `gen_ai.cost.usd`, `mcp.server.name`, `mcp.tool.name`, and `mcp.client.name`.
+- Record per-call cost for nested tool calls dispatched through `mcp.callTool` inside the Code Mode goja sandbox. The outer `execute` call's client_id flows through `context.Context` to every nested call so attribution is preserved for high-tool-count workloads.
+- Add `GET /api/metrics/cost?range={30m,1h,6h,24h,7d}&per_client=true` for cost-over-time time-series, mirroring the `/api/metrics/tokens` shape with optional per-client grouping.
+- Add `DELETE /api/metrics/cost`, which clears recorded cost data without touching the token counters or format-savings tally.
+- Extend `/api/status` with an additive, omitempty `cost` field carrying the session, per-server, per-client, and per-replica USD totals.
 
 ### Bug Fixes
 
