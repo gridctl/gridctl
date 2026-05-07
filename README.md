@@ -371,6 +371,19 @@ In the web wizard, the "Add skill source" step has an inline, collapsible **Auth
 
 Raw tokens are never written outside the encrypted vault — neither to the skill origin nor the lock file. Error and log paths strip embedded URL userinfo (`https://TOKEN@host/...`) and known PAT patterns (`ghp_…`, `github_pat_…`, `glpat-…`) before they reach the API or CLI.
 
+### Cost Optimize
+
+`gridctl optimize` scans the running gateway and prints findings with a measured weekly USD impact and a paste-ready YAML remediation. The PR-4 heuristics flag **unused servers** (registered but no calls observed in the lookback window) and **unused tools** (a server is active but a specific tool has not been called in the window and is not already excluded). On a fresh gateway with less than 24h of data, `optimize` returns a single info finding so reports never over-fire.
+
+```bash
+gridctl optimize                          # styled findings table
+gridctl optimize --format json            # machine-readable OptimizeReport
+gridctl optimize --min-impact 0.10        # filter low-impact findings (info findings always shown)
+gridctl optimize --severity warn,critical # narrow to actionable findings
+```
+
+Exit codes follow the standard CLI contract: `0` no findings or info-only, `1` at least one warn/critical finding, `2` infrastructure error (gateway unreachable, wrong stack name). The Web UI surfaces the same findings inside the Gateway sidebar's `Optimize` panel.
+
 ### Distributed Tracing
 
 Every tool call through the gateway is captured as an OpenTelemetry trace. Spans record transport type, server name, duration, and error state. The last 1000 traces are kept in a ring buffer and are queryable via CLI or the Web UI.
@@ -453,6 +466,11 @@ gridctl traces --server <name>       # Filter by MCP server name
 gridctl traces --errors              # Show only error traces
 gridctl traces --min-duration 100ms  # Filter by minimum duration
 gridctl traces --json                # Output as JSON
+gridctl optimize                     # Surface unused servers and tools with weekly $ impact
+gridctl optimize --stack <name>      # Pick a specific stack when more than one is running
+gridctl optimize --min-impact 0.10   # Filter findings below a weekly USD impact threshold
+gridctl optimize --severity warn,critical  # Allowlist by severity
+gridctl optimize --format json       # Machine-readable OptimizeReport (exit 0/1/2)
 ```
 
 ## 🖥️ Connect LLM Application

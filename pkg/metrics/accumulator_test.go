@@ -711,6 +711,59 @@ func TestAccumulator_ClearCost_AlsoClearsPerClient(t *testing.T) {
 	}
 }
 
+func TestAccumulator_RecordToolCall(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordToolCall("github", "create_issue")
+	acc.RecordToolCall("github", "create_issue")
+	acc.RecordToolCall("github", "list_issues")
+	acc.RecordToolCall("filesystem", "read_file")
+
+	snap := acc.ToolUsageSnapshot()
+	if got := snap["github"]["create_issue"].Calls; got != 2 {
+		t.Errorf("create_issue calls = %d, want 2", got)
+	}
+	if got := snap["github"]["list_issues"].Calls; got != 1 {
+		t.Errorf("list_issues calls = %d, want 1", got)
+	}
+	if got := snap["filesystem"]["read_file"].Calls; got != 1 {
+		t.Errorf("read_file calls = %d, want 1", got)
+	}
+	if snap["github"]["create_issue"].LastCalledAt.IsZero() {
+		t.Error("create_issue LastCalledAt should be non-zero")
+	}
+}
+
+func TestAccumulator_RecordToolCall_EmptyArgsAreNoOp(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordToolCall("", "create_issue")
+	acc.RecordToolCall("github", "")
+	if snap := acc.ToolUsageSnapshot(); len(snap) != 0 {
+		t.Errorf("expected empty tool usage; got %v", snap)
+	}
+}
+
+func TestAccumulator_ToolUsageSnapshot_EmptyAccumulator(t *testing.T) {
+	acc := NewAccumulator(100)
+	if snap := acc.ToolUsageSnapshot(); snap != nil {
+		t.Errorf("ToolUsageSnapshot on fresh accumulator should be nil; got %v", snap)
+	}
+}
+
+func TestAccumulator_StartedAt_StableAcrossClear(t *testing.T) {
+	acc := NewAccumulator(100)
+	before := acc.StartedAt()
+	acc.RecordToolCall("github", "create_issue")
+	acc.Clear()
+	after := acc.StartedAt()
+	if !before.Equal(after) {
+		t.Errorf("StartedAt should not change after Clear; before=%v after=%v", before, after)
+	}
+	if snap := acc.ToolUsageSnapshot(); snap != nil {
+		t.Errorf("Clear should drop per-tool stats; got %v", snap)
+	}
+}
+
 func TestAccumulator_Clear_ResetsPerClient(t *testing.T) {
 	acc := NewAccumulator(100)
 	acc.RecordReplicaWithClient("s", -1, "client-a", 10, 5)

@@ -419,6 +419,12 @@ Ubuntu and macOS (install → re-run for idempotency → `gridctl upgrade
 ./gridctl traces --follow
 ./gridctl traces --server github --errors
 
+# Surface cost-reduction findings (unused servers and tools)
+./gridctl optimize
+./gridctl optimize --stack mcp-basic
+./gridctl optimize --min-impact 0.10
+./gridctl optimize --format json
+
 # Manage schema pins (TOFU rug pull protection)
 ./gridctl pins list
 ./gridctl pins verify
@@ -584,6 +590,19 @@ Manage TOFU schema pins that protect against rug pull attacks (CVE-2025-54136 cl
 | `--stack` | all | Stack name (auto-detected when only one stack is running) |
 | `--exit-code` | `verify` | Exit 1 if any server has drift (CI use case) |
 
+#### `gridctl optimize`
+
+Scan the running gateway and print cost-reduction findings — unused servers and unused tools in v1 — with a measured weekly USD impact and a paste-ready YAML remediation. The CLI requires the gateway to be running; it never reads client-side session files.
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--stack` | `-s` | Stack to query (auto-detected when only one stack is running) |
+| `--min-impact` | | Filter findings below this weekly USD impact (info findings always shown) |
+| `--severity` | | Comma-separated severity allowlist: `info,warn,critical` |
+| `--format` | | Output format: `json` for machine-readable `OptimizeReport` (default: table) |
+
+Exit codes: `0` no findings or info-only, `1` at least one `warn`/`critical` finding, `2` infrastructure error (gateway unreachable, ambiguous or unknown stack).
+
 #### `gridctl test <skill-name>`
 
 Run acceptance criteria for a skill against the running gateway.
@@ -643,7 +662,7 @@ When `gridctl apply` runs, it:
 
 **Endpoints:**
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
-- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/health`, `/ready`
+- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/api/metrics/cost`, `/api/optimize`, `/health`, `/ready`
 - **Stack Library:** `/api/stacks` (list/save), `/api/stack/initialize` (cold-load a saved stack into a stackless daemon)
 - **Vault:** `/api/vault`, `/api/vault/status`, `/api/vault/unlock`, `/api/vault/lock`, `/api/vault/sets`, `/api/vault/import`
 - **Pins:** `/api/pins` (list all), `/api/pins/{server}` (get), `/api/pins/{server}/approve` (POST), `/api/pins/{server}` (DELETE)
@@ -669,6 +688,9 @@ When `gridctl apply` runs, it:
 - `GET /api/metrics/tokens?range=1h` - Historical time-series token data (range: 30m, 1h, 6h, 24h, 7d)
 - `DELETE /api/metrics/tokens` - Clear all token metrics
 - `GET /api/status` includes `token_usage` (session totals, per-server breakdown, format savings)
+
+**Optimize API:**
+- `GET /api/optimize?stack={name}&min_impact=0.10&severity=warn,critical` — Returns an `OptimizeReport{findings, health_score, generated_at}` derived from the live gateway state and accumulator. Each finding carries `id`, `heuristic` (`unused_server`/`unused_tool`/`need_more_data`), `severity`, `title`, `summary`, `server`, `tool`, `impact_usd_per_week`, `remediation` (YAML or shell snippet), and `detected_at`. Returns `404` when `stack` does not match the active stack and `503` when the metrics accumulator is not configured.
 
 **Registry API:**
 - `GET /api/registry/status` - Returns skill counts

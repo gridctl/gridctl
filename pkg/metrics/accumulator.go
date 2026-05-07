@@ -209,10 +209,34 @@ type clientCounters struct {
 	cacheWriteCostMicroUSD atomic.Int64
 }
 
+// ToolStat is the snapshot shape for per-(server, tool) call tracking.
+// Used by pkg/optimize to detect tools that have not seen any calls
+// inside a freshness window. Calls is the cumulative count since the
+// accumulator was created or last cleared; LastCalledAt is the wall-clock
+// time the most recent call was recorded, or the zero value when no
+// calls have been recorded.
+type ToolStat struct {
+	Calls        int64     `json:"calls"`
+	LastCalledAt time.Time `json:"last_called_at,omitempty"`
+}
+
+// toolUsage holds per-(server, tool) atomic counters. lastCalledNanos
+// stores time.UnixNano so the read path can produce a time.Time without
+// taking a lock. Keyed by (serverName -> toolName) in the accumulator.
+type toolUsage struct {
+	calls           atomic.Int64
+	lastCalledNanos atomic.Int64
+}
+
 // Accumulator collects token usage metrics with thread-safe operations.
 // Session totals use atomic counters. Historical data is stored in a ring buffer
 // of pre-aggregated 1-minute time buckets.
 type Accumulator struct {
+	// startedAt is set when NewAccumulator is called and never reset by
+	// Clear or ClearCost. Consumers (e.g. pkg/optimize) use it to gate
+	// findings that require a minimum observation window.
+	startedAt time.Time
+
 	// Session totals (atomic for lock-free reads)
 	sessionInput  atomic.Int64
 	sessionOutput atomic.Int64
@@ -249,6 +273,12 @@ type Accumulator struct {
 	clientBufMu sync.RWMutex
 	clientBufs  map[string]*serverBuffer
 
+	// Per-(server, tool) call counters. Powers the unused_tool optimize
+	// heuristic: a tool registered on a server but absent from this map
+	// (or with a stale LastCalledAt) has not been called recently.
+	toolUsageMu sync.RWMutex
+	toolUsage   map[string]map[string]*toolUsage
+
 	// Format savings (atomic for lock-free reads)
 	savingsOriginal  atomic.Int64
 	savingsFormatted atomic.Int64
@@ -278,6 +308,7 @@ func NewAccumulator(maxDataPoints int) *Accumulator {
 		maxDataPoints = 10000
 	}
 	return &Accumulator{
+		startedAt:  time.Now(),
 		servers:    make(map[string]*serverCounters),
 		replicas:   make(map[string]map[int]*replicaCounters),
 		buckets:    make([]bucket, maxDataPoints),
@@ -285,7 +316,16 @@ func NewAccumulator(maxDataPoints int) *Accumulator {
 		serverBufs: make(map[string]*serverBuffer),
 		clients:    make(map[string]*clientCounters),
 		clientBufs: make(map[string]*serverBuffer),
+		toolUsage:  make(map[string]map[string]*toolUsage),
 	}
+}
+
+// StartedAt returns the wall-clock time the accumulator was created.
+// Clear and ClearCost do not reset this value — the start-of-observation
+// window stays anchored to the gateway lifetime, which is what
+// pkg/optimize uses to gate "<24h of data" findings.
+func (a *Accumulator) StartedAt() time.Time {
+	return a.startedAt
 }
 
 // Record adds a token usage observation from a tool call. Equivalent to
@@ -396,6 +436,70 @@ func (a *Accumulator) getOrCreateReplicaCounters(serverName string, replicaID in
 		m[replicaID] = rc
 	}
 	return rc
+}
+
+// RecordToolCall increments per-(server, tool) call counters and stamps
+// the last-called timestamp. Used by pkg/optimize's unused_tool heuristic.
+//
+// An empty serverName or toolName is a no-op so callers without per-tool
+// attribution (legacy ToolCallObserver path) can invoke unconditionally.
+func (a *Accumulator) RecordToolCall(serverName, toolName string) {
+	if serverName == "" || toolName == "" {
+		return
+	}
+	tu := a.getOrCreateToolUsage(serverName, toolName)
+	tu.calls.Add(1)
+	tu.lastCalledNanos.Store(time.Now().UnixNano())
+}
+
+func (a *Accumulator) getOrCreateToolUsage(serverName, toolName string) *toolUsage {
+	a.toolUsageMu.RLock()
+	if m, ok := a.toolUsage[serverName]; ok {
+		if tu, ok := m[toolName]; ok {
+			a.toolUsageMu.RUnlock()
+			return tu
+		}
+	}
+	a.toolUsageMu.RUnlock()
+
+	a.toolUsageMu.Lock()
+	defer a.toolUsageMu.Unlock()
+	m, ok := a.toolUsage[serverName]
+	if !ok {
+		m = make(map[string]*toolUsage)
+		a.toolUsage[serverName] = m
+	}
+	tu, ok := m[toolName]
+	if !ok {
+		tu = &toolUsage{}
+		m[toolName] = tu
+	}
+	return tu
+}
+
+// ToolUsageSnapshot returns a deep copy of the per-(server, tool) call
+// counters. Empty when no per-tool calls have been recorded (typical for
+// gateways still on the legacy ToolCallObserver path).
+func (a *Accumulator) ToolUsageSnapshot() map[string]map[string]ToolStat {
+	a.toolUsageMu.RLock()
+	defer a.toolUsageMu.RUnlock()
+	if len(a.toolUsage) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]ToolStat, len(a.toolUsage))
+	for serverName, tools := range a.toolUsage {
+		inner := make(map[string]ToolStat, len(tools))
+		for toolName, tu := range tools {
+			calls := tu.calls.Load()
+			var lastCalled time.Time
+			if nanos := tu.lastCalledNanos.Load(); nanos > 0 {
+				lastCalled = time.Unix(0, nanos)
+			}
+			inner[toolName] = ToolStat{Calls: calls, LastCalledAt: lastCalled}
+		}
+		out[serverName] = inner
+	}
+	return out
 }
 
 // RecordFormatSavings records token counts before and after format conversion.
@@ -1173,6 +1277,10 @@ func (a *Accumulator) Clear() {
 	a.clientBufMu.Lock()
 	a.clientBufs = make(map[string]*serverBuffer)
 	a.clientBufMu.Unlock()
+
+	a.toolUsageMu.Lock()
+	a.toolUsage = make(map[string]map[string]*toolUsage)
+	a.toolUsageMu.Unlock()
 
 	a.savingsOriginal.Store(0)
 	a.savingsFormatted.Store(0)

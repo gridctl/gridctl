@@ -18,6 +18,11 @@ All notable changes to gridctl will be documented in this file.
 - Add `DELETE /api/metrics/cost`, which clears recorded cost data without touching the token counters or format-savings tally.
 - Extend `/api/status` with an additive, omitempty `cost` field carrying the session, per-server, per-client, and per-replica USD totals.
 - Surface cost in the Web UI Metrics tab: a session `$ Cost` KPI card beside Input/Output/Total tokens, a cost-over-time area chart that scales with the existing time-range selector, and a `Top Clients` panel summarizing per-client token and USD totals (sortable, default cost descending, hidden when no per-client attribution is present). Cost values render as `—` until the gateway has priced any calls, never a fabricated number.
+- Add `pkg/optimize` with the `unused_server` and `unused_tool` heuristics, scoring each finding with a measured weekly USD impact and a paste-ready YAML remediation snippet. The `<24h of data` gate emits a single info finding so reports never over-fire on a freshly started gateway.
+- Add `GET /api/optimize?stack=&min_impact=&severity=` returning an `OptimizeReport{findings, health_score, generated_at}` derived from the live gateway state and accumulator snapshot.
+- Add the `gridctl optimize` CLI command — `--stack`/`--min-impact`/`--severity`/`--format json` flags, a styled findings table with severity, weekly $, and remediation hint, and the standard `0|1|2` exit codes (0 = no findings, 1 = warn/critical, 2 = gateway unreachable or wrong stack).
+- Add a Sidebar `Optimize` panel inside the gateway view: each finding renders with a severity badge, weekly USD impact, and a collapsible remediation snippet. The panel polls on the same cadence as Token Usage / Cost.
+- Track per-(server, tool) call counts on the metrics accumulator and thread the originating tool name through the observer path so `unused_tool` can detect cold tools without inferring from token totals.
 
 ### Bug Fixes
 

@@ -52,7 +52,7 @@ func (o *Observer) SetModelResolver(r ModelResolver) {
 // reported in result._meta (CallUsage) are priced via the provider's
 // cache rates rather than rolled into the input rate.
 func (o *Observer) ObserveToolCall(serverName string, replicaID int, arguments map[string]any, result *mcp.ToolCallResult) {
-	o.observe(serverName, replicaID, "", arguments, result)
+	o.observe(serverName, replicaID, "", "", arguments, result)
 }
 
 // ObserveToolCallWithClient is the ClientObserver entry point. It records
@@ -60,14 +60,14 @@ func (o *Observer) ObserveToolCall(serverName string, replicaID int, arguments m
 // them to the supplied client, and returns a summary the gateway uses to
 // populate OTel GenAI semantic span attributes without re-counting tokens.
 func (o *Observer) ObserveToolCallWithClient(_ context.Context, obs mcp.ToolCallObservation) mcp.ToolCallSummary {
-	return o.observe(obs.ServerName, obs.ReplicaID, obs.ClientID, obs.Arguments, obs.Result)
+	return o.observe(obs.ServerName, obs.ReplicaID, obs.ClientID, obs.ToolName, obs.Arguments, obs.Result)
 }
 
 // observe is the shared core of the legacy and client-aware observer entry
 // points. It returns the values needed to set OTel GenAI span attributes
 // for callers that pass the call through ObserveToolCallWithClient; the
 // legacy ObserveToolCall path discards the return value.
-func (o *Observer) observe(serverName string, replicaID int, clientID string, arguments map[string]any, result *mcp.ToolCallResult) mcp.ToolCallSummary {
+func (o *Observer) observe(serverName string, replicaID int, clientID, toolName string, arguments map[string]any, result *mcp.ToolCallResult) mcp.ToolCallSummary {
 	inputTokens := token.CountJSON(o.counter, arguments)
 
 	outputTokens := 0
@@ -80,6 +80,7 @@ func (o *Observer) observe(serverName string, replicaID int, clientID string, ar
 	}
 
 	o.accumulator.RecordReplicaWithClient(serverName, replicaID, clientID, inputTokens, outputTokens)
+	o.accumulator.RecordToolCall(serverName, toolName)
 
 	summary := mcp.ToolCallSummary{
 		InputTokens:  inputTokens,

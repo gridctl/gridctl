@@ -39,6 +39,7 @@ func init() {
 	rootCmd.AddCommand(pinsCmd)
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(activateCmd)
+	rootCmd.AddCommand(optimizeCmd)
 }
 
 func Execute() {

@@ -376,6 +376,49 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/metri
 
 ---
 
+### Optimize
+
+#### `GET /api/optimize`
+
+Returns an `OptimizeReport` derived from gateway-observed data: the registered server list, per-server token + cost totals, and per-(server, tool) call counts. v1 implements the `unused_server` and `unused_tool` heuristics; gateways with less than 24h of observation get a single `info` finding ("need more data") so reports never over-fire.
+
+**Auth:** Yes
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `stack` | string | — | Active stack name. `404` if it does not match. |
+| `min_impact` | float | `0` | Drop findings whose weekly USD impact is below this threshold. `info` findings are always retained. |
+| `severity` | string | — | Comma-separated allowlist of `info`, `warn`, `critical`. |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/optimize?min_impact=0.10"
+```
+
+**Response:**
+```json
+{
+  "findings": [
+    {
+      "id": "unused-server-github",
+      "heuristic": "unused_server",
+      "severity": "warn",
+      "title": "Unused server: github",
+      "summary": "Server 'github' has registered 12 tools but no calls have been observed.",
+      "server": "github",
+      "impact_usd_per_week": 0.27,
+      "remediation": "# Remove the server entirely:\nmcp-servers:\n  # delete the entry for: github\n",
+      "detected_at": "2026-05-07T12:00:00Z"
+    }
+  ],
+  "health_score": 90,
+  "generated_at": "2026-05-07T12:00:00Z"
+}
+```
+
+Returns `503` when no metrics accumulator is configured; `404` when `stack` does not match the active stack.
+
+---
+
 ### Hot Reload
 
 #### `POST /api/reload`

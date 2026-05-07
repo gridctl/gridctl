@@ -101,10 +101,7 @@ describe('GatewaySidebar', () => {
     const onClose = vi.fn();
     render(<GatewaySidebar onClose={onClose} />);
 
-    // The close button is the last button (X icon)
-    const buttons = screen.getAllByRole('button');
-    const closeButton = buttons[buttons.length - 1];
-    fireEvent.click(closeButton);
+    fireEvent.click(screen.getByLabelText('Close gateway sidebar'));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
