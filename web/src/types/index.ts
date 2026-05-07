@@ -116,7 +116,28 @@ export interface FormatSavings {
 export interface TokenUsage {
   session: TokenCounts;
   per_server: Record<string, TokenCounts>;
+  per_replica?: Record<string, Record<string, TokenCounts>>;
+  // per_client groups token usage by the originating MCP client. omitempty
+  // on the wire; pre-attribution responses won't include it.
+  per_client?: Record<string, TokenCounts>;
   format_savings: FormatSavings;
+}
+
+// Per-dimension USD cost snapshot mirroring TokenCounts
+export interface CostCounts {
+  input_usd: number;
+  output_usd: number;
+  cache_read_usd?: number;
+  cache_write_usd?: number;
+  total_usd: number;
+}
+
+// Cost usage summary from GET /api/status (cost field)
+export interface CostUsage {
+  session: CostCounts;
+  per_server: Record<string, CostCounts>;
+  per_replica?: Record<string, Record<string, CostCounts>>;
+  per_client?: Record<string, CostCounts>;
 }
 
 // Historical time-series data point
@@ -135,6 +156,21 @@ export interface TokenMetricsResponse {
   per_server: Record<string, TokenDataPoint[]>;
 }
 
+// Single bucket of cost-over-time data (USD per minute-aligned bucket)
+export interface CostDataPoint {
+  timestamp: string;
+  usd: number;
+}
+
+// Response from GET /api/metrics/cost
+export interface CostMetricsResponse {
+  range: string;
+  interval: string;
+  data_points: CostDataPoint[];
+  per_server: Record<string, CostDataPoint[]>;
+  per_client?: Record<string, CostDataPoint[]>;
+}
+
 // Gateway status response from GET /api/status
 export interface GatewayStatus {
   gateway: ServerInfo;
@@ -143,6 +179,7 @@ export interface GatewayStatus {
   sessions?: number;       // Active MCP session count
   code_mode?: string;      // "on" when code mode is active (omitted when off)
   token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
+  cost?: CostUsage;        // Cost snapshot (omitted until any cost is recorded)
   stack_name?: string;     // Active stack name; omitted in stackless mode
 }
 

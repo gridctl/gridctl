@@ -10,6 +10,7 @@ import type {
   ClientStatus,
   Tool,
   TokenUsage,
+  CostUsage,
   ConnectionStatus,
   AutoscaleDecisionKind,
 } from '../types';
@@ -52,6 +53,7 @@ interface StackState {
   sessions: number;
   codeMode: string | null;  // Gateway code mode status ("on" when active)
   tokenUsage: TokenUsage | null; // Token usage metrics from status response
+  costUsage: CostUsage | null;   // USD cost snapshot; null when no cost recorded
   stackName: string;        // Active stack name; empty string in stackless mode
 
   // === React Flow State ===
@@ -99,6 +101,7 @@ export const useStackStore = create<StackState>()(
     sessions: 0,
     codeMode: null,
     tokenUsage: null,
+    costUsage: null,
     stackName: '',
     nodes: [],
     edges: [],
@@ -129,6 +132,7 @@ export const useStackStore = create<StackState>()(
         sessions: status.sessions ?? 0,
         codeMode: status.code_mode || null,
         tokenUsage: status.token_usage ?? null,
+        costUsage: status.cost ?? null,
         stackName: status.stack_name || '',
         autoscaleHistory: folded.history,
         autoscaleDecisions: folded.decisions,

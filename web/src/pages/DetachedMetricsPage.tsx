@@ -1,18 +1,21 @@
-import { useEffect, useState, useCallback, Component, type ReactNode } from 'react';
+import { useEffect, useState, useCallback, Component, type ComponentType, type ReactNode } from 'react';
 import {
   BarChart3,
   AlertCircle,
   Maximize2,
   Minimize2,
+  DollarSign,
+  Users,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
-import { fetchStatus, fetchTokenMetrics, clearTokenMetrics } from '../lib/api';
-import { formatCompactNumber } from '../lib/format';
+import { fetchStatus, fetchTokenMetrics, fetchCostMetrics, clearTokenMetrics } from '../lib/api';
+import { formatCompactNumber, formatUSD } from '../lib/format';
 import { POLLING } from '../lib/constants';
 import { AreaChart } from '../components/chart/AreaChart';
-import type { GatewayStatus, TokenMetricsResponse, TokenUsage } from '../types';
+import type { GatewayStatus, TokenMetricsResponse, CostMetricsResponse, TokenUsage, CostUsage } from '../types';
 import {
   Pause,
   Play,
@@ -68,6 +71,7 @@ class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 type TimeRange = 'live' | '1h' | '6h' | '24h' | '7d';
 type SortColumn = 'name' | 'input' | 'output' | 'total';
 type SortDirection = 'asc' | 'desc';
+type ClientSortColumn = 'name' | 'input' | 'output' | 'total' | 'cost';
 
 const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: 'live', label: 'Live' },
@@ -79,26 +83,31 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
 
 function DetachedMetricsPageContent() {
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
+  const [costUsage, setCostUsage] = useState<CostUsage | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('live');
   const [isPaused, setIsPaused] = useState(false);
   const [metricsData, setMetricsData] = useState<TokenMetricsResponse | null>(null);
+  const [costData, setCostData] = useState<CostMetricsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [sortColumn, setSortColumn] = useState<SortColumn>('total');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [clientSortColumn, setClientSortColumn] = useState<ClientSortColumn>('cost');
+  const [clientSortDirection, setClientSortDirection] = useState<SortDirection>('desc');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useDetachedWindowSync('metrics');
 
   const apiRange = timeRange === 'live' ? '30m' : timeRange;
 
-  // Poll status for real-time token usage
+  // Poll status for real-time token + cost usage
   useEffect(() => {
     const pollStatus = async () => {
       try {
         const status: GatewayStatus = await fetchStatus();
         setTokenUsage(status.token_usage ?? null);
+        setCostUsage(status.cost ?? null);
       } catch {
         // Ignore status errors
       }
@@ -111,9 +120,20 @@ function DetachedMetricsPageContent() {
 
   const loadMetrics = useCallback(async () => {
     try {
-      const data = await fetchTokenMetrics(apiRange);
-      setMetricsData(data);
-      setError(null);
+      const [tokenResult, costResult] = await Promise.allSettled([
+        fetchTokenMetrics(apiRange),
+        fetchCostMetrics(apiRange),
+      ]);
+      if (tokenResult.status === 'fulfilled') setMetricsData(tokenResult.value);
+      if (costResult.status === 'fulfilled') setCostData(costResult.value);
+      const firstFailure =
+        (tokenResult.status === 'rejected' && tokenResult.reason) ||
+        (costResult.status === 'rejected' && costResult.reason);
+      if (firstFailure) {
+        setError(firstFailure instanceof Error ? firstFailure.message : 'Failed to fetch metrics');
+      } else {
+        setError(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
     } finally {
@@ -139,6 +159,7 @@ function DetachedMetricsPageContent() {
     try {
       await clearTokenMetrics();
       setMetricsData(null);
+      setCostData(null);
       setShowClearConfirm(false);
       setIsLoading(true);
       loadMetrics();
@@ -153,6 +174,15 @@ function DetachedMetricsPageContent() {
     } else {
       setSortColumn(column);
       setSortDirection('desc');
+    }
+  };
+
+  const handleClientSort = (column: ClientSortColumn) => {
+    if (clientSortColumn === column) {
+      setClientSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setClientSortColumn(column);
+      setClientSortDirection('desc');
     }
   };
 
@@ -177,7 +207,12 @@ function DetachedMetricsPageContent() {
   const sessionTotal = tokenUsage?.session.total_tokens ?? 0;
   const savingsPercent = tokenUsage?.format_savings.savings_percent ?? 0;
   const savedTokens = tokenUsage?.format_savings.saved_tokens ?? 0;
-  const hasData = sessionTotal > 0 || (metricsData?.data_points?.length ?? 0) > 0;
+  const sessionCostUSD = costUsage?.session.total_usd;
+  const hasCost = sessionCostUSD !== undefined;
+  const hasData =
+    sessionTotal > 0 ||
+    (metricsData?.data_points?.length ?? 0) > 0 ||
+    (costData?.data_points?.length ?? 0) > 0;
 
   const chartData = metricsData?.data_points
     ? metricsData.data_points.map((dp) => ({
@@ -186,6 +221,40 @@ function DetachedMetricsPageContent() {
         "Output Tokens": dp.output_tokens,
       }))
     : [];
+
+  const costChartData = costData?.data_points
+    ? costData.data_points.map((dp) => ({
+        time: new Date(dp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        "Cost (USD)": dp.usd,
+      }))
+    : [];
+
+  const costSeriesHasData = costChartData.some((d) => d['Cost (USD)'] > 0);
+
+  const tokenClients = tokenUsage?.per_client ?? {};
+  const costClients = costUsage?.per_client ?? {};
+  const clientNames = new Set<string>([...Object.keys(tokenClients), ...Object.keys(costClients)]);
+  const perClientRows = Array.from(clientNames).map((name) => {
+    const tokens = tokenClients[name];
+    const cost = costClients[name];
+    return {
+      name,
+      input: tokens?.input_tokens ?? 0,
+      output: tokens?.output_tokens ?? 0,
+      total: tokens?.total_tokens ?? 0,
+      cost: cost?.total_usd,
+    };
+  });
+  const sortedClients = [...perClientRows].sort((a, b) => {
+    const dir = clientSortDirection === 'asc' ? 1 : -1;
+    if (clientSortColumn === 'name') return dir * a.name.localeCompare(b.name);
+    if (clientSortColumn === 'cost') {
+      const aCost = a.cost ?? -Infinity;
+      const bCost = b.cost ?? -Infinity;
+      return dir * (aCost - bCost);
+    }
+    return dir * (a[clientSortColumn] - b[clientSortColumn]);
+  });
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
@@ -361,10 +430,11 @@ function DetachedMetricsPageContent() {
         {!error && hasData && (
           <div className="space-y-4">
             {/* KPI Cards */}
-            <div className={cn('grid gap-3', savingsPercent > 0 ? 'grid-cols-4' : 'grid-cols-3')}>
+            <div className={cn('grid gap-3', savingsPercent > 0 ? 'grid-cols-5' : 'grid-cols-4')}>
               <KPICard label="Input Tokens" value={sessionInput} colorClass="text-secondary" />
               <KPICard label="Output Tokens" value={sessionOutput} colorClass="text-primary" />
               <KPICard label="Total Tokens" value={sessionTotal} colorClass="text-text-primary" />
+              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} />
               {savingsPercent > 0 && (
                 <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
                   <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Format Savings</span>
@@ -406,6 +476,66 @@ function DetachedMetricsPageContent() {
               />
             </div>
 
+            {(hasCost || costSeriesHasData) && (
+              <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-medium text-text-secondary inline-flex items-center gap-1.5">
+                    <DollarSign size={11} className="text-emerald-400" />
+                    Cost Over Time
+                  </span>
+                  {costData && (
+                    <span className="text-[9px] text-text-muted font-mono">
+                      {costData.data_points?.length ?? 0} points &middot; {costData.interval} interval
+                    </span>
+                  )}
+                </div>
+                <AreaChart
+                  data={costChartData}
+                  index="time"
+                  categories={["Cost (USD)"]}
+                  colors={["emerald"]}
+                  type="default"
+                  fill="gradient"
+                  showLegend={false}
+                  showGridLines={true}
+                  showYAxis={true}
+                  yAxisWidth={56}
+                  valueFormatter={(v: number) => formatUSD(v)}
+                  className="h-40"
+                />
+              </div>
+            )}
+
+            {/* Top Clients */}
+            {sortedClients.length > 0 && (
+              <PanelHeader icon={Users} label="Top Clients">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border/30">
+                      <ClientSortableHeader label="Client" column="name" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} />
+                      <ClientSortableHeader label="Input" column="input" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
+                      <ClientSortableHeader label="Output" column="output" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
+                      <ClientSortableHeader label="Total" column="total" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
+                      <ClientSortableHeader label="Cost" column="cost" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedClients.map((client) => (
+                      <tr key={client.name} className="border-b border-border/20 last:border-0 hover:bg-surface-highlight/30 transition-colors">
+                        <td className="px-3 py-2 font-medium text-text-primary font-mono">{client.name}</td>
+                        <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(client.input)}</td>
+                        <td className="px-3 py-2 text-right text-primary tabular-nums">{formatCompactNumber(client.output)}</td>
+                        <td className="px-3 py-2 text-right text-text-primary font-semibold tabular-nums">{formatCompactNumber(client.total)}</td>
+                        <td className={cn('px-3 py-2 text-right tabular-nums', client.cost === undefined ? 'text-text-muted' : 'text-emerald-400')}>
+                          {client.cost === undefined ? '—' : formatUSD(client.cost)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </PanelHeader>
+            )}
+
             {/* Per-Server Breakdown Table */}
             {sortedServers.length > 0 && (
               <div className="rounded-lg bg-surface-elevated/60 border border-border/30 overflow-hidden">
@@ -437,8 +567,14 @@ function DetachedMetricsPageContent() {
 
       {/* Footer */}
       <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
-        <span>
+        <span className="flex items-center gap-2">
           {sessionTotal > 0 ? `${formatCompactNumber(sessionTotal)} total tokens` : 'No data'}
+          {hasCost && (
+            <>
+              <span className="text-text-muted/50">·</span>
+              <span className="text-emerald-400/80">{formatUSD(sessionCostUSD ?? 0)}</span>
+            </>
+          )}
           {isPaused ? ' (paused)' : ''}
         </span>
         <span className="flex items-center gap-1">
@@ -461,6 +597,78 @@ function KPICard({ label, value, colorClass }: { label: string; value: number; c
       <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">{label}</span>
       <span className={cn('text-lg font-bold tabular-nums', colorClass)}>{formatCompactNumber(value)}</span>
     </div>
+  );
+}
+
+function CostKPICard({ usd, hasCost }: { usd: number | undefined; hasCost: boolean }) {
+  return (
+    <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
+      <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1 inline-flex items-center gap-1">
+        <DollarSign size={10} className="text-text-muted/70" />
+        Cost
+      </span>
+      <span
+        className={cn(
+          'text-lg font-bold tabular-nums',
+          hasCost ? 'text-emerald-400' : 'text-text-muted',
+        )}
+      >
+        {hasCost ? formatUSD(usd ?? 0) : '—'}
+      </span>
+    </div>
+  );
+}
+
+function PanelHeader({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: LucideIcon | ComponentType<{ size?: number; className?: string }>;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg bg-surface-elevated/60 border border-border/30 overflow-hidden">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 bg-surface-highlight/30">
+        <Icon size={11} className="text-text-muted" />
+        <span className="text-[11px] font-medium text-text-secondary">{label}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ClientSortableHeader({
+  label, column, sortColumn, sortDirection, onSort, align = 'left',
+}: {
+  label: string;
+  column: ClientSortColumn;
+  sortColumn: ClientSortColumn;
+  sortDirection: SortDirection;
+  onSort: (column: ClientSortColumn) => void;
+  align?: 'left' | 'right';
+}) {
+  const isActive = sortColumn === column;
+  const SortIcon = isActive ? (sortDirection === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+
+  return (
+    <th
+      className={cn(
+        'px-3 py-2 font-medium text-text-muted cursor-pointer hover:text-text-secondary transition-colors select-none',
+        align === 'right' && 'text-right'
+      )}
+      tabIndex={0}
+      role="columnheader"
+      aria-sort={isActive ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
+      onClick={() => onSort(column)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(column); } }}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <SortIcon size={10} className={isActive ? 'text-primary' : 'text-text-muted/40'} />
+      </span>
+    </th>
   );
 }
 
