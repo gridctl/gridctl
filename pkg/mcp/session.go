@@ -14,6 +14,10 @@ const maxSessions = 1000
 type Session struct {
 	ID          string
 	ClientInfo  ClientInfo
+	// ClientID is the normalized form of ClientInfo.Name (see NormalizeClientID).
+	// It is the stable attribution dimension threaded through tool-call observers
+	// so cost and token aggregates can be grouped per originating client.
+	ClientID    string
 	Initialized bool
 	CreatedAt   time.Time
 	LastSeen    time.Time
@@ -46,6 +50,7 @@ func (m *SessionManager) Create(clientInfo ClientInfo) *Session {
 	session := &Session{
 		ID:          id,
 		ClientInfo:  clientInfo,
+		ClientID:    NormalizeClientID(clientInfo.Name),
 		Initialized: true,
 		CreatedAt:   time.Now(),
 		LastSeen:    time.Now(),
