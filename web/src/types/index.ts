@@ -171,6 +171,32 @@ export interface CostMetricsResponse {
   per_client?: Record<string, CostDataPoint[]>;
 }
 
+// Severity classifies optimize findings. Mirrors pkg/optimize.Severity
+// on the Go side; "info" findings are advisory and never trigger a
+// non-zero CLI exit.
+export type OptimizeSeverity = 'info' | 'warn' | 'critical';
+
+// Single recommendation produced by pkg/optimize.Analyze.
+export interface OptimizeFinding {
+  id: string;
+  heuristic: string;
+  severity: OptimizeSeverity;
+  title: string;
+  summary: string;
+  server?: string;
+  tool?: string;
+  impact_usd_per_week: number;
+  remediation: string;
+  detected_at: string;
+}
+
+// Response from GET /api/optimize.
+export interface OptimizeReport {
+  findings: OptimizeFinding[];
+  health_score: number;
+  generated_at: string;
+}
+
 // Gateway status response from GET /api/status
 export interface GatewayStatus {
   gateway: ServerInfo;
