@@ -23,6 +23,7 @@ All notable changes to gridctl will be documented in this file.
 - Add the `gridctl optimize` CLI command — `--stack`/`--min-impact`/`--severity`/`--format json` flags, a styled findings table with severity, weekly $, and remediation hint, and the standard `0|1|2` exit codes (0 = no findings, 1 = warn/critical, 2 = gateway unreachable or wrong stack).
 - Add a Sidebar `Optimize` panel inside the gateway view: each finding renders with a severity badge, weekly USD impact, and a collapsible remediation snippet. The panel polls on the same cadence as Token Usage / Cost.
 - Track per-(server, tool) call counts on the metrics accumulator and thread the originating tool name through the observer path so `unused_tool` can detect cold tools without inferring from token totals.
+- Expand `pkg/optimize` with three additional heuristics: `schema_overhead` (server schema cost dominates tool value, derived from live tool-list bytes), `format_savings_shortfall` (server emits raw JSON when the session has demonstrated TOON/CSV savings — projects the measured savings rate onto the candidate server), and `expensive_model_on_cheap_task` (Opus-tier rate on simple-lookup traffic, informational only since model selection is client-side). All three reuse the existing `/api/optimize`, `gridctl optimize`, and Sidebar Optimize panel — no new surfaces.
 
 ### Bug Fixes
 
