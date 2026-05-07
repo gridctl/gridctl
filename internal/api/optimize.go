@@ -1,11 +1,15 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/optimize"
+	"github.com/gridctl/gridctl/pkg/pricing"
 )
 
 // handleOptimize handles GET /api/optimize and produces an
@@ -93,10 +97,113 @@ func (s *Server) optimizeStats() optimize.Stats {
 				Tools:         ms.Tools,
 				ToolWhitelist: ms.ToolWhitelist,
 				Initialized:   ms.Initialized,
+				OutputFormat:  ms.OutputFormat,
 			})
 		}
+		stats.PinStats = computeSchemaTokens(s.gateway)
 	}
+	if acc := s.metricsAccumulator; acc != nil {
+		snap := acc.Snapshot()
+		stats.FormatBaseline = optimize.FormatBaseline{
+			OriginalTokens:  snap.FormatSavings.OriginalTokens,
+			FormattedTokens: snap.FormatSavings.FormattedTokens,
+			SavingsPercent:  snap.FormatSavings.SavingsPercent,
+		}
+		stats.ServerCallCount = computeServerCallCount(acc.ToolUsageSnapshot())
+	}
+	stats.ModelStats = lookupModelStats(stats.Servers)
 	return stats
+}
+
+// computeSchemaTokens estimates per-server schema-overhead tokens by
+// marshaling the live tool list through the gateway and applying a
+// chars-per-token heuristic. The pin store's PinRecord has SHA256
+// hashes only, not byte counts, so we go to the live source. The
+// schema_overhead heuristic treats this as a measurement, not a
+// guess — every byte counted here is a byte the gateway actually
+// shipped on the last tools/list response.
+func computeSchemaTokens(gateway *mcp.Gateway) map[string]optimize.PinStat {
+	if gateway == nil {
+		return nil
+	}
+	result, err := gateway.HandleToolsList()
+	if err != nil || result == nil || len(result.Tools) == 0 {
+		return nil
+	}
+	bytesPerServer := make(map[string]int, len(result.Tools))
+	for _, tool := range result.Tools {
+		serverName, _, ok := splitPrefixedTool(tool.Name)
+		if !ok {
+			continue
+		}
+		raw, err := json.Marshal(tool)
+		if err != nil {
+			continue
+		}
+		bytesPerServer[serverName] += len(raw)
+	}
+	if len(bytesPerServer) == 0 {
+		return nil
+	}
+	out := make(map[string]optimize.PinStat, len(bytesPerServer))
+	for name, bytes := range bytesPerServer {
+		// Approximate token count via the OpenAI rule-of-thumb of ~4
+		// characters per token. JSON Schemas trend slightly token-dense
+		// because of curly braces and quoting, but ~4 is the right
+		// order of magnitude and we don't need precision for a
+		// threshold-driven heuristic.
+		out[name] = optimize.PinStat{SchemaTokens: bytes / 4}
+	}
+	return out
+}
+
+// splitPrefixedTool extracts the server name from the gateway's
+// "<server>__<tool>" prefix shape. The mcp package owns the delimiter
+// constant; we mirror the value here so this helper can stay
+// stdlib-only and avoid a circular import.
+func splitPrefixedTool(prefixed string) (server, tool string, ok bool) {
+	const delim = "__"
+	idx := strings.Index(prefixed, delim)
+	if idx <= 0 || idx+len(delim) >= len(prefixed) {
+		return "", "", false
+	}
+	return prefixed[:idx], prefixed[idx+len(delim):], true
+}
+
+// computeServerCallCount sums the per-(server, tool) call counts the
+// accumulator captured into a per-server total. Used by the
+// expensive_model_on_cheap_task heuristic to compute average tokens
+// per call without the metrics package growing a separate counter.
+func computeServerCallCount(toolUsage map[string]map[string]metrics.ToolStat) map[string]int64 {
+	if len(toolUsage) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(toolUsage))
+	for server, tools := range toolUsage {
+		var total int64
+		for _, stat := range tools {
+			total += stat.Calls
+		}
+		if total > 0 {
+			out[server] = total
+		}
+	}
+	return out
+}
+
+// lookupModelStats consults the active pricing.Source for a default
+// model attribution per server. The current gateway has no per-server
+// model resolver wired into a public accessor, so this returns an
+// empty map for now — the expensive_model_on_cheap_task heuristic
+// falls back to inferring rate from observed cost÷tokens, which still
+// correctly identifies Opus-tier traffic.
+//
+// When a future PR exposes per-server model attribution, populate the
+// returned map here so the heuristic can name the model in its
+// summary instead of saying "an Opus-tier model."
+func lookupModelStats(_ []optimize.ServerInfo) map[string]optimize.ModelStat {
+	_ = pricing.CurrentSource()
+	return nil
 }
 
 // parseFloatQuery returns the float64 value of a query parameter, or 0
