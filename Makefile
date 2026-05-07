@@ -1,4 +1,4 @@
-.PHONY: all build build-web build-go dev clean help test test-coverage test-integration test-frontend mock-servers clean-mock-servers generate
+.PHONY: all build build-web build-go dev clean help test test-coverage test-integration test-frontend mock-servers clean-mock-servers generate update-pricing
 
 # Version from git tags (fallback to dev)
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -117,6 +117,23 @@ clean-mock-servers:
 	@rm -f examples/_mock-servers/mock-mcp-server/mock-mcp-server
 	@echo "Mock servers cleaned up."
 
+# Refresh embedded LiteLLM pricing data. Recommended weekly cadence — the
+# upstream file changes whenever providers adjust per-token rates or add
+# new models. The download is non-fatal: if the fetch fails the existing
+# embedded snapshot is preserved.
+PRICING_URL := https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
+PRICING_DEST := pkg/pricing/data/model_prices.json
+update-pricing:
+	@echo "Refreshing pricing data from $(PRICING_URL)..."
+	@tmp=$$(mktemp); \
+	if curl -sSL --fail --max-time 30 -o $$tmp $(PRICING_URL); then \
+		mv $$tmp $(PRICING_DEST); \
+		echo "Updated $(PRICING_DEST) ($$(wc -c < $(PRICING_DEST)) bytes)."; \
+	else \
+		rm -f $$tmp; \
+		echo "WARN: pricing refresh failed; keeping existing $(PRICING_DEST)."; \
+	fi
+
 # Generate mocks (requires mockgen: go install go.uber.org/mock/mockgen@latest)
 generate:
 	@echo "Generating mocks..."
@@ -140,6 +157,7 @@ help:
 	@echo "  make test-frontend - Run frontend tests"
 	@echo "  make test-integration - Run integration tests (requires Docker)"
 	@echo "  make generate   - Regenerate mock files (requires mockgen)"
+	@echo "  make update-pricing - Refresh embedded LiteLLM pricing data (weekly)"
 	@echo "  make mock-servers [PORT=9001] - Build and run mock MCP servers for examples"
 	@echo "  make clean-mock-servers - Stop and remove mock MCP servers"
 	@echo "  make help       - Show this help message"
