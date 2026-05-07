@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SkillTestResult, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, CostMetricsResponse, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SkillTestResult, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -362,6 +362,39 @@ export async function clearTokenMetrics(): Promise<void> {
 
   if (!response.ok) {
     throw new Error(`Clear metrics failed: ${response.status} ${response.statusText}`);
+  }
+}
+
+/**
+ * Fetch historical USD-cost metrics. Mirrors fetchTokenMetrics so cost
+ * charts can share the existing time-range vocabulary.
+ * GET /api/metrics/cost?range=1h&per_client=true
+ */
+export async function fetchCostMetrics(
+  range: string = '1h',
+  perClient: boolean = false,
+): Promise<CostMetricsResponse> {
+  const params = new URLSearchParams({ range });
+  if (perClient) params.set('per_client', 'true');
+  return fetchJSON<CostMetricsResponse>(`/api/metrics/cost?${params.toString()}`);
+}
+
+/**
+ * Clear recorded USD-cost metrics. Leaves token counters intact.
+ * DELETE /api/metrics/cost
+ */
+export async function clearCostMetrics(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/metrics/cost`, {
+    method: 'DELETE',
+    headers: buildHeaders(),
+  });
+
+  if (response.status === 401) {
+    throw new AuthError('Authentication required');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Clear cost metrics failed: ${response.status} ${response.statusText}`);
   }
 }
 
