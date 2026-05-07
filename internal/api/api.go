@@ -225,6 +225,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
 	mux.HandleFunc("/api/metrics/tokens", s.handleMetricsTokens)
+	mux.HandleFunc("/api/metrics/cost", s.handleMetricsCost)
 	mux.HandleFunc("GET /api/traces", s.handleTraces)
 	mux.HandleFunc("GET /api/traces/{traceId}", s.handleTraces)
 	mux.HandleFunc("/api/clients", s.handleClients)
@@ -348,6 +349,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Registry   *registry.RegistryStatus `json:"registry,omitempty"`
 		CodeMode   string                   `json:"code_mode,omitempty"`
 		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
+		Cost       *metrics.CostUsage       `json:"cost,omitempty"`
 		StackName  string                   `json:"stack_name,omitempty"`
 	}{
 		Gateway: ServerInfo{
@@ -375,9 +377,19 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if s.metricsAccumulator != nil {
 		snap := s.metricsAccumulator.Snapshot()
 		status.TokenUsage = &snap
+		if cost := s.metricsAccumulator.CostSnapshot(); !costSnapshotIsZero(cost) {
+			status.Cost = &cost
+		}
 	}
 
 	writeJSON(w, status)
+}
+
+// costSnapshotIsZero reports whether a CostUsage has any recorded cost data.
+// We omit the /api/status `cost` field entirely when zero so consumers see
+// the same JSON shape they did before per-call cost was recorded.
+func costSnapshotIsZero(c metrics.CostUsage) bool {
+	return c.Session.TotalUSD == 0 && len(c.PerServer) == 0 && len(c.PerReplica) == 0 && len(c.PerClient) == 0
 }
 
 // handleSessions returns active MCP session count and IDs.
@@ -738,6 +750,102 @@ func (s *Server) handleDeleteMetricsTokens(w http.ResponseWriter, _ *http.Reques
 
 	s.metricsAccumulator.Clear()
 	writeJSON(w, map[string]string{"status": "ok", "message": "Token metrics cleared"})
+}
+
+// handleMetricsCost handles cost metrics requests.
+// GET /api/metrics/cost?range=1h&per_client=true — historical cost time-series
+// DELETE /api/metrics/cost — clears recorded cost data without touching tokens
+func (s *Server) handleMetricsCost(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetMetricsCost(w, r)
+	case http.MethodDelete:
+		s.handleDeleteMetricsCost(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleGetMetricsCost returns historical cost-over-time data with the same
+// time-range vocabulary as /api/metrics/tokens. Setting per_client=true on
+// the query string includes a `per_client` map grouping cost by the
+// originating MCP client; otherwise the response carries only the
+// session-wide series and per-server breakdown.
+func (s *Server) handleGetMetricsCost(w http.ResponseWriter, r *http.Request) {
+	emptyResponse := metrics.CostTimeSeriesResponse{
+		Range:     "1h",
+		Interval:  "1m",
+		Points:    []metrics.CostDataPoint{},
+		PerServer: map[string][]metrics.CostDataPoint{},
+	}
+	if s.metricsAccumulator == nil {
+		writeJSON(w, emptyResponse)
+		return
+	}
+
+	rangeParam := r.URL.Query().Get("range")
+	duration := parseRange(rangeParam)
+	includeClients := parseBoolQuery(r, "per_client", false)
+
+	var result metrics.CostTimeSeriesResponse
+	if includeClients {
+		result = s.metricsAccumulator.QueryCostByClient(duration)
+	} else {
+		result = s.metricsAccumulator.QueryCost(duration)
+	}
+
+	// Ensure non-nil slices for stable JSON serialization.
+	if result.Points == nil {
+		result.Points = []metrics.CostDataPoint{}
+	}
+	if result.PerServer == nil {
+		result.PerServer = map[string][]metrics.CostDataPoint{}
+	}
+	for name, points := range result.PerServer {
+		if points == nil {
+			result.PerServer[name] = []metrics.CostDataPoint{}
+		}
+	}
+	if includeClients {
+		if result.PerClient == nil {
+			result.PerClient = map[string][]metrics.CostDataPoint{}
+		}
+		for name, points := range result.PerClient {
+			if points == nil {
+				result.PerClient[name] = []metrics.CostDataPoint{}
+			}
+		}
+	}
+
+	writeJSON(w, result)
+}
+
+// handleDeleteMetricsCost clears recorded cost data while leaving token
+// counters and the format-savings tally intact.
+func (s *Server) handleDeleteMetricsCost(w http.ResponseWriter, _ *http.Request) {
+	if s.metricsAccumulator == nil {
+		writeJSON(w, map[string]string{"status": "ok", "message": "Cost metrics cleared"})
+		return
+	}
+	s.metricsAccumulator.ClearCost()
+	writeJSON(w, map[string]string{"status": "ok", "message": "Cost metrics cleared"})
+}
+
+// parseBoolQuery returns the boolean value of a query parameter, falling
+// back to def when the parameter is unset or unparseable. "1", "true",
+// "yes", "on" (case-insensitive) all read as true.
+func parseBoolQuery(r *http.Request, key string, def bool) bool {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return def
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	return def
 }
 
 // parseRange converts a range query parameter to a duration.
