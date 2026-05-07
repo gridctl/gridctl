@@ -62,6 +62,60 @@ type ToolCallObserver interface {
 	ObserveToolCall(serverName string, replicaID int, arguments map[string]any, result *ToolCallResult)
 }
 
+// ToolCallObservation is the additive payload passed to ClientObserver. New
+// optional fields land here over time so the ToolCallObserver interface
+// stays stable.
+type ToolCallObservation struct {
+	// ServerName is the MCP server that handled the call.
+	ServerName string
+	// ReplicaID is the zero-indexed replica within ServerName's replica set,
+	// or -1 when the caller did not dispatch through a ReplicaSet.
+	ReplicaID int
+	// ClientID is the normalized identifier of the originating MCP client
+	// (e.g. "claude-code", "cursor"). Empty when no session attribution
+	// was available — observers should treat that as anonymous.
+	ClientID string
+	// ToolName is the unprefixed tool name (no "<server>__" prefix).
+	ToolName string
+	// Arguments are the tool call arguments (input).
+	Arguments map[string]any
+	// Result is the tool call response (output). May be nil on error.
+	Result *ToolCallResult
+}
+
+// ToolCallSummary is the synchronous return value of ObserveToolCallWithClient.
+// The gateway uses these values to populate OTel GenAI semantic-convention
+// span attributes without re-counting tokens. Cache-token fields are zero
+// when the underlying tool result did not report cache usage.
+type ToolCallSummary struct {
+	InputTokens         int
+	OutputTokens        int
+	CacheReadTokens     int
+	CacheCreationTokens int
+	// Model is the canonical model ID used to price the call, or "" when
+	// no model could be resolved.
+	Model string
+	// CostUSD is the total USD cost recorded for the call. Zero when
+	// HasCost is false.
+	CostUSD float64
+	// HasCost reports whether the active pricing source recognised Model
+	// and produced a non-zero breakdown for the call.
+	HasCost bool
+}
+
+// ClientObserver is the optional richer interface that observers implement to
+// receive context-aware, client-attributed observations. Implementations are
+// invoked synchronously by the gateway so they can read the active span
+// from ctx and return precomputed values for span attribution. Observers
+// that only implement the legacy ToolCallObserver continue to work via
+// the asynchronous fan-out path.
+type ClientObserver interface {
+	// ObserveToolCallWithClient records a tool-call observation. The returned
+	// summary carries the values the gateway needs to set OTel GenAI span
+	// attributes on the call's child span.
+	ObserveToolCallWithClient(ctx context.Context, obs ToolCallObservation) ToolCallSummary
+}
+
 // FormatSavingsRecorder receives format savings observations.
 // Used by the gateway to report token savings from format conversion
 // without coupling to the metrics package directly.
