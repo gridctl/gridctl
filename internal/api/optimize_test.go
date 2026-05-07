@@ -112,6 +112,71 @@ func TestHandleOptimize_CountsToolUsage(t *testing.T) {
 	}
 }
 
+// TestOptimizeStats_ServerCallCount_FromToolUsage covers the wiring
+// between the per-tool counter on the accumulator and the per-server
+// call count expensive_model_on_cheap_task expects.
+func TestOptimizeStats_ServerCallCount_FromToolUsage(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.RecordToolCall("github", "create_issue")
+	srv.metricsAccumulator.RecordToolCall("github", "create_issue")
+	srv.metricsAccumulator.RecordToolCall("github", "list_issues")
+	srv.metricsAccumulator.RecordToolCall("filesystem", "read_file")
+
+	stats := srv.optimizeStats()
+
+	if got := stats.ServerCallCount["github"]; got != 3 {
+		t.Errorf("github call count = %d, want 3", got)
+	}
+	if got := stats.ServerCallCount["filesystem"]; got != 1 {
+		t.Errorf("filesystem call count = %d, want 1", got)
+	}
+}
+
+// TestOptimizeStats_FormatBaseline_FromAccumulator covers the wiring
+// between RecordFormatSavings and the FormatBaseline shape the
+// format_savings_shortfall heuristic reads.
+func TestOptimizeStats_FormatBaseline_FromAccumulator(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.RecordFormatSavings("toon-server", 10_000, 7_000)
+
+	stats := srv.optimizeStats()
+
+	if stats.FormatBaseline.OriginalTokens != 10_000 {
+		t.Errorf("OriginalTokens = %d, want 10000", stats.FormatBaseline.OriginalTokens)
+	}
+	if stats.FormatBaseline.FormattedTokens != 7_000 {
+		t.Errorf("FormattedTokens = %d, want 7000", stats.FormatBaseline.FormattedTokens)
+	}
+	if stats.FormatBaseline.SavingsPercent < 29 || stats.FormatBaseline.SavingsPercent > 31 {
+		t.Errorf("SavingsPercent = %v, want ~30", stats.FormatBaseline.SavingsPercent)
+	}
+}
+
+// TestSplitPrefixedTool covers the gateway tool-name format the
+// schema_overhead computation depends on.
+func TestSplitPrefixedTool(t *testing.T) {
+	cases := []struct {
+		in       string
+		wantSrv  string
+		wantTool string
+		wantOk   bool
+	}{
+		{"github__create_issue", "github", "create_issue", true},
+		{"filesystem__read_file", "filesystem", "read_file", true},
+		{"no_delim_here", "", "", false},
+		{"__leading", "", "", false},
+		{"trailing__", "", "", false},
+		{"", "", "", false},
+	}
+	for _, tc := range cases {
+		gotSrv, gotTool, gotOk := splitPrefixedTool(tc.in)
+		if gotSrv != tc.wantSrv || gotTool != tc.wantTool || gotOk != tc.wantOk {
+			t.Errorf("splitPrefixedTool(%q) = (%q, %q, %v), want (%q, %q, %v)",
+				tc.in, gotSrv, gotTool, gotOk, tc.wantSrv, tc.wantTool, tc.wantOk)
+		}
+	}
+}
+
 // Round-trip check: a min_impact filter is honored through the API.
 func TestHandleOptimize_MinImpactRespected(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
