@@ -166,6 +166,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `registry` | object | Registry skill counts (omitted if empty) |
 | `code_mode` | string | Code mode status (omitted if `"off"`) |
 | `token_usage` | object | Token usage metrics (omitted if no metrics accumulator) |
+| `cost` | object | USD cost snapshot (omitted when no cost has been recorded) |
 
 **Token usage fields:**
 
@@ -173,7 +174,17 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 |-------|------|-------------|
 | `session` | object | Aggregate token counts (`input_tokens`, `output_tokens`, `total_tokens`) |
 | `per_server` | map | Token counts keyed by server name |
+| `per_client` | map | Token counts keyed by normalized MCP client name (omitted when no per-client traffic has been observed) |
 | `format_savings` | object | Savings from output format conversion (`original_tokens`, `formatted_tokens`, `saved_tokens`, `savings_percent`) |
+
+**Cost fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session` | object | Aggregate USD cost (`input_usd`, `output_usd`, `cache_read_usd`, `cache_write_usd`, `total_usd`) |
+| `per_server` | map | USD cost keyed by server name |
+| `per_replica` | map | USD cost keyed by `(server, replica_id)` (omitted when no replica-aware traffic has been observed) |
+| `per_client` | map | USD cost keyed by normalized MCP client name (omitted when no per-client traffic has been observed) |
 
 **MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server, and `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers).
 
@@ -309,6 +320,58 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/metri
 **Response:**
 ```json
 {"status": "ok", "message": "Token metrics cleared"}
+```
+
+---
+
+### Cost Metrics
+
+#### `GET /api/metrics/cost`
+
+Returns historical USD cost time-series data, mirroring the `/api/metrics/tokens` shape. Cost is computed at observation time using the active pricing source (LiteLLM by default) and never recomputed from stored token totals.
+
+**Auth:** Yes
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `range` | string | `"1h"` | Time range: `"30m"`, `"1h"`, `"6h"`, `"24h"`, `"7d"` |
+| `per_client` | bool | `false` | When `true`, the response includes a `per_client` map grouping cost by the originating MCP client (e.g. `claude-code`, `cursor`). |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/metrics/cost?range=24h&per_client=true"
+```
+
+**Response:**
+```json
+{
+  "range": "24h",
+  "interval": "1h",
+  "data_points": [
+    {"timestamp": "2026-05-07T00:00:00Z", "usd": 0.42}
+  ],
+  "per_server": {
+    "github": [{"timestamp": "2026-05-07T00:00:00Z", "usd": 0.42}]
+  },
+  "per_client": {
+    "claude-code": [{"timestamp": "2026-05-07T00:00:00Z", "usd": 0.30}],
+    "cursor":      [{"timestamp": "2026-05-07T00:00:00Z", "usd": 0.12}]
+  }
+}
+```
+
+#### `DELETE /api/metrics/cost`
+
+Clears recorded cost data while leaving token counters and the format-savings tally intact. Use this when rotating pricing sources or recovering from a bad pricing snapshot without losing token history.
+
+**Auth:** Yes
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/metrics/cost
+```
+
+**Response:**
+```json
+{"status": "ok", "message": "Cost metrics cleared"}
 ```
 
 ---
