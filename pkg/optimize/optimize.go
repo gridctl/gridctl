@@ -114,6 +114,12 @@ type ServerInfo struct {
 	// list may be empty for transient reasons (cold start, network
 	// blip) rather than misconfiguration.
 	Initialized bool
+
+	// OutputFormat is the configured `output_format` from the stack
+	// YAML — "json" (or empty) for the default, "toon" / "csv" / "text"
+	// for the format-conversion variants. Powers the
+	// format_savings_shortfall heuristic.
+	OutputFormat string
 }
 
 // ServerUsage carries per-server token and cost totals as observed by
@@ -171,6 +177,83 @@ type Stats struct {
 	// Analyze to skip the unused_tool heuristic entirely (rather than
 	// flagging every tool as unused).
 	ToolUsage map[string]map[string]ToolStat
+
+	// PinStats is per-server schema-overhead inputs. nil disables the
+	// schema_overhead heuristic. Populated by callers that can read
+	// schema-byte counts off the live gateway tool list (or, in the
+	// future, from extended pin records); fall back to nil when no
+	// data source is available so the heuristic skips silently.
+	PinStats map[string]PinStat
+
+	// FormatBaseline is the session-wide format-conversion savings rate
+	// observed across servers that DO use `output_format: toon|csv`.
+	// Used by the format_savings_shortfall heuristic to project savings
+	// onto servers that have not adopted format conversion. The zero
+	// value disables the heuristic — without a baseline we have no
+	// gateway-measured evidence that conversion would help here.
+	FormatBaseline FormatBaseline
+
+	// ServerCallCount is the total tool-call count per server, summed
+	// across that server's tools. Used by
+	// expensive_model_on_cheap_task to compute average tokens-per-call.
+	// nil means the heuristic skips per-server avg-tokens math.
+	ServerCallCount map[string]int64
+
+	// ModelStats carries per-server pricing rates when the call site
+	// knows which model dominates traffic for that server. Empty/nil
+	// causes expensive_model_on_cheap_task to fall back to inferring
+	// the rate from observed cost÷tokens.
+	ModelStats map[string]ModelStat
+}
+
+// PinStat carries the schema-overhead inputs for a single server. The
+// pin shape evolves over time, so callers populate this from whichever
+// source is most authoritative on their build (live tool list, pin
+// records, etc.). Zero values cause the heuristic to skip the server.
+type PinStat struct {
+	// SchemaTokens is the estimated total token cost of the server's
+	// tool definitions when serialized into a tools/list response.
+	// Populated by counting bytes of marshaled JSON and applying a
+	// chars-per-token heuristic.
+	SchemaTokens int
+}
+
+// FormatBaseline summarizes the session-wide token savings achieved by
+// servers already using `output_format: toon|csv` conversion. The
+// format_savings_shortfall heuristic projects this rate onto candidate
+// servers to derive a measured impact estimate.
+type FormatBaseline struct {
+	// OriginalTokens is the pre-conversion token count summed across
+	// every conversion the gateway has observed.
+	OriginalTokens int64
+	// FormattedTokens is the post-conversion token count for the same
+	// observations.
+	FormattedTokens int64
+	// SavingsPercent is the percentage of tokens saved by conversion
+	// (0–100). Computed by the caller; zero means "no demonstrated
+	// savings yet" and the heuristic skips.
+	SavingsPercent float64
+}
+
+// ModelStat names the dominant model for a server and carries its
+// per-token rates. Used by expensive_model_on_cheap_task to detect
+// "Opus-tier model on a simple lookup tool" without re-deriving rates
+// from cost÷tokens (which conflates input vs output vs cache rates).
+type ModelStat struct {
+	// Model is the canonical model ID (e.g. "claude-opus-4-7"). Empty
+	// when the gateway has no resolver wired for the server, in which
+	// case the heuristic falls back to inferring rate from observed
+	// cost.
+	Model string
+	// InputUSDPerToken is the input-token rate from pricing.Lookup.
+	// Zero disables the rate-based path; the heuristic falls back to
+	// inferring from observed cost÷tokens.
+	InputUSDPerToken float64
+	// OutputUSDPerToken is the output-token rate from pricing.Lookup.
+	// Provided alongside InputUSDPerToken for completeness; the
+	// heuristic itself only needs InputUSDPerToken to detect
+	// Opus-tier pricing.
+	OutputUSDPerToken float64
 }
 
 // ToolStat mirrors metrics.ToolStat so pkg/optimize stays free of an
@@ -198,9 +281,9 @@ const (
 
 	// estimatedSchemaOverheadTokens is the rough JSON Schema cost a
 	// server adds to every prompt regardless of whether its tools are
-	// called. Used as a coarse upper-bound for unused_server impact;
-	// the schema_overhead heuristic in PR 5 will replace this with the
-	// real byte count from the pin store.
+	// called. Used as a coarse upper-bound for unused_server impact
+	// when no measured schema-token data is available (e.g. legacy
+	// gateway, no live tool list).
 	estimatedSchemaOverheadTokens = 1500
 
 	// estimatedPromptsPerWeek is a conservative upper-bound on how
@@ -215,6 +298,54 @@ const (
 	// tokens, the Anthropic Sonnet rate, is a defensible mid-range
 	// number across providers in 2026.
 	estimatedInputUSDPerToken = 3.0 / 1_000_000.0
+
+	// schemaOverheadMinSchemaTokens is the floor on schema size below
+	// which schema_overhead never fires — small servers never push a
+	// meaningful prompt-tax even if they're idle.
+	schemaOverheadMinSchemaTokens = 2000
+
+	// schemaOverheadRatioFloor is the minimum ratio of (output tokens
+	// observed) to (schema tokens) that a server must achieve to avoid
+	// firing. A server that has produced fewer output tokens than its
+	// schema costs to advertise is paying more for the schema than
+	// it's getting back from the calls.
+	schemaOverheadRatioFloor = 5.0
+
+	// formatShortfallMinSavingsPercent is the floor on the session
+	// FormatBaseline.SavingsPercent below which format_savings_shortfall
+	// is silent. Without demonstrated savings, projecting onto a
+	// candidate server would be a guess, not a measurement.
+	formatShortfallMinSavingsPercent = 10.0
+
+	// formatShortfallMinOutputTokens is the floor on a candidate
+	// server's output tokens below which the heuristic skips. Below
+	// this threshold the projected savings rounds to zero and the
+	// finding adds noise without value.
+	formatShortfallMinOutputTokens = 5_000
+
+	// formatShortfallProjectionWeeks is how many weeks of activity the
+	// projected impact represents — set to 1 so the
+	// `impact_usd_per_week` field stays comparable to the other
+	// heuristics' weekly numbers.
+	formatShortfallProjectionWeeks = 1.0
+
+	// expensiveModelInputRateThreshold flags any server whose dominant
+	// model has an input rate at or above this number. ~$5 per million
+	// input tokens captures Opus-tier and GPT-4-class pricing without
+	// catching mid-tier Sonnet/GPT-4o.
+	expensiveModelInputRateThreshold = 5.0 / 1_000_000.0
+
+	// expensiveModelMaxAvgTokensPerCall is the upper bound on the
+	// per-call token average that still counts as a "simple lookup."
+	// Servers with larger calls (long prompts, big result payloads)
+	// are not the target of this heuristic — it's about cheap tasks
+	// being executed on expensive infra.
+	expensiveModelMaxAvgTokensPerCall = 200.0
+
+	// expensiveModelMinCalls keeps the heuristic from firing on a
+	// single outlier call. Five calls is enough to be a pattern; less
+	// than that is anecdote.
+	expensiveModelMinCalls = 5
 )
 
 // Analyze runs the v1 heuristic pass over the supplied Stats and
@@ -258,6 +389,9 @@ func Analyze(stats Stats, opts Options) OptimizeReport {
 	var findings []Finding
 	findings = append(findings, detectUnusedServers(stats, now, cutoff)...)
 	findings = append(findings, detectUnusedTools(stats, now, cutoff)...)
+	findings = append(findings, detectSchemaOverhead(stats, now)...)
+	findings = append(findings, detectFormatSavingsShortfall(stats, now)...)
+	findings = append(findings, detectExpensiveModelOnCheapTask(stats, now)...)
 
 	if opts.MinImpactUSDPerWeek > 0 {
 		findings = filterByImpact(findings, opts.MinImpactUSDPerWeek)
@@ -408,6 +542,227 @@ func remediationUnusedTool(srv ServerInfo, tool string) string {
 	return out
 }
 
+// detectSchemaOverhead flags servers whose tool-list payload (the
+// schema gateway sends on every initialize / tools/list) is large
+// relative to the value the server's tools have produced. The formula
+// is the gateway-data-driven shape of the prompt's heuristic:
+//
+//	ratio = output_tokens / schema_tokens
+//
+// If schema_tokens crosses the floor and ratio falls below
+// schemaOverheadRatioFloor, the server's schema is paying more than
+// the calls have delivered back — typically because few of the
+// advertised tools are exercised. The remediation pushes the user to
+// trim the tool list via `tools:` so the schema shrinks.
+//
+// Skipped silently when PinStats is empty for the server: we never
+// fabricate schema-token counts, and without them the heuristic has
+// no measurement to anchor to.
+func detectSchemaOverhead(stats Stats, now time.Time) []Finding {
+	if len(stats.PinStats) == 0 {
+		return nil
+	}
+	var out []Finding
+	for _, srv := range stats.Servers {
+		if !srv.Initialized {
+			continue
+		}
+		pin, ok := stats.PinStats[srv.Name]
+		if !ok || pin.SchemaTokens < schemaOverheadMinSchemaTokens {
+			continue
+		}
+		usage := stats.Usage[srv.Name]
+		// A server with zero output tokens is unused — covered by
+		// detectUnusedServers; skip here so we don't emit two warnings
+		// for the same root cause.
+		if usage.OutputTokens == 0 {
+			continue
+		}
+		ratio := float64(usage.OutputTokens) / float64(pin.SchemaTokens)
+		if ratio >= schemaOverheadRatioFloor {
+			continue
+		}
+		impact := schemaOverheadImpact(pin.SchemaTokens, usage)
+		out = append(out, Finding{
+			ID:               "schema-overhead-" + srv.Name,
+			Heuristic:        "schema_overhead",
+			Severity:         SeverityWarn,
+			Title:            "Schema overhead exceeds tool value: " + srv.Name,
+			Summary:          summarySchemaOverhead(srv, pin, usage, ratio),
+			Server:           srv.Name,
+			ImpactUSDPerWeek: impact,
+			Remediation:      remediationSchemaOverhead(srv),
+			DetectedAt:       now,
+		})
+	}
+	return out
+}
+
+// detectFormatSavingsShortfall flags servers that emit raw JSON output
+// (no `output_format` configured) when other servers in the same
+// session have already demonstrated a meaningful savings rate from
+// converting to TOON or CSV. The projected impact uses the session
+// baseline rate × the candidate server's measured output tokens × the
+// candidate's measured per-token cost — every input is observed, not
+// guessed.
+//
+// Skipped silently when:
+//   - FormatBaseline.SavingsPercent is below the demonstration floor
+//     (the gateway has no measured savings to project).
+//   - The candidate server already has output_format set to a
+//     conversion variant (toon, csv, text).
+//   - The candidate's output tokens are below formatShortfallMinOutputTokens.
+func detectFormatSavingsShortfall(stats Stats, now time.Time) []Finding {
+	if stats.FormatBaseline.SavingsPercent < formatShortfallMinSavingsPercent {
+		return nil
+	}
+	var out []Finding
+	for _, srv := range stats.Servers {
+		if !srv.Initialized {
+			continue
+		}
+		if usesFormatConversion(srv.OutputFormat) {
+			continue
+		}
+		usage := stats.Usage[srv.Name]
+		if usage.OutputTokens < formatShortfallMinOutputTokens {
+			continue
+		}
+		// Per-token rate inferred from observed cost so impact stays
+		// gateway-data-driven. Falls back to the conservative default
+		// when no cost has been recorded yet (rare for a server with
+		// >5K output tokens but possible right after pricing data was
+		// cleared via DELETE /api/metrics/cost).
+		rate := estimatedInputUSDPerToken
+		if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
+			rate = usage.TotalCostUSD / float64(usage.TotalTokens)
+		}
+		projectedSavedTokens := float64(usage.OutputTokens) * stats.FormatBaseline.SavingsPercent / 100.0
+		impact := projectedSavedTokens * rate * formatShortfallProjectionWeeks
+		out = append(out, Finding{
+			ID:               "format-savings-shortfall-" + srv.Name,
+			Heuristic:        "format_savings_shortfall",
+			Severity:         SeverityWarn,
+			Title:            "Output format conversion would save tokens: " + srv.Name,
+			Summary:          summaryFormatShortfall(srv, usage, stats.FormatBaseline),
+			Server:           srv.Name,
+			ImpactUSDPerWeek: impact,
+			Remediation:      remediationFormatShortfall(srv),
+			DetectedAt:       now,
+		})
+	}
+	return out
+}
+
+// detectExpensiveModelOnCheapTask flags servers where an Opus-tier
+// model dominates traffic but the calls themselves are tiny — short
+// prompts, short results — i.e. the simple-lookup pattern. The
+// finding is informational only because the model usually lives
+// client-side; gridctl can suggest the migration but cannot enforce it.
+//
+// The detection logic prefers explicit ModelStats when the call site
+// knows which model is in use; otherwise it falls back to inferring
+// an effective rate from observed cost÷tokens. When neither signal is
+// available the heuristic stays silent.
+func detectExpensiveModelOnCheapTask(stats Stats, now time.Time) []Finding {
+	if len(stats.ServerCallCount) == 0 {
+		return nil
+	}
+	var out []Finding
+	for _, srv := range stats.Servers {
+		if !srv.Initialized {
+			continue
+		}
+		nCalls := stats.ServerCallCount[srv.Name]
+		if nCalls < expensiveModelMinCalls {
+			continue
+		}
+		usage := stats.Usage[srv.Name]
+		if usage.TotalTokens == 0 {
+			continue
+		}
+		avgTokensPerCall := float64(usage.TotalTokens) / float64(nCalls)
+		if avgTokensPerCall > expensiveModelMaxAvgTokensPerCall {
+			continue
+		}
+		rate, modelName := resolveDominantRate(stats.ModelStats[srv.Name], usage)
+		if rate < expensiveModelInputRateThreshold {
+			continue
+		}
+		out = append(out, Finding{
+			ID:               "expensive-model-cheap-task-" + srv.Name,
+			Heuristic:        "expensive_model_on_cheap_task",
+			Severity:         SeverityInfo,
+			Title:            "Expensive model on cheap task: " + srv.Name,
+			Summary:          summaryExpensiveModel(srv, usage, nCalls, modelName, rate),
+			Server:           srv.Name,
+			ImpactUSDPerWeek: 0, // informational; client-side model swap is the action
+			Remediation:      remediationExpensiveModel(srv, modelName),
+			DetectedAt:       now,
+		})
+	}
+	return out
+}
+
+func schemaOverheadImpact(schemaTokens int, usage ServerUsage) float64 {
+	rate := estimatedInputUSDPerToken
+	if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
+		rate = usage.TotalCostUSD / float64(usage.TotalTokens)
+	}
+	return float64(schemaTokens) * estimatedPromptsPerWeek * rate
+}
+
+func summarySchemaOverhead(srv ServerInfo, pin PinStat, usage ServerUsage, ratio float64) string {
+	return "Server '" + srv.Name + "' advertises " + itoa(len(srv.Tools)) + " tools (~" + itoa(pin.SchemaTokens) + " schema tokens) but its tools have produced only " + itoa64(usage.OutputTokens) + " output tokens — a usage ratio of " + formatRatio(ratio) + ". Pruning unused tools shrinks the schema sent on every prompt."
+}
+
+func remediationSchemaOverhead(srv ServerInfo) string {
+	return "# Trim the tool surface to the tools that actually get called:\nmcp-servers:\n  - name: " + srv.Name + "\n    tools:\n      # only list the tools you use, e.g.:\n      # - one_tool_you_actually_call"
+}
+
+func summaryFormatShortfall(srv ServerInfo, usage ServerUsage, baseline FormatBaseline) string {
+	return "Server '" + srv.Name + "' emitted " + itoa64(usage.OutputTokens) + " output tokens with no `output_format` configured. Servers in this stack that use TOON or CSV conversion saved " + formatPercent(baseline.SavingsPercent) + "% on average — applying the same conversion to '" + srv.Name + "' would project a similar reduction."
+}
+
+func remediationFormatShortfall(srv ServerInfo) string {
+	return "# Switch the server to a token-efficient output format\nmcp-servers:\n  - name: " + srv.Name + "\n    output_format: toon  # or csv when the result is tabular"
+}
+
+func summaryExpensiveModel(srv ServerInfo, usage ServerUsage, nCalls int64, modelName string, rate float64) string {
+	avg := float64(usage.TotalTokens) / float64(nCalls)
+	model := modelName
+	if model == "" {
+		model = "an Opus-tier model"
+	}
+	return "Server '" + srv.Name + "' is being called with " + model + " (" + formatRatePerMillion(rate) + " per million input tokens) but the average call is only " + formatRatio(avg) + " tokens — a simple-lookup pattern. The model selection lives client-side; consider routing this server to a cheaper model when possible."
+}
+
+func remediationExpensiveModel(srv ServerInfo, modelName string) string {
+	if modelName == "" {
+		return "# Model selection is client-side; pick a smaller model (e.g. Haiku, gpt-4o-mini) for prompts that primarily call '" + srv.Name + "'."
+	}
+	return "# Currently observed model: " + modelName + "\n# Model selection is client-side; pick a smaller model (e.g. Haiku, gpt-4o-mini) for prompts that primarily call '" + srv.Name + "'."
+}
+
+func usesFormatConversion(format string) bool {
+	switch format {
+	case "toon", "csv", "text":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveDominantRate(ms ModelStat, usage ServerUsage) (float64, string) {
+	if ms.InputUSDPerToken > 0 {
+		return ms.InputUSDPerToken, ms.Model
+	}
+	if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
+		return usage.TotalCostUSD / float64(usage.TotalTokens), ms.Model
+	}
+	return 0, ms.Model
+}
+
 func filterByImpact(in []Finding, min float64) []Finding {
 	out := in[:0]
 	for _, f := range in {
@@ -480,6 +835,65 @@ func toSet(in []string) map[string]bool {
 		out[s] = true
 	}
 	return out
+}
+
+// formatRatio formats a float ratio with one decimal of precision.
+// Used in summaries where exact precision adds noise but the rough
+// magnitude carries the message.
+func formatRatio(r float64) string {
+	if r >= 100 {
+		return itoa(int(r))
+	}
+	whole := int(r)
+	frac := int((r - float64(whole)) * 10)
+	if frac < 0 {
+		frac = -frac
+	}
+	return itoa(whole) + "." + itoa(frac)
+}
+
+// formatPercent renders a 0-100 percentage with no decimals.
+func formatPercent(p float64) string {
+	return itoa(int(p + 0.5))
+}
+
+// formatRatePerMillion renders a per-token USD rate as a "$X.XX/M"
+// shape, which is the unit operators reason in when comparing models.
+func formatRatePerMillion(rate float64) string {
+	per := rate * 1_000_000
+	whole := int(per)
+	frac := int((per - float64(whole)) * 100)
+	if frac < 0 {
+		frac = -frac
+	}
+	if frac < 10 {
+		return "$" + itoa(whole) + ".0" + itoa(frac)
+	}
+	return "$" + itoa(whole) + "." + itoa(frac)
+}
+
+// itoa64 is the int64 sibling of itoa.
+func itoa64(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := false
+	if n < 0 {
+		neg = true
+		n = -n
+	}
+	var buf [21]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
 }
 
 // itoa avoids a fmt dependency on the rendering hot path. The values
