@@ -1,6 +1,9 @@
 package metrics
 
 import (
+	"encoding/json"
+	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -364,4 +367,216 @@ func TestDownsampleToHour(t *testing.T) {
 	if result[1].InputTokens != 300 {
 		t.Errorf("hour 2 input = %d, want 300", result[1].InputTokens)
 	}
+}
+
+// --- Cost layer tests ---
+
+func TestAccumulator_RecordCost_SessionAndPerServer(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordCost("server-a", -1, CostBreakdown{
+		Input: 0.10, Output: 0.20, CacheRead: 0.05, CacheWrite: 0.01,
+	})
+	acc.RecordCost("server-a", -1, CostBreakdown{Input: 0.05, Output: 0.10})
+	acc.RecordCost("server-b", -1, CostBreakdown{Input: 0.30, Output: 0.40})
+
+	snap := acc.CostSnapshot()
+	if !approxCostEq(snap.Session.InputUSD, 0.45) {
+		t.Errorf("session input = %v, want 0.45", snap.Session.InputUSD)
+	}
+	if !approxCostEq(snap.Session.OutputUSD, 0.70) {
+		t.Errorf("session output = %v, want 0.70", snap.Session.OutputUSD)
+	}
+	if !approxCostEq(snap.Session.CacheReadUSD, 0.05) {
+		t.Errorf("session cache-read = %v, want 0.05", snap.Session.CacheReadUSD)
+	}
+	if !approxCostEq(snap.Session.CacheWriteUSD, 0.01) {
+		t.Errorf("session cache-write = %v, want 0.01", snap.Session.CacheWriteUSD)
+	}
+	if !approxCostEq(snap.Session.TotalUSD, 1.21) {
+		t.Errorf("session total = %v, want 1.21", snap.Session.TotalUSD)
+	}
+
+	a := snap.PerServer["server-a"]
+	if !approxCostEq(a.TotalUSD, 0.51) {
+		t.Errorf("server-a total = %v, want 0.51", a.TotalUSD)
+	}
+	b := snap.PerServer["server-b"]
+	if !approxCostEq(b.TotalUSD, 0.70) {
+		t.Errorf("server-b total = %v, want 0.70", b.TotalUSD)
+	}
+}
+
+func TestAccumulator_RecordCost_PerReplica(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordCost("multi", 0, CostBreakdown{Input: 0.10, Output: 0.20})
+	acc.RecordCost("multi", 1, CostBreakdown{Input: 0.05, Output: 0.05})
+	acc.RecordCost("multi", 1, CostBreakdown{Input: 0.05, Output: 0.05})
+
+	snap := acc.CostSnapshot()
+	replicas, ok := snap.PerReplica["multi"]
+	if !ok {
+		t.Fatalf("expected per-replica cost map; got %+v", snap.PerReplica)
+	}
+	if !approxCostEq(replicas[0].TotalUSD, 0.30) {
+		t.Errorf("replica 0 total = %v, want 0.30", replicas[0].TotalUSD)
+	}
+	if !approxCostEq(replicas[1].TotalUSD, 0.20) {
+		t.Errorf("replica 1 total = %v, want 0.20", replicas[1].TotalUSD)
+	}
+	server := snap.PerServer["multi"]
+	if !approxCostEq(server.TotalUSD, replicas[0].TotalUSD+replicas[1].TotalUSD) {
+		t.Errorf("server total %v != replica sum %v",
+			server.TotalUSD, replicas[0].TotalUSD+replicas[1].TotalUSD)
+	}
+}
+
+func TestAccumulator_RecordCost_RejectsInvalidValues(t *testing.T) {
+	cases := []CostBreakdown{
+		{Input: math.NaN()},
+		{Output: math.Inf(1)},
+		{CacheRead: -1.0},
+		{CacheWrite: math.Inf(-1)},
+	}
+	for _, c := range cases {
+		acc := NewAccumulator(100)
+		acc.RecordCost("server", -1, c)
+		snap := acc.CostSnapshot()
+		if snap.Session.TotalUSD != 0 {
+			t.Errorf("invalid breakdown %+v should be dropped; got total=%v", c, snap.Session.TotalUSD)
+		}
+	}
+}
+
+func TestAccumulator_RecordCost_ZeroIsNoop(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCost("server", -1, CostBreakdown{})
+	snap := acc.CostSnapshot()
+	if snap.Session.TotalUSD != 0 {
+		t.Errorf("zero cost record should be a no-op; got total=%v", snap.Session.TotalUSD)
+	}
+	if _, ok := snap.PerServer["server"]; ok {
+		t.Error("zero cost record should not create per-server entry")
+	}
+}
+
+func TestAccumulator_QueryCost(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCost("server-a", -1, CostBreakdown{Input: 0.10, Output: 0.20})
+	acc.RecordCost("server-b", -1, CostBreakdown{Input: 0.30, Output: 0.40})
+
+	resp := acc.QueryCost(time.Hour)
+	if resp.Range != "1h" {
+		t.Errorf("range = %q, want 1h", resp.Range)
+	}
+	if resp.Interval != "1m" {
+		t.Errorf("interval = %q, want 1m", resp.Interval)
+	}
+	if len(resp.Points) == 0 {
+		t.Fatal("expected at least one cost data point")
+	}
+	var total float64
+	for _, p := range resp.Points {
+		total += p.USD
+	}
+	if !approxCostEq(total, 1.0) {
+		t.Errorf("aggregate USD = %v, want 1.00", total)
+	}
+	if _, ok := resp.PerServer["server-a"]; !ok {
+		t.Error("expected per-server time-series for server-a")
+	}
+}
+
+func TestAccumulator_RecordCost_Concurrent(t *testing.T) {
+	acc := NewAccumulator(1000)
+	var wg sync.WaitGroup
+	const goroutines = 50
+	const calls = 50
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < calls; j++ {
+				acc.RecordCost("server", j%4, CostBreakdown{Input: 0.001, Output: 0.001})
+			}
+		}()
+	}
+	wg.Wait()
+
+	snap := acc.CostSnapshot()
+	want := 0.002 * float64(goroutines*calls)
+	if !approxCostEq(snap.Session.TotalUSD, want) {
+		t.Errorf("session total under concurrent writes = %v, want %v",
+			snap.Session.TotalUSD, want)
+	}
+}
+
+func TestAccumulator_ClearCost_LeavesTokensUntouched(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.Record("server-a", 100, 50)
+	acc.RecordCost("server-a", -1, CostBreakdown{Input: 0.10, Output: 0.20})
+
+	acc.ClearCost()
+
+	tokens := acc.Snapshot()
+	if tokens.Session.TotalTokens != 150 {
+		t.Errorf("ClearCost should not touch token counters; got %d", tokens.Session.TotalTokens)
+	}
+
+	cost := acc.CostSnapshot()
+	if cost.Session.TotalUSD != 0 {
+		t.Errorf("expected zero cost after ClearCost; got %v", cost.Session.TotalUSD)
+	}
+	if entry, ok := cost.PerServer["server-a"]; ok && entry.TotalUSD != 0 {
+		t.Errorf("expected zero per-server cost after ClearCost; got %v", entry.TotalUSD)
+	}
+}
+
+func TestAccumulator_Clear_ResetsCost(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCost("s", -1, CostBreakdown{Input: 1.0})
+	acc.Clear()
+
+	snap := acc.CostSnapshot()
+	if snap.Session.TotalUSD != 0 {
+		t.Errorf("Clear() should reset cost; got %v", snap.Session.TotalUSD)
+	}
+}
+
+// TestAccumulator_TokenJSONShapeUnchanged covers Acceptance Criterion 3:
+// the JSON representation of the token-side Snapshot has not changed.
+// Existing /api/metrics/tokens consumers parse this shape; any drift here
+// is a backward-incompatible regression.
+func TestAccumulator_TokenJSONShapeUnchanged(t *testing.T) {
+	usage := TokenUsage{
+		Session:   TokenCounts{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+		PerServer: map[string]TokenCounts{"a": {InputTokens: 1, OutputTokens: 1, TotalTokens: 2}},
+	}
+	payload, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(payload)
+
+	for _, key := range []string{`"session"`, `"per_server"`, `"format_savings"`} {
+		if !strings.Contains(body, key) {
+			t.Errorf("expected field %s in TokenUsage JSON; got %s", key, body)
+		}
+	}
+	// Cost-related field names must not have leaked into TokenUsage.
+	for _, forbidden := range []string{`"cost"`, `"session_usd"`, `"input_usd"`, `"total_usd"`} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("TokenUsage unexpectedly carries %s field; got %s", forbidden, body)
+		}
+	}
+}
+
+func approxCostEq(a, b float64) bool {
+	const eps = 1e-6 // micro-USD precision
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d < eps
 }
