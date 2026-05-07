@@ -73,6 +73,16 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 			ctx = propagator.Extract(ctx, tracing.NewMetaCarrier(meta))
 		}
 	}
+
+	// Attach the originating client ID (resolved from the session) so the
+	// gateway and observers can attribute tool calls per client. The
+	// initialize request itself has no session yet — its ClientID lands on
+	// the spawned session and applies to subsequent calls.
+	if sid := r.Header.Get("Mcp-Session-Id"); sid != "" {
+		if sess := h.gateway.sessions.Get(sid); sess != nil && sess.ClientID != "" {
+			ctx = WithClientID(ctx, sess.ClientID)
+		}
+	}
 	r = r.WithContext(ctx)
 
 	// Route to handler based on method
