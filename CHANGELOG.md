@@ -17,6 +17,7 @@ All notable changes to gridctl will be documented in this file.
 - Add `GET /api/metrics/cost?range={30m,1h,6h,24h,7d}&per_client=true` for cost-over-time time-series, mirroring the `/api/metrics/tokens` shape with optional per-client grouping.
 - Add `DELETE /api/metrics/cost`, which clears recorded cost data without touching the token counters or format-savings tally.
 - Extend `/api/status` with an additive, omitempty `cost` field carrying the session, per-server, per-client, and per-replica USD totals.
+- Surface cost in the Web UI Metrics tab: a session `$ Cost` KPI card beside Input/Output/Total tokens, a cost-over-time area chart that scales with the existing time-range selector, and a `Top Clients` panel summarizing per-client token and USD totals (sortable, default cost descending, hidden when no per-client attribution is present). Cost values render as `—` until the gateway has priced any calls, never a fabricated number.
 
 ### Bug Fixes
 
