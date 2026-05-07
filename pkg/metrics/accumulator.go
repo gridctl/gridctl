@@ -28,6 +28,13 @@ type TokenUsage struct {
 	Session       TokenCounts                        `json:"session"`
 	PerServer     map[string]TokenCounts             `json:"per_server"`
 	PerReplica    map[string]map[int]TokenCounts     `json:"per_replica,omitempty"`
+	// PerClient groups token usage by the originating MCP client (for example
+	// "claude-code", "cursor"). The field is omitempty so consumers built
+	// before per-client attribution shipped continue to see the same JSON
+	// shape. Future per-user / per-team dimensions land as sibling fields
+	// (per_user, per_team) under this same shape rather than reshaping
+	// per_client.
+	PerClient     map[string]TokenCounts             `json:"per_client,omitempty"`
 	FormatSavings FormatSavings                      `json:"format_savings"`
 }
 
@@ -75,13 +82,14 @@ type CostCounts struct {
 }
 
 // CostUsage is the top-level cost snapshot. The shape mirrors TokenUsage so
-// API consumers can render cost charts beside token charts. Per-client
-// attribution is added in a later PR; the field is reserved here as a JSON
-// extension point.
+// API consumers can render cost charts beside token charts.
 type CostUsage struct {
 	Session    CostCounts                       `json:"session"`
 	PerServer  map[string]CostCounts            `json:"per_server"`
 	PerReplica map[string]map[int]CostCounts    `json:"per_replica,omitempty"`
+	// PerClient groups USD cost by the originating MCP client. omitempty so
+	// pre-attribution consumers keep their existing JSON shape.
+	PerClient  map[string]CostCounts            `json:"per_client,omitempty"`
 }
 
 // CostDataPoint is the time-series shape for cost-over-time queries.
@@ -98,6 +106,11 @@ type CostTimeSeriesResponse struct {
 	Interval  string                       `json:"interval"`
 	Points    []CostDataPoint              `json:"data_points"`
 	PerServer map[string][]CostDataPoint   `json:"per_server"`
+	// PerClient groups cost over time by originating MCP client. Populated
+	// only when the API caller requests per-client grouping (the
+	// `per_client=true` query parameter on /api/metrics/cost) so the JSON
+	// stays compact for the common per-server view.
+	PerClient map[string][]CostDataPoint   `json:"per_client,omitempty"`
 }
 
 // costScale converts the public USD float64 values to the int64
@@ -181,6 +194,21 @@ type replicaCounters struct {
 	cacheWriteCostMicroUSD atomic.Int64
 }
 
+// clientCounters holds per-client atomic counters for token + cost
+// aggregates. Keyed by the normalized client ID (mcp.NormalizeClientID).
+// The cardinality is bounded by the number of distinct MCP clients
+// (~10s in practice), so the map fits easily under the same RWMutex
+// pattern used for per-server aggregates.
+type clientCounters struct {
+	inputTokens  atomic.Int64
+	outputTokens atomic.Int64
+
+	inputCostMicroUSD      atomic.Int64
+	outputCostMicroUSD     atomic.Int64
+	cacheReadCostMicroUSD  atomic.Int64
+	cacheWriteCostMicroUSD atomic.Int64
+}
+
 // Accumulator collects token usage metrics with thread-safe operations.
 // Session totals use atomic counters. Historical data is stored in a ring buffer
 // of pre-aggregated 1-minute time buckets.
@@ -209,6 +237,17 @@ type Accumulator struct {
 	// Per-server ring buffers
 	serverBufMu sync.RWMutex
 	serverBufs  map[string]*serverBuffer
+
+	// Per-client totals (token + cost). Cardinality is bounded by the number
+	// of distinct MCP clients seen on the gateway (~10s in practice).
+	clientMu sync.RWMutex
+	clients  map[string]*clientCounters
+
+	// Per-client cost ring buffers, used to group /api/metrics/cost by the
+	// originating client. Tokens are not bucketed per-client because the
+	// existing TokenUsage / token time-series path is unchanged in PR 2.
+	clientBufMu sync.RWMutex
+	clientBufs  map[string]*serverBuffer
 
 	// Format savings (atomic for lock-free reads)
 	savingsOriginal  atomic.Int64
@@ -244,6 +283,8 @@ func NewAccumulator(maxDataPoints int) *Accumulator {
 		buckets:    make([]bucket, maxDataPoints),
 		maxSize:    maxDataPoints,
 		serverBufs: make(map[string]*serverBuffer),
+		clients:    make(map[string]*clientCounters),
+		clientBufs: make(map[string]*serverBuffer),
 	}
 }
 
@@ -258,6 +299,15 @@ func (a *Accumulator) Record(serverName string, inputTokens, outputTokens int) {
 // to skip the per-replica update (used for servers that are not part of a
 // replica set).
 func (a *Accumulator) RecordReplica(serverName string, replicaID, inputTokens, outputTokens int) {
+	a.RecordReplicaWithClient(serverName, replicaID, "", inputTokens, outputTokens)
+}
+
+// RecordReplicaWithClient is the client-aware variant of RecordReplica. It
+// updates the per-client token counters in addition to session, per-server,
+// and per-replica aggregates. An empty clientID skips the per-client update,
+// matching the replicaID < 0 convention so callers without attribution can
+// continue to use the same code path.
+func (a *Accumulator) RecordReplicaWithClient(serverName string, replicaID int, clientID string, inputTokens, outputTokens int) {
 	input := int64(inputTokens)
 	output := int64(outputTokens)
 
@@ -288,10 +338,37 @@ func (a *Accumulator) RecordReplica(serverName string, replicaID, inputTokens, o
 		rc.outputTokens.Add(output)
 	}
 
+	if clientID != "" {
+		cc := a.getOrCreateClientCounters(clientID)
+		cc.inputTokens.Add(input)
+		cc.outputTokens.Add(output)
+	}
+
 	// Update time-series ring buffer
 	now := bucketKey(time.Now())
 	a.addToBucket(now, input, output)
 	a.addToServerBucket(serverName, now, input, output)
+}
+
+// getOrCreateClientCounters returns the per-client counter bucket, creating
+// it on first use. Safe for concurrent access; uses the same
+// double-checked-locking pattern as the per-server map.
+func (a *Accumulator) getOrCreateClientCounters(clientID string) *clientCounters {
+	a.clientMu.RLock()
+	cc, ok := a.clients[clientID]
+	a.clientMu.RUnlock()
+	if ok {
+		return cc
+	}
+
+	a.clientMu.Lock()
+	defer a.clientMu.Unlock()
+	cc, ok = a.clients[clientID]
+	if !ok {
+		cc = &clientCounters{}
+		a.clients[clientID] = cc
+	}
+	return cc
 }
 
 // getOrCreateReplicaCounters returns the per-replica counter bucket, creating
@@ -338,6 +415,14 @@ func (a *Accumulator) RecordFormatSavings(serverName string, originalTokens, for
 // earlier calls. Cache-read and cache-write components arrive as separate
 // fields on CostBreakdown so the Snapshot shape can preserve the split.
 func (a *Accumulator) RecordCost(serverName string, replicaID int, cost CostBreakdown) {
+	a.RecordCostWithClient(serverName, replicaID, "", cost)
+}
+
+// RecordCostWithClient is the client-aware variant of RecordCost. The cost
+// is added to the per-client cost aggregates and per-client cost ring
+// buffer in addition to the session, per-server, and per-replica
+// aggregates. An empty clientID skips the per-client update.
+func (a *Accumulator) RecordCostWithClient(serverName string, replicaID int, clientID string, cost CostBreakdown) {
 	if cost.IsZero() {
 		return
 	}
@@ -369,9 +454,20 @@ func (a *Accumulator) RecordCost(serverName string, replicaID int, cost CostBrea
 		rc.cacheWriteCostMicroUSD.Add(cacheWriteMicro)
 	}
 
+	if clientID != "" {
+		cc := a.getOrCreateClientCounters(clientID)
+		cc.inputCostMicroUSD.Add(inputMicro)
+		cc.outputCostMicroUSD.Add(outputMicro)
+		cc.cacheReadCostMicroUSD.Add(cacheReadMicro)
+		cc.cacheWriteCostMicroUSD.Add(cacheWriteMicro)
+	}
+
 	now := bucketKey(time.Now())
 	a.addCostToBucket(now, totalMicro)
 	a.addCostToServerBucket(serverName, now, totalMicro)
+	if clientID != "" {
+		a.addCostToClientBucket(clientID, now, totalMicro)
+	}
 }
 
 // getOrCreateServerCounters returns the per-server counter bucket, creating
@@ -549,6 +645,50 @@ func (a *Accumulator) addCostToServerBucket(serverName string, ts time.Time, cos
 	}
 }
 
+// addCostToClientBucket adds a USD cost (in micro-USD) to a per-client ring
+// buffer, mirroring addCostToServerBucket. Used by RecordCostWithClient to
+// power the per_client grouping on /api/metrics/cost.
+func (a *Accumulator) addCostToClientBucket(clientID string, ts time.Time, costMicro int64) {
+	a.clientBufMu.RLock()
+	cb, ok := a.clientBufs[clientID]
+	a.clientBufMu.RUnlock()
+
+	if !ok {
+		a.clientBufMu.Lock()
+		cb, ok = a.clientBufs[clientID]
+		if !ok {
+			cb = &serverBuffer{
+				buckets: make([]bucket, a.maxSize),
+				maxSize: a.maxSize,
+			}
+			a.clientBufs[clientID] = cb
+		}
+		a.clientBufMu.Unlock()
+	}
+
+	a.clientBufMu.Lock()
+	defer a.clientBufMu.Unlock()
+
+	idx := cb.position
+	if idx > 0 || cb.wrapped {
+		lastIdx := idx - 1
+		if lastIdx < 0 {
+			lastIdx = cb.maxSize - 1
+		}
+		if cb.buckets[lastIdx].timestamp.Equal(ts) {
+			cb.buckets[lastIdx].costMicroUSD += costMicro
+			return
+		}
+	}
+
+	cb.buckets[idx] = bucket{timestamp: ts, costMicroUSD: costMicro}
+	cb.position++
+	if cb.position >= cb.maxSize {
+		cb.position = 0
+		cb.wrapped = true
+	}
+}
+
 // Snapshot returns the current token usage summary.
 func (a *Accumulator) Snapshot() TokenUsage {
 	input := a.sessionInput.Load()
@@ -587,6 +727,22 @@ func (a *Accumulator) Snapshot() TokenUsage {
 	}
 	a.replicaMu.RUnlock()
 
+	a.clientMu.RLock()
+	var perClient map[string]TokenCounts
+	if len(a.clients) > 0 {
+		perClient = make(map[string]TokenCounts, len(a.clients))
+		for name, cc := range a.clients {
+			ci := cc.inputTokens.Load()
+			co := cc.outputTokens.Load()
+			perClient[name] = TokenCounts{
+				InputTokens:  ci,
+				OutputTokens: co,
+				TotalTokens:  ci + co,
+			}
+		}
+	}
+	a.clientMu.RUnlock()
+
 	// Compute format savings
 	origTokens := a.savingsOriginal.Load()
 	fmtTokens := a.savingsFormatted.Load()
@@ -604,6 +760,7 @@ func (a *Accumulator) Snapshot() TokenUsage {
 		},
 		PerServer:  perServer,
 		PerReplica: perReplica,
+		PerClient:  perClient,
 		FormatSavings: FormatSavings{
 			OriginalTokens:  origTokens,
 			FormattedTokens: fmtTokens,
@@ -654,6 +811,21 @@ func (a *Accumulator) CostSnapshot() CostUsage {
 	}
 	a.replicaMu.RUnlock()
 
+	a.clientMu.RLock()
+	var perClient map[string]CostCounts
+	if len(a.clients) > 0 {
+		perClient = make(map[string]CostCounts, len(a.clients))
+		for name, cc := range a.clients {
+			perClient[name] = readCostCounts(
+				cc.inputCostMicroUSD.Load(),
+				cc.outputCostMicroUSD.Load(),
+				cc.cacheReadCostMicroUSD.Load(),
+				cc.cacheWriteCostMicroUSD.Load(),
+			)
+		}
+	}
+	a.clientMu.RUnlock()
+
 	return CostUsage{
 		Session: CostCounts{
 			InputUSD:      sessionInput,
@@ -664,6 +836,7 @@ func (a *Accumulator) CostSnapshot() CostUsage {
 		},
 		PerServer:  perServer,
 		PerReplica: perReplica,
+		PerClient:  perClient,
 	}
 }
 
@@ -685,8 +858,20 @@ func readCostCounts(inputMicro, outputMicro, cacheReadMicro, cacheWriteMicro int
 // QueryCost returns historical cost-over-time data for the given duration.
 // For ranges > 6h, data points are downsampled to hourly buckets, matching
 // the Query (token) behavior so charts can share the same time-range
-// selector.
+// selector. The PerClient map on the response is left nil; call
+// QueryCostByClient when caller asks for per-client grouping.
 func (a *Accumulator) QueryCost(duration time.Duration) CostTimeSeriesResponse {
+	return a.queryCost(duration, false)
+}
+
+// QueryCostByClient is QueryCost with per-client grouping enabled. The
+// returned response has its PerClient field populated alongside PerServer
+// so consumers can render either dimension off a single response.
+func (a *Accumulator) QueryCostByClient(duration time.Duration) CostTimeSeriesResponse {
+	return a.queryCost(duration, true)
+}
+
+func (a *Accumulator) queryCost(duration time.Duration, includeClients bool) CostTimeSeriesResponse {
 	cutoff := time.Now().Add(-duration)
 	downsample := duration > 6*time.Hour
 
@@ -705,12 +890,23 @@ func (a *Accumulator) QueryCost(duration time.Duration) CostTimeSeriesResponse {
 	}
 	a.serverBufMu.RUnlock()
 
-	return CostTimeSeriesResponse{
+	resp := CostTimeSeriesResponse{
 		Range:     rangeName,
 		Interval:  interval,
 		Points:    points,
 		PerServer: perServer,
 	}
+
+	if includeClients {
+		a.clientBufMu.RLock()
+		perClient := make(map[string][]CostDataPoint, len(a.clientBufs))
+		for name, cb := range a.clientBufs {
+			perClient[name] = queryServerCostBuffer(cb, cutoff, downsample)
+		}
+		a.clientBufMu.RUnlock()
+		resp.PerClient = perClient
+	}
+	return resp
 }
 
 func (a *Accumulator) queryCostBuffer(cutoff time.Time, downsample bool) []CostDataPoint {
@@ -960,6 +1156,10 @@ func (a *Accumulator) Clear() {
 	a.replicas = make(map[string]map[int]*replicaCounters)
 	a.replicaMu.Unlock()
 
+	a.clientMu.Lock()
+	a.clients = make(map[string]*clientCounters)
+	a.clientMu.Unlock()
+
 	a.bufMu.Lock()
 	a.buckets = make([]bucket, a.maxSize)
 	a.position = 0
@@ -969,6 +1169,10 @@ func (a *Accumulator) Clear() {
 	a.serverBufMu.Lock()
 	a.serverBufs = make(map[string]*serverBuffer)
 	a.serverBufMu.Unlock()
+
+	a.clientBufMu.Lock()
+	a.clientBufs = make(map[string]*serverBuffer)
+	a.clientBufMu.Unlock()
 
 	a.savingsOriginal.Store(0)
 	a.savingsFormatted.Store(0)
@@ -980,9 +1184,9 @@ func (a *Accumulator) Clear() {
 }
 
 // ClearCost resets cost counters and cost ring-buffer values without
-// touching token counters or format-savings state. Used by the future
-// `DELETE /api/metrics/cost` endpoint (PR 2) so operators can wipe cost
-// data without losing token history.
+// touching token counters or format-savings state. Used by the
+// `DELETE /api/metrics/cost` endpoint so operators can wipe cost data
+// without losing token history.
 func (a *Accumulator) ClearCost() {
 	a.sessionInputCostMicroUSD.Store(0)
 	a.sessionOutputCostMicroUSD.Store(0)
@@ -1009,6 +1213,15 @@ func (a *Accumulator) ClearCost() {
 	}
 	a.replicaMu.RUnlock()
 
+	a.clientMu.RLock()
+	for _, cc := range a.clients {
+		cc.inputCostMicroUSD.Store(0)
+		cc.outputCostMicroUSD.Store(0)
+		cc.cacheReadCostMicroUSD.Store(0)
+		cc.cacheWriteCostMicroUSD.Store(0)
+	}
+	a.clientMu.RUnlock()
+
 	a.bufMu.Lock()
 	for i := range a.buckets {
 		a.buckets[i].costMicroUSD = 0
@@ -1022,6 +1235,14 @@ func (a *Accumulator) ClearCost() {
 		}
 	}
 	a.serverBufMu.Unlock()
+
+	a.clientBufMu.Lock()
+	for _, cb := range a.clientBufs {
+		for i := range cb.buckets {
+			cb.buckets[i].costMicroUSD = 0
+		}
+	}
+	a.clientBufMu.Unlock()
 }
 
 // formatRange returns a human-readable range string for a duration.
