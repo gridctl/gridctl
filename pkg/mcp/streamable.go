@@ -195,7 +195,16 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 	}
 
 	s.gateway.sessions.Touch(sessionID)
-	resp := s.handleRequest(r.Context(), session, &req)
+
+	// Thread the originating client ID into the request context so tool-call
+	// observers can attribute calls per client. Sessions created before
+	// PR 2 may have an empty ClientID; WithClientID is a no-op in that case.
+	ctx := r.Context()
+	if gSession := s.gateway.sessions.Get(sessionID); gSession != nil && gSession.ClientID != "" {
+		ctx = WithClientID(ctx, gSession.ClientID)
+	}
+
+	resp := s.handleRequest(ctx, session, &req)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
