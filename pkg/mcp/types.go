@@ -227,6 +227,36 @@ type ToolCallParams struct {
 type ToolCallResult struct {
 	Content []Content `json:"content"`
 	IsError bool      `json:"isError,omitempty"`
+
+	// Usage carries optional usage metadata reported alongside a tool
+	// result — model ID, cache-read/cache-write tokens. The field is
+	// nil for tool calls that do not report usage. Skipped during
+	// JSON marshalling: the MCP wire shape for usage metadata is
+	// finalized in a follow-up PR (the spec's `_meta` field is used by
+	// tracing and pipelock for keyed extensions, so we cannot claim
+	// the entire object here). Internal observers populate Usage in
+	// memory only.
+	Usage *CallUsage `json:"-"`
+}
+
+// CallUsage is the optional per-call usage metadata that an MCP server may
+// report alongside a tool result. All fields are optional: zero values
+// indicate "not reported" rather than "zero usage." The metrics observer
+// reads these to price cache traffic separately from input traffic.
+type CallUsage struct {
+	// Model is the canonical model ID used to service the call (e.g.
+	// "claude-opus-4-7"). When empty, the observer falls back to the
+	// server's configured default model.
+	Model string `json:"model,omitempty"`
+
+	// CacheReadTokens is the count of input tokens served from a prompt
+	// cache. Priced via the provider's cache_read_input_token_cost rate.
+	CacheReadTokens int `json:"cache_read_tokens,omitempty"`
+
+	// CacheCreationTokens is the count of input tokens written to a
+	// prompt cache. Priced via the provider's
+	// cache_creation_input_token_cost rate.
+	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
 }
 
 // Content represents content in a tool response.
