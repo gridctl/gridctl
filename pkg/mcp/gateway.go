@@ -1356,15 +1356,73 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	// Format conversion: convert JSON content to the configured output format
 	g.applyFormatConversion(ctx, client.Name(), result)
 
-	// Notify observer asynchronously to avoid adding latency to tool calls
+	// Notify the tool-call observer. Observers that implement ClientObserver
+	// receive the call synchronously (with ctx + client attribution) so they
+	// can return a summary the gateway uses to populate OTel GenAI semantic
+	// span attributes; legacy observers fall back to the original async path.
 	g.mu.RLock()
 	obs := g.toolCallObserver
 	g.mu.RUnlock()
 	if obs != nil {
-		go obs.ObserveToolCall(client.Name(), replicaID, params.Arguments, result)
+		clientID := ClientIDFromContext(ctx)
+		if co, ok := obs.(ClientObserver); ok {
+			summary := co.ObserveToolCallWithClient(ctx, ToolCallObservation{
+				ServerName: client.Name(),
+				ReplicaID:  replicaID,
+				ClientID:   clientID,
+				ToolName:   toolName,
+				Arguments:  params.Arguments,
+				Result:     result,
+			})
+			setGenAISpanAttributes(span, client.Name(), toolName, clientID, summary, result)
+		} else {
+			go obs.ObserveToolCall(client.Name(), replicaID, params.Arguments, result)
+		}
 	}
 
 	return result, nil
+}
+
+// setGenAISpanAttributes attaches OpenTelemetry GenAI semantic-convention
+// attributes to a tool-call span using the values returned by the observer.
+// Cache-token attributes are emitted only when the underlying tool result
+// reported cache usage; otherwise they are omitted entirely (per the
+// March 2026 GenAI spec, zero-valued counters convey "not reported").
+//
+// gen_ai.cost.usd is gridctl-specific until the GenAI spec defines a cost
+// attribute; it is documented in docs/cost-observability.md.
+func setGenAISpanAttributes(span trace.Span, serverName, toolName, clientID string, summary ToolCallSummary, result *ToolCallResult) {
+	if span == nil || !span.IsRecording() {
+		return
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String("mcp.server.name", serverName),
+		attribute.String("mcp.tool.name", toolName),
+	}
+	if clientID != "" {
+		attrs = append(attrs, attribute.String("mcp.client.name", clientID))
+	}
+	if summary.InputTokens > 0 {
+		attrs = append(attrs, attribute.Int64("gen_ai.usage.input_tokens", int64(summary.InputTokens)))
+	}
+	if summary.OutputTokens > 0 {
+		attrs = append(attrs, attribute.Int64("gen_ai.usage.output_tokens", int64(summary.OutputTokens)))
+	}
+	if result != nil && result.Usage != nil {
+		if result.Usage.CacheReadTokens > 0 {
+			attrs = append(attrs, attribute.Int64("gen_ai.usage.cache_read.input_tokens", int64(result.Usage.CacheReadTokens)))
+		}
+		if result.Usage.CacheCreationTokens > 0 {
+			attrs = append(attrs, attribute.Int64("gen_ai.usage.cache_creation.input_tokens", int64(result.Usage.CacheCreationTokens)))
+		}
+	}
+	if summary.Model != "" {
+		attrs = append(attrs, attribute.String("gen_ai.request.model", summary.Model))
+	}
+	if summary.HasCost {
+		attrs = append(attrs, attribute.Float64("gen_ai.cost.usd", summary.CostUSD))
+	}
+	span.SetAttributes(attrs...)
 }
 
 // maxFormatPayloadSize is the maximum text size for format conversion (1MB).
