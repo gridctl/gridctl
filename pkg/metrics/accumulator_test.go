@@ -580,3 +580,150 @@ func approxCostEq(a, b float64) bool {
 	}
 	return d < eps
 }
+
+// --- Per-client attribution tests (PR 2) ---
+
+func TestAccumulator_RecordReplicaWithClient_TokenAttribution(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordReplicaWithClient("server-a", -1, "claude-code", 100, 50)
+	acc.RecordReplicaWithClient("server-a", -1, "cursor", 30, 10)
+	acc.RecordReplicaWithClient("server-b", 0, "claude-code", 20, 5)
+
+	snap := acc.Snapshot()
+
+	if snap.Session.TotalTokens != 215 {
+		t.Errorf("session total = %d, want 215", snap.Session.TotalTokens)
+	}
+	if got := snap.PerClient["claude-code"].TotalTokens; got != 175 {
+		t.Errorf("claude-code total = %d, want 175 (100+50 + 20+5)", got)
+	}
+	if got := snap.PerClient["cursor"].TotalTokens; got != 40 {
+		t.Errorf("cursor total = %d, want 40", got)
+	}
+	// per-server aggregates must still cover both clients combined.
+	if snap.PerServer["server-a"].TotalTokens != 190 {
+		t.Errorf("server-a total = %d, want 190", snap.PerServer["server-a"].TotalTokens)
+	}
+}
+
+func TestAccumulator_RecordReplicaWithClient_EmptyClientSkipsClientMap(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordReplicaWithClient("server-a", -1, "", 10, 5)
+
+	snap := acc.Snapshot()
+	if len(snap.PerClient) != 0 {
+		t.Errorf("expected no per-client entries with empty clientID, got %v", snap.PerClient)
+	}
+	// Session totals must still reflect the call.
+	if snap.Session.TotalTokens != 15 {
+		t.Errorf("session total = %d, want 15", snap.Session.TotalTokens)
+	}
+}
+
+func TestAccumulator_RecordCostWithClient_CostAttribution(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordCostWithClient("server-a", -1, "claude-code", CostBreakdown{Input: 0.10, Output: 0.20})
+	acc.RecordCostWithClient("server-a", -1, "cursor", CostBreakdown{Input: 0.05, Output: 0.05})
+
+	snap := acc.CostSnapshot()
+	if !approxCostEq(snap.Session.TotalUSD, 0.40) {
+		t.Errorf("session total = %v, want 0.40", snap.Session.TotalUSD)
+	}
+	if !approxCostEq(snap.PerClient["claude-code"].TotalUSD, 0.30) {
+		t.Errorf("claude-code = %v, want 0.30", snap.PerClient["claude-code"].TotalUSD)
+	}
+	if !approxCostEq(snap.PerClient["cursor"].TotalUSD, 0.10) {
+		t.Errorf("cursor = %v, want 0.10", snap.PerClient["cursor"].TotalUSD)
+	}
+}
+
+func TestAccumulator_QueryCostByClient_GroupsByClient(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordCostWithClient("server-a", -1, "claude-code", CostBreakdown{Input: 0.50, Output: 0.50})
+	acc.RecordCostWithClient("server-a", -1, "cursor", CostBreakdown{Input: 0.10})
+
+	withClients := acc.QueryCostByClient(time.Hour)
+	if withClients.PerClient == nil {
+		t.Fatal("expected non-nil PerClient when querying with client grouping")
+	}
+	if len(withClients.PerClient) != 2 {
+		t.Errorf("expected 2 per-client series, got %d", len(withClients.PerClient))
+	}
+
+	// QueryCost (no client grouping) must still leave PerClient nil so
+	// existing consumers see the same JSON shape.
+	withoutClients := acc.QueryCost(time.Hour)
+	if withoutClients.PerClient != nil {
+		t.Errorf("expected nil PerClient on QueryCost; got %v", withoutClients.PerClient)
+	}
+	if len(withoutClients.PerServer) == 0 {
+		t.Error("QueryCost should still surface PerServer time-series")
+	}
+}
+
+func TestAccumulator_TokenUsage_PerClient_OmitemptyWhenAbsent(t *testing.T) {
+	usage := TokenUsage{
+		Session:   TokenCounts{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+		PerServer: map[string]TokenCounts{"a": {InputTokens: 1, OutputTokens: 1, TotalTokens: 2}},
+	}
+	payload, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(payload)
+	if strings.Contains(body, `"per_client"`) {
+		t.Errorf("expected per_client field omitted when absent; got %s", body)
+	}
+}
+
+func TestAccumulator_CostUsage_PerClient_OmitemptyWhenAbsent(t *testing.T) {
+	usage := CostUsage{
+		Session: CostCounts{InputUSD: 1, TotalUSD: 1},
+	}
+	payload, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(payload)
+	if strings.Contains(body, `"per_client"`) {
+		t.Errorf("expected per_client field omitted when absent; got %s", body)
+	}
+}
+
+func TestAccumulator_ClearCost_AlsoClearsPerClient(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordReplicaWithClient("s", -1, "client-a", 10, 5)
+	acc.RecordCostWithClient("s", -1, "client-a", CostBreakdown{Input: 1.0})
+
+	acc.ClearCost()
+
+	snap := acc.CostSnapshot()
+	if got := snap.PerClient["client-a"].TotalUSD; got != 0 {
+		t.Errorf("ClearCost should reset per-client cost; got %v", got)
+	}
+	// Token-side per-client should remain intact (ClearCost does not touch tokens).
+	tokens := acc.Snapshot()
+	if tokens.PerClient["client-a"].TotalTokens != 15 {
+		t.Errorf("ClearCost should not touch token counters; got %d", tokens.PerClient["client-a"].TotalTokens)
+	}
+}
+
+func TestAccumulator_Clear_ResetsPerClient(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordReplicaWithClient("s", -1, "client-a", 10, 5)
+	acc.RecordCostWithClient("s", -1, "client-a", CostBreakdown{Input: 1.0})
+
+	acc.Clear()
+
+	tokens := acc.Snapshot()
+	if len(tokens.PerClient) != 0 {
+		t.Errorf("Clear should drop per-client tokens; got %v", tokens.PerClient)
+	}
+	cost := acc.CostSnapshot()
+	if len(cost.PerClient) != 0 {
+		t.Errorf("Clear should drop per-client cost; got %v", cost.PerClient)
+	}
+}
