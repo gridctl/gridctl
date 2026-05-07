@@ -1435,3 +1435,227 @@ func TestHandleGetMetricsTokens_NoAccumulator(t *testing.T) {
 		t.Errorf("expected 0 data points, got %d", len(result.Points))
 	}
 }
+
+// --- Cost metrics endpoint tests (PR 2) ---
+
+func TestHandleStatus_IncludesCostWhenRecorded(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.RecordCostWithClient("server-a", -1, "claude-code",
+		metrics.CostBreakdown{Input: 0.10, Output: 0.20})
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	costRaw, ok := result["cost"]
+	if !ok {
+		t.Fatal("expected cost field on /api/status when cost is recorded")
+	}
+	var cost metrics.CostUsage
+	if err := json.Unmarshal(costRaw, &cost); err != nil {
+		t.Fatalf("failed to unmarshal cost: %v", err)
+	}
+	if cost.Session.TotalUSD == 0 {
+		t.Errorf("expected non-zero session_usd, got %v", cost.Session.TotalUSD)
+	}
+	if _, ok := cost.PerClient["claude-code"]; !ok {
+		t.Errorf("expected per_client[claude-code]; got %+v", cost.PerClient)
+	}
+}
+
+// TestHandleStatus_OmitsCostWhenZero covers Acceptance Criterion 4: the
+// `cost` field is omitempty so existing /api/status consumers see the
+// same payload they did before the per-call cost feature shipped.
+func TestHandleStatus_OmitsCostWhenZero(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if _, ok := result["cost"]; ok {
+		t.Error("expected cost field to be omitted when accumulator has no cost data")
+	}
+}
+
+// TestHandleGetMetricsTokens_ShapeUnchanged covers Acceptance Criterion 3:
+// the JSON shape of /api/metrics/tokens has not regressed. PR 2 introduces
+// the per_client field on TokenUsage but it must remain omitempty so
+// pre-existing consumers see no change when no client attribution exists.
+func TestHandleGetMetricsTokens_ShapeUnchanged(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.Record("server-a", 100, 50)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	for _, key := range []string{"range", "interval", "data_points", "per_server"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("expected %q field on /api/metrics/tokens response; got keys %v",
+				key, mapKeys(raw))
+		}
+	}
+	for _, forbidden := range []string{"cost", "session_usd", "input_usd"} {
+		if _, ok := raw[forbidden]; ok {
+			t.Errorf("token response unexpectedly carries %q", forbidden)
+		}
+	}
+}
+
+func TestHandleGetMetricsCost(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.RecordCost("server-a", -1, metrics.CostBreakdown{Input: 0.50, Output: 0.50})
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/cost?range=1h", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var result metrics.CostTimeSeriesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if result.Range != "1h" {
+		t.Errorf("range = %q, want %q", result.Range, "1h")
+	}
+	if len(result.Points) == 0 {
+		t.Error("expected at least one data point")
+	}
+	if result.PerClient != nil {
+		t.Errorf("expected nil PerClient when per_client param is absent; got %v", result.PerClient)
+	}
+}
+
+// TestHandleGetMetricsCost_PerClientGrouping covers Acceptance Criterion 6:
+// per_client=true groups the time-series by the normalized client name.
+func TestHandleGetMetricsCost_PerClientGrouping(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.RecordCostWithClient("server-a", -1, "claude-code",
+		metrics.CostBreakdown{Input: 0.50, Output: 0.50})
+	srv.metricsAccumulator.RecordCostWithClient("server-a", -1, "cursor",
+		metrics.CostBreakdown{Input: 0.10})
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/cost?range=24h&per_client=true", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var result metrics.CostTimeSeriesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if _, ok := result.PerClient["claude-code"]; !ok {
+		t.Errorf("expected per_client[claude-code]; got %v", result.PerClient)
+	}
+	if _, ok := result.PerClient["cursor"]; !ok {
+		t.Errorf("expected per_client[cursor]; got %v", result.PerClient)
+	}
+}
+
+func TestHandleGetMetricsCost_DefaultRange(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/cost", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var result metrics.CostTimeSeriesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if result.Range != "1h" {
+		t.Errorf("default range = %q, want %q", result.Range, "1h")
+	}
+}
+
+func TestHandleDeleteMetricsCost_LeavesTokensIntact(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	srv.metricsAccumulator.Record("server-a", 100, 50)
+	srv.metricsAccumulator.RecordCost("server-a", -1, metrics.CostBreakdown{Input: 0.10})
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodDelete, "/api/metrics/cost", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	if got := srv.metricsAccumulator.CostSnapshot().Session.TotalUSD; got != 0 {
+		t.Errorf("expected zero cost after DELETE; got %v", got)
+	}
+	if got := srv.metricsAccumulator.Snapshot().Session.TotalTokens; got != 150 {
+		t.Errorf("expected token counters intact after DELETE /api/metrics/cost; got %d", got)
+	}
+}
+
+func TestHandleMetricsCost_MethodNotAllowed(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	handler := srv.Handler()
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch} {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/api/metrics/cost", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Errorf("expected 405 for %s, got %d", method, rec.Code)
+			}
+		})
+	}
+}
+
+func TestHandleGetMetricsCost_NoAccumulator(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/cost?range=1h", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var result metrics.CostTimeSeriesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(result.Points) != 0 {
+		t.Errorf("expected 0 data points without accumulator, got %d", len(result.Points))
+	}
+}
+
+func mapKeys(m map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
