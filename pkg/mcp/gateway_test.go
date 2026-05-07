@@ -3267,3 +3267,142 @@ func TestGateway_ReplicaStatuses_UnknownServer(t *testing.T) {
 	}
 }
 
+// --- Per-client attribution dispatch (PR 2) ---
+
+// recordingClientObserver captures the ToolCallObservation passed by the
+// gateway. The summary it returns is non-trivial so the gateway sets the
+// gen_ai.cost.usd span attribute on the span — production code uses the
+// metrics.Observer.
+type recordingClientObserver struct {
+	mu      sync.Mutex
+	calls   []ToolCallObservation
+	summary ToolCallSummary
+}
+
+func (r *recordingClientObserver) ObserveToolCall(serverName string, replicaID int, args map[string]any, result *ToolCallResult) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, ToolCallObservation{
+		ServerName: serverName,
+		ReplicaID:  replicaID,
+		Arguments:  args,
+		Result:     result,
+	})
+}
+
+func (r *recordingClientObserver) ObserveToolCallWithClient(_ context.Context, obs ToolCallObservation) ToolCallSummary {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, obs)
+	return r.summary
+}
+
+func (r *recordingClientObserver) snapshot() []ToolCallObservation {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]ToolCallObservation, len(r.calls))
+	copy(out, r.calls)
+	return out
+}
+
+func TestGateway_ClientObserver_PropagatesClientID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{{Name: "echo"}})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	obs := &recordingClientObserver{summary: ToolCallSummary{InputTokens: 1, OutputTokens: 1, Model: "m", CostUSD: 0.05, HasCost: true}}
+	g.SetToolCallObserver(obs)
+
+	ctx := WithClientID(context.Background(), "claude-code")
+	if _, err := g.HandleToolsCall(ctx, ToolCallParams{
+		Name:      "agent1__echo",
+		Arguments: map[string]any{"k": "v"},
+	}); err != nil {
+		t.Fatalf("HandleToolsCall: %v", err)
+	}
+
+	calls := obs.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 observation, got %d", len(calls))
+	}
+	if calls[0].ClientID != "claude-code" {
+		t.Errorf("ClientID = %q, want claude-code", calls[0].ClientID)
+	}
+	if calls[0].ToolName != "echo" {
+		t.Errorf("ToolName = %q, want echo", calls[0].ToolName)
+	}
+	if calls[0].ServerName != "agent1" {
+		t.Errorf("ServerName = %q, want agent1", calls[0].ServerName)
+	}
+}
+
+func TestGateway_LegacyObserver_FallsBackAsync(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{{Name: "echo"}})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	// Legacy observer implements only ObserveToolCall.
+	legacy := &legacyObserver{}
+	g.SetToolCallObserver(legacy)
+
+	if _, err := g.HandleToolsCall(context.Background(), ToolCallParams{
+		Name:      "agent1__echo",
+		Arguments: map[string]any{"k": "v"},
+	}); err != nil {
+		t.Fatalf("HandleToolsCall: %v", err)
+	}
+
+	// Async dispatch — wait briefly for the goroutine to land.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && legacy.count() == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if legacy.count() != 1 {
+		t.Errorf("expected legacy observer to record 1 call, got %d", legacy.count())
+	}
+}
+
+type legacyObserver struct {
+	mu     sync.Mutex
+	called int
+}
+
+func (l *legacyObserver) ObserveToolCall(_ string, _ int, _ map[string]any, _ *ToolCallResult) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.called++
+}
+
+func (l *legacyObserver) count() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.called
+}
+
+// TestGateway_HandleInitialize_NormalizesClientID covers the session-level
+// capture: the Session's ClientID field is the normalized form of the raw
+// clientInfo.name from the initialize request.
+func TestGateway_HandleInitialize_NormalizesClientID(t *testing.T) {
+	g := NewGateway()
+	_, sess, err := g.HandleInitialize(InitializeParams{
+		ProtocolVersion: MCPProtocolVersion,
+		ClientInfo:      ClientInfo{Name: "Claude Code", Version: "1.0"},
+	})
+	if err != nil {
+		t.Fatalf("HandleInitialize: %v", err)
+	}
+	if sess.ClientID != "claude-code" {
+		t.Errorf("Session.ClientID = %q, want claude-code", sess.ClientID)
+	}
+}
+
