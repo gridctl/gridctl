@@ -756,3 +756,188 @@ func TestStore_DeleteWhileEncrypted(t *testing.T) {
 		t.Error("kept key should exist")
 	}
 }
+
+// --- Cross-process reload tests ---
+//
+// These simulate the daemon + CLI scenario: two Store instances pointed at
+// the same baseDir, one writing and the other reading.
+
+func TestStore_ReloadsOnExternalWrite_Plaintext(t *testing.T) {
+	dir := t.TempDir()
+
+	// "server" loads an empty vault.
+	server := NewStore(dir)
+	if err := server.Load(); err != nil {
+		t.Fatalf("server Load(): %v", err)
+	}
+	if got := len(server.List()); got != 0 {
+		t.Fatalf("server List() before external write = %d, want 0", got)
+	}
+
+	// "cli" writes via a separate Store instance.
+	cli := NewStore(dir)
+	if err := cli.Load(); err != nil {
+		t.Fatalf("cli Load(): %v", err)
+	}
+	if err := cli.Set("API_KEY", "abc123"); err != nil {
+		t.Fatalf("cli Set(): %v", err)
+	}
+	if _, err := cli.Import(map[string]string{"DB_URL": "postgres://x", "TOKEN": "t1"}); err != nil {
+		t.Fatalf("cli Import(): %v", err)
+	}
+
+	// "server" reads should now reflect the cli writes.
+	secrets := server.List()
+	if len(secrets) != 3 {
+		t.Fatalf("server List() after external write = %d, want 3", len(secrets))
+	}
+
+	val, ok := server.Get("API_KEY")
+	if !ok || val != "abc123" {
+		t.Errorf("server Get(API_KEY) = %q, %v; want %q, true", val, ok, "abc123")
+	}
+	if !server.Has("DB_URL") {
+		t.Error("server Has(DB_URL) = false; want true")
+	}
+	if got := len(server.Keys()); got != 3 {
+		t.Errorf("server Keys() len = %d, want 3", got)
+	}
+
+	// Subsequent CLI delete should also propagate.
+	if err := cli.Delete("TOKEN"); err != nil {
+		t.Fatalf("cli Delete(): %v", err)
+	}
+	if server.Has("TOKEN") {
+		t.Error("server Has(TOKEN) after external delete = true; want false")
+	}
+}
+
+func TestStore_ReloadsOnExternalWrite_Encrypted(t *testing.T) {
+	dir := t.TempDir()
+	const pass = "test-passphrase"
+
+	// "server" creates an encrypted vault and holds the passphrase.
+	server := NewStore(dir)
+	if err := server.Load(); err != nil {
+		t.Fatalf("server Load(): %v", err)
+	}
+	if err := server.Set("INITIAL", "v0"); err != nil {
+		t.Fatalf("server Set(): %v", err)
+	}
+	if err := server.Lock(pass); err != nil {
+		t.Fatalf("server Lock(): %v", err)
+	}
+
+	// "cli" loads, unlocks with the same passphrase, writes.
+	cli := NewStore(dir)
+	if err := cli.Load(); err != nil {
+		t.Fatalf("cli Load(): %v", err)
+	}
+	if err := cli.Unlock(pass); err != nil {
+		t.Fatalf("cli Unlock(): %v", err)
+	}
+	if err := cli.Set("API_KEY", "abc123"); err != nil {
+		t.Fatalf("cli Set(): %v", err)
+	}
+
+	// Server reads should pick up the encrypted external write.
+	secrets := server.List()
+	if len(secrets) != 2 {
+		t.Fatalf("server List() after external encrypted write = %d, want 2", len(secrets))
+	}
+
+	val, ok := server.Get("API_KEY")
+	if !ok || val != "abc123" {
+		t.Errorf("server Get(API_KEY) = %q, %v; want %q, true", val, ok, "abc123")
+	}
+}
+
+func TestStore_LockedEncryptedReadIsNoop(t *testing.T) {
+	dir := t.TempDir()
+
+	// Set up an encrypted vault on disk.
+	writer := NewStore(dir)
+	if err := writer.Set("KEY", "val"); err != nil {
+		t.Fatalf("writer Set(): %v", err)
+	}
+	if err := writer.Lock("pass"); err != nil {
+		t.Fatalf("writer Lock(): %v", err)
+	}
+
+	// Fresh server starts with the vault locked (no passphrase known).
+	server := NewStore(dir)
+	if err := server.Load(); err != nil {
+		t.Fatalf("server Load(): %v", err)
+	}
+	if !server.IsLocked() {
+		t.Fatal("server should be locked after Load on encrypted vault")
+	}
+
+	// Reads should not error, should not unlock the vault, and should not
+	// surface secret values from disk.
+	for i := 0; i < 3; i++ {
+		_ = server.List()
+		_, _ = server.Get("KEY")
+		_ = server.Keys()
+		_ = server.Values()
+	}
+	if !server.IsLocked() {
+		t.Error("server became unlocked after reads; reload-on-read must be no-op while locked")
+	}
+}
+
+func TestStore_ReloadIgnoresCorruptFile(t *testing.T) {
+	// A corrupt external write (e.g. a half-flushed file or manual edit
+	// gone wrong) must not wipe the daemon's in-memory secrets. The parse
+	// error propagates inside loadLocked but the existing maps are
+	// preserved.
+	dir := t.TempDir()
+
+	store := NewStore(dir)
+	if err := store.Set("KEY", "val"); err != nil {
+		t.Fatalf("Set(): %v", err)
+	}
+	if got := len(store.List()); got != 1 {
+		t.Fatalf("List() before corruption = %d, want 1", got)
+	}
+
+	// Overwrite the backing file with garbage. Use a distinct mtime to
+	// guarantee the gate fires.
+	path := filepath.Join(dir, "secrets.json")
+	if err := os.WriteFile(path, []byte("not valid json {{{"), 0600); err != nil {
+		t.Fatalf("write garbage: %v", err)
+	}
+
+	val, ok := store.Get("KEY")
+	if !ok || val != "val" {
+		t.Errorf("Get(KEY) after corrupt overwrite = %q, %v; want %q, true", val, ok, "val")
+	}
+}
+
+func TestStore_ReloadIgnoresMissingFile(t *testing.T) {
+	// reloadIfChanged must treat a missing backing file as a no-op rather
+	// than wiping in-memory state — otherwise a transient stat error would
+	// surface as silent data loss to readers.
+	dir := t.TempDir()
+
+	store := NewStore(dir)
+	if err := store.Set("KEY", "val"); err != nil {
+		t.Fatalf("Set(): %v", err)
+	}
+
+	// Prime the cache with a read.
+	if got := len(store.List()); got != 1 {
+		t.Fatalf("List() before remove = %d, want 1", got)
+	}
+
+	// Remove the backing file. A correct reloadIfChanged treats a missing
+	// file as no-op (preserve in-memory state).
+	if err := os.Remove(filepath.Join(dir, "secrets.json")); err != nil {
+		t.Fatalf("remove secrets.json: %v", err)
+	}
+
+	val, ok := store.Get("KEY")
+	if !ok || val != "val" {
+		t.Errorf("Get(KEY) after file removal = %q, %v; want %q, true", val, ok, "val")
+	}
+}
