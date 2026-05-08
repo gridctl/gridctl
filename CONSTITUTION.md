@@ -6,11 +6,11 @@ This document contains the immutable governance articles for the gridctl project
 
 ## Article I — Library-First Architecture
 
-Gridctl MUST prefer the Go standard library over external dependencies. A new external dependency MUST NOT be introduced when the standard library can achieve the same result with reasonable code. Every external dependency is a supply-chain risk and a maintenance burden; its introduction requires explicit justification in the PR that adds it.
+Gridctl prefers mature, permissively-licensed (Apache 2.0 or MIT) Go libraries over bespoke implementations for foundational concerns where the alternative is reinventing a graph runtime, sandbox, or schema validator. The standard library remains the default for incidental utilities. Justification for each new top-level dependency still belongs in the PR that adds it.
 
 ## Article II — Dependency Minimalism
 
-External dependencies MUST be justified by functionality that the standard library demonstrably cannot provide. Dependencies MUST NOT be added for convenience, style preference, or to reduce line count when equivalent stdlib patterns exist. Transitive dependencies count toward this obligation.
+External dependencies MUST be justified by functionality, maturity, or correctness gains the project would otherwise have to reproduce. Transitive footprint and license posture remain part of the review criteria.
 
 ## Article III — Test-First Development
 
@@ -38,7 +38,7 @@ The public CLI interface and stack YAML schema are versioned artifacts. Breaking
 
 ## Article IX — Stack YAML Backward Compatibility
 
-Every new field added to the stack YAML schema MUST be optional with a documented default that preserves existing behavior. A stack file valid against version N MUST remain valid and produce equivalent behavior under version N+1 unless the major version has been incremented. Removing or renaming a field is a breaking change.
+Every new field added to the `stack.yaml` schema (MCP servers, transports, networks, vault, pins) MUST be optional with a documented default that preserves existing behavior. A stack file valid against version N MUST remain valid and produce equivalent behavior under version N+1 unless the major version has been incremented. Removing or renaming a field is a breaking change. This guarantee covers the `stack.yaml` schema only — skill definition formats are not in scope. The `workflow:` block in `SKILL.md` is no longer supported.
 
 ## Article X — Machine-Parseable CLI Output
 
