@@ -1,12 +1,7 @@
 package registry
 
 import (
-	"encoding/json"
 	"fmt"
-	"sort"
-
-	"github.com/gridctl/gridctl/pkg/mcp"
-	"gopkg.in/yaml.v3"
 )
 
 // ItemState represents the lifecycle state of a skill.
@@ -37,121 +32,17 @@ type AgentSkill struct {
 	// --- Gridctl extensions (not in agentskills.io spec) ---
 	State ItemState `yaml:"state,omitempty" json:"state"`
 
-	// Workflow definition (gridctl extension).
-	// When present, the skill becomes executable and is exposed as an MCP tool.
-	Inputs   map[string]SkillInput `yaml:"inputs,omitempty" json:"inputs,omitempty"`
-	Workflow []WorkflowStep        `yaml:"workflow,omitempty" json:"workflow,omitempty"`
-	Output   *WorkflowOutput       `yaml:"output,omitempty" json:"output,omitempty"`
-
 	// --- Parsed from file content (not in frontmatter YAML) ---
 	Body string `yaml:"-" json:"body"` // Markdown content after frontmatter
 
 	// --- Computed fields (not serialized to YAML) ---
-	FileCount int    `yaml:"-" json:"fileCount"` // Number of supporting files (scripts/, references/, assets/)
+	FileCount int    `yaml:"-" json:"fileCount"`     // Number of supporting files (scripts/, references/, assets/)
 	Dir       string `yaml:"-" json:"dir,omitempty"` // Relative path from skills/ root (e.g., "git-workflow/branch-fork")
-}
-
-// IsExecutable returns true if the skill has a workflow definition.
-func (s *AgentSkill) IsExecutable() bool {
-	return len(s.Workflow) > 0
 }
 
 // Validate checks the skill against the agentskills.io specification.
 func (s *AgentSkill) Validate() error {
 	return ValidateSkill(s)
-}
-
-// ToMCPTool generates an MCP Tool definition from this skill's inputs.
-// Only meaningful for executable skills (IsExecutable() == true).
-func (s *AgentSkill) ToMCPTool() mcp.Tool {
-	schema := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
-	}
-	props := schema["properties"].(map[string]any)
-	var required []string
-
-	for name, input := range s.Inputs {
-		prop := map[string]any{
-			"type": input.Type,
-		}
-		if input.Description != "" {
-			prop["description"] = input.Description
-		}
-		if input.Default != nil {
-			prop["default"] = input.Default
-		}
-		if len(input.Enum) > 0 {
-			prop["enum"] = input.Enum
-		}
-		props[name] = prop
-		if input.Required {
-			required = append(required, name)
-		}
-	}
-	if len(required) > 0 {
-		sort.Strings(required)
-		schema["required"] = required
-	}
-
-	raw, _ := json.Marshal(schema)
-	return mcp.Tool{
-		Name:        s.Name,
-		Description: s.Description,
-		InputSchema: raw,
-	}
-}
-
-// SkillInput defines a parameter for an executable skill.
-type SkillInput struct {
-	Type        string   `yaml:"type" json:"type"`
-	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
-	Required    bool     `yaml:"required,omitempty" json:"required,omitempty"`
-	Default     any      `yaml:"default,omitempty" json:"default,omitempty"`
-	Enum        []string `yaml:"enum,omitempty" json:"enum,omitempty"`
-}
-
-// WorkflowStep defines a single tool invocation in a workflow.
-type WorkflowStep struct {
-	ID        string         `yaml:"id" json:"id"`
-	Tool      string         `yaml:"tool" json:"tool"`
-	Args      map[string]any `yaml:"args,omitempty" json:"args,omitempty"`
-	DependsOn StringOrSlice  `yaml:"depends_on,omitempty" json:"dependsOn,omitempty"`
-	Condition string         `yaml:"condition,omitempty" json:"condition,omitempty"`
-	OnError   string         `yaml:"on_error,omitempty" json:"onError,omitempty"`
-	Timeout   string         `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	Retry     *RetryPolicy   `yaml:"retry,omitempty" json:"retry,omitempty"`
-}
-
-// RetryPolicy defines retry behavior for a workflow step.
-type RetryPolicy struct {
-	MaxAttempts int    `yaml:"max_attempts" json:"maxAttempts"`
-	Backoff     string `yaml:"backoff,omitempty" json:"backoff,omitempty"`
-}
-
-// WorkflowOutput controls how step results are assembled.
-type WorkflowOutput struct {
-	Format   string   `yaml:"format,omitempty" json:"format,omitempty"`     // merged|last|custom
-	Include  []string `yaml:"include,omitempty" json:"include,omitempty"`
-	Template string   `yaml:"template,omitempty" json:"template,omitempty"`
-}
-
-// StringOrSlice allows YAML fields to be either a single string or a list.
-// "depends_on: step-a" and "depends_on: [step-a, step-b]" both work.
-type StringOrSlice []string
-
-// UnmarshalYAML implements custom YAML unmarshaling for StringOrSlice.
-func (s *StringOrSlice) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind == yaml.ScalarNode {
-		*s = StringOrSlice{value.Value}
-		return nil
-	}
-	var slice []string
-	if err := value.Decode(&slice); err != nil {
-		return err
-	}
-	*s = slice
-	return nil
 }
 
 // SkillFile represents a file within a skill directory.

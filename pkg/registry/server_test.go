@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
@@ -230,32 +229,16 @@ func TestServer_Tools_ReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestServer_CallTool_SkillNotFound(t *testing.T) {
-	srv, _ := setupTestServer(t)
-
-	_, err := srv.CallTool(context.Background(), "anything", nil)
-	if err == nil {
-		t.Fatal("expected error for nonexistent skill")
-	}
-}
-
-func TestServer_CallTool_NonExecutable(t *testing.T) {
+func TestServer_CallTool_AlwaysErrors(t *testing.T) {
 	srv, dir := setupTestServer(t)
-	writeTestSkill(t, dir, "knowledge-skill", "A knowledge skill", "Body.", StateActive)
+	writeTestSkill(t, dir, "any-skill", "A skill", "Body.", StateActive)
 
 	if err := srv.Initialize(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
-	result, err := srv.CallTool(context.Background(), "knowledge-skill", nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.IsError {
-		t.Error("expected error result for non-executable skill")
-	}
-	if len(result.Content) == 0 || result.Content[0].Text == "" {
-		t.Error("expected explanation text in error result")
+	if _, err := srv.CallTool(context.Background(), "any-skill", nil); err == nil {
+		t.Error("expected error: registry serves prompts, not tools")
 	}
 }
 
@@ -337,67 +320,3 @@ func TestServer_ImplementsInterfaces(t *testing.T) {
 	var _ mcp.PromptProvider = (*Server)(nil)
 }
 
-// --- TestSkill ---
-
-func TestServer_TestSkill_NoExecutor(t *testing.T) {
-	store := NewStore(t.TempDir())
-	srv := New(store) // no WithToolCaller → executor is nil
-	sk := &AgentSkill{
-		Name:               "test-skill",
-		Description:        "a skill",
-		State:              StateDraft,
-		Body:               "# test",
-		AcceptanceCriteria: []string{"GIVEN x WHEN the skill is called THEN is not empty"},
-	}
-	if err := store.SaveSkill(sk); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	_, err := srv.TestSkill(context.Background(), "test-skill", 0)
-	if err == nil {
-		t.Error("expected error when no executor configured")
-	}
-}
-
-func TestServer_TestSkill_NotFound(t *testing.T) {
-	store := NewStore(t.TempDir())
-	srv := New(store)
-
-	_, err := srv.TestSkill(context.Background(), "nonexistent", 0)
-	if err == nil {
-		t.Error("expected error for nonexistent skill")
-	}
-}
-
-func TestServer_TestSkill_WithExecutor(t *testing.T) {
-	store := NewStore(t.TempDir())
-	caller := newMockToolCaller()
-	caller.results["test-skill"] = &mcp.ToolCallResult{
-		Content: []mcp.Content{mcp.NewTextContent("expected output")},
-	}
-	srv := New(store, WithToolCaller(caller, nil))
-
-	sk := &AgentSkill{
-		Name:               "test-skill",
-		Description:        "a skill",
-		State:              StateDraft,
-		Body:               "# test",
-		AcceptanceCriteria: []string{"GIVEN x WHEN the skill is called THEN contains expected"},
-	}
-	if err := store.SaveSkill(sk); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	result, err := srv.TestSkill(context.Background(), "test-skill", 5*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Passed != 1 {
-		t.Errorf("expected 1 passed, got %d", result.Passed)
-	}
-	// Result should be persisted in store
-	stored := store.GetTestResult("test-skill")
-	if stored == nil {
-		t.Error("expected test result to be persisted in store")
-	}
-}

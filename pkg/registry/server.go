@@ -3,24 +3,16 @@ package registry
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
-// Server is an in-process MCP server that serves Agent Skills as prompts
-// and executable workflow skills as MCP tools.
+// Server is an in-process MCP server that serves Agent Skills as prompts.
 // It implements mcp.AgentClient so it can be registered with the gateway router,
 // and mcp.PromptProvider so the gateway can serve skills via MCP prompts and resources.
-//
-// Skills without a workflow are knowledge documents exposed as prompts.
-// Skills with a workflow are executable and exposed as MCP tools that
-// route through the gateway's ToolCaller for step execution.
 type Server struct {
-	store    *Store
-	executor *Executor // nil if no ToolCaller was provided
+	store *Store
 
 	mu          sync.RWMutex
 	initialized bool
@@ -33,39 +25,14 @@ var (
 	_ mcp.PromptProvider = (*Server)(nil)
 )
 
-// New creates a registry server. If caller is non-nil, executable
-// skills (those with workflows) are exposed as MCP tools that route
-// through the caller. Skills without workflows remain knowledge documents.
-func New(store *Store, opts ...ServerOption) *Server {
-	s := &Server{
+// New creates a registry server that serves skills as MCP prompts.
+func New(store *Store) *Server {
+	return &Server{
 		store: store,
 		serverInfo: mcp.ServerInfo{
 			Name:    "registry",
 			Version: "1.0.0",
 		},
-	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
-}
-
-// ServerOption configures the registry server.
-type ServerOption func(*Server)
-
-// WithToolCaller enables workflow execution through the given ToolCaller.
-func WithToolCaller(caller ToolCaller, logger *slog.Logger, opts ...ExecutorOption) ServerOption {
-	return func(s *Server) {
-		if caller != nil {
-			s.executor = NewExecutor(caller, logger, opts...)
-		}
-	}
-}
-
-// SetLogger updates the executor's logger if one is configured.
-func (s *Server) SetLogger(logger *slog.Logger) {
-	if s.executor != nil {
-		s.executor.SetLogger(logger)
 	}
 }
 
@@ -95,42 +62,14 @@ func (s *Server) RefreshTools(ctx context.Context) error {
 	return nil
 }
 
-// Tools returns executable skills as MCP tools.
-// Skills without workflows are not included (they remain prompts only).
+// Tools returns nil. Skills are served as MCP prompts, not tools.
 func (s *Server) Tools() []mcp.Tool {
-	if s.executor == nil {
-		return nil
-	}
-	var tools []mcp.Tool
-	for _, sk := range s.store.ActiveSkills() {
-		if !sk.IsExecutable() {
-			continue
-		}
-		tools = append(tools, sk.ToMCPTool())
-	}
-	return tools
+	return nil
 }
 
-// CallTool dispatches to the executor for executable skills.
-// Non-executable skills return an informational error.
+// CallTool always returns an error. Skills are served as MCP prompts, not tools.
 func (s *Server) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
-	sk, err := s.store.GetSkill(name)
-	if err != nil {
-		return nil, fmt.Errorf("skill %q not found", name)
-	}
-	if !sk.IsExecutable() {
-		return &mcp.ToolCallResult{
-			Content: []mcp.Content{mcp.NewTextContent("This skill is a knowledge document, not executable.")},
-			IsError: true,
-		}, nil
-	}
-	if s.executor == nil {
-		return &mcp.ToolCallResult{
-			Content: []mcp.Content{mcp.NewTextContent("Workflow execution is not available (no ToolCaller configured).")},
-			IsError: true,
-		}, nil
-	}
-	return s.executor.Execute(ctx, sk, arguments)
+	return nil, fmt.Errorf("registry serves skills as prompts; %q is not a tool", name)
 }
 
 // IsInitialized returns whether the server has been initialized.
@@ -155,23 +94,6 @@ func (s *Server) Store() *Store {
 // HasContent returns true if the registry has any skills.
 func (s *Server) HasContent() bool {
 	return s.store.HasContent()
-}
-
-// TestSkill runs acceptance criteria for a skill against live MCP tools and stores the result.
-func (s *Server) TestSkill(ctx context.Context, name string, criterionTimeout time.Duration) (*SkillTestResult, error) {
-	sk, err := s.store.GetSkill(name)
-	if err != nil {
-		return nil, fmt.Errorf("skill %q: %w", name, err)
-	}
-	if s.executor == nil {
-		return nil, fmt.Errorf("workflow execution not available (no ToolCaller configured)")
-	}
-	result, err := s.executor.RunAcceptanceCriteria(ctx, sk, criterionTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("running acceptance criteria for %s: %w", name, err)
-	}
-	s.store.SaveTestResult(name, result)
-	return result, nil
 }
 
 // ListPromptData returns active Agent Skills as MCP PromptData.

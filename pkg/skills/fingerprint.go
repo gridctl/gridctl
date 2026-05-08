@@ -15,7 +15,6 @@ type Fingerprint struct {
 	ContentHash string   `json:"contentHash" yaml:"content_hash"`
 	ToolsHash   string   `json:"toolsHash" yaml:"tools_hash"`
 	Tools       []string `json:"tools,omitempty" yaml:"tools,omitempty"`
-	WorkflowLen int      `json:"workflowSteps" yaml:"workflow_steps"`
 }
 
 // ComputeFingerprint generates a behavioral fingerprint for a skill.
@@ -34,9 +33,6 @@ func ComputeFingerprint(skill *registry.AgentSkill) *Fingerprint {
 		th := sha256.Sum256([]byte(strings.Join(tools, ",")))
 		fp.ToolsHash = hex.EncodeToString(th[:])
 	}
-
-	// Count workflow steps from body
-	fp.WorkflowLen = countWorkflowSteps(skill.Body)
 
 	return fp
 }
@@ -59,10 +55,6 @@ func BehavioralChanges(old, new *Fingerprint) []string {
 		}
 	}
 
-	if old.WorkflowLen != new.WorkflowLen {
-		changes = append(changes, fmt.Sprintf("workflow steps: %d → %d", old.WorkflowLen, new.WorkflowLen))
-	}
-
 	if old.ContentHash != new.ContentHash && len(changes) == 0 {
 		changes = append(changes, "content changed")
 	}
@@ -80,26 +72,6 @@ func parseToolList(s string) []string {
 		}
 	}
 	return tools
-}
-
-// countWorkflowSteps counts lines that look like workflow step definitions.
-func countWorkflowSteps(body string) int {
-	count := 0
-	inWorkflow := false
-	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "## Workflow") || strings.HasPrefix(trimmed, "## workflow") {
-			inWorkflow = true
-			continue
-		}
-		if inWorkflow && strings.HasPrefix(trimmed, "## ") {
-			inWorkflow = false
-		}
-		if inWorkflow && strings.HasPrefix(trimmed, "- ") {
-			count++
-		}
-	}
-	return count
 }
 
 // diffStringSlices returns added and removed items between old and new slices.

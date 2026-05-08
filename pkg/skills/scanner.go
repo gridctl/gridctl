@@ -70,53 +70,19 @@ var dangerousPatterns = []struct {
 	},
 }
 
-// ScanSkill checks a skill for dangerous patterns in its workflow and body.
+// ScanSkill checks a skill for dangerous patterns in its body.
 func ScanSkill(sk *registry.AgentSkill) *ScanResult {
 	result := &ScanResult{
 		SkillName: sk.Name,
 		Safe:      true,
 	}
 
-	// Scan workflow steps
-	for _, step := range sk.Workflow {
-		scanWorkflowStep(step, result)
-	}
-
-	// Scan body for inline scripts
 	if sk.Body != "" {
 		scanText("body", sk.Body, result)
 	}
 
 	result.Safe = len(result.Findings) == 0
 	return result
-}
-
-func scanWorkflowStep(step registry.WorkflowStep, result *ScanResult) {
-	// Check tool name for shell execution
-	if step.Tool == "exec" || step.Tool == "shell" || step.Tool == "run" {
-		result.Findings = append(result.Findings, SecurityFinding{
-			StepID:      step.ID,
-			Pattern:     fmt.Sprintf("tool: %s", step.Tool),
-			Description: "direct shell execution tool",
-			Severity:    "warning",
-		})
-	}
-
-	// Scan args for dangerous patterns
-	for key, val := range step.Args {
-		if s, ok := val.(string); ok {
-			for _, dp := range dangerousPatterns {
-				if dp.pattern.MatchString(s) {
-					result.Findings = append(result.Findings, SecurityFinding{
-						StepID:      step.ID,
-						Pattern:     fmt.Sprintf("args.%s: %s", key, dp.pattern.String()),
-						Description: dp.description,
-						Severity:    dp.severity,
-					})
-				}
-			}
-		}
-	}
 }
 
 func scanText(context, text string, result *ScanResult) {

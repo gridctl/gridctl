@@ -5,6 +5,10 @@ All notable changes to gridctl will be documented in this file.
 ## [Unreleased]
 
 
+### Breaking Changes
+
+- Removed the YAML-driven skill workflow engine. The `workflow:` block in `SKILL.md`, the workflow visual designer in the Web UI, the `gridctl test` and `gridctl activate` subcommands, and the `/workflow`, `/execute`, `/validate-workflow`, and `/test` registry API endpoints are no longer supported. Skill manifests, the registry store, the MCP gateway, the Code Mode sandbox, and remote skill import (sources, lockfile, origin tracking) are unaffected. A code-first agent runtime replaces the YAML engine in a follow-up release.
+
 ### Features
 
 

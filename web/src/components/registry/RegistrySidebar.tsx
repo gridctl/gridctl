@@ -10,12 +10,8 @@ import {
   X,
   Search,
   FolderOpen,
-  GitBranch,
   Download,
   ArrowUpCircle,
-  CheckCircle2,
-  XCircle,
-  MinusCircle,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useRegistryStore } from '../../stores/useRegistryStore';
@@ -27,7 +23,6 @@ import { PopoutButton } from '../ui/PopoutButton';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { SkillEditor } from './SkillEditor';
 import { StateBadge } from './StateBadge';
-import { TestStatusBadge } from './TestStatusBadge';
 import { SkillActions } from './SkillActions';
 import { useListNav } from '../../hooks/useListNav';
 import { showToast } from '../ui/Toast';
@@ -39,11 +34,9 @@ import {
   disableRegistrySkill,
   fetchSkillUpdates,
   updateSkillSource,
-  getSkillTestResult,
 } from '../../lib/api';
-import { hasWorkflowBlock } from '../../lib/workflowSync';
 import { useWizardStore } from '../../stores/useWizardStore';
-import type { AgentSkill, UpdateSummary, SkillTestResult } from '../../types';
+import type { AgentSkill, UpdateSummary } from '../../types';
 
 export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {}) {
   const skills = useRegistryStore((s) => s.skills);
@@ -336,7 +329,6 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
           onEdit={(skill) => { setEditingSkill(skill); setShowEditor(true); }}
           onDelete={(name) => setConfirmDelete(name)}
           onToggleState={handleToggleState}
-          onOpenWorkflow={(name) => openDetachedWindow('workflow', `skill=${encodeURIComponent(name)}`)}
         />
       </div>
 
@@ -403,7 +395,6 @@ function SkillsList({
   onEdit,
   onDelete,
   onToggleState,
-  onOpenWorkflow,
 }: {
   skills: AgentSkill[];
   isFiltered: boolean;
@@ -413,7 +404,6 @@ function SkillsList({
   onEdit: (skill: AgentSkill) => void;
   onDelete: (name: string) => void;
   onToggleState: (skill: AgentSkill) => void;
-  onOpenWorkflow: (name: string) => void;
 }) {
   if ((skills ?? []).length === 0) {
     return (
@@ -446,7 +436,6 @@ function SkillsList({
           onEdit={onEdit}
           onDelete={onDelete}
           onToggleState={onToggleState}
-          onOpenWorkflow={onOpenWorkflow}
         />
       ))}
     </div>
@@ -464,7 +453,6 @@ function SkillItem({
   onEdit,
   onDelete,
   onToggleState,
-  onOpenWorkflow,
 }: {
   skill: AgentSkill;
   index: number;
@@ -474,19 +462,8 @@ function SkillItem({
   onEdit: (skill: AgentSkill) => void;
   onDelete: (name: string) => void;
   onToggleState: (skill: AgentSkill) => void;
-  onOpenWorkflow: (name: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [testResult, setTestResult] = useState<SkillTestResult | null>(null);
-  const [showTestDetails, setShowTestDetails] = useState(false);
-  const isExecutable = hasWorkflowBlock(skill.body ?? '');
-
-  useEffect(() => {
-    if (!expanded) return;
-    getSkillTestResult(skill.name)
-      .then(setTestResult)
-      .catch(() => setTestResult(null));
-  }, [expanded, skill.name]);
 
   const isActive = skill.state === 'active';
 
@@ -518,25 +495,7 @@ function SkillItem({
         <span className="text-xs font-medium text-text-primary flex-1 text-left truncate">
           {skill.name}
         </span>
-        {isExecutable && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-mono">
-            workflow
-          </span>
-        )}
         <StateBadge state={skill.state} />
-        {isExecutable && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenWorkflow(skill.name);
-            }}
-            title="Open workflow designer"
-            className="p-2 rounded hover:bg-primary/10 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <GitBranch size={12} className="text-text-muted group-hover:text-primary transition-colors" />
-          </button>
-        )}
         {skill.fileCount > 0 && (
           <span className="text-[10px] text-text-muted font-mono flex items-center gap-0.5">
             <FolderOpen size={9} />
@@ -595,47 +554,6 @@ function SkillItem({
               </span>
             )}
           </div>
-
-          {/* Test status badge */}
-          <div className="mt-2">
-            <TestStatusBadge
-              testResult={testResult}
-              density="compact"
-              onClick={() => setShowTestDetails(!showTestDetails)}
-            />
-          </div>
-
-          {/* Per-criterion details */}
-          {showTestDetails && testResult && testResult.results.length > 0 && (
-            <div className="mt-2 space-y-1.5 rounded-lg border border-border/30 bg-background/40 p-2">
-              {testResult.results.map((r, i) => (
-                <div key={i} className="flex items-start gap-1.5">
-                  {r.skipped ? (
-                    <MinusCircle size={10} className="text-text-muted/50 flex-shrink-0 mt-0.5" />
-                  ) : r.passed ? (
-                    <CheckCircle2 size={10} className="text-status-running flex-shrink-0 mt-0.5" />
-                  ) : (
-                    <XCircle size={10} className="text-status-error flex-shrink-0 mt-0.5" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-text-muted font-mono leading-relaxed truncate">
-                      {r.criterion}
-                    </p>
-                    {!r.passed && !r.skipped && r.actual && (
-                      <p className="text-[10px] text-status-error mt-0.5 font-mono truncate">
-                        actual: {r.actual}
-                      </p>
-                    )}
-                    {r.skipped && r.skipReason && (
-                      <p className="text-[10px] text-text-muted mt-0.5 italic">
-                        {r.skipReason}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* Actions — toggle lives on the collapsed row, so only edit + delete here */}
           <div className="flex items-center justify-end gap-0.5 mt-3 pt-2 border-t border-border-subtle/50">

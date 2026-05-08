@@ -40,7 +40,6 @@ interface UIState {
   sidebarDetached: boolean;
   editorDetached: boolean;
   registryDetached: boolean;
-  workflowDetached: boolean;
   metricsDetached: boolean;
   vaultDetached: boolean;
   tracesDetached: boolean;
@@ -69,7 +68,6 @@ interface UIState {
   setSidebarDetached: (detached: boolean) => void;
   setEditorDetached: (detached: boolean) => void;
   setRegistryDetached: (detached: boolean) => void;
-  setWorkflowDetached: (detached: boolean) => void;
   setMetricsDetached: (detached: boolean) => void;
   setVaultDetached: (detached: boolean) => void;
   setTracesDetached: (detached: boolean) => void;
@@ -122,7 +120,6 @@ export const useUIStore = create<UIState>()(
       sidebarDetached: false,
       editorDetached: false,
       registryDetached: false,
-      workflowDetached: false,
       metricsDetached: false,
       vaultDetached: false,
       tracesDetached: false,
@@ -170,7 +167,6 @@ export const useUIStore = create<UIState>()(
       setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
       setEditorDetached: (editorDetached) => set({ editorDetached }),
       setRegistryDetached: (registryDetached) => set({ registryDetached }),
-      setWorkflowDetached: (workflowDetached) => set({ workflowDetached }),
       setMetricsDetached: (metricsDetached) => set({ metricsDetached }),
       setVaultDetached: (vaultDetached) => set({ vaultDetached }),
       setTracesDetached: (tracesDetached) => set({ tracesDetached }),

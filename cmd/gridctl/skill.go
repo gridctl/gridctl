@@ -537,9 +537,6 @@ func runSkillValidate(name string) error {
 
 	for _, w := range result.Warnings {
 		fmt.Printf("⚠  %s: %s\n", name, w)
-		if w == registry.WarnNoAcceptanceCriteria {
-			fmt.Printf("   Add acceptance_criteria: [...] to the skill frontmatter to document expected behavior\n")
-		}
 	}
 
 	if result.Valid() && len(result.Warnings) == 0 {

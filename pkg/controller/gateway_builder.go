@@ -175,8 +175,7 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		regDir = b.registryDir
 	}
 	registryStore := registry.NewStore(regDir)
-	registryServer := registry.New(registryStore,
-		registry.WithToolCaller(inst.Gateway, nil))
+	registryServer := registry.New(registryStore)
 	inst.RegistryServer = registryServer
 
 	// Phase 2: Configure logging
@@ -186,7 +185,6 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		return nil, logErr
 	}
 	inst.Gateway.SetLogger(slog.New(inst.Handler))
-	registryServer.SetLogger(slog.New(inst.Handler))
 
 	// Seed the in-memory log buffer from any pre-existing per-server
 	// logs.jsonl files BEFORE registry init or any other component starts
