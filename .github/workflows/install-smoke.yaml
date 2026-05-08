@@ -3,12 +3,12 @@ name: Install Smoke
 on:
   pull_request:
     paths:
-      - "scripts/install.sh"
+      - "install.sh"
       - ".github/workflows/install-smoke.yaml"
   push:
     branches: [main]
     paths:
-      - "scripts/install.sh"
+      - "install.sh"
   schedule:
     # Catch GitHub Releases drift weekly (Monday 08:00 UTC).
     - cron: "0 8 * * 1"
@@ -47,7 +47,7 @@ jobs:
       - name: Run installer (latest release)
         env:
           GRIDCTL_VERSION: ${{ steps.latest.outputs.tag }}
-        run: bash scripts/install.sh
+        run: bash install.sh
 
       - name: Verify gridctl on PATH
         run: |
@@ -59,7 +59,7 @@ jobs:
           GRIDCTL_VERSION: ${{ steps.latest.outputs.tag }}
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          bash scripts/install.sh
+          bash install.sh
           gridctl version
 
       - name: Set up Go (for upgrade subcommand smoke)
@@ -84,7 +84,7 @@ jobs:
       - name: Uninstall removes the binary
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          bash scripts/install.sh --uninstall
+          bash install.sh --uninstall
           if [ -e "$HOME/.local/bin/gridctl" ]; then
             echo "gridctl binary still present after uninstall" >&2
             exit 1
@@ -96,9 +96,9 @@ jobs:
         run: |
           mkdir -p "$HOME/.gridctl"
           touch "$HOME/.gridctl/sentinel"
-          bash scripts/install.sh
+          bash install.sh
           export PATH="$HOME/.local/bin:$PATH"
-          bash scripts/install.sh --uninstall --purge
+          bash install.sh --uninstall --purge
           if [ -e "$HOME/.gridctl/sentinel" ]; then
             echo "config directory not purged" >&2
             exit 1
@@ -110,4 +110,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run shellcheck
-        run: shellcheck -s sh scripts/install.sh
+        run: shellcheck -s sh install.sh
+
+  documented-url:
+    # Only meaningful post-merge: pre-merge the file isn't on
+    # gridctl/gridctl/main yet, so we can't assert the canonical
+    # raw.githubusercontent.com URL until the PR lands.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Documented install URL is reachable
+        run: |
+          url="https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh"
+          echo "checking $url"
+          code="$(curl -fsSL -o /dev/null -w '%{http_code}' "$url")"
+          if [ "$code" != "200" ]; then
+            echo "install.sh URL returned HTTP $code (expected 200)" >&2
+            exit 1
+          fi
