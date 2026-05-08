@@ -387,16 +387,22 @@ func (s *Store) GetSetSecrets(setName string) []Secret {
 }
 
 // IsLocked returns true when the vault is encrypted and not yet unlocked.
+// Takes the write lock so reloadIfChanged can pick up external lock/unlock
+// transitions before reporting state.
 func (s *Store) IsLocked() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 	return s.locked
 }
 
 // IsEncrypted returns true when the vault has an encrypted backing file.
+// Takes the write lock so reloadIfChanged can pick up external lock/unlock
+// transitions before reporting state.
 func (s *Store) IsEncrypted() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 	return s.encrypted
 }
 
@@ -609,24 +615,58 @@ func (s *Store) stampMtimeLocked() {
 	s.size = info.Size()
 }
 
-// reloadIfChanged re-reads from disk when the backing file's mtime or size
-// has advanced past the cached baseline. No-op when the file is missing
-// (preserve in-memory state) or when encrypted+locked (no passphrase). The
-// caller must hold the write lock — a reload mutates s.secrets/s.sets.
+// reloadIfChanged refreshes in-memory state to match the current shape of
+// the vault on disk. It detects three kinds of change in addition to plain
+// content edits: plaintext → encrypted (CLI lock while daemon is up),
+// encrypted → plaintext (manual restore or future "decrypt" command), and
+// same-file rewrites. When neither backing file exists, in-memory state is
+// preserved so an in-flight write (window between rename and stat) doesn't
+// surface as silent data loss. The caller must hold the write lock.
 func (s *Store) reloadIfChanged() error {
-	if s.encrypted && s.locked {
-		return nil
+	// secrets.enc takes precedence (matches Load()'s file ordering).
+	if info, err := os.Stat(s.encryptedPath()); err == nil {
+		if !s.encrypted {
+			// Plaintext → encrypted transition. The daemon doesn't know the
+			// new passphrase, so drop plaintext from memory and report
+			// locked. Done as one uninterrupted sequence so a panic between
+			// flag flip and map clear can't leave plaintext readable.
+			s.encrypted = true
+			s.locked = true
+			s.passphrase = ""
+			s.secrets = make(map[string]Secret)
+			s.sets = make(map[string]Set)
+			s.mtime = info.ModTime()
+			s.size = info.Size()
+			return nil
+		}
+		if s.locked {
+			return nil
+		}
+		// Size is a fallback for filesystems with coarse mtime resolution
+		// where a same-second rewrite could share an mtime with the prior
+		// file.
+		if !info.ModTime().After(s.mtime) && info.Size() == s.size {
+			return nil
+		}
+		return s.loadLocked()
 	}
-	info, err := os.Stat(s.activePathLocked())
-	if err != nil {
-		return nil
+	if info, err := os.Stat(s.secretsPath()); err == nil {
+		if s.encrypted {
+			// Encrypted → plaintext transition. Toggle flags first so
+			// loadLocked reads the plaintext path; on parse failure the
+			// atomic swap inside parseSecretsData leaves in-memory secrets
+			// intact (they were already empty if the daemon was locked).
+			s.encrypted = false
+			s.locked = false
+			s.passphrase = ""
+			return s.loadLocked()
+		}
+		if !info.ModTime().After(s.mtime) && info.Size() == s.size {
+			return nil
+		}
+		return s.loadLocked()
 	}
-	// Size is a fallback for filesystems with coarse mtime resolution where a
-	// same-second rewrite could otherwise share an mtime with the prior file.
-	if !info.ModTime().After(s.mtime) && info.Size() == s.size {
-		return nil
-	}
-	return s.loadLocked()
+	return nil
 }
 
 // serializeSecrets returns the current secrets as JSON.
