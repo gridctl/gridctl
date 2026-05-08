@@ -29,6 +29,7 @@ All notable changes to gridctl will be documented in this file.
 
 
 - Telemetry persistence write and seed gaps (#550 follow-up)
+- Persist and replay cost data across daemon restarts. Previously the cost KPI and Cost Over Time chart silently reset to $0 after a restart even when pre-restart cost was non-zero — token persistence had this path; cost did not. The on-disk `metrics.jsonl` schema is extended additively (cost fields are pointer + `omitempty`) and remains forward- and backward-compatible with files written by older versions.
 
 ## [0.1.0-beta.8] - 2026-05-05
 

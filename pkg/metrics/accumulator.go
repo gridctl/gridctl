@@ -25,17 +25,17 @@ type FormatSavings struct {
 
 // TokenUsage is the top-level token usage snapshot returned by the API.
 type TokenUsage struct {
-	Session       TokenCounts                        `json:"session"`
-	PerServer     map[string]TokenCounts             `json:"per_server"`
-	PerReplica    map[string]map[int]TokenCounts     `json:"per_replica,omitempty"`
+	Session    TokenCounts                    `json:"session"`
+	PerServer  map[string]TokenCounts         `json:"per_server"`
+	PerReplica map[string]map[int]TokenCounts `json:"per_replica,omitempty"`
 	// PerClient groups token usage by the originating MCP client (for example
 	// "claude-code", "cursor"). The field is omitempty so consumers built
 	// before per-client attribution shipped continue to see the same JSON
 	// shape. Future per-user / per-team dimensions land as sibling fields
 	// (per_user, per_team) under this same shape rather than reshaping
 	// per_client.
-	PerClient     map[string]TokenCounts             `json:"per_client,omitempty"`
-	FormatSavings FormatSavings                      `json:"format_savings"`
+	PerClient     map[string]TokenCounts `json:"per_client,omitempty"`
+	FormatSavings FormatSavings          `json:"format_savings"`
 }
 
 // CostBreakdown is the per-call USD cost split passed to RecordCost. Cache
@@ -81,15 +81,38 @@ type CostCounts struct {
 	TotalUSD      float64 `json:"total_usd"`
 }
 
+// CostMicroUSDCounts is the int64 micro-USD shape used by the persistence
+// layer to round-trip the four cost components without float precision
+// loss. Mirrors the in-memory atomic representation on serverCounters.
+type CostMicroUSDCounts struct {
+	InputMicroUSD      int64 `json:"input_micro_usd,omitempty"`
+	OutputMicroUSD     int64 `json:"output_micro_usd,omitempty"`
+	CacheReadMicroUSD  int64 `json:"cache_read_micro_usd,omitempty"`
+	CacheWriteMicroUSD int64 `json:"cache_write_micro_usd,omitempty"`
+}
+
+// IsZero reports whether all four cost components are zero.
+func (c CostMicroUSDCounts) IsZero() bool {
+	return c.InputMicroUSD == 0 && c.OutputMicroUSD == 0 &&
+		c.CacheReadMicroUSD == 0 && c.CacheWriteMicroUSD == 0
+}
+
+// TotalMicroUSD returns the rolled-up sum of the four components — the
+// shape ReplaySnapshot stores per bucket, matching addCostToBucket's live
+// behavior of writing a single total per minute.
+func (c CostMicroUSDCounts) TotalMicroUSD() int64 {
+	return c.InputMicroUSD + c.OutputMicroUSD + c.CacheReadMicroUSD + c.CacheWriteMicroUSD
+}
+
 // CostUsage is the top-level cost snapshot. The shape mirrors TokenUsage so
 // API consumers can render cost charts beside token charts.
 type CostUsage struct {
-	Session    CostCounts                       `json:"session"`
-	PerServer  map[string]CostCounts            `json:"per_server"`
-	PerReplica map[string]map[int]CostCounts    `json:"per_replica,omitempty"`
+	Session    CostCounts                    `json:"session"`
+	PerServer  map[string]CostCounts         `json:"per_server"`
+	PerReplica map[string]map[int]CostCounts `json:"per_replica,omitempty"`
 	// PerClient groups USD cost by the originating MCP client. omitempty so
 	// pre-attribution consumers keep their existing JSON shape.
-	PerClient  map[string]CostCounts            `json:"per_client,omitempty"`
+	PerClient map[string]CostCounts `json:"per_client,omitempty"`
 }
 
 // CostDataPoint is the time-series shape for cost-over-time queries.
@@ -102,15 +125,15 @@ type CostDataPoint struct {
 // `Range` and `Interval` strings reuse the same vocabulary as the token
 // time-series so charts can share a time-range selector.
 type CostTimeSeriesResponse struct {
-	Range     string                       `json:"range"`
-	Interval  string                       `json:"interval"`
-	Points    []CostDataPoint              `json:"data_points"`
-	PerServer map[string][]CostDataPoint   `json:"per_server"`
+	Range     string                     `json:"range"`
+	Interval  string                     `json:"interval"`
+	Points    []CostDataPoint            `json:"data_points"`
+	PerServer map[string][]CostDataPoint `json:"per_server"`
 	// PerClient groups cost over time by originating MCP client. Populated
 	// only when the API caller requests per-client grouping (the
 	// `per_client=true` query parameter on /api/metrics/cost) so the JSON
 	// stays compact for the common per-server view.
-	PerClient map[string][]CostDataPoint   `json:"per_client,omitempty"`
+	PerClient map[string][]CostDataPoint `json:"per_client,omitempty"`
 }
 
 // costScale converts the public USD float64 values to the int64
@@ -144,10 +167,10 @@ type DataPoint struct {
 
 // TimeSeriesResponse is returned by the historical metrics endpoint.
 type TimeSeriesResponse struct {
-	Range     string                       `json:"range"`
-	Interval  string                       `json:"interval"`
-	Points    []DataPoint                  `json:"data_points"`
-	PerServer map[string][]DataPoint       `json:"per_server"`
+	Range     string                 `json:"range"`
+	Interval  string                 `json:"interval"`
+	Points    []DataPoint            `json:"data_points"`
+	PerServer map[string][]DataPoint `json:"per_server"`
 }
 
 // bucketKey returns the minute-aligned key for a timestamp.
@@ -160,10 +183,10 @@ func bucketKey(t time.Time) time.Time {
 // addition is a plain integer write under the bucket mutex; precision below
 // nano-USD is irrelevant for any realistic call.
 type bucket struct {
-	timestamp     time.Time
-	inputTokens   int64
-	outputTokens  int64
-	costMicroUSD  int64
+	timestamp    time.Time
+	inputTokens  int64
+	outputTokens int64
+	costMicroUSD int64
 }
 
 // serverCounters holds atomic counters for a single server.
@@ -874,6 +897,29 @@ func (a *Accumulator) Snapshot() TokenUsage {
 	}
 }
 
+// CostMicroSnapshot returns per-server cumulative cost in the int64
+// micro-USD shape used by the persistence layer. Skipping the float USD
+// round-trip avoids any precision loss between the in-memory atomics and
+// the on-disk schema. Used by telemetry.MetricsFlusher.flushOnce to
+// compute a cost diff against prevCost in the same units that get written
+// to metrics.jsonl, and consumed symmetrically by SeedFromFile via
+// RestoreCost. Session totals are not returned — they are derivable as
+// the sum across servers, which RestoreCost re-derives on rehydrate.
+func (a *Accumulator) CostMicroSnapshot() map[string]CostMicroUSDCounts {
+	a.serverMu.RLock()
+	defer a.serverMu.RUnlock()
+	out := make(map[string]CostMicroUSDCounts, len(a.servers))
+	for name, sc := range a.servers {
+		out[name] = CostMicroUSDCounts{
+			InputMicroUSD:      sc.inputCostMicroUSD.Load(),
+			OutputMicroUSD:     sc.outputCostMicroUSD.Load(),
+			CacheReadMicroUSD:  sc.cacheReadCostMicroUSD.Load(),
+			CacheWriteMicroUSD: sc.cacheWriteCostMicroUSD.Load(),
+		}
+	}
+	return out
+}
+
 // CostSnapshot returns the current cost usage summary in USD. The shape
 // mirrors Snapshot()'s TokenUsage so API responses can carry both side by
 // side. Cache fields are non-zero only when RecordCost recorded cache
@@ -1223,6 +1269,56 @@ func (a *Accumulator) Restore(perServer map[string]TokenCounts) {
 	a.sessionOutput.Store(sessionOut)
 }
 
+// RestoreCost is the cost analogue of Restore: it overwrites per-server
+// cost component atomics with the supplied map and recomputes session
+// cost totals as the sum across all servers (matching the invariant
+// RecordCost maintains). Used on daemon startup by
+// telemetry.MetricsFlusher.SeedFromFile to repopulate cumulative cost
+// counters from a persisted metrics.jsonl file so the Cost KPI card
+// reflects pre-restart spend the moment the UI loads.
+//
+// Per-component splitting (input / output / cache-read / cache-write) is
+// preserved on the cumulative atomics so CostSnapshot.Session can render
+// the breakdown without recomputing — same trade-off live RecordCost
+// makes. The time-series ring buffers are populated separately via
+// ReplaySnapshot, which carries only the rolled-up total per bucket.
+//
+// Servers absent from the map retain their current cost state. Replicas,
+// format-savings, and per-client cost have no on-disk equivalent in the
+// snapshot format and are not restored.
+func (a *Accumulator) RestoreCost(perServer map[string]CostMicroUSDCounts) {
+	if len(perServer) == 0 {
+		return
+	}
+
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+
+	for name, counts := range perServer {
+		sc, ok := a.servers[name]
+		if !ok {
+			sc = &serverCounters{}
+			a.servers[name] = sc
+		}
+		sc.inputCostMicroUSD.Store(counts.InputMicroUSD)
+		sc.outputCostMicroUSD.Store(counts.OutputMicroUSD)
+		sc.cacheReadCostMicroUSD.Store(counts.CacheReadMicroUSD)
+		sc.cacheWriteCostMicroUSD.Store(counts.CacheWriteMicroUSD)
+	}
+
+	var sessionIn, sessionOut, sessionCR, sessionCW int64
+	for _, sc := range a.servers {
+		sessionIn += sc.inputCostMicroUSD.Load()
+		sessionOut += sc.outputCostMicroUSD.Load()
+		sessionCR += sc.cacheReadCostMicroUSD.Load()
+		sessionCW += sc.cacheWriteCostMicroUSD.Load()
+	}
+	a.sessionInputCostMicroUSD.Store(sessionIn)
+	a.sessionOutputCostMicroUSD.Store(sessionOut)
+	a.sessionCacheReadCostMicroUSD.Store(sessionCR)
+	a.sessionCacheWriteCostMicroUSD.Store(sessionCW)
+}
+
 // ReplaySnapshot adds a historical observation to the time-series ring
 // buffers (aggregate + per-server) without touching cumulative counters.
 // Used by telemetry.MetricsFlusher.SeedFromFile to rehydrate per-minute
@@ -1230,20 +1326,36 @@ func (a *Accumulator) Restore(perServer map[string]TokenCounts) {
 // activity continuously alongside live data instead of resetting to a single
 // post-restart point.
 //
-// Cumulative counters are restored separately via Restore. Calling both with
-// the same source data reproduces the on-disk state.
+// costMicro is the rolled-up total cost for the minute (sum of the four
+// CostBreakdown components) in int64 micro-USD, matching the live
+// RecordCost path which also calls addCostToBucket(now, totalMicro). Pass 0
+// for token-only replays (legacy persistence files predate the cost field).
+// Cost-only replays — non-zero costMicro with zero token counts — are
+// supported so a minute that recorded a priced fixture without token
+// attribution still hydrates its cost bucket on seed.
+//
+// Cumulative counters are restored separately via Restore + RestoreCost.
+// Calling both with the same source data reproduces the on-disk state.
 //
 // ts is bucketed to the minute via the same key the live Record path uses,
 // so chronological replay produces one bucket per flush minute and live
 // observations after replay continue advancing the same ring naturally.
-func (a *Accumulator) ReplaySnapshot(serverName string, ts time.Time, inputTokens, outputTokens int64) {
-	if inputTokens == 0 && outputTokens == 0 {
+func (a *Accumulator) ReplaySnapshot(serverName string, ts time.Time, inputTokens, outputTokens, costMicro int64) {
+	if inputTokens == 0 && outputTokens == 0 && costMicro == 0 {
 		return
 	}
 	bucket := bucketKey(ts)
-	a.addToBucket(bucket, inputTokens, outputTokens)
-	if serverName != "" {
-		a.addToServerBucket(serverName, bucket, inputTokens, outputTokens)
+	if inputTokens != 0 || outputTokens != 0 {
+		a.addToBucket(bucket, inputTokens, outputTokens)
+		if serverName != "" {
+			a.addToServerBucket(serverName, bucket, inputTokens, outputTokens)
+		}
+	}
+	if costMicro != 0 {
+		a.addCostToBucket(bucket, costMicro)
+		if serverName != "" {
+			a.addCostToServerBucket(serverName, bucket, costMicro)
+		}
 	}
 }
 
