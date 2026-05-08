@@ -440,6 +440,109 @@ func TestMetricsFlusher_SeedFromFile(t *testing.T) {
 	})
 }
 
+// TestSeedFromFile_LegacyTokenOnly verifies that metrics.jsonl files
+// written before cost persistence shipped (no cost_diff / cost_total
+// fields) continue to load cleanly. Token state restores; cost state
+// stays zero. Backward compatibility is the entire reason the cost
+// fields are pointer + omitempty.
+func TestSeedFromFile_LegacyTokenOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metrics.jsonl")
+
+	// Hand-write the legacy on-disk format: a reset sentinel followed by
+	// a reset payload, then a non-reset diff. No cost_diff / cost_total
+	// fields anywhere — exactly what a pre-cost-persistence daemon would
+	// have produced.
+	writeRawLine(t, path, `{"reset":true,"ts":"2026-05-05T12:00:00Z","server":"github"}`)
+	writeRawLine(t, path,
+		`{"ts":"2026-05-05T12:00:00Z","server":"github","reset":true,`+
+			`"diff":{"input_tokens":100,"output_tokens":50,"total_tokens":150},`+
+			`"total":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}`)
+	writeRawLine(t, path,
+		`{"ts":"2026-05-05T12:01:00Z","server":"github",`+
+			`"diff":{"input_tokens":25,"output_tokens":10,"total_tokens":35},`+
+			`"total":{"input_tokens":125,"output_tokens":60,"total_tokens":185}}`)
+
+	acc := metrics.NewAccumulator(100)
+	f := NewMetricsFlusher(acc, time.Hour)
+	if err := f.AddServer("github", path, LogOpts{}); err != nil {
+		t.Fatalf("AddServer: %v", err)
+	}
+	if err := f.SeedFromFile(path, 100); err != nil {
+		t.Fatalf("SeedFromFile of legacy file: %v", err)
+	}
+
+	// Tokens restore as if nothing changed.
+	snap := acc.Snapshot()
+	if got := snap.PerServer["github"].TotalTokens; got != 185 {
+		t.Errorf("legacy seed token total = %d; want 185", got)
+	}
+	if got := snap.Session.TotalTokens; got != 185 {
+		t.Errorf("legacy seed session token total = %d; want 185", got)
+	}
+
+	// Cost stays zero — nothing on disk to restore.
+	cost := acc.CostSnapshot()
+	if cost.Session.TotalUSD != 0 {
+		t.Errorf("legacy seed produced non-zero session cost = %v; want 0", cost.Session.TotalUSD)
+	}
+	if got, ok := cost.PerServer["github"]; ok && got.TotalUSD != 0 {
+		t.Errorf("legacy seed produced non-zero github cost = %v; want 0", got.TotalUSD)
+	}
+}
+
+// TestMetricsSnapshotLine_OmitsCostFieldsWhenZero pins the wire format
+// guarantee: a token-only flush (no priced calls in the minute)
+// serializes byte-identically to the pre-cost-persistence schema, so
+// older daemons reading new files round-trip token state without any
+// surprises.
+func TestMetricsSnapshotLine_OmitsCostFieldsWhenZero(t *testing.T) {
+	line := MetricsSnapshotLine{
+		Time:   time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC),
+		Server: "github",
+		Diff:   metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+		Total:  metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+	}
+	data, err := json.Marshal(line)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(data)
+	if strings.Contains(got, "cost_diff") {
+		t.Errorf("token-only line carried cost_diff field: %s", got)
+	}
+	if strings.Contains(got, "cost_total") {
+		t.Errorf("token-only line carried cost_total field: %s", got)
+	}
+}
+
+// TestMetricsSnapshotLine_IncludesCostFieldsWhenPresent is the inverse —
+// once cost is non-zero, the new fields appear with the documented JSON
+// names so the seed path can find them.
+func TestMetricsSnapshotLine_IncludesCostFieldsWhenPresent(t *testing.T) {
+	cd := metrics.CostMicroUSDCounts{InputMicroUSD: 50_000}
+	ct := metrics.CostMicroUSDCounts{InputMicroUSD: 100_000}
+	line := MetricsSnapshotLine{
+		Time:      time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC),
+		Server:    "github",
+		Diff:      metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+		Total:     metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+		CostDiff:  &cd,
+		CostTotal: &ct,
+	}
+	data, err := json.Marshal(line)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, `"cost_diff":{"input_micro_usd":50000}`) {
+		t.Errorf("line missing cost_diff: %s", got)
+	}
+	if !strings.Contains(got, `"cost_total":{"input_micro_usd":100000}`) {
+		t.Errorf("line missing cost_total: %s", got)
+	}
+}
+
 // writeMetricsLine appends one MetricsSnapshotLine as NDJSON to path.
 func writeMetricsLine(t *testing.T, path string, line MetricsSnapshotLine) {
 	t.Helper()

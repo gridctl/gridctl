@@ -780,3 +780,187 @@ func TestAccumulator_Clear_ResetsPerClient(t *testing.T) {
 		t.Errorf("Clear should drop per-client cost; got %v", cost.PerClient)
 	}
 }
+
+// TestAccumulator_RestoreCost_PerServerAndSessionTotals covers the cost
+// analogue of Restore: it overwrites per-server cost component atomics
+// from the supplied map and recomputes session totals as the sum across
+// servers. After RestoreCost the CostSnapshot KPI surfaces should reflect
+// pre-restart spend, matching what telemetry.MetricsFlusher.SeedFromFile
+// reads from disk.
+func TestAccumulator_RestoreCost_PerServerAndSessionTotals(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RestoreCost(map[string]CostMicroUSDCounts{
+		"github": {
+			InputMicroUSD:      50_000,  // $0.05
+			OutputMicroUSD:     100_000, // $0.10
+			CacheReadMicroUSD:  20_000,  // $0.02
+			CacheWriteMicroUSD: 5_000,   // $0.005
+		},
+		"gitlab": {
+			InputMicroUSD:  300_000, // $0.30
+			OutputMicroUSD: 400_000, // $0.40
+		},
+	})
+
+	snap := acc.CostSnapshot()
+	if !approxCostEq(snap.PerServer["github"].TotalUSD, 0.175) {
+		t.Errorf("github total = %v, want 0.175", snap.PerServer["github"].TotalUSD)
+	}
+	if !approxCostEq(snap.PerServer["github"].CacheReadUSD, 0.02) {
+		t.Errorf("github cache-read = %v, want 0.02", snap.PerServer["github"].CacheReadUSD)
+	}
+	if !approxCostEq(snap.PerServer["gitlab"].TotalUSD, 0.70) {
+		t.Errorf("gitlab total = %v, want 0.70", snap.PerServer["gitlab"].TotalUSD)
+	}
+	// Session totals = sum across all per-server components (matches
+	// Restore's invariant on tokens — per-server is the source of truth,
+	// session is derived).
+	if !approxCostEq(snap.Session.TotalUSD, 0.875) {
+		t.Errorf("session total = %v, want 0.875", snap.Session.TotalUSD)
+	}
+	if !approxCostEq(snap.Session.InputUSD, 0.35) {
+		t.Errorf("session input = %v, want 0.35", snap.Session.InputUSD)
+	}
+}
+
+// TestAccumulator_RestoreCost_EmptyMapIsNoop guards against an
+// edge case where the persistence file has no cost data (legacy or
+// no-priced-calls file). RestoreCost must leave the accumulator's cost
+// state untouched in that case so live RecordCost calls are not erased.
+func TestAccumulator_RestoreCost_EmptyMapIsNoop(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCost("github", -1, CostBreakdown{Input: 0.10})
+
+	acc.RestoreCost(nil)
+	acc.RestoreCost(map[string]CostMicroUSDCounts{})
+
+	snap := acc.CostSnapshot()
+	if !approxCostEq(snap.Session.InputUSD, 0.10) {
+		t.Errorf("RestoreCost(empty) erased cost; session input = %v, want 0.10", snap.Session.InputUSD)
+	}
+}
+
+// TestAccumulator_ReplaySnapshot_CostBucket verifies that ReplaySnapshot
+// populates the cost bucket at the correct minute key and that QueryCost
+// returns the rolled-up total. Mirrors the token-only assertion already
+// implicit in TestEndToEnd_MetricsPersistAndReseed but pinned at the
+// accumulator surface.
+func TestAccumulator_ReplaySnapshot_CostBucket(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	ts := time.Now().Add(-30 * time.Minute)            // within the 1h query window
+	acc.ReplaySnapshot("github", ts, 100, 50, 250_000) // $0.25 rolled-up
+
+	resp := acc.QueryCost(time.Hour)
+	var total float64
+	for _, p := range resp.Points {
+		total += p.USD
+	}
+	if !approxCostEq(total, 0.25) {
+		t.Errorf("aggregate cost from replay = %v, want 0.25", total)
+	}
+	per := resp.PerServer["github"]
+	if len(per) == 0 {
+		t.Fatalf("expected per-server cost points after replay; got 0")
+	}
+	var perTotal float64
+	for _, p := range per {
+		perTotal += p.USD
+	}
+	if !approxCostEq(perTotal, 0.25) {
+		t.Errorf("per-server cost from replay = %v, want 0.25", perTotal)
+	}
+}
+
+// TestAccumulator_ReplaySnapshot_CostOnly covers the cost-only replay
+// path: zero token counts plus a non-zero cost. Without explicit
+// handling the early-return guard would silently drop the line; that
+// would lose any priced fixture minute (rare in production, common in
+// tests) on rehydrate.
+func TestAccumulator_ReplaySnapshot_CostOnly(t *testing.T) {
+	acc := NewAccumulator(100)
+	ts := time.Now().Add(-10 * time.Minute)
+
+	acc.ReplaySnapshot("github", ts, 0, 0, 100_000) // tokens=0, cost=$0.10
+
+	resp := acc.QueryCost(time.Hour)
+	var total float64
+	for _, p := range resp.Points {
+		total += p.USD
+	}
+	if !approxCostEq(total, 0.10) {
+		t.Errorf("cost-only replay aggregate = %v, want 0.10", total)
+	}
+}
+
+// TestAccumulator_ReplaySnapshot_AllZeroIsNoop guards the early-return
+// guard: a line with zero tokens and zero cost is genuinely empty and
+// should not allocate a bucket.
+func TestAccumulator_ReplaySnapshot_AllZeroIsNoop(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.ReplaySnapshot("github", time.Now(), 0, 0, 0)
+
+	resp := acc.Query(time.Hour)
+	if len(resp.Points) != 0 {
+		t.Errorf("all-zero replay created %d points; want 0", len(resp.Points))
+	}
+	costResp := acc.QueryCost(time.Hour)
+	if len(costResp.Points) != 0 {
+		t.Errorf("all-zero replay created %d cost points; want 0", len(costResp.Points))
+	}
+}
+
+// TestCostMicroUSDCounts_TotalAndIsZero pins the helper math the
+// flusher and seed paths rely on.
+func TestCostMicroUSDCounts_TotalAndIsZero(t *testing.T) {
+	zero := CostMicroUSDCounts{}
+	if !zero.IsZero() {
+		t.Error("zero value IsZero = false")
+	}
+	if zero.TotalMicroUSD() != 0 {
+		t.Errorf("zero total = %d, want 0", zero.TotalMicroUSD())
+	}
+
+	cc := CostMicroUSDCounts{
+		InputMicroUSD:      1,
+		OutputMicroUSD:     2,
+		CacheReadMicroUSD:  3,
+		CacheWriteMicroUSD: 4,
+	}
+	if cc.IsZero() {
+		t.Error("non-zero value IsZero = true")
+	}
+	if cc.TotalMicroUSD() != 10 {
+		t.Errorf("total = %d, want 10", cc.TotalMicroUSD())
+	}
+}
+
+// TestAccumulator_CostMicroSnapshot_PerServer asserts the persistence-
+// shaped snapshot exposed for flushOnce contains the same per-component
+// values the public CostSnapshot does, just in the int64 micro-USD shape
+// that round-trips losslessly through the on-disk schema.
+func TestAccumulator_CostMicroSnapshot_PerServer(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCost("github", -1, CostBreakdown{
+		Input: 0.10, Output: 0.20, CacheRead: 0.01, CacheWrite: 0.005,
+	})
+
+	got := acc.CostMicroSnapshot()
+	gh, ok := got["github"]
+	if !ok {
+		t.Fatalf("expected github entry in CostMicroSnapshot; got %v", got)
+	}
+	if gh.InputMicroUSD != 100_000 {
+		t.Errorf("input micro = %d, want 100000", gh.InputMicroUSD)
+	}
+	if gh.OutputMicroUSD != 200_000 {
+		t.Errorf("output micro = %d, want 200000", gh.OutputMicroUSD)
+	}
+	if gh.CacheReadMicroUSD != 10_000 {
+		t.Errorf("cache-read micro = %d, want 10000", gh.CacheReadMicroUSD)
+	}
+	if gh.CacheWriteMicroUSD != 5_000 {
+		t.Errorf("cache-write micro = %d, want 5000", gh.CacheWriteMicroUSD)
+	}
+}

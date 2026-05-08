@@ -21,15 +21,22 @@ const DefaultMetricsFlushInterval = 60 * time.Second
 
 // MetricsSnapshotLine is the on-disk schema for one NDJSON entry in
 // metrics.jsonl. Time, Server, and Diff are populated for every line; Reset
-// is true on the first line written after a counter reset (server restart,
-// Accumulator.Clear) and the diff for that line is the *full* snapshot, not
-// a negative delta.
+// is true on the first line written after a token counter reset (server
+// restart, Accumulator.Clear) and the diff for that line is the *full*
+// snapshot. CostReset signals an independent cost-side reset (e.g.
+// Accumulator.ClearCost between flushes) — the two flags are independent
+// so a cost-only clear does not invalidate the token diff on the same
+// line. Cost fields are pointer + omitempty so token-only minutes emit
+// lines byte-identical to the pre-cost-persistence schema.
 type MetricsSnapshotLine struct {
-	Time   time.Time            `json:"ts"`
-	Server string               `json:"server"`
-	Reset  bool                 `json:"reset,omitempty"`
-	Diff   metrics.TokenCounts  `json:"diff"`
-	Total  metrics.TokenCounts  `json:"total"`
+	Time      time.Time                   `json:"ts"`
+	Server    string                      `json:"server"`
+	Reset     bool                        `json:"reset,omitempty"`
+	CostReset bool                        `json:"cost_reset,omitempty"`
+	Diff      metrics.TokenCounts         `json:"diff"`
+	Total     metrics.TokenCounts         `json:"total"`
+	CostDiff  *metrics.CostMicroUSDCounts `json:"cost_diff,omitempty"`
+	CostTotal *metrics.CostMicroUSDCounts `json:"cost_total,omitempty"`
 }
 
 // MetricsFlusher periodically serializes per-server token counters from a
@@ -42,9 +49,10 @@ type MetricsFlusher struct {
 	interval time.Duration
 	logger   *slog.Logger
 
-	mu      sync.Mutex
-	writers map[string]*lumberjack.Logger  // serverName -> writer
-	prev    map[string]metrics.TokenCounts // serverName -> last snapshot
+	mu       sync.Mutex
+	writers  map[string]*lumberjack.Logger         // serverName -> writer
+	prev     map[string]metrics.TokenCounts        // serverName -> last token snapshot
+	prevCost map[string]metrics.CostMicroUSDCounts // serverName -> last cost snapshot (parallel to prev)
 
 	stop     chan struct{}
 	done     chan struct{}
@@ -63,6 +71,7 @@ func NewMetricsFlusher(acc *metrics.Accumulator, interval time.Duration) *Metric
 		interval: interval,
 		writers:  make(map[string]*lumberjack.Logger),
 		prev:     make(map[string]metrics.TokenCounts),
+		prevCost: make(map[string]metrics.CostMicroUSDCounts),
 		stop:     make(chan struct{}),
 		done:     make(chan struct{}),
 	}
@@ -128,6 +137,7 @@ func (f *MetricsFlusher) RemoveServer(name string) {
 		delete(f.writers, name)
 	}
 	delete(f.prev, name)
+	delete(f.prevCost, name)
 }
 
 // ConfiguredServers returns the names currently persisting metrics.
@@ -199,7 +209,10 @@ func (f *MetricsFlusher) run() {
 }
 
 // flushOnce snapshots the accumulator and writes one NDJSON line per
-// configured server with a non-zero delta vs the previous snapshot. The
+// configured server with a non-zero delta vs the previous snapshot. A
+// "non-zero delta" means *either* the token diff or the cost diff is
+// non-zero — a minute that records a priced fixture without token
+// attribution still emits a line so its cost reaches disk. The
 // per-server writer map is snapshotted under the mutex; disk I/O happens
 // outside the lock so a slow writer can't block AddServer/RemoveServer.
 func (f *MetricsFlusher) flushOnce(now time.Time) {
@@ -207,6 +220,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		return
 	}
 	snap := f.acc.Snapshot()
+	costSnap := f.acc.CostMicroSnapshot()
 
 	type planned struct {
 		writer *lumberjack.Logger
@@ -220,34 +234,88 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		if !ok {
 			continue
 		}
+		// Cost may legitimately be missing from the cost snapshot when no
+		// priced call has hit the server yet — treat a missing entry as
+		// the zero CostMicroUSDCounts so the diff math stays uniform.
+		currentCost := costSnap[name]
 		prev, hadPrev := f.prev[name]
+		prevCost, hadPrevCost := f.prevCost[name]
 		line := MetricsSnapshotLine{
 			Time:   now.UTC(),
 			Server: name,
 			Total:  current,
 		}
-		switch {
-		case !hadPrev:
+		// Reset detection runs independently per dimension. A token reset
+		// (first flush, or strictly-decreasing component) writes the full
+		// token snapshot in Diff and sets Reset=true. A cost reset
+		// (ClearCost between flushes — only flagged when prior cost
+		// existed) writes the full cost snapshot in CostDiff and sets
+		// CostReset=true. Splitting the flags is what lets a cost-only
+		// clear preserve the token Diff on the same line; conflating
+		// them would silently drop the token activity for that minute on
+		// SeedFromFile replay.
+		tokenReset := !hadPrev || isCounterReset(prev, current)
+		costReset := hadPrevCost && isCostCounterReset(prevCost, currentCost)
+
+		var tokenDiff metrics.TokenCounts
+		if tokenReset {
 			line.Reset = true
-			line.Diff = current
-		case isCounterReset(prev, current):
-			line.Reset = true
-			line.Diff = current
-		default:
-			line.Diff = metrics.TokenCounts{
+			tokenDiff = current
+		} else {
+			tokenDiff = metrics.TokenCounts{
 				InputTokens:  current.InputTokens - prev.InputTokens,
 				OutputTokens: current.OutputTokens - prev.OutputTokens,
 				TotalTokens:  current.TotalTokens - prev.TotalTokens,
 			}
-			if line.Diff.InputTokens == 0 && line.Diff.OutputTokens == 0 && line.Diff.TotalTokens == 0 {
-				continue
+		}
+		line.Diff = tokenDiff
+
+		var costDiff metrics.CostMicroUSDCounts
+		switch {
+		case costReset:
+			line.CostReset = true
+			costDiff = currentCost
+		case tokenReset:
+			// Token reset implies a fresh-server boundary. Match the
+			// existing token contract by carrying the full cost
+			// snapshot in CostDiff so the post-restart cumulative
+			// reconstruction reads the same way for both dimensions.
+			costDiff = currentCost
+		default:
+			costDiff = metrics.CostMicroUSDCounts{
+				InputMicroUSD:      currentCost.InputMicroUSD - prevCost.InputMicroUSD,
+				OutputMicroUSD:     currentCost.OutputMicroUSD - prevCost.OutputMicroUSD,
+				CacheReadMicroUSD:  currentCost.CacheReadMicroUSD - prevCost.CacheReadMicroUSD,
+				CacheWriteMicroUSD: currentCost.CacheWriteMicroUSD - prevCost.CacheWriteMicroUSD,
 			}
 		}
+
+		// Skip lines whose every dimension is empty: token diff zero AND
+		// cost diff zero AND neither dimension reset. A reset line always
+		// emits because it carries the post-reset boundary signal even
+		// when the post-reset state is zero.
+		tokenDiffZero := tokenDiff.InputTokens == 0 && tokenDiff.OutputTokens == 0 && tokenDiff.TotalTokens == 0
+		if !line.Reset && !line.CostReset && tokenDiffZero && costDiff.IsZero() {
+			continue
+		}
+
+		if !costDiff.IsZero() || line.CostReset {
+			cd := costDiff
+			line.CostDiff = &cd
+		}
+		if !currentCost.IsZero() {
+			ct := currentCost
+			line.CostTotal = &ct
+		}
+
 		plan = append(plan, planned{writer: writer, line: line})
-		// Update prev under the lock — even if the write fails the in-memory
-		// state advances; lumberjack rotates rather than retaining failed
-		// writes, so retry would emit the same delta on the next tick anyway.
+		// Update prev / prevCost under the lock — even if the write fails
+		// the in-memory state advances; lumberjack rotates rather than
+		// retaining failed writes, so retry would emit the same delta on
+		// the next tick anyway. Both maps advance together so a partial
+		// failure cannot leave them out of sync for the next tick's diff.
 		f.prev[name] = current
+		f.prevCost[name] = currentCost
 	}
 	f.mu.Unlock()
 
@@ -291,12 +359,28 @@ func isCounterReset(prev, current metrics.TokenCounts) bool {
 		current.TotalTokens < prev.TotalTokens
 }
 
+// isCostCounterReset is the cost analogue of isCounterReset. ClearCost
+// can produce a strictly-decreasing cost component without touching tokens;
+// flushOnce records that as a CostReset (independent of token Reset) so
+// SeedFromFile knows to skip the line's CostDiff for time-series replay
+// while still consuming its token Diff normally.
+func isCostCounterReset(prev, current metrics.CostMicroUSDCounts) bool {
+	return current.InputMicroUSD < prev.InputMicroUSD ||
+		current.OutputMicroUSD < prev.OutputMicroUSD ||
+		current.CacheReadMicroUSD < prev.CacheReadMicroUSD ||
+		current.CacheWriteMicroUSD < prev.CacheWriteMicroUSD
+}
+
 // SeedFromFile reads up to the last n NDJSON entries from path and seeds
-// three surfaces atomically: cumulative per-server totals (via Restore),
-// per-minute time-series ring buckets (via ReplaySnapshot), and this
-// flusher's previous-snapshot map. The Token Usage Over Time chart in the
-// UI is backed by the time-series ring; without the bucket replay it would
-// show only a single post-restart point.
+// four surfaces atomically: cumulative per-server token totals (via
+// Restore), cumulative per-server cost totals (via RestoreCost), per-minute
+// time-series ring buckets — both tokens and cost — (via ReplaySnapshot),
+// and this flusher's previous-snapshot maps (prev + prevCost). The Token
+// Usage Over Time and Cost Over Time charts are backed by the time-series
+// ring; without the bucket replay each would show only a single post-restart
+// point. The Cost KPI card is backed by the cumulative atomics; without
+// RestoreCost it would silently read $0 even when pre-restart cost was
+// non-zero.
 //
 // On-disk format mirrors flushOnce's output: full MetricsSnapshotLine
 // entries plus lighter reset sentinels ({reset, ts, server} only). Reset
@@ -307,7 +391,13 @@ func isCounterReset(prev, current metrics.TokenCounts) bool {
 // For time-series, only non-reset lines are replayed: a Reset line's Diff
 // carries the carry-over from prior sessions (full snapshot), not a single
 // minute's activity, so replaying it would create a synthetic spike at the
-// reset boundary.
+// reset boundary. The same skip applies to cost replay.
+//
+// Legacy files predating cost persistence have no CostDiff / CostTotal
+// fields; they unmarshal with nil pointers, the cost diff sums to zero,
+// the cost replay no-ops, and RestoreCost is invoked with an empty map
+// (which itself no-ops). Token state restores normally — the file remains
+// fully readable with no warning.
 //
 // Missing or empty files return nil (expected on first run with persistence
 // enabled). Malformed lines are skipped without aborting; a single corrupt
@@ -344,13 +434,16 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 		ts     time.Time
 		input  int64
 		output int64
+		cost   int64 // rolled-up micro-USD total for the bucket
 	}
 
-	// Latest Total per server feeds Restore + prev. Non-reset Diff entries
-	// feed ReplaySnapshot in chronological file order so per-minute buckets
-	// appear in the same shape they had during live operation.
+	// Latest Total / CostTotal per server feeds Restore + RestoreCost +
+	// prev / prevCost. Non-reset Diff entries feed ReplaySnapshot in
+	// chronological file order so per-minute buckets appear in the same
+	// shape they had during live operation.
 	latest := make(map[string]metrics.TokenCounts)
-	var series []seriesPoint
+	latestCost := make(map[string]metrics.CostMicroUSDCounts)
+	series := make([]seriesPoint, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -364,17 +457,35 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 			continue
 		}
 		latest[rec.Server] = rec.Total
-		if rec.Reset {
-			continue
+		if rec.CostTotal != nil {
+			latestCost[rec.Server] = *rec.CostTotal
 		}
-		if rec.Diff.InputTokens == 0 && rec.Diff.OutputTokens == 0 {
+		// Reset and CostReset are independent: a token-reset line skips
+		// token replay (Diff is the full carryover, replaying would spike
+		// the bucket) but its cost diff may still be a real per-minute
+		// delta. Symmetrically, a cost-reset-only line keeps its real
+		// token diff but skips the cost component.
+		var input, output, costMicro int64
+		if !rec.Reset {
+			input = rec.Diff.InputTokens
+			output = rec.Diff.OutputTokens
+		}
+		if !rec.CostReset && !rec.Reset && rec.CostDiff != nil {
+			// Token-reset lines carry CostDiff = currentCost as a
+			// fresh-server boundary marker, not a per-minute delta —
+			// skip cost replay for those too so we don't emit a
+			// synthetic spike alongside the token reset.
+			costMicro = rec.CostDiff.TotalMicroUSD()
+		}
+		if input == 0 && output == 0 && costMicro == 0 {
 			continue
 		}
 		series = append(series, seriesPoint{
 			server: rec.Server,
 			ts:     rec.Time,
-			input:  rec.Diff.InputTokens,
-			output: rec.Diff.OutputTokens,
+			input:  input,
+			output: output,
+			cost:   costMicro,
 		})
 	}
 
@@ -384,15 +495,19 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 
 	// Replay time-series buckets first so the ring buffer fills in
 	// chronological order; then restore cumulative counters; then seed
-	// the flusher's prev map under the lock so the next flushOnce
-	// computes a real diff against the seeded baseline.
+	// the flusher's prev / prevCost maps under the lock so the next
+	// flushOnce computes a real diff against the seeded baseline.
 	for _, p := range series {
-		f.acc.ReplaySnapshot(p.server, p.ts, p.input, p.output)
+		f.acc.ReplaySnapshot(p.server, p.ts, p.input, p.output, p.cost)
 	}
 	f.acc.Restore(latest)
+	f.acc.RestoreCost(latestCost)
 	f.mu.Lock()
 	for name, counts := range latest {
 		f.prev[name] = counts
+	}
+	for name, counts := range latestCost {
+		f.prevCost[name] = counts
 	}
 	f.mu.Unlock()
 	return nil
