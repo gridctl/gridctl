@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, WorkflowDefinition, ExecutionResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SkillTestResult, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -518,14 +518,6 @@ export async function disableRegistrySkill(name: string): Promise<AgentSkill> {
   return mutateJSON<AgentSkill>(`/api/registry/skills/${encodeURIComponent(name)}/disable`, 'POST');
 }
 
-export async function runSkillTest(name: string): Promise<SkillTestResult> {
-  return mutateJSON<SkillTestResult>(`/api/registry/skills/${encodeURIComponent(name)}/test`, 'POST');
-}
-
-export async function getSkillTestResult(name: string): Promise<SkillTestResult> {
-  return fetchJSON<SkillTestResult>(`/api/registry/skills/${encodeURIComponent(name)}/test`);
-}
-
 // --- Skill File Management ---
 
 export async function fetchSkillFiles(skillName: string): Promise<SkillFile[]> {
@@ -579,33 +571,6 @@ export async function validateSkillContent(content: string): Promise<SkillValida
   return mutateJSON<SkillValidationResult>('/api/registry/skills/validate', 'POST', { content });
 }
 
-// --- Workflow API ---
-
-export async function fetchWorkflowDefinition(skillName: string): Promise<WorkflowDefinition> {
-  return fetchJSON<WorkflowDefinition>(`/api/registry/skills/${encodeURIComponent(skillName)}/workflow`);
-}
-
-export async function executeWorkflow(
-  skillName: string,
-  args: Record<string, unknown>
-): Promise<ExecutionResult> {
-  return mutateJSON<ExecutionResult>(
-    `/api/registry/skills/${encodeURIComponent(skillName)}/execute`,
-    'POST',
-    { arguments: args },
-  );
-}
-
-export async function validateWorkflow(
-  skillName: string,
-  args: Record<string, unknown>
-): Promise<{ valid: boolean; errors: string[]; warnings: string[]; resolvedArgs?: Record<string, Record<string, unknown>> }> {
-  return mutateJSON(
-    `/api/registry/skills/${encodeURIComponent(skillName)}/validate-workflow`,
-    'POST',
-    { arguments: args },
-  );
-}
 
 // === Vault API ===
 

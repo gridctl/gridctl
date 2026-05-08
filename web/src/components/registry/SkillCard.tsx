@@ -2,13 +2,11 @@ import { memo } from 'react';
 import { BookOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StateBadge } from './StateBadge';
-import { TestStatusBadge } from './TestStatusBadge';
 import { SkillActions } from './SkillActions';
-import type { AgentSkill, SkillTestResult } from '../../types';
+import type { AgentSkill } from '../../types';
 
 export interface SkillCardProps {
   skill: AgentSkill;
-  testResult?: SkillTestResult | null;
   onEnable: (skill: AgentSkill) => void;
   onDisable: (skill: AgentSkill) => void;
   onEdit: (skill: AgentSkill) => void;
@@ -19,7 +17,6 @@ export interface SkillCardProps {
 
 export const SkillCard = memo(({
   skill,
-  testResult,
   onEnable,
   onDisable,
   onEdit,
@@ -68,9 +65,8 @@ export const SkillCard = memo(({
         </p>
       </div>
 
-      {/* Footer: test status + actions */}
-      <div className="px-3 pb-3 pt-2 border-t border-border-subtle/50 flex items-center justify-between gap-2">
-        <TestStatusBadge testResult={testResult} density="card" />
+      {/* Footer: actions */}
+      <div className="px-3 pb-3 pt-2 border-t border-border-subtle/50 flex items-center justify-end gap-2">
         <SkillActions
           skill={skill}
           onToggle={handleToggle}

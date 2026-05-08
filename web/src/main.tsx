@@ -7,7 +7,6 @@ import { DetachedLogsPage } from './pages/DetachedLogsPage.tsx';
 import { DetachedSidebarPage } from './pages/DetachedSidebarPage.tsx';
 import { DetachedEditorPage } from './pages/DetachedEditorPage.tsx';
 import { DetachedRegistryPage } from './pages/DetachedRegistryPage.tsx';
-import { DetachedWorkflowPage } from './pages/DetachedWorkflowPage.tsx';
 import { DetachedMetricsPage } from './pages/DetachedMetricsPage.tsx';
 import { DetachedVaultPage } from './pages/DetachedVaultPage.tsx';
 import { DetachedTracesPage } from './pages/DetachedTracesPage.tsx';
@@ -21,7 +20,6 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/sidebar" element={<DetachedSidebarPage />} />
         <Route path="/editor" element={<DetachedEditorPage />} />
         <Route path="/registry" element={<DetachedRegistryPage />} />
-        <Route path="/workflow" element={<DetachedWorkflowPage />} />
         <Route path="/metrics" element={<DetachedMetricsPage />} />
         <Route path="/vault" element={<DetachedVaultPage />} />
         <Route path="/traces" element={<DetachedTracesPage />} />

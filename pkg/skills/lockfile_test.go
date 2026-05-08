@@ -162,7 +162,6 @@ func TestLockFileWithFingerprint(t *testing.T) {
 		ContentHash: "abc123",
 		ToolsHash:   "def456",
 		Tools:       []string{"tool-a", "tool-b"},
-		WorkflowLen: 3,
 	}
 
 	lf := &LockFile{
@@ -193,7 +192,6 @@ func TestLockFileWithFingerprint(t *testing.T) {
 	assert.Equal(t, "abc123", skill.Fingerprint.ContentHash)
 	assert.Equal(t, "def456", skill.Fingerprint.ToolsHash)
 	assert.Equal(t, []string{"tool-a", "tool-b"}, skill.Fingerprint.Tools)
-	assert.Equal(t, 3, skill.Fingerprint.WorkflowLen)
 }
 
 func TestLockFileSetSourceInitializesMap(t *testing.T) {

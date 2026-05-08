@@ -12,20 +12,14 @@ import {
   GripVertical,
   Eye,
   EyeOff,
-  Code2,
-  GitBranch,
-  Play,
 } from 'lucide-react';
 import { marked } from 'marked';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 import { SkillFileTree } from './SkillFileTree';
-import { WorkflowPanel } from '../workflow/WorkflowPanel';
-import { VisualDesigner } from '../workflow/VisualDesigner';
 import { createRegistrySkill, updateRegistrySkill, validateSkillContent } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import { hasWorkflowBlock } from '../../lib/workflowSync';
-import type { AgentSkill, ItemState, SkillValidationResult, WorkflowStep, SkillInput, WorkflowOutput } from '../../types';
+import type { AgentSkill, ItemState, SkillValidationResult } from '../../types';
 
 // --- Types ---
 
@@ -451,23 +445,6 @@ export function SkillEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<SkillValidationResult | null>(null);
-  const [editorMode, setEditorMode] = useState<'code' | 'visual' | 'test'>('code');
-
-  // Visual designer workflow state
-  const [designerSteps, setDesignerSteps] = useState<WorkflowStep[]>([]);
-  const [designerInputs, setDesignerInputs] = useState<Record<string, SkillInput>>({});
-  const [designerOutput, setDesignerOutput] = useState<WorkflowOutput | undefined>();
-
-  // Detect if the editor currently has a workflow block. Debounce the check
-  // against `body` so Code/Visual/Test tabs can appear as soon as the user
-  // types `workflow:` without waiting for a save + reopen.
-  const [hasWorkflow, setHasWorkflow] = useState(() => hasWorkflowBlock(skill?.body ?? ''));
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setHasWorkflow(hasWorkflowBlock(body));
-    }, 300);
-    return () => clearTimeout(id);
-  }, [body]);
 
   // Resizable split pane
   const { ratio, containerRef, handleMouseDown: handleSplitMouseDown, isDragging: splitDragging } = useSplitPane(0.5, 0.25, 0.75);
@@ -685,50 +662,6 @@ export function SkillEditor({
           </div>
         </div>
 
-        {/* Mode toggle (shown when skill has a workflow) */}
-        {hasWorkflow && !isNew && (
-          <div className="flex items-center justify-center px-5 py-2 border-b border-border/30 bg-surface/30 flex-shrink-0">
-            <div className="flex items-center rounded-lg border border-border/50 bg-surface-elevated/60 overflow-hidden">
-              <button
-                onClick={() => setEditorMode('code')}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5',
-                  editorMode === 'code'
-                    ? 'bg-primary/15 text-primary'
-                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
-                )}
-              >
-                <Code2 size={12} />
-                Code
-              </button>
-              <button
-                onClick={() => setEditorMode('visual')}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-medium transition-all duration-200 border-x border-border/30 flex items-center gap-1.5',
-                  editorMode === 'visual'
-                    ? 'bg-primary/15 text-primary'
-                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
-                )}
-              >
-                <GitBranch size={12} />
-                Visual
-              </button>
-              <button
-                onClick={() => setEditorMode('test')}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5',
-                  editorMode === 'test'
-                    ? 'bg-primary/15 text-primary'
-                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
-                )}
-              >
-                <Play size={12} />
-                Test
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Error display */}
         {error && (
           <div className="px-5 py-2.5 bg-status-error/10 border-b border-status-error/30 flex-shrink-0">
@@ -736,26 +669,6 @@ export function SkillEditor({
           </div>
         )}
 
-        {/* Visual mode */}
-        {editorMode === 'visual' && hasWorkflow && !isNew && (
-          <VisualDesigner
-            steps={designerSteps}
-            inputs={designerInputs}
-            output={designerOutput}
-            onStepsChange={setDesignerSteps}
-            onInputsChange={setDesignerInputs}
-            onOutputChange={setDesignerOutput}
-          />
-        )}
-
-        {/* Test mode */}
-        {editorMode === 'test' && hasWorkflow && !isNew && skill && (
-          <WorkflowPanel skillName={skill.name} />
-        )}
-
-        {/* Code mode */}
-        {editorMode === 'code' && (
-          <>
         {/* Frontmatter helpers (collapsible, scrollable) */}
         <div className="border-b border-border/30 flex-shrink-0">
           <button
@@ -949,8 +862,6 @@ export function SkillEditor({
             <span>{charCount} chars</span>
           </div>
         </div>
-          </>
-        )}
       </div>
     </Modal>
   );

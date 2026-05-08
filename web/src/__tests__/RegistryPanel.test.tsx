@@ -49,11 +49,6 @@ vi.mock('../lib/api', () => ({
   disableRegistrySkill: vi.fn(),
   fetchSkillUpdates: vi.fn().mockResolvedValue({ available: 0, sources: [] }),
   updateSkillSource: vi.fn(),
-  getSkillTestResult: vi.fn().mockResolvedValue({ skill: '', passed: 0, failed: 0, results: [], status: 'untested' }),
-}));
-
-vi.mock('../lib/workflowSync', () => ({
-  hasWorkflowBlock: vi.fn().mockReturnValue(false),
 }));
 
 import { RegistrySidebar } from '../components/registry/RegistrySidebar';

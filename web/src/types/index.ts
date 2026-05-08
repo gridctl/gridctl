@@ -317,25 +317,6 @@ export interface AgentSkill {
   dir?: string;          // Relative path from skills/ root (e.g., "git-workflow/branch-fork")
 }
 
-// CriterionResult holds the outcome of a single acceptance criterion test
-export interface CriterionResult {
-  criterion: string;
-  passed: boolean;
-  actual?: string;       // Set when failed
-  skipped?: boolean;
-  skipReason?: string;   // Set when skipped
-}
-
-// SkillTestResult holds the full result of running a skill's acceptance criteria
-export interface SkillTestResult {
-  skill: string;
-  passed: number;
-  failed: number;
-  skipped?: number;
-  results: CriterionResult[];
-  status?: 'untested'; // Set when no test has been run yet
-}
-
 // SkillFile represents a file within a skill directory
 export interface SkillFile {
   path: string;          // Relative path (e.g., "scripts/lint.sh")
@@ -378,65 +359,6 @@ export interface SkillGroupNodeData extends NodeDataBase {
 }
 
 export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | ClientNodeData | SkillNodeData | SkillGroupNodeData;
-
-// --- Workflow Types ---
-
-export interface SkillInput {
-  type: string;
-  description?: string;
-  required?: boolean;
-  default?: unknown;
-  enum?: string[];
-}
-
-export interface WorkflowStep {
-  id: string;
-  tool: string;
-  args?: Record<string, unknown>;
-  dependsOn?: string[];
-  condition?: string;
-  onError?: string;
-  timeout?: string;
-  retry?: { maxAttempts: number; backoff?: string };
-}
-
-export interface WorkflowOutput {
-  format?: string;
-  include?: string[];
-  template?: string;
-}
-
-export interface WorkflowDefinition {
-  name: string;
-  inputs?: Record<string, SkillInput>;
-  workflow: WorkflowStep[];
-  output?: WorkflowOutput;
-  dag: {
-    levels: WorkflowStep[][];
-  };
-}
-
-export interface StepExecutionResult {
-  id: string;
-  tool: string;
-  status: 'success' | 'failed' | 'skipped' | 'running' | 'pending';
-  startedAt?: string;
-  durationMs?: number;
-  error?: string;
-  attempts?: number;
-  skipReason?: string;
-  level: number;
-}
-
-export interface ExecutionResult {
-  skill: string;
-  status: 'completed' | 'failed' | 'partial';
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  steps: StepExecutionResult[];
-  error?: string;
-}
 
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
