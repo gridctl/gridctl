@@ -113,18 +113,16 @@ jobs:
         run: shellcheck -s sh install.sh
 
   documented-url:
+    # Only meaningful post-merge: pre-merge the file isn't on
+    # gridctl/gridctl/main yet, so we can't assert the canonical
+    # raw.githubusercontent.com URL until the PR lands.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Documented install URL is reachable
-        # Guards against the doc/path drift class of bug: install.sh moved
-        # without README updates, branch deleted, etc. On a PR from a fork
-        # the URL targets the fork's branch (still a valid liveness check);
-        # on push to main it asserts the production URL is healthy.
-        env:
-          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
-          url="https://raw.githubusercontent.com/${{ github.repository }}/${BRANCH}/install.sh"
+          url="https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh"
           echo "checking $url"
           code="$(curl -fsSL -o /dev/null -w '%{http_code}' "$url")"
           if [ "$code" != "200" ]; then
