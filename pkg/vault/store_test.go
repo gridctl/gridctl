@@ -914,6 +914,119 @@ func TestStore_ReloadIgnoresCorruptFile(t *testing.T) {
 	}
 }
 
+func TestStore_ReloadDetectsPlaintextToEncryptedTransition(t *testing.T) {
+	// Cross-process: while a "daemon" Store has the plaintext vault loaded,
+	// a "cli" Store calls Lock(). The daemon's next read must drop the
+	// in-memory plaintext, report locked, and not leak the previous values.
+	dir := t.TempDir()
+	const pass = "test-passphrase"
+
+	daemon := NewStore(dir)
+	if err := daemon.Load(); err != nil {
+		t.Fatalf("daemon Load(): %v", err)
+	}
+	if err := daemon.Set("API_KEY", "abc123"); err != nil {
+		t.Fatalf("daemon Set(): %v", err)
+	}
+	if daemon.IsLocked() {
+		t.Fatal("daemon IsLocked() before lock = true; want false")
+	}
+
+	cli := NewStore(dir)
+	if err := cli.Load(); err != nil {
+		t.Fatalf("cli Load(): %v", err)
+	}
+	if err := cli.Lock(pass); err != nil {
+		t.Fatalf("cli Lock(): %v", err)
+	}
+
+	if !daemon.IsLocked() {
+		t.Fatal("daemon IsLocked() after external lock = false; want true (plaintext leak)")
+	}
+	if got := daemon.List(); len(got) != 0 {
+		t.Errorf("daemon List() after external lock = %d secrets; want 0", len(got))
+	}
+	if val, ok := daemon.Get("API_KEY"); ok {
+		t.Errorf("daemon Get(API_KEY) after external lock = %q, true; want \"\", false", val)
+	}
+}
+
+func TestStore_ReloadDetectsEncryptedToPlaintextTransition(t *testing.T) {
+	// No CLI command performs encrypted → plaintext on disk today; the
+	// symmetric branch is exercised here by direct file manipulation, which
+	// also covers a manual restore-from-backup or future decrypt command.
+	dir := t.TempDir()
+	const pass = "test-passphrase"
+
+	writer := NewStore(dir)
+	if err := writer.Set("OLD_KEY", "old"); err != nil {
+		t.Fatalf("writer Set(): %v", err)
+	}
+	if err := writer.Lock(pass); err != nil {
+		t.Fatalf("writer Lock(): %v", err)
+	}
+
+	daemon := NewStore(dir)
+	if err := daemon.Load(); err != nil {
+		t.Fatalf("daemon Load(): %v", err)
+	}
+	if !daemon.IsLocked() {
+		t.Fatal("daemon IsLocked() on encrypted vault = false; want true")
+	}
+
+	plaintext := []byte(`{"secrets":[{"key":"NEW_KEY","value":"new"}]}`)
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), plaintext, 0600); err != nil {
+		t.Fatalf("write secrets.json: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "secrets.enc")); err != nil {
+		t.Fatalf("remove secrets.enc: %v", err)
+	}
+
+	if daemon.IsLocked() {
+		t.Error("daemon IsLocked() after external decrypt = true; want false")
+	}
+	if daemon.IsEncrypted() {
+		t.Error("daemon IsEncrypted() after external decrypt = true; want false")
+	}
+	val, ok := daemon.Get("NEW_KEY")
+	if !ok || val != "new" {
+		t.Errorf("daemon Get(NEW_KEY) = %q, %v; want %q, true", val, ok, "new")
+	}
+	if _, ok := daemon.Get("OLD_KEY"); ok {
+		t.Error("daemon Get(OLD_KEY) returned ok=true after external decrypt swap")
+	}
+}
+
+func TestStore_IsLockedReflectsExternalLock(t *testing.T) {
+	// IsLocked() and IsEncrypted() must observe an external lock without
+	// a prior read call — handleVaultStatus reaches for them directly.
+	dir := t.TempDir()
+	const pass = "test-passphrase"
+
+	daemon := NewStore(dir)
+	if err := daemon.Load(); err != nil {
+		t.Fatalf("daemon Load(): %v", err)
+	}
+	if err := daemon.Set("API_KEY", "abc123"); err != nil {
+		t.Fatalf("daemon Set(): %v", err)
+	}
+
+	cli := NewStore(dir)
+	if err := cli.Load(); err != nil {
+		t.Fatalf("cli Load(): %v", err)
+	}
+	if err := cli.Lock(pass); err != nil {
+		t.Fatalf("cli Lock(): %v", err)
+	}
+
+	if !daemon.IsLocked() {
+		t.Fatal("daemon IsLocked() after external lock without prior read = false; want true")
+	}
+	if !daemon.IsEncrypted() {
+		t.Fatal("daemon IsEncrypted() after external lock without prior read = false; want true")
+	}
+}
+
 func TestStore_ReloadIgnoresMissingFile(t *testing.T) {
 	// reloadIfChanged must treat a missing backing file as a no-op rather
 	// than wiping in-memory state — otherwise a transient stat error would
