@@ -492,3 +492,77 @@ func TestHandleVault_StatusShowsEncrypted(t *testing.T) {
 		t.Errorf("encrypted = %v, want true", result["encrypted"])
 	}
 }
+
+// TestHandleVault_List_ReflectsExternalWrites asserts that secrets written by
+// a separate Store instance against the same baseDir (i.e., a CLI
+// `gridctl vault import` run while the daemon is up) are visible to the
+// server's HTTP handler on the next request, without restarting the server.
+func TestHandleVault_List_ReflectsExternalWrites(t *testing.T) {
+	dir := t.TempDir()
+
+	// Server-side store, wired into the handler.
+	serverStore := vault.NewStore(dir)
+	if err := serverStore.Load(); err != nil {
+		t.Fatalf("server Load(): %v", err)
+	}
+	server := &Server{vaultStore: serverStore}
+	handler := server.Handler()
+
+	// First request returns an empty list.
+	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("initial list status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var initial []map[string]string
+	_ = json.NewDecoder(w.Body).Decode(&initial)
+	if len(initial) != 0 {
+		t.Fatalf("initial list = %d entries, want 0", len(initial))
+	}
+
+	// CLI-side store writes through a separate instance.
+	cli := vault.NewStore(dir)
+	if err := cli.Load(); err != nil {
+		t.Fatalf("cli Load(): %v", err)
+	}
+	if _, err := cli.Import(map[string]string{"API_KEY": "abc", "DB_URL": "postgres://x"}); err != nil {
+		t.Fatalf("cli Import(): %v", err)
+	}
+
+	// Server's next request reflects the external writes.
+	req = httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("post-write list status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var entries []map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&entries); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("post-write list = %d entries, want 2", len(entries))
+	}
+
+	keys := map[string]bool{}
+	for _, e := range entries {
+		keys[e["key"]] = true
+	}
+	if !keys["API_KEY"] || !keys["DB_URL"] {
+		t.Errorf("missing expected keys in list: %v", entries)
+	}
+
+	// Single-key Get should also pick up the external write.
+	req = httptest.NewRequest(http.MethodGet, "/api/vault/API_KEY", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var got map[string]string
+	_ = json.NewDecoder(w.Body).Decode(&got)
+	if got["value"] != "abc" {
+		t.Errorf("Get value = %q, want %q", got["value"], "abc")
+	}
+}
