@@ -21,6 +21,10 @@ type Store struct {
 	locked     bool   // true when secrets.enc exists and vault is not unlocked
 	encrypted  bool   // true when vault was loaded from secrets.enc (re-encrypt on save)
 	passphrase string // held in memory for re-encryption after modifications
+	// Cached mtime/size of the backing file; gates reload-on-read so external
+	// writes (e.g. CLI vault commands while the daemon is up) are picked up.
+	mtime time.Time
+	size  int64
 }
 
 // NewStore creates a vault store rooted at the given directory.
@@ -42,12 +46,16 @@ func (s *Store) Load() error {
 	s.sets = make(map[string]Set)
 	s.locked = false
 	s.encrypted = false
+	s.mtime = time.Time{}
+	s.size = 0
 
 	// Check for encrypted vault first
 	encPath := s.encryptedPath()
-	if _, err := os.Stat(encPath); err == nil {
+	if info, err := os.Stat(encPath); err == nil {
 		s.locked = true
 		s.encrypted = true
+		s.mtime = info.ModTime()
+		s.size = info.Size()
 		return nil
 	}
 
@@ -60,39 +68,53 @@ func (s *Store) Load() error {
 		return fmt.Errorf("reading vault: %w", err)
 	}
 
-	return s.parseSecretsData(data)
+	secrets, sets, err := parseSecretsData(data)
+	if err != nil {
+		return err
+	}
+	s.secrets = secrets
+	s.sets = sets
+	s.stampMtimeLocked()
+	return nil
 }
 
-// parseSecretsData parses secrets JSON into the in-memory maps.
-func (s *Store) parseSecretsData(data []byte) error {
+// parseSecretsData parses secrets JSON and returns fresh maps. Returning
+// rather than mutating lets callers swap state in atomically — a parse error
+// must never wipe the live in-memory secrets.
+func parseSecretsData(data []byte) (map[string]Secret, map[string]Set, error) {
+	secrets := make(map[string]Secret)
+	sets := make(map[string]Set)
+
 	// Try new format first (object with secrets and sets)
 	var sd storeData
 	if err := json.Unmarshal(data, &sd); err == nil && (sd.Secrets != nil || sd.Sets != nil) {
 		for _, sec := range sd.Secrets {
-			s.secrets[sec.Key] = sec
+			secrets[sec.Key] = sec
 		}
 		for _, set := range sd.Sets {
-			s.sets[set.Name] = set
+			sets[set.Name] = set
 		}
-		return nil
+		return secrets, sets, nil
 	}
 
 	// Fall back to legacy flat array format
-	var secrets []Secret
-	if err := json.Unmarshal(data, &secrets); err != nil {
-		return fmt.Errorf("parsing vault: %w", err)
+	var legacy []Secret
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return nil, nil, fmt.Errorf("parsing vault: %w", err)
 	}
 
-	for _, sec := range secrets {
-		s.secrets[sec.Key] = sec
+	for _, sec := range legacy {
+		secrets[sec.Key] = sec
 	}
-	return nil
+	return secrets, sets, nil
 }
 
-// Get returns a secret value and whether it exists.
+// Get returns a secret value and whether it exists. Read methods take the
+// write lock because reloadIfChanged may mutate state.
 func (s *Store) Get(key string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 
 	sec, ok := s.secrets[key]
 	if !ok {
@@ -164,8 +186,9 @@ func (s *Store) Delete(key string) error {
 
 // List returns all secrets sorted by key.
 func (s *Store) List() []Secret {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 
 	result := make([]Secret, 0, len(s.secrets))
 	for _, sec := range s.secrets {
@@ -197,8 +220,9 @@ func (s *Store) Import(secrets map[string]string) (int, error) {
 
 // Export returns all secrets as a key-value map.
 func (s *Store) Export() map[string]string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 
 	result := make(map[string]string, len(s.secrets))
 	for k, sec := range s.secrets {
@@ -209,8 +233,9 @@ func (s *Store) Export() map[string]string {
 
 // Keys returns sorted key names only.
 func (s *Store) Keys() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 
 	keys := make([]string, 0, len(s.secrets))
 	for k := range s.secrets {
@@ -222,16 +247,18 @@ func (s *Store) Keys() []string {
 
 // Has checks existence without returning the value.
 func (s *Store) Has(key string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 	_, ok := s.secrets[key]
 	return ok
 }
 
 // Values returns all secret values (for redaction registration).
 func (s *Store) Values() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 
 	vals := make([]string, 0, len(s.secrets))
 	for _, sec := range s.secrets {
@@ -273,8 +300,9 @@ func (s *Store) SetSecretSet(key, setName string) error {
 
 // ListSets returns all sets with their member counts.
 func (s *Store) ListSets() []SetSummary {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 
 	// Count members per set
 	counts := make(map[string]int)
@@ -344,8 +372,9 @@ func (s *Store) DeleteSet(name string) error {
 
 // GetSetSecrets returns all secrets belonging to a set, sorted by key.
 func (s *Store) GetSetSecrets(setName string) []Secret {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
 
 	var result []Secret
 	for _, sec := range s.secrets {
@@ -410,6 +439,7 @@ func (s *Store) Lock(passphrase string) error {
 		s.encrypted = true
 		s.locked = false
 		s.passphrase = passphrase
+		s.stampMtimeLocked()
 		return nil
 	})
 }
@@ -439,14 +469,15 @@ func (s *Store) Unlock(passphrase string) error {
 			return err
 		}
 
-		s.secrets = make(map[string]Secret)
-		s.sets = make(map[string]Set)
-		if err := s.parseSecretsData(plaintext); err != nil {
+		secrets, sets, err := parseSecretsData(plaintext)
+		if err != nil {
 			return err
 		}
-
+		s.secrets = secrets
+		s.sets = sets
 		s.locked = false
 		s.passphrase = passphrase
+		s.stampMtimeLocked()
 		return nil
 	})
 }
@@ -486,6 +517,7 @@ func (s *Store) ChangePassphrase(oldPass, newPass string) error {
 		}
 
 		s.passphrase = newPass
+		s.stampMtimeLocked()
 		return nil
 	})
 }
@@ -501,7 +533,8 @@ func (s *Store) encryptedPath() string {
 }
 
 // loadLocked reads from disk without acquiring the mutex (caller must hold it).
-// Supports plaintext, legacy, and encrypted formats.
+// Supports plaintext, legacy, and encrypted formats. Updates s.mtime/s.size
+// on success so subsequent reloadIfChanged calls have a fresh baseline.
 func (s *Store) loadLocked() error {
 	// If encrypted and unlocked, read from encrypted file
 	if s.encrypted && !s.locked && s.passphrase != "" {
@@ -523,9 +556,14 @@ func (s *Store) loadLocked() error {
 			return err
 		}
 
-		s.secrets = make(map[string]Secret)
-		s.sets = make(map[string]Set)
-		return s.parseSecretsData(plaintext)
+		secrets, sets, err := parseSecretsData(plaintext)
+		if err != nil {
+			return err
+		}
+		s.secrets = secrets
+		s.sets = sets
+		s.stampMtimeLocked()
+		return nil
 	}
 
 	path := s.secretsPath()
@@ -537,9 +575,58 @@ func (s *Store) loadLocked() error {
 		return fmt.Errorf("reading vault: %w", err)
 	}
 
-	s.secrets = make(map[string]Secret)
-	s.sets = make(map[string]Set)
-	return s.parseSecretsData(data)
+	secrets, sets, err := parseSecretsData(data)
+	if err != nil {
+		return err
+	}
+	s.secrets = secrets
+	s.sets = sets
+	s.stampMtimeLocked()
+	return nil
+}
+
+// activePathLocked returns the backing file path that matches the current
+// encryption state. Caller must hold the mutex.
+func (s *Store) activePathLocked() string {
+	if s.encrypted {
+		return s.encryptedPath()
+	}
+	return s.secretsPath()
+}
+
+// stampMtimeLocked records the current mtime and size of the active backing
+// file. A failed stat (e.g., file not yet written) leaves the baseline cleared
+// so the next reloadIfChanged is a no-op rather than a spurious reload.
+// Caller must hold the mutex.
+func (s *Store) stampMtimeLocked() {
+	info, err := os.Stat(s.activePathLocked())
+	if err != nil {
+		s.mtime = time.Time{}
+		s.size = 0
+		return
+	}
+	s.mtime = info.ModTime()
+	s.size = info.Size()
+}
+
+// reloadIfChanged re-reads from disk when the backing file's mtime or size
+// has advanced past the cached baseline. No-op when the file is missing
+// (preserve in-memory state) or when encrypted+locked (no passphrase). The
+// caller must hold the write lock — a reload mutates s.secrets/s.sets.
+func (s *Store) reloadIfChanged() error {
+	if s.encrypted && s.locked {
+		return nil
+	}
+	info, err := os.Stat(s.activePathLocked())
+	if err != nil {
+		return nil
+	}
+	// Size is a fallback for filesystems with coarse mtime resolution where a
+	// same-second rewrite could otherwise share an mtime with the prior file.
+	if !info.ModTime().After(s.mtime) && info.Size() == s.size {
+		return nil
+	}
+	return s.loadLocked()
 }
 
 // serializeSecrets returns the current secrets as JSON.
@@ -584,10 +671,18 @@ func (s *Store) saveLocked() error {
 			return err
 		}
 
-		return atomicWrite(s.encryptedPath(), encData, 0600)
+		if err := atomicWrite(s.encryptedPath(), encData, 0600); err != nil {
+			return err
+		}
+		s.stampMtimeLocked()
+		return nil
 	}
 
-	return atomicWrite(s.secretsPath(), data, 0600)
+	if err := atomicWrite(s.secretsPath(), data, 0600); err != nil {
+		return err
+	}
+	s.stampMtimeLocked()
+	return nil
 }
 
 // atomicWrite writes data to path via temp file + rename.
