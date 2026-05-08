@@ -597,7 +597,7 @@ function KPICard({ label, value, colorClass }: { label: string; value: number; c
 function CostKPICard({ usd, hasCost }: { usd: number | undefined; hasCost: boolean }) {
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
-      <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1 inline-flex items-center gap-1">
+      <span className="text-[10px] text-text-muted uppercase tracking-wider flex items-center gap-1 mb-1">
         <DollarSign size={10} className="text-text-muted/70" />
         Cost
       </span>
