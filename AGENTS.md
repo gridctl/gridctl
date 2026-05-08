@@ -317,7 +317,7 @@ artifacts; only the front-end mechanism differs.
 
 | Path | Mechanism | Updates via |
 |---|---|---|
-| Curl one-liner | `scripts/install.sh` served from `raw.githubusercontent.com/gridctl/gridctl/main/install.sh` | `gridctl upgrade` (in-place, atomic rename) |
+| Curl one-liner | `install.sh` served from `raw.githubusercontent.com/gridctl/gridctl/main/install.sh` | `gridctl upgrade` (in-place, atomic rename) |
 | Homebrew | `gridctl/homebrew-tap` formula auto-published by GoReleaser post-release | `brew upgrade gridctl/tap/gridctl` |
 | Source | `git clone && make build` | `git pull && make build` |
 
@@ -327,7 +327,7 @@ unless `--force` is passed.
 
 ### Release artifact contract
 
-Both `scripts/install.sh` and `cmd/gridctl/upgrade.go` consume two
+Both `install.sh` and `cmd/gridctl/upgrade.go` consume two
 artifacts produced by GoReleaser. **Renaming either breaks both
 consumers silently for the next release.**
 
@@ -352,7 +352,7 @@ to the lighter `releases/latest` redirect (which excludes pre-releases)
 so the curl installer and `gridctl upgrade` serve stable users a stable
 build. Affected lines:
 
-- `scripts/install.sh` — `resolve_version()`
+- `install.sh` — `resolve_version()`
 - `cmd/gridctl/upgrade.go` — `fetchLatestTag()`
 
 Both files have a `TODO` comment marking the call site.
@@ -364,8 +364,8 @@ Ubuntu and macOS (install → re-run for idempotency → `gridctl upgrade
 --check` → `--uninstall` → `--uninstall --purge`) plus a separate
 `shellcheck -s sh` job. Triggers:
 
-- PRs touching `scripts/install.sh` or the workflow itself
-- Pushes to `main` touching `scripts/install.sh`
+- PRs touching `install.sh` or the workflow itself
+- Pushes to `main` touching `install.sh`
 - Weekly cron (Monday 08:00 UTC) — surfaces release-artifact drift
 
 ## CLI Usage
