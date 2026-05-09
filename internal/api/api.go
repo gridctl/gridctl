@@ -12,6 +12,8 @@ import (
 
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/agent"
+	"github.com/gridctl/gridctl/pkg/agent/compose"
+	"github.com/gridctl/gridctl/pkg/agent/persist"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -78,6 +80,12 @@ type Server struct {
 	playgroundProvider agent.ChatModel
 	playgroundOnce     sync.Once
 	playgroundSvc      *playgroundService
+
+	// Agent runtime persistence + approval surface. SetAgentRunStore
+	// and SetAgentApprovalRegistry wire these at apply time; nil
+	// values cause /api/agent/runs/* handlers to return 503.
+	agentRunStore         *persist.Store
+	agentApprovalRegistry *compose.Registry
 }
 
 // NewServer creates a new API server.
@@ -240,6 +248,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("GET /api/agents/{name}/logs", s.handleAgentLogs)
+
+	// Agent runtime — typed runs persisted as JSONL at
+	// ~/.gridctl/runs/<run_id>.jsonl. List and inspect surfaces are
+	// always available when a store is wired; resume/approve route
+	// through the in-process approval registry.
+	mux.HandleFunc("GET /api/agent/runs", s.handleAgentRunsList)
+	mux.HandleFunc("GET /api/agent/runs/{run_id}", s.handleAgentRunGet)
+	mux.HandleFunc("GET /api/agent/runs/{run_id}/events", s.handleAgentRunEvents)
+	mux.HandleFunc("POST /api/agent/runs/{run_id}/resume", s.handleAgentRunResume)
+	mux.HandleFunc("POST /api/agent/runs/{run_id}/approve", s.handleAgentRunApprove)
 	mux.HandleFunc("POST /api/mcp-servers/{name}/restart", s.handleMCPServerRestart)
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)

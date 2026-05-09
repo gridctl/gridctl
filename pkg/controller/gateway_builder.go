@@ -16,6 +16,8 @@ import (
 
 	"github.com/gridctl/gridctl/internal/api"
 	"github.com/gridctl/gridctl/internal/probe"
+	"github.com/gridctl/gridctl/pkg/agent/compose"
+	"github.com/gridctl/gridctl/pkg/agent/persist"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -471,6 +473,12 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	if provider := buildPlaygroundProvider(b.vaultStore); provider != nil {
 		server.SetPlaygroundProvider(provider)
 	}
+
+	// Agent runtime persistence (Phase E). Runs land as JSONL at
+	// ~/.gridctl/runs/<run_id>.jsonl; the registry tracks approval
+	// gates so the API and CLI can resolve them by ID.
+	server.SetAgentRunStore(persist.NewStore(persist.DefaultRunsDir()))
+	server.SetAgentApprovalRegistry(compose.NewRegistry())
 
 	// Wire token usage metrics
 	counter, err := b.buildTokenCounter()
