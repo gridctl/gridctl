@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gridctl/gridctl/internal/probe"
+	"github.com/gridctl/gridctl/pkg/agent"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -66,6 +68,16 @@ type Server struct {
 	// unchanged; tests inject temp paths to stay isolated from $HOME.
 	skillLockPath    string
 	skillsConfigPath string
+
+	// Playground LLM provider. When nil, /api/playground/chat returns
+	// a 400 explaining that the user needs to configure a vault key
+	// and restart the daemon. The provider is the route layer
+	// (agent/llm/gateway.Provider) chosen at apply-time by the
+	// gateway builder so a single API server can serve mixed
+	// provider models.
+	playgroundProvider agent.ChatModel
+	playgroundOnce     sync.Once
+	playgroundSvc      *playgroundService
 }
 
 // NewServer creates a new API server.
@@ -188,6 +200,15 @@ func (s *Server) SetSkillSourcePaths(lockPath, configPath string) {
 	s.skillsConfigPath = configPath
 }
 
+// SetPlaygroundProvider injects the LLM provider used by
+// /api/playground/{chat,stream}. Passing nil disables the playground
+// (the chat endpoint returns a clear error). The provider is typically
+// the prefix-routing agent/llm/gateway.Provider built at apply-time by
+// pkg/controller from the vault keys present.
+func (s *Server) SetPlaygroundProvider(p agent.ChatModel) {
+	s.playgroundProvider = p
+}
+
 // RegistryServer returns the registry server.
 func (s *Server) RegistryServer() *registry.Server {
 	return s.registryServer
@@ -298,6 +319,13 @@ func (s *Server) Handler() http.Handler {
 	// Server probe — ephemeral tool enumeration used by the wizard's
 	// "Discover tools" flow for servers not yet loaded in the topology.
 	mux.HandleFunc("POST /api/servers/probe", s.handleProbe)
+
+	// Playground — LLM provider abstraction surface. /auth probes the
+	// vault for provider keys; /chat kicks off an inference into a
+	// session channel; /stream is the SSE the React client subscribes to.
+	mux.HandleFunc("POST /api/playground/auth", s.handlePlaygroundAuth)
+	mux.HandleFunc("POST /api/playground/chat", s.handlePlaygroundChat)
+	mux.HandleFunc("GET /api/playground/stream", s.handlePlaygroundStream)
 
 	// Registry endpoints
 	mux.HandleFunc("GET /api/registry/status", s.handleRegistryStatus)
