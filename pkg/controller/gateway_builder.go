@@ -468,6 +468,10 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		server.SetPinStore(b.pinStore)
 	}
 
+	if provider := buildPlaygroundProvider(b.vaultStore); provider != nil {
+		server.SetPlaygroundProvider(provider)
+	}
+
 	// Wire token usage metrics
 	counter, err := b.buildTokenCounter()
 	if err != nil {
