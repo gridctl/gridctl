@@ -2,40 +2,34 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-beta.9] - 2026-05-09
 
-
-### Breaking Changes
-
-- Removed the YAML-driven skill workflow engine. The `workflow:` block in `SKILL.md`, the workflow visual designer in the Web UI, the `gridctl test` and `gridctl activate` subcommands, and the `/workflow`, `/execute`, `/validate-workflow`, and `/test` registry API endpoints are no longer supported. Skill manifests, the registry store, the MCP gateway, the Code Mode sandbox, and remote skill import (sources, lockfile, origin tracking) are unaffected. A code-first agent runtime replaces the YAML engine in a follow-up release.
-
-### Features
-
-
-- Add `pkg/pricing` with embedded LiteLLM rate table, model-ID normalization, and a swappable `Source` interface for cost lookup. The package prices input, output, cache-read, and cache-write tokens separately so providers like Anthropic are not mis-priced by an order of magnitude.
-- Wire cost accumulation into `pkg/metrics`: parallel atomic counters (session, per-server, per-replica), a per-minute cost ring buffer, `RecordCost`, `CostSnapshot`, `QueryCost`, and `ClearCost`. The `/api/metrics/tokens` JSON shape is unchanged; cost surfaces land in a follow-up PR.
-- Add `make update-pricing` to refresh the embedded LiteLLM pricing snapshot (weekly cadence recommended).
-- Capture and normalize the originating MCP client (`clientInfo.name`) on every session, propagate the normalized identifier through the tool-call path, and aggregate per-client tokens and cost in `pkg/metrics`. `TokenUsage` and `CostUsage` gain an additive `per_client` field (omitempty); pre-existing JSON consumers see no shape change.
-- Tag tool-call OpenTelemetry spans with the GenAI semantic-convention attributes `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens` (only when reported), `gen_ai.usage.cache_creation.input_tokens` (only when reported), `gen_ai.request.model`, `gen_ai.cost.usd`, `mcp.server.name`, `mcp.tool.name`, and `mcp.client.name`.
-- Record per-call cost for nested tool calls dispatched through `mcp.callTool` inside the Code Mode goja sandbox. The outer `execute` call's client_id flows through `context.Context` to every nested call so attribution is preserved for high-tool-count workloads.
-- Add `GET /api/metrics/cost?range={30m,1h,6h,24h,7d}&per_client=true` for cost-over-time time-series, mirroring the `/api/metrics/tokens` shape with optional per-client grouping.
-- Add `DELETE /api/metrics/cost`, which clears recorded cost data without touching the token counters or format-savings tally.
-- Extend `/api/status` with an additive, omitempty `cost` field carrying the session, per-server, per-client, and per-replica USD totals.
-- Surface cost in the Web UI Metrics tab: a session `$ Cost` KPI card beside Input/Output/Total tokens, a cost-over-time area chart that scales with the existing time-range selector, and a `Top Clients` panel summarizing per-client token and USD totals (sortable, default cost descending, hidden when no per-client attribution is present). Cost values render as `—` until the gateway has priced any calls, never a fabricated number.
-- Add `pkg/optimize` with the `unused_server` and `unused_tool` heuristics, scoring each finding with a measured weekly USD impact and a paste-ready YAML remediation snippet. The `<24h of data` gate emits a single info finding so reports never over-fire on a freshly started gateway.
-- Add `GET /api/optimize?stack=&min_impact=&severity=` returning an `OptimizeReport{findings, health_score, generated_at}` derived from the live gateway state and accumulator snapshot.
-- Add the `gridctl optimize` CLI command — `--stack`/`--min-impact`/`--severity`/`--format json` flags, a styled findings table with severity, weekly $, and remediation hint, and the standard `0|1|2` exit codes (0 = no findings, 1 = warn/critical, 2 = gateway unreachable or wrong stack).
-- Add a Sidebar `Optimize` panel inside the gateway view: each finding renders with a severity badge, weekly USD impact, and a collapsible remediation snippet. The panel polls on the same cadence as Token Usage / Cost.
-- Track per-(server, tool) call counts on the metrics accumulator and thread the originating tool name through the observer path so `unused_tool` can detect cold tools without inferring from token totals.
-- Expand `pkg/optimize` with three additional heuristics: `schema_overhead` (server schema cost dominates tool value, derived from live tool-list bytes), `format_savings_shortfall` (server emits raw JSON when the session has demonstrated TOON/CSV savings — projects the measured savings rate onto the candidate server), and `expensive_model_on_cheap_task` (Opus-tier rate on simple-lookup traffic, informational only since model selection is client-side). All three reuse the existing `/api/optimize`, `gridctl optimize`, and Sidebar Optimize panel — no new surfaces.
 
 ### Bug Fixes
 
 
-- Telemetry persistence write and seed gaps (#550 follow-up)
-- Persist and replay cost data across daemon restarts. Previously the cost KPI and Cost Over Time chart silently reset to $0 after a restart even when pre-restart cost was non-zero — token persistence had this path; cost did not. The on-disk `metrics.jsonl` schema is extended additively (cost fields are pointer + `omitempty`) and remains forward- and backward-compatible with files written by older versions.
+- Telemetry persistence write and seed gaps ([#563](https://github.com/gridctl/gridctl/pull/563))
+- Stack cost KPI label above value ([#571](https://github.com/gridctl/gridctl/pull/571))
+- Persist and replay cost data across restarts ([#573](https://github.com/gridctl/gridctl/pull/573))
+- Serve install.sh from repo root ([#575](https://github.com/gridctl/gridctl/pull/575))
+- Reload vault on read to pick up external writes ([#577](https://github.com/gridctl/gridctl/pull/577))
+- Vault encryption-state transitions not detected by daemon ([#579](https://github.com/gridctl/gridctl/pull/579))
 
-## [0.1.0-beta.8] - 2026-05-05
+### Features
+
+
+- Cost layer foundation (pricing + metrics) ([#565](https://github.com/gridctl/gridctl/pull/565))
+- Per-client attribution, GenAI spans, cost API ([#566](https://github.com/gridctl/gridctl/pull/566))
+- Cost KPI, cost-over-time chart, top clients panel ([#567](https://github.com/gridctl/gridctl/pull/567))
+- Gridctl optimize CLI, /api/optimize, and sidebar panel ([#568](https://github.com/gridctl/gridctl/pull/568))
+- Schema_overhead, format_savings_shortfall, expensive_model heuristics ([#569](https://github.com/gridctl/gridctl/pull/569))
+
+### Refactoring
+
+
+- Muted-by-default color hierarchy for Skills Registry ([#559](https://github.com/gridctl/gridctl/pull/559))
+- Focus-First styling pass for Topology view ([#561](https://github.com/gridctl/gridctl/pull/561))
+- Remove yaml workflow engine ([#581](https://github.com/gridctl/gridctl/pull/581))## [0.1.0-beta.8] - 2026-05-05
 
 
 ### Bug Fixes
