@@ -214,15 +214,26 @@ gridctl/
 │   │   ├── types.go      # PinRecord, ServerPins, status constants
 │   │   ├── store.go      # PinStore: load/save (atomic), VerifyOrPin, Approve, Reset
 │   │   └── adapter.go    # GatewayAdapter: bridges PinStore to SchemaVerifier interface
-│   └── registry/         # Agent Skills registry (agentskills.io)
-│       ├── types.go      # AgentSkill, SkillFile, ItemState, workflow types
-│       ├── frontmatter.go # SKILL.md parsing (YAML frontmatter + markdown body)
-│       ├── validator.go   # agentskills.io spec validation + workflow validation
-│       ├── store.go      # Directory-based persistent store
-│       ├── server.go     # MCP server interface for registry
-│       ├── dag.go        # Workflow DAG builder (Kahn's algorithm, level grouping)
-│       ├── template.go   # Template engine for workflow expressions
-│       └── executor.go   # Workflow executor with parallel step dispatch
+│   ├── registry/         # Agent Skills registry (agentskills.io)
+│   │   ├── types.go      # AgentSkill, SkillFile, ItemState, workflow types
+│   │   ├── frontmatter.go # SKILL.md parsing (YAML frontmatter + markdown body)
+│   │   ├── validator.go   # agentskills.io spec validation + workflow validation
+│   │   ├── store.go      # Directory-based persistent store
+│   │   ├── server.go     # MCP server interface for registry
+│   │   ├── dag.go        # Workflow DAG builder (Kahn's algorithm, level grouping)
+│   │   ├── template.go   # Template engine for workflow expressions
+│   │   └── executor.go   # Workflow executor with parallel step dispatch
+│   └── agent/            # Code-first agent runtime (graph composition + LLM provider abstraction)
+│       ├── agent.go      # Public type surface: Graph[I,O], Runnable[I,O], StreamReader[T], ToolInfo, ChatRequest/Response/Chunk, Message, ToolCall, ToolResult, ChatModel
+│       ├── toolcaller.go # ToolCaller interface (alias of mcp.ToolCaller); ToolCallResult type alias
+│       ├── internal/eino/ # Boundary layer — only place github.com/cloudwego/eino is referenced; enforced by scripts/check-eino-boundary.sh
+│       ├── gateway/      # Adapter: NewToolCaller(*mcp.Gateway) → agent.ToolCaller
+│       └── llm/          # LLM provider abstraction (net/http + encoding/json only)
+│           ├── llm.go    # Provider type alias of agent.ChatModel
+│           ├── anthropic/ # Anthropic Messages API (Generate + Stream + tools.go + messages.go)
+│           ├── openai/   # OpenAI Chat Completions API
+│           ├── google/   # Google Gemini Generative Language API
+│           └── gateway/  # Prefix-routing provider that dispatches by model name
 ├── web/                  # React frontend (Vite)
 ├── examples/             # Example topologies
 │   ├── getting-started/  # Basic examples
