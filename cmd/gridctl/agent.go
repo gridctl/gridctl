@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,14 +19,24 @@ import (
 	"github.com/gridctl/gridctl/pkg/agent/dev/devserver"
 	"github.com/gridctl/gridctl/pkg/agent/dev/scaffold"
 	"github.com/gridctl/gridctl/pkg/agent/dev/watcher"
+	"github.com/gridctl/gridctl/pkg/agent/sandbox"
+	"github.com/gridctl/gridctl/pkg/registry"
 
 	"github.com/spf13/cobra"
 )
 
+// sha256Hex returns the hex-encoded SHA-256 of b. Used by agent build
+// to fingerprint handler source so reruns over identical input produce
+// identical manifests.
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
 // agentCmd is the parent for skill-authoring-time operations:
 // editor canvas (`agent dev`), scaffolding (`agent init`),
-// validation (`agent validate`), and the explicit Go skill compile
-// step (`agent build`). Phase F ships dev + init; build / validate
+// validation (`agent validate`), and the explicit skill compile
+// step (`agent build`). Phase F ships dev + init; build + validate
 // land in Phase G alongside the rest of the CLI surface.
 var agentCmd = &cobra.Command{
 	Use:   "agent",
@@ -33,6 +45,8 @@ var agentCmd = &cobra.Command{
 
   agent init        scaffold a runnable hello-world TS skill in cwd
   agent dev         start the IDE dev server (live canvas + trace overlay)
+  agent validate    validate a skill's manifest and handler
+  agent build       compile + emit a publishable manifest for a skill
 
 The IDE is read-only with respect to source — code is canon. The
 canvas is a derived view of the AST on disk; click any node to jump
@@ -40,13 +54,16 @@ to that file:line in $EDITOR.`,
 }
 
 var (
-	agentDevPort    int
-	agentDevRoot    string
-	agentDevFormat  string
-	agentInitName   string
-	agentInitForce  bool
-	agentInitDir    string
-	agentInitFormat string
+	agentDevPort       int
+	agentDevRoot       string
+	agentDevFormat     string
+	agentInitName      string
+	agentInitForce     bool
+	agentInitDir       string
+	agentInitFormat    string
+	agentValidateFormat   string
+	agentBuildFormat      string
+	agentBuildOutDir   string
 )
 
 var agentDevCmd = &cobra.Command{
@@ -181,6 +198,41 @@ DIR defaults to the current directory. Existing files are skipped
 	},
 }
 
+var agentValidateCmd = &cobra.Command{
+	Use:   "validate <skill>",
+	Short: "Validate a skill's manifest and handler",
+	Long: `Validates a registered skill's SKILL.md (frontmatter + state) and,
+when present, sanity-checks the handler:
+
+  - skill.ts handlers transpile cleanly via esbuild
+  - skill.go handlers are reported as "needs agent build" (Phase H wiring)
+
+This is a static check — the skill is not invoked. Use 'gridctl run
+<skill>' to exercise it end-to-end.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runAgentValidate(args[0])
+	},
+}
+
+var agentBuildCmd = &cobra.Command{
+	Use:   "build <skill>",
+	Short: "Compile a skill and emit a publishable manifest",
+	Long: `Compiles a typed skill and writes a manifest the registry can
+publish.
+
+For TS handlers the compile step runs esbuild and writes the
+transpiled JS plus a manifest.json (name, description, input schema,
+handler hash) to the output directory (defaults to <skill_dir>/dist/).
+For Go handlers, build returns "not yet wired" — compiled Go skill
+registration lands in Phase H along with the gateway-builder hook
+that calls SetSkillRegistry from a built artifact.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runAgentBuild(args[0])
+	},
+}
+
 func init() {
 	agentDevCmd.Flags().IntVar(&agentDevPort, "port", 8181, "Port to bind the dev server on")
 	agentDevCmd.Flags().StringVar(&agentDevRoot, "root", "", "Project root to watch (defaults to cwd)")
@@ -191,7 +243,193 @@ func init() {
 	agentInitCmd.Flags().BoolVar(&agentInitForce, "force", false, "Overwrite existing files")
 	agentInitCmd.Flags().StringVar(&agentInitFormat, "format", "text", "Output format: text or json")
 
+	agentValidateCmd.Flags().StringVar(&agentValidateFormat, "format", "text", "Output format: text or json")
+
+	agentBuildCmd.Flags().StringVar(&agentBuildFormat, "format", "text", "Output format: text or json")
+	agentBuildCmd.Flags().StringVar(&agentBuildOutDir, "out", "", "Output directory for the manifest (defaults to <skill_dir>/dist/)")
+
 	agentCmd.AddCommand(agentDevCmd)
 	agentCmd.AddCommand(agentInitCmd)
+	agentCmd.AddCommand(agentValidateCmd)
+	agentCmd.AddCommand(agentBuildCmd)
 	rootCmd.AddCommand(agentCmd)
+}
+
+// agentValidateReport is the structured shape returned by
+// `gridctl agent validate <skill> --format json`. Mirrors what the
+// pretty path prints so JSON consumers can re-render losslessly.
+type agentValidateReport struct {
+	Skill    string   `json:"skill"`
+	Handler  string   `json:"handler,omitempty"` // "go", "ts", ""
+	Errors   []string `json:"errors,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+	Valid    bool     `json:"valid"`
+}
+
+// agentBuildReport is the structured shape returned by
+// `gridctl agent build <skill> --format json`. Manifest is written to
+// disk; this is the index-of-what-was-produced.
+type agentBuildReport struct {
+	Skill        string   `json:"skill"`
+	Handler      string   `json:"handler"`
+	OutDir       string   `json:"out_dir"`
+	ManifestPath string   `json:"manifest_path,omitempty"`
+	Artifacts    []string `json:"artifacts,omitempty"`
+	Status       string   `json:"status"` // "ok" or "deferred"
+	Notes        []string `json:"notes,omitempty"`
+}
+
+func runAgentValidate(name string) error {
+	store, err := loadRegistry()
+	if err != nil {
+		return err
+	}
+	sk, err := store.GetSkill(name)
+	if err != nil {
+		return err
+	}
+
+	result := registry.ValidateSkillFull(sk)
+	report := agentValidateReport{
+		Skill:    name,
+		Handler:  sk.HandlerLanguage,
+		Errors:   append([]string(nil), result.Errors...),
+		Warnings: append([]string(nil), result.Warnings...),
+		Valid:    result.Valid(),
+	}
+
+	if sk.HandlerLanguage == "ts" {
+		path, ok := store.HandlerPath(name)
+		if !ok {
+			report.Errors = append(report.Errors, "handler path missing in registry")
+			report.Valid = false
+		} else {
+			source, readErr := os.ReadFile(path) // #nosec G304 -- registry-walker derived path
+			if readErr != nil {
+				report.Errors = append(report.Errors, fmt.Sprintf("reading handler %s: %v", path, readErr))
+				report.Valid = false
+			} else if _, terr := sandbox.TranspileTS(string(source)); terr != nil {
+				report.Errors = append(report.Errors, fmt.Sprintf("transpile failed: %v", terr))
+				report.Valid = false
+			}
+		}
+	}
+
+	if strings.EqualFold(agentValidateFormat, "json") {
+		return json.NewEncoder(os.Stdout).Encode(report)
+	}
+	for _, e := range report.Errors {
+		fmt.Printf("  ✗ %s: %s\n", name, e)
+	}
+	for _, w := range report.Warnings {
+		fmt.Printf("  ⚠ %s: %s\n", name, w)
+	}
+	if report.Valid {
+		fmt.Printf("✓ %s is valid (handler=%s)\n", name, fallback(report.Handler, "none"))
+	} else {
+		return fmt.Errorf("%s is invalid", name)
+	}
+	return nil
+}
+
+func runAgentBuild(name string) error {
+	store, err := loadRegistry()
+	if err != nil {
+		return err
+	}
+	sk, err := store.GetSkill(name)
+	if err != nil {
+		return err
+	}
+
+	switch sk.HandlerLanguage {
+	case "ts":
+		return runAgentBuildTS(store, sk)
+	case "go":
+		report := agentBuildReport{
+			Skill:   name,
+			Handler: "go",
+			Status:  "deferred",
+			Notes:   []string{"Go-handler build lands in Phase H — wiring SetSkillRegistry from a compiled artifact is part of the gateway-builder hook"},
+		}
+		if strings.EqualFold(agentBuildFormat, "json") {
+			return json.NewEncoder(os.Stdout).Encode(report)
+		}
+		fmt.Printf("agent build %s: deferred (Go handler)\n", name)
+		for _, n := range report.Notes {
+			fmt.Printf("  note: %s\n", n)
+		}
+		return errors.New("go skill build not yet wired (Phase H)")
+	case "":
+		return fmt.Errorf("skill %q is markdown-only — nothing to build", name)
+	default:
+		return fmt.Errorf("skill %q has unsupported handler language %q", name, sk.HandlerLanguage)
+	}
+}
+
+// runAgentBuildTS transpiles the TS handler, writes the JS output
+// alongside a manifest.json the registry publish path can read. The
+// fingerprint is sha256 of the source bytes so reruns over identical
+// input produce identical manifests.
+func runAgentBuildTS(store *registry.Store, sk *registry.AgentSkill) error {
+	handlerPath, ok := store.HandlerPath(sk.Name)
+	if !ok {
+		return fmt.Errorf("skill %q: handler path missing in registry", sk.Name)
+	}
+	source, err := os.ReadFile(handlerPath) // #nosec G304 -- registry-walker derived path
+	if err != nil {
+		return fmt.Errorf("reading handler %s: %w", handlerPath, err)
+	}
+	transpiled, err := sandbox.TranspileTS(string(source))
+	if err != nil {
+		return fmt.Errorf("transpile %s: %w", handlerPath, err)
+	}
+
+	outDir := agentBuildOutDir
+	if outDir == "" {
+		outDir = filepath.Join(filepath.Dir(handlerPath), "dist")
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil { //nolint:gosec // skill artifacts are user-readable by design
+		return fmt.Errorf("creating %s: %w", outDir, err)
+	}
+
+	jsPath := filepath.Join(outDir, "skill.js")
+	if err := os.WriteFile(jsPath, []byte(transpiled), 0o644); err != nil { //nolint:gosec // user-readable artifact
+		return fmt.Errorf("writing %s: %w", jsPath, err)
+	}
+
+	hash := sha256Hex(source)
+	manifest := map[string]any{
+		"name":         sk.Name,
+		"description":  sk.Description,
+		"handler":      "ts",
+		"handler_path": "skill.js",
+		"source_hash":  hash,
+		"input_schema": map[string]any{"type": "object"},
+	}
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling manifest: %w", err)
+	}
+	manifestPath := filepath.Join(outDir, "manifest.json")
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil { //nolint:gosec // user-readable artifact
+		return fmt.Errorf("writing %s: %w", manifestPath, err)
+	}
+
+	report := agentBuildReport{
+		Skill:        sk.Name,
+		Handler:      "ts",
+		OutDir:       outDir,
+		ManifestPath: manifestPath,
+		Artifacts:    []string{jsPath, manifestPath},
+		Status:       "ok",
+	}
+	if strings.EqualFold(agentBuildFormat, "json") {
+		return json.NewEncoder(os.Stdout).Encode(report)
+	}
+	fmt.Printf("✓ built %s -> %s\n", sk.Name, manifestPath)
+	for _, a := range report.Artifacts {
+		fmt.Printf("  artifact: %s\n", a)
+	}
+	return nil
 }
