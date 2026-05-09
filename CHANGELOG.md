@@ -2,6 +2,14 @@
 
 All notable changes to gridctl will be documented in this file.
 
+## [Unreleased]
+
+
+### Features
+
+
+- Add `pkg/agent/` skeleton with the typed graph adapter wrapping cloudwego/eino v0.8.13 behind `pkg/agent/internal/eino/`. Public surface (`agent.Graph[I, O]`, `agent.Runnable[I, O]`, `agent.StreamReader[T]`, `agent.ToolInfo`, `agent.ChatModel`) is gridctl-shaped — no eino types appear outside the adapter directory. Boundary enforced in CI by `scripts/check-eino-boundary.sh`. Records third-party provenance in `THIRD_PARTY.md`.
+
 ## [0.1.0-beta.9] - 2026-05-09
 
 
