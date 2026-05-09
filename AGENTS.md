@@ -228,6 +228,11 @@ gridctl/
 │       ├── toolcaller.go # ToolCaller interface (alias of mcp.ToolCaller); ToolCallResult type alias
 │       ├── internal/eino/ # Boundary layer — only place github.com/cloudwego/eino is referenced; enforced by scripts/check-eino-boundary.sh
 │       ├── gateway/      # Adapter: NewToolCaller(*mcp.Gateway) → agent.ToolCaller
+│       ├── dev/          # Visual IDE backend — code is canon, the IDE never writes back to source
+│       │   ├── parser/   # Go AST + TS regex/lexer; emits flat node list of recognised primitives
+│       │   ├── watcher/  # Recursive fsnotify watcher with 200ms coalescing debounce
+│       │   ├── devserver/ # HTTP routes for /api/agent/dev/{skills,events}
+│       │   └── scaffold/ # Renders `agent init` starter (SKILL.md + skill.ts + agent.json)
 │       └── llm/          # LLM provider abstraction (net/http + encoding/json only)
 │           ├── llm.go    # Provider type alias of agent.ChatModel
 │           ├── anthropic/ # Anthropic Messages API (Generate + Stream + tools.go + messages.go)
