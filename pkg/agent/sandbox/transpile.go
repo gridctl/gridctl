@@ -6,6 +6,13 @@ import (
 	"github.com/evanw/esbuild/pkg/api"
 )
 
+// TranspileTS is the exported wrapper around the sandbox's TS
+// transpile path. The compiled output is the same CommonJS shape the
+// sandbox itself runs, so a CLI consumer (`gridctl agent build`) can
+// pre-compile a skill and produce an artifact byte-equivalent to what
+// the runtime would produce on first invocation.
+func TranspileTS(source string) (string, error) { return transpileTS(source) }
+
 // transpileTS converts a TypeScript source file to ES2015-compatible
 // JavaScript that goja can execute. The output uses CommonJS module
 // shape so the harness can read the skill's default export through
