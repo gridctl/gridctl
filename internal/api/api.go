@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/agent"
 	"github.com/gridctl/gridctl/pkg/agent/compose"
+	"github.com/gridctl/gridctl/pkg/agent/dev/devserver"
 	"github.com/gridctl/gridctl/pkg/agent/persist"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
@@ -86,6 +87,11 @@ type Server struct {
 	// values cause /api/agent/runs/* handlers to return 503.
 	agentRunStore         *persist.Store
 	agentApprovalRegistry *compose.Registry
+
+	// Agent IDE dev surface. SetAgentDevServer wires a project-rooted
+	// devserver.Server that powers the /api/agent/dev/* endpoints
+	// (skills list, AST graphs, file-watcher SSE). Nil → 503.
+	agentDevServer *devserver.Server
 }
 
 // NewServer creates a new API server.
@@ -258,6 +264,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agent/runs/{run_id}/events", s.handleAgentRunEvents)
 	mux.HandleFunc("POST /api/agent/runs/{run_id}/resume", s.handleAgentRunResume)
 	mux.HandleFunc("POST /api/agent/runs/{run_id}/approve", s.handleAgentRunApprove)
+
+	// Agent IDE dev surface — code-canon AST graphs + file-watcher SSE.
+	// All paths funnel through handleAgentDev so SetAgentDevServer
+	// can swap implementations without re-binding routes.
+	mux.HandleFunc("/api/agent/dev/", s.handleAgentDev)
 	mux.HandleFunc("POST /api/mcp-servers/{name}/restart", s.handleMCPServerRestart)
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
