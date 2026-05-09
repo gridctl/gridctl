@@ -9,6 +9,9 @@ All notable changes to gridctl will be documented in this file.
 
 
 - Add `pkg/agent/` skeleton with the typed graph adapter wrapping cloudwego/eino v0.8.13 behind `pkg/agent/internal/eino/`. Public surface (`agent.Graph[I, O]`, `agent.Runnable[I, O]`, `agent.StreamReader[T]`, `agent.ToolInfo`, `agent.ChatModel`) is gridctl-shaped — no eino types appear outside the adapter directory. Boundary enforced in CI by `scripts/check-eino-boundary.sh`. Records third-party provenance in `THIRD_PARTY.md`.
+- LLM provider abstraction at `pkg/agent/llm/` with anthropic, openai, google, and gateway sub-packages. Each provider implements `agent.ChatModel` (Generate + Stream) using only `net/http` and `encoding/json`; provider tool adapters at `pkg/agent/llm/<provider>/tools.go` translate gridctl's `agent.ToolInfo` to vendor tool formats so the compose graph never sees vendor-specific shapes. The `gateway` sub-package routes by model prefix so a single provider can serve mixed-vendor skills.
+- Gateway tool-caller adapter at `pkg/agent/gateway/` exposing `*mcp.Gateway` as `agent.ToolCaller` so agent runtime tool invocations flow through the existing tracing, pricing, replica routing, vault auth, and tool whitelisting paths unchanged.
+- Wire `/api/playground/auth`, `/api/playground/chat`, `/api/playground/stream` to the new provider abstraction; the dead playground UI in `web/src/components/playground/PlaygroundTab.tsx` now streams responses end-to-end against any vault-configured provider key. LLM calls record cost via `pricing.CalculateBreakdown` and `metrics.Accumulator.RecordCost` with synthetic server names (`llm:anthropic`, `llm:openai`, `llm:google`).
 
 ## [0.1.0-beta.9] - 2026-05-09
 
