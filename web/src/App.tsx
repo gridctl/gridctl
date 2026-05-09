@@ -57,6 +57,7 @@ import { useGlobalCommands } from './hooks/useGlobalCommands';
 import { CommandRegistryProvider } from './hooks/useCommandRegistry';
 import { CommandPalette } from './components/palette/CommandPalette';
 import { ToastContainer } from './components/ui/Toast';
+import { ApprovalBanner } from './components/agent/ApprovalBanner';
 import { cn } from './lib/cn';
 
 // Constants for panel sizing
@@ -167,6 +168,11 @@ function AppContent() {
           Gateway is shutting down...
         </div>
       )}
+
+      {/* Agent runtime approval banner — surfaces every run suspended on an
+          approval gate. Sits below shutdown notification (z-30 vs z-40) so
+          terminal status always wins over a pending-approval row. */}
+      <ApprovalBanner />
 
       {/* Row 1: Header */}
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
