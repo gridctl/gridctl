@@ -15,8 +15,9 @@ require (
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/evanw/esbuild v0.28.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getkin/kin-openapi v0.137.0
+	github.com/getkin/kin-openapi v0.138.0
 	github.com/go-git/go-git/v5 v5.18.0
+	github.com/invopop/jsonschema v0.14.0
 	github.com/jedib0t/go-pretty/v6 v6.7.10
 	github.com/mattn/go-isatty v0.0.22
 	github.com/opencontainers/image-spec v1.1.1
@@ -83,7 +84,6 @@ require (
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
