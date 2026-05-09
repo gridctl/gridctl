@@ -10,6 +10,7 @@ import { DetachedRegistryPage } from './pages/DetachedRegistryPage.tsx';
 import { DetachedMetricsPage } from './pages/DetachedMetricsPage.tsx';
 import { DetachedVaultPage } from './pages/DetachedVaultPage.tsx';
 import { DetachedTracesPage } from './pages/DetachedTracesPage.tsx';
+import { LazyAgentIDEPage } from './pages/LazyAgentIDE.tsx';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -23,6 +24,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/metrics" element={<DetachedMetricsPage />} />
         <Route path="/vault" element={<DetachedVaultPage />} />
         <Route path="/traces" element={<DetachedTracesPage />} />
+        <Route path="/agent" element={<LazyAgentIDEPage />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>
