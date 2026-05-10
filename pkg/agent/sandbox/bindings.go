@@ -66,6 +66,26 @@ func normalizeArgs(raw any) map[string]any {
 	return out
 }
 
+// installSkillBinding wires the per-call `skill` global the JS
+// sandbox reads to recover the registered skill's body and name. The
+// shape mirrors Go's RunContext: `skill.body` matches ctx.SkillBody()
+// and `skill.name` matches ctx.SkillName(). Both fields are
+// closure-captured at install time — the values are frozen for the
+// duration of one Execute, which is the same single-call shape the
+// rest of the bindings expect.
+//
+// The object is installed unconditionally so author code can rely on
+// `skill.body` / `skill.name` resolving to a string. Empty strings
+// are legitimate ("no SKILL.md body" / "harness invocation"); a
+// missing global would force authors to guard every read with a
+// `typeof` check.
+func installSkillBinding(vm *goja.Runtime, b Bindings) {
+	skillObj := vm.NewObject()
+	_ = skillObj.Set("body", b.SkillBody)
+	_ = skillObj.Set("name", b.SkillName)
+	_ = vm.Set("skill", skillObj)
+}
+
 // installToolBinding wires `tool(name, args)` as a global. The async
 // shape mirrors codemode_fetch.go: build a Promise, do the dispatch
 // in a goroutine, deliver the result back to the event loop thread
