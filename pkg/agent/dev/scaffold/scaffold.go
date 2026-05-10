@@ -274,15 +274,16 @@ func helloSkillGo(name string) string {
 // (-buildmode=plugin); the gateway opens the resulting skill.so at
 // start and calls RegisterSkill against the shared *skill.Registry.
 //
-// The graph: tool() -> llm() -> return. Tool and LLM access plumb
-// through skill.RunContext (the typed first argument); the example
-// skills under examples/registry/items/ wire the live calls.
+// The graph: tool() -> llm() -> return. The first argument is
+// skill.RunContext — it embeds context.Context and surfaces the
+// SKILL.md body and the registered skill name so a Go skill can
+// drive the hybrid pattern (feed body straight into llm.Generate's
+// System slot).
 //
 // The fallacy of the graph applies — code is canon.
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/gridctl/gridctl/pkg/agent/llm"
@@ -308,25 +309,28 @@ type HelloOutput struct {
 const greetingStyleTool = "gridctl__greeting_style"
 
 // providerSlot is reserved for the llm.Provider the runtime plumbs
-// in once skill.RunContext lands. Keeping the type referenced here
-// pins the import and signals where the live wire-up plugs in.
+// in. Keeping the type referenced here pins the import and signals
+// where the live wire-up plugs in.
 var providerSlot llm.Provider
 
-// run executes the skill. The scaffold lands with context.Context
-// to compile against today's typed runtime; the next iteration of
-// the SDK swaps this for skill.RunContext, which exposes
-// ctx.SkillBody() and ctx.SkillName() for the hybrid pattern.
-func run(_ context.Context, in HelloInput) (HelloOutput, error) {
+// run executes the skill. ctx is skill.RunContext: it embeds
+// context.Context so cancellation flows through, and exposes
+// ctx.SkillBody() / ctx.SkillName() for the hybrid pattern.
+func run(ctx skill.RunContext, in HelloInput) (HelloOutput, error) {
 	// 1. Resolve the caller's preferred greeting style via an MCP tool.
 	//    The runtime hands the typed runner a tool dispatcher through
 	//    RunContext; the const above names the tool the live call hits.
 	style := "casual"
 	_ = greetingStyleTool
+	_ = ctx.SkillName()
 
 	// 2. Ask the model to phrase the greeting. The runtime hands the
 	//    typed runner an llm.Provider through RunContext; the example
 	//    skills under examples/registry/items/ wire the live call.
+	//    Hybrid pattern: ctx.SkillBody() returns the SKILL.md body,
+	//    suitable for use as llm.Request.System.
 	_ = providerSlot
+	_ = ctx.SkillBody()
 	greeting := fmt.Sprintf("hello %%s (%%s)", in.Name, style)
 
 	return HelloOutput{Greeting: greeting}, nil
@@ -334,11 +338,14 @@ func run(_ context.Context, in HelloInput) (HelloOutput, error) {
 
 // New constructs the typed Definition the registry server lifts
 // into an MCP tool envelope. Skills called via 'gridctl run' or
-// via an upstream MCP client land in run() above.
+// via an upstream MCP client land in run() above. The body argument
+// is what ctx.SkillBody() returns inside run; pass "" when the
+// SKILL.md body is irrelevant to the handler.
 func New() *skill.Definition {
 	return skill.MustDefine[HelloInput, HelloOutput](
 		%q,
 		"Greet the caller via one tool call and one LLM completion.",
+		"",
 		run,
 	)
 }
@@ -376,8 +383,22 @@ import (
 	"testing"
 )
 
+// fakeRunContext satisfies skill.RunContext for unit tests. The
+// production runtime constructs RunContext through skill.Define;
+// here we just need a value that embeds a context and answers the
+// two skill-scoped accessors with fixtures.
+type fakeRunContext struct {
+	context.Context
+	body string
+	name string
+}
+
+func (f fakeRunContext) SkillBody() string { return f.body }
+func (f fakeRunContext) SkillName() string { return f.name }
+
 func TestRun_GreetsTheCaller(t *testing.T) {
-	out, err := run(context.Background(), HelloInput{Name: "world"})
+	rc := fakeRunContext{Context: context.Background(), name: "hello-go"}
+	out, err := run(rc, HelloInput{Name: "world"})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
