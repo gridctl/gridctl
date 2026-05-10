@@ -1,17 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +31,11 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
+// goosProbe reports the current platform. Defaulted to runtime.GOOS;
+// tests override it to exercise the Windows pre-flight error without
+// running on Windows.
+var goosProbe = func() string { return runtime.GOOS }
 
 // sha256Hex returns the hex-encoded SHA-256 of b. Used by agent build
 // to fingerprint handler source so reruns over identical input produce
@@ -249,10 +261,12 @@ var agentValidateCmd = &cobra.Command{
 when present, sanity-checks the handler:
 
   - skill.ts handlers transpile cleanly via esbuild
-  - skill.go handlers are reported as "needs agent build" (Phase H wiring)
+  - skill.go handlers parse cleanly and declare the plugin entry point
+    'func RegisterSkill(*skill.Registry) error' (the symbol the gateway
+    looks up after plugin.Open)
 
-This is a static check — the skill is not invoked. Use 'gridctl run
-<skill>' to exercise it end-to-end.`,
+This is a static check — the skill is not invoked. The Go path does
+not run 'go build'; use 'gridctl agent build <skill>' to compile.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAgentValidate(args[0])
@@ -268,9 +282,14 @@ publish.
 For TS handlers the compile step runs esbuild and writes the
 transpiled JS plus a manifest.json (name, description, input schema,
 handler hash) to the output directory (defaults to <skill_dir>/dist/).
-For Go handlers, build returns "not yet wired" — compiled Go skill
-registration lands in Phase H along with the gateway-builder hook
-that calls SetSkillRegistry from a built artifact.`,
+
+For Go handlers the compile step shells out to 'go build
+-buildmode=plugin' and writes 'skill.so' alongside a manifest carrying
+two extra guardrail fields: 'go_version' (the building toolchain) and
+'go_mod_hash' (sha256 of the resolved go.mod). The gateway-builder
+loader checks both at start time and skips plugins built against a
+mismatched toolchain or dep graph. Go plugins are Linux/macOS only;
+Windows returns a clear pre-flight error.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAgentBuild(args[0])
@@ -361,6 +380,17 @@ func runAgentValidate(name string) error {
 		}
 	}
 
+	if sk.HandlerLanguage == "go" {
+		path, ok := store.HandlerPath(name)
+		if !ok {
+			report.Errors = append(report.Errors, "handler path missing in registry")
+			report.Valid = false
+		} else if symErr := validateGoSkillSymbol(path); symErr != nil {
+			report.Errors = append(report.Errors, symErr.Error())
+			report.Valid = false
+		}
+	}
+
 	if strings.EqualFold(agentValidateFormat, "json") {
 		return json.NewEncoder(os.Stdout).Encode(report)
 	}
@@ -392,20 +422,7 @@ func runAgentBuild(name string) error {
 	case "ts":
 		return runAgentBuildTS(store, sk)
 	case "go":
-		report := agentBuildReport{
-			Skill:   name,
-			Handler: "go",
-			Status:  "deferred",
-			Notes:   []string{"Go-handler build lands in Phase H — wiring SetSkillRegistry from a compiled artifact is part of the gateway-builder hook"},
-		}
-		if strings.EqualFold(agentBuildFormat, "json") {
-			return json.NewEncoder(os.Stdout).Encode(report)
-		}
-		fmt.Printf("agent build %s: deferred (Go handler)\n", name)
-		for _, n := range report.Notes {
-			fmt.Printf("  note: %s\n", n)
-		}
-		return errors.New("go skill build not yet wired (Phase H)")
+		return runAgentBuildGo(store, sk)
 	case "":
 		return fmt.Errorf("skill %q is markdown-only — nothing to build", name)
 	default:
@@ -478,4 +495,194 @@ func runAgentBuildTS(store *registry.Store, sk *registry.AgentSkill) error {
 		fmt.Printf("  artifact: %s\n", a)
 	}
 	return nil
+}
+
+// runAgentBuildGo compiles a Go-handler skill as a Go plugin
+// (`go build -buildmode=plugin`) and writes a manifest.json the
+// gateway-builder loader keys against at start time. Two guardrail
+// fields — `go_version` and `go_mod_hash` — let the loader detect a
+// stale plugin (operator upgraded the daemon's toolchain or dep graph
+// without rebuilding the plugin) and skip it with an actionable warn
+// rather than letting the opaque plugin.Open error confuse the
+// operator. Plugins are Linux/macOS only; on Windows we return a
+// clear pre-flight error before invoking the toolchain.
+func runAgentBuildGo(store *registry.Store, sk *registry.AgentSkill) error {
+	if goosProbe() == "windows" {
+		return errors.New("go skill build requires Linux or macOS — Go plugins are not available on Windows")
+	}
+
+	handlerPath, ok := store.HandlerPath(sk.Name)
+	if !ok {
+		return fmt.Errorf("skill %q: handler path missing in registry", sk.Name)
+	}
+	source, err := os.ReadFile(handlerPath) // #nosec G304 -- registry-walker derived path
+	if err != nil {
+		return fmt.Errorf("reading handler %s: %w", handlerPath, err)
+	}
+
+	outDir := agentBuildOutDir
+	if outDir == "" {
+		outDir = filepath.Join(filepath.Dir(handlerPath), "dist")
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil { //nolint:gosec // skill artifacts are user-readable by design
+		return fmt.Errorf("creating %s: %w", outDir, err)
+	}
+
+	soPath := filepath.Join(outDir, "skill.so")
+	cmd := exec.Command("go", "build", "-buildmode=plugin", "-o", soPath, handlerPath) // #nosec G204 -- registry-walker derived path
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("go build %s: %w\n%s", handlerPath, err, msg)
+		}
+		return fmt.Errorf("go build %s: %w", handlerPath, err)
+	}
+
+	hash := sha256Hex(source)
+	manifest := map[string]any{
+		"name":         sk.Name,
+		"description":  sk.Description,
+		"handler":      "go",
+		"handler_path": "skill.so",
+		"source_hash":  hash,
+		"input_schema": map[string]any{"type": "object"},
+		"go_version":   runtime.Version(),
+	}
+	if modHash, ok := goModHashFor(handlerPath); ok {
+		manifest["go_mod_hash"] = modHash
+	} else {
+		slog.Warn("agent build: go.mod not found walking up from handler — omitting go_mod_hash from manifest",
+			"skill", sk.Name, "handler", handlerPath)
+	}
+
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling manifest: %w", err)
+	}
+	manifestPath := filepath.Join(outDir, "manifest.json")
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil { //nolint:gosec // user-readable artifact
+		return fmt.Errorf("writing %s: %w", manifestPath, err)
+	}
+
+	report := agentBuildReport{
+		Skill:        sk.Name,
+		Handler:      "go",
+		OutDir:       outDir,
+		ManifestPath: manifestPath,
+		Artifacts:    []string{soPath, manifestPath},
+		Status:       "ok",
+	}
+	if strings.EqualFold(agentBuildFormat, "json") {
+		return json.NewEncoder(os.Stdout).Encode(report)
+	}
+	fmt.Printf("✓ built %s -> %s\n", sk.Name, manifestPath)
+	for _, a := range report.Artifacts {
+		fmt.Printf("  artifact: %s\n", a)
+	}
+	return nil
+}
+
+// goModHashFor walks upward from handlerPath until it finds a go.mod
+// and returns the sha256 of its bytes. If no go.mod is found before
+// the filesystem root, returns ("", false) so the caller can decide
+// whether to omit the field or fail. Standalone skill scaffolds
+// without a go.mod parent are unusual but valid — the caller logs at
+// warn and continues per Pitfall #9 in the implementation brief.
+func goModHashFor(handlerPath string) (string, bool) {
+	dir := filepath.Dir(handlerPath)
+	for {
+		candidate := filepath.Join(dir, "go.mod")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			data, err := os.ReadFile(candidate) // #nosec G304 -- candidate is filepath-joined from registry-derived path
+			if err != nil {
+				return "", false
+			}
+			return sha256Hex(data), true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+// validateGoSkillSymbol parses a Go-handler skill's source file via
+// go/parser (no toolchain invocation) and reports a clear error when
+// the plugin entry point — `func RegisterSkill(*skill.Registry) error`
+// — is missing or has the wrong shape. Catches the most common
+// copy-paste mistake at validate time so the operator does not waste
+// a `go build -buildmode=plugin` round-trip discovering it.
+//
+// The check is deliberately forgiving: the parameter type's package
+// qualifier is not pinned to "skill" (an alias is fine), only the
+// pointer-to-Registry shape is. If the symbol is present but the
+// daemon still cannot resolve it at plugin.Lookup time, the gateway
+// loader's warn path catches the residual cases.
+func validateGoSkillSymbol(path string) error {
+	src, err := os.ReadFile(path) // #nosec G304 -- registry-walker derived path
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution)
+	if err != nil {
+		return fmt.Errorf("parsing %s: %w", path, err)
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name == nil || fn.Name.Name != "RegisterSkill" {
+			continue
+		}
+		if fn.Recv != nil {
+			return errors.New("RegisterSkill must be a top-level function, not a method")
+		}
+		if !registerSkillSignatureOK(fn.Type) {
+			return errors.New("RegisterSkill must have signature 'func(*skill.Registry) error'")
+		}
+		return nil
+	}
+	return errors.New("missing plugin entry point: declare 'func RegisterSkill(*skill.Registry) error' in skill.go")
+}
+
+// registerSkillSignatureOK reports whether ft is a "func(*X.Registry)
+// error" shape. Helper for validateGoSkillSymbol.
+func registerSkillSignatureOK(ft *ast.FuncType) bool {
+	if ft == nil || ft.Params == nil || ft.Results == nil {
+		return false
+	}
+	if countFields(ft.Params) != 1 || countFields(ft.Results) != 1 {
+		return false
+	}
+	param := ft.Params.List[0].Type
+	star, ok := param.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := star.X.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil || sel.Sel.Name != "Registry" {
+		return false
+	}
+	result := ft.Results.List[0].Type
+	ident, ok := result.(*ast.Ident)
+	if !ok || ident.Name != "error" {
+		return false
+	}
+	return true
+}
+
+// countFields sums the per-field-list name counts. A bare type with
+// no name in the field list still counts as one field; e.g.
+// `func(*skill.Registry) error` has one nameless param field.
+func countFields(fl *ast.FieldList) int {
+	n := 0
+	for _, f := range fl.List {
+		if len(f.Names) == 0 {
+			n++
+			continue
+		}
+		n += len(f.Names)
+	}
+	return n
 }
