@@ -19,7 +19,7 @@ type helloOutput struct {
 	Greeting string `json:"greeting"`
 }
 
-func helloRunner(_ context.Context, in helloInput) (helloOutput, error) {
+func helloRunner(_ RunContext, in helloInput) (helloOutput, error) {
 	if in.Name == "" {
 		return helloOutput{}, errors.New("name required")
 	}
@@ -28,7 +28,7 @@ func helloRunner(_ context.Context, in helloInput) (helloOutput, error) {
 
 func TestDefine_RoundtripsTypedInputAndOutput(t *testing.T) {
 	t.Parallel()
-	def, err := Define("hello", "greets a name", helloRunner)
+	def, err := Define("hello", "greets a name", "", helloRunner)
 	if err != nil {
 		t.Fatalf("Define: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestDefine_RoundtripsTypedInputAndOutput(t *testing.T) {
 
 func TestDefine_PropagatesRunnerErrors(t *testing.T) {
 	t.Parallel()
-	def, err := Define("hello", "greets a name", helloRunner)
+	def, err := Define("hello", "greets a name", "", helloRunner)
 	if err != nil {
 		t.Fatalf("Define: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestDefine_PropagatesRunnerErrors(t *testing.T) {
 
 func TestDefine_RejectsScalarInput(t *testing.T) {
 	t.Parallel()
-	_, err := Define("scalar", "no good", func(_ context.Context, in int) (int, error) { return in, nil })
+	_, err := Define("scalar", "no good", "", func(_ RunContext, in int) (int, error) { return in, nil })
 	if err == nil {
 		t.Fatalf("expected error for scalar input type")
 	}
@@ -80,7 +80,7 @@ func TestDefine_RejectsScalarInput(t *testing.T) {
 
 func TestDefine_AllowsMapInput(t *testing.T) {
 	t.Parallel()
-	def, err := Define("loose", "loose input", func(_ context.Context, in map[string]any) (map[string]any, error) {
+	def, err := Define("loose", "loose input", "", func(_ RunContext, in map[string]any) (map[string]any, error) {
 		return in, nil
 	})
 	if err != nil {
@@ -106,7 +106,7 @@ func TestDefine_AllowsMapInput(t *testing.T) {
 
 func TestDefine_RejectsEmptyName(t *testing.T) {
 	t.Parallel()
-	_, err := Define("", "x", helloRunner)
+	_, err := Define("", "x", "", helloRunner)
 	if err == nil {
 		t.Fatalf("expected error for empty name")
 	}
@@ -114,15 +114,62 @@ func TestDefine_RejectsEmptyName(t *testing.T) {
 
 func TestDefine_RejectsNilRunner(t *testing.T) {
 	t.Parallel()
-	_, err := Define[helloInput, helloOutput]("hello", "x", nil)
+	_, err := Define[helloInput, helloOutput]("hello", "x", "", nil)
 	if err == nil {
 		t.Fatalf("expected error for nil runner")
 	}
 }
 
+func TestDefine_RunContextExposesBodyAndName(t *testing.T) {
+	t.Parallel()
+	const wantBody = "# triage runbook\n\nseverity: page on err > 5%\n"
+	const wantName = "triage"
+	var gotBody, gotName string
+	def, err := Define(wantName, "expose body and name", wantBody,
+		func(rc RunContext, in helloInput) (helloOutput, error) {
+			gotBody = rc.SkillBody()
+			gotName = rc.SkillName()
+			return helloOutput{Greeting: "ok"}, nil
+		})
+	if err != nil {
+		t.Fatalf("Define: %v", err)
+	}
+	if _, err := def.Invoker(context.Background(), map[string]any{"name": "x"}); err != nil {
+		t.Fatalf("Invoker: %v", err)
+	}
+	if gotBody != wantBody {
+		t.Errorf("SkillBody = %q, want %q", gotBody, wantBody)
+	}
+	if gotName != wantName {
+		t.Errorf("SkillName = %q, want %q", gotName, wantName)
+	}
+}
+
+func TestDefine_RunContextPreservesContextValues(t *testing.T) {
+	t.Parallel()
+	type ctxKey string
+	parent := context.WithValue(context.Background(), ctxKey("trace"), "abc123")
+	def, err := Define("ctx", "preserves context", "",
+		func(rc RunContext, _ helloInput) (helloOutput, error) {
+			if rc.Value(ctxKey("trace")) != "abc123" {
+				return helloOutput{}, errors.New("ctx value not propagated")
+			}
+			if rc.SkillBody() != "" {
+				return helloOutput{}, errors.New("empty body should read as empty string")
+			}
+			return helloOutput{Greeting: "ok"}, nil
+		})
+	if err != nil {
+		t.Fatalf("Define: %v", err)
+	}
+	if _, err := def.Invoker(parent, map[string]any{"name": "x"}); err != nil {
+		t.Fatalf("Invoker: %v", err)
+	}
+}
+
 func TestRegistry_RegistersAndDispatches(t *testing.T) {
 	t.Parallel()
-	def, err := Define("hello", "greets", helloRunner)
+	def, err := Define("hello", "greets", "", helloRunner)
 	if err != nil {
 		t.Fatalf("Define: %v", err)
 	}
@@ -159,8 +206,8 @@ func TestRegistry_RegistersAndDispatches(t *testing.T) {
 func TestRegistry_RejectsDuplicateName(t *testing.T) {
 	t.Parallel()
 	reg := NewRegistry()
-	def1, _ := Define("hello", "1", helloRunner)
-	def2, _ := Define("hello", "2", helloRunner)
+	def1, _ := Define("hello", "1", "", helloRunner)
+	def2, _ := Define("hello", "2", "", helloRunner)
 	if err := reg.Register(def1); err != nil {
 		t.Fatalf("first Register: %v", err)
 	}
