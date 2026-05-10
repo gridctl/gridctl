@@ -226,7 +226,7 @@ func TestRunAgentInit_PromptOnlyAndLangAreMutuallyExclusive(t *testing.T) {
 	}
 }
 
-func TestRunAgentInit_LangGoIsDeferredToPhase2(t *testing.T) {
+func TestRunAgentInit_LangGoWritesGoScaffold(t *testing.T) {
 	resetAgentInitFlagsForTest(t)
 	t.Cleanup(func() { resetAgentInitFlagsForTest(t) })
 
@@ -234,12 +234,18 @@ func TestRunAgentInit_LangGoIsDeferredToPhase2(t *testing.T) {
 	if err := agentInitCmd.Flags().Set("lang", "go"); err != nil {
 		t.Fatalf("set lang: %v", err)
 	}
-	err := runAgentInit(agentInitCmd, []string{dir})
-	if err == nil {
-		t.Fatal("expected error for --lang go in Phase 1 (Phase 2 wires the body)")
+	if err := runAgentInit(agentInitCmd, []string{dir}); err != nil {
+		t.Fatalf("runAgentInit(--lang go): %v", err)
 	}
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("expected 'not yet implemented' note, got: %v", err)
+	for _, name := range []string{"SKILL.md", "skill.go", "skill_test.go"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("expected %s on disk: %v", name, err)
+		}
+	}
+	for _, name := range []string{"skill.ts", "agent.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Errorf("expected no %s for go flavor, got err=%v", name, err)
+		}
 	}
 }
 
