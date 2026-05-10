@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -90,6 +91,90 @@ func TestGatewayBuilder_Build_WithEmptyRegistry(t *testing.T) {
 	// API server should have the registry server
 	if inst.APIServer.RegistryServer() == nil {
 		t.Error("expected API server to have registry server set")
+	}
+}
+
+// TestGatewayBuilder_Build_WiresTSDispatcherForExternalCallers is the
+// regression test for the wiring gap that hid TypeScript skills from
+// MCP clients. Before the fix, the registry server's TSDispatcher was
+// never installed by the builder, so a skill.ts dropped on disk loaded
+// into the registry's store but produced "not a registered tool" when
+// any external client called it. The test drops the minimal
+// SKILL.md + skill.ts pair the registry walker recognises, builds the
+// gateway, and asserts:
+//
+//  1. Gateway.Router().AggregatedTools() lists the skill (proves
+//     SetTSDispatcher ran before the router refreshed its tool list).
+//  2. Calling RegistryServer.CallTool dispatches into the sandbox and
+//     returns the skill's resolved value (proves the dispatcher's
+//     bindings provider produces a usable Bindings struct).
+//
+// The skill itself does not call llm() / tool(), so the dispatcher's
+// nil-when-unwired ChatModel is fine.
+func TestGatewayBuilder_Build_WiresTSDispatcherForExternalCallers(t *testing.T) {
+	regDir := t.TempDir()
+	skillDir := filepath.Join(regDir, "skills", "echo")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("creating skill dir: %v", err)
+	}
+	skillMD := `---
+name: echo
+description: ts echo skill
+state: active
+---
+
+Echo input back.
+`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0o644); err != nil {
+		t.Fatalf("writing SKILL.md: %v", err)
+	}
+	skillTS := `export default async function (i: any) { return { echoed: i }; }`
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.ts"), []byte(skillTS), 0o644); err != nil {
+		t.Fatalf("writing skill.ts: %v", err)
+	}
+
+	cfg := Config{Port: 8180}
+	stack := &config.Stack{Name: "test"}
+	rt := runtime.NewOrchestrator(nil, nil)
+	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", rt, &runtime.UpResult{})
+	builder.registryDir = regDir
+
+	inst, err := builder.Build(false)
+	if err != nil {
+		t.Fatalf("Build() returned error: %v", err)
+	}
+
+	// Surface check: the TS skill must appear in the aggregated tool
+	// list under the gateway's "registry__" prefix. Before the fix, the
+	// registry's Tools() filtered TS skills out when the dispatcher was
+	// nil — so the absence of this entry was the load-bearing user-
+	// visible bug.
+	wantPrefixed := mcp.PrefixTool("registry", "echo")
+	found := false
+	for _, tl := range inst.Gateway.Router().AggregatedTools() {
+		if tl.Name == wantPrefixed {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("aggregated tools missing %q (TS dispatcher not wired)", wantPrefixed)
+	}
+
+	// Execution check: dispatch through the registry server's CallTool
+	// — this is the path Gateway.HandleToolCall hits for an external
+	// MCP client. A successful echo proves the sandbox+dispatcher chain
+	// is reachable end-to-end.
+	res, err := inst.RegistryServer.CallTool(context.Background(), "echo", map[string]any{"v": 7})
+	if err != nil {
+		t.Fatalf("RegistryServer.CallTool(echo): %v", err)
+	}
+	if len(res.Content) == 0 {
+		t.Fatal("CallTool returned no content")
+	}
+	got := res.Content[0].Text
+	if !strings.Contains(got, `"echoed":`) || !strings.Contains(got, `"v":7`) {
+		t.Errorf("CallTool result = %q, want JSON containing echoed.v=7", got)
 	}
 }
 
