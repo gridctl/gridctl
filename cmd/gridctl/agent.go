@@ -54,16 +54,18 @@ to that file:line in $EDITOR.`,
 }
 
 var (
-	agentDevPort       int
-	agentDevRoot       string
-	agentDevFormat     string
-	agentInitName      string
-	agentInitForce     bool
-	agentInitDir       string
-	agentInitFormat    string
-	agentValidateFormat   string
-	agentBuildFormat      string
-	agentBuildOutDir   string
+	agentDevPort        int
+	agentDevRoot        string
+	agentDevFormat      string
+	agentInitName       string
+	agentInitForce      bool
+	agentInitDir        string
+	agentInitFormat     string
+	agentInitLang       string
+	agentInitPromptOnly bool
+	agentValidateFormat string
+	agentBuildFormat    string
+	agentBuildOutDir    string
 )
 
 var agentDevCmd = &cobra.Command{
@@ -150,52 +152,94 @@ the canvas in <300ms (TS) or after explicit 'agent build' (Go).`,
 
 var agentInitCmd = &cobra.Command{
 	Use:   "init [DIR]",
-	Short: "Scaffold a runnable hello-world TS skill",
-	Long: `Drops a starter SKILL.md, skill.ts, and agent.json into DIR.
+	Short: "Scaffold a runnable hello-world skill",
+	Long: `Drops a starter skill into DIR.
+
+Three flavors:
+  agent init                    TS skill: SKILL.md + skill.ts + agent.json (default)
+  agent init --lang go          Go skill: SKILL.md + skill.go + skill_test.go (Phase 2)
+  agent init --prompt-only      Prompt-only skill: SKILL.md only
 
 DIR defaults to the current directory. Existing files are skipped
-(re-running 'agent init' is idempotent unless --force is set).`,
+(re-running 'agent init' is idempotent unless --force is set).
+--prompt-only is mutually exclusive with --lang.`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		dir := agentInitDir
-		if len(args) == 1 {
-			dir = args[0]
-		}
-		if dir == "" {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("agent init: getwd: %w", err)
-			}
-			dir = cwd
-		}
-		dir, err := filepath.Abs(dir)
+	RunE: runAgentInit,
+}
+
+// runAgentInit is the agent init subcommand body, extracted so
+// tests can drive it directly with a constructed cobra command in
+// the same shape as runAgentValidate / runAgentBuild.
+func runAgentInit(cmd *cobra.Command, args []string) error {
+	flavor, err := resolveAgentInitFlavor(cmd)
+	if err != nil {
+		return err
+	}
+	dir := agentInitDir
+	if len(args) == 1 {
+		dir = args[0]
+	}
+	if dir == "" {
+		cwd, err := os.Getwd()
 		if err != nil {
-			return fmt.Errorf("agent init: abs %s: %w", dir, err)
+			return fmt.Errorf("agent init: getwd: %w", err)
 		}
-		res, err := scaffold.Scaffold(dir, scaffold.Options{
-			SkillName: agentInitName,
-			Force:     agentInitForce,
+		dir = cwd
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("agent init: abs %s: %w", dir, err)
+	}
+	res, err := scaffold.Scaffold(dir, scaffold.Options{
+		SkillName: agentInitName,
+		Force:     agentInitForce,
+		Language:  flavor,
+	})
+	if err != nil {
+		return fmt.Errorf("agent init: %w", err)
+	}
+	if strings.EqualFold(agentInitFormat, "json") {
+		_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			"dir":     dir,
+			"flavor":  flavor,
+			"created": res.Created,
+			"skipped": res.Skipped,
 		})
-		if err != nil {
-			return fmt.Errorf("agent init: %w", err)
-		}
-		if strings.EqualFold(agentInitFormat, "json") {
-			_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
-				"dir":     dir,
-				"created": res.Created,
-				"skipped": res.Skipped,
-			})
-			return nil
-		}
-		for _, f := range res.Created {
-			fmt.Fprintf(cmd.OutOrStdout(), "created %s\n", filepath.Join(dir, f))
-		}
-		for _, f := range res.Skipped {
-			fmt.Fprintf(cmd.OutOrStdout(), "skipped %s (already exists)\n", filepath.Join(dir, f))
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "\nrun: gridctl agent dev --root %q\n", dir)
 		return nil
-	},
+	}
+	for _, f := range res.Created {
+		fmt.Fprintf(cmd.OutOrStdout(), "created %s\n", filepath.Join(dir, f))
+	}
+	for _, f := range res.Skipped {
+		fmt.Fprintf(cmd.OutOrStdout(), "skipped %s (already exists)\n", filepath.Join(dir, f))
+	}
+	if flavor == "prompt" {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nrun: gridctl skill list --remote && gridctl run %s\n", agentInitName)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nrun: gridctl agent dev --root %q\n", dir)
+	}
+	return nil
+}
+
+// resolveAgentInitFlavor turns the --lang / --prompt-only flag pair
+// into the scaffold.Options.Language value. Returns a clear error
+// if the user combined --prompt-only with an explicit --lang or
+// passed an unrecognised --lang value. Defaults match cobra's flag
+// defaults (--lang ts).
+func resolveAgentInitFlavor(cmd *cobra.Command) (string, error) {
+	langChanged := cmd.Flags().Changed("lang")
+	if agentInitPromptOnly && langChanged {
+		return "", fmt.Errorf("agent init: --prompt-only is mutually exclusive with --lang %s", agentInitLang)
+	}
+	if agentInitPromptOnly {
+		return "prompt", nil
+	}
+	switch agentInitLang {
+	case "", "ts", "go":
+		return agentInitLang, nil
+	default:
+		return "", fmt.Errorf("agent init: unsupported --lang %q (want ts or go)", agentInitLang)
+	}
 }
 
 var agentValidateCmd = &cobra.Command{
@@ -242,6 +286,8 @@ func init() {
 	agentInitCmd.Flags().StringVar(&agentInitDir, "dir", "", "Directory to scaffold into (defaults to cwd or first arg)")
 	agentInitCmd.Flags().BoolVar(&agentInitForce, "force", false, "Overwrite existing files")
 	agentInitCmd.Flags().StringVar(&agentInitFormat, "format", "text", "Output format: text or json")
+	agentInitCmd.Flags().StringVar(&agentInitLang, "lang", "ts", "Skill language: ts or go")
+	agentInitCmd.Flags().BoolVar(&agentInitPromptOnly, "prompt-only", false, "Scaffold a prompt-only skill (SKILL.md only; mutually exclusive with --lang)")
 
 	agentValidateCmd.Flags().StringVar(&agentValidateFormat, "format", "text", "Output format: text or json")
 
