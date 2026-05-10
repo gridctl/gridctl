@@ -200,6 +200,9 @@ func (s *Sandbox) Execute(ctx context.Context, source string, input any, b Bindi
 		installParallelBinding(vm, loop, b)
 		installHandoffBinding(vm, loop, runCtx, s.timeout, b)
 		installApprovalBinding(vm, loop, runCtx, s.timeout, b)
+		// Install the require() shim after the bindings so it can read
+		// their global values into the @gridctl/agent module object.
+		installRequireShim(vm)
 
 		// Run the transpiled skill source first; this populates
 		// module.exports.default with the handler the harness then
@@ -320,5 +323,46 @@ func installModuleHarness(vm *goja.Runtime) {
 	_ = module.Set("exports", exports)
 	_ = vm.Set("module", module)
 	_ = vm.Set("exports", exports)
+}
+
+// agentModuleName is the only module specifier the require() shim
+// resolves. Skills that author against the gridctl SDK import from this
+// package; everything else fails fast so authors notice unsupported
+// imports at runtime rather than getting a silently-empty module.
+const agentModuleName = "@gridctl/agent"
+
+// agentModuleExports lists the names the @gridctl/agent module re-exports
+// — they map 1:1 onto the bindings each install* function registers as a
+// JS global. Keeping this in one place ensures a new binding is exposed
+// through both the global path and the import path with one change.
+var agentModuleExports = []string{"tool", "llm", "parallel", "handoff", "approval"}
+
+// installRequireShim wires a minimal CommonJS-style require() that
+// resolves the @gridctl/agent specifier the scaffold (and esbuild's
+// CommonJS output) emits. The shim returns an object whose properties
+// are the goja values the binding installs already registered as
+// globals — that's why this call MUST run after every install* binding.
+//
+// Any other module name throws so unexpected imports surface as a
+// runtime error rather than a silently-undefined member access.
+func installRequireShim(vm *goja.Runtime) {
+	_ = vm.Set("require", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("require: missing module name")))
+		}
+		name := call.Arguments[0].String()
+		if name != agentModuleName {
+			panic(vm.NewGoError(fmt.Errorf("require: unknown module %q", name)))
+		}
+		mod := vm.NewObject()
+		for _, export := range agentModuleExports {
+			// A goja Set on a property whose binding is missing yields
+			// `undefined`; copying the live value preserves the function
+			// identity so esbuild's `(0, mod.tool)(...)` indirect-call
+			// form still dispatches to the binding closure.
+			_ = mod.Set(export, vm.Get(export))
+		}
+		return vm.ToValue(mod)
+	})
 }
 
