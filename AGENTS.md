@@ -214,20 +214,22 @@ gridctl/
 │   │   ├── types.go      # PinRecord, ServerPins, status constants
 │   │   ├── store.go      # PinStore: load/save (atomic), VerifyOrPin, Approve, Reset
 │   │   └── adapter.go    # GatewayAdapter: bridges PinStore to SchemaVerifier interface
-│   ├── registry/         # Agent Skills registry (agentskills.io)
-│   │   ├── types.go      # AgentSkill, SkillFile, ItemState, workflow types
+│   ├── registry/         # Agent Skills registry (agentskills.io) — dispatches to typed handlers via pkg/agent/
+│   │   ├── types.go      # AgentSkill, SkillFile, ItemState, HandlerLanguage (none|go|ts)
 │   │   ├── frontmatter.go # SKILL.md parsing (YAML frontmatter + markdown body)
-│   │   ├── validator.go   # agentskills.io spec validation + workflow validation
-│   │   ├── store.go      # Directory-based persistent store
-│   │   ├── server.go     # MCP server interface for registry
-│   │   ├── dag.go        # Workflow DAG builder (Kahn's algorithm, level grouping)
-│   │   ├── template.go   # Template engine for workflow expressions
-│   │   └── executor.go   # Workflow executor with parallel step dispatch
+│   │   ├── validator.go  # agentskills.io spec validation
+│   │   ├── store.go      # Directory-based persistent store; walker recognises *.go and *.ts siblings of SKILL.md, exposes Store.HandlerPath(name)
+│   │   └── server.go     # MCP server interface for registry; SetSkillRegistry + SetTSDispatcher route typed-skill CallTool
 │   └── agent/            # Code-first agent runtime (graph composition + LLM provider abstraction)
 │       ├── agent.go      # Public type surface: Graph[I,O], Runnable[I,O], StreamReader[T], ToolInfo, ChatRequest/Response/Chunk, Message, ToolCall, ToolResult, ChatModel
 │       ├── toolcaller.go # ToolCaller interface (alias of mcp.ToolCaller); ToolCallResult type alias
 │       ├── internal/eino/ # Boundary layer — only place github.com/cloudwego/eino is referenced; enforced by scripts/check-eino-boundary.sh
 │       ├── gateway/      # Adapter: NewToolCaller(*mcp.Gateway) → agent.ToolCaller
+│       ├── compose/      # Approval gate primitive: NewGate(run_id, recorder, registry, notifier) returns sandbox.Approver-compatible Gate
+│       ├── orchestrator/ # Single-writer multi-agent: Orchestrator[State], Handoff[State, Out], ParallelHandoff[State, Out] (clamped at 4)
+│       ├── persist/      # JSONL run ledger at ~/.gridctl/runs/<run_id>.jsonl; Store, Recorder, Read/Stream/List/Summary, BuildResumePlan
+│       ├── sandbox/      # TS skill loader: esbuild transpile + per-call goja with tool()/llm()/parallel()/handoff()/approval() bindings
+│       ├── skill/        # Typed Skill SDK: Define[I, O], Registry — exposes typed skills as MCP tools through the gateway
 │       ├── dev/          # Visual IDE backend — code is canon, the IDE never writes back to source
 │       │   ├── parser/   # Go AST + TS regex/lexer; emits flat node list of recognised primitives
 │       │   ├── watcher/  # Recursive fsnotify watcher with 200ms coalescing debounce
@@ -238,7 +240,8 @@ gridctl/
 │           ├── anthropic/ # Anthropic Messages API (Generate + Stream + tools.go + messages.go)
 │           ├── openai/   # OpenAI Chat Completions API
 │           ├── google/   # Google Gemini Generative Language API
-│           └── gateway/  # Prefix-routing provider that dispatches by model name
+│           ├── gateway/  # Prefix-routing provider that dispatches by model name
+│           └── observed/ # ChatModel wrapper that adds OTel spans + pricing.CalculateBreakdown + metrics.Accumulator.RecordCost (synthetic "llm:<provider>" server name)
 ├── web/                  # React frontend (Vite)
 ├── examples/             # Example topologies
 │   ├── getting-started/  # Basic examples
@@ -256,7 +259,7 @@ gridctl/
         ├── hot_reload_test.go        # Reload handler: add/remove/modify servers
         ├── runtime_test.go           # Full stack lifecycle, resources, networks
         ├── podman_test.go            # Podman rootless networking
-        ├── skills_executor_test.go   # Skill execution workflows (DAGs, timeouts)
+        ├── skills_private_git_test.go # Skill import via private git over HTTPS PAT and SSH agent
         ├── openapi_test.go           # OpenAPI spec parsing + auth
         ├── replica_kill_one_test.go       # Kill one replica, verify exclusion + survivors
         ├── replica_all_down_test.go       # All replicas down → structured error
@@ -491,7 +494,7 @@ Compares the stack spec against running state and shows a structured diff.
 
 #### `gridctl validate <stack.yaml>`
 
-Validates the stack spec including config schema, transport rules, and workflow definitions. Exit codes: `0` valid, `1` validation error, `2` infrastructure error.
+Validates the stack spec including config schema, transport rules, and skill definitions. Exit codes: `0` valid, `1` validation error, `2` infrastructure error.
 
 | Flag | Short | Description |
 |------|-------|-------------|
@@ -633,7 +636,7 @@ Acceptance criteria in `SKILL.md` frontmatter must follow the `GIVEN <context> W
 
 #### `gridctl activate <skill-name>`
 
-Transition a skill from draft to active state. Executable skills (those with a `workflow` block) must have `acceptance_criteria` defined before activation is permitted.
+Transition a skill from draft to active state. Skills with a Go or TypeScript handler must have `acceptance_criteria` defined before activation is permitted.
 
 Exit codes: `0` activated, `1` blocked by missing acceptance criteria or validation error.
 
@@ -678,11 +681,11 @@ When `gridctl apply` runs, it:
 
 **Endpoints:**
 - **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
-- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/api/metrics/cost`, `/api/optimize`, `/health`, `/ready`
+- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/api/metrics/cost`, `/api/optimize`, `/api/agent/runs[/{run_id}[/events|resume|approve]]`, `/api/agent/dev/{skills|events}`, `/api/playground/{auth|chat|stream}`, `/health`, `/ready`
 - **Stack Library:** `/api/stacks` (list/save), `/api/stack/initialize` (cold-load a saved stack into a stackless daemon)
 - **Vault:** `/api/vault`, `/api/vault/status`, `/api/vault/unlock`, `/api/vault/lock`, `/api/vault/sets`, `/api/vault/import`
 - **Pins:** `/api/pins` (list all), `/api/pins/{server}` (get), `/api/pins/{server}/approve` (POST), `/api/pins/{server}` (DELETE)
-- **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`, `/api/registry/skills/{name}/workflow`, `/api/registry/skills/{name}/execute`, `/api/registry/skills/{name}/validate-workflow`, `/api/registry/skills/{name}/test`
+- **Registry:** `/api/registry/status`, `/api/registry/skills[/{name}]`, `/api/registry/skills/{name}/files[/{path}]`, `/api/registry/skills/validate`, `/api/registry/skills/{name}/test`
 - **Traces:** `/api/traces`, `/api/traces/{traceId}`
 - **Web UI:** `GET /`
 
@@ -706,7 +709,7 @@ When `gridctl apply` runs, it:
 - `GET /api/status` includes `token_usage` (session totals, per-server breakdown, format savings)
 
 **Optimize API:**
-- `GET /api/optimize?stack={name}&min_impact=0.10&severity=warn,critical` — Returns an `OptimizeReport{findings, health_score, generated_at}` derived from the live gateway state and accumulator. Each finding carries `id`, `heuristic` (`unused_server`/`unused_tool`/`need_more_data`), `severity`, `title`, `summary`, `server`, `tool`, `impact_usd_per_week`, `remediation` (YAML or shell snippet), and `detected_at`. Returns `404` when `stack` does not match the active stack and `503` when the metrics accumulator is not configured.
+- `GET /api/optimize?stack={name}&min_impact=0.10&severity=warn,critical` — Returns an `OptimizeReport{findings, health_score, generated_at}` derived from the live gateway state, accumulator snapshot, and (when wired) the agent persistence store. Each finding carries `id`, `heuristic` (`unused_server`, `unused_tool`, `schema_overhead`, `format_savings_shortfall`, `expensive_model_on_cheap_task`, `unbounded_loop`, `oversized_prompt`, `untyped_handoff`, `need_more_data`), `severity`, `title`, `summary`, `server`, `tool`, `impact_usd_per_week`, `remediation` (YAML or shell snippet), and `detected_at`. Returns `404` when `stack` does not match the active stack and `503` when the metrics accumulator is not configured.
 
 **Registry API:**
 - `GET /api/registry/status` - Returns skill counts
@@ -718,11 +721,6 @@ When `gridctl apply` runs, it:
 - `GET /api/registry/skills/{name}/files` - List files in skill directory
 - `GET/PUT/DELETE /api/registry/skills/{name}/files/{path}` - File management
 - `POST /api/registry/skills/validate` - Validate SKILL.md content
-
-**Workflow API:**
-- `GET /api/registry/skills/{name}/workflow` - Get parsed workflow definition with DAG levels
-- `POST /api/registry/skills/{name}/execute` - Execute a workflow skill (returns ToolCallResult)
-- `POST /api/registry/skills/{name}/validate-workflow` - Dry-run validation without execution
 
 **Skill Test API:**
 - `POST /api/registry/skills/{name}/test` - Run acceptance criteria for a skill
@@ -770,6 +768,23 @@ When the vault is locked, all endpoints except `status`, `unlock`, and `lock` re
 **Replica sets:** Each registered server is a `ReplicaSet` in the router — a pool of 1..N `AgentClient` replicas sharing one server name and one tool namespace. Set `replicas: N` (and optionally `replica_policy: round-robin | least-connections`) in `mcp-servers[]` to spawn N independent processes. Validation caps at 32 and rejects replicas on `external` / `openapi` transports. Per-replica health monitor pings each replica independently, excludes failures from dispatch, and reconnects with exponential backoff (1s → 30s cap, ±25% jitter, reset on success). When every replica is unhealthy, tool calls fail with `no healthy replicas: <server>`. Every log line and trace span on the tool-call path carries a `replica_id`; `gridctl status --replicas` and `/api/stack/health` expose the per-replica breakdown. See [docs/scaling.md](docs/scaling.md).
 
 **Autoscale:** A server can replace static `replicas: N` with a reactive `autoscale:` block — same transport rules, same replica-set plumbing, but with a per-set controller in `pkg/mcp/autoscaler` that spawns/reaps replicas based on rolling-median in-flight load (`min`, `max`, `target_in_flight`, `scale_up_after`, `scale_down_after`, `warm_pool`, `idle_to_zero`). `autoscale` and `replicas` are mutually exclusive on the same server. Live snapshots are published on `/api/status` and `/api/mcp-servers` as `autoscale?: AutoscaleStatus` (current, target, median, lastDecision, lastScaleUp/DownAt); `gridctl status --replicas` surfaces the same via an `AUTOSCALE` column. See [docs/scaling.md#autoscaling](docs/scaling.md#autoscaling).
+
+## Agent Runtime Architecture
+
+The code-first agent runtime (`pkg/agent/`) implements a three-layer mental model that the rest of the codebase reasons in terms of:
+
+1. **Gateway** (existing, `pkg/mcp/`): MCP protocol bridge that aggregates tools from heterogeneous downstream MCP servers behind a single endpoint. Owns tool prefixing (`server__tool`), replica routing, vault auth, schema pinning, format conversion, tracing, and per-tool metrics. Unchanged by the agent runtime — every agent tool call still flows through `Gateway.CallTool`.
+2. **Agent Runtime** (new, `pkg/agent/`): Typed graph composition (via the `internal/eino/` adapter), an LLM provider abstraction (`llm/anthropic`, `llm/openai`, `llm/google`, prefix-routed by `llm/gateway`), the Skill SDK (`skill/`), the TS sandbox (`sandbox/`), the single-writer orchestrator (`orchestrator/`), JSONL run persistence and time-travel resume (`persist/`), the approval gate primitive (`compose/`), and the IDE backend (`dev/`). The `internal/eino/` boundary is enforced by `scripts/check-eino-boundary.sh` — no `github.com/cloudwego/eino` types appear outside that directory.
+3. **Skill Registry** (existing, recontextualised, `pkg/registry/`): Discovery, packaging, remote import via git, lockfile, and source-only fingerprinting. The walker recognises `*.go` and `*.ts` siblings of `SKILL.md`; `pkg/registry.Server.Tools()` and `Server.CallTool()` expose registered typed skills as MCP tools, so local execution (`gridctl run <skill>`) and remote execution (an upstream MCP client invoking via the gateway, including a second gridctl pointed at the first) share one code path.
+
+Skills are typed Go (`skill.Define[I, O]("name", "description", run)` — input and output structs with `jsonschema` tags) or TypeScript (transpiled via the existing esbuild path, executed in `pkg/agent/sandbox/`'s goja runtime with `tool()`, `llm()`, `parallel()`, `handoff()`, `approval()` bindings). Both flavours register through the same registry and surface as MCP tools through the gateway — there is no "internal" vs "external" execution mode.
+
+**Observability wiring.** Tracing, pricing, and metrics are wired through the same primitives the gateway uses:
+
+- **Tracing** (`pkg/tracing/`): every orchestrator handoff (`agent.orchestrator.handoff`) and parallel batch (`agent.orchestrator.parallel`) opens an OTel span under tracer `gridctl.agent.orchestrator`. LLM calls wrapped through `pkg/agent/llm/observed/` open `agent.llm.generate` / `agent.llm.stream` spans under tracer `gridctl.agent.llm` carrying `gen_ai.*` attributes; spans attach to existing `mcp.routing` parent spans when invoked from a tool-call path.
+- **Pricing** (`pkg/pricing/`): every LLM call records cost via `pricing.CalculateBreakdown(model, Usage)` — at the playground service site (`internal/api/playground.go`) for the chat path, and inside `pkg/agent/llm/observed.Provider` for any agent-runtime call site that wraps its `ChatModel`.
+- **Metrics** (`pkg/metrics/`): cost is recorded via `Accumulator.RecordCost(serverName, replicaID, breakdown)` directly with synthetic server names (`llm:anthropic`, `llm:openai`, `llm:google`, `llm:unknown`) — never via MCP envelope spoofing.
+- **Optimize** (`pkg/optimize/`): three agent-runtime heuristics — `unbounded_loop`, `oversized_prompt`, `untyped_handoff` — read aggregated `RunStat` records derived from `pkg/agent/persist/` and surface in `gridctl optimize` output when their thresholds fire.
 
 ## Stack YAML Schema
 
@@ -934,111 +949,80 @@ resources:
 
 In simple mode, the `network` field on individual containers is ignored.
 
-## Skill Workflows
+## Skills
 
-Skills with a `workflow` block in their YAML frontmatter become **executable** — they are exposed as MCP tools (not just prompts) and run deterministic multi-step tool orchestration through the gateway.
+Skills are typed, code-first units of work that run on the agent runtime. The legacy YAML `workflow:` block (declarative DAGs of tool calls) was removed in PR #581 and is formally disowned by Constitution Article IX. Skills are now Go or TypeScript handlers paired with a `SKILL.md` manifest; the registry walker (`pkg/registry/store.go`) recognises `*.go` and `*.ts` siblings of `SKILL.md` and exposes them as MCP tools through the gateway.
 
-### Workflow SKILL.md Schema
-
-```yaml
----
-name: my-workflow
-description: What the workflow does
-allowed-tools: server__tool1, server__tool2
-state: active
-
-acceptance_criteria:
-  - GIVEN a valid input WHEN the skill is called THEN the output contains expected data
-  - GIVEN an invalid input WHEN the skill is called THEN an error is returned
-
-inputs:
-  param_name:
-    type: string          # string | number | boolean | object | array
-    description: Help text
-    required: true
-    default: "fallback"   # Optional default value
-    enum: ["a", "b"]      # Optional allowed values
-
-workflow:
-  - id: step-one
-    tool: server__tool1
-    args:
-      key: "{{ inputs.param_name }}"
-    on_error: fail        # fail | skip | continue (default: fail)
-
-  - id: step-two
-    tool: server__tool2
-    args:
-      data: "{{ steps.step-one.result }}"
-    depends_on: step-one
-    timeout: "30s"
-    retry:
-      max_attempts: 3
-      backoff: "2s"
-
-output:
-  format: merged          # merged | last | custom
-  include: [step-one, step-two]
----
-
-# My Workflow
-
-Documentation for the workflow.
-```
-
-### Template Expressions
-
-| Expression | Returns | Example |
-|---|---|---|
-| `{{ inputs.name }}` | Input parameter value | `{{ inputs.device_ip }}` |
-| `{{ steps.id.result }}` | Full text result of a step | `{{ steps.fetch.result }}` |
-| `{{ steps.id.json.path }}` | JSON path extraction | `{{ steps.api.json.data.name }}` |
-| `{{ steps.id.is_error }}` | Boolean error flag | `{{ steps.validate.is_error }}` |
-
-Whole expressions (`"{{ inputs.count }}"`) preserve types. Mixed text (`"Value: {{ inputs.count }}"`) converts to string.
-
-### DAG Execution
-
-Steps are organized into levels using topological sort (Kahn's algorithm). Steps in the same level run concurrently (bounded by `maxParallel`, default 4).
+### Skill Layout
 
 ```
-depends_on: step-a            # Single dependency
-depends_on: [step-a, step-b]  # Multiple (all must complete)
-# No depends_on               # Runs in Level 0 (first)
+my-skill/
+├── SKILL.md         # YAML frontmatter (name, description, allowed-tools, state, acceptance_criteria, inputs)
+├── skill.go         # Optional Go handler — built via `gridctl agent build my-skill`
+└── skill.ts         # Optional TypeScript handler — transpiled and executed in pkg/agent/sandbox/
 ```
 
-### Error Handling
+A skill exposes exactly one handler. `state: active` skills are dispatchable; `acceptance_criteria` (`GIVEN ... WHEN ... THEN ...`) drive `gridctl test <skill>`.
 
-| Policy | Behavior |
+### TypeScript skills (sandboxed via goja + esbuild)
+
+```typescript
+// skill.ts — default-export an async function
+export default async function (input: { topic: string }): Promise<{ summary: string }> {
+  const research = await tool("github__list_issues", { repo: input.topic });
+  const summary = await llm({
+    model: "claude-sonnet-4-6",
+    messages: [{ role: "user", content: `Summarise: ${research}` }],
+  });
+  return { summary: summary.content };
+}
+```
+
+Sandbox bindings:
+
+| Binding | Purpose |
 |---|---|
-| `on_error: fail` | Halt entire workflow (default) |
-| `on_error: skip` | Mark step + transitive dependents as skipped |
-| `on_error: continue` | Store error, proceed (downstream can check `is_error`) |
+| `tool(name, args)` | Invoke any allowed MCP tool through the gateway (whitelisting + tracing + cost recording all apply). |
+| `llm(req)` | Issue a `ChatRequest` via the wired `ChatModel`. Wrap the wired model in `pkg/agent/llm/observed/` to record cost. |
+| `parallel(items, fn)` | Concurrent map with the orchestrator hard cap of 4. |
+| `handoff(skill, input)` | Dispatch another skill through the same registry path the gateway exposes. |
+| `approval(prompt)` | Suspend the run on `pkg/agent/compose.Gate` until a CLI / web / MCP consumer responds. |
 
-### Conditional Execution
+### Go skills (typed via the Skill SDK)
 
-```yaml
-condition: "{{ steps.validate.json.valid == true }}"
+```go
+type Input struct { Topic string `json:"topic" jsonschema:"required"` }
+type Output struct { Summary string `json:"summary"` }
+
+var Skill = skill.Define[Input, Output]("research", "Research a topic", func(ctx context.Context, in Input) (Output, error) {
+    // ... tool() and llm() equivalents are first-class Go calls into the orchestrator.
+})
 ```
 
-Steps with a false condition are skipped along with their dependents.
+`skill.Define` infers a JSON Schema from the input struct (`jsonschema` tags) at registration time; the `Run(ctx, input)` signature aligns with the gateway's existing `pkg/mcp.AgentClient.CallTool` shape so local execution and remote (over-MCP) execution share one code path.
 
-### Output Formats
+### Multi-agent orchestration
 
-| Format | Behavior |
+`pkg/agent/orchestrator.New[State](caller, initial)` returns an `Orchestrator[State]` whose State is mutable only through `Apply(func(*State) error)` and readable only through `Snapshot()` (deep copy via JSON round-trip). `Handoff[State, Out](ctx, o, call)` and `ParallelHandoff[State, Out](ctx, o, calls)` dispatch subagents through `agent.ToolCaller` — the same surface `*skill.Registry` and the gateway adapter both satisfy. Subagents never receive `*State`; single-writer enforcement is structural. Parallel handoffs are clamped at `HardMaxParallel = 4`; requests above the ceiling clamp with a logged warning.
+
+### Run persistence and time-travel resume
+
+Every run writes a JSONL ledger to `~/.gridctl/runs/<run_id>.jsonl` (`pkg/agent/persist/`). Event types: `run_started`, `run_completed`, `node_enter`, `node_exit`, `tool_call`, `tool_result`, `llm_call`, `llm_chunk`, `structured_output`, `approval_request`, `approval_response`, `error`. `gridctl runs resume <run_id> [--from-step <node_id>]` rebuilds state from the ledger and continues execution.
+
+### CLI surface
+
+| Command | Purpose |
 |---|---|
-| `merged` | Joins non-error step results with separator (default) |
-| `last` | Returns only the last non-skipped step's result |
-| `custom` | Uses `template` field with `{{ steps.*.result }}` expressions |
-
-### Executor Limits
-
-| Limit | Default |
-|---|---|
-| `maxParallel` | 4 concurrent steps per level |
-| `maxResultSize` | 1MB per step result |
-| `maxDepth` | 10 (nested skill composition) |
-| `workflowTimeout` | 5 minutes |
+| `gridctl run <skill> [--input @file.json \| - \| '<json>'] [--format json] [--quiet]` | Execute a skill; streams typed events. |
+| `gridctl runs list` | Recent runs (table or `--format json`). |
+| `gridctl runs inspect <run_id>` | Typed event timeline. |
+| `gridctl runs trace <run_id>` | OTel-shaped JSON projection. |
+| `gridctl runs resume <run_id> [--from-step <node_id>]` | Time-travel resume. |
+| `gridctl runs approve <run_id> [--decision approve\|reject] [--reason <text>]` | Resolve a pending approval gate. |
+| `gridctl agent dev [--port 8181]` | Launch the visual IDE backend. |
+| `gridctl agent build <skill>` | Compile a typed Go skill + emit publishable manifest. |
+| `gridctl agent validate <skill>` | Validate manifest + schemas without executing. |
+| `gridctl agent init` | Scaffold a runnable hello-world TS skill. |
 
 ## Code Conventions
 

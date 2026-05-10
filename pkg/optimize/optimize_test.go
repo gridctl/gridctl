@@ -630,6 +630,186 @@ func TestAnalyze_ExpensiveModel_SkipsBelowMinCalls(t *testing.T) {
 	}
 }
 
+func TestAnalyze_UnboundedLoop_FiresAboveThreshold(t *testing.T) {
+	stats := baseStats()
+	stats.RunStats = []RunStat{
+		{
+			RunID:           "run-loopy",
+			Skill:           "research",
+			MaxNodeRevisits: 25,
+			HotNodeID:       "fetch",
+		},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	var hit *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Heuristic == "unbounded_loop" {
+			hit = &rep.Findings[i]
+			break
+		}
+	}
+	if hit == nil {
+		t.Fatal("expected unbounded_loop finding")
+	}
+	if hit.Severity != SeverityWarn {
+		t.Errorf("Severity = %q, want warn", hit.Severity)
+	}
+	if !strings.Contains(hit.Summary, "fetch") {
+		t.Errorf("summary should name the hot node; got %q", hit.Summary)
+	}
+	if !strings.Contains(hit.Remediation, "run-loopy") {
+		t.Errorf("remediation should reference the run id; got %q", hit.Remediation)
+	}
+}
+
+func TestAnalyze_UnboundedLoop_SkipsBelowThreshold(t *testing.T) {
+	stats := baseStats()
+	stats.RunStats = []RunStat{
+		{RunID: "run-quiet", MaxNodeRevisits: 5, HotNodeID: "step"},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	for _, f := range rep.Findings {
+		if f.Heuristic == "unbounded_loop" {
+			t.Errorf("must skip below revisit threshold; got %+v", f)
+		}
+	}
+}
+
+func TestAnalyze_UnboundedLoop_SilentWithoutRunStats(t *testing.T) {
+	stats := baseStats()
+	// stats.RunStats intentionally nil
+
+	rep := Analyze(stats, Options{})
+
+	for _, f := range rep.Findings {
+		if f.Heuristic == "unbounded_loop" {
+			t.Errorf("must stay silent without RunStats; got %+v", f)
+		}
+	}
+}
+
+func TestAnalyze_OversizedPrompt_FiresAboveThreshold(t *testing.T) {
+	stats := baseStats()
+	stats.RunStats = []RunStat{
+		{
+			RunID:           "run-fat",
+			Skill:           "summarize",
+			MaxPromptTokens: 150_000,
+			HotModel:        "claude-opus-4-7",
+		},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	var hit *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Heuristic == "oversized_prompt" {
+			hit = &rep.Findings[i]
+			break
+		}
+	}
+	if hit == nil {
+		t.Fatal("expected oversized_prompt finding")
+	}
+	if hit.Severity != SeverityWarn {
+		t.Errorf("Severity = %q, want warn", hit.Severity)
+	}
+	if !strings.Contains(hit.Summary, "claude-opus-4-7") {
+		t.Errorf("summary should name the model; got %q", hit.Summary)
+	}
+	if !strings.Contains(hit.Summary, "150000") {
+		t.Errorf("summary should report observed token count; got %q", hit.Summary)
+	}
+}
+
+func TestAnalyze_OversizedPrompt_SkipsBelowThreshold(t *testing.T) {
+	stats := baseStats()
+	stats.RunStats = []RunStat{
+		{RunID: "run-lean", MaxPromptTokens: 10_000, HotModel: "gpt-4o-mini"},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	for _, f := range rep.Findings {
+		if f.Heuristic == "oversized_prompt" {
+			t.Errorf("must skip below token threshold; got %+v", f)
+		}
+	}
+}
+
+func TestAnalyze_UntypedHandoff_FiresAtRatioAndChildFloor(t *testing.T) {
+	stats := baseStats()
+	stats.RunStats = []RunStat{
+		{
+			RunID:           "run-mixed",
+			Skill:           "orchestrate",
+			ChildHandoffs:   4,
+			UntypedHandoffs: 3,
+		},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	var hit *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Heuristic == "untyped_handoff" {
+			hit = &rep.Findings[i]
+			break
+		}
+	}
+	if hit == nil {
+		t.Fatal("expected untyped_handoff finding")
+	}
+	if hit.Severity != SeverityInfo {
+		t.Errorf("Severity = %q, want info", hit.Severity)
+	}
+	if !strings.Contains(hit.Summary, "75%") {
+		t.Errorf("summary should report ratio (3/4 = 75%%); got %q", hit.Summary)
+	}
+}
+
+func TestAnalyze_UntypedHandoff_SkipsBelowMinChildren(t *testing.T) {
+	stats := baseStats()
+	stats.RunStats = []RunStat{
+		{
+			RunID:           "run-small",
+			ChildHandoffs:   2, // below untypedHandoffMinChildren
+			UntypedHandoffs: 2,
+		},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	for _, f := range rep.Findings {
+		if f.Heuristic == "untyped_handoff" {
+			t.Errorf("must skip when child handoffs are sparse; got %+v", f)
+		}
+	}
+}
+
+func TestAnalyze_UntypedHandoff_SkipsBelowRatioFloor(t *testing.T) {
+	stats := baseStats()
+	stats.RunStats = []RunStat{
+		{
+			RunID:           "run-mostly-typed",
+			ChildHandoffs:   10,
+			UntypedHandoffs: 2, // 20% — below floor
+		},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	for _, f := range rep.Findings {
+		if f.Heuristic == "untyped_handoff" {
+			t.Errorf("must skip when ratio is below floor; got %+v", f)
+		}
+	}
+}
+
 func TestSeverity_IsActionable(t *testing.T) {
 	cases := []struct {
 		s    Severity
