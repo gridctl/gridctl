@@ -113,7 +113,7 @@ func (s *Server) optimizeStats() optimize.Stats {
 		stats.ServerCallCount = computeServerCallCount(acc.ToolUsageSnapshot())
 	}
 	stats.ModelStats = lookupModelStats(stats.Servers)
-	stats.RunStats = collectRunStats(s.agentRunStore)
+	stats.RunStats = collectRunStats(s.runStore())
 	return stats
 }
 
