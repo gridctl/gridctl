@@ -15,6 +15,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/agent/compose"
 	"github.com/gridctl/gridctl/pkg/agent/dev/devserver"
 	"github.com/gridctl/gridctl/pkg/agent/persist"
+	agentruntime "github.com/gridctl/gridctl/pkg/agent/runtime"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -92,6 +93,12 @@ type Server struct {
 	// devserver.Server that powers the /api/agent/dev/* endpoints
 	// (skills list, AST graphs, file-watcher SSE). Nil → 503.
 	agentDevServer *devserver.Server
+
+	// agentRuntime is the unified runtime aggregate; when non-nil,
+	// /api/agent/* and /api/playground/* handlers prefer it over the
+	// per-component fields above. SetAgentRuntime installs it; the
+	// per-component setters are retained as test-fixture wrappers.
+	agentRuntime *agentruntime.Runtime
 }
 
 // NewServer creates a new API server.
@@ -219,8 +226,63 @@ func (s *Server) SetSkillSourcePaths(lockPath, configPath string) {
 // (the chat endpoint returns a clear error). The provider is typically
 // the prefix-routing agent/llm/gateway.Provider built at apply-time by
 // pkg/controller from the vault keys present.
+//
+// SetAgentRuntime takes precedence over this setter at read time;
+// retained for test fixtures.
 func (s *Server) SetPlaygroundProvider(p agent.ChatModel) {
 	s.playgroundProvider = p
+}
+
+// SetAgentRuntime installs the unified runtime aggregate. When set, the
+// per-component setters below are ignored at read time. Wire-time only:
+// the controller calls this once during apply before HTTP serving
+// starts; field access is unsynchronised to match the rest of the
+// per-server setter pattern.
+func (s *Server) SetAgentRuntime(rt *agentruntime.Runtime) {
+	s.agentRuntime = rt
+}
+
+// The four accessors below all share the same shape: prefer the runtime
+// aggregate's component when set, otherwise fall back to the legacy
+// per-field value the matching setter wrote. Production wiring goes
+// through SetAgentRuntime; the per-field setters survive for tests
+// that need to wire a single component without building a full
+// Runtime.
+
+func (s *Server) runStore() *persist.Store {
+	if s.agentRuntime != nil {
+		if store := s.agentRuntime.RunStore(); store != nil {
+			return store
+		}
+	}
+	return s.agentRunStore
+}
+
+func (s *Server) approvalRegistry() *compose.Registry {
+	if s.agentRuntime != nil {
+		if reg := s.agentRuntime.ApprovalRegistry(); reg != nil {
+			return reg
+		}
+	}
+	return s.agentApprovalRegistry
+}
+
+func (s *Server) chatProvider() agent.ChatModel {
+	if s.agentRuntime != nil {
+		if m := s.agentRuntime.ChatModel(); m != nil {
+			return m
+		}
+	}
+	return s.playgroundProvider
+}
+
+func (s *Server) devServer() *devserver.Server {
+	if s.agentRuntime != nil {
+		if d := s.agentRuntime.DevServer(); d != nil {
+			return d
+		}
+	}
+	return s.agentDevServer
 }
 
 // RegistryServer returns the registry server.
