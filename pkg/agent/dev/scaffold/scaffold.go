@@ -4,8 +4,9 @@
 // agent dev` with no further setup. The prompt-only flavor writes
 // just SKILL.md so authors can hand-edit a body that surfaces to
 // upstream MCP clients as a prompt or tool description. The Go
-// flavor (Language: "go") is a Phase 2 stub and currently returns
-// an error.
+// flavor writes SKILL.md + skill.go + skill_test.go — a typed Go
+// skill the operator builds with `gridctl agent build` (Phase 4)
+// and the gateway loads as a plugin at start (Phase 5).
 package scaffold
 
 import (
@@ -33,8 +34,9 @@ type Result struct {
 // value defaults to "hello-ts". Force=false (the default) means
 // existing files are left in place. Language picks the flavor:
 // "" or "ts" → TypeScript skill (existing behavior, default);
-// "prompt" → SKILL.md only (no handler sibling); "go" → Phase 2
-// stub that returns an error today. Any other value is rejected.
+// "prompt" → SKILL.md only (no handler sibling); "go" → typed Go
+// skill (SKILL.md + skill.go + skill_test.go). Any other value is
+// rejected.
 type Options struct {
 	SkillName string
 	Force     bool
@@ -55,12 +57,8 @@ func Scaffold(root string, opts Options) (Result, error) {
 		opts.SkillName = "hello-ts"
 	}
 	switch opts.Language {
-	case "", "ts", "prompt":
-		// supported in Phase 1
-	case "go":
-		// Phase 2 fills this in; surface a clear error today rather
-		// than scaffolding a half-formed Go skill.
-		return Result{}, errors.New(`scaffold: language "go" not yet implemented`)
+	case "", "ts", "prompt", "go":
+		// supported flavors
 	default:
 		return Result{}, fmt.Errorf("scaffold: unsupported language %q (want ts, go, or prompt)", opts.Language)
 	}
@@ -102,11 +100,27 @@ type starterFile struct {
 // reviewed. The flavor branches here, not in Scaffold, so the
 // write loop stays single-shape regardless of language.
 func starterFiles(opts Options) []starterFile {
-	if opts.Language == "prompt" {
+	switch opts.Language {
+	case "prompt":
 		return []starterFile{
 			{
 				path: "SKILL.md",
 				body: promptSkillMD(opts.SkillName),
+			},
+		}
+	case "go":
+		return []starterFile{
+			{
+				path: "SKILL.md",
+				body: helloSkillMD(opts.SkillName),
+			},
+			{
+				path: "skill.go",
+				body: helloSkillGo(opts.SkillName),
+			},
+			{
+				path: "skill_test.go",
+				body: helloSkillGoTest(opts.SkillName),
 			},
 		}
 	}
@@ -232,4 +246,168 @@ func helloAgentJSON(name string) string {
   "mcp_servers": []
 }
 `, name)
+}
+
+// HelloSkillGo returns the body of the scaffolded skill.go as bytes
+// the regression suite can run through `go build` verbatim. Same
+// parity guarantee HelloSkillTS provides for the TS path: a future
+// change to the scaffold immediately re-tests compile compatibility,
+// no parallel copy of the source to drift out of sync.
+func HelloSkillGo(name string) string { return helloSkillGo(name) }
+
+// HelloSkillGoTest returns the body of the scaffolded skill_test.go
+// for the same regression-channel reason as HelloSkillGo. The test
+// is part of the scaffold output, so the compile-check pass needs
+// it on disk alongside skill.go.
+func HelloSkillGoTest(name string) string { return helloSkillGoTest(name) }
+
+// helloSkillGo renders a runnable typed Go skill. Authors edit this
+// file, then run `gridctl agent build <name>` to compile it as a Go
+// plugin (`go build -buildmode=plugin`); the gateway loads the
+// resulting skill.so on start and registers the skill against the
+// shared registry. Plugins are package main without a runnable
+// main() entry point, but `go build` (non-plugin) requires one — so
+// the scaffold ships an empty main() stub the plugin build ignores.
+func helloSkillGo(name string) string {
+	return fmt.Sprintf(`// Hello-world typed Go skill — exercise the gridctl skill SDK
+// primitives. Built with 'gridctl agent build %s' as a Go plugin
+// (-buildmode=plugin); the gateway opens the resulting skill.so at
+// start and calls RegisterSkill against the shared *skill.Registry.
+//
+// The graph: tool() -> llm() -> return. Tool and LLM access plumb
+// through skill.RunContext (the typed first argument); the example
+// skills under examples/registry/items/ wire the live calls.
+//
+// The fallacy of the graph applies — code is canon.
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/gridctl/gridctl/pkg/agent/llm"
+	"github.com/gridctl/gridctl/pkg/agent/skill"
+)
+
+// HelloInput is the typed input shape. The jsonschema tag drives
+// the schema the gateway hands to upstream MCP clients; the json
+// tag is the wire form on the way in.
+type HelloInput struct {
+	Name string %sjson:"name" jsonschema:"required,description=Name to greet"%s
+}
+
+// HelloOutput is the typed output shape. The skill SDK marshals it
+// back to MCP content as a single JSON text block.
+type HelloOutput struct {
+	Greeting string %sjson:"greeting"%s
+}
+
+// greetingStyleTool is the unprefixed MCP tool the live skill
+// dispatches the style lookup to. Kept as a constant so the
+// scaffold reads as data-driven, not magic-string.
+const greetingStyleTool = "gridctl__greeting_style"
+
+// providerSlot is reserved for the llm.Provider the runtime plumbs
+// in once skill.RunContext lands. Keeping the type referenced here
+// pins the import and signals where the live wire-up plugs in.
+var providerSlot llm.Provider
+
+// run executes the skill. The scaffold lands with context.Context
+// to compile against today's typed runtime; the next iteration of
+// the SDK swaps this for skill.RunContext, which exposes
+// ctx.SkillBody() and ctx.SkillName() for the hybrid pattern.
+func run(_ context.Context, in HelloInput) (HelloOutput, error) {
+	// 1. Resolve the caller's preferred greeting style via an MCP tool.
+	//    The runtime hands the typed runner a tool dispatcher through
+	//    RunContext; the const above names the tool the live call hits.
+	style := "casual"
+	_ = greetingStyleTool
+
+	// 2. Ask the model to phrase the greeting. The runtime hands the
+	//    typed runner an llm.Provider through RunContext; the example
+	//    skills under examples/registry/items/ wire the live call.
+	_ = providerSlot
+	greeting := fmt.Sprintf("hello %%s (%%s)", in.Name, style)
+
+	return HelloOutput{Greeting: greeting}, nil
+}
+
+// New constructs the typed Definition the registry server lifts
+// into an MCP tool envelope. Skills called via 'gridctl run' or
+// via an upstream MCP client land in run() above.
+func New() *skill.Definition {
+	return skill.MustDefine[HelloInput, HelloOutput](
+		%q,
+		"Greet the caller via one tool call and one LLM completion.",
+		run,
+	)
+}
+
+// RegisterSkill is the plugin entry point the gateway-builder loader
+// looks up after plugin.Open. The loader hands the plugin the shared
+// *skill.Registry; the plugin registers each skill it owns. The
+// symbol name and signature are the contract — renaming or
+// re-shaping breaks the loader's plugin.Lookup.
+func RegisterSkill(reg *skill.Registry) error {
+	return reg.Register(New())
+}
+
+// main is unused — this package is built as a Go plugin via
+// 'go build -buildmode=plugin' and has no executable entry point.
+// The empty main() lets plain 'go build' compile-check the source
+// without complaining about a missing main function.
+func main() {}
+`, name, "`", "`", "`", "`", name)
+}
+
+// helloSkillGoTest renders the table test that exercises the
+// scaffolded run() and New() so authors land with a passing
+// compile + test out of the box. The regression suite re-uses this
+// body as part of the compile-check: scaffold output must build
+// cleanly with the test alongside it.
+func helloSkillGoTest(name string) string {
+	_ = name
+	return `package main
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestRun_GreetsTheCaller(t *testing.T) {
+	out, err := run(context.Background(), HelloInput{Name: "world"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out.Greeting, "world") {
+		t.Errorf("greeting = %q, want it to contain 'world'", out.Greeting)
+	}
+}
+
+func TestNew_ProducesDispatchableDefinition(t *testing.T) {
+	def := New()
+	if def == nil {
+		t.Fatal("New: definition is nil")
+	}
+	if def.Name == "" {
+		t.Error("definition name is empty")
+	}
+	res, err := def.Invoker(context.Background(), map[string]any{"name": "world"})
+	if err != nil {
+		t.Fatalf("Invoker: %v", err)
+	}
+	if res == nil || len(res.Content) != 1 {
+		t.Fatalf("expected one content item, got %+v", res)
+	}
+	var out HelloOutput
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !strings.Contains(out.Greeting, "world") {
+		t.Errorf("greeting = %q, want it to contain 'world'", out.Greeting)
+	}
+}
+`
 }
