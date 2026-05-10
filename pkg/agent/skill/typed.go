@@ -9,10 +9,60 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
+// RunContext is the typed runner's first argument. It embeds
+// context.Context — cancellation, deadlines, and request-scoped values
+// flow through unchanged — and surfaces two skill-scoped accessors so
+// authors can drive the hybrid pattern: feed the SKILL.md body straight
+// into an llm.Generate System slot, key per-skill state on SkillName.
+//
+// Body and Name are captured at Define-time and read with no per-call
+// I/O. The runtime resolves the body from the registry store before
+// constructing the Definition, so RunContext readers never reach back
+// into the registry on the call path.
+type RunContext interface {
+	context.Context
+
+	// SkillBody returns the post-frontmatter markdown body the
+	// registry parsed from SKILL.md. Empty string for skills whose
+	// SKILL.md has no body — and for skills constructed via Define
+	// without one (programmatic registrations, tests).
+	SkillBody() string
+
+	// SkillName returns the registered skill name. The same string
+	// the gateway exposes as the unprefixed MCP tool name.
+	SkillName() string
+}
+
+// runContext is the concrete RunContext the Define-built invoker
+// constructs per call. The struct embeds context.Context so the
+// runner sees a real context that satisfies the interface, and the
+// body/name fields are closure-captured at Define time so reads are
+// a single pointer chase with no synchronisation cost.
+type runContext struct {
+	context.Context
+	body string
+	name string
+}
+
+func (r *runContext) SkillBody() string { return r.body }
+func (r *runContext) SkillName() string { return r.name }
+
+// newRunContext lifts a parent context plus the skill-scoped body
+// and name into a RunContext. Exposed unexported so the package's
+// own invokers and tests can build instances without leaking the
+// concrete type to authors — RunContext is the surface, not
+// runContext.
+func newRunContext(parent context.Context, body, name string) *runContext {
+	return &runContext{Context: parent, body: body, name: name}
+}
+
 // TypedRunner is the typed authoring signature skill authors write.
 // I and O are Go structs; the SDK marshals across the boundary so the
-// handler body works in typed Go and the wire form stays JSON.
-type TypedRunner[I any, O any] func(ctx context.Context, input I) (O, error)
+// handler body works in typed Go and the wire form stays JSON. The
+// first argument is RunContext rather than context.Context so the
+// runner can read the SKILL.md body and the registered name without
+// reaching back into the registry.
+type TypedRunner[I any, O any] func(ctx RunContext, input I) (O, error)
 
 // Define wraps a typed runner as a Definition. The input schema is
 // inferred from I via reflectInputSchema (jsonschema struct tags); the
@@ -22,14 +72,22 @@ type TypedRunner[I any, O any] func(ctx context.Context, input I) (O, error)
 //     skills the decoded shape; the typed boundary needs the raw
 //     bytes to feed json.Unmarshal into a Go value of type I).
 //  2. Decodes into a fresh I.
-//  3. Invokes the runner.
-//  4. Renders the typed output O back to MCP content as a single
+//  3. Constructs a RunContext closing over the body and name passed
+//     to Define so ctx.SkillBody() / ctx.SkillName() resolve without
+//     per-call I/O.
+//  4. Invokes the runner.
+//  5. Renders the typed output O back to MCP content as a single
 //     JSON text block. Skills that need richer content shapes
 //     (multi-part, image, etc.) should construct a Definition by hand.
 //
+// body is the post-frontmatter SKILL.md markdown. Pass an empty string
+// for programmatic registrations that don't have a SKILL.md sibling
+// (tests, hand-built fixtures); the runner's ctx.SkillBody() reads as
+// "" and the hybrid pattern degrades gracefully.
+//
 // Decode failures and runner errors flow back to the caller; the
 // runner's err is wrapped, never swallowed.
-func Define[I any, O any](name, description string, run TypedRunner[I, O]) (*Definition, error) {
+func Define[I any, O any](name, description, body string, run TypedRunner[I, O]) (*Definition, error) {
 	if name == "" {
 		return nil, errors.New("skill.Define: name is required")
 	}
@@ -55,7 +113,8 @@ func Define[I any, O any](name, description string, run TypedRunner[I, O]) (*Def
 			}
 		}
 
-		output, err := run(ctx, input)
+		rc := newRunContext(ctx, body, name)
+		output, err := run(rc, input)
 		if err != nil {
 			return nil, fmt.Errorf("skill %q: %w", name, err)
 		}
@@ -81,8 +140,8 @@ func Define[I any, O any](name, description string, run TypedRunner[I, O]) (*Def
 // code where a malformed skill is a programming error and the binary
 // has nothing useful to do without it. Library code should call
 // Define and propagate the error.
-func MustDefine[I any, O any](name, description string, run TypedRunner[I, O]) *Definition {
-	def, err := Define[I, O](name, description, run)
+func MustDefine[I any, O any](name, description, body string, run TypedRunner[I, O]) *Definition {
+	def, err := Define[I, O](name, description, body, run)
 	if err != nil {
 		panic(err)
 	}
