@@ -113,6 +113,76 @@ func TestExecute_CapturesConsoleOutput(t *testing.T) {
 	}
 }
 
+// TestExecute_ExposesSkillBodyAndNameAsGlobals checks the TS hybrid
+// parity surface: `skill.body` and `skill.name` resolve to the strings
+// the dispatcher plumbed through Bindings. Same shape Go's RunContext
+// surfaces; without this, the "all flavors first-class" invariant
+// only holds for Go.
+func TestExecute_ExposesSkillBodyAndNameAsGlobals(t *testing.T) {
+	t.Parallel()
+	sb := New(2 * time.Second)
+	src := `
+		export default async function () {
+			return { body: skill.body, name: skill.name };
+		}
+	`
+	const wantBody = "# triage runbook\n\nseverity: page on err > 5%\n"
+	const wantName = "triage"
+	res, err := sb.Execute(context.Background(), src, nil,
+		Bindings{SkillBody: wantBody, SkillName: wantName})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(res.Value), &out); err != nil {
+		t.Fatalf("decode value: %v (raw=%q)", err, res.Value)
+	}
+	if out["body"] != wantBody {
+		t.Errorf("skill.body = %v, want %q", out["body"], wantBody)
+	}
+	if out["name"] != wantName {
+		t.Errorf("skill.name = %v, want %q", out["name"], wantName)
+	}
+}
+
+// TestExecute_SkillGlobalDefaultsToEmptyStrings confirms the JS-side
+// surface is defined even when the dispatcher plumbed nothing — author
+// code can read `skill.body` without guarding `typeof`.
+func TestExecute_SkillGlobalDefaultsToEmptyStrings(t *testing.T) {
+	t.Parallel()
+	sb := New(2 * time.Second)
+	src := `
+		export default async function () {
+			return {
+				bodyType: typeof skill.body,
+				nameType: typeof skill.name,
+				body: skill.body,
+				name: skill.name,
+			};
+		}
+	`
+	res, err := sb.Execute(context.Background(), src, nil, Bindings{})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(res.Value), &out); err != nil {
+		t.Fatalf("decode value: %v (raw=%q)", err, res.Value)
+	}
+	if out["bodyType"] != "string" {
+		t.Errorf("typeof skill.body = %v, want string", out["bodyType"])
+	}
+	if out["nameType"] != "string" {
+		t.Errorf("typeof skill.name = %v, want string", out["nameType"])
+	}
+	if out["body"] != "" {
+		t.Errorf("skill.body = %v, want empty string", out["body"])
+	}
+	if out["name"] != "" {
+		t.Errorf("skill.name = %v, want empty string", out["name"])
+	}
+}
+
 func TestExecute_RejectsMissingDefaultExport(t *testing.T) {
 	t.Parallel()
 	sb := New(2 * time.Second)
