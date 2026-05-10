@@ -157,7 +157,7 @@ var agentInitCmd = &cobra.Command{
 
 Three flavors:
   agent init                    TS skill: SKILL.md + skill.ts + agent.json (default)
-  agent init --lang go          Go skill: SKILL.md + skill.go + skill_test.go (Phase 2)
+  agent init --lang go          Go skill: SKILL.md + skill.go + skill_test.go
   agent init --prompt-only      Prompt-only skill: SKILL.md only
 
 DIR defaults to the current directory. Existing files are skipped
