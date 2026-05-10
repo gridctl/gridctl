@@ -214,7 +214,7 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agent tool caller: %w", err)
 	}
-	dispatcher, err := sandbox.NewDispatcher(agentSandbox, makeDispatcherBindings(inst.Gateway, registryServer, toolCaller))
+	dispatcher, err := sandbox.NewDispatcher(agentSandbox, makeDispatcherBindings(inst.Gateway, registryStore, registryServer, toolCaller))
 	if err != nil {
 		return nil, fmt.Errorf("agent dispatcher: %w", err)
 	}
@@ -778,16 +778,32 @@ func (b *GatewayBuilder) tokenizerName() string {
 // (it depends only on the gateway pointer, which is stable) so a
 // per-call construction failure is impossible by design.
 //
+// SkillBody and SkillName are resolved per-call from the registry
+// store so the JS sandbox's `skill.body` / `skill.name` globals match
+// what a Go skill would receive via ctx.SkillBody() / ctx.SkillName()
+// for the same skill — the parity invariant the hybrid pattern
+// depends on. A store lookup miss reads as empty body, not a hard
+// error: bindings should degrade quietly rather than fault the
+// invocation when the registry walker has dropped the skill (a race
+// during hot-reload, or a programmatic registration that bypassed the
+// on-disk store).
+//
 // Approver is left nil so the sandbox's auto-approve stub stays in
 // effect for the dispatcher path. Orchestrator-driven runs construct a
 // real compose.Gate (which needs a per-run recorder) and supply it via
 // their own bindings.
-func makeDispatcherBindings(gw *mcp.Gateway, skillCaller sandbox.SkillCaller, toolCaller agent.ToolCaller) sandbox.BindingsProvider {
-	return func(_ context.Context, _ string) sandbox.Bindings {
+func makeDispatcherBindings(gw *mcp.Gateway, store *registry.Store, skillCaller sandbox.SkillCaller, toolCaller agent.ToolCaller) sandbox.BindingsProvider {
+	return func(_ context.Context, skillName string) sandbox.Bindings {
 		b := sandbox.Bindings{
 			AllowedTools: gw.Router().AggregatedTools(),
 			SkillCaller:  skillCaller,
 			ToolCaller:   toolCaller,
+			SkillName:    skillName,
+		}
+		if store != nil && skillName != "" {
+			if sk, err := store.GetSkill(skillName); err == nil && sk != nil {
+				b.SkillBody = sk.Body
+			}
 		}
 		if rt, ok := gw.AgentRuntime().(*agentruntime.Runtime); ok && rt != nil {
 			b.ChatModel = rt.ChatModel()
