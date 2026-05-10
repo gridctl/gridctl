@@ -1,8 +1,11 @@
 // Package scaffold renders the starter files `gridctl agent init`
-// drops into a fresh project: SKILL.md, hello.ts, agent.json. The
-// resulting directory is runnable through `gridctl agent dev` with
-// no further setup — the IDE opens to a working canvas, not an
-// empty one.
+// drops into a fresh project. The TS flavor (default) writes
+// SKILL.md + skill.ts + agent.json — runnable through `gridctl
+// agent dev` with no further setup. The prompt-only flavor writes
+// just SKILL.md so authors can hand-edit a body that surfaces to
+// upstream MCP clients as a prompt or tool description. The Go
+// flavor (Language: "go") is a Phase 2 stub and currently returns
+// an error.
 package scaffold
 
 import (
@@ -28,23 +31,38 @@ type Result struct {
 // Options controls the scaffolded files. SkillName seeds the
 // SKILL.md frontmatter and the hello-world's identifier; an empty
 // value defaults to "hello-ts". Force=false (the default) means
-// existing files are left in place.
+// existing files are left in place. Language picks the flavor:
+// "" or "ts" → TypeScript skill (existing behavior, default);
+// "prompt" → SKILL.md only (no handler sibling); "go" → Phase 2
+// stub that returns an error today. Any other value is rejected.
 type Options struct {
 	SkillName string
 	Force     bool
+	Language  string
 }
 
-// Scaffold writes hello.ts + agent.json + SKILL.md into root. The
-// root directory is created if missing. Returns ErrNotEmpty if
-// Force=false and a target file already exists with a different
-// content; pre-existing files with identical bytes are silently
-// skipped so re-running `agent init` is idempotent.
+// Scaffold writes the starter files for the requested flavor into
+// root. The root directory is created if missing. Pre-existing
+// files with identical bytes are silently skipped so re-running
+// `agent init` is idempotent; non-identical files are skipped
+// unless Force=true. Returns an error for unsupported Language
+// values before any file is written.
 func Scaffold(root string, opts Options) (Result, error) {
 	if root == "" {
 		return Result{}, errors.New("scaffold: root is required")
 	}
 	if opts.SkillName == "" {
 		opts.SkillName = "hello-ts"
+	}
+	switch opts.Language {
+	case "", "ts", "prompt":
+		// supported in Phase 1
+	case "go":
+		// Phase 2 fills this in; surface a clear error today rather
+		// than scaffolding a half-formed Go skill.
+		return Result{}, errors.New(`scaffold: language "go" not yet implemented`)
+	default:
+		return Result{}, fmt.Errorf("scaffold: unsupported language %q (want ts, go, or prompt)", opts.Language)
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return Result{}, fmt.Errorf("scaffold: mkdir %s: %w", root, err)
@@ -81,8 +99,17 @@ type starterFile struct {
 
 // starterFiles returns the contents to write. Kept inline so the
 // scaffold has no embed dependency and stays read-trivially when
-// reviewed.
+// reviewed. The flavor branches here, not in Scaffold, so the
+// write loop stays single-shape regardless of language.
 func starterFiles(opts Options) []starterFile {
+	if opts.Language == "prompt" {
+		return []starterFile{
+			{
+				path: "SKILL.md",
+				body: promptSkillMD(opts.SkillName),
+			},
+		}
+	}
 	return []starterFile{
 		{
 			path: "SKILL.md",
@@ -99,9 +126,9 @@ func starterFiles(opts Options) []starterFile {
 	}
 }
 
-// helloSkillMD renders a minimal SKILL.md that satisfies the
-// agentskills.io frontmatter schema and lands an active state so
-// `gridctl agent dev` shows it immediately.
+// helloSkillMD renders a minimal SKILL.md for the TS flavor that
+// satisfies the agentskills.io frontmatter schema and lands an
+// active state so `gridctl agent dev` shows it immediately.
 func helloSkillMD(name string) string {
 	return fmt.Sprintf(`---
 name: %s
@@ -115,6 +142,34 @@ A starter typed skill — one tool call, one LLM completion. Edit ` + "`skill.ts
 canvas reflects the change in <300ms.
 
 > The fallacy of the graph applies — code is canon.
+`, name, name)
+}
+
+// promptSkillMD renders a prompt-only SKILL.md — frontmatter +
+// markdown body, no handler sibling. Upstream MCP clients consume
+// the body verbatim as a prompt or tool description; gridctl does
+// not template-expand `{{double_brace}}` placeholders, so any
+// substitution is the upstream client's responsibility.
+func promptSkillMD(name string) string {
+	return fmt.Sprintf(`---
+name: %s
+description: Starter prompt-only skill — body becomes the surfaced prompt.
+state: active
+---
+
+# %s
+
+A starter prompt-only skill. The body of this file is what upstream MCP
+clients see — there is no handler sibling. Edit the body to shape the
+prompt; rerun `+"`gridctl skill list --remote`"+` to confirm it surfaces.
+
+Replace this body with the actual prompt content. Variables inside
+`+"`{{double_braces}}`"+` are convention-only — gridctl does not
+template-expand them; the upstream client is responsible for
+substitution.
+
+> The fallacy of the graph applies — code is canon. For prompt-only
+> skills, the markdown body is the canon.
 `, name, name)
 }
 
