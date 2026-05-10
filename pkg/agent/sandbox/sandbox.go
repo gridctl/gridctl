@@ -86,6 +86,19 @@ type Bindings struct {
 	// MaxParallel caps parallel() concurrency. Zero means
 	// DefaultMaxParallel.
 	MaxParallel int
+
+	// SkillBody is the post-frontmatter markdown the registry parsed
+	// from this invocation's SKILL.md. The runtime exposes it to the
+	// JS sandbox as `skill.body` so TS skills can drive the same
+	// hybrid pattern Go skills hit through ctx.SkillBody() — feed
+	// per-skill prose into an llm() call's `system` field without
+	// hardcoding it in the handler. Empty string for skills with no
+	// body and for harness paths (tests) that don't plumb one through.
+	SkillBody string
+
+	// SkillName is the registered skill name. Exposed as `skill.name`
+	// in the JS sandbox for parity with Go's ctx.SkillName().
+	SkillName string
 }
 
 // SkillCaller is the dispatch surface handoff() uses. The signature
@@ -195,6 +208,7 @@ func (s *Sandbox) Execute(ctx context.Context, source string, input any, b Bindi
 
 		installConsole(vm, &consoleMu, &consoleOutput)
 		installModuleHarness(vm)
+		installSkillBinding(vm, b)
 		installToolBinding(vm, loop, runCtx, s.timeout, b)
 		installLLMBinding(vm, loop, runCtx, s.timeout, b)
 		installParallelBinding(vm, loop, b)
@@ -335,7 +349,7 @@ const agentModuleName = "@gridctl/agent"
 // — they map 1:1 onto the bindings each install* function registers as a
 // JS global. Keeping this in one place ensures a new binding is exposed
 // through both the global path and the import path with one change.
-var agentModuleExports = []string{"tool", "llm", "parallel", "handoff", "approval"}
+var agentModuleExports = []string{"tool", "llm", "parallel", "handoff", "approval", "skill"}
 
 // installRequireShim wires a minimal CommonJS-style require() that
 // resolves the @gridctl/agent specifier the scaffold (and esbuild's
