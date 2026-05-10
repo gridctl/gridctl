@@ -43,8 +43,8 @@ func TestRecursiveComposition_TypedSkillHandoffFromTS(t *testing.T) {
 	}
 
 	registry := skill.NewRegistry()
-	greet, err := skill.Define("greet", "greets a name",
-		func(_ context.Context, in greetInput) (greetOutput, error) {
+	greet, err := skill.Define("greet", "greets a name", "",
+		func(_ skill.RunContext, in greetInput) (greetOutput, error) {
 			return greetOutput{Greeting: "hello " + in.Name}, nil
 		})
 	if err != nil {
