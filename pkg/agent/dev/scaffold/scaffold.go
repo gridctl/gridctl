@@ -118,6 +118,13 @@ canvas reflects the change in <300ms.
 `, name, name)
 }
 
+// HelloSkillTS returns the body of the scaffolded skill.ts as bytes
+// the regression suite can run through the sandbox verbatim. Exporting
+// the helper means a future change to the scaffold immediately re-tests
+// runtime compatibility — there's no parallel copy of the source to
+// drift out of sync.
+func HelloSkillTS(name string) string { return helloSkillTS(name) }
+
 // helloSkillTS renders a runnable TS skill exercising the recognised
 // primitives. Authors edit this file, the watcher fires, the IDE
 // re-renders.
@@ -155,7 +162,7 @@ export default async function run(input: HelloInput): Promise<HelloOutput> {
     ],
   });
 
-  return { greeting: reply.text };
+  return { greeting: reply.content };
 }
 `
 }
