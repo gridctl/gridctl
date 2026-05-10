@@ -97,19 +97,69 @@ func TestScaffoldPromptOnlyWritesOnlySkillMD(t *testing.T) {
 	}
 }
 
-func TestScaffoldGoNotYetImplemented(t *testing.T) {
+func TestScaffoldGoWritesSkillSourceAndTest(t *testing.T) {
 	dir := t.TempDir()
-	_, err := Scaffold(dir, Options{Language: "go", SkillName: "hello-go"})
-	if err == nil {
-		t.Fatal("expected error for Language=\"go\" in Phase 1")
+	res, err := Scaffold(dir, Options{Language: "go", SkillName: "hello-go"})
+	if err != nil {
+		t.Fatalf("Scaffold(go): %v", err)
 	}
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("expected 'not yet implemented' in error, got: %v", err)
+	want := []string{"SKILL.md", "skill.go", "skill_test.go"}
+	if got := len(res.Created); got != len(want) {
+		t.Fatalf("Created = %d files, want %d: %v", got, len(want), res.Created)
 	}
-	// No partial output should land on disk before the error returns.
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 0 {
-		t.Errorf("expected empty dir after Go-stub error, got %d entries", len(entries))
+	for _, name := range want {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("expected %s on disk: %v", name, err)
+		}
+	}
+	// Go skills don't carry agent.json or skill.ts — verify they
+	// don't leak in from the TS branch.
+	for _, name := range []string{"agent.json", "skill.ts"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Errorf("expected no %s for go scaffold, got err=%v", name, err)
+		}
+	}
+	src, err := os.ReadFile(filepath.Join(dir, "skill.go"))
+	if err != nil {
+		t.Fatalf("read skill.go: %v", err)
+	}
+	srcStr := string(src)
+	for _, want := range []string{
+		"package main",
+		"\"github.com/gridctl/gridctl/pkg/agent/skill\"",
+		"\"github.com/gridctl/gridctl/pkg/agent/llm\"",
+		"type HelloInput struct",
+		"type HelloOutput struct",
+		"jsonschema:\"required",
+		"func New() *skill.Definition",
+		"func RegisterSkill(reg *skill.Registry) error",
+		"func main() {}",
+		"\"hello-go\"",
+	} {
+		if !strings.Contains(srcStr, want) {
+			t.Errorf("skill.go missing expected substring %q\n--- skill.go ---\n%s", want, srcStr)
+		}
+	}
+}
+
+func TestHelloSkillGoExportsTestChannel(t *testing.T) {
+	// Mirrors HelloSkillTS: the regression suite needs a stable
+	// channel into the scaffold body so a future scaffold change
+	// re-runs compatibility checks without a parallel copy of the
+	// source drifting.
+	src := HelloSkillGo("hello-go")
+	if !strings.Contains(src, "package main") {
+		t.Errorf("HelloSkillGo: missing 'package main'")
+	}
+	if !strings.Contains(src, "func RegisterSkill") {
+		t.Errorf("HelloSkillGo: missing RegisterSkill plugin entry")
+	}
+	tst := HelloSkillGoTest("hello-go")
+	if !strings.Contains(tst, "package main") {
+		t.Errorf("HelloSkillGoTest: missing 'package main'")
+	}
+	if !strings.Contains(tst, "TestRun_GreetsTheCaller") {
+		t.Errorf("HelloSkillGoTest: missing TestRun_GreetsTheCaller")
 	}
 }
 
