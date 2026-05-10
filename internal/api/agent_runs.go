@@ -13,16 +13,18 @@ import (
 )
 
 // SetAgentRunStore wires the persist.Store the /api/agent/runs/*
-// handlers read from. The daemon constructs the store once per
-// process at apply time so concurrent run-loop writers and HTTP
-// readers share the same on-disk layout.
+// handlers fall back to when no runtime aggregate is installed.
+// Production callers should use SetAgentRuntime, which takes precedence
+// over this setter at read time. Retained for tests that need only one
+// slice of runtime state.
 func (s *Server) SetAgentRunStore(store *persist.Store) {
 	s.agentRunStore = store
 }
 
-// SetAgentApprovalRegistry wires the in-process approval registry.
-// Approvals issued by the runtime register here; the
-// /api/agent/runs/{id}/approve handler resolves them by ID.
+// SetAgentApprovalRegistry wires the in-process approval registry the
+// /api/agent/runs/{id}/approve handler falls back to when no runtime
+// aggregate is installed. SetAgentRuntime takes precedence at read
+// time. Retained for test-fixture wiring.
 func (s *Server) SetAgentApprovalRegistry(reg *compose.Registry) {
 	s.agentApprovalRegistry = reg
 }
@@ -46,7 +48,7 @@ type agentRunListItem struct {
 
 // handleAgentRunsList returns a paginated list of recent runs.
 func (s *Server) handleAgentRunsList(w http.ResponseWriter, r *http.Request) {
-	store := s.agentRunStore
+	store := s.runStore()
 	if store == nil {
 		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
 		return
@@ -74,7 +76,7 @@ func (s *Server) handleAgentRunsList(w http.ResponseWriter, r *http.Request) {
 // payload list is returned in one shot — for streaming, see
 // handleAgentRunEvents (SSE).
 func (s *Server) handleAgentRunGet(w http.ResponseWriter, r *http.Request) {
-	store := s.agentRunStore
+	store := s.runStore()
 	if store == nil {
 		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
 		return
@@ -109,7 +111,7 @@ func (s *Server) handleAgentRunGet(w http.ResponseWriter, r *http.Request) {
 // The handler streams the complete ledger then closes the connection;
 // live tailing lands when the runtime exposes an event-bus surface.
 func (s *Server) handleAgentRunEvents(w http.ResponseWriter, r *http.Request) {
-	store := s.agentRunStore
+	store := s.runStore()
 	if store == nil {
 		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
 		return
@@ -162,7 +164,7 @@ type agentResumeRequest struct {
 // projection over the JSONL so CLI/web clients see the same
 // rehydrated state.
 func (s *Server) handleAgentRunResume(w http.ResponseWriter, r *http.Request) {
-	store := s.agentRunStore
+	store := s.runStore()
 	if store == nil {
 		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
 		return
@@ -199,11 +201,12 @@ type agentApproveRequest struct {
 // can be supplied explicitly or inferred from the run's pending
 // approval (most CLIs use the run-id-only form for convenience).
 func (s *Server) handleAgentRunApprove(w http.ResponseWriter, r *http.Request) {
-	if s.agentApprovalRegistry == nil {
+	registry := s.approvalRegistry()
+	if registry == nil {
 		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
 		return
 	}
-	store := s.agentRunStore
+	store := s.runStore()
 	if store == nil {
 		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
 		return
@@ -238,7 +241,7 @@ func (s *Server) handleAgentRunApprove(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = "api"
 	}
-	if err := s.agentApprovalRegistry.Resolve(approvalID, req.Approved, req.Reason, source); err != nil {
+	if err := registry.Resolve(approvalID, req.Approved, req.Reason, source); err != nil {
 		switch {
 		case errors.Is(err, compose.ErrApprovalNotFound):
 			writeJSONError(w, err.Error(), http.StatusNotFound)

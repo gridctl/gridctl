@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/agent"
+	"github.com/gridctl/gridctl/pkg/agent/dev/scaffold"
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
@@ -428,6 +429,99 @@ func TestApprovalBinding_HonorsCustomApprover(t *testing.T) {
 	}
 	if app.prompt != "ship?" {
 		t.Errorf("approver got prompt %q, want ship?", app.prompt)
+	}
+}
+
+// TestExecute_ScaffoldOutputRunsThroughRequireShim is the regression
+// test for the gap that shipped in the Code-First Agent Runtime slice:
+// `gridctl agent init` scaffolds a skill.ts that imports from
+// "@gridctl/agent", esbuild lowers that to require("@gridctl/agent"),
+// and the sandbox previously had no require global. The test runs the
+// literal scaffold body so any future scaffold change re-exercises the
+// runtime contract automatically.
+func TestExecute_ScaffoldOutputRunsThroughRequireShim(t *testing.T) {
+	t.Parallel()
+	src := scaffold.HelloSkillTS("hello-ts")
+	caller := &fakeToolCaller{
+		respond: func(_ string, _ map[string]any) (*mcp.ToolCallResult, error) {
+			return &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent(`"casual"`)}}, nil
+		},
+	}
+	model := &fakeChatModel{
+		resp: agent.ChatResponse{
+			Model:   "claude-sonnet-4-6",
+			Content: "Hi, world!",
+		},
+	}
+	sb := New(2 * time.Second)
+	res, err := sb.Execute(context.Background(),
+		src,
+		map[string]any{"name": "world"},
+		Bindings{
+			ToolCaller:   caller,
+			AllowedTools: []mcp.Tool{{Name: "gridctl__greeting_style"}},
+			ChatModel:    model,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(res.Value, "Hi, world!") {
+		t.Errorf("value = %s, want greeting from chat model", res.Value)
+	}
+	if len(caller.calls) != 1 || caller.calls[0].name != "gridctl__greeting_style" {
+		t.Errorf("expected one tool call to gridctl__greeting_style, got %+v", caller.calls)
+	}
+}
+
+// TestExecute_RequireShim_GridctlAgent verifies that an explicit import
+// of the agent SDK transpiles into a working require("@gridctl/agent")
+// call and the resulting module object exposes the binding globals.
+// This is the smaller, focused mirror of the scaffold-output test —
+// useful when debugging because it isolates require() resolution from
+// the broader scaffold path.
+func TestExecute_RequireShim_GridctlAgent(t *testing.T) {
+	t.Parallel()
+	src := `
+		import { tool } from "@gridctl/agent";
+		export default async function (i: { x: number }) {
+			return await tool("svc__op", { x: i.x });
+		}
+	`
+	caller := &fakeToolCaller{
+		respond: func(_ string, args map[string]any) (*mcp.ToolCallResult, error) {
+			payload, _ := json.Marshal(map[string]any{"ok": true, "x": args["x"]})
+			return &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent(string(payload))}}, nil
+		},
+	}
+	sb := New(2 * time.Second)
+	res, err := sb.Execute(context.Background(), src, map[string]any{"x": 1}, Bindings{
+		ToolCaller:   caller,
+		AllowedTools: []mcp.Tool{{Name: "svc__op"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(res.Value, `"ok":true`) {
+		t.Errorf("value = %s, want ok:true", res.Value)
+	}
+}
+
+// TestExecute_RequireShim_RejectsUnknownModule guards against the
+// require shim accidentally returning empty modules for arbitrary names.
+// Unknown imports must surface as a clear runtime error so authors
+// notice unsupported imports immediately rather than getting
+// undefined-method failures deep inside their handler.
+func TestExecute_RequireShim_RejectsUnknownModule(t *testing.T) {
+	t.Parallel()
+	src := `import * as fs from "fs"; export default async function () { return fs; };`
+	sb := New(2 * time.Second)
+	_, err := sb.Execute(context.Background(), src, nil, Bindings{})
+	if err == nil {
+		t.Fatal("expected unknown-module error, got nil")
+	}
+	if !strings.Contains(err.Error(), `unknown module "fs"`) {
+		t.Errorf("err = %v, want unknown-module error", err)
 	}
 }
 

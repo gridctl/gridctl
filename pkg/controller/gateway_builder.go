@@ -16,8 +16,12 @@ import (
 
 	"github.com/gridctl/gridctl/internal/api"
 	"github.com/gridctl/gridctl/internal/probe"
+	"github.com/gridctl/gridctl/pkg/agent"
 	"github.com/gridctl/gridctl/pkg/agent/compose"
+	agentgateway "github.com/gridctl/gridctl/pkg/agent/gateway"
 	"github.com/gridctl/gridctl/pkg/agent/persist"
+	agentruntime "github.com/gridctl/gridctl/pkg/agent/runtime"
+	"github.com/gridctl/gridctl/pkg/agent/sandbox"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -179,6 +183,42 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	registryStore := registry.NewStore(regDir)
 	registryServer := registry.New(registryStore)
 	inst.RegistryServer = registryServer
+
+	// Phase 1c: Build the agent runtime aggregate. The gateway hangs off
+	// SetAgentRuntime so HTTP handlers, the dispatcher, and the IDE all
+	// pull from one place. RunStore + ApprovalRegistry + Sandbox are
+	// available from the start so the dispatcher can register against
+	// the registry server before the router exposes its tools; the
+	// ChatModel plugs in later inside buildAPIServer once the vault has
+	// resolved provider keys.
+	agentSandbox := sandbox.New(0)
+	agentRuntime := agentruntime.NewRuntime(
+		persist.NewStore(persist.DefaultRunsDir()),
+		compose.NewRegistry(),
+		agentSandbox,
+	)
+	inst.Gateway.SetAgentRuntime(agentRuntime)
+
+	// Wire the TS dispatcher onto the registry server. The bindings
+	// provider closes over the gateway so per-call collaborators
+	// (current AllowedTools snapshot, the runtime's ChatModel) reflect
+	// the daemon's live state rather than a snapshot frozen at build
+	// time. The ToolCaller is built once here because its only failure
+	// mode is a nil gateway — a programmer error we want to surface at
+	// build time, not as a silently-disabled tool() binding at first
+	// call. SetTSDispatcher MUST run before the router adds the
+	// registry server below — Router.RefreshTools queries the
+	// registry's Tools(), which only surfaces TS skills when a
+	// dispatcher is wired.
+	toolCaller, err := agentgateway.NewToolCaller(inst.Gateway)
+	if err != nil {
+		return nil, fmt.Errorf("agent tool caller: %w", err)
+	}
+	dispatcher, err := sandbox.NewDispatcher(agentSandbox, makeDispatcherBindings(inst.Gateway, registryServer, toolCaller))
+	if err != nil {
+		return nil, fmt.Errorf("agent dispatcher: %w", err)
+	}
+	registryServer.SetTSDispatcher(dispatcher)
 
 	// Phase 2: Configure logging
 	var logErr error
@@ -470,15 +510,29 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		server.SetPinStore(b.pinStore)
 	}
 
+	// Resolve the agent runtime aggregate the gateway holds (built in
+	// Phase 1c above). Every API handler that needs runtime components
+	// reads them from this aggregate rather than from per-field setters.
+	rt, _ := gateway.AgentRuntime().(*agentruntime.Runtime)
+
 	if provider := buildPlaygroundProvider(b.vaultStore); provider != nil {
 		server.SetPlaygroundProvider(provider)
+		// Wire the same provider into the runtime so the TS dispatcher's
+		// llm() binding sees it. The dispatcher's bindings closure
+		// re-reads ChatModel on every call, so plugging it in here
+		// retroactively makes earlier-registered TS skills work.
+		if rt != nil {
+			rt.SetChatModel(provider)
+		}
 	}
 
-	// Agent runtime persistence (Phase E). Runs land as JSONL at
-	// ~/.gridctl/runs/<run_id>.jsonl; the registry tracks approval
-	// gates so the API and CLI can resolve them by ID.
-	server.SetAgentRunStore(persist.NewStore(persist.DefaultRunsDir()))
-	server.SetAgentApprovalRegistry(compose.NewRegistry())
+	// Agent runtime persistence (Phase E). The runtime aggregate already
+	// owns the JSONL run store and approval registry — wire it into the
+	// API server so /api/agent/runs/* handlers read from one source of
+	// truth and can never get out of step with the dispatcher's view.
+	if rt != nil {
+		server.SetAgentRuntime(rt)
+	}
 
 	// Wire token usage metrics
 	counter, err := b.buildTokenCounter()
@@ -713,6 +767,33 @@ func (b *GatewayBuilder) tokenizerName() string {
 		return b.stack.Gateway.Tokenizer
 	}
 	return "embedded"
+}
+
+// makeDispatcherBindings returns a sandbox.BindingsProvider that builds
+// per-call collaborators from the live gateway state. Closing over gw
+// (rather than snapshotting Bindings at build time) means later changes
+// — a freshly-set ChatModel after vault auth completes, an autoscaled
+// MCP server adding new tools — show up in subsequent dispatches
+// without a rewire. The ToolCaller is constructed once at wire time
+// (it depends only on the gateway pointer, which is stable) so a
+// per-call construction failure is impossible by design.
+//
+// Approver is left nil so the sandbox's auto-approve stub stays in
+// effect for the dispatcher path. Orchestrator-driven runs construct a
+// real compose.Gate (which needs a per-run recorder) and supply it via
+// their own bindings.
+func makeDispatcherBindings(gw *mcp.Gateway, skillCaller sandbox.SkillCaller, toolCaller agent.ToolCaller) sandbox.BindingsProvider {
+	return func(_ context.Context, _ string) sandbox.Bindings {
+		b := sandbox.Bindings{
+			AllowedTools: gw.Router().AggregatedTools(),
+			SkillCaller:  skillCaller,
+			ToolCaller:   toolCaller,
+		}
+		if rt, ok := gw.AgentRuntime().(*agentruntime.Runtime); ok && rt != nil {
+			b.ChatModel = rt.ChatModel()
+		}
+		return b
+	}
 }
 
 // buildTokenCounter creates the token counter based on the stack gateway config.

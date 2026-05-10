@@ -115,6 +115,16 @@ type HealthStatus struct {
 // DefaultHealthCheckInterval is the default interval between health checks.
 const DefaultHealthCheckInterval = 30 * time.Second
 
+// AgentRuntime is the opaque agent-runtime aggregate stored on the
+// Gateway via SetAgentRuntime. The concrete type lives in
+// pkg/agent/runtime to avoid the import cycle (pkg/agent already
+// depends on pkg/mcp). Consumers that need the underlying components
+// type-assert to *agent/runtime.Runtime; the marker method keeps
+// arbitrary types from accidentally satisfying the interface.
+type AgentRuntime interface {
+	AgentRuntimeMarker()
+}
+
 // Gateway aggregates multiple MCP servers into a single endpoint.
 type Gateway struct {
 	router    *Router
@@ -123,11 +133,12 @@ type Gateway struct {
 	logger    *slog.Logger
 	cancel    context.CancelFunc
 
-	mu          sync.RWMutex
-	serverInfo  ServerInfo
-	serverMeta  map[string]MCPServerConfig // name -> config for status reporting
-	codeMode    *CodeMode                  // nil when code mode is off
-	codeModeStr string                           // "off", "on" — for status reporting
+	mu           sync.RWMutex
+	serverInfo   ServerInfo
+	serverMeta   map[string]MCPServerConfig // name -> config for status reporting
+	codeMode     *CodeMode                  // nil when code mode is off
+	codeModeStr  string                     // "off", "on" — for status reporting
+	agentRuntime AgentRuntime               // nil until SetAgentRuntime wires the runtime aggregate
 
 	healthMu      sync.RWMutex
 	health        map[string]*HealthStatus         // name -> rollup health (public API)
@@ -207,6 +218,24 @@ func (g *Gateway) SetCodeMode(timeout time.Duration) {
 	cm.SetLogger(g.logger)
 	g.codeMode = cm
 	g.codeModeStr = "on"
+}
+
+// SetAgentRuntime installs the agent runtime aggregate the gateway hangs
+// off. Consumers (HTTP handlers, dispatcher bindings) read the runtime
+// via AgentRuntime() and type-assert to *agent/runtime.Runtime to access
+// the underlying components. Pass nil to detach.
+func (g *Gateway) SetAgentRuntime(rt AgentRuntime) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentRuntime = rt
+}
+
+// AgentRuntime returns the agent runtime aggregate previously installed
+// via SetAgentRuntime, or nil when none is wired.
+func (g *Gateway) AgentRuntime() AgentRuntime {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.agentRuntime
 }
 
 // SetDefaultOutputFormat sets the gateway-level default output format.

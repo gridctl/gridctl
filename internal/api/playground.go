@@ -214,11 +214,11 @@ func (s *Server) handlePlaygroundChat(w http.ResponseWriter, r *http.Request) {
 // a chat request. When the requested model has no matching provider,
 // the function returns an error the handler surfaces verbatim.
 func (s *Server) resolveProvider(model string) (agent.ChatModel, string, string, error) {
-	if s.playgroundProvider != nil {
+	if provider := s.chatProvider(); provider != nil {
 		// The injected provider may be a router (llm/gateway.Provider)
 		// that itself dispatches by prefix; otherwise the provider
 		// honors whatever model the request specifies.
-		return s.playgroundProvider, model, providerNameFromModel(model), nil
+		return provider, model, providerNameFromModel(model), nil
 	}
 	return nil, "", "", errors.New("playground: no LLM provider is configured (set ANTHROPIC_API_KEY in the vault and restart)")
 }

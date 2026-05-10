@@ -3406,3 +3406,38 @@ func TestGateway_HandleInitialize_NormalizesClientID(t *testing.T) {
 	}
 }
 
+// stubAgentRuntime is a minimal AgentRuntime impl used by the
+// round-trip test. The real implementation lives in
+// pkg/agent/runtime — importing it here would re-create the
+// agent → mcp → agent cycle the marker interface exists to break, so
+// we declare a local type and assert the gateway round-trips it.
+type stubAgentRuntime struct{ id string }
+
+func (*stubAgentRuntime) AgentRuntimeMarker() {}
+
+// TestGateway_AgentRuntimeRoundTrip locks in the SetAgentRuntime /
+// AgentRuntime contract: a value installed via the setter is returned
+// verbatim by the accessor, and the zero state is nil.
+func TestGateway_AgentRuntimeRoundTrip(t *testing.T) {
+	g := NewGateway()
+	if got := g.AgentRuntime(); got != nil {
+		t.Fatalf("zero-value AgentRuntime = %v, want nil", got)
+	}
+
+	rt := &stubAgentRuntime{id: "fixture"}
+	g.SetAgentRuntime(rt)
+
+	got, ok := g.AgentRuntime().(*stubAgentRuntime)
+	if !ok {
+		t.Fatalf("AgentRuntime returned %T, want *stubAgentRuntime", g.AgentRuntime())
+	}
+	if got != rt {
+		t.Errorf("AgentRuntime returned a different pointer (%p vs %p)", got, rt)
+	}
+
+	g.SetAgentRuntime(nil)
+	if got := g.AgentRuntime(); got != nil {
+		t.Errorf("after SetAgentRuntime(nil), AgentRuntime() = %v, want nil", got)
+	}
+}
+
