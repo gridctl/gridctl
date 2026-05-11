@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -565,6 +566,73 @@ func RegisterSkill(reg *skill.Registry) error { return nil }
 
 	if err := runAgentValidate("valid-go"); err != nil {
 		t.Fatalf("validate clean go skill: %v", err)
+	}
+}
+
+// TestRunAgentInit_JSONContract_EmptyCreatedIsArray locks down the
+// `--format json` contract: when every starter file already exists,
+// `created` must serialize as `[]`, never `null`. The .([]any) type
+// assertion is the load-bearing check — a nil slice marshals to JSON
+// null and the assertion fails with ok=false.
+func TestRunAgentInit_JSONContract_EmptyCreatedIsArray(t *testing.T) {
+	resetAgentInitFlagsForTest(t)
+	t.Cleanup(func() { resetAgentInitFlagsForTest(t) })
+
+	dir := t.TempDir()
+
+	if err := runAgentInit(agentInitCmd, []string{dir}); err != nil {
+		t.Fatalf("first runAgentInit (populate): %v", err)
+	}
+
+	resetAgentInitFlagsForTest(t)
+	var buf bytes.Buffer
+	agentInitCmd.SetOut(&buf)
+	agentInitFormat = "json"
+	if err := runAgentInit(agentInitCmd, []string{dir}); err != nil {
+		t.Fatalf("second runAgentInit (json): %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal output %q: %v", buf.String(), err)
+	}
+
+	created, ok := got["created"].([]any)
+	if !ok {
+		t.Fatalf(`"created" must be a JSON array, got %T (value=%v) — null breaks consumer pipelines`, got["created"], got["created"])
+	}
+	if len(created) != 0 {
+		t.Errorf(`"created" must be empty when all files were skipped, got %v`, created)
+	}
+}
+
+// TestRunAgentInit_JSONContract_EmptySkippedIsArray is the symmetric
+// case: a fresh directory has nothing to skip, so `skipped` must
+// serialize as `[]`. Same nil-slice failure mode as the created case.
+func TestRunAgentInit_JSONContract_EmptySkippedIsArray(t *testing.T) {
+	resetAgentInitFlagsForTest(t)
+	t.Cleanup(func() { resetAgentInitFlagsForTest(t) })
+
+	dir := t.TempDir()
+
+	var buf bytes.Buffer
+	agentInitCmd.SetOut(&buf)
+	agentInitFormat = "json"
+	if err := runAgentInit(agentInitCmd, []string{dir}); err != nil {
+		t.Fatalf("runAgentInit (json, fresh dir): %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal output %q: %v", buf.String(), err)
+	}
+
+	skipped, ok := got["skipped"].([]any)
+	if !ok {
+		t.Fatalf(`"skipped" must be a JSON array, got %T (value=%v) — null breaks consumer pipelines`, got["skipped"], got["skipped"])
+	}
+	if len(skipped) != 0 {
+		t.Errorf(`"skipped" must be empty when all files were created, got %v`, skipped)
 	}
 }
 
