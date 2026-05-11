@@ -13,6 +13,7 @@ Guides and references for gridctl.
 
 | Document | Description |
 |----------|-------------|
+| [Skills](skills.md) | The three flavors (prompt / code-ts / code-go), the hybrid pattern, recursive composability, and Go-plugin sharp edges |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server — policies, trade-offs, observability |
 | [Troubleshooting](troubleshooting.md) | Common errors and resolutions — runtime, networking, vault, hot reload |
 
