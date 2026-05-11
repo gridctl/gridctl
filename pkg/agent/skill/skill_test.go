@@ -145,6 +145,36 @@ func TestDefine_RunContextExposesBodyAndName(t *testing.T) {
 	}
 }
 
+func TestWithSkillBody_OverridesCapturedBody(t *testing.T) {
+	t.Parallel()
+	const captured = "captured-at-define-time"
+	const override = "loader-supplied-override"
+	var gotBody string
+	def, err := Define("override", "body override", captured,
+		func(rc RunContext, _ helloInput) (helloOutput, error) {
+			gotBody = rc.SkillBody()
+			return helloOutput{Greeting: "ok"}, nil
+		})
+	if err != nil {
+		t.Fatalf("Define: %v", err)
+	}
+	// Without override: captured body wins.
+	if _, err := def.Invoker(context.Background(), map[string]any{"name": "x"}); err != nil {
+		t.Fatalf("Invoker (no override): %v", err)
+	}
+	if gotBody != captured {
+		t.Errorf("without override SkillBody = %q, want %q", gotBody, captured)
+	}
+	// With override: WithSkillBody-wrapped context wins.
+	ctx := WithSkillBody(context.Background(), override)
+	if _, err := def.Invoker(ctx, map[string]any{"name": "x"}); err != nil {
+		t.Fatalf("Invoker (override): %v", err)
+	}
+	if gotBody != override {
+		t.Errorf("with override SkillBody = %q, want %q", gotBody, override)
+	}
+}
+
 func TestDefine_RunContextPreservesContextValues(t *testing.T) {
 	t.Parallel()
 	type ctxKey string

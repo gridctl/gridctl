@@ -44,7 +44,31 @@ type runContext struct {
 	name string
 }
 
-func (r *runContext) SkillBody() string { return r.body }
+// skillBodyOverrideKey is the context-value key WithSkillBody uses to
+// inject a body that takes precedence over the value captured at
+// Define time. The gateway-builder Go-plugin loader sets this so a
+// plugin that registered with body="" still surfaces the on-disk
+// SKILL.md body through ctx.SkillBody() — preserving the hybrid
+// pattern across the plugin boundary without a generics-crossing
+// re-registration the loader cannot perform.
+type skillBodyOverrideKey struct{}
+
+// WithSkillBody returns a context whose downstream RunContext.SkillBody()
+// resolves to body instead of the value captured at Define time. The
+// override is read-only (a context value), so concurrent invocations
+// of the same Definition each see the body wired by their own
+// caller's context. In-process registrations have no reason to call
+// this — they pass body to Define directly.
+func WithSkillBody(parent context.Context, body string) context.Context {
+	return context.WithValue(parent, skillBodyOverrideKey{}, body)
+}
+
+func (r *runContext) SkillBody() string {
+	if v, ok := r.Value(skillBodyOverrideKey{}).(string); ok {
+		return v
+	}
+	return r.body
+}
 func (r *runContext) SkillName() string { return r.name }
 
 // newRunContext lifts a parent context plus the skill-scoped body
