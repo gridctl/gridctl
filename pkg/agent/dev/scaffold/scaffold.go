@@ -66,7 +66,7 @@ func Scaffold(root string, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("scaffold: mkdir %s: %w", root, err)
 	}
 	files := starterFiles(opts)
-	res := Result{}
+	res := Result{Created: []string{}, Skipped: []string{}}
 	for _, f := range files {
 		dst := filepath.Join(root, f.path)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
