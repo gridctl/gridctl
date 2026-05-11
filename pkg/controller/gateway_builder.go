@@ -22,6 +22,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/agent/persist"
 	agentruntime "github.com/gridctl/gridctl/pkg/agent/runtime"
 	"github.com/gridctl/gridctl/pkg/agent/sandbox"
+	"github.com/gridctl/gridctl/pkg/agent/skill"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -238,6 +239,20 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	if err := registryServer.Initialize(context.Background()); err != nil {
 		slog.New(inst.Handler).Warn("registry initialization failed", "error", err)
 	}
+
+	// Load Go skill plugins after the store walker has populated
+	// HandlerLanguage/HandlerPath, and BEFORE the registry server is
+	// added to the router — Router.RefreshTools queries the registry's
+	// Tools(), which only surfaces Go skills once a *skill.Registry is
+	// wired via SetSkillRegistry. The loader reads each Go skill's
+	// manifest.json first and enforces the go_version + go_mod_hash
+	// guardrails before plugin.Open, so a stale plugin produces an
+	// actionable warning rather than the opaque toolchain-mismatch
+	// error the plugin package would otherwise return.
+	goSkillRegistry := skill.NewRegistry()
+	loadGoSkillPlugins(registryStore, goSkillRegistry, slog.New(inst.Handler))
+	registryServer.SetSkillRegistry(goSkillRegistry)
+
 	if registryServer.HasContent() {
 		inst.Gateway.Router().AddClient(registryServer)
 		inst.Gateway.Router().RefreshTools()
