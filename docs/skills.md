@@ -61,7 +61,7 @@ Post-scaffold hint:
 run: gridctl agent dev --root "<dir>"
 ```
 
-The dev server (`gridctl agent dev`) gives you the IDE: a watcher that re-renders the graph on save in <300ms, click-to-`$EDITOR` jumps via `vscode://file/...:line`, and a trace overlay that shows the same status pills and latency the gateway records at runtime. The IDE is read-only — code is canon, the canvas never writes back.
+`gridctl agent dev` exposes the dev-server API (`/api/agent/dev/skills`, `/events`) for JSON/CLI use; the browser canvas is served by the daemon at `http://localhost:8180/agent` when you pass `--agent-dev-root <dir>` to `gridctl serve` (or place skills under `~/.gridctl/registry/skills`, which the daemon picks up by default). The canvas gives you a watcher that re-renders the graph on save in <300ms, click-to-`$EDITOR` jumps via `vscode://file/...:line`, and a trace overlay that shows the same status pills and latency the gateway records at runtime. The IDE is read-only — code is canon, the canvas never writes back.
 
 The TS sandbox's tool calls flow through the same `agent.ToolCaller` the gateway uses, so tracing, pricing, replica routing, vault auth, and tool whitelisting apply unchanged. `handoff()` resolves through the same `SkillCaller` interface the registry server uses, which means a TS skill calling a Go skill or a remote skill traverses the same dispatcher path an upstream client would — local execution and remote execution are one code path.
 

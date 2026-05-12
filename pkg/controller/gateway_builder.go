@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -18,6 +19,8 @@ import (
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/agent"
 	"github.com/gridctl/gridctl/pkg/agent/compose"
+	"github.com/gridctl/gridctl/pkg/agent/dev/devserver"
+	"github.com/gridctl/gridctl/pkg/agent/dev/watcher"
 	agentgateway "github.com/gridctl/gridctl/pkg/agent/gateway"
 	"github.com/gridctl/gridctl/pkg/agent/persist"
 	agentruntime "github.com/gridctl/gridctl/pkg/agent/runtime"
@@ -84,6 +87,11 @@ type GatewayBuilder struct {
 	// telemetry holds the opt-in disk-persistence writers wired at Build
 	// time. Nil when no server in the stack opts in.
 	telemetry *telemetryWiring
+
+	// agentDevWatcher is set when buildAPIServer wires the Agent IDE dev
+	// server. Run() starts its goroutine against the daemon's lifecycle
+	// context so the watcher exits cleanly on shutdown.
+	agentDevWatcher *watcher.Watcher
 }
 
 // telemetryWiring bundles the three per-signal writers + the otlptrace
@@ -381,6 +389,17 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 		// Server started successfully
 	}
 
+	// Start the Agent IDE watcher (when wired). Its lifetime is bound to
+	// ctx so it exits cleanly on shutdown; errors are non-fatal so a
+	// failed watcher does not crash the daemon.
+	if b.agentDevWatcher != nil {
+		go func(w *watcher.Watcher) {
+			if err := w.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.New(bufferHandler).Warn("agent IDE watcher exited", "error", err)
+			}
+		}(b.agentDevWatcher)
+	}
+
 	// Register MCP servers (after HTTP server is running for health checks)
 	registrar := NewServerRegistrar(gateway, b.config.NoExpand)
 	registrar.SetLogger(slog.New(bufferHandler))
@@ -541,6 +560,16 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		}
 	}
 
+	// Agent IDE dev server (Phase F). When a project root is configured
+	// (or the default registry root exists), construct the watcher +
+	// devserver and wire them onto the runtime aggregate so the API
+	// server's /api/agent/dev/* handlers stop 503'ing. SetDevServer must
+	// run before SetAgentRuntime so the read accessor sees a non-nil
+	// devServer the first time a request lands.
+	if rt != nil {
+		b.wireAgentDevServer(rt)
+	}
+
 	// Agent runtime persistence (Phase E). The runtime aggregate already
 	// owns the JSONL run store and approval registry — wire it into the
 	// API server so /api/agent/runs/* handlers read from one source of
@@ -633,6 +662,58 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	b.seedMetricsFromDisk(handler)
 
 	return server, nil
+}
+
+// wireAgentDevServer resolves the dev-root, constructs the watcher +
+// devserver, and installs them on the runtime aggregate. Each step is
+// best-effort: a missing root, an unreadable directory, or a fsnotify
+// failure logs a warning and leaves rt.DevServer() nil so the IDE
+// handlers fall back to 503 with the existing message. The watcher
+// goroutine is started later in Run() so it binds to the daemon's
+// lifecycle context.
+func (b *GatewayBuilder) wireAgentDevServer(rt *agentruntime.Runtime) {
+	root := b.resolveAgentDevRoot()
+	if root == "" {
+		return
+	}
+
+	logger := slog.Default()
+
+	w, err := watcher.New(root)
+	if err != nil {
+		logger.Warn("agent IDE dev server disabled", "root", root, "error", err)
+		return
+	}
+
+	srv, err := devserver.NewServer(root, w)
+	if err != nil {
+		logger.Warn("agent IDE dev server disabled", "root", root, "error", err)
+		return
+	}
+
+	rt.SetDevServer(srv)
+	b.agentDevWatcher = w
+	logger.Info("agent IDE wired", "root", root)
+}
+
+// resolveAgentDevRoot returns the effective dev-root for the Agent IDE,
+// preferring the explicit flag and falling back to ~/.gridctl/registry/skills
+// when that directory exists. Returns "" when no root resolves — callers
+// treat that as "leave the IDE backend unwired".
+func (b *GatewayBuilder) resolveAgentDevRoot() string {
+	if b.config.AgentDevRoot != "" {
+		return b.config.AgentDevRoot
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	candidate := filepath.Join(home, ".gridctl", "registry", "skills")
+	info, err := os.Stat(candidate)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return candidate
 }
 
 // applyTelemetryConfig walks the stack's MCP servers and registers per-

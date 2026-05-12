@@ -58,6 +58,12 @@ type Config struct {
 	Runtime     string // Explicit runtime selection (docker, podman)
 	Replace     bool   // Stop a running stack before deploying (used by plan apply)
 	LogFile     string // Path to log file (overrides stack.yaml logging.file)
+
+	// AgentDevRoot opts the daemon into the Agent IDE dev server. When set,
+	// /api/agent/dev/* serves the parsed skills under this project root and
+	// streams file-watcher events for the canvas. Empty falls back to
+	// ~/.gridctl/registry/skills if it exists; otherwise the routes 503.
+	AgentDevRoot string
 }
 
 // StackController orchestrates the full deploy lifecycle.

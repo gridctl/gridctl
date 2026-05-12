@@ -64,4 +64,5 @@ func init() {
 	serveCmd.Flags().BoolVarP(&applyForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
 	serveCmd.Flags().BoolVar(&applyDaemonChild, "daemon-child", false, "Internal flag for daemon process")
 	_ = serveCmd.Flags().MarkHidden("daemon-child")
+	serveCmd.Flags().StringVar(&applyAgentDevRoot, "agent-dev-root", "", "Project root for the Agent IDE dev server (defaults to ~/.gridctl/registry/skills if present)")
 }
