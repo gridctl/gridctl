@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   fetchSkill,
@@ -10,6 +10,7 @@ import { SkillSidebar } from './SkillSidebar';
 import { NodeList } from './NodeList';
 import { Canvas } from './Canvas';
 import { NodeDetail } from './NodeDetail';
+import { RunLauncherModal, type SkillForLaunch } from './RunLauncherModal';
 import { useDevSocket } from '../../../hooks/useDevSocket';
 import { useRunTrace } from './useRunTrace';
 import { cn } from '../../../lib/cn';
@@ -43,6 +44,14 @@ export function AgentIDE() {
   const [graphError, setGraphError] = useState<string | null>(null);
 
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+
+  // RunLauncher state — null when no modal is open. The originRef
+  // points at the SkillSidebar Run button that opened the modal so
+  // focus can return to it on close.
+  const [launcher, setLauncher] = useState<{
+    skill: SkillForLaunch;
+    originRef: RefObject<HTMLButtonElement | null>;
+  } | null>(null);
 
   const { lastEvent, connectionState } = useDevSocket(true);
   const runTrace = useRunTrace(runID);
@@ -130,6 +139,30 @@ export function AgentIDE() {
     [params, setParams],
   );
 
+  const handleRunSkill = useCallback(
+    (name: string, originRef: RefObject<HTMLButtonElement | null>) => {
+      // Note: SkillSummary doesn't carry description today — the dev
+      // server only surfaces name/lang/dir/node_count. The modal
+      // omits the description paragraph when undefined. Surfacing
+      // SKILL.md descriptions through the dev API is a follow-up.
+      setLauncher({ skill: { name }, originRef });
+    },
+    [],
+  );
+
+  const handleLaunched = useCallback(
+    (response: { run_id: string; started_at: string }) => {
+      // Update URL to activate useRunTrace on the new run. Use replace
+      // so back-button navigation doesn't accumulate intermediate runs.
+      const next = new URLSearchParams(params);
+      if (launcher?.skill.name) next.set('skill', launcher.skill.name);
+      next.set('run', response.run_id);
+      setParams(next, { replace: true });
+      setLauncher(null);
+    },
+    [params, setParams, launcher],
+  );
+
   const selectedNodeObj = useMemo(() => {
     if (!graph || !selectedNode) return null;
     return graph.nodes.find((n) => n.id === selectedNode) ?? null;
@@ -147,6 +180,7 @@ export function AgentIDE() {
           skills={skills}
           active={activeSkill}
           onSelect={handleSelectSkill}
+          onRunSkill={handleRunSkill}
           loading={skillsLoading}
           error={skillsError}
         />
@@ -205,6 +239,15 @@ export function AgentIDE() {
           onClose={() => setSelectedNode(null)}
         />
       </div>
+
+      {launcher && (
+        <RunLauncherModal
+          skill={launcher.skill}
+          returnFocusRef={launcher.originRef}
+          onClose={() => setLauncher(null)}
+          onLaunched={handleLaunched}
+        />
+      )}
     </div>
   );
 }
