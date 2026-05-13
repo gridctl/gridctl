@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -166,6 +168,67 @@ func TestParseSkillReportsMissingHandler(t *testing.T) {
 	}
 	if g.ParseError == "" {
 		t.Fatal("expected ParseError for missing handler")
+	}
+}
+
+// TestGraphNodesAlwaysSerializeAsArray guards the wire contract: the
+// frontend reads `graph.nodes.length` and crashes on `null`, so every
+// return path must yield a non-nil slice. Covers no-handler, valid
+// handler with zero recognised primitives, and a TS file with no
+// handler at all.
+func TestGraphNodesAlwaysSerializeAsArray(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+	}{
+		{
+			name:  "no-handler",
+			setup: func(_ *testing.T, _ string) {},
+		},
+		{
+			name: "go-handler-zero-nodes",
+			setup: func(t *testing.T, dir string) {
+				if err := os.WriteFile(filepath.Join(dir, "skill.go"),
+					[]byte("package x\nfunc Run(){}\n"), 0o644); err != nil {
+					t.Fatalf("write: %v", err)
+				}
+			},
+		},
+		{
+			name: "ts-handler-zero-nodes",
+			setup: func(t *testing.T, dir string) {
+				if err := os.WriteFile(filepath.Join(dir, "skill.ts"),
+					[]byte("export default async function run(){}\n"), 0o644); err != nil {
+					t.Fatalf("write: %v", err)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tc.setup(t, dir)
+			g, err := ParseSkill("noop", dir)
+			if err != nil {
+				t.Fatalf("ParseSkill: %v", err)
+			}
+			if g.Nodes == nil {
+				t.Fatal("Nodes is nil, want non-nil empty slice")
+			}
+			if len(g.Nodes) != 0 {
+				t.Fatalf("len(Nodes) = %d, want 0", len(g.Nodes))
+			}
+			body, err := json.Marshal(g)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if !bytes.Contains(body, []byte(`"nodes":[]`)) {
+				t.Fatalf("JSON missing `\"nodes\":[]`: %s", body)
+			}
+			if bytes.Contains(body, []byte(`"nodes":null`)) {
+				t.Fatalf("JSON has `\"nodes\":null`: %s", body)
+			}
+		})
 	}
 }
 
