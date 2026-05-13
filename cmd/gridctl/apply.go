@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/gridctl/gridctl/pkg/controller"
 	"github.com/gridctl/gridctl/pkg/output"
@@ -82,7 +85,14 @@ func runServeStackless() error {
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
-	return ctrl.Serve(context.Background())
+
+	// Cancel ctx on SIGINT/SIGTERM so all ctx-bound goroutines in the gateway
+	// (health monitor, autoscaler, agent IDE watcher, file watcher) actually
+	// exit; without this the daemon child receives the signal but never exits.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	return ctrl.Serve(ctx)
 }
 
 func runApply(stackPath string) error {
@@ -105,7 +115,11 @@ func runApply(stackPath string) error {
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
 
-	if err := ctrl.Deploy(context.Background()); err != nil {
+	// Cancel ctx on SIGINT/SIGTERM so daemon goroutines exit cleanly.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := ctrl.Deploy(ctx); err != nil {
 		return err
 	}
 
