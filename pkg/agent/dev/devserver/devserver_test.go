@@ -125,3 +125,41 @@ func TestNewServerRejectsMissingRoot(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+// TestListSkillsFiltersMdOnlySkills guards the Agent IDE sidebar: any
+// SKILL.md directory without a typed handler (skill.go / skill.ts)
+// must not appear in the listing. Otherwise the IDE auto-selects it
+// on first load and renders an empty graph.
+func TestListSkillsFiltersMdOnlySkills(t *testing.T) {
+	root := t.TempDir()
+	mdOnly := filepath.Join(root, "md-only")
+	writeFile(t, mdOnly, "SKILL.md", "---\nname: md-only\n---\n")
+
+	typed := filepath.Join(root, "typed")
+	writeFile(t, typed, "SKILL.md", "---\nname: typed\n---\n")
+	writeFile(t, typed, "skill.ts", "await tool(\"x\");\n")
+
+	srv, err := NewServer(root, nil)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/dev/skills", nil)
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Skills []SkillEntry `json:"skills"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := len(body.Skills); got != 1 {
+		t.Fatalf("skills = %d, want 1: %+v", got, body.Skills)
+	}
+	if body.Skills[0].Name != "typed" {
+		t.Errorf("name = %q, want %q", body.Skills[0].Name, "typed")
+	}
+}
