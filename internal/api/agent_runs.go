@@ -10,6 +10,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/agent/compose"
 	"github.com/gridctl/gridctl/pkg/agent/persist"
+	"github.com/gridctl/gridctl/pkg/agent/runner"
 )
 
 // SetAgentRunStore wires the persist.Store the /api/agent/runs/*
@@ -257,6 +258,91 @@ func (s *Server) handleAgentRunApprove(w http.ResponseWriter, r *http.Request) {
 		"approval_id": approvalID,
 		"approved":    req.Approved,
 	})
+}
+
+// agentRunLaunchRequest is the body accepted by POST /api/agent/runs.
+type agentRunLaunchRequest struct {
+	SkillName string          `json:"skill_name"`
+	Input     json.RawMessage `json:"input,omitempty"`
+}
+
+// agentRunLaunchResponse is the body returned by POST /api/agent/runs.
+type agentRunLaunchResponse struct {
+	RunID     string    `json:"run_id"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+// handleAgentRunsLaunch validates the request and dispatches a new run
+// via the daemon's wired registry server. EventRunStarted is recorded
+// synchronously before the response returns so SSE subscribers polling
+// the new run see the head of the ledger without racing the first
+// event. Execution flows through registry.Server.CallTool so
+// tool()/llm()/approval() bindings (vault, gateway routing, approval
+// registry) apply unchanged.
+//
+// Initial scope is TS-handler skills only — Go and prompt-only handlers
+// are rejected with 422 and an actionable message.
+func (s *Server) handleAgentRunsLaunch(w http.ResponseWriter, r *http.Request) {
+	store := s.runStore()
+	if store == nil || s.registryServer == nil {
+		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req agentRunLaunchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, fmt.Sprintf("decoding body: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.SkillName == "" {
+		writeJSONError(w, "skill_name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Default input to {} when absent. When present, it must be a
+	// JSON object — a top-level array, scalar, or null is rejected so
+	// the dispatcher receives a stable shape.
+	input := map[string]any{}
+	rawInput := json.RawMessage(`{}`)
+	if len(req.Input) > 0 {
+		if err := json.Unmarshal(req.Input, &input); err != nil || input == nil {
+			writeJSONError(w, "input must be a JSON object", http.StatusBadRequest)
+			return
+		}
+		rawInput = req.Input
+	}
+
+	sk, err := s.registryServer.Store().GetSkill(req.SkillName)
+	if err != nil {
+		writeJSONError(w, fmt.Sprintf("skill %q not found", req.SkillName), http.StatusNotFound)
+		return
+	}
+
+	switch sk.HandlerLanguage {
+	case "ts":
+		// proceed
+	case "go":
+		writeJSONError(w, fmt.Sprintf("skill %q has a Go handler; the launcher does not yet support Go plugins — invoke via `gridctl run` after `gridctl agent build`", req.SkillName), http.StatusUnprocessableEntity)
+		return
+	case "":
+		writeJSONError(w, fmt.Sprintf("skill %q is prompt-only and surfaces as an MCP prompt, not an invocable tool", req.SkillName), http.StatusUnprocessableEntity)
+		return
+	default:
+		writeJSONError(w, fmt.Sprintf("skill %q has unsupported handler language %q", req.SkillName, sk.HandlerLanguage), http.StatusUnprocessableEntity)
+		return
+	}
+
+	runID, startedAt, err := runner.Start(r.Context(), store, s.registryServer, runner.StartOptions{
+		Skill:    req.SkillName,
+		Flavor:   sk.HandlerLanguage,
+		Input:    input,
+		RawInput: rawInput,
+	})
+	if err != nil {
+		writeJSONError(w, fmt.Sprintf("starting run: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, agentRunLaunchResponse{RunID: runID, StartedAt: startedAt})
 }
 
 // summaryToListItem strips the on-disk path off a persist.RunSummary
