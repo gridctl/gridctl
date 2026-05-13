@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -71,6 +72,15 @@ func TestServe_ExitsOnSIGTERM(t *testing.T) {
 		// path on some platforms.
 	case <-time.After(20 * time.Second):
 		t.Fatalf("daemon did not exit within 20s of SIGTERM\n%s", out.String())
+	}
+
+	// State file must be gone after the daemon exits — proves the
+	// defer in runStacklessDaemonChild fired. If the file lingers, an
+	// orphan daemon would still be discoverable by `gridctl stop`, but
+	// this assertion specifically guards the happy-path lifecycle.
+	statePath := filepath.Join(os.Getenv("HOME"), ".gridctl", "state", "gridctl.json")
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("expected state file to be absent after exit, got err=%v", err)
 	}
 }
 
