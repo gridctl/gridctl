@@ -109,6 +109,12 @@ func (s *Server) listSkillDirs() ([]SkillEntry, error) {
 		} else if _, err := os.Stat(filepath.Join(dir, "skill.ts")); err == nil {
 			lang = "ts"
 		}
+		// Skip markdown-only skills. The Agent IDE is the typed-skill
+		// graph view; md-only Claude Code skills have nothing to render
+		// and would auto-select on first load with a null graph.
+		if lang == "" {
+			return nil
+		}
 		rel, _ := filepath.Rel(s.root, dir)
 		if rel == "" {
 			rel = "."
@@ -118,12 +124,10 @@ func (s *Server) listSkillDirs() ([]SkillEntry, error) {
 			Lang: lang,
 			Dir:  rel,
 		}
-		if lang != "" {
-			g, err := parser.ParseSkill(name, dir)
-			if err == nil {
-				entry.NodeCount = len(g.Nodes)
-				entry.HasError = g.ParseError != ""
-			}
+		g, err := parser.ParseSkill(name, dir)
+		if err == nil {
+			entry.NodeCount = len(g.Nodes)
+			entry.HasError = g.ParseError != ""
 		}
 		entries = append(entries, entry)
 		return nil
