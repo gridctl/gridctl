@@ -139,7 +139,7 @@ func parseGoFile(skillName, path string) (Graph, error) {
 	if err != nil {
 		return Graph{}, fmt.Errorf("parser: read %s: %w", path, err)
 	}
-	g := Graph{Skill: skillName, Lang: LangGo, File: path}
+	g := Graph{Skill: skillName, Lang: LangGo, File: path, Nodes: []Node{}}
 
 	fset := token.NewFileSet()
 	f, parseErr := parser.ParseFile(fset, path, src, parser.AllErrors)
@@ -277,5 +277,5 @@ func ParseSkill(skillName, skillDir string) (Graph, error) {
 			return g, nil
 		}
 	}
-	return Graph{Skill: skillName, ParseError: "no typed handler (skill.go / skill.ts) found"}, nil
+	return Graph{Skill: skillName, Nodes: []Node{}, ParseError: "no typed handler (skill.go / skill.ts) found"}, nil
 }
