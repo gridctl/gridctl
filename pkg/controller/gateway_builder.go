@@ -8,9 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -432,7 +430,7 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 	}
 
 	// Wait for shutdown signal or server error
-	return b.waitForShutdown(inst, bufferHandler, serverErr, verbose)
+	return b.waitForShutdown(ctx, inst, bufferHandler, serverErr, verbose)
 }
 
 // buildLogging creates or reuses the log buffer and handler.
@@ -1061,15 +1059,15 @@ func (b *GatewayBuilder) printEndpoints(inst *GatewayInstance) {
 	fmt.Println("\nPress Ctrl+C to stop...")
 }
 
-// waitForShutdown blocks until a shutdown signal or server error, then cleans up.
-func (b *GatewayBuilder) waitForShutdown(inst *GatewayInstance, handler slog.Handler, serverErr <-chan error, verbose bool) error {
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
-
+// waitForShutdown blocks until ctx is canceled (signal-driven) or the server
+// errors, then cleans up. Listening on ctx.Done() rather than a local signal
+// channel ensures all ctx-bound goroutines in the gateway see the same
+// cancellation and exit cleanly.
+func (b *GatewayBuilder) waitForShutdown(ctx context.Context, inst *GatewayInstance, handler slog.Handler, serverErr <-chan error, verbose bool) error {
 	select {
-	case sig := <-done:
+	case <-ctx.Done():
 		logger := slog.New(handler)
-		logger.Info("received signal, shutting down", "signal", sig)
+		logger.Info("received shutdown signal")
 
 		if verbose {
 			fmt.Println("\nShutting down...")
@@ -1079,7 +1077,9 @@ func (b *GatewayBuilder) waitForShutdown(inst *GatewayInstance, handler slog.Han
 		// HTTP connections are still alive, then closes gateway clients.
 		inst.APIServer.Close()
 
-		// Graceful HTTP shutdown with timeout
+		// Graceful HTTP shutdown with timeout. Parent is Background, not
+		// ctx — ctx is already canceled at this point, so a child of it
+		// would expire immediately.
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer shutdownCancel()
 
