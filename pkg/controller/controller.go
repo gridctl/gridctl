@@ -163,6 +163,10 @@ func (sc *StackController) runStacklessDaemonChild(ctx context.Context) error {
 	if err := state.Save(st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
+	// State-file lifetime tracks process lifetime: this defer is the
+	// only point where the file is removed, so an orphaned daemon
+	// remains discoverable until it actually exits.
+	defer func() { _ = state.Delete("gridctl") }()
 
 	return sc.buildAndRunStackless(ctx, false)
 }
@@ -382,6 +386,8 @@ func (sc *StackController) runDaemonChild(ctx context.Context, stack *config.Sta
 	if err := state.Save(st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
+	// State-file lifetime tracks process lifetime; see runStacklessDaemonChild.
+	defer func() { _ = state.Delete(stack.Name) }()
 
 	builder := sc.newGatewayBuilder(stack, rt, result)
 	return builder.BuildAndRun(ctx, false)
