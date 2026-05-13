@@ -322,6 +322,7 @@ func (s *Server) Handler() http.Handler {
 	// always available when a store is wired; resume/approve route
 	// through the in-process approval registry.
 	mux.HandleFunc("GET /api/agent/runs", s.handleAgentRunsList)
+	mux.HandleFunc("POST /api/agent/runs", s.handleAgentRunsLaunch)
 	mux.HandleFunc("GET /api/agent/runs/{run_id}", s.handleAgentRunGet)
 	mux.HandleFunc("GET /api/agent/runs/{run_id}/events", s.handleAgentRunEvents)
 	mux.HandleFunc("POST /api/agent/runs/{run_id}/resume", s.handleAgentRunResume)
