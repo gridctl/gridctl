@@ -71,7 +71,11 @@ export async function fetchSkill(name: string): Promise<SkillGraph | null> {
   if (!res.ok) {
     throw new Error(`fetchSkill(${name}): ${res.status} ${res.statusText}`);
   }
-  return (await res.json()) as SkillGraph;
+  // Coerce a stray `null` nodes field to `[]` — the Go backend
+  // guarantees `[]` on the wire, but the frontend null-derefs on
+  // `graph.nodes.length` so we belt-and-suspenders here too.
+  const g = (await res.json()) as SkillGraph;
+  return { ...g, nodes: g.nodes ?? [] };
 }
 
 // === Watcher events (SSE) ===
