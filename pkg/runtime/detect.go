@@ -2,17 +2,27 @@ package runtime
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// defaultDockerSocketPath is the canonical Unix-domain socket path probed when
+// no DOCKER_HOST is set and no Docker CLI context resolves. Exposed as a var
+// only so the regression test can simulate a dangling default symlink without
+// touching the real /var/run/docker.sock.
+var defaultDockerSocketPath = "/var/run/docker.sock"
 
 // RuntimeType identifies the container runtime.
 type RuntimeType string
@@ -60,17 +70,20 @@ func resolveExplicit(requested string) (*RuntimeInfo, error) {
 	rt := RuntimeType(strings.ToLower(requested))
 	switch rt {
 	case RuntimeDocker:
-		// Try DOCKER_HOST first, then default socket
+		// Try DOCKER_HOST, then the active Docker CLI context, then the default socket
 		if host := os.Getenv("DOCKER_HOST"); host != "" {
 			socketPath := extractSocketPath(host)
 			if socketPath != "" && probeSocket(socketPath) {
 				return buildRuntimeInfo(RuntimeDocker, socketPath)
 			}
 		}
-		if probeSocket("/var/run/docker.sock") {
-			return buildRuntimeInfo(RuntimeDocker, "/var/run/docker.sock")
+		if ctxSocket, _ := resolveDockerContext(); ctxSocket != "" && probeSocket(ctxSocket) {
+			return buildRuntimeInfo(RuntimeDocker, ctxSocket)
 		}
-		return nil, fmt.Errorf("docker runtime requested but Docker socket not found or not responding\n\nChecked:\n  - /var/run/docker.sock\n\nInstall Docker: https://docs.docker.com/get-docker/")
+		if probeSocket(defaultDockerSocketPath) {
+			return buildRuntimeInfo(RuntimeDocker, defaultDockerSocketPath)
+		}
+		return nil, fmt.Errorf("docker runtime requested but Docker socket not found or not responding\n\nChecked:\n  - %s\n\nInstall Docker: https://docs.docker.com/get-docker/", defaultDockerSocketPath)
 
 	case RuntimePodman:
 		sockets := podmanSockets()
@@ -86,24 +99,37 @@ func resolveExplicit(requested string) (*RuntimeInfo, error) {
 	}
 }
 
-// autoDetect probes sockets in priority order.
+// autoDetect probes sockets in priority order:
+//  1. DOCKER_HOST env var (if set)
+//  2. Active Docker CLI context (unix endpoint only)
+//  3. Default Docker socket (/var/run/docker.sock)
+//  4. Podman sockets
+//
+// This mirrors the Docker CLI's own resolution order so gridctl works on
+// context-based setups like OrbStack, Colima, and Rancher Desktop without the
+// user having to export DOCKER_HOST.
 func autoDetect() (*RuntimeInfo, error) {
 	// 1. DOCKER_HOST (if set)
 	if host := os.Getenv("DOCKER_HOST"); host != "" {
 		socketPath := extractSocketPath(host)
 		if socketPath != "" && probeSocket(socketPath) {
-			// Determine type by querying version
 			rt := detectTypeFromSocket(socketPath)
 			return buildRuntimeInfo(rt, socketPath)
 		}
 	}
 
-	// 2. Docker default socket
-	if probeSocket("/var/run/docker.sock") {
-		return buildRuntimeInfo(RuntimeDocker, "/var/run/docker.sock")
+	// 2. Active Docker CLI context
+	if ctxSocket, _ := resolveDockerContext(); ctxSocket != "" && probeSocket(ctxSocket) {
+		rt := detectTypeFromSocket(ctxSocket)
+		return buildRuntimeInfo(rt, ctxSocket)
 	}
 
-	// 3. Podman sockets
+	// 3. Docker default socket
+	if probeSocket(defaultDockerSocketPath) {
+		return buildRuntimeInfo(RuntimeDocker, defaultDockerSocketPath)
+	}
+
+	// 4. Podman sockets
 	for _, s := range podmanSockets() {
 		if probeSocket(s) {
 			return buildRuntimeInfo(RuntimePodman, s)
@@ -159,6 +185,85 @@ func extractSocketPath(host string) string {
 		return strings.TrimPrefix(host, "unix://")
 	}
 	return ""
+}
+
+// resolveDockerContext returns the unix socket path of the active Docker CLI
+// context, or "" if no context is active or its endpoint is not a unix socket.
+// It reads $DOCKER_CONFIG (or ~/.docker) for config.json and the SHA-256-keyed
+// meta.json that Docker stores per context.
+//
+// The function fails closed: any error reading or parsing user files returns
+// ("", nil) so detection falls through to the next probe rather than aborting
+// because of an unrelated config glitch. The (string, error) signature is
+// retained for future callers that want to distinguish failure modes.
+func resolveDockerContext() (string, error) {
+	dir := os.Getenv("DOCKER_CONFIG")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", nil
+		}
+		dir = filepath.Join(home, ".docker")
+	}
+
+	cfgBytes, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return "", nil
+	}
+	var cfg struct {
+		CurrentContext string `json:"currentContext"`
+	}
+	if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
+		return "", nil
+	}
+	// "default" is Docker's builtin context (always /var/run/docker.sock); it
+	// has no meta file. Empty means no context selected.
+	if cfg.CurrentContext == "" || cfg.CurrentContext == "default" {
+		return "", nil
+	}
+
+	sum := sha256.Sum256([]byte(cfg.CurrentContext))
+	metaPath := filepath.Join(dir, "contexts", "meta", hex.EncodeToString(sum[:]), "meta.json")
+	metaBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		return "", nil
+	}
+	var meta struct {
+		Endpoints struct {
+			Docker struct {
+				Host string `json:"Host"`
+			} `json:"docker"`
+		} `json:"Endpoints"`
+	}
+	if err := json.Unmarshal(metaBytes, &meta); err != nil {
+		return "", nil
+	}
+	// extractSocketPath returns "" for non-unix schemes (tcp://, ssh://, npipe://),
+	// which intentionally skips them — supporting those is out of scope here.
+	return extractSocketPath(meta.Endpoints.Docker.Host), nil
+}
+
+// socketStatus classifies why a socket path is unusable, for richer error
+// messages. Distinguishes "not present", "dangling symlink (target missing)",
+// "not a socket", and "present but not responding".
+func socketStatus(path string) string {
+	li, err := os.Lstat(path)
+	if err != nil {
+		return "not present"
+	}
+	if li.Mode()&os.ModeSymlink != 0 {
+		if _, err := os.Stat(path); err != nil {
+			return "dangling symlink (target missing)"
+		}
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return "not present"
+	}
+	if fi.Mode()&os.ModeSocket == 0 {
+		return "not a socket"
+	}
+	return "present but not responding"
 }
 
 // detectTypeFromSocket queries the version endpoint to determine runtime type.
@@ -404,11 +509,18 @@ func (info *RuntimeInfo) IsRootless() bool {
 func buildNoRuntimeError() error {
 	var checked []string
 	if host := os.Getenv("DOCKER_HOST"); host != "" {
-		checked = append(checked, "  - "+host+" (from DOCKER_HOST)")
+		if sp := extractSocketPath(host); sp != "" {
+			checked = append(checked, fmt.Sprintf("  - %s (from DOCKER_HOST: %s)", sp, socketStatus(sp)))
+		} else {
+			checked = append(checked, "  - "+host+" (from DOCKER_HOST: non-unix scheme, unsupported)")
+		}
 	}
-	checked = append(checked, "  - /var/run/docker.sock")
+	if ctxSocket, _ := resolveDockerContext(); ctxSocket != "" {
+		checked = append(checked, fmt.Sprintf("  - %s (from Docker context: %s)", ctxSocket, socketStatus(ctxSocket)))
+	}
+	checked = append(checked, fmt.Sprintf("  - %s (%s)", defaultDockerSocketPath, socketStatus(defaultDockerSocketPath)))
 	for _, s := range podmanSockets() {
-		checked = append(checked, "  - "+s)
+		checked = append(checked, fmt.Sprintf("  - %s (%s)", s, socketStatus(s)))
 	}
 
 	// Check if binaries are in PATH

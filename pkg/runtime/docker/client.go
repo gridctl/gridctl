@@ -37,7 +37,7 @@ func NewDockerClientWithHost(host string) (dockerclient.DockerClient, error) {
 func Ping(ctx context.Context, cli dockerclient.DockerClient) error {
 	_, err := cli.Ping(ctx)
 	if err != nil {
-		return fmt.Errorf("docker daemon not accessible: %w", err)
+		return fmt.Errorf("docker daemon not accessible: %w\n(if Docker runs via a CLI context like OrbStack or Colima, run 'docker context inspect' to verify the endpoint, or set DOCKER_HOST=unix://... to override)", err)
 	}
 	return nil
 }
