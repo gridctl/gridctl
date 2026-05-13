@@ -27,7 +27,7 @@ func parseTSFile(skillName, path string) (Graph, error) {
 	}
 	defer f.Close()
 
-	g := Graph{Skill: skillName, Lang: LangTS, File: path}
+	g := Graph{Skill: skillName, Lang: LangTS, File: path, Nodes: []Node{}}
 	idx := make(map[NodeKind]int)
 
 	sc := bufio.NewScanner(f)
