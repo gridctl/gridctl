@@ -1100,10 +1100,7 @@ func (b *GatewayBuilder) waitForShutdown(ctx context.Context, inst *GatewayInsta
 		if b.telemetry != nil && b.telemetry.logRouter != nil {
 			b.telemetry.logRouter.Close()
 		}
-
-		_ = state.Delete(b.stack.Name)
 	case err := <-serverErr:
-		_ = state.Delete(b.stack.Name)
 		return fmt.Errorf("server error: %w", err)
 	}
 
