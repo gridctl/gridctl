@@ -8,6 +8,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// findOrphan is a package-level seam over state.FindOrphan so tests
+// can simulate orphan and ambiguous outcomes without depending on
+// pgrep matching a real subprocess.
+var findOrphan = state.FindOrphan
+
+// stopForce, when true, allows runStop to terminate an orphan daemon
+// discovered via the port + process scan that runs when the state
+// file is missing.
+var stopForce bool
+
+// stopDefaultPort mirrors the default in serveCmd / applyCmd. Phase 3
+// of #618 deliberately hardcodes the port for stop fallback; adding a
+// --port flag here is out of scope.
+const stopDefaultPort = 8180
+
 var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the stackless gridctl daemon",
@@ -20,13 +35,18 @@ For stacks started with 'gridctl apply', use 'gridctl destroy <stack.yaml>' inst
 	},
 }
 
+func init() {
+	stopCmd.Flags().BoolVar(&stopForce, "force", false,
+		"Forcibly terminate an orphan daemon discovered via port and process scan when the state file is missing")
+}
+
 func runStop() error {
 	const name = "gridctl"
 
 	return state.WithLock(name, 5*time.Second, func() error {
 		st, err := state.Load(name)
 		if err != nil || st == nil {
-			return fmt.Errorf("no stackless daemon is running")
+			return runStopOrphanFallback()
 		}
 
 		if !state.IsRunning(st) {
@@ -43,4 +63,27 @@ func runStop() error {
 		fmt.Println("gridctl stopped")
 		return nil
 	})
+}
+
+// runStopOrphanFallback handles the missing-state-file case. If we
+// can identify a single orphan daemon listening on the default port,
+// either point the user at --force or terminate it (with --force).
+// Anything ambiguous falls through to the legacy "nothing to stop"
+// error so the user never sees us act on guesswork.
+func runStopOrphanFallback() error {
+	pid, ok, ferr := findOrphan(stopDefaultPort)
+	if ferr != nil || !ok {
+		return fmt.Errorf("no stackless daemon is running")
+	}
+
+	if !stopForce {
+		return fmt.Errorf("no state file found, but a gridctl process (pid %d) is listening on :%d — its /health endpoint is responding but it has no managed state; run 'gridctl stop --force' to terminate it", pid, stopDefaultPort)
+	}
+
+	orphan := &state.DaemonState{PID: pid, Port: stopDefaultPort, StackName: "gridctl"}
+	if err := state.KillDaemon(orphan); err != nil {
+		return fmt.Errorf("could not stop orphan daemon (pid %d): %w", pid, err)
+	}
+	fmt.Printf("Stopped orphan gridctl daemon (pid %d)\n", pid)
+	return nil
 }
