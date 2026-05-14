@@ -53,6 +53,10 @@ export function AgentIDE() {
     originRef: RefObject<HTMLButtonElement | null>;
   } | null>(null);
 
+  // Bumped on every launch so the sidebar Runs tab re-fetches the
+  // list — the new run shows up at the top without a manual refresh.
+  const [runsRefreshKey, setRunsRefreshKey] = useState(0);
+
   const { lastEvent, connectionState } = useDevSocket(true);
   const runTrace = useRunTrace(runID);
 
@@ -159,6 +163,9 @@ export function AgentIDE() {
       next.set('run', response.run_id);
       setParams(next, { replace: true });
       setLauncher(null);
+      // Nudge the sidebar's Runs tab to re-fetch so the new run row
+      // appears at the top immediately.
+      setRunsRefreshKey((k) => k + 1);
     },
     [params, setParams, launcher],
   );
@@ -183,6 +190,8 @@ export function AgentIDE() {
           onRunSkill={handleRunSkill}
           loading={skillsLoading}
           error={skillsError}
+          runsRefreshKey={runsRefreshKey}
+          activeRunID={runID}
         />
 
         <main className="flex flex-col h-full overflow-hidden bg-background">

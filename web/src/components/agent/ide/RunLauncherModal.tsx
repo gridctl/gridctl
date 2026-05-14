@@ -14,13 +14,12 @@ import { cn } from '../../../lib/cn';
 import { formatRelativeTime } from '../../../lib/time';
 import {
   fetchAgentRun,
-  fetchAgentRuns,
   inputFromRunDetail,
   launchRun,
   LaunchRunError,
-  type AgentRunSummary,
   type LaunchRunResponse,
 } from '../../../lib/agent-runs';
+import { useRunsForSkill } from './useRunsForSkill';
 
 // RJSF is heavy (~90KB gzipped with AJV) and only renders when a skill
 // exposes an inputSchema with properties. Lazy-load it so the main
@@ -73,9 +72,16 @@ export function RunLauncherModal({
   const [parseError, setParseError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [recentRuns, setRecentRuns] = useState<AgentRunSummary[]>([]);
-  const [recentLoading, setRecentLoading] = useState(true);
   const [selectedRunID, setSelectedRunID] = useState<string>('');
+
+  // Recent runs of THIS skill for the "Run like…" picker. The shared
+  // hook handles the filter; the modal stays silent on failure (the
+  // dropdown simply won't populate — Run like… is optional).
+  const { runs: recentRuns, loading: recentLoading } = useRunsForSkill({
+    skillName: skill.name,
+    limit: RUN_HISTORY_LIMIT,
+    fetchLimit: 50,
+  });
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -91,31 +97,6 @@ export function RunLauncherModal({
     }, 200);
     return () => window.clearTimeout(handle);
   }, [jsonText]);
-
-  // Fetch recent runs of THIS skill for the "Run like…" picker. The
-  // backend list endpoint returns ~50 runs; we filter client-side by
-  // skill name and trim to the most recent N. Failure is silent — the
-  // dropdown simply won't populate.
-  useEffect(() => {
-    let cancelled = false;
-    fetchAgentRuns(50)
-      .then((runs) => {
-        if (cancelled) return;
-        const filtered = runs
-          .filter((r) => r.skill === skill.name)
-          .slice(0, RUN_HISTORY_LIMIT);
-        setRecentRuns(filtered);
-      })
-      .catch(() => {
-        // Quietly degrade — Run like… is optional.
-      })
-      .finally(() => {
-        if (!cancelled) setRecentLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [skill.name]);
 
   // Move focus into the dialog when it mounts; remember the previously
   // focused element so we can return it on close. Capture the return

@@ -3,6 +3,7 @@ import { editorURL, type AgentNode } from '../../../lib/agent-api';
 import { styleFor } from './kind-style';
 import { TracePill } from './TracePill';
 import { ResumeButton } from './ResumeButton';
+import { RunOutputView } from './RunOutputView';
 import type { RunTrace, NodeTrace } from './useRunTrace';
 import { cn } from '../../../lib/cn';
 
@@ -43,19 +44,27 @@ export function NodeDetail({
 
   if (!node) {
     return (
-      <aside className="h-full bg-surface/40 border-l border-border-subtle p-6 flex flex-col">
-        <h3 className="font-sans text-text-muted text-xs uppercase tracking-[0.3em] mb-3">
-          Inspector
-        </h3>
-        <div className="flex-1 flex items-center justify-center text-center text-text-muted text-sm">
-          <div>
-            <div className="font-sans text-text-muted/40 text-[10px] uppercase tracking-[0.4em] mb-2">
-              awaiting selection
+      <aside className="h-full bg-surface/40 border-l border-border-subtle flex flex-col overflow-hidden">
+        <header className="px-6 pt-5 pb-4 border-b border-border-subtle">
+          <h3 className="font-sans text-text-muted text-xs uppercase tracking-[0.3em]">
+            Inspector
+          </h3>
+        </header>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {runID ? (
+            <RunOutputView runID={runID} runTrace={runTrace} />
+          ) : (
+            <div className="h-full flex items-center justify-center text-center text-text-muted text-sm">
+              <div>
+                <div className="font-sans text-text-muted/40 text-[10px] uppercase tracking-[0.4em] mb-2">
+                  awaiting selection
+                </div>
+                <p className="text-text-muted">
+                  Select a node to see its source location, trace data, and resume control.
+                </p>
+              </div>
             </div>
-            <p className="text-text-muted">
-              Select a node to see its source location, trace data, and resume control.
-            </p>
-          </div>
+          )}
         </div>
       </aside>
     );
