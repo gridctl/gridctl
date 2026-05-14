@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -21,6 +23,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/agent/dev/watcher"
 	agentgateway "github.com/gridctl/gridctl/pkg/agent/gateway"
 	"github.com/gridctl/gridctl/pkg/agent/persist"
+	"github.com/gridctl/gridctl/pkg/agent/runner"
 	agentruntime "github.com/gridctl/gridctl/pkg/agent/runtime"
 	"github.com/gridctl/gridctl/pkg/agent/sandbox"
 	"github.com/gridctl/gridctl/pkg/agent/skill"
@@ -886,12 +889,32 @@ func (b *GatewayBuilder) tokenizerName() string {
 // effect for the dispatcher path. Orchestrator-driven runs construct a
 // real compose.Gate (which needs a per-run recorder) and supply it via
 // their own bindings.
+//
+// Session is built per dispatch from the recorder ctx-stashed by
+// runner.Run upstream. When the parent dispatcher is firing for an
+// in-runner call, the recorder is non-nil and the sandbox bindings
+// emit per-node telemetry (node_enter / tool_call / llm_call / …) into
+// the same JSONL ledger the runner opened. Test wiring that calls
+// Dispatch without a runner gets a nil session — the bindings still
+// function, just without recording.
+//
+// The SkillCaller is wrapped with childRunSkillCaller so handoff() (and
+// any tool() call that resolves to a registered skill) opens its own
+// child recorder via runner.Run, automatically populating ParentRunID
+// on the child's run_started payload.
 func makeDispatcherBindings(gw *mcp.Gateway, store *registry.Store, skillCaller sandbox.SkillCaller, toolCaller agent.ToolCaller) sandbox.BindingsProvider {
-	return func(_ context.Context, skillName string) sandbox.Bindings {
+	rt, _ := gw.AgentRuntime().(*agentruntime.Runtime)
+	var runStore *persist.Store
+	if rt != nil {
+		runStore = rt.RunStore()
+	}
+	nestedSkillCaller := newChildRunSkillCaller(skillCaller, runStore, store)
+	nestedToolCaller := newChildRunToolCaller(toolCaller, skillCaller, runStore, store)
+	return func(ctx context.Context, skillName string) sandbox.Bindings {
 		b := sandbox.Bindings{
 			AllowedTools: gw.Router().AggregatedTools(),
-			SkillCaller:  skillCaller,
-			ToolCaller:   toolCaller,
+			SkillCaller:  nestedSkillCaller,
+			ToolCaller:   nestedToolCaller,
 			SkillName:    skillName,
 		}
 		if store != nil && skillName != "" {
@@ -899,11 +922,153 @@ func makeDispatcherBindings(gw *mcp.Gateway, store *registry.Store, skillCaller 
 				b.SkillBody = sk.Body
 			}
 		}
-		if rt, ok := gw.AgentRuntime().(*agentruntime.Runtime); ok && rt != nil {
+		if rt != nil {
 			b.ChatModel = rt.ChatModel()
+		}
+		if rec, ok := runner.RecorderFromContext(ctx); ok {
+			b.Session = sandbox.NewRunSession(rec)
 		}
 		return b
 	}
+}
+
+// registryServerName mirrors registry.Server.Name() — the agent prefix
+// used when a registered skill is surfaced as an MCP tool. The wrappers
+// below test against this string to decide whether a tool() call is
+// hitting a registered skill (and therefore deserves a child recorder
+// with ParentRunID populated) or a real MCP-server tool (which stays
+// stateless). Hardcoded here so pkg/controller does not have to import
+// pkg/registry for a single literal.
+const registryServerName = "registry"
+
+// childRunSkillCaller wraps the registry server so that handoff() from
+// inside a parent run opens a fresh child recorder via runner.Run. The
+// runner reads the parent run ID off ctx (set by the parent run's
+// runner.Run) and writes it as ParentRunID on the child's
+// EventRunStarted, which is what gives the IDE the orchestrator → leaf
+// tree shape. When ctx has no parent run id (top-level handoff outside
+// of a tracked run, e.g. an internal harness path), the wrapper falls
+// through to the underlying SkillCaller without opening a recorder.
+type childRunSkillCaller struct {
+	inner    sandbox.SkillCaller
+	store    *persist.Store
+	regStore *registry.Store
+}
+
+func newChildRunSkillCaller(inner sandbox.SkillCaller, store *persist.Store, regStore *registry.Store) sandbox.SkillCaller {
+	if inner == nil || store == nil {
+		return inner
+	}
+	return &childRunSkillCaller{inner: inner, store: store, regStore: regStore}
+}
+
+func (c *childRunSkillCaller) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
+	if _, parented := runner.RunIDFromContext(ctx); !parented {
+		return c.inner.CallTool(ctx, name, arguments)
+	}
+	_, res, err := runner.Run(ctx, c.store, c.inner, runner.StartOptions{
+		Skill:    name,
+		Flavor:   flavorForSkill(c.regStore, name),
+		Input:    arguments,
+		RawInput: marshalArgsForLedger(arguments),
+	})
+	return res, err
+}
+
+// childRunToolCaller wraps the gateway-backed ToolCaller so a tool()
+// invocation that resolves to a registered typed skill opens a child
+// recorder (just like handoff). Bare MCP-tool calls fall through to
+// the underlying ToolCaller unchanged. The wrapper strips the registry
+// agent prefix from the resolved name before consulting the registry
+// store — bindings.go's resolveToolName returns the prefixed form
+// (`registry__<skill>`) because that is what the gateway router
+// dispatches against, but the registry store indexes skills by their
+// unprefixed name. Without the strip, the lookup would miss every
+// real call and the parent-link path would silently never engage.
+type childRunToolCaller struct {
+	inner     agent.ToolCaller
+	skillCall sandbox.SkillCaller
+	store     *persist.Store
+	regStore  *registry.Store
+}
+
+func newChildRunToolCaller(inner agent.ToolCaller, skillCall sandbox.SkillCaller, store *persist.Store, regStore *registry.Store) agent.ToolCaller {
+	if inner == nil {
+		return inner
+	}
+	return &childRunToolCaller{inner: inner, skillCall: skillCall, store: store, regStore: regStore}
+}
+
+func (c *childRunToolCaller) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
+	if c.store == nil || c.regStore == nil {
+		return c.inner.CallTool(ctx, name, arguments)
+	}
+	if _, parented := runner.RunIDFromContext(ctx); !parented {
+		return c.inner.CallTool(ctx, name, arguments)
+	}
+	skillName, isRegistrySkill := unprefixRegistrySkillName(name)
+	if !isRegistrySkill {
+		return c.inner.CallTool(ctx, name, arguments)
+	}
+	sk, err := c.regStore.GetSkill(skillName)
+	if err != nil || sk == nil || sk.HandlerLanguage != "ts" {
+		return c.inner.CallTool(ctx, name, arguments)
+	}
+	// Dispatch via runner.Run so the child run gets its own recorder
+	// and ParentRunID linkage. Pass the unprefixed name through —
+	// SkillCaller (registry.Server.CallTool) expects unprefixed.
+	_, res, err := runner.Run(ctx, c.store, c.skillCall, runner.StartOptions{
+		Skill:    skillName,
+		Flavor:   sk.HandlerLanguage,
+		Input:    arguments,
+		RawInput: marshalArgsForLedger(arguments),
+	})
+	return res, err
+}
+
+// unprefixRegistrySkillName splits a tool name of the form
+// "registry__<skill>" into its bare skill component and reports
+// whether the prefix matched. Tool names that are not prefixed with
+// the registry agent name (i.e. real MCP-server tools) are returned
+// verbatim with a false flag so the caller can fall through to the
+// gateway dispatch path. The shape of "<agent>__<tool>" is the
+// gridctl-wide convention codified in mcp.PrefixTool.
+func unprefixRegistrySkillName(prefixed string) (string, bool) {
+	prefix := registryServerName + mcp.ToolNameDelimiter
+	if !strings.HasPrefix(prefixed, prefix) {
+		return prefixed, false
+	}
+	return prefixed[len(prefix):], true
+}
+
+// flavorForSkill resolves the handler language for a skill name from
+// the registry store, returning the empty string when the skill is
+// not on disk (e.g. a programmatically registered Go skill that
+// bypassed the walker). The child run's flavor field is purely
+// informational, so an empty value is acceptable.
+func flavorForSkill(store *registry.Store, name string) string {
+	if store == nil || name == "" {
+		return ""
+	}
+	if sk, err := store.GetSkill(name); err == nil && sk != nil {
+		return sk.HandlerLanguage
+	}
+	return ""
+}
+
+// marshalArgsForLedger encodes a child run's input map for verbatim
+// storage on the run's EventRunStarted payload. An encoding failure is
+// non-fatal — the runner accepts a nil RawInput and inspects the
+// parsed map separately.
+func marshalArgsForLedger(args map[string]any) []byte {
+	if args == nil {
+		return nil
+	}
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return nil
+	}
+	return raw
 }
 
 // buildTokenCounter creates the token counter based on the stack gateway config.
