@@ -145,6 +145,7 @@ type Gateway struct {
 	replicaHealth map[string]map[int]*HealthStatus // name -> replica_id -> health
 
 	toolCallObserver ToolCallObserver // optional observer for tool call metrics
+	runPersister     RunPersister     // optional adapter that wraps typed-skill calls in an on-disk run ledger
 
 	defaultOutputFormat    string                // gateway-level default output format
 	tokenCounter          token.Counter          // token counter for format savings calculation
@@ -200,6 +201,19 @@ func (g *Gateway) SetToolCallObserver(obs ToolCallObserver) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.toolCallObserver = obs
+}
+
+// SetRunPersister installs the adapter the gateway delegates to when
+// dispatching tool calls. The adapter decides whether to wrap a given
+// call in the on-disk run ledger (e.g. typed-skill targets) or pass
+// through to direct dispatch (e.g. proxied upstream MCP servers).
+// Passing nil disables persistence — the gateway then dispatches tool
+// calls directly via the routed AgentClient, matching the pre-adapter
+// behaviour.
+func (g *Gateway) SetRunPersister(p RunPersister) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.runPersister = p
 }
 
 // SetVersion sets the gateway version string.
@@ -1359,8 +1373,20 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	logger.Info("tool call started", "server", client.Name(), "tool", toolName)
 	start := time.Now()
 
+	g.mu.RLock()
+	persister := g.runPersister
+	g.mu.RUnlock()
+
 	replica.IncInFlight()
-	result, err := client.CallTool(ctx, toolName, params.Arguments)
+	var (
+		result *ToolCallResult
+		runID  string
+	)
+	if persister != nil {
+		runID, result, err = persister.PersistAndCall(ctx, client, toolName, params.Arguments)
+	} else {
+		result, err = client.CallTool(ctx, toolName, params.Arguments)
+	}
 	replica.DecInFlight()
 	duration := time.Since(start)
 
@@ -1376,6 +1402,12 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 
 	if result.IsError {
 		span.SetStatus(codes.Error, "tool returned error result")
+	}
+	if runID != "" {
+		if result.Meta == nil {
+			result.Meta = map[string]any{}
+		}
+		result.Meta["run_id"] = runID
 	}
 	logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
 
