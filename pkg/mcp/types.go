@@ -116,6 +116,22 @@ type ClientObserver interface {
 	ObserveToolCallWithClient(ctx context.Context, obs ToolCallObservation) ToolCallSummary
 }
 
+// RunPersister wraps a tool-call dispatch with an on-disk run ledger
+// when the routed target is a persisted-skill surface (typed skills).
+// The gateway invokes PersistAndCall in place of client.CallTool when
+// a RunPersister is installed via Gateway.SetRunPersister. The adapter
+// is the single source of truth for the "should this call persist?"
+// decision — proxied upstream MCP server calls fall through to direct
+// dispatch by returning an empty runID and the upstream result.
+//
+// A non-empty runID is embedded in the response's _meta.run_id so MCP
+// clients have a handle for trace inspection, approval responses, and
+// resume — the same operations the Run Launcher surfaces via
+// /api/agent/runs/{run_id}/*.
+type RunPersister interface {
+	PersistAndCall(ctx context.Context, client AgentClient, toolName string, arguments map[string]any) (runID string, result *ToolCallResult, err error)
+}
+
 // FormatSavingsRecorder receives format savings observations.
 // Used by the gateway to report token savings from format conversion
 // without coupling to the metrics package directly.
@@ -286,11 +302,19 @@ type ToolCallResult struct {
 	// result — model ID, cache-read/cache-write tokens. The field is
 	// nil for tool calls that do not report usage. Skipped during
 	// JSON marshalling: the MCP wire shape for usage metadata is
-	// finalized in a follow-up PR (the spec's `_meta` field is used by
-	// tracing and pipelock for keyed extensions, so we cannot claim
-	// the entire object here). Internal observers populate Usage in
-	// memory only.
+	// finalized in a follow-up PR (the spec's `_meta` field is used
+	// by tracing and pipelock for keyed extensions, so we cannot
+	// claim the entire object here). Internal observers populate
+	// Usage in memory only.
 	Usage *CallUsage `json:"-"`
+
+	// Meta is the MCP-spec extension point on result objects. The
+	// gateway populates Meta["run_id"] when a typed-skill call is
+	// persisted to the on-disk ledger so external MCP clients have a
+	// handle for resume / approval / trace inspection. Other keyed
+	// extensions (usage, drift signals) can land here as the wire
+	// shape stabilises.
+	Meta map[string]any `json:"_meta,omitempty"`
 }
 
 // CallUsage is the optional per-call usage metadata that an MCP server may
