@@ -34,6 +34,59 @@ type Executor interface {
 	CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error)
 }
 
+// runIDKey is the context-value handle for the active run's ID. A
+// caller that sees a non-empty value knows it is running inside a run
+// — the parent of any nested skill call dispatched off this context.
+// The key is a private struct (not a string) so unrelated packages
+// can't collide with it and so leak-detection tools surface the type
+// in trace dumps.
+type runIDKey struct{}
+
+// recorderKey is the context-value handle for the active run's
+// recorder. Carrying it lets sandbox bindings emit per-call events
+// (tool_call, llm_call, approval_*) into the same ledger the runner
+// opened — no second OpenWriter, no risk of two writers racing on the
+// same JSONL file.
+type recorderKey struct{}
+
+// RunIDFromContext returns the run ID stashed on ctx by a parent
+// runner.Run / runner.Start, plus a flag noting whether the value was
+// present. The flag distinguishes "no parent run" from "parent run
+// with empty id" (which should never happen but is structurally
+// possible).
+func RunIDFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	v, ok := ctx.Value(runIDKey{}).(string)
+	return v, ok && v != ""
+}
+
+// RecorderFromContext returns the active run's recorder, when one is
+// in scope. Bindings that emit per-call events read it through this
+// accessor rather than caching the recorder at install time, because
+// the install* helpers run before the recorder is wired in.
+func RecorderFromContext(ctx context.Context) (*persist.Recorder, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	rec, ok := ctx.Value(recorderKey{}).(*persist.Recorder)
+	return rec, ok && rec != nil
+}
+
+// contextWithRun returns a child context carrying the run ID and
+// recorder under the package's private keys. Used by Run and Start to
+// hand the dispatcher a context that downstream bindings can read.
+func contextWithRun(ctx context.Context, runID string, rec *persist.Recorder) context.Context {
+	if runID != "" {
+		ctx = context.WithValue(ctx, runIDKey{}, runID)
+	}
+	if rec != nil {
+		ctx = context.WithValue(ctx, recorderKey{}, rec)
+	}
+	return ctx
+}
+
 // StartOptions configures a single Start call.
 type StartOptions struct {
 	// Skill is the registered skill name to invoke.
@@ -84,10 +137,16 @@ func Run(ctx context.Context, store *persist.Store, exec Executor, opts StartOpt
 		}
 	}()
 
+	// If ctx already carries a run ID we are dispatching a nested
+	// skill call (e.g. handoff() from inside a parent run); preserve
+	// the linkage on the child's RunStarted payload so the IDE can
+	// reconstruct the tree.
+	parentRunID, _ := RunIDFromContext(ctx)
 	if _, err := rec.Record(persist.EventRunStarted, persist.RunStartedPayload{
-		Skill:  opts.Skill,
-		Flavor: opts.Flavor,
-		Input:  opts.RawInput,
+		Skill:       opts.Skill,
+		Flavor:      opts.Flavor,
+		Input:       opts.RawInput,
+		ParentRunID: parentRunID,
 	}); err != nil {
 		return "", nil, fmt.Errorf("runner: recording run_started: %w", err)
 	}
@@ -97,6 +156,10 @@ func Run(ctx context.Context, store *persist.Store, exec Executor, opts StartOpt
 		args = map[string]any{}
 	}
 
+	// Hand the dispatcher a ctx tagged with this run's ID and
+	// recorder so sandbox bindings can attach per-call telemetry and
+	// nested skill calls can inherit the parent run id.
+	ctx = contextWithRun(ctx, runID, rec)
 	result, callErr := exec.CallTool(ctx, opts.Skill, args)
 	if callErr != nil {
 		recordFailure(rec, callErr.Error())
@@ -110,9 +173,11 @@ func Run(ctx context.Context, store *persist.Store, exec Executor, opts StartOpt
 		recordFailure(rec, msg)
 		return runID, result, nil
 	}
+	output, truncated := outputFromResult(result)
 	if _, err := rec.Record(persist.EventRunCompleted, persist.RunCompletedPayload{
-		Status: "ok",
-		Output: outputFromResult(result),
+		Status:    "ok",
+		Output:    output,
+		Truncated: truncated,
 	}); err != nil {
 		slog.Warn("runner: recording run_completed", "run_id", runID, "err", err)
 	}
@@ -145,10 +210,12 @@ func Start(ctx context.Context, store *persist.Store, exec Executor, opts StartO
 		return "", time.Time{}, fmt.Errorf("runner: opening run ledger: %w", err)
 	}
 
+	parentRunID, _ := RunIDFromContext(ctx)
 	ev, err := rec.Record(persist.EventRunStarted, persist.RunStartedPayload{
-		Skill:  opts.Skill,
-		Flavor: opts.Flavor,
-		Input:  opts.RawInput,
+		Skill:       opts.Skill,
+		Flavor:      opts.Flavor,
+		Input:       opts.RawInput,
+		ParentRunID: parentRunID,
 	})
 	if err != nil {
 		_ = rec.Close()
@@ -162,8 +229,11 @@ func Start(ctx context.Context, store *persist.Store, exec Executor, opts StartO
 
 	// Detach from the request context so the dispatch outlives the
 	// HTTP request. Values (trace context, request IDs) propagate;
-	// cancellation does not.
-	go runAsync(context.WithoutCancel(ctx), rec, exec, opts.Skill, args)
+	// cancellation does not. Tag the detached ctx with this run's ID
+	// and recorder so the dispatcher and downstream bindings can
+	// attach per-call telemetry and inherit the parent run id.
+	dispatchCtx := contextWithRun(context.WithoutCancel(ctx), runID, rec)
+	go runAsync(dispatchCtx, rec, exec, opts.Skill, args)
 
 	return runID, ev.Time, nil
 }
@@ -190,9 +260,11 @@ func runAsync(ctx context.Context, rec *persist.Recorder, exec Executor, skillNa
 		return
 	}
 
+	output, truncated := outputFromResult(result)
 	if _, err := rec.Record(persist.EventRunCompleted, persist.RunCompletedPayload{
-		Status: "ok",
-		Output: outputFromResult(result),
+		Status:    "ok",
+		Output:    output,
+		Truncated: truncated,
 	}); err != nil {
 		slog.Warn("runner: recording run_completed", "run_id", rec.RunID(), "err", err)
 	}
@@ -214,29 +286,36 @@ func recordFailure(rec *persist.Recorder, msg string) {
 }
 
 // outputFromResult extracts the skill's output payload from a tool-call
-// result. The dispatcher wraps the typed return value as a single text
-// content block; probe-parse as JSON and store the raw bytes when
-// valid. Non-JSON text is JSON-string-wrapped so the ledger row
-// remains a syntactically valid value. This diverges from the CLI
+// result, capped at persist.MaxPayloadBytes. The dispatcher wraps the
+// typed return value as a single text content block; probe-parse as
+// JSON and store the raw bytes when valid. Non-JSON text is
+// JSON-string-wrapped so the ledger row remains a syntactically valid
+// value. Returns the (possibly truncated) JSON value and a flag noting
+// whether truncation occurred so the caller can populate the
+// RunCompletedPayload.Truncated field. This diverges from the CLI
 // (cmd/gridctl/run.go), which records `null` and emits a stderr
 // warning — we preserve the literal text because the API surface
 // returns the run_id immediately and has no stderr to write to;
 // inspectors then see the actual return value rather than a silent
 // data loss.
-func outputFromResult(result *mcp.ToolCallResult) json.RawMessage {
+func outputFromResult(result *mcp.ToolCallResult) (json.RawMessage, bool) {
 	if result == nil || len(result.Content) == 0 {
-		return json.RawMessage("null")
+		return json.RawMessage("null"), false
 	}
 	text := result.Content[0].Text
 	if text == "" {
-		return json.RawMessage("null")
+		return json.RawMessage("null"), false
 	}
+	var raw json.RawMessage
 	var probe any
 	if err := json.Unmarshal([]byte(text), &probe); err == nil {
-		return json.RawMessage(text)
+		raw = json.RawMessage(text)
+	} else {
+		encoded, _ := json.Marshal(text)
+		raw = json.RawMessage(encoded)
 	}
-	encoded, _ := json.Marshal(text)
-	return json.RawMessage(encoded)
+	capped, truncated := persist.CapRawJSON(raw)
+	return capped, truncated
 }
 
 func extractText(result *mcp.ToolCallResult) string {
