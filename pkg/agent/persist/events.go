@@ -161,8 +161,12 @@ type RunCompletedPayload struct {
 
 	// Output is the run's final output payload, when Status is
 	// "ok". JSON-encoded; readers decode against the skill's output
-	// schema.
+	// schema. Truncated to MaxPayloadBytes (and wrapped as a JSON
+	// string) when Truncated is set.
 	Output json.RawMessage `json:"output,omitempty"`
+
+	// Truncated is true when Output was capped at MaxPayloadBytes.
+	Truncated bool `json:"truncated,omitempty"`
 
 	// Error is the terminal error message when Status is "error" or
 	// "cancelled". Empty otherwise.
@@ -205,6 +209,11 @@ type ToolCallPayload struct {
 	// agent.ToolCall.ID. Used to pair tool_call with tool_result.
 	CallID string `json:"call_id"`
 
+	// NodeID, when set, links the tool call to the wrapping
+	// node_enter/node_exit pair so the inspector can collapse
+	// per-tool detail under its node row.
+	NodeID string `json:"node_id,omitempty"`
+
 	// Name is the prefixed tool name (server__tool) the gateway
 	// dispatches against. Recording the prefixed form keeps the
 	// ledger unambiguous when the same tool name is exposed by
@@ -213,8 +222,16 @@ type ToolCallPayload struct {
 
 	// Arguments is the JSON-encoded argument object as the model
 	// emitted it. Verbatim — provider key ordering and escaping is
-	// preserved.
+	// preserved, unless the encoded form exceeded MaxPayloadBytes,
+	// in which case it is replaced with the first MaxPayloadBytes
+	// as a JSON-quoted string and Truncated is set. Consumers
+	// treating a truncated payload as opaque get a syntactically
+	// valid value either way.
 	Arguments json.RawMessage `json:"arguments,omitempty"`
+
+	// Truncated is true when Arguments was capped at MaxPayloadBytes.
+	// Inspectors render the prefix and a "truncated" marker.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // ToolResultPayload is the body of an EventToolResult event.
@@ -222,11 +239,18 @@ type ToolResultPayload struct {
 	// CallID matches the EventToolCall it answers.
 	CallID string `json:"call_id"`
 
+	// NodeID, when set, mirrors the matching EventToolCall.NodeID so
+	// the inspector can pair the two without an arguments lookup.
+	NodeID string `json:"node_id,omitempty"`
+
 	// Output is the textual content the runtime surfaced to the
 	// model. Multi-block content collapses to a single string here;
 	// structured-content support follows when the gateway exposes it
-	// uniformly.
+	// uniformly. Truncated to MaxPayloadBytes when Truncated is set.
 	Output string `json:"output,omitempty"`
+
+	// Truncated is true when Output was capped at MaxPayloadBytes.
+	Truncated bool `json:"truncated,omitempty"`
 
 	// IsError mirrors the gateway's error flag.
 	IsError bool `json:"is_error,omitempty"`
@@ -336,6 +360,46 @@ type ErrorPayload struct {
 	// Empty for runtime-level errors that don't belong to a single
 	// node.
 	NodeID string `json:"node_id,omitempty"`
+}
+
+// MaxPayloadBytes caps the verbatim slice of `Arguments` / `Output` an
+// event carries. The cap protects the ledger from authors feeding a
+// multi-megabyte file read or LLM response straight into a tool call —
+// the JSONL file would balloon, the SSE stream would stall, and the
+// IDE would gag on a single 50 MB line. 64 KB is large enough to keep
+// the common path lossless (typical tool args and prose outputs) and
+// small enough that a truncated payload still renders quickly.
+const MaxPayloadBytes = 64 * 1024
+
+// CapRawJSON returns a value safe to store as a payload field of type
+// json.RawMessage, along with a flag indicating whether the original
+// exceeded the cap. Over-cap values are replaced with a JSON-encoded
+// string of the first MaxPayloadBytes — that keeps the field
+// syntactically valid JSON (so readers don't choke) while flagging
+// loss. Callers should also set their payload's Truncated field when
+// the returned flag is true.
+func CapRawJSON(raw []byte) (json.RawMessage, bool) {
+	if len(raw) <= MaxPayloadBytes {
+		return raw, false
+	}
+	quoted, err := json.Marshal(string(raw[:MaxPayloadBytes]))
+	if err != nil {
+		// json.Marshal of a string never fails in practice; fall back
+		// to a minimal valid placeholder rather than poison the ledger.
+		return json.RawMessage(`""`), true
+	}
+	return quoted, true
+}
+
+// CapString returns the first MaxPayloadBytes of s and a flag noting
+// whether the original was longer. Used for plain-text payload fields
+// (e.g. ToolResultPayload.Output) where the cap is purely a length
+// trim — no JSON-quoting is needed.
+func CapString(s string) (string, bool) {
+	if len(s) <= MaxPayloadBytes {
+		return s, false
+	}
+	return s[:MaxPayloadBytes], true
 }
 
 // MarshalEvent renders a typed payload into an Event ready for write.
