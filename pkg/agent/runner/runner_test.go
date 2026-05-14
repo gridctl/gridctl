@@ -322,6 +322,123 @@ func TestRun_RejectsMissingDependencies(t *testing.T) {
 	}
 }
 
+// TestRun_NestedRunCarriesParentRunID confirms that a runner.Run
+// invocation whose ctx already carries a run ID (i.e. a child run
+// fired from inside a parent run's dispatch — handoff() reaches
+// runner.Run via the childRunSkillCaller adapter) writes ParentRunID
+// onto the child's EventRunStarted payload. The parent → child link
+// is what gives the IDE's runs browser its nested-tree shape.
+func TestRun_NestedRunCarriesParentRunID(t *testing.T) {
+	store := persist.NewStore(t.TempDir())
+	result := &mcp.ToolCallResult{
+		Content: []mcp.Content{mcp.NewTextContent(`null`)},
+	}
+	exec := newStubExecutor(result, nil)
+
+	// Pre-tag ctx with a parent run ID exactly the way runner.Run
+	// itself does when wrapping the dispatcher ctx for downstream
+	// bindings. The exported RunIDFromContext / contextWithRun pair
+	// is intentionally minimal — the test calls the helper indirectly
+	// by stashing a fake parent ID via the typed key.
+	parentRunID := persist.NewRunID()
+	parentCtx := context.WithValue(context.Background(), runIDKey{}, parentRunID)
+
+	childRunID, _, err := Run(parentCtx, store, exec, StartOptions{Skill: "leaf", Flavor: "ts"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if childRunID == parentRunID {
+		t.Fatal("expected distinct child run ID")
+	}
+	events, err := store.Read(childRunID)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(events) == 0 || events[0].Type != persist.EventRunStarted {
+		t.Fatalf("expected first event run_started, got %+v", events)
+	}
+	var started persist.RunStartedPayload
+	if err := json.Unmarshal(events[0].Payload, &started); err != nil {
+		t.Fatalf("decode run_started: %v", err)
+	}
+	if started.ParentRunID != parentRunID {
+		t.Fatalf("expected parent_run_id=%q, got %q", parentRunID, started.ParentRunID)
+	}
+}
+
+// TestRun_TopLevelHasEmptyParentRunID confirms the inverse: a run
+// fired outside of a parent dispatch (top-level MCP tools/call or
+// in-IDE launcher) has no parent linkage on its RunStarted payload.
+func TestRun_TopLevelHasEmptyParentRunID(t *testing.T) {
+	store := persist.NewStore(t.TempDir())
+	result := &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent(`null`)}}
+	exec := newStubExecutor(result, nil)
+
+	runID, _, err := Run(context.Background(), store, exec, StartOptions{Skill: "demo", Flavor: "ts"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	events, err := store.Read(runID)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	var started persist.RunStartedPayload
+	if err := json.Unmarshal(events[0].Payload, &started); err != nil {
+		t.Fatalf("decode run_started: %v", err)
+	}
+	if started.ParentRunID != "" {
+		t.Fatalf("expected empty parent_run_id on top-level run, got %q", started.ParentRunID)
+	}
+}
+
+// TestRun_StashesRunIDAndRecorderOnDispatchContext confirms the
+// runner hands the downstream executor a ctx tagged with the run's ID
+// and recorder. Sandbox bindings read these via RunIDFromContext /
+// RecorderFromContext to emit per-call telemetry into the same
+// JSONL the runner opened.
+func TestRun_StashesRunIDAndRecorderOnDispatchContext(t *testing.T) {
+	store := persist.NewStore(t.TempDir())
+	captured := struct {
+		runID    string
+		recorder *persist.Recorder
+		hasRunID bool
+		hasRec   bool
+	}{}
+	exec := &capturingExecutor{
+		result: &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent(`null`)}},
+		onCall: func(ctx context.Context) {
+			captured.runID, captured.hasRunID = RunIDFromContext(ctx)
+			captured.recorder, captured.hasRec = RecorderFromContext(ctx)
+		},
+	}
+
+	runID, _, err := Run(context.Background(), store, exec, StartOptions{Skill: "demo", Flavor: "ts"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !captured.hasRunID || captured.runID != runID {
+		t.Fatalf("dispatcher ctx missing runID: got hasRunID=%v runID=%q want runID=%q", captured.hasRunID, captured.runID, runID)
+	}
+	if !captured.hasRec || captured.recorder == nil {
+		t.Fatalf("dispatcher ctx missing recorder: hasRec=%v rec=%v", captured.hasRec, captured.recorder)
+	}
+	if captured.recorder.RunID() != runID {
+		t.Fatalf("dispatcher recorder run_id = %q, want %q", captured.recorder.RunID(), runID)
+	}
+}
+
+type capturingExecutor struct {
+	result *mcp.ToolCallResult
+	onCall func(ctx context.Context)
+}
+
+func (e *capturingExecutor) CallTool(ctx context.Context, _ string, _ map[string]any) (*mcp.ToolCallResult, error) {
+	if e.onCall != nil {
+		e.onCall(ctx)
+	}
+	return e.result, nil
+}
+
 func TestStart_NonJSONOutputIsWrappedAsString(t *testing.T) {
 	store := persist.NewStore(t.TempDir())
 	result := &mcp.ToolCallResult{
