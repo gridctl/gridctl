@@ -4,8 +4,8 @@ package state
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -15,24 +15,55 @@ import (
 // FindOrphan looks for an orphan gridctl daemon listening on port — a
 // process that owns the port but has no managed state file (because
 // e.g. an earlier shutdown deleted state mid-way, or the daemon was
-// started by a pre-fix binary).
+// started in a mode that doesn't write state, like 'serve --foreground').
 //
-// Returns (pid, true, nil) only when both signals agree: the /health
-// endpoint responds 200 AND pgrep -f finds exactly one matching
-// gridctl --daemon-child process for that port. Any ambiguity
-// (multiple matches, no /health response, no matching process)
-// returns ok=false so the caller can fall through to the legacy
-// behavior rather than acting on guesswork.
+// Returns (pid, true, nil) only when all three signals agree:
+//  1. The /health endpoint on port responds 200.
+//  2. Exactly one process (after excluding our own PID) holds the TCP
+//     listen socket for that port.
+//  3. That process's executable basename is "gridctl".
 //
-// The pgrep pattern requires --daemon-child, which the parent
-// gridctl stop process never sets, so this can never match the
-// caller itself.
+// Any ambiguity — health probe fails, no listener, multiple listeners
+// after self-exclusion, or executable name mismatch — returns ok=false
+// so the caller falls through to the legacy behavior rather than acting
+// on guesswork.
 func FindOrphan(port int) (int, bool, error) {
-	if !probeHealth(port) {
+	if !probeHealthFn(port) {
 		return 0, false, nil
 	}
-	return runPgrep(port)
+
+	pids, err := listenerForPort(port)
+	if err != nil {
+		return 0, false, err
+	}
+
+	self := os.Getpid()
+	var candidates []int
+	for _, pid := range pids {
+		if pid == self {
+			continue
+		}
+		candidates = append(candidates, pid)
+	}
+	if len(candidates) != 1 {
+		return 0, false, nil
+	}
+
+	exe, err := executableForPID(candidates[0])
+	if err != nil || exe != "gridctl" {
+		return 0, false, nil
+	}
+	return candidates[0], true, nil
 }
+
+// Seams: package-level vars so tests can substitute fakes without
+// shelling out. The cmd/gridctl/stop_test.go file uses the same pattern
+// for findOrphan.
+var (
+	probeHealthFn    = probeHealth
+	listenerForPort  = lookupListenerPort
+	executableForPID = lookupExecutable
+)
 
 func probeHealth(port int) bool {
 	client := &http.Client{Timeout: 500 * time.Millisecond}
@@ -45,16 +76,19 @@ func probeHealth(port int) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func runPgrep(port int) (int, bool, error) {
-	pattern := fmt.Sprintf("gridctl.*--daemon-child.*--port %d", port)
-	out, err := exec.Command("pgrep", "-f", pattern).Output()
+// lookupListenerPort returns the PIDs currently holding a TCP listen
+// socket on port. Uses `lsof -nP -iTCP:<port> -sTCP:LISTEN -t`, whose
+// -t flag emits one numeric PID per line and nothing else. Exit code 1
+// from lsof means "no matches" and is reported as an empty slice rather
+// than an error.
+func lookupListenerPort(port int) ([]int, error) {
+	out, err := exec.Command("lsof", "-nP", "-iTCP:"+strconv.Itoa(port), "-sTCP:LISTEN", "-t").Output()
 	if err != nil {
-		// pgrep exit code 1 means "no matches" — not an error.
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return 0, false, nil
+			return nil, nil
 		}
-		return 0, false, fmt.Errorf("pgrep: %w", err)
+		return nil, err
 	}
 
 	var pids []int
@@ -65,8 +99,23 @@ func runPgrep(port int) (int, bool, error) {
 		}
 		pids = append(pids, pid)
 	}
-	if len(pids) != 1 {
-		return 0, false, nil
+	return pids, nil
+}
+
+// lookupExecutable returns the bare executable basename for pid via
+// `ps -o comm= -p <pid>`. Linux ps may decorate renamed threads with
+// parens; trim them so the returned name compares cleanly to "gridctl".
+func lookupExecutable(pid int) (string, error) {
+	out, err := exec.Command("ps", "-o", "comm=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return "", err
 	}
-	return pids[0], true, nil
+	name := strings.TrimSpace(string(out))
+	name = strings.Trim(name, "()")
+	// Some ps implementations return the full executable path; the
+	// daemon-vs-caller decision only cares about the basename.
+	if idx := strings.LastIndex(name, "/"); idx >= 0 {
+		name = name[idx+1:]
+	}
+	return name, nil
 }
