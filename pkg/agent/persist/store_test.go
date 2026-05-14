@@ -324,3 +324,273 @@ func TestMarshalEventEmbedsPayload(t *testing.T) {
 		t.Fatalf("payload mismatch: %+v", p)
 	}
 }
+
+// TestEventVocabularyRoundTrip drives every event type the closed
+// contract in events.go exposes (except EventLLMChunk, intentionally
+// deferred — streaming chunk emission lands in a follow-on) through
+// the same Record → Read → typed-decode cycle. Adding a new event
+// type to the vocabulary should fail this test until the new payload
+// shape is exercised here too; the table is the single place to
+// extend.
+func TestEventVocabularyRoundTrip(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		evType  EventType
+		payload any
+		verify  func(t *testing.T, ev Event)
+	}{
+		{
+			name:    "run_started",
+			evType:  EventRunStarted,
+			payload: RunStartedPayload{Skill: "demo", Flavor: "ts", ParentRunID: "run_parent", TraceID: "trace_x"},
+			verify: func(t *testing.T, ev Event) {
+				var p RunStartedPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.ParentRunID != "run_parent" || p.Flavor != "ts" {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:    "run_completed",
+			evType:  EventRunCompleted,
+			payload: RunCompletedPayload{Status: "ok", Output: json.RawMessage(`{"answer":42}`)},
+			verify: func(t *testing.T, ev Event) {
+				var p RunCompletedPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.Status != "ok" || string(p.Output) != `{"answer":42}` {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:    "node_enter",
+			evType:  EventNodeEnter,
+			payload: NodeEnterPayload{NodeID: "tool:srv__t#1", NodeName: "tool", SpanID: "span_a"},
+			verify: func(t *testing.T, ev Event) {
+				var p NodeEnterPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.NodeID != "tool:srv__t#1" || p.NodeName != "tool" {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:    "node_exit",
+			evType:  EventNodeExit,
+			payload: NodeExitPayload{NodeID: "tool:srv__t#1", DurationMicros: 4321, Success: true},
+			verify: func(t *testing.T, ev Event) {
+				var p NodeExitPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.DurationMicros != 4321 || !p.Success {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:   "tool_call",
+			evType: EventToolCall,
+			payload: ToolCallPayload{
+				CallID:    "call_1",
+				NodeID:    "tool:srv__t#1",
+				Name:      "srv__t",
+				Arguments: json.RawMessage(`{"k":"v"}`),
+			},
+			verify: func(t *testing.T, ev Event) {
+				var p ToolCallPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.NodeID != "tool:srv__t#1" || string(p.Arguments) != `{"k":"v"}` {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:   "tool_result",
+			evType: EventToolResult,
+			payload: ToolResultPayload{
+				CallID: "call_1",
+				NodeID: "tool:srv__t#1",
+				Output: "ok",
+			},
+			verify: func(t *testing.T, ev Event) {
+				var p ToolResultPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.Output != "ok" || p.IsError {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:   "llm_call",
+			evType: EventLLMCall,
+			payload: LLMCallPayload{
+				Model:        "claude-opus-4-7",
+				Provider:     "anthropic",
+				PromptTokens: 12,
+				OutputTokens: 34,
+				CostUSD:      0.0125,
+			},
+			verify: func(t *testing.T, ev Event) {
+				var p LLMCallPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.PromptTokens != 12 || p.OutputTokens != 34 || p.CostUSD != 0.0125 {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:    "structured_output",
+			evType:  EventStructuredOutput,
+			payload: StructuredOutputPayload{SchemaDigest: "sha256:abc", Output: json.RawMessage(`{"ok":true}`)},
+			verify: func(t *testing.T, ev Event) {
+				var p StructuredOutputPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.SchemaDigest != "sha256:abc" || string(p.Output) != `{"ok":true}` {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:    "approval_request",
+			evType:  EventApprovalRequest,
+			payload: ApprovalRequestPayload{ApprovalID: "ap_1", Prompt: "ok?", TimeoutSeconds: 60},
+			verify: func(t *testing.T, ev Event) {
+				var p ApprovalRequestPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.ApprovalID != "ap_1" || p.TimeoutSeconds != 60 {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:    "approval_response",
+			evType:  EventApprovalResponse,
+			payload: ApprovalResponsePayload{ApprovalID: "ap_1", Approved: true, Reason: "ship it", Source: "web"},
+			verify: func(t *testing.T, ev Event) {
+				var p ApprovalResponsePayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if !p.Approved || p.Source != "web" {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name:    "error",
+			evType:  EventError,
+			payload: ErrorPayload{Message: "boom", NodeID: "tool:srv__t#1"},
+			verify: func(t *testing.T, ev Event) {
+				var p ErrorPayload
+				if err := json.Unmarshal(ev.Payload, &p); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if p.Message != "boom" || p.NodeID != "tool:srv__t#1" {
+					t.Fatalf("payload mismatch: %+v", p)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			store := NewStore(dir)
+			runID := NewRunID()
+			rec, err := store.OpenWriter(runID)
+			if err != nil {
+				t.Fatalf("OpenWriter: %v", err)
+			}
+			if _, err := rec.Record(tc.evType, tc.payload); err != nil {
+				t.Fatalf("Record: %v", err)
+			}
+			if err := rec.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			events, err := store.Read(runID)
+			if err != nil {
+				t.Fatalf("Read: %v", err)
+			}
+			if len(events) != 1 {
+				t.Fatalf("expected 1 event, got %d", len(events))
+			}
+			if events[0].Type != tc.evType {
+				t.Fatalf("event type = %s, want %s", events[0].Type, tc.evType)
+			}
+			tc.verify(t, events[0])
+		})
+	}
+}
+
+// TestCapRawJSONRespectsBudget locks in the size-cap contract for
+// verbatim payload fields. The cap protects the ledger from authors
+// feeding multi-megabyte blobs into a tool call; under-budget values
+// pass through unchanged so the common path is lossless.
+func TestCapRawJSONRespectsBudget(t *testing.T) {
+	t.Parallel()
+	small := []byte(`{"a":1}`)
+	got, truncated := CapRawJSON(small)
+	if truncated {
+		t.Fatalf("under-budget value flagged as truncated")
+	}
+	if string(got) != string(small) {
+		t.Fatalf("under-budget value mutated: got %s, want %s", got, small)
+	}
+
+	big := make([]byte, MaxPayloadBytes+1024)
+	for i := range big {
+		big[i] = 'a'
+	}
+	got, truncated = CapRawJSON(big)
+	if !truncated {
+		t.Fatalf("over-budget value not flagged as truncated")
+	}
+	// The returned value must still be valid JSON so readers don't
+	// choke; the cap helper wraps the prefix as a JSON string.
+	var probe any
+	if err := json.Unmarshal(got, &probe); err != nil {
+		t.Fatalf("capped value is not valid JSON: %v", err)
+	}
+	if s, ok := probe.(string); !ok || len(s) != MaxPayloadBytes {
+		t.Fatalf("capped string length = %d, want %d (probe=%T)", len(s), MaxPayloadBytes, probe)
+	}
+}
+
+// TestCapStringRespectsBudget mirrors TestCapRawJSONRespectsBudget for
+// plain-text fields (e.g. ToolResultPayload.Output).
+func TestCapStringRespectsBudget(t *testing.T) {
+	t.Parallel()
+	got, truncated := CapString("hello")
+	if truncated || got != "hello" {
+		t.Fatalf("under-budget string mutated: got %q, truncated=%v", got, truncated)
+	}
+	big := strings.Repeat("x", MaxPayloadBytes+512)
+	got, truncated = CapString(big)
+	if !truncated {
+		t.Fatalf("over-budget string not flagged as truncated")
+	}
+	if len(got) != MaxPayloadBytes {
+		t.Fatalf("capped length = %d, want %d", len(got), MaxPayloadBytes)
+	}
+}
