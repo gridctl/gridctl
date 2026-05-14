@@ -99,6 +99,15 @@ type Bindings struct {
 	// SkillName is the registered skill name. Exposed as `skill.name`
 	// in the JS sandbox for parity with Go's ctx.SkillName().
 	SkillName string
+
+	// Session, when non-nil, is the per-invocation telemetry handle
+	// the bindings emit through. The runtime wires this to the
+	// parent run's recorder so external MCP clients firing tools/call
+	// against a typed skill see the same per-node trace the in-IDE
+	// Run Launcher produces. A nil Session disables emission — the
+	// bindings still function, the ledger just records the run's
+	// terminal boundaries only.
+	Session *RunSession
 }
 
 // SkillCaller is the dispatch surface handoff() uses. The signature
