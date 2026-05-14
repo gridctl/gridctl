@@ -205,6 +205,123 @@ func TestStart_RunStartedPayloadCarriesInput(t *testing.T) {
 	waitForStatus(t, store, runID)
 }
 
+func TestRun_HappyPathWritesStartedAndCompleted(t *testing.T) {
+	store := persist.NewStore(t.TempDir())
+	result := &mcp.ToolCallResult{
+		Content: []mcp.Content{mcp.NewTextContent(`{"ok":true}`)},
+	}
+	exec := newStubExecutor(result, nil)
+
+	runID, got, err := Run(context.Background(), store, exec, StartOptions{
+		Skill:    "demo",
+		Flavor:   "ts",
+		Input:    map[string]any{"name": "world"},
+		RawInput: json.RawMessage(`{"name":"world"}`),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if runID == "" {
+		t.Fatal("expected non-empty run id")
+	}
+	if got != result {
+		t.Fatal("expected the exec result returned unchanged")
+	}
+
+	summary, err := store.Summary(runID)
+	if err != nil {
+		t.Fatalf("Summary: %v", err)
+	}
+	if summary.Status != "ok" {
+		t.Fatalf("expected status=ok, got %q", summary.Status)
+	}
+	events, err := store.Read(runID)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events (run_started, run_completed), got %d", len(events))
+	}
+	if events[0].Type != persist.EventRunStarted {
+		t.Fatalf("event 0: expected run_started, got %s", events[0].Type)
+	}
+	if events[1].Type != persist.EventRunCompleted {
+		t.Fatalf("event 1: expected run_completed, got %s", events[1].Type)
+	}
+	var completed persist.RunCompletedPayload
+	if err := json.Unmarshal(events[1].Payload, &completed); err != nil {
+		t.Fatalf("decode run_completed: %v", err)
+	}
+	if string(completed.Output) != `{"ok":true}` {
+		t.Fatalf("unexpected output: %s", completed.Output)
+	}
+}
+
+func TestRun_ExecutorErrorRecordsErrorAndReturnsError(t *testing.T) {
+	store := persist.NewStore(t.TempDir())
+	exec := newStubExecutor(nil, errors.New("boom"))
+
+	runID, got, err := Run(context.Background(), store, exec, StartOptions{Skill: "demo", Flavor: "ts"})
+	if err == nil || err.Error() != "boom" {
+		t.Fatalf("expected boom error, got %v", err)
+	}
+	if got != nil {
+		t.Fatal("expected nil result on dispatch error")
+	}
+	summary, err := store.Summary(runID)
+	if err != nil {
+		t.Fatalf("Summary: %v", err)
+	}
+	if summary.Status != "error" {
+		t.Fatalf("expected status=error, got %q", summary.Status)
+	}
+	if summary.Error != "boom" {
+		t.Fatalf("expected error=%q, got %q", "boom", summary.Error)
+	}
+}
+
+func TestRun_IsErrorResultRecordsAsErrorAndForwardsResult(t *testing.T) {
+	store := persist.NewStore(t.TempDir())
+	result := &mcp.ToolCallResult{
+		Content: []mcp.Content{mcp.NewTextContent("auth failed")},
+		IsError: true,
+	}
+	exec := newStubExecutor(result, nil)
+
+	runID, got, err := Run(context.Background(), store, exec, StartOptions{Skill: "demo", Flavor: "ts"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got != result {
+		t.Fatal("expected IsError result forwarded so the caller can put it on the wire")
+	}
+	summary, err := store.Summary(runID)
+	if err != nil {
+		t.Fatalf("Summary: %v", err)
+	}
+	if summary.Status != "error" {
+		t.Fatalf("expected status=error, got %q", summary.Status)
+	}
+	if !strings.Contains(summary.Error, "auth failed") {
+		t.Fatalf("expected error to include %q, got %q", "auth failed", summary.Error)
+	}
+}
+
+func TestRun_RejectsMissingDependencies(t *testing.T) {
+	store := persist.NewStore(t.TempDir())
+	exec := newStubExecutor(nil, nil)
+
+	if _, _, err := Run(context.Background(), nil, exec, StartOptions{Skill: "demo"}); err == nil {
+		t.Fatal("expected error for nil store")
+	}
+	if _, _, err := Run(context.Background(), store, nil, StartOptions{Skill: "demo"}); err == nil {
+		t.Fatal("expected error for nil executor")
+	}
+	if _, _, err := Run(context.Background(), store, exec, StartOptions{Skill: ""}); err == nil {
+		t.Fatal("expected error for empty skill")
+	}
+}
+
 func TestStart_NonJSONOutputIsWrappedAsString(t *testing.T) {
 	store := persist.NewStore(t.TempDir())
 	result := &mcp.ToolCallResult{
