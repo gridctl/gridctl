@@ -52,6 +52,73 @@ type StartOptions struct {
 	RawInput json.RawMessage
 }
 
+// Run opens a new run ledger, writes EventRunStarted synchronously,
+// dispatches the skill synchronously via exec, records the terminal
+// event, and closes the recorder before returning. Unlike Start it
+// blocks until dispatch completes and returns both the run ID and the
+// tool-call result so callers (e.g. the MCP transport, which must put
+// the result on the wire) can surface them together.
+//
+// ctx is propagated as-is to the dispatcher — cancellation does flow
+// through, so an interrupted MCP request records an error event and
+// returns ctx.Err() to the caller.
+func Run(ctx context.Context, store *persist.Store, exec Executor, opts StartOptions) (string, *mcp.ToolCallResult, error) {
+	if store == nil {
+		return "", nil, errors.New("runner: store is required")
+	}
+	if exec == nil {
+		return "", nil, errors.New("runner: executor is required")
+	}
+	if opts.Skill == "" {
+		return "", nil, errors.New("runner: skill is required")
+	}
+
+	runID := persist.NewRunID()
+	rec, err := store.OpenWriter(runID)
+	if err != nil {
+		return "", nil, fmt.Errorf("runner: opening run ledger: %w", err)
+	}
+	defer func() {
+		if cerr := rec.Close(); cerr != nil {
+			slog.Warn("runner: closing recorder", "run_id", runID, "err", cerr)
+		}
+	}()
+
+	if _, err := rec.Record(persist.EventRunStarted, persist.RunStartedPayload{
+		Skill:  opts.Skill,
+		Flavor: opts.Flavor,
+		Input:  opts.RawInput,
+	}); err != nil {
+		return "", nil, fmt.Errorf("runner: recording run_started: %w", err)
+	}
+
+	args := opts.Input
+	if args == nil {
+		args = map[string]any{}
+	}
+
+	result, callErr := exec.CallTool(ctx, opts.Skill, args)
+	if callErr != nil {
+		recordFailure(rec, callErr.Error())
+		return runID, nil, callErr
+	}
+	if result != nil && result.IsError {
+		msg := extractText(result)
+		if msg == "" {
+			msg = "skill returned error result"
+		}
+		recordFailure(rec, msg)
+		return runID, result, nil
+	}
+	if _, err := rec.Record(persist.EventRunCompleted, persist.RunCompletedPayload{
+		Status: "ok",
+		Output: outputFromResult(result),
+	}); err != nil {
+		slog.Warn("runner: recording run_completed", "run_id", runID, "err", err)
+	}
+	return runID, result, nil
+}
+
 // Start opens a new run ledger, writes EventRunStarted synchronously,
 // and dispatches the skill asynchronously via exec. Returns the run ID
 // and the started_at timestamp from the recorded event. The async

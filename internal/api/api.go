@@ -103,12 +103,19 @@ type Server struct {
 
 // NewServer creates a new API server.
 func NewServer(gateway *mcp.Gateway, staticFS fs.FS) *Server {
-	return &Server{
-		gateway:            gateway,
-		streamableServer:   mcp.NewStreamableHTTPServer(gateway, nil),
-		sseServer:          mcp.NewSSEServer(gateway),
-		staticFS:           staticFS,
+	s := &Server{
+		gateway:          gateway,
+		streamableServer: mcp.NewStreamableHTTPServer(gateway, nil),
+		sseServer:        mcp.NewSSEServer(gateway),
+		staticFS:         staticFS,
 	}
+	// Wire the run-persister adapter so MCP tools/call against typed
+	// skills lands in ~/.gridctl/runs/<run_id>.jsonl alongside Run
+	// Launcher invocations. The adapter resolves the store and
+	// registry lazily, so SetRegistryServer / SetAgentRunStore /
+	// SetAgentRuntime can land in any order without losing wiring.
+	gateway.SetRunPersister(newRunPersisterAdapter(s))
+	return s
 }
 
 // SetDockerClient sets the Docker client for container operations.
