@@ -2,6 +2,8 @@ package sandbox
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -12,6 +14,20 @@ import (
 	"github.com/gridctl/gridctl/pkg/agent"
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
+
+// newCallID produces a per-binding call identifier used to pair
+// EventToolCall with EventToolResult (and EventApprovalRequest with
+// EventApprovalResponse). 8 random bytes is overkill for one run's
+// scope but keeps the wire format aligned with persist.NewRunID's
+// random-suffix shape. Failure to read entropy falls back to a static
+// placeholder — callers downstream tolerate any non-empty string.
+func newCallID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return "call_static"
+	}
+	return "call_" + hex.EncodeToString(buf)
+}
 
 // keepAliveSlack is the headroom over the sandbox execution timeout
 // that the asyncDeliver watchdog uses. The runCtx watchdog in
@@ -123,16 +139,38 @@ func installToolBinding(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context
 			panic(vm.NewGoError(err))
 		}
 
+		// Emit node_enter + tool_call synchronously on the goja
+		// thread so the wire-order of "tool dispatched at T" matches
+		// the JSONL order; the matching tool_result + node_exit are
+		// written from the goroutine before asyncDeliver settles the
+		// Promise, preserving causal ordering across the boundary.
+		nodeID := b.Session.NextNodeID("tool", resolved)
+		b.Session.RecordNodeEnter(nodeID, "tool")
+		callID := newCallID()
+		b.Session.RecordToolCall(nodeID, callID, resolved, args)
+		started := time.Now()
+
 		promise, resolve, reject := vm.NewPromise()
 		deliver := asyncDeliver(vm, loop, timeout, reject, fmt.Sprintf("tool %q", resolved))
 		go func() {
 			res, err := b.ToolCaller.CallTool(ctx, resolved, args)
-			deliver(func(vm *goja.Runtime) {
-				if err != nil {
+			// Record terminal events on the goroutine BEFORE the
+			// deliver hop so the ledger reflects causal completion
+			// even if loop.RunOnLoop is delayed by a long-running
+			// JS tick.
+			if err != nil {
+				b.Session.RecordToolResult(nodeID, callID, err.Error(), true)
+				b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), false)
+				deliver(func(vm *goja.Runtime) {
 					_ = reject(vm.NewGoError(fmt.Errorf("tool %q: %w", resolved, err)))
-					return
-				}
-				if res != nil && res.IsError {
+				})
+				return
+			}
+			isErr := res != nil && res.IsError
+			b.Session.RecordToolResult(nodeID, callID, contentText(res), isErr)
+			b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), !isErr)
+			deliver(func(vm *goja.Runtime) {
+				if isErr {
 					_ = reject(vm.NewGoError(fmt.Errorf("tool %q error: %s", resolved, contentText(res))))
 					return
 				}
@@ -192,15 +230,27 @@ func installLLMBinding(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.
 			panic(vm.NewGoError(err))
 		}
 
+		nodeID := b.Session.NextNodeID("llm", req.Model)
+		b.Session.RecordNodeEnter(nodeID, "llm")
+		started := time.Now()
+
 		promise, resolve, reject := vm.NewPromise()
 		deliver := asyncDeliver(vm, loop, timeout, reject, "llm")
 		go func() {
 			resp, err := b.ChatModel.Generate(ctx, req)
-			deliver(func(vm *goja.Runtime) {
-				if err != nil {
+			if err != nil {
+				b.Session.RecordError(nodeID, err.Error())
+				b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), false)
+				deliver(func(vm *goja.Runtime) {
 					_ = reject(vm.NewGoError(fmt.Errorf("llm: %w", err)))
-					return
-				}
+				})
+				return
+			}
+			// Token counts and cost arrive only after the provider
+			// replies; emit llm_call once on completion.
+			b.Session.RecordLLMCall(req.Model, "", resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.CacheReadTokens, resp.Usage.CacheWriteTokens, 0)
+			b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), true)
+			deliver(func(vm *goja.Runtime) {
 				_ = resolve(vm.ToValue(chatResponseToMap(resp)))
 			})
 		}()
@@ -386,16 +436,35 @@ func installHandoffBinding(vm *goja.Runtime, loop *eventloop.EventLoop, ctx cont
 			input = normalizeArgs(call.Arguments[1].Export())
 		}
 
+		// handoff() routes through the SkillCaller adapter that opens
+		// a child recorder via runner.Run when the parent ctx carries
+		// a run id; from the parent's perspective the call surfaces
+		// as a single "skill:<name>#N" node, and the child run's own
+		// JSONL ledger carries the per-node detail with
+		// ParentRunID pointing back at the parent.
+		nodeID := b.Session.NextNodeID("skill", name)
+		b.Session.RecordNodeEnter(nodeID, "skill")
+		callID := newCallID()
+		b.Session.RecordToolCall(nodeID, callID, name, input)
+		started := time.Now()
+
 		promise, resolve, reject := vm.NewPromise()
 		deliver := asyncDeliver(vm, loop, timeout, reject, fmt.Sprintf("handoff %q", name))
 		go func() {
 			res, err := b.SkillCaller.CallTool(ctx, name, input)
-			deliver(func(vm *goja.Runtime) {
-				if err != nil {
+			if err != nil {
+				b.Session.RecordToolResult(nodeID, callID, err.Error(), true)
+				b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), false)
+				deliver(func(vm *goja.Runtime) {
 					_ = reject(vm.NewGoError(fmt.Errorf("handoff %q: %w", name, err)))
-					return
-				}
-				if res != nil && res.IsError {
+				})
+				return
+			}
+			isErr := res != nil && res.IsError
+			b.Session.RecordToolResult(nodeID, callID, contentText(res), isErr)
+			b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), !isErr)
+			deliver(func(vm *goja.Runtime) {
+				if isErr {
 					_ = reject(vm.NewGoError(fmt.Errorf("handoff %q error: %s", name, contentText(res))))
 					return
 				}
@@ -418,9 +487,21 @@ func installApprovalBinding(vm *goja.Runtime, loop *eventloop.EventLoop, ctx con
 		if len(call.Arguments) >= 1 {
 			prompt = call.Arguments[0].String()
 		}
+
+		nodeID := b.Session.NextNodeID("approval", "")
+		b.Session.RecordNodeEnter(nodeID, "approval")
+		approvalID := newCallID()
+		b.Session.RecordApprovalRequest(approvalID, prompt)
+		started := time.Now()
+
 		promise, resolve, reject := vm.NewPromise()
 		deliver := asyncDeliver(vm, loop, timeout, reject, "approval")
 		if approver == nil {
+			// Stub auto-approver — record the synthetic response so
+			// the ledger still has a paired request/response shape
+			// and the inspector can render the gate cleanly.
+			b.Session.RecordApprovalResponse(approvalID, true, prompt, "auto")
+			b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), true)
 			deliver(func(vm *goja.Runtime) {
 				_ = resolve(vm.ToValue(map[string]any{
 					"approved":  true,
@@ -432,11 +513,23 @@ func installApprovalBinding(vm *goja.Runtime, loop *eventloop.EventLoop, ctx con
 		}
 		go func() {
 			decision, err := approver.Approve(ctx, prompt)
-			deliver(func(vm *goja.Runtime) {
-				if err != nil {
+			if err != nil {
+				// Emit a synthetic approval_response carrying the
+				// error so the request/response pair the inspector
+				// joins by ApprovalID stays intact — an orphan
+				// EventApprovalRequest would otherwise render as a
+				// permanently-suspended gate.
+				b.Session.RecordApprovalResponse(approvalID, false, err.Error(), "error")
+				b.Session.RecordError(nodeID, err.Error())
+				b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), false)
+				deliver(func(vm *goja.Runtime) {
 					_ = reject(vm.NewGoError(fmt.Errorf("approval: %w", err)))
-					return
-				}
+				})
+				return
+			}
+			b.Session.RecordApprovalResponse(approvalID, decision.Approved, decision.Reason, "")
+			b.Session.RecordNodeExit(nodeID, time.Since(started).Microseconds(), decision.Approved)
+			deliver(func(vm *goja.Runtime) {
 				_ = resolve(vm.ToValue(map[string]any{
 					"approved":  decision.Approved,
 					"reason":    decision.Reason,
