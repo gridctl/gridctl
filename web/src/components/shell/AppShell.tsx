@@ -16,6 +16,8 @@ import { usePolling } from '../../hooks/usePolling';
 import { useSSEShutdown } from '../../hooks/useSSEShutdown';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
+import { useGlobalRunsStream } from '../runs/useGlobalRunsStream';
+import { useRunsCommands } from '../runs/useRunsCommands';
 import { isWorkspace, type Workspace, WORKSPACES } from '../../types/workspace';
 import {
   LAST_WORKSPACE_GLOBAL_KEY,
@@ -116,6 +118,12 @@ function AppShellInner() {
   });
 
   useGlobalCommands({ onRefresh: handleRefresh });
+
+  // Keep the global run-events stream open across every workspace so
+  // the BottomPanel "Runs" tab + in-flight badge stay live when the
+  // user is sitting on /topology or /skills.
+  useGlobalRunsStream();
+  useRunsCommands();
 
   const bottomRowHeight = bottomPanelOpen ? bottomPanelHeight : BOTTOM_PANEL_COLLAPSED;
 
