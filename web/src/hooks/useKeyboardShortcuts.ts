@@ -14,6 +14,8 @@ interface ShortcutOptions {
   onSwitchToTopology?: () => void;
   onSwitchToSkills?: () => void;
   onSwitchToRuns?: () => void;
+  // ⌘\ toggles Compact Mode for the active workspace.
+  onToggleCompactMode?: () => void;
 }
 
 export function useKeyboardShortcuts(options: ShortcutOptions) {
@@ -90,6 +92,12 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
       if (isMod && e.key === 'k') {
         e.preventDefault();
         options.onOpenPalette?.();
+      }
+
+      // Toggle Compact Mode: Cmd/Ctrl+\
+      if (isMod && e.key === '\\') {
+        e.preventDefault();
+        options.onToggleCompactMode?.();
       }
     };
 

@@ -65,6 +65,8 @@ function AppShellInner() {
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen);
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
   const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace);
+  const activeWorkspace = useUIStore((s) => s.activeWorkspace);
+  const toggleCompactMode = useUIStore((s) => s.toggleCompactMode);
 
   const authRequired = useAuthStore((s) => s.authRequired);
 
@@ -115,6 +117,7 @@ function AppShellInner() {
     onSwitchToTopology: () => navigate(`/${WORKSPACES[0]}`),
     onSwitchToSkills: () => navigate(`/${WORKSPACES[1]}`),
     onSwitchToRuns: () => navigate(`/${WORKSPACES[2]}`),
+    onToggleCompactMode: () => toggleCompactMode(activeWorkspace),
   });
 
   useGlobalCommands({ onRefresh: handleRefresh });

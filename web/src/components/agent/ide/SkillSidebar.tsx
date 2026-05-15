@@ -14,7 +14,7 @@ interface SkillSidebarProps {
   loading?: boolean;
   error?: string | null;
   /**
-   * AgentIDE bumps this each time a run is launched — the Runs tab
+   * SkillsWorkspace bumps this each time a run is launched — the Runs tab
    * uses it to re-fetch the list so the newly-started run appears
    * at the top without waiting for the next mount.
    */

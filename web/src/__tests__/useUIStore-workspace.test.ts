@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useUIStore } from '../stores/useUIStore';
+import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
 
 describe('useUIStore workspace slice', () => {
   beforeEach(() => {
@@ -28,5 +28,41 @@ describe('useUIStore workspace slice', () => {
       });
       expect(result.current).toBe(ws);
     }
+  });
+});
+
+describe('useUIStore compact mode slice', () => {
+  beforeEach(() => {
+    useUIStore.setState({ compactMode: { ...COMPACT_MODE_DEFAULTS } });
+  });
+
+  it('defaults compactMode to skills-on, topology/runs-off', () => {
+    const state = useUIStore.getState();
+    expect(state.compactMode.skills).toBe(true);
+    expect(state.compactMode.topology).toBe(false);
+    expect(state.compactMode.runs).toBe(false);
+  });
+
+  it('setCompactMode updates a single workspace without touching the others', () => {
+    act(() => {
+      useUIStore.getState().setCompactMode('topology', true);
+    });
+    const state = useUIStore.getState();
+    expect(state.compactMode.topology).toBe(true);
+    expect(state.compactMode.skills).toBe(true);
+    expect(state.compactMode.runs).toBe(false);
+  });
+
+  it('toggleCompactMode flips only the targeted workspace', () => {
+    act(() => {
+      useUIStore.getState().toggleCompactMode('skills');
+    });
+    expect(useUIStore.getState().compactMode.skills).toBe(false);
+    act(() => {
+      useUIStore.getState().toggleCompactMode('skills');
+    });
+    expect(useUIStore.getState().compactMode.skills).toBe(true);
+    // Other workspaces unaffected.
+    expect(useUIStore.getState().compactMode.topology).toBe(false);
   });
 });

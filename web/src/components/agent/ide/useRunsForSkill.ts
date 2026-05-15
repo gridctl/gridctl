@@ -21,7 +21,7 @@ export interface UseRunsForSkillOptions {
    */
   fetchLimit?: number;
   /**
-   * Bumping this value re-runs the fetch. Used by AgentIDE to
+   * Bumping this value re-runs the fetch. Used by SkillsWorkspace to
    * refresh the sidebar list when a new run is launched.
    */
   refreshKey?: number | string;
@@ -39,7 +39,7 @@ export interface UseRunsForSkillResult {
  * RunLauncherModal's "Run like…" picker and the SkillSidebar's Runs
  * tab. The single hook keeps the two surfaces honest about what a
  * "run" looks like and lets either surface refresh the other (via
- * the AgentIDE-managed refreshKey) when a new run is launched.
+ * the SkillsWorkspace-managed refreshKey) when a new run is launched.
  *
  * The hook returns the unsorted server order — the API already
  * returns `started_at` desc. Consumers that need other orderings can

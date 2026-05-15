@@ -16,7 +16,7 @@ import {
 
 interface RunsListProps {
   /**
-   * Bump to force a re-fetch — AgentIDE increments this when a new
+   * Bump to force a re-fetch — SkillsWorkspace increments this when a new
    * run is launched so the sidebar reflects the new row immediately.
    */
   refreshKey: number;

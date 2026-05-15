@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { StateCreator } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Workspace } from '../types/workspace';
+import { WORKSPACES, type Workspace } from '../types/workspace';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
 type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces' | 'runs' | 'pins';
@@ -24,7 +24,53 @@ export const createWorkspaceSlice: StateCreator<
   setActiveWorkspace: (activeWorkspace) => set({ activeWorkspace }),
 });
 
-interface UIState extends WorkspaceSlice {
+// Compact Mode is workspace-scoped — Skills wants density by default so the
+// three-pane IDE doesn't compete with the shell chrome for real estate;
+// Topology and Runs prefer roomier defaults.
+export type CompactModeMap = Record<Workspace, boolean>;
+
+export const COMPACT_MODE_DEFAULTS: CompactModeMap = {
+  topology: false,
+  skills: true,
+  runs: false,
+};
+
+export interface CompactModeSlice {
+  compactMode: CompactModeMap;
+  setCompactMode: (workspace: Workspace, value: boolean) => void;
+  toggleCompactMode: (workspace: Workspace) => void;
+}
+
+export const createCompactModeSlice: StateCreator<
+  UIState,
+  [['zustand/persist', unknown]],
+  [],
+  CompactModeSlice
+> = (set) => ({
+  compactMode: { ...COMPACT_MODE_DEFAULTS },
+  setCompactMode: (workspace, value) =>
+    set((s) => ({ compactMode: { ...s.compactMode, [workspace]: value } })),
+  toggleCompactMode: (workspace) =>
+    set((s) => ({
+      compactMode: { ...s.compactMode, [workspace]: !s.compactMode[workspace] },
+    })),
+});
+
+// Persisted shape may drift from the canonical {topology, skills, runs} keys
+// across versions — coerce so a stale localStorage payload never leaves a
+// workspace with `undefined` compact state at boot.
+function normalizeCompactMode(raw: unknown): CompactModeMap {
+  const out = { ...COMPACT_MODE_DEFAULTS };
+  if (raw && typeof raw === 'object') {
+    for (const ws of WORKSPACES) {
+      const v = (raw as Record<string, unknown>)[ws];
+      if (typeof v === 'boolean') out[ws] = v;
+    }
+  }
+  return out;
+}
+
+interface UIState extends WorkspaceSlice, CompactModeSlice {
   sidebarOpen: boolean;
   activeTab: SidebarTab;
   edgeStyle: EdgeStyle;
@@ -106,6 +152,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set, get, store) => ({
       ...createWorkspaceSlice(set, get, store),
+      ...createCompactModeSlice(set, get, store),
       sidebarOpen: false,
       activeTab: 'details',
       edgeStyle: 'default', // Bezier curves
@@ -196,6 +243,14 @@ export const useUIStore = create<UIState>()(
       partialize: (state) => ({
         edgeStyle: state.edgeStyle,
         compactCards: state.compactCards,
+        compactMode: state.compactMode,
+      }),
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as Partial<UIState>),
+        // Re-normalize to guarantee every workspace key is present even if a
+        // user upgrades from a build that only persisted a subset.
+        compactMode: normalizeCompactMode((persisted as { compactMode?: unknown })?.compactMode),
       }),
     }
   )

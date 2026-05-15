@@ -30,6 +30,7 @@ import type {
   MCPServerStatus,
   ResourceStatus,
 } from '../types';
+import { DetachedSkillsSidebar } from '../components/skills/DetachedSkillsSidebar';
 
 // Error boundary for detached window
 interface ErrorBoundaryState {
@@ -281,13 +282,24 @@ function DetachedSidebarPageContent() {
   );
 }
 
-// Export with error boundary wrapper
+// Export with error boundary wrapper. Routes to the workspace-appropriate
+// inspector body so /sidebar?workspace=skills renders NodeDetail while the
+// default Topology behavior is unchanged.
 export function DetachedSidebarPage() {
   return (
     <DetachedErrorBoundary>
-      <DetachedSidebarPageContent />
+      <WorkspaceRouter />
     </DetachedErrorBoundary>
   );
+}
+
+function WorkspaceRouter() {
+  const [searchParams] = useSearchParams();
+  const workspace = searchParams.get('workspace');
+  if (workspace === 'skills') {
+    return <DetachedSkillsSidebar />;
+  }
+  return <DetachedSidebarPageContent />;
 }
 
 // Node details component

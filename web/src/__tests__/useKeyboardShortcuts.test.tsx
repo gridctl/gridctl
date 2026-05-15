@@ -51,4 +51,11 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     fireMod('k');
     expect(onOpenPalette).toHaveBeenCalledTimes(1);
   });
+
+  it('⌘\\ calls onToggleCompactMode', () => {
+    const onToggleCompactMode = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onToggleCompactMode }));
+    fireMod('\\');
+    expect(onToggleCompactMode).toHaveBeenCalledTimes(1);
+  });
 });
