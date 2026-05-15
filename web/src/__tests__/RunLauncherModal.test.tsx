@@ -8,7 +8,7 @@ vi.mock('../lib/agent-runs', async () => {
   );
   return {
     ...actual,
-    fetchAgentRuns: vi.fn().mockResolvedValue([]),
+    fetchAgentRuns: vi.fn().mockResolvedValue({ runs: [] }),
     fetchAgentRun: vi.fn().mockResolvedValue(null),
     launchRun: vi.fn(),
   };
@@ -28,7 +28,7 @@ const mockedFetchAgentRun = vi.mocked(fetchAgentRun);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedFetchAgentRuns.mockResolvedValue([]);
+  mockedFetchAgentRuns.mockResolvedValue({ runs: [] });
   mockedFetchAgentRun.mockResolvedValue(null);
   window.localStorage.clear();
 });
@@ -167,22 +167,24 @@ describe('RunLauncherModal', () => {
   });
 
   it('populates the Run-like picker with prior runs of this skill', async () => {
-    mockedFetchAgentRuns.mockResolvedValueOnce([
-      {
-        run_id: 'a-prev-1',
-        skill: 'repo-audit',
-        status: 'completed',
-        started_at: '2026-05-13T16:00:00Z',
-        event_count: 4,
-      },
-      {
-        run_id: 'b-other',
-        skill: 'something-else',
-        status: 'completed',
-        started_at: '2026-05-13T16:30:00Z',
-        event_count: 2,
-      },
-    ]);
+    mockedFetchAgentRuns.mockResolvedValueOnce({
+      runs: [
+        {
+          run_id: 'a-prev-1',
+          skill: 'repo-audit',
+          status: 'completed',
+          started_at: '2026-05-13T16:00:00Z',
+          event_count: 4,
+        },
+        {
+          run_id: 'b-other',
+          skill: 'something-else',
+          status: 'completed',
+          started_at: '2026-05-13T16:30:00Z',
+          event_count: 2,
+        },
+      ],
+    });
     renderModal();
     await waitFor(() => {
       // The picker option label includes the short run id "a-prev-1"
