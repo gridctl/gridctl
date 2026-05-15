@@ -5,14 +5,17 @@ import {
   BarChart3,
   FileCode2,
   Activity,
+  PlayCircle,
   LockOpen,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
+import { useRunsStore } from '../../stores/useRunsStore';
 import { LogsTab } from '../log/LogsTab';
 import { MetricsTab } from '../metrics/MetricsTab';
 import { SpecTab } from '../spec/SpecTab';
 import { TracesTab } from '../traces/TracesTab';
+import { RunsBottomTab } from '../runs/RunsBottomTab';
 import { PinsPanel } from '../pins/PinsPanel';
 
 const TABS = [
@@ -20,6 +23,7 @@ const TABS = [
   { id: 'metrics' as const, label: 'Metrics', icon: BarChart3 },
   { id: 'spec' as const, label: 'Spec', icon: FileCode2 },
   { id: 'traces' as const, label: 'Traces', icon: Activity },
+  { id: 'runs' as const, label: 'Runs', icon: PlayCircle },
   { id: 'pins' as const, label: 'Pins', icon: LockOpen },
 ];
 
@@ -31,6 +35,7 @@ export function BottomPanel() {
   const logsDetached = useUIStore((s) => s.logsDetached);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
   const tracesDetached = useUIStore((s) => s.tracesDetached);
+  const inFlightCount = useRunsStore((s) => s.inFlightRuns.size);
 
   return (
     <div
@@ -65,6 +70,7 @@ export function BottomPanel() {
           <div role="tablist" aria-label="Bottom panel tabs" className="flex items-center gap-1">
           {TABS.map((tab) => {
             const isActive = bottomPanelTab === tab.id;
+            const badge = tab.id === 'runs' && inFlightCount > 0 ? inFlightCount : null;
             return (
               <button
                 key={tab.id}
@@ -84,6 +90,18 @@ export function BottomPanel() {
               >
                 <tab.icon size={12} className={isActive ? 'text-primary' : ''} />
                 {tab.label}
+                {badge != null && (
+                  <span
+                    aria-label={`${badge} in flight`}
+                    className={cn(
+                      'inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full',
+                      'text-[9px] font-mono leading-none',
+                      'bg-status-running/15 text-status-running border border-status-running/30',
+                    )}
+                  >
+                    {badge}
+                  </span>
+                )}
                 {/* Active indicator */}
                 {isActive && (
                   <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary rounded-full" />
@@ -109,6 +127,9 @@ export function BottomPanel() {
           </div>
           <div id="panel-traces" role="tabpanel" aria-labelledby="tab-traces" className={cn('absolute inset-0', bottomPanelTab !== 'traces' && 'invisible')}>
             <TracesTab />
+          </div>
+          <div id="panel-runs" role="tabpanel" aria-labelledby="tab-runs" className={cn('absolute inset-0', bottomPanelTab !== 'runs' && 'invisible')}>
+            <RunsBottomTab />
           </div>
           <div id="panel-pins" role="tabpanel" aria-labelledby="tab-pins" className={cn('absolute inset-0', bottomPanelTab !== 'pins' && 'invisible')}>
             <PinsPanel />
