@@ -56,6 +56,27 @@ export const createCompactModeSlice: StateCreator<
     })),
 });
 
+// Global toggle for the AppShell-level SSE runs stream. Lives here so both the
+// BottomPanel header toggle and the StatusBar chip share a single source of
+// truth — flipping one updates the other instantly via the store.
+export interface RunsStreamSlice {
+  runsStreamEnabled: boolean;
+  setRunsStreamEnabled: (enabled: boolean) => void;
+  toggleRunsStreamEnabled: () => void;
+}
+
+export const createRunsStreamSlice: StateCreator<
+  UIState,
+  [['zustand/persist', unknown]],
+  [],
+  RunsStreamSlice
+> = (set) => ({
+  runsStreamEnabled: true,
+  setRunsStreamEnabled: (runsStreamEnabled) => set({ runsStreamEnabled }),
+  toggleRunsStreamEnabled: () =>
+    set((s) => ({ runsStreamEnabled: !s.runsStreamEnabled })),
+});
+
 // Persisted shape may drift from the canonical {topology, skills, runs} keys
 // across versions — coerce so a stale localStorage payload never leaves a
 // workspace with `undefined` compact state at boot.
@@ -70,7 +91,7 @@ function normalizeCompactMode(raw: unknown): CompactModeMap {
   return out;
 }
 
-interface UIState extends WorkspaceSlice, CompactModeSlice {
+interface UIState extends WorkspaceSlice, CompactModeSlice, RunsStreamSlice {
   sidebarOpen: boolean;
   activeTab: SidebarTab;
   edgeStyle: EdgeStyle;
@@ -153,6 +174,7 @@ export const useUIStore = create<UIState>()(
     (set, get, store) => ({
       ...createWorkspaceSlice(set, get, store),
       ...createCompactModeSlice(set, get, store),
+      ...createRunsStreamSlice(set, get, store),
       sidebarOpen: false,
       activeTab: 'details',
       edgeStyle: 'default', // Bezier curves
@@ -244,6 +266,7 @@ export const useUIStore = create<UIState>()(
         edgeStyle: state.edgeStyle,
         compactCards: state.compactCards,
         compactMode: state.compactMode,
+        runsStreamEnabled: state.runsStreamEnabled,
       }),
       merge: (persisted, current) => ({
         ...current,

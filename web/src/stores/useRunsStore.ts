@@ -67,7 +67,7 @@ interface RunsState {
   inFlightRuns: Set<string>;
 
   /** Status of the global event stream. */
-  streamStatus: 'idle' | 'connecting' | 'open' | 'restarted' | 'error';
+  streamStatus: 'idle' | 'connecting' | 'open' | 'restarted' | 'error' | 'paused';
 
   // Actions ─────────────────────────────────────────────────────────────────
 

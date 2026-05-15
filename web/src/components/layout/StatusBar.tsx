@@ -1,6 +1,7 @@
 import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, Gauge, ArrowDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
+import { useUIStore } from '../../stores/useUIStore';
 import { formatRelativeTime } from '../../lib/time';
 import { formatCompactNumber } from '../../lib/format';
 import { SpecHealthBadge } from '../spec/SpecHealthBadge';
@@ -16,6 +17,8 @@ export function StatusBar() {
   const connectionStatus = useStackStore((s) => s.connectionStatus);
   const lastUpdated = useStackStore((s) => s.lastUpdated);
   const error = useStackStore((s) => s.error);
+  const runsStreamEnabled = useUIStore((s) => s.runsStreamEnabled);
+  const toggleRunsStreamEnabled = useUIStore((s) => s.toggleRunsStreamEnabled);
 
   const runningServers = (mcpServers ?? []).filter((s) => s.initialized).length;
   const unhealthyServers = (mcpServers ?? []).filter((s) => s.healthy === false).length;
@@ -41,6 +44,37 @@ export function StatusBar() {
           </span>
           <span className="font-medium">{isConnected ? 'Connected' : error || 'Disconnected'}</span>
         </div>
+
+        {/* Divider */}
+        <div className="w-px h-3 bg-border/50" />
+
+        {/* Runs SSE stream — click to pause/resume. Mirrors the BottomPanel toggle. */}
+        <button
+          type="button"
+          onClick={toggleRunsStreamEnabled}
+          aria-pressed={runsStreamEnabled}
+          title={
+            runsStreamEnabled
+              ? 'Pause real-time run updates'
+              : 'Resume real-time run updates'
+          }
+          className={cn(
+            'flex items-center gap-2 px-2 py-0.5 rounded-full transition-colors',
+            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
+            runsStreamEnabled
+              ? 'text-status-running hover:bg-status-running/10'
+              : 'text-text-muted hover:bg-surface-highlight/40',
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'w-1.5 h-1.5 rounded-full',
+              runsStreamEnabled ? 'bg-status-running animate-pulse' : 'bg-text-muted/60',
+            )}
+          />
+          <span className="font-medium">{runsStreamEnabled ? 'Live' : 'Paused'}</span>
+        </button>
 
         {/* Divider */}
         <div className="w-px h-3 bg-border/50" />

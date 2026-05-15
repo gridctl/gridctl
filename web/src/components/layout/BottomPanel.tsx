@@ -35,6 +35,8 @@ export function BottomPanel() {
   const logsDetached = useUIStore((s) => s.logsDetached);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
   const tracesDetached = useUIStore((s) => s.tracesDetached);
+  const runsStreamEnabled = useUIStore((s) => s.runsStreamEnabled);
+  const toggleRunsStreamEnabled = useUIStore((s) => s.toggleRunsStreamEnabled);
   const inFlightCount = useRunsStore((s) => s.inFlightRuns.size);
 
   return (
@@ -111,6 +113,34 @@ export function BottomPanel() {
           })}
           </div>
         </div>
+
+        {/* Right: Live/Paused toggle for the global runs SSE stream. */}
+        <button
+          type="button"
+          onClick={toggleRunsStreamEnabled}
+          aria-pressed={runsStreamEnabled}
+          title={
+            runsStreamEnabled
+              ? 'Pause real-time run updates'
+              : 'Resume real-time run updates'
+          }
+          className={cn(
+            'inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium transition-colors',
+            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
+            runsStreamEnabled
+              ? 'text-status-running hover:bg-status-running/10'
+              : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40',
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'w-1.5 h-1.5 rounded-full',
+              runsStreamEnabled ? 'bg-status-running animate-pulse' : 'bg-text-muted/60',
+            )}
+          />
+          {runsStreamEnabled ? 'Live' : 'Paused'}
+        </button>
       </div>
 
       {/* Content - Only visible when panel is open, both tabs rendered to preserve state */}
