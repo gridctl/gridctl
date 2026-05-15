@@ -63,7 +63,7 @@ export function useRunsForSkill(options: UseRunsForSkillOptions = {}): UseRunsFo
     requestRef.current += 1;
     const myRequest = requestRef.current;
     fetchAgentRuns(fetchLimit)
-      .then((all) => {
+      .then(({ runs: all }) => {
         if (requestRef.current !== myRequest) return;
         const filtered = skillName ? all.filter((r) => r.skill === skillName) : all;
         const trimmed = limit != null ? filtered.slice(0, limit) : filtered;
