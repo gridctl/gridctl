@@ -151,6 +151,14 @@ function StreamStatusChip({ status }: { status: ReturnType<typeof useRunsStore.g
       </span>
     );
   }
+  if (status === 'paused') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-text-muted font-medium">
+        <span className="w-1.5 h-1.5 rounded-full bg-text-muted/60" />
+        Paused
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1 text-[10px] text-text-muted">
       <span className="w-1.5 h-1.5 rounded-full bg-text-muted/40" />
