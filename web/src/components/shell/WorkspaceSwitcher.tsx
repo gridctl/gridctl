@@ -1,35 +1,37 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/cn';
-import { WORKSPACES, WORKSPACE_LABELS, type Workspace } from '../../types/workspace';
+import { WORKSPACE_CONFIG, type WorkspaceConfig } from '../../types/workspace';
 
 interface WorkspacePillProps {
-  workspace: Workspace;
-  label: string;
+  workspace: WorkspaceConfig;
 }
 
-function WorkspacePill({ workspace, label }: WorkspacePillProps) {
+function WorkspacePill({ workspace }: WorkspacePillProps) {
   const { pathname } = useLocation();
-  const isActive = pathname === `/${workspace}` || pathname.startsWith(`/${workspace}/`);
+  const isActive =
+    pathname === `/${workspace.id}` || pathname.startsWith(`/${workspace.id}/`);
+  const Icon = workspace.icon;
   return (
     <NavLink
-      to={`/${workspace}`}
+      to={`/${workspace.id}`}
       role="tab"
       aria-selected={isActive}
-      data-workspace={workspace}
+      data-workspace={workspace.id}
       className={cn(
-        'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+        'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
         isActive
           ? 'bg-primary/15 text-primary border border-primary/30'
           : 'text-text-secondary hover:text-text-primary hover:bg-surface-highlight/60 border border-transparent',
       )}
     >
-      {label}
+      <Icon size={12} aria-hidden="true" />
+      {workspace.label}
     </NavLink>
   );
 }
 
-// Segmented control of three NavLink pills in the Header. Always visible.
+// Segmented control of pills in the Header, one per WORKSPACE_CONFIG entry.
 // role="tablist" with aria-selected on each tab for screen-reader navigation.
 export function WorkspaceSwitcher() {
   return (
@@ -38,8 +40,8 @@ export function WorkspaceSwitcher() {
       aria-label="Workspace"
       className="flex items-center gap-1 p-1 rounded-full bg-surface-elevated/60 backdrop-blur-sm border border-border/50"
     >
-      {WORKSPACES.map((ws) => (
-        <WorkspacePill key={ws} workspace={ws} label={WORKSPACE_LABELS[ws]} />
+      {WORKSPACE_CONFIG.map((ws) => (
+        <WorkspacePill key={ws.id} workspace={ws} />
       ))}
     </div>
   );

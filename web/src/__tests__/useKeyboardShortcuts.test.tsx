@@ -8,30 +8,33 @@ function fireMod(key: string) {
 }
 
 describe('useKeyboardShortcuts — workspace navigation', () => {
-  it('⌘1 calls onSwitchToTopology', () => {
-    const onSwitchToTopology = vi.fn();
-    renderHook(() => useKeyboardShortcuts({ onSwitchToTopology }));
+  it('⌘1 calls onSwitchToWorkspace with "topology"', () => {
+    const onSwitchToWorkspace = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
     fireMod('1');
-    expect(onSwitchToTopology).toHaveBeenCalledTimes(1);
+    expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
+    expect(onSwitchToWorkspace).toHaveBeenCalledWith('topology');
   });
 
-  it('⌘2 calls onSwitchToSkills', () => {
-    const onSwitchToSkills = vi.fn();
-    renderHook(() => useKeyboardShortcuts({ onSwitchToSkills }));
+  it('⌘2 calls onSwitchToWorkspace with "skills"', () => {
+    const onSwitchToWorkspace = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
     fireMod('2');
-    expect(onSwitchToSkills).toHaveBeenCalledTimes(1);
+    expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
+    expect(onSwitchToWorkspace).toHaveBeenCalledWith('skills');
   });
 
-  it('⌘3 calls onSwitchToRuns', () => {
-    const onSwitchToRuns = vi.fn();
-    renderHook(() => useKeyboardShortcuts({ onSwitchToRuns }));
+  it('⌘3 calls onSwitchToWorkspace with "runs"', () => {
+    const onSwitchToWorkspace = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
     fireMod('3');
-    expect(onSwitchToRuns).toHaveBeenCalledTimes(1);
+    expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
+    expect(onSwitchToWorkspace).toHaveBeenCalledWith('runs');
   });
 
   it('does not fire workspace shortcuts when focus is inside an input', () => {
-    const onSwitchToSkills = vi.fn();
-    renderHook(() => useKeyboardShortcuts({ onSwitchToSkills }));
+    const onSwitchToWorkspace = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
 
     const input = document.createElement('input');
     document.body.appendChild(input);
@@ -41,7 +44,7 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     Object.defineProperty(ev, 'target', { value: input });
     window.dispatchEvent(ev);
 
-    expect(onSwitchToSkills).not.toHaveBeenCalled();
+    expect(onSwitchToWorkspace).not.toHaveBeenCalled();
     input.remove();
   });
 

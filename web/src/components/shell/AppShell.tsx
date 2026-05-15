@@ -18,7 +18,7 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
 import { useGlobalRunsStream } from '../runs/useGlobalRunsStream';
 import { useRunsCommands } from '../runs/useRunsCommands';
-import { isWorkspace, type Workspace, WORKSPACES } from '../../types/workspace';
+import { isWorkspace, type Workspace } from '../../types/workspace';
 import {
   LAST_WORKSPACE_GLOBAL_KEY,
   LAST_WORKSPACE_PER_STACK_PREFIX,
@@ -114,9 +114,7 @@ function AppShellInner() {
     onToggleBottomPanel: toggleBottomPanel,
     onSwitchToTraces: () => setBottomPanelTab('traces'),
     onOpenPalette: toggleCommandPalette,
-    onSwitchToTopology: () => navigate(`/${WORKSPACES[0]}`),
-    onSwitchToSkills: () => navigate(`/${WORKSPACES[1]}`),
-    onSwitchToRuns: () => navigate(`/${WORKSPACES[2]}`),
+    onSwitchToWorkspace: (id) => navigate(`/${id}`),
     onToggleCompactMode: () => toggleCompactMode(activeWorkspace),
   });
 

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { WORKSPACE_CONFIG, type Workspace } from '../types/workspace';
 
 interface ShortcutOptions {
   onFitView?: () => void;
@@ -10,13 +11,17 @@ interface ShortcutOptions {
   onToggleBottomPanel?: () => void;
   onSwitchToTraces?: () => void;
   onOpenPalette?: () => void;
-  // Workspace navigation — ⌘1 / ⌘2 / ⌘3 switch top-level workspaces.
-  onSwitchToTopology?: () => void;
-  onSwitchToSkills?: () => void;
-  onSwitchToRuns?: () => void;
-  // ⌘\ toggles Compact Mode for the active workspace.
+  // Workspace navigation — Cmd/Ctrl + <shortcutKey> switches top-level
+  // workspaces. The key→id mapping comes from WORKSPACE_CONFIG, so adding a
+  // workspace there automatically binds its shortcut.
+  onSwitchToWorkspace?: (id: Workspace) => void;
+  // Cmd/Ctrl+\ toggles Compact Mode for the active workspace.
   onToggleCompactMode?: () => void;
 }
+
+const WORKSPACE_BY_KEY: ReadonlyMap<string, Workspace> = new Map(
+  WORKSPACE_CONFIG.map((w) => [w.shortcutKey, w.id]),
+);
 
 export function useKeyboardShortcuts(options: ShortcutOptions) {
   useEffect(() => {
@@ -70,18 +75,13 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
         options.onToggleBottomPanel?.();
       }
 
-      // Workspace switching: ⌘1 (Topology), ⌘2 (Skills), ⌘3 (Runs)
-      if (isMod && e.key === '1') {
-        e.preventDefault();
-        options.onSwitchToTopology?.();
-      }
-      if (isMod && e.key === '2') {
-        e.preventDefault();
-        options.onSwitchToSkills?.();
-      }
-      if (isMod && e.key === '3') {
-        e.preventDefault();
-        options.onSwitchToRuns?.();
+      // Workspace switching: Cmd/Ctrl + <shortcutKey from WORKSPACE_CONFIG>
+      if (isMod) {
+        const ws = WORKSPACE_BY_KEY.get(e.key);
+        if (ws) {
+          e.preventDefault();
+          options.onSwitchToWorkspace?.(ws);
+        }
       }
       // Traces panel quick-jump: Cmd/Ctrl+4 (tabs themselves remain clickable)
       if (isMod && e.key === '4') {
