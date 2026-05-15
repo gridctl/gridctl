@@ -1,10 +1,6 @@
-import { useState } from 'react';
 import {
-  X,
   Terminal,
   Box,
-  ChevronDown,
-  ChevronRight,
   Wrench,
   FileText,
   Sparkles,
@@ -23,6 +19,7 @@ import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ControlBar } from '../ui/ControlBar';
 import { PopoutButton } from '../ui/PopoutButton';
+import { InspectorHeader, InspectorSection } from '../inspector';
 import { GatewaySidebar } from '../gateway/GatewaySidebar';
 import { TokenUsageSection } from '../sidebar/TokenUsageSection';
 import { ToolsEditor } from '../sidebar/ToolsEditor';
@@ -117,74 +114,51 @@ export function Sidebar() {
         )}
       />
 
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30">
-        <div className="flex items-center gap-3 min-w-0">
-          <div
-            className={cn(
-              'p-2 rounded-xl flex-shrink-0 border relative',
-              colorClass === 'primary' && 'bg-primary/10 border-primary/20',
-              colorClass === 'violet' && 'bg-violet-500/10 border-violet-500/20',
-              colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
+      <InspectorHeader
+        title={data.name}
+        icon={Icon}
+        accent={colorClass}
+        subtitle={
+          <>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider">
+              {isClient ? 'LLM Client' : isServer ? 'MCP Server' : 'Resource'}
+            </p>
+            {isServer && isExternal && (
+              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-violet-500/10 text-violet-400 flex items-center gap-0.5">
+                <Globe size={8} />
+                External
+              </span>
             )}
-          >
-            <Icon
-              size={16}
-              className={cn(
-                colorClass === 'primary' && 'text-primary',
-                colorClass === 'violet' && 'text-violet-400',
-                colorClass === 'secondary' && 'text-secondary'
-              )}
-            />
-          </div>
-          <div className="min-w-0">
-            <h2 className="font-semibold text-text-primary truncate tracking-tight">{data.name}</h2>
-            <div className="flex items-center gap-1.5">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider">
-                {isClient ? 'LLM Client' : isServer ? 'MCP Server' : 'Resource'}
-              </p>
-              {isServer && isExternal && (
-                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-violet-500/10 text-violet-400 flex items-center gap-0.5">
-                  <Globe size={8} />
-                  External
-                </span>
-              )}
-              {isServer && isLocalProcess && (
-                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
-                  <Cpu size={8} />
-                  Local
-                </span>
-              )}
-              {isServer && isSSH && (
-                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
-                  <KeyRound size={8} />
-                  SSH
-                </span>
-              )}
-              {isServer && isOpenAPI && (
-                <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
-                  <FileJson size={8} />
-                  OpenAPI
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <PopoutButton
-            onClick={handlePopout}
-            disabled={sidebarDetached}
-          />
-          <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
-            <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
-          </button>
-        </div>
-      </div>
+            {isServer && isLocalProcess && (
+              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
+                <Cpu size={8} />
+                Local
+              </span>
+            )}
+            {isServer && isSSH && (
+              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
+                <KeyRound size={8} />
+                SSH
+              </span>
+            )}
+            {isServer && isOpenAPI && (
+              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
+                <FileJson size={8} />
+                OpenAPI
+              </span>
+            )}
+          </>
+        }
+        onClose={handleClose}
+        actions={
+          <PopoutButton onClick={handlePopout} disabled={sidebarDetached} />
+        }
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto scrollbar-dark">
         {/* Status Section */}
-        <Section title="Status" icon={Sparkles} defaultOpen>
+        <InspectorSection title="Status" icon={Sparkles} defaultOpen>
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-text-muted">State</span>
@@ -335,29 +309,29 @@ export function Sidebar() {
               </div>
             )}
           </div>
-        </Section>
+        </InspectorSection>
 
         {/* Token Usage Section (MCP servers only) */}
         {isServer && (
-          <Section title="Token Usage" icon={Gauge}>
+          <InspectorSection title="Token Usage" icon={Gauge}>
             <TokenUsageSection serverName={data.name} />
-          </Section>
+          </InspectorSection>
         )}
 
         {/* Scaling Section (MCP servers with autoscale only) */}
         {isServer && serverData?.autoscale && (
-          <Section title="Scaling" icon={Activity} defaultOpen>
+          <InspectorSection title="Scaling" icon={Activity} defaultOpen>
             <AutoscalePanel
               status={serverData.autoscale}
               history={autoscaleHistory[data.name] ?? []}
               decisions={autoscaleDecisions[data.name] ?? []}
             />
-          </Section>
+          </InspectorSection>
         )}
 
         {/* Controls Section (not for clients - they aren't containers) */}
         {!isClient && (
-          <Section title="Actions" icon={Terminal} defaultOpen>
+          <InspectorSection title="Actions" icon={Terminal} defaultOpen>
             <ControlBar name={data.name} variant={isServer ? 'mcp-server' : 'mcp-server'} />
             <button
               onClick={handleShowLogs}
@@ -371,73 +345,27 @@ export function Sidebar() {
               <FileText size={14} />
               Show Logs Panel
             </button>
-          </Section>
+          </InspectorSection>
         )}
 
         {/* Telemetry Section (MCP servers only) — between Actions and Tools */}
         {isServer && (
-          <Section title="Telemetry" icon={Database}>
+          <InspectorSection title="Telemetry" icon={Database}>
             <SidebarTelemetrySection serverName={data.name} />
-          </Section>
+          </InspectorSection>
         )}
 
         {/* Tools Section (MCP servers only) */}
         {isServer && (
-          <Section title="Tools" icon={Wrench} count={(data as MCPServerNodeData).toolCount}>
+          <InspectorSection title="Tools" icon={Wrench} count={(data as MCPServerNodeData).toolCount}>
             <ToolsEditor
               serverName={data.name}
               savedTools={(data as MCPServerNodeData).toolWhitelist ?? []}
               serverTools={(data as MCPServerNodeData).tools ?? []}
             />
-          </Section>
+          </InspectorSection>
         )}
 
-      </div>
-    </div>
-  );
-}
-
-// Collapsible section component
-interface SectionProps {
-  title: string;
-  icon?: React.ComponentType<{ size?: number; className?: string }>;
-  count?: number;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}
-
-function Section({ title, icon: Icon, count, defaultOpen = false, children }: SectionProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-
-  return (
-    <div className="border-b border-border/30">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 hover:bg-surface-highlight/50 transition-colors group"
-      >
-        <div className="flex items-center gap-2.5">
-          {Icon && (
-            <div className="p-1 rounded-md bg-surface-highlight/50 group-hover:bg-surface-highlight transition-colors">
-              <Icon size={12} className="text-text-muted group-hover:text-primary transition-colors" />
-            </div>
-          )}
-          <span className="text-sm font-medium text-text-primary">{title}</span>
-          {count !== undefined && (
-            <span className="text-[10px] text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md font-mono">
-              {count}
-            </span>
-          )}
-        </div>
-        <div className="p-1 rounded-md group-hover:bg-surface-highlight transition-colors">
-          {isOpen ? (
-            <ChevronDown size={14} className="text-text-muted" />
-          ) : (
-            <ChevronRight size={14} className="text-text-muted" />
-          )}
-        </div>
-      </button>
-      <div className={cn('overflow-hidden transition-all duration-200', isOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0')}>
-        <div className="px-4 pb-4">{children}</div>
       </div>
     </div>
   );

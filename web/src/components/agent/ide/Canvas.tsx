@@ -1,10 +1,8 @@
 import { useMemo, useEffect, useCallback } from 'react';
 import {
-  ReactFlow,
   ReactFlowProvider,
-  Background,
-  BackgroundVariant,
   Controls,
+  BackgroundVariant,
   type Node as RFNode,
   type Edge as RFEdge,
   type NodeProps,
@@ -12,12 +10,14 @@ import {
   Position,
   useReactFlow,
 } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
 import { editorURL, type SkillGraph } from '../../../lib/agent-api';
 import { styleFor } from './kind-style';
 import type { NodeTrace } from './useRunTrace';
 import { TracePill } from './TracePill';
+import { CanvasBase } from '../../canvas/CanvasBase';
+import { EmptyState } from '../../ui/EmptyState';
 import { cn } from '../../../lib/cn';
+import { Sparkles } from 'lucide-react';
 
 interface CanvasProps {
   graph: SkillGraph;
@@ -41,14 +41,13 @@ const NODE_WIDTH = 240;
 const ROW_HEIGHT = 100;
 
 /**
- * Canvas is the Slice 3 view — a read-only React Flow rendering of
- * the same AST graph the NodeList shows. Per-kind custom nodes
- * inherit the Slice 1 colour map so the two views are recognisably
- * the same data.
+ * Canvas is the Skills workspace's React Flow surface — a read-only,
+ * single-column rendering of the parsed typed-skill AST. The graph mirrors
+ * what NodeList shows; both consume the same trace overlay so the views
+ * stay recognisably the same data.
  *
- * "The fallacy of the graph applies — code is canon." The canvas
- * never writes back to source. Click a node to jump to the source
- * line; canvas mutations are deferred to a future slice.
+ * "The fallacy of the graph applies — code is canon." The canvas never
+ * writes back to source. Double-click a node to jump to its source line.
  */
 export function Canvas(props: CanvasProps) {
   return (
@@ -114,52 +113,42 @@ function CanvasInner({ graph, skillDir, selected, onSelect, trace }: CanvasProps
 
   if (graph.nodes.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-center px-12">
-        <div className="font-sans text-text-muted/60 text-xs uppercase tracking-[0.4em] mb-3">
-          empty canvas
-        </div>
-        <h2 className="font-sans text-2xl text-text-secondary mb-2">No primitives recognised</h2>
-        <p className="text-text-muted text-sm max-w-sm leading-relaxed">
-          Add a tool(), llm(), parallel(), handoff(), or approval() call to the source — the canvas
-          re-renders on save.
-        </p>
-      </div>
+      <EmptyState
+        icon={Sparkles}
+        title="No primitives recognised"
+        description="Add a tool(), llm(), parallel(), handoff(), or approval() call to the source — the canvas re-renders on save."
+      />
     );
   }
 
   return (
-    <div className="h-full w-full agent-canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodeClick={handleNodeClick}
-        onPaneClick={() => onSelect(null)}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable
-        zoomOnScroll
-        panOnScroll
-        minZoom={0.4}
-        maxZoom={1.6}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={24}
-          size={1}
-          color="rgba(255,255,255,0.04)"
-        />
-        <Controls
-          showInteractive={false}
-          style={{
-            background: 'var(--color-surface)',
-            borderColor: 'var(--color-border)',
-            borderWidth: 1,
-          }}
-        />
-      </ReactFlow>
-    </div>
+    <CanvasBase<NodeData>
+      className="agent-canvas"
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      onNodeClick={handleNodeClick}
+      onPaneClick={() => onSelect(null)}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable
+      zoomOnScroll
+      panOnScroll
+      minZoom={0.4}
+      maxZoom={1.6}
+      backgrounds={[
+        { variant: BackgroundVariant.Dots, gap: 24, size: 1, color: 'rgba(255,255,255,0.04)' },
+      ]}
+    >
+      <Controls
+        showInteractive={false}
+        style={{
+          background: 'var(--color-surface)',
+          borderColor: 'var(--color-border)',
+          borderWidth: 1,
+        }}
+      />
+    </CanvasBase>
   );
 }
 

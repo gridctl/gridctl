@@ -3,6 +3,7 @@ import { type SkillSummary } from '../../../lib/agent-api';
 import { cn } from '../../../lib/cn';
 import { SkillRunButton } from './SkillRunButton';
 import { RunsList } from './RunsList';
+import { InspectorTabList, InspectorTabButton } from '../../inspector';
 
 type SidebarTab = 'skills' | 'runs';
 
@@ -67,24 +68,20 @@ export function SkillSidebar({
         </p>
       </header>
 
-      <div
-        role="tablist"
-        aria-label="Sidebar sections"
-        className="px-5 pt-3 flex items-center gap-1 border-b border-border-subtle/50"
-      >
-        <TabButton
+      <InspectorTabList ariaLabel="Sidebar sections">
+        <InspectorTabButton
           active={tab === 'skills'}
           onClick={() => setTab('skills')}
           label="Skills"
           controls="sidebar-tab-skills"
         />
-        <TabButton
+        <InspectorTabButton
           active={tab === 'runs'}
           onClick={() => setTab('runs')}
           label="Runs"
           controls="sidebar-tab-runs"
         />
-      </div>
+      </InspectorTabList>
 
       <div className="flex-1 overflow-y-auto py-3">
         {tab === 'skills' && (
@@ -142,36 +139,6 @@ export function SkillSidebar({
         )}
       </div>
     </aside>
-  );
-}
-
-interface TabButtonProps {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  controls: string;
-}
-
-function TabButton({ active, onClick, label, controls }: TabButtonProps) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      aria-controls={controls}
-      onClick={onClick}
-      className={cn(
-        'px-3 py-1.5 -mb-px',
-        'font-mono text-[10px] uppercase tracking-[0.2em]',
-        'border-b-2 transition-colors',
-        active
-          ? 'border-primary text-text-primary'
-          : 'border-transparent text-text-muted hover:text-text-primary',
-        'focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
