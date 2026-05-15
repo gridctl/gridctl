@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
-  ReactFlow,
   Background,
   Panel,
   BackgroundVariant,
@@ -8,7 +7,6 @@ import {
   useViewport,
   type Connection,
 } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
 import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Database, GitCompareArrows, Eye, Cable, KeyRound } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
@@ -19,6 +17,7 @@ import { useWizardStore } from '../../stores/useWizardStore';
 import { COLORS } from '../../lib/constants';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
+import { CanvasBase } from '../canvas/CanvasBase';
 import { DriftOverlay } from '../spec/DriftOverlay';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { SecretHeatmapOverlay } from '../spec/SecretHeatmapOverlay';
@@ -223,7 +222,7 @@ export function Canvas() {
           </div>
         </div>
       )}
-      <ReactFlow
+      <CanvasBase
         nodes={styledNodes}
         edges={styledEdges}
         nodeTypes={nodeTypes}
@@ -234,22 +233,19 @@ export function Canvas() {
         onPaneClick={onPaneClick}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
-        fitViewOptions={{
-          padding: 0.2,
-          maxZoom: 1.5,
-        }}
+        fitViewOptions={{ padding: 0.2, maxZoom: 1.5 }}
         minZoom={0.1}
         maxZoom={2}
-        proOptions={{ hideAttribution: true }}
+        backgrounds={[
+          {
+            variant: BackgroundVariant.Lines,
+            gap: 100,
+            color: 'rgba(100, 116, 139, 0.15)',
+          },
+        ]}
       >
-        {/* Main grid - Lines at 100px intervals */}
-        <Background
-          variant={BackgroundVariant.Lines}
-          gap={100}
-          color="rgba(100, 116, 139, 0.15)"
-        />
-
-        {/* Sub-grid - Dots at 20px, fades in when zoom > 0.8 */}
+        {/* Sub-grid — dots at 20px, fades in when zoom > 0.8. Rendered as a
+            child so the zoom-conditional layer stays local to this canvas. */}
         {showSubGrid && (
           <Background
             id="sub-grid"
@@ -366,7 +362,7 @@ export function Canvas() {
             <KeyRound className="w-4 h-4" />
           </button>
         </Panel>
-      </ReactFlow>
+      </CanvasBase>
       {showDriftOverlay && (
         <div className="absolute inset-0 pointer-events-none bg-primary/[0.02] z-10" />
       )}
