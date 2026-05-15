@@ -17,6 +17,7 @@ import { DetachedTracesPage } from './pages/DetachedTracesPage';
 const TopologyWorkspace = lazy(() => import('./components/workspaces/TopologyWorkspace'));
 const SkillsWorkspace = lazy(() => import('./components/workspaces/SkillsWorkspace'));
 const RunsWorkspace = lazy(() => import('./components/workspaces/RunsWorkspace'));
+const RunDetailWorkspace = lazy(() => import('./components/workspaces/RunDetailWorkspace'));
 
 export function AppRoutes() {
   return (
@@ -45,6 +46,14 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<WorkspaceLoadingShell />}>
               <RunsWorkspace />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/runs/:runID"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <RunDetailWorkspace />
             </Suspense>
           }
         />
