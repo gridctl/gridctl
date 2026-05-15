@@ -36,20 +36,64 @@ export interface AgentRunSummary {
 
 export interface AgentRunListResponse {
   runs: AgentRunSummary[];
+  next_cursor?: string;
 }
 
-export async function fetchAgentRuns(limit = 50): Promise<AgentRunSummary[]> {
-  const response = await fetch(`${API_BASE}/api/agent/runs?limit=${limit}`, {
-    headers: buildHeaders(),
-  });
+export interface AgentRunListQuery {
+  /**
+   * Page size. Server clamps to a hard ceiling (~500). Defaults to 50
+   * when omitted.
+   */
+  limit?: number;
+  /**
+   * Forward cursor — last run_id from the previous page. The server
+   * skips runs strictly newer than (or equal to) this ID, so an empty
+   * cursor returns the newest page.
+   */
+  cursor?: string;
+  /**
+   * Exact status match. Empty / omitted = any status.
+   */
+  status?: string;
+  /**
+   * Exact skill name. Empty / omitted = any skill.
+   */
+  skill?: string;
+  /**
+   * Lower bound on started_at. Accepts an RFC 3339 timestamp or a
+   * relative window (`5m`, `1h`, `24h`, `7d`).
+   */
+  since?: string;
+  /**
+   * Parent run ID filter; surfaces only child runs of a given root.
+   */
+  parent?: string;
+}
+
+export async function fetchAgentRuns(
+  query: AgentRunListQuery | number = {},
+): Promise<AgentRunListResponse> {
+  // Backwards-compat: `fetchAgentRuns(50)` predates filters. Keep it
+  // working so the Agent IDE sidebar doesn't need to change here.
+  const q: AgentRunListQuery = typeof query === 'number' ? { limit: query } : query;
+  const params = new URLSearchParams();
+  if (q.limit != null) params.set('limit', String(q.limit));
+  if (q.cursor) params.set('cursor', q.cursor);
+  if (q.status) params.set('status', q.status);
+  if (q.skill) params.set('skill', q.skill);
+  if (q.since) params.set('since', q.since);
+  if (q.parent) params.set('parent', q.parent);
+  const qs = params.toString();
+  const url = `${API_BASE}/api/agent/runs${qs ? `?${qs}` : ''}`;
+  const response = await fetch(url, { headers: buildHeaders() });
   if (response.status === 503) {
-    return [];
+    return { runs: [] };
   }
   if (!response.ok) {
     throw new Error(`agent runs API: ${response.status} ${response.statusText}`);
   }
   const body = (await response.json()) as AgentRunListResponse;
-  return body.runs ?? [];
+  return { runs: body.runs ?? [], next_cursor: body.next_cursor };
 }
 
 export interface ApprovalRequest {
