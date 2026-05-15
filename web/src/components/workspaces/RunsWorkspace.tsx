@@ -1,15 +1,112 @@
-// Phase 1 placeholder for /runs. The real Runs workspace — filterable grid,
-// ancestry tree, live waterfall — ships in Phase 2.
-export function RunsWorkspace() {
+import { useEffect, useMemo, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { RunsFilterBar } from '../runs/RunsFilterBar';
+import { RunsGrid } from '../runs/RunsGrid';
+import { RunInspector } from '../runs/RunInspector';
+import { useRunsStore, RUNS_DEFAULT_FILTERS } from '../../stores/useRunsStore';
+import type { RunsFilters } from '../../stores/useRunsStore';
+
+const FILTER_KEYS = ['status', 'skill', 'since', 'parent'] as const;
+
+function filtersFromSearchParams(params: URLSearchParams): RunsFilters {
+  return {
+    status: params.get('status') ?? RUNS_DEFAULT_FILTERS.status,
+    skill: params.get('skill') ?? RUNS_DEFAULT_FILTERS.skill,
+    since: params.get('since') ?? RUNS_DEFAULT_FILTERS.since,
+    parent: params.get('parent') ?? RUNS_DEFAULT_FILTERS.parent,
+  };
+}
+
+function filtersAreEqual(a: RunsFilters, b: RunsFilters): boolean {
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-background">
-      <div className="max-w-md text-center space-y-4 p-8 rounded-2xl bg-surface/60 backdrop-blur-xl border border-border/40">
-        <div className="text-[10px] uppercase tracking-[0.4em] text-text-muted/60">runs</div>
-        <h2 className="text-xl font-semibold text-text-primary">Runs workspace</h2>
-        <p className="text-sm text-text-muted leading-relaxed">
-          Live execution observability is coming next — a filterable grid of every skill run, an
-          ancestry tree for parent/child chains, and a global trace waterfall in the bottom panel.
-        </p>
+    a.status === b.status &&
+    a.skill === b.skill &&
+    a.since === b.since &&
+    a.parent === b.parent
+  );
+}
+
+/**
+ * RunsWorkspace renders the /runs grid + inspector inside AppShell.
+ * URL binding is the single source of truth for the filter state:
+ * the store mirrors the URL, not the other way around, so back/forward
+ * navigation and reload preserve filters without an extra
+ * persistence layer.
+ */
+export function RunsWorkspace() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const filters = useRunsStore((s) => s.filters);
+  const setFilters = useRunsStore((s) => s.setFilters);
+  const selectedRunID = useRunsStore((s) => s.selectedRunID);
+  const setSelectedRun = useRunsStore((s) => s.setSelectedRun);
+  const loadRuns = useRunsStore((s) => s.loadRuns);
+  const runs = useRunsStore((s) => s.runs);
+
+  // URL → store (incoming).
+  useEffect(() => {
+    const next = filtersFromSearchParams(searchParams);
+    if (!filtersAreEqual(next, filters)) {
+      setFilters(next);
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Store → URL (outgoing). Strip filter keys so unrelated params
+  // (e.g. ?compact, ?stack) survive the rewrite.
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const key of FILTER_KEYS) {
+          const val = filters[key];
+          if (val && val !== RUNS_DEFAULT_FILTERS[key]) {
+            next.set(key, val);
+          } else {
+            next.delete(key);
+          }
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }, [filters, setSearchParams]);
+
+  // Re-fetch whenever the filters change. The store does the deep
+  // compare against its own state — this hook just triggers it.
+  const lastLoadedFilters = useRef<RunsFilters | null>(null);
+  useEffect(() => {
+    if (lastLoadedFilters.current && filtersAreEqual(lastLoadedFilters.current, filters)) {
+      return;
+    }
+    lastLoadedFilters.current = filters;
+    void loadRuns();
+  }, [filters, loadRuns]);
+
+  const skillOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of runs) {
+      if (r.skill) seen.add(r.skill);
+    }
+    return [...seen].sort();
+  }, [runs]);
+
+  return (
+    <div className="absolute inset-0 flex flex-col bg-background">
+      <RunsFilterBar skillOptions={skillOptions} />
+
+      <div className="flex flex-1 min-h-0">
+        <div className="flex-1 min-w-0">
+          <RunsGrid onOpenDetail={(id) => navigate(`/runs/${id}`)} />
+        </div>
+        {selectedRunID && (
+          <div className="w-[360px] flex-shrink-0 border-l border-border/30 bg-surface/40">
+            <RunInspector
+              runID={selectedRunID}
+              onClose={() => setSelectedRun(null)}
+              onOpenDetail={() => navigate(`/runs/${selectedRunID}`)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
