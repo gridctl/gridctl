@@ -173,6 +173,57 @@ export function subscribeToRunEvents(
   };
 }
 
+export interface GlobalRunsSubscriptionHandlers {
+  /** Fires for every event observed on the global bus. */
+  onEvent: (ev: RunEvent) => void;
+  /**
+   * Fires when the server signals a gap (the per-subscriber buffer
+   * overflowed and at least one event was dropped). The /runs store
+   * uses this to invalidate its watermarks and refetch the affected
+   * runs.
+   */
+  onRestart?: () => void;
+  /** Fires when the underlying EventSource errors. */
+  onError?: (err: Error) => void;
+  /** Fires once the server emits the initial `ready` frame. */
+  onReady?: () => void;
+}
+
+/**
+ * subscribeToGlobalRunEvents opens an EventSource against the global
+ * run-events stream and routes each frame to the matching handler.
+ *
+ * Reconnect contract: events on this stream are best-effort. The
+ * server replays nothing on reconnect and may drop events for a slow
+ * client; callers MUST dedupe by `(run_id, seq)` against the per-run
+ * SSE endpoint, which IS authoritative. On a `stream_restarted` frame
+ * the caller should treat its watermarks as invalid.
+ */
+export function subscribeToGlobalRunEvents(
+  handlers: GlobalRunsSubscriptionHandlers,
+): TraceSubscription {
+  const url = `${API_BASE}/api/agent/runs/events/stream`;
+  const es = new EventSource(url, { withCredentials: false });
+  es.onmessage = (msg) => {
+    try {
+      const ev = JSON.parse(msg.data) as RunEvent;
+      handlers.onEvent(ev);
+    } catch (err) {
+      handlers.onError?.(err as Error);
+    }
+  };
+  es.addEventListener('ready', () => handlers.onReady?.());
+  es.addEventListener('stream_restarted', () => handlers.onRestart?.());
+  es.addEventListener('error', () => {
+    handlers.onError?.(new Error('global run event stream interrupted'));
+  });
+  return {
+    close() {
+      es.close();
+    },
+  };
+}
+
 export interface ResumeRequest {
   from_step?: string;
 }
