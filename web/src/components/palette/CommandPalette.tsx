@@ -130,6 +130,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const { getSortedCommands, getRecentCommands, recordUsage } = useCommandRegistry();
   const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
   const bottomPanelTab = useUIStore((s) => s.bottomPanelTab);
+  const activeWorkspace = useUIStore((s) => s.activeWorkspace);
 
   // Capture focused element before opening
   useEffect(() => {
@@ -174,13 +175,13 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         : 'logs'
     : 'canvas';
 
-  const recentCommands = getRecentCommands(5);
-  const contextCommands = getSortedCommands(undefined, currentSection).slice(0, 6);
-  const navCommands = getSortedCommands(undefined, undefined).filter(
+  const recentCommands = getRecentCommands(5, activeWorkspace);
+  const contextCommands = getSortedCommands(undefined, currentSection, activeWorkspace).slice(0, 6);
+  const navCommands = getSortedCommands(undefined, undefined, activeWorkspace).filter(
     (c) => c.id.startsWith('navigate:'),
   );
   const searchResults = isActiveSearch
-    ? getSortedCommands(query.trim() || undefined, scope ?? undefined)
+    ? getSortedCommands(query.trim() || undefined, scope ?? undefined, activeWorkspace)
     : [];
 
   const resultCount = isActiveSearch ? searchResults.length : null;

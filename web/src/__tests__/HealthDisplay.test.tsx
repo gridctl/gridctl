@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 
 // Mock @xyflow/react before importing components that use it
@@ -113,7 +114,11 @@ describe('Header unhealthy count', () => {
     vi.doMock('../assets/brand/logo.svg', () => ({ default: 'logo.svg' }));
 
     const { Header } = await import('../components/layout/Header');
-    render(<Header />);
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText('(2 unhealthy)')).toBeInTheDocument();
   });
@@ -136,7 +141,11 @@ describe('Header unhealthy count', () => {
     vi.doMock('../assets/brand/logo.svg', () => ({ default: 'logo.svg' }));
 
     const { Header } = await import('../components/layout/Header');
-    render(<Header />);
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
 
     expect(screen.queryByText(/unhealthy/)).not.toBeInTheDocument();
   });

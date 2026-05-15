@@ -13,6 +13,7 @@ import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import logoSvg from '../../assets/brand/logo.svg';
+import { WorkspaceSwitcher } from '../shell/WorkspaceSwitcher';
 
 interface HeaderProps {
   onRefresh?: () => void;
@@ -104,7 +105,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       {/* Subtle gradient line at top */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
-      {/* Left: Logo & Version */}
+      {/* Left: Logo & Version + Workspace Switcher */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
           {/* Brand Logo */}
@@ -120,6 +121,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
             </span>
           )}
         </div>
+        <WorkspaceSwitcher />
       </div>
 
       {/* Center: Status Pills */}

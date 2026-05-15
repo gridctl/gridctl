@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useReactFlow } from '@xyflow/react';
+import { useNavigate } from 'react-router-dom';
 import {
   Activity,
   Key,
@@ -19,6 +20,8 @@ import {
   FileCode,
   Plus,
   PanelBottom,
+  Workflow,
+  Compass,
 } from 'lucide-react';
 import { useCommandRegistry } from './useCommandRegistry';
 import { useUIStore } from '../stores/useUIStore';
@@ -36,6 +39,7 @@ interface GlobalCommandsOptions {
 export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { registerCommands, unregisterCommands } = useCommandRegistry();
+  const navigate = useNavigate();
 
   const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
@@ -57,10 +61,39 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   // Static navigation commands
   useEffect(() => {
     const commands: PaletteCommand[] = [
+      // Cross-workspace navigation — visible in every workspace.
+      {
+        id: 'navigate:workspace-topology',
+        label: 'Go to Topology',
+        section: 'global',
+        icon: <Compass size={14} />,
+        shortcut: ['⌘', '1'],
+        keywords: ['topology', 'workspace', 'operator', 'graph', 'go'],
+        onSelect: () => navigate('/topology'),
+      },
+      {
+        id: 'navigate:workspace-skills',
+        label: 'Go to Skills',
+        section: 'global',
+        icon: <Library size={14} />,
+        shortcut: ['⌘', '2'],
+        keywords: ['skills', 'workspace', 'agent', 'ide', 'developer', 'go'],
+        onSelect: () => navigate('/skills'),
+      },
+      {
+        id: 'navigate:workspace-runs',
+        label: 'Go to Runs',
+        section: 'global',
+        icon: <Workflow size={14} />,
+        shortcut: ['⌘', '3'],
+        keywords: ['runs', 'workspace', 'executions', 'traces', 'observability', 'go'],
+        onSelect: () => navigate('/runs'),
+      },
       {
         id: 'navigate:canvas',
         label: 'Go to Canvas',
         section: 'global',
+        workspaces: ['topology'],
         icon: <Layers size={14} />,
         keywords: ['canvas', 'graph', 'topology', 'nodes', 'home', 'main'],
         onSelect: () => setBottomPanelOpen(false),
@@ -108,7 +141,14 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     ];
     registerCommands('navigation', commands);
     return () => unregisterCommands('navigation');
-  }, [registerCommands, unregisterCommands, setBottomPanelTab, setBottomPanelOpen, setShowVault]);
+  }, [
+    registerCommands,
+    unregisterCommands,
+    setBottomPanelTab,
+    setBottomPanelOpen,
+    setShowVault,
+    navigate,
+  ]);
 
   // Canvas actions and global actions
   useEffect(() => {
@@ -117,6 +157,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:zoom-fit',
         label: 'Zoom to fit',
         section: 'canvas',
+        workspaces: ['topology'],
         icon: <Maximize2 size={14} />,
         shortcut: ['⌘', '0'],
         keywords: ['zoom', 'fit', 'view', 'reset', 'all', 'fit view'],
@@ -126,6 +167,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:zoom-in',
         label: 'Zoom in',
         section: 'canvas',
+        workspaces: ['topology'],
         icon: <ZoomIn size={14} />,
         shortcut: ['⌘', '+'],
         keywords: ['zoom', 'in', 'magnify', 'larger'],
@@ -135,6 +177,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:zoom-out',
         label: 'Zoom out',
         section: 'canvas',
+        workspaces: ['topology'],
         icon: <ZoomOut size={14} />,
         shortcut: ['⌘', '−'],
         keywords: ['zoom', 'out', 'shrink', 'smaller'],
@@ -144,6 +187,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:refresh',
         label: 'Refresh canvas',
         section: 'canvas',
+        workspaces: ['topology'],
         icon: <RefreshCw size={14} />,
         shortcut: ['⌘', '⇧', 'R'],
         keywords: ['refresh', 'reload', 'update', 'sync', 'data'],
@@ -162,6 +206,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:toggle-heatmap',
         label: 'Toggle heatmap overlay',
         section: 'canvas',
+        workspaces: ['topology'],
         icon: <Flame size={14} />,
         keywords: ['heatmap', 'heat', 'overlay', 'tokens', 'usage', 'toggle'],
         onSelect: () => toggleHeatMap(),
@@ -170,6 +215,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:toggle-drift',
         label: 'Toggle drift overlay',
         section: 'canvas',
+        workspaces: ['topology'],
         icon: <GitBranch size={14} />,
         keywords: ['drift', 'overlay', 'diff', 'changes', 'diverged', 'toggle'],
         onSelect: () => toggleDriftOverlay(),
@@ -178,6 +224,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:toggle-compact',
         label: 'Toggle compact cards',
         section: 'canvas',
+        workspaces: ['topology'],
         icon: <LayoutGrid size={14} />,
         keywords: ['compact', 'cards', 'nodes', 'size', 'dense', 'toggle'],
         onSelect: () => toggleCompactCards(),
@@ -186,6 +233,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:toggle-spec-mode',
         label: 'Toggle spec mode',
         section: 'canvas',
+        workspaces: ['topology'],
         icon: <Eye size={14} />,
         keywords: ['spec', 'mode', 'ghost', 'undeployed', 'preview', 'toggle'],
         onSelect: () => toggleSpecMode(),
@@ -221,6 +269,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       id: `node:${server.name}`,
       label: `View node: ${server.name}`,
       section: 'canvas' as const,
+      workspaces: ['topology' as const],
       icon: <Server size={14} />,
       keywords: [server.name, 'node', 'server', 'mcp'],
       onSelect: () => {

@@ -8,11 +8,12 @@ interface ShortcutOptions {
   onZoomOut?: () => void;
   onRefresh?: () => void;
   onToggleBottomPanel?: () => void;
-  onSwitchToLogs?: () => void;
-  onSwitchToMetrics?: () => void;
-  onSwitchToSpec?: () => void;
   onSwitchToTraces?: () => void;
   onOpenPalette?: () => void;
+  // Workspace navigation — ⌘1 / ⌘2 / ⌘3 switch top-level workspaces.
+  onSwitchToTopology?: () => void;
+  onSwitchToSkills?: () => void;
+  onSwitchToRuns?: () => void;
 }
 
 export function useKeyboardShortcuts(options: ShortcutOptions) {
@@ -55,7 +56,7 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
         options.onZoomOut?.();
       }
 
-      // Refresh: Cmd/Ctrl+R (only if not browser refresh)
+      // Refresh: Cmd/Ctrl+Shift+R (Cmd+R alone is reserved for browser refresh)
       if (isMod && e.key === 'r' && e.shiftKey) {
         e.preventDefault();
         options.onRefresh?.();
@@ -67,19 +68,20 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
         options.onToggleBottomPanel?.();
       }
 
-      // Tab switching: Cmd/Ctrl+1-5
+      // Workspace switching: ⌘1 (Topology), ⌘2 (Skills), ⌘3 (Runs)
       if (isMod && e.key === '1') {
         e.preventDefault();
-        options.onSwitchToLogs?.();
+        options.onSwitchToTopology?.();
       }
       if (isMod && e.key === '2') {
         e.preventDefault();
-        options.onSwitchToMetrics?.();
+        options.onSwitchToSkills?.();
       }
       if (isMod && e.key === '3') {
         e.preventDefault();
-        options.onSwitchToSpec?.();
+        options.onSwitchToRuns?.();
       }
+      // Traces panel quick-jump: Cmd/Ctrl+4 (tabs themselves remain clickable)
       if (isMod && e.key === '4') {
         e.preventDefault();
         options.onSwitchToTraces?.();

@@ -1,31 +1,16 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter } from 'react-router-dom';
 import './index.css';
-import App from './App.tsx';
-import { DetachedLogsPage } from './pages/DetachedLogsPage.tsx';
-import { DetachedSidebarPage } from './pages/DetachedSidebarPage.tsx';
-import { DetachedEditorPage } from './pages/DetachedEditorPage.tsx';
-import { DetachedRegistryPage } from './pages/DetachedRegistryPage.tsx';
-import { DetachedMetricsPage } from './pages/DetachedMetricsPage.tsx';
-import { DetachedVaultPage } from './pages/DetachedVaultPage.tsx';
-import { DetachedTracesPage } from './pages/DetachedTracesPage.tsx';
-import { LazyAgentIDEPage } from './pages/LazyAgentIDE.tsx';
+import { CommandRegistryProvider } from './hooks/useCommandRegistry';
+import { AppRoutes } from './routes';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/logs" element={<DetachedLogsPage />} />
-        <Route path="/sidebar" element={<DetachedSidebarPage />} />
-        <Route path="/editor" element={<DetachedEditorPage />} />
-        <Route path="/registry" element={<DetachedRegistryPage />} />
-        <Route path="/metrics" element={<DetachedMetricsPage />} />
-        <Route path="/vault" element={<DetachedVaultPage />} />
-        <Route path="/traces" element={<DetachedTracesPage />} />
-        <Route path="/agent" element={<LazyAgentIDEPage />} />
-      </Routes>
+      <CommandRegistryProvider>
+        <AppRoutes />
+      </CommandRegistryProvider>
     </BrowserRouter>
-  </StrictMode>
+  </StrictMode>,
 );
