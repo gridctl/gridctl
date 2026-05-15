@@ -44,6 +44,8 @@ type Store struct {
 
 	mu      sync.Mutex
 	writers map[string]*Recorder
+
+	bus *Bus
 }
 
 // NewStore constructs a Store rooted at the given directory. The
@@ -56,7 +58,18 @@ func NewStore(dir string) *Store {
 	return &Store{
 		dir:     dir,
 		writers: make(map[string]*Recorder),
+		bus:     NewBus(),
 	}
+}
+
+// Bus exposes the global event bus so cross-run observers (the /runs
+// workspace SSE stream, future cross-run metrics) can subscribe to
+// every event without polling the disk. The bus is best-effort: events
+// arrive after the durable JSONL write and slow consumers see drops
+// surfaced as `stream_restarted` sentinels rather than backpressure
+// against the recorder.
+func (s *Store) Bus() *Bus {
+	return s.bus
 }
 
 // Dir returns the configured runs directory.
@@ -172,6 +185,101 @@ func (s *Store) Stream(ctx context.Context, runID string, fn func(Event) error) 
 		}
 	}
 	return scanner.Err()
+}
+
+// ListFilter constrains a List call without forcing every caller
+// through an in-memory post-filter. Empty fields match everything.
+//
+// Note: scanning the runs directory and reading each summary stays
+// linear in total runs on disk. TODO(runs-index): once installs grow
+// past ~10k runs the API handler should consult a sidecar index
+// (sqlite or an mtime-bucketed manifest) instead of re-scanning.
+type ListFilter struct {
+	Status   string    // exact match against RunSummary.Status; empty = any
+	Skill    string    // exact match against RunSummary.Skill; empty = any
+	Parent   string    // exact match against ParentRunID; empty = any
+	Since    time.Time // include runs with StartedAt >= Since; zero = no lower bound
+	BeforeID string    // cursor: skip runs newer-or-equal to this ID (run ID is time-ordered)
+}
+
+// ListFiltered is List with optional filters and an ID-based cursor.
+// Runs are returned newest first; pass the last RunID from the prior
+// page in `BeforeID` to fetch the next page.
+func (s *Store) ListFiltered(filter ListFilter, limit int) ([]RunSummary, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("persist: reading runs dir: %w", err)
+	}
+	type tagged struct {
+		runID   string
+		modTime time.Time
+	}
+	files := make([]tagged, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, fileExt) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, tagged{
+			runID:   strings.TrimSuffix(name, fileExt),
+			modTime: info.ModTime(),
+		})
+	}
+	// Sort by run ID descending — IDs embed a UTC timestamp prefix so
+	// lexicographic order matches start order more faithfully than
+	// mtime (which moves whenever a long-running run records its next
+	// event).
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].runID == files[j].runID {
+			return files[i].modTime.After(files[j].modTime)
+		}
+		return files[i].runID > files[j].runID
+	})
+
+	out := make([]RunSummary, 0, limit)
+	skipping := filter.BeforeID != ""
+	for _, t := range files {
+		if skipping {
+			if t.runID == filter.BeforeID {
+				skipping = false
+			}
+			continue
+		}
+		summary, err := s.Summary(t.runID)
+		if err != nil {
+			continue
+		}
+		if filter.Status != "" && summary.Status != filter.Status {
+			continue
+		}
+		if filter.Skill != "" && summary.Skill != filter.Skill {
+			continue
+		}
+		if filter.Parent != "" && summary.ParentRunID != filter.Parent {
+			continue
+		}
+		if !filter.Since.IsZero() && summary.StartedAt.Before(filter.Since) {
+			// Files are sorted newest-first; once we see a run older
+			// than the lower bound the rest will be too. Bail early to
+			// keep the scan O(window) instead of O(all runs).
+			break
+		}
+		out = append(out, summary)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 // List enumerates every run on disk, newest first by mtime. Each
@@ -323,7 +431,10 @@ func (r *Recorder) NextSeq() uint64 {
 
 // Record appends a typed payload as an Event. The sequence number is
 // allocated from the recorder's monotonic counter; Time is set to
-// time.Now().UTC().
+// time.Now().UTC(). After the durable write succeeds the event fans
+// out to the store's global bus so cross-run subscribers (the /runs
+// live tail) see it immediately. Bus publish is non-blocking — a slow
+// subscriber drops the event rather than stalling the recorder.
 func (r *Recorder) Record(eventType EventType, payload any) (Event, error) {
 	seq := r.seq.Add(1)
 	ev, err := MarshalEvent(r.runID, seq, eventType, payload)
@@ -332,6 +443,9 @@ func (r *Recorder) Record(eventType EventType, payload any) (Event, error) {
 	}
 	if err := r.write(ev); err != nil {
 		return Event{}, err
+	}
+	if r.store != nil && r.store.bus != nil {
+		r.store.bus.Publish(ev)
 	}
 	return ev, nil
 }
