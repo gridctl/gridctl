@@ -1,11 +1,30 @@
 import { create } from 'zustand';
+import type { StateCreator } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Workspace } from '../types/workspace';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
 type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces' | 'pins';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
 
-interface UIState {
+// Cross-workspace shell state. Lives on useUIStore via the Zustand slices
+// pattern — never reach into a workspace-specific store from here.
+export interface WorkspaceSlice {
+  activeWorkspace: Workspace;
+  setActiveWorkspace: (ws: Workspace) => void;
+}
+
+export const createWorkspaceSlice: StateCreator<
+  UIState,
+  [['zustand/persist', unknown]],
+  [],
+  WorkspaceSlice
+> = (set) => ({
+  activeWorkspace: 'topology',
+  setActiveWorkspace: (activeWorkspace) => set({ activeWorkspace }),
+});
+
+interface UIState extends WorkspaceSlice {
   sidebarOpen: boolean;
   activeTab: SidebarTab;
   edgeStyle: EdgeStyle;
@@ -85,7 +104,8 @@ interface UIState {
 
 export const useUIStore = create<UIState>()(
   persist(
-    (set) => ({
+    (set, get, store) => ({
+      ...createWorkspaceSlice(set, get, store),
       sidebarOpen: false,
       activeTab: 'details',
       edgeStyle: 'default', // Bezier curves
