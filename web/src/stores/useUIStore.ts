@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 import type { Workspace } from '../types/workspace';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
-type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces' | 'pins';
+type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces' | 'runs' | 'pins';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
 
 // Cross-workspace shell state. Lives on useUIStore via the Zustand slices
