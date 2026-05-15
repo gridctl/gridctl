@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestNewRunIDIsUnique(t *testing.T) {
@@ -574,6 +575,114 @@ func TestCapRawJSONRespectsBudget(t *testing.T) {
 	}
 	if s, ok := probe.(string); !ok || len(s) != MaxPayloadBytes {
 		t.Fatalf("capped string length = %d, want %d (probe=%T)", len(s), MaxPayloadBytes, probe)
+	}
+}
+
+// writeMinimalRun emits a run_started + run_completed pair so the
+// summary tests below have something to filter against without having
+// to know the recorder internals.
+func writeMinimalRun(t *testing.T, store *Store, skill, status string) string {
+	t.Helper()
+	runID := NewRunID()
+	rec, err := store.OpenWriter(runID)
+	if err != nil {
+		t.Fatalf("OpenWriter: %v", err)
+	}
+	if _, err := rec.Record(EventRunStarted, RunStartedPayload{Skill: skill, Flavor: "ts"}); err != nil {
+		t.Fatalf("Record start: %v", err)
+	}
+	if status != "" {
+		if _, err := rec.Record(EventRunCompleted, RunCompletedPayload{Status: status}); err != nil {
+			t.Fatalf("Record completed: %v", err)
+		}
+	}
+	if err := rec.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// NewRunID() embeds millisecond-precision timestamps; insert a
+	// gap so subsequent runs sort distinctly.
+	time.Sleep(2 * time.Millisecond)
+	return runID
+}
+
+func TestListFilteredByStatus(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir())
+	defer store.CloseAll() //nolint:errcheck
+
+	writeMinimalRun(t, store, "alpha", "ok")
+	errored := writeMinimalRun(t, store, "alpha", "error")
+	writeMinimalRun(t, store, "beta", "ok")
+
+	got, err := store.ListFiltered(ListFilter{Status: "error"}, 10)
+	if err != nil {
+		t.Fatalf("ListFiltered: %v", err)
+	}
+	if len(got) != 1 || got[0].RunID != errored {
+		t.Fatalf("expected one errored run %q, got %+v", errored, got)
+	}
+}
+
+func TestListFilteredBySkill(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir())
+	defer store.CloseAll() //nolint:errcheck
+
+	writeMinimalRun(t, store, "alpha", "ok")
+	writeMinimalRun(t, store, "alpha", "ok")
+	beta := writeMinimalRun(t, store, "beta", "ok")
+
+	got, err := store.ListFiltered(ListFilter{Skill: "beta"}, 10)
+	if err != nil {
+		t.Fatalf("ListFiltered: %v", err)
+	}
+	if len(got) != 1 || got[0].RunID != beta {
+		t.Fatalf("expected one beta run %q, got %+v", beta, got)
+	}
+}
+
+func TestListFilteredCursorPaginates(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir())
+	defer store.CloseAll() //nolint:errcheck
+
+	runs := make([]string, 0, 5)
+	for i := 0; i < 5; i++ {
+		runs = append(runs, writeMinimalRun(t, store, "alpha", "ok"))
+	}
+
+	page1, err := store.ListFiltered(ListFilter{}, 2)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1) != 2 {
+		t.Fatalf("page1 size = %d, want 2", len(page1))
+	}
+
+	cursor := page1[len(page1)-1].RunID
+	page2, err := store.ListFiltered(ListFilter{BeforeID: cursor}, 2)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2) != 2 {
+		t.Fatalf("page2 size = %d, want 2", len(page2))
+	}
+	// Pages must not overlap — the cursor is exclusive.
+	for _, a := range page1 {
+		for _, b := range page2 {
+			if a.RunID == b.RunID {
+				t.Fatalf("page1 and page2 overlap on %q", a.RunID)
+			}
+		}
+	}
+	// Run IDs sort lexicographically by their embedded timestamps, so
+	// the newest run lands first across both pages.
+	all := append(page1, page2...)
+	for i := range all {
+		want := runs[len(runs)-1-i]
+		if all[i].RunID != want {
+			t.Fatalf("pos %d: got %q, want %q (full=%v)", i, all[i].RunID, want, runs)
+		}
 	}
 }
 
