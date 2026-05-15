@@ -8,6 +8,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type { PaletteCommand, PaletteSection } from '../types/palette';
+import type { Workspace } from '../types/workspace';
 
 const FRECENCY_KEY = 'gridctl-palette-frecency';
 
@@ -50,8 +51,12 @@ interface CommandRegistryContextValue {
   registerCommands: (sectionId: string, cmds: PaletteCommand[]) => void;
   unregisterCommands: (sectionId: string) => void;
   recordUsage: (commandId: string) => void;
-  getSortedCommands: (query?: string, scopeSection?: PaletteSection) => PaletteCommand[];
-  getRecentCommands: (limit?: number) => PaletteCommand[];
+  getSortedCommands: (
+    query?: string,
+    scopeSection?: PaletteSection,
+    activeWorkspace?: Workspace,
+  ) => PaletteCommand[];
+  getRecentCommands: (limit?: number, activeWorkspace?: Workspace) => PaletteCommand[];
 }
 
 const CommandRegistryContext = createContext<CommandRegistryContextValue | null>(null);
@@ -94,8 +99,18 @@ export function CommandRegistryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const getSortedCommands = useCallback(
-    (query?: string, scopeSection?: PaletteSection): PaletteCommand[] => {
+    (
+      query?: string,
+      scopeSection?: PaletteSection,
+      activeWorkspace?: Workspace,
+    ): PaletteCommand[] => {
       let filtered = commands;
+
+      if (activeWorkspace) {
+        filtered = filtered.filter(
+          (c) => !c.workspaces || c.workspaces.includes(activeWorkspace),
+        );
+      }
 
       if (scopeSection) {
         filtered = filtered.filter((c) => c.section === scopeSection);
@@ -126,9 +141,10 @@ export function CommandRegistryProvider({ children }: { children: ReactNode }) {
   );
 
   const getRecentCommands = useCallback(
-    (limit = 5): PaletteCommand[] => {
+    (limit = 5, activeWorkspace?: Workspace): PaletteCommand[] => {
       return commands
         .filter((c) => frecencyRef.current.has(c.id))
+        .filter((c) => !activeWorkspace || !c.workspaces || c.workspaces.includes(activeWorkspace))
         .sort(
           (a, b) =>
             (frecencyRef.current.get(b.id)?.lastUsed ?? 0) -
