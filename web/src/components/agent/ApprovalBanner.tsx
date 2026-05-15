@@ -24,7 +24,7 @@ export function ApprovalBanner() {
     let cancelled = false;
     async function poll() {
       try {
-        const runs = await fetchAgentRuns(100);
+        const { runs } = await fetchAgentRuns(100);
         if (cancelled) return;
         setPending(runs.filter((r) => r.status === 'awaiting_approval' && r.pending_approval));
         setError(null);
