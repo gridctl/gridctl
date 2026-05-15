@@ -6,12 +6,24 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/agent/compose"
 	"github.com/gridctl/gridctl/pkg/agent/persist"
 	"github.com/gridctl/gridctl/pkg/agent/runner"
 )
+
+// agentRunsListDefaultLimit caps the default page size for
+// GET /api/agent/runs when no `limit` query param is supplied.
+const agentRunsListDefaultLimit = 50
+
+// agentRunsListMaxLimit caps the page size operators can request.
+// Large requests still page through the directory scan; a hard ceiling
+// keeps a malicious or buggy client from forcing the daemon to read
+// thousands of summary files in one request.
+const agentRunsListMaxLimit = 500
 
 // SetAgentRunStore wires the persist.Store the /api/agent/runs/*
 // handlers fall back to when no runtime aggregate is installed.
@@ -48,29 +60,107 @@ type agentRunListItem struct {
 }
 
 // handleAgentRunsList returns a paginated list of recent runs.
+//
+// Query params (all optional):
+//   - status  — exact match against summary status (running / ok / error /
+//     cancelled / awaiting_approval / suspended).
+//   - skill   — exact match against the skill name the run was launched
+//     against.
+//   - parent  — exact match against parent_run_id; surfaces child runs of
+//     a given root.
+//   - since   — RFC 3339 timestamp or relative duration (`5m`, `1h`,
+//     `24h`, `7d`); excludes runs older than the cutoff.
+//   - limit   — page size, clamped to [1, agentRunsListMaxLimit].
+//   - cursor  — last run_id from the previous page; resumes the scan
+//     from the next-older run.
+//
+// Filtering scans the ledger directory in run-ID order (newest first)
+// and applies the predicates in-memory. For installs with more than
+// ~10k persisted runs the store should grow a sidecar index; until
+// then the scan cost is bounded by the page size + filter window.
 func (s *Server) handleAgentRunsList(w http.ResponseWriter, r *http.Request) {
 	store := s.runStore()
 	if store == nil {
 		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
 		return
 	}
-	limit := 50
-	if v := r.URL.Query().Get("limit"); v != "" {
-		var parsed int
-		if _, err := fmt.Sscanf(v, "%d", &parsed); err == nil && parsed > 0 {
+
+	q := r.URL.Query()
+	limit := agentRunsListDefaultLimit
+	if v := q.Get("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
 			limit = parsed
 		}
 	}
-	summaries, err := store.List(limit)
+	if limit > agentRunsListMaxLimit {
+		limit = agentRunsListMaxLimit
+	}
+
+	filter := persist.ListFilter{
+		Status:   strings.TrimSpace(q.Get("status")),
+		Skill:    strings.TrimSpace(q.Get("skill")),
+		Parent:   strings.TrimSpace(q.Get("parent")),
+		BeforeID: strings.TrimSpace(q.Get("cursor")),
+	}
+	if since := strings.TrimSpace(q.Get("since")); since != "" {
+		t, err := parseSinceParam(since)
+		if err != nil {
+			writeJSONError(w, fmt.Sprintf("invalid since: %v", err), http.StatusBadRequest)
+			return
+		}
+		filter.Since = t
+	}
+
+	// Over-fetch by one so we can emit a forward cursor only when
+	// there is something to page to.
+	summaries, err := store.ListFiltered(filter, limit+1)
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	var nextCursor string
+	if len(summaries) > limit {
+		summaries = summaries[:limit]
+	}
+	if len(summaries) == limit && limit > 0 {
+		nextCursor = summaries[limit-1].RunID
+	}
+
 	out := make([]agentRunListItem, 0, len(summaries))
 	for _, sum := range summaries {
 		out = append(out, summaryToListItem(sum))
 	}
-	writeJSON(w, map[string]any{"runs": out})
+	body := map[string]any{"runs": out}
+	if nextCursor != "" {
+		body["next_cursor"] = nextCursor
+	}
+	writeJSON(w, body)
+}
+
+// parseSinceParam accepts an RFC 3339 timestamp ("2026-05-14T10:00:00Z")
+// or a relative duration ("5m", "1h", "24h", "7d"). Relative values are
+// resolved against time.Now() so the lower bound moves with the
+// request. Custom shapes (e.g. "1d2h") are rejected — the UI only ever
+// sends the canonical forms.
+func parseSinceParam(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.UTC(), nil
+	}
+	// Go's ParseDuration accepts the unit suffixes we care about; "d"
+	// is not native, so expand it before delegating.
+	if strings.HasSuffix(s, "d") {
+		days, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
+		if err != nil || days <= 0 {
+			return time.Time{}, fmt.Errorf("invalid duration %q", s)
+		}
+		return time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour), nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return time.Time{}, fmt.Errorf("invalid duration %q", s)
+	}
+	return time.Now().UTC().Add(-d), nil
 }
 
 // handleAgentRunGet returns a run's typed event timeline. The full
@@ -151,6 +241,77 @@ func (s *Server) handleAgentRunEvents(w http.ResponseWriter, r *http.Request) {
 		safe, _ := json.Marshal(err.Error())
 		fmt.Fprintf(w, "event: error\ndata: %s\n\n", safe)
 		flusher.Flush()
+	}
+}
+
+// handleAgentRunsEventsStream is the global live tail across every
+// run. It subscribes to the persist.Store bus and forwards each event
+// as an SSE `data:` line for the lifetime of the connection.
+//
+// Reconnect contract: clients dedupe by `(run_id, seq)` against a
+// per-run watermark, because the per-run event endpoint replays the
+// full ledger on subscribe and the same event will appear on both
+// streams. When the per-subscriber buffer overflows the handler emits
+// an `event: stream_restarted` frame ahead of the next event so the
+// client can resync its watermark — at-least-once with a one-shot
+// gap signal, not at-most-once.
+func (s *Server) handleAgentRunsEventsStream(w http.ResponseWriter, r *http.Request) {
+	store := s.runStore()
+	if store == nil {
+		writeJSONError(w, "agent runtime not configured", http.StatusServiceUnavailable)
+		return
+	}
+	bus := store.Bus()
+	if bus == nil {
+		writeJSONError(w, "global event bus not available", http.StatusServiceUnavailable)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSONError(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	sub, unsub := bus.Subscribe()
+	defer unsub()
+
+	// Emit a no-op ready frame so the client can confirm the stream is
+	// open before any actual events arrive. EventSource readers ignore
+	// unknown event types, so this is safe to ship without a matching
+	// listener.
+	fmt.Fprint(w, "event: ready\ndata: {}\n\n")
+	flusher.Flush()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-sub.C:
+			if !ok {
+				return
+			}
+			if sub.TakeDropped() {
+				fmt.Fprint(w, "event: stream_restarted\ndata: {}\n\n")
+			}
+			raw, err := json.Marshal(ev)
+			if err != nil {
+				// Best-effort: keep the stream alive but surface the
+				// problem so the client can decide to refetch.
+				safe, _ := json.Marshal(err.Error())
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", safe)
+				flusher.Flush()
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
 	}
 }
 
