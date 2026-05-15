@@ -330,6 +330,11 @@ func (s *Server) Handler() http.Handler {
 	// through the in-process approval registry.
 	mux.HandleFunc("GET /api/agent/runs", s.handleAgentRunsList)
 	mux.HandleFunc("POST /api/agent/runs", s.handleAgentRunsLaunch)
+	// Global live tail across every run — wired before the {run_id}
+	// surface so the more-specific event subscription doesn't shadow
+	// the path. The per-run SSE remains the source of truth for any
+	// single run; this stream is the cross-run observability surface.
+	mux.HandleFunc("GET /api/agent/runs/events/stream", s.handleAgentRunsEventsStream)
 	mux.HandleFunc("GET /api/agent/runs/{run_id}", s.handleAgentRunGet)
 	mux.HandleFunc("GET /api/agent/runs/{run_id}/events", s.handleAgentRunEvents)
 	mux.HandleFunc("POST /api/agent/runs/{run_id}/resume", s.handleAgentRunResume)
