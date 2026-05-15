@@ -4,6 +4,15 @@ import { cn } from '../../../lib/cn';
 import { formatRelativeTime } from '../../../lib/time';
 import type { AgentRunSummary } from '../../../lib/agent-runs';
 import { useRunsForSkill } from './useRunsForSkill';
+import {
+  statusTone,
+  type RunStatusTone,
+} from '../../runs/status';
+import {
+  buildRunTree,
+  flattenRunTree,
+  type RunRowNode,
+} from '../../runs/tree';
 
 interface RunsListProps {
   /**
@@ -16,12 +25,6 @@ interface RunsListProps {
    * so the operator can scan back to where they are.
    */
   activeRunID: string | null;
-}
-
-interface RunRowNode {
-  run: AgentRunSummary;
-  depth: number;
-  children: RunRowNode[];
 }
 
 /**
@@ -43,7 +46,7 @@ export function RunsList({ refreshKey, activeRunID }: RunsListProps) {
     refreshKey,
   });
 
-  const tree = useMemo(() => buildTree(runs), [runs]);
+  const tree = useMemo(() => buildRunTree(runs), [runs]);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
@@ -121,7 +124,7 @@ export function RunsList({ refreshKey, activeRunID }: RunsListProps) {
   }
 
   // Flatten the tree honouring collapsed state.
-  const rows = flattenTree(tree, collapsed);
+  const rows = flattenRunTree(tree, collapsed);
 
   return (
     <ul
@@ -230,50 +233,10 @@ function RunRow({ row, isActive, isCollapsed, hasChildren, onSelect, onToggle }:
   );
 }
 
-interface StatusTone {
-  dot: string;
-  glow: string | undefined;
-  text: string;
-}
-
-function statusTone(status: string | undefined): StatusTone {
-  const s = (status ?? '').toLowerCase();
-  if (s === 'running' || s === 'started' || s === 'in_progress') {
-    return {
-      dot: 'bg-status-running',
-      glow: '0 0 8px var(--color-status-running)',
-      text: 'text-status-running',
-    };
-  }
-  if (s === 'error' || s === 'errored' || s === 'failed') {
-    return {
-      dot: 'bg-status-error',
-      glow: '0 0 6px var(--color-status-error)',
-      text: 'text-status-error',
-    };
-  }
-  if (s === 'awaiting_approval' || s === 'suspended' || s === 'pending') {
-    return {
-      dot: 'bg-status-pending',
-      glow: '0 0 6px var(--color-status-pending)',
-      text: 'text-status-pending',
-    };
-  }
-  if (s === 'completed' || s === 'ok' || s === 'success') {
-    return {
-      dot: 'bg-status-running/60',
-      glow: undefined,
-      text: 'text-status-running/80',
-    };
-  }
-  return {
-    dot: 'bg-text-muted/40',
-    glow: undefined,
-    text: 'text-text-muted',
-  };
-}
-
-function StatusDot({ tone }: { tone: StatusTone }) {
+// The IDE sidebar prefers a dot-only status row (no icon, no label —
+// the depth indent + skill name is already the row's main signal).
+// StatusDot renders the shared tone with the IDE's glow halo.
+function StatusDot({ tone }: { tone: RunStatusTone }) {
   return (
     <span
       aria-hidden
@@ -281,51 +244,4 @@ function StatusDot({ tone }: { tone: StatusTone }) {
       style={tone.glow ? { boxShadow: tone.glow } : undefined}
     />
   );
-}
-
-/**
- * buildTree groups runs by parent_run_id and returns a depth-tagged
- * forest. Runs whose parent is not in the current window are
- * surfaced as roots so they don't vanish.
- */
-function buildTree(runs: AgentRunSummary[]): RunRowNode[] {
-  const byID = new Map<string, RunRowNode>();
-  for (const r of runs) {
-    byID.set(r.run_id, { run: r, depth: 0, children: [] });
-  }
-  const roots: RunRowNode[] = [];
-  for (const r of runs) {
-    const node = byID.get(r.run_id)!;
-    const parentID = r.parent_run_id;
-    if (parentID && byID.has(parentID)) {
-      const parent = byID.get(parentID)!;
-      node.depth = parent.depth + 1;
-      parent.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  // After parent-attached pass, recompute depth via BFS so deeply
-  // nested children get the right indent even when the source order
-  // surfaces a grandparent after its grandchild.
-  const queue: RunRowNode[] = [...roots];
-  while (queue.length > 0) {
-    const n = queue.shift()!;
-    for (const c of n.children) {
-      c.depth = n.depth + 1;
-      queue.push(c);
-    }
-  }
-  return roots;
-}
-
-function flattenTree(roots: RunRowNode[], collapsed: Set<string>): RunRowNode[] {
-  const out: RunRowNode[] = [];
-  const walk = (node: RunRowNode) => {
-    out.push(node);
-    if (collapsed.has(node.run.run_id)) return;
-    for (const c of node.children) walk(c);
-  };
-  for (const r of roots) walk(r);
-  return out;
 }
