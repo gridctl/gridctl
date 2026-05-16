@@ -1,6 +1,6 @@
 # 🔗 OpenAPI
 
-Turn any REST API with an OpenAPI specification into MCP tools — no container, no code, no custom server.
+Turn any REST API with an OpenAPI specification into MCP tools - no container, no code, no custom server.
 
 ## How It Works
 
@@ -50,7 +50,7 @@ openapi:
 
 ### Authentication
 
-**Bearer token** — reads token from an environment variable:
+**Bearer token** - reads token from an environment variable:
 
 ```yaml
 openapi:
@@ -60,7 +60,7 @@ openapi:
     tokenEnv: API_TOKEN            # Sends: Authorization: Bearer <$API_TOKEN>
 ```
 
-**Custom header** — sends any header name with a value from an environment variable:
+**Custom header** - sends any header name with a value from an environment variable:
 
 ```yaml
 openapi:
