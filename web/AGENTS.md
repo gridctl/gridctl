@@ -149,8 +149,8 @@ Shows per-server token counts, sparkline trend chart, and conditional format sav
 *   **Location:** Between Status and Actions sections (MCP server nodes only)
 *   **Icon:** Activity (Lucide)
 *   **Components:**
-    *   `TokenUsageSection` — Token counts (input/output/total), SparkChart with 5s auto-refresh, format savings bar with ARIA accessibility
-    *   `SparkChart` — Minimal Recharts-based sparkline (no axes, legends, or tooltips)
+    *   `TokenUsageSection` - Token counts (input/output/total), SparkChart with 5s auto-refresh, format savings bar with ARIA accessibility
+    *   `SparkChart` - Minimal Recharts-based sparkline (no axes, legends, or tooltips)
 *   **Visibility:** Only renders when token data exists for the selected server
 *   **Format Savings:** Conditional bar showing original vs formatted tokens and savings percentage
 
@@ -163,9 +163,9 @@ Live view of reactive-autoscale state. Renders whenever the selected server's `M
 *   **Layout (top-down):**
     *   Headline: `Current <c> / Target <t> · Range <min>–<max>` (mono, violet emphasis)
     *   Dwell phrase keyed off `lastDecision` (e.g. `Scaling up · median in-flight 14, target 10`; `Stable · …`; `Idle · scaled to zero`)
-    *   Inline-SVG sparkline — `current` solid violet, `target` dashed violet at 50%, min/max as faint horizontal guide lines at 15%. No chart library; path data memoized.
-    *   Collapsible **Recent Decisions** feed (closed by default) — last ≤10 client-derived entries with `HH:MM:SS · kind chip · from→to`
-*   **Derivation:** The decision feed is **not** streamed by the backend; it's reconstructed in the store by diffing `lastScaleUpAt` / `lastScaleDownAt` between polls. Two scale events within one 3s polling window can coalesce — accepted trade-off.
+    *   Inline-SVG sparkline - `current` solid violet, `target` dashed violet at 50%, min/max as faint horizontal guide lines at 15%. No chart library; path data memoized.
+    *   Collapsible **Recent Decisions** feed (closed by default) - last ≤10 client-derived entries with `HH:MM:SS · kind chip · from→to`
+*   **Derivation:** The decision feed is **not** streamed by the backend; it's reconstructed in the store by diffing `lastScaleUpAt` / `lastScaleDownAt` between polls. Two scale events within one 3s polling window can coalesce - accepted trade-off.
 
 ### Access Section (Agents Only)
 Shows the MCP server dependencies for an agent with tool-level access visualization.
@@ -204,40 +204,72 @@ Shows the MCP server dependencies for an agent with tool-level access visualizat
 
 ## 9. Layout Architecture
 
-### CSS Grid Main Layout
-The app uses CSS Grid for the main layout with four rows:
+### Unified App Shell
+
+The app is wrapped by a single `<AppShell>` (`src/components/shell/AppShell.tsx`) that owns the four-row chrome (Header / main / BottomPanel / StatusBar), the `ReactFlowProvider`, the command palette, the global runs SSE stream, and keyboard shortcut wiring. Every workspace renders inside its `<Outlet />`.
 
 ```tsx
-// App.tsx grid structure
-<div style={{
-  display: 'grid',
-  gridTemplateRows: `${HEADER_HEIGHT}px 1fr ${bottomRowHeight}px ${STATUSBAR_HEIGHT}px`,
-  gridTemplateColumns: '1fr',
-}}>
-  <Header />           {/* Row 1: Fixed 56px */}
-  <main>               {/* Row 2: Flexible (1fr) */}
-    <Canvas />         {/* Fills main area */}
-    <Sidebar />        {/* Absolute overlay, right side */}
-  </main>
-  <BottomPanel />      {/* Row 3: 40px collapsed, 100-800px expanded */}
-  <StatusBar />        {/* Row 4: Fixed 32px */}
-</div>
+<ReactFlowProvider>
+  <div style={{
+    display: 'grid',
+    gridTemplateRows: `${HEADER_HEIGHT}px 1fr ${bottomRowHeight}px ${STATUSBAR_HEIGHT}px`,
+  }}>
+    <Header />              {/* Row 1: 56px */}
+    <main><Outlet /></main> {/* Row 2: 1fr - active workspace renders here */}
+    <BottomPanel />         {/* Row 3: 40px collapsed; 100–800px expanded */}
+    <StatusBar />           {/* Row 4: 32px */}
+  </div>
+</ReactFlowProvider>
 ```
 
+`AppShell` runs side-effect hooks once for the whole app: `useGlobalRunsStream` (live tail of every run via SSE), `useRunsCommands` (palette commands for runs), `useGlobalCommands`, `useKeyboardShortcuts`, `useSSEShutdown`. Workspaces never re-mount these; they just consume the resulting state.
+
+### Workspaces
+
+Three top-level workspaces share the shell, routed and code-split:
+
+| Workspace | Route | Component | Purpose |
+|---|---|---|---|
+| Topology | `/topology` | `TopologyWorkspace` | Stack canvas (butterfly layout), node inspector |
+| Skills | `/skills` | `SkillsWorkspace` | Agent IDE - typed-skill sidebar, list/canvas toggle, trace overlay, run launcher |
+| Runs | `/runs` | `RunsWorkspace` (+ `/runs/:runID` → `RunDetailWorkspace`) | Live runs grid + inspector + waterfall |
+
+Workspace metadata lives in `src/types/workspace.ts` (`WORKSPACE_CONFIG` - id, label, icon, shortcut key). Adding a workspace = appending one entry; the switcher, shortcuts, and labels follow automatically. `RootRedirect` picks the landing workspace from `localStorage` (`gridctl-last-workspace` global or `gridctl-last-workspace:<stackId>` per-stack); the legacy `/agent` path redirects to `/skills` preserving query/hash.
+
+### WorkspaceShell (rails primitive)
+
+`src/components/layout/WorkspaceShell.tsx` is the shared resizable-panel primitive (built on `react-resizable-panels` v4) that workspaces wrap their canvas in. Skills and Runs both use it; Topology uses a leaner CSS-grid layout because the right rail is the legacy `<Sidebar>` overlay.
+
+```tsx
+<WorkspaceShell
+  workspace="skills"            // persistence key
+  defaultLeftPct={18}
+  defaultRightPct={24}
+  minLeftPx={220}
+  minRightPx={300}
+  left={<SkillSidebar />}
+  right={<NodeDetail />}
+>
+  <Canvas />
+</WorkspaceShell>
+```
+
+Behaviors: per-workspace width persistence via `useWorkspaceLayout`, double-click separator to reset to defaults, `[` and `]` collapse/expand the left/right rail (suppressed inside text inputs). Rails are optional - omit `left` or `right` to render a single-rail layout.
+
 ### Resizable Panels
-Both sidebar and bottom panel support drag-to-resize:
 
-| Panel | Direction | Min | Default | Max |
-|-------|-----------|-----|---------|-----|
-| Sidebar | Horizontal (width) | 280px | 320px | 600px |
-| Bottom Panel | Vertical (height) | 100px | 250px | 800px |
+| Panel | Where | Min | Default | Max |
+|-------|-------|-----|---------|-----|
+| Topology sidebar | `<Sidebar />` overlay in TopologyWorkspace | 280px | 320px | 600px |
+| WorkspaceShell rails | Skills (left + right), Runs (right) | `minLeftPx`/`minRightPx` props | percent of 1440px | n/a |
+| Bottom panel | `<BottomPanel />` in AppShell | 100px | 250px | 800px |
 
-**ResizeHandle Component:** Thin handle with amber glow on hover/drag, positioned at panel edge.
+**ResizeHandle Component (`src/components/ui/ResizeHandle.tsx`):** the legacy mouse-driven handle still used by Topology and BottomPanel; WorkspaceShell uses RRP's `<Separator>` for keyboard + pointer parity.
 
 ### Panel State Management
-- `useUIStore` manages `sidebarOpen` and `bottomPanelOpen` states
-- Sidebar uses CSS transform (`translate-x-full`) for show/hide animation
-- Bottom panel height controlled via grid row size
+- `useUIStore` manages `sidebarOpen`, `bottomPanelOpen`, `activeWorkspace`, `commandPaletteOpen`, and the per-workspace `compactMode` map.
+- Topology's `<Sidebar>` uses CSS transform (`translate-x-full`) for show/hide animation.
+- BottomPanel height is controlled via the shell's grid row size, not the sidebar's width.
 
 ## 10. Defensive Coding Patterns
 
@@ -292,11 +324,14 @@ These components access arrays that may be null during state transitions:
 
 The UI supports detaching panels into separate browser windows for multi-monitor workflows.
 
-### Routes
+### Routes (all are pop-out routes rendered outside `<AppShell>` on purpose - frameless)
 - `/logs` - Detached logs viewer with node selector
 - `/metrics` - Detached metrics dashboard with KPI cards, chart, and per-server table
 - `/sidebar` - Detached sidebar with node selector
 - `/editor` - Detached registry editor (skill)
+- `/registry` - Detached registry sidebar (skill list + actions)
+- `/vault` - Detached vault panel (`DetachedVaultPage`)
+- `/traces` - Detached traces viewer (`DetachedTracesPage`)
 
 ### Components
 - **PopoutButton** (`src/components/ui/PopoutButton.tsx`): Pop-out icon button with hover glow effect
@@ -334,12 +369,23 @@ openDetachedWindow('editor', 'type=skill');
 
 ## 12. Bottom Panel (Tabbed Container)
 
-The BottomPanel is a tabbed container with two tabs: **Logs** and **Metrics**. Tab state is preserved via CSS `invisible` (both tabs rendered simultaneously). Supports keyboard shortcuts: `Cmd/Ctrl+1` for Logs, `Cmd/Ctrl+2` for Metrics (auto-opens panel if collapsed).
+The BottomPanel is a tabbed container with six tabs - **Logs**, **Metrics**, **Spec**, **Traces**, **Runs**, **Pins**. All panels are rendered simultaneously and toggled via CSS `invisible` so re-tabbing is instant. `setBottomPanelTab` always opens the panel as a side-effect. The Runs tab shows an in-flight badge fed by `useGlobalRunsStream`.
+
+### Tab roster
+
+| Tab | Component | Data source |
+|---|---|---|
+| Logs | `LogsTab` (shared with `DetachedLogsPage`) | `GET /api/logs` + `GET /api/agents/{name}/logs` |
+| Metrics | `MetricsTab` | `GET /api/metrics/tokens?range=` (poll) |
+| Spec | `SpecTab` | `GET /api/stack/spec`, `GET /api/stack/plan`, drift overlay |
+| Traces | `TracesTab` | `GET /api/traces`, `GET /api/traces/{id}` |
+| Runs | `RunsBottomTab` | `useGlobalRunsStream` → `GET /api/agent/runs/events/stream` |
+| Pins | `PinsTab` | `GET /api/pins[/{server}]` + approve / reset actions |
 
 ### Metrics Tab
 
 *   **Components:**
-    *   `MetricsTab` — Session KPI cards, Recharts area chart, time range selector, and sortable per-server table
+    *   `MetricsTab` - Session KPI cards, Recharts area chart, time range selector, and sortable per-server table
     *   Vendored Tremor Raw chart components adapted for Obsidian Observatory theme
     *   Recharts with vendor chunk code splitting
 *   **Controls:** Time range selector (30m, 1h, 6h, 24h, 7d), pause/resume, clear, fullscreen
@@ -432,16 +478,42 @@ Log text size is controlled via the `--log-font-size` CSS custom property set on
 
 Both `BottomPanel.tsx` and `DetachedLogsPage.tsx` import from `components/log/` to ensure consistent behavior in attached and detached modes.
 
-## 13. Registry UI
+## 13. Skills Workspace and Agent IDE
 
-The registry provides a CRUD interface for managing Agent Skills (SKILL.md files) following the agentskills.io specification.
+The Skills workspace (`/skills`) is the developer view inside the unified shell. It hosts the agent IDE - the live canvas that mirrors the AST of typed skills on disk - plus a CRUD interface for SKILL.md frontmatter, file editing, validation, and a per-skill **Run Launcher** that fires runs through `POST /api/agent/runs` and overlays the live trace on the canvas.
 
-### Components (`src/components/registry/`)
+Code is canon: the IDE never writes back to source. The watcher (`useDevSocket`) subscribes to `/api/agent/dev/events` and re-renders the graph on save in <300ms (TS) or after `gridctl agent build` (Go).
 
-- **RegistrySidebar**: Skills list with create/edit/delete/activate/disable actions
-- **SkillEditor**: Split-pane markdown editor with frontmatter helpers, live preview, and validation
-- **SkillFileTree**: File browser for scripts/, references/, assets/ within a skill directory
-- **DetachedEditorPage** (`src/pages/DetachedEditorPage.tsx`): Standalone editor for popout window
+### Workspace shape
+
+```tsx
+<WorkspaceShell workspace="skills" left={<SkillSidebar />} right={<NodeDetail />}>
+  {viewMode === 'list' ? <NodeList /> : <Canvas />}
+</WorkspaceShell>
+```
+
+URL-driven state for deep links: `?skill=foo&run=bar&view=canvas|list`.
+
+### Components (`src/components/agent/ide/`)
+
+- **SkillSidebar**: Typed-skill list with handler-language badges, state pills, and a Run button per skill. Backs the WorkspaceShell left rail.
+- **NodeList** / **Canvas**: list and React Flow canvas modes for the parsed handler graph.
+- **NodeDetail**: WorkspaceShell right-rail inspector - node attributes, source location with click-to-`$EDITOR` (`vscode://file/...:line`), live trace status.
+- **RunLauncherModal**: Per-skill run launcher driven by the skill's input JSON Schema.
+- **SchemaForm**: JSON-Schema-driven form used by the run launcher.
+- **SkillRunButton**: Inline run-trigger anchor used in `SkillSidebar` and skill cards.
+- **TracePill** / **useRunTrace**: Trace overlay state - fetches the live ledger for `?run=<id>` and decorates canvas nodes with the same status colors and latency the gateway records.
+- **RunOutputView** / **RunsList** / **useRunsForSkill**: Per-skill run history feed with deep-link to `/runs/<id>`.
+- **ResumeButton**: Time-travel resume affordance for suspended runs.
+
+### Registry UI (still under `src/components/registry/`)
+
+The legacy registry CRUD is now embedded inside the Skills workspace as a popout - `DetachedEditorPage` opens at `/editor?type=skill&name=...` for a multi-monitor edit experience.
+
+- **RegistrySidebar**: Skills list with create/edit/delete/activate/disable actions.
+- **SkillEditor**: Split-pane markdown editor with frontmatter helpers, live preview, and validation.
+- **SkillFileTree**: File browser for `scripts/`, `references/`, `assets/` within a skill directory.
+- **SkillCard** / **SkillCardSkeleton** / **SkillActions** / **StateBadge**: presentational primitives shared by the skills surfaces.
 
 ### Editor Features
 
@@ -452,18 +524,41 @@ The registry provides a CRUD interface for managing Agent Skills (SKILL.md files
 | File tree | Browse and manage supporting files |
 | Validation | Real-time spec validation with errors/warnings |
 | State toggle | Draft/Active/Disabled state management |
-| Popout | Detachable to separate window |
+| Popout | Detachable to separate window via `/editor` |
 
-### Store: `useRegistryStore`
+### Stores
 
-Zustand store managing skills and loading states. Fetches from `/api/registry/skills`.
+- `useRegistryStore` - skills + loading states from `/api/registry/skills`.
+- `useUIStore` - `compactMode.skills` toggles a denser rail/canvas layout (Cmd+Shift+. while focused on the workspace).
 
 ### Graph Integration
 
-- **RegistryNode**: Shows active/total skill count
-- Appears connected to gateway node when registry has content (progressive disclosure)
+- **RegistryNode**: shows active/total skill count on the topology canvas.
+- Appears connected to the gateway node when the registry has content (progressive disclosure).
 
-## 14. Authentication
+## 14. Runs Workspace and Live Stream
+
+The Runs workspace (`/runs`) renders the JSONL ledger at `~/.gridctl/runs/<run_id>.jsonl` as a live grid + inspector. `/runs/:runID` opens a detail view with the full waterfall.
+
+### Components (`src/components/runs/` and `src/components/workspaces/`)
+
+- **RunsWorkspace** / **RunDetailWorkspace**: workspace bodies under `<AppShell>`.
+- **RunsFilterBar**: status / skill / since / parent filters; the URL is the single source of truth.
+- **RunsGrid**: virtualised list of run summaries with status pills and skill chips.
+- **RunInspector**: right-rail event timeline plus per-node attributes; opens the detail route on demand.
+- **RunWaterfall**: span-style timeline rendered in `RunDetailWorkspace`.
+- **StatusPill** / `status.ts` / `format.ts` / `tree.ts`: shared status, time, and parent/child layout helpers.
+- **RunsBottomTab**: live span waterfall surfaced in the AppShell BottomPanel under the **Runs** tab - driven by the same stream as the workspace.
+
+### Global SSE bus
+
+`useGlobalRunsStream` (mounted **once** in `<AppShell>`) opens an `EventSource` against `GET /api/agent/runs/events/stream` so every workspace receives live events without subscribing per-run. The BottomPanel's in-flight badge, the Runs grid, and the Skills workspace's trace overlay all consume the same stream via `useRunsStore`. Per-run SSE (`/api/agent/runs/{run_id}/events`) is still the source of truth for one run's full timeline.
+
+### Pause toggle
+
+The shell BottomPanel exposes a pause control for the runs SSE stream so an operator inspecting a frozen state can stop the grid from scrolling out from under them. Resume re-attaches and back-fills from the ledger; no events are dropped.
+
+## 15. Authentication
 
 Gateway authentication support in the web UI.
 
@@ -481,104 +576,50 @@ Manages `authRequired` (boolean) and `token` (string) state. The token is includ
 - `AuthPrompt` renders over the main UI until a valid token is provided
 - Token persists in the store for the session duration
 
-## 15. Keyboard Shortcuts
+## 16. Keyboard Shortcuts
 
-Hook: `useKeyboardShortcuts` (`src/hooks/useKeyboardShortcuts.ts`)
+Hook: `useKeyboardShortcuts` (`src/hooks/useKeyboardShortcuts.ts`). Wired once by `<AppShell>`.
 
-Provides global keyboard shortcuts for common UI actions (toggling panels, refreshing, etc.).
+### Global
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd/Ctrl+1` | Switch to Logs tab (auto-opens bottom panel) |
-| `Cmd/Ctrl+2` | Switch to Metrics tab (auto-opens bottom panel) |
+| `Cmd/Ctrl+1` | Switch to Topology workspace |
+| `Cmd/Ctrl+2` | Switch to Skills workspace |
+| `Cmd/Ctrl+3` | Switch to Runs workspace |
+| `Cmd/Ctrl+K` | Open command palette |
+| `Cmd/Ctrl+R` | Refresh polled state |
+| `Cmd/Ctrl+B` | Toggle BottomPanel |
+| `Cmd/Ctrl+,` | Switch BottomPanel to Traces tab |
+| `Cmd/Ctrl+Shift+.` | Toggle Compact Mode for the active workspace |
+| `Cmd/Ctrl+F` | Fit canvas |
+| `Cmd/Ctrl+=` / `Cmd/Ctrl+-` | Zoom canvas in/out |
+| `Escape` | Clear node selection, close inspector |
 
-### Workflow Keyboard Shortcuts
+### WorkspaceShell rails
 
-Hook: `useWorkflowKeyboardShortcuts` (`src/hooks/useWorkflowKeyboardShortcuts.ts`)
+| Shortcut | Action |
+|----------|--------|
+| `[` | Collapse/expand the left rail (skipped inside text inputs) |
+| `]` | Collapse/expand the right rail (skipped inside text inputs) |
 
-| Shortcut | Action | Context |
-|----------|--------|---------|
-| `1` | Switch to Code mode | Workflow editor |
-| `2` | Switch to Visual mode | Workflow editor |
-| `3` | Switch to Test mode | Workflow editor |
-| `f` | Toggle follow mode | Test/Visual mode during execution |
-| `Delete` / `Backspace` | Delete selected step or edge | Visual mode |
-| `Escape` | Deselect / close inspector | Visual mode |
-| `Ctrl+Enter` / `Cmd+Enter` | Run workflow | Test mode |
-| `Ctrl+Shift+V` / `Cmd+Shift+V` | Validate workflow (dry-run) | Test mode |
-| `t` | Toggle toolbox palette | Visual mode |
-| `i` | Toggle inspector panel | Visual mode |
-| `l` | Auto-layout ("Tidy") | Visual mode |
-| `Ctrl+S` / `Cmd+S` | Save skill | All modes |
+### Command Palette
 
-## 16. Workflow Designer
+`CommandPalette` (`src/components/palette/CommandPalette.tsx`) hosts a Cmd+K palette wired through `useGlobalCommands` (shell-level) and `useRunsCommands` / `useSkillsCommands` (workspace-level). Workspaces register commands as they mount; the palette deduplicates by id so a stale registration from a previous mount does not pollute the list.
 
-### Components (`src/components/workflow/`)
+## 17. Compact Mode
 
-- **WorkflowGraph**: DAG visualization using React Flow, top-to-bottom layout
-- **StepNode**: Custom React Flow node with status indicators and glass panel styling
-- **WorkflowInspector**: Right-side editing panel for step properties
-- **WorkflowRunner**: Test panel with input form and step-by-step results
-- **WorkflowToolbar**: Mode toggle (Code/Visual/Test) with zoom and follow controls
-- **VisualDesigner**: Editable workflow canvas with drag-and-drop tool palette
-- **DesignerGraph**: Editable React Flow canvas with connection and drop support
-- **DesignerInspector**: Step property editor with variable picker
-- **ToolboxPalette**: Left sidebar with tool search, inputs, and output config
-- **WorkflowEmptyState**: Empty state with "Add Workflow Template" button
+Each workspace can toggle a denser layout independently. State lives in `useUIStore.compactMode` keyed by `Workspace`.
 
-### Status Colors (Workflow Steps)
+| Workspace | Compact effect |
+|---|---|
+| Topology | Compact card style on graph nodes (`compactCards` flag) |
+| Skills | Narrower default rail percentages and tighter node-list rows |
+| Runs | Tighter filter bar + grid spacing |
 
-| Status | Border | Glow | Dot | Animation |
-|--------|--------|------|-----|-----------|
-| pending | `border-border/40` | none | `bg-text-muted` | none |
-| running | `border-primary/60` | `shadow-[0_0_12px_rgba(245,158,11,0.2)]` | `bg-primary` | pulse (`step-node-running`) |
-| success | `border-status-running/60` | `shadow-[0_0_8px_rgba(16,185,129,0.15)]` | `bg-status-running` | flash (`step-node-just-completed`) |
-| failed | `border-status-error/60` | `shadow-[0_0_8px_rgba(244,63,94,0.15)]` | `bg-status-error` | blink |
-| skipped | `border-border/20` | none | `bg-text-muted/40` | dimmed (opacity-50) |
+Toggle via `Cmd/Ctrl+Shift+.` while the workspace is active, or via the command palette.
 
-### Execution Animations (CSS)
-
-- **Edge dash-flow**: `workflow-edge-active` - dashed stroke animation on edges leading to running steps
-- **Node pulse**: `step-node-running` - subtle border glow pulse on running nodes
-- **Completion flash**: `step-node-just-completed` - green glow that fades on success
-
-### Template Expression Highlighting
-
-Template expressions `{{ ... }}` use: `text-primary bg-primary/10 px-1 rounded` inline styling.
-
-### Pop-out Windows
-
-Route: `/workflow?skill={name}&mode={code|visual|test}`
-Window size: 1200x800
-BroadcastChannel: workflow execution sync between windows via `gridctl-workflow-sync` channel
-
-### Text Zoom
-
-Generalized via `useTextZoom` hook (`src/hooks/useTextZoom.ts`):
-
-| Area | Storage Key | Default | Range |
-|------|-------------|---------|-------|
-| Log viewer | `gridctl-log-font-size` | 11px | 8-22px |
-| Workflow runner results | `gridctl-workflow-font-size` | 12px | 8-20px |
-
-### Responsive Layout
-
-Container-width-based layout via `useContainerWidth` hook:
-- **Small** (< 600px): Hide toolbox, compact inspector
-- **Medium** (600-900px): Collapsed toolbox by default, min-width inspector
-- **Large** (> 900px): Full layout with toolbox, canvas, and inspector
-
-### Execution History
-
-Last 5 execution results stored in `useWorkflowStore.executionHistory`. Collapsible history section in WorkflowRunner with expandable per-step results.
-
-### Error Recovery
-
-Failed executions show a recovery panel with:
-- **Pre-execution errors**: Error message + Retry button
-- **Step-level errors**: Error message with failed step details + Retry + Inspect buttons
-
-## 17. Vault Panel
+## 18. Vault Panel
 
 ### Components (`src/components/vault/`)
 
@@ -614,17 +655,17 @@ Vault-specific: `fetchVaultSecrets`, `createVaultSecret`, `getVaultSecret`, `upd
 - Monospace font (`font-mono`) for secret keys and values
 - Error states use `status-error` color token
 
-## 18. Creation Wizard
+## 19. Creation Wizard
 
 The creation wizard is a multi-step modal for adding MCP servers, resources, stacks, and skills to the running configuration.
 
 ### Components (`src/components/wizard/`)
 
-- **CreationWizard**: Root wizard modal — routes to the appropriate step flow based on resource type
-- **RecipePicker**: First step — resource type selection cards (Stack, MCP Server, Resource, Agent, Skill)
+- **CreationWizard**: Root wizard modal - routes to the appropriate step flow based on resource type
+- **RecipePicker**: First step - resource type selection cards (Stack, MCP Server, Resource, Agent, Skill)
 - **BrowseStep**: Registry browser for importing skills
 - **AddSourceStep**: Transport/source configuration for MCP servers
-- **MCPServerForm**: MCP server detail form. Advanced section includes a segmented **Scaling** control (Static replicas | Autoscale). The two branches share no state — toggling clears the opposite field group so the emitted YAML carries at most one of `replicas:` or `autoscale:`. Hidden on `external` and `openapi` server types (backend rejects both).
+- **MCPServerForm**: MCP server detail form. Advanced section includes a segmented **Scaling** control (Static replicas | Autoscale). The two branches share no state - toggling clears the opposite field group so the emitted YAML carries at most one of `replicas:` or `autoscale:`. Hidden on `external` and `openapi` server types (backend rejects both).
 - **ResourceForm**: Resource (non-MCP container) form
 - **StackForm**: Stack spec builder
 - **ReviewStep**: Final review and deploy step (all resource types); for stacks, shows **Save & Load** instead of Deploy
@@ -642,7 +683,7 @@ When no stack is active (stackless mode), the wizard gates stack-dependent resou
 
 | Resource Type | Stackless Behavior |
 |---------------|-------------------|
-| **Stack** | Always enabled — the mechanism for loading a stack |
+| **Stack** | Always enabled - the mechanism for loading a stack |
 | **MCP Server** | `opacity-40 cursor-not-allowed`; clicking is a no-op with tooltip "Requires an active stack" |
 | **Resource** | `opacity-40 cursor-not-allowed`; clicking is a no-op with tooltip "Requires an active stack" |
 | **Agent** | Always enabled |
@@ -669,7 +710,7 @@ The Canvas empty state conditionally renders quick-add links based on stack stat
 - **Always visible:** "Create your first stack" CTA (navigates to stack wizard)
 - **Hidden until stack active:** Quick-add "Add MCP Server" and "Add Resource" links
 
-## 19. Checklist for New Components
+## 20. Checklist for New Components
 
 1. Use Tailwind color tokens (no hardcoded hex values)
 2. Use `font-mono` for technical data, `font-sans` for UI
