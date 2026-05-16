@@ -28,7 +28,7 @@ gridctl status
 ## ℹ️ Note: Infrastructure vs Application Logic
 
 These examples use **placeholder containers** (`alpine:latest` with `sleep`) to demonstrate
-stack structure and tool filtering — not actual MCP server logic.
+stack structure and tool filtering - not actual MCP server logic.
 
 To see examples with real MCP servers:
 
