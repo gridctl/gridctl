@@ -15,7 +15,7 @@ Examples demonstrating the Agent Skills registry following the [agentskills.io](
 
 ## How the Registry Works
 
-The registry stores Agent Skills as SKILL.md files — markdown documents with YAML frontmatter:
+The registry stores Agent Skills as SKILL.md files - markdown documents with YAML frontmatter:
 
 ```
 ~/.gridctl/registry/
@@ -28,11 +28,11 @@ The registry stores Agent Skills as SKILL.md files — markdown documents with Y
 ```
 
 Each skill has a lifecycle state:
-- **draft** — stored but not exposed via MCP (default)
-- **active** — exposed as an MCP prompt and resource
-- **disabled** — temporarily hidden without deletion
+- **draft** - stored but not exposed via MCP (default)
+- **active** - exposed as an MCP prompt and resource
+- **disabled** - temporarily hidden without deletion
 
-Skills are managed via the REST API or Web UI — they are **not** declared in stack YAML.
+Skills are managed via the REST API or Web UI - they are **not** declared in stack YAML.
 
 ## Skill Sources
 
