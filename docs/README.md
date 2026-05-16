@@ -6,7 +6,7 @@ Guides and references for gridctl.
 
 | Document | Description |
 |----------|-------------|
-| [Configuration Reference](config-schema.md) | Every field in `stack.yaml` — server types, networks, agents, auth, vault |
+| [Configuration Reference](config-schema.md) | Every field in `stack.yaml` - server types, networks, agents, auth, vault |
 | [REST API Reference](api-reference.md) | Gateway endpoints, request/response formats, authentication |
 
 ## Guides
@@ -14,12 +14,12 @@ Guides and references for gridctl.
 | Document | Description |
 |----------|-------------|
 | [Skills](skills.md) | The three flavors (prompt / code-ts / code-go), the hybrid pattern, recursive composability, and Go-plugin sharp edges |
-| [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server — policies, trade-offs, observability |
-| [Troubleshooting](troubleshooting.md) | Common errors and resolutions — runtime, networking, vault, hot reload |
+| [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
+| [Troubleshooting](troubleshooting.md) | Common errors and resolutions - runtime, networking, vault, hot reload |
 
 ## Quick Links
 
-- [Getting Started](../README.md#-quick-start) — deploy your first stack
-- [Examples](../examples/) — 20+ example configurations
-- [Contributing](../CONTRIBUTING.md) — development setup and conventions
-- [Changelog](../CHANGELOG.md) — release history
+- [Getting Started](../README.md#-quick-start) - deploy your first stack
+- [Examples](../examples/) - 20+ example configurations
+- [Contributing](../CONTRIBUTING.md) - development setup and conventions
+- [Changelog](../CHANGELOG.md) - release history
