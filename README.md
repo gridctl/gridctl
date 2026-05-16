@@ -215,20 +215,20 @@ Fast, consistent, ephemeral, flexible, and version controlled! Many practitioner
 
 ### Spec-Driven Workflow
 
-The `stack.yaml` file has always been your source of truth. Now you have the full lifecycle tooling to match — validate before you commit, preview before you apply, and detect the moment your environment drifts from what's in version control:
+The `stack.yaml` file has always been your source of truth. Now you have the full lifecycle tooling to match - validate before you commit, preview before you apply, and detect the moment your environment drifts from what's in version control:
 
 ```bash
 gridctl validate stack.yaml    # Lint and schema-check the spec (exit 0/1/2)
-gridctl plan stack.yaml        # Diff against running state — see exactly what changes
+gridctl plan stack.yaml        # Diff against running state - see exactly what changes
 gridctl apply stack.yaml       # Apply the spec
 gridctl export                 # Reverse-engineer stack.yaml from a running stack
 gridctl test <skill>           # Run acceptance criteria for a skill (exit 0/1/2)
 gridctl activate <skill>       # Promote a skill from draft to active
 ```
 
-Drift detection runs in the background: the canvas flags servers that are running but absent from your spec, and declarations in your spec that haven't been deployed — so your YAML and your environment stay in sync. Need to build a stack from scratch? Start the UI with `gridctl serve`, use the visual spec builder to compose your stack through a guided wizard, then **Save & Load** it directly into the running daemon — no YAML file required to get started.
+Drift detection runs in the background: the canvas flags servers that are running but absent from your spec, and declarations in your spec that haven't been deployed - so your YAML and your environment stay in sync. Need to build a stack from scratch? Start the UI with `gridctl serve`, use the visual spec builder to compose your stack through a guided wizard, then **Save & Load** it directly into the running daemon - no YAML file required to get started.
 
-Executable skills (those with a `workflow` block) must define `acceptance_criteria` before `gridctl activate` will promote them — ensuring every deployed skill has a machine-checkable definition of done.
+Code skills (those with a `skill.ts` or `skill.go` handler) must define `acceptance_criteria` in `SKILL.md` frontmatter before `gridctl activate` will promote them - ensuring every deployed skill has a machine-checkable definition of done.
 
 ### Protocol Bridge
 
@@ -247,7 +247,7 @@ Aggregates tools from HTTP servers, stdio processes, SSH tunnels, and external U
 
 ### Context Window Optimization _(access control)_
 
-Are you paying for your own tokens for learning? Even if you aren't, being optimized is critical for not overloading that context window! Reducing the number of tools and scoping things correctly significantly reduces the likelihood of _"tool confusion"_ — where a given LLM selects a similarly named tool from the wrong server.
+Are you paying for your own tokens for learning? Even if you aren't, being optimized is critical for not overloading that context window! Reducing the number of tools and scoping things correctly significantly reduces the likelihood of _"tool confusion"_ - where a given LLM selects a similarly named tool from the wrong server.
 
 Use the `tools` filter in the _stack.yaml_ file to whitelist exactly which tools each server exposes. `gridctl` filters this list *before* it reaches the LLM:
 
@@ -265,7 +265,7 @@ This GitHub server only exposes read-only tools. Write operations like `create_i
 
 ### Output Format Conversion
 
-Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into TOON or CSV before they reach the client — reducing token consumption by 25–61% for tabular and key-value data.
+Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into TOON or CSV before they reach the client - reducing token consumption by 25–61% for tabular and key-value data.
 
 ```yaml
 gateway:
@@ -282,14 +282,14 @@ mcp-servers:
 |--------|----------|---------|
 | `toon` | Key-value pairs, nested objects | ~25–40% |
 | `csv` | Tabular / array-of-objects data | ~40–61% |
-| `text` | Raw passthrough (no conversion) | — |
-| `json` | Default (no conversion) | — |
+| `text` | Raw passthrough (no conversion) | - |
+| `json` | Default (no conversion) | - |
 
 Non-JSON responses and payloads over 1MB are passed through unchanged. Per-server settings override the gateway default.
 
 ### Code Mode
 
-When a stack exposes dozens of tools, context window consumption grows fast. Code Mode replaces all individual tool definitions with two meta-tools — `search` and `execute` — reducing context overhead by 99%+. LLM agents discover tools via search, then call them through JavaScript executed in a sandboxed [goja](https://github.com/nicholasgasior/goja) runtime.
+When a stack exposes dozens of tools, context window consumption grows fast. Code Mode replaces all individual tool definitions with two meta-tools - `search` and `execute` - reducing context overhead by 99%+. LLM agents discover tools via search, then call them through JavaScript executed in a sandboxed [goja](https://github.com/nicholasgasior/goja) runtime.
 
 ```yaml
 gateway:
@@ -305,50 +305,62 @@ gridctl apply stack.yaml --code-mode
 
 The sandbox provides `mcp.callTool(serverName, toolName, args)` for synchronous tool calls and `console.log/warn/error` for output capture. Modern JavaScript syntax (arrow functions, destructuring, template literals) is supported via esbuild transpilation. See [`examples/code-mode/`](examples/code-mode/) for a working example.
 
-### Skills Registry
+### Skills
 
-Store reusable skills as [SKILL.md](https://agentskills.io) files — markdown documents with YAML frontmatter that get exposed to LLM clients as MCP prompts. Create them via the REST API, Web UI, or by dropping files into `~/.gridctl/registry/skills/`.
+Skills are the primary way to extend the gateway's behavior. They live in `~/.gridctl/registry/skills/<name>/` and come in three flavors - file presence is the discriminator, not a `kind:` field in the frontmatter:
 
+| Flavor | Files | Surfaces as | Runtime |
+|---|---|---|---|
+| **Prompt-only** | `SKILL.md` | MCP prompt + tool | None - the markdown body is the artifact |
+| **Code (TypeScript)** | `SKILL.md` + `skill.ts` + `agent.json` | MCP tool (typed I/O) | `goja` + `esbuild` sandbox (in-process) |
+| **Code (Go)** | `SKILL.md` + `skill.go` + `skill_test.go` | MCP tool (typed I/O) | Go plugin (`go build -buildmode=plugin`) |
+
+**Prompt-only** skills are prose the LLM consumes verbatim - runbooks, severity matrices, personas. The markdown body is delivered to upstream clients (Claude Desktop, IDE, CLI) without an intermediate handler.
+
+**Code skills** are logic - they call `tool()`, `llm()`, `parallel()`, `handoff()`, and `approval()` bindings. The TS path runs in-process via a `goja` JavaScript sandbox with `esbuild` transpilation; the Go path compiles into a `.so` plugin the gateway loads at start. Both register through one `*skill.Registry`, so a TS skill, a Go skill, and an upstream MCP client all reach the same skill through one code path.
+
+**Hybrid pattern** - a code skill can read its own `SKILL.md` body at runtime (`skill.body` in TS, `ctx.SkillBody()` in Go) and feed it to an LLM as the system prompt. Code drives the graph; prose drives the behavior. Edit the markdown, change runtime behavior, no code change.
+
+Skills have three lifecycle states: **draft** (stored, not exposed), **active** (discoverable via MCP), and **disabled** (hidden without deletion). See [docs/skills.md](docs/skills.md) for the full three-flavor reference and [`examples/registry/items/`](examples/registry/items/) for the canonical reference set - `triage-ts/`, `triage-go/`, and `incident-triage-hybrid/`.
+
+```bash
+# Scaffold a starter skill in the current directory
+gridctl agent init --name my-skill                  # TS (default)
+gridctl agent init --lang go --name my-skill        # Go
+gridctl agent init --prompt-only --name my-skill    # Prompt-only
+
+# Validate and compile
+gridctl agent validate my-skill                     # static check (manifest + handler symbols)
+gridctl agent build my-skill                        # esbuild for TS, `go build -buildmode=plugin` for Go
+
+# Run a skill end-to-end and stream typed events
+gridctl run my-skill --input '{"topic": "..."}'
+
+# Iterate live with the canvas + trace overlay
+gridctl agent dev --root .
 ```
-~/.gridctl/registry/skills/
-└── code-review/
-    ├── SKILL.md              # Frontmatter + markdown instructions
-    └── references/           # Optional supporting files
+
+### Skill Runs and Time-Travel Resume
+
+Every skill invocation writes a JSONL event ledger to `~/.gridctl/runs/<run_id>.jsonl`. Inspect, trace, and resume:
+
+```bash
+gridctl runs list                                   # recent runs (newest first)
+gridctl runs inspect <run_id>                       # typed event timeline
+gridctl runs trace <run_id>                         # OTel-shaped JSON projection
+gridctl runs resume <run_id> [--from-step <node>]   # rehydrate state and continue
+gridctl runs approve <run_id> --decision approve    # resolve a pending approval gate
 ```
 
-Skills have three lifecycle states: **draft** (stored, not exposed), **active** (discoverable via MCP), and **disabled** (hidden without deletion). See [`examples/registry/`](examples/registry/) for working examples.
-
-### Skill Workflows
-
-Add `inputs`, `workflow`, and `output` blocks to a SKILL.md frontmatter to make it **executable**. Executable skills are exposed as MCP tools and run deterministic multi-step tool orchestration through the gateway.
-
-```yaml
-inputs:
-  a: { type: number, required: true }
-  b: { type: number, required: true }
-
-workflow:
-  - id: add
-    tool: math__add
-    args: { a: "{{ inputs.a }}", b: "{{ inputs.b }}" }
-  - id: echo
-    tool: text__echo
-    args: { message: "{{ steps.add.result }}" }
-    depends_on: add
-
-output:
-  format: last
-```
-
-Steps without dependencies run in parallel. Template expressions reference inputs (`{{ inputs.x }}`) and prior step results (`{{ steps.id.result }}`). Each step supports retry policies, timeouts, conditional execution, and configurable error handling (`fail` / `skip` / `continue`). The Web UI includes a visual workflow designer with Code, Visual, and Test modes. See [`examples/registry/`](examples/registry/) for working examples.
+The Web UI's **Runs** workspace renders the same ledger as a live grid, inspector, and waterfall - fed by a shared SSE stream that stays open across every workspace so the in-flight badge and BottomPanel Runs tab update in real time.
 
 ### Private Repositories
 
 Both `gridctl skill add` and MCP server `source` blocks can clone private git repositories. Credentials come from one of three places, in priority order:
 
-1. **Vault reference** _(recommended)_ — the raw token stays in the encrypted vault; only a `${vault:KEY}` reference is persisted to the skill origin / lock file.
-2. **Ephemeral flag** — `--auth-token <PAT>` for one-shot CI use; never written to disk.
-3. **Ambient environment** — SSH URLs use ssh-agent + `~/.ssh/known_hosts`; HTTPS URLs fall back to `GITHUB_TOKEN` if set.
+1. **Vault reference** _(recommended)_ - the raw token stays in the encrypted vault; only a `${vault:KEY}` reference is persisted to the skill origin / lock file.
+2. **Ephemeral flag** - `--auth-token <PAT>` for one-shot CI use; never written to disk.
+3. **Ambient environment** - SSH URLs use ssh-agent + `~/.ssh/known_hosts`; HTTPS URLs fall back to `GITHUB_TOKEN` if set.
 
 ```bash
 # Public repo (unchanged)
@@ -369,7 +381,7 @@ gridctl skill add git@github.com:acme/private-skills.git
 
 In the web wizard, the "Add skill source" step has an inline, collapsible **Authentication** card. It stays collapsed for public repos and auto-expands when a scan returns an auth-class error, offering two modes: pick an existing vault secret or paste a one-shot token. The same subsection is available in the MCP server form when the source type is `git`.
 
-Raw tokens are never written outside the encrypted vault — neither to the skill origin nor the lock file. Error and log paths strip embedded URL userinfo (`https://TOKEN@host/...`) and known PAT patterns (`ghp_…`, `github_pat_…`, `glpat-…`) before they reach the API or CLI.
+Raw tokens are never written outside the encrypted vault - neither to the skill origin nor the lock file. Error and log paths strip embedded URL userinfo (`https://TOKEN@host/...`) and known PAT patterns (`ghp_…`, `github_pat_…`, `glpat-…`) before they reach the API or CLI.
 
 ### Cost Optimize
 
@@ -403,75 +415,119 @@ The Web UI includes a Traces tab in the bottom panel with an interactive waterfa
 
 ## 📚 CLI Reference
 
-```bash
-gridctl validate <stack.yaml>        # Validate stack YAML (exit 0/1/2)
-gridctl validate <stack.yaml> --format json  # Machine-readable output
-gridctl plan <stack.yaml>            # Preview changes against running state
-gridctl plan <stack.yaml> -y         # Auto-approve and apply planned changes
-gridctl apply <stack.yaml>           # Start containers and gateway
-gridctl apply <stack.yaml> -f        # Run in foreground (debug mode)
-gridctl apply <stack.yaml> -p 9000   # Custom gateway port
-gridctl apply <stack.yaml> --base-port 9000  # Base port for MCP server host port allocation
-gridctl apply <stack.yaml> --watch   # Watch for changes and hot reload
-gridctl apply <stack.yaml> --flash   # Apply and auto-link LLM clients
-gridctl apply <stack.yaml> --code-mode   # Enable code mode (search + execute)
-gridctl apply <stack.yaml> --no-cache    # Force rebuild of source-based images
-gridctl apply <stack.yaml> --no-expand   # Disable env var expansion in OpenAPI specs
-gridctl apply <stack.yaml> -v        # Print full stack as JSON
-gridctl apply <stack.yaml> -q        # Suppress progress output
-gridctl apply <stack.yaml> --log-file <path>  # Structured JSON log output with rotation
-gridctl export                       # Reverse-engineer stack.yaml from running stack
-gridctl export -o ./output           # Write to directory instead of stdout
-gridctl export --format json         # Output as JSON instead of YAML
-gridctl serve                        # Start the web UI without managing a stack
-gridctl stop                         # Stop the stackless gridctl daemon
-gridctl status                       # Show running stacks
-gridctl status --replicas            # Expand to one row per replica
-gridctl info                         # Show detected container runtime
-gridctl version                      # Print version information
-gridctl upgrade                      # Check + prompt + upgrade (standalone install)
-gridctl upgrade --check              # Only check for updates; do not install
-gridctl upgrade --yes                # Non-interactive upgrade (CI)
-gridctl upgrade --version <tag>      # Install a specific release tag (allows downgrades)
-gridctl upgrade --force              # Bypass Homebrew detection and up-to-date short-circuit
-gridctl link                         # Connect an LLM client to the gateway
-gridctl unlink                       # Remove gridctl from an LLM client
-gridctl reload                       # Hot reload a running stack
-gridctl destroy <stack.yaml>         # Stop and remove containers
-gridctl vault set <key>              # Store a secret (interactive prompt, or use --value)
-gridctl vault get <key>              # Retrieve a secret (masked by default, use --plain)
-gridctl vault list                   # List all vault keys
-gridctl vault delete <key>           # Remove a secret from the vault
-gridctl vault import <file>          # Import secrets from .env or .json
-gridctl vault export                 # Export secrets (default: env format)
-gridctl vault lock / unlock          # Lock or unlock the vault
-gridctl vault change-passphrase      # Change the vault encryption passphrase
-gridctl skill list                   # List skills in the registry
-gridctl skill add <repo-url>         # Import skills from a remote git repository
-gridctl skill add <repo-url> --auth-token <pat>  # ...with ephemeral HTTPS PAT (CI; not persisted)
-gridctl skill add <repo-url> --vault-key <key>   # ...with a PAT resolved from ${vault:KEY}
-gridctl skill add <repo-url> --ssh-key <path>    # ...with an on-disk SSH private key
-gridctl skill update [name]          # Update imported skills (all if no name given)
-gridctl skill remove <name>          # Remove an imported skill
-gridctl skill pin <name> <ref>       # Pin a skill to a specific git ref
-gridctl skill info <name>            # Show skill origin and update status
-gridctl skill try <repo-url>         # Temporarily import a skill for evaluation
-gridctl skill validate <name>        # Validate a skill definition
-gridctl test <skill-name>            # Run acceptance criteria for a skill (exit 0/1/2)
-gridctl activate <skill-name>        # Promote a skill from draft to active state
-gridctl traces                       # Show recent distributed traces (table view)
-gridctl traces <trace-id>            # Show span waterfall for a single trace
-gridctl traces --follow              # Stream new traces as they arrive
-gridctl traces --server <name>       # Filter by MCP server name
-gridctl traces --errors              # Show only error traces
-gridctl traces --min-duration 100ms  # Filter by minimum duration
-gridctl traces --json                # Output as JSON
-gridctl optimize                     # Surface unused servers and tools with weekly $ impact
-gridctl optimize --stack <name>      # Pick a specific stack when more than one is running
-gridctl optimize --min-impact 0.10   # Filter findings below a weekly USD impact threshold
-gridctl optimize --severity warn,critical  # Allowlist by severity
-gridctl optimize --format json       # Machine-readable OptimizeReport (exit 0/1/2)
-```
+Commands are grouped by domain. Run `gridctl <command> --help` for the full flag set; the tables below cover the high-value flags an operator reaches for daily.
+
+### Stack lifecycle
+
+| Command | Purpose |
+|---|---|
+| `gridctl validate <stack.yaml>` | Validate stack YAML (exit `0`/`1`/`2`); `--format json` for machine-readable output. |
+| `gridctl plan <stack.yaml>` | Preview changes against running state; `-y` / `--auto-approve` to apply. |
+| `gridctl apply <stack.yaml>` | Start containers and the MCP gateway. Flags: `-f` foreground, `-p` port, `--base-port`, `--watch`, `--flash`, `--code-mode`, `--no-cache`, `--no-expand`, `-v` JSON dump, `-q` quiet, `--log-file <path>`. |
+| `gridctl reload [stack-name]` | Hot reload a running stack's spec. |
+| `gridctl destroy <stack.yaml>` | Stop and remove all containers for the stack. |
+| `gridctl export` | Reverse-engineer `stack.yaml` from running state; `-o <dir>` write to directory, `--format json`. |
+| `gridctl serve` | Start the web UI and API without managing a stack (stackless mode). |
+| `gridctl stop` | Stop the stackless gridctl daemon. |
+| `gridctl status` | Show running stacks; `--replicas` expands to one row per replica. |
+| `gridctl info` | Show the detected container runtime (Docker/Podman). |
+| `gridctl version` | Print version information. |
+
+### LLM clients
+
+| Command | Purpose |
+|---|---|
+| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview. |
+| `gridctl unlink [client]` | Remove gridctl from an LLM client's config. |
+
+### Skills - remote import (git)
+
+| Command | Purpose |
+|---|---|
+| `gridctl skill list` | List skills in the registry (`--remote` for imported skills only). |
+| `gridctl skill add <repo-url>` | Import skills from a git repository. Auth flags: `--auth-token <pat>` (ephemeral HTTPS PAT, CI), `--vault-key <key>` (resolves from `${vault:KEY}`), `--ssh-key <path>` (SSH). |
+| `gridctl skill update [name]` | Update imported skills (all when name omitted). |
+| `gridctl skill remove <name>` | Remove an imported skill. |
+| `gridctl skill pin <name> <ref>` | Pin a skill to a specific git ref. |
+| `gridctl skill info <name>` | Show origin and update status. |
+| `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation. |
+| `gridctl skill validate <name>` | Validate a skill definition. |
+| `gridctl test <skill-name>` | Run acceptance criteria (exit `0`/`1`/`2`). |
+| `gridctl activate <skill-name>` | Promote a skill from draft to active. |
+
+### Skills - authoring
+
+| Command | Purpose |
+|---|---|
+| `gridctl agent init [DIR]` | Scaffold a starter skill. `--lang ts` (default), `--lang go`, or `--prompt-only` (mutually exclusive with `--lang`). |
+| `gridctl agent dev --root <dir>` | Start the IDE dev server (canvas + watcher + trace overlay) on port `8181`. |
+| `gridctl agent validate <skill>` | Static-check a skill's manifest and handler symbols. |
+| `gridctl agent build <skill>` | Compile: esbuild for TS, `go build -buildmode=plugin` for Go. Writes `dist/manifest.json`. |
+
+### Runs
+
+| Command | Purpose |
+|---|---|
+| `gridctl run <skill>` | Execute a typed skill and stream events. Input: `--input '<json>'` inline, `--input @file.json`, or `--input -` for stdin. Output: `--format json` (NDJSON + summary), `--quiet`. |
+| `gridctl runs list` | Recent runs (`--limit N`, `--format json`). |
+| `gridctl runs inspect <run_id>` | Typed event timeline. |
+| `gridctl runs trace <run_id>` | OTel-shaped JSON projection. |
+| `gridctl runs resume <run_id>` | Time-travel resume from the last checkpoint; `--from-step <node_id>` to override. |
+| `gridctl runs approve <run_id>` | Resolve a pending approval gate. `--decision approve\|reject`, `--reason "<text>"`. |
+
+### Vault
+
+| Command | Purpose |
+|---|---|
+| `gridctl vault set <key>` | Store a secret (interactive prompt, or `--value`); `--set <name>` to assign to a variable set. |
+| `gridctl vault get <key>` | Retrieve a secret (masked; `--plain` to unmask). |
+| `gridctl vault list` | List all vault keys with set assignments. |
+| `gridctl vault delete <key>` | Remove a secret (`--force` to skip confirmation). |
+| `gridctl vault import <file>` | Import from `.env` or `.json` (`--format` to override auto-detection). |
+| `gridctl vault export` | Export secrets (`--format env\|json`, `--plain` to unmask). |
+| `gridctl vault lock` / `unlock` | Encrypt / decrypt the vault. |
+| `gridctl vault change-passphrase` | Re-encrypt with a new passphrase. |
+
+### Pins (TOFU schema pinning)
+
+| Command | Purpose |
+|---|---|
+| `gridctl pins list` | Status of all pinned servers. |
+| `gridctl pins verify [server]` | Verify pins (`--exit-code` for CI: exit `1` on drift). |
+| `gridctl pins approve <server>` | Re-pin current tool definitions, clearing drift. |
+| `gridctl pins reset <server>` | Delete pins (re-pinned on next apply). |
+
+### Traces
+
+| Command | Purpose |
+|---|---|
+| `gridctl traces` | Show recent distributed traces (table view). |
+| `gridctl traces <trace-id>` | Span waterfall for a single trace. |
+| `gridctl traces --follow` | Stream traces as they arrive. |
+| `gridctl traces --server <name>` | Filter by MCP server name. |
+| `gridctl traces --errors` | Show only error traces. |
+| `gridctl traces --min-duration 100ms` | Filter by minimum duration. |
+| `gridctl traces --json` | Output as JSON. |
+
+### Optimize
+
+| Command | Purpose |
+|---|---|
+| `gridctl optimize` | Surface unused servers and tools with weekly USD impact. |
+| `gridctl optimize --stack <name>` | Pick a specific stack when more than one is running. |
+| `gridctl optimize --min-impact 0.10` | Filter findings below a weekly USD impact threshold (info findings always shown). |
+| `gridctl optimize --severity warn,critical` | Allowlist by severity. |
+| `gridctl optimize --format json` | Machine-readable `OptimizeReport` (exit `0`/`1`/`2`). |
+
+### Upgrade
+
+| Command | Purpose |
+|---|---|
+| `gridctl upgrade` | Check + prompt + upgrade (standalone install). |
+| `gridctl upgrade --check` | Only check for updates; do not install. |
+| `gridctl upgrade --yes` | Non-interactive (CI / cron). |
+| `gridctl upgrade --version <tag>` | Install a specific release tag (allows downgrades). |
+| `gridctl upgrade --force` | Bypass Homebrew detection and the up-to-date short-circuit. |
 
 ## 🖥️ Connect LLM Application
 
@@ -536,9 +592,12 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
 | [`registry-advanced.yaml`](examples/registry/registry-advanced.yaml) | Cross-server skills |
-| [`workflow-basic`](examples/registry/items/workflow-basic/SKILL.md) | Executable skill workflow with sequential steps |
-| [`workflow-parallel`](examples/registry/items/workflow-parallel/SKILL.md) | Fan-out parallel execution with fan-in merge |
-| [`workflow-conditional`](examples/registry/items/workflow-conditional/SKILL.md) | Retry policies and error handling strategies |
+| [`triage-ts`](examples/registry/items/triage-ts/SKILL.md) | TypeScript code skill (sandboxed `goja` + `esbuild`) with the hybrid pattern |
+| [`triage-go`](examples/registry/items/triage-go/SKILL.md) | Typed Go code skill via `skill.Define[I, O]` |
+| [`incident-triage-hybrid`](examples/registry/items/incident-triage-hybrid/SKILL.md) | Hybrid pattern: Go handler reads its own `SKILL.md` body as the LLM system prompt |
+| [`code-review`](examples/registry/items/code-review/SKILL.md) | Prompt-only skill - SKILL.md only, no handler |
+| [`agent-basic.yaml`](examples/getting-started/agent-basic.yaml) | Stack with a skills registry attached to the gateway |
+| [`multi-agent-skills.yaml`](examples/multi-agent/multi-agent-skills.yaml) | Multi-agent orchestrator handing off between skills |
 | [`vault-basic.yaml`](examples/secrets-vault/vault-basic.yaml) | Reference vault secrets with `${vault:KEY}` syntax |
 | [`vault-sets.yaml`](examples/secrets-vault/vault-sets.yaml) | Auto-inject grouped secrets via variable sets |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
@@ -562,13 +621,20 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 | Reactive autoscaling | Experimental | May change without notice |
 | Code mode | Experimental | May change without notice |
 | Podman runtime | Stable | Backward compatible in 0.x |
-| Skills registry workflows | Experimental | May change without notice |
+| Skills registry (prompt-only) | Stable | Backward compatible in 0.x |
 | Skill acceptance criteria (test) | Experimental | May change without notice |
 | Stack export (export) | Experimental | May change without notice |
 | Spec drift detection | Experimental | May change without notice |
 | Visual spec builder | Experimental | May change without notice |
 | Skills import (skill add) | Experimental | May change without notice |
 | Distributed tracing | Experimental | May change without notice |
+| Typed skill SDK (Go, TS) | Experimental | May change without notice |
+| Go plugin skill loader | Experimental | May change without notice |
+| Agent IDE (`gridctl agent dev`) | Experimental | May change without notice |
+| JSONL run ledger + resume | Experimental | May change without notice |
+| Multi-agent orchestrator | Experimental | May change without notice |
+| LLM provider abstraction | Experimental | May change without notice |
+| Cost observability | Experimental | May change without notice |
 
 ## ⚠️ Known Limitations
 
@@ -579,10 +645,12 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 
 ## 📖 Documentation
 
-- [Configuration Reference](docs/config-schema.md) — every field in `stack.yaml`
-- [REST API Reference](docs/api-reference.md) — all gateway endpoints
-- [Scaling](docs/scaling.md) — static replicas, reactive autoscaling, and the trade-offs
-- [Troubleshooting](docs/troubleshooting.md) — common issues and resolutions
+- [Skills](docs/skills.md) - the three-flavor skill model (prompt-only, TS, Go), the hybrid pattern, and Go-plugin sharp edges
+- [Configuration Reference](docs/config-schema.md) - every field in `stack.yaml`
+- [REST API Reference](docs/api-reference.md) - all gateway endpoints
+- [Scaling](docs/scaling.md) - static replicas, reactive autoscaling, and the trade-offs
+- [Cost Observability](docs/cost-observability.md) - LLM pricing, per-client attribution, and the `optimize` heuristics
+- [Troubleshooting](docs/troubleshooting.md) - common issues and resolutions
 
 ## 🤝 Contributing
 
