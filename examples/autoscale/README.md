@@ -21,13 +21,13 @@ mcp-servers:
 Every 10s the scaler samples the median in-flight request count across healthy
 replicas and decides:
 
-- **Scale up** — when the rolling median stays above `target_in_flight` for
+- **Scale up** - when the rolling median stays above `target_in_flight` for
   the full `scale_up_after` window, spawn enough replicas to drive the median
   back under target. Clamped at `max`.
-- **Scale down** — when the rolling median stays below half the target for
+- **Scale down** - when the rolling median stays below half the target for
   the full `scale_down_after` window, reap one replica per tick, floored at
   `min + warm_pool`.
-- **Cold start** — a tool call that arrives while `current == 0` (only
+- **Cold start** - a tool call that arrives while `current == 0` (only
   possible under `idle_to_zero: true, min: 0`) synchronously spawns the first
   replica before the call returns.
 
@@ -83,7 +83,7 @@ local/SSH but may be tight for container cold starts. When you enable
 timeout to **60s minimum** (or disable idle-to-zero for that server).
 
 You can also use `warm_pool: 1` with `min: 0, idle_to_zero: true` to keep
-one replica permanently warm — trading a small amount of idle memory for a
+one replica permanently warm - trading a small amount of idle memory for a
 zero-cold-start guarantee.
 
 ## Mutually exclusive with `replicas: N`
@@ -102,8 +102,8 @@ dropping in-flight calls.
 
 ## Not supported
 
-- External URL servers and OpenAPI servers — they're stateless from gridctl's
+- External URL servers and OpenAPI servers - they're stateless from gridctl's
   point of view; scale them at the HTTP tier.
-- Cross-daemon load balancing — decisions are local to one gridctl daemon.
-- Predictive pre-warm — policies are reactive to current load only. Use
+- Cross-daemon load balancing - decisions are local to one gridctl daemon.
+- Predictive pre-warm - policies are reactive to current load only. Use
   `warm_pool` to keep a buffer above the load floor.
