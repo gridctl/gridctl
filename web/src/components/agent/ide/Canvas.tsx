@@ -3,6 +3,7 @@ import {
   ReactFlowProvider,
   Controls,
   BackgroundVariant,
+  MarkerType,
   type Node as RFNode,
   type Edge as RFEdge,
   type NodeProps,
@@ -38,7 +39,7 @@ interface NodeData extends Record<string, unknown> {
 }
 
 const NODE_WIDTH = 240;
-const ROW_HEIGHT = 100;
+const ROW_HEIGHT = 160;
 
 /**
  * Canvas is the Skills workspace's React Flow surface — a read-only,
@@ -89,9 +90,17 @@ function CanvasInner({ graph, skillDir, selected, onSelect, trace }: CanvasProps
         id: `${src.id}->${dst.id}`,
         source: src.id,
         target: dst.id,
-        type: 'smoothstep',
-        animated: trace[src.id]?.status === 'running',
+        type: 'default',
+        // Animate only the incoming edge of the currently-running node so the
+        // canvas reads as a flow rather than a marquee.
+        animated: trace[dst.id]?.status === 'running',
         style: { stroke: 'var(--color-border)', strokeWidth: 1.5 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 14,
+          height: 14,
+          color: 'var(--color-border)',
+        },
       });
     }
     return out;
@@ -170,7 +179,11 @@ function AgentFlowNode({ data }: NodeProps<RFNode<NodeData>>) {
       )}
       style={{ width: NODE_WIDTH }}
     >
-      <Handle type="target" position={Position.Top} className="!bg-border !border-0 !w-2 !h-2" />
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="!bg-border !border-0 !w-2 !h-2 !opacity-0 !pointer-events-none"
+      />
       {/* Top accent stripe — uses the per-kind colour as a thin
           identity hairline so kinds are scannable across the canvas */}
       <div className={cn('h-[3px]', style.badgeBg)} />
@@ -211,7 +224,11 @@ function AgentFlowNode({ data }: NodeProps<RFNode<NodeData>>) {
           {data.file}:{data.line}
         </button>
       </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-border !border-0 !w-2 !h-2" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!bg-border !border-0 !w-2 !h-2 !opacity-0 !pointer-events-none"
+      />
     </div>
   );
 }

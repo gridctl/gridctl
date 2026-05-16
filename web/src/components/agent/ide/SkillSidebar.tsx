@@ -51,24 +51,7 @@ export function SkillSidebar({
       className="h-full bg-surface/30 border-r border-border-subtle flex flex-col overflow-hidden"
       aria-label="Skills and runs"
     >
-      <header className="px-5 pt-6 pb-4 border-b border-border-subtle">
-        <div className="font-sans text-text-muted/70 text-[10px] uppercase tracking-[0.4em] mb-1">
-          gridctl
-        </div>
-        <div className="flex items-baseline gap-2">
-          <h1 className="font-sans text-text-primary text-xl font-semibold tracking-tight">
-            agent ide
-          </h1>
-          <span className="font-mono text-[10px] text-text-muted/70 uppercase tracking-[0.2em]">
-            phase F
-          </span>
-        </div>
-        <p className="font-sans text-text-muted text-xs mt-2 leading-snug">
-          Code is canon — the canvas is the derived view.
-        </p>
-      </header>
-
-      <InspectorTabList ariaLabel="Sidebar sections">
+      <InspectorTabList ariaLabel="Sidebar sections" className="pt-5">
         <InspectorTabButton
           active={tab === 'skills'}
           onClick={() => setTab('skills')}
