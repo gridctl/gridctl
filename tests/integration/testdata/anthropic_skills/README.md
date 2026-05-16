@@ -11,5 +11,5 @@ without modification.
 | `brand-guidelines/SKILL.md` | `skills/brand-guidelines/SKILL.md` | Apache-2.0 (see `LICENSE.txt`) |
 | `brand-guidelines/LICENSE.txt` | `skills/brand-guidelines/LICENSE.txt` | Apache-2.0 |
 
-The fixture is checked in verbatim — do not modify it. Refresh by re-vending
+The fixture is checked in verbatim - do not modify it. Refresh by re-vending
 from upstream when the agentskills.io spec evolves.
