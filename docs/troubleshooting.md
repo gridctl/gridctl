@@ -101,7 +101,7 @@ The error also lists which workloads need a container runtime and which can run 
 
 **Resolution:**
 
-Install Docker or Podman. If your stack only uses external URL or local process servers, no container runtime is needed — check your `stack.yaml` for servers that require containers (those with `image:` or `source:`).
+Install Docker or Podman. If your stack only uses external URL or local process servers, no container runtime is needed - check your `stack.yaml` for servers that require containers (those with `image:` or `source:`).
 
 ---
 
@@ -314,7 +314,7 @@ Some servers reload successfully while others fail. The reload result shows erro
 **Resolution:**
 
 1. Fix the specific server's configuration in `stack.yaml`.
-2. Run `gridctl reload` again — only the failed changes will be retried.
+2. Run `gridctl reload` again - only the failed changes will be retried.
 3. Servers that reloaded successfully are unaffected.
 
 ---
@@ -360,11 +360,11 @@ wrong passphrase or corrupted vault
 **Causes:**
 
 - Incorrect passphrase entered
-- The vault file was corrupted (rare — disk error or interrupted write)
+- The vault file was corrupted (rare - disk error or interrupted write)
 
 **Resolution:**
 
-1. Try the correct passphrase. The vault uses PBKDF2 key derivation — there is no way to recover a forgotten passphrase.
+1. Try the correct passphrase. The vault uses PBKDF2 key derivation - there is no way to recover a forgotten passphrase.
 
 2. If the vault file is corrupted, check for a backup:
    ```bash
@@ -419,7 +419,7 @@ If the backend shows `cni`, configure Podman to use netavark by editing `/etc/co
 network_backend = "netavark"
 ```
 
-> **Note:** `pasta` and `slirp4netns` provide container-to-host (egress) connectivity only. Inter-container networking uses netavark bridge networks — these are separate concerns.
+> **Note:** `pasta` and `slirp4netns` provide container-to-host (egress) connectivity only. Inter-container networking uses netavark bridge networks - these are separate concerns.
 
 ### SELinux volume mount errors
 
@@ -456,7 +456,7 @@ Gridctl auto-detects SELinux and appends the `:Z` label to volume mounts. If you
 
 ### Host alias differences
 
-Podman uses `host.containers.internal` (Podman 4.7+) instead of Docker's `host.docker.internal`. Gridctl handles this automatically — no action needed. If you see connection errors between agents and the gateway, ensure you are on Podman 4.7 or later:
+Podman uses `host.containers.internal` (Podman 4.7+) instead of Docker's `host.docker.internal`. Gridctl handles this automatically - no action needed. If you see connection errors between agents and the gateway, ensure you are on Podman 4.7 or later:
 
 ```bash
 podman --version
@@ -484,7 +484,7 @@ Browser shows a blank page or connection refused when accessing the gateway URL.
    http://localhost:9000
    ```
 
-3. The web UI requires a modern browser — Chrome, Firefox, Safari, or Edge.
+3. The web UI requires a modern browser - Chrome, Firefox, Safari, or Edge.
 
 ### Authentication prompt loop
 
