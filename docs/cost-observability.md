@@ -26,8 +26,8 @@ Unknown models log a single `WARN` per ID and are treated as zero-cost. The cost
 
 Anthropic's prompt-cache rates are roughly 10% (cache-read) and 125% (cache-write) of input rates. Conflating cache-read tokens with input tokens overstates cost by an order of magnitude on cache-heavy workloads. Gridctl prices each component separately:
 
-- `cache_read_input_token_cost` — applied to `CallUsage.CacheReadTokens`.
-- `cache_creation_input_token_cost` — applied to `CallUsage.CacheCreationTokens`.
+- `cache_read_input_token_cost` - applied to `CallUsage.CacheReadTokens`.
+- `cache_creation_input_token_cost` - applied to `CallUsage.CacheCreationTokens`.
 
 Cache fields default to zero. When a tool result reports them via `_meta` (the MCP-spec extension point for usage metadata), the observer prices the components separately and records the breakdown alongside the per-call total.
 
@@ -45,11 +45,11 @@ The package-level `Lookup` and `Calculate` functions read through the active sou
 
 `gridctl optimize` analyzes the running gateway and prints actionable cost-reduction findings. The package ships **five heuristics** in `pkg/optimize`:
 
-- **`unused_server`** — A server is registered in the stack but no tool calls have been observed from it. Removing it (or excluding all its tools) frees the JSON Schema overhead the server adds to every prompt. The reported weekly USD impact uses the server's observed per-token rate when available, otherwise falls back to a conservative default; the formula always derives from measured data.
-- **`unused_tool`** — A server *is* receiving traffic but a specific tool it exposes has not been called inside the lookback window (default 7 days) and is not already excluded via the server's `tools:` filter. Remediation suggests adding the tool to the exclusion list.
-- **`schema_overhead`** — A server's tool-list payload (the schema sent on every initialize / tools/list) is large relative to the value the server's tools have produced. The detector measures schema bytes off the live gateway tool list, applies a chars-per-token heuristic, and fires when the ratio of observed output tokens to schema tokens falls below the floor. Remediation prunes unused tools via the server's `tools:` filter.
-- **`format_savings_shortfall`** — A server emits raw JSON (no `output_format`) while other servers in the same session have already demonstrated meaningful savings from converting to TOON or CSV. Projected impact = baseline savings rate × the candidate's measured output tokens × its measured per-token cost. Remediation adds `output_format: toon` (or `csv`) to the server entry.
-- **`expensive_model_on_cheap_task`** *(informational)* — An Opus-tier model dominates traffic on a server whose calls average tiny prompts and tiny results. The detector either reads the rate directly when the gateway resolves a per-server model, or infers the rate from observed cost ÷ tokens. Severity is `info` because model selection lives client-side; gridctl can suggest the migration but cannot enforce it.
+- **`unused_server`** - A server is registered in the stack but no tool calls have been observed from it. Removing it (or excluding all its tools) frees the JSON Schema overhead the server adds to every prompt. The reported weekly USD impact uses the server's observed per-token rate when available, otherwise falls back to a conservative default; the formula always derives from measured data.
+- **`unused_tool`** - A server *is* receiving traffic but a specific tool it exposes has not been called inside the lookback window (default 7 days) and is not already excluded via the server's `tools:` filter. Remediation suggests adding the tool to the exclusion list.
+- **`schema_overhead`** - A server's tool-list payload (the schema sent on every initialize / tools/list) is large relative to the value the server's tools have produced. The detector measures schema bytes off the live gateway tool list, applies a chars-per-token heuristic, and fires when the ratio of observed output tokens to schema tokens falls below the floor. Remediation prunes unused tools via the server's `tools:` filter.
+- **`format_savings_shortfall`** - A server emits raw JSON (no `output_format`) while other servers in the same session have already demonstrated meaningful savings from converting to TOON or CSV. Projected impact = baseline savings rate × the candidate's measured output tokens × its measured per-token cost. Remediation adds `output_format: toon` (or `csv`) to the server entry.
+- **`expensive_model_on_cheap_task`** *(informational)* - An Opus-tier model dominates traffic on a server whose calls average tiny prompts and tiny results. The detector either reads the rate directly when the gateway resolves a per-server model, or infers the rate from observed cost ÷ tokens. Severity is `info` because model selection lives client-side; gridctl can suggest the migration but cannot enforce it.
 
 A single `info` finding ("need more data") is emitted on a gateway that has been running for less than the minimum observation window (default 24h) so reports never over-fire on freshly applied stacks. Findings are sorted by severity then weekly impact descending so the most actionable item renders first.
 
@@ -73,7 +73,7 @@ The data shape (`OptimizeReport`, `Finding`, `Stats`) is additive: every new heu
 ### Limitations
 
 - The pricing snapshot is best-effort, not a billing source of truth. Unknown models log a single `WARN` and are treated as zero-cost; their findings will under-report impact.
-- The `unused_server` impact uses an estimated upper-bound on schema overhead and weekly prompt count when no usage signal is available. The number is conservative — a busy team easily exceeds it — but stays anchored to measured per-token cost when present.
+- The `unused_server` impact uses an estimated upper-bound on schema overhead and weekly prompt count when no usage signal is available. The number is conservative - a busy team easily exceeds it - but stays anchored to measured per-token cost when present.
 - Per-tool tracking starts when the observer's tool-name path deploys; gateways running an older binary will emit no `unused_tool` or `expensive_model_on_cheap_task` findings until restarted.
 - `schema_overhead` reads schema bytes off the live tool list at request time, applies a chars-per-token heuristic (~4), and projects an upper-bound weekly impact assuming the schema rides every prompt. Real savings depend on the consuming client's prompt cadence; the projection is conservative.
 - `format_savings_shortfall` only fires when the session has already demonstrated meaningful savings from another server's `output_format: toon|csv` conversion. Until you've converted at least one server, the heuristic stays silent rather than guessing.
