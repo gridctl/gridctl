@@ -12,7 +12,7 @@ Reduce context window consumption by replacing individual tool definitions with 
 
 ### Why Code Mode
 
-When a stack exposes dozens of tools, each tool definition consumes context window tokens. Code mode replaces all tool definitions with two meta-tools — `search` and `execute` — cutting context overhead by 99%+.
+When a stack exposes dozens of tools, each tool definition consumes context window tokens. Code mode replaces all tool definitions with two meta-tools - `search` and `execute` - cutting context overhead by 99%+.
 
 ### Meta-Tools
 
@@ -34,8 +34,8 @@ When a stack exposes dozens of tools, each tool definition consumes context wind
 Code runs in a [goja](https://github.com/nicholasgasior/goja) JavaScript runtime (ES5.1 compatible). Modern syntax (arrow functions, destructuring, template literals) is transpiled via esbuild.
 
 **Bindings:**
-- `mcp.callTool(serverName, toolName, args)` — synchronous, returns parsed objects
-- `console.log()`, `console.warn()`, `console.error()` — captured in response
+- `mcp.callTool(serverName, toolName, args)` - synchronous, returns parsed objects
+- `console.log()`, `console.warn()`, `console.error()` - captured in response
 
 **Limits:**
 - Max code size: 64 KB
