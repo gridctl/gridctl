@@ -1,7 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Check, Copy, WrapText } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { formatRelativeTime } from '../../../lib/time';
 import type { RunEvent } from '../../../lib/agent-api';
+import { CodeViewer } from '../../ui/CodeViewer';
+import { ZoomControls } from '../../ui/ZoomControls';
+import { useTextZoom } from '../../../hooks/useTextZoom';
 import type { RunTrace } from './useRunTrace';
 
 interface RunOutputViewProps {
@@ -36,7 +40,7 @@ interface StartedShape {
  * RunOutputView is the right-pane terminal-output viewer that lights
  * up the moment no node is selected but a run is active. It folds
  * the run's `run_started` + `run_completed` events into a single
- * scannable view: a status header, a JSON viewer for the terminal
+ * scannable view: a status header, a CodeViewer for the terminal
  * Output (or a red `<pre>` for Error), and a live event counter
  * while the run is still in-flight.
  *
@@ -45,6 +49,15 @@ interface StartedShape {
  * canvas/inspector layout can't survive a runaway DOM tree.
  */
 export function RunOutputView({ runID, runTrace }: RunOutputViewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
+    storageKey: 'gridctl-skills-inspector-font-size',
+    defaultSize: 11,
+    minSize: 9,
+    maxSize: 16,
+    containerRef,
+  });
+
   const completed = useMemo(
     () => findEvent(runTrace.events, 'run_completed'),
     [runTrace.events],
@@ -65,7 +78,11 @@ export function RunOutputView({ runID, runTrace }: RunOutputViewProps) {
 
   if (!completed) {
     return (
-      <div className="space-y-4" aria-live="polite">
+      <div
+        ref={containerRef}
+        className="space-y-4"
+        aria-live="polite"
+      >
         <Header
           runID={runID}
           parentRunID={startedPayload.parent_run_id}
@@ -80,7 +97,10 @@ export function RunOutputView({ runID, runTrace }: RunOutputViewProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div
+      ref={containerRef}
+      className="space-y-4"
+    >
       <Header
         runID={runID}
         parentRunID={startedPayload.parent_run_id}
@@ -106,6 +126,18 @@ export function RunOutputView({ runID, runTrace }: RunOutputViewProps) {
         <OutputPayload
           output={completedPayload.output}
           truncated={completedPayload.truncated}
+          fontSize={fontSize}
+          zoomControls={
+            <ZoomControls
+              fontSize={fontSize}
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+              onReset={resetZoom}
+              isMin={isMin}
+              isMax={isMax}
+              isDefault={isDefault}
+            />
+          }
         />
       )}
     </div>
@@ -224,15 +256,38 @@ function InFlightCard({ eventCount, status }: InFlightCardProps) {
 interface OutputPayloadProps {
   output: unknown;
   truncated: boolean | undefined;
+  fontSize: number;
+  zoomControls: React.ReactNode;
 }
 
-function OutputPayload({ output, truncated }: OutputPayloadProps) {
-  // Use a stable string form so the collapse decision and the
-  // rendered text agree. Object outputs stringify pretty; primitives
-  // print verbatim (still wrapped in a <pre>).
-  const text = useMemo(() => stringify(output), [output]);
-  const [expanded, setExpanded] = useState<boolean>(() => text.length <= COLLAPSE_THRESHOLD);
-  const empty = output == null || (typeof text === 'string' && text.trim().length === 0);
+function OutputPayload({ output, truncated, fontSize, zoomControls }: OutputPayloadProps) {
+  // Pretty stringification is the default Inspector view. Raw shows
+  // the original string value verbatim when output is a string;
+  // otherwise Raw degrades to Pretty since there's no meaningful raw
+  // form for an object.
+  const prettyText = useMemo(() => stringify(output), [output]);
+  const rawAvailable = typeof output === 'string';
+
+  const [pretty, setPretty] = useState<boolean>(true);
+  const [wrap, setWrap] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
+
+  const visibleText = !pretty && rawAvailable ? (output as string) : prettyText;
+  const language: 'json' | 'plain' = !pretty && rawAvailable ? 'plain' : 'json';
+
+  const [expanded, setExpanded] = useState<boolean>(() => visibleText.length <= COLLAPSE_THRESHOLD);
+  const renderText = expanded ? visibleText : preview(visibleText);
+  const empty = output == null || (typeof prettyText === 'string' && prettyText.trim().length === 0);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(visibleText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard write can fail in insecure contexts; silently no-op.
+    }
+  }, [visibleText]);
 
   if (empty) {
     return (
@@ -246,7 +301,7 @@ function OutputPayload({ output, truncated }: OutputPayloadProps) {
     );
   }
 
-  const tooLong = text.length > COLLAPSE_THRESHOLD;
+  const tooLong = visibleText.length > COLLAPSE_THRESHOLD;
 
   return (
     <div>
@@ -254,26 +309,78 @@ function OutputPayload({ output, truncated }: OutputPayloadProps) {
         <Caption>output</Caption>
         <div className="flex items-center gap-2">
           {truncated && <TruncationPill />}
-          <ByteCount bytes={text.length} />
+          <ByteCount bytes={visibleText.length} />
         </div>
       </div>
-      <pre
+
+      <div
         className={cn(
-          'p-3 rounded-md border border-border-subtle bg-surface',
-          'font-mono text-[11px] leading-relaxed text-text-primary',
-          'whitespace-pre-wrap break-words',
-          'max-h-[60vh] overflow-y-auto',
-          !expanded && 'max-h-32 overflow-hidden relative',
+          'flex flex-wrap items-center gap-1.5 mb-1.5 px-1.5 py-1.5',
+          'rounded-md border border-border-subtle bg-surface/60',
         )}
       >
-        {expanded ? text : preview(text)}
+        <ToolbarButton
+          onClick={handleCopy}
+          title={copied ? 'copied' : 'copy output'}
+          active={copied}
+        >
+          {copied ? <Check size={11} /> : <Copy size={11} />}
+          <span>{copied ? 'copied' : 'copy'}</span>
+        </ToolbarButton>
+
+        <ToggleGroup>
+          <ToggleButton
+            active={pretty}
+            onClick={() => setPretty(true)}
+            title="pretty-printed, tokenized"
+          >
+            pretty
+          </ToggleButton>
+          <ToggleButton
+            active={!pretty}
+            onClick={() => rawAvailable && setPretty(false)}
+            disabled={!rawAvailable}
+            title={rawAvailable ? 'raw string' : 'raw view only for string outputs'}
+          >
+            raw
+          </ToggleButton>
+        </ToggleGroup>
+
+        <ToolbarButton
+          onClick={() => setWrap((v) => !v)}
+          title={wrap ? 'disable wrap' : 'enable wrap'}
+          active={wrap}
+        >
+          <WrapText size={11} />
+          <span>wrap</span>
+        </ToolbarButton>
+
+        <div className="ml-auto">{zoomControls}</div>
+      </div>
+
+      <div
+        className={cn(
+          'rounded-md border border-border-subtle bg-surface',
+          'max-h-[60vh] overflow-hidden relative flex flex-col',
+          !expanded && 'max-h-32',
+        )}
+      >
+        <CodeViewer
+          content={renderText}
+          language={language}
+          wrap={wrap}
+          fontSize={fontSize}
+          ariaLabel="run output"
+          className="p-3"
+        />
         {!expanded && (
           <span
             aria-hidden
             className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-surface to-transparent"
           />
         )}
-      </pre>
+      </div>
+
       {tooLong && (
         <button
           type="button"
@@ -286,10 +393,86 @@ function OutputPayload({ output, truncated }: OutputPayloadProps) {
             'focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
           )}
         >
-          {expanded ? '⌃ collapse' : `⌄ expand · ${text.length.toLocaleString()} chars`}
+          {expanded ? '⌃ collapse' : `⌄ expand · ${visibleText.length.toLocaleString()} chars`}
         </button>
       )}
     </div>
+  );
+}
+
+function ToolbarButton({
+  onClick,
+  title,
+  active,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  title: string;
+  active?: boolean;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
+      className={cn(
+        'inline-flex items-center gap-1 px-2 py-1 rounded',
+        'font-mono text-[10px] uppercase tracking-[0.14em]',
+        'border border-border-subtle/60 transition-all duration-150',
+        'hover:border-border hover:text-text-primary',
+        'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-border-subtle/60',
+        active
+          ? 'text-primary bg-primary/8 border-primary/30 hover:border-primary/40 hover:text-primary'
+          : 'text-text-muted bg-surface-elevated/40',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToggleGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="inline-flex items-center rounded border border-border-subtle/60 overflow-hidden bg-surface-elevated/40">
+      {children}
+    </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  disabled,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-pressed={active}
+      className={cn(
+        'px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors duration-150',
+        'disabled:opacity-40 disabled:cursor-not-allowed',
+        active
+          ? 'text-primary bg-primary/10'
+          : 'text-text-muted hover:text-text-primary hover:bg-surface-highlight/40',
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
