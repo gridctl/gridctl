@@ -11,7 +11,8 @@ import {
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
-import { LogLine, LevelFilter, ZoomControls, parseLogEntry, type LogLevel, type ParsedLog } from '../log';
+import { LogLine, LevelFilter, parseLogEntry, type LogLevel, type ParsedLog } from '../log';
+import { ZoomControls } from '../ui/ZoomControls';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { useUIStore } from '../../stores/useUIStore';
 import { useSelectedNodeData } from '../../stores/useStackStore';

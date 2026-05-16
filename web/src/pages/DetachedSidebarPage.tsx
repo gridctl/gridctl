@@ -17,7 +17,7 @@ import {
 import { cn } from '../lib/cn';
 import { Badge } from '../components/ui/Badge';
 import { IconButton } from '../components/ui/IconButton';
-import { ZoomControls } from '../components/log/ZoomControls';
+import { ZoomControls } from '../components/ui/ZoomControls';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useLogFontSize } from '../hooks/useLogFontSize';
 import { fetchStatus, fetchTools } from '../lib/api';

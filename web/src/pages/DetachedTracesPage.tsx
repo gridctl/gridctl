@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
-import { ZoomControls } from '../components/log/ZoomControls';
+import { ZoomControls } from '../components/ui/ZoomControls';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useTextZoom } from '../hooks/useTextZoom';
 import { fetchTraces, fetchTraceDetail, fetchMCPServers } from '../lib/api';

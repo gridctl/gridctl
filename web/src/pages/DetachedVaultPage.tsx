@@ -23,7 +23,7 @@ import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { ZoomControls } from '../components/log/ZoomControls';
+import { ZoomControls } from '../components/ui/ZoomControls';
 import { VaultLockPrompt } from '../components/vault/VaultLockPrompt';
 import { ToastContainer, showToast } from '../components/ui/Toast';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';

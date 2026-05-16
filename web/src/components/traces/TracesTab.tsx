@@ -3,7 +3,7 @@ import { Activity, AlertCircle, RefreshCw, X, Filter } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
-import { ZoomControls } from '../log/ZoomControls';
+import { ZoomControls } from '../ui/ZoomControls';
 import { useUIStore } from '../../stores/useUIStore';
 import { useTracesStore } from '../../stores/useTracesStore';
 import { useStackStore } from '../../stores/useStackStore';

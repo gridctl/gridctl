@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
-import { ZoomControls } from '../components/log/ZoomControls';
+import { ZoomControls } from '../components/ui/ZoomControls';
 import { SkillEditor } from '../components/registry/SkillEditor';
 import { SkillCard } from '../components/registry/SkillCard';
 import { SkillCardSkeleton } from '../components/registry/SkillCardSkeleton';

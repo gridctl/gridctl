@@ -1,7 +1,6 @@
 export { LogLine } from './LogLine';
 export { LogsTab } from './LogsTab';
 export { LevelFilter } from './LevelFilter';
-export { ZoomControls } from './ZoomControls';
 export {
   type LogLevel,
   type ParsedLog,

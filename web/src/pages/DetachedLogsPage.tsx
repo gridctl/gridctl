@@ -16,7 +16,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
-import { LogLine, LevelFilter, ZoomControls, parseLogEntry, type LogLevel, type ParsedLog } from '../components/log';
+import { LogLine, LevelFilter, parseLogEntry, type LogLevel, type ParsedLog } from '../components/log';
+import { ZoomControls } from '../components/ui/ZoomControls';
 import { fetchAgentLogs, fetchGatewayLogs, fetchStatus } from '../lib/api';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useLogFontSize } from '../hooks/useLogFontSize';
