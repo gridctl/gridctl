@@ -26,7 +26,7 @@ right rail change. Workspace switching is done via React Router `NavLink`s
 in the header, the `⌘1` / `⌘2` / `⌘3` shortcuts, or the command palette.
 
 Detached windows (`/sidebar`, `/logs`, `/editor`, `/metrics`, `/vault`,
-`/traces`, `/registry`) render *outside* AppShell — they're popout-friendly
+`/traces`, `/registry`) render *outside* AppShell - they're popout-friendly
 single-purpose pages that accept a `?workspace=` query param to render the
 appropriate workspace content.
 
@@ -66,7 +66,7 @@ workspace. Reach for them before duplicating UI:
 | `InspectorTabList` / `InspectorTabButton` | `components/inspector/` | Skills `SkillSidebar.tsx` (tablist a11y wrapper) |
 | `EmptyState` | `components/ui/` | Skills Canvas, anywhere a "no items / no selection" affordance is needed |
 
-`CanvasBase` is intentionally small (~120 LOC) — it owns the React Flow
+`CanvasBase` is intentionally small (~120 LOC) - it owns the React Flow
 boilerplate (wrapper element, Background layers, proOptions) and exposes
 workspace-specific props. The Topology canvas and Skills canvas remain
 separate components that *compose* CanvasBase; they do **not** share a
@@ -85,7 +85,7 @@ polymorphic super-canvas.
   up on unmount. See `useRunsCommands` and `useSkillsCommands` for the
   pattern.
 - Use Tailwind **semantic tokens** (`bg-primary`, `text-secondary`,
-  `border-status-error`) — never raw color literals like `bg-amber-500` in
+  `border-status-error`) - never raw color literals like `bg-amber-500` in
   new code.
 - Code-split each workspace with `React.lazy()` + `<Suspense>`; the router
   already wires this up in `routes.tsx`.
