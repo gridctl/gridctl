@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
-    "@rjsf/core": "^5.24.13",
+    "@rjsf/core": "^6.5.2",
     "@rjsf/utils": "^5.24.13",
     "@rjsf/validator-ajv8": "^5.24.13",
     "@xyflow/react": "^12.10.0",
