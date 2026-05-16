@@ -40,7 +40,7 @@ OK
 
 #### `GET /ready`
 
-Readiness check. Returns `200 OK` only when all MCP servers are connected and initialized. Returns `503 Service Unavailable` in two cases: any MCP server is not yet ready, or the daemon is running in stackless mode (no stack loaded yet — use `POST /api/stack/initialize` or the wizard to load one).
+Readiness check. Returns `200 OK` only when all MCP servers are connected and initialized. Returns `503 Service Unavailable` in two cases: any MCP server is not yet ready, or the daemon is running in stackless mode (no stack loaded yet - use `POST /api/stack/initialize` or the wizard to load one).
 
 **Auth:** No
 
@@ -198,7 +198,7 @@ Returns MCP server status details. Response fields match the `mcp-servers[]` ent
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-servers
 ```
 
-**Autoscale fields** — servers configured with an `autoscale` block (see [config-schema.md#autoscale](config-schema.md#autoscale)) include an `autoscale` object in their status:
+**Autoscale fields** - servers configured with an `autoscale` block (see [config-schema.md#autoscale](config-schema.md#autoscale)) include an `autoscale` object in their status:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -210,7 +210,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-servers
 | `medianInFlight` | int | Rolling median in-flight request count across healthy replicas |
 | `lastScaleUpAt` | string | RFC3339 timestamp of the most recent scale-up (omitted when none) |
 | `lastScaleDownAt` | string | RFC3339 timestamp of the most recent scale-down (omitted when none) |
-| `lastDecision` | string | `"up"`, `"down"`, or `"noop"` — what the controller just decided |
+| `lastDecision` | string | `"up"`, `"down"`, or `"noop"` - what the controller just decided |
 | `warmPool` | int | Configured warm-pool (omitted when 0) |
 | `idleToZero` | bool | Configured scale-to-zero (omitted when false) |
 
@@ -233,7 +233,7 @@ Returns structured log entries from the gateway log buffer.
 | Query Param | Type | Default | Description |
 |-------------|------|---------|-------------|
 | `lines` | int | `100` | Number of recent log entries to return |
-| `level` | string | — | Comma-separated level filter (e.g., `"ERROR,WARN"`) |
+| `level` | string | - | Comma-separated level filter (e.g., `"ERROR,WARN"`) |
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/logs?lines=50&level=ERROR,WARN"
@@ -386,9 +386,9 @@ Returns an `OptimizeReport` derived from gateway-observed data: the registered s
 
 | Query Param | Type | Default | Description |
 |-------------|------|---------|-------------|
-| `stack` | string | — | Active stack name. `404` if it does not match. |
+| `stack` | string | - | Active stack name. `404` if it does not match. |
 | `min_impact` | float | `0` | Drop findings whose weekly USD impact is below this threshold. `info` findings are always retained. |
-| `severity` | string | — | Comma-separated allowlist of `info`, `warn`, `critical`. |
+| `severity` | string | - | Comma-separated allowlist of `info`, `warn`, `critical`. |
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/optimize?min_impact=0.10"
@@ -541,8 +541,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-ser
 ```
 
 **Errors:**
-- `404` — Server name not found in gateway
-- `500` — Restart failed (container error, connection timeout, etc.)
+- `404` - Server name not found in gateway
+- `500` - Restart failed (container error, connection timeout, etc.)
 
 #### `PUT /api/mcp-servers/{name}/tools`
 
@@ -573,12 +573,12 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 `reloaded` is `false` when the daemon is running without live-reload; the UI should hint the user to run `gridctl reload` manually. `reloadedAt` is omitted in that case.
 
 **Errors:**
-- `400 unknown_tool` — Tool name not advertised by the server (whitelist is stale)
-- `400` — Body missing `tools` array, or contains an empty tool name
-- `404` — Server not found in the stack file
-- `409 stack_modified` — Stack file changed on disk between read and write
-- `502 reload_failed` — YAML written but hot reload failed
-- `503` — No stack file configured (stackless mode)
+- `400 unknown_tool` - Tool name not advertised by the server (whitelist is stale)
+- `400` - Body missing `tools` array, or contains an empty tool name
+- `404` - Server not found in the stack file
+- `409 stack_modified` - Stack file changed on disk between read and write
+- `502 reload_failed` - YAML written but hot reload failed
+- `503` - No stack file configured (stackless mode)
 
 #### `POST /api/servers/probe`
 
@@ -597,7 +597,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`). The body is capped at 64 KiB.
 
-`X-Session-ID` is optional; when absent, the remote address is used for per-session accounting. Concurrency is capped at **3 in-flight probes per session** and **10 globally** — excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
+`X-Session-ID` is optional; when absent, the remote address is used for per-session accounting. Concurrency is capped at **3 in-flight probes per session** and **10 globally** - excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
 
 **Response:**
 ```json
@@ -620,11 +620,11 @@ The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`
 ```
 
 Error codes:
-- `invalid_config` (400) — Body malformed or required fields missing
-- `rate_limited` (429 / 503) — Session or global probe cap exceeded
-- `unsupported_transport` (503) — Probe is not configured on this daemon
-- `internal` (500) — Unexpected probe failure
-- Other codes (422) — Probe ran but the upstream rejected the handshake
+- `invalid_config` (400) - Body malformed or required fields missing
+- `rate_limited` (429 / 503) - Session or global probe cap exceeded
+- `unsupported_transport` (503) - Probe is not configured on this daemon
+- `internal` (500) - Unexpected probe failure
+- Other codes (422) - Probe ran but the upstream rejected the handshake
 
 Env-var values present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
 
@@ -926,8 +926,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/gi
 ```
 
 **Errors:**
-- `404` — No pins found for that server, or server not found in gateway
-- `503` — Pin store not available
+- `404` - No pins found for that server, or server not found in gateway
+- `503` - Pin store not available
 
 #### `DELETE /api/pins/{server}`
 
@@ -942,7 +942,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/
 **Response:** `204 No Content`
 
 **Errors:**
-- `404` — No pins found for that server
+- `404` - No pins found for that server
 
 ---
 
