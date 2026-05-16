@@ -1,6 +1,6 @@
 # Security Policy
 
-This document describes how to report security vulnerabilities in gridctl and how the project handles disclosure. If you have found a security issue, follow the process below. **Do not open a public GitHub issue** — not through the issue templates and not through any other public channel.
+This document describes how to report security vulnerabilities in gridctl and how the project handles disclosure. If you have found a security issue, follow the process below. **Do not open a public GitHub issue** - not through the issue templates and not through any other public channel.
 
 ## Reporting a Vulnerability
 
@@ -17,7 +17,7 @@ Include in your report:
 - The version of gridctl affected
 - Any relevant configuration or environment details
 
-The issue template system is for bugs and feature requests only — it is not appropriate for security reports. Do not open a public issue or pull request disclosing the vulnerability.
+The issue template system is for bugs and feature requests only - it is not appropriate for security reports. Do not open a public issue or pull request disclosing the vulnerability.
 
 ## Response Timeline
 
