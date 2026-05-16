@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RunsFilterBar } from '../runs/RunsFilterBar';
 import { RunsGrid } from '../runs/RunsGrid';
 import { RunInspector } from '../runs/RunInspector';
+import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { useRunsStore, RUNS_DEFAULT_FILTERS } from '../../stores/useRunsStore';
 import type { RunsFilters } from '../../stores/useRunsStore';
 
@@ -94,20 +95,24 @@ export function RunsWorkspace() {
     <div className="absolute inset-0 flex flex-col bg-background">
       <RunsFilterBar skillOptions={skillOptions} />
 
-      <div className="flex flex-1 min-h-0">
-        <div className="flex-1 min-w-0">
-          <RunsGrid onOpenDetail={(id) => navigate(`/runs/${id}`)} />
-        </div>
-        {selectedRunID && (
-          <div className="w-[360px] flex-shrink-0 border-l border-border/30 bg-surface/40">
-            <RunInspector
-              runID={selectedRunID}
-              onClose={() => setSelectedRun(null)}
-              onOpenDetail={() => navigate(`/runs/${selectedRunID}`)}
-            />
-          </div>
-        )}
-      </div>
+      <WorkspaceShell
+        workspace="runs"
+        defaultRightPct={25}
+        minRightPx={300}
+        right={
+          selectedRunID ? (
+            <div className="h-full bg-surface/40 border-l border-border/30">
+              <RunInspector
+                runID={selectedRunID}
+                onClose={() => setSelectedRun(null)}
+                onOpenDetail={() => navigate(`/runs/${selectedRunID}`)}
+              />
+            </div>
+          ) : undefined
+        }
+      >
+        <RunsGrid onOpenDetail={(id) => navigate(`/runs/${id}`)} />
+      </WorkspaceShell>
     </div>
   );
 }
