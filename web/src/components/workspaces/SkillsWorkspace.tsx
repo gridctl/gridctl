@@ -16,13 +16,16 @@ import { useRunTrace } from '../agent/ide/useRunTrace';
 import { useSkillsCommands } from '../skills/useSkillsCommands';
 import { useUIStore } from '../../stores/useUIStore';
 import { cn } from '../../lib/cn';
+import { WorkspaceShell } from '../layout/WorkspaceShell';
 
 type ViewMode = 'list' | 'canvas';
 
-const SIDEBAR_WIDTH = 280;
-const INSPECTOR_WIDTH = 360;
-const COMPACT_SIDEBAR_WIDTH = 220;
-const COMPACT_INSPECTOR_WIDTH = 300;
+// Default rail sizes as percentages of a 1440px reference width:
+// 280/1440 ≈ 19%, 360/1440 = 25%; compact 220/1440 ≈ 15%, 300/1440 ≈ 21%.
+const DEFAULT_SIDEBAR_PCT = 19;
+const DEFAULT_INSPECTOR_PCT = 25;
+const COMPACT_SIDEBAR_PCT = 15;
+const COMPACT_INSPECTOR_PCT = 21;
 
 /**
  * SkillsWorkspace is the developer view inside the unified shell. It
@@ -176,28 +179,40 @@ export function SkillsWorkspace() {
     onRefresh: refreshSkills,
   });
 
-  const sidebarWidth = compact ? COMPACT_SIDEBAR_WIDTH : SIDEBAR_WIDTH;
-  const inspectorWidth = compact ? COMPACT_INSPECTOR_WIDTH : INSPECTOR_WIDTH;
+  const defaultLeftPct = compact ? COMPACT_SIDEBAR_PCT : DEFAULT_SIDEBAR_PCT;
+  const defaultRightPct = compact ? COMPACT_INSPECTOR_PCT : DEFAULT_INSPECTOR_PCT;
 
   return (
-    <div className="absolute inset-0 bg-background text-text-primary overflow-hidden">
-      <div
-        className="grid h-full"
-        style={{
-          gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr) ${inspectorWidth}px`,
-        }}
+    <div className="absolute inset-0 flex bg-background text-text-primary overflow-hidden">
+      <WorkspaceShell
+        workspace="skills"
+        defaultLeftPct={defaultLeftPct}
+        defaultRightPct={defaultRightPct}
+        minLeftPx={220}
+        minRightPx={300}
+        left={
+          <SkillSidebar
+            skills={skills}
+            active={activeSkill}
+            onSelect={handleSelectSkill}
+            onRunSkill={handleRunSkill}
+            loading={skillsLoading}
+            error={skillsError}
+            runsRefreshKey={runsRefreshKey}
+            activeRunID={runID}
+          />
+        }
+        right={
+          <NodeDetail
+            node={selectedNodeObj}
+            skillDir={skillDir}
+            trace={selectedNode ? runTrace.byNode[selectedNode] : undefined}
+            runID={runID}
+            runTrace={runTrace}
+            onClose={() => setSelectedNode(null)}
+          />
+        }
       >
-        <SkillSidebar
-          skills={skills}
-          active={activeSkill}
-          onSelect={handleSelectSkill}
-          onRunSkill={handleRunSkill}
-          loading={skillsLoading}
-          error={skillsError}
-          runsRefreshKey={runsRefreshKey}
-          activeRunID={runID}
-        />
-
         <main className="flex flex-col h-full overflow-hidden bg-background">
           <Toolbar
             graph={graph}
@@ -240,16 +255,7 @@ export function SkillsWorkspace() {
             )}
           </div>
         </main>
-
-        <NodeDetail
-          node={selectedNodeObj}
-          skillDir={skillDir}
-          trace={selectedNode ? runTrace.byNode[selectedNode] : undefined}
-          runID={runID}
-          runTrace={runTrace}
-          onClose={() => setSelectedNode(null)}
-        />
-      </div>
+      </WorkspaceShell>
 
       {launcher && (
         <RunLauncherModal
