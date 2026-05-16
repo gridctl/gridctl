@@ -3,7 +3,7 @@
 Manage secrets with `gridctl vault` instead of exporting environment variables or hardcoding values in stack files.
 
 > [!NOTE]
-> The vault is not a production secrets manager — it's a local development tool. Instead of scattering API keys across shell profiles, `.env` files, and `export` statements that inevitably end up in the wrong place, the vault gives you a single place to store and reference secrets on your machine. If you're deploying to production, use a proper secrets manager like HashiCorp Vault, AWS Secrets Manager, or whatever your platform provides.
+> The vault is not a production secrets manager - it's a local development tool. Instead of scattering API keys across shell profiles, `.env` files, and `export` statements that inevitably end up in the wrong place, the vault gives you a single place to store and reference secrets on your machine. If you're deploying to production, use a proper secrets manager like HashiCorp Vault, AWS Secrets Manager, or whatever your platform provides.
 
 ## 📄 Examples
 
@@ -16,7 +16,7 @@ Manage secrets with `gridctl vault` instead of exporting environment variables o
 
 ### How It Works
 
-Secrets are stored locally in `~/.gridctl/vault/` and referenced in stack YAML using `${vault:KEY}` syntax. When you deploy a stack, gridctl resolves vault references and injects them as environment variables into your containers — keeping secrets out of your stack files and version control.
+Secrets are stored locally in `~/.gridctl/vault/` and referenced in stack YAML using `${vault:KEY}` syntax. When you deploy a stack, gridctl resolves vault references and injects them as environment variables into your containers - keeping secrets out of your stack files and version control.
 
 ```yaml
 env:
@@ -75,7 +75,7 @@ gridctl vault set DB_PASSWORD --value "s3cur3Pa55" --set production
 gridctl vault set API_KEY --value "ak_prod_..." --set production
 ```
 
-Then reference the set in your stack YAML — all secrets in the set are injected into every container's environment:
+Then reference the set in your stack YAML - all secrets in the set are injected into every container's environment:
 
 ```yaml
 secrets:
