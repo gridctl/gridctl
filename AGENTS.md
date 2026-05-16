@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Gridctl is an MCP (Model Context Protocol) orchestration tool — "Containerlab for MCP Infrastructure".
+Gridctl is an MCP (Model Context Protocol) orchestration tool - "Containerlab for MCP Infrastructure".
 
 **Architecture:**
 - Controller (Go): Reads stack.yaml, manages Docker containers
@@ -142,7 +142,7 @@ gridctl/
 │   │   ├── clone.go      # Clone, Fetch, Checkout, ResolveRef, HeadCommit, ListTags
 │   │   ├── auth.go       # Auther interface + DetectProtocol: NoAuth, HTTPSTokenAuth, SSHAgentAuth, SSHKeyFileAuth
 │   │   ├── errors.go     # Sentinel errors + ClassifyError (maps go-git errors to ErrAuth*, ErrNotFound, ErrHostKeyMismatch, etc.)
-│   │   └── redact.go     # RedactURL, RedactString, RedactError — scrubs PATs and embedded userinfo
+│   │   └── redact.go     # RedactURL, RedactString, RedactError - scrubs PATs and embedded userinfo
 │   ├── output/           # CLI output formatting
 │   │   ├── output.go     # Printer, banner display, and progress helpers
 │   │   ├── styles.go     # Color schemes
@@ -214,7 +214,7 @@ gridctl/
 │   │   ├── types.go      # PinRecord, ServerPins, status constants
 │   │   ├── store.go      # PinStore: load/save (atomic), VerifyOrPin, Approve, Reset
 │   │   └── adapter.go    # GatewayAdapter: bridges PinStore to SchemaVerifier interface
-│   ├── registry/         # Agent Skills registry (agentskills.io) — dispatches to typed handlers via pkg/agent/
+│   ├── registry/         # Agent Skills registry (agentskills.io) - dispatches to typed handlers via pkg/agent/
 │   │   ├── types.go      # AgentSkill, SkillFile, ItemState, HandlerLanguage (none|go|ts)
 │   │   ├── frontmatter.go # SKILL.md parsing (YAML frontmatter + markdown body)
 │   │   ├── validator.go  # agentskills.io spec validation
@@ -223,18 +223,20 @@ gridctl/
 │   └── agent/            # Code-first agent runtime (graph composition + LLM provider abstraction)
 │       ├── agent.go      # Public type surface: Graph[I,O], Runnable[I,O], StreamReader[T], ToolInfo, ChatRequest/Response/Chunk, Message, ToolCall, ToolResult, ChatModel
 │       ├── toolcaller.go # ToolCaller interface (alias of mcp.ToolCaller); ToolCallResult type alias
-│       ├── internal/eino/ # Boundary layer — only place github.com/cloudwego/eino is referenced; enforced by scripts/check-eino-boundary.sh
+│       ├── internal/eino/ # Boundary layer - only place github.com/cloudwego/eino is referenced; enforced by scripts/check-eino-boundary.sh
 │       ├── gateway/      # Adapter: NewToolCaller(*mcp.Gateway) → agent.ToolCaller
 │       ├── compose/      # Approval gate primitive: NewGate(run_id, recorder, registry, notifier) returns sandbox.Approver-compatible Gate
 │       ├── orchestrator/ # Single-writer multi-agent: Orchestrator[State], Handoff[State, Out], ParallelHandoff[State, Out] (clamped at 4)
-│       ├── persist/      # JSONL run ledger at ~/.gridctl/runs/<run_id>.jsonl; Store, Recorder, Read/Stream/List/Summary, BuildResumePlan
-│       ├── sandbox/      # TS skill loader: esbuild transpile + per-call goja with tool()/llm()/parallel()/handoff()/approval() bindings
-│       ├── skill/        # Typed Skill SDK: Define[I, O], Registry — exposes typed skills as MCP tools through the gateway
-│       ├── dev/          # Visual IDE backend — code is canon, the IDE never writes back to source
+│       ├── persist/      # JSONL run ledger at ~/.gridctl/runs/<run_id>.jsonl; Store, Recorder, Read/Stream/List/Summary, BuildResumePlan, global event Bus
+│       ├── runner/       # Skill-run orchestration: opens the JSONL ledger, dispatches through an Executor interface, records EventRunStarted/Completed/Error
+│       ├── runtime/      # Process-wide handle aggregating run store, approval registry, sandbox, dev server, and active LLM provider behind mcp.AgentRuntime
+│       ├── sandbox/      # TS skill loader: esbuild transpile + per-call goja with tool()/llm()/parallel()/handoff()/approval() bindings + skill.body/name globals
+│       ├── skill/        # Typed Skill SDK: Definition, Registry, Define[I, O], MustDefine, RunContext with SkillBody()/SkillName(), WithSkillBody context helper
+│       ├── dev/          # Visual IDE backend - code is canon, the IDE never writes back to source
 │       │   ├── parser/   # Go AST + TS regex/lexer; emits flat node list of recognised primitives
 │       │   ├── watcher/  # Recursive fsnotify watcher with 200ms coalescing debounce
 │       │   ├── devserver/ # HTTP routes for /api/agent/dev/{skills,events}
-│       │   └── scaffold/ # Renders `agent init` starter (SKILL.md + skill.ts + agent.json)
+│       │   └── scaffold/ # Renders `agent init` starter (SKILL.md + skill.ts + agent.json) for ts/go/prompt-only flavors
 │       └── llm/          # LLM provider abstraction (net/http + encoding/json only)
 │           ├── llm.go    # Provider type alias of agent.ChatModel
 │           ├── anthropic/ # Anthropic Messages API (Generate + Stream + tools.go + messages.go)
@@ -270,7 +272,7 @@ gridctl/
 
 ## Private Git Auth
 
-Gridctl clones private git repositories in two places — skill imports (`pkg/skills`) and MCP server source builds (`pkg/builder`). Both go through the shared `pkg/git` package.
+Gridctl clones private git repositories in two places - skill imports (`pkg/skills`) and MCP server source builds (`pkg/builder`). Both go through the shared `pkg/git` package.
 
 **Layering:**
 
@@ -295,7 +297,7 @@ cmd/gridctl/skill.go              internal/api/skills.go
 
 **Auther interface.** `pkg/git.Auther.AuthFor(url)` returns the `transport.AuthMethod` go-git uses. Each implementation validates its own inputs eagerly (`ErrEmptyToken`, `ErrProtocolMismatch`, `ErrSSHAgentMissing`) so a misconfigured auth fails fast rather than falling through to an unauthenticated clone that returns a cryptic "not found". `pkg/git.DetectProtocol(url)` classifies URLs as `HTTPS`, `SSH`, `Local`, or `Unknown`; implementations reject URLs whose protocol doesn't match their mechanism.
 
-**Resolver threading — `${vault:KEY}` is resolved once, at the boundary.**
+**Resolver threading - `${vault:KEY}` is resolved once, at the boundary.**
 
 - The **CLI** (`cmd/gridctl/skill.go`) resolves `--vault-key GIT_TOKEN` into a raw token in `buildAuthConfigFromFlags` before calling `Importer.Import`. It also registers a `skills.CredentialResolver` on the importer so `skill update` can re-resolve stored references automatically.
 - The **API** (`internal/api/skills.go`) does the same inside `AuthRequest.toAuthConfig`, consulting the live `vault.Store` on every request so rotated secrets take effect immediately.
@@ -309,7 +311,7 @@ cmd/gridctl/skill.go              internal/api/skills.go
 
 **Error classification.** `git.ClassifyError` maps raw go-git errors into sentinels (`ErrAuthRequired`, `ErrAuthFailed`, `ErrNotFound`, `ErrHostKeyMismatch`, `ErrSSHAgentMissing`). The CLI turns these into human hints via `printSkillAuthHint`; the API maps them to HTTP status codes via `gitErrorStatus` (401, 404, 400, 500).
 
-**Scope.** v1 ships HTTPS PAT (via vault or ephemeral flag / env) and SSH-via-agent; SSH key-file auth is wired but lacks a stricter host-key policy — `SSHKeyFileAuth.KnownHostsPath` is reserved for follow-up work. Out of scope for v1: OAuth device flow, GitHub App tokens, OS keychain, 1Password/Bitwarden passthrough, credential templates, Git LFS auth.
+**Scope.** v1 ships HTTPS PAT (via vault or ephemeral flag / env) and SSH-via-agent; SSH key-file auth is wired but lacks a stricter host-key policy - `SSHKeyFileAuth.KnownHostsPath` is reserved for follow-up work. Out of scope for v1: OAuth device flow, GitHub App tokens, OS keychain, 1Password/Bitwarden passthrough, credential templates, Git LFS auth.
 
 ## Build Commands
 
@@ -371,8 +373,8 @@ to the lighter `releases/latest` redirect (which excludes pre-releases)
 so the curl installer and `gridctl upgrade` serve stable users a stable
 build. Affected lines:
 
-- `install.sh` — `resolve_version()`
-- `cmd/gridctl/upgrade.go` — `fetchLatestTag()`
+- `install.sh` - `resolve_version()`
+- `cmd/gridctl/upgrade.go` - `fetchLatestTag()`
 
 Both files have a `TODO` comment marking the call site.
 
@@ -385,7 +387,7 @@ Ubuntu and macOS (install → re-run for idempotency → `gridctl upgrade
 
 - PRs touching `install.sh` or the workflow itself
 - Pushes to `main` touching `install.sh`
-- Weekly cron (Monday 08:00 UTC) — surfaces release-artifact drift
+- Weekly cron (Monday 08:00 UTC) - surfaces release-artifact drift
 
 ## CLI Usage
 
@@ -551,7 +553,7 @@ Triggers a hot reload of the stack configuration. The stack must be running with
 
 #### `gridctl serve`
 
-Starts the API server and web UI in stackless mode — no stack file required. Stack-dependent endpoints return 503 until a stack is loaded via the wizard. Vault and wizard endpoints are always available.
+Starts the API server and web UI in stackless mode - no stack file required. Stack-dependent endpoints return 503 until a stack is loaded via the wizard. Vault and wizard endpoints are always available.
 
 | Flag | Short | Description |
 |------|-------|-------------|
@@ -611,7 +613,7 @@ Manage TOFU schema pins that protect against rug pull attacks (CVE-2025-54136 cl
 
 #### `gridctl optimize`
 
-Scan the running gateway and print cost-reduction findings — unused servers and unused tools in v1 — with a measured weekly USD impact and a paste-ready YAML remediation. The CLI requires the gateway to be running; it never reads client-side session files.
+Scan the running gateway and print cost-reduction findings - unused servers and unused tools in v1 - with a measured weekly USD impact and a paste-ready YAML remediation. The CLI requires the gateway to be running; it never reads client-side session files.
 
 | Flag | Short | Description |
 |------|-------|-------------|
@@ -680,8 +682,8 @@ When `gridctl apply` runs, it:
 6. Starts HTTP server with MCP endpoint
 
 **Endpoints:**
-- **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop)
-- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/api/metrics/cost`, `/api/optimize`, `/api/agent/runs[/{run_id}[/events|resume|approve]]`, `/api/agent/dev/{skills|events}`, `/api/playground/{auth|chat|stream}`, `/health`, `/ready`
+- **MCP:** `POST /mcp` (JSON-RPC), `GET /sse` + `POST /message` (SSE for Claude Desktop; `/message` returns `410 Gone` and is retained only for legacy clients)
+- **API:** `/api/status`, `/api/mcp-servers`, `/api/mcp-servers/{name}/restart`, `/api/mcp-servers/{name}/tools` (PUT), `/api/tools`, `/api/logs`, `/api/clients`, `/api/reload`, `/api/metrics/tokens`, `/api/metrics/cost`, `/api/optimize`, `/api/agent/runs` (GET list, POST launch), `/api/agent/runs/events/stream` (global SSE bus across every active run), `/api/agent/runs/{run_id}[/events|resume|approve]`, `/api/agent/dev/{skills|events}`, `/api/playground/{auth|chat|stream}`, `/api/telemetry/inventory`, `/api/telemetry` (DELETE), `/api/mcp-servers/{name}/telemetry` (PATCH), `/health`, `/ready`
 - **Stack Library:** `/api/stacks` (list/save), `/api/stack/initialize` (cold-load a saved stack into a stackless daemon)
 - **Vault:** `/api/vault`, `/api/vault/status`, `/api/vault/unlock`, `/api/vault/lock`, `/api/vault/sets`, `/api/vault/import`
 - **Pins:** `/api/pins` (list all), `/api/pins/{server}` (get), `/api/pins/{server}/approve` (POST), `/api/pins/{server}` (DELETE)
@@ -709,7 +711,7 @@ When `gridctl apply` runs, it:
 - `GET /api/status` includes `token_usage` (session totals, per-server breakdown, format savings)
 
 **Optimize API:**
-- `GET /api/optimize?stack={name}&min_impact=0.10&severity=warn,critical` — Returns an `OptimizeReport{findings, health_score, generated_at}` derived from the live gateway state, accumulator snapshot, and (when wired) the agent persistence store. Each finding carries `id`, `heuristic` (`unused_server`, `unused_tool`, `schema_overhead`, `format_savings_shortfall`, `expensive_model_on_cheap_task`, `unbounded_loop`, `oversized_prompt`, `untyped_handoff`, `need_more_data`), `severity`, `title`, `summary`, `server`, `tool`, `impact_usd_per_week`, `remediation` (YAML or shell snippet), and `detected_at`. Returns `404` when `stack` does not match the active stack and `503` when the metrics accumulator is not configured.
+- `GET /api/optimize?stack={name}&min_impact=0.10&severity=warn,critical` - Returns an `OptimizeReport{findings, health_score, generated_at}` derived from the live gateway state, accumulator snapshot, and (when wired) the agent persistence store. Each finding carries `id`, `heuristic` (`unused_server`, `unused_tool`, `schema_overhead`, `format_savings_shortfall`, `expensive_model_on_cheap_task`, `unbounded_loop`, `oversized_prompt`, `untyped_handoff`, `need_more_data`), `severity`, `title`, `summary`, `server`, `tool`, `impact_usd_per_week`, `remediation` (YAML or shell snippet), and `detected_at`. Returns `404` when `stack` does not match the active stack and `503` when the metrics accumulator is not configured.
 
 **Registry API:**
 - `GET /api/registry/status` - Returns skill counts
@@ -751,7 +753,7 @@ When the vault is locked, all endpoints except `status`, `unlock`, and `lock` re
   - Query params: `server` (filter by server name), `errors=true` (errors only), `min_duration` (e.g. `100ms`, `1s`), `limit` (default 100)
   - Response: `TraceRecord[]` with fields: `trace_id`, `operation`, `start_time`, `duration_ms`, `span_count`, `is_error`, `spans`
 - `GET /api/traces/{traceId}` - Get a single trace with full span detail
-  - Response: `TraceRecord` with `spans[]` — each span has `span_id`, `name`, `start_time`, `duration_ms`, `is_error`, `attrs` (OTel attributes)
+  - Response: `TraceRecord` with `spans[]` - each span has `span_id`, `name`, `start_time`, `duration_ms`, `is_error`, `attrs` (OTel attributes)
 
 **Stack Library API:**
 - `GET /api/stacks` - List saved stacks from `~/.gridctl/stacks/`; returns `{stacks: [{name, path, size, modTime}]}`
@@ -765,26 +767,27 @@ When the vault is locked, all endpoints except `status`, `unlock`, and `lock` re
 **Tool prefixing:** Tools are prefixed with server name to avoid collisions:
 - `server-name__tool-name` (e.g., `itential-mcp__get_workflows`)
 
-**Replica sets:** Each registered server is a `ReplicaSet` in the router — a pool of 1..N `AgentClient` replicas sharing one server name and one tool namespace. Set `replicas: N` (and optionally `replica_policy: round-robin | least-connections`) in `mcp-servers[]` to spawn N independent processes. Validation caps at 32 and rejects replicas on `external` / `openapi` transports. Per-replica health monitor pings each replica independently, excludes failures from dispatch, and reconnects with exponential backoff (1s → 30s cap, ±25% jitter, reset on success). When every replica is unhealthy, tool calls fail with `no healthy replicas: <server>`. Every log line and trace span on the tool-call path carries a `replica_id`; `gridctl status --replicas` and `/api/stack/health` expose the per-replica breakdown. See [docs/scaling.md](docs/scaling.md).
+**Replica sets:** Each registered server is a `ReplicaSet` in the router - a pool of 1..N `AgentClient` replicas sharing one server name and one tool namespace. Set `replicas: N` (and optionally `replica_policy: round-robin | least-connections`) in `mcp-servers[]` to spawn N independent processes. Validation caps at 32 and rejects replicas on `external` / `openapi` transports. Per-replica health monitor pings each replica independently, excludes failures from dispatch, and reconnects with exponential backoff (1s → 30s cap, ±25% jitter, reset on success). When every replica is unhealthy, tool calls fail with `no healthy replicas: <server>`. Every log line and trace span on the tool-call path carries a `replica_id`; `gridctl status --replicas` and `/api/stack/health` expose the per-replica breakdown. See [docs/scaling.md](docs/scaling.md).
 
-**Autoscale:** A server can replace static `replicas: N` with a reactive `autoscale:` block — same transport rules, same replica-set plumbing, but with a per-set controller in `pkg/mcp/autoscaler` that spawns/reaps replicas based on rolling-median in-flight load (`min`, `max`, `target_in_flight`, `scale_up_after`, `scale_down_after`, `warm_pool`, `idle_to_zero`). `autoscale` and `replicas` are mutually exclusive on the same server. Live snapshots are published on `/api/status` and `/api/mcp-servers` as `autoscale?: AutoscaleStatus` (current, target, median, lastDecision, lastScaleUp/DownAt); `gridctl status --replicas` surfaces the same via an `AUTOSCALE` column. See [docs/scaling.md#autoscaling](docs/scaling.md#autoscaling).
+**Autoscale:** A server can replace static `replicas: N` with a reactive `autoscale:` block - same transport rules, same replica-set plumbing, but with a per-set controller in `pkg/mcp/autoscaler` that spawns/reaps replicas based on rolling-median in-flight load (`min`, `max`, `target_in_flight`, `scale_up_after`, `scale_down_after`, `warm_pool`, `idle_to_zero`). `autoscale` and `replicas` are mutually exclusive on the same server. Live snapshots are published on `/api/status` and `/api/mcp-servers` as `autoscale?: AutoscaleStatus` (current, target, median, lastDecision, lastScaleUp/DownAt); `gridctl status --replicas` surfaces the same via an `AUTOSCALE` column. See [docs/scaling.md#autoscaling](docs/scaling.md#autoscaling).
 
 ## Agent Runtime Architecture
 
 The code-first agent runtime (`pkg/agent/`) implements a three-layer mental model that the rest of the codebase reasons in terms of:
 
-1. **Gateway** (existing, `pkg/mcp/`): MCP protocol bridge that aggregates tools from heterogeneous downstream MCP servers behind a single endpoint. Owns tool prefixing (`server__tool`), replica routing, vault auth, schema pinning, format conversion, tracing, and per-tool metrics. Unchanged by the agent runtime — every agent tool call still flows through `Gateway.CallTool`.
-2. **Agent Runtime** (new, `pkg/agent/`): Typed graph composition (via the `internal/eino/` adapter), an LLM provider abstraction (`llm/anthropic`, `llm/openai`, `llm/google`, prefix-routed by `llm/gateway`), the Skill SDK (`skill/`), the TS sandbox (`sandbox/`), the single-writer orchestrator (`orchestrator/`), JSONL run persistence and time-travel resume (`persist/`), the approval gate primitive (`compose/`), and the IDE backend (`dev/`). The `internal/eino/` boundary is enforced by `scripts/check-eino-boundary.sh` — no `github.com/cloudwego/eino` types appear outside that directory.
+1. **Gateway** (existing, `pkg/mcp/`): MCP protocol bridge that aggregates tools from heterogeneous downstream MCP servers behind a single endpoint. Owns tool prefixing (`server__tool`), replica routing, vault auth, schema pinning, format conversion, tracing, and per-tool metrics. Unchanged by the agent runtime - every agent tool call still flows through `Gateway.CallTool`.
+2. **Agent Runtime** (new, `pkg/agent/`): Typed graph composition (via the `internal/eino/` adapter), an LLM provider abstraction (`llm/anthropic`, `llm/openai`, `llm/google`, prefix-routed by `llm/gateway`), the Skill SDK (`skill/`), the TS sandbox (`sandbox/`), the single-writer orchestrator (`orchestrator/`), JSONL run persistence and time-travel resume (`persist/`), the approval gate primitive (`compose/`), and the IDE backend (`dev/`). The `internal/eino/` boundary is enforced by `scripts/check-eino-boundary.sh` - no `github.com/cloudwego/eino` types appear outside that directory.
 3. **Skill Registry** (existing, recontextualised, `pkg/registry/`): Discovery, packaging, remote import via git, lockfile, and source-only fingerprinting. The walker recognises `*.go` and `*.ts` siblings of `SKILL.md`; `pkg/registry.Server.Tools()` and `Server.CallTool()` expose registered typed skills as MCP tools, so local execution (`gridctl run <skill>`) and remote execution (an upstream MCP client invoking via the gateway, including a second gridctl pointed at the first) share one code path.
 
-Skills are typed Go (`skill.Define[I, O]("name", "description", run)` — input and output structs with `jsonschema` tags) or TypeScript (transpiled via the existing esbuild path, executed in `pkg/agent/sandbox/`'s goja runtime with `tool()`, `llm()`, `parallel()`, `handoff()`, `approval()` bindings). Both flavours register through the same registry and surface as MCP tools through the gateway — there is no "internal" vs "external" execution mode.
+Skills are typed Go (`skill.Define[I, O]("name", "description", run)` - input and output structs with `jsonschema` tags) or TypeScript (transpiled via the existing esbuild path, executed in `pkg/agent/sandbox/`'s goja runtime with `tool()`, `llm()`, `parallel()`, `handoff()`, `approval()` bindings). Both flavours register through the same registry and surface as MCP tools through the gateway - there is no "internal" vs "external" execution mode.
 
 **Observability wiring.** Tracing, pricing, and metrics are wired through the same primitives the gateway uses:
 
 - **Tracing** (`pkg/tracing/`): every orchestrator handoff (`agent.orchestrator.handoff`) and parallel batch (`agent.orchestrator.parallel`) opens an OTel span under tracer `gridctl.agent.orchestrator`. LLM calls wrapped through `pkg/agent/llm/observed/` open `agent.llm.generate` / `agent.llm.stream` spans under tracer `gridctl.agent.llm` carrying `gen_ai.*` attributes; spans attach to existing `mcp.routing` parent spans when invoked from a tool-call path.
-- **Pricing** (`pkg/pricing/`): every LLM call records cost via `pricing.CalculateBreakdown(model, Usage)` — at the playground service site (`internal/api/playground.go`) for the chat path, and inside `pkg/agent/llm/observed.Provider` for any agent-runtime call site that wraps its `ChatModel`.
-- **Metrics** (`pkg/metrics/`): cost is recorded via `Accumulator.RecordCost(serverName, replicaID, breakdown)` directly with synthetic server names (`llm:anthropic`, `llm:openai`, `llm:google`, `llm:unknown`) — never via MCP envelope spoofing.
-- **Optimize** (`pkg/optimize/`): three agent-runtime heuristics — `unbounded_loop`, `oversized_prompt`, `untyped_handoff` — read aggregated `RunStat` records derived from `pkg/agent/persist/` and surface in `gridctl optimize` output when their thresholds fire.
+- **Pricing** (`pkg/pricing/`): every LLM call records cost via `pricing.CalculateBreakdown(model, Usage)` - at the playground service site (`internal/api/playground.go`) for the chat path, and inside `pkg/agent/llm/observed.Provider` for any agent-runtime call site that wraps its `ChatModel`.
+- **Metrics** (`pkg/metrics/`): cost is recorded via `Accumulator.RecordCost(serverName, replicaID, breakdown)` directly with synthetic server names (`llm:anthropic`, `llm:openai`, `llm:google`, `llm:unknown`) - never via MCP envelope spoofing.
+- **Optimize** (`pkg/optimize/`): three agent-runtime heuristics - `unbounded_loop`, `oversized_prompt`, `untyped_handoff` - read aggregated `RunStat` records derived from `pkg/agent/persist/` and surface in `gridctl optimize` output when their thresholds fire.
+- **Global event bus** (`pkg/agent/persist/bus.go`): every JSONL event also fans out to an in-process bus so SSE consumers (`GET /api/agent/runs/events/stream`, the Web UI's global runs stream) see live updates across **every** active run without subscribing per-run. Per-run SSE remains the source of truth for one run's timeline; the global stream is the cross-run observability surface.
 
 ## Stack YAML Schema
 
@@ -893,7 +896,7 @@ resources:                            # Non-MCP containers (databases, etc.)
 
 ### Tool Filtering
 
-Use the `tools` field on MCP servers to whitelist which tools are exposed system-wide — unauthorized tools never enter the gateway:
+Use the `tools` field on MCP servers to whitelist which tools are exposed system-wide - unauthorized tools never enter the gateway:
 
 ```yaml
 mcp-servers:
@@ -951,78 +954,141 @@ In simple mode, the `network` field on individual containers is ignored.
 
 ## Skills
 
-Skills are typed, code-first units of work that run on the agent runtime. The legacy YAML `workflow:` block (declarative DAGs of tool calls) was removed in PR #581 and is formally disowned by Constitution Article IX. Skills are now Go or TypeScript handlers paired with a `SKILL.md` manifest; the registry walker (`pkg/registry/store.go`) recognises `*.go` and `*.ts` siblings of `SKILL.md` and exposes them as MCP tools through the gateway.
+Skills are the gateway's primary extension surface. The legacy declarative YAML `workflow:` block was removed in PR #581 and is formally disowned by Constitution Article IX. Today there are **three flavors**, all under `~/.gridctl/registry/skills/<name>/`; the registry walker (`pkg/registry/store.go`) classifies them by **file presence** - there is no `kind:` field in the frontmatter, and we do not plan to add one (the frontmatter stays agentskills.io-compliant).
 
-### Skill Layout
+| Flavor | Required files | Surfaces as | Runtime |
+|---|---|---|---|
+| **Prompt-only** (data layer) | `SKILL.md` | MCP prompt **and** MCP tool envelope | None - the markdown body is the artifact |
+| **Code (TypeScript)** (logic layer) | `SKILL.md` + `skill.ts` + `agent.json` | MCP tool (typed input/output) | In-process `goja` runtime + `esbuild` transpile (`pkg/agent/sandbox/`) |
+| **Code (Go)** (logic layer) | `SKILL.md` + `skill.go` + `skill_test.go` | MCP tool (typed input/output) | Go plugin (`go build -buildmode=plugin`); loaded by `pkg/controller/go_plugins.go` |
 
-```
-my-skill/
-├── SKILL.md         # YAML frontmatter (name, description, allowed-tools, state, acceptance_criteria, inputs)
-├── skill.go         # Optional Go handler — built via `gridctl agent build my-skill`
-└── skill.ts         # Optional TypeScript handler — transpiled and executed in pkg/agent/sandbox/
-```
+`state: active` skills are dispatchable; `acceptance_criteria` (`GIVEN ... WHEN ... THEN ...`) drive `gridctl test <skill>`. Code skills must define `acceptance_criteria` before `gridctl activate` will promote them.
 
-A skill exposes exactly one handler. `state: active` skills are dispatchable; `acceptance_criteria` (`GIVEN ... WHEN ... THEN ...`) drive `gridctl test <skill>`.
+The same upstream MCP client cannot tell the three flavors apart at call time - that is the invariant `docs/skills.md` protects.
 
-### TypeScript skills (sandboxed via goja + esbuild)
+### Prompt-only skills (data layer)
+
+Reach for prompt-only when the skill is **prose** - a severity matrix the model applies verbatim, a runbook surfaced to upstream clients (Claude Desktop, IDE, CLI). Scaffold with `gridctl agent init --prompt-only`; edit `SKILL.md`; the next registry refresh picks up the change. No build, no restart of anything except the registry refresh.
+
+### Code skills - TypeScript (sandboxed via goja + esbuild)
 
 ```typescript
-// skill.ts — default-export an async function
+// skill.ts - default-export an async function
+import { llm, skill, tool } from "@gridctl/agent";
+
 export default async function (input: { topic: string }): Promise<{ summary: string }> {
   const research = await tool("github__list_issues", { repo: input.topic });
-  const summary = await llm({
+  const reply = await llm({
     model: "claude-sonnet-4-6",
+    system: skill.body,  // hybrid pattern: SKILL.md body drives the system prompt
     messages: [{ role: "user", content: `Summarise: ${research}` }],
   });
-  return { summary: summary.content };
+  return { summary: reply.content ?? "" };
 }
 ```
 
-Sandbox bindings:
+Sandbox bindings (installed in `pkg/agent/sandbox/bindings.go`):
 
 | Binding | Purpose |
 |---|---|
-| `tool(name, args)` | Invoke any allowed MCP tool through the gateway (whitelisting + tracing + cost recording all apply). |
-| `llm(req)` | Issue a `ChatRequest` via the wired `ChatModel`. Wrap the wired model in `pkg/agent/llm/observed/` to record cost. |
-| `parallel(items, fn)` | Concurrent map with the orchestrator hard cap of 4. |
-| `handoff(skill, input)` | Dispatch another skill through the same registry path the gateway exposes. |
-| `approval(prompt)` | Suspend the run on `pkg/agent/compose.Gate` until a CLI / web / MCP consumer responds. |
+| `tool(name, args)` | Invoke any allowed MCP tool through the gateway (whitelisting + tracing + cost recording all apply). Accepts both prefixed (`server__tool`) and unprefixed names; unprefixed resolves against `AllowedTools` if exactly one suffix matches. |
+| `llm(req)` | Issue an `agent.ChatRequest` via the wired `ChatModel`. Wrap the wired model in `pkg/agent/llm/observed/` to record cost. |
+| `parallel(items, fn)` | Concurrent map with a soft cap of `DefaultMaxParallel = 4`. The orchestrator's `HardMaxParallel = 4` is the structural ceiling. |
+| `handoff(name, input)` | Dispatch another skill through the same `SkillCaller` adapter the gateway exposes. Local execution and remote (over-MCP) execution share one code path. |
+| `approval(prompt)` | Suspend the run on `pkg/agent/compose.Gate` until a CLI / web / MCP consumer responds. Auto-approves with `automatic: true` when no `Approver` is wired. |
+| `skill.body`, `skill.name` | Read-only globals that mirror Go's `ctx.SkillBody()` / `ctx.SkillName()`. Drives the hybrid pattern from TS. |
 
-### Go skills (typed via the Skill SDK)
+### Code skills - Go (typed via the Skill SDK)
+
+The typed runner signature is `func(ctx skill.RunContext, input I) (O, error)`. `RunContext` embeds `context.Context` and adds `SkillBody() string` plus `SkillName() string`; both are captured at `Define` time so reads are a single pointer chase with no per-call I/O.
 
 ```go
-type Input struct { Topic string `json:"topic" jsonschema:"required"` }
+package main
+
+import "github.com/gridctl/gridctl/pkg/agent/skill"
+
+type Input  struct { Topic string `json:"topic" jsonschema:"required"` }
 type Output struct { Summary string `json:"summary"` }
 
-var Skill = skill.Define[Input, Output]("research", "Research a topic", func(ctx context.Context, in Input) (Output, error) {
-    // ... tool() and llm() equivalents are first-class Go calls into the orchestrator.
-})
+func run(ctx skill.RunContext, in Input) (Output, error) {
+    // tool() and llm() equivalents are first-class Go calls into the orchestrator/provider.
+    return Output{Summary: "..."}, nil
+}
+
+// New is the constructor the plugin entry point hands to the Registry.
+func New() *skill.Definition {
+    return skill.MustDefine[Input, Output]("research", "Research a topic", "", run)
+}
+
+// RegisterSkill is the fixed plugin entry point the gateway looks up
+// via plugin.Lookup after plugin.Open. Missing or mis-typed → load skipped.
+func RegisterSkill(reg *skill.Registry) error { return reg.Register(New()) }
+
+func main() {} // satisfies `go build` for compile-checks; never invoked
 ```
 
-`skill.Define` infers a JSON Schema from the input struct (`jsonschema` tags) at registration time; the `Run(ctx, input)` signature aligns with the gateway's existing `pkg/mcp.AgentClient.CallTool` shape so local execution and remote (over-MCP) execution share one code path.
+`skill.Define[I, O](name, description, body, run)` infers the input JSON Schema from `I`'s `jsonschema` struct tags at registration time and returns a `*Definition` the registry lifts into an `mcp.Tool` envelope. `MustDefine` is the panicking variant for package-init code. The fourth argument - the post-frontmatter `SKILL.md` body - is positional; pass `""` for programmatic registrations (tests, fixtures). The gateway-builder plugin loader re-decorates each loaded `Definition` with the on-disk body via `skill.WithSkillBody(ctx, body)` so authors writing `New()` with `""` still see the on-disk body through `ctx.SkillBody()`.
+
+### The hybrid pattern
+
+A code skill can read its own `SKILL.md` body and feed it to an LLM as the system prompt. Code drives the graph; prose drives the behavior. Edit the markdown, change runtime behavior, no code change.
+
+```go
+func run(ctx skill.RunContext, in TriageInput) (TriageOutput, error) {
+    req := agent.ChatRequest{
+        Model:    "claude-sonnet-4-6",
+        System:   ctx.SkillBody(),       // the post-frontmatter markdown
+        Messages: []agent.Message{ /* ... */ },
+    }
+    // ...
+}
+```
+
+`examples/registry/items/incident-triage-hybrid/` is the byte-checked reference; `skill_test.go` asserts `buildRequest(...).System` equals the on-disk body verbatim. The TS counterpart is `examples/registry/items/triage-ts/`.
+
+### Operational sharp edges (Go plugins)
+
+The Go plugin path has real operational constraints - kept on `docs/skills.md` for the operator debugging a `plugin.Open` failure:
+
+- **Host/plugin Go version must match.** The daemon's `runtime.Version()` and the building toolchain version are recorded in `dist/manifest.json` as `go_version` plus `go_mod_hash` (sha256 of the resolved `go.mod`). At gateway start `pkg/controller/go_plugins.go` reads the manifest **before** calling `plugin.Open` and skips with an actionable warn on mismatch.
+- **Plugins cannot be unloaded.** `plugin.Open` is one-way. Hot-reload only refreshes the TS path; Go plugins refresh on daemon start. Don't try to "hot reload" Go skills.
+- **Linux and macOS only.** Windows daemons walk past Go-handler skills via a stub loader; `gridctl agent build` for a Go skill on Windows returns a pre-flight error before invoking the toolchain.
+- **`RegisterSkill` is the contract.** `plugin.Lookup("RegisterSkill")` must return `func(*skill.Registry) error`. `gridctl agent validate <skill>` parses `skill.go` via `go/parser` and catches the missing-symbol case before a `go build` round-trip.
+- **One broken plugin does not block gateway start.** Per-skill load failures log at warn and the loop continues; the skill surfaces as a missing tool at call time.
 
 ### Multi-agent orchestration
 
-`pkg/agent/orchestrator.New[State](caller, initial)` returns an `Orchestrator[State]` whose State is mutable only through `Apply(func(*State) error)` and readable only through `Snapshot()` (deep copy via JSON round-trip). `Handoff[State, Out](ctx, o, call)` and `ParallelHandoff[State, Out](ctx, o, calls)` dispatch subagents through `agent.ToolCaller` — the same surface `*skill.Registry` and the gateway adapter both satisfy. Subagents never receive `*State`; single-writer enforcement is structural. Parallel handoffs are clamped at `HardMaxParallel = 4`; requests above the ceiling clamp with a logged warning.
+`pkg/agent/orchestrator.New[State](caller, initial)` returns an `Orchestrator[State]` whose State is mutable only through `Apply(func(*State) error)` and readable only through `Snapshot()` (deep copy via JSON round-trip). `Handoff[State, Out](ctx, o, call)` and `ParallelHandoff[State, Out](ctx, o, calls)` dispatch subagents through `agent.ToolCaller` - the same surface `*skill.Registry` and the gateway adapter both satisfy. Subagents never receive `*State`; single-writer enforcement is structural. Parallel handoffs are clamped at `HardMaxParallel = 4`; requests above the ceiling clamp with a logged warning.
 
 ### Run persistence and time-travel resume
 
-Every run writes a JSONL ledger to `~/.gridctl/runs/<run_id>.jsonl` (`pkg/agent/persist/`). Event types: `run_started`, `run_completed`, `node_enter`, `node_exit`, `tool_call`, `tool_result`, `llm_call`, `llm_chunk`, `structured_output`, `approval_request`, `approval_response`, `error`. `gridctl runs resume <run_id> [--from-step <node_id>]` rebuilds state from the ledger and continues execution.
+Every run writes a JSONL ledger to `~/.gridctl/runs/<run_id>.jsonl` (`pkg/agent/persist/`). Event types: `run_started`, `run_completed`, `node_enter`, `node_exit`, `tool_call`, `tool_result`, `llm_call`, `llm_chunk`, `structured_output`, `approval_request`, `approval_response`, `error`. `gridctl runs resume <run_id> [--from-step <node_id>]` rebuilds state from the ledger and continues execution. A global SSE stream (`GET /api/agent/runs/events/stream`) fans out every event across active runs to the Web UI's Runs workspace and BottomPanel Runs tab so the live grid stays in sync across workspaces.
 
 ### CLI surface
 
 | Command | Purpose |
 |---|---|
-| `gridctl run <skill> [--input @file.json \| - \| '<json>'] [--format json] [--quiet]` | Execute a skill; streams typed events. |
-| `gridctl runs list` | Recent runs (table or `--format json`). |
+| `gridctl agent init [DIR]` | Scaffold a starter skill. `--lang ts` (default) or `--lang go`; `--prompt-only` is mutually exclusive with `--lang`. Idempotent unless `--force`. |
+| `gridctl agent dev [--root <dir>] [--port 8181]` | IDE dev server: AST graphs, file-watcher SSE, click-to-`$EDITOR` jumps, trace overlay. Read-only (code is canon). |
+| `gridctl agent validate <skill>` | Static check: SKILL.md state, TS transpile via esbuild, Go `RegisterSkill` symbol via `go/parser` (no toolchain invocation). |
+| `gridctl agent build <skill>` | Compile + write `dist/manifest.json`. TS: esbuild → `skill.js`. Go: `go build -buildmode=plugin` → `skill.so` + manifest guardrail fields (`go_version`, `go_mod_hash`). |
+| `gridctl run <skill> [--input @file.json \| - \| '<json>'] [--format json] [--quiet] [--run-id <id>]` | Execute a TS skill in-process and stream typed events; records to `~/.gridctl/runs/<run_id>.jsonl`. Go-handler skills require daemon registration via the gateway-builder plugin loader. |
+| `gridctl runs list [--limit N]` | Recent runs (table or `--format json`). |
 | `gridctl runs inspect <run_id>` | Typed event timeline. |
-| `gridctl runs trace <run_id>` | OTel-shaped JSON projection. |
-| `gridctl runs resume <run_id> [--from-step <node_id>]` | Time-travel resume. |
-| `gridctl runs approve <run_id> [--decision approve\|reject] [--reason <text>]` | Resolve a pending approval gate. |
-| `gridctl agent dev [--port 8181]` | Launch the visual IDE backend. |
-| `gridctl agent build <skill>` | Compile a typed Go skill + emit publishable manifest. |
-| `gridctl agent validate <skill>` | Validate manifest + schemas without executing. |
-| `gridctl agent init` | Scaffold a runnable hello-world TS skill. |
+| `gridctl runs trace <run_id>` | OTel-shaped JSON projection of the JSONL ledger. |
+| `gridctl runs resume <run_id> [--from-step <node_id>]` | Time-travel resume from the last checkpoint. |
+| `gridctl runs approve <run_id> [--decision approve\|reject] [--reason <text>]` | Resolve a pending approval gate (calls `POST /api/agent/runs/<id>/approve`). |
+
+### Reference
+
+- `pkg/agent/skill/skill.go` - `Definition`, `Registry`, `Invoker`, the two-layer (runtime-facing / author-facing) mental model.
+- `pkg/agent/skill/typed.go` - `RunContext`, `TypedRunner[I, O]`, `Define[I, O]`, `MustDefine`, `WithSkillBody`.
+- `pkg/agent/sandbox/bindings.go` - `tool()`, `llm()`, `parallel()`, `handoff()`, `approval()`, and the `skill` global.
+- `pkg/agent/sandbox/sandbox.go` - `Bindings`, single-shot event loop, `DefaultTimeout`, `MaxSourceSize`.
+- `pkg/controller/go_plugins.go` - `loadGoSkillPlugins`: manifest-guardrail-then-`plugin.Open`; called from `gateway_builder.go:Build()`.
+- `pkg/controller/gateway_builder.go` - `makeDispatcherBindings` (per-call body resolution for the TS sandbox path).
+- `examples/registry/items/triage-ts/`, `triage-go/`, `incident-triage-hybrid/` - the three reference skills.
+- `docs/skills.md` - the canonical three-flavor reference, including all operational sharp edges.
 
 ## Code Conventions
 
