@@ -793,3 +793,154 @@ func TestDetectContentType(t *testing.T) {
 		})
 	}
 }
+
+// --- Skills: test (acceptance-criteria runner) ---
+
+// seedSkillWithCriteria saves a skill that carries acceptance_criteria
+// markers the deterministic evaluator can read.
+func seedSkillWithCriteria(t *testing.T, regServer *registry.Server, name string, criteria []string) {
+	t.Helper()
+	sk := &registry.AgentSkill{
+		Name:               name,
+		Description:        "Test skill with criteria: " + name,
+		State:              registry.StateActive,
+		Body:               "# " + name + "\n\nSkill instructions.",
+		AcceptanceCriteria: criteria,
+	}
+	if err := regServer.Store().SaveSkill(sk); err != nil {
+		t.Fatalf("failed to seed skill: %v", err)
+	}
+}
+
+func TestHandleRegistry_TestSkill_HappyPath(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkillWithCriteria(t, regServer, "with-criteria", []string{
+		"PASS: criterion 0",
+		"FAIL: criterion 1",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/with-criteria/test", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var report registry.TestReport
+	if err := json.NewDecoder(rec.Body).Decode(&report); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if report.SkillName != "with-criteria" {
+		t.Errorf("SkillName = %q, want with-criteria", report.SkillName)
+	}
+	if report.PassCount != 1 || report.FailCount != 1 {
+		t.Errorf("counts pass=%d fail=%d, want 1/1", report.PassCount, report.FailCount)
+	}
+	if report.Evaluator != "deterministic" {
+		t.Errorf("Evaluator = %q, want deterministic (no chat provider set)", report.Evaluator)
+	}
+}
+
+func TestHandleRegistry_TestSkill_NotFound(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/missing/test", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegistry_TestSkill_NoCriteria(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "no-criteria", registry.StateActive)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/no-criteria/test", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRegistry_TestSkill_DryRun(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkillWithCriteria(t, regServer, "with-criteria", []string{
+		"PASS: c0",
+		"FAIL: c1",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/with-criteria/test?dry_run=1", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var report registry.TestReport
+	if err := json.NewDecoder(rec.Body).Decode(&report); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !report.DryRun {
+		t.Error("DryRun should be true")
+	}
+	if report.PassCount != 0 || report.FailCount != 0 {
+		t.Errorf("dry-run should report no verdicts; got pass=%d fail=%d", report.PassCount, report.FailCount)
+	}
+	if len(report.Results) != 2 {
+		t.Errorf("Results len = %d, want 2", len(report.Results))
+	}
+}
+
+func TestHandleRegistry_TestSkill_ScopedToCriterion(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkillWithCriteria(t, regServer, "with-criteria", []string{
+		"PASS: c0",
+		"FAIL: c1",
+		"PASS: c2",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/with-criteria/test?criterion=1", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	var report registry.TestReport
+	if err := json.NewDecoder(rec.Body).Decode(&report); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("Results len = %d, want 1", len(report.Results))
+	}
+	if report.Results[0].Index != 1 {
+		t.Errorf("Results[0].Index = %d, want 1", report.Results[0].Index)
+	}
+	if report.FailCount != 1 {
+		t.Errorf("FailCount = %d, want 1", report.FailCount)
+	}
+}
+
+func TestHandleRegistry_TestSkill_BadCriterion(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkillWithCriteria(t, regServer, "with-criteria", []string{"PASS: c0"})
+
+	cases := []struct {
+		name string
+		url  string
+		want int
+	}{
+		{"non-integer", "/api/registry/skills/with-criteria/test?criterion=abc", http.StatusBadRequest},
+		{"negative", "/api/registry/skills/with-criteria/test?criterion=-1", http.StatusBadRequest},
+		{"out of range", "/api/registry/skills/with-criteria/test?criterion=99", http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.url, nil)
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Errorf("expected %d, got %d (body=%s)", tc.want, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
