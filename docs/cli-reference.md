@@ -51,6 +51,7 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 | `gridctl skill info <name>` | Show origin and update status. |
 | `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation. |
 | `gridctl skill validate <name>` | Validate a skill definition. |
+| `gridctl test <skill-name>` | Run a skill's `acceptance_criteria` (exit `0`/`1`/`2`); `--dry-run` lists criteria without executing, `--criterion <n>` scopes to one criterion, `--format json` for machine output. |
 
 ## Skills - authoring
 
