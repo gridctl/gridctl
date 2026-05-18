@@ -626,15 +626,18 @@ Exit codes: `0` no findings or info-only, `1` at least one `warn`/`critical` fin
 
 #### `gridctl test <skill-name>`
 
-Run acceptance criteria for a skill against the running gateway.
+Run acceptance criteria for a skill against the running gateway. The runner POSTs to `/api/registry/skills/{name}/test`; the server hands each criterion to an LLM judge when a chat provider is configured (set `ANTHROPIC_API_KEY` in the vault), otherwise falls back to a deterministic adapter that reads explicit `PASS:` / `FAIL:` markers — useful in CI when criteria are fixture-encoded.
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--stack` | `-s` | Stack to test against (auto-detect if only one running) |
+| `--format` | | Output format: `json` for machine-readable `TestReport` (default: table) |
+| `--dry-run` | | List criteria without evaluating them |
+| `--criterion` | | Zero-based index of a single criterion to evaluate (default: all) |
 
-Exit codes: `0` all criteria passed, `1` one or more criteria failed, `2` infrastructure error (gateway unreachable, skill not found).
+Exit codes: `0` all criteria passed, `1` one or more criteria failed, `2` infrastructure error (gateway unreachable, skill not found, criterion index out of range).
 
-Acceptance criteria in `SKILL.md` frontmatter must follow the `GIVEN <context> WHEN <action> THEN <assertion>` format. Criteria that don't match the pattern are skipped.
+Acceptance criteria in `SKILL.md` frontmatter are free-form Given/When/Then prose; the LLM judge reads them directly. The deterministic adapter requires criteria to start with `PASS:` or `FAIL:` and reports `error` severity for ambiguous prose, so production prose criteria do not pretend to pass against a missing provider.
 
 #### `gridctl activate <skill-name>`
 
