@@ -2,10 +2,29 @@
 
 Guides and references for gridctl.
 
+## Learning Path
+
+New to gridctl? Read in this order:
+
+1. **[Installation](installation.md)** - get the binary on your machine
+2. **[Quick Start](../README.md#-quick-start)** - apply your first stack in three commands
+3. **[Configuration Reference](config-schema.md)** - the shape of `stack.yaml`
+4. **[Skills](skills.md)** - extend the gateway with prompt, TypeScript, or Go skills
+5. **[Scaling](scaling.md)** and **[Cost Observability](cost-observability.md)** - operate at volume
+6. **[Troubleshooting](troubleshooting.md)** - when something goes wrong
+
+## Getting Started
+
+| Document | Description |
+|----------|-------------|
+| [Installation](installation.md) | One-liner install, package managers, container runtime detection, Podman setup, updating, uninstalling |
+| [Quick Start](../README.md#-quick-start) | Apply your first stack in three commands |
+
 ## References
 
 | Document | Description |
 |----------|-------------|
+| [CLI Reference](cli-reference.md) | Every `gridctl` command, grouped by domain - stack lifecycle, skills, runs, vault, optimize, traces, upgrade |
 | [Configuration Reference](config-schema.md) | Every field in `stack.yaml` - server types, networks, agents, auth, vault |
 | [REST API Reference](api-reference.md) | Gateway endpoints, request/response formats, authentication |
 
@@ -15,11 +34,17 @@ Guides and references for gridctl.
 |----------|-------------|
 | [Skills](skills.md) | The three flavors (prompt / code-ts / code-go), the hybrid pattern, recursive composability, and Go-plugin sharp edges |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
+| [Cost Observability](cost-observability.md) | LLM pricing, per-client attribution, and the `gridctl optimize` heuristics |
+
+## Operations
+
+| Document | Description |
+|----------|-------------|
+| [Project Status](project-status.md) | Per-feature stability tiers and currently known limitations |
 | [Troubleshooting](troubleshooting.md) | Common errors and resolutions - runtime, networking, vault, hot reload |
 
 ## Quick Links
 
-- [Getting Started](../README.md#-quick-start) - deploy your first stack
-- [Examples](../examples/) - 20+ example configurations
+- [Examples](../examples/) - 25+ example stacks (transports, OpenAPI, skills registry, multi-agent, vault, tracing)
 - [Contributing](../CONTRIBUTING.md) - development setup and conventions
 - [Changelog](../CHANGELOG.md) - release history
