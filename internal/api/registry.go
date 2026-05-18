@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/gridctl/gridctl/pkg/registry"
 )
@@ -166,6 +168,77 @@ func (s *Server) handleRegistrySkillStateChange(w http.ResponseWriter, name, act
 	}
 	s.refreshRegistryRouter()
 	writeJSON(w, sk)
+}
+
+// handleRegistrySkillTest runs the skill's acceptance_criteria and
+// returns a TestReport. Query parameters (all optional):
+//   - criterion=N: scope to a single criterion index (zero-based).
+//   - dry_run=1:   list criteria without evaluating them.
+//
+// Returns:
+//   - 200 with the JSON report when criteria ran (including when
+//     verdicts came back fail; the CLI maps fail-count to exit 1).
+//   - 400 when criterion= is out of range or malformed.
+//   - 404 when the skill does not exist.
+//   - 422 when the skill has no acceptance_criteria — Unprocessable
+//     Entity reads correctly here: the request was understood, the
+//     skill just has nothing to test.
+//
+// POST /api/registry/skills/{name}/test
+func (s *Server) handleRegistrySkillTest(w http.ResponseWriter, r *http.Request) {
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+	name := r.PathValue("name")
+	sk, err := s.registryServer.Store().GetSkill(name)
+	if err != nil {
+		writeJSONError(w, "Skill not found: "+name, http.StatusNotFound)
+		return
+	}
+
+	opts := registry.NewRunOptions()
+	if v := r.URL.Query().Get("criterion"); v != "" {
+		idx, parseErr := strconv.Atoi(v)
+		if parseErr != nil || idx < 0 {
+			writeJSONError(w, "criterion must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		opts.CriterionIndex = idx
+	}
+	if v := r.URL.Query().Get("dry_run"); v == "1" || strings.EqualFold(v, "true") {
+		opts.DryRun = true
+	}
+
+	var ev registry.Evaluator
+	if !opts.DryRun {
+		if provider := s.chatProvider(); provider != nil {
+			ev = registry.LLMEvaluator{Provider: provider}
+		} else {
+			// No LLM wired — fall back to the deterministic evaluator so
+			// fixture skills with explicit PASS:/FAIL: markers still run
+			// in CI. Prose criteria will surface as error-severity rows
+			// with a clear "configure an LLM provider" message.
+			ev = registry.DeterministicEvaluator{}
+		}
+	}
+
+	report, err := registry.RunAcceptance(r.Context(), sk, ev, opts)
+	if err != nil {
+		switch {
+		case errors.Is(err, registry.ErrNoCriteria):
+			writeJSONError(w, "skill has no acceptance_criteria", http.StatusUnprocessableEntity)
+		case errors.Is(err, registry.ErrCriterionOutOfRange):
+			writeJSONError(w, "criterion index out of range", http.StatusBadRequest)
+		default:
+			writeJSONError(w, "test failed: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	if report.Results == nil {
+		report.Results = []registry.TestResult{}
+	}
+	writeJSON(w, report)
 }
 
 // handleRegistrySkillFileList lists files in a skill directory.
