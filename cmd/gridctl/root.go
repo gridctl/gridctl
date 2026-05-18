@@ -38,6 +38,7 @@ func init() {
 	rootCmd.AddCommand(skillCmd)
 	rootCmd.AddCommand(pinsCmd)
 	rootCmd.AddCommand(optimizeCmd)
+	rootCmd.AddCommand(testCmd)
 }
 
 func Execute() {
