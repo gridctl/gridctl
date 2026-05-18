@@ -19,3 +19,7 @@ updates:
       interval: weekly
     commit-message:
       prefix: "chore"
+    groups:
+      rjsf:
+        patterns:
+          - "@rjsf/*"
