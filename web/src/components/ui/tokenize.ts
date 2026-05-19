@@ -137,7 +137,7 @@ function highlightYAMLLine(line: string): HighlightedToken[] {
         tokens.push({ text: value, className: 'text-tertiary-light' });
       } else if (/^\s*-?\d+(\.\d+)?$/.test(value.trim())) {
         tokens.push({ text: value, className: 'text-primary' });
-      } else if (value.includes('${vault:')) {
+      } else if (value.includes('${vault:') || value.includes('${var:')) {
         tokens.push({ text: value, className: 'text-status-pending' });
       } else {
         tokens.push({ text: value, className: 'text-text-primary' });

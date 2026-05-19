@@ -19,7 +19,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { AutoscaleFormData, MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
 import type { ProbeServerConfig } from '../../../lib/api';
-import { SecretsPopover } from '../SecretsPopover';
+import { VariablesPopover } from '../VariablesPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
 
@@ -318,10 +318,10 @@ function KeyValueEditor({
                 value={val}
                 onChange={(e) => updateValue(key, e.target.value)}
                 placeholder={placeholder?.value ?? 'value'}
-                className={cn(inputClass, 'flex-1', val.startsWith('${vault:') && 'text-tertiary font-medium')}
+                className={cn(inputClass, 'flex-1', val.startsWith('${var:') && 'text-tertiary font-medium')}
               />
               {showSecrets && (
-                <SecretsPopover
+                <VariablesPopover
                   onSelect={(ref) => updateValue(key, ref)}
                 />
               )}
@@ -1756,7 +1756,7 @@ function SourceAuthField({
                 No credential selected
               </div>
             )}
-            <SecretsPopover onSelect={onChange} />
+            <VariablesPopover onSelect={onChange} />
           </div>
         </div>
       )}

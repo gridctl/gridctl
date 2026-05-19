@@ -40,8 +40,9 @@ function highlightYAMLLine(line: string): HighlightedToken[] {
       else if (/^\s*-?\d+(\.\d+)?$/.test(value.trim())) {
         tokens.push({ text: value, className: 'text-primary' });
       }
-      // Vault references
-      else if (value.includes('${vault:')) {
+      // Variable store references (canonical ${var:KEY}; ${vault:KEY} still
+      // accepted while the deprecation alias is in effect).
+      else if (value.includes('${vault:') || value.includes('${var:')) {
         tokens.push({ text: value, className: 'text-status-pending' });
       }
       // Regular values

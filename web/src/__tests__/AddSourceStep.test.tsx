@@ -11,8 +11,8 @@ vi.mock('../lib/api', async () => {
     ...actual,
     fetchSkillSources: vi.fn().mockResolvedValue([]),
     previewSkillSource: vi.fn(),
-    fetchVaultSecrets: vi.fn().mockResolvedValue([]),
-    createVaultSecret: vi.fn(),
+    fetchVariables: vi.fn().mockResolvedValue([]),
+    createVariable: vi.fn(),
   };
 });
 

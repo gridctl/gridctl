@@ -4,20 +4,20 @@ import '@testing-library/jest-dom';
 import { StackForm } from '../components/wizard/steps/StackForm';
 import type { StackFormData } from '../lib/yaml-builder';
 import { buildYAML } from '../lib/yaml-builder';
-import { fetchVaultSets } from '../lib/api';
+import { fetchVariableSets } from '../lib/api';
 
-// Mock SecretsPopover to avoid vault API calls
-vi.mock('../components/wizard/SecretsPopover', () => ({
-  SecretsPopover: ({ onSelect }: { onSelect: (ref: string) => void }) => (
-    <button data-testid="secrets-popover" onClick={() => onSelect('${vault:TEST}')}>
-      vault
+// Mock VariablesPopover to avoid variable store API calls.
+vi.mock('../components/wizard/VariablesPopover', () => ({
+  VariablesPopover: ({ onSelect }: { onSelect: (ref: string) => void }) => (
+    <button data-testid="variables-popover" onClick={() => onSelect('${var:TEST}')}>
+      var
     </button>
   ),
 }));
 
 // Mock vault API — default to empty sets; individual tests override as needed
 vi.mock('../lib/api', () => ({
-  fetchVaultSets: vi.fn().mockResolvedValue([]),
+  fetchVariableSets: vi.fn().mockResolvedValue([]),
 }));
 
 function defaultData(overrides?: Partial<StackFormData>): StackFormData {
@@ -100,7 +100,7 @@ describe('StackForm', () => {
   });
 
   it('shows vault set dropdown with existing sets when Add set is clicked', async () => {
-    vi.mocked(fetchVaultSets).mockResolvedValueOnce([
+    vi.mocked(fetchVariableSets).mockResolvedValueOnce([
       { name: 'dev', count: 2 },
       { name: 'prod', count: 5 },
     ]);

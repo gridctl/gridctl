@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Search, Plus, X, Loader2, Check } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useVaultStore } from '../../stores/useVaultStore';
-import { fetchVaultSets } from '../../lib/api';
+import { fetchVariableSets } from '../../lib/api';
 
 interface VaultSetSelectorProps {
   value: string[];
@@ -30,7 +30,7 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
   // Fetch sets when popover opens
   useEffect(() => {
     if (!open) return;
-    fetchVaultSets()
+    fetchVariableSets()
       .then((s) => setSets(s))
       .catch(() => {});
   }, [open, setSets]);

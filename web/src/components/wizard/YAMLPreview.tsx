@@ -13,8 +13,9 @@ interface YAMLPreviewProps {
 function highlightYAML(yaml: string): Array<{ lineNum: number; html: string }> {
   return yaml.split('\n').map((line, i) => {
     let html = line
-      // Vault references (most specific — process before anything else)
-      .replace(/(\$\{vault:[^}]+\})/, '<span class="text-tertiary font-medium">$1</span>')
+      // Variable store references — canonical ${var:KEY} plus the
+      // deprecated ${vault:KEY} alias still in flight.
+      .replace(/(\$\{(?:vault|var):[^}]+\})/, '<span class="text-tertiary font-medium">$1</span>')
       // Quoted strings (must run before key regex to avoid matching HTML class names)
       .replace(/"([^"]*)"/, '<span class="text-status-running">"$1"</span>')
       // Comments

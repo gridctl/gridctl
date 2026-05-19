@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/shell/AppShell';
 import { RootRedirect } from './components/shell/RootRedirect';
 import { AgentRedirect } from './components/shell/AgentRedirect';
@@ -71,7 +71,10 @@ export function AppRoutes() {
       <Route path="/editor" element={<DetachedEditorPage />} />
       <Route path="/registry" element={<DetachedRegistryPage />} />
       <Route path="/metrics" element={<DetachedMetricsPage />} />
-      <Route path="/vault" element={<DetachedVaultPage />} />
+      <Route path="/var" element={<DetachedVaultPage />} />
+      {/* /vault → /var: silent redirect for bookmarks and existing window
+          handles. Kept through the beta cycle and removed at v1.0. */}
+      <Route path="/vault" element={<Navigate to="/var" replace />} />
       <Route path="/traces" element={<DetachedTracesPage />} />
     </Routes>
   );

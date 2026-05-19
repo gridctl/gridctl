@@ -55,7 +55,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const selectNode = useStackStore((s) => s.selectNode);
 
   const traces = useTracesStore((s) => s.traces);
-  const secrets = useVaultStore((s) => s.secrets);
+  const secrets = useVaultStore((s) => s.variables);
   const skills = useRegistryStore((s) => s.skills);
 
   // Static navigation commands
@@ -132,10 +132,10 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       },
       {
         id: 'navigate:vault',
-        label: 'Open Vault',
+        label: 'Open Variables',
         section: 'global',
         icon: <Key size={14} />,
-        keywords: ['vault', 'secrets', 'keys', 'env', 'open'],
+        keywords: ['variables', 'vault', 'secrets', 'keys', 'env', 'open'],
         onSelect: () => setShowVault(true),
       },
     ];
@@ -295,14 +295,23 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     return () => unregisterCommands('dynamic-traces');
   }, [traces, registerCommands, unregisterCommands, setBottomPanelTab]);
 
-  // Dynamic vault secret commands
+  // Dynamic variable store commands — both secrets and plaintext entries
+  // surface here. The label distinguishes the two so the user knows what
+  // kind of value will appear when the panel opens.
   useEffect(() => {
-    const commands: PaletteCommand[] = (secrets ?? []).slice(0, 30).map((secret) => ({
-      id: `vault:${secret.key}`,
-      label: `Open secret: ${secret.key}`,
+    const commands: PaletteCommand[] = (secrets ?? []).slice(0, 30).map((variable) => ({
+      id: `vault:${variable.key}`,
+      label: `Open variable: ${variable.key}${variable.is_secret ? '' : ' (plaintext)'}`,
       section: 'vault' as const,
       icon: <Key size={14} />,
-      keywords: [secret.key, 'vault', 'secret', 'env', secret.set ?? ''],
+      keywords: [
+        variable.key,
+        'variable',
+        'vault',
+        variable.is_secret ? 'secret' : 'plaintext',
+        'env',
+        variable.set ?? '',
+      ],
       onSelect: () => setShowVault(true),
     }));
     registerCommands('dynamic-vault', commands);

@@ -14,7 +14,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { ResourceFormData } from '../../../lib/yaml-builder';
-import { SecretsPopover } from '../SecretsPopover';
+import { VariablesPopover } from '../VariablesPopover';
 
 // --- Resource presets ---
 
@@ -35,7 +35,7 @@ const RESOURCE_PRESETS: ResourcePreset[] = [
     data: {
       name: 'postgres',
       image: 'postgres:16',
-      env: { POSTGRES_DB: 'mydb', POSTGRES_USER: 'user', POSTGRES_PASSWORD: '${vault:POSTGRES_PASSWORD}' },
+      env: { POSTGRES_DB: 'mydb', POSTGRES_USER: 'user', POSTGRES_PASSWORD: '${var:POSTGRES_PASSWORD}' },
       ports: ['5432:5432'],
     },
   },
@@ -58,7 +58,7 @@ const RESOURCE_PRESETS: ResourcePreset[] = [
     data: {
       name: 'mysql',
       image: 'mysql:8',
-      env: { MYSQL_DATABASE: 'mydb', MYSQL_ROOT_PASSWORD: '${vault:MYSQL_ROOT_PASSWORD}' },
+      env: { MYSQL_DATABASE: 'mydb', MYSQL_ROOT_PASSWORD: '${var:MYSQL_ROOT_PASSWORD}' },
       ports: ['3306:3306'],
     },
   },
@@ -216,10 +216,10 @@ function KeyValueEditor({
                 value={val}
                 onChange={(e) => updateValue(key, e.target.value)}
                 placeholder={placeholder?.value ?? 'value'}
-                className={cn(inputClass, 'flex-1', val.startsWith('${vault:') && 'text-tertiary font-medium')}
+                className={cn(inputClass, 'flex-1', val.startsWith('${var:') && 'text-tertiary font-medium')}
               />
               {showSecrets && (
-                <SecretsPopover onSelect={(ref) => updateValue(key, ref)} />
+                <VariablesPopover onSelect={(ref) => updateValue(key, ref)} />
               )}
             </div>
             <button

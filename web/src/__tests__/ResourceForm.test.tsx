@@ -157,7 +157,7 @@ describe('ResourceForm', () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         env: expect.objectContaining({
-          POSTGRES_PASSWORD: '${vault:POSTGRES_PASSWORD}',
+          POSTGRES_PASSWORD: '${var:POSTGRES_PASSWORD}',
         }),
       }),
     );

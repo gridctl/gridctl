@@ -16,14 +16,14 @@ type ScopePrefix = 't:' | 'v:' | 'r:' | '>';
 
 const SCOPE_CONFIG: Record<ScopePrefix, { label: string; section: PaletteSection }> = {
   't:': { label: 'Traces', section: 'traces' },
-  'v:': { label: 'Vault', section: 'vault' },
+  'v:': { label: 'Variables', section: 'vault' },
   'r:': { label: 'Registry', section: 'registry' },
   '>': { label: 'Actions', section: 'global' },
 };
 
 const SECTION_DISPLAY: Record<PaletteSection, { label: string; className: string }> = {
   traces: { label: 'TRACES', className: 'text-secondary bg-secondary/5 border-secondary/20' },
-  vault: { label: 'VAULT', className: 'text-primary bg-primary/5 border-primary/20' },
+  vault: { label: 'VARIABLES', className: 'text-primary bg-primary/5 border-primary/20' },
   registry: { label: 'REGISTRY', className: 'text-tertiary bg-tertiary/5 border-tertiary/20' },
   canvas: { label: 'CANVAS', className: 'text-text-muted bg-surface-highlight border-border/30' },
   logs: { label: 'LOGS', className: 'text-text-muted bg-surface-highlight border-border/30' },

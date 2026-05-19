@@ -221,7 +221,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         <IconButton
           icon={Settings}
           onClick={() => setShowVault(!showVault)}
-          tooltip="Vault"
+          tooltip="Variables"
           className={cn(
             'hover:text-primary hover:border-primary/30',
             showVault && 'text-primary border-primary/30'

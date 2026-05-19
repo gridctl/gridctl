@@ -22,7 +22,7 @@ import {
   type SkillAuth,
 } from '../../../lib/api';
 import { showToast } from '../../ui/Toast';
-import { SecretsPopover } from '../SecretsPopover';
+import { VariablesPopover } from '../VariablesPopover';
 import type { SkillPreview, SkillSourceStatus } from '../../../types';
 
 interface AddSourceStepProps {
@@ -357,7 +357,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
                           Choose a vault key →
                         </div>
                       )}
-                      <SecretsPopover onSelect={setVaultRef} />
+                      <VariablesPopover onSelect={setVaultRef} />
                     </div>
                   ) : (
                     <>

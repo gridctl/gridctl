@@ -8,11 +8,11 @@ const WINDOW_TITLES: Record<string, string> = {
   editor: 'Gridctl - Editor',
   registry: 'Gridctl - Registry',
   metrics: 'Gridctl - Metrics',
-  vault: 'Gridctl - Vault',
+  var: 'Gridctl - Variables',
   traces: 'Gridctl - Traces',
 };
 
-type DetachableWindow = 'logs' | 'sidebar' | 'editor' | 'registry' | 'metrics' | 'vault' | 'traces';
+type DetachableWindow = 'logs' | 'sidebar' | 'editor' | 'registry' | 'metrics' | 'var' | 'traces';
 
 export function useWindowManager() {
   const windowRefs = useRef<Map<string, Window | null>>(new Map());
@@ -46,7 +46,7 @@ export function useWindowManager() {
           setSidebarOpen(false);
         } else if (payload?.windowType === 'metrics') {
           setMetricsDetached(true);
-        } else if (payload?.windowType === 'vault') {
+        } else if (payload?.windowType === 'var') {
           setVaultDetached(true);
         } else if (payload?.windowType === 'traces') {
           setTracesDetached(true);
@@ -62,7 +62,7 @@ export function useWindowManager() {
           setRegistryDetached(false);
         } else if (payload?.windowType === 'metrics') {
           setMetricsDetached(false);
-        } else if (payload?.windowType === 'vault') {
+        } else if (payload?.windowType === 'var') {
           setVaultDetached(false);
         } else if (payload?.windowType === 'traces') {
           setTracesDetached(false);
@@ -99,7 +99,7 @@ export function useWindowManager() {
       setSidebarOpen(false);
     } else if (type === 'metrics') {
       setMetricsDetached(true);
-    } else if (type === 'vault') {
+    } else if (type === 'var') {
       setVaultDetached(true);
     } else if (type === 'traces') {
       setTracesDetached(true);
@@ -131,7 +131,7 @@ export function useWindowManager() {
             setRegistryDetached(false);
           } else if (type === 'metrics') {
             setMetricsDetached(false);
-          } else if (type === 'vault') {
+          } else if (type === 'var') {
             setVaultDetached(false);
           } else if (type === 'traces') {
             setTracesDetached(false);
