@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import { useUIStore } from '../stores/useUIStore';
 import { useBroadcastChannel, type BroadcastMessage } from './useBroadcastChannel';
 
@@ -14,9 +14,13 @@ const WINDOW_TITLES: Record<string, string> = {
 
 type DetachableWindow = 'logs' | 'sidebar' | 'editor' | 'registry' | 'metrics' | 'var' | 'traces';
 
-export function useWindowManager() {
-  const windowRefs = useRef<Map<string, Window | null>>(new Map());
+// Module-scope: detached windows live for the lifetime of the opener page,
+// not the lifetime of any particular component instance. A per-component ref
+// caused unmount cleanups to close windows that openDetachedWindow had only
+// just opened (the same call flips a UI flag that can unmount the caller).
+const windowRefs: Map<string, Window | null> = new Map();
 
+export function useWindowManager() {
   const setLogsDetached = useUIStore((s) => s.setLogsDetached);
   const setSidebarDetached = useUIStore((s) => s.setSidebarDetached);
   const setEditorDetached = useUIStore((s) => s.setEditorDetached);
@@ -67,7 +71,7 @@ export function useWindowManager() {
         } else if (payload?.windowType === 'traces') {
           setTracesDetached(false);
         }
-        windowRefs.current.delete(payload?.windowType ?? '');
+        windowRefs.delete(payload?.windowType ?? '');
       }
     }
   }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setMetricsDetached, setVaultDetached, setTracesDetached, setBottomPanelOpen, setSidebarOpen]);
@@ -78,7 +82,7 @@ export function useWindowManager() {
 
   // Open a detached window
   const openDetachedWindow = useCallback((type: DetachableWindow, params?: string) => {
-    const existingWindow = windowRefs.current.get(type);
+    const existingWindow = windowRefs.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.focus();
       return;
@@ -108,46 +112,68 @@ export function useWindowManager() {
     const url = params ? `/${type}?${params}` : `/${type}`;
     const newWindow = window.open(url, `gridctl-${type}`);
 
-    if (newWindow) {
-      windowRefs.current.set(type, newWindow);
-
-      // Update title after load
-      newWindow.addEventListener('load', () => {
-        newWindow.document.title = WINDOW_TITLES[type];
-      });
-
-      // Track window close
-      const checkClosed = setInterval(() => {
-        if (newWindow.closed) {
-          clearInterval(checkClosed);
-          windowRefs.current.delete(type);
-          if (type === 'logs') {
-            setLogsDetached(false);
-          } else if (type === 'sidebar') {
-            setSidebarDetached(false);
-          } else if (type === 'editor') {
-            setEditorDetached(false);
-          } else if (type === 'registry') {
-            setRegistryDetached(false);
-          } else if (type === 'metrics') {
-            setMetricsDetached(false);
-          } else if (type === 'var') {
-            setVaultDetached(false);
-          } else if (type === 'traces') {
-            setTracesDetached(false);
-          }
-        }
-      }, 500);
+    if (!newWindow) {
+      // Popup blocked or otherwise refused. Roll back the eager state flip so
+      // the user still sees the source panel.
+      if (type === 'logs') {
+        setLogsDetached(false);
+        setBottomPanelOpen(true);
+      } else if (type === 'sidebar') {
+        setSidebarDetached(false);
+        setSidebarOpen(true);
+      } else if (type === 'editor') {
+        setEditorDetached(false);
+      } else if (type === 'registry') {
+        setRegistryDetached(false);
+        setSidebarOpen(true);
+      } else if (type === 'metrics') {
+        setMetricsDetached(false);
+      } else if (type === 'var') {
+        setVaultDetached(false);
+      } else if (type === 'traces') {
+        setTracesDetached(false);
+      }
+      return;
     }
+
+    windowRefs.set(type, newWindow);
+
+    // Update title after load
+    newWindow.addEventListener('load', () => {
+      newWindow.document.title = WINDOW_TITLES[type];
+    });
+
+    // Track window close
+    const checkClosed = setInterval(() => {
+      if (newWindow.closed) {
+        clearInterval(checkClosed);
+        windowRefs.delete(type);
+        if (type === 'logs') {
+          setLogsDetached(false);
+        } else if (type === 'sidebar') {
+          setSidebarDetached(false);
+        } else if (type === 'editor') {
+          setEditorDetached(false);
+        } else if (type === 'registry') {
+          setRegistryDetached(false);
+        } else if (type === 'metrics') {
+          setMetricsDetached(false);
+        } else if (type === 'var') {
+          setVaultDetached(false);
+        } else if (type === 'traces') {
+          setTracesDetached(false);
+        }
+      }
+    }, 500);
   }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setMetricsDetached, setVaultDetached, setTracesDetached, setBottomPanelOpen, setSidebarOpen]);
 
   // Close a detached window
   const closeDetachedWindow = useCallback((type: DetachableWindow) => {
-    const existingWindow = windowRefs.current.get(type);
+    const existingWindow = windowRefs.get(type);
     if (existingWindow && !existingWindow.closed) {
       existingWindow.close();
     }
-    windowRefs.current.delete(type);
+    windowRefs.delete(type);
   }, []);
 
   // Notify detached windows of state changes
@@ -167,19 +193,6 @@ export function useWindowManager() {
       source: 'main',
     });
   }, [postMessage]);
-
-  // Clean up on unmount
-  useEffect(() => {
-    const refs = windowRefs.current;
-    return () => {
-      refs.forEach((win) => {
-        if (win && !win.closed) {
-          win.close();
-        }
-      });
-      refs.clear();
-    };
-  }, []);
 
   return {
     openDetachedWindow,
