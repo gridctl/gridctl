@@ -4,6 +4,41 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking
+
+- Renamed `VaultSecret` interface to `Variable` in `src/lib/api.ts`; every
+  `*VaultSecret*` / `*VaultSet*` / `*VaultStatus*` export renamed to its
+  `*Variable*` / `*VariableSet*` / `*VariableStoreStatus*` counterpart. No
+  JS-level aliases — the hard rename forces every callsite to update.
+- Renamed `SecretsPopover` component to `VariablesPopover`. The wizard
+  popover button title is now `"Insert variable"`.
+- Web route `/vault` silently redirects to `/var`. The detached window
+  type renamed from `'vault'` to `'var'`; window name string updated
+  from `gridctl-vault` to `gridctl-var`.
+
+### Added
+
+- Type badge (string / json / list / number / bool) and visibility icon
+  (lock for secret, eye for plaintext) on every variable row in the
+  Variables panel, detached page, and wizard popover.
+- Type selector + Secret/Plaintext toggle in the quick-add form
+  (Variables panel) and the wizard popover's create-new form. Defaults
+  to `string` + `Secret` (Article XII).
+- Inline JSON validation hint: `type=json` values that don't parse are
+  rejected before submission with a clear error.
+
+### Changed
+
+- Plaintext variables display their value inline without requiring a
+  Reveal click. Only secret rows show bullets and gate the value behind
+  Reveal with the 10-second auto-hide timer.
+- Variables popover (renamed from Secrets popover) surfaces both
+  secrets and plaintext entries side by side, with distinct icons, and
+  emits `${var:KEY}` (canonical) instead of `${vault:KEY}`.
+- Panel header label changed from `Vault` to `Variables`; command
+  palette section label changed from `VAULT` to `VARIABLES`; scope
+  prefix `v:` label changed from `Vault` to `Variables`.
+
 
 ### Bug Fixes
 

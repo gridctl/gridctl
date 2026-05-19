@@ -2,6 +2,74 @@
 
 All notable changes to gridctl will be documented in this file.
 
+## [Unreleased]
+
+### Breaking
+
+- **`gridctl vault` renamed to `gridctl var`.** The unified variable store
+  now holds both secrets and non-sensitive configuration. `gridctl vault
+  <sub>` continues to work through the beta cycle and emits a one-time
+  deprecation warning per process; the alias is removed at v1.0.
+- **API routes `/api/vault/*` renamed to `/api/var/*`.** The legacy paths
+  continue to serve identical responses through the beta cycle and now
+  carry `Deprecation: true`, `Sunset`, and `Link` headers pointing at the
+  canonical surface.
+- **Vault on-disk format bumped to v2** (`{"version": 2, "variables": [...],
+  "sets": [...]}`). Loading is backward-compatible — v0 (legacy flat array)
+  and v1 (`{"secrets": [...]}`) files migrate in-memory with every entry
+  defaulting to `is_secret=true`, `type=string` (Article XII). Every save
+  writes v2.
+- **Web UI route `/vault` redirects to `/var`** silently. The detached
+  window name string changed from `gridctl-vault` to `gridctl-var`.
+- **`web/src/lib/api.ts` `VaultSecret` interface renamed to `Variable`**;
+  every `*VaultSecret*` / `*VaultSet*` function renamed to its
+  `*Variable*` / `*VariableSet*` counterpart. No JS-level aliases — the
+  hard rename forces every callsite to update.
+
+### Added
+
+- **`gridctl var` command tree** mirroring the previous `vault` surface
+  (`set`, `get`, `list`, `delete`, `import`, `export`, `lock`, `unlock`,
+  `change-passphrase`, `sets {list,create,delete}`).
+- **`--secret` / `--plaintext` flags on `gridctl var set`** with secure
+  defaults (Article XII). Passing both is a clean error.
+- **`--type` flag on `gridctl var set`** with validation for `string`
+  (default), `json`, `list`, `number`, `bool`. PR 1 records the type as
+  metadata; PR 2 will wire type-aware expansion.
+- **`.env` metadata markers** for `gridctl var import` / `export`:
+  `# @type=...` and `# @public` lines preceding a `KEY=VALUE` entry tag
+  the variable's type and visibility on import; export emits them.
+- **JSON import/export** in the canonical `{"variables": [...]}` shape
+  round-trips type and visibility. Legacy `{KEY: value}` JSON files still
+  import losslessly into secrets.
+- **`${var:KEY}` stack YAML syntax** is the canonical reference form.
+  `${vault:KEY}` still resolves and emits a one-time-per-process
+  deprecation warning.
+- **Web UI affordances**: Type badge and Visibility (lock/eye) icon on
+  every variable row; Type selector and Secret/Plaintext toggle in the
+  add and wizard popover forms; JSON validation hint before submission.
+- **Variables popover (renamed from Secrets popover)** in the stack
+  wizard surfaces both secret and plaintext entries with distinct icons
+  and emits `${var:KEY}` on insert.
+- **`examples/portable-stack/`** demonstrates the headline use case
+  (region/cluster as plaintext vars, DB password as secret) with a
+  `stack.yaml` that's safe to commit to git.
+
+### Changed
+
+- **Log redaction now only applies to values stored with `--secret`**
+  (the default). Plaintext variables — REGION, CLUSTER_ID, account IDs —
+  appear unredacted in logs, ending the masking fatigue that came from
+  treating every vault value as sensitive. Wired through
+  `Store.Values()` → `RegisterRedactValues` at every existing callsite
+  (controller startup, daemon reload).
+- **Web UI**: plaintext variables display their value unmasked by default.
+  Only secret rows show bullets and require Reveal; the 10-second
+  auto-hide timer applies to secrets only.
+- **Stack expansion error wording** now says
+  `missing variable(s): X. To fix: gridctl var set X` (was
+  `missing vault secret(s): X. To fix: gridctl vault set X`).
+
 ## [0.1.0-beta.10] - 2026-05-18
 
 
