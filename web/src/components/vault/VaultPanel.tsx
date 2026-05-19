@@ -28,21 +28,26 @@ import { useVaultStore } from '../../stores/useVaultStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { showToast } from '../ui/Toast';
 import {
-  fetchVaultSecrets,
-  fetchVaultSets,
-  createVaultSecret,
-  getVaultSecret,
-  updateVaultSecret,
-  deleteVaultSecret,
-  createVaultSet,
-  deleteVaultSet,
-  assignSecretToSet,
-  fetchVaultStatus,
-  unlockVault,
-  lockVault,
+  fetchVariables,
+  fetchVariableSets,
+  createVariable,
+  getVariable,
+  updateVariable,
+  deleteVariable,
+  createVariableSet,
+  deleteVariableSet,
+  assignVariableToSet,
+  fetchVariableStoreStatus,
+  unlockVariableStore,
+  lockVariableStore,
 } from '../../lib/api';
-import type { VaultSecret } from '../../lib/api';
+import type { Variable, VariableType } from '../../lib/api';
 import { VaultLockPrompt } from './VaultLockPrompt';
+import { VariableTypeBadge } from './VariableTypeBadge';
+import { VariableVisibilityIcon } from './VariableVisibilityIcon';
+import { VariableTypeSelector } from './VariableTypeSelector';
+import { VariableSecretToggle } from './VariableSecretToggle';
+import { validateVariableInput } from './variableTypeHelpers';
 
 interface VaultPanelProps {
   onClose: () => void;
@@ -51,7 +56,7 @@ interface VaultPanelProps {
 export function VaultPanel({ onClose }: VaultPanelProps) {
   const vaultDetached = useUIStore((s) => s.vaultDetached);
 
-  const secrets = useVaultStore((s) => s.secrets);
+  const secrets = useVaultStore((s) => s.variables);
   const sets = useVaultStore((s) => s.sets);
   const loading = useVaultStore((s) => s.loading);
   const error = useVaultStore((s) => s.error);
@@ -81,6 +86,9 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const [showNewValue, setShowNewValue] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  // Type/Visibility controls. Defaults to string+Secret per Article XII.
+  const [newType, setNewType] = useState<VariableType>('string');
+  const [newIsSecret, setNewIsSecret] = useState(true);
   const keyInputRef = useRef<HTMLInputElement>(null);
 
   // Reveal state: map of key -> revealed value
@@ -90,6 +98,8 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   // Edit state
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [editType, setEditType] = useState<VariableType>('string');
+  const [editIsSecret, setEditIsSecret] = useState(true);
   const [showEditValue, setShowEditValue] = useState(false);
 
   // Delete confirmation
@@ -115,17 +125,37 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     useVaultStore.getState().setLoading(true);
     useVaultStore.getState().setError(null);
     try {
-      const status = await fetchVaultStatus();
+      const status = await fetchVariableStoreStatus();
       useVaultStore.getState().setLocked(status.locked);
       useVaultStore.getState().setEncrypted(status.encrypted);
 
       if (!status.locked) {
-        const [secretsData, setsData] = await Promise.all([
-          fetchVaultSecrets(),
-          fetchVaultSets(),
+        const [variablesData, setsData] = await Promise.all([
+          fetchVariables(),
+          fetchVariableSets(),
         ]);
-        useVaultStore.getState().setSecrets(secretsData);
+        useVaultStore.getState().setVariables(variablesData);
         useVaultStore.getState().setSets(setsData);
+
+        // Plaintext variables display their value inline by default
+        // (no Reveal click needed). Eager-fetch them after the list so
+        // the rows render with values on first paint.
+        const plaintext = variablesData.filter((v) => !v.is_secret);
+        if (plaintext.length > 0) {
+          const fetched = await Promise.all(
+            plaintext.map((v) =>
+              getVariable(v.key).then(
+                (detail) => [v.key, detail.value] as const,
+                () => [v.key, ''] as const,
+              ),
+            ),
+          );
+          setRevealed((prev) => {
+            const next = { ...prev };
+            for (const [k, val] of fetched) next[k] = val;
+            return next;
+          });
+        }
       }
     } catch (err) {
       useVaultStore.getState().setError(err instanceof Error ? err.message : 'Failed to load vault');
@@ -158,13 +188,13 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   }, [onClose]);
 
   const handlePopout = useCallback(() => {
-    window.open('/vault', 'gridctl-vault');
+    window.open('/var', 'gridctl-var');
     onClose();
   }, [onClose]);
 
   const handleUnlock = useCallback(async (passphrase: string): Promise<boolean> => {
     try {
-      await unlockVault(passphrase);
+      await unlockVariableStore(passphrase);
       useVaultStore.getState().setLocked(false);
       await refresh();
       showToast('success', 'Vault unlocked');
@@ -184,7 +214,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     setIsLocking(true);
     setLockError(null);
     try {
-      await lockVault(lockPassphrase);
+      await lockVariableStore(lockPassphrase);
       setShowLockForm(false);
       setLockPassphrase('');
       setLockConfirm('');
@@ -198,7 +228,11 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   }, [lockPassphrase, lockConfirm, refresh]);
 
   const handleReveal = useCallback(async (key: string) => {
-    if (revealed[key]) {
+    // Plaintext variables are always revealed; Hide is a no-op for them.
+    const target = allSecrets.find((v) => v.key === key);
+    const isPlaintext = target ? !target.is_secret : false;
+
+    if (revealed[key] !== undefined && !isPlaintext) {
       setRevealed((prev) => {
         const next = { ...prev };
         delete next[key];
@@ -212,8 +246,11 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     }
 
     try {
-      const data = await getVaultSecret(key);
+      const data = await getVariable(key);
       setRevealed((prev) => ({ ...prev, [key]: data.value }));
+      // The 10-second auto-hide timer applies only to secrets — plaintext
+      // values stay visible until the panel is closed.
+      if (isPlaintext) return;
       revealTimers.current[key] = setTimeout(() => {
         setRevealed((prev) => {
           const next = { ...prev };
@@ -225,48 +262,74 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     } catch {
       showToast('error', `Failed to reveal ${key}`);
     }
-  }, [revealed]);
+  }, [revealed, allSecrets]);
 
   const handleAdd = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKey.trim() || !newValue) return;
 
     const key = newKey.trim();
+    const validation = validateVariableInput(newType, newValue);
+    if (!validation.ok) {
+      setAddError(validation.error);
+      return;
+    }
+
     setIsAdding(true);
     setAddError(null);
     try {
-      await createVaultSecret(key, newValue, newSet || undefined);
+      await createVariable({
+        key,
+        value: validation.normalized,
+        type: newType,
+        isSecret: newIsSecret,
+        set: newSet || undefined,
+      });
       setNewKey('');
       setNewValue('');
       setNewSet('');
       setShowNewValue(false);
+      setNewType('string');
+      setNewIsSecret(true);
       await refresh();
-      showToast('success', `Secret "${key}" created`);
+      showToast('success', `Variable "${key}" created`);
     } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to create secret');
+      setAddError(err instanceof Error ? err.message : 'Failed to create variable');
     } finally {
       setIsAdding(false);
     }
-  }, [newKey, newValue, newSet, refresh]);
+  }, [newKey, newValue, newSet, newType, newIsSecret, refresh]);
 
   const handleEdit = useCallback((key: string) => {
+    const current = allSecrets.find((v) => v.key === key);
     setEditingKey(key);
     setEditValue('');
+    setEditType(current?.type ?? 'string');
+    setEditIsSecret(current?.is_secret ?? true);
     setShowEditValue(false);
-  }, []);
+  }, [allSecrets]);
 
   const handleEditSave = useCallback(async () => {
     if (!editingKey || !editValue) return;
+    const validation = validateVariableInput(editType, editValue);
+    if (!validation.ok) {
+      showToast('error', validation.error);
+      return;
+    }
     try {
-      await updateVaultSecret(editingKey, editValue);
+      await updateVariable(editingKey, {
+        value: validation.normalized,
+        type: editType,
+        isSecret: editIsSecret,
+      });
       setEditingKey(null);
       setEditValue('');
       await refresh();
-      showToast('success', `Secret "${editingKey}" updated`);
+      showToast('success', `Variable "${editingKey}" updated`);
     } catch {
-      showToast('error', 'Failed to update secret');
+      showToast('error', 'Failed to update variable');
     }
-  }, [editingKey, editValue, refresh]);
+  }, [editingKey, editValue, editType, editIsSecret, refresh]);
 
   const handleEditCancel = useCallback(() => {
     setEditingKey(null);
@@ -277,7 +340,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const handleDeleteConfirm = useCallback(async () => {
     if (!confirmDelete) return;
     try {
-      await deleteVaultSecret(confirmDelete);
+      await deleteVariable(confirmDelete);
       setConfirmDelete(null);
       await refresh();
       showToast('success', `Secret "${confirmDelete}" deleted`);
@@ -289,7 +352,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const handleCreateSet = useCallback(async () => {
     if (!newSetName.trim()) return;
     try {
-      await createVaultSet(newSetName.trim());
+      await createVariableSet(newSetName.trim());
       setNewSetName('');
       setShowNewSet(false);
       await refresh();
@@ -301,7 +364,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
   const handleDeleteSet = useCallback(async (name: string) => {
     try {
-      await deleteVaultSet(name);
+      await deleteVariableSet(name);
       await refresh();
       showToast('success', `Set "${name}" deleted`);
     } catch {
@@ -311,7 +374,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
   const handleAssignSet = useCallback(async (key: string, set: string) => {
     try {
-      await assignSecretToSet(key, set);
+      await assignVariableToSet(key, set);
       await refresh();
     } catch {
       showToast('error', 'Failed to assign set');
@@ -350,7 +413,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
             <KeyRound size={16} className="text-primary" />
           </div>
           <div className="min-w-0">
-            <h2 className="font-semibold text-text-primary truncate tracking-tight">Vault</h2>
+            <h2 className="font-semibold text-text-primary truncate tracking-tight">Variables</h2>
             <div className="flex items-center gap-1.5">
               <p className="text-[10px] text-text-muted uppercase tracking-wider">Secrets</p>
               {encrypted && !locked && (
@@ -526,6 +589,10 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                     {showNewValue ? <EyeOff size={12} /> : <Eye size={12} />}
                   </button>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <VariableTypeSelector value={newType} onChange={setNewType} />
+                  <VariableSecretToggle isSecret={newIsSecret} onChange={setNewIsSecret} />
+                </div>
                 <div className="flex gap-2">
                   <select
                     value={newSet}
@@ -560,10 +627,10 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                 </p>
                 <div className="mt-2 space-y-1">
                   <code className="block text-[10px] font-mono text-primary/80 bg-surface-elevated rounded px-2 py-1">
-                    gridctl vault set API_KEY
+                    gridctl var set API_KEY
                   </code>
                   <code className="block text-[10px] font-mono text-primary/80 bg-surface-elevated rounded px-2 py-1">
-                    gridctl vault import .env
+                    gridctl var import .env
                   </code>
                 </div>
               </div>
@@ -629,7 +696,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
                 <div className="space-y-1">
                   {(sets ?? []).map((set) => {
-                    const setSecrets = filteredSecrets.filter((s) => s.set === set.name);
+                    const setVariables = filteredSecrets.filter((s) => s.set === set.name);
                     const isExpanded = expandedSets[set.name] ?? false;
                     return (
                       <div key={set.name} className="group rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
@@ -653,9 +720,9 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                             <Trash2 size={10} className="text-text-muted hover:text-status-error" />
                           </button>
                         </button>
-                        {isExpanded && setSecrets.length > 0 && (
+                        {isExpanded && setVariables.length > 0 && (
                           <div className="px-2 pb-2 space-y-1">
-                            {setSecrets.map((secret) => (
+                            {setVariables.map((secret) => (
                               <SecretItem
                                 key={secret.key}
                                 secret={secret}
@@ -677,7 +744,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                             ))}
                           </div>
                         )}
-                        {isExpanded && setSecrets.length === 0 && (
+                        {isExpanded && setVariables.length === 0 && (
                           <div className="px-3 pb-2">
                             <p className="text-[10px] text-text-muted italic">No secrets in this set</p>
                           </div>
@@ -790,7 +857,7 @@ function NewSetForm({ show, value, onChange, onSave, onCancel, className }: NewS
 
 // SecretItem — expandable row matching SkillItem pattern
 interface SecretItemProps {
-  secret: VaultSecret;
+  secret: Variable;
   revealed?: string;
   isEditing: boolean;
   editValue: string;
@@ -866,6 +933,16 @@ function SecretItem({
     );
   }
 
+  // Plaintext variables show their value inline by default \u2014 the Reveal
+  // affordance is reserved for actual secrets.
+  const isPlaintext = !secret.is_secret;
+  const displayValue =
+    revealed !== undefined
+      ? revealed
+      : isPlaintext
+        ? '\u2022\u2022\u2022' // not yet fetched; placeholder until refresh completes
+        : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
+
   return (
     <div className="rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
       {/* Header row */}
@@ -879,12 +956,13 @@ function SecretItem({
         <div className="p-0.5 text-text-muted">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </div>
-        <KeyRound size={12} className="text-primary/60 flex-shrink-0" />
+        <VariableVisibilityIcon isSecret={secret.is_secret} />
         <span className="text-xs font-mono font-medium text-text-primary flex-1 text-left truncate">
           {secret.key}
         </span>
-        <span className="text-[10px] font-mono text-text-muted truncate max-w-[100px]">
-          {revealed !== undefined ? revealed : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
+        <VariableTypeBadge type={secret.type} />
+        <span className="text-[10px] font-mono text-text-muted truncate max-w-[120px]">
+          {displayValue}
         </span>
       </button>
 
@@ -918,18 +996,20 @@ function SecretItem({
 
           {/* Actions */}
           <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border-subtle/50">
-            <button
-              onClick={(e) => { e.stopPropagation(); onReveal(); }}
-              className={cn(
-                'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all duration-200',
-                revealed !== undefined
-                  ? 'bg-status-pending text-background shadow-[0_1px_8px_rgba(234,179,8,0.2)] hover:shadow-[0_2px_12px_rgba(234,179,8,0.3)] hover:-translate-y-0.5 active:translate-y-0'
-                  : 'bg-status-running text-background shadow-[0_1px_8px_rgba(16,185,129,0.2)] hover:shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:translate-y-0'
-              )}
-            >
-              {revealed !== undefined ? <EyeOff size={10} /> : <Eye size={10} />}
-              {revealed !== undefined ? 'Hide' : 'Reveal'}
-            </button>
+            {!isPlaintext && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onReveal(); }}
+                className={cn(
+                  'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all duration-200',
+                  revealed !== undefined
+                    ? 'bg-status-pending text-background shadow-[0_1px_8px_rgba(234,179,8,0.2)] hover:shadow-[0_2px_12px_rgba(234,179,8,0.3)] hover:-translate-y-0.5 active:translate-y-0'
+                    : 'bg-status-running text-background shadow-[0_1px_8px_rgba(16,185,129,0.2)] hover:shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:translate-y-0'
+                )}
+              >
+                {revealed !== undefined ? <EyeOff size={10} /> : <Eye size={10} />}
+                {revealed !== undefined ? 'Hide' : 'Reveal'}
+              </button>
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_8px_rgba(245,158,11,0.2)] hover:shadow-[0_2px_12px_rgba(245,158,11,0.3)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"

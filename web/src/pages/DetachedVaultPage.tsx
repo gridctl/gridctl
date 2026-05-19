@@ -30,21 +30,26 @@ import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useLogFontSize } from '../hooks/useLogFontSize';
 import { useVaultStore } from '../stores/useVaultStore';
 import {
-  fetchVaultSecrets,
-  fetchVaultSets,
-  createVaultSecret,
-  getVaultSecret,
-  updateVaultSecret,
-  deleteVaultSecret,
-  createVaultSet,
-  deleteVaultSet,
-  assignSecretToSet,
-  fetchVaultStatus,
-  unlockVault,
-  lockVault,
+  fetchVariables,
+  fetchVariableSets,
+  createVariable,
+  getVariable,
+  updateVariable,
+  deleteVariable,
+  createVariableSet,
+  deleteVariableSet,
+  assignVariableToSet,
+  fetchVariableStoreStatus,
+  unlockVariableStore,
+  lockVariableStore,
 } from '../lib/api';
-import type { VaultSecret } from '../lib/api';
+import type { Variable, VariableType } from '../lib/api';
 import { POLLING } from '../lib/constants';
+import { VariableTypeBadge } from '../components/vault/VariableTypeBadge';
+import { VariableVisibilityIcon } from '../components/vault/VariableVisibilityIcon';
+import { VariableTypeSelector } from '../components/vault/VariableTypeSelector';
+import { VariableSecretToggle } from '../components/vault/VariableSecretToggle';
+import { validateVariableInput } from '../components/vault/variableTypeHelpers';
 
 // Error boundary for detached window
 interface ErrorBoundaryState {
@@ -89,7 +94,7 @@ class DetachedErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 }
 
 function DetachedVaultContent() {
-  const secrets = useVaultStore((s) => s.secrets);
+  const secrets = useVaultStore((s) => s.variables);
   const sets = useVaultStore((s) => s.sets);
   const loading = useVaultStore((s) => s.loading);
   const error = useVaultStore((s) => s.error);
@@ -113,6 +118,8 @@ function DetachedVaultContent() {
   const [showNewValue, setShowNewValue] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [newType, setNewType] = useState<VariableType>('string');
+  const [newIsSecret, setNewIsSecret] = useState(true);
 
   // Reveal state
   const [revealed, setRevealed] = useState<Record<string, string>>({});
@@ -137,7 +144,7 @@ function DetachedVaultContent() {
     useLogFontSize(contentRef);
 
   // Register with main window
-  useDetachedWindowSync('vault');
+  useDetachedWindowSync('var');
 
   // Filtered secrets
   const allSecrets = secrets ?? [];
@@ -153,17 +160,36 @@ function DetachedVaultContent() {
     useVaultStore.getState().setLoading(true);
     useVaultStore.getState().setError(null);
     try {
-      const status = await fetchVaultStatus();
+      const status = await fetchVariableStoreStatus();
       useVaultStore.getState().setLocked(status.locked);
       useVaultStore.getState().setEncrypted(status.encrypted);
 
       if (!status.locked) {
-        const [secretsData, setsData] = await Promise.all([
-          fetchVaultSecrets(),
-          fetchVaultSets(),
+        const [variablesData, setsData] = await Promise.all([
+          fetchVariables(),
+          fetchVariableSets(),
         ]);
-        useVaultStore.getState().setSecrets(secretsData);
+        useVaultStore.getState().setVariables(variablesData);
         useVaultStore.getState().setSets(setsData);
+
+        // Plaintext variables display unmasked by default; pre-fetch their
+        // values so rows render with content on first paint.
+        const plaintext = variablesData.filter((v) => !v.is_secret);
+        if (plaintext.length > 0) {
+          const fetched = await Promise.all(
+            plaintext.map((v) =>
+              getVariable(v.key).then(
+                (detail) => [v.key, detail.value] as const,
+                () => [v.key, ''] as const,
+              ),
+            ),
+          );
+          setRevealed((prev) => {
+            const next = { ...prev };
+            for (const [k, val] of fetched) next[k] = val;
+            return next;
+          });
+        }
       }
     } catch (err) {
       useVaultStore.getState().setError(err instanceof Error ? err.message : 'Failed to load vault');
@@ -183,7 +209,7 @@ function DetachedVaultContent() {
 
   const handleUnlock = useCallback(async (passphrase: string): Promise<boolean> => {
     try {
-      await unlockVault(passphrase);
+      await unlockVariableStore(passphrase);
       useVaultStore.getState().setLocked(false);
       await refresh();
       showToast('success', 'Vault unlocked');
@@ -202,7 +228,7 @@ function DetachedVaultContent() {
     setIsLocking(true);
     setLockError(null);
     try {
-      await lockVault(lockPassphrase);
+      await lockVariableStore(lockPassphrase);
       setShowLockForm(false);
       setLockPassphrase('');
       setLockConfirm('');
@@ -216,7 +242,10 @@ function DetachedVaultContent() {
   }, [lockPassphrase, lockConfirm, refresh]);
 
   const handleReveal = useCallback(async (key: string) => {
-    if (revealed[key]) {
+    const target = allSecrets.find((v) => v.key === key);
+    const isPlaintext = target ? !target.is_secret : false;
+
+    if (revealed[key] !== undefined && !isPlaintext) {
       setRevealed((prev) => {
         const next = { ...prev };
         delete next[key];
@@ -229,8 +258,9 @@ function DetachedVaultContent() {
       return;
     }
     try {
-      const data = await getVaultSecret(key);
+      const data = await getVariable(key);
       setRevealed((prev) => ({ ...prev, [key]: data.value }));
+      if (isPlaintext) return;
       revealTimers.current[key] = setTimeout(() => {
         setRevealed((prev) => {
           const next = { ...prev };
@@ -242,28 +272,43 @@ function DetachedVaultContent() {
     } catch {
       showToast('error', `Failed to reveal ${key}`);
     }
-  }, [revealed]);
+  }, [revealed, allSecrets]);
 
   const handleAdd = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKey.trim() || !newValue) return;
     const key = newKey.trim();
+
+    const validation = validateVariableInput(newType, newValue);
+    if (!validation.ok) {
+      setAddError(validation.error);
+      return;
+    }
+
     setIsAdding(true);
     setAddError(null);
     try {
-      await createVaultSecret(key, newValue, newSet || undefined);
+      await createVariable({
+        key,
+        value: validation.normalized,
+        type: newType,
+        isSecret: newIsSecret,
+        set: newSet || undefined,
+      });
       setNewKey('');
       setNewValue('');
       setNewSet('');
       setShowNewValue(false);
+      setNewType('string');
+      setNewIsSecret(true);
       await refresh();
-      showToast('success', `Secret "${key}" created`);
+      showToast('success', `Variable "${key}" created`);
     } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to create secret');
+      setAddError(err instanceof Error ? err.message : 'Failed to create variable');
     } finally {
       setIsAdding(false);
     }
-  }, [newKey, newValue, newSet, refresh]);
+  }, [newKey, newValue, newSet, newType, newIsSecret, refresh]);
 
   const handleEdit = useCallback((key: string) => {
     setEditingKey(key);
@@ -274,11 +319,11 @@ function DetachedVaultContent() {
   const handleEditSave = useCallback(async () => {
     if (!editingKey || !editValue) return;
     try {
-      await updateVaultSecret(editingKey, editValue);
+      await updateVariable(editingKey, { value: editValue });
       setEditingKey(null);
       setEditValue('');
       await refresh();
-      showToast('success', `Secret "${editingKey}" updated`);
+      showToast('success', `Variable "${editingKey}" updated`);
     } catch {
       showToast('error', 'Failed to update secret');
     }
@@ -293,7 +338,7 @@ function DetachedVaultContent() {
   const handleDeleteConfirm = useCallback(async () => {
     if (!confirmDelete) return;
     try {
-      await deleteVaultSecret(confirmDelete);
+      await deleteVariable(confirmDelete);
       setConfirmDelete(null);
       await refresh();
       showToast('success', `Secret "${confirmDelete}" deleted`);
@@ -305,7 +350,7 @@ function DetachedVaultContent() {
   const handleCreateSet = useCallback(async () => {
     if (!newSetName.trim()) return;
     try {
-      await createVaultSet(newSetName.trim());
+      await createVariableSet(newSetName.trim());
       setNewSetName('');
       setShowNewSet(false);
       await refresh();
@@ -317,7 +362,7 @@ function DetachedVaultContent() {
 
   const handleDeleteSet = useCallback(async (name: string) => {
     try {
-      await deleteVaultSet(name);
+      await deleteVariableSet(name);
       await refresh();
       showToast('success', `Set "${name}" deleted`);
     } catch {
@@ -327,7 +372,7 @@ function DetachedVaultContent() {
 
   const handleAssignSet = useCallback(async (key: string, set: string) => {
     try {
-      await assignSecretToSet(key, set);
+      await assignVariableToSet(key, set);
       await refresh();
     } catch {
       showToast('error', 'Failed to assign set');
@@ -361,7 +406,7 @@ function DetachedVaultContent() {
             <KeyRound size={14} className="text-primary" />
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-text-primary tracking-tight">Vault</span>
+            <span className="text-sm font-semibold text-text-primary tracking-tight">Variables</span>
             <span className="text-[10px] text-text-muted uppercase tracking-wider">Secrets</span>
             {encrypted && !locked && (
               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1">
@@ -540,6 +585,10 @@ function DetachedVaultContent() {
                     {showNewValue ? <EyeOff size={12} /> : <Eye size={12} />}
                   </button>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <VariableTypeSelector value={newType} onChange={setNewType} />
+                  <VariableSecretToggle isSecret={newIsSecret} onChange={setNewIsSecret} />
+                </div>
                 <div className="flex gap-2">
                   <select
                     value={newSet}
@@ -643,7 +692,7 @@ function DetachedVaultContent() {
 
                 <div className="space-y-2">
                   {(sets ?? []).map((set) => {
-                    const setSecrets = filteredSecrets.filter((s) => s.set === set.name);
+                    const setVariables = filteredSecrets.filter((s) => s.set === set.name);
                     const isExpanded = expandedSets[set.name] ?? false;
                     return (
                       <div key={set.name} className="group rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
@@ -667,9 +716,9 @@ function DetachedVaultContent() {
                             <Trash2 size={10} className="text-text-muted hover:text-status-error" />
                           </button>
                         </button>
-                        {isExpanded && setSecrets.length > 0 && (
+                        {isExpanded && setVariables.length > 0 && (
                           <div className="px-2 pb-2 space-y-1">
-                            {setSecrets.map((secret) => (
+                            {setVariables.map((secret) => (
                               <SecretItem
                                 key={secret.key}
                                 secret={secret}
@@ -691,7 +740,7 @@ function DetachedVaultContent() {
                             ))}
                           </div>
                         )}
-                        {isExpanded && setSecrets.length === 0 && (
+                        {isExpanded && setVariables.length === 0 && (
                           <div className="px-3 pb-2">
                             <p className="text-[10px] text-text-muted italic">No secrets in this set</p>
                           </div>
@@ -771,7 +820,7 @@ function DetachedVaultContent() {
 
 // SecretItem — expandable row matching SkillItem pattern
 interface SecretItemProps {
-  secret: VaultSecret;
+  secret: Variable;
   revealed?: string;
   isEditing: boolean;
   editValue: string;
@@ -847,6 +896,14 @@ function SecretItem({
     );
   }
 
+  const isPlaintext = !secret.is_secret;
+  const displayValue =
+    revealed !== undefined
+      ? revealed
+      : isPlaintext
+        ? '\u2022\u2022\u2022'
+        : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
+
   return (
     <div className="rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
       {/* Header row */}
@@ -860,12 +917,13 @@ function SecretItem({
         <div className="p-0.5 text-text-muted">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </div>
-        <KeyRound size={12} className="text-primary/60 flex-shrink-0" />
+        <VariableVisibilityIcon isSecret={secret.is_secret} />
         <span className="text-xs font-mono font-medium text-text-primary flex-1 text-left truncate log-text">
           {secret.key}
         </span>
-        <span className="text-[10px] font-mono text-text-muted truncate max-w-[100px] log-text-detail">
-          {revealed !== undefined ? revealed : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
+        <VariableTypeBadge type={secret.type} />
+        <span className="text-[10px] font-mono text-text-muted truncate max-w-[120px] log-text-detail">
+          {displayValue}
         </span>
       </button>
 
@@ -899,18 +957,20 @@ function SecretItem({
 
           {/* Actions */}
           <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border-subtle/50">
-            <button
-              onClick={(e) => { e.stopPropagation(); onReveal(); }}
-              className={cn(
-                'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all duration-200',
-                revealed !== undefined
-                  ? 'bg-status-pending text-background shadow-[0_1px_8px_rgba(234,179,8,0.2)] hover:shadow-[0_2px_12px_rgba(234,179,8,0.3)] hover:-translate-y-0.5 active:translate-y-0'
-                  : 'bg-status-running text-background shadow-[0_1px_8px_rgba(16,185,129,0.2)] hover:shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:translate-y-0'
-              )}
-            >
-              {revealed !== undefined ? <EyeOff size={10} /> : <Eye size={10} />}
-              {revealed !== undefined ? 'Hide' : 'Reveal'}
-            </button>
+            {!isPlaintext && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onReveal(); }}
+                className={cn(
+                  'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all duration-200',
+                  revealed !== undefined
+                    ? 'bg-status-pending text-background shadow-[0_1px_8px_rgba(234,179,8,0.2)] hover:shadow-[0_2px_12px_rgba(234,179,8,0.3)] hover:-translate-y-0.5 active:translate-y-0'
+                    : 'bg-status-running text-background shadow-[0_1px_8px_rgba(16,185,129,0.2)] hover:shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:translate-y-0'
+                )}
+              >
+                {revealed !== undefined ? <EyeOff size={10} /> : <Eye size={10} />}
+                {revealed !== undefined ? 'Hide' : 'Reveal'}
+              </button>
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_8px_rgba(245,158,11,0.2)] hover:shadow-[0_2px_12px_rgba(245,158,11,0.3)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"

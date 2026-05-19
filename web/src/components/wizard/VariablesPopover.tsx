@@ -3,9 +3,15 @@ import { createPortal } from 'react-dom';
 import { KeyRound, Search, Plus, Eye, EyeOff, X, Loader2, Check } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useVaultStore } from '../../stores/useVaultStore';
-import { fetchVaultSecrets, createVaultSecret } from '../../lib/api';
+import { fetchVariables, createVariable } from '../../lib/api';
+import type { VariableType } from '../../lib/api';
+import { VariableVisibilityIcon } from '../vault/VariableVisibilityIcon';
+import { VariableTypeBadge } from '../vault/VariableTypeBadge';
+import { VariableTypeSelector } from '../vault/VariableTypeSelector';
+import { VariableSecretToggle } from '../vault/VariableSecretToggle';
+import { validateVariableInput } from '../vault/variableTypeHelpers';
 
-interface SecretsPopoverProps {
+interface VariablesPopoverProps {
   onSelect: (reference: string) => void;
   className?: string;
 }
@@ -19,7 +25,11 @@ interface PopoverPosition {
 // Approximate max height of the popover (search + list + divider + button)
 const POPOVER_ESTIMATED_HEIGHT = 260;
 
-export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
+// VariablesPopover surfaces the unified variable store from the stack wizard.
+// It lists both secrets (lock icon) and plaintext variables (eye icon) so a
+// user picking a reference can see which kind they're inserting. Emitted
+// references use the canonical ${var:KEY} syntax.
+export function VariablesPopover({ onSelect, className }: VariablesPopoverProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
   const [creating, setCreating] = useState(false);
@@ -28,11 +38,13 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
   const [showValue, setShowValue] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [newType, setNewType] = useState<VariableType>('string');
+  const [newIsSecret, setNewIsSecret] = useState(true);
   const [position, setPosition] = useState<PopoverPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const secrets = useVaultStore((s) => s.secrets);
-  const setSecrets = useVaultStore((s) => s.setSecrets);
+  const variables = useVaultStore((s) => s.variables);
+  const setVariables = useVaultStore((s) => s.setVariables);
 
   // Compute fixed position from trigger button rect
   const updatePosition = useCallback(() => {
@@ -47,13 +59,13 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
     }
   }, []);
 
-  // Load secrets when popover opens
+  // Load variables when popover opens
   useEffect(() => {
     if (!open) return;
-    fetchVaultSecrets()
-      .then((s) => setSecrets(s))
+    fetchVariables()
+      .then((s) => setVariables(s))
       .catch(() => {});
-  }, [open, setSecrets]);
+  }, [open, setVariables]);
 
   // Compute position on open; reposition on scroll or resize
   useEffect(() => {
@@ -88,7 +100,7 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
 
   const handleSelect = useCallback(
     (key: string) => {
-      onSelect(`\${vault:${key}}`);
+      onSelect(`\${var:${key}}`);
       setOpen(false);
       setFilter('');
     },
@@ -101,25 +113,37 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
       setError('Key must be uppercase alphanumeric with underscores');
       return;
     }
+    const validation = validateVariableInput(newType, newValue);
+    if (!validation.ok) {
+      setError(validation.error);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      await createVaultSecret(newKey, newValue);
-      const updated = await fetchVaultSecrets();
-      setSecrets(updated);
-      onSelect(`\${vault:${newKey}}`);
+      await createVariable({
+        key: newKey,
+        value: validation.normalized,
+        type: newType,
+        isSecret: newIsSecret,
+      });
+      const updated = await fetchVariables();
+      setVariables(updated);
+      onSelect(`\${var:${newKey}}`);
       setOpen(false);
       setCreating(false);
       setNewKey('');
       setNewValue('');
+      setNewType('string');
+      setNewIsSecret(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create secret');
+      setError(e instanceof Error ? e.message : 'Failed to create variable');
     } finally {
       setSaving(false);
     }
   };
 
-  const filtered = (secrets ?? []).filter((s) =>
+  const filtered = (variables ?? []).filter((s) =>
     s.key.toLowerCase().includes(filter.toLowerCase()),
   );
 
@@ -145,27 +169,29 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter secrets..."
+            placeholder="Filter variables..."
             autoFocus
             className="w-full bg-background/60 border border-border/40 rounded-lg pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
           />
         </div>
       </div>
 
-      {/* Secret list — scrollable without overflow-hidden clipping */}
+      {/* Variable list */}
       <div className="max-h-36 overflow-y-auto scrollbar-dark">
         {filtered.length === 0 && !creating && (
           <div className="px-3 py-4 text-center text-[10px] text-text-muted">
-            {secrets === null ? 'Loading...' : 'No secrets found'}
+            {variables === null ? 'Loading...' : 'No variables found'}
           </div>
         )}
-        {filtered.map((secret) => (
+        {filtered.map((variable) => (
           <button
-            key={secret.key}
-            onClick={() => handleSelect(secret.key)}
-            className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-white/[0.04] transition-colors group"
+            key={variable.key}
+            onClick={() => handleSelect(variable.key)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/[0.04] transition-colors group"
           >
-            <span className="font-mono text-text-primary truncate">{secret.key}</span>
+            <VariableVisibilityIcon isSecret={variable.is_secret} />
+            <span className="font-mono text-text-primary truncate flex-1 text-left">{variable.key}</span>
+            <VariableTypeBadge type={variable.type} />
             <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
               <Check size={10} />
               Select
@@ -187,13 +213,13 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
           className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-secondary hover:bg-white/[0.04] transition-colors"
         >
           <Plus size={12} />
-          Create New Secret
+          Create New Variable
         </button>
       ) : (
         <div className="px-3 py-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
-              New Secret
+              New Variable
             </span>
             <button
               onClick={() => {
@@ -209,15 +235,15 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
             type="text"
             value={newKey}
             onChange={(e) => setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
-            placeholder="SECRET_KEY"
+            placeholder="VARIABLE_KEY"
             className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
           />
           <div className="relative">
             <input
-              type={showValue ? 'text' : 'password'}
+              type={showValue || !newIsSecret ? 'text' : 'password'}
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
-              placeholder="Secret value"
+              placeholder="Variable value"
               className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 pr-8 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
             />
             <button
@@ -227,6 +253,12 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
             >
               {showValue ? <EyeOff size={12} /> : <Eye size={12} />}
             </button>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            <VariableTypeSelector value={newType} onChange={setNewType} />
+          </div>
+          <div className="flex flex-wrap gap-1">
+            <VariableSecretToggle isSecret={newIsSecret} onChange={setNewIsSecret} />
           </div>
           {error && (
             <p className="text-[10px] text-status-error">{error}</p>
@@ -259,7 +291,7 @@ export function SecretsPopover({ onSelect, className }: SecretsPopoverProps) {
           'hover:bg-primary/10 text-text-muted hover:text-primary',
           open && 'bg-primary/10 text-primary',
         )}
-        title="Insert vault secret"
+        title="Insert variable"
       >
         <KeyRound size={13} />
       </button>
