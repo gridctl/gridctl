@@ -1,7 +1,11 @@
 package config
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -117,6 +121,26 @@ func TestExpandString(t *testing.T) {
 			input: "prefix ${vault:KEY} suffix",
 			vault: map[string]string{"KEY": "val"},
 			want:  "prefix val suffix",
+		},
+
+		// ${var:KEY} is the canonical syntax; resolves identically to vault.
+		{
+			name:  "var hit",
+			input: "${var:REGION}",
+			vault: map[string]string{"REGION": "us-east-1"},
+			want:  "us-east-1",
+		},
+		{
+			name:           "var miss",
+			input:          "${var:MISSING}",
+			want:           "${var:MISSING}",
+			wantUnresolved: []string{"MISSING"},
+		},
+		{
+			name:  "mixed var and vault refs resolve through same store",
+			input: "${var:A}-${vault:B}",
+			vault: map[string]string{"A": "1", "B": "2"},
+			want:  "1-2",
 		},
 		{
 			name:  "multiple refs in one string",
@@ -255,7 +279,7 @@ mcp-servers:
 	if err == nil {
 		t.Fatal("expected error for missing vault key")
 	}
-	if !contains(err.Error(), "missing vault secret") {
+	if !contains(err.Error(), "missing variable") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -335,6 +359,45 @@ mcp-servers:
 
 	if stack.MCPServers[0].Env["URL"] != "http://localhost:8080" {
 		t.Errorf("POSIX default operator failed: got %q", stack.MCPServers[0].Env["URL"])
+	}
+}
+
+// TestVaultSyntaxDeprecation verifies that ${vault:KEY} produces the
+// deprecation warning exactly once per process even when the input has
+// multiple ${vault:KEY} occurrences (Article XIV: no per-occurrence spam).
+func TestVaultSyntaxDeprecation(t *testing.T) {
+	// Reset the once so this test can observe its own first invocation.
+	vaultSyntaxDeprecationOnce = sync.Once{}
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	vault := &mockVault{secrets: map[string]string{"A": "1", "B": "2"}}
+
+	// Many vault refs in one expansion → one warning.
+	_, _, _ = ExpandString("${vault:A}-${vault:B}-${vault:A}", VaultResolver(vault))
+
+	out := buf.String()
+	count := strings.Count(out, "syntax is deprecated")
+	if count != 1 {
+		t.Errorf("deprecation warning count = %d, want 1; buf=%q", count, out)
+	}
+
+	// Second expansion in the same process → still exactly one warning.
+	buf.Reset()
+	_, _, _ = ExpandString("${vault:A}", VaultResolver(vault))
+	if strings.Contains(buf.String(), "deprecated") {
+		t.Errorf("deprecation warning fired again on subsequent call; output: %q", buf.String())
+	}
+
+	// ${var:KEY} must NOT produce a warning.
+	vaultSyntaxDeprecationOnce = sync.Once{}
+	buf.Reset()
+	_, _, _ = ExpandString("${var:A}", VaultResolver(vault))
+	if strings.Contains(buf.String(), "deprecated") {
+		t.Errorf("${var:KEY} produced a deprecation warning; output: %q", buf.String())
 	}
 }
 

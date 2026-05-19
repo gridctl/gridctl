@@ -67,17 +67,17 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 	// Expand variable references in string values
 	unresolved, emptyVars := expandStackVars(&stack, resolve)
 
-	// Fail on unresolved vault references only if a vault was provided
+	// Fail on unresolved variable references only if a store was provided.
 	if cfg.vault != nil && len(unresolved) > 0 {
-		msg := fmt.Sprintf("missing vault secret(s): %s", strings.Join(unresolved, ", "))
-		msg += "\n  To fix: gridctl vault set <KEY>"
+		msg := fmt.Sprintf("missing variable(s): %s", strings.Join(unresolved, ", "))
+		msg += "\n  To fix: gridctl var set <KEY>"
 		return nil, fmt.Errorf("%s", msg)
 	}
 
-	// Hint about empty env vars that could use vault
+	// Hint about empty env vars that could use the variable store
 	if cfg.vault == nil {
 		for _, v := range emptyVars {
-			slog.Info("hint: "+v+" resolved to empty — use 'gridctl vault set "+v+"' to store it securely", "var", v)
+			slog.Info("hint: "+v+" resolved to empty — use 'gridctl var set "+v+"' to store it securely", "var", v)
 		}
 	}
 

@@ -808,7 +808,7 @@ mcp-servers:
 	if err == nil {
 		t.Fatal("expected error for missing vault key with vault provided")
 	}
-	if !contains(err.Error(), "missing vault secret") {
+	if !contains(err.Error(), "missing variable") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
