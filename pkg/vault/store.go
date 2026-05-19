@@ -12,11 +12,13 @@ import (
 	"github.com/gridctl/gridctl/pkg/state"
 )
 
-// Store manages secrets in a JSON file with mutex-protected access.
+// Store manages variables in a JSON file with mutex-protected access.
+// It serves both secrets (IsSecret=true, redacted in logs) and non-sensitive
+// configuration (IsSecret=false, plaintext in logs).
 type Store struct {
 	baseDir    string
 	mu         sync.RWMutex
-	secrets    map[string]Secret
+	variables  map[string]Variable
 	sets       map[string]Set
 	locked     bool   // true when secrets.enc exists and vault is not unlocked
 	encrypted  bool   // true when vault was loaded from secrets.enc (re-encrypt on save)
@@ -27,22 +29,22 @@ type Store struct {
 	size  int64
 }
 
-// NewStore creates a vault store rooted at the given directory.
+// NewStore creates a variable store rooted at the given directory.
 func NewStore(baseDir string) *Store {
 	return &Store{
-		baseDir: baseDir,
-		secrets: make(map[string]Secret),
-		sets:    make(map[string]Set),
+		baseDir:   baseDir,
+		variables: make(map[string]Variable),
+		sets:      make(map[string]Set),
 	}
 }
 
-// Load reads secrets into memory. Checks for secrets.enc first (encrypted),
+// Load reads variables into memory. Checks for secrets.enc first (encrypted),
 // then falls back to secrets.json (plaintext). If the file doesn't exist, starts empty.
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.secrets = make(map[string]Secret)
+	s.variables = make(map[string]Variable)
 	s.sets = make(map[string]Set)
 	s.locked = false
 	s.encrypted = false
@@ -68,62 +70,158 @@ func (s *Store) Load() error {
 		return fmt.Errorf("reading vault: %w", err)
 	}
 
-	secrets, sets, err := parseSecretsData(data)
+	variables, sets, err := parseSecretsData(data)
 	if err != nil {
 		return err
 	}
-	s.secrets = secrets
+	s.variables = variables
 	s.sets = sets
 	s.stampMtimeLocked()
 	return nil
 }
 
-// parseSecretsData parses secrets JSON and returns fresh maps. Returning
-// rather than mutating lets callers swap state in atomically — a parse error
-// must never wipe the live in-memory secrets.
-func parseSecretsData(data []byte) (map[string]Secret, map[string]Set, error) {
-	secrets := make(map[string]Secret)
+// parseSecretsData parses on-disk data and returns fresh maps. It accepts
+// three formats and migrates legacy shapes in-memory; saves always rewrite
+// the file as v2.
+//
+//   - v2: {"version": 2, "variables": [...], "sets": [...]}
+//   - v1: {"secrets": [...], "sets": [...]}                       — pre-rename
+//   - v0: [{"key", "value", "set"}]                                — pre-sets
+//
+// Returning rather than mutating lets callers swap state in atomically — a
+// parse error must never wipe the live in-memory variables.
+func parseSecretsData(data []byte) (map[string]Variable, map[string]Set, error) {
+	variables := make(map[string]Variable)
 	sets := make(map[string]Set)
 
-	// Try new format first (object with secrets and sets)
-	var sd storeData
-	if err := json.Unmarshal(data, &sd); err == nil && (sd.Secrets != nil || sd.Sets != nil) {
-		for _, sec := range sd.Secrets {
-			secrets[sec.Key] = sec
+	// Peek at the top-level JSON shape: array → v0, object → v1 or v2.
+	trimmed := skipJSONWhitespace(data)
+	switch {
+	case len(trimmed) == 0:
+		// Empty file is a valid empty store.
+		return variables, sets, nil
+	case trimmed[0] == '[':
+		// v0: legacy flat array of secrets, no sets, no metadata.
+		var legacy []legacySecret
+		if err := json.Unmarshal(data, &legacy); err != nil {
+			return nil, nil, fmt.Errorf("parsing vault (v0): %w", err)
 		}
-		for _, set := range sd.Sets {
+		for _, sec := range legacy {
+			variables[sec.Key] = Variable{
+				Key:      sec.Key,
+				Value:    sec.Value,
+				Set:      sec.Set,
+				Type:     TypeString,
+				IsSecret: true,
+			}
+		}
+		return variables, sets, nil
+	case trimmed[0] == '{':
+		// v1 or v2: try v2 first by checking for "version" / "variables" keys.
+		var probe struct {
+			Version   *int              `json:"version"`
+			Variables []json.RawMessage `json:"variables"`
+			Secrets   []json.RawMessage `json:"secrets"`
+		}
+		if err := json.Unmarshal(data, &probe); err != nil {
+			return nil, nil, fmt.Errorf("parsing vault: %w", err)
+		}
+
+		if probe.Version != nil || probe.Variables != nil {
+			var sd storeData
+			if err := json.Unmarshal(data, &sd); err != nil {
+				return nil, nil, fmt.Errorf("parsing vault (v2): %w", err)
+			}
+			for _, v := range sd.Variables {
+				if v.Type == "" {
+					v.Type = TypeString
+				}
+				variables[v.Key] = v
+			}
+			for _, set := range sd.Sets {
+				sets[set.Name] = set
+			}
+			return variables, sets, nil
+		}
+
+		// v1: object with "secrets" key (and optional "sets").
+		var v1 struct {
+			Secrets []legacySecret `json:"secrets"`
+			Sets    []Set          `json:"sets"`
+		}
+		if err := json.Unmarshal(data, &v1); err != nil {
+			return nil, nil, fmt.Errorf("parsing vault (v1): %w", err)
+		}
+		for _, sec := range v1.Secrets {
+			variables[sec.Key] = Variable{
+				Key:      sec.Key,
+				Value:    sec.Value,
+				Set:      sec.Set,
+				Type:     TypeString,
+				IsSecret: true,
+			}
+		}
+		for _, set := range v1.Sets {
 			sets[set.Name] = set
 		}
-		return secrets, sets, nil
+		return variables, sets, nil
+	default:
+		return nil, nil, fmt.Errorf("parsing vault: unexpected JSON shape")
 	}
-
-	// Fall back to legacy flat array format
-	var legacy []Secret
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		return nil, nil, fmt.Errorf("parsing vault: %w", err)
-	}
-
-	for _, sec := range legacy {
-		secrets[sec.Key] = sec
-	}
-	return secrets, sets, nil
 }
 
-// Get returns a secret value and whether it exists. Read methods take the
+// legacySecret matches the pre-rename Secret struct shape so v0/v1 files
+// (which used "key"/"value"/"set" without type or sensitivity metadata) can
+// decode without redefining the wire format.
+type legacySecret struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Set   string `json:"set,omitempty"`
+}
+
+// skipJSONWhitespace returns the input with leading JSON whitespace (space,
+// tab, CR, LF) stripped. Used to inspect the first non-whitespace byte.
+func skipJSONWhitespace(b []byte) []byte {
+	for i, c := range b {
+		switch c {
+		case ' ', '\t', '\r', '\n':
+			continue
+		default:
+			return b[i:]
+		}
+	}
+	return nil
+}
+
+// Get returns a variable's value and whether it exists. Read methods take the
 // write lock because reloadIfChanged may mutate state.
 func (s *Store) Get(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_ = s.reloadIfChanged()
 
-	sec, ok := s.secrets[key]
+	v, ok := s.variables[key]
 	if !ok {
 		return "", false
 	}
-	return sec.Value, true
+	return v.Value, true
 }
 
-// Set adds or updates a secret. Creates the vault directory on first write.
+// GetVariable returns the full variable record (including type and sensitivity)
+// and whether it exists.
+func (s *Store) GetVariable(key string) (Variable, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadIfChanged()
+
+	v, ok := s.variables[key]
+	return v, ok
+}
+
+// Set adds or updates a variable's value. For existing keys, the previous
+// Set, Type, and IsSecret are preserved (this is the historic Set behaviour
+// from the secrets-only era and many callers rely on it). For new keys the
+// secure default (IsSecret=true, Type=string) applies (Article XII).
 func (s *Store) Set(key, value string) error {
 	return state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
@@ -133,18 +231,21 @@ func (s *Store) Set(key, value string) error {
 			return err
 		}
 
-		existing, ok := s.secrets[key]
-		if ok {
+		if existing, ok := s.variables[key]; ok {
 			existing.Value = value
-			s.secrets[key] = existing
+			s.variables[key] = existing
 		} else {
-			s.secrets[key] = Secret{Key: key, Value: value}
+			s.variables[key] = Variable{
+				Key: key, Value: value, Type: TypeString, IsSecret: true,
+			}
 		}
 		return s.saveLocked()
 	})
 }
 
-// SetWithSet adds or updates a secret and assigns it to a set.
+// SetWithSet adds or updates a variable and assigns it to a set. Preserves
+// existing Type/IsSecret metadata for known keys; new keys default to
+// secret/string.
 func (s *Store) SetWithSet(key, value, setName string) error {
 	return state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
@@ -154,8 +255,16 @@ func (s *Store) SetWithSet(key, value, setName string) error {
 			return err
 		}
 
-		s.secrets[key] = Secret{Key: key, Value: value, Set: setName}
-		// Auto-create set if it doesn't exist
+		if existing, ok := s.variables[key]; ok {
+			existing.Value = value
+			existing.Set = setName
+			s.variables[key] = existing
+		} else {
+			s.variables[key] = Variable{
+				Key: key, Value: value, Set: setName,
+				Type: TypeString, IsSecret: true,
+			}
+		}
 		if setName != "" {
 			if _, exists := s.sets[setName]; !exists {
 				s.sets[setName] = Set{Name: setName}
@@ -165,7 +274,40 @@ func (s *Store) SetWithSet(key, value, setName string) error {
 	})
 }
 
-// Delete removes a secret by key.
+// SetVariable adds or updates a variable with full metadata control. All
+// fields are taken from v; existing entries are fully replaced. Used by the
+// CLI/API when callers want to thread type and sensitivity explicitly.
+// Auto-creates referenced sets so callers don't need a separate CreateSet.
+func (s *Store) SetVariable(v Variable) error {
+	if v.Key == "" {
+		return fmt.Errorf("variable key cannot be empty")
+	}
+	if v.Type == "" {
+		v.Type = TypeString
+	}
+	if !IsValidType(v.Type) {
+		return fmt.Errorf("invalid variable type: %q", v.Type)
+	}
+
+	return state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if err := s.loadLocked(); err != nil {
+			return err
+		}
+
+		s.variables[v.Key] = v
+		if v.Set != "" {
+			if _, exists := s.sets[v.Set]; !exists {
+				s.sets[v.Set] = Set{Name: v.Set}
+			}
+		}
+		return s.saveLocked()
+	})
+}
+
+// Delete removes a variable by key.
 func (s *Store) Delete(key string) error {
 	return state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
@@ -175,31 +317,43 @@ func (s *Store) Delete(key string) error {
 			return err
 		}
 
-		if _, ok := s.secrets[key]; !ok {
-			return fmt.Errorf("secret %q not found", key)
+		if _, ok := s.variables[key]; !ok {
+			return fmt.Errorf("variable %q not found", key)
 		}
 
-		delete(s.secrets, key)
+		delete(s.variables, key)
 		return s.saveLocked()
 	})
 }
 
-// List returns all secrets sorted by key.
-func (s *Store) List() []Secret {
+// List returns all variables sorted by key.
+func (s *Store) List() []Variable {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_ = s.reloadIfChanged()
 
-	result := make([]Secret, 0, len(s.secrets))
-	for _, sec := range s.secrets {
-		result = append(result, sec)
+	result := make([]Variable, 0, len(s.variables))
+	for _, v := range s.variables {
+		result = append(result, v)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Key < result[j].Key })
 	return result
 }
 
-// Import bulk-imports secrets. Returns the count of keys imported.
+// Import bulk-imports variables. Plain-map imports default to secret/string
+// (Article XII secure default); callers needing per-key type or visibility
+// should use ImportVariables.
 func (s *Store) Import(secrets map[string]string) (int, error) {
+	vars := make([]Variable, 0, len(secrets))
+	for k, v := range secrets {
+		vars = append(vars, Variable{Key: k, Value: v, Type: TypeString, IsSecret: true})
+	}
+	return s.ImportVariables(vars)
+}
+
+// ImportVariables bulk-imports variables, preserving per-entry metadata.
+// Returns the count of keys imported.
+func (s *Store) ImportVariables(vars []Variable) (int, error) {
 	var count int
 	err := state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
@@ -209,8 +363,22 @@ func (s *Store) Import(secrets map[string]string) (int, error) {
 			return err
 		}
 
-		for k, v := range secrets {
-			s.secrets[k] = Secret{Key: k, Value: v}
+		for _, v := range vars {
+			if v.Key == "" {
+				continue
+			}
+			if v.Type == "" {
+				v.Type = TypeString
+			}
+			if !IsValidType(v.Type) {
+				return fmt.Errorf("invalid variable type %q for key %q", v.Type, v.Key)
+			}
+			s.variables[v.Key] = v
+			if v.Set != "" {
+				if _, exists := s.sets[v.Set]; !exists {
+					s.sets[v.Set] = Set{Name: v.Set}
+				}
+			}
 			count++
 		}
 		return s.saveLocked()
@@ -218,15 +386,15 @@ func (s *Store) Import(secrets map[string]string) (int, error) {
 	return count, err
 }
 
-// Export returns all secrets as a key-value map.
+// Export returns all variables as a key-value map.
 func (s *Store) Export() map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_ = s.reloadIfChanged()
 
-	result := make(map[string]string, len(s.secrets))
-	for k, sec := range s.secrets {
-		result[k] = sec.Value
+	result := make(map[string]string, len(s.variables))
+	for k, v := range s.variables {
+		result[k] = v.Value
 	}
 	return result
 }
@@ -237,8 +405,8 @@ func (s *Store) Keys() []string {
 	defer s.mu.Unlock()
 	_ = s.reloadIfChanged()
 
-	keys := make([]string, 0, len(s.secrets))
-	for k := range s.secrets {
+	keys := make([]string, 0, len(s.variables))
+	for k := range s.variables {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -250,26 +418,28 @@ func (s *Store) Has(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_ = s.reloadIfChanged()
-	_, ok := s.secrets[key]
+	_, ok := s.variables[key]
 	return ok
 }
 
-// Values returns all secret values (for redaction registration).
+// Values returns variable values flagged as secret (IsSecret=true), used to
+// seed log redaction. Plaintext variables are intentionally excluded so
+// non-sensitive values like REGION=us-east-1 stay legible in logs.
 func (s *Store) Values() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_ = s.reloadIfChanged()
 
-	vals := make([]string, 0, len(s.secrets))
-	for _, sec := range s.secrets {
-		if sec.Value != "" {
-			vals = append(vals, sec.Value)
+	vals := make([]string, 0, len(s.variables))
+	for _, v := range s.variables {
+		if v.IsSecret && v.Value != "" {
+			vals = append(vals, v.Value)
 		}
 	}
 	return vals
 }
 
-// SetSecretSet assigns a secret to a set (or unassigns if setName is empty).
+// SetSecretSet assigns a variable to a set (or unassigns if setName is empty).
 func (s *Store) SetSecretSet(key, setName string) error {
 	return state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
@@ -279,13 +449,13 @@ func (s *Store) SetSecretSet(key, setName string) error {
 			return err
 		}
 
-		sec, ok := s.secrets[key]
+		v, ok := s.variables[key]
 		if !ok {
-			return fmt.Errorf("secret %q not found", key)
+			return fmt.Errorf("variable %q not found", key)
 		}
 
-		sec.Set = setName
-		s.secrets[key] = sec
+		v.Set = setName
+		s.variables[key] = v
 
 		// Auto-create set if it doesn't exist
 		if setName != "" {
@@ -306,9 +476,9 @@ func (s *Store) ListSets() []SetSummary {
 
 	// Count members per set
 	counts := make(map[string]int)
-	for _, sec := range s.secrets {
-		if sec.Set != "" {
-			counts[sec.Set]++
+	for _, v := range s.variables {
+		if v.Set != "" {
+			counts[v.Set]++
 		}
 	}
 
@@ -343,7 +513,7 @@ func (s *Store) CreateSet(name string) error {
 	})
 }
 
-// DeleteSet removes a set. Secrets in the set are unassigned but not deleted.
+// DeleteSet removes a set. Variables in the set are unassigned but not deleted.
 func (s *Store) DeleteSet(name string) error {
 	return state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
@@ -357,11 +527,11 @@ func (s *Store) DeleteSet(name string) error {
 			return fmt.Errorf("set %q not found", name)
 		}
 
-		// Unassign secrets from this set
-		for k, sec := range s.secrets {
-			if sec.Set == name {
-				sec.Set = ""
-				s.secrets[k] = sec
+		// Unassign variables from this set
+		for k, v := range s.variables {
+			if v.Set == name {
+				v.Set = ""
+				s.variables[k] = v
 			}
 		}
 
@@ -370,16 +540,19 @@ func (s *Store) DeleteSet(name string) error {
 	})
 }
 
-// GetSetSecrets returns all secrets belonging to a set, sorted by key.
-func (s *Store) GetSetSecrets(setName string) []Secret {
+// GetSetSecrets returns all variables belonging to a set, sorted by key.
+// Retains its historic name (set-based "secrets" lookup) for backward
+// compatibility with callers; the unified store treats plaintext and secret
+// variables identically when grouping by set.
+func (s *Store) GetSetSecrets(setName string) []Variable {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_ = s.reloadIfChanged()
 
-	var result []Secret
-	for _, sec := range s.secrets {
-		if sec.Set == setName {
-			result = append(result, sec)
+	var result []Variable
+	for _, v := range s.variables {
+		if v.Set == setName {
+			result = append(result, v)
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Key < result[j].Key })
@@ -416,7 +589,7 @@ func (s *Store) Lock(passphrase string) error {
 			return err
 		}
 
-		data, err := s.serializeSecrets()
+		data, err := s.serializeVariables()
 		if err != nil {
 			return err
 		}
@@ -475,11 +648,11 @@ func (s *Store) Unlock(passphrase string) error {
 			return err
 		}
 
-		secrets, sets, err := parseSecretsData(plaintext)
+		variables, sets, err := parseSecretsData(plaintext)
 		if err != nil {
 			return err
 		}
-		s.secrets = secrets
+		s.variables = variables
 		s.sets = sets
 		s.locked = false
 		s.passphrase = passphrase
@@ -528,7 +701,9 @@ func (s *Store) ChangePassphrase(oldPass, newPass string) error {
 	})
 }
 
-// secretsPath returns the path to the secrets JSON file.
+// secretsPath returns the path to the variables JSON file. The filename
+// stays "secrets.json" for backward compatibility with v0/v1 deployments;
+// the rename is at the API/CLI/Go-struct layer, not the on-disk filename.
 func (s *Store) secretsPath() string {
 	return filepath.Join(s.baseDir, "secrets.json")
 }
@@ -562,11 +737,11 @@ func (s *Store) loadLocked() error {
 			return err
 		}
 
-		secrets, sets, err := parseSecretsData(plaintext)
+		variables, sets, err := parseSecretsData(plaintext)
 		if err != nil {
 			return err
 		}
-		s.secrets = secrets
+		s.variables = variables
 		s.sets = sets
 		s.stampMtimeLocked()
 		return nil
@@ -581,11 +756,11 @@ func (s *Store) loadLocked() error {
 		return fmt.Errorf("reading vault: %w", err)
 	}
 
-	secrets, sets, err := parseSecretsData(data)
+	variables, sets, err := parseSecretsData(data)
 	if err != nil {
 		return err
 	}
-	s.secrets = secrets
+	s.variables = variables
 	s.sets = sets
 	s.stampMtimeLocked()
 	return nil
@@ -633,7 +808,7 @@ func (s *Store) reloadIfChanged() error {
 			s.encrypted = true
 			s.locked = true
 			s.passphrase = ""
-			s.secrets = make(map[string]Secret)
+			s.variables = make(map[string]Variable)
 			s.sets = make(map[string]Set)
 			s.mtime = info.ModTime()
 			s.size = info.Size()
@@ -654,7 +829,7 @@ func (s *Store) reloadIfChanged() error {
 		if s.encrypted {
 			// Encrypted → plaintext transition. Toggle flags first so
 			// loadLocked reads the plaintext path; on parse failure the
-			// atomic swap inside parseSecretsData leaves in-memory secrets
+			// atomic swap inside parseSecretsData leaves in-memory variables
 			// intact (they were already empty if the daemon was locked).
 			s.encrypted = false
 			s.locked = false
@@ -669,13 +844,16 @@ func (s *Store) reloadIfChanged() error {
 	return nil
 }
 
-// serializeSecrets returns the current secrets as JSON.
-func (s *Store) serializeSecrets() ([]byte, error) {
-	secrets := make([]Secret, 0, len(s.secrets))
-	for _, sec := range s.secrets {
-		secrets = append(secrets, sec)
+// serializeVariables returns the current variables as JSON in the v2 shape.
+func (s *Store) serializeVariables() ([]byte, error) {
+	variables := make([]Variable, 0, len(s.variables))
+	for _, v := range s.variables {
+		if v.Type == "" {
+			v.Type = TypeString
+		}
+		variables = append(variables, v)
 	}
-	sort.Slice(secrets, func(i, j int) bool { return secrets[i].Key < secrets[j].Key })
+	sort.Slice(variables, func(i, j int) bool { return variables[i].Key < variables[j].Key })
 
 	sets := make([]Set, 0, len(s.sets))
 	for _, set := range s.sets {
@@ -683,18 +861,18 @@ func (s *Store) serializeSecrets() ([]byte, error) {
 	}
 	sort.Slice(sets, func(i, j int) bool { return sets[i].Name < sets[j].Name })
 
-	sd := storeData{Secrets: secrets, Sets: sets}
+	sd := storeData{Version: CurrentStoreVersion, Variables: variables, Sets: sets}
 	return json.MarshalIndent(sd, "", "  ")
 }
 
-// saveLocked writes secrets to disk atomically. Creates directory on first write.
-// If the vault is encrypted, re-encrypts and writes to secrets.enc.
+// saveLocked writes variables to disk atomically. Creates directory on first
+// write. If the vault is encrypted, re-encrypts and writes to secrets.enc.
 func (s *Store) saveLocked() error {
 	if err := os.MkdirAll(s.baseDir, 0700); err != nil {
 		return fmt.Errorf("creating vault directory: %w", err)
 	}
 
-	data, err := s.serializeSecrets()
+	data, err := s.serializeVariables()
 	if err != nil {
 		return fmt.Errorf("marshaling vault: %w", err)
 	}

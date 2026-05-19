@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -471,12 +472,12 @@ func TestStore_GetSetSecrets_Sorted(t *testing.T) {
 	}
 }
 
-func TestStore_LegacyFormatBackwardCompat(t *testing.T) {
+func TestStore_LoadV0_FlatArray(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write legacy format (flat array)
-	legacy := `[{"key":"LEGACY","value":"old-format"}]`
-	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte(legacy), 0600); err != nil {
+	// v0: legacy flat array, no sets, no type, no is_secret.
+	v0 := `[{"key":"LEGACY","value":"old-format","set":"legacy-set"}]`
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte(v0), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -485,9 +486,312 @@ func TestStore_LegacyFormatBackwardCompat(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	got, ok := store.Get("LEGACY")
-	if !ok || got != "old-format" {
-		t.Errorf("Legacy format not loaded: ok=%v, got=%q", ok, got)
+	v, ok := store.GetVariable("LEGACY")
+	if !ok {
+		t.Fatal("LEGACY key not found")
+	}
+	if v.Value != "old-format" {
+		t.Errorf("Value = %q, want %q", v.Value, "old-format")
+	}
+	if v.Type != TypeString {
+		t.Errorf("Type = %q, want %q (v0 default)", v.Type, TypeString)
+	}
+	if !v.IsSecret {
+		t.Error("IsSecret = false, want true (v0 default, Article XII)")
+	}
+	if v.Set != "legacy-set" {
+		t.Errorf("Set = %q, want %q", v.Set, "legacy-set")
+	}
+}
+
+func TestStore_LoadV1_SecretsObject(t *testing.T) {
+	dir := t.TempDir()
+
+	// v1: object with "secrets" key (pre-rename), no version, no type, no is_secret.
+	v1 := `{"secrets":[{"key":"OLD_KEY","value":"v1-val"}],"sets":[{"name":"db"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte(v1), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	v, ok := store.GetVariable("OLD_KEY")
+	if !ok {
+		t.Fatal("OLD_KEY not found")
+	}
+	if v.Value != "v1-val" {
+		t.Errorf("Value = %q, want %q", v.Value, "v1-val")
+	}
+	if v.Type != TypeString {
+		t.Errorf("Type = %q, want %q (v1 default)", v.Type, TypeString)
+	}
+	if !v.IsSecret {
+		t.Error("IsSecret = false, want true (v1 default, Article XII)")
+	}
+
+	sets := store.ListSets()
+	if len(sets) != 1 || sets[0].Name != "db" {
+		t.Errorf("ListSets() = %v, want [{db 0}]", sets)
+	}
+}
+
+func TestStore_LoadV2_Roundtrip(t *testing.T) {
+	dir := t.TempDir()
+
+	// v2: explicit version, variables array with full metadata.
+	v2 := `{
+  "version": 2,
+  "variables": [
+    {"key": "REGION", "value": "us-east-1", "type": "string", "is_secret": false},
+    {"key": "DB_PASS", "value": "p4ss", "type": "string", "is_secret": true, "set": "db"},
+    {"key": "PORTS", "value": "[\"80\",\"443\"]", "type": "list", "is_secret": false}
+  ],
+  "sets": [{"name": "db", "description": "Database vars"}]
+}`
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte(v2), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	// Plaintext variable should round-trip with IsSecret=false.
+	region, ok := store.GetVariable("REGION")
+	if !ok {
+		t.Fatal("REGION not found")
+	}
+	if region.IsSecret {
+		t.Error("REGION.IsSecret = true, want false")
+	}
+	if region.Type != TypeString {
+		t.Errorf("REGION.Type = %q, want %q", region.Type, TypeString)
+	}
+
+	// Secret variable should preserve type and set assignment.
+	pass, _ := store.GetVariable("DB_PASS")
+	if !pass.IsSecret {
+		t.Error("DB_PASS.IsSecret = false, want true")
+	}
+	if pass.Set != "db" {
+		t.Errorf("DB_PASS.Set = %q, want %q", pass.Set, "db")
+	}
+
+	// Typed list should preserve Type=list.
+	ports, _ := store.GetVariable("PORTS")
+	if ports.Type != TypeList {
+		t.Errorf("PORTS.Type = %q, want %q", ports.Type, TypeList)
+	}
+}
+
+func TestStore_SaveAlwaysWritesV2(t *testing.T) {
+	dir := t.TempDir()
+
+	// Seed a v1 file.
+	v1 := `{"secrets":[{"key":"A","value":"v1"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte(v1), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Any mutation forces a save.
+	if err := store.Set("B", "new"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-read raw file: it must now be v2.
+	data, err := os.ReadFile(filepath.Join(dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var disk map[string]any
+	if err := json.Unmarshal(data, &disk); err != nil {
+		t.Fatalf("file not valid JSON: %v", err)
+	}
+	if v, ok := disk["version"].(float64); !ok || int(v) != CurrentStoreVersion {
+		t.Errorf("on-disk version = %v, want %d", disk["version"], CurrentStoreVersion)
+	}
+	if _, ok := disk["variables"]; !ok {
+		t.Error("on-disk file missing \"variables\" key after save")
+	}
+	if _, ok := disk["secrets"]; ok {
+		t.Error("on-disk file still has \"secrets\" key after save (should be \"variables\")")
+	}
+}
+
+func TestStore_Values_FiltersByIsSecret(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	if err := store.SetVariable(Variable{Key: "SECRET_TOK", Value: "tok123", Type: TypeString, IsSecret: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetVariable(Variable{Key: "REGION", Value: "us-east-1", Type: TypeString, IsSecret: false}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetVariable(Variable{Key: "EMPTY_SECRET", Value: "", Type: TypeString, IsSecret: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	vals := store.Values()
+	if len(vals) != 1 {
+		t.Fatalf("Values() returned %d values, want 1 (only non-empty secret)", len(vals))
+	}
+	if vals[0] != "tok123" {
+		t.Errorf("Values()[0] = %q, want %q", vals[0], "tok123")
+	}
+}
+
+func TestStore_SetVariable_DefaultsToSecret(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	// Plain Set() must default to IsSecret=true (Article XII).
+	if err := store.Set("KEY", "val"); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := store.GetVariable("KEY")
+	if !v.IsSecret {
+		t.Error("Set() default IsSecret = false, want true (Article XII)")
+	}
+	if v.Type != TypeString {
+		t.Errorf("Set() default Type = %q, want %q", v.Type, TypeString)
+	}
+}
+
+func TestStore_SetVariable_Plaintext(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	if err := store.SetVariable(Variable{
+		Key: "REGION", Value: "us-east-1", Type: TypeString, IsSecret: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	v, _ := store.GetVariable("REGION")
+	if v.IsSecret {
+		t.Error("plaintext SetVariable produced IsSecret=true")
+	}
+
+	// Values() must NOT include plaintext values.
+	vals := store.Values()
+	for _, val := range vals {
+		if val == "us-east-1" {
+			t.Error("Values() leaked plaintext value into redaction set")
+		}
+	}
+}
+
+func TestStore_SetVariable_RejectsInvalidType(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	err := store.SetVariable(Variable{Key: "K", Value: "v", Type: "weird"})
+	if err == nil {
+		t.Error("SetVariable accepted invalid type")
+	}
+}
+
+func TestStore_ImportVariables(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	vars := []Variable{
+		{Key: "A", Value: "1", Type: TypeString, IsSecret: true},
+		{Key: "B", Value: "us-east-1", Type: TypeString, IsSecret: false},
+		{Key: "C", Value: `["x","y"]`, Type: TypeList, IsSecret: false},
+	}
+
+	count, err := store.ImportVariables(vars)
+	if err != nil {
+		t.Fatalf("ImportVariables() error: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("count = %d, want 3", count)
+	}
+
+	b, _ := store.GetVariable("B")
+	if b.IsSecret {
+		t.Error("B should be plaintext after import")
+	}
+	c, _ := store.GetVariable("C")
+	if c.Type != TypeList {
+		t.Errorf("C.Type = %q, want %q", c.Type, TypeList)
+	}
+}
+
+func TestStore_EncryptedV1Migrates_LocksAsV2(t *testing.T) {
+	// A vault that was encrypted with a v1 inner shape, when unlocked and
+	// re-saved, must round-trip as v2 with IsSecret=true on every entry.
+	dir := t.TempDir()
+
+	// Manually encrypt a v1-shaped plaintext.
+	v1 := []byte(`{"secrets":[{"key":"DB_PASS","value":"v1pass"}]}`)
+	ev, err := LockVault(v1, "pass")
+	if err != nil {
+		t.Fatalf("LockVault() error: %v", err)
+	}
+	encData, err := marshalEncryptedVault(ev)
+	if err != nil {
+		t.Fatalf("marshalEncryptedVault() error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secrets.enc"), encData, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load, unlock, and force a save.
+	store := NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Unlock("pass"); err != nil {
+		t.Fatalf("Unlock() error: %v", err)
+	}
+
+	// In-memory: every v1 entry must default to IsSecret=true.
+	v, ok := store.GetVariable("DB_PASS")
+	if !ok {
+		t.Fatal("DB_PASS not found after unlock")
+	}
+	if !v.IsSecret {
+		t.Error("DB_PASS.IsSecret = false after v1 migration, want true")
+	}
+	if v.Type != TypeString {
+		t.Errorf("DB_PASS.Type = %q, want %q", v.Type, TypeString)
+	}
+
+	// Set a new variable to trigger a save. The re-encrypted blob must now
+	// contain a v2 inner shape; verify by decrypting and inspecting.
+	if err := store.SetVariable(Variable{
+		Key: "REGION", Value: "us-east-1", Type: TypeString, IsSecret: false,
+	}); err != nil {
+		t.Fatalf("SetVariable() error: %v", err)
+	}
+
+	encNew, err := os.ReadFile(filepath.Join(dir, "secrets.enc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	evNew, err := unmarshalEncryptedVault(encNew)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := UnlockVault(evNew, "pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var inner map[string]any
+	if err := json.Unmarshal(plain, &inner); err != nil {
+		t.Fatalf("decrypted inner JSON parse: %v", err)
+	}
+	if ver, _ := inner["version"].(float64); int(ver) != CurrentStoreVersion {
+		t.Errorf("re-encrypted inner version = %v, want %d", inner["version"], CurrentStoreVersion)
 	}
 }
 
