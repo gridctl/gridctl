@@ -1,16 +1,20 @@
 import { create } from 'zustand';
-import type { VaultSecret, VaultSet } from '../lib/api';
+import type { Variable, VariableSet } from '../lib/api';
 
+// useVaultStore is kept as the in-memory cache for the unified variable
+// store (secrets + plaintext config). The hook name retains "Vault" for
+// historic reasons; the API surface and on-disk schema use the unified
+// "Variable" vocabulary.
 interface VaultState {
-  secrets: VaultSecret[] | null;
-  sets: VaultSet[] | null;
+  variables: Variable[] | null;
+  sets: VariableSet[] | null;
   loading: boolean;
   error: string | null;
   locked: boolean;
   encrypted: boolean;
 
-  setSecrets: (secrets: VaultSecret[]) => void;
-  setSets: (sets: VaultSet[]) => void;
+  setVariables: (variables: Variable[]) => void;
+  setSets: (sets: VariableSet[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setLocked: (locked: boolean) => void;
@@ -18,17 +22,17 @@ interface VaultState {
 }
 
 export const useVaultStore = create<VaultState>()((set) => ({
-  secrets: null,
+  variables: null,
   sets: null,
   loading: false,
   error: null,
   locked: false,
   encrypted: false,
 
-  setSecrets: (secrets) => set({ secrets: secrets ?? [] }),
+  setVariables: (variables) => set({ variables: variables ?? [] }),
   setSets: (sets) => set({ sets: sets ?? [] }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
-  setLocked: (locked) => set(locked ? { locked, secrets: null, sets: null } : { locked }),
+  setLocked: (locked) => set(locked ? { locked, variables: null, sets: null } : { locked }),
   setEncrypted: (encrypted) => set({ encrypted }),
 }));

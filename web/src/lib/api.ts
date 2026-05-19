@@ -572,74 +572,108 @@ export async function validateSkillContent(content: string): Promise<SkillValida
 }
 
 
-// === Vault API ===
+// === Variable Store API ===
 
-export interface VaultSecret {
+// Variable types accepted by `gridctl var set --type`. PR 1 records the type
+// as metadata only — expansion still treats every value as a string.
+export type VariableType = 'string' | 'json' | 'list' | 'number' | 'bool';
+
+export interface Variable {
   key: string;
+  type: VariableType;
+  is_secret: boolean;
   set?: string;
 }
 
-export interface VaultSet {
+export interface VariableSet {
   name: string;
   description?: string;
   count: number;
 }
 
-export async function fetchVaultSecrets(): Promise<VaultSecret[]> {
-  return fetchJSON<VaultSecret[]>('/api/vault');
+export async function fetchVariables(): Promise<Variable[]> {
+  return fetchJSON<Variable[]>('/api/var');
 }
 
-export async function createVaultSecret(key: string, value: string, set?: string): Promise<void> {
-  await mutateJSON<unknown>('/api/vault', 'POST', { key, value, ...(set ? { set } : {}) });
+export interface CreateVariableInput {
+  key: string;
+  value: string;
+  type?: VariableType;
+  isSecret?: boolean;
+  set?: string;
 }
 
-export async function getVaultSecret(key: string): Promise<{ key: string; value: string }> {
-  return fetchJSON<{ key: string; value: string }>(`/api/vault/${encodeURIComponent(key)}`);
+export async function createVariable(input: CreateVariableInput): Promise<void> {
+  const body: Record<string, unknown> = { key: input.key, value: input.value };
+  if (input.type !== undefined) body.type = input.type;
+  if (input.isSecret !== undefined) body.is_secret = input.isSecret;
+  if (input.set) body.set = input.set;
+  await mutateJSON<unknown>('/api/var', 'POST', body);
 }
 
-export async function updateVaultSecret(key: string, value: string): Promise<void> {
-  await mutateJSON<unknown>(`/api/vault/${encodeURIComponent(key)}`, 'PUT', { value });
+export interface VariableDetail extends Variable {
+  value: string;
 }
 
-export async function deleteVaultSecret(key: string): Promise<void> {
-  return mutateJSON<void>(`/api/vault/${encodeURIComponent(key)}`, 'DELETE');
+export async function getVariable(key: string): Promise<VariableDetail> {
+  return fetchJSON<VariableDetail>(`/api/var/${encodeURIComponent(key)}`);
 }
 
-export async function fetchVaultSets(): Promise<VaultSet[]> {
-  return fetchJSON<VaultSet[]>('/api/vault/sets');
+export interface UpdateVariableInput {
+  value?: string;
+  type?: VariableType;
+  isSecret?: boolean;
+  set?: string;
 }
 
-export async function createVaultSet(name: string): Promise<void> {
-  await mutateJSON<unknown>('/api/vault/sets', 'POST', { name });
+export async function updateVariable(key: string, input: UpdateVariableInput): Promise<void> {
+  const body: Record<string, unknown> = {};
+  if (input.value !== undefined) body.value = input.value;
+  if (input.type !== undefined) body.type = input.type;
+  if (input.isSecret !== undefined) body.is_secret = input.isSecret;
+  if (input.set !== undefined) body.set = input.set;
+  await mutateJSON<unknown>(`/api/var/${encodeURIComponent(key)}`, 'PUT', body);
 }
 
-export async function deleteVaultSet(name: string): Promise<void> {
-  return mutateJSON<void>(`/api/vault/sets/${encodeURIComponent(name)}`, 'DELETE');
+export async function deleteVariable(key: string): Promise<void> {
+  return mutateJSON<void>(`/api/var/${encodeURIComponent(key)}`, 'DELETE');
 }
 
-export async function assignSecretToSet(key: string, set: string): Promise<void> {
-  await mutateJSON<unknown>(`/api/vault/${encodeURIComponent(key)}/set`, 'PUT', { set });
+export async function fetchVariableSets(): Promise<VariableSet[]> {
+  return fetchJSON<VariableSet[]>('/api/var/sets');
 }
 
-// === Vault Encryption API ===
+export async function createVariableSet(name: string): Promise<void> {
+  await mutateJSON<unknown>('/api/var/sets', 'POST', { name });
+}
 
-export interface VaultStatus {
+export async function deleteVariableSet(name: string): Promise<void> {
+  return mutateJSON<void>(`/api/var/sets/${encodeURIComponent(name)}`, 'DELETE');
+}
+
+export async function assignVariableToSet(key: string, set: string): Promise<void> {
+  await mutateJSON<unknown>(`/api/var/${encodeURIComponent(key)}/set`, 'PUT', { set });
+}
+
+// === Variable Store Encryption API ===
+
+export interface VariableStoreStatus {
   locked: boolean;
   encrypted: boolean;
-  secrets_count?: number;
+  variables_count?: number;
   sets_count?: number;
 }
 
-export async function fetchVaultStatus(): Promise<VaultStatus> {
-  return fetchJSON<VaultStatus>('/api/vault/status');
+export async function fetchVariableStoreStatus(): Promise<VariableStoreStatus> {
+  return fetchJSON<VariableStoreStatus>('/api/var/status');
 }
 
-export async function unlockVault(passphrase: string): Promise<{ status: string }> {
-  return mutateJSON<{ status: string }>('/api/vault/unlock', 'POST', { passphrase });
+export async function unlockVariableStore(passphrase: string): Promise<{ status: string }> {
+  return mutateJSON<{ status: string }>('/api/var/unlock', 'POST', { passphrase });
 }
 
-export async function lockVault(passphrase: string): Promise<{ status: string }> {
-  return mutateJSON<{ status: string }>('/api/vault/lock', 'POST', { passphrase });
+export async function lockVariableStore(passphrase: string): Promise<{ status: string }> {
+  return mutateJSON<{ status: string }>('/api/var/lock', 'POST', { passphrase });
 }
 
 // === Stack Spec API ===

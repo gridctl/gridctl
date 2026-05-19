@@ -1,6 +1,6 @@
 // yaml-builder.ts — Form state to YAML serialization
 // Converts structured wizard form data into valid YAML strings.
-// Never includes raw secrets — only ${vault:KEY} references.
+// Never includes raw secrets — only ${var:KEY} references.
 
 export type ResourceType = 'stack' | 'mcp-server' | 'resource' | 'skill' | 'secret';
 
@@ -25,7 +25,7 @@ export interface MCPServerFormData {
     // reference (no raw tokens) since this block is persisted to YAML.
     auth?: {
       method?: 'token';
-      credentialRef?: string; // e.g. "${vault:GIT_TOKEN}"
+      credentialRef?: string; // e.g. "${var:GIT_TOKEN}"
     };
   };
   // External
@@ -147,7 +147,7 @@ export type WizardFormData =
 // Serialize a value that might need quoting
 function yamlValue(val: string | number | boolean): string {
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-  if (/^\$\{vault:/.test(val)) return `"${val}"`;
+  if (/^\$\{(vault|var):/.test(val)) return `"${val}"`;
   if (/[:#{}[\],&*?|>!%@`]/.test(val) || val === '' || val === 'true' || val === 'false') {
     return `"${val.replace(/"/g, '\\"')}"`;
   }
