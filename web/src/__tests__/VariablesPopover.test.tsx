@@ -96,7 +96,8 @@ describe('VariablesPopover', () => {
 
     fireEvent.click(screen.getByText('Create New Variable'));
     expect(screen.getByPlaceholderText('VARIABLE_KEY')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Variable value')).toBeInTheDocument();
+    // Default form state is string + Secret, so the value hint mirrors that.
+    expect(screen.getByPlaceholderText('secret value')).toBeInTheDocument();
   });
 
   it('converts new key input to uppercase', async () => {
@@ -139,6 +140,52 @@ describe('VariablesPopover', () => {
     for (let i = 0; i < 20; i++) {
       expect(screen.getByText(`VAR_${i}`)).toBeInTheDocument();
     }
+  });
+
+  describe('placeholder adaptation', () => {
+    const openCreateForm = async () => {
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      await waitFor(() => {
+        fireEvent.click(screen.getByText('Create New Variable'));
+      });
+    };
+
+    it('shows a secret-value hint by default (string + Secret)', async () => {
+      await openCreateForm();
+      expect(screen.getByPlaceholderText('secret value')).toBeInTheDocument();
+    });
+
+    it('drops the word "secret" when Plaintext is selected', async () => {
+      await openCreateForm();
+      fireEvent.click(screen.getByRole('button', { name: /plaintext/i }));
+      expect(screen.queryByPlaceholderText('secret value')).not.toBeInTheDocument();
+      expect(screen.getByPlaceholderText('plaintext value')).toBeInTheDocument();
+    });
+
+    it('hints comma-separated input when list type is selected', async () => {
+      await openCreateForm();
+      fireEvent.click(screen.getByRole('button', { name: 'list' }));
+      expect(screen.getByPlaceholderText('item1, item2, item3')).toBeInTheDocument();
+    });
+
+    it('hints JSON object syntax when json type is selected', async () => {
+      await openCreateForm();
+      fireEvent.click(screen.getByRole('button', { name: 'json' }));
+      expect(screen.getByPlaceholderText('{"key": "value"}')).toBeInTheDocument();
+    });
+
+    it('hints a number example when number type is selected', async () => {
+      await openCreateForm();
+      fireEvent.click(screen.getByRole('button', { name: 'number' }));
+      expect(screen.getByPlaceholderText('42')).toBeInTheDocument();
+    });
+
+    it('hints true/false when bool type is selected', async () => {
+      await openCreateForm();
+      fireEvent.click(screen.getByRole('button', { name: 'bool' }));
+      expect(screen.getByPlaceholderText('true or false')).toBeInTheDocument();
+    });
   });
 
   it('closes popover on outside mousedown', async () => {

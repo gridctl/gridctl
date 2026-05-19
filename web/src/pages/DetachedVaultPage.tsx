@@ -49,7 +49,7 @@ import { VariableTypeBadge } from '../components/vault/VariableTypeBadge';
 import { VariableVisibilityIcon } from '../components/vault/VariableVisibilityIcon';
 import { VariableTypeSelector } from '../components/vault/VariableTypeSelector';
 import { VariableSecretToggle } from '../components/vault/VariableSecretToggle';
-import { validateVariableInput } from '../components/vault/variableTypeHelpers';
+import { validateVariableInput, getValuePlaceholder } from '../components/vault/variableTypeHelpers';
 
 // Error boundary for detached window
 interface ErrorBoundaryState {
@@ -574,7 +574,7 @@ function DetachedVaultContent() {
                     type={showNewValue ? 'text' : 'password'}
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
-                    placeholder="Secret value"
+                    placeholder={getValuePlaceholder(newType, newIsSecret)}
                     className="w-full bg-surface border border-border rounded-lg px-3 py-2 pr-10 text-xs font-mono text-text-primary log-text placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
                   />
                   <button

@@ -47,7 +47,7 @@ import { VariableTypeBadge } from './VariableTypeBadge';
 import { VariableVisibilityIcon } from './VariableVisibilityIcon';
 import { VariableTypeSelector } from './VariableTypeSelector';
 import { VariableSecretToggle } from './VariableSecretToggle';
-import { validateVariableInput } from './variableTypeHelpers';
+import { validateVariableInput, getValuePlaceholder } from './variableTypeHelpers';
 
 interface VaultPanelProps {
   onClose: () => void;
@@ -578,7 +578,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                     type={showNewValue ? 'text' : 'password'}
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
-                    placeholder="Secret value"
+                    placeholder={getValuePlaceholder(newType, newIsSecret)}
                     className="w-full bg-surface border border-border rounded-lg px-3 py-2 pr-10 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
                   />
                   <button

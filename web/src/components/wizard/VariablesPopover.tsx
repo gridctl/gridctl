@@ -9,7 +9,7 @@ import { VariableVisibilityIcon } from '../vault/VariableVisibilityIcon';
 import { VariableTypeBadge } from '../vault/VariableTypeBadge';
 import { VariableTypeSelector } from '../vault/VariableTypeSelector';
 import { VariableSecretToggle } from '../vault/VariableSecretToggle';
-import { validateVariableInput } from '../vault/variableTypeHelpers';
+import { validateVariableInput, getValuePlaceholder } from '../vault/variableTypeHelpers';
 
 interface VariablesPopoverProps {
   onSelect: (reference: string) => void;
@@ -243,7 +243,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
               type={showValue || !newIsSecret ? 'text' : 'password'}
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
-              placeholder="Variable value"
+              placeholder={getValuePlaceholder(newType, newIsSecret)}
               className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 pr-8 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
             />
             <button

@@ -45,3 +45,26 @@ export function validateVariableInput(
     }
   }
 }
+
+// getValuePlaceholder produces an input placeholder that mirrors what
+// validateVariableInput accepts: comma-separated for `list` (not a JSON
+// array), lowercase tokens for `bool`, etc. Visibility only changes the
+// `string` hint — for the structured types the format is the same whether
+// stored as a secret or in plaintext.
+export function getValuePlaceholder(
+  type: VariableType,
+  isSecret: boolean,
+): string {
+  switch (type) {
+    case 'string':
+      return isSecret ? 'secret value' : 'plaintext value';
+    case 'json':
+      return '{"key": "value"}';
+    case 'list':
+      return 'item1, item2, item3';
+    case 'number':
+      return '42';
+    case 'bool':
+      return 'true or false';
+  }
+}
