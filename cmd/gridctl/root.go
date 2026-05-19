@@ -31,6 +31,7 @@ func init() {
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(linkCmd)
 	rootCmd.AddCommand(unlinkCmd)
+	rootCmd.AddCommand(varCmd)
 	rootCmd.AddCommand(vaultCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(planCmd)
