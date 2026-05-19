@@ -1,0 +1,34 @@
+# Variable Sets Example
+#
+# Groups related variables into sets and injects them automatically
+# into all containers. Explicit env values take precedence.
+#
+# Sets work the same way for secrets and plaintext variables — the
+# IsSecret flag only affects log redaction and UI display.
+#
+# Prerequisites:
+#   gridctl var sets create production
+#   gridctl var set DB_HOST  --value db.example.com --set production --plaintext
+#   gridctl var set DB_PASSWORD                     --set production
+#   gridctl var set API_KEY                         --set production
+#
+# Note: the stack.yaml field below is still named `secrets.sets` to avoid a
+# breaking change to the stack schema. The label is historical; the set
+# membership is type-agnostic.
+#
+# Usage:
+#   gridctl apply examples/secrets-vault/var-sets.yaml
+
+version: "1"
+name: var-sets
+
+secrets:
+  sets:
+    - production          # All variables in this set are injected into container env
+
+mcp-servers:
+  - name: backend
+    image: ghcr.io/org/backend-mcp:latest
+    port: 3000
+    env:
+      LOG_LEVEL: "info"   # Explicit env values take precedence over set values

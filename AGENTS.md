@@ -85,7 +85,8 @@ gridctl/
 │   ├── unlink.go         # Remove gridctl from LLM clients
 │   ├── reload.go         # Hot reload stack configuration
 │   ├── skill.go          # Remote skill management (add, update, remove, pin, info, validate, try)
-│   ├── vault.go          # Vault secret management commands
+│   ├── var.go            # Variable store commands (gridctl var)
+│   ├── vault.go          # Deprecation wrapper for gridctl vault → gridctl var
 │   ├── pins.go           # Schema pin management commands
 │   ├── traces.go         # Distributed traces CLI command (table, waterfall, follow)
 │   ├── test.go           # Skill acceptance criteria runner (exit 0/1/2)
@@ -101,14 +102,14 @@ gridctl/
 │       ├── api.go        # Server setup and route registration
 │       ├── auth.go       # Gateway authentication middleware
 │       ├── registry.go   # Registry CRUD endpoints
-│       ├── vault.go      # Vault REST API endpoints
+│       ├── vault.go      # Variable store REST API (/api/var/*; /api/vault/* deprecated alias)
 │       ├── pins.go       # Schema pins REST API endpoints
 │       └── stack.go      # Stack library endpoints (list, save, initialize)
 ├── pkg/
 │   ├── config/           # Stack YAML parsing
 │   │   ├── types.go      # Stack, Agent, Resource structs
 │   │   ├── loader.go     # LoadStack() function
-│   │   ├── expand.go     # Variable expansion (env + vault)
+│   │   ├── expand.go     # Variable expansion (env + variable store via ${var:KEY} / ${vault:KEY})
 │   │   └── validate.go   # Validation rules
 │   ├── dockerclient/     # Docker client interface
 │   │   └── interface.go  # Interface definition for mocking

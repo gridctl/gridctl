@@ -1,0 +1,45 @@
+# Portable stack
+#
+# Demonstrates the headline use case for the unified variable store: the
+# stack.yaml carries no environment-specific values — every per-env knob
+# lives in the variable store on the host running gridctl. The same file
+# checks into git, deploys to dev/staging/prod against the operator's local
+# var store, and never carries a secret in plaintext on disk.
+#
+# Plaintext variables (REGION, CLUSTER_ID) appear unredacted in logs so a
+# `gridctl logs` reader can confirm which environment they hit.
+# Secret variables (DB_PASSWORD, AWS_SECRET_ACCESS_KEY) are redacted.
+#
+# Prerequisites:
+#
+#   # Non-sensitive config — visible in logs.
+#   gridctl var set REGION us-east-1 --plaintext
+#   gridctl var set CLUSTER_ID prod-cluster-42 --plaintext
+#   gridctl var set AWS_ACCOUNT_ID 123456789012 --plaintext
+#
+#   # Secrets — redacted in logs (Article XII default).
+#   gridctl var set DB_PASSWORD                    # interactive prompt
+#   gridctl var set AWS_SECRET_ACCESS_KEY          # interactive prompt
+#
+# Usage:
+#   gridctl apply examples/portable-stack/stack.yaml
+
+version: "1"
+name: portable-stack
+
+mcp-servers:
+  - name: data-api
+    image: ghcr.io/org/data-mcp:latest
+    port: 3000
+    env:
+      AWS_REGION: "${var:REGION}"
+      AWS_ACCOUNT_ID: "${var:AWS_ACCOUNT_ID}"
+      AWS_SECRET_ACCESS_KEY: "${var:AWS_SECRET_ACCESS_KEY}"
+      CLUSTER_ID: "${var:CLUSTER_ID}"
+
+  - name: db-proxy
+    image: ghcr.io/org/db-proxy-mcp:latest
+    port: 3001
+    env:
+      DB_HOST: "db.${var:REGION}.example.com"
+      DB_PASSWORD: "${var:DB_PASSWORD}"

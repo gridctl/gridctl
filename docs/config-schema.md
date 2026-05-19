@@ -843,9 +843,30 @@ String values in the configuration support variable expansion:
 | `${VAR}` | Braced environment variable reference |
 | `${VAR:-default}` | Use default if variable is undefined or empty |
 | `${VAR:+replacement}` | Use replacement if variable is defined and non-empty |
-| `${vault:KEY}` | Vault secret reference (error if key not found) |
+| `${var:KEY}` | Variable store reference (error if key not found). Canonical syntax. |
+| `${vault:KEY}` | Deprecated alias for `${var:KEY}`. Logs a one-shot warning per process. Removed at v1.0. |
 
 Variable expansion is applied to string values across all configuration sections including `env`, `token`, and `url` fields.
+
+### Variables vs Secrets
+
+The variable store is unified: it holds both secrets and non-sensitive
+configuration. The on-disk metadata distinguishes them:
+
+| Stored as | CLI | Behaviour |
+|-----------|-----|-----------|
+| Secret (default) | `gridctl var set KEY` | Encrypted at rest when the store is locked; values are replaced with `[REDACTED]` in logs. |
+| Plaintext | `gridctl var set KEY value --plaintext` | Stored alongside secrets but kept legible in logs and the web UI. |
+
+Secrets and plaintext variables share the same lookup path — `${var:KEY}`
+works for both. The unification means a `stack.yaml` can carry environment
+knobs (region, cluster ID, account ID) without leaking them through redaction
+fatigue, and without forcing the operator into a parallel `.env` workflow.
+
+`gridctl var set --type {string|json|list|number|bool}` records a type
+metadata field for each entry. PR 1 records the type only; PR 2 will wire
+type-aware expansion so a `type=json` value can unmarshal directly into a
+YAML mapping.
 
 ---
 

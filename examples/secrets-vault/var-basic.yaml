@@ -1,0 +1,30 @@
+# Variable store basics
+#
+# Uses the unified gridctl variable store to inject both secrets and
+# non-sensitive configuration into MCP server containers.
+#
+# Prerequisites:
+#   gridctl var set GITHUB_TOKEN              # default: secret (Article XII)
+#   gridctl var set OPENAI_API_KEY            # default: secret
+#   gridctl var set LOG_LEVEL info --plaintext   # plaintext: visible in logs
+#
+# Usage:
+#   gridctl apply examples/secrets-vault/var-basic.yaml
+
+version: "1"
+name: var-basic
+
+mcp-servers:
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    transport: stdio
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${var:GITHUB_TOKEN}"
+
+  - name: ai-service
+    image: ghcr.io/org/ai-mcp-server:latest
+    port: 3000
+    env:
+      OPENAI_API_KEY: "${var:OPENAI_API_KEY}"
+      # Plaintext variable — appears unredacted in logs.
+      LOG_LEVEL: "${var:LOG_LEVEL}"
