@@ -365,20 +365,33 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/pins/{server}/approve", s.handleApprovePins)
 	mux.HandleFunc("DELETE /api/pins/{server}", s.handleResetPins)
 
-	// Vault endpoints
-	mux.HandleFunc("GET /api/vault", s.handleVaultList)
-	mux.HandleFunc("POST /api/vault", s.handleVaultCreate)
-	mux.HandleFunc("POST /api/vault/import", s.handleVaultImport)
-	mux.HandleFunc("GET /api/vault/status", s.handleVaultStatus)
-	mux.HandleFunc("POST /api/vault/unlock", s.handleVaultUnlock)
-	mux.HandleFunc("POST /api/vault/lock", s.handleVaultLock)
-	mux.HandleFunc("GET /api/vault/sets", s.handleVaultSetsList)
-	mux.HandleFunc("POST /api/vault/sets", s.handleVaultSetsCreate)
-	mux.HandleFunc("DELETE /api/vault/sets/{name}", s.handleVaultSetsDelete)
-	mux.HandleFunc("GET /api/vault/{key}", s.handleVaultKeyGet)
-	mux.HandleFunc("PUT /api/vault/{key}", s.handleVaultKeyPut)
-	mux.HandleFunc("DELETE /api/vault/{key}", s.handleVaultKeyDelete)
-	mux.HandleFunc("PUT /api/vault/{key}/set", s.handleVaultAssignSet)
+	// Variable store endpoints — canonical /api/var/* surface plus a
+	// deprecated /api/vault/* alias that wears Deprecation/Sunset headers.
+	// Both register the same handler functions so behaviour is identical;
+	// only the response headers differ on the deprecated path.
+	registerVarRoutes := func(prefix string, deprecated bool) {
+		wrap := func(canonical string, h http.HandlerFunc) http.HandlerFunc {
+			if !deprecated {
+				return h
+			}
+			return deprecatedVaultHandler(canonical, h)
+		}
+		mux.HandleFunc("GET "+prefix, wrap("/api/var", s.handleVaultList))
+		mux.HandleFunc("POST "+prefix, wrap("/api/var", s.handleVaultCreate))
+		mux.HandleFunc("POST "+prefix+"/import", wrap("/api/var/import", s.handleVaultImport))
+		mux.HandleFunc("GET "+prefix+"/status", wrap("/api/var/status", s.handleVaultStatus))
+		mux.HandleFunc("POST "+prefix+"/unlock", wrap("/api/var/unlock", s.handleVaultUnlock))
+		mux.HandleFunc("POST "+prefix+"/lock", wrap("/api/var/lock", s.handleVaultLock))
+		mux.HandleFunc("GET "+prefix+"/sets", wrap("/api/var/sets", s.handleVaultSetsList))
+		mux.HandleFunc("POST "+prefix+"/sets", wrap("/api/var/sets", s.handleVaultSetsCreate))
+		mux.HandleFunc("DELETE "+prefix+"/sets/{name}", wrap("/api/var/sets/{name}", s.handleVaultSetsDelete))
+		mux.HandleFunc("GET "+prefix+"/{key}", wrap("/api/var/{key}", s.handleVaultKeyGet))
+		mux.HandleFunc("PUT "+prefix+"/{key}", wrap("/api/var/{key}", s.handleVaultKeyPut))
+		mux.HandleFunc("DELETE "+prefix+"/{key}", wrap("/api/var/{key}", s.handleVaultKeyDelete))
+		mux.HandleFunc("PUT "+prefix+"/{key}/set", wrap("/api/var/{key}/set", s.handleVaultAssignSet))
+	}
+	registerVarRoutes("/api/var", false)
+	registerVarRoutes("/api/vault", true)
 
 	// Stack spec endpoints
 	mux.HandleFunc("POST /api/stack/validate", s.handleStackValidate)

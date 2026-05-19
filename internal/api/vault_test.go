@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -515,7 +516,7 @@ func TestHandleVault_List_ReflectsExternalWrites(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("initial list status = %d, want %d", w.Code, http.StatusOK)
 	}
-	var initial []map[string]string
+	var initial []map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&initial)
 	if len(initial) != 0 {
 		t.Fatalf("initial list = %d entries, want 0", len(initial))
@@ -537,7 +538,7 @@ func TestHandleVault_List_ReflectsExternalWrites(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("post-write list status = %d, want %d", w.Code, http.StatusOK)
 	}
-	var entries []map[string]string
+	var entries []map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&entries); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
@@ -547,7 +548,9 @@ func TestHandleVault_List_ReflectsExternalWrites(t *testing.T) {
 
 	keys := map[string]bool{}
 	for _, e := range entries {
-		keys[e["key"]] = true
+		if k, ok := e["key"].(string); ok {
+			keys[k] = true
+		}
 	}
 	if !keys["API_KEY"] || !keys["DB_URL"] {
 		t.Errorf("missing expected keys in list: %v", entries)
@@ -560,9 +563,146 @@ func TestHandleVault_List_ReflectsExternalWrites(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want %d", w.Code, http.StatusOK)
 	}
-	var got map[string]string
+	var got map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&got)
 	if got["value"] != "abc" {
 		t.Errorf("Get value = %q, want %q", got["value"], "abc")
+	}
+}
+
+// TestHandleVar_CreateRoundtripsTypeAndIsSecret asserts the new /api/var
+// surface accepts type+is_secret on create and returns them on get/list.
+func TestHandleVar_CreateRoundtripsTypeAndIsSecret(t *testing.T) {
+	dir := t.TempDir()
+	store := vault.NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{vaultStore: store}
+	handler := server.Handler()
+
+	body := `{"key":"REGION","value":"us-east-1","type":"string","is_secret":false}`
+	req := httptest.NewRequest(http.MethodPost, "/api/var", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("POST status = %d, want %d (body=%q)", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/var/REGION", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var got map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got["value"] != "us-east-1" {
+		t.Errorf("value = %v, want us-east-1", got["value"])
+	}
+	if got["is_secret"] != false {
+		t.Errorf("is_secret = %v, want false", got["is_secret"])
+	}
+	if got["type"] != "string" {
+		t.Errorf("type = %v, want string", got["type"])
+	}
+}
+
+// TestHandleVar_CreateDefaultsToSecret asserts the secure default (Article XII):
+// a POST without an explicit is_secret stores the variable as a secret.
+func TestHandleVar_CreateDefaultsToSecret(t *testing.T) {
+	dir := t.TempDir()
+	store := vault.NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{vaultStore: store}
+	handler := server.Handler()
+
+	// Legacy payload: just key+value, no metadata.
+	body := `{"key":"DB_PASS","value":"p4ss"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/var", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("POST status = %d, want %d", w.Code, http.StatusCreated)
+	}
+
+	v, ok := store.GetVariable("DB_PASS")
+	if !ok {
+		t.Fatal("DB_PASS not stored")
+	}
+	if !v.IsSecret {
+		t.Error("DB_PASS.IsSecret = false on default; want true (Article XII)")
+	}
+	if v.Type != vault.TypeString {
+		t.Errorf("DB_PASS.Type = %q, want string", v.Type)
+	}
+}
+
+// TestHandleVar_DeprecatedVaultPathAddsHeaders asserts that the legacy
+// /api/vault/* surface continues to work identically but tags every
+// response with the Deprecation/Sunset/Link triple.
+func TestHandleVar_DeprecatedVaultPathAddsHeaders(t *testing.T) {
+	dir := t.TempDir()
+	store := vault.NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{vaultStore: store}
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if got := w.Header().Get("Deprecation"); got != "true" {
+		t.Errorf("Deprecation header = %q, want %q", got, "true")
+	}
+	if got := w.Header().Get("Sunset"); got == "" {
+		t.Error("Sunset header missing on deprecated /api/vault response")
+	}
+	if got := w.Header().Get("Link"); !strings.Contains(got, "successor-version") {
+		t.Errorf("Link header missing successor-version: %q", got)
+	}
+
+	// Canonical /api/var must NOT carry the deprecation headers.
+	req = httptest.NewRequest(http.MethodGet, "/api/var", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if got := w.Header().Get("Deprecation"); got != "" {
+		t.Errorf("canonical /api/var has Deprecation header = %q", got)
+	}
+}
+
+// TestHandleVar_StatusIncludesVariablesCount verifies the rename + alias.
+func TestHandleVar_StatusIncludesVariablesCount(t *testing.T) {
+	dir := t.TempDir()
+	store := vault.NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Set("A", "1")
+
+	server := &Server{vaultStore: store}
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/var/status", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	var got map[string]any
+	_ = json.NewDecoder(w.Body).Decode(&got)
+	if v, _ := got["variables_count"].(float64); int(v) != 1 {
+		t.Errorf("variables_count = %v, want 1", got["variables_count"])
+	}
+	if v, _ := got["secrets_count"].(float64); int(v) != 1 {
+		t.Errorf("secrets_count (legacy alias) = %v, want 1", got["secrets_count"])
 	}
 }
