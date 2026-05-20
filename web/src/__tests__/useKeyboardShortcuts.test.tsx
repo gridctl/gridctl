@@ -24,10 +24,18 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     expect(onSwitchToWorkspace).toHaveBeenCalledWith('skills');
   });
 
-  it('⌘3 calls onSwitchToWorkspace with "runs"', () => {
+  it('⌘3 calls onSwitchToWorkspace with "library"', () => {
     const onSwitchToWorkspace = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
     fireMod('3');
+    expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
+    expect(onSwitchToWorkspace).toHaveBeenCalledWith('library');
+  });
+
+  it('⌘4 calls onSwitchToWorkspace with "runs"', () => {
+    const onSwitchToWorkspace = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
+    fireMod('4');
     expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
     expect(onSwitchToWorkspace).toHaveBeenCalledWith('runs');
   });

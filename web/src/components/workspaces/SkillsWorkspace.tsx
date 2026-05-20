@@ -28,11 +28,14 @@ const COMPACT_SIDEBAR_PCT = 15;
 const COMPACT_INSPECTOR_PCT = 21;
 
 /**
- * SkillsWorkspace is the developer view inside the unified shell. It
- * preserves every behavior of the legacy `/agent` IDE — typed-skill
- * sidebar, list/canvas toggle, trace overlay, run launcher — and adds
- * deep-link continuity (`/skills?skill=foo&run=abc`), workspace-scoped
- * command palette commands, and Compact Mode.
+ * SkillsWorkspace is the Stage tab — the developer's per-skill Agent IDE
+ * inside the unified shell. The id stays `'skills'` and the route stays
+ * `/skills` to keep stored state, deep-links, and the Go API stable, but
+ * the user-facing label is "Stage" (see workspace.ts WORKSPACE_CONFIG).
+ * Behaviors preserved from the legacy `/agent` IDE: typed-skill sidebar,
+ * list/canvas toggle, trace overlay, run launcher. Adds deep-link
+ * continuity (`/skills?skill=foo&run=abc`), workspace-scoped command
+ * palette commands, and Compact Mode.
  */
 export function SkillsWorkspace() {
   const [params, setParams] = useSearchParams();

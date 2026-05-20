@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 
 // Mock dependencies before imports
@@ -10,35 +11,11 @@ vi.mock('../stores/useStackStore', () => ({
   })),
 }));
 
-vi.mock('../stores/useUIStore', () => ({
-  useUIStore: vi.fn((selector) => selector({
-    registryDetached: false,
-    setSidebarOpen: mockSetSidebarOpen,
+vi.mock('../stores/useRegistryStore', () => ({
+  useRegistryStore: vi.fn((selector) => selector({
+    skills: [],
   })),
 }));
-
-vi.mock('../hooks/useWindowManager', () => ({
-  useWindowManager: () => ({
-    openDetachedWindow: mockOpenDetachedWindow,
-  }),
-}));
-
-vi.mock('../components/registry/RegistrySidebar', () => ({
-  RegistrySidebar: ({ embedded }: { embedded?: boolean }) => (
-    <div data-testid="registry-sidebar" data-embedded={embedded} />
-  ),
-}));
-
-vi.mock('../components/ui/PopoutButton', () => ({
-  PopoutButton: ({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) => (
-    <button data-testid="popout-button" onClick={onClick} disabled={disabled}>
-      Popout
-    </button>
-  ),
-}));
-
-const mockSetSidebarOpen = vi.fn();
-const mockOpenDetachedWindow = vi.fn();
 
 import { GatewaySidebar } from '../components/gateway/GatewaySidebar';
 import { useSelectedNodeData } from '../stores/useStackStore';
@@ -69,45 +46,42 @@ function makeGatewayData(overrides: Partial<GatewayNodeData> = {}): GatewayNodeD
   };
 }
 
+function renderWithRouter(ui: React.ReactNode) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
 describe('GatewaySidebar', () => {
   it('renders gateway name from selected node', () => {
     vi.mocked(useSelectedNodeData).mockReturnValue(makeGatewayData({ name: 'my-gateway' }));
-    render(<GatewaySidebar onClose={vi.fn()} />);
+    renderWithRouter(<GatewaySidebar onClose={vi.fn()} />);
     expect(screen.getByText('my-gateway')).toBeInTheDocument();
   });
 
   it('renders version from selected node', () => {
     vi.mocked(useSelectedNodeData).mockReturnValue(makeGatewayData({ version: 'v0.2.0' }));
-    render(<GatewaySidebar onClose={vi.fn()} />);
+    renderWithRouter(<GatewaySidebar onClose={vi.fn()} />);
     expect(screen.getByText('v0.2.0')).toBeInTheDocument();
   });
 
   it('shows fallback name when no node selected', () => {
     vi.mocked(useSelectedNodeData).mockReturnValue(undefined);
-    render(<GatewaySidebar onClose={vi.fn()} />);
+    renderWithRouter(<GatewaySidebar onClose={vi.fn()} />);
     expect(screen.getByText('Gateway')).toBeInTheDocument();
   });
 
-  it('renders embedded RegistrySidebar', () => {
+  it('renders a Manage Skills link pointing to /library', () => {
     vi.mocked(useSelectedNodeData).mockReturnValue(makeGatewayData());
-    render(<GatewaySidebar onClose={vi.fn()} />);
-    const registry = screen.getByTestId('registry-sidebar');
-    expect(registry).toBeInTheDocument();
-    expect(registry).toHaveAttribute('data-embedded', 'true');
+    renderWithRouter(<GatewaySidebar onClose={vi.fn()} />);
+    const link = screen.getByRole('link', { name: /manage skills/i });
+    expect(link).toHaveAttribute('href', '/library');
   });
 
   it('calls onClose when close button clicked', () => {
     vi.mocked(useSelectedNodeData).mockReturnValue(makeGatewayData());
     const onClose = vi.fn();
-    render(<GatewaySidebar onClose={onClose} />);
+    renderWithRouter(<GatewaySidebar onClose={onClose} />);
 
     fireEvent.click(screen.getByLabelText('Close gateway sidebar'));
     expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it('renders popout button', () => {
-    vi.mocked(useSelectedNodeData).mockReturnValue(makeGatewayData());
-    render(<GatewaySidebar onClose={vi.fn()} />);
-    expect(screen.getByTestId('popout-button')).toBeInTheDocument();
   });
 });

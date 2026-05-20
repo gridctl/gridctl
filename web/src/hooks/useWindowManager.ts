@@ -6,10 +6,17 @@ const WINDOW_TITLES: Record<string, string> = {
   logs: 'Gridctl - Logs',
   sidebar: 'Gridctl - Details',
   editor: 'Gridctl - Editor',
-  registry: 'Gridctl - Registry',
+  registry: 'Gridctl - Library',
   metrics: 'Gridctl - Metrics',
   var: 'Gridctl - Variables',
   traces: 'Gridctl - Traces',
+};
+
+// The `registry` window type points at /library-window after the workspace
+// promotion; other types render at /<type>. Keeping the type key as
+// `registry` avoids churning every call-site and stored detached state.
+const WINDOW_PATHS: Record<string, string> = {
+  registry: '/library-window',
 };
 
 type DetachableWindow = 'logs' | 'sidebar' | 'editor' | 'registry' | 'metrics' | 'var' | 'traces';
@@ -109,7 +116,8 @@ export function useWindowManager() {
       setTracesDetached(true);
     }
 
-    const url = params ? `/${type}?${params}` : `/${type}`;
+    const basePath = WINDOW_PATHS[type] ?? `/${type}`;
+    const url = params ? `${basePath}?${params}` : basePath;
     const newWindow = window.open(url, `gridctl-${type}`);
 
     if (!newWindow) {

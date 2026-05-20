@@ -75,7 +75,9 @@ describe('useWindowManager.openDetachedWindow', () => {
     });
 
     expect(openSpy).toHaveBeenCalledTimes(1);
-    expect(openSpy).toHaveBeenCalledWith('/registry', 'gridctl-registry');
+    // The 'registry' window key now points at /library-window after the
+    // workspace promotion; the key itself stays for back-compat.
+    expect(openSpy).toHaveBeenCalledWith('/library-window', 'gridctl-registry');
 
     // Eager state flip should have run, which unmounts the harness via
     // ConditionalHost's `sidebarOpen` gate.

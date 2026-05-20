@@ -1,12 +1,10 @@
 import { memo, useState } from 'react';
-import { Activity, ChevronDown, ChevronRight, Lightbulb, X } from 'lucide-react';
-import { RegistrySidebar } from '../registry/RegistrySidebar';
+import { Link } from 'react-router-dom';
+import { Activity, ArrowRight, ChevronDown, ChevronRight, Library, Lightbulb, X } from 'lucide-react';
 import { OptimizeSection } from '../sidebar/OptimizeSection';
-import { PopoutButton } from '../ui/PopoutButton';
 import { cn } from '../../lib/cn';
 import { useSelectedNodeData } from '../../stores/useStackStore';
-import { useUIStore } from '../../stores/useUIStore';
-import { useWindowManager } from '../../hooks/useWindowManager';
+import { useRegistryStore } from '../../stores/useRegistryStore';
 import type { GatewayNodeData } from '../../types';
 
 interface GatewaySidebarProps {
@@ -15,12 +13,9 @@ interface GatewaySidebarProps {
 
 const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
   const selectedData = useSelectedNodeData() as GatewayNodeData | null;
-  const registryDetached = useUIStore((s) => s.registryDetached);
-  const { openDetachedWindow } = useWindowManager();
-
-  const handlePopout = () => {
-    openDetachedWindow('registry');
-  };
+  const skills = useRegistryStore((s) => s.skills);
+  // null = not loaded; render the CTA without a count badge as a skeleton.
+  const skillCount = skills?.length ?? null;
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden">
@@ -42,23 +37,41 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <PopoutButton
-            onClick={handlePopout}
-            disabled={registryDetached}
-          />
-          <button onClick={onClose} aria-label="Close gateway sidebar" className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
-            <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
-          </button>
-        </div>
+        <button onClick={onClose} aria-label="Close gateway sidebar" className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
+          <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
+        </button>
       </div>
 
-      {/* Registry section */}
       <div className="flex-1 overflow-y-auto scrollbar-dark">
         <CollapsibleSection title="Optimize" icon={Lightbulb}>
           <OptimizeSection />
         </CollapsibleSection>
-        <RegistrySidebar embedded />
+
+        <div className="p-4 border-b border-border/30">
+          <Link
+            to="/library"
+            className={cn(
+              'group flex items-center justify-between w-full px-3 py-2.5 rounded-lg',
+              'bg-surface-elevated/40 hover:bg-surface-highlight/60 border border-border/40 hover:border-primary/30',
+              'transition-colors',
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-md bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
+                <Library size={12} className="text-primary" />
+              </div>
+              <span className="text-xs font-medium text-text-primary">
+                Manage Skills
+                {skillCount !== null && (
+                  <span className="ml-1.5 text-[10px] text-text-muted font-mono">
+                    ({skillCount})
+                  </span>
+                )}
+              </span>
+            </div>
+            <ArrowRight size={12} className="text-text-muted group-hover:text-primary transition-colors" />
+          </Link>
+        </div>
       </div>
     </div>
   );

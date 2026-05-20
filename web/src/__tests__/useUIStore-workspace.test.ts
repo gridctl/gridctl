@@ -22,7 +22,7 @@ describe('useUIStore workspace slice', () => {
 
   it('setActiveWorkspace cycles through every workspace', () => {
     const { result } = renderHook(() => useUIStore((s) => s.activeWorkspace));
-    for (const ws of ['topology', 'skills', 'runs'] as const) {
+    for (const ws of ['topology', 'skills', 'library', 'runs'] as const) {
       act(() => {
         useUIStore.getState().setActiveWorkspace(ws);
       });
@@ -36,10 +36,11 @@ describe('useUIStore compact mode slice', () => {
     useUIStore.setState({ compactMode: { ...COMPACT_MODE_DEFAULTS } });
   });
 
-  it('defaults compactMode to skills-on, topology/runs-off', () => {
+  it('defaults compactMode to skills-on, others-off', () => {
     const state = useUIStore.getState();
     expect(state.compactMode.skills).toBe(true);
     expect(state.compactMode.topology).toBe(false);
+    expect(state.compactMode.library).toBe(false);
     expect(state.compactMode.runs).toBe(false);
   });
 
@@ -50,19 +51,21 @@ describe('useUIStore compact mode slice', () => {
     const state = useUIStore.getState();
     expect(state.compactMode.topology).toBe(true);
     expect(state.compactMode.skills).toBe(true);
+    expect(state.compactMode.library).toBe(false);
     expect(state.compactMode.runs).toBe(false);
   });
 
   it('toggleCompactMode flips only the targeted workspace', () => {
     act(() => {
-      useUIStore.getState().toggleCompactMode('skills');
+      useUIStore.getState().toggleCompactMode('library');
     });
-    expect(useUIStore.getState().compactMode.skills).toBe(false);
+    expect(useUIStore.getState().compactMode.library).toBe(true);
     act(() => {
-      useUIStore.getState().toggleCompactMode('skills');
+      useUIStore.getState().toggleCompactMode('library');
     });
-    expect(useUIStore.getState().compactMode.skills).toBe(true);
+    expect(useUIStore.getState().compactMode.library).toBe(false);
     // Other workspaces unaffected.
     expect(useUIStore.getState().compactMode.topology).toBe(false);
+    expect(useUIStore.getState().compactMode.skills).toBe(true);
   });
 });

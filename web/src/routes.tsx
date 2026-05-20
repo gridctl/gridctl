@@ -12,18 +12,18 @@ import { DetachedMetricsPage } from './pages/DetachedMetricsPage';
 import { DetachedVaultPage } from './pages/DetachedVaultPage';
 import { DetachedTracesPage } from './pages/DetachedTracesPage';
 
-// Each workspace is code-split into its own chunk. Phase 2/3 will fill in
-// the Skills and Runs workspaces; today they render placeholder cards.
+// Each workspace is code-split into its own chunk.
 const TopologyWorkspace = lazy(() => import('./components/workspaces/TopologyWorkspace'));
 const SkillsWorkspace = lazy(() => import('./components/workspaces/SkillsWorkspace'));
+const LibraryWorkspace = lazy(() => import('./components/workspaces/LibraryWorkspace'));
 const RunsWorkspace = lazy(() => import('./components/workspaces/RunsWorkspace'));
 const RunDetailWorkspace = lazy(() => import('./components/workspaces/RunDetailWorkspace'));
 
 export function AppRoutes() {
   return (
     <Routes>
-      {/* Unified shell parent route. The three workspaces render as
-          children inside <AppShell>'s <Outlet />. */}
+      {/* Unified shell parent route. Workspaces render as children inside
+          <AppShell>'s <Outlet />. */}
       <Route element={<AppShell />}>
         <Route
           path="/topology"
@@ -38,6 +38,25 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<WorkspaceLoadingShell />}>
               <SkillsWorkspace />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/library"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <LibraryWorkspace />
+            </Suspense>
+          }
+        />
+        {/* /library/:skillName deep-links the editor for a single skill;
+            the workspace component looks up the name and either mounts
+            the SkillEditor or falls back with a toast. */}
+        <Route
+          path="/library/:skillName"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <LibraryWorkspace />
             </Suspense>
           }
         />
@@ -69,7 +88,10 @@ export function AppRoutes() {
       <Route path="/logs" element={<DetachedLogsPage />} />
       <Route path="/sidebar" element={<DetachedSidebarPage />} />
       <Route path="/editor" element={<DetachedEditorPage />} />
-      <Route path="/registry" element={<DetachedRegistryPage />} />
+      <Route path="/library-window" element={<DetachedRegistryPage />} />
+      {/* /registry → /library-window: silent redirect for bookmarks and
+          existing detached window handles. */}
+      <Route path="/registry" element={<Navigate to="/library-window" replace />} />
       <Route path="/metrics" element={<DetachedMetricsPage />} />
       <Route path="/var" element={<DetachedVaultPage />} />
       {/* /vault → /var: silent redirect for bookmarks and existing window
