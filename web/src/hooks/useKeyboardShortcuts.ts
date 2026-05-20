@@ -9,7 +9,6 @@ interface ShortcutOptions {
   onZoomOut?: () => void;
   onRefresh?: () => void;
   onToggleBottomPanel?: () => void;
-  onSwitchToTraces?: () => void;
   onOpenPalette?: () => void;
   // Workspace navigation — Cmd/Ctrl + <shortcutKey> switches top-level
   // workspaces. The key→id mapping comes from WORKSPACE_CONFIG, so adding a
@@ -82,11 +81,6 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
           e.preventDefault();
           options.onSwitchToWorkspace?.(ws);
         }
-      }
-      // Traces panel quick-jump: Cmd/Ctrl+4 (tabs themselves remain clickable)
-      if (isMod && e.key === '4') {
-        e.preventDefault();
-        options.onSwitchToTraces?.();
       }
       // Open command palette: Cmd/Ctrl+K
       if (isMod && e.key === 'k') {

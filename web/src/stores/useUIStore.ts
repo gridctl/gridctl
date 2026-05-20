@@ -32,6 +32,7 @@ export type CompactModeMap = Record<Workspace, boolean>;
 export const COMPACT_MODE_DEFAULTS: CompactModeMap = {
   topology: false,
   skills: true,
+  library: false,
   runs: false,
 };
 

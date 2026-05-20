@@ -3,6 +3,7 @@ import { useReactFlow } from '@xyflow/react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
+  Code,
   Key,
   Library,
   Terminal,
@@ -73,19 +74,28 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       },
       {
         id: 'navigate:workspace-skills',
-        label: 'Go to Skills',
+        label: 'Go to Stage',
+        section: 'global',
+        icon: <Code size={14} />,
+        shortcut: ['⌘', '2'],
+        keywords: ['stage', 'skills', 'workspace', 'agent', 'ide', 'developer', 'go'],
+        onSelect: () => navigate('/skills'),
+      },
+      {
+        id: 'navigate:workspace-library',
+        label: 'Go to Library',
         section: 'global',
         icon: <Library size={14} />,
-        shortcut: ['⌘', '2'],
-        keywords: ['skills', 'workspace', 'agent', 'ide', 'developer', 'go'],
-        onSelect: () => navigate('/skills'),
+        shortcut: ['⌘', '3'],
+        keywords: ['library', 'workspace', 'registry', 'catalog', 'skills', 'go'],
+        onSelect: () => navigate('/library'),
       },
       {
         id: 'navigate:workspace-runs',
         label: 'Go to Runs',
         section: 'global',
         icon: <Workflow size={14} />,
-        shortcut: ['⌘', '3'],
+        shortcut: ['⌘', '4'],
         keywords: ['runs', 'workspace', 'executions', 'traces', 'observability', 'go'],
         onSelect: () => navigate('/runs'),
       },
@@ -318,20 +328,20 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     return () => unregisterCommands('dynamic-vault');
   }, [secrets, registerCommands, unregisterCommands, setShowVault]);
 
-  // Dynamic registry skill commands
+  // Dynamic registry skill commands — open the Library workspace at the
+  // skill's deep-link so the SkillEditor mounts.
   useEffect(() => {
     const commands: PaletteCommand[] = (skills ?? []).slice(0, 20).map((skill) => ({
       id: `skill:${skill.name}`,
       label: `View skill: ${skill.name}`,
       section: 'registry' as const,
       icon: <Library size={14} />,
-      keywords: [skill.name, 'skill', 'registry', skill.description],
+      keywords: [skill.name, 'skill', 'library', 'registry', skill.description],
       onSelect: () => {
-        // Registry panel integration — open bottom panel to spec for now
-        setBottomPanelTab('spec');
+        navigate(`/library/${encodeURIComponent(skill.name)}`);
       },
     }));
     registerCommands('dynamic-skills', commands);
     return () => unregisterCommands('dynamic-skills');
-  }, [skills, registerCommands, unregisterCommands, setBottomPanelTab]);
+  }, [skills, registerCommands, unregisterCommands, navigate]);
 }

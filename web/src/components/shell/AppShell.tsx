@@ -59,7 +59,6 @@ function AppShellInner() {
 
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
-  const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
   const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
   const commandPaletteOpen = useUIStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen);
@@ -100,8 +99,9 @@ function AppShellInner() {
     });
   }, []);
 
-  // Keyboard shortcuts. ⌘1/2/3 now switch workspaces; bottom-panel tab
-  // shortcuts were retired (tabs are still clickable in the panel).
+  // Keyboard shortcuts. ⌘1/2/3/4 switch workspaces (Topology / Stage /
+  // Library / Runs); bottom-panel tab shortcuts were retired (tabs are
+  // still clickable in the panel).
   useKeyboardShortcuts({
     onFitView: () => fitView({ padding: 0.2, duration: 300 }),
     onEscape: () => {
@@ -112,7 +112,6 @@ function AppShellInner() {
     onZoomOut: () => zoomOut({ duration: 200 }),
     onRefresh: handleRefresh,
     onToggleBottomPanel: toggleBottomPanel,
-    onSwitchToTraces: () => setBottomPanelTab('traces'),
     onOpenPalette: toggleCommandPalette,
     onSwitchToWorkspace: (id) => navigate(`/${id}`),
     onToggleCompactMode: () => toggleCompactMode(activeWorkspace),

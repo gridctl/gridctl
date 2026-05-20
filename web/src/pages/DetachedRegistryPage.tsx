@@ -12,8 +12,8 @@ import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
 import { ZoomControls } from '../components/ui/ZoomControls';
 import { SkillEditor } from '../components/registry/SkillEditor';
-import { SkillCard } from '../components/registry/SkillCard';
 import { SkillCardSkeleton } from '../components/registry/SkillCardSkeleton';
+import { LibraryGrid } from '../components/registry/LibraryGrid';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ToastContainer, showToast } from '../components/ui/Toast';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
@@ -79,129 +79,6 @@ const TABS: { key: FilterTab; label: string }[] = [
   { key: 'draft', label: 'Draft' },
   { key: 'disabled', label: 'Disabled' },
 ];
-
-function getGroupKey(dir?: string): string {
-  if (!dir) return '';
-  return dir.split('/')[0];
-}
-
-function groupSkills(skills: AgentSkill[]): Map<string, AgentSkill[]> {
-  const groups = new Map<string, AgentSkill[]>();
-  for (const skill of skills) {
-    const key = getGroupKey(skill.dir);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(skill);
-  }
-  return groups;
-}
-
-function toTitleCase(key: string): string {
-  return key.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-interface GroupedSkillGridProps {
-  skills: AgentSkill[];
-  hasSearch: boolean;
-  onEnable: (skill: AgentSkill) => void;
-  onDisable: (skill: AgentSkill) => void;
-  onEdit: (skill: AgentSkill) => void;
-  onDelete: (skill: AgentSkill) => void;
-}
-
-function GroupedSkillGrid({ skills, hasSearch, onEnable, onDisable, onEdit, onDelete }: GroupedSkillGridProps) {
-  const groups = groupSkills(skills);
-  // Only group when the structure is meaningful: 2+ groups AND at least one
-  // group has 2+ skills. Otherwise the full-width section headers just waste
-  // horizontal space (every skill becomes its own "group of one").
-  const hasMeaningfulGrouping =
-    groups.size > 1 && Array.from(groups.values()).some((g) => g.length > 1);
-
-  const gridStyle: React.CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: '12px',
-  };
-
-  if (!hasMeaningfulGrouping) {
-    return (
-      <div className="p-4" style={gridStyle}>
-        {skills.map((skill, i) => (
-          <SkillCard
-            key={skill.name}
-            skill={skill}
-            className={cn('motion-safe:animate-fade-in-scale', skill.metadata?.colspan === '2' ? 'col-span-2' : undefined)}
-            style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
-            onEnable={onEnable}
-            onDisable={onDisable}
-            onEdit={onEdit}
-            onDelete={onDelete}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-4" style={gridStyle}>
-      {Array.from(groups.entries()).map(([key, groupSkillList]) => (
-        <GroupSection
-          key={key || '__ungrouped__'}
-          groupKey={key}
-          skills={groupSkillList}
-          showHeader
-          hasSearch={hasSearch}
-          onEnable={onEnable}
-          onDisable={onDisable}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      ))}
-    </div>
-  );
-}
-
-interface GroupSectionProps {
-  groupKey: string;
-  skills: AgentSkill[];
-  showHeader: boolean;
-  hasSearch: boolean;
-  onEnable: (skill: AgentSkill) => void;
-  onDisable: (skill: AgentSkill) => void;
-  onEdit: (skill: AgentSkill) => void;
-  onDelete: (skill: AgentSkill) => void;
-}
-
-function GroupSection({ groupKey, skills, showHeader, hasSearch, onEnable, onDisable, onEdit, onDelete }: GroupSectionProps) {
-  return (
-    <>
-      {showHeader && (
-        <div style={{ gridColumn: '1 / -1' }} className="flex flex-col gap-1 mt-2 first:mt-0 animate-fade-in-scale">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase tracking-widest text-text-muted font-medium">
-              {groupKey ? toTitleCase(groupKey) : 'Other'}
-            </span>
-            <span className="text-[10px] px-1.5 rounded-full bg-surface-highlight text-text-muted">
-              {skills.length} {hasSearch ? 'matched' : 'skills'}
-            </span>
-          </div>
-          <div className="border-b border-border/30" />
-        </div>
-      )}
-      {skills.map((skill, i) => (
-        <SkillCard
-          key={skill.name}
-          skill={skill}
-          className={cn('motion-safe:animate-fade-in-scale', skill.metadata?.colspan === '2' ? 'col-span-2' : undefined)}
-          style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
-          onEnable={onEnable}
-          onDisable={onDisable}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      ))}
-    </>
-  );
-}
 
 function DetachedRegistryContent() {
   const [skills, setSkills] = useState<AgentSkill[] | null>(null);
@@ -319,7 +196,7 @@ function DetachedRegistryContent() {
             <Library size={14} className="text-primary" />
           </div>
           <div>
-            <span className="text-sm font-semibold text-text-primary tracking-tight">Registry</span>
+            <span className="text-sm font-semibold text-text-primary tracking-tight">Library</span>
             <span className="text-[10px] text-text-muted uppercase tracking-wider ml-2">Agent Skills</span>
           </div>
         </div>
@@ -449,7 +326,7 @@ function DetachedRegistryContent() {
 
         {/* Card grid */}
         {!isLoading && displayedSkills.length > 0 && (
-          <GroupedSkillGrid
+          <LibraryGrid
             skills={displayedSkills}
             hasSearch={searchQuery.length > 0}
             onEnable={handleEnable}
@@ -464,7 +341,7 @@ function DetachedRegistryContent() {
       <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted z-10">
         <span>
           {status ? `${status.totalSkills} total` : ''}
-          {status ? ` \u00B7 ` : ''}
+          {status ? ` · ` : ''}
           <span className="text-status-running">{status?.activeSkills ?? 0} active</span>
         </span>
         <span className="flex items-center gap-1">
