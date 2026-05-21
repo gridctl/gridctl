@@ -273,24 +273,34 @@ func TestProbeHandler_SessionConcurrencyCap(t *testing.T) {
 	handler := srv.Handler()
 
 	body, _ := json.Marshal(map[string]any{"url": "https://example.com/mcp"})
+	send := func() int {
+		req := httptest.NewRequest(http.MethodPost, "/api/servers/probe", bytes.NewReader(body))
+		req.Header.Set("X-Session-ID", "s1")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// Fill the cap first so the rejected probe is deterministic — launching
+	// all four concurrently let the 4th sometimes acquire after the first
+	// three released their slots, masking the cap.
 	var wg sync.WaitGroup
 	results := make(chan int, 4)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			req := httptest.NewRequest(http.MethodPost, "/api/servers/probe", bytes.NewReader(body))
-			req.Header.Set("X-Session-ID", "s1")
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-			results <- rec.Code
+			results <- send()
 		}()
 	}
-
-	// Wait for 3 to be in-flight, then release all 4 (including the rejected one).
 	for client.started.Load() < 3 {
 		time.Sleep(time.Millisecond)
 	}
+
+	// All three slots are held — this probe must be rejected by acquire().
+	rejected := send()
+	results <- rejected
+
 	close(block)
 	wg.Wait()
 	close(results)
@@ -299,8 +309,8 @@ func TestProbeHandler_SessionConcurrencyCap(t *testing.T) {
 	for c := range results {
 		codes[c]++
 	}
-	if codes[http.StatusTooManyRequests] == 0 {
-		t.Fatalf("expected at least one 429, got %+v", codes)
+	if rejected != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 for over-cap probe, got %d (all codes: %+v)", rejected, codes)
 	}
 }
 
