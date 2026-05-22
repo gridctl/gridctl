@@ -58,7 +58,7 @@ OK
 
 #### `GET /api/status`
 
-Returns the overall gateway status including servers, agents, resources, sessions, and optional features.
+Returns the overall gateway status including servers, resources, sessions, and optional features.
 
 **Auth:** Yes
 
@@ -102,23 +102,6 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
       }
     }
   ],
-  "agents": [
-    {
-      "name": "code-reviewer",
-      "status": "running",
-      "variant": "local",
-      "image": "alpine:latest",
-      "containerId": "abc123def456",
-      "uses": [{"server": "github", "tools": ["get_file_contents"]}],
-      "hasA2A": true,
-      "role": "local",
-      "url": "",
-      "endpoint": "/a2a/code-reviewer",
-      "skillCount": 2,
-      "skills": ["review-code", "summarize-pr"],
-      "description": "AI assistant for code review"
-    }
-  ],
   "resources": [
     {
       "name": "postgres",
@@ -127,7 +110,6 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
     }
   ],
   "sessions": 3,
-  "a2a_tasks": 0,
   "registry": {
     "total": 5,
     "active": 3,
@@ -159,10 +141,9 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 |-------|------|-------------|
 | `gateway` | object | Gateway name and version |
 | `mcp-servers` | []object | Status of each MCP server |
-| `agents` | []object | Unified agent status (local + remote) |
 | `resources` | []object | Resource container status |
 | `sessions` | int | Active SSE session count |
-| `a2a_tasks` | int | Active A2A task count (omitted if A2A disabled) |
+| `stack_name` | string | Active stack name (omitted in stackless mode) |
 | `registry` | object | Registry skill counts (omitted if empty) |
 | `code_mode` | string | Code mode status (omitted if `"off"`) |
 | `token_usage` | object | Token usage metrics (omitted if no metrics accumulator) |
@@ -459,64 +440,6 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/reload
 ```
 
 Returns `503` if reload is not enabled (gateway started without `--watch`).
-
----
-
-### Agent Control
-
-#### `GET /api/agents/{name}/logs`
-
-Returns container logs for an agent.
-
-**Auth:** Yes
-
-| Query Param | Type | Default | Description |
-|-------------|------|---------|-------------|
-| `lines` | int | `100` | Number of log lines to return |
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/agents/code-reviewer/logs?lines=50"
-```
-
-**Response:** JSON array of log line strings.
-
-Returns a friendly message (not an error) for non-container agents (external, SSH, local process, remote A2A).
-
-#### `POST /api/agents/{name}/restart`
-
-Restarts an agent container.
-
-**Auth:** Yes
-
-```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/agents/code-reviewer/restart
-```
-
-**Response:**
-```json
-{
-  "status": "restarted",
-  "agent": "code-reviewer"
-}
-```
-
-#### `POST /api/agents/{name}/stop`
-
-Stops an agent container.
-
-**Auth:** Yes
-
-```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/agents/code-reviewer/stop
-```
-
-**Response:**
-```json
-{
-  "status": "stopped",
-  "agent": "code-reviewer"
-}
-```
 
 ---
 
@@ -1093,8 +1016,8 @@ JSON-RPC 2.0 endpoint for MCP protocol operations.
 | Method | Description |
 |--------|-------------|
 | `initialize` | Initialize MCP session |
-| `tools/list` | List available tools (supports `X-Agent-Name` header for agent-scoped filtering) |
-| `tools/call` | Call a tool (supports `X-Agent-Name` header for access control) |
+| `tools/list` | List available tools |
+| `tools/call` | Call a tool |
 | `prompts/list` | List available prompts |
 | `prompts/get` | Get a specific prompt |
 | `resources/list` | List available resources |
@@ -1133,10 +1056,6 @@ Server-Sent Events connection for bidirectional MCP communication.
 
 **Auth:** Yes
 
-| Query Param | Type | Description |
-|-------------|------|-------------|
-| `agent` | string | Optional agent identity for access control |
-
 The SSE connection sends an initial `endpoint` event with the URL for posting messages:
 
 ```
@@ -1155,57 +1074,6 @@ Message endpoint for SSE clients. Accepts JSON-RPC requests and returns response
 | Query Param | Type | Description |
 |-------------|------|-------------|
 | `sessionId` | string | Session ID from the SSE endpoint event |
-
----
-
-### A2A Protocol *(experimental)*
-
-Agent-to-Agent protocol endpoints for inter-agent communication.
-
-#### `GET /.well-known/agent.json`
-
-A2A agent discovery. Returns all local agent cards.
-
-**Auth:** Yes
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/.well-known/agent.json
-```
-
-**Response:**
-```json
-{
-  "agents": [
-    {
-      "name": "code-reviewer",
-      "description": "AI assistant for code review",
-      "url": "http://localhost:8180/a2a/code-reviewer",
-      "version": "1.0.0",
-      "skills": [
-        {
-          "id": "review-code",
-          "name": "Review Code",
-          "description": "Analyze code for bugs and style issues"
-        }
-      ]
-    }
-  ]
-}
-```
-
-#### `GET /a2a/{name}`
-
-Returns the agent card for a specific A2A agent.
-
-**Auth:** Yes
-
-#### `POST /a2a/{name}`
-
-A2A JSON-RPC endpoint for agent communication.
-
-**Auth:** Yes
-
-**Supported methods:** `message/send`, `tasks/get`, `tasks/list`, `tasks/cancel`
 
 ---
 
