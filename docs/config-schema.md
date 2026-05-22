@@ -14,9 +14,7 @@ secrets: ...
 network: ...
 networks: ...
 mcp-servers: ...
-agents: ...
 resources: ...
-a2a-agents: ...
 ```
 
 | Field | Type | Required | Default | Description |
@@ -28,9 +26,7 @@ a2a-agents: ...
 | `network` | object | No | See below | Single network configuration (simple mode) |
 | `networks` | []object | No | - | Multiple network configurations (advanced mode) |
 | `mcp-servers` | []object | No | - | MCP server definitions |
-| `agents` | []object | No | - | Agent definitions |
 | `resources` | []object | No | - | Supporting container definitions (databases, caches, etc.) |
-| `a2a-agents` | []object | No | - | External A2A agent references *(experimental)* |
 
 ---
 
@@ -311,7 +307,7 @@ networks:
 
 **Constraints:**
 - Cannot have both `network` and `networks` defined
-- In advanced mode, all container-based servers, agents, and resources must specify a `network` field referencing a name from this list
+- In advanced mode, all container-based servers and resources must specify a `network` field referencing a name from this list
 - Duplicate network names are rejected
 
 ---
@@ -590,111 +586,6 @@ Full decision-rule walkthrough, cold-start trade-offs, and observability details
 
 ---
 
-## Agents
-
-Agents consume MCP tools and can communicate via A2A protocol. Two modes: container-based and headless.
-
-### Container Agent
-
-```yaml
-agents:
-  - name: code-reviewer
-    image: my-org/reviewer:latest
-    description: "Reviews pull requests"
-    capabilities:
-      - code-review
-    uses:
-      - server: github
-        tools: ["get_file_contents", "get_pull_request"]
-    env:
-      AGENT_MODE: "review"
-    a2a:
-      enabled: true
-      skills:
-        - id: review-code
-          name: "Review Code"
-          description: "Analyze code for bugs and style issues"
-          tags: ["code", "review"]
-```
-
-### Headless Agent
-
-```yaml
-agents:
-  - name: assistant
-    runtime: claude-code
-    prompt: "You are a helpful coding assistant."
-    uses:
-      - github
-```
-
-### All Agent Fields
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `name` | string | **Yes** | - | Unique agent identifier |
-| `image` | string | Conditional | - | Docker image (container agents) |
-| `source` | object | Conditional | - | Build from source (see [Source](#source)) |
-| `runtime` | string | Conditional | - | Headless runtime (e.g., `"claude-code"`) |
-| `prompt` | string | Conditional | - | System prompt (required when `runtime` is set) |
-| `description` | string | No | - | Agent description |
-| `capabilities` | []string | No | - | Capability tags (informational) |
-| `uses` | []ToolSelector | No | - | MCP servers or A2A agents this agent can access |
-| `equipped_skills` | []ToolSelector | No | - | Alias for `uses` (merged during load) |
-| `env` | map | No | - | Environment variables |
-| `build_args` | map | No | - | Docker build-time arguments |
-| `network` | string | Conditional | - | Network to join (required in advanced network mode) |
-| `command` | []string | No | - | Override container entrypoint |
-| `a2a` | object | No | - | A2A protocol configuration *(experimental)* |
-
-**Mode constraints:**
-- Must have exactly one of: `image`, `source`, or `runtime`
-- `runtime` cannot be combined with `image` or `source`
-- `prompt` is required when `runtime` is set
-
-**Tool selectors** (`uses` / `equipped_skills`) support two formats:
-
-```yaml
-# String format (all tools from server)
-uses:
-  - server-name
-
-# Object format (filtered tools)
-uses:
-  - server: server-name
-    tools: ["tool1", "tool2"]
-```
-
-**Dependency rules:**
-- References must point to defined MCP servers or A2A-enabled agents
-- Self-references are not allowed
-- Circular dependencies between agents are detected and rejected
-
-### A2A Config *(experimental)*
-
-Exposes an agent via the Agent-to-Agent protocol.
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `enabled` | bool | No | `true` (when block is present) | Enable A2A exposure |
-| `version` | string | No | `"1.0.0"` | Agent version string |
-| `skills` | []object | No | - | Skills this agent exposes |
-
-**A2A Skill:**
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `id` | string | **Yes** | - | Unique skill identifier |
-| `name` | string | **Yes** | - | Human-readable skill name |
-| `description` | string | No | - | Skill description |
-| `tags` | []string | No | - | Classification tags |
-
-**Constraints:**
-- Skill IDs must be unique within an agent
-- Both `id` and `name` are required
-
----
-
 ## Resources
 
 Supporting containers such as databases, caches, and other services.
@@ -721,41 +612,8 @@ resources:
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 
 **Constraints:**
-- Names must be unique and not conflict with MCP server or agent names
+- Names must be unique and not conflict with MCP server names
 - `image` is always required
-
----
-
-## A2A Agents *(experimental)*
-
-External Agent-to-Agent agent references for connecting to remote A2A-compatible agents.
-
-```yaml
-a2a-agents:
-  - name: remote-reviewer
-    url: https://agents.example.com
-    auth:
-      type: bearer
-      token_env: REMOTE_AGENT_TOKEN
-```
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `name` | string | **Yes** | - | Local alias for the remote agent |
-| `url` | string | **Yes** | - | Base URL for the remote agent's A2A endpoint |
-| `auth` | object | No | - | Authentication configuration |
-
-**A2A Auth:**
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `type` | string | No | - | `"bearer"`, `"api_key"`, or `"none"` |
-| `token_env` | string | Conditional | - | Env var name for the token (required when type is set and not `"none"`) |
-| `header_name` | string | No | `"Authorization"` | Header name for API key auth |
-
-**Constraints:**
-- Names must not conflict with MCP servers or local agents
-- Duplicate A2A agent names are rejected
 
 ---
 
@@ -872,9 +730,7 @@ YAML mapping.
 
 ## Name Uniqueness
 
-All names across servers, agents, and resources share a single namespace. The following conflicts are rejected:
+All names across MCP servers and resources share a single namespace. The following conflicts are rejected:
 
-- Duplicate names within MCP servers, agents, resources, or A2A agents
-- An agent name matching an MCP server or resource name
+- Duplicate names within MCP servers or resources
 - A resource name matching an MCP server name
-- An A2A agent name matching a local agent or MCP server name
