@@ -1,6 +1,6 @@
 # Gridctl Constitution
 
-This document contains the immutable governance articles for the gridctl project. These articles are **non-negotiable** and **not subject to per-feature override**. They apply to every commit, PR, and release regardless of urgency, scope, or contributor preference. Where AGENTS.md provides mutable architectural guidance that evolves with the project, this document does not change without an explicit constitutional amendment (a dedicated PR that modifies only this file, reviewed by a maintainer).
+This document contains the immutable governance articles for the gridctl project. These articles are **non-negotiable** and **not subject to per-feature override**. They apply to every commit, PR, and release regardless of urgency, scope, or contributor preference. This document does not change without an explicit constitutional amendment (a dedicated PR that modifies only this file, reviewed by a maintainer).
 
 ---
 
