@@ -3,51 +3,29 @@ import { createPortal } from 'react-dom';
 import {
   X,
   Plus,
-  Eye,
-  EyeOff,
-  Pencil,
-  Trash2,
-  Check,
-  XCircle,
   KeyRound,
-  FolderOpen,
-  ChevronDown,
-  ChevronRight,
   AlertCircle,
   Package,
   Lock,
   LockOpen,
   Search,
 } from 'lucide-react';
-import { cn } from '../../lib/cn';
-import { Button } from '../ui/Button';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { PopoutButton } from '../ui/PopoutButton';
-import { useVaultStore } from '../../stores/useVaultStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { showToast } from '../ui/Toast';
-import {
-  fetchVariables,
-  fetchVariableSets,
-  createVariable,
-  getVariable,
-  updateVariable,
-  deleteVariable,
-  createVariableSet,
-  deleteVariableSet,
-  assignVariableToSet,
-  fetchVariableStoreStatus,
-  unlockVariableStore,
-  lockVariableStore,
-} from '../../lib/api';
-import type { Variable, VariableType } from '../../lib/api';
+import { useVaultManager } from '../../hooks/useVaultManager';
+import { useRevealedValues } from '../../hooks/useRevealedValues';
+import { validateVariableInput } from './variableTypeHelpers';
 import { VaultLockPrompt } from './VaultLockPrompt';
-import { VariableTypeBadge } from './VariableTypeBadge';
-import { VariableVisibilityIcon } from './VariableVisibilityIcon';
-import { VariableTypeSelector } from './VariableTypeSelector';
-import { VariableSecretToggle } from './VariableSecretToggle';
-import { validateVariableInput, getValuePlaceholder } from './variableTypeHelpers';
+import { SecretItem } from './SecretItem';
+import { NewSetForm } from './NewSetForm';
+import { VariableQuickAddForm } from './VariableQuickAddForm';
+import { VaultEncryptForm } from './VaultEncryptForm';
+import { EmptyVaultState } from './EmptyVaultState';
+import { SetGroup } from './SetGroup';
+import type { VariableType } from '../../lib/api';
 
 interface VaultPanelProps {
   onClose: () => void;
@@ -55,13 +33,27 @@ interface VaultPanelProps {
 
 export function VaultPanel({ onClose }: VaultPanelProps) {
   const vaultDetached = useUIStore((s) => s.vaultDetached);
+  const revealedState = useRevealedValues();
+  const vault = useVaultManager({ onPlaintextLoaded: revealedState.bulkSet });
 
-  const secrets = useVaultStore((s) => s.variables);
-  const sets = useVaultStore((s) => s.sets);
-  const loading = useVaultStore((s) => s.loading);
-  const error = useVaultStore((s) => s.error);
-  const locked = useVaultStore((s) => s.locked);
-  const encrypted = useVaultStore((s) => s.encrypted);
+  const {
+    variables: secrets,
+    sets,
+    loading,
+    error,
+    locked,
+    encrypted,
+    refresh,
+    unlock,
+    lock,
+    createVar,
+    updateVar,
+    deleteVar,
+    getVar,
+    createSet,
+    deleteSet,
+    assignToSet,
+  } = vault;
 
   // Panel width (resizable)
   const [panelWidth, setPanelWidth] = useState(380);
@@ -69,109 +61,42 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     setPanelWidth((prev) => Math.min(600, Math.max(280, prev + delta)));
   }, []);
 
-  // Search state
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Lock UI state
   const [showLockForm, setShowLockForm] = useState(false);
-  const [lockPassphrase, setLockPassphrase] = useState('');
-  const [lockConfirm, setLockConfirm] = useState('');
-  const [lockError, setLockError] = useState<string | null>(null);
-  const [isLocking, setIsLocking] = useState(false);
 
-  // Quick-add form state
-  const [newKey, setNewKey] = useState('');
-  const [newValue, setNewValue] = useState('');
-  const [newSet, setNewSet] = useState('');
-  const [showNewValue, setShowNewValue] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
-  const [isAdding, setIsAdding] = useState(false);
-  // Type/Visibility controls. Defaults to string+Secret per Article XII.
-  const [newType, setNewType] = useState<VariableType>('string');
-  const [newIsSecret, setNewIsSecret] = useState(true);
-  const keyInputRef = useRef<HTMLInputElement>(null);
-
-  // Reveal state: map of key -> revealed value
-  const [revealed, setRevealed] = useState<Record<string, string>>({});
-  const revealTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-
-  // Edit state
+  // Edit state — VaultPanel preserves the variable's current type/is_secret
+  // on save (and validates the value against the type), so we track them
+  // here in addition to the value being edited.
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editType, setEditType] = useState<VariableType>('string');
   const [editIsSecret, setEditIsSecret] = useState(true);
   const [showEditValue, setShowEditValue] = useState(false);
 
-  // Delete confirmation
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  // Set management
   const [expandedSets, setExpandedSets] = useState<Record<string, boolean>>({});
   const [showNewSet, setShowNewSet] = useState(false);
   const [newSetName, setNewSetName] = useState('');
 
-  // Filtered secrets based on search
-  const allSecrets = secrets ?? [];
+  const keyInputRef = useRef<HTMLInputElement>(null);
+
+  const allSecrets = useMemo(() => secrets ?? [], [secrets]);
   const filteredSecrets = useMemo(() => {
     if (!searchQuery) return allSecrets;
     const lower = searchQuery.toLowerCase();
     return allSecrets.filter(
-      (s) => s.key.toLowerCase().includes(lower) || (s.set ?? '').toLowerCase().includes(lower),
+      (s) =>
+        s.key.toLowerCase().includes(lower) ||
+        (s.set ?? '').toLowerCase().includes(lower),
     );
   }, [allSecrets, searchQuery]);
 
-  // Fetch data on mount
-  const refresh = useCallback(async () => {
-    useVaultStore.getState().setLoading(true);
-    useVaultStore.getState().setError(null);
-    try {
-      const status = await fetchVariableStoreStatus();
-      useVaultStore.getState().setLocked(status.locked);
-      useVaultStore.getState().setEncrypted(status.encrypted);
-
-      if (!status.locked) {
-        const [variablesData, setsData] = await Promise.all([
-          fetchVariables(),
-          fetchVariableSets(),
-        ]);
-        useVaultStore.getState().setVariables(variablesData);
-        useVaultStore.getState().setSets(setsData);
-
-        // Plaintext variables display their value inline by default
-        // (no Reveal click needed). Eager-fetch them after the list so
-        // the rows render with values on first paint.
-        const plaintext = variablesData.filter((v) => !v.is_secret);
-        if (plaintext.length > 0) {
-          const fetched = await Promise.all(
-            plaintext.map((v) =>
-              getVariable(v.key).then(
-                (detail) => [v.key, detail.value] as const,
-                () => [v.key, ''] as const,
-              ),
-            ),
-          );
-          setRevealed((prev) => {
-            const next = { ...prev };
-            for (const [k, val] of fetched) next[k] = val;
-            return next;
-          });
-        }
-      }
-    } catch (err) {
-      useVaultStore.getState().setError(err instanceof Error ? err.message : 'Failed to load vault');
-    } finally {
-      useVaultStore.getState().setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     refresh();
-    return () => {
-      Object.values(revealTimers.current).forEach(clearTimeout);
-    };
   }, [refresh]);
 
-  // Handle Escape key
+  // Escape closes the panel unless the user is in an input.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -192,122 +117,60 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     onClose();
   }, [onClose]);
 
-  const handleUnlock = useCallback(async (passphrase: string): Promise<boolean> => {
-    try {
-      await unlockVariableStore(passphrase);
-      useVaultStore.getState().setLocked(false);
-      await refresh();
-      showToast('success', 'Vault unlocked');
-      return true;
-    } catch {
-      return false;
-    }
-  }, [refresh]);
+  const handleUnlock = useCallback(
+    async (passphrase: string): Promise<boolean> => {
+      const ok = await unlock(passphrase);
+      if (ok) showToast('success', 'Vault unlocked');
+      return ok;
+    },
+    [unlock],
+  );
 
-  const handleLock = useCallback(async () => {
-    if (!lockPassphrase.trim()) return;
-    if (lockPassphrase !== lockConfirm) {
-      setLockError('Passphrases do not match');
-      return;
-    }
-
-    setIsLocking(true);
-    setLockError(null);
-    try {
-      await lockVariableStore(lockPassphrase);
+  const handleEncrypt = useCallback(
+    async (passphrase: string) => {
+      await lock(passphrase);
       setShowLockForm(false);
-      setLockPassphrase('');
-      setLockConfirm('');
       showToast('success', 'Vault encrypted');
-      await refresh();
-    } catch (err) {
-      setLockError(err instanceof Error ? err.message : 'Failed to lock vault');
-    } finally {
-      setIsLocking(false);
-    }
-  }, [lockPassphrase, lockConfirm, refresh]);
+    },
+    [lock],
+  );
 
-  const handleReveal = useCallback(async (key: string) => {
-    // Plaintext variables are always revealed; Hide is a no-op for them.
-    const target = allSecrets.find((v) => v.key === key);
-    const isPlaintext = target ? !target.is_secret : false;
-
-    if (revealed[key] !== undefined && !isPlaintext) {
-      setRevealed((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-      if (revealTimers.current[key]) {
-        clearTimeout(revealTimers.current[key]);
-        delete revealTimers.current[key];
+  const handleReveal = useCallback(
+    async (key: string) => {
+      const target = allSecrets.find((v) => v.key === key);
+      const isPlaintext = target ? !target.is_secret : false;
+      try {
+        await revealedState.reveal(
+          key,
+          async () => (await getVar(key)).value,
+          !isPlaintext,
+        );
+      } catch {
+        showToast('error', `Failed to reveal ${key}`);
       }
-      return;
-    }
+    },
+    [allSecrets, revealedState, getVar],
+  );
 
-    try {
-      const data = await getVariable(key);
-      setRevealed((prev) => ({ ...prev, [key]: data.value }));
-      // The 10-second auto-hide timer applies only to secrets — plaintext
-      // values stay visible until the panel is closed.
-      if (isPlaintext) return;
-      revealTimers.current[key] = setTimeout(() => {
-        setRevealed((prev) => {
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
-        delete revealTimers.current[key];
-      }, 10000);
-    } catch {
-      showToast('error', `Failed to reveal ${key}`);
-    }
-  }, [revealed, allSecrets]);
+  const handleCreate = useCallback(
+    async (input: Parameters<typeof createVar>[0]) => {
+      await createVar(input);
+      showToast('success', `Variable "${input.key}" created`);
+    },
+    [createVar],
+  );
 
-  const handleAdd = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newKey.trim() || !newValue) return;
-
-    const key = newKey.trim();
-    const validation = validateVariableInput(newType, newValue);
-    if (!validation.ok) {
-      setAddError(validation.error);
-      return;
-    }
-
-    setIsAdding(true);
-    setAddError(null);
-    try {
-      await createVariable({
-        key,
-        value: validation.normalized,
-        type: newType,
-        isSecret: newIsSecret,
-        set: newSet || undefined,
-      });
-      setNewKey('');
-      setNewValue('');
-      setNewSet('');
-      setShowNewValue(false);
-      setNewType('string');
-      setNewIsSecret(true);
-      await refresh();
-      showToast('success', `Variable "${key}" created`);
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to create variable');
-    } finally {
-      setIsAdding(false);
-    }
-  }, [newKey, newValue, newSet, newType, newIsSecret, refresh]);
-
-  const handleEdit = useCallback((key: string) => {
-    const current = allSecrets.find((v) => v.key === key);
-    setEditingKey(key);
-    setEditValue('');
-    setEditType(current?.type ?? 'string');
-    setEditIsSecret(current?.is_secret ?? true);
-    setShowEditValue(false);
-  }, [allSecrets]);
+  const handleEdit = useCallback(
+    (key: string) => {
+      const current = allSecrets.find((v) => v.key === key);
+      setEditingKey(key);
+      setEditValue('');
+      setEditType(current?.type ?? 'string');
+      setEditIsSecret(current?.is_secret ?? true);
+      setShowEditValue(false);
+    },
+    [allSecrets],
+  );
 
   const handleEditSave = useCallback(async () => {
     if (!editingKey || !editValue) return;
@@ -317,19 +180,18 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
       return;
     }
     try {
-      await updateVariable(editingKey, {
+      await updateVar(editingKey, {
         value: validation.normalized,
         type: editType,
         isSecret: editIsSecret,
       });
       setEditingKey(null);
       setEditValue('');
-      await refresh();
       showToast('success', `Variable "${editingKey}" updated`);
     } catch {
       showToast('error', 'Failed to update variable');
     }
-  }, [editingKey, editValue, editType, editIsSecret, refresh]);
+  }, [editingKey, editValue, editType, editIsSecret, updateVar]);
 
   const handleEditCancel = useCallback(() => {
     setEditingKey(null);
@@ -340,691 +202,375 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const handleDeleteConfirm = useCallback(async () => {
     if (!confirmDelete) return;
     try {
-      await deleteVariable(confirmDelete);
+      await deleteVar(confirmDelete);
       setConfirmDelete(null);
-      await refresh();
       showToast('success', `Secret "${confirmDelete}" deleted`);
     } catch {
       showToast('error', 'Failed to delete secret');
     }
-  }, [confirmDelete, refresh]);
+  }, [confirmDelete, deleteVar]);
 
   const handleCreateSet = useCallback(async () => {
-    if (!newSetName.trim()) return;
+    const name = newSetName.trim();
+    if (!name) return;
     try {
-      await createVariableSet(newSetName.trim());
+      await createSet(name);
       setNewSetName('');
       setShowNewSet(false);
-      await refresh();
-      showToast('success', `Set "${newSetName.trim()}" created`);
+      showToast('success', `Set "${name}" created`);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to create set');
+      showToast(
+        'error',
+        err instanceof Error ? err.message : 'Failed to create set',
+      );
     }
-  }, [newSetName, refresh]);
+  }, [newSetName, createSet]);
 
-  const handleDeleteSet = useCallback(async (name: string) => {
-    try {
-      await deleteVariableSet(name);
-      await refresh();
-      showToast('success', `Set "${name}" deleted`);
-    } catch {
-      showToast('error', 'Failed to delete set');
-    }
-  }, [refresh]);
+  const handleDeleteSet = useCallback(
+    async (name: string) => {
+      try {
+        await deleteSet(name);
+        showToast('success', `Set "${name}" deleted`);
+      } catch {
+        showToast('error', 'Failed to delete set');
+      }
+    },
+    [deleteSet],
+  );
 
-  const handleAssignSet = useCallback(async (key: string, set: string) => {
-    try {
-      await assignVariableToSet(key, set);
-      await refresh();
-    } catch {
-      showToast('error', 'Failed to assign set');
-    }
-  }, [refresh]);
+  const handleAssignSet = useCallback(
+    async (key: string, set: string) => {
+      try {
+        await assignToSet(key, set);
+      } catch {
+        showToast('error', 'Failed to assign set');
+      }
+    },
+    [assignToSet],
+  );
 
   const toggleSetExpand = useCallback((name: string) => {
     setExpandedSets((prev) => ({ ...prev, [name]: !prev[name] }));
   }, []);
 
-  // Group secrets by set
   const unassigned = filteredSecrets.filter((s) => !s.set);
   const setNames = (sets ?? []).map((s) => s.name);
-
   const isEmpty = allSecrets.length === 0 && (sets ?? []).length === 0;
+
+  const rowHandlers = {
+    revealed: revealedState.revealed,
+    editingKey,
+    editValue,
+    showEditValue,
+    setNames,
+    onReveal: handleReveal,
+    onEdit: handleEdit,
+    onDeleteSecret: (key: string) => setConfirmDelete(key),
+    onEditValueChange: setEditValue,
+    onEditToggleShow: () => setShowEditValue(!showEditValue),
+    onEditSave: handleEditSave,
+    onEditCancel: handleEditCancel,
+    onAssignSet: handleAssignSet,
+  };
 
   return createPortal(
     <div
       className="fixed inset-y-0 right-0 z-40 max-w-full flex flex-row bg-surface/95 backdrop-blur-xl border-l border-border/50 shadow-2xl animate-slide-in-right"
       style={{ width: panelWidth }}
     >
-      {/* Resize handle on left edge */}
       <ResizeHandle
         direction="vertical"
         onResize={handleResize}
         className="flex-shrink-0"
       />
 
-      {/* Content column */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30 flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="p-2 rounded-xl flex-shrink-0 border bg-primary/10 border-primary/20">
-            <KeyRound size={16} className="text-primary" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="font-semibold text-text-primary truncate tracking-tight">Variables</h2>
-            <div className="flex items-center gap-1.5">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider">Secrets</p>
-              {encrypted && !locked && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-0.5">
-                  <LockOpen size={8} />
-                  Encrypted
-                </span>
-              )}
-              {locked && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-0.5">
-                  <Lock size={8} />
-                  Locked
-                </span>
-              )}
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30 flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 rounded-xl flex-shrink-0 border bg-primary/10 border-primary/20">
+              <KeyRound size={16} className="text-primary" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-text-primary truncate tracking-tight">
+                Variables
+              </h2>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[10px] text-text-muted uppercase tracking-wider">
+                  Secrets
+                </p>
+                {encrypted && !locked && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-0.5">
+                    <LockOpen size={8} />
+                    Encrypted
+                  </span>
+                )}
+                {locked && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-0.5">
+                    <Lock size={8} />
+                    Locked
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+          <div className="flex items-center gap-1">
+            <PopoutButton onClick={handlePopout} disabled={vaultDetached} />
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group"
+            >
+              <X
+                size={16}
+                className="text-text-muted group-hover:text-text-primary transition-colors"
+              />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <PopoutButton
-            onClick={handlePopout}
-            disabled={vaultDetached}
-          />
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
-            <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
-          </button>
-        </div>
-      </div>
 
-      {/* Lock prompt */}
-      {locked && (
-        <VaultLockPrompt onUnlock={handleUnlock} />
-      )}
+        {locked && <VaultLockPrompt onUnlock={handleUnlock} />}
 
-      {/* Unlocked content */}
-      {!locked && (
-        <>
-          {/* Item count + actions bar */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-border/20 flex-shrink-0">
-            <div className="flex items-center gap-2">
+        {!locked && (
+          <>
+            {/* Item count + actions bar */}
+            <div className="flex items-center justify-between px-4 py-2 border-b border-border/20 flex-shrink-0">
               <span className="text-[10px] text-text-muted">
                 {searchQuery
                   ? `${filteredSecrets.length} of ${allSecrets.length} secrets`
                   : `${allSecrets.length} secrets`}
               </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {!encrypted && allSecrets.length > 0 && (
-                <button
-                  onClick={() => setShowLockForm(!showLockForm)}
-                  className="flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors"
-                >
-                  <Lock size={10} /> Encrypt
-                </button>
-              )}
-              <button
-                onClick={() => keyInputRef.current?.focus()}
-                className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
-              >
-                <Plus size={10} /> New
-              </button>
-            </div>
-          </div>
-
-          {/* Search */}
-          <div className="px-2 py-1.5 border-b border-border/20 flex-shrink-0" role="search">
-            <div className="relative">
-              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/50" />
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search secrets..."
-                aria-label="Filter secrets"
-                className="w-full bg-background/40 border border-border/30 rounded-lg pl-7 pr-7 py-1 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/40"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-highlight transition-colors"
-                >
-                  <X size={12} className="text-text-muted" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
-            {/* Lock form */}
-            {showLockForm && (
-              <div className="px-4 pt-3 pb-2 border-b border-border-subtle/50">
-                <div className="space-y-2">
-                  <div className="text-xs text-text-secondary mb-2">Encrypt vault with a passphrase:</div>
-                  <input
-                    type="password"
-                    value={lockPassphrase}
-                    onChange={(e) => { setLockPassphrase(e.target.value); setLockError(null); }}
-                    placeholder="New passphrase"
-                    autoFocus
-                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
-                  />
-                  <input
-                    type="password"
-                    value={lockConfirm}
-                    onChange={(e) => { setLockConfirm(e.target.value); setLockError(null); }}
-                    placeholder="Confirm passphrase"
-                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleLock(); }}
-                  />
-                  {lockError && (
-                    <p className="text-[10px] text-status-error">{lockError}</p>
-                  )}
-                  <div className="flex justify-end gap-2">
-                    <button
-                      onClick={() => { setShowLockForm(false); setLockPassphrase(''); setLockConfirm(''); setLockError(null); }}
-                      className="px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary rounded transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <Button variant="primary" size="sm" onClick={handleLock} disabled={!lockPassphrase.trim() || !lockConfirm.trim() || isLocking}>
-                      <Lock size={12} />
-                      {isLocking ? 'Encrypting...' : 'Encrypt'}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Error */}
-            {error && (
-              <div className="mx-4 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error">
-                <AlertCircle size={12} className="flex-shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Loading skeleton */}
-            {loading && !secrets && (
-              <div className="p-4 space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-10 rounded-lg bg-surface-elevated animate-pulse" />
-                ))}
-              </div>
-            )}
-
-            {/* Quick-add form */}
-            <form onSubmit={handleAdd} className="px-4 pt-3 pb-2 border-b border-border-subtle/50">
-              <div className="space-y-2">
-                <input
-                  ref={keyInputRef}
-                  type="text"
-                  value={newKey}
-                  onChange={(e) => { setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '')); setAddError(null); }}
-                  placeholder="KEY_NAME"
-                  className={cn(
-                    'w-full bg-surface border rounded-lg px-3 py-2 text-xs font-mono text-text-primary',
-                    'placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors',
-                    addError ? 'border-status-error/50' : 'border-border'
-                  )}
-                />
-                <div className="relative">
-                  <input
-                    type={showNewValue ? 'text' : 'password'}
-                    value={newValue}
-                    onChange={(e) => setNewValue(e.target.value)}
-                    placeholder={getValuePlaceholder(newType, newIsSecret)}
-                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 pr-10 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
-                  />
+              <div className="flex items-center gap-2">
+                {!encrypted && allSecrets.length > 0 && (
                   <button
-                    type="button"
-                    onClick={() => setShowNewValue(!showNewValue)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-text-muted hover:text-text-primary transition-colors"
+                    onClick={() => setShowLockForm(!showLockForm)}
+                    className="flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors"
                   >
-                    {showNewValue ? <EyeOff size={12} /> : <Eye size={12} />}
+                    <Lock size={10} /> Encrypt
                   </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <VariableTypeSelector value={newType} onChange={setNewType} />
-                  <VariableSecretToggle isSecret={newIsSecret} onChange={setNewIsSecret} />
-                </div>
-                <div className="flex gap-2">
-                  <select
-                    value={newSet}
-                    onChange={(e) => setNewSet(e.target.value)}
-                    className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-xs text-text-secondary focus:border-primary/50 outline-none transition-colors"
+                )}
+                <button
+                  onClick={() => keyInputRef.current?.focus()}
+                  className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+                >
+                  <Plus size={10} /> New
+                </button>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div
+              className="px-2 py-1.5 border-b border-border/20 flex-shrink-0"
+              role="search"
+            >
+              <div className="relative">
+                <Search
+                  size={12}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/50"
+                />
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search secrets..."
+                  aria-label="Filter secrets"
+                  className="w-full bg-background/40 border border-border/30 rounded-lg pl-7 pr-7 py-1 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/40"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-highlight transition-colors"
                   >
-                    <option value="">No set</option>
-                    {setNames.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                  <Button type="submit" variant="primary" size="sm" disabled={!newKey.trim() || !newValue || isAdding}>
-                    <Plus size={12} />
-                    Add
-                  </Button>
-                </div>
+                    <X size={12} className="text-text-muted" />
+                  </button>
+                )}
               </div>
-              {addError && (
-                <p className="mt-1.5 text-[10px] text-status-error">{addError}</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
+              {showLockForm && (
+                <VaultEncryptForm
+                  onLock={handleEncrypt}
+                  onCancel={() => setShowLockForm(false)}
+                  className="px-4 pt-3 pb-2 border-b border-border-subtle/50"
+                />
               )}
-            </form>
 
-            {/* Empty state */}
-            {!loading && isEmpty && (
-              <div className="px-4 py-8 text-center">
-                <div className="mx-auto w-12 h-12 mb-4 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                  <KeyRound size={20} className="text-primary/60" />
+              {error && (
+                <div className="mx-4 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error">
+                  <AlertCircle size={12} className="flex-shrink-0" />
+                  <span>{error}</span>
                 </div>
-                <p className="text-sm text-text-secondary mb-2">No secrets stored</p>
-                <p className="text-xs text-text-muted leading-relaxed">
-                  Add secrets using the form above, or via CLI:
-                </p>
-                <div className="mt-2 space-y-1">
-                  <code className="block text-[10px] font-mono text-primary/80 bg-surface-elevated rounded px-2 py-1">
-                    gridctl var set API_KEY
-                  </code>
-                  <code className="block text-[10px] font-mono text-primary/80 bg-surface-elevated rounded px-2 py-1">
-                    gridctl var import .env
-                  </code>
+              )}
+
+              {loading && !secrets && (
+                <div className="p-4 space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="h-10 rounded-lg bg-surface-elevated animate-pulse"
+                    />
+                  ))}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Search empty state */}
-            {!loading && !isEmpty && filteredSecrets.length === 0 && searchQuery && (
-              <div className="p-6 text-center">
-                <KeyRound size={24} className="text-text-muted/30 mx-auto mb-2" />
-                <p className="text-text-muted text-xs">No matching secrets</p>
-              </div>
-            )}
+              <VariableQuickAddForm
+                setNames={setNames}
+                onSubmit={handleCreate}
+                keyInputRef={keyInputRef}
+                className="px-4 pt-3 pb-2 border-b border-border-subtle/50"
+              />
 
-            {/* Unassigned secrets */}
-            {!loading && unassigned.length > 0 && (
-              <div className="p-2 space-y-1">
-                {unassigned.map((secret) => (
-                  <SecretItem
-                    key={secret.key}
-                    secret={secret}
-                    revealed={revealed[secret.key]}
-                    isEditing={editingKey === secret.key}
-                    editValue={editValue}
-                    showEditValue={showEditValue}
-                    onReveal={() => handleReveal(secret.key)}
-                    onEdit={() => handleEdit(secret.key)}
-                    onDelete={() => setConfirmDelete(secret.key)}
-                    onEditValueChange={setEditValue}
-                    onEditToggleShow={() => setShowEditValue(!showEditValue)}
-                    onEditSave={handleEditSave}
-                    onEditCancel={handleEditCancel}
-                    sets={setNames}
-                    onAssignSet={(set) => handleAssignSet(secret.key, set)}
-                  />
-                ))}
-              </div>
-            )}
+              {!loading && isEmpty && <EmptyVaultState cliVerb="var" />}
 
-            {/* Variable sets */}
-            {!loading && (sets ?? []).length > 0 && (
-              <div className="px-2 py-2">
-                <div className="flex items-center justify-between px-2 mb-2">
-                  <div className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
-                    Variable Sets
+              {!loading &&
+                !isEmpty &&
+                filteredSecrets.length === 0 &&
+                searchQuery && (
+                  <div className="p-6 text-center">
+                    <KeyRound
+                      size={24}
+                      className="text-text-muted/30 mx-auto mb-2"
+                    />
+                    <p className="text-text-muted text-xs">
+                      No matching secrets
+                    </p>
                   </div>
+                )}
+
+              {!loading && unassigned.length > 0 && (
+                <div className="p-2 space-y-1">
+                  {unassigned.map((secret) => (
+                    <SecretItem
+                      key={secret.key}
+                      secret={secret}
+                      revealed={revealedState.revealed[secret.key]}
+                      isEditing={editingKey === secret.key}
+                      editValue={editValue}
+                      showEditValue={showEditValue}
+                      onReveal={() => handleReveal(secret.key)}
+                      onEdit={() => handleEdit(secret.key)}
+                      onDelete={() => setConfirmDelete(secret.key)}
+                      onEditValueChange={setEditValue}
+                      onEditToggleShow={() => setShowEditValue(!showEditValue)}
+                      onEditSave={handleEditSave}
+                      onEditCancel={handleEditCancel}
+                      sets={setNames}
+                      onAssignSet={(set) => handleAssignSet(secret.key, set)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {!loading && (sets ?? []).length > 0 && (
+                <div className="px-2 py-2">
+                  <div className="flex items-center justify-between px-2 mb-2">
+                    <div className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
+                      Variable Sets
+                    </div>
+                    <button
+                      onClick={() => setShowNewSet(true)}
+                      className="p-1 rounded hover:bg-surface-highlight transition-colors"
+                      title="New set"
+                    >
+                      <Plus
+                        size={12}
+                        className="text-text-muted hover:text-primary"
+                      />
+                    </button>
+                  </div>
+
+                  <NewSetForm
+                    show={showNewSet}
+                    value={newSetName}
+                    onChange={setNewSetName}
+                    onSave={handleCreateSet}
+                    onCancel={() => {
+                      setShowNewSet(false);
+                      setNewSetName('');
+                    }}
+                    className="mb-2 px-2"
+                  />
+
+                  <div className="space-y-1">
+                    {(sets ?? []).map((set) => (
+                      <SetGroup
+                        key={set.name}
+                        set={set}
+                        variables={filteredSecrets.filter(
+                          (s) => s.set === set.name,
+                        )}
+                        expanded={expandedSets[set.name] ?? false}
+                        onToggleExpand={() => toggleSetExpand(set.name)}
+                        onDeleteSet={() => handleDeleteSet(set.name)}
+                        handlers={rowHandlers}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!loading && !isEmpty && (sets ?? []).length === 0 && (
+                <div className="px-4 py-2">
                   <button
                     onClick={() => setShowNewSet(true)}
-                    className="p-1 rounded hover:bg-surface-highlight transition-colors"
-                    title="New set"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border/50 text-xs text-text-muted hover:text-text-secondary hover:border-border transition-colors"
                   >
-                    <Plus size={12} className="text-text-muted hover:text-primary" />
+                    <Package size={12} />
+                    Create a variable set
                   </button>
+                  <NewSetForm
+                    show={showNewSet}
+                    value={newSetName}
+                    onChange={setNewSetName}
+                    onSave={handleCreateSet}
+                    onCancel={() => {
+                      setShowNewSet(false);
+                      setNewSetName('');
+                    }}
+                    className="mt-2"
+                  />
                 </div>
-
-                <NewSetForm
-                  show={showNewSet}
-                  value={newSetName}
-                  onChange={setNewSetName}
-                  onSave={handleCreateSet}
-                  onCancel={() => { setShowNewSet(false); setNewSetName(''); }}
-                  className="mb-2 px-2"
-                />
-
-                <div className="space-y-1">
-                  {(sets ?? []).map((set) => {
-                    const setVariables = filteredSecrets.filter((s) => s.set === set.name);
-                    const isExpanded = expandedSets[set.name] ?? false;
-                    return (
-                      <div key={set.name} className="group rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
-                        <button
-                          onClick={() => toggleSetExpand(set.name)}
-                          className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-surface-highlight/50 transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            {isExpanded ? <ChevronDown size={12} className="text-text-muted" /> : <ChevronRight size={12} className="text-text-muted" />}
-                            <FolderOpen size={12} className="text-secondary" />
-                            <span className="text-xs font-mono text-text-primary">{set.name}</span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/10 text-secondary">
-                              {set.count}
-                            </span>
-                          </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteSet(set.name); }}
-                            className="p-1 rounded hover:bg-status-error/10 transition-colors opacity-0 group-hover:opacity-100"
-                            title="Delete set"
-                          >
-                            <Trash2 size={10} className="text-text-muted hover:text-status-error" />
-                          </button>
-                        </button>
-                        {isExpanded && setVariables.length > 0 && (
-                          <div className="px-2 pb-2 space-y-1">
-                            {setVariables.map((secret) => (
-                              <SecretItem
-                                key={secret.key}
-                                secret={secret}
-                                revealed={revealed[secret.key]}
-                                isEditing={editingKey === secret.key}
-                                editValue={editValue}
-                                showEditValue={showEditValue}
-                                onReveal={() => handleReveal(secret.key)}
-                                onEdit={() => handleEdit(secret.key)}
-                                onDelete={() => setConfirmDelete(secret.key)}
-                                onEditValueChange={setEditValue}
-                                onEditToggleShow={() => setShowEditValue(!showEditValue)}
-                                onEditSave={handleEditSave}
-                                onEditCancel={handleEditCancel}
-                                sets={setNames}
-                                onAssignSet={(set) => handleAssignSet(secret.key, set)}
-                                compact
-                              />
-                            ))}
-                          </div>
-                        )}
-                        {isExpanded && setVariables.length === 0 && (
-                          <div className="px-3 pb-2">
-                            <p className="text-[10px] text-text-muted italic">No secrets in this set</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Create set button when no sets exist */}
-            {!loading && !isEmpty && (sets ?? []).length === 0 && (
-              <div className="px-4 py-2">
-                <button
-                  onClick={() => setShowNewSet(true)}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border/50 text-xs text-text-muted hover:text-text-secondary hover:border-border transition-colors"
-                >
-                  <Package size={12} />
-                  Create a variable set
-                </button>
-                <NewSetForm
-                  show={showNewSet}
-                  value={newSetName}
-                  onChange={setNewSetName}
-                  onSave={handleCreateSet}
-                  onCancel={() => { setShowNewSet(false); setNewSetName(''); }}
-                  className="mt-2"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Status footer */}
-          <div className="px-4 py-2 border-t border-border/30 bg-surface/30 flex-shrink-0">
-            <div className="flex items-center justify-between text-[10px] text-text-muted">
-              <span>{allSecrets.length} total</span>
-              <span>
-                {(sets ?? []).length > 0 && (
-                  <span className="text-secondary">{(sets ?? []).length} sets</span>
-                )}
-              </span>
+              )}
             </div>
-          </div>
-        </>
-      )}
 
-      {/* Delete confirmation */}
-      <ConfirmDialog
-        isOpen={confirmDelete !== null}
-        onClose={() => setConfirmDelete(null)}
-        onConfirm={handleDeleteConfirm}
-        title="Delete secret"
-        message={
-          <>
-            <p>
-              Delete <span className="font-mono text-primary">{confirmDelete}</span>?
-            </p>
-            <p>This action cannot be undone.</p>
+            {/* Status footer */}
+            <div className="px-4 py-2 border-t border-border/30 bg-surface/30 flex-shrink-0">
+              <div className="flex items-center justify-between text-[10px] text-text-muted">
+                <span>{allSecrets.length} total</span>
+                <span>
+                  {(sets ?? []).length > 0 && (
+                    <span className="text-secondary">
+                      {(sets ?? []).length} sets
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
           </>
-        }
-        confirmLabel={
-          <span>
-            Delete <span className="font-mono">"{confirmDelete}"</span>
-          </span>
-        }
-        variant="danger"
-      />
-      </div>{/* end content column */}
+        )}
+
+        <ConfirmDialog
+          isOpen={confirmDelete !== null}
+          onClose={() => setConfirmDelete(null)}
+          onConfirm={handleDeleteConfirm}
+          title="Delete secret"
+          message={
+            <>
+              <p>
+                Delete{' '}
+                <span className="font-mono text-primary">{confirmDelete}</span>?
+              </p>
+              <p>This action cannot be undone.</p>
+            </>
+          }
+          confirmLabel={
+            <span>
+              Delete <span className="font-mono">"{confirmDelete}"</span>
+            </span>
+          }
+          variant="danger"
+        />
+      </div>
     </div>,
     document.body,
-  );
-}
-
-// NewSetForm renders the inline set creation form
-interface NewSetFormProps {
-  show: boolean;
-  value: string;
-  onChange: (val: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  className?: string;
-}
-
-function NewSetForm({ show, value, onChange, onSave, onCancel, className }: NewSetFormProps) {
-  if (!show) return null;
-  return (
-    <div className={cn('flex gap-2', className)}>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-        placeholder="set-name"
-        autoFocus
-        className="flex-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onSave();
-          if (e.key === 'Escape') onCancel();
-        }}
-      />
-      <button onClick={onSave} className="p-1 rounded hover:bg-surface-highlight transition-colors" disabled={!value.trim()}>
-        <Check size={12} className="text-status-running" />
-      </button>
-      <button onClick={onCancel} className="p-1 rounded hover:bg-surface-highlight transition-colors">
-        <XCircle size={12} className="text-text-muted" />
-      </button>
-    </div>
-  );
-}
-
-// SecretItem — expandable row matching SkillItem pattern
-interface SecretItemProps {
-  secret: Variable;
-  revealed?: string;
-  isEditing: boolean;
-  editValue: string;
-  showEditValue: boolean;
-  onReveal: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onEditValueChange: (val: string) => void;
-  onEditToggleShow: () => void;
-  onEditSave: () => void;
-  onEditCancel: () => void;
-  sets: string[];
-  onAssignSet: (set: string) => void;
-  compact?: boolean;
-}
-
-function SecretItem({
-  secret,
-  revealed,
-  isEditing,
-  editValue,
-  showEditValue,
-  onReveal,
-  onEdit,
-  onDelete,
-  onEditValueChange,
-  onEditToggleShow,
-  onEditSave,
-  onEditCancel,
-  sets,
-  onAssignSet,
-  compact,
-}: SecretItemProps) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (isEditing) {
-    return (
-      <div className="rounded-lg bg-surface-elevated/50 border border-primary/20 p-2 space-y-2">
-        <div className="text-xs font-mono text-primary">{secret.key}</div>
-        <div className="relative">
-          <input
-            type={showEditValue ? 'text' : 'password'}
-            value={editValue}
-            onChange={(e) => onEditValueChange(e.target.value)}
-            placeholder="New value"
-            autoFocus
-            className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 pr-8 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onEditSave();
-              if (e.key === 'Escape') onEditCancel();
-            }}
-          />
-          <button
-            type="button"
-            onClick={onEditToggleShow}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
-          >
-            {showEditValue ? <EyeOff size={10} /> : <Eye size={10} />}
-          </button>
-        </div>
-        <div className="flex justify-end gap-1.5">
-          <button
-            onClick={onEditCancel}
-            className="px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary rounded transition-colors"
-          >
-            Cancel
-          </button>
-          <Button variant="primary" size="sm" onClick={onEditSave} disabled={!editValue}>
-            Save
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Plaintext variables show their value inline by default \u2014 the Reveal
-  // affordance is reserved for actual secrets.
-  const isPlaintext = !secret.is_secret;
-  const displayValue =
-    revealed !== undefined
-      ? revealed
-      : isPlaintext
-        ? '\u2022\u2022\u2022' // not yet fetched; placeholder until refresh completes
-        : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
-
-  return (
-    <div className="rounded-lg bg-surface-elevated/50 border border-border-subtle overflow-hidden">
-      {/* Header row */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className={cn(
-          'w-full flex items-center gap-2 hover:bg-surface-highlight/50 transition-colors',
-          compact ? 'px-2 py-1.5' : 'p-3',
-        )}
-      >
-        <div className="p-0.5 text-text-muted">
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </div>
-        <VariableVisibilityIcon isSecret={secret.is_secret} />
-        <span className="text-xs font-mono font-medium text-text-primary flex-1 text-left truncate">
-          {secret.key}
-        </span>
-        <VariableTypeBadge type={secret.type} />
-        <span className="text-[10px] font-mono text-text-muted truncate max-w-[120px]">
-          {displayValue}
-        </span>
-      </button>
-
-      {/* Expanded content */}
-      {expanded && (
-        <div className="px-3 pb-3 border-t border-border-subtle">
-          {/* Value display */}
-          <div className="mt-2 mb-2">
-            <div className="text-[10px] text-text-muted mb-1">Value</div>
-            <div className="text-xs font-mono text-text-secondary bg-background/60 px-2 py-1.5 rounded break-all">
-              {revealed !== undefined ? revealed : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
-            </div>
-          </div>
-
-          {/* Set assignment */}
-          {!compact && sets.length > 0 && !secret.set && (
-            <div className="mb-2">
-              <select
-                value=""
-                onChange={(e) => { if (e.target.value) onAssignSet(e.target.value); }}
-                className="w-full bg-surface border border-border rounded-lg px-2 py-1 text-[10px] text-text-muted focus:outline-none focus:border-primary/40 transition-colors"
-                title="Assign to set"
-              >
-                <option value="">Assign to set...</option>
-                {sets.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border-subtle/50">
-            {!isPlaintext && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onReveal(); }}
-                className={cn(
-                  'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all duration-200',
-                  revealed !== undefined
-                    ? 'bg-status-pending text-background shadow-[0_1px_8px_rgba(234,179,8,0.2)] hover:shadow-[0_2px_12px_rgba(234,179,8,0.3)] hover:-translate-y-0.5 active:translate-y-0'
-                    : 'bg-status-running text-background shadow-[0_1px_8px_rgba(16,185,129,0.2)] hover:shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:translate-y-0'
-                )}
-              >
-                {revealed !== undefined ? <EyeOff size={10} /> : <Eye size={10} />}
-                {revealed !== undefined ? 'Hide' : 'Reveal'}
-              </button>
-            )}
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(); }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_8px_rgba(245,158,11,0.2)] hover:shadow-[0_2px_12px_rgba(245,158,11,0.3)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
-            >
-              <Pencil size={10} /> Edit
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gradient-to-r from-status-error to-rose-600 text-white shadow-[0_1px_8px_rgba(244,63,94,0.2)] hover:shadow-[0_2px_12px_rgba(244,63,94,0.3)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
-            >
-              <Trash2 size={10} /> Delete
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
