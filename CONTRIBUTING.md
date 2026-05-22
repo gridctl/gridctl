@@ -91,7 +91,6 @@ Example: `feature/add-ssh-transport` or `fix/container-timeout`
 - Functional components with hooks
 - Zustand for state management
 - Tailwind CSS for styling
-- Follow the design system in [web/AGENTS.md](web/AGENTS.md)
 
 ### Testing Requirements
 
