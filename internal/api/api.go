@@ -7,15 +7,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gridctl/gridctl/internal/probe"
-	"github.com/gridctl/gridctl/pkg/agent"
-	"github.com/gridctl/gridctl/pkg/agent/compose"
-	"github.com/gridctl/gridctl/pkg/agent/dev/devserver"
-	"github.com/gridctl/gridctl/pkg/agent/persist"
-	agentruntime "github.com/gridctl/gridctl/pkg/agent/runtime"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -72,50 +66,16 @@ type Server struct {
 	// unchanged; tests inject temp paths to stay isolated from $HOME.
 	skillLockPath    string
 	skillsConfigPath string
-
-	// Playground LLM provider. When nil, /api/playground/chat returns
-	// a 400 explaining that the user needs to configure a vault key
-	// and restart the daemon. The provider is the route layer
-	// (agent/llm/gateway.Provider) chosen at apply-time by the
-	// gateway builder so a single API server can serve mixed
-	// provider models.
-	playgroundProvider agent.ChatModel
-	playgroundOnce     sync.Once
-	playgroundSvc      *playgroundService
-
-	// Agent runtime persistence + approval surface. SetAgentRunStore
-	// and SetAgentApprovalRegistry wire these at apply time; nil
-	// values cause /api/agent/runs/* handlers to return 503.
-	agentRunStore         *persist.Store
-	agentApprovalRegistry *compose.Registry
-
-	// Agent IDE dev surface. SetAgentDevServer wires a project-rooted
-	// devserver.Server that powers the /api/agent/dev/* endpoints
-	// (skills list, AST graphs, file-watcher SSE). Nil → 503.
-	agentDevServer *devserver.Server
-
-	// agentRuntime is the unified runtime aggregate; when non-nil,
-	// /api/agent/* and /api/playground/* handlers prefer it over the
-	// per-component fields above. SetAgentRuntime installs it; the
-	// per-component setters are retained as test-fixture wrappers.
-	agentRuntime *agentruntime.Runtime
 }
 
 // NewServer creates a new API server.
 func NewServer(gateway *mcp.Gateway, staticFS fs.FS) *Server {
-	s := &Server{
+	return &Server{
 		gateway:          gateway,
 		streamableServer: mcp.NewStreamableHTTPServer(gateway, nil),
 		sseServer:        mcp.NewSSEServer(gateway),
 		staticFS:         staticFS,
 	}
-	// Wire the run-persister adapter so MCP tools/call against typed
-	// skills lands in ~/.gridctl/runs/<run_id>.jsonl alongside Run
-	// Launcher invocations. The adapter resolves the store and
-	// registry lazily, so SetRegistryServer / SetAgentRunStore /
-	// SetAgentRuntime can land in any order without losing wiring.
-	gateway.SetRunPersister(newRunPersisterAdapter(s))
-	return s
 }
 
 // SetDockerClient sets the Docker client for container operations.
@@ -228,70 +188,6 @@ func (s *Server) SetSkillSourcePaths(lockPath, configPath string) {
 	s.skillsConfigPath = configPath
 }
 
-// SetPlaygroundProvider injects the LLM provider used by
-// /api/playground/{chat,stream}. Passing nil disables the playground
-// (the chat endpoint returns a clear error). The provider is typically
-// the prefix-routing agent/llm/gateway.Provider built at apply-time by
-// pkg/controller from the vault keys present.
-//
-// SetAgentRuntime takes precedence over this setter at read time;
-// retained for test fixtures.
-func (s *Server) SetPlaygroundProvider(p agent.ChatModel) {
-	s.playgroundProvider = p
-}
-
-// SetAgentRuntime installs the unified runtime aggregate. When set, the
-// per-component setters below are ignored at read time. Wire-time only:
-// the controller calls this once during apply before HTTP serving
-// starts; field access is unsynchronised to match the rest of the
-// per-server setter pattern.
-func (s *Server) SetAgentRuntime(rt *agentruntime.Runtime) {
-	s.agentRuntime = rt
-}
-
-// The four accessors below all share the same shape: prefer the runtime
-// aggregate's component when set, otherwise fall back to the legacy
-// per-field value the matching setter wrote. Production wiring goes
-// through SetAgentRuntime; the per-field setters survive for tests
-// that need to wire a single component without building a full
-// Runtime.
-
-func (s *Server) runStore() *persist.Store {
-	if s.agentRuntime != nil {
-		if store := s.agentRuntime.RunStore(); store != nil {
-			return store
-		}
-	}
-	return s.agentRunStore
-}
-
-func (s *Server) approvalRegistry() *compose.Registry {
-	if s.agentRuntime != nil {
-		if reg := s.agentRuntime.ApprovalRegistry(); reg != nil {
-			return reg
-		}
-	}
-	return s.agentApprovalRegistry
-}
-
-func (s *Server) chatProvider() agent.ChatModel {
-	if s.agentRuntime != nil {
-		if m := s.agentRuntime.ChatModel(); m != nil {
-			return m
-		}
-	}
-	return s.playgroundProvider
-}
-
-func (s *Server) devServer() *devserver.Server {
-	if s.agentRuntime != nil {
-		if d := s.agentRuntime.DevServer(); d != nil {
-			return d
-		}
-	}
-	return s.agentDevServer
-}
-
 // RegistryServer returns the registry server.
 func (s *Server) RegistryServer() *registry.Server {
 	return s.registryServer
@@ -324,26 +220,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("GET /api/agents/{name}/logs", s.handleAgentLogs)
 
-	// Agent runtime — typed runs persisted as JSONL at
-	// ~/.gridctl/runs/<run_id>.jsonl. List and inspect surfaces are
-	// always available when a store is wired; resume/approve route
-	// through the in-process approval registry.
-	mux.HandleFunc("GET /api/agent/runs", s.handleAgentRunsList)
-	mux.HandleFunc("POST /api/agent/runs", s.handleAgentRunsLaunch)
-	// Global live tail across every run — wired before the {run_id}
-	// surface so the more-specific event subscription doesn't shadow
-	// the path. The per-run SSE remains the source of truth for any
-	// single run; this stream is the cross-run observability surface.
-	mux.HandleFunc("GET /api/agent/runs/events/stream", s.handleAgentRunsEventsStream)
-	mux.HandleFunc("GET /api/agent/runs/{run_id}", s.handleAgentRunGet)
-	mux.HandleFunc("GET /api/agent/runs/{run_id}/events", s.handleAgentRunEvents)
-	mux.HandleFunc("POST /api/agent/runs/{run_id}/resume", s.handleAgentRunResume)
-	mux.HandleFunc("POST /api/agent/runs/{run_id}/approve", s.handleAgentRunApprove)
-
-	// Agent IDE dev surface — code-canon AST graphs + file-watcher SSE.
-	// All paths funnel through handleAgentDev so SetAgentDevServer
-	// can swap implementations without re-binding routes.
-	mux.HandleFunc("/api/agent/dev/", s.handleAgentDev)
 	mux.HandleFunc("POST /api/mcp-servers/{name}/restart", s.handleMCPServerRestart)
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
@@ -437,13 +313,6 @@ func (s *Server) Handler() http.Handler {
 	// "Discover tools" flow for servers not yet loaded in the topology.
 	mux.HandleFunc("POST /api/servers/probe", s.handleProbe)
 
-	// Playground — LLM provider abstraction surface. /auth probes the
-	// vault for provider keys; /chat kicks off an inference into a
-	// session channel; /stream is the SSE the React client subscribes to.
-	mux.HandleFunc("POST /api/playground/auth", s.handlePlaygroundAuth)
-	mux.HandleFunc("POST /api/playground/chat", s.handlePlaygroundChat)
-	mux.HandleFunc("GET /api/playground/stream", s.handlePlaygroundStream)
-
 	// Registry endpoints
 	mux.HandleFunc("GET /api/registry/status", s.handleRegistryStatus)
 	mux.HandleFunc("GET /api/registry/skills", s.handleRegistrySkillsList)
@@ -454,7 +323,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/registry/skills/{name}", s.handleRegistrySkillDelete)
 	mux.HandleFunc("POST /api/registry/skills/{name}/activate", s.handleRegistrySkillActivate)
 	mux.HandleFunc("POST /api/registry/skills/{name}/disable", s.handleRegistrySkillDisable)
-	mux.HandleFunc("POST /api/registry/skills/{name}/test", s.handleRegistrySkillTest)
 	mux.HandleFunc("GET /api/registry/skills/{name}/files", s.handleRegistrySkillFileList)
 	mux.HandleFunc("GET /api/registry/skills/{name}/files/{path...}", s.handleRegistrySkillFileGet)
 	mux.HandleFunc("PUT /api/registry/skills/{name}/files/{path...}", s.handleRegistrySkillFilePut)
