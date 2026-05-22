@@ -35,11 +35,11 @@ Last updated: **v0.1.0-beta.9** (see [CHANGELOG.md](../CHANGELOG.md) for release
 | Visual spec builder | Experimental | May change without notice |
 | Skills import (skill add) | Experimental | May change without notice |
 | Distributed tracing | Experimental | May change without notice |
-| Multi-agent orchestrator | Experimental | May change without notice |
 | Cost observability | Experimental | May change without notice |
 | Typed skill SDK (Go, TS) | Removed in v0.1.x | Replaced by prompt-only skills |
 | Go plugin skill loader | Removed in v0.1.x | Replaced by prompt-only skills |
 | Agent IDE (`gridctl agent dev`) | Removed in v0.1.x | Use the Library workspace instead |
+| Multi-agent orchestrator (A2A) | Removed in v0.1.x | Use an external agent runtime (LangGraph, CrewAI, AutoGen, OpenAI Agents SDK) over gridctl as the MCP gateway |
 | JSONL run ledger + resume | Removed in v0.1.x | — |
 | LLM provider abstraction | Removed in v0.1.x | Was internal to the playground |
 
