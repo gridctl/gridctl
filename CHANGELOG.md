@@ -25,6 +25,13 @@ All notable changes to gridctl will be documented in this file.
   runtime, sandbox, persist, dev, skill SDK, internal/eino, llm provider
   abstraction). `pkg/optimize/` heuristics that read the run ledger are
   also gone; `pkg/optimize/` itself stays.
+- **`X-Agent-Name` CORS header dropped** from the gateway's
+  `Access-Control-Allow-Headers` allowlist and from `docs/api-reference.md`.
+  The header was advertised but never read by any production handler after
+  the agent surface removal.
+- **Dead frontend `restartAgent` / `stopAgent` helpers** removed from
+  `web/src/lib/api.ts`. The functions targeted server routes that no
+  longer exist (`/api/agents/{name}/{restart,stop}`) and had no callers.
 
 ### Changed
 
@@ -41,6 +48,18 @@ All notable changes to gridctl will be documented in this file.
   library"; the "Skills (Early Access)" and "Visual Agent IDE" feature
   blocks are replaced with a single Skill Library section. `AGENTS.md` is
   removed (pre-1.0 working notes; no replacement).
+- **`pkg/mcp` internal naming clarified.** Local variables, named-return
+  parameters, doc comments, and error messages in `pkg/mcp/router.go` and
+  `pkg/mcp/gateway.go` now use `serverName` and "server" terminology
+  consistently. `PrefixTool` / `ParsePrefixedTool` keep their public
+  signatures; only their named-return parameters changed (godoc only —
+  no Go ABI change). Public interface and method names (`AgentClient`,
+  `AddClient`, `RemoveClient`) are unchanged.
+- **CLI command registration consolidated** in `cmd/gridctl/root.go`.
+  `reload`, `telemetry`, `traces`, `upgrade`, `export`, and `version`
+  previously self-registered via their own `init()` functions; they now
+  appear in the canonical `rootCmd.AddCommand(...)` list in `root.go`
+  alongside the other 16 commands.
 
 ### Migration
 
@@ -55,6 +74,12 @@ All notable changes to gridctl will be documented in this file.
 
 ### Breaking
 
+- **API route `GET /api/agents/{name}/logs` renamed to
+  `GET /api/mcp-servers/{name}/logs`** to match the existing
+  `/api/mcp-servers/{name}/restart` and `/api/mcp-servers/{name}/tools`
+  convention. No backwards-compatibility redirect (pre-1.0, no documented
+  external consumer). The frontend `fetchAgentLogs` helper was renamed to
+  `fetchServerLogs`; every caller in `web/src/` was updated.
 - **`gridctl vault` renamed to `gridctl var`.** The unified variable store
   now holds both secrets and non-sensitive configuration. `gridctl vault
   <sub>` continues to work through the beta cycle and emits a one-time

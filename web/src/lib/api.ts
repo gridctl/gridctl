@@ -129,15 +129,15 @@ export async function fetchClients(): Promise<ClientStatus[]> {
   return fetchJSON<ClientStatus[]>('/api/clients');
 }
 
-// === Agent Control Functions (require backend endpoints) ===
+// === MCP Server Control Functions ===
 
 /**
- * Fetch logs for a specific agent
- * GET /api/agents/{name}/logs
+ * Fetch logs for a specific MCP server
+ * GET /api/mcp-servers/{name}/logs
  */
-export async function fetchAgentLogs(name: string, lines = 100): Promise<string[]> {
+export async function fetchServerLogs(name: string, lines = 100): Promise<string[]> {
   const response = await fetch(
-    `${API_BASE}/api/agents/${encodeURIComponent(name)}/logs?lines=${lines}`,
+    `${API_BASE}/api/mcp-servers/${encodeURIComponent(name)}/logs?lines=${lines}`,
     { headers: buildHeaders() },
   );
 
@@ -160,46 +160,6 @@ export async function fetchAgentLogs(name: string, lines = 100): Promise<string[
 
   return response.json();
 }
-
-/**
- * Restart an agent's container
- * POST /api/agents/{name}/restart
- */
-export async function restartAgent(name: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/agents/${encodeURIComponent(name)}/restart`, {
-    method: 'POST',
-    headers: buildHeaders(),
-  });
-
-  if (response.status === 401) {
-    throw new AuthError('Authentication required');
-  }
-
-  if (!response.ok) {
-    throw new Error(`Restart failed: ${response.status} ${response.statusText}`);
-  }
-}
-
-/**
- * Stop an agent's container
- * POST /api/agents/{name}/stop
- */
-export async function stopAgent(name: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/agents/${encodeURIComponent(name)}/stop`, {
-    method: 'POST',
-    headers: buildHeaders(),
-  });
-
-  if (response.status === 401) {
-    throw new AuthError('Authentication required');
-  }
-
-  if (!response.ok) {
-    throw new Error(`Stop failed: ${response.status} ${response.statusText}`);
-  }
-}
-
-// === MCP Server Control Functions ===
 
 /**
  * Restart an MCP server connection

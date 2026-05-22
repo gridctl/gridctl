@@ -29,6 +29,7 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(reloadCmd)
 	rootCmd.AddCommand(linkCmd)
 	rootCmd.AddCommand(unlinkCmd)
 	rootCmd.AddCommand(varCmd)
@@ -40,6 +41,11 @@ func init() {
 	rootCmd.AddCommand(pinsCmd)
 	rootCmd.AddCommand(optimizeCmd)
 	rootCmd.AddCommand(activateCmd)
+	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(telemetryCmd)
+	rootCmd.AddCommand(tracesCmd)
+	rootCmd.AddCommand(upgradeCmd)
+	rootCmd.AddCommand(versionCmd)
 }
 
 func Execute() {

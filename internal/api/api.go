@@ -218,8 +218,8 @@ func (s *Server) Handler() http.Handler {
 	// API endpoints
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
-	mux.HandleFunc("GET /api/agents/{name}/logs", s.handleAgentLogs)
 
+	mux.HandleFunc("GET /api/mcp-servers/{name}/logs", s.handleMCPServerLogs)
 	mux.HandleFunc("POST /api/mcp-servers/{name}/restart", s.handleMCPServerRestart)
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
@@ -528,7 +528,7 @@ func corsMiddleware(allowedOrigins []string, extraHeaders []string, next http.Ha
 		}
 		originSet[o] = true
 	}
-	allowHeaders := "Content-Type, X-Agent-Name, Authorization"
+	allowHeaders := "Content-Type, Authorization"
 	for _, h := range extraHeaders {
 		allowHeaders += ", " + h
 	}
@@ -609,9 +609,9 @@ func (s *Server) getResourceStatuses() []ResourceStatus {
 	return resources
 }
 
-// handleAgentLogs returns structured logs from the global buffer filtered by server name.
-// GET /api/agents/{name}/logs?lines=100
-func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request) {
+// handleMCPServerLogs returns structured logs from the global buffer filtered by server name.
+// GET /api/mcp-servers/{name}/logs?lines=100
+func (s *Server) handleMCPServerLogs(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	if s.logBuffer == nil {

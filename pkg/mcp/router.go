@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// Router routes tool calls to the appropriate agent.
+// Router routes tool calls to the appropriate MCP server.
 //
 // Internally the Router keys on server name and stores a *ReplicaSet per name.
 // A single-client registration (via AddClient) is wrapped in a
@@ -15,8 +15,8 @@ import (
 // same behavior as before replicas existed.
 type Router struct {
 	mu    sync.RWMutex
-	sets  map[string]*ReplicaSet // agentName -> replica set
-	tools map[string]string      // prefixedToolName -> agentName
+	sets  map[string]*ReplicaSet // serverName -> replica set
+	tools map[string]string      // prefixedToolName -> serverName
 }
 
 // NewRouter creates a new tool router.
@@ -27,7 +27,7 @@ func NewRouter() *Router {
 	}
 }
 
-// AddClient adds an agent client to the router as a single-replica set.
+// AddClient adds a client to the router as a single-replica set.
 // Preserves the pre-replicas API so existing callers keep working unchanged.
 func (r *Router) AddClient(client AgentClient) {
 	set := NewReplicaSet(client.Name(), ReplicaPolicyRoundRobin, []AgentClient{client})
@@ -42,22 +42,22 @@ func (r *Router) AddReplicaSet(set *ReplicaSet) {
 	r.sets[set.Name()] = set
 }
 
-// RemoveClient removes an agent (replica set) and its tools from the router.
+// RemoveClient removes a server (replica set) and its tools from the router.
 func (r *Router) RemoveClient(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sets, name)
 
-	// Remove tools for this agent
-	for tool, agent := range r.tools {
-		if agent == name {
+	// Remove tools for this server
+	for tool, server := range r.tools {
+		if server == name {
 			delete(r.tools, tool)
 		}
 	}
 }
 
-// GetClient returns one client for the named agent, chosen by the set's
-// dispatch policy. Returns nil if the agent is not registered or no replica
+// GetClient returns one client for the named server, chosen by the set's
+// dispatch policy. Returns nil if the server is not registered or no replica
 // is currently healthy.
 func (r *Router) GetClient(name string) AgentClient {
 	r.mu.RLock()
@@ -69,8 +69,8 @@ func (r *Router) GetClient(name string) AgentClient {
 	return set.Client()
 }
 
-// GetReplicaSet returns the replica set for the named agent, or nil if the
-// agent is not registered. Useful for callers that need per-replica access
+// GetReplicaSet returns the replica set for the named server, or nil if the
+// server is not registered. Useful for callers that need per-replica access
 // (health monitor, status reporting).
 func (r *Router) GetReplicaSet(name string) *ReplicaSet {
 	r.mu.RLock()
@@ -78,8 +78,8 @@ func (r *Router) GetReplicaSet(name string) *ReplicaSet {
 	return r.sets[name]
 }
 
-// Clients returns one representative AgentClient per registered agent,
-// sorted by agent name. Each representative is chosen via the set's policy,
+// Clients returns one representative AgentClient per registered server,
+// sorted by server name. Each representative is chosen via the set's policy,
 // so a single-replica set returns its only client. Skips sets with no
 // currently-healthy replica.
 func (r *Router) Clients() []AgentClient {
@@ -99,7 +99,7 @@ func (r *Router) Clients() []AgentClient {
 	return clients
 }
 
-// ReplicaSets returns all registered replica sets, sorted by agent name.
+// ReplicaSets returns all registered replica sets, sorted by server name.
 func (r *Router) ReplicaSets() []*ReplicaSet {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -133,7 +133,7 @@ func toolsOf(set *ReplicaSet) []Tool {
 	return tools
 }
 
-// RefreshTools updates the tool registry from all agents.
+// RefreshTools updates the tool registry from all servers.
 func (r *Router) RefreshTools() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -149,7 +149,7 @@ func (r *Router) RefreshTools() {
 	}
 }
 
-// AggregatedTools returns all tools from all agents with prefixed names.
+// AggregatedTools returns all tools from all servers with prefixed names.
 func (r *Router) AggregatedTools() []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -176,7 +176,7 @@ func (r *Router) AggregatedTools() []Tool {
 	return tools
 }
 
-// RouteToolCall routes a tool call to the appropriate agent. The concrete
+// RouteToolCall routes a tool call to the appropriate server. The concrete
 // replica is chosen by the set's dispatch policy.
 func (r *Router) RouteToolCall(prefixedName string) (AgentClient, string, error) {
 	replica, toolName, err := r.RouteToolCallReplica(prefixedName)
@@ -190,40 +190,40 @@ func (r *Router) RouteToolCall(prefixedName string) (AgentClient, string, error)
 // replica itself. Callers that need the replica id (for per-replica logging,
 // tracing, and in-flight accounting) should use this variant.
 func (r *Router) RouteToolCallReplica(prefixedName string) (*Replica, string, error) {
-	agentName, toolName, err := ParsePrefixedTool(prefixedName)
+	serverName, toolName, err := ParsePrefixedTool(prefixedName)
 	if err != nil {
 		return nil, "", err
 	}
 
 	r.mu.RLock()
-	set, ok := r.sets[agentName]
+	set, ok := r.sets[serverName]
 	r.mu.RUnlock()
 	if !ok {
-		return nil, "", fmt.Errorf("unknown agent: %s", agentName)
+		return nil, "", fmt.Errorf("unknown server: %s", serverName)
 	}
 
 	replica, err := set.Pick()
 	if err != nil {
-		return nil, "", fmt.Errorf("agent %s: %w", agentName, err)
+		return nil, "", fmt.Errorf("server %s: %w", serverName, err)
 	}
 	return replica, toolName, nil
 }
 
-// ToolNameDelimiter is the separator between agent name and tool name in prefixed tool names.
-// Format: "agentname__toolname"
+// ToolNameDelimiter is the separator between server name and tool name in prefixed tool names.
+// Format: "servername__toolname"
 // Uses double underscore to be compatible with Claude Desktop's tool name validation: ^[a-zA-Z0-9_-]{1,64}$
 const ToolNameDelimiter = "__"
 
-// PrefixTool creates a prefixed tool name: "agent__tool"
-func PrefixTool(agentName, toolName string) string {
-	return agentName + ToolNameDelimiter + toolName
+// PrefixTool creates a prefixed tool name: "server__tool"
+func PrefixTool(serverName, toolName string) string {
+	return serverName + ToolNameDelimiter + toolName
 }
 
-// ParsePrefixedTool parses a prefixed tool name into agent and tool names.
-func ParsePrefixedTool(prefixed string) (agentName, toolName string, err error) {
+// ParsePrefixedTool parses a prefixed tool name into server and tool names.
+func ParsePrefixedTool(prefixed string) (serverName, toolName string, err error) {
 	parts := strings.SplitN(prefixed, ToolNameDelimiter, 2)
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid tool name format: %s (expected agent__tool)", prefixed)
+		return "", "", fmt.Errorf("invalid tool name format: %s (expected server__tool)", prefixed)
 	}
 	return parts[0], parts[1], nil
 }

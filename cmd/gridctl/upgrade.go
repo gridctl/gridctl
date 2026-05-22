@@ -59,7 +59,6 @@ func init() {
 	upgradeCmd.Flags().StringVar(&upgradeVersion, "version", "", "Install a specific release tag (allows downgrades)")
 	upgradeCmd.Flags().BoolVar(&upgradeForce, "force", false, "Bypass Homebrew detection and the up-to-date short-circuit")
 	upgradeCmd.Flags().BoolVarP(&upgradeYes, "yes", "y", false, "Non-interactive: skip the confirmation prompt")
-	rootCmd.AddCommand(upgradeCmd)
 }
 
 func runUpgrade() error {

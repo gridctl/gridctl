@@ -63,7 +63,6 @@ func init() {
 	tracesCmd.Flags().StringVar(&tracesMinDuration, "min-duration", "", "Minimum trace duration (e.g. 100ms, 1s)")
 	tracesCmd.Flags().BoolVar(&tracesJSON, "json", false, "Output as JSON")
 	tracesCmd.Flags().BoolVar(&tracesFollow, "follow", false, "Stream new traces as they arrive")
-	rootCmd.AddCommand(tracesCmd)
 }
 
 // resolveTracesPort finds the port of a running gateway, optionally filtered by stack name.

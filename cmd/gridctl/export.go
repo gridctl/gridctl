@@ -36,7 +36,6 @@ If remote skills are active, a skills.yaml is also generated.`,
 func init() {
 	exportCmd.Flags().StringVarP(&exportOutputDir, "output", "o", "", "Output directory (default: stdout)")
 	exportCmd.Flags().StringVar(&exportFormat, "format", "yaml", "Output format: yaml or json")
-	rootCmd.AddCommand(exportCmd)
 }
 
 func runExport() error {

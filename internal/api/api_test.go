@@ -698,12 +698,12 @@ func TestHandleGatewayLogs_MethodNotAllowed(t *testing.T) {
 
 // --- Agent logs endpoint tests ---
 
-func TestHandleAgentLogs_NoBuffer(t *testing.T) {
+func TestHandleMCPServerLogs_NoBuffer(t *testing.T) {
 	srv := newTestServer(t)
 	// logBuffer is nil by default
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/agents/atlassian/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -720,7 +720,7 @@ func TestHandleAgentLogs_NoBuffer(t *testing.T) {
 	}
 }
 
-func TestHandleAgentLogs_FiltersByServer(t *testing.T) {
+func TestHandleMCPServerLogs_FiltersByServer(t *testing.T) {
 	srv := newTestServerWithLogBuffer(t, 100)
 
 	srv.logBuffer.Add(logging.BufferedEntry{
@@ -740,7 +740,7 @@ func TestHandleAgentLogs_FiltersByServer(t *testing.T) {
 	})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/agents/atlassian/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -762,7 +762,7 @@ func TestHandleAgentLogs_FiltersByServer(t *testing.T) {
 	}
 }
 
-func TestHandleAgentLogs_EmptyWhenNoMatch(t *testing.T) {
+func TestHandleMCPServerLogs_EmptyWhenNoMatch(t *testing.T) {
 	srv := newTestServerWithLogBuffer(t, 100)
 
 	srv.logBuffer.Add(logging.BufferedEntry{
@@ -772,7 +772,7 @@ func TestHandleAgentLogs_EmptyWhenNoMatch(t *testing.T) {
 	})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/agents/atlassian/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -789,7 +789,7 @@ func TestHandleAgentLogs_EmptyWhenNoMatch(t *testing.T) {
 	}
 }
 
-func TestHandleAgentLogs_LinesParam(t *testing.T) {
+func TestHandleMCPServerLogs_LinesParam(t *testing.T) {
 	srv := newTestServerWithLogBuffer(t, 200)
 
 	for i := 0; i < 20; i++ {
@@ -801,7 +801,7 @@ func TestHandleAgentLogs_LinesParam(t *testing.T) {
 	}
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/agents/atlassian/logs?lines=5", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs?lines=5", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -818,11 +818,11 @@ func TestHandleAgentLogs_LinesParam(t *testing.T) {
 	}
 }
 
-func TestHandleAgentLogs_MethodNotAllowed(t *testing.T) {
+func TestHandleMCPServerLogs_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/agents/atlassian/logs", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mcp-servers/atlassian/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

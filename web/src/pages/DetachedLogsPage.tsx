@@ -18,7 +18,7 @@ import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
 import { LogLine, LevelFilter, parseLogEntry, type LogLevel, type ParsedLog } from '../components/log';
 import { ZoomControls } from '../components/ui/ZoomControls';
-import { fetchAgentLogs, fetchGatewayLogs, fetchStatus } from '../lib/api';
+import { fetchServerLogs, fetchGatewayLogs, fetchStatus } from '../lib/api';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useLogFontSize } from '../hooks/useLogFontSize';
 import { POLLING } from '../lib/constants';
@@ -149,7 +149,7 @@ function DetachedLogsPageContent() {
         const entries = await fetchGatewayLogs(500);
         setLogs((entries ?? []).map(parseLogEntry));
       } else {
-        const lines = await fetchAgentLogs(selectedAgent, 500);
+        const lines = await fetchServerLogs(selectedAgent, 500);
         setLogs((lines ?? []).map(parseLogEntry));
       }
       setError(null);

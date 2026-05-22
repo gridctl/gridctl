@@ -16,7 +16,7 @@ import (
 )
 
 // initializeStreamable sends an initialize request and returns the session ID.
-func initializeStreamable(t *testing.T, srv *StreamableHTTPServer, agentName string) string {
+func initializeStreamable(t *testing.T, srv *StreamableHTTPServer) string {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
@@ -28,9 +28,6 @@ func initializeStreamable(t *testing.T, srv *StreamableHTTPServer, agentName str
 		},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
-	if agentName != "" {
-		req.Header.Set("X-Agent-Name", agentName)
-	}
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -69,7 +66,7 @@ func streamablePost(t *testing.T, srv *StreamableHTTPServer, sessionID string, m
 
 func TestStreamableHTTPServer_Initialize(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	if len(sessionID) == 0 {
 		t.Error("expected non-empty session ID")
@@ -109,7 +106,7 @@ func TestStreamableHTTPServer_Initialize_SessionIDInHeader(t *testing.T) {
 
 func TestStreamableHTTPServer_Initialize_ParsesProtocolVersion(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	// Verify the session is tracked
 	ids := srv.SessionIDs()
@@ -184,7 +181,7 @@ func TestStreamableHTTPServer_Post_InvalidJSON(t *testing.T) {
 
 func TestStreamableHTTPServer_Ping(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	resp := streamablePost(t, srv, sessionID, "ping", nil)
 	if resp.Error != nil {
@@ -203,7 +200,7 @@ func TestStreamableHTTPServer_ToolsList(t *testing.T) {
 	g.Router().RefreshTools()
 
 	srv := NewStreamableHTTPServer(g, nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	resp := streamablePost(t, srv, sessionID, "tools/list", nil)
 	if resp.Error != nil {
@@ -231,7 +228,7 @@ func TestStreamableHTTPServer_ToolsCall(t *testing.T) {
 	g.Router().RefreshTools()
 
 	srv := NewStreamableHTTPServer(g, nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	params, _ := json.Marshal(ToolCallParams{Name: "server1__echo", Arguments: map[string]any{}})
 	body := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": json.RawMessage(params)}
@@ -259,7 +256,7 @@ func TestStreamableHTTPServer_ToolsCall(t *testing.T) {
 
 func TestStreamableHTTPServer_Delete(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
 	req.Header.Set("Mcp-Session-Id", sessionID)
@@ -301,7 +298,7 @@ func TestStreamableHTTPServer_Delete_UnknownSession(t *testing.T) {
 
 func TestStreamableHTTPServer_PostAfterDelete(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	// Delete the session
 	del := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
@@ -323,7 +320,7 @@ func TestStreamableHTTPServer_PostAfterDelete(t *testing.T) {
 
 func TestStreamableHTTPServer_Get_SSEHeaders(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
@@ -376,7 +373,7 @@ func TestStreamableHTTPServer_Get_UnknownSession(t *testing.T) {
 
 func TestStreamableHTTPServer_Get_LastEventID_Replay(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	// Manually look up the session and push some events
 	srv.mu.RLock()
@@ -510,12 +507,12 @@ func TestStreamableHTTPServer_SessionCount(t *testing.T) {
 		t.Errorf("expected 0 sessions initially, got %d", srv.SessionCount())
 	}
 
-	id1 := initializeStreamable(t, srv, "")
+	id1 := initializeStreamable(t, srv)
 	if srv.SessionCount() != 1 {
 		t.Errorf("expected 1 session, got %d", srv.SessionCount())
 	}
 
-	_ = initializeStreamable(t, srv, "")
+	_ = initializeStreamable(t, srv)
 	if srv.SessionCount() != 2 {
 		t.Errorf("expected 2 sessions, got %d", srv.SessionCount())
 	}
@@ -533,8 +530,8 @@ func TestStreamableHTTPServer_SessionCount(t *testing.T) {
 func TestStreamableHTTPServer_Close(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
 
-	initializeStreamable(t, srv, "")
-	initializeStreamable(t, srv, "")
+	initializeStreamable(t, srv)
+	initializeStreamable(t, srv)
 
 	if srv.SessionCount() != 2 {
 		t.Fatalf("expected 2 sessions before close, got %d", srv.SessionCount())
@@ -549,7 +546,7 @@ func TestStreamableHTTPServer_Close(t *testing.T) {
 
 func TestStreamableHTTPServer_Close_CancelsSSEStream(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -581,7 +578,7 @@ func TestStreamableHTTPServer_Close_CancelsSSEStream(t *testing.T) {
 
 func TestStreamableHTTPServer_NotificationsInitialized(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	resp := streamablePost(t, srv, sessionID, "notifications/initialized", nil)
 	if resp.Error != nil {
@@ -591,7 +588,7 @@ func TestStreamableHTTPServer_NotificationsInitialized(t *testing.T) {
 
 func TestStreamableHTTPServer_UnknownMethod(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	resp := streamablePost(t, srv, sessionID, "nonexistent/method", nil)
 	if resp.Error == nil {
@@ -604,7 +601,7 @@ func TestStreamableHTTPServer_UnknownMethod(t *testing.T) {
 
 func TestStreamableHTTPServer_Get_CancelCancelsOldStream(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	defer cancel1()
@@ -654,7 +651,7 @@ func TestStreamableHTTPServer_GatewaySessionCount(t *testing.T) {
 		t.Errorf("expected 0 gateway sessions initially, got %d", g.SessionCount())
 	}
 
-	id1 := initializeStreamable(t, srv, "")
+	id1 := initializeStreamable(t, srv)
 	if g.SessionCount() != 1 {
 		t.Errorf("expected 1 gateway session after initialize, got %d", g.SessionCount())
 	}
@@ -671,7 +668,7 @@ func TestStreamableHTTPServer_GatewaySessionCount(t *testing.T) {
 
 func TestStreamableHTTPServer_ToolsCall_InvalidParams(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":"invalid"}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
@@ -729,7 +726,7 @@ func setupStreamableWithRegistry(t *testing.T) (*StreamableHTTPServer, string) {
 	g.Router().AddClient(pp)
 
 	srv := NewStreamableHTTPServer(g, nil)
-	sessionID := initializeStreamable(t, srv, "")
+	sessionID := initializeStreamable(t, srv)
 	return srv, sessionID
 }
 

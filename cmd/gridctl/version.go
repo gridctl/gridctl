@@ -14,10 +14,6 @@ var (
 	date    = "unknown"
 )
 
-func init() {
-	rootCmd.AddCommand(versionCmd)
-}
-
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",

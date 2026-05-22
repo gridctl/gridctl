@@ -1255,8 +1255,8 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		// at zero healthy replicas, synchronously spawn one before retrying.
 		// Bounded here by the caller's context (tool-call timeout) rather than
 		// by a hard-coded deadline so long-spin containers can complete.
-		if agentName, _, parseErr := ParsePrefixedTool(params.Name); parseErr == nil {
-			if scaler := g.GetAutoscaler(agentName); scaler != nil {
+		if serverName, _, parseErr := ParsePrefixedTool(params.Name); parseErr == nil {
+			if scaler := g.GetAutoscaler(serverName); scaler != nil {
 				if cs := scaler.TriggerColdStart(ctx); cs == nil {
 					replica, toolName, err = g.router.RouteToolCallReplica(params.Name)
 				} else if err == nil {

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom';
 
 vi.mock('../lib/api', () => ({
-  fetchAgentLogs: vi.fn(),
+  fetchServerLogs: vi.fn(),
 }));
 
 vi.mock('../lib/constants', () => ({
@@ -19,7 +19,7 @@ vi.mock('../components/ui/IconButton', () => ({
 }));
 
 import { LogViewer } from '../components/ui/LogViewer';
-import { fetchAgentLogs } from '../lib/api';
+import { fetchServerLogs } from '../lib/api';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -27,19 +27,19 @@ beforeEach(() => {
 
 describe('LogViewer', () => {
   it('renders agent name in header', () => {
-    vi.mocked(fetchAgentLogs).mockReturnValue(new Promise(() => {}));
+    vi.mocked(fetchServerLogs).mockReturnValue(new Promise(() => {}));
     render(<LogViewer agentName="test-agent" onClose={vi.fn()} />);
     expect(screen.getByText('Logs: test-agent')).toBeInTheDocument();
   });
 
   it('shows loading state initially', () => {
-    vi.mocked(fetchAgentLogs).mockReturnValue(new Promise(() => {}));
+    vi.mocked(fetchServerLogs).mockReturnValue(new Promise(() => {}));
     render(<LogViewer agentName="test-agent" onClose={vi.fn()} />);
     expect(screen.getByText('Loading logs...')).toBeInTheDocument();
   });
 
   it('renders log entries after fetch', async () => {
-    vi.mocked(fetchAgentLogs).mockResolvedValue([
+    vi.mocked(fetchServerLogs).mockResolvedValue([
       'INFO starting server',
       'WARN slow query detected',
       'ERROR connection failed',
@@ -55,7 +55,7 @@ describe('LogViewer', () => {
   });
 
   it('shows empty state when no logs', async () => {
-    vi.mocked(fetchAgentLogs).mockResolvedValue([]);
+    vi.mocked(fetchServerLogs).mockResolvedValue([]);
     render(<LogViewer agentName="test-agent" onClose={vi.fn()} />);
 
     await waitFor(() => {
@@ -64,7 +64,7 @@ describe('LogViewer', () => {
   });
 
   it('shows error message on fetch failure', async () => {
-    vi.mocked(fetchAgentLogs).mockRejectedValue(new Error('Network error'));
+    vi.mocked(fetchServerLogs).mockRejectedValue(new Error('Network error'));
     render(<LogViewer agentName="test-agent" onClose={vi.fn()} />);
 
     await waitFor(() => {
@@ -73,7 +73,7 @@ describe('LogViewer', () => {
   });
 
   it('calls onClose when close button clicked', async () => {
-    vi.mocked(fetchAgentLogs).mockResolvedValue([]);
+    vi.mocked(fetchServerLogs).mockResolvedValue([]);
     const onClose = vi.fn();
     render(<LogViewer agentName="test-agent" onClose={onClose} />);
 
@@ -86,7 +86,7 @@ describe('LogViewer', () => {
   });
 
   it('toggles pause/resume', async () => {
-    vi.mocked(fetchAgentLogs).mockResolvedValue(['log line']);
+    vi.mocked(fetchServerLogs).mockResolvedValue(['log line']);
     render(<LogViewer agentName="test-agent" onClose={vi.fn()} />);
 
     await waitFor(() => {
@@ -98,31 +98,31 @@ describe('LogViewer', () => {
   });
 
   it('fetches logs with correct agent name and limit', async () => {
-    vi.mocked(fetchAgentLogs).mockResolvedValue([]);
+    vi.mocked(fetchServerLogs).mockResolvedValue([]);
     render(<LogViewer agentName="my-agent" onClose={vi.fn()} />);
 
     await waitFor(() => {
-      expect(fetchAgentLogs).toHaveBeenCalledWith('my-agent', 500);
+      expect(fetchServerLogs).toHaveBeenCalledWith('my-agent', 500);
     });
   });
 
   it('polls for new logs on interval', async () => {
     vi.useFakeTimers();
-    vi.mocked(fetchAgentLogs).mockResolvedValue(['initial log']);
+    vi.mocked(fetchServerLogs).mockResolvedValue(['initial log']);
 
     await act(async () => {
       render(<LogViewer agentName="test-agent" onClose={vi.fn()} />);
     });
 
     // Initial fetch
-    expect(fetchAgentLogs).toHaveBeenCalledTimes(1);
+    expect(fetchServerLogs).toHaveBeenCalledTimes(1);
 
     // Advance past one polling interval and flush promises
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
 
-    expect(fetchAgentLogs).toHaveBeenCalledTimes(2);
+    expect(fetchServerLogs).toHaveBeenCalledTimes(2);
 
     vi.useRealTimers();
   });

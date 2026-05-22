@@ -1117,7 +1117,7 @@ The gateway sets CORS headers based on `gateway.allowed_origins`:
 ```
 Access-Control-Allow-Origin: {origin}
 Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
-Access-Control-Allow-Headers: Content-Type, X-Agent-Name, Authorization
+Access-Control-Allow-Headers: Content-Type, Authorization
 Vary: Origin
 ```
 

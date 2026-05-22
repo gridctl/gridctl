@@ -101,7 +101,6 @@ func init() {
 	telemetryCmd.AddCommand(telemetryStatusCmd)
 	telemetryCmd.AddCommand(telemetryWipeCmd)
 	telemetryCmd.AddCommand(telemetryTailCmd)
-	rootCmd.AddCommand(telemetryCmd)
 }
 
 // stackInventory pairs a stack name with its inventory records so the CLI can

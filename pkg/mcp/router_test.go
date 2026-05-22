@@ -200,12 +200,12 @@ func TestRouter_RouteToolCall(t *testing.T) {
 	}
 }
 
-func TestRouter_RouteToolCall_UnknownAgent(t *testing.T) {
+func TestRouter_RouteToolCall_UnknownServer(t *testing.T) {
 	r := NewRouter()
 
 	_, _, err := r.RouteToolCall("unknown__tool1")
 	if err == nil {
-		t.Fatal("expected error for unknown agent")
+		t.Fatal("expected error for unknown server")
 	}
 }
 
@@ -220,32 +220,32 @@ func TestRouter_RouteToolCall_InvalidFormat(t *testing.T) {
 
 func TestPrefixTool(t *testing.T) {
 	tests := []struct {
-		agent    string
+		server   string
 		tool     string
 		expected string
 	}{
-		{"agent1", "tool1", "agent1__tool1"},
-		{"my-agent", "my-tool", "my-agent__my-tool"},
+		{"server1", "tool1", "server1__tool1"},
+		{"my-server", "my-tool", "my-server__my-tool"},
 		{"a", "b", "a__b"},
 	}
 
 	for _, tc := range tests {
-		got := PrefixTool(tc.agent, tc.tool)
+		got := PrefixTool(tc.server, tc.tool)
 		if got != tc.expected {
-			t.Errorf("PrefixTool(%s, %s) = %s, want %s", tc.agent, tc.tool, got, tc.expected)
+			t.Errorf("PrefixTool(%s, %s) = %s, want %s", tc.server, tc.tool, got, tc.expected)
 		}
 	}
 }
 
 func TestParsePrefixedTool(t *testing.T) {
 	tests := []struct {
-		input     string
-		wantAgent string
-		wantTool  string
-		wantErr   bool
+		input      string
+		wantServer string
+		wantTool   string
+		wantErr    bool
 	}{
-		{"agent1__tool1", "agent1", "tool1", false},
-		{"my-agent__my-tool", "my-agent", "my-tool", false},
+		{"server1__tool1", "server1", "tool1", false},
+		{"my-server__my-tool", "my-server", "my-tool", false},
 		{"a__b__c", "a", "b__c", false}, // SplitN with 2 preserves extra __
 		{"invalidformat", "", "", true},
 		{"single-dash", "", "", true},
@@ -254,14 +254,14 @@ func TestParsePrefixedTool(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		agent, tool, err := ParsePrefixedTool(tc.input)
+		server, tool, err := ParsePrefixedTool(tc.input)
 		if (err != nil) != tc.wantErr {
 			t.Errorf("ParsePrefixedTool(%s) error = %v, wantErr %v", tc.input, err, tc.wantErr)
 			continue
 		}
 		if !tc.wantErr {
-			if agent != tc.wantAgent {
-				t.Errorf("ParsePrefixedTool(%s) agent = %s, want %s", tc.input, agent, tc.wantAgent)
+			if server != tc.wantServer {
+				t.Errorf("ParsePrefixedTool(%s) server = %s, want %s", tc.input, server, tc.wantServer)
 			}
 			if tool != tc.wantTool {
 				t.Errorf("ParsePrefixedTool(%s) tool = %s, want %s", tc.input, tool, tc.wantTool)

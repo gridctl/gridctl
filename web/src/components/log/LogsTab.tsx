@@ -18,7 +18,7 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useSelectedNodeData } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useLogFontSize } from '../../hooks/useLogFontSize';
-import { fetchAgentLogs, fetchGatewayLogs } from '../../lib/api';
+import { fetchServerLogs, fetchGatewayLogs } from '../../lib/api';
 import { POLLING } from '../../lib/constants';
 import type { NodeData } from '../../types';
 
@@ -64,7 +64,7 @@ export function LogsTab() {
         const entries = await fetchGatewayLogs(500);
         setLogs((entries ?? []).map(parseLogEntry));
       } else if (agentName) {
-        const lines = await fetchAgentLogs(agentName, 500);
+        const lines = await fetchServerLogs(agentName, 500);
         setLogs((lines ?? []).map(parseLogEntry));
       }
       setError(null);

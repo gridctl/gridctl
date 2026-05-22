@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Pause, Play, ArrowDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { fetchAgentLogs } from '../../lib/api';
+import { fetchServerLogs } from '../../lib/api';
 import { POLLING } from '../../lib/constants';
 import { IconButton } from './IconButton';
 
@@ -21,7 +21,7 @@ export function LogViewer({ agentName, onClose }: LogViewerProps) {
 
   const fetchLogs = useCallback(async () => {
     try {
-      const newLogs = await fetchAgentLogs(agentName, 500);
+      const newLogs = await fetchServerLogs(agentName, 500);
       setLogs(newLogs);
       setError(null);
     } catch (err) {

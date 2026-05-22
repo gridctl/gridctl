@@ -34,10 +34,6 @@ If no stack name is provided, reloads all running stacks.`,
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(reloadCmd)
-}
-
 func reloadStack(name string) error {
 	// Try to find by stack name first
 	st, err := state.Load(name)
