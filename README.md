@@ -198,7 +198,6 @@ Learn more → [Skills guide](docs/skills.md)
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
-| [`multi-agent-skills.yaml`](examples/multi-agent/multi-agent-skills.yaml) | Multi-agent orchestrator handing off between skills |
 | [`vault-basic.yaml`](examples/secrets-vault/vault-basic.yaml) | Reference vault secrets with `${vault:KEY}` syntax |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 
