@@ -305,12 +305,13 @@ body::before {
   backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .node-glass:hover {
   border-color: var(--color-border);
-  box-shadow: var(--shadow-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--shadow-lg);
 }
 
 /* Primary variant (MCP servers) - Amber accent */
@@ -323,11 +324,13 @@ body::before {
   backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .node-glass-primary.selected {
   border-color: var(--color-primary);
   box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 0 0 1px var(--color-primary),
     var(--shadow-glow-primary),
     var(--shadow-lg);
@@ -343,11 +346,13 @@ body::before {
   backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .node-glass-secondary.selected {
   border-color: var(--color-secondary);
   box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 0 0 1px var(--color-secondary),
     var(--shadow-glow-secondary),
     var(--shadow-lg);
@@ -363,12 +368,13 @@ body::before {
   backdrop-filter: blur(20px);
   border: 1px solid rgba(245, 158, 11, 0.2);
   border-radius: 16px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--shadow-lg);
 }
 
 .node-gateway.selected {
   border-color: var(--color-primary);
   box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 0 0 2px var(--color-primary),
     var(--shadow-glow-primary),
     var(--shadow-lg);
@@ -594,6 +600,16 @@ body::before {
   border: 1px solid var(--glass-border);
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
+}
+
+/* Top-edge inset highlight — fakes light catching a beveled glass surface.
+   Compose with other shadows via comma separation. */
+.shadow-bevel {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.shadow-lg-bevel {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--shadow-lg);
 }
 
 /* ============================================

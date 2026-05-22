@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Database, Wrench, Zap, Radio, Monitor, Code, Library, ExternalLink } from 'lucide-react';
+import { Activity, Server, Database, Wrench, Radio, Monitor, Code, Library, ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -20,7 +20,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         'w-60 rounded-2xl',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
         'backdrop-blur-xl border border-border',
-        'shadow-lg transition-all duration-300 ease-out',
+        'shadow-lg-bevel transition-all duration-300 ease-out',
         selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
         !selected && 'hover:shadow-node-hover hover:border-primary/60'
       )}
@@ -52,8 +52,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {/* MCP Servers */}
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-              <Server size={12} className="text-primary/70" />
+            <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+              <Server size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
             </div>
             <span className="text-xs text-text-secondary font-medium">MCP Servers</span>
           </div>
@@ -66,8 +66,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {data.resourceCount > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Database size={12} className="text-primary/70" />
+              <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+                <Database size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Resources</span>
             </div>
@@ -81,8 +81,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {(data.sessions ?? 0) > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Radio size={12} className="text-primary/70" />
+              <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+                <Radio size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Sessions</span>
             </div>
@@ -96,8 +96,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {(data.clientCount ?? 0) > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Monitor size={12} className="text-primary/70" />
+              <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+                <Monitor size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Clients</span>
             </div>
@@ -110,8 +110,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {/* Tools */}
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-              <Wrench size={12} className="text-primary/70" />
+            <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+              <Wrench size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
             </div>
             <span className="text-xs text-text-secondary font-medium">Total Tools</span>
           </div>
@@ -128,8 +128,8 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             title="Open skills dashboard"
           >
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/15 transition-colors">
-                <Library size={12} className="text-primary/70" />
+              <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+                <Library size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Skills</span>
             </div>
@@ -156,7 +156,6 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             <StatusDot status="running" />
             Gateway Active
           </span>
-          <Zap size={14} className="text-primary animate-pulse" style={{ animationDuration: '2s' }} />
         </div>
       </div>
 
