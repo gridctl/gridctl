@@ -30,7 +30,6 @@ var (
 	applyFlash        bool
 	applyCodeMode     bool
 	applyLogFile      string
-	applyAgentDevRoot string
 )
 
 var applyCmd = &cobra.Command{
@@ -70,25 +69,23 @@ func init() {
 	applyCmd.Flags().BoolVar(&applyFlash, "flash", false, "Auto-link detected LLM clients after apply")
 	applyCmd.Flags().BoolVar(&applyCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools) (experimental)")
 	applyCmd.Flags().StringVar(&applyLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
-	applyCmd.Flags().StringVar(&applyAgentDevRoot, "agent-dev-root", "", "Project root for the Agent IDE dev server (defaults to ~/.gridctl/registry/skills if present)")
 }
 
 // runServeStackless starts the API server and web UI without a stack file.
 // Vault and wizard endpoints are active; stack-dependent endpoints return 503.
 func runServeStackless() error {
 	ctrl := controller.New(controller.Config{
-		Port:         applyPort,
-		Foreground:   applyForeground,
-		DaemonChild:  applyDaemonChild,
-		LogFile:      applyLogFile,
-		AgentDevRoot: applyAgentDevRoot,
+		Port:        applyPort,
+		Foreground:  applyForeground,
+		DaemonChild: applyDaemonChild,
+		LogFile:     applyLogFile,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
 
 	// Cancel ctx on SIGINT/SIGTERM so all ctx-bound goroutines in the gateway
-	// (health monitor, autoscaler, agent IDE watcher, file watcher) actually
-	// exit; without this the daemon child receives the signal but never exits.
+	// (health monitor, autoscaler, file watcher) actually exit; without this
+	// the daemon child receives the signal but never exits.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -97,20 +94,19 @@ func runServeStackless() error {
 
 func runApply(stackPath string) error {
 	ctrl := controller.New(controller.Config{
-		StackPath:    stackPath,
-		Port:         applyPort,
-		BasePort:     applyBasePort,
-		Verbose:      applyVerbose,
-		Quiet:        applyQuiet,
-		NoCache:      applyNoCache,
-		NoExpand:     applyNoExpand,
-		Foreground:   applyForeground,
-		Watch:        applyWatch,
-		DaemonChild:  applyDaemonChild,
-		CodeMode:     applyCodeMode,
-		Runtime:      runtimeFlag,
-		LogFile:      applyLogFile,
-		AgentDevRoot: applyAgentDevRoot,
+		StackPath:   stackPath,
+		Port:        applyPort,
+		BasePort:    applyBasePort,
+		Verbose:     applyVerbose,
+		Quiet:       applyQuiet,
+		NoCache:     applyNoCache,
+		NoExpand:    applyNoExpand,
+		Foreground:  applyForeground,
+		Watch:       applyWatch,
+		DaemonChild: applyDaemonChild,
+		CodeMode:    applyCodeMode,
+		Runtime:     runtimeFlag,
+		LogFile:     applyLogFile,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
