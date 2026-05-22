@@ -54,6 +54,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
       className={cn(
         'w-64 rounded-xl relative',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
+        'shadow-bevel',
         isServer
           ? 'bg-gradient-to-br from-surface/95 to-violet-500/[0.03] border-border'
           : 'bg-gradient-to-br from-surface/95 to-secondary/[0.02] border-border',
