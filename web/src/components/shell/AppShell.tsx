@@ -8,7 +8,6 @@ import { AuthPrompt } from '../auth/AuthPrompt';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ToastContainer } from '../ui/Toast';
-import { ApprovalBanner } from '../agent/ApprovalBanner';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useAuthStore } from '../../stores/useAuthStore';
@@ -16,8 +15,6 @@ import { usePolling } from '../../hooks/usePolling';
 import { useSSEShutdown } from '../../hooks/useSSEShutdown';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
-import { useGlobalRunsStream } from '../runs/useGlobalRunsStream';
-import { useRunsCommands } from '../runs/useRunsCommands';
 import { isWorkspace, type Workspace } from '../../types/workspace';
 import {
   LAST_WORKSPACE_GLOBAL_KEY,
@@ -99,9 +96,9 @@ function AppShellInner() {
     });
   }, []);
 
-  // Keyboard shortcuts. ⌘1/2/3/4 switch workspaces (Topology / Stage /
-  // Library / Runs); bottom-panel tab shortcuts were retired (tabs are
-  // still clickable in the panel).
+  // Keyboard shortcuts. ⌘1/2 switch workspaces (Topology / Library);
+  // bottom-panel tab shortcuts were retired (tabs are still clickable in
+  // the panel).
   useKeyboardShortcuts({
     onFitView: () => fitView({ padding: 0.2, duration: 300 }),
     onEscape: () => {
@@ -118,12 +115,6 @@ function AppShellInner() {
   });
 
   useGlobalCommands({ onRefresh: handleRefresh });
-
-  // Keep the global run-events stream open across every workspace so
-  // the BottomPanel "Runs" tab + in-flight badge stay live when the
-  // user is sitting on /topology or /skills.
-  useGlobalRunsStream();
-  useRunsCommands();
 
   const bottomRowHeight = bottomPanelOpen ? bottomPanelHeight : BOTTOM_PANEL_COLLAPSED;
 
@@ -143,8 +134,6 @@ function AppShellInner() {
           Gateway is shutting down...
         </div>
       )}
-
-      <ApprovalBanner />
 
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
@@ -177,7 +166,7 @@ function AppShellInner() {
   );
 }
 
-// AppShell is the parent route for the three workspaces. It owns the
+// AppShell is the parent route for the two workspaces. It owns the
 // ReactFlowProvider so workspace canvases (and shell-level hooks like
 // useGlobalCommands, which calls useReactFlow) share a single instance.
 export function AppShell() {

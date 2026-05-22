@@ -12,7 +12,6 @@ import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Lay
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
-import { usePlaygroundStore } from '../../stores/usePlaygroundStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { COLORS } from '../../lib/constants';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
@@ -48,8 +47,6 @@ export function Canvas() {
   const toggleWiringMode = useUIStore((s) => s.toggleWiringMode);
   const showSecretHeatmap = useUIStore((s) => s.showSecretHeatmap);
   const toggleSecretHeatmap = useUIStore((s) => s.toggleSecretHeatmap);
-  const agentIsThinking = usePlaygroundStore((s) => s.agentIsThinking);
-  const activeToolCallEdges = usePlaygroundStore((s) => s.activeToolCallEdges);
 
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -80,74 +77,34 @@ export function Canvas() {
     },
   }), [edgeStyle]);
 
-  // Apply highlighting classes and playground animation state to nodes
+  // Apply highlighting classes to nodes based on the selected agent's path.
   const styledNodes = useMemo(() => {
-    const hasPlaygroundActivity = agentIsThinking || activeToolCallEdges.size > 0;
-    if (!highlightState.hasSelection && !hasPlaygroundActivity) return nodes ?? [];
+    if (!highlightState.hasSelection) return nodes ?? [];
+    return (nodes ?? []).map((node) => ({
+      ...node,
+      className: cn(
+        node.className,
+        highlightState.highlightedNodeIds.has(node.id) ? 'highlighted' : 'dimmed'
+      ),
+    }));
+  }, [nodes, highlightState]);
 
-    return (nodes ?? []).map((node) => {
-      const nodeData = node.data as { type?: string; name?: string };
-      let updatedData = node.data;
-
-      if (nodeData.type === 'mcp-server') {
-        updatedData = { ...updatedData, isProcessing: activeToolCallEdges.has(nodeData.name ?? '') };
-      }
-
-      const base = updatedData !== node.data ? { ...node, data: updatedData } : node;
-
-      if (!highlightState.hasSelection) return base;
-
-      return {
-        ...base,
-        className: cn(
-          node.className,
-          highlightState.highlightedNodeIds.has(node.id) ? 'highlighted' : 'dimmed'
-        ),
-      };
-    });
-  }, [nodes, highlightState, agentIsThinking, activeToolCallEdges]);
-
-  // Apply highlighting classes and playground animation to edges
+  // Apply highlighting classes to edges.
   // Uses edges (Agent → Server) are always hidden - we show the path through Gateway instead
   const styledEdges = useMemo(() => {
     return (edges ?? []).map((edge) => {
       const edgeData = edge.data as { isUsesEdge?: boolean } | undefined;
-      const isUsesEdge = edgeData?.isUsesEdge;
-
-      // Always hide uses edges - path is shown via Gateway highlighting
-      if (isUsesEdge) {
-        return {
-          ...edge,
-          className: 'hidden',
-        };
+      if (edgeData?.isUsesEdge) {
+        return { ...edge, className: 'hidden' };
       }
-
-      // Animate edges to servers with active tool calls
-      // Gateway→server edge IDs follow: edge-gateway-mcp-${serverName}
-      let isAnimated = false;
-      if (activeToolCallEdges.size > 0) {
-        for (const serverName of activeToolCallEdges) {
-          if (edge.id === `edge-gateway-mcp-${serverName}`) {
-            isAnimated = true;
-            break;
-          }
-        }
-      }
-
-      // No selection: show edges with animation applied
-      if (!highlightState.hasSelection) {
-        return isAnimated ? { ...edge, animated: true } : edge;
-      }
-
-      // With selection: highlight the path, dim everything else
+      if (!highlightState.hasSelection) return edge;
       const isHighlighted = highlightState.highlightedEdgeIds.has(edge.id);
       return {
         ...edge,
-        animated: isAnimated,
         className: cn(edge.className, isHighlighted ? 'highlighted' : 'dimmed'),
       };
     });
-  }, [edges, highlightState, activeToolCallEdges]);
+  }, [edges, highlightState]);
 
   // Handle node selection
   const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string }) => {

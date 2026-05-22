@@ -12,9 +12,9 @@ const SIDEBAR_MIN = 280;
 const SIDEBAR_MAX = 600;
 
 // Topology workspace body: canvas, loading/error overlays, and the right-rail
-// inspector. Rendered inside <AppShell>'s <main> outlet. Layout mirrors
-// SkillsWorkspace: a CSS grid with a canvas column and a collapsible inspector
-// column (0px when closed) so switching workspaces doesn't shift the canvas.
+// inspector. Rendered inside <AppShell>'s <main> outlet. CSS grid: a canvas
+// column plus a collapsible inspector column (0px when closed) so switching
+// workspaces doesn't shift the canvas.
 export function TopologyWorkspace() {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
 
