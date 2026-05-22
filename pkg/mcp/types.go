@@ -292,10 +292,7 @@ type ToolCallResult struct {
 	// Usage in memory only.
 	Usage *CallUsage `json:"-"`
 
-	// Meta is the MCP-spec extension point on result objects. The
-	// gateway populates Meta["run_id"] when a typed-skill call is
-	// persisted to the on-disk ledger so external MCP clients have a
-	// handle for resume / approval / trace inspection. Other keyed
+	// Meta is the MCP-spec extension point on result objects. Keyed
 	// extensions (usage, drift signals) can land here as the wire
 	// shape stabilises.
 	Meta map[string]any `json:"_meta,omitempty"`

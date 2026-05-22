@@ -704,10 +704,6 @@ func detectExpensiveModelOnCheapTask(stats Stats, now time.Time) []Finding {
 	return out
 }
 
-// detectUnboundedLoop flags agent runs whose graph re-entered a single
-// node enough times to suggest the runtime got stuck. The threshold
-// (unboundedLoopRevisitThreshold) is set high enough that legitimate
-// iterative workflows pass — only runs in the "tool-call retry storm"
 func schemaOverheadImpact(schemaTokens int, usage ServerUsage) float64 {
 	rate := estimatedInputUSDPerToken
 	if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {

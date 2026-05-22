@@ -1,14 +1,12 @@
 # Skills Registry Stack
 #
 # Demonstrates the skills registry alongside MCP servers.
-# Skills defined in ~/.gridctl/registry/skills/ are exposed as MCP prompts
-# (and as MCP tools if they have a workflow block).
+# Skills defined in ~/.gridctl/registry/skills/ are exposed as MCP prompts.
 #
 # Usage:
 #   gridctl apply examples/getting-started/skills-basic.yaml
 #   gridctl skill list
 #   gridctl activate my-skill
-#   gridctl test my-skill
 
 version: "1"
 name: skills-demo
