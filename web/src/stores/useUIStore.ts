@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 import { WORKSPACES, type Workspace } from '../types/workspace';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
-type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces' | 'runs' | 'pins';
+type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces' | 'pins';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
 
 // Cross-workspace shell state. Lives on useUIStore via the Zustand slices
@@ -24,16 +24,13 @@ export const createWorkspaceSlice: StateCreator<
   setActiveWorkspace: (activeWorkspace) => set({ activeWorkspace }),
 });
 
-// Compact Mode is workspace-scoped — Skills wants density by default so the
-// three-pane IDE doesn't compete with the shell chrome for real estate;
-// Topology and Runs prefer roomier defaults.
+// Compact Mode is workspace-scoped — both workspaces default to roomier
+// layouts; flip per-workspace via toggleCompactMode.
 export type CompactModeMap = Record<Workspace, boolean>;
 
 export const COMPACT_MODE_DEFAULTS: CompactModeMap = {
   topology: false,
-  skills: true,
   library: false,
-  runs: false,
 };
 
 export interface CompactModeSlice {
@@ -57,30 +54,9 @@ export const createCompactModeSlice: StateCreator<
     })),
 });
 
-// Global toggle for the AppShell-level SSE runs stream. Lives here so both the
-// BottomPanel header toggle and the StatusBar chip share a single source of
-// truth — flipping one updates the other instantly via the store.
-export interface RunsStreamSlice {
-  runsStreamEnabled: boolean;
-  setRunsStreamEnabled: (enabled: boolean) => void;
-  toggleRunsStreamEnabled: () => void;
-}
-
-export const createRunsStreamSlice: StateCreator<
-  UIState,
-  [['zustand/persist', unknown]],
-  [],
-  RunsStreamSlice
-> = (set) => ({
-  runsStreamEnabled: true,
-  setRunsStreamEnabled: (runsStreamEnabled) => set({ runsStreamEnabled }),
-  toggleRunsStreamEnabled: () =>
-    set((s) => ({ runsStreamEnabled: !s.runsStreamEnabled })),
-});
-
-// Persisted shape may drift from the canonical {topology, skills, runs} keys
-// across versions — coerce so a stale localStorage payload never leaves a
-// workspace with `undefined` compact state at boot.
+// Persisted shape may drift from the canonical workspace keys across versions
+// — coerce so a stale localStorage payload never leaves a workspace with
+// `undefined` compact state at boot.
 function normalizeCompactMode(raw: unknown): CompactModeMap {
   const out = { ...COMPACT_MODE_DEFAULTS };
   if (raw && typeof raw === 'object') {
@@ -92,7 +68,7 @@ function normalizeCompactMode(raw: unknown): CompactModeMap {
   return out;
 }
 
-interface UIState extends WorkspaceSlice, CompactModeSlice, RunsStreamSlice {
+interface UIState extends WorkspaceSlice, CompactModeSlice {
   sidebarOpen: boolean;
   activeTab: SidebarTab;
   edgeStyle: EdgeStyle;
@@ -175,7 +151,6 @@ export const useUIStore = create<UIState>()(
     (set, get, store) => ({
       ...createWorkspaceSlice(set, get, store),
       ...createCompactModeSlice(set, get, store),
-      ...createRunsStreamSlice(set, get, store),
       sidebarOpen: false,
       activeTab: 'details',
       edgeStyle: 'default', // Bezier curves
@@ -267,7 +242,6 @@ export const useUIStore = create<UIState>()(
         edgeStyle: state.edgeStyle,
         compactCards: state.compactCards,
         compactMode: state.compactMode,
-        runsStreamEnabled: state.runsStreamEnabled,
       }),
       merge: (persisted, current) => ({
         ...current,

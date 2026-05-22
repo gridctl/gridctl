@@ -15,14 +15,14 @@ describe('useUIStore workspace slice', () => {
   it('setActiveWorkspace updates state', () => {
     const { result } = renderHook(() => useUIStore((s) => s.activeWorkspace));
     act(() => {
-      useUIStore.getState().setActiveWorkspace('skills');
+      useUIStore.getState().setActiveWorkspace('library');
     });
-    expect(result.current).toBe('skills');
+    expect(result.current).toBe('library');
   });
 
   it('setActiveWorkspace cycles through every workspace', () => {
     const { result } = renderHook(() => useUIStore((s) => s.activeWorkspace));
-    for (const ws of ['topology', 'skills', 'library', 'runs'] as const) {
+    for (const ws of ['topology', 'library'] as const) {
       act(() => {
         useUIStore.getState().setActiveWorkspace(ws);
       });
@@ -36,12 +36,10 @@ describe('useUIStore compact mode slice', () => {
     useUIStore.setState({ compactMode: { ...COMPACT_MODE_DEFAULTS } });
   });
 
-  it('defaults compactMode to skills-on, others-off', () => {
+  it('defaults compactMode to all-off', () => {
     const state = useUIStore.getState();
-    expect(state.compactMode.skills).toBe(true);
     expect(state.compactMode.topology).toBe(false);
     expect(state.compactMode.library).toBe(false);
-    expect(state.compactMode.runs).toBe(false);
   });
 
   it('setCompactMode updates a single workspace without touching the others', () => {
@@ -50,9 +48,7 @@ describe('useUIStore compact mode slice', () => {
     });
     const state = useUIStore.getState();
     expect(state.compactMode.topology).toBe(true);
-    expect(state.compactMode.skills).toBe(true);
     expect(state.compactMode.library).toBe(false);
-    expect(state.compactMode.runs).toBe(false);
   });
 
   it('toggleCompactMode flips only the targeted workspace', () => {
@@ -64,8 +60,6 @@ describe('useUIStore compact mode slice', () => {
       useUIStore.getState().toggleCompactMode('library');
     });
     expect(useUIStore.getState().compactMode.library).toBe(false);
-    // Other workspaces unaffected.
     expect(useUIStore.getState().compactMode.topology).toBe(false);
-    expect(useUIStore.getState().compactMode.skills).toBe(true);
   });
 });

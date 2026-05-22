@@ -2,7 +2,6 @@ import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/shell/AppShell';
 import { RootRedirect } from './components/shell/RootRedirect';
-import { AgentRedirect } from './components/shell/AgentRedirect';
 import { WorkspaceLoadingShell } from './components/shell/WorkspaceLoadingShell';
 import { DetachedLogsPage } from './pages/DetachedLogsPage';
 import { DetachedSidebarPage } from './pages/DetachedSidebarPage';
@@ -14,10 +13,7 @@ import { DetachedTracesPage } from './pages/DetachedTracesPage';
 
 // Each workspace is code-split into its own chunk.
 const TopologyWorkspace = lazy(() => import('./components/workspaces/TopologyWorkspace'));
-const SkillsWorkspace = lazy(() => import('./components/workspaces/SkillsWorkspace'));
 const LibraryWorkspace = lazy(() => import('./components/workspaces/LibraryWorkspace'));
-const RunsWorkspace = lazy(() => import('./components/workspaces/RunsWorkspace'));
-const RunDetailWorkspace = lazy(() => import('./components/workspaces/RunDetailWorkspace'));
 
 export function AppRoutes() {
   return (
@@ -30,14 +26,6 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<WorkspaceLoadingShell />}>
               <TopologyWorkspace />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/skills"
-          element={
-            <Suspense fallback={<WorkspaceLoadingShell />}>
-              <SkillsWorkspace />
             </Suspense>
           }
         />
@@ -60,29 +48,17 @@ export function AppRoutes() {
             </Suspense>
           }
         />
-        <Route
-          path="/runs"
-          element={
-            <Suspense fallback={<WorkspaceLoadingShell />}>
-              <RunsWorkspace />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/runs/:runID"
-          element={
-            <Suspense fallback={<WorkspaceLoadingShell />}>
-              <RunDetailWorkspace />
-            </Suspense>
-          }
-        />
       </Route>
 
       {/* Root redirect — chooses a workspace based on stack + storage. */}
       <Route path="/" element={<RootRedirect />} />
 
-      {/* /agent permanently redirects to /skills, preserving query/hash. */}
-      <Route path="/agent" element={<AgentRedirect />} />
+      {/* Bookmark redirects for the workspaces removed when the agent runtime
+          was retired. Keep through v1.0 so existing links don't 404. */}
+      <Route path="/skills" element={<Navigate to="/library" replace />} />
+      <Route path="/runs" element={<Navigate to="/library" replace />} />
+      <Route path="/runs/:runID" element={<Navigate to="/library" replace />} />
+      <Route path="/agent" element={<Navigate to="/library" replace />} />
 
       {/* Detached windows stay frameless — outside AppShell on purpose. */}
       <Route path="/logs" element={<DetachedLogsPage />} />

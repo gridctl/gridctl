@@ -3,7 +3,6 @@ import { useReactFlow } from '@xyflow/react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
-  Code,
   Key,
   Library,
   Terminal,
@@ -21,7 +20,6 @@ import {
   FileCode,
   Plus,
   PanelBottom,
-  Workflow,
   Compass,
 } from 'lucide-react';
 import { useCommandRegistry } from './useCommandRegistry';
@@ -73,31 +71,13 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         onSelect: () => navigate('/topology'),
       },
       {
-        id: 'navigate:workspace-skills',
-        label: 'Go to Stage',
-        section: 'global',
-        icon: <Code size={14} />,
-        shortcut: ['⌘', '2'],
-        keywords: ['stage', 'skills', 'workspace', 'agent', 'ide', 'developer', 'go'],
-        onSelect: () => navigate('/skills'),
-      },
-      {
         id: 'navigate:workspace-library',
         label: 'Go to Library',
         section: 'global',
         icon: <Library size={14} />,
-        shortcut: ['⌘', '3'],
+        shortcut: ['⌘', '2'],
         keywords: ['library', 'workspace', 'registry', 'catalog', 'skills', 'go'],
         onSelect: () => navigate('/library'),
-      },
-      {
-        id: 'navigate:workspace-runs',
-        label: 'Go to Runs',
-        section: 'global',
-        icon: <Workflow size={14} />,
-        shortcut: ['⌘', '4'],
-        keywords: ['runs', 'workspace', 'executions', 'traces', 'observability', 'go'],
-        onSelect: () => navigate('/runs'),
       },
       {
         id: 'navigate:canvas',

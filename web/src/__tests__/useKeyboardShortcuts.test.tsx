@@ -16,28 +16,19 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     expect(onSwitchToWorkspace).toHaveBeenCalledWith('topology');
   });
 
-  it('⌘2 calls onSwitchToWorkspace with "skills"', () => {
+  it('⌘2 calls onSwitchToWorkspace with "library"', () => {
     const onSwitchToWorkspace = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
     fireMod('2');
     expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
-    expect(onSwitchToWorkspace).toHaveBeenCalledWith('skills');
-  });
-
-  it('⌘3 calls onSwitchToWorkspace with "library"', () => {
-    const onSwitchToWorkspace = vi.fn();
-    renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
-    fireMod('3');
-    expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
     expect(onSwitchToWorkspace).toHaveBeenCalledWith('library');
   });
 
-  it('⌘4 calls onSwitchToWorkspace with "runs"', () => {
+  it('⌘3 is not bound to any workspace', () => {
     const onSwitchToWorkspace = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
-    fireMod('4');
-    expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
-    expect(onSwitchToWorkspace).toHaveBeenCalledWith('runs');
+    fireMod('3');
+    expect(onSwitchToWorkspace).not.toHaveBeenCalled();
   });
 
   it('does not fire workspace shortcuts when focus is inside an input', () => {
