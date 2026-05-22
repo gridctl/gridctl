@@ -50,6 +50,7 @@ const SkillGroupNode = memo(({ data, selected }: SkillGroupNodeProps) => {
           'w-44 rounded-xl relative',
           'backdrop-blur-xl border transition-all duration-200 ease-out',
           'bg-gradient-to-b from-surface/95 via-surface/90 to-tertiary/[0.03]',
+          'shadow-bevel',
           'flex items-center px-2.5 gap-2',
           selected && 'border-tertiary shadow-glow-tertiary ring-2 ring-tertiary/20',
           !selected && 'border-border hover:shadow-node-hover hover:border-tertiary-light/60'
@@ -87,6 +88,7 @@ const SkillGroupNode = memo(({ data, selected }: SkillGroupNodeProps) => {
         'w-44 rounded-xl relative',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-tertiary/[0.03]',
+        'shadow-bevel',
         'flex flex-col items-center justify-center text-center p-3 gap-1.5',
         selected && 'border-tertiary shadow-glow-tertiary ring-2 ring-tertiary/20',
         !selected && 'border-tertiary/25 hover:shadow-node-hover hover:border-tertiary/40'
