@@ -4,6 +4,55 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Removed
+
+- **Agent runtime surface removed.** gridctl 0.1.x retires the typed-skill
+  execution layer (TS goja sandbox, Go plugins, run ledger, approval gates,
+  agent IDE) and refocuses on its MCP-gateway-with-skill-library niche.
+  Specifically removed:
+  - **CLI subcommands**: `gridctl agent {init,dev,build,validate}`,
+    `gridctl run`, `gridctl runs {list,inspect,trace,resume,approve}`.
+  - **REST endpoints**: `/api/agent/*` (dev server, runs, watcher SSE) and
+    `/api/playground/*`.
+  - **UI workspaces**: Stage (`/skills`), Runs (`/runs`, `/runs/:id`), and
+    the Playground tab. `/skills`, `/runs`, `/runs/:id`, and `/agent` now
+    redirect to `/library`.
+  - **Typed-skill flavors**: TS handlers (`skill.ts` + `agent.json`) and Go
+    plugins (`skill.go` + `dist/skill.so`). Skills are now served
+    exclusively as MCP prompts; the file-presence discriminator is gone
+    because there is only one flavor.
+- **Go packages removed**: `pkg/agent/` in its entirety (orchestrator,
+  runtime, sandbox, persist, dev, skill SDK, internal/eino, llm provider
+  abstraction). `pkg/optimize/` heuristics that read the run ledger are
+  also gone; `pkg/optimize/` itself stays.
+
+### Changed
+
+- **UI reduced from 4 workspaces to 2.** Topology (`⌘1`) and Library (`⌘2`)
+  are the only top-nav workspaces; the Stage and Runs pills, the
+  bottom-panel Runs tab, and the StatusBar's Live/Paused chip are gone.
+- **`navigate:workspace-library` command palette entry rebound** from `⌘3`
+  to `⌘2` to match the new shortcut layout.
+- **Documentation rewritten** to match: `docs/skills.md` drops every
+  TS/Go/sandbox/agent-IDE section and reframes around prompt-only skills +
+  the Library workspace + the MCP-prompt serving model. `docs/cli-reference.md`
+  loses the Skills-authoring and Runs tables. `README.md`'s one-liner shifts
+  from "MCP servers and Agent Skills" to "MCP gateway with built-in skill
+  library"; the "Skills (Early Access)" and "Visual Agent IDE" feature
+  blocks are replaced with a single Skill Library section. `AGENTS.md` is
+  removed (pre-1.0 working notes; no replacement).
+
+### Migration
+
+- Bookmarks for `/skills`, `/runs`, `/runs/:id`, and `/agent` now redirect
+  to `/library` silently — no error toast, no 404.
+- Callers of the typed-skill CLI (`gridctl agent dev`, `gridctl run`,
+  `gridctl runs *`) and the `/api/agent/*` / `/api/playground/*` REST
+  surfaces need to migrate to an external agent runtime (LangGraph,
+  CrewAI, AutoGen, OpenAI Agents SDK) and use gridctl underneath as the
+  MCP gateway. Skills authored as prompt-only `SKILL.md` files surface to
+  upstream MCP clients unchanged.
+
 ### Breaking
 
 - **`gridctl vault` renamed to `gridctl var`.** The unified variable store
