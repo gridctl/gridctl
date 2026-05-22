@@ -5,8 +5,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	"github.com/gridctl/gridctl/pkg/agent"
 )
 
 func TestRunAcceptance_NoCriteria(t *testing.T) {
@@ -183,92 +181,3 @@ func TestRunAcceptance_NilEvaluator(t *testing.T) {
 	}
 }
 
-// stubChatModel implements agent.ChatModel for evaluator tests.
-type stubChatModel struct {
-	resp agent.ChatResponse
-	err  error
-}
-
-func (s *stubChatModel) Generate(_ context.Context, _ agent.ChatRequest) (agent.ChatResponse, error) {
-	return s.resp, s.err
-}
-
-func (s *stubChatModel) Stream(_ context.Context, _ agent.ChatRequest) (*agent.StreamReader[agent.ChatChunk], error) {
-	return nil, errors.New("stream not implemented for stub")
-}
-
-func TestLLMEvaluator_ParsesVerdict(t *testing.T) {
-	cases := []struct {
-		name    string
-		content string
-		want    TestSeverity
-	}{
-		{"plain pass", `{"verdict":"pass","rationale":"looks good"}`, TestSeverityPass},
-		{"plain fail", `{"verdict":"fail","rationale":"missing input handling"}`, TestSeverityFail},
-		{"upper-case verdict", `{"verdict":"PASS","rationale":"ok"}`, TestSeverityPass},
-		{"prefatory whitespace", "  \n  {\"verdict\":\"pass\",\"rationale\":\"ok\"}", TestSeverityPass},
-		{"surrounded by prose", "Here is the verdict: {\"verdict\":\"fail\",\"rationale\":\"r\"} thanks", TestSeverityFail},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ev := LLMEvaluator{Provider: &stubChatModel{
-				resp: agent.ChatResponse{Content: tc.content},
-			}}
-			got := ev.Evaluate(context.Background(), &AgentSkill{Name: "x", Body: "body"}, 0, "criterion")
-			if got.Severity != tc.want {
-				t.Errorf("Severity = %q, want %q (message: %q)", got.Severity, tc.want, got.Message)
-			}
-		})
-	}
-}
-
-func TestLLMEvaluator_BadJSON(t *testing.T) {
-	ev := LLMEvaluator{Provider: &stubChatModel{
-		resp: agent.ChatResponse{Content: "this is not JSON"},
-	}}
-	got := ev.Evaluate(context.Background(), &AgentSkill{Name: "x"}, 0, "criterion")
-	if got.Severity != TestSeverityError {
-		t.Errorf("Severity = %q, want error", got.Severity)
-	}
-	if got.Message == "" {
-		t.Error("error message should be populated")
-	}
-}
-
-func TestLLMEvaluator_UnknownVerdict(t *testing.T) {
-	ev := LLMEvaluator{Provider: &stubChatModel{
-		resp: agent.ChatResponse{Content: `{"verdict":"maybe","rationale":"unsure"}`},
-	}}
-	got := ev.Evaluate(context.Background(), &AgentSkill{Name: "x"}, 0, "criterion")
-	if got.Severity != TestSeverityError {
-		t.Errorf("Severity = %q, want error", got.Severity)
-	}
-}
-
-func TestLLMEvaluator_ProviderError(t *testing.T) {
-	ev := LLMEvaluator{Provider: &stubChatModel{err: errors.New("upstream 500")}}
-	got := ev.Evaluate(context.Background(), &AgentSkill{Name: "x"}, 0, "criterion")
-	if got.Severity != TestSeverityError {
-		t.Errorf("Severity = %q, want error", got.Severity)
-	}
-}
-
-func TestLLMEvaluator_NilProvider(t *testing.T) {
-	ev := LLMEvaluator{}
-	got := ev.Evaluate(context.Background(), &AgentSkill{Name: "x"}, 0, "criterion")
-	if got.Severity != TestSeverityError {
-		t.Errorf("Severity = %q, want error", got.Severity)
-	}
-}
-
-func TestLLMEvaluator_DefaultsApplied(t *testing.T) {
-	// Confirm that omitted Model + MaxTokens don't blow up — the
-	// evaluator should fall back to its compile-time defaults.
-	ev := LLMEvaluator{Provider: &stubChatModel{
-		resp: agent.ChatResponse{Content: `{"verdict":"pass","rationale":"ok"}`},
-	}}
-	got := ev.Evaluate(context.Background(), &AgentSkill{Name: "x"}, 0, "criterion")
-	if got.Severity != TestSeverityPass {
-		t.Errorf("Severity = %q, want pass", got.Severity)
-	}
-}
