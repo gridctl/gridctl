@@ -204,62 +204,6 @@ type Stats struct {
 	// causes expensive_model_on_cheap_task to fall back to inferring
 	// the rate from observed cost÷tokens.
 	ModelStats map[string]ModelStat
-
-	// RunStats are per-run aggregates derived from the agent runtime's
-	// JSONL ledger. Populated by callers that have access to a
-	// pkg/agent/persist.Store. nil disables the agent-runtime heuristics
-	// (unbounded_loop, oversized_prompt, untyped_handoff) silently —
-	// without run data we have nothing to reason about.
-	RunStats []RunStat
-}
-
-// RunStat is the per-run summary the agent-runtime heuristics
-// (unbounded_loop, oversized_prompt, untyped_handoff) read from. It is
-// derived from the JSONL ledger written by pkg/agent/persist; the
-// callers in internal/api/optimize.go aggregate raw events into this
-// shape so optimize stays free of an import on pkg/agent/persist.
-type RunStat struct {
-	// RunID is the run identifier; surfaced in finding IDs and summaries.
-	RunID string
-
-	// Skill is the unprefixed skill name the run was launched against.
-	// Empty for ad-hoc graphs with no registered skill.
-	Skill string
-
-	// MaxNodeRevisits is the largest number of times any single node
-	// was re-entered in this run. A value of 1 means every node was
-	// entered exactly once (the typical case). The unbounded_loop
-	// heuristic flags runs where this exceeds a threshold.
-	MaxNodeRevisits int
-
-	// HotNodeID is the node_id whose entry count equals MaxNodeRevisits.
-	// Used in the finding's summary so the user knows which call site
-	// to inspect first.
-	HotNodeID string
-
-	// MaxPromptTokens is the largest input-token count observed across
-	// every llm_call in the run. The oversized_prompt heuristic flags
-	// runs where this exceeds a threshold.
-	MaxPromptTokens int
-
-	// HotModel is the model whose llm_call carried MaxPromptTokens. Used
-	// in the finding's summary so the user can correlate the spike with
-	// the provider's context window.
-	HotModel string
-
-	// UntypedHandoffs is the count of handoffs (child runs with a
-	// non-empty ParentRunID) whose run_started payload carried no
-	// structured metadata (Flavor empty AND InputDigest empty). Without
-	// either the runtime cannot validate cross-flavor input shapes or
-	// dedupe identical inputs across resumes — both signals the typed
-	// SDK was bypassed.
-	UntypedHandoffs int
-
-	// ChildHandoffs is the total count of child runs (non-empty
-	// ParentRunID) recorded under this run, typed or not. Used as the
-	// denominator in the untyped_handoff finding's summary so the user
-	// sees the ratio rather than just an absolute count.
-	ChildHandoffs int
 }
 
 // PinStat carries the schema-overhead inputs for a single server. The
@@ -402,36 +346,6 @@ const (
 	// single outlier call. Five calls is enough to be a pattern; less
 	// than that is anecdote.
 	expensiveModelMinCalls = 5
-
-	// unboundedLoopRevisitThreshold flags any run where a single node
-	// was entered this many times or more. A value of 20 catches the
-	// "agent stuck in a tool-call retry loop" pattern (typically <10
-	// retries are intentional) without firing on legitimate iterative
-	// workflows that re-enter a step a handful of times. The threshold
-	// is conservative on purpose: false positives erode trust in the
-	// heuristic faster than missing edge cases.
-	unboundedLoopRevisitThreshold = 20
-
-	// oversizedPromptTokenThreshold flags any llm_call whose input
-	// token count meets or exceeds this number. ~100k tokens is half
-	// the context window of even the largest current frontier models;
-	// crossing it is a strong signal the prompt could be trimmed
-	// (RAG-style chunking, summarization, or a smaller model swap)
-	// before the call hits the wall.
-	oversizedPromptTokenThreshold = 100_000
-
-	// untypedHandoffMinChildren keeps untyped_handoff silent on runs
-	// with only a handful of child runs — a single untyped fixture
-	// handoff in a small run is noise, not a pattern. Three or more
-	// children let the ratio (untyped / total) carry meaning.
-	untypedHandoffMinChildren = 3
-
-	// untypedHandoffRatioFloor flags runs where the untyped fraction
-	// of handoffs meets or exceeds 50%. Below this threshold the run
-	// is mostly typed and the few untyped calls may be deliberate
-	// (TS-side ad-hoc tool invocations, debug fixtures) rather than
-	// architectural drift.
-	untypedHandoffRatioFloor = 0.5
 )
 
 // Analyze runs the v1 heuristic pass over the supplied Stats and
@@ -478,9 +392,6 @@ func Analyze(stats Stats, opts Options) OptimizeReport {
 	findings = append(findings, detectSchemaOverhead(stats, now)...)
 	findings = append(findings, detectFormatSavingsShortfall(stats, now)...)
 	findings = append(findings, detectExpensiveModelOnCheapTask(stats, now)...)
-	findings = append(findings, detectUnboundedLoop(stats, now)...)
-	findings = append(findings, detectOversizedPrompt(stats, now)...)
-	findings = append(findings, detectUntypedHandoff(stats, now)...)
 
 	if opts.MinImpactUSDPerWeek > 0 {
 		findings = filterByImpact(findings, opts.MinImpactUSDPerWeek)
@@ -791,147 +702,6 @@ func detectExpensiveModelOnCheapTask(stats Stats, now time.Time) []Finding {
 		})
 	}
 	return out
-}
-
-// detectUnboundedLoop flags agent runs whose graph re-entered a single
-// node enough times to suggest the runtime got stuck. The threshold
-// (unboundedLoopRevisitThreshold) is set high enough that legitimate
-// iterative workflows pass — only runs in the "tool-call retry storm"
-// regime fire. Skipped silently when RunStats is empty: without ledger
-// data the heuristic has nothing to reason about, and we never invent a
-// finding from absence of input.
-func detectUnboundedLoop(stats Stats, now time.Time) []Finding {
-	if len(stats.RunStats) == 0 {
-		return nil
-	}
-	var out []Finding
-	for _, run := range stats.RunStats {
-		if run.MaxNodeRevisits < unboundedLoopRevisitThreshold {
-			continue
-		}
-		out = append(out, Finding{
-			ID:               "unbounded-loop-" + run.RunID,
-			Heuristic:        "unbounded_loop",
-			Severity:         SeverityWarn,
-			Title:            "Possible unbounded loop in run: " + runLabel(run),
-			Summary:          summaryUnboundedLoop(run),
-			Server:           run.Skill,
-			ImpactUSDPerWeek: 0, // ledger evidence proves a pattern, not a recurring weekly cost
-			Remediation:      remediationUnboundedLoop(run),
-			DetectedAt:       now,
-		})
-	}
-	return out
-}
-
-// detectOversizedPrompt flags runs whose largest llm_call shipped more
-// input tokens than oversizedPromptTokenThreshold. The signal is the
-// magnitude on a single call, not a session total — bloated context
-// windows are typically introduced by one runaway message, not by the
-// gradual accumulation of small ones.
-func detectOversizedPrompt(stats Stats, now time.Time) []Finding {
-	if len(stats.RunStats) == 0 {
-		return nil
-	}
-	var out []Finding
-	for _, run := range stats.RunStats {
-		if run.MaxPromptTokens < oversizedPromptTokenThreshold {
-			continue
-		}
-		out = append(out, Finding{
-			ID:               "oversized-prompt-" + run.RunID,
-			Heuristic:        "oversized_prompt",
-			Severity:         SeverityWarn,
-			Title:            "Oversized prompt in run: " + runLabel(run),
-			Summary:          summaryOversizedPrompt(run),
-			Server:           run.Skill,
-			ImpactUSDPerWeek: 0, // per-run finding; recurrence is what the user investigates next
-			Remediation:      remediationOversizedPrompt(run),
-			DetectedAt:       now,
-		})
-	}
-	return out
-}
-
-// detectUntypedHandoff flags runs whose child handoffs mostly skipped
-// the typed Skill SDK envelope. "Untyped" here means the child run's
-// run_started payload carried neither Flavor (go|ts|prompt) nor an
-// InputDigest — both of which the SDK populates by default. The
-// heuristic stays silent below untypedHandoffMinChildren so a one-off
-// fixture handoff doesn't trip the alarm; above it, a ratio at or
-// above untypedHandoffRatioFloor is enough drift to flag.
-func detectUntypedHandoff(stats Stats, now time.Time) []Finding {
-	if len(stats.RunStats) == 0 {
-		return nil
-	}
-	var out []Finding
-	for _, run := range stats.RunStats {
-		if run.ChildHandoffs < untypedHandoffMinChildren {
-			continue
-		}
-		ratio := float64(run.UntypedHandoffs) / float64(run.ChildHandoffs)
-		if ratio < untypedHandoffRatioFloor {
-			continue
-		}
-		out = append(out, Finding{
-			ID:               "untyped-handoff-" + run.RunID,
-			Heuristic:        "untyped_handoff",
-			Severity:         SeverityInfo,
-			Title:            "Untyped handoffs in run: " + runLabel(run),
-			Summary:          summaryUntypedHandoff(run, ratio),
-			Server:           run.Skill,
-			ImpactUSDPerWeek: 0, // typing discipline; correctness signal, not spend
-			Remediation:      remediationUntypedHandoff(),
-			DetectedAt:       now,
-		})
-	}
-	return out
-}
-
-// runLabel renders the user-facing identifier for a RunStat. Prefers
-// the skill name (operator-meaningful) and falls back to the raw run
-// ID when the skill is unknown.
-func runLabel(run RunStat) string {
-	if run.Skill != "" {
-		return run.Skill + " (" + run.RunID + ")"
-	}
-	return run.RunID
-}
-
-func summaryUnboundedLoop(run RunStat) string {
-	node := run.HotNodeID
-	if node == "" {
-		node = "(unknown)"
-	}
-	return "Run '" + run.RunID + "' re-entered node '" + node + "' " + itoa(run.MaxNodeRevisits) + " times. The unbounded_loop floor is " + itoa(unboundedLoopRevisitThreshold) + " — runs above it usually indicate the agent is retrying the same step without converging. Inspect the node and add a termination condition or max-iteration cap."
-}
-
-func remediationUnboundedLoop(run RunStat) string {
-	node := run.HotNodeID
-	if node == "" {
-		node = "<node_id>"
-	}
-	return "# Inspect the run's event timeline:\ngridctl runs inspect " + run.RunID + "\n\n# Then add a termination condition (TS) or a max-iter cap (Go orchestrator)\n# at the call site for node '" + node + "' so the loop cannot run open-ended."
-}
-
-func summaryOversizedPrompt(run RunStat) string {
-	model := run.HotModel
-	if model == "" {
-		model = "(unknown model)"
-	}
-	return "Run '" + run.RunID + "' issued an LLM call to " + model + " with " + itoa(run.MaxPromptTokens) + " input tokens — at or above the " + itoa(oversizedPromptTokenThreshold) + "-token floor. Trim conversation history, summarize prior turns, switch to a chunked-RAG retrieval pattern, or move the call to a model with a larger context window."
-}
-
-func remediationOversizedPrompt(run RunStat) string {
-	return "# Inspect the offending llm_call event:\ngridctl runs inspect " + run.RunID + " --format json\n\n# Then trim the prompt at the call site:\n#  - Drop early turns from the conversation history.\n#  - Summarize tool-result blobs before re-injection.\n#  - Switch to a model with a larger context window if the trim is impossible."
-}
-
-func summaryUntypedHandoff(run RunStat, ratio float64) string {
-	return "Run '" + run.RunID + "' performed " + itoa(run.ChildHandoffs) + " handoffs; " + itoa(run.UntypedHandoffs) + " (" + formatPercent(ratio*100) + "%) skipped the typed Skill SDK envelope. The runtime cannot validate cross-flavor input shapes for untyped handoffs, and resume-from-step replays them without the input digest dedupe. Convert ad-hoc handoff() invocations to skill.Define[I, O] in Go or a SKILL.md-backed TS skill so the input shape is enforced and the run is replayable."
-}
-
-func remediationUntypedHandoff() string {
-	return "# Untyped handoffs originate from sandbox callers that pass plain object inputs.\n# Convert them to typed skills so the SDK records flavor + input digest:\n#   Go:  skill.Define[InputT, OutputT](\"my-skill\", \"...\", run)\n#   TS:  add a SKILL.md sibling and surface the handler via skill.ts so the\n#        registry walker tags the run with flavor='ts' and an InputDigest."
 }
 
 func schemaOverheadImpact(schemaTokens int, usage ServerUsage) float64 {

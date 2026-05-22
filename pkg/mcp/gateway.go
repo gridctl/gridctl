@@ -115,16 +115,6 @@ type HealthStatus struct {
 // DefaultHealthCheckInterval is the default interval between health checks.
 const DefaultHealthCheckInterval = 30 * time.Second
 
-// AgentRuntime is the opaque agent-runtime aggregate stored on the
-// Gateway via SetAgentRuntime. The concrete type lives in
-// pkg/agent/runtime to avoid the import cycle (pkg/agent already
-// depends on pkg/mcp). Consumers that need the underlying components
-// type-assert to *agent/runtime.Runtime; the marker method keeps
-// arbitrary types from accidentally satisfying the interface.
-type AgentRuntime interface {
-	AgentRuntimeMarker()
-}
-
 // Gateway aggregates multiple MCP servers into a single endpoint.
 type Gateway struct {
 	router    *Router
@@ -133,19 +123,17 @@ type Gateway struct {
 	logger    *slog.Logger
 	cancel    context.CancelFunc
 
-	mu           sync.RWMutex
-	serverInfo   ServerInfo
-	serverMeta   map[string]MCPServerConfig // name -> config for status reporting
-	codeMode     *CodeMode                  // nil when code mode is off
-	codeModeStr  string                     // "off", "on" — for status reporting
-	agentRuntime AgentRuntime               // nil until SetAgentRuntime wires the runtime aggregate
+	mu          sync.RWMutex
+	serverInfo  ServerInfo
+	serverMeta  map[string]MCPServerConfig // name -> config for status reporting
+	codeMode    *CodeMode                  // nil when code mode is off
+	codeModeStr string                     // "off", "on" — for status reporting
 
 	healthMu      sync.RWMutex
 	health        map[string]*HealthStatus         // name -> rollup health (public API)
 	replicaHealth map[string]map[int]*HealthStatus // name -> replica_id -> health
 
 	toolCallObserver ToolCallObserver // optional observer for tool call metrics
-	runPersister     RunPersister     // optional adapter that wraps typed-skill calls in an on-disk run ledger
 
 	defaultOutputFormat    string                // gateway-level default output format
 	tokenCounter          token.Counter          // token counter for format savings calculation
@@ -203,19 +191,6 @@ func (g *Gateway) SetToolCallObserver(obs ToolCallObserver) {
 	g.toolCallObserver = obs
 }
 
-// SetRunPersister installs the adapter the gateway delegates to when
-// dispatching tool calls. The adapter decides whether to wrap a given
-// call in the on-disk run ledger (e.g. typed-skill targets) or pass
-// through to direct dispatch (e.g. proxied upstream MCP servers).
-// Passing nil disables persistence — the gateway then dispatches tool
-// calls directly via the routed AgentClient, matching the pre-adapter
-// behaviour.
-func (g *Gateway) SetRunPersister(p RunPersister) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.runPersister = p
-}
-
 // SetVersion sets the gateway version string.
 func (g *Gateway) SetVersion(version string) {
 	g.mu.Lock()
@@ -232,24 +207,6 @@ func (g *Gateway) SetCodeMode(timeout time.Duration) {
 	cm.SetLogger(g.logger)
 	g.codeMode = cm
 	g.codeModeStr = "on"
-}
-
-// SetAgentRuntime installs the agent runtime aggregate the gateway hangs
-// off. Consumers (HTTP handlers, dispatcher bindings) read the runtime
-// via AgentRuntime() and type-assert to *agent/runtime.Runtime to access
-// the underlying components. Pass nil to detach.
-func (g *Gateway) SetAgentRuntime(rt AgentRuntime) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.agentRuntime = rt
-}
-
-// AgentRuntime returns the agent runtime aggregate previously installed
-// via SetAgentRuntime, or nil when none is wired.
-func (g *Gateway) AgentRuntime() AgentRuntime {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.agentRuntime
 }
 
 // SetDefaultOutputFormat sets the gateway-level default output format.
@@ -1373,20 +1330,8 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	logger.Info("tool call started", "server", client.Name(), "tool", toolName)
 	start := time.Now()
 
-	g.mu.RLock()
-	persister := g.runPersister
-	g.mu.RUnlock()
-
 	replica.IncInFlight()
-	var (
-		result *ToolCallResult
-		runID  string
-	)
-	if persister != nil {
-		runID, result, err = persister.PersistAndCall(ctx, client, toolName, params.Arguments)
-	} else {
-		result, err = client.CallTool(ctx, toolName, params.Arguments)
-	}
+	result, err := client.CallTool(ctx, toolName, params.Arguments)
 	replica.DecInFlight()
 	duration := time.Since(start)
 
@@ -1402,12 +1347,6 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 
 	if result.IsError {
 		span.SetStatus(codes.Error, "tool returned error result")
-	}
-	if runID != "" {
-		if result.Meta == nil {
-			result.Meta = map[string]any{}
-		}
-		result.Meta["run_id"] = runID
 	}
 	logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
 

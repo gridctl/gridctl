@@ -38,14 +38,6 @@ type AgentSkill struct {
 	// --- Computed fields (not serialized to YAML) ---
 	FileCount int    `yaml:"-" json:"fileCount"`     // Number of supporting files (scripts/, references/, assets/)
 	Dir       string `yaml:"-" json:"dir,omitempty"` // Relative path from skills/ root (e.g., "git-workflow/branch-fork")
-
-	// --- Typed-skill fields (Phase C) ---
-	// Set when a skill.go or skill.ts sibling is present alongside
-	// SKILL.md. The walker discovers the handler at load time but
-	// does not load or compile it; runtime dispatch happens through
-	// the registry server's typed-skill path.
-	HandlerLanguage string `yaml:"-" json:"handlerLanguage,omitempty"` // "go", "ts", or empty
-	HandlerPath     string `yaml:"-" json:"handlerPath,omitempty"`     // Relative path from skill dir (e.g., "skill.ts")
 }
 
 // Validate checks the skill against the agentskills.io specification.

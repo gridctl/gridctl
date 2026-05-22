@@ -2,31 +2,18 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 
 	"github.com/gridctl/gridctl/internal/api"
 	"github.com/gridctl/gridctl/internal/probe"
-	"github.com/gridctl/gridctl/pkg/agent"
-	"github.com/gridctl/gridctl/pkg/agent/compose"
-	"github.com/gridctl/gridctl/pkg/agent/dev/devserver"
-	"github.com/gridctl/gridctl/pkg/agent/dev/watcher"
-	agentgateway "github.com/gridctl/gridctl/pkg/agent/gateway"
-	"github.com/gridctl/gridctl/pkg/agent/persist"
-	"github.com/gridctl/gridctl/pkg/agent/runner"
-	agentruntime "github.com/gridctl/gridctl/pkg/agent/runtime"
-	"github.com/gridctl/gridctl/pkg/agent/sandbox"
-	"github.com/gridctl/gridctl/pkg/agent/skill"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -88,11 +75,6 @@ type GatewayBuilder struct {
 	// telemetry holds the opt-in disk-persistence writers wired at Build
 	// time. Nil when no server in the stack opts in.
 	telemetry *telemetryWiring
-
-	// agentDevWatcher is set when buildAPIServer wires the Agent IDE dev
-	// server. Run() starts its goroutine against the daemon's lifecycle
-	// context so the watcher exits cleanly on shutdown.
-	agentDevWatcher *watcher.Watcher
 }
 
 // telemetryWiring bundles the three per-signal writers + the otlptrace
@@ -194,42 +176,6 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	registryServer := registry.New(registryStore)
 	inst.RegistryServer = registryServer
 
-	// Phase 1c: Build the agent runtime aggregate. The gateway hangs off
-	// SetAgentRuntime so HTTP handlers, the dispatcher, and the IDE all
-	// pull from one place. RunStore + ApprovalRegistry + Sandbox are
-	// available from the start so the dispatcher can register against
-	// the registry server before the router exposes its tools; the
-	// ChatModel plugs in later inside buildAPIServer once the vault has
-	// resolved provider keys.
-	agentSandbox := sandbox.New(0)
-	agentRuntime := agentruntime.NewRuntime(
-		persist.NewStore(persist.DefaultRunsDir()),
-		compose.NewRegistry(),
-		agentSandbox,
-	)
-	inst.Gateway.SetAgentRuntime(agentRuntime)
-
-	// Wire the TS dispatcher onto the registry server. The bindings
-	// provider closes over the gateway so per-call collaborators
-	// (current AllowedTools snapshot, the runtime's ChatModel) reflect
-	// the daemon's live state rather than a snapshot frozen at build
-	// time. The ToolCaller is built once here because its only failure
-	// mode is a nil gateway — a programmer error we want to surface at
-	// build time, not as a silently-disabled tool() binding at first
-	// call. SetTSDispatcher MUST run before the router adds the
-	// registry server below — Router.RefreshTools queries the
-	// registry's Tools(), which only surfaces TS skills when a
-	// dispatcher is wired.
-	toolCaller, err := agentgateway.NewToolCaller(inst.Gateway)
-	if err != nil {
-		return nil, fmt.Errorf("agent tool caller: %w", err)
-	}
-	dispatcher, err := sandbox.NewDispatcher(agentSandbox, makeDispatcherBindings(inst.Gateway, registryStore, registryServer, toolCaller))
-	if err != nil {
-		return nil, fmt.Errorf("agent dispatcher: %w", err)
-	}
-	registryServer.SetTSDispatcher(dispatcher)
-
 	// Phase 2: Configure logging
 	var logErr error
 	inst.LogBuffer, inst.Handler, logErr = b.buildLogging(verbose)
@@ -248,19 +194,6 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	if err := registryServer.Initialize(context.Background()); err != nil {
 		slog.New(inst.Handler).Warn("registry initialization failed", "error", err)
 	}
-
-	// Load Go skill plugins after the store walker has populated
-	// HandlerLanguage/HandlerPath, and BEFORE the registry server is
-	// added to the router — Router.RefreshTools queries the registry's
-	// Tools(), which only surfaces Go skills once a *skill.Registry is
-	// wired via SetSkillRegistry. The loader reads each Go skill's
-	// manifest.json first and enforces the go_version + go_mod_hash
-	// guardrails before plugin.Open, so a stale plugin produces an
-	// actionable warning rather than the opaque toolchain-mismatch
-	// error the plugin package would otherwise return.
-	goSkillRegistry := skill.NewRegistry()
-	loadGoSkillPlugins(registryStore, goSkillRegistry, slog.New(inst.Handler))
-	registryServer.SetSkillRegistry(goSkillRegistry)
 
 	if registryServer.HasContent() {
 		inst.Gateway.Router().AddClient(registryServer)
@@ -388,17 +321,6 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 		return fmt.Errorf("failed to start server on port %d: %w", b.config.Port, err)
 	case <-time.After(100 * time.Millisecond):
 		// Server started successfully
-	}
-
-	// Start the Agent IDE watcher (when wired). Its lifetime is bound to
-	// ctx so it exits cleanly on shutdown; errors are non-fatal so a
-	// failed watcher does not crash the daemon.
-	if b.agentDevWatcher != nil {
-		go func(w *watcher.Watcher) {
-			if err := w.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				slog.New(bufferHandler).Warn("agent IDE watcher exited", "error", err)
-			}
-		}(b.agentDevWatcher)
 	}
 
 	// Register MCP servers (after HTTP server is running for health checks)
@@ -545,40 +467,6 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		server.SetPinStore(b.pinStore)
 	}
 
-	// Resolve the agent runtime aggregate the gateway holds (built in
-	// Phase 1c above). Every API handler that needs runtime components
-	// reads them from this aggregate rather than from per-field setters.
-	rt, _ := gateway.AgentRuntime().(*agentruntime.Runtime)
-
-	if provider := buildPlaygroundProvider(b.vaultStore); provider != nil {
-		server.SetPlaygroundProvider(provider)
-		// Wire the same provider into the runtime so the TS dispatcher's
-		// llm() binding sees it. The dispatcher's bindings closure
-		// re-reads ChatModel on every call, so plugging it in here
-		// retroactively makes earlier-registered TS skills work.
-		if rt != nil {
-			rt.SetChatModel(provider)
-		}
-	}
-
-	// Agent IDE dev server (Phase F). When a project root is configured
-	// (or the default registry root exists), construct the watcher +
-	// devserver and wire them onto the runtime aggregate so the API
-	// server's /api/agent/dev/* handlers stop 503'ing. SetDevServer must
-	// run before SetAgentRuntime so the read accessor sees a non-nil
-	// devServer the first time a request lands.
-	if rt != nil {
-		b.wireAgentDevServer(rt)
-	}
-
-	// Agent runtime persistence (Phase E). The runtime aggregate already
-	// owns the JSONL run store and approval registry — wire it into the
-	// API server so /api/agent/runs/* handlers read from one source of
-	// truth and can never get out of step with the dispatcher's view.
-	if rt != nil {
-		server.SetAgentRuntime(rt)
-	}
-
 	// Wire token usage metrics
 	counter, err := b.buildTokenCounter()
 	if err != nil {
@@ -663,58 +551,6 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	b.seedMetricsFromDisk(handler)
 
 	return server, nil
-}
-
-// wireAgentDevServer resolves the dev-root, constructs the watcher +
-// devserver, and installs them on the runtime aggregate. Each step is
-// best-effort: a missing root, an unreadable directory, or a fsnotify
-// failure logs a warning and leaves rt.DevServer() nil so the IDE
-// handlers fall back to 503 with the existing message. The watcher
-// goroutine is started later in Run() so it binds to the daemon's
-// lifecycle context.
-func (b *GatewayBuilder) wireAgentDevServer(rt *agentruntime.Runtime) {
-	root := b.resolveAgentDevRoot()
-	if root == "" {
-		return
-	}
-
-	logger := slog.Default()
-
-	w, err := watcher.New(root)
-	if err != nil {
-		logger.Warn("agent IDE dev server disabled", "root", root, "error", err)
-		return
-	}
-
-	srv, err := devserver.NewServer(root, w)
-	if err != nil {
-		logger.Warn("agent IDE dev server disabled", "root", root, "error", err)
-		return
-	}
-
-	rt.SetDevServer(srv)
-	b.agentDevWatcher = w
-	logger.Info("agent IDE wired", "root", root)
-}
-
-// resolveAgentDevRoot returns the effective dev-root for the Agent IDE,
-// preferring the explicit flag and falling back to ~/.gridctl/registry/skills
-// when that directory exists. Returns "" when no root resolves — callers
-// treat that as "leave the IDE backend unwired".
-func (b *GatewayBuilder) resolveAgentDevRoot() string {
-	if b.config.AgentDevRoot != "" {
-		return b.config.AgentDevRoot
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	candidate := filepath.Join(home, ".gridctl", "registry", "skills")
-	info, err := os.Stat(candidate)
-	if err != nil || !info.IsDir() {
-		return ""
-	}
-	return candidate
 }
 
 // applyTelemetryConfig walks the stack's MCP servers and registers per-
@@ -864,211 +700,6 @@ func (b *GatewayBuilder) tokenizerName() string {
 		return b.stack.Gateway.Tokenizer
 	}
 	return "embedded"
-}
-
-// makeDispatcherBindings returns a sandbox.BindingsProvider that builds
-// per-call collaborators from the live gateway state. Closing over gw
-// (rather than snapshotting Bindings at build time) means later changes
-// — a freshly-set ChatModel after vault auth completes, an autoscaled
-// MCP server adding new tools — show up in subsequent dispatches
-// without a rewire. The ToolCaller is constructed once at wire time
-// (it depends only on the gateway pointer, which is stable) so a
-// per-call construction failure is impossible by design.
-//
-// SkillBody and SkillName are resolved per-call from the registry
-// store so the JS sandbox's `skill.body` / `skill.name` globals match
-// what a Go skill would receive via ctx.SkillBody() / ctx.SkillName()
-// for the same skill — the parity invariant the hybrid pattern
-// depends on. A store lookup miss reads as empty body, not a hard
-// error: bindings should degrade quietly rather than fault the
-// invocation when the registry walker has dropped the skill (a race
-// during hot-reload, or a programmatic registration that bypassed the
-// on-disk store).
-//
-// Approver is left nil so the sandbox's auto-approve stub stays in
-// effect for the dispatcher path. Orchestrator-driven runs construct a
-// real compose.Gate (which needs a per-run recorder) and supply it via
-// their own bindings.
-//
-// Session is built per dispatch from the recorder ctx-stashed by
-// runner.Run upstream. When the parent dispatcher is firing for an
-// in-runner call, the recorder is non-nil and the sandbox bindings
-// emit per-node telemetry (node_enter / tool_call / llm_call / …) into
-// the same JSONL ledger the runner opened. Test wiring that calls
-// Dispatch without a runner gets a nil session — the bindings still
-// function, just without recording.
-//
-// The SkillCaller is wrapped with childRunSkillCaller so handoff() (and
-// any tool() call that resolves to a registered skill) opens its own
-// child recorder via runner.Run, automatically populating ParentRunID
-// on the child's run_started payload.
-func makeDispatcherBindings(gw *mcp.Gateway, store *registry.Store, skillCaller sandbox.SkillCaller, toolCaller agent.ToolCaller) sandbox.BindingsProvider {
-	rt, _ := gw.AgentRuntime().(*agentruntime.Runtime)
-	var runStore *persist.Store
-	if rt != nil {
-		runStore = rt.RunStore()
-	}
-	nestedSkillCaller := newChildRunSkillCaller(skillCaller, runStore, store)
-	nestedToolCaller := newChildRunToolCaller(toolCaller, skillCaller, runStore, store)
-	return func(ctx context.Context, skillName string) sandbox.Bindings {
-		b := sandbox.Bindings{
-			AllowedTools: gw.Router().AggregatedTools(),
-			SkillCaller:  nestedSkillCaller,
-			ToolCaller:   nestedToolCaller,
-			SkillName:    skillName,
-		}
-		if store != nil && skillName != "" {
-			if sk, err := store.GetSkill(skillName); err == nil && sk != nil {
-				b.SkillBody = sk.Body
-			}
-		}
-		if rt != nil {
-			b.ChatModel = rt.ChatModel()
-		}
-		if rec, ok := runner.RecorderFromContext(ctx); ok {
-			b.Session = sandbox.NewRunSession(rec)
-		}
-		return b
-	}
-}
-
-// registryServerName mirrors registry.Server.Name() — the agent prefix
-// used when a registered skill is surfaced as an MCP tool. The wrappers
-// below test against this string to decide whether a tool() call is
-// hitting a registered skill (and therefore deserves a child recorder
-// with ParentRunID populated) or a real MCP-server tool (which stays
-// stateless). Hardcoded here so pkg/controller does not have to import
-// pkg/registry for a single literal.
-const registryServerName = "registry"
-
-// childRunSkillCaller wraps the registry server so that handoff() from
-// inside a parent run opens a fresh child recorder via runner.Run. The
-// runner reads the parent run ID off ctx (set by the parent run's
-// runner.Run) and writes it as ParentRunID on the child's
-// EventRunStarted, which is what gives the IDE the orchestrator → leaf
-// tree shape. When ctx has no parent run id (top-level handoff outside
-// of a tracked run, e.g. an internal harness path), the wrapper falls
-// through to the underlying SkillCaller without opening a recorder.
-type childRunSkillCaller struct {
-	inner    sandbox.SkillCaller
-	store    *persist.Store
-	regStore *registry.Store
-}
-
-func newChildRunSkillCaller(inner sandbox.SkillCaller, store *persist.Store, regStore *registry.Store) sandbox.SkillCaller {
-	if inner == nil || store == nil {
-		return inner
-	}
-	return &childRunSkillCaller{inner: inner, store: store, regStore: regStore}
-}
-
-func (c *childRunSkillCaller) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
-	if _, parented := runner.RunIDFromContext(ctx); !parented {
-		return c.inner.CallTool(ctx, name, arguments)
-	}
-	_, res, err := runner.Run(ctx, c.store, c.inner, runner.StartOptions{
-		Skill:    name,
-		Flavor:   flavorForSkill(c.regStore, name),
-		Input:    arguments,
-		RawInput: marshalArgsForLedger(arguments),
-	})
-	return res, err
-}
-
-// childRunToolCaller wraps the gateway-backed ToolCaller so a tool()
-// invocation that resolves to a registered typed skill opens a child
-// recorder (just like handoff). Bare MCP-tool calls fall through to
-// the underlying ToolCaller unchanged. The wrapper strips the registry
-// agent prefix from the resolved name before consulting the registry
-// store — bindings.go's resolveToolName returns the prefixed form
-// (`registry__<skill>`) because that is what the gateway router
-// dispatches against, but the registry store indexes skills by their
-// unprefixed name. Without the strip, the lookup would miss every
-// real call and the parent-link path would silently never engage.
-type childRunToolCaller struct {
-	inner     agent.ToolCaller
-	skillCall sandbox.SkillCaller
-	store     *persist.Store
-	regStore  *registry.Store
-}
-
-func newChildRunToolCaller(inner agent.ToolCaller, skillCall sandbox.SkillCaller, store *persist.Store, regStore *registry.Store) agent.ToolCaller {
-	if inner == nil {
-		return inner
-	}
-	return &childRunToolCaller{inner: inner, skillCall: skillCall, store: store, regStore: regStore}
-}
-
-func (c *childRunToolCaller) CallTool(ctx context.Context, name string, arguments map[string]any) (*mcp.ToolCallResult, error) {
-	if c.store == nil || c.regStore == nil {
-		return c.inner.CallTool(ctx, name, arguments)
-	}
-	if _, parented := runner.RunIDFromContext(ctx); !parented {
-		return c.inner.CallTool(ctx, name, arguments)
-	}
-	skillName, isRegistrySkill := unprefixRegistrySkillName(name)
-	if !isRegistrySkill {
-		return c.inner.CallTool(ctx, name, arguments)
-	}
-	sk, err := c.regStore.GetSkill(skillName)
-	if err != nil || sk == nil || sk.HandlerLanguage != "ts" {
-		return c.inner.CallTool(ctx, name, arguments)
-	}
-	// Dispatch via runner.Run so the child run gets its own recorder
-	// and ParentRunID linkage. Pass the unprefixed name through —
-	// SkillCaller (registry.Server.CallTool) expects unprefixed.
-	_, res, err := runner.Run(ctx, c.store, c.skillCall, runner.StartOptions{
-		Skill:    skillName,
-		Flavor:   sk.HandlerLanguage,
-		Input:    arguments,
-		RawInput: marshalArgsForLedger(arguments),
-	})
-	return res, err
-}
-
-// unprefixRegistrySkillName splits a tool name of the form
-// "registry__<skill>" into its bare skill component and reports
-// whether the prefix matched. Tool names that are not prefixed with
-// the registry agent name (i.e. real MCP-server tools) are returned
-// verbatim with a false flag so the caller can fall through to the
-// gateway dispatch path. The shape of "<agent>__<tool>" is the
-// gridctl-wide convention codified in mcp.PrefixTool.
-func unprefixRegistrySkillName(prefixed string) (string, bool) {
-	prefix := registryServerName + mcp.ToolNameDelimiter
-	if !strings.HasPrefix(prefixed, prefix) {
-		return prefixed, false
-	}
-	return prefixed[len(prefix):], true
-}
-
-// flavorForSkill resolves the handler language for a skill name from
-// the registry store, returning the empty string when the skill is
-// not on disk (e.g. a programmatically registered Go skill that
-// bypassed the walker). The child run's flavor field is purely
-// informational, so an empty value is acceptable.
-func flavorForSkill(store *registry.Store, name string) string {
-	if store == nil || name == "" {
-		return ""
-	}
-	if sk, err := store.GetSkill(name); err == nil && sk != nil {
-		return sk.HandlerLanguage
-	}
-	return ""
-}
-
-// marshalArgsForLedger encodes a child run's input map for verbatim
-// storage on the run's EventRunStarted payload. An encoding failure is
-// non-fatal — the runner accepts a nil RawInput and inspects the
-// parsed map separately.
-func marshalArgsForLedger(args map[string]any) []byte {
-	if args == nil {
-		return nil
-	}
-	raw, err := json.Marshal(args)
-	if err != nil {
-		return nil
-	}
-	return raw
 }
 
 // buildTokenCounter creates the token counter based on the stack gateway config.

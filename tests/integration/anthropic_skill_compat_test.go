@@ -80,13 +80,7 @@ func TestAnthropicSkillCompat(t *testing.T) {
 		)
 	}
 
-	// 5. The walker must classify this as a prompt-only skill: no
-	//    skill.go / skill.ts sibling, so HandlerLanguage is empty.
-	if sk.HandlerLanguage != "" {
-		t.Errorf("HandlerLanguage = %q, want \"\" (prompt-only fixture)", sk.HandlerLanguage)
-	}
-
-	// 6. ValidateSkillFull must report no errors. This is what
+	// 5. ValidateSkillFull must report no errors. This is what
 	//    `gridctl skill validate brand-guidelines` runs under the hood,
 	//    so a passing assertion here is "the CLI would print ✓ valid".
 	result := registry.ValidateSkillFull(sk)

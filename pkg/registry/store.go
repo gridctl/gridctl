@@ -54,23 +54,6 @@ func (s *Store) Load() error {
 	return nil
 }
 
-// HandlerPath returns the absolute path to a typed skill's handler
-// file ("skill.go" / "skill.ts") on disk, or ("", false) if the skill
-// does not exist or has no typed handler. The store walker populates
-// HandlerLanguage/HandlerPath at Load time; this helper resolves the
-// pair against baseDir so dispatchers do not have to know the on-disk
-// layout.
-func (s *Store) HandlerPath(name string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	sk, ok := s.skills[name]
-	if !ok || sk.HandlerLanguage == "" || sk.HandlerPath == "" {
-		return "", false
-	}
-	return filepath.Join(s.baseDir, "skills", sk.Dir, sk.HandlerPath), true
-}
-
 // HasContent returns true if there is at least one skill.
 func (s *Store) HasContent() bool {
 	s.mu.RLock()
@@ -458,7 +441,6 @@ func (s *Store) loadSkills() error {
 
 		sk.Dir = relDir
 		sk.FileCount = countSupportingFiles(skillDir)
-		sk.HandlerLanguage, sk.HandlerPath = detectHandler(skillDir)
 		s.skills[sk.Name] = sk
 		return nil
 	})
@@ -490,32 +472,6 @@ func (s *Store) checkLegacyFiles() {
 			)
 		}
 	}
-}
-
-// detectHandler reports the typed-skill handler sibling alongside the
-// SKILL.md in skillDir, if any. The walker prefers a Go handler over
-// a TypeScript handler when both are present so Go skill authors can
-// keep a TS prototype in the same directory without ambiguity. The
-// returned HandlerPath is the file's relative path from the skill
-// directory ("skill.go" / "skill.ts"); the absolute path is recovered
-// at dispatch time via the store's Dir() + skill Dir + HandlerPath.
-//
-// Phase C only consumes the TS path at runtime (Go skills compile in
-// Phase G); the Go branch is included so the metadata is correct now
-// and downstream code does not need to re-walk the directory later.
-func detectHandler(skillDir string) (lang, path string) {
-	for _, candidate := range []struct{ name, language string }{
-		{"skill.go", "go"},
-		{"skill.ts", "ts"},
-	} {
-		full := filepath.Join(skillDir, candidate.name)
-		info, err := os.Stat(full)
-		if err != nil || info.IsDir() {
-			continue
-		}
-		return candidate.language, candidate.name
-	}
-	return "", ""
 }
 
 // countSupportingFiles counts files in the scripts/, references/, and assets/

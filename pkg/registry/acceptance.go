@@ -2,31 +2,23 @@
 //
 // A skill's `acceptance_criteria` frontmatter is a list of Given/When/Then
 // prose strings. The runner evaluates each criterion against the skill's
-// body and frontmatter, returning a TestReport that callers (CLI, API,
-// Web UI) render directly.
+// body and frontmatter, returning a TestReport that callers can render.
 //
-// Two evaluators ship:
-//
-//   - LLMEvaluator: hands the skill + criterion to an agent.ChatModel
-//     and asks for a structured pass/fail verdict. Production path; the
-//     prose contract stays free-form.
-//   - DeterministicEvaluator: a no-LLM adapter for CI and unit tests.
-//     It looks for "PASS:" or "FAIL:" markers inside each criterion so
-//     fixture skills can encode expected outcomes without standing up an
-//     LLM provider.
+// The DeterministicEvaluator ships in-tree: it looks for "PASS:" or
+// "FAIL:" markers inside each criterion so fixture skills can encode
+// expected outcomes without standing up an LLM provider. Production
+// evaluation against a live model was previously provided by the
+// LLMEvaluator; that path moved out when the agent runtime was
+// retired.
 //
 // The runner is read-only — it never mutates the skill or its files.
 package registry
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
-
-	"github.com/gridctl/gridctl/pkg/agent"
 )
 
 // TestSeverity classifies a single criterion's outcome. The vocabulary
@@ -291,141 +283,3 @@ func (DeterministicEvaluator) Evaluate(_ context.Context, _ *AgentSkill, idx int
 	}
 }
 
-// LLMEvaluator is the production evaluator. It asks an agent.ChatModel
-// to render a verdict on each criterion against the skill's body, then
-// parses a strict JSON envelope from the model's response.
-//
-// The prompt instructs the judge to emit exactly one JSON object with
-// `verdict` (pass|fail) and `rationale` (one sentence). Anything else
-// is treated as TestSeverityError so the user sees the model misbehaved
-// rather than guessing whether absence-of-marker meant pass or fail.
-type LLMEvaluator struct {
-	// Model is the canonical model ID handed to ChatRequest.Model.
-	// Falls back to defaultJudgeModel when empty.
-	Model string
-
-	// Provider is the gridctl LLM provider. Required; constructing
-	// the evaluator without one and calling Evaluate produces
-	// TestSeverityError on every criterion.
-	Provider agent.ChatModel
-
-	// MaxTokens caps the judge's output. Defaults to 256 — verdicts
-	// fit comfortably in a few sentences.
-	MaxTokens int
-}
-
-const defaultJudgeModel = "claude-haiku-4-5-20251001"
-
-// Name returns "llm".
-func (LLMEvaluator) Name() string { return "llm" }
-
-// Evaluate prompts the judge and parses its verdict. Errors at any
-// stage become TestSeverityError so the report stays complete.
-func (e LLMEvaluator) Evaluate(ctx context.Context, skill *AgentSkill, idx int, criterion string) TestResult {
-	out := TestResult{Index: idx, Criterion: criterion}
-	if e.Provider == nil {
-		out.Severity = TestSeverityError
-		out.Message = "no LLM provider configured (set ANTHROPIC_API_KEY in the vault and restart)"
-		return out
-	}
-
-	model := e.Model
-	if model == "" {
-		model = defaultJudgeModel
-	}
-	maxTokens := e.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = 256
-	}
-
-	prompt := buildJudgePrompt(skill, criterion)
-	req := agent.ChatRequest{
-		Model:     model,
-		MaxTokens: maxTokens,
-		System:    judgeSystemPrompt,
-		Messages:  []agent.Message{{Role: agent.RoleUser, Content: prompt}},
-	}
-
-	resp, err := e.Provider.Generate(ctx, req)
-	if err != nil {
-		out.Severity = TestSeverityError
-		out.Message = "LLM judge: " + err.Error()
-		return out
-	}
-	verdict, rationale, parseErr := parseJudgeResponse(resp.Content)
-	if parseErr != nil {
-		out.Severity = TestSeverityError
-		out.Message = "LLM judge returned unparseable response: " + parseErr.Error()
-		return out
-	}
-	out.Severity = verdict
-	out.Message = rationale
-	return out
-}
-
-const judgeSystemPrompt = `You are an acceptance-criteria judge for an Agent Skills file.
-
-You will be given:
-1. The skill's name and body (the markdown a model would read at runtime).
-2. A single Given/When/Then-style criterion the skill is supposed to satisfy.
-
-Your job is to decide whether the skill's behavior, as documented in its body, satisfies the criterion.
-
-Reply with EXACTLY one JSON object on a single line, no surrounding prose, no markdown fence:
-
-{"verdict":"pass","rationale":"one short sentence"}
-
-verdict MUST be "pass" or "fail". rationale MUST be one sentence under 200 characters explaining the verdict.`
-
-func buildJudgePrompt(skill *AgentSkill, criterion string) string {
-	var b strings.Builder
-	b.WriteString("Skill name: ")
-	b.WriteString(skill.Name)
-	b.WriteString("\n\nSkill description: ")
-	b.WriteString(skill.Description)
-	b.WriteString("\n\nSkill body:\n---\n")
-	b.WriteString(skill.Body)
-	b.WriteString("\n---\n\nCriterion to evaluate:\n")
-	b.WriteString(criterion)
-	b.WriteString("\n\nReturn the JSON envelope now.")
-	return b.String()
-}
-
-// parseJudgeResponse extracts the first JSON object from raw and
-// validates it. Models often emit prefatory whitespace or, despite the
-// system prompt, a leading fence; we scan for the first '{' rather
-// than rejecting on framing noise.
-func parseJudgeResponse(raw string) (TestSeverity, string, error) {
-	trimmed := strings.TrimSpace(raw)
-	start := strings.Index(trimmed, "{")
-	end := strings.LastIndex(trimmed, "}")
-	if start < 0 || end < 0 || end <= start {
-		return TestSeverityError, "", fmt.Errorf("no JSON object found in response: %q", clip(trimmed))
-	}
-	payload := trimmed[start : end+1]
-	var env struct {
-		Verdict   string `json:"verdict"`
-		Rationale string `json:"rationale"`
-	}
-	if err := json.Unmarshal([]byte(payload), &env); err != nil {
-		return TestSeverityError, "", fmt.Errorf("invalid JSON: %w", err)
-	}
-	switch strings.ToLower(strings.TrimSpace(env.Verdict)) {
-	case "pass":
-		return TestSeverityPass, env.Rationale, nil
-	case "fail":
-		return TestSeverityFail, env.Rationale, nil
-	default:
-		return TestSeverityError, "", fmt.Errorf("unknown verdict %q", env.Verdict)
-	}
-}
-
-// clip caps a string at 120 characters so error messages stay readable
-// when the model emits a long blob.
-func clip(s string) string {
-	const max = 120
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
-}
