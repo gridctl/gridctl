@@ -209,7 +209,7 @@ export function Canvas() {
             variant={BackgroundVariant.Dots}
             gap={20}
             size={1}
-            color={`rgba(0, 202, 255, ${0.1 * subGridOpacity})`}
+            color={`rgba(13, 148, 136, ${0.1 * subGridOpacity})`}
           />
         )}
 
