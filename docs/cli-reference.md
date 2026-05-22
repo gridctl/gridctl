@@ -6,9 +6,7 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 
 - [Stack lifecycle](#stack-lifecycle)
 - [LLM clients](#llm-clients)
-- [Skills - remote import (git)](#skills---remote-import-git)
-- [Skills - authoring](#skills---authoring)
-- [Runs](#runs)
+- [Skills](#skills)
 - [Vault](#vault)
 - [Pins (TOFU schema pinning)](#pins-tofu-schema-pinning)
 - [Traces](#traces)
@@ -39,7 +37,9 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 | `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview. |
 | `gridctl unlink [client]` | Remove gridctl from an LLM client's config. |
 
-## Skills - remote import (git)
+## Skills
+
+Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients as a prompt. See [`docs/skills.md`](./skills.md) for the authoring guide.
 
 | Command | Purpose |
 |---|---|
@@ -52,27 +52,6 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 | `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation. |
 | `gridctl skill validate <name>` | Validate a skill definition. |
 | `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `--format json` for machine output, `--quiet` to suppress the success line. |
-| `gridctl test <skill-name>` | Run a skill's `acceptance_criteria` (exit `0`/`1`/`2`); `--dry-run` lists criteria without executing, `--criterion <n>` scopes to one criterion, `--format json` for machine output. |
-
-## Skills - authoring
-
-| Command | Purpose |
-|---|---|
-| `gridctl agent init [DIR]` | Scaffold a starter skill. `--lang ts` (default), `--lang go`, or `--prompt-only` (mutually exclusive with `--lang`). |
-| `gridctl agent dev --root <dir>` | Start the IDE dev server (canvas + watcher + trace overlay) on port `8181`. |
-| `gridctl agent validate <skill>` | Static-check a skill's manifest and handler symbols. |
-| `gridctl agent build <skill>` | Compile: esbuild for TS, `go build -buildmode=plugin` for Go. Writes `dist/manifest.json`. |
-
-## Runs
-
-| Command | Purpose |
-|---|---|
-| `gridctl run <skill>` | Execute a typed skill and stream events. Input: `--input '<json>'` inline, `--input @file.json`, or `--input -` for stdin. Output: `--format json` (NDJSON + summary), `--quiet`. |
-| `gridctl runs list` | Recent runs (`--limit N`, `--format json`). |
-| `gridctl runs inspect <run_id>` | Typed event timeline. |
-| `gridctl runs trace <run_id>` | OTel-shaped JSON projection. |
-| `gridctl runs resume <run_id>` | Time-travel resume from the last checkpoint; `--from-step <node_id>` to override. |
-| `gridctl runs approve <run_id>` | Resolve a pending approval gate. `--decision approve\|reject`, `--reason "<text>"`. |
 
 ## Vault
 

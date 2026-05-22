@@ -29,19 +29,19 @@ Last updated: **v0.1.0-beta.9** (see [CHANGELOG.md](../CHANGELOG.md) for release
 | Code mode | Experimental | May change without notice |
 | Podman runtime | Stable | Backward compatible in 0.x |
 | Skills registry (prompt-only) | Stable | Backward compatible in 0.x |
-| Skill acceptance criteria (test) | Experimental | May change without notice |
+| Library workspace (UI) | Stable | No API guarantee (internal) |
 | Stack export (export) | Experimental | May change without notice |
 | Spec drift detection | Experimental | May change without notice |
 | Visual spec builder | Experimental | May change without notice |
 | Skills import (skill add) | Experimental | May change without notice |
 | Distributed tracing | Experimental | May change without notice |
-| Typed skill SDK (Go, TS) | Experimental | May change without notice |
-| Go plugin skill loader | Experimental | May change without notice |
-| Agent IDE (`gridctl agent dev`) | Experimental | May change without notice |
-| JSONL run ledger + resume | Experimental | May change without notice |
 | Multi-agent orchestrator | Experimental | May change without notice |
-| LLM provider abstraction | Experimental | May change without notice |
 | Cost observability | Experimental | May change without notice |
+| Typed skill SDK (Go, TS) | Removed in v0.1.x | Replaced by prompt-only skills |
+| Go plugin skill loader | Removed in v0.1.x | Replaced by prompt-only skills |
+| Agent IDE (`gridctl agent dev`) | Removed in v0.1.x | Use the Library workspace instead |
+| JSONL run ledger + resume | Removed in v0.1.x | — |
+| LLM provider abstraction | Removed in v0.1.x | Was internal to the playground |
 
 ## Known limitations
 

@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <strong>The developer cockpit for MCP servers and Agent Skills.</strong>
+  <strong>MCP gateway with a built-in skill library.</strong>
 </p>
 
 <p align="center">
-  <em>One YAML. One endpoint. Every MCP server and Agent Skill.</em>
+  <em>One YAML. One endpoint. Every MCP server plus the skills you author alongside them.</em>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 
 ![Gridctl](assets/gridctl.gif)
 
-Gridctl aggregates tools from [MCP](https://modelcontextprotocol.io/) servers and [Agent Skills](https://agentskills.io) into a single gateway. Define your stack in YAML, apply with one command, and connect Claude Desktop — or any MCP client — through one endpoint.
+Gridctl aggregates tools from [MCP](https://modelcontextprotocol.io/) servers into a single gateway and serves [Agent Skills](https://agentskills.io) as MCP prompts to upstream clients. Define your stack in YAML, apply with one command, and connect Claude Desktop — or any MCP client — through one endpoint.
 
 ```bash
 gridctl apply stack.yaml
@@ -174,21 +174,17 @@ mcp-servers:
 
 Learn more → [Configuration Reference](docs/config-schema.md)
 
-### Skills _(Early Access)_
+### Skill Library
 
-Three flavors of skills surface to upstream clients as MCP prompts and tools — **prompt-only** (`SKILL.md` body delivered verbatim), **TypeScript** (`skill.ts` in a `goja` + `esbuild` sandbox), and **Go** (`skill.go` compiled as a Go plugin). The **hybrid pattern** lets a code skill read its own `SKILL.md` body at runtime and feed it to an LLM as the system prompt — edit the markdown, change runtime behavior, no code change.
+Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author in the Library workspace in the web UI (or via `gridctl skill *` on the CLI), activate, and the prompt becomes available to Claude Desktop, Claude Code, Cursor, Codex — anything that speaks MCP.
 
 ```bash
-gridctl agent init --name my-skill        # Scaffold (TS default; --lang go or --prompt-only)
-gridctl agent build my-skill              # esbuild for TS; go build -buildmode=plugin for Go
-gridctl run my-skill --input '{...}'      # Run end-to-end and stream typed events
+gridctl skill list                        # Show what's in the registry
+gridctl skill add <git-repo>              # Import skills from a remote repo
+gridctl activate my-skill                 # Promote a draft → active
 ```
 
-Learn more → [Skills guide](docs/skills.md)
-
-### Visual Agent IDE _(Early Access)_
-
-`gridctl agent dev --root .` boots a local IDE on port `8181` — React Flow canvas, file watcher (sub-300 ms re-render), live trace overlay, click-to-`$EDITOR` jumps. Every skill invocation also writes a JSONL event ledger to `~/.gridctl/runs/<run_id>.jsonl`, so `gridctl runs inspect`, `runs trace`, and `runs resume` give you a typed timeline and time-travel resume from any checkpoint.
+Skills follow the [agentskills.io specification](https://agentskills.io) — author them as plain markdown with frontmatter and they work with every skill-aware client, not just gridctl.
 
 Learn more → [Skills guide](docs/skills.md)
 
@@ -202,7 +198,6 @@ Learn more → [Skills guide](docs/skills.md)
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
-| [`incident-triage-hybrid`](examples/registry/items/incident-triage-hybrid/SKILL.md) | Hybrid pattern: Go handler reads its own `SKILL.md` body as the LLM system prompt |
 | [`multi-agent-skills.yaml`](examples/multi-agent/multi-agent-skills.yaml) | Multi-agent orchestrator handing off between skills |
 | [`vault-basic.yaml`](examples/secrets-vault/vault-basic.yaml) | Reference vault secrets with `${vault:KEY}` syntax |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
