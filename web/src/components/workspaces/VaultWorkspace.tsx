@@ -53,6 +53,7 @@ export function VaultWorkspace() {
     variables: vaultVariables,
     sets: vaultSets,
     usage,
+    recentlyEdited,
     loading,
     error,
     locked,
@@ -150,6 +151,15 @@ export function VaultWorkspace() {
   );
   const allSets = useMemo(() => vaultSets ?? [], [vaultSets]);
   const setNames = useMemo(() => allSets.map((s) => s.name), [allSets]);
+  // Set names whose members include a variable edited this session — drives the
+  // left-rail "recently edited" dot.
+  const recentlyEditedSets = useMemo(() => {
+    const names = new Set<string>();
+    for (const v of allVariables) {
+      if (v.set && v.key in recentlyEdited) names.add(v.set);
+    }
+    return names;
+  }, [allVariables, recentlyEdited]);
   const isEmpty = allVariables.length === 0 && allSets.length === 0;
 
   // Exact consumption filter: keep variables actually referenced by the named
@@ -356,6 +366,7 @@ export function VaultWorkspace() {
       onSelectSet={setActiveSet}
       totalCount={allVariables.length}
       unassignedCount={allVariables.filter((v) => !v.set).length}
+      recentlyEditedSets={recentlyEditedSets}
       newSetOpen={newSetOpen}
       onNewSetOpen={setNewSetOpen}
       newSetName={newSetName}
@@ -705,6 +716,7 @@ interface VaultLeftRailProps {
   onSelectSet: (name: string) => void;
   totalCount: number;
   unassignedCount: number;
+  recentlyEditedSets: Set<string>;
   newSetOpen: boolean;
   onNewSetOpen: (open: boolean) => void;
   newSetName: string;
@@ -721,6 +733,7 @@ function VaultLeftRail({
   onSelectSet,
   totalCount,
   unassignedCount,
+  recentlyEditedSets,
   newSetOpen,
   onNewSetOpen,
   newSetName,
@@ -761,6 +774,7 @@ function VaultLeftRail({
             count={set.count}
             mono
             active={activeSet === set.name}
+            recentlyEdited={recentlyEditedSets.has(set.name)}
             onClick={() => onSelectSet(set.name)}
             onDelete={locked ? undefined : () => onDeleteSet(set.name)}
           />
@@ -806,6 +820,9 @@ interface SetPillProps {
   onClick: () => void;
   mono?: boolean;
   onDelete?: () => void;
+  // When true, a dot marks the set as containing a variable edited this
+  // session. Absence is the signal — nothing renders when false/omitted.
+  recentlyEdited?: boolean;
 }
 
 function SetPill({
@@ -815,6 +832,7 @@ function SetPill({
   onClick,
   mono,
   onDelete,
+  recentlyEdited,
 }: SetPillProps) {
   return (
     <div
@@ -838,15 +856,24 @@ function SetPill({
         >
           {label}
         </span>
-        <span
-          className={cn(
-            'flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded',
-            active
-              ? 'bg-primary/15 text-primary'
-              : 'bg-surface-elevated text-text-muted',
+        <span className="flex-shrink-0 flex items-center gap-1.5">
+          {recentlyEdited && (
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-secondary/70 flex-shrink-0"
+              title="Recently edited"
+              aria-label="Recently edited"
+            />
           )}
-        >
-          {count}
+          <span
+            className={cn(
+              'text-[10px] font-mono px-1.5 py-0.5 rounded',
+              active
+                ? 'bg-primary/15 text-primary'
+                : 'bg-surface-elevated text-text-muted',
+            )}
+          >
+            {count}
+          </span>
         </span>
       </button>
       {onDelete && (
