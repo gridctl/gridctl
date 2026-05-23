@@ -37,6 +37,9 @@ export interface UseVaultManagerResult {
   variables: Variable[] | null;
   sets: VariableSet[] | null;
   usage: Record<string, Consumer[]>;
+  // recentlyEdited maps variable key → epoch-ms of its last session mutation;
+  // consumers derive the per-set "recently edited" dot from it.
+  recentlyEdited: Record<string, number>;
   loading: boolean;
   error: string | null;
   locked: boolean;
@@ -49,6 +52,7 @@ export interface UseVaultManagerResult {
   createVar: (input: CreateVariableInput) => Promise<void>;
   updateVar: (key: string, input: UpdateVariableInput) => Promise<void>;
   deleteVar: (key: string) => Promise<void>;
+  markRecentlyEdited: (keys: string[]) => void;
   getVar: (key: string) => Promise<{ value: string }>;
   createSet: (name: string) => Promise<void>;
   deleteSet: (name: string) => Promise<void>;
@@ -67,6 +71,8 @@ export function useVaultManager(
   const variables = useVaultStore((s) => s.variables);
   const sets = useVaultStore((s) => s.sets);
   const usage = useVaultStore((s) => s.usage);
+  const recentlyEdited = useVaultStore((s) => s.recentlyEdited);
+  const markRecentlyEdited = useVaultStore((s) => s.markRecentlyEdited);
   const loading = useVaultStore((s) => s.loading);
   const error = useVaultStore((s) => s.error);
   const locked = useVaultStore((s) => s.locked);
@@ -147,6 +153,7 @@ export function useVaultManager(
     async (input: CreateVariableInput) => {
       await createVariable(input);
       await refresh();
+      useVaultStore.getState().markRecentlyEdited([input.key]);
     },
     [refresh],
   );
@@ -155,6 +162,7 @@ export function useVaultManager(
     async (key: string, input: UpdateVariableInput) => {
       await updateVariable(key, input);
       await refresh();
+      useVaultStore.getState().markRecentlyEdited([key]);
     },
     [refresh],
   );
@@ -191,6 +199,9 @@ export function useVaultManager(
     async (key: string, set: string) => {
       await assignVariableToSet(key, set);
       await refresh();
+      // After refresh the variable's `.set` is the destination, so the dot
+      // surfaces on the set it moved into (not the one it left).
+      useVaultStore.getState().markRecentlyEdited([key]);
     },
     [refresh],
   );
@@ -199,6 +210,7 @@ export function useVaultManager(
     async (vars: ImportVariableInput[]) => {
       const result = await importVariables(vars);
       await refresh();
+      useVaultStore.getState().markRecentlyEdited(vars.map((v) => v.key));
       return result;
     },
     [refresh],
@@ -208,6 +220,7 @@ export function useVaultManager(
     variables,
     sets,
     usage,
+    recentlyEdited,
     loading,
     error,
     locked,
@@ -218,6 +231,7 @@ export function useVaultManager(
     createVar,
     updateVar,
     deleteVar,
+    markRecentlyEdited,
     getVar,
     createSet,
     deleteSet,
