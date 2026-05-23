@@ -4,6 +4,7 @@ import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
 import { VariableTypeSelector } from './VariableTypeSelector';
 import { VariableSecretToggle } from './VariableSecretToggle';
+import { SecretGenerator } from './SecretGenerator';
 import {
   validateVariableInput,
   getValuePlaceholder,
@@ -125,6 +126,12 @@ export function VariableQuickAddForm({
         <div className="flex flex-wrap items-center gap-2">
           <VariableTypeSelector value={type} onChange={setType} />
           <VariableSecretToggle isSecret={isSecret} onChange={setIsSecret} />
+          {type === 'string' && (
+            <SecretGenerator
+              onGenerate={setNewValue}
+              onReveal={() => setShowValue(true)}
+            />
+          )}
         </div>
         <div className="flex gap-2">
           <select
