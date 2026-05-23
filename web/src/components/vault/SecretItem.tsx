@@ -84,7 +84,7 @@ export function SecretItem({
         <div className={editKeyClass}>{secret.key}</div>
         <div className="relative">
           <input
-            type={showEditValue ? 'text' : 'password'}
+            type={showEditValue || !secret.is_secret ? 'text' : 'password'}
             value={editValue}
             onChange={(e) => onEditValueChange(e.target.value)}
             placeholder="New value"
