@@ -13,9 +13,11 @@ import {
   fetchVariableStoreStatus,
   unlockVariableStore,
   lockVariableStore,
+  importVariables,
 } from '../lib/api';
 import type {
   CreateVariableInput,
+  ImportVariableInput,
   UpdateVariableInput,
   Variable,
   VariableSet,
@@ -48,6 +50,7 @@ export interface UseVaultManagerResult {
   createSet: (name: string) => Promise<void>;
   deleteSet: (name: string) => Promise<void>;
   assignToSet: (key: string, set: string) => Promise<void>;
+  importVars: (vars: ImportVariableInput[]) => Promise<{ imported: number }>;
 }
 
 // Single source of truth for vault data + IO actions, consumed by both the
@@ -184,6 +187,15 @@ export function useVaultManager(
     [refresh],
   );
 
+  const importVars = useCallback(
+    async (vars: ImportVariableInput[]) => {
+      const result = await importVariables(vars);
+      await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
   return {
     variables,
     sets,
@@ -201,5 +213,6 @@ export function useVaultManager(
     createSet,
     deleteSet,
     assignToSet,
+    importVars,
   };
 }

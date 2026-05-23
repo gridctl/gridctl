@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
+import { WORKSPACES } from '../types/workspace';
 
 describe('useUIStore workspace slice', () => {
   beforeEach(() => {
@@ -22,7 +23,7 @@ describe('useUIStore workspace slice', () => {
 
   it('setActiveWorkspace cycles through every workspace', () => {
     const { result } = renderHook(() => useUIStore((s) => s.activeWorkspace));
-    for (const ws of ['topology', 'library'] as const) {
+    for (const ws of WORKSPACES) {
       act(() => {
         useUIStore.getState().setActiveWorkspace(ws);
       });
@@ -36,10 +37,11 @@ describe('useUIStore compact mode slice', () => {
     useUIStore.setState({ compactMode: { ...COMPACT_MODE_DEFAULTS } });
   });
 
-  it('defaults compactMode to all-off', () => {
+  it('defaults compactMode to all-off for every workspace', () => {
     const state = useUIStore.getState();
-    expect(state.compactMode.topology).toBe(false);
-    expect(state.compactMode.library).toBe(false);
+    for (const ws of WORKSPACES) {
+      expect(state.compactMode[ws]).toBe(false);
+    }
   });
 
   it('setCompactMode updates a single workspace without touching the others', () => {
@@ -48,7 +50,10 @@ describe('useUIStore compact mode slice', () => {
     });
     const state = useUIStore.getState();
     expect(state.compactMode.topology).toBe(true);
-    expect(state.compactMode.library).toBe(false);
+    for (const ws of WORKSPACES) {
+      if (ws === 'topology') continue;
+      expect(state.compactMode[ws]).toBe(false);
+    }
   });
 
   it('toggleCompactMode flips only the targeted workspace', () => {
@@ -59,7 +64,11 @@ describe('useUIStore compact mode slice', () => {
     act(() => {
       useUIStore.getState().toggleCompactMode('library');
     });
-    expect(useUIStore.getState().compactMode.library).toBe(false);
-    expect(useUIStore.getState().compactMode.topology).toBe(false);
+    const state = useUIStore.getState();
+    expect(state.compactMode.library).toBe(false);
+    for (const ws of WORKSPACES) {
+      if (ws === 'library') continue;
+      expect(state.compactMode[ws]).toBe(false);
+    }
   });
 });
