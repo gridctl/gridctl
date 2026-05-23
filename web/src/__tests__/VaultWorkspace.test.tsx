@@ -89,6 +89,57 @@ describe('VaultWorkspace — empty state', () => {
   });
 });
 
+describe('VaultWorkspace — server filter', () => {
+  const testVariables = [
+    { key: 'POSTGRES_URL', type: 'string' as const, is_secret: true },
+    { key: 'POSTGRES_PASSWORD', type: 'string' as const, is_secret: true },
+    { key: 'REDIS_URL', type: 'string' as const, is_secret: false },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: false,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(testVariables);
+    useVaultStore.setState({
+      variables: testVariables,
+      sets: [],
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+  });
+
+  it('applies ?filter=server:<name> on mount and shows the inline banner', async () => {
+    render(
+      <MemoryRouter initialEntries={['/vault?filter=server:postgres']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('POSTGRES_URL')).toBeInTheDocument();
+    expect(screen.getByText('POSTGRES_PASSWORD')).toBeInTheDocument();
+    expect(screen.queryByText('REDIS_URL')).not.toBeInTheDocument();
+    expect(screen.getByText(/filtering for server/i)).toBeInTheDocument();
+    expect(screen.getByText('postgres')).toBeInTheDocument();
+  });
+
+  it('clears the banner and removes the filter when Clear is clicked', async () => {
+    render(
+      <MemoryRouter initialEntries={['/vault?filter=server:postgres']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    const clearBtn = await screen.findByRole('button', {
+      name: /clear server filter/i,
+    });
+    fireEvent.click(clearBtn);
+    expect(await screen.findByText('REDIS_URL')).toBeInTheDocument();
+    expect(screen.queryByText(/filtering for server/i)).not.toBeInTheDocument();
+  });
+});
+
 describe('VaultWorkspace — locked state', () => {
   beforeEach(() => {
     vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({

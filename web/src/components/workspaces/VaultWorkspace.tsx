@@ -8,6 +8,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   FileUp,
+  Filter,
   KeyRound,
   Lock,
   LockOpen,
@@ -73,6 +74,13 @@ export function VaultWorkspace() {
   // ---- URL state ----------------------------------------------------------
   const activeSet = searchParams.get('set') ?? ALL_SETS_KEY;
   const searchQuery = searchParams.get('q') ?? '';
+  // ?filter=server:<name> deep-links from Topology's server inspector. The
+  // server name is matched against variable keys as a substring — see
+  // filteredByServer below for the documented limitation.
+  const filterParam = searchParams.get('filter') ?? '';
+  const serverFilter = filterParam.startsWith('server:')
+    ? filterParam.slice('server:'.length)
+    : '';
 
   const setActiveSet = useCallback(
     (name: string) => {
@@ -104,6 +112,17 @@ export function VaultWorkspace() {
     [setSearchParams],
   );
 
+  const clearServerFilter = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('filter');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   // ---- Local UI state -----------------------------------------------------
   // Edit state — mirrors VaultPanel: validate type on save, preserve is_secret.
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -130,10 +149,20 @@ export function VaultWorkspace() {
   const setNames = useMemo(() => allSets.map((s) => s.name), [allSets]);
   const isEmpty = allVariables.length === 0 && allSets.length === 0;
 
+  // Approximate consumption filter: matches variable keys that contain the
+  // server name (case-insensitive). The backend doesn't yet track which
+  // server consumes which variable, so this is the best the client can do.
+  // Surfaced inline via ServerFilterBanner so users understand the limitation.
+  const filteredByServer = useMemo(() => {
+    if (!serverFilter) return allVariables;
+    const lower = serverFilter.toLowerCase();
+    return allVariables.filter((v) => v.key.toLowerCase().includes(lower));
+  }, [allVariables, serverFilter]);
+
   const filteredBySet = useMemo(() => {
-    if (activeSet === ALL_SETS_KEY) return allVariables;
-    return allVariables.filter((v) => v.set === activeSet);
-  }, [allVariables, activeSet]);
+    if (activeSet === ALL_SETS_KEY) return filteredByServer;
+    return filteredByServer.filter((v) => v.set === activeSet);
+  }, [filteredByServer, activeSet]);
 
   const filteredBySearch = useMemo(() => {
     if (!searchQuery) return filteredBySet;
@@ -354,6 +383,14 @@ export function VaultWorkspace() {
             </div>
           ) : (
             <>
+              {serverFilter && (
+                <ServerFilterBanner
+                  serverName={serverFilter}
+                  matchCount={filteredByServer.length}
+                  onClear={clearServerFilter}
+                />
+              )}
+
               {/* Search + add-one strip */}
               <div className="flex-shrink-0 px-6 py-3 border-b border-border-subtle bg-surface/30 flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -849,6 +886,43 @@ function VariableList({
           onAssignSet={(set) => onAssignSet(variable.key, set)}
         />
       ))}
+    </div>
+  );
+}
+
+interface ServerFilterBannerProps {
+  serverName: string;
+  matchCount: number;
+  onClear: () => void;
+}
+
+// Inline banner shown when the workspace is deep-linked from a Topology
+// server node. Documents the approximate-match limitation: variable
+// consumption tracking isn't wired server-side yet, so the filter is a
+// substring match against variable keys.
+function ServerFilterBanner({
+  serverName,
+  matchCount,
+  onClear,
+}: ServerFilterBannerProps) {
+  return (
+    <div className="flex-shrink-0 px-6 py-2 border-b border-border-subtle bg-primary/[0.04] flex items-center gap-2">
+      <Filter size={12} className="text-primary/70 flex-shrink-0" />
+      <div className="flex-1 min-w-0 text-[11px] text-text-secondary">
+        Filtering for server{' '}
+        <span className="font-mono text-primary">{serverName}</span>
+        <span className="text-text-muted/70 ml-2">
+          · {matchCount} {matchCount === 1 ? 'match' : 'matches'} · approximate
+          (matches keys containing the server name)
+        </span>
+      </div>
+      <button
+        onClick={onClear}
+        aria-label="Clear server filter"
+        className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-surface-highlight rounded transition-colors"
+      >
+        <X size={11} /> Clear
+      </button>
     </div>
   );
 }
