@@ -202,4 +202,35 @@ describe('VariablesPopover', () => {
       expect(screen.queryByPlaceholderText('Filter variables...')).not.toBeInTheDocument();
     });
   });
+
+  describe('secret generator', () => {
+    const openCreateForm = async () => {
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      await waitFor(() => {
+        fireEvent.click(screen.getByText('Create New Variable'));
+      });
+    };
+
+    it('offers the generator in the create-new form for string variables', async () => {
+      await openCreateForm();
+      expect(
+        screen.getByRole('button', { name: 'Generate value' }),
+      ).toBeInTheDocument();
+    });
+
+    it('generates into the value input without closing the popover', async () => {
+      await openCreateForm();
+      const valueInput = screen.getByPlaceholderText('secret value') as HTMLInputElement;
+
+      fireEvent.click(screen.getByRole('button', { name: 'Generate value' }));
+      // Interacting inside the inline panel must not close the host popover.
+      fireEvent.mouseDown(screen.getByRole('slider', { name: 'Length' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+
+      expect(valueInput.value).toHaveLength(24);
+      // The create form (and popover) are still open.
+      expect(screen.getByPlaceholderText('VARIABLE_KEY')).toBeInTheDocument();
+    });
+  });
 });
