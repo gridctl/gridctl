@@ -14,6 +14,7 @@ import { DetachedTracesPage } from './pages/DetachedTracesPage';
 // Each workspace is code-split into its own chunk.
 const TopologyWorkspace = lazy(() => import('./components/workspaces/TopologyWorkspace'));
 const LibraryWorkspace = lazy(() => import('./components/workspaces/LibraryWorkspace'));
+const VaultWorkspace = lazy(() => import('./components/workspaces/VaultWorkspace'));
 
 export function AppRoutes() {
   return (
@@ -48,6 +49,14 @@ export function AppRoutes() {
             </Suspense>
           }
         />
+        <Route
+          path="/vault"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <VaultWorkspace />
+            </Suspense>
+          }
+        />
       </Route>
 
       {/* Root redirect — chooses a workspace based on stack + storage. */}
@@ -70,9 +79,6 @@ export function AppRoutes() {
       <Route path="/registry" element={<Navigate to="/library-window" replace />} />
       <Route path="/metrics" element={<DetachedMetricsPage />} />
       <Route path="/var" element={<DetachedVaultPage />} />
-      {/* /vault → /var: silent redirect for bookmarks and existing window
-          handles. Kept through the beta cycle and removed at v1.0. */}
-      <Route path="/vault" element={<Navigate to="/var" replace />} />
       <Route path="/traces" element={<DetachedTracesPage />} />
     </Routes>
   );
