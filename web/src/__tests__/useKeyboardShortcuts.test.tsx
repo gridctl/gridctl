@@ -24,11 +24,12 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     expect(onSwitchToWorkspace).toHaveBeenCalledWith('library');
   });
 
-  it('⌘3 is not bound to any workspace', () => {
+  it('⌘3 calls onSwitchToWorkspace with "vault"', () => {
     const onSwitchToWorkspace = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
     fireMod('3');
-    expect(onSwitchToWorkspace).not.toHaveBeenCalled();
+    expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
+    expect(onSwitchToWorkspace).toHaveBeenCalledWith('vault');
   });
 
   it('does not fire workspace shortcuts when focus is inside an input', () => {
