@@ -29,7 +29,9 @@ export interface SetGroupProps {
   variables: Variable[];
   expanded: boolean;
   onToggleExpand: () => void;
-  onDeleteSet: () => void;
+  // When omitted, the per-set delete (trash) affordance is not rendered.
+  // The sidebar (quick-lookup) hides it; the workspace shows it.
+  onDeleteSet?: () => void;
   handlers: SetGroupRowHandlers;
   // Use `.log-text` on key/value text for detached-page zoom scaling.
   enableZoom?: boolean;
@@ -74,16 +76,18 @@ export function SetGroup({
             {set.count}
           </span>
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDeleteSet();
-          }}
-          className="p-1 rounded hover:bg-status-error/10 transition-colors opacity-0 group-hover:opacity-100"
-          title="Delete set"
-        >
-          <Trash2 size={10} className="text-text-muted hover:text-status-error" />
-        </button>
+        {onDeleteSet && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteSet();
+            }}
+            className="p-1 rounded hover:bg-status-error/10 transition-colors opacity-0 group-hover:opacity-100"
+            title="Delete set"
+          >
+            <Trash2 size={10} className="text-text-muted hover:text-status-error" />
+          </button>
+        )}
       </button>
       {expanded && variables.length > 0 && (
         <div className={cn('px-2 pb-2 space-y-1', innerClassName)}>
