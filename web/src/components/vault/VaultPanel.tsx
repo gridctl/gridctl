@@ -37,6 +37,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const {
     variables: secrets,
     sets,
+    recentlyEdited,
     loading,
     error,
     locked,
@@ -211,6 +212,17 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const unassigned = filteredSecrets.filter((s) => !s.set);
   const setNames = (sets ?? []).map((s) => s.name);
   const isEmpty = allSecrets.length === 0 && (sets ?? []).length === 0;
+
+  // Set names with a member edited this session — drives the per-set
+  // "recently edited" dot. Derived from the full (unfiltered) list so the
+  // search query doesn't suppress the hint.
+  const recentlyEditedSets = useMemo(() => {
+    const names = new Set<string>();
+    for (const v of allSecrets) {
+      if (v.set && v.key in recentlyEdited) names.add(v.set);
+    }
+    return names;
+  }, [allSecrets, recentlyEdited]);
 
   const rowHandlers = {
     revealed: revealedState.revealed,
@@ -412,6 +424,7 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                         )}
                         expanded={expandedSets[set.name] ?? false}
                         onToggleExpand={() => toggleSetExpand(set.name)}
+                        recentlyEdited={recentlyEditedSets.has(set.name)}
                         handlers={rowHandlers}
                       />
                     ))}
