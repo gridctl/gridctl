@@ -13,6 +13,7 @@ import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
 import { VariableTypeBadge } from './VariableTypeBadge';
 import { VariableVisibilityIcon } from './VariableVisibilityIcon';
+import { SecretGenerator } from './SecretGenerator';
 import type { Consumer, Variable } from '../../lib/api';
 
 // How many consumers to show before collapsing behind a "see all" toggle.
@@ -125,6 +126,14 @@ export function SecretItem({
             {showEditValue ? <EyeOff size={10} /> : <Eye size={10} />}
           </button>
         </div>
+        {secret.type === 'string' && (
+          <SecretGenerator
+            onGenerate={onEditValueChange}
+            onReveal={() => {
+              if (!showEditValue) onEditToggleShow();
+            }}
+          />
+        )}
         <div className="flex justify-end gap-1.5">
           <button
             onClick={onEditCancel}
