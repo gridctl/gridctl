@@ -9,6 +9,7 @@ import { VariableVisibilityIcon } from '../vault/VariableVisibilityIcon';
 import { VariableTypeBadge } from '../vault/VariableTypeBadge';
 import { VariableTypeSelector } from '../vault/VariableTypeSelector';
 import { VariableSecretToggle } from '../vault/VariableSecretToggle';
+import { SecretGenerator } from '../vault/SecretGenerator';
 import { validateVariableInput, getValuePlaceholder } from '../vault/variableTypeHelpers';
 
 interface VariablesPopoverProps {
@@ -257,8 +258,14 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
           <div className="flex flex-wrap gap-1">
             <VariableTypeSelector value={newType} onChange={setNewType} />
           </div>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             <VariableSecretToggle isSecret={newIsSecret} onChange={setNewIsSecret} />
+            {newType === 'string' && (
+              <SecretGenerator
+                onGenerate={setNewValue}
+                onReveal={() => setShowValue(true)}
+              />
+            )}
           </div>
           {error && (
             <p className="text-[10px] text-status-error">{error}</p>

@@ -18,6 +18,13 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- Secret generator in the Variables workspace: a wand button beside the
+  value input (quick-add form, wizard create-new form, and inline edit)
+  opens an inline panel to generate a cryptographically secure random
+  string with configurable length and character classes and a live
+  entropy readout. Generation is fully client-side via the Web Crypto
+  CSPRNG with rejection sampling (no modulo bias); shown only for
+  `string` variables.
 - Type badge (string / json / list / number / bool) and visibility icon
   (lock for secret, eye for plaintext) on every variable row in the
   Variables panel, detached page, and wizard popover.

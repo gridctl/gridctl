@@ -106,3 +106,39 @@ describe('SecretItem — usage badge', () => {
     expect(screen.queryByText(/github · env\.GITHUB_TOKEN/)).toBeNull();
   });
 });
+
+describe('SecretItem — secret generator (edit mode)', () => {
+  it('offers the generator while editing a string variable', () => {
+    renderItem({ isEditing: true });
+    expect(
+      screen.getByRole('button', { name: 'Generate value' }),
+    ).toBeInTheDocument();
+  });
+
+  it('hides the generator for non-string variables', () => {
+    renderItem({
+      isEditing: true,
+      secret: { key: 'PORT', type: 'number', is_secret: false },
+    });
+    expect(screen.queryByRole('button', { name: 'Generate value' })).toBeNull();
+  });
+
+  it('writes a generated value and reveals it via the toggle', () => {
+    const onEditValueChange = vi.fn();
+    const onEditToggleShow = vi.fn();
+    renderItem({
+      isEditing: true,
+      showEditValue: false,
+      onEditValueChange,
+      onEditToggleShow,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate value' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+
+    expect(onEditValueChange).toHaveBeenCalledTimes(1);
+    expect(onEditValueChange.mock.calls[0][0]).toHaveLength(24);
+    // Value was masked, so the reveal toggle is fired exactly once.
+    expect(onEditToggleShow).toHaveBeenCalledTimes(1);
+  });
+});
