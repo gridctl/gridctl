@@ -19,7 +19,7 @@ import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { VariableTypeSelector } from './VariableTypeSelector';
-import { parseEnv } from '../../lib/envParser';
+import { parseImport } from '../../lib/parseFile';
 import type { ParsedEnvEntry } from '../../lib/envParser';
 import type {
   ImportVariableInput,
@@ -36,6 +36,10 @@ export interface EnvImportModalProps {
   // Optional initial set assignment for every parsed row. Used when the user
   // opens the modal while a set filter is active in the workspace.
   defaultSet?: string;
+  // Optional content to pre-seed the input with — used when the modal is
+  // opened by dropping a file onto the workspace. `.env` or JSON is auto-
+  // detected by parseImport, so this is just the raw file text.
+  initialText?: string;
 }
 
 interface RowOverride {
@@ -69,10 +73,12 @@ function rowFromParsed(
     key: entry.key,
     value: entry.value,
     type: override?.type ?? entry.type,
-    set: override?.set ?? defaultSet,
+    // Precedence: a per-row user tweak, then a value the source carried
+    // explicitly (JSON v2), then the workspace/secure default.
+    set: override?.set ?? entry.set ?? defaultSet,
     // Default new imports to "secret" per Article XII secure default — the
     // user can toggle to plaintext per row if needed.
-    isSecret: override?.isSecret ?? true,
+    isSecret: override?.isSecret ?? entry.isSecret ?? true,
     skipped: override?.skipped ?? false,
     revealed: override?.revealed ?? false,
   };
@@ -86,6 +92,7 @@ export function EnvImportModal({
   existingVariables,
   sets,
   defaultSet = '',
+  initialText = '',
 }: EnvImportModalProps) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -95,7 +102,10 @@ export function EnvImportModal({
     initialFocusRef: textareaRef,
   });
 
-  const [text, setText] = useState('');
+  // Seeded once from initialText; the modal is mounted fresh on each open
+  // (see the unmount-resets-state note above), so a plain initializer is
+  // enough — no open/close effect needed.
+  const [text, setText] = useState(initialText);
   // Per-key user overrides — survive re-parses so small textarea edits don't
   // wipe per-row tweaks. Keyed by variable key, not by parser line, since
   // line numbers shift as the user types.
@@ -105,7 +115,7 @@ export function EnvImportModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const parsed = useMemo(() => parseEnv(text), [text]);
+  const parsed = useMemo(() => parseImport(text), [text]);
 
   const rows = useMemo<RowState[]>(
     () =>
@@ -245,7 +255,7 @@ export function EnvImportModal({
                 Import variables
               </h2>
               <p className="text-[10px] text-text-muted uppercase tracking-[0.18em]">
-                paste · drop · pick a .env file
+                paste · drop · pick a .env or .json file
               </p>
             </div>
           </div>
@@ -300,7 +310,7 @@ export function EnvImportModal({
                 Pick a file
                 <input
                   type="file"
-                  accept=".env,text/plain"
+                  accept=".env,.json,text/plain,application/json"
                   onChange={onFilePicked}
                   className="hidden"
                 />
