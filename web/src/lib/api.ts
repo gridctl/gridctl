@@ -555,6 +555,32 @@ export async function fetchVariables(): Promise<Variable[]> {
   return fetchJSON<Variable[]>('/api/var');
 }
 
+// ConsumerKind mirrors the backend config.ReferenceKind: where in the active
+// stack a ${var:KEY} reference appears. Only 'mcp-server' and 'resource' map to
+// topology nodes; the rest are stack/gateway/network-level sites.
+export type ConsumerKind =
+  | 'mcp-server'
+  | 'resource'
+  | 'gateway'
+  | 'network'
+  | 'stack';
+
+// Consumer is a single site that references a variable. `field` is the YAML key
+// path the user wrote (e.g. "env.GITHUB_TOKEN", "image", "openapi.baseUrl").
+export interface Consumer {
+  kind: ConsumerKind;
+  name?: string;
+  field: string;
+}
+
+// fetchVariableUsage returns the usage index for the active stack: each variable
+// key mapped to the consumers that reference it. Returns {} when no stack is
+// loaded. Derived from the stack file (never the vault), so it carries no values
+// and is safe to call while the vault is locked.
+export async function fetchVariableUsage(): Promise<Record<string, Consumer[]>> {
+  return fetchJSON<Record<string, Consumer[]>>('/api/var/usage');
+}
+
 export interface CreateVariableInput {
   key: string;
   value: string;

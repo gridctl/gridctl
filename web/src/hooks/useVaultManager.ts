@@ -3,6 +3,7 @@ import { useVaultStore } from '../stores/useVaultStore';
 import {
   fetchVariables,
   fetchVariableSets,
+  fetchVariableUsage,
   createVariable,
   getVariable,
   updateVariable,
@@ -16,6 +17,7 @@ import {
   importVariables,
 } from '../lib/api';
 import type {
+  Consumer,
   CreateVariableInput,
   ImportVariableInput,
   UpdateVariableInput,
@@ -34,6 +36,7 @@ export interface UseVaultManagerResult {
   // Store state — re-rendered when useVaultStore changes
   variables: Variable[] | null;
   sets: VariableSet[] | null;
+  usage: Record<string, Consumer[]>;
   loading: boolean;
   error: string | null;
   locked: boolean;
@@ -63,6 +66,7 @@ export function useVaultManager(
 ): UseVaultManagerResult {
   const variables = useVaultStore((s) => s.variables);
   const sets = useVaultStore((s) => s.sets);
+  const usage = useVaultStore((s) => s.usage);
   const loading = useVaultStore((s) => s.loading);
   const error = useVaultStore((s) => s.error);
   const locked = useVaultStore((s) => s.locked);
@@ -79,12 +83,16 @@ export function useVaultManager(
       useVaultStore.getState().setEncrypted(status.encrypted);
 
       if (!status.locked) {
-        const [variablesData, setsData] = await Promise.all([
+        // Usage is best-effort and parallel: a failure must not break the
+        // variable list, so it resolves to {} rather than rejecting.
+        const [variablesData, setsData, usageData] = await Promise.all([
           fetchVariables(),
           fetchVariableSets(),
+          fetchVariableUsage().catch(() => ({}) as Record<string, Consumer[]>),
         ]);
         useVaultStore.getState().setVariables(variablesData);
         useVaultStore.getState().setSets(setsData);
+        useVaultStore.getState().setUsage(usageData);
 
         // Plaintext variables display their value inline by default
         // (no Reveal click needed). Eager-fetch them so the rows render
@@ -199,6 +207,7 @@ export function useVaultManager(
   return {
     variables,
     sets,
+    usage,
     loading,
     error,
     locked,

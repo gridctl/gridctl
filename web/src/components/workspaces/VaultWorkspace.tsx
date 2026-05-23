@@ -30,10 +30,11 @@ import { VaultEncryptForm } from '../vault/VaultEncryptForm';
 import { VaultLockPrompt } from '../vault/VaultLockPrompt';
 import { EnvImportModal } from '../vault/EnvImportModal';
 import { useUIStore } from '../../stores/useUIStore';
+import { useStackStore } from '../../stores/useStackStore';
 import { useVaultManager } from '../../hooks/useVaultManager';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { validateVariableInput } from '../vault/variableTypeHelpers';
-import type { Variable, VariableType } from '../../lib/api';
+import type { Consumer, Variable, VariableType } from '../../lib/api';
 
 const ALL_SETS_KEY = '__all__';
 
@@ -45,11 +46,13 @@ export function VaultWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
   const compact = useUIStore((s) => s.compactMode.vault);
 
+  const selectNode = useStackStore((s) => s.selectNode);
   const revealedState = useRevealedValues();
   const vault = useVaultManager({ onPlaintextLoaded: revealedState.bulkSet });
   const {
     variables: vaultVariables,
     sets: vaultSets,
+    usage,
     loading,
     error,
     locked,
@@ -149,15 +152,19 @@ export function VaultWorkspace() {
   const setNames = useMemo(() => allSets.map((s) => s.name), [allSets]);
   const isEmpty = allVariables.length === 0 && allSets.length === 0;
 
-  // Approximate consumption filter: matches variable keys that contain the
-  // server name (case-insensitive). The backend doesn't yet track which
-  // server consumes which variable, so this is the best the client can do.
-  // Surfaced inline via ServerFilterBanner so users understand the limitation.
+  // Exact consumption filter: keep variables actually referenced by the named
+  // server/resource, using the backend usage index (GET /api/var/usage). This
+  // replaces the former approximate key-substring heuristic.
   const filteredByServer = useMemo(() => {
     if (!serverFilter) return allVariables;
-    const lower = serverFilter.toLowerCase();
-    return allVariables.filter((v) => v.key.toLowerCase().includes(lower));
-  }, [allVariables, serverFilter]);
+    return allVariables.filter((v) =>
+      (usage[v.key] ?? []).some(
+        (c) =>
+          (c.kind === 'mcp-server' || c.kind === 'resource') &&
+          c.name === serverFilter,
+      ),
+    );
+  }, [allVariables, serverFilter, usage]);
 
   const filteredBySet = useMemo(() => {
     if (activeSet === ALL_SETS_KEY) return filteredByServer;
@@ -322,6 +329,24 @@ export function VaultWorkspace() {
     [importVars],
   );
 
+  // Selecting a consumer highlights its topology node (ids are mcp-<name> /
+  // resource-<name>). We stay on the Variables route — a toast points the user
+  // to Topology rather than yanking them out of their current view.
+  const handleConsumerClick = useCallback(
+    (consumer: Consumer) => {
+      const nodeId =
+        consumer.kind === 'mcp-server'
+          ? `mcp-${consumer.name}`
+          : consumer.kind === 'resource'
+            ? `resource-${consumer.name}`
+            : null;
+      if (!nodeId) return;
+      selectNode(nodeId);
+      showToast('success', `Selected ${consumer.name} — open Topology to inspect`);
+    },
+    [selectNode],
+  );
+
   // ---- Rendering ----------------------------------------------------------
   const leftRail = (
     <VaultLeftRail
@@ -482,6 +507,7 @@ export function VaultWorkspace() {
                   <VariableList
                     variables={filteredBySearch}
                     revealed={revealedState.revealed}
+                    usage={usage}
                     editingKey={editingKey}
                     editValue={editValue}
                     showEditValue={showEditValue}
@@ -494,6 +520,7 @@ export function VaultWorkspace() {
                     onEditSave={handleEditSave}
                     onEditCancel={handleEditCancel}
                     onAssignSet={handleAssignSet}
+                    onConsumerClick={handleConsumerClick}
                   />
                 )}
               </div>
@@ -512,6 +539,14 @@ export function VaultWorkspace() {
             <p>
               Delete <span className="font-mono text-primary">{confirmDelete}</span>?
             </p>
+            {confirmDelete && (usage[confirmDelete]?.length ?? 0) > 0 && (
+              <p className="mt-2 px-2.5 py-2 rounded-md bg-status-error/10 border border-status-error/20 text-[11px] text-status-error">
+                Used by {usage[confirmDelete].length}{' '}
+                {usage[confirmDelete].length === 1 ? 'consumer' : 'consumers'} in
+                the active stack. Deleting it may break{' '}
+                {usage[confirmDelete].length === 1 ? 'it' : 'them'}.
+              </p>
+            )}
             <p>This action cannot be undone.</p>
           </>
         }
@@ -835,6 +870,7 @@ function SetPill({
 interface VariableListProps {
   variables: Variable[];
   revealed: Record<string, string>;
+  usage: Record<string, Consumer[]>;
   editingKey: string | null;
   editValue: string;
   showEditValue: boolean;
@@ -847,11 +883,13 @@ interface VariableListProps {
   onEditSave: () => void;
   onEditCancel: () => void;
   onAssignSet: (key: string, set: string) => void;
+  onConsumerClick: (consumer: Consumer) => void;
 }
 
 function VariableList({
   variables,
   revealed,
+  usage,
   editingKey,
   editValue,
   showEditValue,
@@ -864,6 +902,7 @@ function VariableList({
   onEditSave,
   onEditCancel,
   onAssignSet,
+  onConsumerClick,
 }: VariableListProps) {
   return (
     <div className="px-6 py-4 space-y-2 max-w-3xl">
@@ -872,6 +911,8 @@ function VariableList({
           key={variable.key}
           secret={variable}
           revealed={revealed[variable.key]}
+          consumers={usage[variable.key]}
+          onConsumerClick={onConsumerClick}
           isEditing={editingKey === variable.key}
           editValue={editValue}
           showEditValue={showEditValue}
@@ -897,9 +938,8 @@ interface ServerFilterBannerProps {
 }
 
 // Inline banner shown when the workspace is deep-linked from a Topology
-// server node. Documents the approximate-match limitation: variable
-// consumption tracking isn't wired server-side yet, so the filter is a
-// substring match against variable keys.
+// server node. Backed by the exact usage index (GET /api/var/usage): the filter
+// shows the variables that server actually references.
 function ServerFilterBanner({
   serverName,
   matchCount,
@@ -909,11 +949,10 @@ function ServerFilterBanner({
     <div className="flex-shrink-0 px-6 py-2 border-b border-border-subtle bg-primary/[0.04] flex items-center gap-2">
       <Filter size={12} className="text-primary/70 flex-shrink-0" />
       <div className="flex-1 min-w-0 text-[11px] text-text-secondary">
-        Filtering for server{' '}
+        Variables used by{' '}
         <span className="font-mono text-primary">{serverName}</span>
         <span className="text-text-muted/70 ml-2">
-          · {matchCount} {matchCount === 1 ? 'match' : 'matches'} · approximate
-          (matches keys containing the server name)
+          · {matchCount} {matchCount === 1 ? 'variable' : 'variables'}
         </span>
       </div>
       <button
