@@ -14,6 +14,7 @@ vi.mock('../lib/api', async () => {
     ...actual,
     fetchVariables: vi.fn().mockResolvedValue([]),
     fetchVariableSets: vi.fn().mockResolvedValue([]),
+    fetchVariableUsage: vi.fn().mockResolvedValue({}),
     createVariable: vi.fn().mockResolvedValue(undefined),
     getVariable: vi.fn().mockResolvedValue({ value: '' }),
     updateVariable: vi.fn().mockResolvedValue(undefined),
@@ -96,15 +97,32 @@ describe('VaultWorkspace — server filter', () => {
     { key: 'REDIS_URL', type: 'string' as const, is_secret: false },
   ];
 
+  // Exact usage index: which server/resource references each variable. The
+  // filter now matches this (not a key substring), so POSTGRES_PASSWORD counts
+  // for `postgres` even though its key shares no substring with another server.
+  const testUsage = {
+    POSTGRES_URL: [
+      { kind: 'mcp-server' as const, name: 'postgres', field: 'env.POSTGRES_URL' },
+    ],
+    POSTGRES_PASSWORD: [
+      { kind: 'resource' as const, name: 'postgres', field: 'env.POSTGRES_PASSWORD' },
+    ],
+    REDIS_URL: [
+      { kind: 'mcp-server' as const, name: 'redis', field: 'env.REDIS_URL' },
+    ],
+  };
+
   beforeEach(() => {
     vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
       locked: false,
       encrypted: false,
     });
     vi.mocked(api.fetchVariables).mockResolvedValue(testVariables);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue(testUsage);
     useVaultStore.setState({
       variables: testVariables,
       sets: [],
+      usage: testUsage,
       loading: false,
       error: null,
       locked: false,
@@ -112,7 +130,7 @@ describe('VaultWorkspace — server filter', () => {
     });
   });
 
-  it('applies ?filter=server:<name> on mount and shows the inline banner', async () => {
+  it('filters to the exact consumers of the deep-linked server', async () => {
     render(
       <MemoryRouter initialEntries={['/vault?filter=server:postgres']}>
         <VaultWorkspace />
@@ -121,8 +139,22 @@ describe('VaultWorkspace — server filter', () => {
     expect(await screen.findByText('POSTGRES_URL')).toBeInTheDocument();
     expect(screen.getByText('POSTGRES_PASSWORD')).toBeInTheDocument();
     expect(screen.queryByText('REDIS_URL')).not.toBeInTheDocument();
-    expect(screen.getByText(/filtering for server/i)).toBeInTheDocument();
+    // Exact-match banner — no "approximate" disclaimer.
+    expect(screen.getByText(/variables used by/i)).toBeInTheDocument();
     expect(screen.getByText('postgres')).toBeInTheDocument();
+    expect(screen.queryByText(/approximate/i)).not.toBeInTheDocument();
+  });
+
+  it('excludes a variable whose key contains the server name but is not referenced by it', async () => {
+    // REDIS_URL's key has no "postgres" substring, and POSTGRES_* are only kept
+    // because the usage index — not the key text — links them to postgres.
+    render(
+      <MemoryRouter initialEntries={['/vault?filter=server:redis']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('REDIS_URL')).toBeInTheDocument();
+    expect(screen.queryByText('POSTGRES_URL')).not.toBeInTheDocument();
   });
 
   it('clears the banner and removes the filter when Clear is clicked', async () => {
@@ -136,7 +168,22 @@ describe('VaultWorkspace — server filter', () => {
     });
     fireEvent.click(clearBtn);
     expect(await screen.findByText('REDIS_URL')).toBeInTheDocument();
-    expect(screen.queryByText(/filtering for server/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/variables used by/i)).not.toBeInTheDocument();
+  });
+
+  it('warns about consumers in the delete confirmation', async () => {
+    render(
+      <MemoryRouter initialEntries={['/vault']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    // Expand the POSTGRES_URL row, then trigger its Delete action.
+    const row = await screen.findByRole('button', { name: /POSTGRES_URL/i });
+    fireEvent.click(row);
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+
+    expect(await screen.findByText(/used by 1 consumer/i)).toBeInTheDocument();
+    expect(screen.getByText(/may break it/i)).toBeInTheDocument();
   });
 });
 
