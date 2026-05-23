@@ -15,6 +15,7 @@ import {
   Activity,
   Database,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ControlBar } from '../ui/ControlBar';
@@ -41,6 +42,7 @@ export function Sidebar() {
   const autoscaleHistory = useStackStore((s) => s.autoscaleHistory);
   const autoscaleDecisions = useStackStore((s) => s.autoscaleDecisions);
   const { openDetachedWindow } = useWindowManager();
+  const navigate = useNavigate();
 
   const handleClose = () => {
     setSidebarOpen(false);
@@ -95,6 +97,10 @@ export function Sidebar() {
 
   const handlePopout = () => {
     openDetachedWindow('sidebar', `node=${encodeURIComponent(data.name)}`);
+  };
+
+  const handleViewSecrets = () => {
+    navigate(`/vault?filter=server:${encodeURIComponent(data.name)}`);
   };
 
   return (
@@ -345,6 +351,20 @@ export function Sidebar() {
               <FileText size={14} />
               Show Logs Panel
             </button>
+            {isServer && (
+              <button
+                onClick={handleViewSecrets}
+                className={cn(
+                  'mt-3 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
+                  'bg-surface-elevated/60 border border-border/50',
+                  'hover:bg-surface-highlight hover:border-text-muted/30 transition-all text-sm',
+                  'text-text-secondary hover:text-text-primary'
+                )}
+              >
+                <KeyRound size={14} />
+                Secrets
+              </button>
+            )}
           </InspectorSection>
         )}
 
