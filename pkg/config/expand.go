@@ -79,6 +79,19 @@ func warnVaultSyntaxDeprecated() {
 // Returns the expanded string, any unresolved vault references, and env vars
 // that resolved to empty.
 func ExpandString(s string, resolve Resolver) (expanded string, unresolvedVault []string, emptyEnvVars []string) {
+	expanded, _, unresolvedVault, emptyEnvVars = ExpandStringRefs(s, resolve)
+	return expanded, unresolvedVault, emptyEnvVars
+}
+
+// ExpandStringRefs is ExpandString plus storeRefs: the variable-store keys
+// (the KEY in ${var:KEY} / ${vault:KEY}) referenced by s, in first-seen order.
+//
+// storeRefs is captured from the parsed grammar *before* resolution, so it
+// records what s references regardless of whether each key resolves — this is
+// the basis for usage tracing and is why the index can never drift from what
+// expansion actually recognizes. Bare $VAR / ${VAR} env-style references are
+// NOT store references and are deliberately excluded.
+func ExpandStringRefs(s string, resolve Resolver) (expanded string, storeRefs []string, unresolvedVault []string, emptyEnvVars []string) {
 	if resolve == nil {
 		resolve = EnvResolver()
 	}
@@ -110,6 +123,13 @@ func ExpandString(s string, resolve Resolver) (expanded string, unresolvedVault 
 		varName := parts[2]
 		op := parts[3]
 		operand := parts[4]
+
+		// Record the reference up front, independent of resolution outcome,
+		// so usage tracing sees every ${var:KEY} site even when the key is
+		// unresolved or supplied via the environment.
+		if isStoreRef {
+			storeRefs = append(storeRefs, varName)
+		}
 
 		value, exists := resolve(varName)
 
@@ -145,5 +165,5 @@ func ExpandString(s string, resolve Resolver) (expanded string, unresolvedVault 
 		}
 	})
 
-	return expanded, unresolvedVault, emptyEnvVars
+	return expanded, storeRefs, unresolvedVault, emptyEnvVars
 }
