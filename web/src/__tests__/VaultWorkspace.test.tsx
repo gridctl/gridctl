@@ -219,3 +219,58 @@ describe('VaultWorkspace — locked state', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('VaultWorkspace — recently edited indicator', () => {
+  const variables = [
+    { key: 'API_KEY', type: 'string' as const, is_secret: true, set: 'dev' },
+    { key: 'DB_URL', type: 'string' as const, is_secret: true, set: 'prod' },
+  ];
+  const sets = [
+    { name: 'dev', count: 1 },
+    { name: 'prod', count: 1 },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: false,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(variables);
+    vi.mocked(api.fetchVariableSets).mockResolvedValue(sets);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue({});
+  });
+
+  it('marks only the set whose member was edited this session', async () => {
+    useVaultStore.setState({
+      variables,
+      sets,
+      usage: {},
+      recentlyEdited: { API_KEY: Date.now() },
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+    renderWorkspace();
+    // API_KEY belongs to "dev", so exactly one set pill carries the dot.
+    const dots = await screen.findAllByTitle('Recently edited');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]).toHaveAttribute('aria-label', 'Recently edited');
+  });
+
+  it('shows no indicator when nothing was edited this session', async () => {
+    useVaultStore.setState({
+      variables,
+      sets,
+      usage: {},
+      recentlyEdited: {},
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+    renderWorkspace();
+    await screen.findByRole('button', { name: /all variables/i });
+    expect(screen.queryByTitle('Recently edited')).not.toBeInTheDocument();
+  });
+});
