@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import {
   X,
   Plus,
   KeyRound,
   AlertCircle,
-  Package,
   Lock,
   LockOpen,
   Search,
@@ -20,9 +20,7 @@ import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { validateVariableInput } from './variableTypeHelpers';
 import { VaultLockPrompt } from './VaultLockPrompt';
 import { SecretItem } from './SecretItem';
-import { NewSetForm } from './NewSetForm';
 import { VariableQuickAddForm } from './VariableQuickAddForm';
-import { VaultEncryptForm } from './VaultEncryptForm';
 import { EmptyVaultState } from './EmptyVaultState';
 import { SetGroup } from './SetGroup';
 import type { VariableType } from '../../lib/api';
@@ -45,13 +43,10 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     encrypted,
     refresh,
     unlock,
-    lock,
     createVar,
     updateVar,
     deleteVar,
     getVar,
-    createSet,
-    deleteSet,
     assignToSet,
   } = vault;
 
@@ -62,7 +57,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [showLockForm, setShowLockForm] = useState(false);
 
   // Edit state — VaultPanel preserves the variable's current type/is_secret
   // on save (and validates the value against the type), so we track them
@@ -76,8 +70,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const [expandedSets, setExpandedSets] = useState<Record<string, boolean>>({});
-  const [showNewSet, setShowNewSet] = useState(false);
-  const [newSetName, setNewSetName] = useState('');
 
   const keyInputRef = useRef<HTMLInputElement>(null);
 
@@ -124,15 +116,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
       return ok;
     },
     [unlock],
-  );
-
-  const handleEncrypt = useCallback(
-    async (passphrase: string) => {
-      await lock(passphrase);
-      setShowLockForm(false);
-      showToast('success', 'Vault encrypted');
-    },
-    [lock],
   );
 
   const handleReveal = useCallback(
@@ -209,34 +192,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
       showToast('error', 'Failed to delete secret');
     }
   }, [confirmDelete, deleteVar]);
-
-  const handleCreateSet = useCallback(async () => {
-    const name = newSetName.trim();
-    if (!name) return;
-    try {
-      await createSet(name);
-      setNewSetName('');
-      setShowNewSet(false);
-      showToast('success', `Set "${name}" created`);
-    } catch (err) {
-      showToast(
-        'error',
-        err instanceof Error ? err.message : 'Failed to create set',
-      );
-    }
-  }, [newSetName, createSet]);
-
-  const handleDeleteSet = useCallback(
-    async (name: string) => {
-      try {
-        await deleteSet(name);
-        showToast('success', `Set "${name}" deleted`);
-      } catch {
-        showToast('error', 'Failed to delete set');
-      }
-    },
-    [deleteSet],
-  );
 
   const handleAssignSet = useCallback(
     async (key: string, set: string) => {
@@ -339,22 +294,12 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                   ? `${filteredSecrets.length} of ${allSecrets.length} secrets`
                   : `${allSecrets.length} secrets`}
               </span>
-              <div className="flex items-center gap-2">
-                {!encrypted && allSecrets.length > 0 && (
-                  <button
-                    onClick={() => setShowLockForm(!showLockForm)}
-                    className="flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors"
-                  >
-                    <Lock size={10} /> Encrypt
-                  </button>
-                )}
-                <button
-                  onClick={() => keyInputRef.current?.focus()}
-                  className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
-                >
-                  <Plus size={10} /> New
-                </button>
-              </div>
+              <button
+                onClick={() => keyInputRef.current?.focus()}
+                className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+              >
+                <Plus size={10} /> New
+              </button>
             </div>
 
             {/* Search */}
@@ -386,14 +331,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
             </div>
 
             <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
-              {showLockForm && (
-                <VaultEncryptForm
-                  onLock={handleEncrypt}
-                  onCancel={() => setShowLockForm(false)}
-                  className="px-4 pt-3 pb-2 border-b border-border-subtle/50"
-                />
-              )}
-
               {error && (
                 <div className="mx-4 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error">
                   <AlertCircle size={12} className="flex-shrink-0" />
@@ -462,34 +399,9 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
 
               {!loading && (sets ?? []).length > 0 && (
                 <div className="px-2 py-2">
-                  <div className="flex items-center justify-between px-2 mb-2">
-                    <div className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
-                      Variable Sets
-                    </div>
-                    <button
-                      onClick={() => setShowNewSet(true)}
-                      className="p-1 rounded hover:bg-surface-highlight transition-colors"
-                      title="New set"
-                    >
-                      <Plus
-                        size={12}
-                        className="text-text-muted hover:text-primary"
-                      />
-                    </button>
+                  <div className="text-[10px] font-medium text-text-muted uppercase tracking-wider px-2 mb-2">
+                    Variable Sets
                   </div>
-
-                  <NewSetForm
-                    show={showNewSet}
-                    value={newSetName}
-                    onChange={setNewSetName}
-                    onSave={handleCreateSet}
-                    onCancel={() => {
-                      setShowNewSet(false);
-                      setNewSetName('');
-                    }}
-                    className="mb-2 px-2"
-                  />
-
                   <div className="space-y-1">
                     {(sets ?? []).map((set) => (
                       <SetGroup
@@ -500,40 +412,24 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
                         )}
                         expanded={expandedSets[set.name] ?? false}
                         onToggleExpand={() => toggleSetExpand(set.name)}
-                        onDeleteSet={() => handleDeleteSet(set.name)}
                         handlers={rowHandlers}
                       />
                     ))}
                   </div>
                 </div>
               )}
-
-              {!loading && !isEmpty && (sets ?? []).length === 0 && (
-                <div className="px-4 py-2">
-                  <button
-                    onClick={() => setShowNewSet(true)}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border/50 text-xs text-text-muted hover:text-text-secondary hover:border-border transition-colors"
-                  >
-                    <Package size={12} />
-                    Create a variable set
-                  </button>
-                  <NewSetForm
-                    show={showNewSet}
-                    value={newSetName}
-                    onChange={setNewSetName}
-                    onSave={handleCreateSet}
-                    onCancel={() => {
-                      setShowNewSet(false);
-                      setNewSetName('');
-                    }}
-                    className="mt-2"
-                  />
-                </div>
-              )}
             </div>
 
-            {/* Status footer */}
-            <div className="px-4 py-2 border-t border-border/30 bg-surface/30 flex-shrink-0">
+            {/* Status footer — also surfaces a hint pointing power-user tasks
+                (set management, bulk import, lock/unlock) to the Variables
+                workspace, since the sidebar intentionally doesn't host them. */}
+            <div className="px-4 py-2 border-t border-border/30 bg-surface/30 flex-shrink-0 space-y-1.5">
+              <Link
+                to="/vault"
+                className="block text-[10px] text-text-muted/70 hover:text-primary transition-colors"
+              >
+                Manage sets and bulk-import in the Variables workspace →
+              </Link>
               <div className="flex items-center justify-between text-[10px] text-text-muted">
                 <span>{allSecrets.length} total</span>
                 <span>
