@@ -1,9 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
-import { Library, Network } from 'lucide-react';
+import { KeyRound, Library, Network } from 'lucide-react';
 
-// Top-level workspaces in the unified shell. Routed at /topology and /library
-// inside AppShell.
-export type Workspace = 'topology' | 'library';
+// Top-level workspaces in the unified shell. Routed at /topology, /library,
+// and /vault inside AppShell.
+export type Workspace = 'topology' | 'library' | 'vault';
 
 export interface WorkspaceConfig {
   id: Workspace;
@@ -15,10 +15,11 @@ export interface WorkspaceConfig {
 
 // Single source of truth for workspace metadata. Adding a workspace = append
 // here; the switcher, shortcuts, and labels follow automatically. Array order
-// is the rendered top-nav order, so shortcuts read left-to-right as 1-2.
+// is the rendered top-nav order, so shortcuts read left-to-right as 1-2-3.
 export const WORKSPACE_CONFIG: readonly WorkspaceConfig[] = [
-  { id: 'topology', label: 'Topology', icon: Network, shortcutKey: '1' },
-  { id: 'library',  label: 'Library',  icon: Library, shortcutKey: '2' },
+  { id: 'topology', label: 'Topology',  icon: Network,  shortcutKey: '1' },
+  { id: 'library',  label: 'Library',   icon: Library,  shortcutKey: '2' },
+  { id: 'vault',    label: 'Variables', icon: KeyRound, shortcutKey: '3' },
 ] as const;
 
 // Derived for back-compat with existing call-sites in useUIStore, AppShell,
