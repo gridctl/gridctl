@@ -32,6 +32,9 @@ export interface SetGroupProps {
   // When omitted, the per-set delete (trash) affordance is not rendered.
   // The sidebar (quick-lookup) hides it; the workspace shows it.
   onDeleteSet?: () => void;
+  // When true, a small dot marks the set as containing a variable edited this
+  // session. Absence is the signal — nothing renders when false/omitted.
+  recentlyEdited?: boolean;
   handlers: SetGroupRowHandlers;
   // Use `.log-text` on key/value text for detached-page zoom scaling.
   enableZoom?: boolean;
@@ -51,6 +54,7 @@ export function SetGroup({
   expanded,
   onToggleExpand,
   onDeleteSet,
+  recentlyEdited,
   handlers,
   enableZoom,
   innerClassName,
@@ -72,6 +76,13 @@ export function SetGroup({
           <span className={cn('text-xs font-mono text-text-primary', nameClassName)}>
             {set.name}
           </span>
+          {recentlyEdited && (
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-secondary/70 flex-shrink-0"
+              title="Recently edited"
+              aria-label="Recently edited"
+            />
+          )}
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/10 text-secondary">
             {set.count}
           </span>
