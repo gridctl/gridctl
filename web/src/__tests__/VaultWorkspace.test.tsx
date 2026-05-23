@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import { VaultWorkspace } from '../components/workspaces/VaultWorkspace';
+import { ToastContainer } from '../components/ui/Toast';
 import { useVaultStore } from '../stores/useVaultStore';
 import * as api from '../lib/api';
 
@@ -38,6 +39,32 @@ function renderWorkspace() {
     </MemoryRouter>,
   );
 }
+
+// Renders the workspace alongside a ToastContainer so drop-validation toasts
+// (normally mounted by AppShell) are assertable in isolation.
+function renderWithToasts() {
+  return render(
+    <MemoryRouter initialEntries={['/vault']}>
+      <VaultWorkspace />
+      <ToastContainer />
+    </MemoryRouter>,
+  );
+}
+
+// Duck-typed File — the drop path only reads name/type/text().
+function fakeFile(name: string, content: string, type = ''): File {
+  return { name, type, text: () => Promise.resolve(content) } as unknown as File;
+}
+
+function dispatchDrag(type: string, files: unknown[] = []) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { dataTransfer: { types: ['Files'], files } });
+  act(() => {
+    window.dispatchEvent(event);
+  });
+}
+
+const OVERLAY_COPY = /drop a \.env or \.json file to import/i;
 
 describe('VaultWorkspace — empty state', () => {
   beforeEach(() => {
@@ -272,5 +299,132 @@ describe('VaultWorkspace — recently edited indicator', () => {
     renderWorkspace();
     await screen.findByRole('button', { name: /all variables/i });
     expect(screen.queryByTitle('Recently edited')).not.toBeInTheDocument();
+  });
+});
+
+describe('VaultWorkspace — drag-and-drop import', () => {
+  beforeEach(() => {
+    // Reset fetch mocks so a prior block's variables don't leak in and create
+    // duplicate-key matches between the list and the modal preview.
+    vi.mocked(api.fetchVariables).mockResolvedValue([]);
+    vi.mocked(api.fetchVariableSets).mockResolvedValue([]);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue({});
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: false,
+    });
+    useVaultStore.setState({
+      variables: [],
+      sets: [],
+      usage: {},
+      recentlyEdited: {},
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+  });
+
+  it('shows the dropzone overlay while a file is dragged over the page', async () => {
+    renderWithToasts();
+    await screen.findByText('variables');
+    dispatchDrag('dragenter');
+    expect(await screen.findByText(OVERLAY_COPY)).toBeInTheDocument();
+  });
+
+  it('opens the import modal pre-populated when a .env file is dropped', async () => {
+    renderWithToasts();
+    await screen.findByText('variables');
+    dispatchDrag('drop', [fakeFile('app.env', 'FOO=bar')]);
+    expect(
+      await screen.findByRole('dialog', { name: /import variables/i }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('FOO')).toBeInTheDocument();
+  });
+
+  it('parses a dropped .json file into the preview', async () => {
+    renderWithToasts();
+    await screen.findByText('variables');
+    dispatchDrag('drop', [
+      fakeFile('vars.json', '{"variables":[{"key":"API_KEY","value":"sk"}]}'),
+    ]);
+    expect(
+      await screen.findByRole('dialog', { name: /import variables/i }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('API_KEY')).toBeInTheDocument();
+  });
+
+  it('rejects an unsupported file type with a toast and no modal', async () => {
+    renderWithToasts();
+    await screen.findByText('variables');
+    dispatchDrag('drop', [fakeFile('photo.png', 'binary', 'image/png')]);
+    expect(
+      await screen.findByText(/only \.env and \.json files/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('dialog', { name: /import variables/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('warns and skips an empty file', async () => {
+    renderWithToasts();
+    await screen.findByText('variables');
+    dispatchDrag('drop', [fakeFile('empty.env', '   ')]);
+    expect(await screen.findByText(/file looks empty/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('dialog', { name: /import variables/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('imports the first of multiple dropped files and warns', async () => {
+    renderWithToasts();
+    await screen.findByText('variables');
+    dispatchDrag('drop', [
+      fakeFile('a.env', 'FOO=bar'),
+      fakeFile('b.env', 'BAZ=qux'),
+    ]);
+    expect(await screen.findByText(/multiple files/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: /import variables/i }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('FOO')).toBeInTheDocument();
+    expect(screen.queryByText('BAZ')).not.toBeInTheDocument();
+  });
+
+  it('suppresses the overlay while the import modal is already open', async () => {
+    renderWithToasts();
+    const cta = await screen.findByRole('button', { name: /^import \.env$/i });
+    fireEvent.click(cta);
+    await screen.findByRole('dialog', { name: /import variables/i });
+    dispatchDrag('dragenter');
+    expect(screen.queryByText(OVERLAY_COPY)).not.toBeInTheDocument();
+  });
+});
+
+describe('VaultWorkspace — drag-and-drop while locked', () => {
+  beforeEach(() => {
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: true,
+      encrypted: true,
+    });
+    useVaultStore.setState({
+      variables: null,
+      sets: null,
+      loading: false,
+      error: null,
+      locked: true,
+      encrypted: true,
+    });
+  });
+
+  it('does not show the overlay or open the modal when locked', async () => {
+    renderWithToasts();
+    await screen.findByText('Vault Locked');
+    dispatchDrag('dragenter');
+    expect(screen.queryByText(OVERLAY_COPY)).not.toBeInTheDocument();
+    dispatchDrag('drop', [fakeFile('a.env', 'FOO=bar')]);
+    expect(
+      screen.queryByRole('dialog', { name: /import variables/i }),
+    ).not.toBeInTheDocument();
   });
 });

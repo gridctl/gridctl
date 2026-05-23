@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -33,6 +34,8 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useVaultManager } from '../../hooks/useVaultManager';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
+import { usePageFileDrop } from '../../hooks/usePageFileDrop';
+import { isImportableFile } from '../../lib/parseFile';
 import { validateVariableInput } from '../vault/variableTypeHelpers';
 import type { Consumer, Variable, VariableType } from '../../lib/api';
 
@@ -140,6 +143,8 @@ export function VaultWorkspace() {
 
   const [encryptOpen, setEncryptOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // Content seeded into the import modal when it's opened by a file drop.
+  const [droppedText, setDroppedText] = useState('');
   const [addOneOpen, setAddOneOpen] = useState(false);
   const [newSetOpen, setNewSetOpen] = useState(false);
   const [newSetName, setNewSetName] = useState('');
@@ -338,6 +343,46 @@ export function VaultWorkspace() {
     },
     [importVars],
   );
+
+  // Page-level file drop: dragging a .env/.json file anywhere over the
+  // workspace opens the import modal pre-seeded with the file's contents.
+  // Validation happens here, before the modal opens, so failures surface as a
+  // toast rather than an empty modal.
+  const handleDroppedFiles = useCallback(async (files: FileList) => {
+    if (files.length > 1) {
+      showToast('warning', 'Dropped multiple files — importing the first only');
+    }
+    const file = files[0];
+    if (!isImportableFile(file)) {
+      showToast('error', 'Only .env and .json files can be imported');
+      return;
+    }
+    let content: string;
+    try {
+      content = await file.text();
+    } catch {
+      showToast('error', 'Could not read that file');
+      return;
+    }
+    if (!content.trim()) {
+      showToast('warning', 'That file looks empty');
+      return;
+    }
+    setDroppedText(content);
+    setImportOpen(true);
+  }, []);
+
+  // Overlay is suppressed while the modal is open (its textarea has its own
+  // dropzone for mid-edit drops) and while the vault is locked.
+  const { isDragging } = usePageFileDrop({
+    enabled: !importOpen && !locked,
+    onFiles: handleDroppedFiles,
+  });
+
+  const closeImport = useCallback(() => {
+    setImportOpen(false);
+    setDroppedText('');
+  }, []);
 
   // Selecting a consumer highlights its topology node (ids are mcp-<name> /
   // resource-<name>). We stay on the Variables route — a toast points the user
@@ -595,12 +640,37 @@ export function VaultWorkspace() {
 
       {importOpen && (
         <EnvImportModal
-          onClose={() => setImportOpen(false)}
+          onClose={closeImport}
           onImport={handleImport}
           existingVariables={allVariables}
           sets={allSets}
           defaultSet={activeSet === ALL_SETS_KEY ? '' : activeSet}
+          initialText={droppedText}
         />
+      )}
+
+      {/* Drag-activated dropzone overlay. Decorative — the window-level
+          listeners (usePageFileDrop) own the drop; the existing modal file
+          picker remains the keyboard/screen-reader path. */}
+      {isDragging && (
+        <div
+          aria-hidden="true"
+          className={cn(
+            'absolute inset-0 z-[55] pointer-events-none p-6',
+            'flex items-center justify-center',
+            'bg-background/80 backdrop-blur-sm animate-fade-in-scale',
+          )}
+        >
+          <div className="flex flex-col items-center justify-center gap-3 w-full max-w-2xl px-10 py-16 rounded-2xl border-2 border-dashed border-primary/50 bg-primary/5 text-primary">
+            <Upload size={28} />
+            <p className="text-sm font-medium">
+              Drop a .env or .json file to import
+            </p>
+            <p className="text-[11px] text-text-muted">
+              You'll review the parsed variables before anything is saved
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1033,6 +1103,12 @@ function VaultEmptyState({ onImport, onAddOne }: VaultEmptyStateProps) {
           </button>
         </div>
         <p className="text-[10px] text-text-muted/70 pt-2">
+          Tip: drop a{' '}
+          <code className="font-mono text-text-secondary">.env</code> or{' '}
+          <code className="font-mono text-text-secondary">.json</code> file
+          anywhere on this page.
+        </p>
+        <p className="text-[10px] text-text-muted/70">
           Or use the CLI:
           <code className="ml-1 font-mono text-text-secondary">
             gridctl var import .env

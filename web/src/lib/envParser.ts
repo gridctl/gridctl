@@ -10,6 +10,11 @@ export interface ParsedEnvEntry {
   // True when the source value was wrapped in single or double quotes. The UI
   // uses this to render the literal value rather than stripping quotes.
   quoted: boolean;
+  // Populated only by structured (JSON) imports that carry these explicitly.
+  // `.env` parsing leaves them undefined so the modal falls back to its
+  // secure defaults (secret, unassigned).
+  isSecret?: boolean;
+  set?: string;
 }
 
 export interface IgnoredEnvLine {
@@ -24,6 +29,12 @@ export interface ParseEnvResult {
 }
 
 const KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+// isValidKey reports whether a string is an acceptable variable key. Shared
+// with the JSON importer so both formats enforce the same key rules.
+export function isValidKey(key: string): boolean {
+  return KEY_REGEX.test(key);
+}
 
 // parseEnv parses a textual `.env`-style block into a list of key/value
 // entries plus any lines we couldn't make sense of. Behaviour is intentionally
