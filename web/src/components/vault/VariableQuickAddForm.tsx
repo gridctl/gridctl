@@ -105,7 +105,7 @@ export function VariableQuickAddForm({
         />
         <div className="relative">
           <input
-            type={showValue ? 'text' : 'password'}
+            type={showValue || !isSecret ? 'text' : 'password'}
             value={newValue}
             onChange={(e) => setNewValue(e.target.value)}
             placeholder={getValuePlaceholder(type, isSecret)}
