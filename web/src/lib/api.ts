@@ -636,6 +636,36 @@ export async function lockVariableStore(passphrase: string): Promise<{ status: s
   return mutateJSON<{ status: string }>('/api/var/lock', 'POST', { passphrase });
 }
 
+export interface ImportVariableInput {
+  key: string;
+  value: string;
+  type: VariableType;
+  isSecret: boolean;
+  set?: string;
+}
+
+export interface ImportVariablesResult {
+  imported: number;
+}
+
+// importVariables bulk-imports entries via POST /api/var/import using the
+// modern `{ variables: [...] }` shape. The server overwrites by key —
+// callers must filter out conflicts they want to preserve before calling.
+export async function importVariables(
+  vars: ImportVariableInput[],
+): Promise<ImportVariablesResult> {
+  const body = {
+    variables: vars.map((v) => ({
+      key: v.key,
+      value: v.value,
+      type: v.type,
+      is_secret: v.isSecret,
+      ...(v.set ? { set: v.set } : {}),
+    })),
+  };
+  return mutateJSON<ImportVariablesResult>('/api/var/import', 'POST', body);
+}
+
 // === Stack Spec API ===
 
 /**
