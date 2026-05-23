@@ -31,6 +31,7 @@ export type CompactModeMap = Record<Workspace, boolean>;
 export const COMPACT_MODE_DEFAULTS: CompactModeMap = {
   topology: false,
   library: false,
+  vault: false,
 };
 
 export interface CompactModeSlice {
