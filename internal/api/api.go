@@ -256,6 +256,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST "+prefix, wrap("/api/var", s.handleVaultCreate))
 		mux.HandleFunc("POST "+prefix+"/import", wrap("/api/var/import", s.handleVaultImport))
 		mux.HandleFunc("GET "+prefix+"/status", wrap("/api/var/status", s.handleVaultStatus))
+		mux.HandleFunc("GET "+prefix+"/usage", wrap("/api/var/usage", s.handleVariableUsage))
 		mux.HandleFunc("POST "+prefix+"/unlock", wrap("/api/var/unlock", s.handleVaultUnlock))
 		mux.HandleFunc("POST "+prefix+"/lock", wrap("/api/var/lock", s.handleVaultLock))
 		mux.HandleFunc("GET "+prefix+"/sets", wrap("/api/var/sets", s.handleVaultSetsList))
