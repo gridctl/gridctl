@@ -141,87 +141,120 @@ func injectSetSecrets(s *Stack, vault VaultSetLookup) {
 	}
 }
 
-// expandStackVars expands variable references in all stack string fields using the
-// unified ExpandString function. Returns unresolved vault references and empty env vars.
+// expandStackVars expands variable references in all stack string fields using
+// the unified ExpandString grammar, and as it goes records every variable-store
+// reference into s.References (the usage index). Returns unresolved vault
+// references and empty env vars.
+//
+// Every field expansion flows through the single expandField helper, which both
+// expands and indexes. This is deliberate: a reference can never be expanded
+// without also being indexed, so the usage index cannot drift from what
+// expansion recognizes (see references_test.go's parity test). When adding a
+// newly expandable field, route it through expandField and it is indexed for
+// free.
 func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, emptyEnvVars []string) {
-	expand := func(val string) string {
-		result, unresolved, empty := ExpandString(val, resolve)
+	index := ReferenceIndex{}
+
+	// expandField expands one field's value and records every ${var:KEY}
+	// reference it contains against the consumer site c.
+	expandField := func(c Consumer, val string) string {
+		result, refs, unresolved, empty := ExpandStringRefs(val, resolve)
+		for _, key := range refs {
+			index.add(key, c)
+		}
 		unresolvedVault = append(unresolvedVault, unresolved...)
 		emptyEnvVars = append(emptyEnvVars, empty...)
 		return result
 	}
 
-	s.Name = expand(s.Name)
+	s.Name = expandField(Consumer{Kind: RefKindStack, Field: "name"}, s.Name)
 
 	if s.Gateway != nil {
 		for i := range s.Gateway.AllowedOrigins {
-			s.Gateway.AllowedOrigins[i] = expand(s.Gateway.AllowedOrigins[i])
+			s.Gateway.AllowedOrigins[i] = expandField(
+				Consumer{Kind: RefKindGateway, Field: fmt.Sprintf("allowed_origins[%d]", i)},
+				s.Gateway.AllowedOrigins[i])
 		}
 		if s.Gateway.Auth != nil {
-			s.Gateway.Auth.Token = expand(s.Gateway.Auth.Token)
+			s.Gateway.Auth.Token = expandField(
+				Consumer{Kind: RefKindGateway, Field: "auth.token"}, s.Gateway.Auth.Token)
 		}
 	}
 
-	s.Network.Name = expand(s.Network.Name)
+	s.Network.Name = expandField(Consumer{Kind: RefKindNetwork, Field: "name"}, s.Network.Name)
 
 	for i := range s.Networks {
-		s.Networks[i].Name = expand(s.Networks[i].Name)
+		s.Networks[i].Name = expandField(
+			Consumer{Kind: RefKindNetwork, Name: s.Networks[i].Name, Field: "name"}, s.Networks[i].Name)
 	}
 
 	for i := range s.MCPServers {
-		s.MCPServers[i].Name = expand(s.MCPServers[i].Name)
-		s.MCPServers[i].Image = expand(s.MCPServers[i].Image)
-		s.MCPServers[i].URL = expand(s.MCPServers[i].URL)
-		s.MCPServers[i].Network = expand(s.MCPServers[i].Network)
-
-		for j := range s.MCPServers[i].Command {
-			s.MCPServers[i].Command[j] = expand(s.MCPServers[i].Command[j])
+		srv := &s.MCPServers[i]
+		// site builds a consumer for srv. srv.Name is read at call time, so
+		// every site after the name field below reflects the expanded name.
+		site := func(field string) Consumer {
+			return Consumer{Kind: RefKindMCPServer, Name: srv.Name, Field: field}
 		}
 
-		if s.MCPServers[i].Source != nil {
-			s.MCPServers[i].Source.URL = expand(s.MCPServers[i].Source.URL)
-			s.MCPServers[i].Source.Path = expand(s.MCPServers[i].Source.Path)
-			s.MCPServers[i].Source.Ref = expand(s.MCPServers[i].Source.Ref)
+		srv.Name = expandField(site("name"), srv.Name)
+		srv.Image = expandField(site("image"), srv.Image)
+		srv.URL = expandField(site("url"), srv.URL)
+		srv.Network = expandField(site("network"), srv.Network)
+
+		for j := range srv.Command {
+			srv.Command[j] = expandField(site(fmt.Sprintf("command[%d]", j)), srv.Command[j])
+		}
+
+		if srv.Source != nil {
+			srv.Source.URL = expandField(site("source.url"), srv.Source.URL)
+			srv.Source.Path = expandField(site("source.path"), srv.Source.Path)
+			srv.Source.Ref = expandField(site("source.ref"), srv.Source.Ref)
 			// Source.Auth.CredentialRef intentionally NOT expanded here:
 			// vault references stay literal until clone time so the
 			// orchestrator can resolve them against the live vault.
-			if s.MCPServers[i].Source.Auth != nil {
-				s.MCPServers[i].Source.Auth.SSHKeyPath = expand(s.MCPServers[i].Source.Auth.SSHKeyPath)
-				s.MCPServers[i].Source.Auth.SSHUser = expand(s.MCPServers[i].Source.Auth.SSHUser)
+			if srv.Source.Auth != nil {
+				srv.Source.Auth.SSHKeyPath = expandField(site("source.auth.ssh_key_path"), srv.Source.Auth.SSHKeyPath)
+				srv.Source.Auth.SSHUser = expandField(site("source.auth.ssh_user"), srv.Source.Auth.SSHUser)
 			}
 		}
 
-		for k, v := range s.MCPServers[i].Env {
-			s.MCPServers[i].Env[k] = expand(v)
+		for k, v := range srv.Env {
+			srv.Env[k] = expandField(site("env."+k), v)
 		}
-		for k, v := range s.MCPServers[i].BuildArgs {
-			s.MCPServers[i].BuildArgs[k] = expand(v)
-		}
-
-		if s.MCPServers[i].SSH != nil {
-			s.MCPServers[i].SSH.Host = expand(s.MCPServers[i].SSH.Host)
-			s.MCPServers[i].SSH.User = expand(s.MCPServers[i].SSH.User)
-			s.MCPServers[i].SSH.IdentityFile = expand(s.MCPServers[i].SSH.IdentityFile)
-			s.MCPServers[i].SSH.KnownHostsFile = expand(s.MCPServers[i].SSH.KnownHostsFile)
-			s.MCPServers[i].SSH.JumpHost = expand(s.MCPServers[i].SSH.JumpHost)
+		for k, v := range srv.BuildArgs {
+			srv.BuildArgs[k] = expandField(site("build_args."+k), v)
 		}
 
-		if s.MCPServers[i].OpenAPI != nil {
-			s.MCPServers[i].OpenAPI.Spec = expand(s.MCPServers[i].OpenAPI.Spec)
-			s.MCPServers[i].OpenAPI.BaseURL = expand(s.MCPServers[i].OpenAPI.BaseURL)
+		if srv.SSH != nil {
+			srv.SSH.Host = expandField(site("ssh.host"), srv.SSH.Host)
+			srv.SSH.User = expandField(site("ssh.user"), srv.SSH.User)
+			srv.SSH.IdentityFile = expandField(site("ssh.identityFile"), srv.SSH.IdentityFile)
+			srv.SSH.KnownHostsFile = expandField(site("ssh.knownHostsFile"), srv.SSH.KnownHostsFile)
+			srv.SSH.JumpHost = expandField(site("ssh.jumpHost"), srv.SSH.JumpHost)
+		}
+
+		if srv.OpenAPI != nil {
+			srv.OpenAPI.Spec = expandField(site("openapi.spec"), srv.OpenAPI.Spec)
+			srv.OpenAPI.BaseURL = expandField(site("openapi.baseUrl"), srv.OpenAPI.BaseURL)
 		}
 	}
 
 	for i := range s.Resources {
-		s.Resources[i].Name = expand(s.Resources[i].Name)
-		s.Resources[i].Image = expand(s.Resources[i].Image)
-		s.Resources[i].Network = expand(s.Resources[i].Network)
+		res := &s.Resources[i]
+		site := func(field string) Consumer {
+			return Consumer{Kind: RefKindResource, Name: res.Name, Field: field}
+		}
 
-		for k, v := range s.Resources[i].Env {
-			s.Resources[i].Env[k] = expand(v)
+		res.Name = expandField(site("name"), res.Name)
+		res.Image = expandField(site("image"), res.Image)
+		res.Network = expandField(site("network"), res.Network)
+
+		for k, v := range res.Env {
+			res.Env[k] = expandField(site("env."+k), v)
 		}
 	}
 
+	s.References = index
 	return unresolvedVault, emptyEnvVars
 }
 
