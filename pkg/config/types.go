@@ -18,6 +18,12 @@ type Stack struct {
 	Networks   []Network        `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
 	MCPServers []MCPServer      `yaml:"mcp-servers"`
 	Resources  []Resource       `yaml:"resources,omitempty"`
+
+	// References is the variable-usage index, derived during expandStackVars:
+	// which consumers reference each ${var:KEY}/${vault:KEY} key. It is computed
+	// from the stack, not persisted with it — the yaml/json "-" tags keep it out
+	// of every existing serialization path. Nil until a stack is loaded/expanded.
+	References ReferenceIndex `yaml:"-" json:"-"`
 }
 
 // LoggingConfig configures log file output with automatic rotation.
