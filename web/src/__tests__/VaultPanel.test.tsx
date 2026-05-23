@@ -91,6 +91,46 @@ describe('VaultPanel — value placeholder adapts to type and visibility', () =>
   });
 });
 
+describe('VaultPanel — value input masking follows Secret/Plaintext', () => {
+  beforeEach(() => {
+    useVaultStore.setState({
+      variables: [],
+      sets: [],
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+  });
+
+  it('masks the value input by default (Secret)', () => {
+    renderPanel();
+    expect(screen.getByPlaceholderText('secret value')).toHaveAttribute(
+      'type',
+      'password',
+    );
+  });
+
+  it('reveals the value input when Plaintext is selected', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /plaintext/i }));
+    expect(screen.getByPlaceholderText('plaintext value')).toHaveAttribute(
+      'type',
+      'text',
+    );
+  });
+
+  it('re-masks the value input when switching back to Secret', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /plaintext/i }));
+    fireEvent.click(screen.getByRole('button', { name: /secret/i }));
+    expect(screen.getByPlaceholderText('secret value')).toHaveAttribute(
+      'type',
+      'password',
+    );
+  });
+});
+
 describe('VaultPanel — sidebar scoped down to quick-lookup', () => {
   beforeEach(() => {
     useVaultStore.setState({
