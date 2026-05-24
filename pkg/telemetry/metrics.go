@@ -37,6 +37,13 @@ type MetricsSnapshotLine struct {
 	Total     metrics.TokenCounts         `json:"total"`
 	CostDiff  *metrics.CostMicroUSDCounts `json:"cost_diff,omitempty"`
 	CostTotal *metrics.CostMicroUSDCounts `json:"cost_total,omitempty"`
+	// ToolUsage carries the server's *cumulative* per-tool call counters
+	// (toolName -> calls + last-called) at flush time — the analogue of
+	// Total for tools, not a per-minute diff. omitempty keeps token-only
+	// minutes and legacy pre-tool-usage files byte-identical; SeedFromFile
+	// takes the most recent non-nil ToolUsage per server (resetting on a
+	// token Reset) to rehydrate Audit Mode's usage history across restarts.
+	ToolUsage map[string]metrics.ToolStat `json:"tool_usage,omitempty"`
 }
 
 // MetricsFlusher periodically serializes per-server token counters from a
@@ -49,10 +56,11 @@ type MetricsFlusher struct {
 	interval time.Duration
 	logger   *slog.Logger
 
-	mu       sync.Mutex
-	writers  map[string]*lumberjack.Logger         // serverName -> writer
-	prev     map[string]metrics.TokenCounts        // serverName -> last token snapshot
-	prevCost map[string]metrics.CostMicroUSDCounts // serverName -> last cost snapshot (parallel to prev)
+	mu        sync.Mutex
+	writers   map[string]*lumberjack.Logger          // serverName -> writer
+	prev      map[string]metrics.TokenCounts         // serverName -> last token snapshot
+	prevCost  map[string]metrics.CostMicroUSDCounts  // serverName -> last cost snapshot (parallel to prev)
+	prevTools map[string]map[string]metrics.ToolStat // serverName -> last per-tool snapshot (parallel to prev)
 
 	stop     chan struct{}
 	done     chan struct{}
@@ -67,13 +75,14 @@ func NewMetricsFlusher(acc *metrics.Accumulator, interval time.Duration) *Metric
 		interval = DefaultMetricsFlushInterval
 	}
 	return &MetricsFlusher{
-		acc:      acc,
-		interval: interval,
-		writers:  make(map[string]*lumberjack.Logger),
-		prev:     make(map[string]metrics.TokenCounts),
-		prevCost: make(map[string]metrics.CostMicroUSDCounts),
-		stop:     make(chan struct{}),
-		done:     make(chan struct{}),
+		acc:       acc,
+		interval:  interval,
+		writers:   make(map[string]*lumberjack.Logger),
+		prev:      make(map[string]metrics.TokenCounts),
+		prevCost:  make(map[string]metrics.CostMicroUSDCounts),
+		prevTools: make(map[string]map[string]metrics.ToolStat),
+		stop:      make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 }
 
@@ -138,6 +147,7 @@ func (f *MetricsFlusher) RemoveServer(name string) {
 	}
 	delete(f.prev, name)
 	delete(f.prevCost, name)
+	delete(f.prevTools, name)
 }
 
 // ConfiguredServers returns the names currently persisting metrics.
@@ -221,6 +231,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 	}
 	snap := f.acc.Snapshot()
 	costSnap := f.acc.CostMicroSnapshot()
+	toolSnap := f.acc.ToolUsageSnapshot()
 
 	type planned struct {
 		writer *lumberjack.Logger
@@ -238,8 +249,15 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		// priced call has hit the server yet — treat a missing entry as
 		// the zero CostMicroUSDCounts so the diff math stays uniform.
 		currentCost := costSnap[name]
+		currentTools := toolSnap[name]
 		prev, hadPrev := f.prev[name]
 		prevCost, hadPrevCost := f.prevCost[name]
+		// Per-tool usage has no diff/reset machinery — it persists as a
+		// cumulative snapshot. toolChanged forces a line when call counts
+		// advanced even if tokens and cost did not (a tool call need not
+		// attribute tokens), mirroring how cost forces a line independently
+		// of the token diff.
+		toolChanged := toolUsageChanged(f.prevTools[name], currentTools)
 		line := MetricsSnapshotLine{
 			Time:   now.UTC(),
 			Server: name,
@@ -295,7 +313,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		// emits because it carries the post-reset boundary signal even
 		// when the post-reset state is zero.
 		tokenDiffZero := tokenDiff.InputTokens == 0 && tokenDiff.OutputTokens == 0 && tokenDiff.TotalTokens == 0
-		if !line.Reset && !line.CostReset && tokenDiffZero && costDiff.IsZero() {
+		if !line.Reset && !line.CostReset && tokenDiffZero && costDiff.IsZero() && !toolChanged {
 			continue
 		}
 
@@ -307,6 +325,13 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 			ct := currentCost
 			line.CostTotal = &ct
 		}
+		// Always carry the freshest cumulative tool usage on every emitted
+		// line (not only when toolChanged) so the most recent line per
+		// server — whatever dimension triggered it — holds the latest
+		// snapshot for SeedFromFile to restore.
+		if len(currentTools) > 0 {
+			line.ToolUsage = currentTools
+		}
 
 		plan = append(plan, planned{writer: writer, line: line})
 		// Update prev / prevCost under the lock — even if the write fails
@@ -316,6 +341,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		// failure cannot leave them out of sync for the next tick's diff.
 		f.prev[name] = current
 		f.prevCost[name] = currentCost
+		f.prevTools[name] = currentTools
 	}
 	f.mu.Unlock()
 
@@ -371,11 +397,32 @@ func isCostCounterReset(prev, current metrics.CostMicroUSDCounts) bool {
 		current.CacheWriteMicroUSD < prev.CacheWriteMicroUSD
 }
 
+// toolUsageChanged reports whether the cumulative per-tool call counts for a
+// server differ between two snapshots. Comparing call counts alone suffices:
+// RecordToolCall bumps the count on every call, so a changed LastCalledAt
+// always coincides with a changed count. A new tool key (len differs) or any
+// per-tool count delta returns true. A token Reset clears tool usage, which
+// surfaces here as a shrink (len differs) — but reset lines already force a
+// flush, so this only needs to catch the steady-state tool-only delta.
+func toolUsageChanged(prev, current map[string]metrics.ToolStat) bool {
+	if len(prev) != len(current) {
+		return true
+	}
+	for tool, cur := range current {
+		if p, ok := prev[tool]; !ok || p.Calls != cur.Calls {
+			return true
+		}
+	}
+	return false
+}
+
 // SeedFromFile reads up to the last n NDJSON entries from path and seeds
-// four surfaces atomically: cumulative per-server token totals (via
-// Restore), cumulative per-server cost totals (via RestoreCost), per-minute
-// time-series ring buckets — both tokens and cost — (via ReplaySnapshot),
-// and this flusher's previous-snapshot maps (prev + prevCost). The Token
+// these surfaces atomically: cumulative per-server token totals (via
+// Restore), cumulative per-server cost totals (via RestoreCost), cumulative
+// per-(server, tool) call counts for Audit Mode (via RestoreToolUsage),
+// per-minute time-series ring buckets — both tokens and cost — (via
+// ReplaySnapshot), and this flusher's previous-snapshot maps (prev +
+// prevCost + prevTools). The Token
 // Usage Over Time and Cost Over Time charts are backed by the time-series
 // ring; without the bucket replay each would show only a single post-restart
 // point. The Cost KPI card is backed by the cumulative atomics; without
@@ -443,6 +490,7 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 	// shape they had during live operation.
 	latest := make(map[string]metrics.TokenCounts)
 	latestCost := make(map[string]metrics.CostMicroUSDCounts)
+	latestTools := make(map[string]map[string]metrics.ToolStat)
 	series := make([]seriesPoint, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -459,6 +507,17 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 		latest[rec.Server] = rec.Total
 		if rec.CostTotal != nil {
 			latestCost[rec.Server] = *rec.CostTotal
+		}
+		// Tool usage is a cumulative snapshot, not a diff. A token Reset
+		// means the accumulator cleared (server restart / Clear), wiping
+		// tool usage too — drop the carried-over snapshot so a post-reset
+		// run with no tool calls restores nothing rather than stale counts.
+		// Any ToolUsage on this same line (post-reset activity) then wins.
+		if rec.Reset {
+			delete(latestTools, rec.Server)
+		}
+		if rec.ToolUsage != nil {
+			latestTools[rec.Server] = rec.ToolUsage
 		}
 		// Reset and CostReset are independent: a token-reset line skips
 		// token replay (Diff is the full carryover, replaying would spike
@@ -502,12 +561,16 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 	}
 	f.acc.Restore(latest)
 	f.acc.RestoreCost(latestCost)
+	f.acc.RestoreToolUsage(latestTools)
 	f.mu.Lock()
 	for name, counts := range latest {
 		f.prev[name] = counts
 	}
 	for name, counts := range latestCost {
 		f.prevCost[name] = counts
+	}
+	for name, tools := range latestTools {
+		f.prevTools[name] = tools
 	}
 	f.mu.Unlock()
 	return nil
