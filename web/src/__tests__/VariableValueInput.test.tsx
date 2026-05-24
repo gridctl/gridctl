@@ -5,23 +5,7 @@ import '@testing-library/jest-dom';
 import { VariableValueInput } from '../components/vault/VariableValueInput';
 import type { VariableType } from '../lib/api';
 
-// CodeMirror needs layout APIs jsdom lacks; swap it for a plain textarea so we
-// can exercise the json path (highlighting/lint are CM's concern, not ours).
-vi.mock('@uiw/react-codemirror', () => ({
-  default: ({
-    value,
-    onChange,
-  }: {
-    value: string;
-    onChange: (v: string) => void;
-  }) => (
-    <textarea
-      aria-label="JSON value"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  ),
-}));
+// CodeMirror is aliased to a textarea stub under test (see vitest.config.ts).
 
 function Harness({
   type,
@@ -117,18 +101,19 @@ describe('VariableValueInput — list', () => {
   });
 });
 
-describe('VariableValueInput — secret reveal gate', () => {
-  it('keeps json masked until revealed, then mounts the editor', async () => {
+describe('VariableValueInput — secret handling', () => {
+  it('always shows the json editor, even for a secret (no mask step)', async () => {
     render(<Harness type="json" isSecret initial="{}" />);
-    // Masked: a password input, no editor.
-    const masked = document.querySelector(
-      'input[type="password"]',
-    ) as HTMLInputElement;
-    expect(masked).toBeInTheDocument();
-    expect(screen.queryByLabelText('JSON value')).toBeNull();
-    // Reveal → rich editor (lazy-loaded) appears.
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal value' }));
     expect(await screen.findByLabelText('JSON value')).toBeInTheDocument();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  it('still masks a secret string until revealed', () => {
+    render(<Harness type="string" isSecret />);
+    const input = screen.getByPlaceholderText('secret value');
+    expect(input).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal value' }));
+    expect(input).toHaveAttribute('type', 'text');
   });
 });
 
