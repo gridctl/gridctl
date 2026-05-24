@@ -169,10 +169,10 @@ describe('VariablesPopover', () => {
       expect(screen.getByPlaceholderText('item1, item2, item3')).toBeInTheDocument();
     });
 
-    it('hints JSON object syntax when json type is selected', async () => {
+    it('shows the JSON editor when json type is selected', async () => {
       await openCreateForm();
       fireEvent.click(screen.getByRole('button', { name: 'json' }));
-      expect(screen.getByPlaceholderText('{"key": "value"}')).toBeInTheDocument();
+      expect(await screen.findByLabelText('JSON value')).toBeInTheDocument();
     });
 
     it('hints a number example when number type is selected', async () => {
