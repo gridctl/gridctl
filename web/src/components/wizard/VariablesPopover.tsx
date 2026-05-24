@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { KeyRound, Search, Plus, Eye, EyeOff, X, Loader2, Check } from 'lucide-react';
+import { KeyRound, Search, Plus, X, Loader2, Check } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useVaultStore } from '../../stores/useVaultStore';
 import { fetchVariables, createVariable } from '../../lib/api';
@@ -10,7 +10,8 @@ import { VariableTypeBadge } from '../vault/VariableTypeBadge';
 import { VariableTypeSelector } from '../vault/VariableTypeSelector';
 import { VariableSecretToggle } from '../vault/VariableSecretToggle';
 import { SecretGenerator } from '../vault/SecretGenerator';
-import { validateVariableInput, getValuePlaceholder } from '../vault/variableTypeHelpers';
+import { VariableValueInput } from '../vault/VariableValueInput';
+import { validateVariableInput } from '../vault/variableTypeHelpers';
 
 interface VariablesPopoverProps {
   onSelect: (reference: string) => void;
@@ -41,6 +42,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
   const [error, setError] = useState<string | null>(null);
   const [newType, setNewType] = useState<VariableType>('string');
   const [newIsSecret, setNewIsSecret] = useState(true);
+  const [valueValid, setValueValid] = useState(true);
   const [position, setPosition] = useState<PopoverPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -108,7 +110,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
     [onSelect],
   );
 
-  const handleCreate = async () => {
+  const handleCreate = useCallback(async () => {
     if (!newKey || !newValue) return;
     if (!/^[A-Z][A-Z0-9_]*$/.test(newKey)) {
       setError('Key must be uppercase alphanumeric with underscores');
@@ -142,7 +144,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
     } finally {
       setSaving(false);
     }
-  };
+  }, [newKey, newValue, newType, newIsSecret, onSelect, setVariables]);
 
   const filtered = (variables ?? []).filter((s) =>
     s.key.toLowerCase().includes(filter.toLowerCase()),
@@ -239,22 +241,20 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             placeholder="VARIABLE_KEY"
             className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
           />
-          <div className="relative">
-            <input
-              type={showValue || !newIsSecret ? 'text' : 'password'}
-              value={newValue}
-              onChange={(e) => setNewValue(e.target.value)}
-              placeholder={getValuePlaceholder(newType, newIsSecret)}
-              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 pr-8 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
-            />
-            <button
-              type="button"
-              onClick={() => setShowValue(!showValue)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
-            >
-              {showValue ? <EyeOff size={12} /> : <Eye size={12} />}
-            </button>
-          </div>
+          <VariableValueInput
+            type={newType}
+            value={newValue}
+            onChange={(v) => {
+              setNewValue(v);
+              setError(null);
+            }}
+            isSecret={newIsSecret}
+            revealed={showValue}
+            onToggleReveal={() => setShowValue((s) => !s)}
+            onValidityChange={setValueValid}
+            onRequestSubmit={handleCreate}
+            compact
+          />
           <div className="flex flex-wrap gap-1">
             <VariableTypeSelector value={newType} onChange={setNewType} />
           </div>
@@ -272,7 +272,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
           )}
           <button
             onClick={handleCreate}
-            disabled={!newKey || !newValue || saving}
+            disabled={!newKey || !newValue || !valueValid || saving}
             className={cn(
               'w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
               'bg-secondary/20 text-secondary hover:bg-secondary/30',
