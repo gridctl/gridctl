@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Command } from 'cmdk';
 import {
+  Activity,
   AlertCircle,
   Check,
   ChevronRight,
@@ -16,13 +17,33 @@ import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
+import { useToolUsage } from '../../hooks/useToolUsage';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { TOOL_NAME_DELIMITER } from '../../lib/constants';
+import { formatRelativeTime } from '../../lib/time';
+import {
+  AUDIT_WINDOWS,
+  DEFAULT_AUDIT_WINDOW,
+  auditWindowMs,
+  classifyTool,
+  formatLastUsed,
+  unusedEnabledTools,
+  type AuditState,
+  type AuditWindow,
+} from '../../lib/toolAudit';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatusDot } from '../ui/StatusDot';
 import { CodeViewer } from '../ui/CodeViewer';
-import type { MCPServerStatus, NodeStatus, Tool } from '../../types';
+import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
+
+// Per-state styling for Audit Mode dots/labels, keyed to the shared status
+// color tokens: used→running (green), unused→pending (amber), disabled→muted.
+const AUDIT_STYLES: Record<AuditState, { dot: string; text: string; label: string }> = {
+  used: { dot: 'bg-status-running', text: 'text-status-running', label: 'used' },
+  unused: { dot: 'bg-status-pending', text: 'text-status-pending', label: 'unused' },
+  disabled: { dot: 'bg-text-muted/50', text: 'text-text-muted', label: 'disabled' },
+};
 
 // ToolsWorkspace is the fleet-wide tool-management surface, sibling to
 // Topology, Library, and Variables. The left rail lists every MCP server with
@@ -103,6 +124,28 @@ export function ToolsWorkspace() {
     activeServer?.tools ?? [],
   );
 
+  // ---- Audit Mode ---------------------------------------------------------
+  // An overlay that classifies each tool as used / configured-but-unused /
+  // disabled against a lookback window. Usage is fetched only while the mode
+  // is on (the hook idles otherwise) so the editor pays nothing when it's off.
+  const [auditMode, setAuditMode] = useState(false);
+  const [auditWindow, setAuditWindow] = useState<AuditWindow>(DEFAULT_AUDIT_WINDOW);
+  const { usage, fetchedAt } = useToolUsage(auditMode);
+  const windowMs = auditWindowMs(auditWindow);
+  const usageByServer = usage?.servers;
+
+  // Per-server count of exposed-but-unused tools, for the rail badge. "now" is
+  // the fetch time from the hook (not a render-time clock read) so the memo
+  // stays pure and only recomputes when usage/window changes.
+  const unusedByServer = useMemo(() => {
+    const out: Record<string, number> = {};
+    if (!auditMode || !usageByServer || fetchedAt == null) return out;
+    for (const s of servers) {
+      out[s.name] = unusedEnabledTools(s, usageByServer[s.name], windowMs, fetchedAt).length;
+    }
+    return out;
+  }, [auditMode, usageByServer, servers, windowMs, fetchedAt]);
+
   // ---- Server-switch guard ------------------------------------------------
   // A pending target set while the active editor has unsaved edits. The switch
   // commits (URL change) only after the user discards.
@@ -153,6 +196,8 @@ export function ToolsWorkspace() {
       servers={servers}
       activeServerName={activeServerName}
       onSelectServer={(name) => requestServer(name)}
+      auditMode={auditMode}
+      unusedByServer={unusedByServer}
     />
   );
 
@@ -171,6 +216,11 @@ export function ToolsWorkspace() {
             serverCount={servers.length}
             query={globalQuery}
             onQueryChange={setGlobalQuery}
+            auditMode={auditMode}
+            onToggleAudit={() => setAuditMode((v) => !v)}
+            auditWindow={auditWindow}
+            onWindowChange={setAuditWindow}
+            observedSince={usage?.observedSince}
           />
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
@@ -191,6 +241,10 @@ export function ToolsWorkspace() {
                 allTools={tools}
                 expanded={expandedTool}
                 onToggleExpand={toggleExpanded}
+                auditMode={auditMode}
+                usage={usageByServer?.[activeServer.name]}
+                windowMs={windowMs}
+                now={fetchedAt}
               />
             ) : null}
           </div>
@@ -227,10 +281,26 @@ interface ToolsHeaderProps {
   serverCount: number;
   query: string;
   onQueryChange: (q: string) => void;
+  auditMode: boolean;
+  onToggleAudit: () => void;
+  auditWindow: AuditWindow;
+  onWindowChange: (w: AuditWindow) => void;
+  observedSince?: string;
 }
 
-function ToolsHeader({ compact, serverCount, query, onQueryChange }: ToolsHeaderProps) {
+function ToolsHeader({
+  compact,
+  serverCount,
+  query,
+  onQueryChange,
+  auditMode,
+  onToggleAudit,
+  auditWindow,
+  onWindowChange,
+  observedSince,
+}: ToolsHeaderProps) {
   const searching = query.trim().length > 0;
+  const windowLabel = AUDIT_WINDOWS.find((w) => w.id === auditWindow)?.label ?? '7 days';
   return (
     <header
       className={cn(
@@ -245,7 +315,54 @@ function ToolsHeader({ compact, serverCount, query, onQueryChange }: ToolsHeader
         <div className="font-mono text-[10px] text-text-muted">
           {serverCount} {serverCount === 1 ? 'server' : 'servers'}
         </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleAudit}
+            aria-pressed={auditMode}
+            aria-label="Toggle audit mode"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+              auditMode
+                ? 'bg-primary/15 text-primary border-primary/40'
+                : 'bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border',
+            )}
+          >
+            <Activity size={11} aria-hidden="true" />
+            Audit
+          </button>
+          {auditMode && (
+            <label className="inline-flex items-center gap-1.5 text-[10px] text-text-muted">
+              <span className="sr-only">Audit lookback window</span>
+              <select
+                value={auditWindow}
+                onChange={(e) => onWindowChange(e.target.value as AuditWindow)}
+                aria-label="Audit lookback window"
+                className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-[10px] text-text-secondary focus:outline-none focus:border-primary/50"
+              >
+                {AUDIT_WINDOWS.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       </div>
+
+      {auditMode && (
+        <p className="text-[10px] text-text-muted/80 leading-relaxed" role="status">
+          <span className="text-status-running">●</span> used ·{' '}
+          <span className="text-status-pending">●</span> unused ·{' '}
+          <span className="text-text-muted">●</span> disabled — &ldquo;unused&rdquo; means no
+          recorded calls in the last {windowLabel}.
+          {observedSince
+            ? ` Tracking since ${formatRelativeTime(new Date(observedSince))}; tools with no recorded calls may predate it.`
+            : ' Counts cover activity since the last gateway restart.'}
+        </p>
+      )}
 
       <div className="relative">
         <Search
@@ -286,9 +403,18 @@ interface ServerRailProps {
   servers: MCPServerStatus[];
   activeServerName: string;
   onSelectServer: (name: string) => void;
+  auditMode: boolean;
+  unusedByServer: Record<string, number>;
 }
 
-function ServerRail({ compact, servers, activeServerName, onSelectServer }: ServerRailProps) {
+function ServerRail({
+  compact,
+  servers,
+  activeServerName,
+  onSelectServer,
+  auditMode,
+  unusedByServer,
+}: ServerRailProps) {
   return (
     <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-r border-border-subtle">
       <div
@@ -309,6 +435,8 @@ function ServerRail({ compact, servers, activeServerName, onSelectServer }: Serv
             server={server}
             active={server.name === activeServerName}
             onClick={() => onSelectServer(server.name)}
+            auditMode={auditMode}
+            unusedCount={unusedByServer[server.name] ?? 0}
           />
         ))}
         {servers.length === 0 && (
@@ -325,11 +453,14 @@ interface ServerPillProps {
   server: MCPServerStatus;
   active: boolean;
   onClick: () => void;
+  auditMode: boolean;
+  unusedCount: number;
 }
 
-function ServerPill({ server, active, onClick }: ServerPillProps) {
+function ServerPill({ server, active, onClick, auditMode, unusedCount }: ServerPillProps) {
   const { enabled, total } = toolCounts(server);
   const status = serverStatus(server);
+  const showUnused = auditMode && unusedCount > 0;
   return (
     <button
       onClick={onClick}
@@ -345,6 +476,14 @@ function ServerPill({ server, active, onClick }: ServerPillProps) {
       <span className={cn('flex-1 min-w-0 text-xs font-mono truncate', active && 'text-primary')}>
         {server.name}
       </span>
+      {showUnused && (
+        <span
+          className="flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded tabular-nums bg-status-pending/15 text-status-pending"
+          title={`${unusedCount} exposed ${unusedCount === 1 ? 'tool' : 'tools'} unused in the lookback window`}
+        >
+          {unusedCount} unused
+        </span>
+      )}
       <span
         className={cn(
           'flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded tabular-nums',
@@ -370,9 +509,26 @@ interface ServerDetailProps {
   // global-search reveal can target it). null = none expanded.
   expanded: string | null;
   onToggleExpand: (tool: string) => void;
+  auditMode: boolean;
+  // This server's per-tool usage map (from GET /api/tools/usage), or undefined
+  // when usage hasn't loaded / Audit Mode is off.
+  usage: Record<string, ToolUsageStat> | undefined;
+  windowMs: number;
+  // Fetch time used as "now" for audit classification (null until loaded).
+  now: number | null;
 }
 
-function ServerDetail({ server, editor, allTools, expanded, onToggleExpand }: ServerDetailProps) {
+function ServerDetail({
+  server,
+  editor,
+  allTools,
+  expanded,
+  onToggleExpand,
+  auditMode,
+  usage,
+  windowMs,
+  now,
+}: ServerDetailProps) {
   const {
     allTools: rows,
     visible,
@@ -387,8 +543,35 @@ function ServerDetail({ server, editor, allTools, expanded, onToggleExpand }: Se
     isSaving,
     conflict,
     handleSave,
+    disableTools,
     handleReloadFromDisk,
   } = editor;
+
+  // Audit state per tool row, computed once per usage/selection/window change.
+  // Captures `now` inside the memo so the row render stays pure (no clock read
+  // during render). Empty when Audit Mode is off.
+  const auditByTool = useMemo(() => {
+    const map = new Map<string, AuditState>();
+    if (!auditMode || now == null) return map;
+    for (const row of rows) {
+      map.set(row.name, classifyTool(selected.has(row.name), usage?.[row.name]?.lastCalledAt, windowMs, now));
+    }
+    return map;
+  }, [auditMode, rows, selected, usage, windowMs, now]);
+
+  // Tools currently exposed (selected) but with no activity in the window —
+  // the "disable unused" remediation target. Derived from auditByTool so the
+  // banner and the per-row dots never disagree.
+  const unusedSelected = useMemo(() => {
+    const out: string[] = [];
+    for (const [name, state] of auditByTool) {
+      if (state === 'unused') out.push(name);
+    }
+    return out;
+  }, [auditByTool]);
+
+  // Confirm gate for the remediation bulk action (consequence-stating).
+  const [remediateOpen, setRemediateOpen] = useState(false);
 
   // Input schemas for this server's tools, keyed by unprefixed tool name.
   const schemaByTool = useMemo(() => {
@@ -446,6 +629,26 @@ function ServerDetail({ server, editor, allTools, expanded, onToggleExpand }: Se
         </div>
       </div>
 
+      {auditMode && unusedSelected.length > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-status-pending/30 bg-status-pending/[0.06] px-3 py-2">
+          <Activity size={12} className="text-status-pending flex-shrink-0" aria-hidden="true" />
+          <p className="flex-1 text-[11px] text-text-secondary">
+            <span className="font-medium text-status-pending">{unusedSelected.length}</span> exposed{' '}
+            {unusedSelected.length === 1 ? 'tool has' : 'tools have'} no recorded calls in the
+            lookback window.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRemediateOpen(true)}
+            disabled={isSaving}
+            aria-label={`Disable ${unusedSelected.length} unused tools`}
+            className="flex-shrink-0 inline-flex items-center gap-1 rounded-md border border-status-pending/40 bg-status-pending/10 px-2 py-1 text-[10px] font-medium text-status-pending hover:bg-status-pending/20 transition-colors disabled:opacity-50"
+          >
+            Disable {unusedSelected.length} unused
+          </button>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
         <Command shouldFilter={false} label={`Tools for ${server.name}`} className="flex flex-col">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
@@ -471,6 +674,7 @@ function ServerDetail({ server, editor, allTools, expanded, onToggleExpand }: Se
               const isSelected = selected.has(opt.name);
               const schema = schemaByTool.get(opt.name);
               const isExpanded = expanded === opt.name;
+              const auditState = auditByTool.get(opt.name) ?? null;
               return (
                 <div
                   key={opt.name}
@@ -516,6 +720,28 @@ function ServerDetail({ server, editor, allTools, expanded, onToggleExpand }: Se
                       </div>
                       {opt.description && (
                         <div className="text-[10px] text-text-muted truncate">{opt.description}</div>
+                      )}
+                      {auditState && (
+                        <div
+                          className={cn(
+                            'flex items-center gap-1 text-[10px] mt-0.5',
+                            AUDIT_STYLES[auditState].text,
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'inline-block w-1.5 h-1.5 rounded-full flex-shrink-0',
+                              AUDIT_STYLES[auditState].dot,
+                            )}
+                            aria-hidden="true"
+                          />
+                          <span>{AUDIT_STYLES[auditState].label}</span>
+                          {auditState !== 'disabled' && (
+                            <span className="text-text-muted/70 truncate">
+                              · {formatLastUsed(usage?.[opt.name]?.lastCalledAt)}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
                     {schema && (
@@ -602,6 +828,26 @@ function ServerDetail({ server, editor, allTools, expanded, onToggleExpand }: Se
           </>
         )}
       </button>
+
+      <ConfirmDialog
+        isOpen={remediateOpen}
+        onClose={() => setRemediateOpen(false)}
+        onConfirm={() => {
+          setRemediateOpen(false);
+          void disableTools(unusedSelected);
+        }}
+        title="Disable unused tools"
+        message={
+          <p>
+            Disable <span className="font-mono text-primary">{unusedSelected.length}</span> unused{' '}
+            {unusedSelected.length === 1 ? 'tool' : 'tools'} on{' '}
+            <span className="font-mono text-primary">{server.name}</span>? This updates the
+            whitelist and reloads the server.
+          </p>
+        }
+        confirmLabel="Disable & reload"
+        variant="danger"
+      />
     </div>
   );
 }
