@@ -83,7 +83,10 @@ export function VariableValueInput({
     setTouched(false);
   }
 
-  const showError = touched && !valid;
+  // Only surface an inline error for a non-empty value that fails its type
+  // (e.g. malformed JSON). An empty required field isn't "wrong" yet — the
+  // disabled Add/Save button already conveys that — so we don't scold it.
+  const showError = touched && !valid && value !== '';
   const describedBy = showError ? errorId : undefined;
   const errorNode = showError ? (
     <p id={errorId} className="mt-1 text-[10px] text-status-error">
@@ -105,23 +108,10 @@ export function VariableValueInput({
     );
   }
 
-  const revealButton = isSecret ? (
-    <button
-      type="button"
-      onClick={onToggleReveal}
-      aria-label={revealed ? 'Hide value' : 'Reveal value'}
-      aria-pressed={revealed}
-      className="p-1 rounded text-text-muted hover:text-text-primary transition-colors"
-    >
-      {revealed ? <EyeOff size={12} /> : <Eye size={12} />}
-    </button>
-  ) : null;
-
-  const showRich = !isSecret || revealed;
-
-  // string, or a still-masked secret of any structured type: a single-line
-  // input. Revealing a secret upgrades json/list/number to their rich editor.
-  if (type === 'string' || !showRich) {
+  // string: a single-line field that masks while typing when secret (the
+  // classic API-key case), with an eye to reveal. Structured types don't take
+  // this path — see below.
+  if (type === 'string') {
     return (
       <div>
         <div className="relative">
@@ -151,9 +141,15 @@ export function VariableValueInput({
             )}
           />
           {isSecret && (
-            <div className="absolute right-2 top-1/2 -translate-y-1/2">
-              {revealButton}
-            </div>
+            <button
+              type="button"
+              onClick={onToggleReveal}
+              aria-label={revealed ? 'Hide value' : 'Reveal value'}
+              aria-pressed={revealed}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-text-muted hover:text-text-primary transition-colors"
+            >
+              {revealed ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
           )}
         </div>
         {errorNode}
@@ -161,11 +157,12 @@ export function VariableValueInput({
     );
   }
 
-  // Revealed (or plaintext) structured editors. A small reveal/hide control
-  // sits above secret editors so the value can be re-masked.
+  // Structured editors (json/list/number) always render their rich widget when
+  // composing — the value is the user's own input, so masking it while typing
+  // is pure friction and can't coexist with highlighting/chips. The Secret flag
+  // still governs storage and masks the value in the saved variable row.
   return (
     <div>
-      {isSecret && <div className="flex justify-end mb-1">{revealButton}</div>}
       {type === 'number' && (
         <NumberValueInput
           value={value}
