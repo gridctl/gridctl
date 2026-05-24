@@ -224,6 +224,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
+	mux.HandleFunc("GET /api/tools/usage", s.handleToolsUsage)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
 	mux.HandleFunc("/api/metrics/tokens", s.handleMetricsTokens)
 	mux.HandleFunc("/api/metrics/cost", s.handleMetricsCost)
