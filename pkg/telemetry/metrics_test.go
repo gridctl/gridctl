@@ -543,6 +543,141 @@ func TestMetricsSnapshotLine_IncludesCostFieldsWhenPresent(t *testing.T) {
 	}
 }
 
+// TestMetricsSnapshotLine_OmitsToolUsageWhenEmpty pins the wire-format
+// guarantee for the tool_usage extension: a line with no per-tool activity
+// (and legacy files predating Audit Mode) serializes without the field, so
+// the addition is backward-compatible exactly like the cost fields.
+func TestMetricsSnapshotLine_OmitsToolUsageWhenEmpty(t *testing.T) {
+	line := MetricsSnapshotLine{
+		Time:   time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC),
+		Server: "github",
+		Diff:   metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+		Total:  metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+	}
+	data, err := json.Marshal(line)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(data), "tool_usage") {
+		t.Errorf("tool-usage-free line carried tool_usage field: %s", data)
+	}
+}
+
+// TestMetricsFlusher_ToolUsagePersistence covers Audit Mode's per-tool usage
+// surviving a gateway restart: a flush writes the cumulative per-tool counts,
+// a fresh accumulator restores them via SeedFromFile, a tool-only delta still
+// reaches disk, and a token reset drops carried-over usage so a wiped
+// accumulator does not resurrect stale counts.
+func TestMetricsFlusher_ToolUsagePersistence(t *testing.T) {
+	t.Run("flush persists cumulative tool usage and seed restores it", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		acc := metrics.NewAccumulator(100)
+		acc.Record("github", 100, 50)
+		acc.RecordToolCall("github", "create_issue")
+		acc.RecordToolCall("github", "create_issue")
+		acc.RecordToolCall("github", "list_repos")
+
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.AddServer("github", path, LogOpts{}); err != nil {
+			t.Fatalf("AddServer: %v", err)
+		}
+		f.flushOnce(time.Now())
+
+		// The latest payload line carries the cumulative per-tool snapshot.
+		var persisted map[string]metrics.ToolStat
+		for _, l := range readMetricsLines(t, path) {
+			var rec MetricsSnapshotLine
+			if err := json.Unmarshal([]byte(l), &rec); err == nil && rec.ToolUsage != nil {
+				persisted = rec.ToolUsage
+			}
+		}
+		if persisted == nil {
+			t.Fatal("no flushed line carried tool_usage")
+		}
+		if got := persisted["create_issue"].Calls; got != 2 {
+			t.Errorf("persisted create_issue calls = %d, want 2", got)
+		}
+
+		// Simulate a restart: a fresh accumulator seeded from the same file.
+		acc2 := metrics.NewAccumulator(100)
+		f2 := NewMetricsFlusher(acc2, time.Hour)
+		if err := f2.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+		snap := acc2.ToolUsageSnapshot()
+		if got := snap["github"]["create_issue"].Calls; got != 2 {
+			t.Errorf("restored create_issue calls = %d, want 2", got)
+		}
+		if got := snap["github"]["list_repos"].Calls; got != 1 {
+			t.Errorf("restored list_repos calls = %d, want 1", got)
+		}
+	})
+
+	t.Run("tool-only delta forces a line without a token change", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		acc := metrics.NewAccumulator(100)
+		acc.Record("github", 100, 50)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.AddServer("github", path, LogOpts{}); err != nil {
+			t.Fatalf("AddServer: %v", err)
+		}
+		f.flushOnce(time.Now()) // token baseline
+		before := len(readMetricsLines(t, path))
+
+		// A tool call with no token delta must still produce a flush line so
+		// the usage reaches disk (mirrors cost's independent delta path).
+		acc.RecordToolCall("github", "create_issue")
+		f.flushOnce(time.Now())
+
+		lines := readMetricsLines(t, path)
+		if len(lines) <= before {
+			t.Fatalf("tool-only delta produced no new line: before=%d after=%d", before, len(lines))
+		}
+		var last MetricsSnapshotLine
+		if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil {
+			t.Fatalf("unmarshal last line: %v", err)
+		}
+		if got := last.ToolUsage["create_issue"].Calls; got != 1 {
+			t.Errorf("forced line tool usage = %+v, want create_issue calls 1", last.ToolUsage)
+		}
+	})
+
+	t.Run("token reset drops carried-over tool usage on seed", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		// Pre-reset history with tool usage.
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:      time.Now().Add(-time.Hour).UTC(),
+			Server:    "github",
+			Total:     metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+			ToolUsage: map[string]metrics.ToolStat{"create_issue": {Calls: 9, LastCalledAt: time.Now().Add(-time.Hour)}},
+		})
+		// Reset sentinel + post-reset full line with no tool usage (Clear
+		// wiped it): the seed must not resurrect the pre-reset counts.
+		writeRawLine(t, path, `{"reset":true,"ts":"2026-05-06T00:00:00Z","server":"github"}`)
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   time.Now().UTC(),
+			Server: "github",
+			Reset:  true,
+			Total:  metrics.TokenCounts{},
+		})
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+		if snap := acc.ToolUsageSnapshot(); snap != nil {
+			t.Errorf("post-reset seed should restore no tool usage; got %v", snap)
+		}
+	})
+}
+
 // writeMetricsLine appends one MetricsSnapshotLine as NDJSON to path.
 func writeMetricsLine(t *testing.T, path string, line MetricsSnapshotLine) {
 	t.Helper()
