@@ -518,6 +518,7 @@ export function VaultWorkspace() {
                     <VariableQuickAddForm
                       setNames={setNames}
                       onSubmit={handleCreate}
+                      onCancel={() => setAddOneOpen(false)}
                       className="max-w-2xl"
                     />
                   </div>
