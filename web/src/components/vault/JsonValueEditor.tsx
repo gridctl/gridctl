@@ -5,6 +5,12 @@ import { linter, lintGutter } from '@codemirror/lint';
 import { EditorView, keymap } from '@codemirror/view';
 import { Prec } from '@codemirror/state';
 
+// An empty editor isn't "invalid JSON" yet — skip linting whitespace-only
+// content so a fresh field doesn't show a red gutter marker.
+const parseLinter = jsonParseLinter();
+const jsonLintSource = (view: EditorView) =>
+  view.state.doc.toString().trim() === '' ? [] : parseLinter(view);
+
 // Dark theme tuned to the app palette (see web/src/index.css tokens). Kept
 // minimal — transparent surface, monospace, no chrome — so the editor reads as
 // an inline field rather than a full IDE.
@@ -53,7 +59,7 @@ export default function JsonValueEditor({
   const extensions = useMemo(
     () => [
       json(),
-      linter(jsonParseLinter()),
+      linter(jsonLintSource),
       lintGutter(),
       EditorView.lineWrapping,
       EditorView.domEventHandlers({
