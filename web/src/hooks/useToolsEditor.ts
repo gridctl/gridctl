@@ -52,6 +52,11 @@ export interface UseToolsEditor {
   // dirty editor and must confirm before the edit is discarded.
   discardPrompt: string | null;
   handleSave: () => Promise<void>;
+  // Deselect the named tools and save the result through the same save+reload
+  // path as handleSave. Used by Audit Mode's "disable unused" remediation.
+  // Respects expose-all semantics: persists the remaining tools as a concrete
+  // whitelist (or [] if the remaining set is every tool).
+  disableTools: (names: string[]) => Promise<void>;
   handleReloadFromDisk: () => Promise<void>;
   handleDiscard: () => void;
   handleKeepEditing: () => void;
@@ -187,16 +192,18 @@ export function useToolsEditor(
   const selectAll = () => setSelection(allTools.map((t) => t.name));
   const clearAll = () => setSelection([]);
 
-  const handleSave = async () => {
+  // saveSelection persists a canonical selection through the atomic
+  // save+reload path and refreshes the global caches. Shared by handleSave
+  // (current selection) and disableTools (selection minus the unused tools)
+  // so both honor the same expose-all semantics and structured-error handling.
+  const saveSelection = async (targetSelection: string[]) => {
     setIsSaving(true);
     setConflict(null);
     // Empty whitelist means "expose all tools" in stack YAML semantics. We
-    // send an empty array when the user has selected every known tool so
+    // send an empty array when the selection covers every known tool so
     // the stack file stays clean of a redundant full-list whitelist.
     const wire =
-      canonicalSelection.length === allTools.length && allTools.length > 0
-        ? []
-        : canonicalSelection;
+      targetSelection.length === allTools.length && allTools.length > 0 ? [] : targetSelection;
     try {
       const resp = await setServerTools(serverName, wire);
       showToast('success', `Tools saved for ${serverName}`);
@@ -255,6 +262,29 @@ export function useToolsEditor(
     }
   };
 
+  const handleSave = () => saveSelection(canonicalSelection);
+
+  const disableTools = (names: string[]) => {
+    const drop = new Set(names);
+    const remaining = canonicalSelection.filter((name) => !drop.has(name));
+    // The whitelist model can't express "expose nothing" — an empty whitelist
+    // means "expose all". Disabling every exposed tool would therefore
+    // paradoxically re-expose them (and any previously-disabled tools). Refuse
+    // that case rather than silently inverting the user's intent.
+    if (remaining.length === 0) {
+      showToast(
+        'error',
+        `Can't disable every exposed tool on ${serverName} — at least one must stay enabled.`,
+      );
+      return Promise.resolve();
+    }
+    // Reflect the change in the view, then persist it. saveSelection reads the
+    // computed `remaining` directly (not React state) so the save is correct
+    // even though setSelection has not flushed yet.
+    setSelection(remaining);
+    return saveSelection(remaining);
+  };
+
   // handleReloadFromDisk refreshes the saved state after a 409. We refetch
   // gateway status (which carries the running whitelist) and let the consumer
   // re-render with the new savedTools; the user's in-flight selection is kept
@@ -304,6 +334,7 @@ export function useToolsEditor(
     conflict,
     discardPrompt,
     handleSave,
+    disableTools,
     handleReloadFromDisk,
     handleDiscard,
     handleKeepEditing,
