@@ -273,6 +273,72 @@ export async function setServerTools(
   return data as SetServerToolsResponse;
 }
 
+// One server's whitelist change in a batch request. tools = [] clears the
+// whitelist (expose all), matching the single-server semantics.
+export interface ServerToolsBatchEntry {
+  name: string;
+  tools: string[];
+}
+
+// One server's applied whitelist in a successful batch response.
+export interface ServerToolsBatchResult {
+  server: string;
+  tools: string[];
+}
+
+// Response payload for PUT /api/mcp-servers/tools on success. The batch is
+// atomic, so every listed server was applied and a single reload (when enabled)
+// ran once for the whole batch.
+export interface SetServerToolsBatchResponse {
+  servers: ServerToolsBatchResult[];
+  reloaded: boolean;
+  reloadedAt?: string; // RFC3339, only present when reloaded is true
+}
+
+/**
+ * Apply tool-whitelist changes to MULTIPLE servers in one atomic write that
+ * triggers a SINGLE reload — the fleet-bulk path. Transaction semantics are
+ * all-or-nothing: if any tool is unknown the whole batch is rejected and
+ * nothing is written (SetServerToolsError code "unknown_tool", message names
+ * the offending server). A concurrent external edit rejects with
+ * "stack_modified" (409); a write that reloads-failed surfaces "reload_failed"
+ * (502) with the changes persisted — mirroring the single-server endpoint.
+ *
+ * PUT /api/mcp-servers/tools
+ */
+export async function setServerToolsBatch(
+  servers: ServerToolsBatchEntry[],
+): Promise<SetServerToolsBatchResponse> {
+  const response = await fetch(`${API_BASE}/api/mcp-servers/tools`, {
+    method: 'PUT',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ servers }),
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err === 'object' && typeof err.code === 'string') {
+      throw new SetServerToolsError(
+        err.code,
+        err.message ?? 'Batch set tools failed',
+        err.hint,
+        response.status,
+      );
+    }
+    const msg =
+      typeof err === 'string'
+        ? err
+        : `Batch set tools failed: ${response.status} ${response.statusText}`;
+    throw new Error(msg);
+  }
+
+  return data as SetServerToolsBatchResponse;
+}
+
 // === Structured Log Entry (from gateway) ===
 
 export interface LogEntry {
