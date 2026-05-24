@@ -181,10 +181,10 @@ describe('VariablesPopover', () => {
       expect(screen.getByPlaceholderText('42')).toBeInTheDocument();
     });
 
-    it('hints true/false when bool type is selected', async () => {
+    it('renders a toggle switch when bool type is selected', async () => {
       await openCreateForm();
       fireEvent.click(screen.getByRole('button', { name: 'bool' }));
-      expect(screen.getByPlaceholderText('true or false')).toBeInTheDocument();
+      expect(screen.getByRole('switch')).toBeInTheDocument();
     });
   });
 
