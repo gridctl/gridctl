@@ -77,10 +77,10 @@ describe('VaultPanel — value placeholder adapts to type and visibility', () =>
     expect(screen.getByPlaceholderText('42')).toBeInTheDocument();
   });
 
-  it('hints true/false when bool type is selected', () => {
+  it('renders a toggle switch when bool type is selected', () => {
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'bool' }));
-    expect(screen.getByPlaceholderText('true or false')).toBeInTheDocument();
+    expect(screen.getByRole('switch')).toBeInTheDocument();
   });
 
   it('leaves the key-input placeholder generic regardless of type', () => {
