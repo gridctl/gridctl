@@ -525,6 +525,57 @@ func (a *Accumulator) ToolUsageSnapshot() map[string]map[string]ToolStat {
 	return out
 }
 
+// RestoreToolUsage seeds per-(server, tool) call counters from a persisted
+// snapshot so Audit Mode's usage history survives a gateway restart. Called
+// on startup by telemetry.MetricsFlusher.SeedFromFile before the gateway
+// serves traffic, so the counters it re-creates are the same *toolUsage
+// buckets RecordToolCall increments afterward — live calls continue from the
+// restored count rather than starting at zero.
+//
+// Tool-call attribution flows through the same observer for direct and
+// code-mode calls (Gateway.CallTool → HandleToolsCall → Observer →
+// RecordToolCall), so a restored snapshot reflects both equally.
+//
+// Restore is max-wins per counter: an existing in-memory value is kept when
+// it already exceeds the restored one (defensive against a seed racing late
+// initialization). Entries with no recorded calls are skipped so the snapshot
+// stays sparse. An empty map is a no-op.
+func (a *Accumulator) RestoreToolUsage(perServer map[string]map[string]ToolStat) {
+	if len(perServer) == 0 {
+		return
+	}
+	a.toolUsageMu.Lock()
+	defer a.toolUsageMu.Unlock()
+	for serverName, tools := range perServer {
+		if serverName == "" {
+			continue
+		}
+		for toolName, stat := range tools {
+			if toolName == "" || stat.Calls <= 0 {
+				continue
+			}
+			m, ok := a.toolUsage[serverName]
+			if !ok {
+				m = make(map[string]*toolUsage)
+				a.toolUsage[serverName] = m
+			}
+			tu, ok := m[toolName]
+			if !ok {
+				tu = &toolUsage{}
+				m[toolName] = tu
+			}
+			if stat.Calls > tu.calls.Load() {
+				tu.calls.Store(stat.Calls)
+			}
+			if !stat.LastCalledAt.IsZero() {
+				if nanos := stat.LastCalledAt.UnixNano(); nanos > tu.lastCalledNanos.Load() {
+					tu.lastCalledNanos.Store(nanos)
+				}
+			}
+		}
+	}
+}
+
 // RecordFormatSavings records token counts before and after format conversion.
 // Normal token usage tracking is handled separately by the ToolCallObserver;
 // this method only tracks the format savings delta.
