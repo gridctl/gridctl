@@ -14,6 +14,7 @@ import { Button } from '../ui/Button';
 import { VariableTypeBadge } from './VariableTypeBadge';
 import { VariableVisibilityIcon } from './VariableVisibilityIcon';
 import { SecretGenerator } from './SecretGenerator';
+import { VariableValueInput } from './VariableValueInput';
 import type { Consumer, Variable } from '../../lib/api';
 
 // How many consumers to show before collapsing behind a "see all" toggle.
@@ -55,7 +56,7 @@ export interface SecretItemProps {
 }
 
 // Expandable variable row matching the SkillItem visual pattern. Used by
-// VaultPanel, DetachedVaultPage, and the upcoming VaultWorkspace.
+// VaultPanel and the VaultWorkspace.
 export function SecretItem({
   secret,
   revealed,
@@ -79,6 +80,9 @@ export function SecretItem({
   const [expanded, setExpanded] = useState(false);
   const [showConsumers, setShowConsumers] = useState(false);
   const [showAllConsumers, setShowAllConsumers] = useState(false);
+  // Tracks whether the in-edit value satisfies its type (json/number can be
+  // invalid); gates the Save button alongside the empty-value check.
+  const [editValueValid, setEditValueValid] = useState(true);
 
   const keyTextClass = cn(
     'text-xs font-mono font-medium text-text-primary flex-1 text-left truncate',
@@ -92,10 +96,6 @@ export function SecretItem({
     'text-xs font-mono text-text-secondary bg-background/60 px-2 py-1.5 rounded break-all',
     enableZoom && 'log-text',
   );
-  const editValueClass = cn(
-    'w-full bg-surface border border-border rounded-lg px-2 py-1.5 pr-8 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors',
-    enableZoom && 'log-text',
-  );
   const editKeyClass = cn(
     'text-xs font-mono text-primary',
     enableZoom && 'log-text',
@@ -105,27 +105,20 @@ export function SecretItem({
     return (
       <div className="rounded-lg bg-surface-elevated/50 border border-primary/20 p-2 space-y-2">
         <div className={editKeyClass}>{secret.key}</div>
-        <div className="relative">
-          <input
-            type={showEditValue || !secret.is_secret ? 'text' : 'password'}
-            value={editValue}
-            onChange={(e) => onEditValueChange(e.target.value)}
-            placeholder="New value"
-            autoFocus
-            className={editValueClass}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onEditSave();
-              if (e.key === 'Escape') onEditCancel();
-            }}
-          />
-          <button
-            type="button"
-            onClick={onEditToggleShow}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
-          >
-            {showEditValue ? <EyeOff size={10} /> : <Eye size={10} />}
-          </button>
-        </div>
+        <VariableValueInput
+          type={secret.type}
+          value={editValue}
+          onChange={onEditValueChange}
+          isSecret={secret.is_secret}
+          revealed={showEditValue}
+          onToggleReveal={onEditToggleShow}
+          onValidityChange={setEditValueValid}
+          onRequestSubmit={onEditSave}
+          onRequestCancel={onEditCancel}
+          compact={compact}
+          enableZoom={enableZoom}
+          autoFocus
+        />
         {secret.type === 'string' && (
           <SecretGenerator
             onGenerate={onEditValueChange}
@@ -145,7 +138,7 @@ export function SecretItem({
             variant="primary"
             size="sm"
             onClick={onEditSave}
-            disabled={!editValue}
+            disabled={!editValue || !editValueValid}
           >
             Save
           </Button>
