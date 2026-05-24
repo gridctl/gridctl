@@ -93,6 +93,20 @@ export function VariableQuickAddForm({
     [doSubmit],
   );
 
+  // Switching into/out of bool clears the value: bool's "true"/"false" is
+  // widget-managed (auto-seeded), not user-typed, so it shouldn't bleed into a
+  // text/json/list field. Text-type switches keep the value for reinterpreting.
+  const handleTypeChange = useCallback(
+    (next: VariableType) => {
+      if (type === 'bool' || next === 'bool') {
+        setNewValue('');
+        setError(null);
+      }
+      setType(next);
+    },
+    [type],
+  );
+
   const handleCancel = useCallback(() => {
     setNewKey('');
     setNewValue('');
@@ -137,7 +151,7 @@ export function VariableQuickAddForm({
           enableZoom={enableZoom}
         />
         <div className="flex flex-wrap items-center gap-2">
-          <VariableTypeSelector value={type} onChange={setType} />
+          <VariableTypeSelector value={type} onChange={handleTypeChange} />
           <VariableSecretToggle isSecret={isSecret} onChange={setIsSecret} />
           {type === 'string' && (
             <SecretGenerator
