@@ -146,6 +146,16 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
     }
   }, [newKey, newValue, newType, newIsSecret, onSelect, setVariables]);
 
+  // Switching into/out of bool clears the value — its "true"/"false" is
+  // widget-managed, not user-typed, so it shouldn't bleed into other types.
+  const handleTypeChange = (next: VariableType) => {
+    if (newType === 'bool' || next === 'bool') {
+      setNewValue('');
+      setError(null);
+    }
+    setNewType(next);
+  };
+
   const filtered = (variables ?? []).filter((s) =>
     s.key.toLowerCase().includes(filter.toLowerCase()),
   );
@@ -256,7 +266,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             compact
           />
           <div className="flex flex-wrap gap-1">
-            <VariableTypeSelector value={newType} onChange={setNewType} />
+            <VariableTypeSelector value={newType} onChange={handleTypeChange} />
           </div>
           <div className="flex flex-wrap items-center gap-1">
             <VariableSecretToggle isSecret={newIsSecret} onChange={setNewIsSecret} />
