@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import { ToolsWorkspace } from '../components/workspaces/ToolsWorkspace';
 import { useStackStore } from '../stores/useStackStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
+import * as api from '../lib/api';
 import type { MCPServerStatus, Tool } from '../types';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
@@ -123,5 +124,84 @@ describe('ToolsWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /show create_issue schema/i }));
     // The CodeViewer renders the JSON schema content.
     expect(screen.getByLabelText('create_issue input schema')).toBeInTheDocument();
+  });
+});
+
+describe('ToolsWorkspace — Audit Mode', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const recent = () => new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1h ago
+  const observedSince = () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  it('toggling Audit Mode fetches usage and annotates rows by state', async () => {
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: observedSince(),
+      servers: { github: { create_issue: { calls: 5, lastCalledAt: recent() } } },
+    });
+
+    renderAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+
+    // create_issue is exposed + recently used → "used".
+    expect(await screen.findByText('used')).toBeInTheDocument();
+    // list_repos is advertised but not whitelisted → "disabled".
+    expect(screen.getByText('disabled')).toBeInTheDocument();
+  });
+
+  it('shows an unused-count rail badge for servers with idle exposed tools', async () => {
+    // github's only exposed tool (create_issue) is recently used → 0 unused;
+    // atlassian exposes get_page with no calls → 1 unused. Only atlassian
+    // should carry the badge.
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: observedSince(),
+      servers: { github: { create_issue: { calls: 5, lastCalledAt: recent() } } },
+    });
+
+    renderAt('/tools');
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+
+    expect(await screen.findByText('1 unused')).toBeInTheDocument();
+  });
+
+  it('remediation disables idle exposed tools through a single-server save', async () => {
+    // gitlab exposes a + b (whitelist), advertises a third disabled tool c.
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server('gitlab', ['a', 'b', 'c'], ['a', 'b'])],
+      tools: [
+        tool(`gitlab${TOOL_NAME_DELIMITER}a`),
+        tool(`gitlab${TOOL_NAME_DELIMITER}b`),
+        tool(`gitlab${TOOL_NAME_DELIMITER}c`),
+      ],
+    });
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: observedSince(),
+      // a used recently; b exposed but idle → the remediation target.
+      servers: { gitlab: { a: { calls: 9, lastCalledAt: recent() } } },
+    });
+    const saveSpy = vi
+      .spyOn(api, 'setServerTools')
+      .mockResolvedValue({ server: 'gitlab', tools: ['a'], reloaded: true });
+    vi.spyOn(api, 'fetchStatus').mockResolvedValue({
+      gateway: { name: 'x', version: '1' },
+      'mcp-servers': [],
+    });
+    vi.spyOn(api, 'fetchTools').mockResolvedValue({ tools: [] });
+
+    renderAt('/tools?server=gitlab');
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+
+    // The remediation affordance appears once usage loads.
+    const disableBtn = await screen.findByRole('button', { name: /disable 1 unused tools/i });
+    fireEvent.click(disableBtn);
+
+    // Consequence-stating confirmation, then commit.
+    const confirm = await screen.findByRole('button', { name: /disable & reload/i });
+    fireEvent.click(confirm);
+
+    // The idle tool (b) is dropped; the used tool (a) persists as the whitelist.
+    await waitFor(() => expect(saveSpy).toHaveBeenCalledWith('gitlab', ['a']));
   });
 });
