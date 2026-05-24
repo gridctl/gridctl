@@ -116,6 +116,116 @@ func setServerTools(path, serverName string, tools []string) error {
 	return atomicWrite(path, updated)
 }
 
+// serverToolsUpdate is one server's whitelist change within a batch write.
+type serverToolsUpdate struct {
+	Server string
+	Tools  []string
+}
+
+// setServerToolsBatch applies whitelist changes for multiple servers to the
+// stack YAML at path in a SINGLE atomic write, mirroring setServerTools'
+// per-path locking and read-verify-write conflict detection. The change is
+// all-or-nothing: every update lands or none do (the caller validates tool
+// names up front and triggers exactly one reload afterward).
+//
+// Returns errServerNotFound (wrapped with the missing name) when any update
+// targets a server absent from the stack, errStackModified when the file
+// changed between the initial read and the write, or a filesystem error.
+func setServerToolsBatch(path string, updates []serverToolsUpdate) error {
+	if path == "" {
+		return errStackFileEmpty
+	}
+
+	mu := stackFileLock(path)
+	mu.Lock()
+	defer mu.Unlock()
+
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read stack file: %w", err)
+	}
+	originalHash := sha256.Sum256(original)
+
+	updated, err := patchMultipleServerTools(original, updates)
+	if err != nil {
+		return err
+	}
+
+	fireBetweenReadsHook()
+
+	current, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("re-read stack file: %w", err)
+	}
+	if sha256.Sum256(current) != originalHash {
+		return errStackModified
+	}
+
+	return atomicWrite(path, updated)
+}
+
+// patchMultipleServerTools applies every update's tools list to its server in
+// one yaml.Node round-trip, preserving comments/ordering. It indexes the
+// mcp-servers sequence by name once, then applies each update via the same
+// replaceOrInsertTools the single-server path uses (an empty list drops the
+// tools: key = expose all). Returns errServerNotFound (wrapped with the name)
+// if any update targets a server that isn't in the stack — and writes nothing,
+// since the marshal happens only after all updates apply.
+func patchMultipleServerTools(source []byte, updates []serverToolsUpdate) ([]byte, error) {
+	if len(updates) == 0 {
+		return nil, fmt.Errorf("no server updates provided")
+	}
+
+	var root yaml.Node
+	if err := yaml.Unmarshal(source, &root); err != nil {
+		return nil, fmt.Errorf("parse stack yaml: %w", err)
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+		return nil, fmt.Errorf("parse stack yaml: not a document")
+	}
+
+	doc := root.Content[0]
+	if doc.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("parse stack yaml: top-level not a mapping")
+	}
+
+	serversSeq := findMappingValue(doc, "mcp-servers")
+	if serversSeq == nil || serversSeq.Kind != yaml.SequenceNode {
+		return nil, errServerNotFound
+	}
+
+	byName := make(map[string]*yaml.Node, len(serversSeq.Content))
+	for _, entry := range serversSeq.Content {
+		if entry.Kind != yaml.MappingNode {
+			continue
+		}
+		if nameNode := findMappingValue(entry, "name"); nameNode != nil {
+			byName[nameNode.Value] = entry
+		}
+	}
+
+	for _, u := range updates {
+		target, ok := byName[u.Server]
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", errServerNotFound, u.Server)
+		}
+		if err := replaceOrInsertTools(target, u.Tools); err != nil {
+			return nil, err
+		}
+	}
+
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(&root); err != nil {
+		return nil, fmt.Errorf("marshal stack yaml: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("marshal stack yaml: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
 // patchServerTools rewrites the given YAML source with tools set to the
 // provided list for the named server. The yaml.Node round-trip keeps line
 // comments and ordering; only the target tools: sequence is replaced.

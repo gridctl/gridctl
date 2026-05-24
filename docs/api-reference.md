@@ -532,6 +532,49 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 - `502 reload_failed` - YAML written but hot reload failed
 - `503` - No stack file configured (stackless mode)
 
+#### `PUT /api/mcp-servers/tools`
+
+Applies tool-whitelist changes to **multiple** servers in one atomic `stack.yaml` write and triggers a **single** hot reload — the fleet-bulk counterpart to the per-server endpoint above. Powers the Tools workspace bulk actions (fleet-wide expose-all / clear / pattern filtering), where applying N servers via N single-server calls would cost N reloads.
+
+**Transaction semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. This prevents a half-applied fleet edit. The reload runs once after the single write.
+
+**Auth:** Yes
+
+**Request:**
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"servers": [
+        {"name": "github", "tools": ["search_code"]},
+        {"name": "atlassian", "tools": []}
+      ]}' \
+  http://localhost:8180/api/mcp-servers/tools
+```
+
+The body must be a JSON object with a non-empty `servers` array; each entry needs a `name` and a `tools` array (`[]` clears that server's whitelist = expose all). Server names must be unique within the batch. The body is capped at 512 KiB.
+
+**Response:**
+```json
+{
+  "servers": [
+    { "server": "github", "tools": ["search_code"] },
+    { "server": "atlassian", "tools": [] }
+  ],
+  "reloaded": true,
+  "reloadedAt": "2025-01-15T10:30:00Z"
+}
+```
+
+`reloaded`/`reloadedAt` follow the single-server rules (one reload for the whole batch; `false` without live-reload).
+
+**Errors:**
+- `400 unknown_tool` - A tool name is not advertised by its server (message names the server); nothing written
+- `400` - Body missing/empty `servers`, an entry missing `name`/`tools`, a duplicate server, or an empty tool name
+- `404` - A named server is not in the stack file; nothing written
+- `409 stack_modified` - Stack file changed on disk between read and write; nothing written
+- `502 reload_failed` - YAML written but hot reload failed
+- `503` - No stack file configured (stackless mode)
+
 #### `POST /api/servers/probe`
 
 Probes an external URL (or any other) MCP server configuration ephemerally and returns its advertised tool list, without registering it with the gateway. Powers the wizard's "Discover tools" button on the MCP server form.
