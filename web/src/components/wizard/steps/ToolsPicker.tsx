@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Command } from 'cmdk';
-import Fuse from 'fuse.js';
 import { AlertCircle, ArrowLeft, Check, Edit3, Loader2, Plus, Radar, Search, X } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { useStackStore } from '../../../stores/useStackStore';
 import { TOOL_NAME_DELIMITER } from '../../../lib/constants';
 import { showToast } from '../../ui/Toast';
+import { useFuzzySearch } from '../../../hooks/useFuzzySearch';
 import { useProbeServer } from '../../../hooks/useProbeServer';
 import { ProbeError, type ProbeServerConfig } from '../../../lib/api';
 
@@ -81,15 +81,11 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
   const inManualMode = modeOverride ?? autoManual;
   const inEmptyState = !hasTools && !inManualMode;
 
-  const fuse = useMemo(
-    () => new Fuse(displayTools, { keys: ['name', 'description'], threshold: 0.4 }),
-    [displayTools],
-  );
-
-  const visible = useMemo(() => {
-    if (!query.trim()) return displayTools;
-    return fuse.search(query).map((r) => r.item);
-  }, [fuse, query, displayTools]);
+  // Shared fuzzy search over the merged tool list. ToolsPicker stays a
+  // controlled input (selection lives in the parent via value/onChange), so it
+  // only borrows the search primitive from useToolsEditor's world — not the
+  // stateful save/dirty controller, which would be a poor fit here.
+  const visible = useFuzzySearch(displayTools, query);
 
   const selected = useMemo(() => new Set(value), [value]);
 
