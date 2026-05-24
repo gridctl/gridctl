@@ -2,10 +2,7 @@ import { KeyRound } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 export interface EmptyVaultStateProps {
-  // The CLI verb to show in the example commands. VaultPanel renders the
-  // current verb ("var"); the detached page historically rendered "vault"
-  // (now a stale alias) — kept as a prop to preserve behavioral parity
-  // until Phases 2-3 clean up.
+  // The CLI verb to show in the example commands (VaultPanel renders "var").
   cliVerb: string;
   className?: string;
 }
