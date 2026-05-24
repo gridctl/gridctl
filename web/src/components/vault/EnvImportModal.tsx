@@ -19,6 +19,7 @@ import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { VariableTypeSelector } from './VariableTypeSelector';
+import { validateVariableInput } from './variableTypeHelpers';
 import { parseImport } from '../../lib/parseFile';
 import type { ParsedEnvEntry } from '../../lib/envParser';
 import type {
@@ -159,6 +160,26 @@ export function EnvImportModal({
     return { newCount, conflicts, skipped };
   }, [rows, existingKeys]);
 
+  // Per-row type validation, keyed by row id. Imports must not push values
+  // that don't satisfy their declared type — the value is normalized (e.g.
+  // `list` → JSON array) before submit, mirroring the manual add path.
+  const validations = useMemo(() => {
+    const m: Record<
+      string,
+      { ok: true; normalized: string } | { ok: false; error: string }
+    > = {};
+    for (const r of rows) {
+      if (r.skipped) continue;
+      m[r.id] = validateVariableInput(r.type, r.value);
+    }
+    return m;
+  }, [rows]);
+
+  const invalidCount = useMemo(
+    () => Object.values(validations).filter((v) => !v.ok).length,
+    [validations],
+  );
+
   const handleFile = useCallback(async (file: File) => {
     const content = await file.text();
     setText((prev) => (prev ? prev + '\n' + content : content));
@@ -195,19 +216,29 @@ export function EnvImportModal({
   );
 
   const handleImport = useCallback(async () => {
-    const toSubmit = rows
-      .filter((r) => !r.skipped)
-      .map<ImportVariableInput>((r) => ({
-        key: r.key,
-        value: r.value,
-        type: r.type,
-        isSecret: r.isSecret,
-        set: r.set || undefined,
-      }));
-    if (toSubmit.length === 0) {
+    const active = rows.filter((r) => !r.skipped);
+    if (active.length === 0) {
       setSubmitError('Nothing to import — every row is skipped.');
       return;
     }
+    const invalid = active.filter((r) => !validations[r.id]?.ok);
+    if (invalid.length > 0) {
+      setSubmitError(
+        `Fix ${invalid.length} value${invalid.length === 1 ? '' : 's'} that don't match their type before importing.`,
+      );
+      return;
+    }
+    const toSubmit = active.map<ImportVariableInput>((r) => {
+      const v = validations[r.id];
+      return {
+        key: r.key,
+        // v is guaranteed ok here (invalid rows blocked above).
+        value: v && v.ok ? v.normalized : r.value,
+        type: r.type,
+        isSecret: r.isSecret,
+        set: r.set || undefined,
+      };
+    });
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -220,7 +251,7 @@ export function EnvImportModal({
     } finally {
       setSubmitting(false);
     }
-  }, [rows, onImport, onClose]);
+  }, [rows, validations, onImport, onClose]);
 
   return (
     <div
@@ -352,12 +383,15 @@ export function EnvImportModal({
                   <tbody>
                     {rows.map((r) => {
                       const exists = existingKeys.has(r.key);
+                      const v = validations[r.id];
+                      const rowError = !r.skipped && v && !v.ok ? v.error : null;
                       return (
                         <tr
                           key={r.id}
                           className={cn(
                             'border-b border-border-subtle/60 transition-opacity',
                             r.skipped && 'opacity-40',
+                            rowError && 'bg-status-error/5',
                           )}
                         >
                           <td className="px-3 py-2 align-top">
@@ -404,6 +438,11 @@ export function EnvImportModal({
                                 </button>
                               )}
                             </div>
+                            {rowError && (
+                              <p className="mt-1 text-[10px] text-status-error">
+                                {rowError}
+                              </p>
+                            )}
                           </td>
                           <td className="px-2 py-2 align-top">
                             <VariableTypeSelector
@@ -501,6 +540,14 @@ export function EnvImportModal({
               <span className="text-status-error font-semibold">{counts.skipped}</span>{' '}
               skipped
             </span>
+            {invalidCount > 0 && (
+              <>
+                <span className="text-text-muted/40">·</span>
+                <span className="text-status-error">
+                  <span className="font-semibold">{invalidCount}</span> invalid
+                </span>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -518,7 +565,9 @@ export function EnvImportModal({
               size="sm"
               onClick={handleImport}
               disabled={
-                submitting || counts.newCount + counts.conflicts === 0
+                submitting ||
+                counts.newCount + counts.conflicts === 0 ||
+                invalidCount > 0
               }
             >
               <FileUp size={12} />
