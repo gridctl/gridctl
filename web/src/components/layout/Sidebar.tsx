@@ -14,6 +14,7 @@ import {
   FileOutput,
   Activity,
   Database,
+  ArrowUpRight,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
@@ -383,6 +384,14 @@ export function Sidebar() {
               savedTools={(data as MCPServerNodeData).toolWhitelist ?? []}
               serverTools={(data as MCPServerNodeData).tools ?? []}
             />
+            <button
+              type="button"
+              onClick={() => navigate(`/tools?server=${encodeURIComponent(data.name)}`)}
+              className="mt-2 inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            >
+              <ArrowUpRight size={10} />
+              Open in Tools workspace
+            </button>
           </InspectorSection>
         )}
 
