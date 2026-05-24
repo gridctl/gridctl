@@ -25,6 +25,9 @@ export interface VariableQuickAddFormProps {
   // Apply `.log-text` so the key and value inputs scale with the parent's
   // zoom controls (detached page).
   enableZoom?: boolean;
+  // When provided, a Cancel button is shown that clears the form and invokes
+  // this (e.g. to collapse the add panel). Omit for always-open hosts.
+  onCancel?: () => void;
 }
 
 // Quick-add form for a single variable. Internal state for every field;
@@ -36,6 +39,7 @@ export function VariableQuickAddForm({
   className,
   keyInputRef,
   enableZoom,
+  onCancel,
 }: VariableQuickAddFormProps) {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
@@ -88,6 +92,17 @@ export function VariableQuickAddForm({
     },
     [doSubmit],
   );
+
+  const handleCancel = useCallback(() => {
+    setNewKey('');
+    setNewValue('');
+    setNewSet('');
+    setShowValue(false);
+    setType('string');
+    setIsSecret(true);
+    setError(null);
+    onCancel?.();
+  }, [onCancel]);
 
   return (
     <form onSubmit={handleSubmit} className={className}>
@@ -144,6 +159,17 @@ export function VariableQuickAddForm({
               </option>
             ))}
           </select>
+          {onCancel && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+          )}
           <Button
             type="submit"
             variant="primary"
