@@ -6,6 +6,7 @@ import {
   AlertCircle,
   Check,
   ChevronRight,
+  Layers,
   Loader2,
   RefreshCw,
   Save,
@@ -35,6 +36,7 @@ import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatusDot } from '../ui/StatusDot';
 import { CodeViewer } from '../ui/CodeViewer';
+import { FleetActions } from './FleetActions';
 import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
 
 // Per-state styling for Audit Mode dots/labels, keyed to the shared status
@@ -130,6 +132,8 @@ export function ToolsWorkspace() {
   // is on (the hook idles otherwise) so the editor pays nothing when it's off.
   const [auditMode, setAuditMode] = useState(false);
   const [auditWindow, setAuditWindow] = useState<AuditWindow>(DEFAULT_AUDIT_WINDOW);
+  // Fleet bulk-action panel (expose-all / hide-pattern across servers).
+  const [fleetOpen, setFleetOpen] = useState(false);
   const { usage, fetchedAt } = useToolUsage(auditMode);
   const windowMs = auditWindowMs(auditWindow);
   const usageByServer = usage?.servers;
@@ -221,6 +225,8 @@ export function ToolsWorkspace() {
             auditWindow={auditWindow}
             onWindowChange={setAuditWindow}
             observedSince={usage?.observedSince}
+            onOpenFleet={() => setFleetOpen(true)}
+            fleetDisabled={servers.length === 0}
           />
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
@@ -268,6 +274,13 @@ export function ToolsWorkspace() {
         confirmLabel="Discard & switch"
         variant="danger"
       />
+
+      <FleetActions
+        isOpen={fleetOpen}
+        onClose={() => setFleetOpen(false)}
+        servers={servers}
+        activeServerName={activeServerName}
+      />
     </div>
   );
 }
@@ -286,6 +299,8 @@ interface ToolsHeaderProps {
   auditWindow: AuditWindow;
   onWindowChange: (w: AuditWindow) => void;
   observedSince?: string;
+  onOpenFleet: () => void;
+  fleetDisabled: boolean;
 }
 
 function ToolsHeader({
@@ -298,6 +313,8 @@ function ToolsHeader({
   auditWindow,
   onWindowChange,
   observedSince,
+  onOpenFleet,
+  fleetDisabled,
 }: ToolsHeaderProps) {
   const searching = query.trim().length > 0;
   const windowLabel = AUDIT_WINDOWS.find((w) => w.id === auditWindow)?.label ?? '7 days';
@@ -317,6 +334,20 @@ function ToolsHeader({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenFleet}
+            disabled={fleetDisabled}
+            aria-label="Open fleet tool actions"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+              'bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border',
+              fleetDisabled && 'opacity-40 cursor-not-allowed',
+            )}
+          >
+            <Layers size={11} aria-hidden="true" />
+            Fleet
+          </button>
           <button
             type="button"
             onClick={onToggleAudit}
