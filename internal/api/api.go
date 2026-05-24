@@ -28,29 +28,29 @@ const statusLocked = 423
 
 // Server provides the combined API server for gridctl.
 type Server struct {
-	gateway          *mcp.Gateway
-	streamableServer *mcp.StreamableHTTPServer
-	sseServer        *mcp.SSEServer
-	staticFS       fs.FS
-	dockerClient   dockerclient.DockerClient
-	stackName      string
-	logBuffer      *logging.LogBuffer
-	reloadHandler  *reload.Handler
-	provisioners   *provisioner.Registry
-	linkServerName string
-	registryServer *registry.Server
+	gateway            *mcp.Gateway
+	streamableServer   *mcp.StreamableHTTPServer
+	sseServer          *mcp.SSEServer
+	staticFS           fs.FS
+	dockerClient       dockerclient.DockerClient
+	stackName          string
+	logBuffer          *logging.LogBuffer
+	reloadHandler      *reload.Handler
+	provisioners       *provisioner.Registry
+	linkServerName     string
+	registryServer     *registry.Server
 	pinStore           *pins.PinStore
 	vaultStore         *vault.Store
 	metricsAccumulator *metrics.Accumulator
 	traceBuffer        *tracing.Buffer
 	stackFile          string
 	allowedOrigins     []string
-	authType       string
-	authToken      string
-	authHeader     string
+	authType           string
+	authToken          string
+	authHeader         string
 
-	gatewayAddr        string // e.g. "http://localhost:8180" — used to build MCP config for CLI proxy
-	tokenizerName      string // active tokenizer mode: "embedded" or "api"
+	gatewayAddr   string // e.g. "http://localhost:8180" — used to build MCP config for CLI proxy
+	tokenizerName string // active tokenizer mode: "embedded" or "api"
 
 	// startWatcher, when set, starts a file watcher on the given stack path.
 	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
@@ -211,9 +211,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// MCP endpoints - Streamable HTTP (POST/GET/DELETE) and legacy SSE negotiation
-	mux.Handle("/mcp", s.streamableServer)                 // Streamable HTTP transport
-	mux.Handle("/sse", s.sseServer)                        // Legacy negotiation redirect
-	mux.HandleFunc("/message", s.sseServer.HandleMessage)  // Legacy endpoint (410 Gone)
+	mux.Handle("/mcp", s.streamableServer)                // Streamable HTTP transport
+	mux.Handle("/sse", s.sseServer)                       // Legacy negotiation redirect
+	mux.HandleFunc("/message", s.sseServer.HandleMessage) // Legacy endpoint (410 Gone)
 
 	// API endpoints
 	mux.HandleFunc("/api/status", s.handleStatus)
@@ -221,6 +221,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/mcp-servers/{name}/logs", s.handleMCPServerLogs)
 	mux.HandleFunc("POST /api/mcp-servers/{name}/restart", s.handleMCPServerRestart)
+	mux.HandleFunc("PUT /api/mcp-servers/tools", s.handleSetServerToolsBatch)
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
@@ -371,7 +372,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		},
 		MCPServers: s.getMCPServerStatuses(),
 		Resources:  s.getResourceStatuses(),
-		Sessions: s.gateway.SessionCount(),
+		Sessions:   s.gateway.SessionCount(),
 	}
 	// Only expose stack_name when a user-defined stack is loaded.
 	// The embedded gateway uses "gridctl" as its default name even in stackless
