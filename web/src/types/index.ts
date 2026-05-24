@@ -225,6 +225,24 @@ export interface ToolsListResult {
   nextCursor?: string;
 }
 
+// One tool's observed usage from GET /api/tools/usage.
+export interface ToolUsageStat {
+  calls: number;
+  // RFC3339; absent when the tool has a count but no recorded timestamp,
+  // or (cross-referenced from the status list) has never been called.
+  lastCalledAt?: string;
+}
+
+// GET /api/tools/usage — per-(server, tool) call counts + last-called times,
+// keyed by server name then unprefixed tool name. Powers Tools Audit Mode.
+// observedSince is when this gateway process began recording; with metrics
+// persistence enabled, restored counts may predate it, so tools missing from
+// `servers` mean "no recorded calls" — not a guaranteed longer disuse window.
+export interface ToolUsageResponse {
+  observedSince?: string;
+  servers: Record<string, Record<string, ToolUsageStat>>;
+}
+
 // Node status for UI display
 export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle';
 
