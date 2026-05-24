@@ -764,6 +764,64 @@ func TestAccumulator_StartedAt_StableAcrossClear(t *testing.T) {
 	}
 }
 
+func TestAccumulator_RestoreToolUsage(t *testing.T) {
+	t.Run("seeds counts and continues incrementing", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		last := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
+		acc.RestoreToolUsage(map[string]map[string]ToolStat{
+			"github": {
+				"create_issue": {Calls: 5, LastCalledAt: last},
+			},
+		})
+
+		snap := acc.ToolUsageSnapshot()
+		if got := snap["github"]["create_issue"].Calls; got != 5 {
+			t.Fatalf("restored calls = %d, want 5", got)
+		}
+		if got := snap["github"]["create_issue"].LastCalledAt; !got.Equal(last) {
+			t.Errorf("restored LastCalledAt = %v, want %v", got, last)
+		}
+
+		// A live call must increment the *restored* bucket, not start fresh.
+		acc.RecordToolCall("github", "create_issue")
+		if got := acc.ToolUsageSnapshot()["github"]["create_issue"].Calls; got != 6 {
+			t.Errorf("calls after restore+record = %d, want 6", got)
+		}
+	})
+
+	t.Run("max-wins keeps a larger in-memory count", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		acc.RecordToolCall("github", "create_issue")
+		acc.RecordToolCall("github", "create_issue")
+		acc.RecordToolCall("github", "create_issue") // 3 live calls
+		acc.RestoreToolUsage(map[string]map[string]ToolStat{
+			"github": {"create_issue": {Calls: 1, LastCalledAt: time.Now()}},
+		})
+		if got := acc.ToolUsageSnapshot()["github"]["create_issue"].Calls; got != 3 {
+			t.Errorf("calls = %d, want 3 (live count must win over smaller restore)", got)
+		}
+	})
+
+	t.Run("zero-call and empty entries are skipped", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		acc.RestoreToolUsage(map[string]map[string]ToolStat{
+			"github": {"never": {Calls: 0}},
+			"":       {"x": {Calls: 9}},
+		})
+		if snap := acc.ToolUsageSnapshot(); snap != nil {
+			t.Errorf("expected no usage restored; got %v", snap)
+		}
+	})
+
+	t.Run("empty map is a no-op", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		acc.RestoreToolUsage(nil)
+		if snap := acc.ToolUsageSnapshot(); snap != nil {
+			t.Errorf("nil restore should be no-op; got %v", snap)
+		}
+	})
+}
+
 func TestAccumulator_Clear_ResetsPerClient(t *testing.T) {
 	acc := NewAccumulator(100)
 	acc.RecordReplicaWithClient("s", -1, "client-a", 10, 5)
