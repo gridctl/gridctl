@@ -8,7 +8,6 @@ import { DetachedSidebarPage } from './pages/DetachedSidebarPage';
 import { DetachedEditorPage } from './pages/DetachedEditorPage';
 import { DetachedRegistryPage } from './pages/DetachedRegistryPage';
 import { DetachedMetricsPage } from './pages/DetachedMetricsPage';
-import { DetachedVaultPage } from './pages/DetachedVaultPage';
 import { DetachedTracesPage } from './pages/DetachedTracesPage';
 
 // Each workspace is code-split into its own chunk.
@@ -78,7 +77,6 @@ export function AppRoutes() {
           existing detached window handles. */}
       <Route path="/registry" element={<Navigate to="/library-window" replace />} />
       <Route path="/metrics" element={<DetachedMetricsPage />} />
-      <Route path="/var" element={<DetachedVaultPage />} />
       <Route path="/traces" element={<DetachedTracesPage />} />
     </Routes>
   );
