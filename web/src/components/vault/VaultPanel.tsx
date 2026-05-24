@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { ResizeHandle } from '../ui/ResizeHandle';
-import { PopoutButton } from '../ui/PopoutButton';
-import { useUIStore } from '../../stores/useUIStore';
 import { showToast } from '../ui/Toast';
 import { useVaultManager } from '../../hooks/useVaultManager';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
@@ -30,7 +28,6 @@ interface VaultPanelProps {
 }
 
 export function VaultPanel({ onClose }: VaultPanelProps) {
-  const vaultDetached = useUIStore((s) => s.vaultDetached);
   const revealedState = useRevealedValues();
   const vault = useVaultManager({ onPlaintextLoaded: revealedState.bulkSet });
 
@@ -103,11 +100,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  const handlePopout = useCallback(() => {
-    window.open('/var', 'gridctl-var');
-    onClose();
   }, [onClose]);
 
   const handleUnlock = useCallback(
@@ -282,7 +274,6 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <PopoutButton onClick={handlePopout} disabled={vaultDetached} />
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group"
