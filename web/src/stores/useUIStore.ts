@@ -105,7 +105,6 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   editorDetached: boolean;
   registryDetached: boolean;
   metricsDetached: boolean;
-  vaultDetached: boolean;
   tracesDetached: boolean;
 
   // Actions
@@ -133,7 +132,6 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   setEditorDetached: (detached: boolean) => void;
   setRegistryDetached: (detached: boolean) => void;
   setMetricsDetached: (detached: boolean) => void;
-  setVaultDetached: (detached: boolean) => void;
   setTracesDetached: (detached: boolean) => void;
 
   // Command palette state (not persisted)
@@ -187,7 +185,6 @@ export const useUIStore = create<UIState>()(
       editorDetached: false,
       registryDetached: false,
       metricsDetached: false,
-      vaultDetached: false,
       tracesDetached: false,
 
       // Command palette (always starts closed)
@@ -234,7 +231,6 @@ export const useUIStore = create<UIState>()(
       setEditorDetached: (editorDetached) => set({ editorDetached }),
       setRegistryDetached: (registryDetached) => set({ registryDetached }),
       setMetricsDetached: (metricsDetached) => set({ metricsDetached }),
-      setVaultDetached: (vaultDetached) => set({ vaultDetached }),
       setTracesDetached: (tracesDetached) => set({ tracesDetached }),
     }),
     {
