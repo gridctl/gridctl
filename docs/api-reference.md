@@ -205,6 +205,35 @@ Returns all aggregated tools from registered MCP servers.
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools
 ```
 
+#### `GET /api/tools/usage`
+
+Returns per-(server, tool) usage observed by the gateway: cumulative call count and the last-called timestamp. Powers the Tools workspace **Audit Mode**, which separates actively-used, configured-but-unused, and disabled tools.
+
+Usage is recorded for both direct tool calls and tools invoked through code mode's `execute` (both flow through the same observer). For servers with metrics persistence enabled, the data is restored from disk on startup so it survives gateway restarts; otherwise it reflects activity since the last gateway start.
+
+`observedSince` is when this gateway process began recording. With persistence enabled, restored counts and timestamps may predate it — clients should treat tools absent from `servers` (or with no `lastCalledAt`) as "no recorded calls" rather than asserting a longer disuse history than `observedSince` supports.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/usage
+```
+
+**Response:**
+```json
+{
+  "observedSince": "2026-05-20T10:00:00Z",
+  "servers": {
+    "github": {
+      "create_issue": { "calls": 42, "lastCalledAt": "2026-05-24T09:13:00Z" },
+      "list_repos": { "calls": 3, "lastCalledAt": "2026-05-21T08:00:00Z" }
+    }
+  }
+}
+```
+
+`servers` is an object keyed by server name; each value maps unprefixed tool names to their stats. Tools that have never been called are omitted. Returns `503` when no metrics accumulator is configured.
+
 #### `GET /api/logs`
 
 Returns structured log entries from the gateway log buffer.
