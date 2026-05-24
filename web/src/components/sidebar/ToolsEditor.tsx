@@ -1,18 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { Command } from 'cmdk';
-import Fuse from 'fuse.js';
 import { AlertCircle, Check, Loader2, RefreshCw, Save, Search } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { useStackStore } from '../../stores/useStackStore';
-import { TOOL_NAME_DELIMITER } from '../../lib/constants';
-import { showToast } from '../ui/Toast';
-import {
-  AuthError,
-  fetchStatus,
-  fetchTools,
-  setServerTools,
-  SetServerToolsError,
-} from '../../lib/api';
+import { useToolsEditor } from '../../hooks/useToolsEditor';
 
 interface ToolsEditorProps {
   serverName: string;
@@ -31,238 +20,30 @@ interface ToolsEditorProps {
   serverTools?: string[];
 }
 
-interface ToolRow {
-  name: string;
-  description?: string;
-}
-
-// canonicalWhitelist normalizes a selection into the wire form: a sorted,
-// deduplicated array. Dirty comparison uses it on both sides so selection
-// order never triggers a spurious "unsaved changes" state.
-function canonicalWhitelist(names: string[]): string[] {
-  return Array.from(new Set(names)).sort();
-}
-
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
+// ToolsEditor is the sidebar's per-server whitelist editor. All of its state
+// and the save-and-reload flow live in useToolsEditor; this component is the
+// presentational shell. The fleet Tools workspace reuses the same hook so the
+// two surfaces stay in lock-step.
 export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditorProps) {
-  const tools = useStackStore((s) => s.tools);
-
-  // Every tool the editor should render. The server's own advertised list
-  // (from /api/status) is the authoritative source — it holds every tool
-  // regardless of code mode. The global tools store provides descriptions
-  // when available. A saved whitelist entry missing from both still renders
-  // so the user sees what's actually persisted in the YAML.
-  const allTools: ToolRow[] = useMemo(() => {
-    const prefix = `${serverName}${TOOL_NAME_DELIMITER}`;
-    const descriptions = new Map<string, string | undefined>();
-    for (const t of tools ?? []) {
-      if (t.name.startsWith(prefix)) {
-        descriptions.set(t.name.slice(prefix.length), t.description);
-      }
-    }
-    const rows = new Map<string, ToolRow>();
-    for (const name of serverTools ?? []) {
-      rows.set(name, { name, description: descriptions.get(name) });
-    }
-    for (const [name, description] of descriptions) {
-      if (!rows.has(name)) rows.set(name, { name, description });
-    }
-    for (const name of savedTools) {
-      if (!rows.has(name)) rows.set(name, { name });
-    }
-    return [...rows.values()];
-  }, [tools, serverName, savedTools, serverTools]);
-
-  // Saved selection in canonical form. When savedTools is empty, the YAML
-  // has no whitelist, so the server is exposing every tool — we reflect that
-  // by checking every row.
-  const savedSelection = useMemo(() => {
-    if (savedTools.length === 0) {
-      return canonicalWhitelist(allTools.map((t) => t.name));
-    }
-    return canonicalWhitelist(savedTools);
-  }, [savedTools, allTools]);
-
-  const [selection, setSelection] = useState<string[]>(savedSelection);
-  const [query, setQuery] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [conflict, setConflict] = useState<string | null>(null);
-  // When the user tries to switch nodes with unsaved edits, we stash the name
-  // of the server we were editing so the "Keep editing" affordance can re-
-  // select it in the graph store.
-  const [discardPrompt, setDiscardPrompt] = useState<string | null>(null);
-
-  // Reset local selection when the server switches or when the saved state
-  // changes and the user has no pending edits. The ref captures the
-  // most-recent committed serverName so polling-driven re-renders don't
-  // clobber the user's in-progress edits.
-  const committedServer = useRef(serverName);
-  const savedRef = useRef(savedSelection);
-  const selectionRef = useRef(selection);
-  selectionRef.current = selection;
-
-  useEffect(() => {
-    const prevServer = committedServer.current;
-    const prevSaved = savedRef.current;
-    const currentCanonical = canonicalWhitelist(selectionRef.current);
-    const isDirty = !arraysEqual(currentCanonical, prevSaved);
-
-    if (prevServer !== serverName && isDirty) {
-      // Node switched out from under a dirty editor. Freeze the incoming
-      // render and surface a confirm dialog — until the user decides we keep
-      // the previous selection in view.
-      setDiscardPrompt(prevServer);
-      return;
-    }
-
-    committedServer.current = serverName;
-    savedRef.current = savedSelection;
-    if (!isDirty || prevServer !== serverName) {
-      setSelection(savedSelection);
-    }
-    // Intentionally depend on the tuple of (serverName, canonicalized
-    // savedSelection) — polling that reshuffles the underlying tools array
-    // without changing membership must not reset state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverName, savedSelection.join('\u0000')]);
-
-  const fuse = useMemo(
-    () => new Fuse(allTools, { keys: ['name', 'description'], threshold: 0.4 }),
-    [allTools],
-  );
-
-  const visible = useMemo(() => {
-    if (!query.trim()) return allTools;
-    return fuse.search(query).map((r) => r.item);
-  }, [fuse, query, allTools]);
-
-  const selected = useMemo(() => new Set(selection), [selection]);
-  const canonicalSelection = useMemo(() => canonicalWhitelist(selection), [selection]);
-  const dirty = !arraysEqual(canonicalSelection, savedSelection);
-  const diffCount = useMemo(() => {
-    const saved = new Set(savedSelection);
-    let count = 0;
-    for (const name of canonicalSelection) if (!saved.has(name)) count++;
-    for (const name of savedSelection) if (!selected.has(name)) count++;
-    return count;
-  }, [canonicalSelection, savedSelection, selected]);
-
-  const toggle = (name: string) => {
-    const next = new Set(selected);
-    if (next.has(name)) next.delete(name);
-    else next.add(name);
-    setSelection([...next]);
-  };
-
-  const selectAll = () => setSelection(allTools.map((t) => t.name));
-  const clearAll = () => setSelection([]);
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    setConflict(null);
-    // Empty whitelist means "expose all tools" in stack YAML semantics. We
-    // send an empty array when the user has selected every known tool so
-    // the stack file stays clean of a redundant full-list whitelist.
-    const wire =
-      canonicalSelection.length === allTools.length && allTools.length > 0
-        ? []
-        : canonicalSelection;
-    try {
-      const resp = await setServerTools(serverName, wire);
-      showToast('success', `Tools saved for ${serverName}`);
-      if (resp.reloaded === false) {
-        showToast(
-          'warning',
-          'Stack updated. Run "gridctl reload" or restart with --watch to apply.',
-        );
-      }
-      // Refresh the global caches so the sidebar reflects the now-filtered
-      // tool set. Best-effort; we've already persisted the write.
-      try {
-        const [status, toolsList] = await Promise.all([fetchStatus(), fetchTools()]);
-        useStackStore.getState().setGatewayStatus(status);
-        useStackStore.getState().setTools(toolsList.tools);
-      } catch {
-        /* ignore refresh failures — the page will re-poll shortly */
-      }
-    } catch (err) {
-      if (err instanceof AuthError) {
-        throw err;
-      }
-      if (err instanceof SetServerToolsError) {
-        switch (err.code) {
-          case 'stack_modified':
-            setConflict(err.hint || err.message);
-            return;
-          case 'reload_failed':
-            showToast(
-              'error',
-              `Tools saved for ${serverName}, but reload failed: ${err.message}. Check gridctl logs.`,
-            );
-            // The save persisted. Refetch so the editor shows the new
-            // on-disk state as the clean baseline; the hot reload can be
-            // re-attempted via the Reload button elsewhere in the UI.
-            try {
-              const [status, toolsList] = await Promise.all([fetchStatus(), fetchTools()]);
-              useStackStore.getState().setGatewayStatus(status);
-              useStackStore.getState().setTools(toolsList.tools);
-            } catch {
-              /* ignore refresh failures */
-            }
-            return;
-          case 'unknown_tool':
-            showToast('error', err.message);
-            return;
-          default:
-            showToast('error', err.message);
-            return;
-        }
-      }
-      const msg = err instanceof Error ? err.message : 'Save failed';
-      showToast('error', msg);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // handleReloadFromDisk refreshes the saved state after a 409. We refetch
-  // gateway status (which carries the running whitelist) and let the parent
-  // re-render the editor with the new savedTools prop; the user's in-flight
-  // selection is kept on top of the refreshed state.
-  const handleReloadFromDisk = async () => {
-    setConflict(null);
-    try {
-      const [status, toolsList] = await Promise.all([fetchStatus(), fetchTools()]);
-      useStackStore.getState().setGatewayStatus(status);
-      useStackStore.getState().setTools(toolsList.tools);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Refresh failed';
-      showToast('error', msg);
-    }
-  };
-
-  const handleDiscard = () => {
-    // User accepted the node switch. Adopt the incoming prop shape by
-    // re-initialising selection to the new savedSelection.
-    committedServer.current = serverName;
-    savedRef.current = savedSelection;
-    setSelection(savedSelection);
-    setDiscardPrompt(null);
-  };
-
-  const handleKeepEditing = () => {
-    if (!discardPrompt) return;
-    // Revert the graph's node selection back to the server we were editing.
-    // The sidebar re-renders with the previous node's data and our local
-    // selection is still the in-flight edit.
-    useStackStore.getState().selectNode(`mcp-${discardPrompt}`);
-    setDiscardPrompt(null);
-  };
+  const {
+    allTools,
+    visible,
+    query,
+    setQuery,
+    selected,
+    toggle,
+    selectAll,
+    clearAll,
+    dirty,
+    diffCount,
+    isSaving,
+    conflict,
+    discardPrompt,
+    handleSave,
+    handleReloadFromDisk,
+    handleDiscard,
+    handleKeepEditing,
+  } = useToolsEditor(serverName, savedTools, serverTools);
 
   const saveLabel = dirty
     ? `Save ${diffCount} change${diffCount === 1 ? '' : 's'} & Reload`
