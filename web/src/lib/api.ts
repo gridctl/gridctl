@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -119,6 +119,16 @@ export async function fetchMCPServers(): Promise<MCPServerStatus[]> {
  */
 export async function fetchTools(): Promise<ToolsListResult> {
   return fetchJSON<ToolsListResult>('/api/tools');
+}
+
+/**
+ * Fetch per-(server, tool) usage: cumulative call counts + last-called
+ * timestamps observed by the gateway. Powers Tools workspace Audit Mode.
+ * Survives gateway restarts for servers with metrics persistence enabled.
+ * GET /api/tools/usage
+ */
+export async function fetchToolUsage(): Promise<ToolUsageResponse> {
+  return fetchJSON<ToolUsageResponse>('/api/tools/usage');
 }
 
 /**
