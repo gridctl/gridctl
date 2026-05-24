@@ -17,9 +17,10 @@ describe('VariableQuickAddForm — secret generator', () => {
     ).toBeInTheDocument();
   });
 
-  it('hides the generator for non-string types', () => {
+  it('hides the generator for non-string types', async () => {
     renderForm();
     fireEvent.click(screen.getByRole('button', { name: 'json' }));
+    await screen.findByLabelText('JSON value');
     expect(screen.queryByRole('button', { name: 'Generate value' })).toBeNull();
   });
 
@@ -35,5 +36,25 @@ describe('VariableQuickAddForm — secret generator', () => {
     expect(valueInput.value).toHaveLength(24);
     // Auto-revealed after generation.
     expect(valueInput).toHaveAttribute('type', 'text');
+  });
+});
+
+describe('VariableQuickAddForm — cancel', () => {
+  it('shows Cancel only when onCancel is provided and invokes it', () => {
+    const onCancel = vi.fn();
+    const { rerender } = render(
+      <VariableQuickAddForm setNames={[]} onSubmit={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+
+    rerender(
+      <VariableQuickAddForm
+        setNames={[]}
+        onSubmit={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });
