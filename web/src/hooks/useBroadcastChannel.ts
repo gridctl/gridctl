@@ -48,7 +48,7 @@ export function useBroadcastChannel(options: UseBroadcastChannelOptions = {}) {
 }
 
 // Hook for detached windows to sync with main window
-export function useDetachedWindowSync(windowType: 'logs' | 'sidebar' | 'editor' | 'registry' | 'metrics' | 'var' | 'traces') {
+export function useDetachedWindowSync(windowType: 'logs' | 'sidebar' | 'editor' | 'registry' | 'metrics' | 'traces') {
   const { postMessage } = useBroadcastChannel({
     onMessage: (msg) => {
       // Handle messages from main window
