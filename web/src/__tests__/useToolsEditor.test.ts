@@ -149,6 +149,46 @@ describe('useToolsEditor', () => {
     expect(setSpy).toHaveBeenCalledWith(SERVER, []);
   });
 
+  it('disableTools deselects the named tools and saves the remainder', async () => {
+    const setSpy = vi
+      .spyOn(apiModule, 'setServerTools')
+      .mockResolvedValue({ server: SERVER, tools: ['query'], reloaded: true, reloadedAt: 'now' });
+    vi.spyOn(apiModule, 'fetchStatus').mockResolvedValue({
+      gateway: { name: 'x', version: '1' },
+      'mcp-servers': [],
+    });
+    vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+
+    // Saved whitelist exposes query + insert (2 of 3 tools); disable insert.
+    const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+
+    await act(async () => {
+      await result.current.disableTools(['insert']);
+    });
+
+    // Remaining selection is the curated whitelist, persisted as-is (not []).
+    expect(setSpy).toHaveBeenCalledWith(SERVER, ['query']);
+    expect(result.current.selected.has('insert')).toBe(false);
+    expect(result.current.selected.has('query')).toBe(true);
+  });
+
+  it('disableTools refuses to disable every exposed tool (would re-expose all)', async () => {
+    const setSpy = vi.spyOn(apiModule, 'setServerTools');
+
+    // Curated whitelist exposes exactly query + insert; disabling both would
+    // empty the whitelist, which means "expose all" — the opposite intent.
+    const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+
+    await act(async () => {
+      await result.current.disableTools(['query', 'insert']);
+    });
+
+    // No save attempted; the live selection is untouched.
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(result.current.selected.has('query')).toBe(true);
+    expect(result.current.selected.has('insert')).toBe(true);
+  });
+
   it('surfaces a 409 stack_modified error as a conflict instead of throwing', async () => {
     vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
       new SetServerToolsError('stack_modified', 'File changed', 'Reload the file.', 409),
