@@ -36,18 +36,18 @@ export interface SetGroupProps {
   // session. Absence is the signal — nothing renders when false/omitted.
   recentlyEdited?: boolean;
   handlers: SetGroupRowHandlers;
-  // Use `.log-text` on key/value text for detached-page zoom scaling.
+  // Use `.log-text` on key/value text for zoom-scaled surfaces.
   enableZoom?: boolean;
-  // Inner row padding ("space-y-1" or "p-2 space-y-2" etc.). VaultPanel and
-  // DetachedVaultPage use slightly different spacing inside the set.
+  // Inner row padding ("space-y-1" or "p-2 space-y-2" etc.) — callers tune the
+  // spacing inside the set.
   innerClassName?: string;
-  // Name label uses `.log-text` in the detached page.
+  // Name label uses `.log-text` for zoom-scaled surfaces.
   nameClassName?: string;
 }
 
 // One expandable Variable Set row + its member secrets. The parent owns the
 // expanded/edit/reveal state and threads it via `handlers`; SetGroup just
-// renders. Both VaultPanel and the detached page render a list of these.
+// renders the list.
 export function SetGroup({
   set,
   variables,
