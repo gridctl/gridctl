@@ -1074,6 +1074,60 @@ func TestGateway_CallTool(t *testing.T) {
 	}
 }
 
+// recordingObserver captures every ToolCallObservation the gateway emits.
+// It implements both ToolCallObserver (so SetToolCallObserver accepts it) and
+// ClientObserver (so it takes the synchronous, tool-name-bearing path).
+type recordingObserver struct {
+	mu    sync.Mutex
+	calls []ToolCallObservation
+}
+
+func (r *recordingObserver) ObserveToolCall(string, int, map[string]any, *ToolCallResult) {}
+
+func (r *recordingObserver) ObserveToolCallWithClient(_ context.Context, obs ToolCallObservation) ToolCallSummary {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, obs)
+	return ToolCallSummary{}
+}
+
+// TestGateway_CallTool_ObserverAttribution verifies the convergence point that
+// Audit Mode depends on: a call routed through Gateway.CallTool with a
+// prefixed "server__tool" name notifies the observer with the *real
+// downstream* server and tool. This is the exact path code mode's execute
+// takes (its sandbox tool caller is the gateway), so usage recorded for
+// code-mode calls is attributed identically to direct calls.
+func TestGateway_CallTool_ObserverAttribution(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	ctx := context.Background()
+
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{{Name: "echo", Description: "Echo tool"}})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(context.Context, string, map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil
+		},
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	obs := &recordingObserver{}
+	g.SetToolCallObserver(obs)
+
+	if _, err := g.CallTool(ctx, "agent1__echo", map[string]any{}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+
+	obs.mu.Lock()
+	defer obs.mu.Unlock()
+	if len(obs.calls) != 1 {
+		t.Fatalf("observer saw %d calls, want 1", len(obs.calls))
+	}
+	if got := obs.calls[0]; got.ServerName != "agent1" || got.ToolName != "echo" {
+		t.Errorf("attribution = (%q, %q), want (agent1, echo)", got.ServerName, got.ToolName)
+	}
+}
+
 // promptProviderClient wraps a MockAgentClient to also implement PromptProvider.
 type promptProviderClient struct {
 	AgentClient
@@ -3405,5 +3459,3 @@ func TestGateway_HandleInitialize_NormalizesClientID(t *testing.T) {
 		t.Errorf("Session.ClientID = %q, want claude-code", sess.ClientID)
 	}
 }
-
-
