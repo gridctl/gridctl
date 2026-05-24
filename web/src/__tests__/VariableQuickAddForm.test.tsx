@@ -39,6 +39,19 @@ describe('VariableQuickAddForm — secret generator', () => {
   });
 });
 
+describe('VariableQuickAddForm — type switching', () => {
+  it('does not carry the bool default value into another type', async () => {
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: 'bool' }));
+    // bool seeds a concrete toggle (shows "false").
+    expect(screen.getByRole('switch')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'list' }));
+    // The list tag-input should be empty — no stray "false" chip.
+    expect(screen.getByRole('textbox', { name: 'Add list item' })).toBeInTheDocument();
+    expect(screen.queryByText('false')).toBeNull();
+  });
+});
+
 describe('VariableQuickAddForm — cancel', () => {
   it('shows Cancel only when onCancel is provided and invokes it', () => {
     const onCancel = vi.fn();
