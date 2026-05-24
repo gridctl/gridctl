@@ -65,10 +65,10 @@ describe('VaultPanel — value placeholder adapts to type and visibility', () =>
     expect(screen.getByPlaceholderText('item1, item2, item3')).toBeInTheDocument();
   });
 
-  it('hints JSON object syntax when json type is selected', () => {
+  it('shows the JSON editor when json type is selected', async () => {
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'json' }));
-    expect(screen.getByPlaceholderText('{"key": "value"}')).toBeInTheDocument();
+    expect(await screen.findByLabelText('JSON value')).toBeInTheDocument();
   });
 
   it('hints a number example when number type is selected', () => {
@@ -83,10 +83,11 @@ describe('VaultPanel — value placeholder adapts to type and visibility', () =>
     expect(screen.getByRole('switch')).toBeInTheDocument();
   });
 
-  it('leaves the key-input placeholder generic regardless of type', () => {
+  it('leaves the key-input placeholder generic regardless of type', async () => {
     renderPanel();
     expect(screen.getByPlaceholderText('KEY_NAME')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'json' }));
+    await screen.findByLabelText('JSON value');
     expect(screen.getByPlaceholderText('KEY_NAME')).toBeInTheDocument();
   });
 });
