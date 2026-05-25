@@ -5,7 +5,7 @@ import { useRegistryStore } from '../stores/useRegistryStore';
 import { usePinsStore } from '../stores/usePinsStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
-import { fetchStatus, fetchTools, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
+import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 
@@ -17,6 +17,7 @@ export function usePolling() {
   const setGatewayStatus = useStackStore((s) => s.setGatewayStatus);
   const setClients = useStackStore((s) => s.setClients);
   const setTools = useStackStore((s) => s.setTools);
+  const setToolCatalog = useStackStore((s) => s.setToolCatalog);
   const setError = useStackStore((s) => s.setError);
   const setLoading = useStackStore((s) => s.setLoading);
   const setConnectionStatus = useStackStore((s) => s.setConnectionStatus);
@@ -27,13 +28,15 @@ export function usePolling() {
 
   const poll = useCallback(async () => {
     try {
-      const [status, toolsResult] = await Promise.all([
+      const [status, toolsResult, catalogResult] = await Promise.all([
         fetchStatus(),
         fetchTools(),
+        fetchToolCatalog(),
       ]);
 
       setGatewayStatus(status);
       setTools(toolsResult.tools);
+      setToolCatalog(catalogResult.tools);
       setAuthRequired(false);
 
       // Fetch clients separately — failure should not block core updates
@@ -123,7 +126,7 @@ export function usePolling() {
         setConnectionStatus('error');
       }
     }
-  }, [setGatewayStatus, setClients, setTools, setError, setConnectionStatus, setAuthRequired, setLoading, refreshNodesAndEdges]);
+  }, [setGatewayStatus, setClients, setTools, setToolCatalog, setError, setConnectionStatus, setAuthRequired, setLoading, refreshNodesAndEdges]);
 
   useEffect(() => {
     // Don't poll while auth prompt is showing

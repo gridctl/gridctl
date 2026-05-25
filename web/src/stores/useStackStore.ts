@@ -50,6 +50,11 @@ interface StackState {
   resources: ResourceStatus[];
   clients: ClientStatus[];  // Detected/linked LLM clients
   tools: Tool[];
+  // Full downstream tool inventory (raw descriptions + schemas) from
+  // /api/tools/catalog. Unlike `tools` (the MCP-facing aggregated list, which
+  // is just the meta-tools in code mode), this always carries per-tool detail,
+  // so the Tools workspace sources descriptions/schemas/search from it.
+  toolCatalog: Tool[];
   sessions: number;
   codeMode: string | null;  // Gateway code mode status ("on" when active)
   tokenUsage: TokenUsage | null; // Token usage metrics from status response
@@ -78,6 +83,7 @@ interface StackState {
   setGatewayStatus: (status: GatewayStatus) => void;
   setClients: (clients: ClientStatus[]) => void;
   setTools: (tools: Tool[]) => void;
+  setToolCatalog: (toolCatalog: Tool[]) => void;
   setError: (error: string | null) => void;
   setLoading: (loading: boolean) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
@@ -98,6 +104,7 @@ export const useStackStore = create<StackState>()(
     resources: [],
     clients: [],
     tools: [],
+    toolCatalog: [],
     sessions: 0,
     codeMode: null,
     tokenUsage: null,
@@ -152,6 +159,8 @@ export const useStackStore = create<StackState>()(
     },
 
     setTools: (tools) => set({ tools }),
+
+    setToolCatalog: (toolCatalog) => set({ toolCatalog }),
 
     setError: (error) => set({
       error,

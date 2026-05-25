@@ -20,7 +20,7 @@ import { IconButton } from '../components/ui/IconButton';
 import { ZoomControls } from '../components/ui/ZoomControls';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useLogFontSize } from '../hooks/useLogFontSize';
-import { fetchStatus, fetchTools } from '../lib/api';
+import { fetchStatus, fetchTools, fetchToolCatalog } from '../lib/api';
 import { getTransportIcon, getTransportColorClasses } from '../lib/transport';
 import { POLLING } from '../lib/constants';
 import { useStackStore } from '../stores/useStackStore';
@@ -99,7 +99,11 @@ function DetachedSidebarPageContent() {
   // Fetch data
   const fetchData = useCallback(async () => {
     try {
-      const [status, toolsResult] = await Promise.all([fetchStatus(), fetchTools()]);
+      const [status, toolsResult, catalogResult] = await Promise.all([
+        fetchStatus(),
+        fetchTools(),
+        fetchToolCatalog(),
+      ]);
 
       const nodeList: NodeOption[] = [
         ...(status['mcp-servers'] ?? []).map((s) => ({
@@ -119,6 +123,7 @@ function DetachedSidebarPageContent() {
       // store) has the same tool descriptions as the primary sidebar.
       useStackStore.getState().setGatewayStatus(status);
       useStackStore.getState().setTools(toolsResult.tools ?? []);
+      useStackStore.getState().setToolCatalog(catalogResult.tools ?? []);
       setIsLoading(false);
     } catch {
       setIsLoading(false);

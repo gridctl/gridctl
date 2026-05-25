@@ -35,8 +35,8 @@ import {
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatusDot } from '../ui/StatusDot';
-import { CodeViewer } from '../ui/CodeViewer';
 import { FleetActions } from './FleetActions';
+import { ToolDetailPanel } from './ToolDetailPanel';
 import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
 
 // Per-state styling for Audit Mode dots/labels, keyed to the shared status
@@ -61,7 +61,10 @@ export function ToolsWorkspace() {
   const compact = useUIStore((s) => s.compactMode.tools);
 
   const mcpServers = useStackStore((s) => s.mcpServers);
-  const tools = useStackStore((s) => s.tools);
+  // The Tools workspace sources per-tool detail from the catalog (raw
+  // descriptions + schemas, populated even in code mode), not the MCP-facing
+  // `tools` list which is just the meta-tools when code mode is on.
+  const toolCatalog = useStackStore((s) => s.toolCatalog);
   const isLoading = useStackStore((s) => s.isLoading);
 
   // Servers sorted by name for a stable rail order.
@@ -154,9 +157,10 @@ export function ToolsWorkspace() {
   // A pending target set while the active editor has unsaved edits. The switch
   // commits (URL change) only after the user discards.
   const [pendingServer, setPendingServer] = useState<string | null>(null);
-  // The tool whose input schema is expanded in the detail pane. Picking a
+  // The tool whose detail is shown in the right rail. Distinct from the
+  // whitelist selection (the checkboxes) — this is the "active" tool. Picking a
   // global-search result sets it so that tool is revealed on arrival.
-  const [expandedTool, setExpandedTool] = useState<string | null>(null);
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
 
   // Switch to a server (or reveal a tool on the active one). Unsaved edits on
   // the current server route through a confirm dialog before the switch
@@ -164,13 +168,13 @@ export function ToolsWorkspace() {
   function requestServer(name: string, tool?: string) {
     if (name !== activeServerName && editor.dirty) {
       setPendingServer(name);
-      setExpandedTool(tool ?? null);
+      setSelectedTool(tool ?? null);
       return;
     }
     if (name !== activeServerName) applyServer(name);
-    // Clear any active filter so a revealed tool is visible, then expand it.
+    // Clear any active filter so a revealed tool is visible, then select it.
     editor.setQuery('');
-    setExpandedTool(tool ?? null);
+    setSelectedTool(tool ?? null);
   }
 
   function confirmSwitch() {
@@ -183,16 +187,35 @@ export function ToolsWorkspace() {
     setPendingServer(null);
   }
 
-  const toggleExpanded = (tool: string) =>
-    setExpandedTool((prev) => (prev === tool ? null : tool));
-
   // ---- Global search ------------------------------------------------------
   const searchActive = globalQuery.trim().length > 0;
-  const globalMatches = useFuzzySearch(tools, globalQuery);
+  const globalMatches = useFuzzySearch(toolCatalog, globalQuery);
   const globalResults = useMemo(
     () => globalMatches.map(splitTool).filter((r): r is GlobalResult => r !== null),
     [globalMatches],
   );
+
+  // ---- Selected-tool detail (right rail) ----------------------------------
+  // The active tool's row (name + description), schema, whitelist state, and
+  // audit classification — all derived here so the panel can live in the shell
+  // right rail (a sibling of the center pane).
+  const selectedRow = useMemo(
+    () => (selectedTool ? editor.allTools.find((t) => t.name === selectedTool) ?? null : null),
+    [selectedTool, editor.allTools],
+  );
+  const selectedSchema = useMemo(() => {
+    if (!selectedTool || !activeServerName) return undefined;
+    const prefixed = `${activeServerName}${TOOL_NAME_DELIMITER}${selectedTool}`;
+    return toolCatalog.find((t) => t.name === prefixed)?.inputSchema;
+  }, [selectedTool, activeServerName, toolCatalog]);
+  const selectedEnabled = selectedTool ? editor.selected.has(selectedTool) : false;
+  const selectedLastCalled = selectedTool
+    ? usageByServer?.[activeServerName]?.[selectedTool]?.lastCalledAt
+    : undefined;
+  const selectedAuditState = useMemo(() => {
+    if (!auditMode || !selectedTool || fetchedAt == null) return null;
+    return classifyTool(selectedEnabled, selectedLastCalled, windowMs, fetchedAt);
+  }, [auditMode, selectedTool, selectedEnabled, selectedLastCalled, windowMs, fetchedAt]);
 
   const leftRail = (
     <ServerRail
@@ -205,14 +228,29 @@ export function ToolsWorkspace() {
     />
   );
 
+  const rightRail = (
+    <ToolDetailPanel
+      serverName={activeServerName}
+      tool={selectedRow}
+      schema={selectedSchema}
+      enabled={selectedEnabled}
+      auditMode={auditMode}
+      auditState={selectedAuditState}
+      lastCalledAt={selectedLastCalled}
+      onClose={() => setSelectedTool(null)}
+    />
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceShell
         workspace="tools"
-        defaultLeftPct={22}
-        defaultRightPct={0}
+        defaultLeftPct={20}
+        defaultRightPct={30}
         left={leftRail}
+        right={rightRail}
         minLeftPx={220}
+        minRightPx={300}
       >
         <main className="flex flex-col h-full overflow-hidden">
           <ToolsHeader
@@ -244,9 +282,8 @@ export function ToolsWorkspace() {
                 key={activeServer.name}
                 server={activeServer}
                 editor={editor}
-                allTools={tools}
-                expanded={expandedTool}
-                onToggleExpand={toggleExpanded}
+                selectedTool={selectedTool}
+                onSelect={setSelectedTool}
                 auditMode={auditMode}
                 usage={usageByServer?.[activeServer.name]}
                 windowMs={windowMs}
@@ -535,11 +572,11 @@ function ServerPill({ server, active, onClick, auditMode, unusedCount }: ServerP
 interface ServerDetailProps {
   server: MCPServerStatus;
   editor: ReturnType<typeof useToolsEditor>;
-  allTools: Tool[];
-  // The tool whose schema is expanded (controlled by the workspace so a
-  // global-search reveal can target it). null = none expanded.
-  expanded: string | null;
-  onToggleExpand: (tool: string) => void;
+  // The active tool whose detail shows in the right rail (controlled by the
+  // workspace so a global-search reveal can target it). null = none selected.
+  // Distinct from the editor's whitelist selection (the checkboxes).
+  selectedTool: string | null;
+  onSelect: (tool: string) => void;
   auditMode: boolean;
   // This server's per-tool usage map (from GET /api/tools/usage), or undefined
   // when usage hasn't loaded / Audit Mode is off.
@@ -552,9 +589,8 @@ interface ServerDetailProps {
 function ServerDetail({
   server,
   editor,
-  allTools,
-  expanded,
-  onToggleExpand,
+  selectedTool,
+  onSelect,
   auditMode,
   usage,
   windowMs,
@@ -604,25 +640,16 @@ function ServerDetail({
   // Confirm gate for the remediation bulk action (consequence-stating).
   const [remediateOpen, setRemediateOpen] = useState(false);
 
-  // Input schemas for this server's tools, keyed by unprefixed tool name.
-  const schemaByTool = useMemo(() => {
-    const prefix = `${server.name}${TOOL_NAME_DELIMITER}`;
-    const map = new Map<string, Record<string, unknown>>();
-    for (const t of allTools) {
-      if (t.name.startsWith(prefix)) map.set(t.name.slice(prefix.length), t.inputSchema);
-    }
-    return map;
-  }, [allTools, server.name]);
-
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Scroll the expanded tool into view (e.g. after a global-search reveal).
-  // DOM-only side effect — no state updates.
+  // Scroll the selected tool into view (e.g. after a global-search reveal).
+  // `block: 'nearest'` no-ops when the row is already visible, so clicking a
+  // visible row to select it never jumps the list. DOM-only — no state writes.
   useEffect(() => {
-    if (!expanded) return;
+    if (!selectedTool) return;
     // Optional-chain: scrollIntoView is absent in jsdom and older embeds.
-    rowRefs.current.get(expanded)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-  }, [expanded]);
+    rowRefs.current.get(selectedTool)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedTool]);
 
   const saveLabel = dirty
     ? `Save ${diffCount} change${diffCount === 1 ? '' : 's'} & Reload`
@@ -702,9 +729,8 @@ function ServerDetail({
               </p>
             </Command.Empty>
             {visible.map((opt) => {
-              const isSelected = selected.has(opt.name);
-              const schema = schemaByTool.get(opt.name);
-              const isExpanded = expanded === opt.name;
+              const isEnabled = selected.has(opt.name);
+              const isActive = selectedTool === opt.name;
               const auditState = auditByTool.get(opt.name) ?? null;
               return (
                 <div
@@ -714,37 +740,48 @@ function ServerDetail({
                     else rowRefs.current.delete(opt.name);
                   }}
                   className={cn(
-                    'border-b border-border/20 last:border-b-0',
-                    isSelected && 'bg-primary/[0.03]',
+                    'border-b border-border/20 last:border-b-0 border-l-2',
+                    isActive
+                      ? 'border-l-primary bg-primary/[0.06]'
+                      : 'border-l-transparent',
+                    isEnabled && !isActive && 'bg-primary/[0.03]',
                   )}
                 >
                   <Command.Item
                     value={opt.name}
-                    onSelect={() => toggle(opt.name)}
-                    aria-checked={isSelected}
-                    aria-label={opt.name}
+                    onSelect={() => onSelect(opt.name)}
+                    aria-current={isActive}
+                    aria-label={`${opt.name} details`}
                     className={cn(
                       'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none outline-none transition-colors',
-                      'hover:bg-surface-highlight/50',
-                      '[&[data-selected=true]]:bg-primary/[0.06]',
+                      'hover:bg-surface-highlight/40',
+                      '[&[data-selected=true]]:bg-surface-highlight/40',
                     )}
                   >
-                    <div
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={isEnabled}
+                      aria-label={isEnabled ? `Disable ${opt.name}` : `Enable ${opt.name}`}
+                      onClick={(e) => {
+                        // Toggling exposure must not select the row for the panel.
+                        e.stopPropagation();
+                        toggle(opt.name);
+                      }}
                       className={cn(
                         'mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
-                        isSelected
+                        isEnabled
                           ? 'bg-primary/20 border-primary/60'
-                          : 'border-border/60 bg-background/50',
+                          : 'border-border/60 bg-background/50 hover:border-primary/40',
                       )}
-                      aria-hidden="true"
                     >
-                      {isSelected && <Check size={10} className="text-primary" />}
-                    </div>
+                      {isEnabled && <Check size={10} className="text-primary" aria-hidden="true" />}
+                    </button>
                     <div className="flex-1 min-w-0">
                       <div
                         className={cn(
                           'text-xs font-mono truncate',
-                          isSelected ? 'text-text-primary' : 'text-text-secondary',
+                          isEnabled ? 'text-text-primary' : 'text-text-secondary',
                         )}
                       >
                         {opt.name}
@@ -775,35 +812,15 @@ function ServerDetail({
                         </div>
                       )}
                     </div>
-                    {schema && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          // Don't toggle selection when peeking the schema.
-                          e.stopPropagation();
-                          onToggleExpand(opt.name);
-                        }}
-                        aria-label={isExpanded ? `Hide ${opt.name} schema` : `Show ${opt.name} schema`}
-                        aria-expanded={isExpanded}
-                        className="flex-shrink-0 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-highlight transition-colors"
-                      >
-                        <ChevronRight
-                          size={13}
-                          className={cn('transition-transform', isExpanded && 'rotate-90')}
-                        />
-                      </button>
-                    )}
+                    <ChevronRight
+                      size={13}
+                      className={cn(
+                        'flex-shrink-0 mt-0.5 transition-colors',
+                        isActive ? 'text-primary' : 'text-text-muted/40',
+                      )}
+                      aria-hidden="true"
+                    />
                   </Command.Item>
-                  {isExpanded && schema && (
-                    <div className="px-3 pb-2">
-                      <CodeViewer
-                        language="json"
-                        content={JSON.stringify(schema, null, 2)}
-                        ariaLabel={`${opt.name} input schema`}
-                        className="rounded-md border border-border/30 bg-background/80 max-h-64"
-                      />
-                    </div>
-                  )}
                 </div>
               );
             })}

@@ -1644,6 +1644,48 @@ func TestGateway_HandleToolsList_CodeMode(t *testing.T) {
 	}
 }
 
+func TestGateway_HandleToolsCatalog_CodeMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	client := setupMockAgentClient(ctrl, "server1", []Tool{
+		{Name: "tool1", Description: "raw tool description", InputSchema: json.RawMessage(`{"type":"object"}`)},
+	})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+	g.SetCodeMode(30 * time.Second)
+
+	// tools/list still hides downstream tools behind the meta-tools.
+	list, err := g.HandleToolsList()
+	if err != nil {
+		t.Fatalf("HandleToolsList: %v", err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name == "server1__tool1" {
+			t.Fatal("code mode tools/list must not expose downstream tools")
+		}
+	}
+
+	// The catalog returns the full inventory with the tool's raw description,
+	// regardless of code mode.
+	cat, err := g.HandleToolsCatalog()
+	if err != nil {
+		t.Fatalf("HandleToolsCatalog: %v", err)
+	}
+	var found *Tool
+	for i := range cat.Tools {
+		if cat.Tools[i].Name == "server1__tool1" {
+			found = &cat.Tools[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected server1__tool1 in catalog, got %v", cat.Tools)
+	}
+	if found.Description != "raw tool description" {
+		t.Errorf("expected unwrapped description, got %q", found.Description)
+	}
+}
+
 func TestGateway_RefreshAllTools(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()

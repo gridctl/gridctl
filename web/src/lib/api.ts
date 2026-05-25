@@ -122,6 +122,17 @@ export async function fetchTools(): Promise<ToolsListResult> {
 }
 
 /**
+ * Fetch the full downstream tool inventory with each tool's raw description and
+ * input schema, regardless of code mode. Unlike /api/tools (which returns only
+ * the meta-tools when code mode is on), this informational endpoint always
+ * carries the real per-tool detail the Tools workspace renders.
+ * GET /api/tools/catalog
+ */
+export async function fetchToolCatalog(): Promise<ToolsListResult> {
+  return fetchJSON<ToolsListResult>('/api/tools/catalog');
+}
+
+/**
  * Fetch per-(server, tool) usage: cumulative call counts + last-called
  * timestamps observed by the gateway. Powers Tools workspace Audit Mode.
  * Survives gateway restarts for servers with metrics persistence enabled.
