@@ -12,19 +12,25 @@ vi.mock('../components/ui/Toast', () => ({
 
 const mockStoreState: {
   tools: Tool[];
+  toolCatalog: Tool[];
   setGatewayStatus: ReturnType<typeof vi.fn>;
   setTools: ReturnType<typeof vi.fn>;
+  setToolCatalog: ReturnType<typeof vi.fn>;
   selectNode: ReturnType<typeof vi.fn>;
 } = {
   tools: [],
+  toolCatalog: [],
   setGatewayStatus: vi.fn(),
   setTools: vi.fn(),
+  setToolCatalog: vi.fn(),
   selectNode: vi.fn(),
 };
 
 vi.mock('../stores/useStackStore', () => ({
   useStackStore: Object.assign(
-    vi.fn((selector: (s: { tools: Tool[] }) => unknown) => selector(mockStoreState)),
+    vi.fn((selector: (s: { tools: Tool[]; toolCatalog: Tool[] }) => unknown) =>
+      selector(mockStoreState),
+    ),
     {
       getState: () => mockStoreState,
     },
@@ -42,13 +48,17 @@ function tool(name: string, description?: string): Tool {
 }
 
 beforeEach(() => {
-  mockStoreState.tools = [
+  const catalog = [
     tool('query', 'Run a SQL query'),
     tool('insert', 'Insert a row'),
     tool('delete_row', 'Delete a row'),
   ];
+  // The editor derives rows + descriptions from the catalog, not `tools`.
+  mockStoreState.tools = catalog;
+  mockStoreState.toolCatalog = catalog;
   mockStoreState.setGatewayStatus.mockReset();
   mockStoreState.setTools.mockReset();
+  mockStoreState.setToolCatalog.mockReset();
   mockStoreState.selectNode.mockReset();
   vi.restoreAllMocks();
 });
@@ -109,6 +119,7 @@ describe('useToolsEditor', () => {
       .spyOn(apiModule, 'fetchStatus')
       .mockResolvedValue({ gateway: { name: 'x', version: '1' }, 'mcp-servers': [] });
     const fetchToolsSpy = vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
 
     const { result } = renderHook(() => useToolsEditor(SERVER, ['query']));
     act(() => result.current.toggle('insert'));
@@ -134,6 +145,7 @@ describe('useToolsEditor', () => {
       'mcp-servers': [],
     });
     vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
 
     // Start curated on "query"; selecting the remaining two brings the
     // selection to the full set, which must normalize to [].
@@ -158,6 +170,7 @@ describe('useToolsEditor', () => {
       'mcp-servers': [],
     });
     vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
 
     // Saved whitelist exposes query + insert (2 of 3 tools); disable insert.
     const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));

@@ -34,6 +34,16 @@ const GITHUB = 'github';
 const ATLAS = 'atlassian';
 
 beforeEach(() => {
+  // The workspace sources per-tool detail (descriptions, schemas, global
+  // search) from the catalog, so seed it; `tools` is the MCP-facing list.
+  const catalog = [
+    tool(`${GITHUB}${TOOL_NAME_DELIMITER}create_issue`, 'Create a GitHub issue', {
+      type: 'object',
+      properties: { title: { type: 'string' } },
+    }),
+    tool(`${GITHUB}${TOOL_NAME_DELIMITER}list_repos`, 'List repositories'),
+    tool(`${ATLAS}${TOOL_NAME_DELIMITER}get_page`, 'Get a Confluence page'),
+  ];
   useStackStore.setState({
     isLoading: false,
     mcpServers: [
@@ -42,14 +52,8 @@ beforeEach(() => {
       // atlassian: empty whitelist = all exposed (1/1)
       server(ATLAS, ['get_page'], []),
     ],
-    tools: [
-      tool(`${GITHUB}${TOOL_NAME_DELIMITER}create_issue`, 'Create a GitHub issue', {
-        type: 'object',
-        properties: { title: { type: 'string' } },
-      }),
-      tool(`${GITHUB}${TOOL_NAME_DELIMITER}list_repos`, 'List repositories'),
-      tool(`${ATLAS}${TOOL_NAME_DELIMITER}get_page`, 'Get a Confluence page'),
-    ],
+    tools: catalog,
+    toolCatalog: catalog,
   });
 });
 
@@ -71,14 +75,15 @@ describe('ToolsWorkspace', () => {
     expect(screen.getByRole('button', { name: /atlassian/i })).toBeInTheDocument();
   });
 
-  it('deep-links to ?server= and shows that server\'s tools, seeded from its whitelist', () => {
+  it('deep-links to ?server= and seeds the per-tool checkbox from its whitelist', () => {
     renderAt('/tools?server=github');
+    // The enable/disable state lives on the per-row checkbox, not the row.
     // github advertises create_issue + list_repos; whitelist is [create_issue].
-    expect(screen.getByRole('option', { name: 'create_issue' })).toHaveAttribute(
+    expect(screen.getByRole('checkbox', { name: /create_issue/i })).toHaveAttribute(
       'aria-checked',
       'true',
     );
-    expect(screen.getByRole('option', { name: 'list_repos' })).toHaveAttribute(
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute(
       'aria-checked',
       'false',
     );
@@ -87,14 +92,14 @@ describe('ToolsWorkspace', () => {
   it('defaults to the first server (alphabetical) when no ?server= is given', () => {
     renderAt('/tools');
     // atlassian sorts before github → its tool is shown by default.
-    expect(screen.getByRole('option', { name: 'get_page' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /get_page/i })).toBeInTheDocument();
   });
 
   it('selecting a server in the rail switches the detail pane', () => {
     renderAt('/tools');
     fireEvent.click(screen.getByRole('button', { name: /github/i }));
-    expect(screen.getByRole('option', { name: 'create_issue' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'get_page' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /create_issue/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /get_page/i })).not.toBeInTheDocument();
   });
 
   it('global search returns cross-server matches, each labeled with its parent server', () => {
@@ -115,15 +120,33 @@ describe('ToolsWorkspace', () => {
     const result = screen.getByText('create_issue').closest('button')!;
     fireEvent.click(result);
     // Search clears and the github detail pane is shown with its tools.
-    expect(screen.getByRole('option', { name: 'create_issue' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'list_repos' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /create_issue/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /list_repos/i })).toBeInTheDocument();
   });
 
-  it('previews a tool input schema on expand', () => {
+  it('clicking the checkbox toggles exposure without selecting the row', () => {
     renderAt('/tools?server=github');
-    fireEvent.click(screen.getByRole('button', { name: /show create_issue schema/i }));
-    // The CodeViewer renders the JSON schema content.
+    // The panel starts empty (nothing selected).
+    expect(screen.getByText(/select a tool to view/i)).toBeInTheDocument();
+    // Toggling list_repos on flips its checkbox but does not open the panel.
+    const checkbox = screen.getByRole('checkbox', { name: /list_repos/i });
+    fireEvent.click(checkbox);
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    expect(screen.getByText(/select a tool to view/i)).toBeInTheDocument();
+  });
+
+  it('selecting a tool row shows its schema in the detail panel', () => {
+    renderAt('/tools?server=github');
+    // Before selection the right rail prompts the user.
+    expect(screen.getByText(/select a tool to view/i)).toBeInTheDocument();
+    // Clicking the row body (the cmdk option) selects it for the panel.
+    fireEvent.click(screen.getByRole('option', { name: /create_issue details/i }));
+    // The panel renders the JSON schema via CodeViewer; the prompt is gone.
     expect(screen.getByLabelText('create_issue input schema')).toBeInTheDocument();
+    expect(screen.queryByText(/select a tool to view/i)).not.toBeInTheDocument();
   });
 });
 
@@ -167,14 +190,16 @@ describe('ToolsWorkspace — Audit Mode', () => {
 
   it('remediation disables idle exposed tools through a single-server save', async () => {
     // gitlab exposes a + b (whitelist), advertises a third disabled tool c.
+    const gitlabCatalog = [
+      tool(`gitlab${TOOL_NAME_DELIMITER}a`),
+      tool(`gitlab${TOOL_NAME_DELIMITER}b`),
+      tool(`gitlab${TOOL_NAME_DELIMITER}c`),
+    ];
     useStackStore.setState({
       isLoading: false,
       mcpServers: [server('gitlab', ['a', 'b', 'c'], ['a', 'b'])],
-      tools: [
-        tool(`gitlab${TOOL_NAME_DELIMITER}a`),
-        tool(`gitlab${TOOL_NAME_DELIMITER}b`),
-        tool(`gitlab${TOOL_NAME_DELIMITER}c`),
-      ],
+      tools: gitlabCatalog,
+      toolCatalog: gitlabCatalog,
     });
     vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
       observedSince: observedSince(),
@@ -189,6 +214,7 @@ describe('ToolsWorkspace — Audit Mode', () => {
       'mcp-servers': [],
     });
     vi.spyOn(api, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(api, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
 
     renderAt('/tools?server=gitlab');
     fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));

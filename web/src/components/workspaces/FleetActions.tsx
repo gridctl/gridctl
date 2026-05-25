@@ -6,6 +6,7 @@ import {
   AuthError,
   fetchStatus,
   fetchTools,
+  fetchToolCatalog,
   setServerToolsBatch,
   SetServerToolsError,
 } from '../../lib/api';
@@ -76,9 +77,14 @@ export function FleetActions({ isOpen, onClose, servers, activeServerName }: Fle
       );
       // Reflect the change immediately; polling would otherwise lag.
       try {
-        const [statusResp, toolsList] = await Promise.all([fetchStatus(), fetchTools()]);
+        const [statusResp, toolsList, catalogList] = await Promise.all([
+          fetchStatus(),
+          fetchTools(),
+          fetchToolCatalog(),
+        ]);
         useStackStore.getState().setGatewayStatus(statusResp);
         useStackStore.getState().setTools(toolsList.tools);
+        useStackStore.getState().setToolCatalog(catalogList.tools);
       } catch {
         /* ignore — the next poll will refresh */
       }

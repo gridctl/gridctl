@@ -13,19 +13,25 @@ vi.mock('../components/ui/Toast', () => ({
 
 const mockStoreState: {
   tools: Tool[];
+  toolCatalog: Tool[];
   setGatewayStatus: ReturnType<typeof vi.fn>;
   setTools: ReturnType<typeof vi.fn>;
+  setToolCatalog: ReturnType<typeof vi.fn>;
   selectNode: ReturnType<typeof vi.fn>;
 } = {
   tools: [],
+  toolCatalog: [],
   setGatewayStatus: vi.fn(),
   setTools: vi.fn(),
+  setToolCatalog: vi.fn(),
   selectNode: vi.fn(),
 };
 
 vi.mock('../stores/useStackStore', () => ({
   useStackStore: Object.assign(
-    vi.fn((selector: (s: { tools: Tool[] }) => unknown) => selector(mockStoreState)),
+    vi.fn((selector: (s: { tools: Tool[]; toolCatalog: Tool[] }) => unknown) =>
+      selector(mockStoreState),
+    ),
     {
       getState: () => mockStoreState,
     },
@@ -43,13 +49,17 @@ function tool(name: string, description?: string): Tool {
 }
 
 beforeEach(() => {
-  mockStoreState.tools = [
+  const catalog = [
     tool('query', 'Run a SQL query'),
     tool('insert', 'Insert a row'),
     tool('delete_row', 'Delete a row'),
   ];
+  // The editor derives rows + descriptions from the catalog, not `tools`.
+  mockStoreState.tools = catalog;
+  mockStoreState.toolCatalog = catalog;
   mockStoreState.setGatewayStatus.mockReset();
   mockStoreState.setTools.mockReset();
+  mockStoreState.setToolCatalog.mockReset();
   mockStoreState.selectNode.mockReset();
   vi.restoreAllMocks();
 });
@@ -92,6 +102,7 @@ describe('ToolsEditor', () => {
       .spyOn(apiModule, 'fetchStatus')
       .mockResolvedValue({ gateway: { name: 'x', version: '1' }, 'mcp-servers': [] });
     const fetchToolsSpy = vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
 
     render(<ToolsEditor serverName={SERVER} savedTools={[]} />);
     fireEvent.click(screen.getByRole('option', { name: 'insert' }));
@@ -114,6 +125,7 @@ describe('ToolsEditor', () => {
       'mcp-servers': [],
     });
     vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
 
     // Start curated: only "query" is saved. User selects the remaining two,
     // bringing selection up to the full set of 3. The handler should
@@ -137,6 +149,7 @@ describe('ToolsEditor', () => {
     // the editor with the new server name; the editor must intercept and
     // prompt before discarding the in-flight edit.
     mockStoreState.tools = [tool('foo')];
+    mockStoreState.toolCatalog = [tool('foo')];
     rerender(<ToolsEditor serverName="other" savedTools={[]} />);
 
     const dialog = screen.getByRole('alertdialog');
@@ -148,10 +161,11 @@ describe('ToolsEditor', () => {
   });
 
   it('renders every server tool when the global store is empty (code mode)', () => {
-    // Simulates code mode: /api/tools returns only the meta-tools, so the
-    // global store has nothing prefixed for this server. The editor must
-    // still list every tool using the per-server `tools` field from status.
+    // Simulates the catalog being empty (e.g. it failed to load), so the
+    // store has nothing prefixed for this server. The editor must still list
+    // every tool using the per-server `tools` field from status.
     mockStoreState.tools = [];
+    mockStoreState.toolCatalog = [];
     render(
       <ToolsEditor
         serverName={SERVER}

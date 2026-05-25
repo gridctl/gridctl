@@ -6,6 +6,7 @@ import {
   AuthError,
   fetchStatus,
   fetchTools,
+  fetchToolCatalog,
   setServerTools,
   SetServerToolsError,
 } from '../lib/api';
@@ -78,17 +79,18 @@ export function useToolsEditor(
   savedTools: string[],
   serverTools?: string[],
 ): UseToolsEditor {
-  const tools = useStackStore((s) => s.tools);
+  const catalog = useStackStore((s) => s.toolCatalog);
 
   // Every tool the editor should render. The server's own advertised list
   // (from /api/status) is the authoritative source — it holds every tool
-  // regardless of code mode. The global tools store provides descriptions
-  // when available. A saved whitelist entry missing from both still renders
-  // so the user sees what's actually persisted in the YAML.
+  // regardless of code mode. The tool catalog (/api/tools/catalog) provides
+  // descriptions when available, including in code mode. A saved whitelist
+  // entry missing from both still renders so the user sees what's actually
+  // persisted in the YAML.
   const allTools: ToolRow[] = useMemo(() => {
     const prefix = `${serverName}${TOOL_NAME_DELIMITER}`;
     const descriptions = new Map<string, string | undefined>();
-    for (const t of tools ?? []) {
+    for (const t of catalog ?? []) {
       if (t.name.startsWith(prefix)) {
         descriptions.set(t.name.slice(prefix.length), t.description);
       }
@@ -104,7 +106,7 @@ export function useToolsEditor(
       if (!rows.has(name)) rows.set(name, { name });
     }
     return [...rows.values()];
-  }, [tools, serverName, savedTools, serverTools]);
+  }, [catalog, serverName, savedTools, serverTools]);
 
   // Saved selection in canonical form. When savedTools is empty, the YAML
   // has no whitelist, so the server is exposing every tool — we reflect that
@@ -216,9 +218,14 @@ export function useToolsEditor(
       // Refresh the global caches so the sidebar reflects the now-filtered
       // tool set. Best-effort; we've already persisted the write.
       try {
-        const [status, toolsList] = await Promise.all([fetchStatus(), fetchTools()]);
+        const [status, toolsList, catalogList] = await Promise.all([
+          fetchStatus(),
+          fetchTools(),
+          fetchToolCatalog(),
+        ]);
         useStackStore.getState().setGatewayStatus(status);
         useStackStore.getState().setTools(toolsList.tools);
+        useStackStore.getState().setToolCatalog(catalogList.tools);
       } catch {
         /* ignore refresh failures — the page will re-poll shortly */
       }
@@ -240,9 +247,14 @@ export function useToolsEditor(
             // on-disk state as the clean baseline; the hot reload can be
             // re-attempted via the Reload button elsewhere in the UI.
             try {
-              const [status, toolsList] = await Promise.all([fetchStatus(), fetchTools()]);
+              const [status, toolsList, catalogList] = await Promise.all([
+                fetchStatus(),
+                fetchTools(),
+                fetchToolCatalog(),
+              ]);
               useStackStore.getState().setGatewayStatus(status);
               useStackStore.getState().setTools(toolsList.tools);
+              useStackStore.getState().setToolCatalog(catalogList.tools);
             } catch {
               /* ignore refresh failures */
             }
@@ -292,9 +304,14 @@ export function useToolsEditor(
   const handleReloadFromDisk = async () => {
     setConflict(null);
     try {
-      const [status, toolsList] = await Promise.all([fetchStatus(), fetchTools()]);
+      const [status, toolsList, catalogList] = await Promise.all([
+        fetchStatus(),
+        fetchTools(),
+        fetchToolCatalog(),
+      ]);
       useStackStore.getState().setGatewayStatus(status);
       useStackStore.getState().setTools(toolsList.tools);
+      useStackStore.getState().setToolCatalog(catalogList.tools);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Refresh failed';
       showToast('error', msg);
