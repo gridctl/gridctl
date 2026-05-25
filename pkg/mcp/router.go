@@ -176,6 +176,35 @@ func (r *Router) AggregatedTools() []Tool {
 	return tools
 }
 
+// CatalogTools returns the full downstream tool inventory for informational
+// (web console) use: prefixed names with each tool's own raw description and
+// input schema. Unlike AggregatedTools it does not wrap descriptions with
+// call-routing instructions, so consumers get the tool's documentation
+// verbatim. Callers use this to surface tool detail regardless of code mode.
+func (r *Router) CatalogTools() []Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	names := make([]string, 0, len(r.sets))
+	for name := range r.sets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var tools []Tool
+	for _, name := range names {
+		for _, tool := range toolsOf(r.sets[name]) {
+			tools = append(tools, Tool{
+				Name:        PrefixTool(name, tool.Name),
+				Title:       tool.Title,
+				Description: tool.Description,
+				InputSchema: tool.InputSchema,
+			})
+		}
+	}
+	return tools
+}
+
 // RouteToolCall routes a tool call to the appropriate server. The concrete
 // replica is chosen by the set's dispatch policy.
 func (r *Router) RouteToolCall(prefixedName string) (AgentClient, string, error) {

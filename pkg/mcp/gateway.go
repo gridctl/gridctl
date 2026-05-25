@@ -1233,6 +1233,15 @@ func (g *Gateway) HandleToolsList() (*ToolsListResult, error) {
 	return &ToolsListResult{Tools: tools}, nil
 }
 
+// HandleToolsCatalog returns the full downstream tool inventory with each
+// tool's raw description and input schema, regardless of code mode. It is
+// informational only (served to the web console for tool detail); it never
+// affects what tools/list exposes to MCP clients — code mode still hides
+// downstream tools behind the meta-tools there.
+func (g *Gateway) HandleToolsCatalog() (*ToolsListResult, error) {
+	return &ToolsListResult{Tools: g.router.CatalogTools()}, nil
+}
+
 // HandleToolsCall routes a tool call to the appropriate MCP server.
 // When code mode is active and the tool is a meta-tool, delegates to code mode.
 func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*ToolCallResult, error) {

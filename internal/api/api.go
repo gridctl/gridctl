@@ -225,6 +225,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
+	mux.HandleFunc("GET /api/tools/catalog", s.handleToolsCatalog)
 	mux.HandleFunc("GET /api/tools/usage", s.handleToolsUsage)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
 	mux.HandleFunc("/api/metrics/tokens", s.handleMetricsTokens)
@@ -440,6 +441,20 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, _ := s.gateway.HandleToolsList()
+	writeJSON(w, result)
+}
+
+// handleToolsCatalog returns the full downstream tool inventory (each tool's
+// raw description + input schema) for the web console, regardless of code
+// mode. Read-only and informational: it does not change what MCP clients see
+// from tools/list.
+func (s *Server) handleToolsCatalog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	result, _ := s.gateway.HandleToolsCatalog()
 	writeJSON(w, result)
 }
 
