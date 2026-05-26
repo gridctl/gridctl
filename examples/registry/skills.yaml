@@ -24,15 +24,15 @@ sources:
     repo: https://github.com/acme/public-skills
     ref: main
 
-  # Private HTTPS repo — PAT resolved from the vault on every fetch.
+  # Private HTTPS repo — PAT resolved from the variable store on every fetch.
   # Pre-stage the secret first:
-  #   gridctl vault set GIT_TOKEN ghp_xxxxxxxxxxxxxxxxxxxx
+  #   gridctl var set GIT_TOKEN --value ghp_xxxxxxxxxxxxxxxxxxxx
   - name: private-skills
     repo: https://github.com/acme/private-skills
     ref: v1.2.0
     auth:
       method: token
-      credential_ref: "${vault:GIT_TOKEN}"
+      credential_ref: "${var:GIT_TOKEN}"
 
   # Private SSH repo — uses the user's ambient ssh-agent and ~/.ssh/known_hosts.
   # No credentials travel through gridctl at all.
