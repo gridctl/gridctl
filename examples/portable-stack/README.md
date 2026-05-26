@@ -14,9 +14,9 @@ decides how they're handled at runtime.
 
 ```bash
 # Non-sensitive — appears unredacted in logs.
-gridctl var set REGION us-east-1 --plaintext
-gridctl var set CLUSTER_ID prod-cluster-42 --plaintext
-gridctl var set AWS_ACCOUNT_ID 123456789012 --plaintext
+gridctl var set REGION --value us-east-1 --plaintext
+gridctl var set CLUSTER_ID --value prod-cluster-42 --plaintext
+gridctl var set AWS_ACCOUNT_ID --value 123456789012 --plaintext
 
 # Secrets — Article XII default; redacted in logs.
 gridctl var set DB_PASSWORD                    # interactive
