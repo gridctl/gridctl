@@ -24,8 +24,8 @@ New to gridctl? Read in this order:
 
 | Document | Description |
 |----------|-------------|
-| [CLI Reference](cli-reference.md) | Every `gridctl` command, grouped by domain - stack lifecycle, skills, vault, optimize, telemetry, traces, upgrade |
-| [Configuration Reference](config-schema.md) | Every field in `stack.yaml` - server types, networks, resources, auth, vault |
+| [CLI Reference](cli-reference.md) | Every `gridctl` command, grouped by domain - stack lifecycle, skills, variables, optimize, telemetry, traces, upgrade |
+| [Configuration Reference](config-schema.md) | Every field in `stack.yaml` - server types, networks, resources, auth, variables |
 | [REST API Reference](api-reference.md) | Gateway endpoints, request/response formats, authentication |
 
 ## Guides
