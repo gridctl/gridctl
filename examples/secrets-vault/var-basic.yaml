@@ -6,7 +6,7 @@
 # Prerequisites:
 #   gridctl var set GITHUB_TOKEN              # default: secret (Article XII)
 #   gridctl var set OPENAI_API_KEY            # default: secret
-#   gridctl var set LOG_LEVEL info --plaintext   # plaintext: visible in logs
+#   gridctl var set LOG_LEVEL --value info --plaintext   # plaintext: visible in logs
 #
 # Usage:
 #   gridctl apply examples/secrets-vault/var-basic.yaml
