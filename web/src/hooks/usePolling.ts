@@ -5,7 +5,7 @@ import { useRegistryStore } from '../stores/useRegistryStore';
 import { usePinsStore } from '../stores/usePinsStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
-import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
+import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 
@@ -107,6 +107,16 @@ export function usePolling() {
         }
       } catch {
         // Registry not available — not an error (progressive disclosure)
+      }
+
+      // Fetch skill sources (provenance) independently. A failure here must not
+      // affect the registry list above — the Library just falls back to
+      // category grouping with no source headers/badges.
+      try {
+        const sources = await fetchSkillSources();
+        useRegistryStore.getState().setSources(sources);
+      } catch {
+        // Sources unavailable — progressive disclosure, not an error.
       }
     } catch (error) {
       if (error instanceof AuthError) {
