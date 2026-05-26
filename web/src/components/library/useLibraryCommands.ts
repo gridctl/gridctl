@@ -4,6 +4,8 @@ import {
   CheckCircle2,
   ExternalLink,
   FileText,
+  FolderGit2,
+  Layers,
   List,
   Plus,
   PowerOff,
@@ -11,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import type { PaletteCommand } from '../../types/palette';
+import type { GroupMode } from '../registry/LibraryGrid';
 
 export type LibraryFilter = 'all' | 'active' | 'draft' | 'disabled';
 
@@ -20,6 +23,8 @@ interface UseLibraryCommandsOptions {
   onShowAll: () => void;
   onFilter: (filter: LibraryFilter) => void;
   onOpenInNewWindow: () => void;
+  /** Optional: switch the grouping axis (Source / Category / None). */
+  onSetGroup?: (mode: GroupMode) => void;
 }
 
 /**
@@ -32,6 +37,7 @@ export function useLibraryCommands({
   onShowAll,
   onFilter,
   onOpenInNewWindow,
+  onSetGroup,
 }: UseLibraryCommandsOptions): void {
   const { registerCommands, unregisterCommands } = useCommandRegistry();
 
@@ -101,6 +107,39 @@ export function useLibraryCommands({
         onSelect: onOpenInNewWindow,
       },
     ];
+
+    if (onSetGroup) {
+      commands.push(
+        {
+          id: 'library:group-source',
+          label: 'Library: Group by Source',
+          section: 'registry',
+          workspaces: ['library'],
+          icon: createElement(FolderGit2, { size: 14 }),
+          keywords: ['group', 'source', 'provenance', 'origin', 'repo'],
+          onSelect: () => onSetGroup('source'),
+        },
+        {
+          id: 'library:group-category',
+          label: 'Library: Group by Category',
+          section: 'registry',
+          workspaces: ['library'],
+          icon: createElement(Layers, { size: 14 }),
+          keywords: ['group', 'category', 'directory', 'folder'],
+          onSelect: () => onSetGroup('category'),
+        },
+        {
+          id: 'library:group-none',
+          label: 'Library: No Grouping',
+          section: 'registry',
+          workspaces: ['library'],
+          icon: createElement(List, { size: 14 }),
+          keywords: ['group', 'none', 'flat', 'ungroup'],
+          onSelect: () => onSetGroup('none'),
+        },
+      );
+    }
+
     registerCommands('library', commands);
     return () => unregisterCommands('library');
   }, [
@@ -111,5 +150,6 @@ export function useLibraryCommands({
     onShowAll,
     onFilter,
     onOpenInNewWindow,
+    onSetGroup,
   ]);
 }
