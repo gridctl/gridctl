@@ -13,9 +13,9 @@
 # Prerequisites:
 #
 #   # Non-sensitive config — visible in logs.
-#   gridctl var set REGION us-east-1 --plaintext
-#   gridctl var set CLUSTER_ID prod-cluster-42 --plaintext
-#   gridctl var set AWS_ACCOUNT_ID 123456789012 --plaintext
+#   gridctl var set REGION --value us-east-1 --plaintext
+#   gridctl var set CLUSTER_ID --value prod-cluster-42 --plaintext
+#   gridctl var set AWS_ACCOUNT_ID --value 123456789012 --plaintext
 #
 #   # Secrets — redacted in logs (Article XII default).
 #   gridctl var set DB_PASSWORD                    # interactive prompt
