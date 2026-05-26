@@ -1,9 +1,9 @@
 import { memo } from 'react';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
-import type { AgentSkill } from '../../types';
+import type { AgentSkill, SkillSourceStatus } from '../../types';
 
 export interface SkillCardProps {
   skill: AgentSkill;
@@ -11,6 +11,8 @@ export interface SkillCardProps {
   onDisable: (skill: AgentSkill) => void;
   onEdit: (skill: AgentSkill) => void;
   onDelete: (skill: AgentSkill) => void;
+  /** Imported-from source, when this skill came from a git source. */
+  source?: SkillSourceStatus;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -21,6 +23,7 @@ export const SkillCard = memo(({
   onDisable,
   onEdit,
   onDelete,
+  source,
   className,
   style,
 }: SkillCardProps) => {
@@ -53,6 +56,15 @@ export const SkillCard = memo(({
           <span className="font-semibold log-text text-text-primary truncate flex-1 min-w-0 leading-tight mt-0.5">
             {skill.name}
           </span>
+          {source && (
+            <span
+              title={source.repo}
+              aria-label={`Imported from ${source.repo}`}
+              className="flex-shrink-0 inline-flex items-center text-text-muted/50 transition-colors group-hover:text-text-muted/80 mt-0.5"
+            >
+              <GitBranch size={12} />
+            </span>
+          )}
           <StateBadge state={skill.state} />
         </div>
 
