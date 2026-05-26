@@ -6,7 +6,7 @@ import { LibraryWorkspace } from '../components/workspaces/LibraryWorkspace';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { showToast } from '../components/ui/Toast';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
-import type { AgentSkill } from '../types';
+import type { AgentSkill, SkillSourceStatus } from '../types';
 
 vi.mock('../components/ui/Toast', () => ({
   showToast: vi.fn(),
@@ -16,6 +16,8 @@ vi.mock('../components/ui/Toast', () => ({
 vi.mock('../lib/api', () => ({
   fetchRegistryStatus: vi.fn().mockResolvedValue({ totalSkills: 0, activeSkills: 0 }),
   fetchRegistrySkills: vi.fn().mockResolvedValue([]),
+  fetchSkillSources: vi.fn().mockResolvedValue([]),
+  updateSkillSource: vi.fn().mockResolvedValue({ source: 'acme-skills', results: [] }),
   activateRegistrySkill: vi.fn().mockResolvedValue(undefined),
   disableRegistrySkill: vi.fn().mockResolvedValue(undefined),
   deleteRegistrySkill: vi.fn().mockResolvedValue(undefined),
@@ -40,6 +42,20 @@ const SAMPLE_SKILLS: AgentSkill[] = [
   { name: 'draft-summarizer', description: 'summarize drafts', state: 'draft', dir: 'tools', fileCount: 1 },
   // @ts-expect-error partial AgentSkill is fine for the test
   { name: 'disabled-skill', description: 'paused', state: 'disabled', dir: 'archive', fileCount: 1 },
+];
+
+// One imported source that owns `draft-summarizer`; the other two skills are
+// local ("My Skills").
+const SAMPLE_SOURCES: SkillSourceStatus[] = [
+  {
+    name: 'acme-skills',
+    repo: 'https://github.com/acme/skills',
+    commitSha: 'abcdef1234567',
+    autoUpdate: false,
+    updateInterval: '',
+    updateAvailable: false,
+    skills: [{ name: 'draft-summarizer', description: 'summarize drafts', state: 'draft', isRemote: true }],
+  },
 ];
 
 function LocationProbe({ onChange }: { onChange: (search: string) => void }) {
@@ -74,7 +90,9 @@ function renderAt(path: string, onLocationChange?: (search: string) => void) {
 describe('LibraryWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useRegistryStore.setState({ skills: SAMPLE_SKILLS, status: { totalSkills: 3, activeSkills: 1 } });
+    // Reset sources to null so provenance grouping is off by default; tests that
+    // exercise grouping opt in explicitly.
+    useRegistryStore.setState({ skills: SAMPLE_SKILLS, status: { totalSkills: 3, activeSkills: 1 }, sources: null });
   });
 
   it('renders the skill grid with all skills when filter is all', () => {
@@ -125,5 +143,90 @@ describe('LibraryWorkspace', () => {
     useRegistryStore.setState({ skills: null });
     renderAt('/library/never-existed');
     expect(showToast).not.toHaveBeenCalled();
+  });
+
+  describe('provenance grouping', () => {
+    it('shows no grouping control or "My Skills" header when there are no sources', () => {
+      renderAt('/library');
+      expect(screen.queryByRole('group', { name: 'Group skills by' })).not.toBeInTheDocument();
+      expect(screen.queryByText('My Skills')).not.toBeInTheDocument();
+      // All skills still render (category/flat behavior is unchanged).
+      expect(screen.getByText('incident-triage')).toBeInTheDocument();
+      expect(screen.getByText('draft-summarizer')).toBeInTheDocument();
+    });
+
+    it('defaults to source grouping with "My Skills" + per-source sections when sources exist', () => {
+      useRegistryStore.setState({ sources: SAMPLE_SOURCES });
+      renderAt('/library');
+      expect(screen.getByRole('group', { name: 'Group skills by' })).toBeInTheDocument();
+      expect(screen.getByText('My Skills')).toBeInTheDocument();
+      expect(screen.getByText('acme/skills')).toBeInTheDocument();
+      // Everything is still visible — grouping organizes, it does not hide.
+      expect(screen.getByText('incident-triage')).toBeInTheDocument();
+      expect(screen.getByText('draft-summarizer')).toBeInTheDocument();
+      expect(screen.getByText('disabled-skill')).toBeInTheDocument();
+    });
+
+    it('shows the short commit SHA in the source header', () => {
+      useRegistryStore.setState({ sources: SAMPLE_SOURCES });
+      renderAt('/library');
+      expect(screen.getByText('abcdef1')).toBeInTheDocument();
+    });
+
+    it('reflects the Group by selection in ?group= (and omits the default)', async () => {
+      useRegistryStore.setState({ sources: SAMPLE_SOURCES });
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+
+      fireEvent.click(screen.getByRole('button', { name: 'None' }));
+      await waitFor(() => expect(currentSearch).toContain('group=none'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Source' }));
+      await waitFor(() => expect(currentSearch).not.toContain('group='));
+    });
+
+    it('restores grouping from ?group=none on initial render', () => {
+      useRegistryStore.setState({ sources: SAMPLE_SOURCES });
+      renderAt('/library?group=none');
+      // Flat mode → no group headers.
+      expect(screen.queryByText('My Skills')).not.toBeInTheDocument();
+      expect(screen.queryByText('acme/skills')).not.toBeInTheDocument();
+      expect(screen.getByText('draft-summarizer')).toBeInTheDocument();
+    });
+
+    it('isolates a source when its header is clicked and sets ?source=', async () => {
+      useRegistryStore.setState({ sources: SAMPLE_SOURCES });
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+
+      fireEvent.click(screen.getByText('acme/skills'));
+      await waitFor(() => expect(currentSearch).toContain('source=acme-skills'));
+      // Only the imported skill remains; local skills are hidden.
+      expect(screen.getByText('draft-summarizer')).toBeInTheDocument();
+      expect(screen.queryByText('incident-triage')).not.toBeInTheDocument();
+    });
+
+    it('restores the isolate from ?source= and clears it via "Show all"', async () => {
+      useRegistryStore.setState({ sources: SAMPLE_SOURCES });
+      let currentSearch = '?source=acme-skills';
+      renderAt('/library?source=acme-skills', (s) => { currentSearch = s; });
+
+      expect(screen.queryByText('incident-triage')).not.toBeInTheDocument();
+      // The "Showing …" chip is the persistent clear control.
+      fireEvent.click(screen.getByRole('button', { name: /show all groups/i }));
+      await waitFor(() => expect(currentSearch).not.toContain('source='));
+      expect(screen.getByText('incident-triage')).toBeInTheDocument();
+    });
+
+    it('isolates "My Skills" with ?source=local', async () => {
+      useRegistryStore.setState({ sources: SAMPLE_SOURCES });
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+
+      fireEvent.click(screen.getByText('My Skills'));
+      await waitFor(() => expect(currentSearch).toContain('source=local'));
+      expect(screen.getByText('incident-triage')).toBeInTheDocument();
+      expect(screen.queryByText('draft-summarizer')).not.toBeInTheDocument();
+    });
   });
 });
