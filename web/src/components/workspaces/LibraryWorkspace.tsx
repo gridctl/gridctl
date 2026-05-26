@@ -12,7 +12,7 @@ import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
 import { SkillEditor } from '../registry/SkillEditor';
 import { SkillCardSkeleton } from '../registry/SkillCardSkeleton';
-import { LibraryGrid } from '../registry/LibraryGrid';
+import { LibraryGrid, type GroupMode } from '../registry/LibraryGrid';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { showToast } from '../ui/Toast';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
@@ -26,11 +26,17 @@ import {
   disableRegistrySkill,
   fetchRegistrySkills,
   fetchRegistryStatus,
+  fetchSkillSources,
 } from '../../lib/api';
+import { extractRepoInfo } from '../../lib/repo';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
-import type { AgentSkill, ItemState } from '../../types';
+import type { AgentSkill, ItemState, SkillSourceStatus } from '../../types';
 
 type FilterTab = 'all' | ItemState;
+
+function isGroupMode(value: string | null): value is GroupMode {
+  return value === 'source' || value === 'category' || value === 'none';
+}
 
 const TABS: { key: FilterTab; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -59,6 +65,7 @@ export function LibraryWorkspace() {
   // the store instead of starting a second polling loop here.
   const skills = useRegistryStore((s) => s.skills);
   const status = useRegistryStore((s) => s.status);
+  const sources = useRegistryStore((s) => s.sources);
 
   // null means "not loaded yet"; the deep-link error toast must wait for a
   // resolved fetch so a transient mid-fetch render doesn't false-positive.
@@ -92,6 +99,55 @@ export function LibraryWorkspace() {
         const next = new URLSearchParams(prev);
         if (tab === 'all') next.delete('filter');
         else next.set('filter', tab);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  // Provenance grouping state. The default grouping is Source when any source
+  // exists, else Category (today's behavior) — so the default value is omitted
+  // from the URL and a no-source registry is untouched.
+  const hasSources = (sources ?? []).length > 0;
+  const defaultGroup: GroupMode = hasSources ? 'source' : 'category';
+  const groupParam = searchParams.get('group');
+  const groupMode: GroupMode = isGroupMode(groupParam) ? groupParam : defaultGroup;
+  const sourceParam = searchParams.get('source');
+  const activeSource = groupMode === 'source' ? sourceParam : null;
+
+  // Join skills to sources by skill name. Verified against internal/api/skills.go:
+  // source entries are built from the same registry store, so SkillSourceEntry.name
+  // === AgentSkill.name. Caveat (deferred): a skill kept after its source is removed,
+  // or a name shared across sources, maps to the first owning source or "My Skills".
+  const sourceMap = useMemo(() => {
+    const map = new Map<string, SkillSourceStatus>();
+    for (const src of sources ?? []) {
+      for (const entry of src.skills ?? []) {
+        if (!map.has(entry.name)) map.set(entry.name, src);
+      }
+    }
+    return map;
+  }, [sources]);
+
+  const setGroupMode = useCallback((mode: GroupMode) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (mode === defaultGroup) next.delete('group');
+        else next.set('group', mode);
+        if (mode !== 'source') next.delete('source'); // isolate only applies in source mode
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams, defaultGroup]);
+
+  const setActiveSource = useCallback((key: string | null) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (!key) next.delete('source');
+        else next.set('source', key);
         return next;
       },
       { replace: true },
@@ -150,6 +206,18 @@ export function LibraryWorkspace() {
       showToast('error', err instanceof Error ? err.message : 'Refresh failed');
     }
   }, []);
+
+  // Refresh registry + sources together — used after an inline source update so
+  // the "update available" badge clears and any new/removed skills appear.
+  const refreshAll = useCallback(async () => {
+    await refreshRegistry();
+    try {
+      const srcs = await fetchSkillSources();
+      useRegistryStore.getState().setSources(srcs);
+    } catch {
+      // Sources unavailable — progressive disclosure.
+    }
+  }, [refreshRegistry]);
 
   const handleEnable = useCallback(async (skill: AgentSkill) => {
     try {
@@ -219,6 +287,7 @@ export function LibraryWorkspace() {
     onShowAll: handleShowAll,
     onFilter: handleFilter,
     onOpenInNewWindow: handlePopout,
+    onSetGroup: setGroupMode,
   });
 
   const searchResults = useFuzzySearch(skills ?? [], searchQuery);
@@ -234,6 +303,25 @@ export function LibraryWorkspace() {
     if (activeTab === 'all') return searchResults;
     return searchResults.filter((s) => s.state === activeTab);
   }, [searchResults, activeTab]);
+
+  // Apply the provenance isolate on top of search + tab filtering, so empty
+  // states and the grid see a coherent set.
+  const visibleSkills = useMemo(() => {
+    if (groupMode !== 'source' || !activeSource) return displayedSkills;
+    return displayedSkills.filter((s) => {
+      const src = sourceMap.get(s.name);
+      return activeSource === 'local' ? !src : src?.name === activeSource;
+    });
+  }, [displayedSkills, groupMode, activeSource, sourceMap]);
+
+  // Human-readable label for the active isolate, shown in the "Show all" chip.
+  const activeSourceLabel = useMemo(() => {
+    if (!activeSource) return null;
+    if (activeSource === 'local') return 'My Skills';
+    const src = (sources ?? []).find((s) => s.name === activeSource);
+    const info = src ? extractRepoInfo(src.repo) : null;
+    return info ? `${info.owner}/${info.repo}` : activeSource;
+  }, [activeSource, sources]);
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
@@ -270,32 +358,51 @@ export function LibraryWorkspace() {
               )}
             </div>
 
-            <div className="flex gap-1 flex-wrap">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-colors',
-                    activeTab === tab.key
-                      ? 'bg-primary/10 text-primary border border-primary/25'
-                      : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
-                  )}
-                >
-                  {tab.label}
-                  <span
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex gap-1 flex-wrap">
+                {TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
                     className={cn(
-                      'text-[10px] px-1.5 py-0 rounded-full font-mono min-w-[18px] text-center transition-colors',
+                      'flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-colors',
                       activeTab === tab.key
-                        ? 'bg-primary/15 text-primary'
-                        : 'bg-surface-highlight text-text-muted',
+                        ? 'bg-primary/10 text-primary border border-primary/25'
+                        : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
                     )}
                   >
-                    {tabCounts[tab.key]}
-                  </span>
-                </button>
-              ))}
+                    {tab.label}
+                    <span
+                      className={cn(
+                        'text-[10px] px-1.5 py-0 rounded-full font-mono min-w-[18px] text-center transition-colors',
+                        activeTab === tab.key
+                          ? 'bg-primary/15 text-primary'
+                          : 'bg-surface-highlight text-text-muted',
+                      )}
+                    >
+                      {tabCounts[tab.key]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {hasSources && (
+                <GroupByControl mode={groupMode} onChange={setGroupMode} />
+              )}
             </div>
+
+            {groupMode === 'source' && activeSource && activeSourceLabel && (
+              <div className="flex">
+                <button
+                  onClick={() => setActiveSource(null)}
+                  aria-label={`Showing ${activeSourceLabel} only — show all groups`}
+                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-primary/25 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+                >
+                  <span className="text-text-muted">Showing</span>
+                  <span className="font-medium">{activeSourceLabel}</span>
+                  <X size={11} />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-dark">
@@ -324,7 +431,7 @@ export function LibraryWorkspace() {
               </div>
             )}
 
-            {!isLoading && hasSkills && displayedSkills.length === 0 && (
+            {!isLoading && hasSkills && visibleSkills.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale p-8">
                 <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
                   <Search size={28} className="text-text-muted/50" />
@@ -343,10 +450,15 @@ export function LibraryWorkspace() {
               </div>
             )}
 
-            {!isLoading && displayedSkills.length > 0 && (
+            {!isLoading && visibleSkills.length > 0 && (
               <LibraryGrid
-                skills={displayedSkills}
+                skills={visibleSkills}
                 hasSearch={searchQuery.length > 0}
+                groupMode={groupMode}
+                sourceMap={sourceMap}
+                activeSource={activeSource}
+                onIsolateSource={setActiveSource}
+                onRefresh={refreshAll}
                 onEnable={handleEnable}
                 onDisable={handleDisable}
                 onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
@@ -384,6 +496,36 @@ export function LibraryWorkspace() {
         onSaved={refreshRegistry}
         skill={editingSkill}
       />
+    </div>
+  );
+}
+
+const GROUP_OPTIONS: { key: GroupMode; label: string }[] = [
+  { key: 'source', label: 'Source' },
+  { key: 'category', label: 'Category' },
+  { key: 'none', label: 'None' },
+];
+
+/** Segmented control to switch the Library's grouping axis. */
+function GroupByControl({ mode, onChange }: { mode: GroupMode; onChange: (m: GroupMode) => void }) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Group skills by">
+      <span className="text-[10px] uppercase tracking-wider text-text-muted/60 mr-0.5">Group</span>
+      {GROUP_OPTIONS.map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => onChange(opt.key)}
+          aria-pressed={mode === opt.key}
+          className={cn(
+            'px-2 py-1 rounded-md text-[11px] font-medium transition-colors',
+            mode === opt.key
+              ? 'bg-primary/10 text-primary border border-primary/25'
+              : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
