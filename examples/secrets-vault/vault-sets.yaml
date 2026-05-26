@@ -1,7 +1,11 @@
-# Variable Sets Example
+# Variable Sets Example (deprecated `vault` aliases — kept as regression test)
 #
 # Groups related secrets into sets and injects them automatically
 # into all containers. Explicit env values take precedence.
+#
+# The `gridctl vault …` commands below are deprecated aliases for
+# `gridctl var …`; prefer var-sets.yaml. The aliases work through the beta
+# cycle and are removed at v1.0.
 #
 # Prerequisites:
 #   gridctl vault sets create production
