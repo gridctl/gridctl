@@ -7,7 +7,7 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 - [Stack lifecycle](#stack-lifecycle)
 - [LLM clients](#llm-clients)
 - [Skills](#skills)
-- [Vault](#vault)
+- [Variables](#variables)
 - [Pins (TOFU schema pinning)](#pins-tofu-schema-pinning)
 - [Traces](#traces)
 - [Optimize](#optimize)
@@ -44,7 +44,7 @@ Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients a
 | Command | Purpose |
 |---|---|
 | `gridctl skill list` | List skills in the registry (`--remote` for imported skills only). |
-| `gridctl skill add <repo-url>` | Import skills from a git repository. Auth flags: `--auth-token <pat>` (ephemeral HTTPS PAT, CI), `--vault-key <key>` (resolves from `${vault:KEY}`), `--ssh-key <path>` (SSH). |
+| `gridctl skill add <repo-url>` | Import skills from a git repository. Auth flags: `--auth-token <pat>` (ephemeral HTTPS PAT, CI), `--vault-key <key>` (resolves from `${var:KEY}`), `--ssh-key <path>` (SSH). |
 | `gridctl skill update [name]` | Update imported skills (all when name omitted). |
 | `gridctl skill remove <name>` | Remove an imported skill. |
 | `gridctl skill pin <name> <ref>` | Pin a skill to a specific git ref. |
@@ -53,18 +53,25 @@ Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients a
 | `gridctl skill validate <name>` | Validate a skill definition. |
 | `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `--format json` for machine output, `--quiet` to suppress the success line. |
 
-## Vault
+## Variables
+
+The variable store holds both secrets (encrypted at rest, redacted in logs) and plaintext configuration. Reference entries from stack YAML with `${var:KEY}` — see [Variable Expansion](config-schema.md#variable-expansion).
 
 | Command | Purpose |
 |---|---|
-| `gridctl vault set <key>` | Store a secret (interactive prompt, or `--value`); `--set <name>` to assign to a variable set. |
-| `gridctl vault get <key>` | Retrieve a secret (masked; `--plain` to unmask). |
-| `gridctl vault list` | List all vault keys with set assignments. |
-| `gridctl vault delete <key>` | Remove a secret (`--force` to skip confirmation). |
-| `gridctl vault import <file>` | Import from `.env` or `.json` (`--format` to override auto-detection). |
-| `gridctl vault export` | Export secrets (`--format env\|json`, `--plain` to unmask). |
-| `gridctl vault lock` / `unlock` | Encrypt / decrypt the vault. |
-| `gridctl vault change-passphrase` | Re-encrypt with a new passphrase. |
+| `gridctl var set <key>` | Store a variable (interactive prompt, or `--value`). Secret by default; `--plaintext` for non-sensitive config visible in logs. `--type <string\|json\|list\|number\|bool>` tags the value's shape; `--set <name>` assigns it to a variable set. |
+| `gridctl var get <key>` | Retrieve a variable (secrets masked; `--plain` to unmask). |
+| `gridctl var list` | List all variables with type, visibility, and set assignment (`--format json`). |
+| `gridctl var delete <key>` | Remove a variable (`--force` to skip confirmation). |
+| `gridctl var import <file>` | Import from `.env` or `.json` (`--format` to override auto-detection; `# @public` / `# @type=` markers tag entries). |
+| `gridctl var export` | Export variables (`--format env\|json`, `--plain` to unmask). |
+| `gridctl var sets list` | List variable sets and their member counts. |
+| `gridctl var sets create <name>` | Create a variable set. |
+| `gridctl var sets delete <name>` | Delete a variable set (members are unassigned, not deleted). |
+| `gridctl var lock` / `unlock` | Encrypt / decrypt the store (XChaCha20-Poly1305 + Argon2id). |
+| `gridctl var change-passphrase` | Re-encrypt with a new passphrase. |
+
+> `gridctl vault …` is a deprecated alias for `gridctl var …`, removed at v1.0. The `${vault:KEY}` reference syntax is likewise deprecated in favor of `${var:KEY}`.
 
 ## Pins (TOFU schema pinning)
 

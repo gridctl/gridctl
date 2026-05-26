@@ -68,7 +68,7 @@ Skills don't have to be authored locally. `gridctl skill add <repo-url>` clones 
 Supported auth flows for private repos:
 
 - `--auth-token <pat>` — an ephemeral HTTPS personal access token, suitable for CI.
-- `--vault-key <key>` — resolves the token from a `${vault:KEY}` entry; suitable for long-running daemons.
+- `--vault-key <key>` — resolves the token from a `${var:KEY}` entry; suitable for long-running daemons.
 - `--ssh-key <path>` — SSH private key path.
 
 ## What gridctl deliberately does not do

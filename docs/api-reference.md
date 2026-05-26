@@ -625,18 +625,18 @@ Env-var values present in the request body are scrubbed from error messages and 
 
 ---
 
-### Vault (Secrets Management)
+### Variables (Secrets & Config)
 
-The vault stores secrets locally with optional encryption. Secrets can be organized into variable sets for scoped injection.
+The variable store holds secrets (encrypted at rest) and plaintext config, organized into variable sets for scoped injection. The canonical route prefix is `/api/var`; `/api/vault/*` remains as a deprecated alias (responses carry `Deprecation` and `Sunset` headers) and is removed at v1.0.
 
-#### `GET /api/vault/status`
+#### `GET /api/var/status`
 
 Returns vault lock state and counts. Does not require the vault to be unlocked.
 
 **Auth:** Yes
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/status
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/status
 ```
 
 **Response:**
@@ -651,14 +651,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/status
 
 `secrets_count` and `sets_count` are only included when the vault is unlocked.
 
-#### `POST /api/vault/unlock`
+#### `POST /api/var/unlock`
 
 Unlocks an encrypted vault with a passphrase.
 
 **Auth:** Yes
 
 ```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/unlock \
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/unlock \
   -H "Content-Type: application/json" \
   -d '{"passphrase": "my-secret-passphrase"}'
 ```
@@ -668,14 +668,14 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/u
 {"status": "unlocked"}
 ```
 
-#### `POST /api/vault/lock`
+#### `POST /api/var/lock`
 
 Encrypts the vault with a passphrase.
 
 **Auth:** Yes
 
 ```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/lock \
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/lock \
   -H "Content-Type: application/json" \
   -d '{"passphrase": "my-secret-passphrase"}'
 ```
@@ -685,14 +685,14 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/l
 {"status": "locked"}
 ```
 
-#### `GET /api/vault`
+#### `GET /api/var`
 
 Lists all secret keys with their set assignments (values not included).
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var
 ```
 
 **Response:**
@@ -703,14 +703,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault
 ]
 ```
 
-#### `POST /api/vault`
+#### `POST /api/var`
 
 Creates a new secret.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault \
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var \
   -H "Content-Type: application/json" \
   -d '{"key": "DB_PASSWORD", "value": "secret123", "set": "production"}'
 ```
@@ -722,14 +722,14 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault \
 
 Key names must match `[a-zA-Z_][a-zA-Z0-9_]*`.
 
-#### `GET /api/vault/{key}`
+#### `GET /api/var/{key}`
 
 Returns a secret value.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/DB_PASSWORD
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/DB_PASSWORD
 ```
 
 **Response:**
@@ -737,14 +737,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/DB_PASSWO
 {"key": "DB_PASSWORD", "value": "secret123"}
 ```
 
-#### `PUT /api/vault/{key}`
+#### `PUT /api/var/{key}`
 
 Updates a secret value.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/DB_PASSWORD \
+curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/DB_PASSWORD \
   -H "Content-Type: application/json" \
   -d '{"value": "new-secret"}'
 ```
@@ -754,36 +754,36 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/DB
 {"key": "DB_PASSWORD", "status": "updated"}
 ```
 
-#### `DELETE /api/vault/{key}`
+#### `DELETE /api/var/{key}`
 
 Deletes a secret.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/DB_PASSWORD
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/DB_PASSWORD
 ```
 
 **Response:** `204 No Content`
 
-#### `GET /api/vault/sets`
+#### `GET /api/var/sets`
 
 Lists all variable sets with member counts.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/sets
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/sets
 ```
 
-#### `POST /api/vault/sets`
+#### `POST /api/var/sets`
 
 Creates a new variable set.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/sets \
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/sets \
   -H "Content-Type: application/json" \
   -d '{"name": "production"}'
 ```
@@ -795,26 +795,26 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/s
 
 Set names must match `[a-z0-9][a-z0-9-]*`.
 
-#### `DELETE /api/vault/sets/{name}`
+#### `DELETE /api/var/sets/{name}`
 
 Deletes a variable set.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/sets/staging
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/sets/staging
 ```
 
 **Response:** `204 No Content`
 
-#### `PUT /api/vault/{key}/set`
+#### `PUT /api/var/{key}/set`
 
 Assigns or unassigns a secret to a variable set.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/DB_PASSWORD/set \
+curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/DB_PASSWORD/set \
   -H "Content-Type: application/json" \
   -d '{"set": "production"}'
 ```
@@ -824,14 +824,14 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/DB
 {"key": "DB_PASSWORD", "set": "production", "status": "updated"}
 ```
 
-#### `POST /api/vault/import`
+#### `POST /api/var/import`
 
 Bulk imports secrets.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/vault/import \
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/import \
   -H "Content-Type: application/json" \
   -d '{"secrets": {"API_KEY": "key123", "DB_HOST": "localhost"}}'
 ```
@@ -845,7 +845,7 @@ When the vault is locked, all endpoints except `status`, `unlock`, and `lock` re
 ```json
 {
   "error": "vault is locked",
-  "hint": "POST /api/vault/unlock with passphrase"
+  "hint": "POST /api/var/unlock with passphrase"
 }
 ```
 

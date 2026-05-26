@@ -58,7 +58,7 @@ gateway:
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
-| `tokenizer_api_key` | string | No | - | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${vault:KEY}` references |
+| `tokenizer_api_key` | string | No | - | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${var:KEY}` references |
 | `tracing` | object | No | - | Distributed tracing configuration (see [Tracing](#tracing)) |
 
 ### Auth
@@ -75,7 +75,7 @@ gateway:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `type` | string | **Yes** | - | Auth mechanism: `"bearer"` or `"api_key"` |
-| `token` | string | **Yes** | - | Expected token value. Supports `${VAR}` and `${vault:KEY}` references |
+| `token` | string | **Yes** | - | Expected token value. Supports `${VAR}` and `${var:KEY}` references |
 | `header` | string | No | `"Authorization"` | Header name. Only applicable when type is `"api_key"` |
 
 **Constraints:**
@@ -466,14 +466,14 @@ mcp-servers:
       ref: main
       auth:
         method: token
-        credential_ref: "${vault:GIT_TOKEN}"
+        credential_ref: "${var:GIT_TOKEN}"
     port: 3000
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `method` | string | **Yes** | - | One of `"token"`, `"ssh-agent"`, `"ssh-key"`, or `"none"` |
-| `credential_ref` | string | Conditional | - | `${vault:KEY}` reference resolved at clone time. Required for `"token"` |
+| `credential_ref` | string | Conditional | - | `${var:KEY}` reference resolved at clone time. Required for `"token"` |
 | `ssh_user` | string | No | `git` | SSH username used with `"ssh-agent"` or `"ssh-key"` |
 | `ssh_key_path` | string | Conditional | - | Path to a private key file. Supports `~` expansion. Required for `"ssh-key"` |
 
@@ -636,7 +636,7 @@ sources:
     ref: v1.2.0
     auth:
       method: token
-      credential_ref: "${vault:GIT_TOKEN}"
+      credential_ref: "${var:GIT_TOKEN}"
 
   - name: private-ssh
     repo: git@github.com:acme/private-skills.git
@@ -663,13 +663,13 @@ Declares how gridctl authenticates when cloning or fetching this repository. Raw
 ```yaml
 auth:
   method: token
-  credential_ref: "${vault:GIT_TOKEN}"
+  credential_ref: "${var:GIT_TOKEN}"
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `method` | string | **Yes** | - | One of `"token"`, `"ssh-agent"`, `"ssh-key"`, or `"none"` |
-| `credential_ref` | string | Conditional | - | `${vault:KEY}` reference resolved at clone/fetch time. Required for `"token"` |
+| `credential_ref` | string | Conditional | - | `${var:KEY}` reference resolved at clone/fetch time. Required for `"token"` |
 | `ssh_user` | string | No | `git` | SSH username used with `"ssh-agent"` or `"ssh-key"` |
 | `ssh_key_path` | string | Conditional | - | Path to a private key file. Required for `"ssh-key"` |
 
@@ -714,7 +714,7 @@ configuration. The on-disk metadata distinguishes them:
 | Stored as | CLI | Behaviour |
 |-----------|-----|-----------|
 | Secret (default) | `gridctl var set KEY` | Encrypted at rest when the store is locked; values are replaced with `[REDACTED]` in logs. |
-| Plaintext | `gridctl var set KEY value --plaintext` | Stored alongside secrets but kept legible in logs and the web UI. |
+| Plaintext | `gridctl var set KEY --value value --plaintext` | Stored alongside secrets but kept legible in logs and the web UI. |
 
 Secrets and plaintext variables share the same lookup path — `${var:KEY}`
 works for both. The unification means a `stack.yaml` can carry environment
