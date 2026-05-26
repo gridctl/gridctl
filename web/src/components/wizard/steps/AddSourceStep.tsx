@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { extractRepoInfo } from '../../../lib/repo';
 import { Button } from '../../ui/Button';
 import {
   previewSkillSource,
@@ -97,12 +98,6 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
   const isValidUrl = (val: string) => {
     return GIT_URL_REGEX.test(val.trim()) || GITHUB_URL_REGEX.test(val.trim());
-  };
-
-  const extractRepoInfo = (val: string): { owner: string; repo: string } | null => {
-    const match = val.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
-    if (match) return { owner: match[1], repo: match[2] };
-    return null;
   };
 
   // Build a SkillAuth from the current card state, or undefined to signal
