@@ -8,7 +8,7 @@ Examples demonstrating the Agent Skills registry following the [agentskills.io](
 |------|-------------|
 | `registry-basic.yaml` | Single server with basic Agent Skills |
 | `registry-advanced.yaml` | Two servers with cross-server skills |
-| `skills.yaml` | Remote skill source list (public, private HTTPS via vault, private SSH via ssh-agent) |
+| `skills.yaml` | Remote skill source list (public, private HTTPS via the variable store, private SSH via ssh-agent) |
 | `items/workflow-basic/` | Executable workflow: sequential steps with inputs and output |
 | `items/workflow-parallel/` | Executable workflow: fan-out parallel execution |
 | `items/workflow-conditional/` | Executable workflow: retry policies and error handling |
@@ -41,7 +41,7 @@ Skills are managed via the REST API or Web UI - they are **not** declared in sta
 ```bash
 # Use the provided example (edit sources first, stage any vault keys):
 cp examples/registry/skills.yaml ~/.gridctl/skills.yaml
-gridctl vault set GIT_TOKEN ghp_xxxxxxxxxxxxxxxxxxxx   # only if using token auth
+gridctl var set GIT_TOKEN --value ghp_xxxxxxxxxxxxxxxxxxxx   # only if using token auth
 gridctl skill update
 ```
 
@@ -49,7 +49,7 @@ Private repos are supported via three auth methods, declared under `auth:`:
 
 | Method | Use when |
 |--------|----------|
-| `token` + `credential_ref: ${vault:KEY}` | Private HTTPS repo; PAT stored in the encrypted vault and re-resolved on every fetch |
+| `token` + `credential_ref: ${var:KEY}` | Private HTTPS repo; PAT stored in the encrypted variable store and re-resolved on every fetch |
 | `ssh-agent` | Private SSH URL; uses the user's ambient ssh-agent + `~/.ssh/known_hosts` |
 | `ssh-key` + `ssh_key_path` | Private SSH URL with an explicit on-disk key |
 
