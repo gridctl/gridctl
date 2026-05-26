@@ -198,7 +198,7 @@ Learn more → [Skills guide](docs/skills.md)
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
-| [`vault-basic.yaml`](examples/secrets-vault/vault-basic.yaml) | Reference vault secrets with `${vault:KEY}` syntax |
+| [`var-basic.yaml`](examples/secrets-vault/var-basic.yaml) | Reference variable-store secrets with `${var:KEY}` syntax |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 
 ## 📖 Documentation
