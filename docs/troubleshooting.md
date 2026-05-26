@@ -137,10 +137,9 @@ failed to start server on port 9000: listen tcp :9000: bind: address already in 
    gridctl destroy
    ```
 
-3. Change the gateway port in your `stack.yaml`:
-   ```yaml
-   gateway:
-     port: 9001  # Use a different port
+3. Start on a different port — `--port` sets the gateway/web UI port (default `8180`), `--base-port` sets the MCP server host-port allocation base (default `9000`):
+   ```bash
+   gridctl apply stack.yaml --port 8181 --base-port 9100
    ```
 
 4. If the port is in TIME_WAIT, wait a few seconds or use a different port.
@@ -326,7 +325,7 @@ Some servers reload successfully while others fail. The reload result shows erro
 **Symptoms:**
 
 ```
-vault is locked. Set GRIDCTL_VAULT_PASSPHRASE or run 'gridctl vault unlock'
+vault is locked. Set GRIDCTL_VAULT_PASSPHRASE or run 'gridctl var unlock'
 ```
 
 Or via the API:
@@ -337,10 +336,10 @@ Or via the API:
 
 **Resolution:**
 
-Unlock the vault before accessing secrets:
+Unlock the store before accessing secrets:
 
 ```bash
-gridctl vault unlock
+gridctl var unlock
 ```
 
 Or set the passphrase as an environment variable for non-interactive use:
@@ -360,21 +359,21 @@ wrong passphrase or corrupted vault
 **Causes:**
 
 - Incorrect passphrase entered
-- The vault file was corrupted (rare - disk error or interrupted write)
+- The store file was corrupted (rare - disk error or interrupted write)
 
 **Resolution:**
 
-1. Try the correct passphrase. The vault uses PBKDF2 key derivation - there is no way to recover a forgotten passphrase.
+1. Try the correct passphrase. The store uses Argon2id key derivation - there is no way to recover a forgotten passphrase.
 
-2. If the vault file is corrupted, check for a backup:
+2. If the store file is corrupted, check for a backup:
    ```bash
-   ls -la ~/.config/gridctl/vault*
+   ls -la ~/.gridctl/vault/
    ```
 
-3. As a last resort, delete the vault and recreate secrets:
+3. As a last resort, delete the store and recreate variables:
    ```bash
-   rm ~/.config/gridctl/vault.enc
-   gridctl vault init
+   rm -rf ~/.gridctl/vault
+   gridctl var set <KEY>   # the store is recreated on first write
    ```
 
 ---
@@ -479,9 +478,9 @@ Browser shows a blank page or connection refused when accessing the gateway URL.
    gridctl status
    ```
 
-2. Check that you're using the correct port (default: 9000):
+2. Check that you're using the correct port (default: 8180):
    ```
-   http://localhost:9000
+   http://localhost:8180
    ```
 
 3. The web UI requires a modern browser - Chrome, Firefox, Safari, or Edge.
