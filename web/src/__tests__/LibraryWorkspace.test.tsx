@@ -21,6 +21,8 @@ vi.mock('../lib/api', () => ({
   activateRegistrySkill: vi.fn().mockResolvedValue(undefined),
   disableRegistrySkill: vi.fn().mockResolvedValue(undefined),
   deleteRegistrySkill: vi.fn().mockResolvedValue(undefined),
+  // Used by SkillFileTree (mounted only on the inspector's Files tab).
+  fetchSkillFiles: vi.fn().mockResolvedValue([]),
 }));
 
 // SkillEditor is heavy and unrelated to the workspace's URL-state behavior.
@@ -143,6 +145,51 @@ describe('LibraryWorkspace', () => {
     useRegistryStore.setState({ skills: null });
     renderAt('/library/never-existed');
     expect(showToast).not.toHaveBeenCalled();
+  });
+
+  describe('inspector pane', () => {
+    it('shows the empty state when nothing is selected', () => {
+      renderAt('/library');
+      expect(screen.getByText(/select a skill to inspect/i)).toBeInTheDocument();
+    });
+
+    it('opens the inspector and sets ?selected= when a card is clicked', async () => {
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+
+      fireEvent.click(screen.getByText('incident-triage'));
+      await waitFor(() => expect(currentSearch).toContain('selected=incident-triage'));
+      // The inspector header (h2) carries the selected skill's name.
+      expect(screen.getByRole('heading', { name: 'incident-triage' })).toBeInTheDocument();
+    });
+
+    it('restores the inspector from ?selected= on initial render', () => {
+      renderAt('/library?selected=draft-summarizer');
+      expect(screen.getByRole('heading', { name: 'draft-summarizer' })).toBeInTheDocument();
+    });
+
+    it('ignores an unknown ?selected= gracefully (empty state)', () => {
+      renderAt('/library?selected=never-existed');
+      expect(screen.getByText(/select a skill to inspect/i)).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'never-existed' })).not.toBeInTheDocument();
+    });
+
+    it('clears the selection and ?selected= when the inspector is closed', async () => {
+      let currentSearch = '?selected=incident-triage';
+      renderAt('/library?selected=incident-triage', (s) => { currentSearch = s; });
+
+      expect(screen.getByRole('heading', { name: 'incident-triage' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /close inspector/i }));
+      await waitFor(() => expect(currentSearch).not.toContain('selected='));
+      expect(screen.getByText(/select a skill to inspect/i)).toBeInTheDocument();
+    });
+
+    it('promotes to the editor when the inspector Edit button is clicked', async () => {
+      renderAt('/library?selected=incident-triage');
+      fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+      await waitFor(() => expect(screen.getByTestId('skill-editor')).toBeInTheDocument());
+      expect(screen.getByTestId('editing-skill-name').textContent).toBe('incident-triage');
+    });
   });
 
   describe('provenance grouping', () => {
