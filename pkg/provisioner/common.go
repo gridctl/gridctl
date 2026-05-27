@@ -125,8 +125,10 @@ func (p *mcpServersProvisioner) Unlink(configPath string, serverName string) err
 	return writeJSONFile(configPath, data)
 }
 
-// HasComments checks if a config file contains JSONC comments that would be
-// lost on write. Returns false if the file doesn't exist.
+// HasComments checks if a config file contains comments that would be lost on
+// write. The comment syntax depends on the file format: TOML and YAML use '#'
+// line comments, while JSON/JSONC uses '//' and '/*'. Returns false if the file
+// doesn't exist.
 func HasComments(configPath string) bool {
 	if !fileExists(configPath) {
 		return false
@@ -135,7 +137,18 @@ func HasComments(configPath string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(raw), "//") || strings.Contains(string(raw), "/*")
+	switch strings.ToLower(filepath.Ext(configPath)) {
+	case ".toml", ".yaml", ".yml":
+		// '#' line comments. Avoids false positives on '//' inside URLs.
+		for _, line := range strings.Split(string(raw), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "#") {
+				return true
+			}
+		}
+		return false
+	default:
+		return strings.Contains(string(raw), "//") || strings.Contains(string(raw), "/*")
+	}
 }
 
 // DryRunDiff returns the before/after config for a dry run.
@@ -150,6 +163,18 @@ func DryRunDiff(configPath string, prov ClientProvisioner, opts LinkOptions) (be
 		dataCopy := deepCopyMap(data)
 		simulateLink(dataCopy, prov, opts)
 		after = formatYAML(dataCopy)
+		return before, after, nil
+	}
+
+	if isTOMLProvisioner(prov) {
+		data, err := readOrCreateTOMLFile(configPath)
+		if err != nil {
+			return "", "", err
+		}
+		before = formatTOML(data)
+		dataCopy := deepCopyMap(data)
+		simulateLink(dataCopy, prov, opts)
+		after = formatTOML(dataCopy)
 		return before, after, nil
 	}
 
@@ -168,6 +193,12 @@ func DryRunDiff(configPath string, prov ClientProvisioner, opts LinkOptions) (be
 // isYAMLProvisioner returns true if the provisioner uses YAML config format.
 func isYAMLProvisioner(prov ClientProvisioner) bool {
 	_, ok := prov.(*Goose)
+	return ok
+}
+
+// isTOMLProvisioner returns true if the provisioner uses TOML config format.
+func isTOMLProvisioner(prov ClientProvisioner) bool {
+	_, ok := prov.(*GrokBuild)
 	return ok
 }
 
@@ -197,6 +228,10 @@ func simulateLink(data map[string]any, prov ClientProvisioner, opts LinkOptions)
 		extensions := getOrCreateMap(data, "extensions")
 		extensions[opts.ServerName] = p.buildEntry(opts)
 		data["extensions"] = extensions
+	case *GrokBuild:
+		servers := getOrCreateMap(data, "mcp_servers")
+		servers[opts.ServerName] = p.buildEntry(opts)
+		data["mcp_servers"] = servers
 	default:
 		if mp, ok := getProvisionerBase(prov); ok {
 			servers := getOrCreateMap(data, "mcpServers")
