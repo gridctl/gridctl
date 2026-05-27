@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import { cn } from '../../lib/cn';
+import { toTitleCase } from '../../lib/text';
 import { SkillCard } from './SkillCard';
 import { SourceGroupHeader } from './SourceGroupHeader';
 import type { AgentSkill, SkillSourceStatus } from '../../types';
@@ -19,10 +20,6 @@ function groupSkills(skills: AgentSkill[]): Map<string, AgentSkill[]> {
     groups.get(key)!.push(skill);
   }
   return groups;
-}
-
-function toTitleCase(key: string): string {
-  return key.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const GRID_STYLE: React.CSSProperties = {
@@ -52,6 +49,11 @@ export interface LibraryGridProps {
   onIsolateSource?: (key: string | null) => void;
   /** Refresh callback invoked after an inline source update. */
   onRefresh?: () => void;
+  /** Select a card into the inspector. Optional so the detached grid (which
+   *  has no inspector rail) is unaffected. */
+  onSelect?: (skill: AgentSkill) => void;
+  /** Name of the skill currently shown in the inspector, for active styling. */
+  activeSkillName?: string | null;
 }
 
 /**
@@ -75,6 +77,8 @@ export function LibraryGrid({
   activeSource = null,
   onIsolateSource,
   onRefresh,
+  onSelect,
+  activeSkillName = null,
 }: LibraryGridProps) {
   const cardHandlers = { onEnable, onDisable, onEdit, onDelete };
 
@@ -83,6 +87,8 @@ export function LibraryGrid({
       key={skill.name}
       skill={skill}
       source={sourceMap?.get(skill.name)}
+      onSelect={onSelect}
+      isActive={skill.name === activeSkillName}
       className={cn(
         'motion-safe:animate-fade-in-scale',
         skill.metadata?.colspan === '2' ? 'col-span-2' : undefined,
