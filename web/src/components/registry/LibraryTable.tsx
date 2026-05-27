@@ -3,19 +3,23 @@ import { cn } from '../../lib/cn';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
 import { skillCategory } from '../../lib/skillMeta';
+import { formatLastUsed } from '../../lib/toolAudit';
 import { toTitleCase } from '../../lib/text';
-import type { AgentSkill, SkillSourceStatus } from '../../types';
+import type { AgentSkill, SkillSourceStatus, SkillUsageStat } from '../../types';
 
 // The sortable column keys. Declared locally (rather than imported from the
 // workspace) so the table has no dependency cycle with its parent; the union
-// matches the workspace's SortMode for the sortable axes.
-export type LibraryTableSort = 'name' | 'state' | 'files';
+// matches the workspace's SortMode for the sortable axes. 'usage' is only an
+// option when a usageMap is supplied (the Last used column is then rendered).
+export type LibraryTableSort = 'name' | 'state' | 'files' | 'usage';
 
-const SORT_COLUMNS: { key: LibraryTableSort; label: string }[] = [
+const BASE_SORT_COLUMNS: { key: LibraryTableSort; label: string }[] = [
   { key: 'state', label: 'State' },
   { key: 'name', label: 'Name' },
   { key: 'files', label: 'Files' },
 ];
+
+const USAGE_SORT_COLUMN: { key: LibraryTableSort; label: string } = { key: 'usage', label: 'Last used' };
 
 export interface LibraryTableProps {
   skills: AgentSkill[];
@@ -30,6 +34,11 @@ export interface LibraryTableProps {
   onSelect: (skill: AgentSkill) => void;
   activeSkillName: string | null;
   sourceMap?: Map<string, SkillSourceStatus>;
+  // Per-skill usage, joined by name. When supplied, a sortable "Last used"
+  // column is rendered; when absent the column is omitted entirely (the usage
+  // endpoint is unavailable), keeping DetachedRegistryPage and prior callers
+  // unchanged.
+  usageMap?: Map<string, SkillUsageStat>;
   onEnable: (skill: AgentSkill) => void;
   onDisable: (skill: AgentSkill) => void;
   onEdit: (skill: AgentSkill) => void;
@@ -56,6 +65,7 @@ export function LibraryTable({
   onSelect,
   activeSkillName,
   sourceMap,
+  usageMap,
   onEnable,
   onDisable,
   onEdit,
@@ -65,6 +75,8 @@ export function LibraryTable({
   const handleToggle = (s: AgentSkill) => (s.state === 'active' ? onDisable(s) : onEnable(s));
   const cellPad = compact ? 'py-1.5' : 'py-2.5';
   const selectAllChecked = allSelected ? 'true' : someSelected ? 'mixed' : 'false';
+  const showUsage = usageMap !== undefined;
+  const sortColumns = showUsage ? [...BASE_SORT_COLUMNS, USAGE_SORT_COLUMN] : BASE_SORT_COLUMNS;
 
   return (
     <div className="p-4">
@@ -92,7 +104,7 @@ export function LibraryTable({
                 ) : null}
               </button>
             </th>
-            {SORT_COLUMNS.map((col) => (
+            {sortColumns.map((col) => (
               <th key={col.key} scope="col" className="px-2 py-2 text-left">
                 <button
                   type="button"
@@ -121,6 +133,8 @@ export function LibraryTable({
             const isSel = selectedNames.has(skill.name);
             const src = sourceMap?.get(skill.name);
             const category = skillCategory(skill.dir);
+            const usage = usageMap?.get(skill.name);
+            const lastUsed = usage?.lastCalledAt ? formatLastUsed(usage.lastCalledAt) : '–';
             return (
               <tr
                 key={skill.name}
@@ -166,10 +180,13 @@ export function LibraryTable({
                     )}
                   </button>
                 </td>
+                <td className={cn('px-2 text-xs font-mono text-text-muted', cellPad)}>{skill.fileCount}</td>
+                {showUsage && (
+                  <td className={cn('px-2 text-xs text-text-muted whitespace-nowrap', cellPad)}>{lastUsed}</td>
+                )}
                 <td className={cn('px-2 text-xs text-text-muted', cellPad)}>
                   {category ? toTitleCase(category) : '–'}
                 </td>
-                <td className={cn('px-2 text-xs font-mono text-text-muted', cellPad)}>{skill.fileCount}</td>
                 <td className={cn('px-2 text-right', cellPad)}>
                   <div className="inline-flex justify-end">
                     <SkillActions skill={skill} onToggle={handleToggle} onEdit={onEdit} onDelete={onDelete} />

@@ -4,12 +4,13 @@ import { cn } from '../../lib/cn';
 import { extractRepoInfo } from '../../lib/repo';
 import { toTitleCase } from '../../lib/text';
 import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
+import { formatLastUsed } from '../../lib/toolAudit';
 import { InspectorHeader, InspectorTabList, InspectorTabButton } from '../inspector';
 import { IconButton } from '../ui/IconButton';
 import { StateBadge } from './StateBadge';
 import { MarkdownPreview } from './MarkdownPreview';
 import { SkillFileTree } from './SkillFileTree';
-import type { AgentSkill, SkillSourceStatus } from '../../types';
+import type { AgentSkill, SkillSourceStatus, SkillUsageStat } from '../../types';
 
 type SkillTab = 'overview' | 'instructions' | 'files';
 
@@ -29,6 +30,16 @@ export interface SkillDetailPanelProps {
   source?: SkillSourceStatus;
   /** Other skills in the same top-level category, for the "Related" list. */
   relatedSkills?: AgentSkill[];
+  /**
+   * Whether the usage endpoint is available. When false, the Usage section is
+   * omitted entirely (no column/KPI/strip on graceful degradation). When true,
+   * a skill with no `usage` entry is shown as "no recorded calls".
+   */
+  usageTracked?: boolean;
+  /** This skill's usage, joined by name. Undefined means zero recorded calls. */
+  usage?: SkillUsageStat;
+  /** When the gateway began recording usage, to label the young-window case. */
+  observedSince?: string | null;
   onClose: () => void;
   onEdit: (skill: AgentSkill) => void;
   onToggle: (skill: AgentSkill) => void;
@@ -46,6 +57,9 @@ export function SkillDetailPanel({
   skill,
   source,
   relatedSkills = [],
+  usageTracked = false,
+  usage,
+  observedSince,
   onClose,
   onEdit,
   onToggle,
@@ -164,6 +178,9 @@ export function SkillDetailPanel({
             <SkillOverview
               skill={skill}
               relatedSkills={relatedSkills}
+              usageTracked={usageTracked}
+              usage={usage}
+              observedSince={observedSince}
               onSelectRelated={onSelectRelated}
             />
           )}
@@ -204,16 +221,23 @@ export function SkillDetailPanel({
 function SkillOverview({
   skill,
   relatedSkills,
+  usageTracked,
+  usage,
+  observedSince,
   onSelectRelated,
 }: {
   skill: AgentSkill;
   relatedSkills: AgentSkill[];
+  usageTracked: boolean;
+  usage?: SkillUsageStat;
+  observedSince?: string | null;
   onSelectRelated?: (name: string) => void;
 }) {
   const category = skill.dir ? toTitleCase(skill.dir.split('/')[0]) : null;
   const tools = (skill.allowedTools ?? '').split(/\s+/).filter(Boolean);
   const metadataEntries = Object.entries(skill.metadata ?? {});
   const criteria = skill.acceptanceCriteria ?? [];
+  const calls = usage?.calls ?? 0;
 
   return (
     <>
@@ -226,6 +250,22 @@ function SkillOverview({
           <p className="text-[11px] text-text-muted/70 italic">No description.</p>
         )}
       </Section>
+
+      {usageTracked && (
+        <Section title="Usage">
+          {calls > 0 ? (
+            <p className="text-xs text-text-secondary">
+              Last used {usage?.lastCalledAt ? formatLastUsed(usage.lastCalledAt) : 'recently'} ·{' '}
+              {calls} {calls === 1 ? 'call' : 'calls'}
+            </p>
+          ) : (
+            <p className="text-[11px] text-text-muted/80 leading-relaxed">
+              No recorded calls{observedSince ? `, tracking since ${formatLastUsed(observedSince)}` : ''}.
+              Counts are cumulative across served clients, so a zero may mean the skill predates tracking.
+            </p>
+          )}
+        </Section>
+      )}
 
       <Section title="Details">
         <dl className="space-y-1.5">
