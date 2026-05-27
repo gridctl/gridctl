@@ -4,6 +4,14 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Grok Build client support.** `gridctl link grok` / `gridctl unlink grok`
+  now manage the gateway entry in xAI Grok Build's `~/.grok/config.toml`,
+  writing an `[mcp_servers.<name>]` table over native streamable HTTP. It is
+  auto-detected by the interactive `link` and `--all` flows and appears in the
+  web UI client list. This is gridctl's first TOML-based client provisioner.
+
 ### Removed
 
 - **Agent runtime surface removed.** gridctl 0.1.x retires the typed-skill
