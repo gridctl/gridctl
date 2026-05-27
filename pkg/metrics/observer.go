@@ -63,6 +63,14 @@ func (o *Observer) ObserveToolCallWithClient(_ context.Context, obs mcp.ToolCall
 	return o.observe(obs.ServerName, obs.ReplicaID, obs.ClientID, obs.ToolName, obs.Arguments, obs.Result)
 }
 
+// ObservePromptGet records that a registry skill was served via prompts/get,
+// incrementing its cumulative count and last-used timestamp in the parallel
+// prompt-usage namespace. The token/cost path does not apply: prompts are
+// static content, not tool calls.
+func (o *Observer) ObservePromptGet(obs mcp.PromptGetObservation) {
+	o.accumulator.RecordPromptGet(obs.PromptName)
+}
+
 // observe is the shared core of the legacy and client-aware observer entry
 // points. It returns the values needed to set OTel GenAI span attributes
 // for callers that pass the call through ObserveToolCallWithClient; the

@@ -295,6 +295,15 @@ func (b *GatewayBuilder) seedMetricsFromDisk(handler slog.Handler) {
 			logger.Warn("telemetry: seed metrics failed", "server", srv.Name, "path", path, "error", err)
 		}
 	}
+
+	// Seed global prompt (skill) usage from the reserved namespace, persisted
+	// off the stack-global metrics toggle (the registry is not a stack server).
+	if b.stack.Telemetry != nil && b.stack.Telemetry.Persist.Metrics {
+		ppath := state.TelemetryServerPath(b.stack.Name, telemetry.PromptUsageNamespace, "metrics")
+		if err := b.telemetry.metricsFlusher.SeedPromptUsageFromFile(ppath, telemetrySeedLimit); err != nil {
+			logger.Warn("telemetry: seed prompt usage failed", "path", ppath, "error", err)
+		}
+	}
 }
 
 // Run starts the HTTP server, registers MCP servers, and blocks until shutdown.
@@ -475,6 +484,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	accumulator := metrics.NewAccumulator(10000)
 	observer := metrics.NewObserver(counter, accumulator)
 	gateway.SetToolCallObserver(observer)
+	gateway.SetPromptGetObserver(observer)
 	gateway.SetTokenCounter(counter)
 	gateway.SetFormatSavingsRecorder(accumulator)
 	server.SetMetricsAccumulator(accumulator)
@@ -566,6 +576,26 @@ func (b *GatewayBuilder) applyTelemetryConfig(apiServer *api.Server, handler slo
 
 	logger := slog.New(handler)
 	stack := b.stack
+
+	// Prompt (skill) usage persists globally off the stack-global metrics
+	// toggle, independent of per-server opt-in: the skills registry is not a
+	// stack.MCPServers entry, so it has no per-server PersistMetrics switch.
+	// Run this before the early-return below so a stack that flips metrics off
+	// still tears the writer down on hot-reload.
+	if flusher := b.telemetry.metricsFlusher; flusher != nil {
+		if stack.Telemetry != nil && stack.Telemetry.Persist.Metrics {
+			if err := state.EnsureTelemetryServerDir(stack.Name, telemetry.PromptUsageNamespace); err != nil {
+				logger.Warn("telemetry: cannot ensure prompt-usage dir", "error", err)
+			} else {
+				path := state.TelemetryServerPath(stack.Name, telemetry.PromptUsageNamespace, "metrics")
+				if err := flusher.SetPromptUsageWriter(path, telemetryRotationOpts(stack)); err != nil {
+					logger.Warn("telemetry: prompt-usage writer install failed", "path", path, "error", err)
+				}
+			}
+		} else {
+			flusher.RemovePromptUsageWriter()
+		}
+	}
 
 	// Compute desired set per signal.
 	wantLogs := map[string]bool{}

@@ -822,6 +822,112 @@ func TestAccumulator_RestoreToolUsage(t *testing.T) {
 	})
 }
 
+func TestAccumulator_RecordPromptGet(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordPromptGet("code-review")
+	acc.RecordPromptGet("code-review")
+	acc.RecordPromptGet("summarize")
+
+	snap := acc.PromptUsageSnapshot()
+	if got := snap["code-review"].Calls; got != 2 {
+		t.Errorf("code-review calls = %d, want 2", got)
+	}
+	if got := snap["summarize"].Calls; got != 1 {
+		t.Errorf("summarize calls = %d, want 1", got)
+	}
+	if snap["code-review"].LastCalledAt.IsZero() {
+		t.Error("code-review LastCalledAt should be non-zero")
+	}
+}
+
+func TestAccumulator_RecordPromptGet_EmptyNameIsNoOp(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordPromptGet("")
+	if snap := acc.PromptUsageSnapshot(); len(snap) != 0 {
+		t.Errorf("expected empty prompt usage; got %v", snap)
+	}
+}
+
+func TestAccumulator_PromptUsageSnapshot_EmptyAccumulator(t *testing.T) {
+	acc := NewAccumulator(100)
+	if snap := acc.PromptUsageSnapshot(); snap != nil {
+		t.Errorf("PromptUsageSnapshot on fresh accumulator should be nil; got %v", snap)
+	}
+}
+
+func TestAccumulator_PromptUsage_DoesNotTouchToolUsage(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordPromptGet("code-review")
+	if snap := acc.ToolUsageSnapshot(); snap != nil {
+		t.Errorf("prompt usage must not appear in tool usage (Audit Mode); got %v", snap)
+	}
+}
+
+func TestAccumulator_RestorePromptUsage(t *testing.T) {
+	t.Run("seeds counts and continues incrementing", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		last := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
+		acc.RestorePromptUsage(map[string]ToolStat{
+			"code-review": {Calls: 5, LastCalledAt: last},
+		})
+
+		snap := acc.PromptUsageSnapshot()
+		if got := snap["code-review"].Calls; got != 5 {
+			t.Fatalf("restored calls = %d, want 5", got)
+		}
+		if got := snap["code-review"].LastCalledAt; !got.Equal(last) {
+			t.Errorf("restored LastCalledAt = %v, want %v", got, last)
+		}
+
+		acc.RecordPromptGet("code-review")
+		if got := acc.PromptUsageSnapshot()["code-review"].Calls; got != 6 {
+			t.Errorf("calls after restore+record = %d, want 6", got)
+		}
+	})
+
+	t.Run("max-wins keeps a larger in-memory count", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		acc.RecordPromptGet("code-review")
+		acc.RecordPromptGet("code-review")
+		acc.RecordPromptGet("code-review") // 3 live calls
+		acc.RestorePromptUsage(map[string]ToolStat{
+			"code-review": {Calls: 1, LastCalledAt: time.Now()},
+		})
+		if got := acc.PromptUsageSnapshot()["code-review"].Calls; got != 3 {
+			t.Errorf("calls = %d, want 3 (live count must win over smaller restore)", got)
+		}
+	})
+
+	t.Run("zero-call and empty entries are skipped", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		acc.RestorePromptUsage(map[string]ToolStat{
+			"never": {Calls: 0},
+			"":      {Calls: 9},
+		})
+		if snap := acc.PromptUsageSnapshot(); snap != nil {
+			t.Errorf("expected no usage restored; got %v", snap)
+		}
+	})
+
+	t.Run("empty map is a no-op", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		acc.RestorePromptUsage(nil)
+		if snap := acc.PromptUsageSnapshot(); snap != nil {
+			t.Errorf("nil restore should be no-op; got %v", snap)
+		}
+	})
+}
+
+func TestAccumulator_Clear_ResetsPromptUsage(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordPromptGet("code-review")
+	acc.Clear()
+	if snap := acc.PromptUsageSnapshot(); snap != nil {
+		t.Errorf("Clear should reset prompt usage; got %v", snap)
+	}
+}
+
 func TestAccumulator_Clear_ResetsPerClient(t *testing.T) {
 	acc := NewAccumulator(100)
 	acc.RecordReplicaWithClient("s", -1, "client-a", 10, 5)
