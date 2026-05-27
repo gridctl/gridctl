@@ -33,6 +33,8 @@ interface InspectorTabButtonProps {
   onClick: () => void;
   label: string;
   controls: string;
+  /** Optional id so a paired tabpanel can reference it via aria-labelledby. */
+  id?: string;
 }
 
 export function InspectorTabButton({
@@ -40,13 +42,16 @@ export function InspectorTabButton({
   onClick,
   label,
   controls,
+  id,
 }: InspectorTabButtonProps) {
   return (
     <button
       type="button"
+      id={id}
       role="tab"
       aria-selected={active}
       aria-controls={controls}
+      tabIndex={active ? 0 : -1}
       onClick={onClick}
       className={cn(
         'px-3 py-1.5 -mb-px',
