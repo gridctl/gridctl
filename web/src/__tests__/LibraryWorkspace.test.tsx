@@ -291,14 +291,14 @@ describe('LibraryWorkspace', () => {
       expect(screen.queryByText('incident-triage')).not.toBeInTheDocument();
     });
 
-    it('restores the isolate from ?source= and clears it via "Show all"', async () => {
+    it('restores the isolate from ?source= and clears it via the source facet chip', async () => {
       useRegistryStore.setState({ sources: SAMPLE_SOURCES });
       let currentSearch = '?source=acme-skills';
       renderAt('/library?source=acme-skills', (s) => { currentSearch = s; });
 
       expect(screen.queryByText('incident-triage')).not.toBeInTheDocument();
-      // The "Showing …" chip is the persistent clear control.
-      fireEvent.click(screen.getByRole('button', { name: /show all groups/i }));
+      // The source facet chip is now the persistent clear control.
+      fireEvent.click(screen.getByRole('button', { name: /clear source filter/i }));
       await waitFor(() => expect(currentSearch).not.toContain('source='));
       expect(screen.getByText('incident-triage')).toBeInTheDocument();
     });
@@ -312,6 +312,73 @@ describe('LibraryWorkspace', () => {
       await waitFor(() => expect(currentSearch).toContain('source=local'));
       expect(screen.getByText('incident-triage')).toBeInTheDocument();
       expect(screen.queryByText('draft-summarizer')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('sort control', () => {
+    it('round-trips the sort axis through ?sort (default name omitted)', async () => {
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+
+      fireEvent.click(screen.getByRole('button', { name: 'State' }));
+      await waitFor(() => expect(currentSearch).toContain('sort=state'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Name' }));
+      await waitFor(() => expect(currentSearch).not.toContain('sort='));
+    });
+
+    it('sorts by name (alphabetical) by default', () => {
+      // group=none → flat list, so DOM order equals sort order.
+      renderAt('/library?group=none');
+      const disabled = screen.getByText('disabled-skill');
+      const incident = screen.getByText('incident-triage');
+      // 'd' sorts before 'i', so disabled-skill renders first.
+      expect(disabled.compareDocumentPosition(incident) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('reorders by state when ?sort=state (active before disabled)', () => {
+      renderAt('/library?group=none&sort=state');
+      const active = screen.getByText('incident-triage');
+      const disabled = screen.getByText('disabled-skill');
+      expect(active.compareDocumentPosition(disabled) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
+
+  describe('facet chips', () => {
+    it('renders no facet strip when nothing is active', () => {
+      renderAt('/library');
+      expect(screen.queryByRole('group', { name: 'Active filters' })).not.toBeInTheDocument();
+    });
+
+    it('shows a search chip that clears ?q', async () => {
+      let currentSearch = '?q=incident';
+      renderAt('/library?q=incident', (s) => { currentSearch = s; });
+      fireEvent.click(screen.getByRole('button', { name: /clear search filter/i }));
+      await waitFor(() => expect(currentSearch).not.toContain('q='));
+    });
+
+    it('shows a state chip that clears ?filter', async () => {
+      let currentSearch = '?filter=draft';
+      renderAt('/library?filter=draft', (s) => { currentSearch = s; });
+      fireEvent.click(screen.getByRole('button', { name: /clear state filter/i }));
+      await waitFor(() => expect(currentSearch).not.toContain('filter='));
+    });
+
+    it('shows a sort chip that resets sort to default', async () => {
+      let currentSearch = '?sort=files';
+      renderAt('/library?sort=files', (s) => { currentSearch = s; });
+      fireEvent.click(screen.getByRole('button', { name: /clear sort filter/i }));
+      await waitFor(() => expect(currentSearch).not.toContain('sort='));
+    });
+
+    it('clears multiple facets at once with Clear all', async () => {
+      let currentSearch = '?q=incident&filter=active';
+      renderAt('/library?q=incident&filter=active', (s) => { currentSearch = s; });
+      fireEvent.click(screen.getByRole('button', { name: /clear all filters/i }));
+      await waitFor(() => {
+        expect(currentSearch).not.toContain('q=');
+        expect(currentSearch).not.toContain('filter=');
+      });
     });
   });
 });
