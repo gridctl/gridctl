@@ -50,6 +50,11 @@ export interface LibraryGridProps {
   onSelect?: (skill: AgentSkill) => void;
   /** Name of the skill currently shown in the inspector, for active styling. */
   activeSkillName?: string | null;
+  /** Multi-select set (skill names). Optional so the detached grid renders no
+   *  checkboxes. */
+  selectedNames?: Set<string>;
+  /** Toggle a card's membership in the multi-select set. */
+  onToggleSelect?: (skill: AgentSkill) => void;
 }
 
 /**
@@ -75,8 +80,11 @@ export function LibraryGrid({
   onRefresh,
   onSelect,
   activeSkillName = null,
+  selectedNames,
+  onToggleSelect,
 }: LibraryGridProps) {
   const cardHandlers = { onEnable, onDisable, onEdit, onDelete };
+  const selectionActive = (selectedNames?.size ?? 0) > 0;
 
   const renderCard = (skill: AgentSkill, i: number) => (
     <SkillCard
@@ -85,6 +93,9 @@ export function LibraryGrid({
       source={sourceMap?.get(skill.name)}
       onSelect={onSelect}
       isActive={skill.name === activeSkillName}
+      onToggleSelect={onToggleSelect}
+      selected={selectedNames?.has(skill.name) ?? false}
+      selectionActive={selectionActive}
       className={cn(
         'motion-safe:animate-fade-in-scale',
         skill.metadata?.colspan === '2' ? 'col-span-2' : undefined,
