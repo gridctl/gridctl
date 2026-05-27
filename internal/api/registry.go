@@ -168,6 +168,100 @@ func (s *Server) handleRegistrySkillStateChange(w http.ResponseWriter, name, act
 	writeJSON(w, sk)
 }
 
+// setRegistrySkillsBatchRequest is the wire shape for PUT /api/registry/skills/batch.
+type setRegistrySkillsBatchRequest struct {
+	Skills []batchSkillStateEntry `json:"skills"`
+}
+
+type batchSkillStateEntry struct {
+	Name  string             `json:"name"`
+	State registry.ItemState `json:"state"`
+}
+
+// batchSkillResult reports one skill's applied state in a batch success.
+type batchSkillResult struct {
+	Name  string             `json:"name"`
+	State registry.ItemState `json:"state"`
+}
+
+type setRegistrySkillsBatchResponse struct {
+	Skills []batchSkillResult `json:"skills"`
+}
+
+// handleRegistrySkillsBatch sets the state of MULTIPLE skills in one request,
+// then refreshes the registry router once instead of once per skill.
+//
+// Transaction semantics are all-or-nothing on validation: every entry is
+// checked up front (known skill, and a target state of active or disabled)
+// before any write, so an unknown skill (404) or an invalid state (400) rejects
+// the whole batch with nothing changed. Only active and disabled are accepted
+// (bulk actions enable or disable; they never set draft). The write phase
+// itself is best-effort rather than transactional: a mid-batch SaveSkill
+// failure (500) can leave earlier entries persisted, matching the per-skill
+// endpoint's non-atomic behavior across calls. Unlike the MCP tools batch, the
+// registry store has no external-edit/reload model, so there is no 409 path.
+//
+// PUT /api/registry/skills/batch
+func (s *Server) handleRegistrySkillsBatch(w http.ResponseWriter, r *http.Request) {
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req setRegistrySkillsBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.Skills) == 0 {
+		writeJSONError(w, "Request body must include a non-empty skills array", http.StatusBadRequest)
+		return
+	}
+
+	// Validate and resolve every entry before any write touches disk.
+	store := s.registryServer.Store()
+	updates := make([]*registry.AgentSkill, 0, len(req.Skills))
+	seen := make(map[string]struct{}, len(req.Skills))
+	for _, entry := range req.Skills {
+		if entry.Name == "" {
+			writeJSONError(w, "Each skill entry must include a name", http.StatusBadRequest)
+			return
+		}
+		if _, dup := seen[entry.Name]; dup {
+			writeJSONError(w, "Duplicate skill in batch: "+entry.Name, http.StatusBadRequest)
+			return
+		}
+		seen[entry.Name] = struct{}{}
+
+		if entry.State != registry.StateActive && entry.State != registry.StateDisabled {
+			writeJSONError(w, "Skill "+entry.Name+" has invalid state; must be active or disabled", http.StatusBadRequest)
+			return
+		}
+		sk, err := store.GetSkill(entry.Name)
+		if err != nil {
+			writeJSONError(w, "Skill not found: "+entry.Name, http.StatusNotFound)
+			return
+		}
+		sk.State = entry.State
+		updates = append(updates, sk)
+	}
+
+	// All entries validated; apply the writes, then refresh once.
+	for _, sk := range updates {
+		if err := store.SaveSkill(sk); err != nil {
+			writeJSONError(w, "Failed to update skill "+sk.Name+": "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	s.refreshRegistryRouter()
+
+	resp := setRegistrySkillsBatchResponse{Skills: make([]batchSkillResult, 0, len(updates))}
+	for _, sk := range updates {
+		resp.Skills = append(resp.Skills, batchSkillResult{Name: sk.Name, State: sk.State})
+	}
+	writeJSON(w, resp)
+}
+
 // handleRegistrySkillFileList lists files in a skill directory.
 // GET /api/registry/skills/{name}/files
 func (s *Server) handleRegistrySkillFileList(w http.ResponseWriter, r *http.Request) {
