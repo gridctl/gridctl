@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { BookOpen, GitBranch } from 'lucide-react';
+import { BookOpen, Check, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
@@ -20,6 +20,14 @@ export interface SkillCardProps {
   onSelect?: (skill: AgentSkill) => void;
   /** Whether this card is the one shown in the inspector. */
   isActive?: boolean;
+  /** Toggle this card's membership in the multi-select set. When omitted, no
+   *  selection checkbox is rendered (e.g. the detached grid). */
+  onToggleSelect?: (skill: AgentSkill) => void;
+  /** Whether this card is currently in the multi-select set. */
+  selected?: boolean;
+  /** Whether any cards are selected, which keeps every checkbox visible while a
+   *  selection is in progress, not just on hover. */
+  selectionActive?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -33,6 +41,9 @@ export const SkillCard = memo(({
   source,
   onSelect,
   isActive = false,
+  onToggleSelect,
+  selected = false,
+  selectionActive = false,
   className,
   style,
 }: SkillCardProps) => {
@@ -88,8 +99,27 @@ export const SkillCard = memo(({
             : undefined
         }
       >
-        {/* Header: icon + name + state badge */}
+        {/* Header: optional select checkbox + icon + name + state badge */}
         <div className="flex items-start gap-2">
+          {onToggleSelect && (
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={selected}
+              aria-label={selected ? `Deselect ${skill.name}` : `Select ${skill.name}`}
+              onClick={(e) => { e.stopPropagation(); onToggleSelect(skill); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
+              className={cn(
+                'flex-shrink-0 mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-all duration-150',
+                selected
+                  ? 'bg-primary/20 border-primary/50 text-primary opacity-100'
+                  : 'border-border/50 text-transparent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+                selectionActive && !selected && 'opacity-100',
+              )}
+            >
+              <Check size={11} />
+            </button>
+          )}
           <div className="p-1.5 rounded-md border bg-surface-highlight/60 border-border/40 flex-shrink-0 mt-0.5 transition-colors duration-200 group-hover:bg-primary/10 group-hover:border-primary/20 group-focus-within:bg-primary/10 group-focus-within:border-primary/20">
             <BookOpen size={14} className="text-text-muted transition-colors duration-200 group-hover:text-primary/70 group-focus-within:text-primary/70" />
           </div>
