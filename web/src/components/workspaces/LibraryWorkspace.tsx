@@ -34,6 +34,7 @@ import { WorkspaceShell } from '../layout/WorkspaceShell';
 import type { AgentSkill, ItemState, SkillSourceStatus } from '../../types';
 
 type FilterTab = 'all' | ItemState;
+type SortMode = 'name' | 'state' | 'files';
 
 function isGroupMode(value: string | null): value is GroupMode {
   return value === 'source' || value === 'category' || value === 'none';
@@ -41,6 +42,10 @@ function isGroupMode(value: string | null): value is GroupMode {
 
 function isFilterTab(value: string | null): value is FilterTab {
   return value === 'active' || value === 'draft' || value === 'disabled' || value === 'all';
+}
+
+function isSortMode(value: string | null): value is SortMode {
+  return value === 'name' || value === 'state' || value === 'files';
 }
 
 /**
@@ -157,6 +162,37 @@ export function LibraryWorkspace() {
         const next = new URLSearchParams(prev);
         if (name) next.set('selected', name);
         else next.delete('selected');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  // Sort axis — URL-synced as ?sort, with the default ('name') omitted.
+  const sortParam = searchParams.get('sort');
+  const sortMode: SortMode = isSortMode(sortParam) ? sortParam : 'name';
+  const setSortMode = useCallback((mode: SortMode) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (mode === 'name') next.delete('sort');
+        else next.set('sort', mode);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  // Clear every removable facet in one update. Grouping (?group) is a view axis,
+  // not a facet, so it is intentionally left untouched.
+  const clearAllFacets = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('q');
+        next.delete('filter');
+        next.delete('source');
+        next.delete('sort');
         return next;
       },
       { replace: true },
@@ -340,7 +376,23 @@ export function LibraryWorkspace() {
     });
   }, [displayedSkills, groupMode, activeSource, sourceMap]);
 
-  // Human-readable label for the active isolate, shown in the "Show all" chip.
+  // Sort a copy of the visible set (never mutate the source). LibraryGrid
+  // buckets in array order, so sorting here also orders within each group;
+  // group order itself is decided by the grid and unaffected.
+  const sortedSkills = useMemo(() => {
+    const byName = (a: AgentSkill, b: AgentSkill) => a.name.localeCompare(b.name);
+    const copy = [...visibleSkills];
+    if (sortMode === 'state') {
+      const order: Record<ItemState, number> = { active: 0, draft: 1, disabled: 2 };
+      return copy.sort((a, b) => order[a.state] - order[b.state] || byName(a, b));
+    }
+    if (sortMode === 'files') {
+      return copy.sort((a, b) => b.fileCount - a.fileCount || byName(a, b));
+    }
+    return copy.sort(byName);
+  }, [visibleSkills, sortMode]);
+
+  // Human-readable label for the active source isolate, shown in its facet chip.
   const activeSourceLabel = useMemo(() => {
     if (!activeSource) return null;
     if (activeSource === 'local') return 'My Skills';
@@ -420,25 +472,24 @@ export function LibraryWorkspace() {
               )}
             </div>
 
-            {hasSources && (
-              <div className="flex items-center justify-end gap-2 flex-wrap">
-                <GroupByControl mode={groupMode} onChange={setGroupMode} />
-              </div>
-            )}
+            {/* Controls row: sort axis (always) and, when sources exist, the
+                grouping axis on the right. */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <SortControl mode={sortMode} onChange={setSortMode} />
+              {hasSources && <GroupByControl mode={groupMode} onChange={setGroupMode} />}
+            </div>
 
-            {groupMode === 'source' && activeSource && activeSourceLabel && (
-              <div className="flex">
-                <button
-                  onClick={() => setActiveSource(null)}
-                  aria-label={`Showing ${activeSourceLabel} only — show all groups`}
-                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-primary/25 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
-                >
-                  <span className="text-text-muted">Showing</span>
-                  <span className="font-medium">{activeSourceLabel}</span>
-                  <X size={11} />
-                </button>
-              </div>
-            )}
+            <FacetChips
+              searchQuery={searchQuery}
+              activeTab={activeTab}
+              sortMode={sortMode}
+              sourceLabel={groupMode === 'source' ? activeSourceLabel : null}
+              onClearSearch={() => setSearchQuery('')}
+              onClearState={() => setActiveTab('all')}
+              onClearSource={() => setActiveSource(null)}
+              onClearSort={() => setSortMode('name')}
+              onClearAll={clearAllFacets}
+            />
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-dark">
@@ -488,7 +539,7 @@ export function LibraryWorkspace() {
 
             {!isLoading && visibleSkills.length > 0 && (
               <LibraryGrid
-                skills={visibleSkills}
+                skills={sortedSkills}
                 hasSearch={searchQuery.length > 0}
                 groupMode={groupMode}
                 sourceMap={sourceMap}
@@ -564,6 +615,102 @@ function GroupByControl({ mode, onChange }: { mode: GroupMode; onChange: (m: Gro
           {opt.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+const SORT_OPTIONS: { key: SortMode; label: string }[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'state', label: 'State' },
+  { key: 'files', label: 'Files' },
+];
+
+const SORT_LABEL: Record<SortMode, string> = { name: 'Name', state: 'State', files: 'Files' };
+
+/** Segmented control to switch the Library's sort axis. */
+function SortControl({ mode, onChange }: { mode: SortMode; onChange: (m: SortMode) => void }) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Sort skills by">
+      <span className="text-[10px] uppercase tracking-wider text-text-muted/60 mr-0.5">Sort</span>
+      {SORT_OPTIONS.map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => onChange(opt.key)}
+          aria-pressed={mode === opt.key}
+          className={cn(
+            'px-2 py-1 rounded-md text-[11px] font-medium transition-colors',
+            mode === opt.key
+              ? 'bg-primary/10 text-primary border border-primary/25'
+              : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface FacetChipsProps {
+  searchQuery: string;
+  activeTab: FilterTab;
+  sortMode: SortMode;
+  sourceLabel: string | null;
+  onClearSearch: () => void;
+  onClearState: () => void;
+  onClearSource: () => void;
+  onClearSort: () => void;
+  onClearAll: () => void;
+}
+
+/**
+ * One strip of removable chips, a chip per active non-default facet. Each chip
+ * reads from and clears the shared URL state, so it stays in sync with the KPI
+ * cards, search box, and grouping control. Renders nothing when no facet is
+ * active. This subsumes the former standalone source-isolate chip.
+ */
+function FacetChips({
+  searchQuery,
+  activeTab,
+  sortMode,
+  sourceLabel,
+  onClearSearch,
+  onClearState,
+  onClearSource,
+  onClearSort,
+  onClearAll,
+}: FacetChipsProps) {
+  const chips: { key: string; label: string; value: string; onClear: () => void }[] = [];
+  if (searchQuery.trim()) chips.push({ key: 'search', label: 'Search', value: searchQuery.trim(), onClear: onClearSearch });
+  if (activeTab !== 'all') chips.push({ key: 'state', label: 'State', value: activeTab, onClear: onClearState });
+  if (sourceLabel) chips.push({ key: 'source', label: 'Source', value: sourceLabel, onClear: onClearSource });
+  if (sortMode !== 'name') chips.push({ key: 'sort', label: 'Sort', value: SORT_LABEL[sortMode], onClear: onClearSort });
+
+  if (chips.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Active filters">
+      {chips.map((chip) => (
+        <button
+          key={chip.key}
+          onClick={chip.onClear}
+          aria-label={`Clear ${chip.label} filter: ${chip.value}`}
+          className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-primary/25 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+        >
+          <span className="text-text-muted">{chip.label}</span>
+          <span className="font-medium">{chip.value}</span>
+          <X size={11} />
+        </button>
+      ))}
+      {chips.length >= 2 && (
+        <button
+          onClick={onClearAll}
+          aria-label="Clear all filters"
+          className="text-[10px] px-2 py-0.5 rounded-full text-text-muted hover:text-text-secondary hover:bg-surface-highlight transition-colors"
+        >
+          Clear all
+        </button>
+      )}
     </div>
   );
 }
