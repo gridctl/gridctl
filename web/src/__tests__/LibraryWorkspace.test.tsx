@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { LibraryWorkspace } from '../components/workspaces/LibraryWorkspace';
 import { useRegistryStore } from '../stores/useRegistryStore';
+import { setRegistrySkillsBatch } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import type { AgentSkill, SkillSourceStatus } from '../types';
@@ -21,6 +22,7 @@ vi.mock('../lib/api', () => ({
   activateRegistrySkill: vi.fn().mockResolvedValue(undefined),
   disableRegistrySkill: vi.fn().mockResolvedValue(undefined),
   deleteRegistrySkill: vi.fn().mockResolvedValue(undefined),
+  setRegistrySkillsBatch: vi.fn().mockResolvedValue({ skills: [] }),
   // Used by SkillFileTree (mounted only on the inspector's Files tab).
   fetchSkillFiles: vi.fn().mockResolvedValue([]),
 }));
@@ -379,6 +381,47 @@ describe('LibraryWorkspace', () => {
         expect(currentSearch).not.toContain('q=');
         expect(currentSearch).not.toContain('filter=');
       });
+    });
+  });
+
+  describe('table view + multi-select', () => {
+    it('toggles to the table view via ?view=table', async () => {
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+      await waitFor(() => expect(currentSearch).toContain('view=table'));
+      // The table-only header select-all checkbox is now present.
+      expect(screen.getByRole('checkbox', { name: /select all skills/i })).toBeInTheDocument();
+    });
+
+    it('selecting a card reveals the bulk action bar with a live count', async () => {
+      renderAt('/library?group=none');
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select incident-triage' }));
+      expect(await screen.findByRole('region', { name: 'Bulk actions' })).toBeInTheDocument();
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+    });
+
+    it('bulk Enable calls the batch endpoint for the selection', async () => {
+      renderAt('/library?group=none');
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select draft-summarizer' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Enable' }));
+      await waitFor(() =>
+        expect(setRegistrySkillsBatch).toHaveBeenCalledWith([{ name: 'draft-summarizer', state: 'active' }]),
+      );
+    });
+
+    it('select-all in the table selects every row', async () => {
+      renderAt('/library?view=table');
+      fireEvent.click(screen.getByRole('checkbox', { name: /select all skills/i }));
+      expect(await screen.findByText('3 selected')).toBeInTheDocument();
+    });
+
+    it('clears the selection with the bulk bar Clear button', async () => {
+      renderAt('/library?group=none');
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select incident-triage' }));
+      expect(await screen.findByText('1 selected')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /clear selection/i }));
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Bulk actions' })).not.toBeInTheDocument());
     });
   });
 });
