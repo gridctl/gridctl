@@ -25,6 +25,7 @@ import { SkillDetailPanel } from '../registry/SkillDetailPanel';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { showToast } from '../ui/Toast';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
+import { useSkillUsage } from '../../hooks/useSkillUsage';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -40,10 +41,10 @@ import {
 } from '../../lib/api';
 import { extractRepoInfo } from '../../lib/repo';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
-import type { AgentSkill, ItemState, SkillSourceStatus } from '../../types';
+import type { AgentSkill, ItemState, SkillSourceStatus, SkillUsageStat } from '../../types';
 
 type FilterTab = 'all' | ItemState;
-type SortMode = 'name' | 'state' | 'files';
+type SortMode = 'name' | 'state' | 'files' | 'usage';
 
 function isGroupMode(value: string | null): value is GroupMode {
   return value === 'source' || value === 'category' || value === 'none';
@@ -54,7 +55,7 @@ function isFilterTab(value: string | null): value is FilterTab {
 }
 
 function isSortMode(value: string | null): value is SortMode {
-  return value === 'name' || value === 'state' || value === 'files';
+  return value === 'name' || value === 'state' || value === 'files' || value === 'usage';
 }
 
 /**
@@ -73,6 +74,30 @@ export function LibraryWorkspace() {
   // the store instead of starting a second polling loop here.
   const skills = useRegistryStore((s) => s.skills);
   const sources = useRegistryStore((s) => s.sources);
+
+  // Per-skill usage, fetched separately and joined by name (mirroring the
+  // provenance source join) so the registry list payload stays untouched. When
+  // the endpoint is unavailable (no metrics accumulator wired) usage stays null
+  // and every usage surface (column, KPI, inspector line) is omitted.
+  const { usage } = useSkillUsage();
+  const usageAvailable = usage !== null;
+  const observedSince = usage?.observedSince ?? null;
+  const usageMap = useMemo(() => {
+    if (!usage) return null;
+    const map = new Map<string, SkillUsageStat>();
+    for (const [name, stat] of Object.entries(usage.skills)) map.set(name, stat);
+    return map;
+  }, [usage]);
+
+  // A skill is "unused" when usage data exists and it has zero recorded calls
+  // (no entry, or an entry with calls === 0).
+  const isUnused = useCallback(
+    (name: string) => {
+      const u = usageMap?.get(name);
+      return !u || u.calls === 0;
+    },
+    [usageMap],
+  );
 
   // null means "not loaded yet"; the deep-link error toast must wait for a
   // resolved fetch so a transient mid-fetch render doesn't false-positive.
@@ -208,6 +233,42 @@ export function LibraryWorkspace() {
     );
   }, [setSearchParams]);
 
+  // Usage facet: a new axis beyond the state filter, URL-synced as
+  // ?usage=unused (the only value today) and omitted otherwise. Threaded like
+  // the source isolate. Effective only when usage data is available.
+  const usageParam = searchParams.get('usage');
+  const usageFilter: 'unused' | null = usageParam === 'unused' ? 'unused' : null;
+  const usageFilterActive = usageFilter === 'unused' && usageAvailable;
+  const setUsageFilter = useCallback((filter: 'unused' | null) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (filter === 'unused') next.set('usage', 'unused');
+        else next.delete('usage');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+  // Enabling "Never used" also clears any state tab: the facet is active-only,
+  // so a draft/disabled tab would contradict it and yield an empty list while
+  // the (search-aware, tab-independent) KPI count still reads non-zero.
+  const toggleNeverUsed = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (usageFilter === 'unused') {
+          next.delete('usage');
+        } else {
+          next.set('usage', 'unused');
+          next.delete('filter');
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }, [usageFilter, setSearchParams]);
+
   // Clear every removable facet in one update. Grouping (?group) is a view axis,
   // not a facet, so it is intentionally left untouched.
   const clearAllFacets = useCallback(() => {
@@ -218,6 +279,7 @@ export function LibraryWorkspace() {
         next.delete('filter');
         next.delete('source');
         next.delete('sort');
+        next.delete('usage');
         return next;
       },
       { replace: true },
@@ -411,15 +473,24 @@ export function LibraryWorkspace() {
     return searchResults.filter((s) => s.state === activeTab);
   }, [searchResults, activeTab]);
 
-  // Apply the provenance isolate on top of search + tab filtering, so empty
-  // states and the grid see a coherent set.
+  // Apply the provenance isolate and the usage facet on top of search + tab
+  // filtering, so empty states and the grid see a coherent set. The usage
+  // facet keeps only active skills with zero recorded calls, and applies only
+  // when usage data is available (a stale ?usage on an unavailable endpoint is
+  // inert rather than hiding everything).
   const visibleSkills = useMemo(() => {
-    if (groupMode !== 'source' || !activeSource) return displayedSkills;
-    return displayedSkills.filter((s) => {
-      const src = sourceMap.get(s.name);
-      return activeSource === 'local' ? !src : src?.name === activeSource;
-    });
-  }, [displayedSkills, groupMode, activeSource, sourceMap]);
+    let result = displayedSkills;
+    if (groupMode === 'source' && activeSource) {
+      result = result.filter((s) => {
+        const src = sourceMap.get(s.name);
+        return activeSource === 'local' ? !src : src?.name === activeSource;
+      });
+    }
+    if (usageFilterActive) {
+      result = result.filter((s) => s.state === 'active' && isUnused(s.name));
+    }
+    return result;
+  }, [displayedSkills, groupMode, activeSource, sourceMap, usageFilterActive, isUnused]);
 
   // Sort a copy of the visible set (never mutate the source). LibraryGrid
   // buckets in array order, so sorting here also orders within each group;
@@ -434,8 +505,29 @@ export function LibraryWorkspace() {
     if (sortMode === 'files') {
       return copy.sort((a, b) => b.fileCount - a.fileCount || byName(a, b));
     }
+    if (sortMode === 'usage') {
+      // Most recently used first, then by call count, then by name. A missing
+      // timestamp or count sorts as zero, so never-used skills sink to the end.
+      const lastMs = (name: string) => {
+        const t = usageMap?.get(name)?.lastCalledAt;
+        const ms = t ? Date.parse(t) : 0;
+        return Number.isNaN(ms) ? 0 : ms;
+      };
+      const calls = (name: string) => usageMap?.get(name)?.calls ?? 0;
+      return copy.sort(
+        (a, b) => lastMs(b.name) - lastMs(a.name) || calls(b.name) - calls(a.name) || byName(a, b),
+      );
+    }
     return copy.sort(byName);
-  }, [visibleSkills, sortMode]);
+  }, [visibleSkills, sortMode, usageMap]);
+
+  // "Never used" KPI count: active skills with zero recorded calls, computed
+  // within the search results (search-aware, like the state KPIs) and only
+  // when usage data exists. null hides the KPI entirely (no zero-state noise).
+  const neverUsedCount = useMemo(() => {
+    if (!usageAvailable) return null;
+    return searchResults.filter((s) => s.state === 'active' && isUnused(s.name)).length;
+  }, [usageAvailable, searchResults, isUnused]);
 
   // Reconcile the selection against the live skill set so a skill deleted out
   // from under the selection never lands in a bulk request (which would reject
@@ -506,6 +598,9 @@ export function LibraryWorkspace() {
       skill={selectedSkillObj}
       source={selectedSkillObj ? sourceMap.get(selectedSkillObj.name) : undefined}
       relatedSkills={relatedSkills}
+      usageTracked={usageAvailable}
+      usage={selectedSkillObj ? usageMap?.get(selectedSkillObj.name) : undefined}
+      observedSince={observedSince}
       onClose={() => setSelectedName(null)}
       onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
       onToggle={(s) => (s.state === 'active' ? handleDisable(s) : handleEnable(s))}
@@ -530,6 +625,9 @@ export function LibraryWorkspace() {
             counts={tabCounts}
             activeTab={activeTab}
             onSelectFilter={setActiveTab}
+            neverUsedCount={neverUsedCount}
+            usageFilterActive={usageFilterActive}
+            onToggleNeverUsed={toggleNeverUsed}
             compact={compact}
           />
 
@@ -558,7 +656,7 @@ export function LibraryWorkspace() {
             {/* Controls row: sort axis (always), then view controls, plus the
                 grouping axis in cards view when sources exist. */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <SortControl mode={sortMode} onChange={setSortMode} />
+              <SortControl mode={sortMode} onChange={setSortMode} usageAvailable={usageAvailable} />
               <div className="flex items-center gap-2 flex-wrap">
                 {hasSources && viewMode === 'cards' && (
                   <GroupByControl mode={groupMode} onChange={setGroupMode} />
@@ -579,10 +677,12 @@ export function LibraryWorkspace() {
               activeTab={activeTab}
               sortMode={sortMode}
               sourceLabel={groupMode === 'source' ? activeSourceLabel : null}
+              usageUnused={usageFilterActive}
               onClearSearch={() => setSearchQuery('')}
               onClearState={() => setActiveTab('all')}
               onClearSource={() => setActiveSource(null)}
               onClearSort={() => setSortMode('name')}
+              onClearUsage={() => setUsageFilter(null)}
               onClearAll={clearAllFacets}
             />
           </div>
@@ -678,6 +778,7 @@ export function LibraryWorkspace() {
                 onSelect={(s) => setSelectedName(s.name)}
                 activeSkillName={selectedName}
                 sourceMap={sourceMap}
+                usageMap={usageMap ?? undefined}
                 onEnable={handleEnable}
                 onDisable={handleDisable}
                 onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
@@ -778,14 +879,18 @@ const SORT_OPTIONS: { key: SortMode; label: string }[] = [
   { key: 'files', label: 'Files' },
 ];
 
-const SORT_LABEL: Record<SortMode, string> = { name: 'Name', state: 'State', files: 'Files' };
+// "Last used" sorts by usage; only offered when usage data is available.
+const USAGE_SORT_OPTION: { key: SortMode; label: string } = { key: 'usage', label: 'Last used' };
+
+const SORT_LABEL: Record<SortMode, string> = { name: 'Name', state: 'State', files: 'Files', usage: 'Last used' };
 
 /** Segmented control to switch the Library's sort axis. */
-function SortControl({ mode, onChange }: { mode: SortMode; onChange: (m: SortMode) => void }) {
+function SortControl({ mode, onChange, usageAvailable }: { mode: SortMode; onChange: (m: SortMode) => void; usageAvailable: boolean }) {
+  const options = usageAvailable ? [...SORT_OPTIONS, USAGE_SORT_OPTION] : SORT_OPTIONS;
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Sort skills by">
       <span className="text-[10px] uppercase tracking-wider text-text-muted/60 mr-0.5">Sort</span>
-      {SORT_OPTIONS.map((opt) => (
+      {options.map((opt) => (
         <button
           key={opt.key}
           onClick={() => onChange(opt.key)}
@@ -809,10 +914,12 @@ interface FacetChipsProps {
   activeTab: FilterTab;
   sortMode: SortMode;
   sourceLabel: string | null;
+  usageUnused: boolean;
   onClearSearch: () => void;
   onClearState: () => void;
   onClearSource: () => void;
   onClearSort: () => void;
+  onClearUsage: () => void;
   onClearAll: () => void;
 }
 
@@ -827,16 +934,19 @@ function FacetChips({
   activeTab,
   sortMode,
   sourceLabel,
+  usageUnused,
   onClearSearch,
   onClearState,
   onClearSource,
   onClearSort,
+  onClearUsage,
   onClearAll,
 }: FacetChipsProps) {
   const chips: { key: string; label: string; value: string; onClear: () => void }[] = [];
   if (searchQuery.trim()) chips.push({ key: 'search', label: 'Search', value: searchQuery.trim(), onClear: onClearSearch });
   if (activeTab !== 'all') chips.push({ key: 'state', label: 'State', value: activeTab, onClear: onClearState });
   if (sourceLabel) chips.push({ key: 'source', label: 'Source', value: sourceLabel, onClear: onClearSource });
+  if (usageUnused) chips.push({ key: 'usage', label: 'Usage', value: 'Never used', onClear: onClearUsage });
   if (sortMode !== 'name') chips.push({ key: 'sort', label: 'Sort', value: SORT_LABEL[sortMode], onClear: onClearSort });
 
   if (chips.length === 0) return null;
@@ -969,8 +1079,9 @@ const STATE_DOT: Record<ItemState, string> = {
 
 // KPI cards double as the state filter: clicking one applies that ?filter, and
 // "Total" clears it. Counts are search-aware (they come from tabCounts),
-// matching the tab strip these cards replaced. Appending a metric here (e.g.
-// failing validation, once that data exists) extends the row without churn.
+// matching the tab strip these cards replaced. The "Never used" KPI is a
+// separate usage axis (?usage) appended after this row in LibraryHeader, and
+// only when usage data exists.
 const KPI_METRICS: { key: FilterTab; label: string; dot: ItemState | null }[] = [
   { key: 'all', label: 'Total', dot: null },
   { key: 'active', label: 'Active', dot: 'active' },
@@ -985,10 +1096,15 @@ interface LibraryHeaderProps {
   counts: Record<FilterTab, number>;
   activeTab: FilterTab;
   onSelectFilter: (tab: FilterTab) => void;
+  // "Never used" is a usage-data KPI on a separate axis from the state filter.
+  // null hides it (usage unavailable), so the row carries no zero-state noise.
+  neverUsedCount: number | null;
+  usageFilterActive: boolean;
+  onToggleNeverUsed: () => void;
   compact: boolean;
 }
 
-function LibraryHeader({ onNewSkill, onRefresh, onPopout, counts, activeTab, onSelectFilter, compact }: LibraryHeaderProps) {
+function LibraryHeader({ onNewSkill, onRefresh, onPopout, counts, activeTab, onSelectFilter, neverUsedCount, usageFilterActive, onToggleNeverUsed, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
   return (
     <header className={cn(
@@ -1014,7 +1130,7 @@ function LibraryHeader({ onNewSkill, onRefresh, onPopout, counts, activeTab, onS
       {/* KPI summary cards — the first-class dashboard signal, and the primary
           state filter. They replace the old tab strip, so the URL contract
           (?filter) and selected-state live in exactly one place. */}
-      <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter skills by state">
+      <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter skills by state and usage">
         {KPI_METRICS.map((metric) => (
           <KpiCard
             key={metric.key}
@@ -1026,6 +1142,18 @@ function LibraryHeader({ onNewSkill, onRefresh, onPopout, counts, activeTab, onS
             onClick={() => onSelectFilter(metric.key)}
           />
         ))}
+        {/* "Never used" is a reserved slot that renders only when usage data
+            exists. It toggles the ?usage=unused facet rather than ?filter. */}
+        {neverUsedCount !== null && (
+          <KpiCard
+            label="Never used"
+            count={neverUsedCount}
+            dot={null}
+            active={usageFilterActive}
+            compact={compact}
+            onClick={onToggleNeverUsed}
+          />
+        )}
       </div>
     </header>
   );
