@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -539,6 +539,18 @@ export async function fetchRegistryStatus(): Promise<RegistryStatus> {
 
 export async function fetchRegistrySkills(): Promise<AgentSkill[]> {
   return fetchJSON<AgentSkill[]>('/api/registry/skills');
+}
+
+/**
+ * Per-skill prompts/get usage: cumulative call counts plus last-called
+ * timestamps, keyed by skill name. Powers the Library "Last used" column,
+ * the inspector usage line, and the "Never used" facet. Joined to skills by
+ * name, so the registry list payload stays unchanged. Survives gateway
+ * restarts when metrics persistence is enabled.
+ * GET /api/skills/usage
+ */
+export async function fetchSkillUsage(): Promise<SkillUsageResponse> {
+  return fetchJSON<SkillUsageResponse>('/api/skills/usage');
 }
 
 export async function fetchRegistrySkill(name: string): Promise<AgentSkill> {

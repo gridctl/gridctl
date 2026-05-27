@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { LibraryWorkspace } from '../components/workspaces/LibraryWorkspace';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { setRegistrySkillsBatch } from '../lib/api';
+import { setRegistrySkillsBatch, fetchSkillUsage } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import type { AgentSkill, SkillSourceStatus } from '../types';
@@ -23,6 +23,9 @@ vi.mock('../lib/api', () => ({
   disableRegistrySkill: vi.fn().mockResolvedValue(undefined),
   deleteRegistrySkill: vi.fn().mockResolvedValue(undefined),
   setRegistrySkillsBatch: vi.fn().mockResolvedValue({ skills: [] }),
+  // Usage overlay (joined by name). Defaults to "available, no calls yet";
+  // tests that exercise usage UI override it with mockResolvedValueOnce.
+  fetchSkillUsage: vi.fn().mockResolvedValue({ observedSince: null, skills: {} }),
   // Used by SkillFileTree (mounted only on the inspector's Files tab).
   fetchSkillFiles: vi.fn().mockResolvedValue([]),
 }));
@@ -422,6 +425,76 @@ describe('LibraryWorkspace', () => {
       expect(await screen.findByText('1 selected')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: /clear selection/i }));
       await waitFor(() => expect(screen.queryByRole('region', { name: 'Bulk actions' })).not.toBeInTheDocument());
+    });
+  });
+
+  describe('usage analytics', () => {
+    // Two active skills (one used, one never used), plus a draft. The "Never
+    // used" KPI counts active + zero-call skills, so it should report 1.
+    const USAGE_SKILLS: AgentSkill[] = [
+      // @ts-expect-error partial AgentSkill is fine for the test
+      { name: 'used-skill', description: 'used', state: 'active', dir: 'ops', fileCount: 1 },
+      // @ts-expect-error partial AgentSkill is fine for the test
+      { name: 'unused-skill', description: 'never run', state: 'active', dir: 'ops', fileCount: 1 },
+      // @ts-expect-error partial AgentSkill is fine for the test
+      { name: 'draft-one', description: 'draft', state: 'draft', dir: 'tools', fileCount: 1 },
+    ];
+
+    const seedUsage = () => {
+      useRegistryStore.setState({ skills: USAGE_SKILLS });
+      vi.mocked(fetchSkillUsage).mockResolvedValueOnce({
+        observedSince: '2026-05-01T00:00:00Z',
+        skills: { 'used-skill': { calls: 5, lastCalledAt: '2026-05-26T00:00:00Z' } },
+      });
+    };
+
+    it('shows a "Never used" KPI counting active zero-call skills', async () => {
+      seedUsage();
+      renderAt('/library');
+      // used-skill has calls; unused-skill is active with none → count 1.
+      expect(await screen.findByRole('button', { name: 'Never used (1)' })).toBeInTheDocument();
+    });
+
+    it('applies ?usage=unused and filters to unused active skills on KPI click', async () => {
+      seedUsage();
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Never used (1)' }));
+      await waitFor(() => expect(currentSearch).toContain('usage=unused'));
+      // Only the unused active skill remains; the used one is filtered out.
+      expect(screen.getByText('unused-skill')).toBeInTheDocument();
+      expect(screen.queryByText('used-skill')).not.toBeInTheDocument();
+      // The draft is not active, so it is excluded too.
+      expect(screen.queryByText('draft-one')).not.toBeInTheDocument();
+    });
+
+    it('shows a removable usage chip that clears ?usage', async () => {
+      seedUsage();
+      let currentSearch = '?usage=unused';
+      renderAt('/library?usage=unused', (s) => { currentSearch = s; });
+
+      fireEvent.click(await screen.findByRole('button', { name: /clear usage filter/i }));
+      await waitFor(() => expect(currentSearch).not.toContain('usage='));
+    });
+
+    it('renders a sortable "Last used" column in the table when usage exists', async () => {
+      seedUsage();
+      renderAt('/library?view=table');
+      // Scope to the column header (a "Last used" sort button also appears in
+      // the SortControl, so an unscoped button query would match two elements).
+      expect(await screen.findByRole('columnheader', { name: /last used/i })).toBeInTheDocument();
+    });
+
+    it('hides all usage UI when the usage endpoint is unavailable', async () => {
+      useRegistryStore.setState({ skills: USAGE_SKILLS });
+      vi.mocked(fetchSkillUsage).mockRejectedValueOnce(new Error('no accumulator'));
+      renderAt('/library?view=table');
+
+      // The state KPIs still render, but the usage KPI and column never appear.
+      expect(await screen.findByRole('button', { name: 'Active (2)' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /never used/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /last used/i })).not.toBeInTheDocument();
     });
   });
 });
