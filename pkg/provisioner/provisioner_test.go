@@ -51,7 +51,7 @@ func TestNewRegistry(t *testing.T) {
 	slugs := r.AllSlugs()
 
 	expected := []string{
-		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "opencode",
+		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "opencode", "grok",
 		"continue", "cline", "anythingllm", "roo", "zed", "goose",
 	}
 	if len(slugs) != len(expected) {
@@ -79,6 +79,7 @@ func TestRegistry_FindBySlug(t *testing.T) {
 		{"vscode", true, "VS Code"},
 		{"gemini", true, "Gemini CLI"},
 		{"opencode", true, "OpenCode"},
+		{"grok", true, "Grok Build"},
 		{"continue", true, "Continue"},
 		{"cline", true, "Cline"},
 		{"anythingllm", true, "AnythingLLM"},
@@ -971,6 +972,7 @@ func TestClientProvisioners_ImplementInterface(t *testing.T) {
 		newVSCode(),
 		newGeminiCLI(),
 		newOpenCode(),
+		newGrokBuild(),
 		newContinueDev(),
 		newCline(),
 		newAnythingLLM(),
@@ -1082,6 +1084,22 @@ func writeTestYAML(t *testing.T, path string, data map[string]any) {
 	t.Helper()
 	if err := writeYAMLFile(path, data); err != nil {
 		t.Fatalf("writing YAML %s: %v", path, err)
+	}
+}
+
+func readTestTOML(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := readTOMLFile(path)
+	if err != nil {
+		t.Fatalf("reading TOML %s: %v", path, err)
+	}
+	return data
+}
+
+func writeTestTOML(t *testing.T, path string, data map[string]any) {
+	t.Helper()
+	if err := writeTOMLFile(path, data); err != nil {
+		t.Fatalf("writing TOML %s: %v", path, err)
 	}
 }
 
@@ -2563,6 +2581,7 @@ func TestTransportDescriptionFor(t *testing.T) {
 		{"Claude Code", newClaudeCode(), "native HTTP"},
 		{"GeminiCLI", newGeminiCLI(), "native HTTP"},
 		{"OpenCode", newOpenCode(), "native HTTP"},
+		{"Grok Build", newGrokBuild(), "native HTTP"},
 		{"VS Code", newVSCode(), "native SSE"},
 		{"Zed", newZed(), "native SSE"},
 		{"Goose", newGoose(), "native SSE"},
@@ -2586,7 +2605,7 @@ func TestNewRegistry_WithNewClients(t *testing.T) {
 	slugs := r.AllSlugs()
 
 	expected := []string{
-		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "opencode",
+		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "opencode", "grok",
 		"continue", "cline", "anythingllm", "roo", "zed", "goose",
 	}
 	if len(slugs) != len(expected) {
@@ -2609,6 +2628,7 @@ func TestRegistry_FindBySlug_NewClients(t *testing.T) {
 	}{
 		{"claude-code", true, "Claude Code"},
 		{"gemini", true, "Gemini CLI"},
+		{"grok", true, "Grok Build"},
 		{"zed", true, "Zed"},
 		{"goose", true, "Goose"},
 	}
@@ -2691,6 +2711,7 @@ func TestNewClientProvisioners_ImplementInterface(t *testing.T) {
 		newClaudeCode(),
 		newGeminiCLI(),
 		newOpenCode(),
+		newGrokBuild(),
 		newZed(),
 		newGoose(),
 	}
@@ -2707,5 +2728,316 @@ func TestNewClientProvisioners_ImplementInterface(t *testing.T) {
 				t.Error("NeedsBridge() should be false for new clients")
 			}
 		})
+	}
+}
+
+// --- Grok Build Tests ---
+
+func grokLinkOpts() LinkOptions {
+	return LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+}
+
+func TestGrokBuild_Link(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	g := newGrokBuild()
+	opts := grokLinkOpts()
+
+	if err := g.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestTOML(t, configPath)
+	servers := data["mcp_servers"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	if entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected url=http://localhost:8180/mcp, got %v", entry["url"])
+	}
+	if entry["type"] != "http" {
+		t.Errorf("expected type=http, got %v", entry["type"])
+	}
+	if entry["enabled"] != true {
+		t.Errorf("expected enabled=true, got %v", entry["enabled"])
+	}
+}
+
+func TestGrokBuild_Link_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	g := newGrokBuild()
+	opts := grokLinkOpts()
+
+	if err := g.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	err := g.Link(configPath, opts)
+	if err != ErrAlreadyLinked {
+		t.Errorf("expected ErrAlreadyLinked, got: %v", err)
+	}
+}
+
+func TestGrokBuild_Link_Conflict(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	writeTestTOML(t, configPath, map[string]any{
+		"mcp_servers": map[string]any{
+			"gridctl": map[string]any{
+				"url":     "https://remote.example.com/mcp",
+				"type":    "http",
+				"enabled": true,
+			},
+		},
+	})
+
+	g := newGrokBuild()
+	opts := grokLinkOpts()
+
+	err := g.Link(configPath, opts)
+	if err != ErrConflict {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+}
+
+func TestGrokBuild_Link_Force(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	writeTestTOML(t, configPath, map[string]any{
+		"mcp_servers": map[string]any{
+			"gridctl": map[string]any{
+				"url":     "https://remote.example.com/mcp",
+				"type":    "http",
+				"enabled": true,
+			},
+		},
+	})
+
+	g := newGrokBuild()
+	opts := grokLinkOpts()
+	opts.Force = true
+
+	if err := g.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestTOML(t, configPath)
+	servers := data["mcp_servers"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	if entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected url after force, got %v", entry["url"])
+	}
+}
+
+func TestGrokBuild_Link_PreservesOtherConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	writeTestTOML(t, configPath, map[string]any{
+		"ui": map[string]any{
+			"yolo": false,
+		},
+		"mcp_servers": map[string]any{
+			"other": map[string]any{
+				"url":     "https://other.example.com/mcp",
+				"type":    "http",
+				"enabled": true,
+			},
+		},
+	})
+
+	g := newGrokBuild()
+	if err := g.Link(configPath, grokLinkOpts()); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestTOML(t, configPath)
+	if _, ok := data["ui"]; !ok {
+		t.Error("top-level [ui] table should be preserved")
+	}
+	servers := data["mcp_servers"].(map[string]any)
+	if _, ok := servers["other"]; !ok {
+		t.Error("existing mcp_servers entry should be preserved")
+	}
+	if _, ok := servers["gridctl"]; !ok {
+		t.Error("gridctl entry should be added")
+	}
+}
+
+func TestGrokBuild_Unlink(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	writeTestTOML(t, configPath, map[string]any{
+		"mcp_servers": map[string]any{
+			"gridctl": map[string]any{
+				"url":     "http://localhost:8180/mcp",
+				"type":    "http",
+				"enabled": true,
+			},
+			"other": map[string]any{
+				"url":     "https://other.example.com/mcp",
+				"type":    "http",
+				"enabled": true,
+			},
+		},
+	})
+
+	g := newGrokBuild()
+	if err := g.Unlink(configPath, "gridctl"); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestTOML(t, configPath)
+	servers := data["mcp_servers"].(map[string]any)
+	if _, ok := servers["gridctl"]; ok {
+		t.Error("gridctl should have been removed")
+	}
+	if _, ok := servers["other"]; !ok {
+		t.Error("other entry should be preserved")
+	}
+}
+
+func TestGrokBuild_Unlink_NotLinked(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	writeTestTOML(t, configPath, map[string]any{
+		"mcp_servers": map[string]any{},
+	})
+
+	g := newGrokBuild()
+	err := g.Unlink(configPath, "gridctl")
+	if err != ErrNotLinked {
+		t.Errorf("expected ErrNotLinked, got: %v", err)
+	}
+}
+
+func TestGrokBuild_Detect(t *testing.T) {
+	dir := t.TempDir()
+	grokDir := filepath.Join(dir, ".grok")
+	if err := os.MkdirAll(grokDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(grokDir, "config.toml")
+
+	g := newGrokBuild()
+	g.paths = map[string]string{
+		"linux":   configPath,
+		"darwin":  configPath,
+		"windows": configPath,
+	}
+
+	path, found := g.Detect()
+	if !found {
+		t.Error("expected Detect to find Grok Build via directory")
+	}
+	if path != configPath {
+		t.Errorf("expected path %q, got %q", configPath, path)
+	}
+}
+
+func TestGrokBuild_Detect_Negative(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "nope", ".grok", "config.toml")
+
+	g := newGrokBuild()
+	g.paths = map[string]string{
+		"linux":   configPath,
+		"darwin":  configPath,
+		"windows": configPath,
+	}
+
+	_, found := g.Detect()
+	if found {
+		t.Error("expected Detect to not find Grok Build")
+	}
+}
+
+func TestGrokBuild_IsLinked(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	g := newGrokBuild()
+
+	linked, err := g.IsLinked(configPath, "gridctl")
+	if err != nil || linked {
+		t.Errorf("expected not linked, got linked=%v err=%v", linked, err)
+	}
+
+	if err := g.Link(configPath, grokLinkOpts()); err != nil {
+		t.Fatal(err)
+	}
+
+	linked, err = g.IsLinked(configPath, "gridctl")
+	if err != nil || !linked {
+		t.Errorf("expected linked, got linked=%v err=%v", linked, err)
+	}
+}
+
+func TestDryRunDiff_GrokBuild(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	writeTestTOML(t, configPath, map[string]any{})
+
+	g := newGrokBuild()
+	opts := grokLinkOpts()
+
+	before, after, err := DryRunDiff(configPath, g, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(before, "gridctl") {
+		t.Error("before should not contain gridctl")
+	}
+	if !strings.Contains(after, "gridctl") {
+		t.Error("after should contain gridctl")
+	}
+	if !strings.Contains(after, "mcp_servers") {
+		t.Error("after should contain mcp_servers key")
+	}
+	if !strings.Contains(after, "http://localhost:8180/mcp") {
+		t.Error("after should contain the HTTP gateway URL")
+	}
+}
+
+func TestHasComments(t *testing.T) {
+	dir := t.TempDir()
+
+	tests := []struct {
+		name     string
+		filename string
+		content  string
+		want     bool
+	}{
+		{"toml url with slashes is not a comment", "config.toml", "url = 'http://localhost:8180/mcp'\n", false},
+		{"toml hash comment", "config.toml", "# a comment\nurl = 'x'\n", true},
+		{"yaml hash comment", "config.yaml", "# note\nkey: val\n", true},
+		{"json line comment", "config.json", "{\n  // c\n  \"a\": 1\n}\n", true},
+		{"json block comment", "config.json", "{ /* c */ \"a\": 1 }\n", true},
+		{"plain json no comment", "config.json", "{\"a\": 1}\n", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(dir, tt.name+"-"+tt.filename)
+			if err := os.WriteFile(path, []byte(tt.content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if got := HasComments(path); got != tt.want {
+				t.Errorf("HasComments(%s) = %v, want %v", tt.filename, got, tt.want)
+			}
+		})
+	}
+
+	if HasComments(filepath.Join(dir, "does-not-exist.toml")) {
+		t.Error("HasComments on missing file should be false")
 	}
 }
