@@ -669,6 +669,52 @@ func TestHandler_PromptsGet(t *testing.T) {
 	}
 }
 
+func TestHandler_PromptsGet_FiresObserver(t *testing.T) {
+	h, g, _ := setupTestHandlerWithRegistry(t)
+	obs := newRecordingPromptGetObserver()
+	g.SetPromptGetObserver(obs)
+
+	body := makeJSONRPC(t, 1, "prompts/get", map[string]any{
+		"name":      "code-review",
+		"arguments": map[string]any{"language": "Go", "code": "func main() {}"},
+	})
+	w := postMCP(t, h, body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	// Serving behavior is unchanged by the observer.
+	resp := decodeResponse(t, w)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+	}
+
+	got := obs.waitForObservation(t)
+	if got.PromptName != "code-review" {
+		t.Errorf("observed prompt = %q, want code-review", got.PromptName)
+	}
+	// The stdio/HTTP handler path carries no per-client attribution.
+	if got.ClientID != "" {
+		t.Errorf("observed clientID = %q, want empty (anonymous)", got.ClientID)
+	}
+}
+
+func TestHandler_PromptsGet_NotFoundDoesNotFireObserver(t *testing.T) {
+	h, g, _ := setupTestHandlerWithRegistry(t)
+	obs := newRecordingPromptGetObserver()
+	g.SetPromptGetObserver(obs)
+
+	body := makeJSONRPC(t, 1, "prompts/get", map[string]any{"name": "nonexistent"})
+	w := postMCP(t, h, body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (JSON-RPC error envelope), got %d", w.Code)
+	}
+	resp := decodeResponse(t, w)
+	if resp.Error == nil {
+		t.Fatal("expected error for unknown prompt")
+	}
+	obs.expectNoObservation(t)
+}
+
 func TestHandler_PromptsGet_DefaultArguments(t *testing.T) {
 	h, _, _ := setupTestHandlerWithRegistry(t)
 

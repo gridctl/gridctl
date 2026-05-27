@@ -1303,7 +1303,7 @@ func TestGateway_HandlePromptsGet_ArgumentSubstitution(t *testing.T) {
 	g.Router().AddClient(client)
 
 	// Test with all arguments provided
-	result, err := g.HandlePromptsGet(PromptsGetParams{
+	result, err := g.HandlePromptsGet(context.Background(), PromptsGetParams{
 		Name:      "greet",
 		Arguments: map[string]string{"name": "Alice", "place": "Wonderland"},
 	})
@@ -1346,7 +1346,7 @@ func TestGateway_HandlePromptsGet_DefaultArguments(t *testing.T) {
 	g.Router().AddClient(client)
 
 	// Test with missing "place" argument — should use default
-	result, err := g.HandlePromptsGet(PromptsGetParams{
+	result, err := g.HandlePromptsGet(context.Background(), PromptsGetParams{
 		Name:      "greet",
 		Arguments: map[string]string{"name": "Bob"},
 	})
@@ -1370,7 +1370,7 @@ func TestGateway_HandlePromptsGet_NotFound(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	_, err := g.HandlePromptsGet(PromptsGetParams{Name: "nonexistent"})
+	_, err := g.HandlePromptsGet(context.Background(), PromptsGetParams{Name: "nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent prompt")
 	}
@@ -1379,7 +1379,7 @@ func TestGateway_HandlePromptsGet_NotFound(t *testing.T) {
 func TestGateway_HandlePromptsGet_NoRegistry(t *testing.T) {
 	g := NewGateway()
 
-	_, err := g.HandlePromptsGet(PromptsGetParams{Name: "anything"})
+	_, err := g.HandlePromptsGet(context.Background(), PromptsGetParams{Name: "anything"})
 	if err == nil {
 		t.Fatal("expected error when no registry")
 	}
@@ -1535,7 +1535,7 @@ func TestGateway_HandlePromptsGet_NilArguments(t *testing.T) {
 	g.Router().AddClient(client)
 
 	// nil arguments map should work for prompts without required args
-	result, err := g.HandlePromptsGet(PromptsGetParams{
+	result, err := g.HandlePromptsGet(context.Background(), PromptsGetParams{
 		Name:      "simple",
 		Arguments: nil,
 	})
@@ -1566,7 +1566,7 @@ func TestGateway_HandlePromptsGet_RequiredArgumentMissing(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	_, err := g.HandlePromptsGet(PromptsGetParams{
+	_, err := g.HandlePromptsGet(context.Background(), PromptsGetParams{
 		Name:      "greet",
 		Arguments: map[string]string{},
 	})

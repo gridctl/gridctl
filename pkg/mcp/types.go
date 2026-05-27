@@ -116,6 +116,30 @@ type ClientObserver interface {
 	ObserveToolCallWithClient(ctx context.Context, obs ToolCallObservation) ToolCallSummary
 }
 
+// PromptGetObserver receives notifications after a prompt (a registry skill)
+// is successfully served via prompts/get. Used by the metrics system to record
+// per-skill usage without coupling the gateway to the metrics package
+// directly. Kept separate from ToolCallObserver so prompt serving never shows
+// up in tool-call telemetry (Tools Audit Mode).
+type PromptGetObserver interface {
+	// ObservePromptGet is called after a prompt is successfully served. The
+	// gateway invokes it asynchronously, so implementations may be slow and
+	// must not assume any ordering relative to the request returning.
+	ObservePromptGet(obs PromptGetObservation)
+}
+
+// PromptGetObservation is the payload passed to a PromptGetObserver. New
+// optional fields can land here over time so the interface stays stable.
+type PromptGetObservation struct {
+	// PromptName is the served prompt name, which equals the registry
+	// skill's Name.
+	PromptName string
+	// ClientID is the normalized identifier of the originating MCP client
+	// (for example "claude-code", "cursor"). Empty when no session
+	// attribution was available; observers should treat that as anonymous.
+	ClientID string
+}
+
 // FormatSavingsRecorder receives format savings observations.
 // Used by the gateway to report token savings from format conversion
 // without coupling to the metrics package directly.
@@ -423,4 +447,3 @@ type ResourceContents struct {
 type ResourcesReadResult struct {
 	Contents []ResourceContents `json:"contents"`
 }
-
