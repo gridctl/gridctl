@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, RegistryStatus, AgentSkill, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -563,6 +563,24 @@ export async function activateRegistrySkill(name: string): Promise<AgentSkill> {
 
 export async function disableRegistrySkill(name: string): Promise<AgentSkill> {
   return mutateJSON<AgentSkill>(`/api/registry/skills/${encodeURIComponent(name)}/disable`, 'POST');
+}
+
+export interface RegistrySkillBatchEntry {
+  name: string;
+  // Bulk actions enable or disable; they never set draft.
+  state: Extract<ItemState, 'active' | 'disabled'>;
+}
+
+export interface SetRegistrySkillsBatchResponse {
+  skills: { name: string; state: ItemState }[];
+}
+
+// PUT /api/registry/skills/batch: set the state of multiple skills in one
+// all-or-nothing request (the whole batch is validated before any write).
+export async function setRegistrySkillsBatch(
+  skills: RegistrySkillBatchEntry[],
+): Promise<SetRegistrySkillsBatchResponse> {
+  return mutateJSON<SetRegistrySkillsBatchResponse>('/api/registry/skills/batch', 'PUT', { skills });
 }
 
 // --- Skill File Management ---

@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  AlignJustify,
   BookOpen,
+  LayoutGrid,
+  List,
   Plus,
+  Power,
+  PowerOff,
   RefreshCw,
   Search,
+  Trash2,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
@@ -13,6 +20,7 @@ import { PopoutButton } from '../ui/PopoutButton';
 import { SkillEditor } from '../registry/SkillEditor';
 import { SkillCardSkeleton } from '../registry/SkillCardSkeleton';
 import { LibraryGrid, type GroupMode } from '../registry/LibraryGrid';
+import { LibraryTable } from '../registry/LibraryTable';
 import { SkillDetailPanel } from '../registry/SkillDetailPanel';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { showToast } from '../ui/Toast';
@@ -28,6 +36,7 @@ import {
   fetchRegistrySkills,
   fetchRegistryStatus,
   fetchSkillSources,
+  setRegistrySkillsBatch,
 } from '../../lib/api';
 import { extractRepoInfo } from '../../lib/repo';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
@@ -72,6 +81,7 @@ export function LibraryWorkspace() {
 
   const { openDetachedWindow } = useWindowManager();
   const compact = useUIStore((s) => s.compactMode.library);
+  const toggleCompact = useUIStore((s) => s.toggleCompactMode);
 
   // URL → local state for the search input. We round-trip through state so the
   // input keeps caret behavior; the URL is the source of truth on reload.
@@ -183,6 +193,21 @@ export function LibraryWorkspace() {
     );
   }, [setSearchParams]);
 
+  // View mode, URL-synced as ?view (cards default omitted), consistent with
+  // the workspace's URL-first state model. Row density stays in useUIStore.
+  const viewMode: 'cards' | 'table' = searchParams.get('view') === 'table' ? 'table' : 'cards';
+  const setViewMode = useCallback((mode: 'cards' | 'table') => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (mode === 'cards') next.delete('view');
+        else next.set('view', mode);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   // Clear every removable facet in one update. Grouping (?group) is a view axis,
   // not a facet, so it is intentionally left untouched.
   const clearAllFacets = useCallback(() => {
@@ -203,6 +228,21 @@ export function LibraryWorkspace() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingSkill, setEditingSkill] = useState<AgentSkill | undefined>();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
+  // Multi-select state. Names only (not skill objects) so the selection
+  // survives filter, sort, group, and refresh; stale names are pruned at the
+  // point of use against the live skill set.
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(() => new Set());
+  const toggleSelect = useCallback((skill: AgentSkill) => {
+    setSelectedNames((prev) => {
+      const next = new Set(prev);
+      if (next.has(skill.name)) next.delete(skill.name);
+      else next.add(skill.name);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelectedNames(new Set()), []);
 
   // Track the last skillName we resolved so we don't refire the toast on every
   // re-render. Reset whenever the param actually changes.
@@ -239,19 +279,24 @@ export function LibraryWorkspace() {
     }
   }, [navigate, searchParams, skillName]);
 
-  // Esc closes the inspector — but only when no modal is open and focus isn't in
-  // a text input (the search box keeps its own clear affordance).
+  // Esc clears an active multi-selection first, then (on a second press) closes
+  // the inspector. Ignored while a modal is open or focus is in a text input
+  // (the search box keeps its own clear affordance).
   useEffect(() => {
-    if (!selectedName) return;
+    if (!selectedName && selectedNames.size === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showEditor) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (selectedNames.size > 0) {
+        setSelectedNames(new Set());
+        return;
+      }
       setSelectedName(null);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedName, showEditor, setSelectedName]);
+  }, [selectedName, selectedNames.size, showEditor, setSelectedName]);
 
   const refreshRegistry = useCallback(async () => {
     try {
@@ -392,6 +437,44 @@ export function LibraryWorkspace() {
     return copy.sort(byName);
   }, [visibleSkills, sortMode]);
 
+  // Reconcile the selection against the live skill set so a skill deleted out
+  // from under the selection never lands in a bulk request (which would reject
+  // the whole batch).
+  const existingNames = useMemo(() => new Set((skills ?? []).map((s) => s.name)), [skills]);
+  const liveSelected = useMemo(
+    () => Array.from(selectedNames).filter((n) => existingNames.has(n)),
+    [selectedNames, existingNames],
+  );
+  const allSelected = sortedSkills.length > 0 && sortedSkills.every((s) => selectedNames.has(s.name));
+  const someSelected = sortedSkills.some((s) => selectedNames.has(s.name)) && !allSelected;
+  const selectAllVisible = useCallback(
+    () => setSelectedNames(new Set(sortedSkills.map((s) => s.name))),
+    [sortedSkills],
+  );
+
+  const handleBulkState = useCallback(async (state: 'active' | 'disabled') => {
+    if (liveSelected.length === 0) return;
+    try {
+      await setRegistrySkillsBatch(liveSelected.map((name) => ({ name, state })));
+      const n = liveSelected.length;
+      showToast('success', `${n} skill${n === 1 ? '' : 's'} ${state === 'active' ? 'enabled' : 'disabled'}`);
+      clearSelection();
+      refreshRegistry();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Bulk update failed');
+    }
+  }, [liveSelected, clearSelection, refreshRegistry]);
+
+  const handleBulkDelete = useCallback(async () => {
+    setConfirmBulkDelete(false);
+    if (liveSelected.length === 0) return;
+    const results = await Promise.allSettled(liveSelected.map((name) => deleteRegistrySkill(name)));
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    showToast(ok === liveSelected.length ? 'success' : 'error', `Deleted ${ok} of ${liveSelected.length} skills`);
+    clearSelection();
+    refreshRegistry();
+  }, [liveSelected, clearSelection, refreshRegistry]);
+
   // Human-readable label for the active source isolate, shown in its facet chip.
   const activeSourceLabel = useMemo(() => {
     if (!activeSource) return null;
@@ -472,11 +555,23 @@ export function LibraryWorkspace() {
               )}
             </div>
 
-            {/* Controls row: sort axis (always) and, when sources exist, the
-                grouping axis on the right. */}
+            {/* Controls row: sort axis (always), then view controls, plus the
+                grouping axis in cards view when sources exist. */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <SortControl mode={sortMode} onChange={setSortMode} />
-              {hasSources && <GroupByControl mode={groupMode} onChange={setGroupMode} />}
+              <div className="flex items-center gap-2 flex-wrap">
+                {hasSources && viewMode === 'cards' && (
+                  <GroupByControl mode={groupMode} onChange={setGroupMode} />
+                )}
+                <ViewToggle mode={viewMode} onChange={setViewMode} />
+                <IconButton
+                  icon={AlignJustify}
+                  onClick={() => toggleCompact('library')}
+                  tooltip={compact ? 'Comfortable rows' : 'Compact rows'}
+                  size="sm"
+                  variant={compact ? 'default' : 'ghost'}
+                />
+              </div>
             </div>
 
             <FacetChips
@@ -491,6 +586,18 @@ export function LibraryWorkspace() {
               onClearAll={clearAllFacets}
             />
           </div>
+
+          {liveSelected.length > 0 && (
+            <BulkActionBar
+              count={liveSelected.length}
+              allSelected={allSelected}
+              onSelectAll={selectAllVisible}
+              onEnable={() => handleBulkState('active')}
+              onDisable={() => handleBulkState('disabled')}
+              onDelete={() => setConfirmBulkDelete(true)}
+              onClear={clearSelection}
+            />
+          )}
 
           <div className="flex-1 overflow-y-auto scrollbar-dark">
             {isLoading && (
@@ -537,7 +644,7 @@ export function LibraryWorkspace() {
               </div>
             )}
 
-            {!isLoading && visibleSkills.length > 0 && (
+            {!isLoading && visibleSkills.length > 0 && viewMode === 'cards' && (
               <LibraryGrid
                 skills={sortedSkills}
                 hasSearch={searchQuery.length > 0}
@@ -552,6 +659,30 @@ export function LibraryWorkspace() {
                 onDelete={(s) => setConfirmDelete(s.name)}
                 onSelect={(s) => setSelectedName(s.name)}
                 activeSkillName={selectedName}
+                selectedNames={selectedNames}
+                onToggleSelect={toggleSelect}
+              />
+            )}
+
+            {!isLoading && visibleSkills.length > 0 && viewMode === 'table' && (
+              <LibraryTable
+                skills={sortedSkills}
+                sortMode={sortMode}
+                onSort={setSortMode}
+                selectedNames={selectedNames}
+                onToggleSelect={toggleSelect}
+                onSelectAll={selectAllVisible}
+                onClearSelection={clearSelection}
+                allSelected={allSelected}
+                someSelected={someSelected}
+                onSelect={(s) => setSelectedName(s.name)}
+                activeSkillName={selectedName}
+                sourceMap={sourceMap}
+                onEnable={handleEnable}
+                onDisable={handleDisable}
+                onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
+                onDelete={(s) => setConfirmDelete(s.name)}
+                compact={compact}
               />
             )}
           </div>
@@ -574,6 +705,28 @@ export function LibraryWorkspace() {
         confirmLabel={
           <span>
             Delete <span className="font-mono">"{confirmDelete}"</span>
+          </span>
+        }
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={confirmBulkDelete}
+        onClose={() => setConfirmBulkDelete(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete skills"
+        message={
+          <>
+            <p>
+              Delete <span className="font-mono text-primary">{liveSelected.length}</span> selected{' '}
+              {liveSelected.length === 1 ? 'skill' : 'skills'}?
+            </p>
+            <p>This action cannot be undone.</p>
+          </>
+        }
+        confirmLabel={
+          <span>
+            Delete {liveSelected.length} {liveSelected.length === 1 ? 'skill' : 'skills'}
           </span>
         }
         variant="danger"
@@ -711,6 +864,96 @@ function FacetChips({
           Clear all
         </button>
       )}
+    </div>
+  );
+}
+
+const VIEW_OPTIONS: { key: 'cards' | 'table'; label: string; icon: LucideIcon }[] = [
+  { key: 'cards', label: 'Cards', icon: LayoutGrid },
+  { key: 'table', label: 'Table', icon: List },
+];
+
+/** Segmented toggle between the card grid and the table view. */
+function ViewToggle({ mode, onChange }: { mode: 'cards' | 'table'; onChange: (m: 'cards' | 'table') => void }) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="View mode">
+      {VIEW_OPTIONS.map(({ key, label, icon: Icon }) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          aria-pressed={mode === key}
+          aria-label={`${label} view`}
+          className={cn(
+            'p-1.5 rounded-md border transition-colors',
+            mode === key
+              ? 'bg-primary/10 text-primary border-primary/25'
+              : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border-transparent',
+          )}
+        >
+          <Icon size={13} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface BulkActionBarProps {
+  count: number;
+  allSelected: boolean;
+  onSelectAll: () => void;
+  onEnable: () => void;
+  onDisable: () => void;
+  onDelete: () => void;
+  onClear: () => void;
+}
+
+/**
+ * Contextual bar shown while a multi-selection is active. The count is an
+ * aria-live region so bulk results are announced. Destructive deletes are
+ * confirmed upstream via ConfirmDialog.
+ */
+function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, onDelete, onClear }: BulkActionBarProps) {
+  return (
+    <div
+      role="region"
+      aria-label="Bulk actions"
+      className="flex items-center gap-2 flex-wrap px-4 py-2 bg-primary/[0.06] border-b border-primary/20 flex-shrink-0"
+    >
+      <span aria-live="polite" className="text-xs font-medium text-text-secondary">
+        {count} selected
+      </span>
+      {!allSelected && (
+        <button onClick={onSelectAll} className="text-[11px] text-text-muted hover:text-text-secondary transition-colors">
+          Select all
+        </button>
+      )}
+      <div className="ml-auto flex items-center gap-1.5">
+        <button
+          onClick={onEnable}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-emerald-400 border border-emerald-400/25 hover:bg-emerald-400/10 transition-colors"
+        >
+          <Power size={11} /> Enable
+        </button>
+        <button
+          onClick={onDisable}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-text-muted border border-border/40 hover:bg-surface-highlight transition-colors"
+        >
+          <PowerOff size={11} /> Disable
+        </button>
+        <button
+          onClick={onDelete}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-red-400 border border-red-400/25 hover:bg-red-400/10 transition-colors"
+        >
+          <Trash2 size={11} /> Delete
+        </button>
+        <button
+          onClick={onClear}
+          aria-label="Clear selection"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-text-muted border border-transparent hover:bg-surface-highlight transition-colors"
+        >
+          <X size={11} /> Clear
+        </button>
+      </div>
     </div>
   );
 }

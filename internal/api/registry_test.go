@@ -794,3 +794,98 @@ func TestDetectContentType(t *testing.T) {
 	}
 }
 
+// --- Batch state endpoint ---
+
+// skillsBatchRequest PUTs a batch state-change payload and returns the recorder.
+func skillsBatchRequest(t *testing.T, srv *Server, payload any) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal batch payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/batch", strings.NewReader(string(body)))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+func TestHandleRegistry_SkillsBatch_SetsMultipleStates(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "alpha", registry.StateDraft)
+	seedSkill(t, regServer, "beta", registry.StateActive)
+
+	rec := skillsBatchRequest(t, srv, map[string]any{
+		"skills": []map[string]any{
+			{"name": "alpha", "state": "active"},
+			{"name": "beta", "state": "disabled"},
+		},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp setRegistrySkillsBatchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(resp.Skills) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(resp.Skills))
+	}
+
+	alpha, _ := regServer.Store().GetSkill("alpha")
+	beta, _ := regServer.Store().GetSkill("beta")
+	if alpha.State != registry.StateActive {
+		t.Errorf("alpha: expected active, got %q", alpha.State)
+	}
+	if beta.State != registry.StateDisabled {
+		t.Errorf("beta: expected disabled, got %q", beta.State)
+	}
+}
+
+func TestHandleRegistry_SkillsBatch_UnknownSkillWritesNothing(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "alpha", registry.StateDraft)
+
+	rec := skillsBatchRequest(t, srv, map[string]any{
+		"skills": []map[string]any{
+			{"name": "alpha", "state": "active"},   // valid on its own
+			{"name": "ghost", "state": "disabled"}, // missing → reject all
+		},
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// All-or-nothing: alpha must be untouched because the batch was rejected.
+	alpha, _ := regServer.Store().GetSkill("alpha")
+	if alpha.State != registry.StateDraft {
+		t.Errorf("alpha must be unchanged after a rejected batch, got %q", alpha.State)
+	}
+}
+
+func TestHandleRegistry_SkillsBatch_InvalidState(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "alpha", registry.StateActive)
+
+	rec := skillsBatchRequest(t, srv, map[string]any{
+		"skills": []map[string]any{
+			{"name": "alpha", "state": "draft"}, // bulk cannot set draft
+		},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	alpha, _ := regServer.Store().GetSkill("alpha")
+	if alpha.State != registry.StateActive {
+		t.Errorf("alpha must be unchanged after a rejected batch, got %q", alpha.State)
+	}
+}
+
+func TestHandleRegistry_SkillsBatch_EmptyArray(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	rec := skillsBatchRequest(t, srv, map[string]any{"skills": []map[string]any{}})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
