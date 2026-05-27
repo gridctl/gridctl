@@ -322,6 +322,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/registry/skills", s.handleRegistrySkillsList)
 	mux.HandleFunc("POST /api/registry/skills", s.handleRegistrySkillCreate)
 	mux.HandleFunc("POST /api/registry/skills/validate", s.handleRegistryValidate)
+	mux.HandleFunc("PUT /api/registry/skills/batch", s.handleRegistrySkillsBatch)
 	mux.HandleFunc("GET /api/registry/skills/{name}", s.handleRegistrySkillGet)
 	mux.HandleFunc("PUT /api/registry/skills/{name}", s.handleRegistrySkillPut)
 	mux.HandleFunc("DELETE /api/registry/skills/{name}", s.handleRegistrySkillDelete)
