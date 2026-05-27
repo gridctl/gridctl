@@ -13,11 +13,12 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { marked } from 'marked';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 import { SkillFileTree } from './SkillFileTree';
+import { MarkdownPreview } from './MarkdownPreview';
 import { createRegistrySkill, updateRegistrySkill, validateSkillContent } from '../../lib/api';
+import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
 import { cn } from '../../lib/cn';
 import type { AgentSkill, ItemState, SkillValidationResult } from '../../types';
 
@@ -69,12 +70,6 @@ function buildSkillMDContent(fields: {
   }
   if (fields.state) lines.push(`state: ${fields.state}`);
   return `---\n${lines.join('\n')}\n---\n\n${fields.body}`;
-}
-
-// --- Markdown rendering ---
-
-function renderMarkdown(content: string): string {
-  return marked.parse(content, { breaks: true, gfm: true }) as string;
 }
 
 // --- Debounced validation ---
@@ -303,56 +298,6 @@ function AcceptanceCriteriaEditor({
   );
 }
 
-// --- MarkdownPreview ---
-
-function MarkdownPreview({ content }: { content: string }) {
-  const html = useMemo(() => (content ? renderMarkdown(content) : ''), [content]);
-
-  if (!content) {
-    return (
-      <div className="flex items-center justify-center h-full min-h-[200px]">
-        <p className="text-text-muted/40 text-sm italic">
-          Preview will appear here as you type...
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={cn(
-        'prose prose-invert prose-sm max-w-none',
-        // Headings
-        'prose-headings:text-text-primary prose-headings:font-semibold prose-headings:tracking-tight',
-        'prose-h1:text-lg prose-h1:border-b prose-h1:border-border/30 prose-h1:pb-2 prose-h1:mb-4',
-        'prose-h2:text-base prose-h2:mt-6 prose-h2:mb-2',
-        'prose-h3:text-sm prose-h3:mt-4 prose-h3:mb-1',
-        // Body text
-        'prose-p:text-text-secondary prose-p:text-sm prose-p:leading-relaxed',
-        // Code
-        'prose-code:text-primary prose-code:bg-surface-highlight prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:font-mono prose-code:before:content-none prose-code:after:content-none',
-        'prose-pre:bg-background/60 prose-pre:border prose-pre:border-border/30 prose-pre:rounded-lg prose-pre:text-xs',
-        // Links
-        'prose-a:text-primary prose-a:no-underline hover:prose-a:underline',
-        // Lists
-        'prose-li:text-text-secondary prose-li:text-sm prose-li:marker:text-text-muted',
-        'prose-ul:my-2 prose-ol:my-2',
-        // Strong / emphasis
-        'prose-strong:text-text-primary',
-        'prose-em:text-text-secondary',
-        // Blockquotes
-        'prose-blockquote:border-primary/40 prose-blockquote:text-text-muted prose-blockquote:not-italic',
-        // Tables
-        'prose-th:text-text-primary prose-th:text-xs prose-th:uppercase prose-th:tracking-wider prose-th:font-medium',
-        'prose-td:text-text-secondary prose-td:text-sm',
-        // Horizontal rules
-        'prose-hr:border-border/30',
-      )}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
-
 // --- SplitPaneHandle ---
 
 function SplitPaneHandle({
@@ -472,12 +417,12 @@ export function SkillEditor({
       setAllowedTools(skill.allowedTools ?? '');
       setCriteria(
         (skill.acceptanceCriteria ?? []).map((c) => {
-          const m = c.match(/GIVEN\s+(.+?)\s+WHEN\s+(.+?)\s+THEN\s+(.+)/i);
+          const parsed = parseAcceptanceCriterion(c);
           return {
             id: ++idCounter.current,
-            given: m?.[1] ?? c,
-            when: m?.[2] ?? '',
-            then: m?.[3] ?? '',
+            given: parsed.given,
+            when: parsed.when,
+            then: parsed.then,
           };
         }),
       );
