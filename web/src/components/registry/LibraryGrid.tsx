@@ -3,19 +3,15 @@ import { cn } from '../../lib/cn';
 import { toTitleCase } from '../../lib/text';
 import { SkillCard } from './SkillCard';
 import { SourceGroupHeader } from './SourceGroupHeader';
+import { skillCategory } from '../../lib/skillMeta';
 import type { AgentSkill, SkillSourceStatus } from '../../types';
 
 export type GroupMode = 'source' | 'category' | 'none';
 
-function getGroupKey(dir?: string): string {
-  if (!dir) return '';
-  return dir.split('/')[0];
-}
-
 function groupSkills(skills: AgentSkill[]): Map<string, AgentSkill[]> {
   const groups = new Map<string, AgentSkill[]>();
   for (const skill of skills) {
-    const key = getGroupKey(skill.dir);
+    const key = skillCategory(skill.dir);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(skill);
   }
