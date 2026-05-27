@@ -704,6 +704,45 @@ func (p *streamableTestPromptProvider) GetPromptData(name string) (*PromptData, 
 	return nil, fmt.Errorf("prompt %q: not found", name)
 }
 
+// recordingPromptGetObserver captures ObservePromptGet calls for assertions.
+// The gateway fires the observer on a goroutine, so tests synchronize on the
+// channel rather than reading shared state. Shared by the handler and
+// streamable transport tests (both in package mcp).
+type recordingPromptGetObserver struct {
+	calls chan PromptGetObservation
+}
+
+func newRecordingPromptGetObserver() *recordingPromptGetObserver {
+	return &recordingPromptGetObserver{calls: make(chan PromptGetObservation, 8)}
+}
+
+func (o *recordingPromptGetObserver) ObservePromptGet(obs PromptGetObservation) {
+	o.calls <- obs
+}
+
+// waitForObservation returns the next observation or fails after a timeout.
+func (o *recordingPromptGetObserver) waitForObservation(t *testing.T) PromptGetObservation {
+	t.Helper()
+	select {
+	case obs := <-o.calls:
+		return obs
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for prompt-get observation")
+		return PromptGetObservation{}
+	}
+}
+
+// expectNoObservation asserts the observer does not fire within a short window.
+// Used to confirm a failed prompts/get records nothing.
+func (o *recordingPromptGetObserver) expectNoObservation(t *testing.T) {
+	t.Helper()
+	select {
+	case got := <-o.calls:
+		t.Fatalf("observer fired unexpectedly: %+v", got)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
 func setupStreamableWithRegistry(t *testing.T) (*StreamableHTTPServer, string) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
@@ -764,6 +803,49 @@ func TestStreamableHTTPServer_PromptsGet(t *testing.T) {
 	if result.Messages[0].Content.Text != expected {
 		t.Errorf("expected %q, got %q", expected, result.Messages[0].Content.Text)
 	}
+}
+
+func TestStreamableHTTPServer_PromptsGet_FiresObserver(t *testing.T) {
+	srv, sessionID := setupStreamableWithRegistry(t)
+	obs := newRecordingPromptGetObserver()
+	srv.gateway.SetPromptGetObserver(obs)
+
+	resp := streamablePost(t, srv, sessionID, "prompts/get", map[string]any{
+		"name":      "code-review",
+		"arguments": map[string]any{"language": "Go", "code": "func main() {}"},
+	})
+	// Serving behavior is unchanged by the observer.
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error.Message)
+	}
+	var result PromptsGetResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if want := "Review this Go code: func main() {}"; result.Messages[0].Content.Text != want {
+		t.Errorf("content = %q, want %q", result.Messages[0].Content.Text, want)
+	}
+
+	got := obs.waitForObservation(t)
+	if got.PromptName != "code-review" {
+		t.Errorf("observed prompt = %q, want code-review", got.PromptName)
+	}
+	// The streamable transport attributes usage to the initializing client.
+	if got.ClientID != "test-client" {
+		t.Errorf("observed clientID = %q, want test-client", got.ClientID)
+	}
+}
+
+func TestStreamableHTTPServer_PromptsGet_NotFoundDoesNotFireObserver(t *testing.T) {
+	srv, sessionID := setupStreamableWithRegistry(t)
+	obs := newRecordingPromptGetObserver()
+	srv.gateway.SetPromptGetObserver(obs)
+
+	resp := streamablePost(t, srv, sessionID, "prompts/get", map[string]any{"name": "nonexistent"})
+	if resp.Error == nil {
+		t.Fatal("expected error for unknown prompt")
+	}
+	obs.expectNoObservation(t)
 }
 
 func TestStreamableHTTPServer_PromptsGet_NilParams(t *testing.T) {

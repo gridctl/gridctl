@@ -251,6 +251,16 @@ type toolUsage struct {
 	lastCalledNanos atomic.Int64
 }
 
+// promptUsage holds per-skill atomic counters for prompts/get serving. Same
+// shape as toolUsage but keyed by a single skill (prompt) name in the
+// accumulator. Kept in a separate namespace from toolUsage so prompt serving
+// never appears in Tools Audit Mode. lastCalledNanos stores time.UnixNano so
+// the read path can produce a time.Time without taking a lock.
+type promptUsage struct {
+	calls           atomic.Int64
+	lastCalledNanos atomic.Int64
+}
+
 // Accumulator collects token usage metrics with thread-safe operations.
 // Session totals use atomic counters. Historical data is stored in a ring buffer
 // of pre-aggregated 1-minute time buckets.
@@ -302,6 +312,12 @@ type Accumulator struct {
 	toolUsageMu sync.RWMutex
 	toolUsage   map[string]map[string]*toolUsage
 
+	// Per-skill prompts/get call counters. Powers the Skills Library
+	// "Never used" facet. Kept in a separate namespace from toolUsage so
+	// prompt serving never pollutes Tools Audit Mode.
+	promptUsageMu sync.RWMutex
+	promptUsage   map[string]*promptUsage
+
 	// Format savings (atomic for lock-free reads)
 	savingsOriginal  atomic.Int64
 	savingsFormatted atomic.Int64
@@ -331,15 +347,16 @@ func NewAccumulator(maxDataPoints int) *Accumulator {
 		maxDataPoints = 10000
 	}
 	return &Accumulator{
-		startedAt:  time.Now(),
-		servers:    make(map[string]*serverCounters),
-		replicas:   make(map[string]map[int]*replicaCounters),
-		buckets:    make([]bucket, maxDataPoints),
-		maxSize:    maxDataPoints,
-		serverBufs: make(map[string]*serverBuffer),
-		clients:    make(map[string]*clientCounters),
-		clientBufs: make(map[string]*serverBuffer),
-		toolUsage:  make(map[string]map[string]*toolUsage),
+		startedAt:   time.Now(),
+		servers:     make(map[string]*serverCounters),
+		replicas:    make(map[string]map[int]*replicaCounters),
+		buckets:     make([]bucket, maxDataPoints),
+		maxSize:     maxDataPoints,
+		serverBufs:  make(map[string]*serverBuffer),
+		clients:     make(map[string]*clientCounters),
+		clientBufs:  make(map[string]*serverBuffer),
+		toolUsage:   make(map[string]map[string]*toolUsage),
+		promptUsage: make(map[string]*promptUsage),
 	}
 }
 
@@ -571,6 +588,93 @@ func (a *Accumulator) RestoreToolUsage(perServer map[string]map[string]ToolStat)
 				if nanos := stat.LastCalledAt.UnixNano(); nanos > tu.lastCalledNanos.Load() {
 					tu.lastCalledNanos.Store(nanos)
 				}
+			}
+		}
+	}
+}
+
+// RecordPromptGet increments the call counter for a single skill (prompt)
+// served via prompts/get and stamps the last-called timestamp. Powers the
+// Skills Library "Never used" facet. An empty name is a no-op so callers
+// without attribution can invoke unconditionally.
+//
+// Kept parallel to RecordToolCall rather than reusing it: routing prompt
+// serving through the tool-usage map would surface synthetic entries in
+// Tools Audit Mode.
+func (a *Accumulator) RecordPromptGet(name string) {
+	if name == "" {
+		return
+	}
+	pu := a.getOrCreatePromptUsage(name)
+	pu.calls.Add(1)
+	pu.lastCalledNanos.Store(time.Now().UnixNano())
+}
+
+func (a *Accumulator) getOrCreatePromptUsage(name string) *promptUsage {
+	a.promptUsageMu.RLock()
+	if pu, ok := a.promptUsage[name]; ok {
+		a.promptUsageMu.RUnlock()
+		return pu
+	}
+	a.promptUsageMu.RUnlock()
+
+	a.promptUsageMu.Lock()
+	defer a.promptUsageMu.Unlock()
+	pu, ok := a.promptUsage[name]
+	if !ok {
+		pu = &promptUsage{}
+		a.promptUsage[name] = pu
+	}
+	return pu
+}
+
+// PromptUsageSnapshot returns a deep copy of the per-skill prompts/get call
+// counters. Empty (nil) when no prompt has been served yet. Reuses the
+// ToolStat value shape so the persistence and API layers share one type.
+func (a *Accumulator) PromptUsageSnapshot() map[string]ToolStat {
+	a.promptUsageMu.RLock()
+	defer a.promptUsageMu.RUnlock()
+	if len(a.promptUsage) == 0 {
+		return nil
+	}
+	out := make(map[string]ToolStat, len(a.promptUsage))
+	for name, pu := range a.promptUsage {
+		calls := pu.calls.Load()
+		var lastCalled time.Time
+		if nanos := pu.lastCalledNanos.Load(); nanos > 0 {
+			lastCalled = time.Unix(0, nanos)
+		}
+		out[name] = ToolStat{Calls: calls, LastCalledAt: lastCalled}
+	}
+	return out
+}
+
+// RestorePromptUsage seeds per-skill prompts/get counters from a persisted
+// snapshot so usage history survives a gateway restart. Mirrors
+// RestoreToolUsage: max-wins per counter (an existing in-memory value is kept
+// when it already exceeds the restored one), entries with no recorded calls
+// are skipped, and an empty map is a no-op.
+func (a *Accumulator) RestorePromptUsage(perSkill map[string]ToolStat) {
+	if len(perSkill) == 0 {
+		return
+	}
+	a.promptUsageMu.Lock()
+	defer a.promptUsageMu.Unlock()
+	for name, stat := range perSkill {
+		if name == "" || stat.Calls <= 0 {
+			continue
+		}
+		pu, ok := a.promptUsage[name]
+		if !ok {
+			pu = &promptUsage{}
+			a.promptUsage[name] = pu
+		}
+		if stat.Calls > pu.calls.Load() {
+			pu.calls.Store(stat.Calls)
+		}
+		if !stat.LastCalledAt.IsZero() {
+			if nanos := stat.LastCalledAt.UnixNano(); nanos > pu.lastCalledNanos.Load() {
+				pu.lastCalledNanos.Store(nanos)
 			}
 		}
 	}
@@ -1444,6 +1548,10 @@ func (a *Accumulator) Clear() {
 	a.toolUsageMu.Lock()
 	a.toolUsage = make(map[string]map[string]*toolUsage)
 	a.toolUsageMu.Unlock()
+
+	a.promptUsageMu.Lock()
+	a.promptUsage = make(map[string]*promptUsage)
+	a.promptUsageMu.Unlock()
 
 	a.savingsOriginal.Store(0)
 	a.savingsFormatted.Store(0)

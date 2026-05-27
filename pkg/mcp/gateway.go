@@ -33,27 +33,27 @@ var ErrReadyTimeout = errors.New("ready timeout")
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
 type MCPServerConfig struct {
-	Name            string
-	Transport       Transport
-	Endpoint        string            // For HTTP/SSE transport
-	ContainerID     string            // For Docker Stdio transport
-	External        bool              // True for external URL servers (no container)
-	LocalProcess    bool              // True for local process servers (no container)
-	SSH             bool              // True for SSH servers (remote process over SSH)
-	OpenAPI         bool              // True for OpenAPI-based servers
-	Command         []string          // For local process or SSH transport
-	WorkDir         string            // For local process transport
-	Env             map[string]string // For local process or SSH transport
-	SSHHost            string            // SSH hostname (for SSH servers)
-	SSHUser            string            // SSH username (for SSH servers)
-	SSHPort            int               // SSH port (for SSH servers, 0 = default 22)
-	SSHIdentityFile    string            // SSH identity file path (for SSH servers)
-	SSHKnownHostsFile  string            // SSH known_hosts file path; enables StrictHostKeyChecking=yes
-	SSHJumpHost        string            // SSH jump/bastion host ([user@]host[:port])
-	OpenAPIConfig   *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
-	Tools           []string          // Tool whitelist (empty = all tools)
-	OutputFormat    string            // Output format: "json", "toon", "csv", "text"
-	PinSchemas      *bool             // Override gateway schema pinning (nil = inherit gateway default)
+	Name              string
+	Transport         Transport
+	Endpoint          string               // For HTTP/SSE transport
+	ContainerID       string               // For Docker Stdio transport
+	External          bool                 // True for external URL servers (no container)
+	LocalProcess      bool                 // True for local process servers (no container)
+	SSH               bool                 // True for SSH servers (remote process over SSH)
+	OpenAPI           bool                 // True for OpenAPI-based servers
+	Command           []string             // For local process or SSH transport
+	WorkDir           string               // For local process transport
+	Env               map[string]string    // For local process or SSH transport
+	SSHHost           string               // SSH hostname (for SSH servers)
+	SSHUser           string               // SSH username (for SSH servers)
+	SSHPort           int                  // SSH port (for SSH servers, 0 = default 22)
+	SSHIdentityFile   string               // SSH identity file path (for SSH servers)
+	SSHKnownHostsFile string               // SSH known_hosts file path; enables StrictHostKeyChecking=yes
+	SSHJumpHost       string               // SSH jump/bastion host ([user@]host[:port])
+	OpenAPIConfig     *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
+	Tools             []string             // Tool whitelist (empty = all tools)
+	OutputFormat      string               // Output format: "json", "toon", "csv", "text"
+	PinSchemas        *bool                // Override gateway schema pinning (nil = inherit gateway default)
 
 	// ReadyTimeout overrides the HTTP/SSE readiness wait. Zero uses DefaultReadyTimeout.
 	// Applies only to HTTP and SSE transports; stdio and other paths ignore it.
@@ -133,20 +133,21 @@ type Gateway struct {
 	health        map[string]*HealthStatus         // name -> rollup health (public API)
 	replicaHealth map[string]map[int]*HealthStatus // name -> replica_id -> health
 
-	toolCallObserver ToolCallObserver // optional observer for tool call metrics
+	toolCallObserver  ToolCallObserver  // optional observer for tool call metrics
+	promptGetObserver PromptGetObserver // optional observer for prompt-get (skill usage) metrics
 
-	defaultOutputFormat    string                // gateway-level default output format
-	tokenCounter          token.Counter          // token counter for format savings calculation
-	formatSavingsRecorder FormatSavingsRecorder  // optional recorder for format savings
+	defaultOutputFormat   string                // gateway-level default output format
+	tokenCounter          token.Counter         // token counter for format savings calculation
+	formatSavingsRecorder FormatSavingsRecorder // optional recorder for format savings
 
 	maxToolResultBytes int // maximum tool result size before truncation (0 = default 64KB)
 
 	toolCountWarned bool // whether the tool count hint has been logged
 
-	schemaVerifier SchemaVerifier   // optional TOFU schema verifier (pins.GatewayAdapter)
-	pinAction      string           // "warn" | "block" on drift (default "warn")
+	schemaVerifier SchemaVerifier // optional TOFU schema verifier (pins.GatewayAdapter)
+	pinAction      string         // "warn" | "block" on drift (default "warn")
 	blockedMu      sync.RWMutex
-	blockedServers map[string]bool  // servers blocked due to unacknowledged schema drift
+	blockedServers map[string]bool // servers blocked due to unacknowledged schema drift
 
 	autoMu      sync.RWMutex
 	autoscalers map[string]*Autoscaler // name -> scaler for autoscaled replica sets
@@ -189,6 +190,15 @@ func (g *Gateway) SetToolCallObserver(obs ToolCallObserver) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.toolCallObserver = obs
+}
+
+// SetPromptGetObserver sets an observer that is notified after every
+// successful prompts/get. Used to collect per-skill usage metrics without
+// coupling the gateway to a metrics package.
+func (g *Gateway) SetPromptGetObserver(obs PromptGetObserver) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.promptGetObserver = obs
 }
 
 // SetVersion sets the gateway version string.
@@ -1589,8 +1599,10 @@ func (g *Gateway) HandlePromptsList() (*PromptsListResult, error) {
 	return &PromptsListResult{Prompts: result}, nil
 }
 
-// HandlePromptsGet returns a specific prompt with argument substitution.
-func (g *Gateway) HandlePromptsGet(params PromptsGetParams) (*PromptsGetResult, error) {
+// HandlePromptsGet returns a specific prompt with argument substitution. The
+// ctx carries the originating client id (set on the streamable transport via
+// WithClientID) so the prompt-get observer can attribute usage per client.
+func (g *Gateway) HandlePromptsGet(ctx context.Context, params PromptsGetParams) (*PromptsGetResult, error) {
 	pp := g.promptProvider()
 	if pp == nil {
 		return nil, fmt.Errorf("registry not available")
@@ -1614,6 +1626,21 @@ func (g *Gateway) HandlePromptsGet(params PromptsGetParams) (*PromptsGetResult, 
 			}
 		}
 		content = strings.ReplaceAll(content, placeholder, value)
+	}
+
+	// Notify the prompt-get observer that this skill was served. Recording is
+	// advisory and must never block or fail prompt serving, so it runs on a
+	// separate goroutine and the observer swallows its own errors. Fired only
+	// on the success path, so a missing required argument does not count as a
+	// served skill. The prompt name equals the registry skill's Name.
+	g.mu.RLock()
+	pObs := g.promptGetObserver
+	g.mu.RUnlock()
+	if pObs != nil {
+		go pObs.ObservePromptGet(PromptGetObservation{
+			PromptName: params.Name,
+			ClientID:   ClientIDFromContext(ctx),
+		})
 	}
 
 	return &PromptsGetResult{
@@ -1696,20 +1723,20 @@ func (g *Gateway) RefreshAllTools(ctx context.Context) error {
 
 // MCPServerStatus returns status information about registered MCP servers.
 type MCPServerStatus struct {
-	Name         string    `json:"name"`
-	Transport    Transport `json:"transport"`
-	Endpoint     string    `json:"endpoint,omitempty"`
-	ContainerID  string    `json:"containerId,omitempty"`
-	Initialized  bool      `json:"initialized"`
-	ToolCount    int       `json:"toolCount"`
-	Tools        []string  `json:"tools"`
-	External     bool      `json:"external"`     // True for external URL servers
-	LocalProcess bool      `json:"localProcess"` // True for local process servers
-	SSH          bool      `json:"ssh"`          // True for SSH servers
-	SSHHost      string    `json:"sshHost,omitempty"` // SSH hostname
-	OpenAPI      bool      `json:"openapi"`      // True for OpenAPI servers
-	OpenAPISpec  string    `json:"openapiSpec,omitempty"` // OpenAPI spec location
-	OutputFormat string    `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
+	Name         string     `json:"name"`
+	Transport    Transport  `json:"transport"`
+	Endpoint     string     `json:"endpoint,omitempty"`
+	ContainerID  string     `json:"containerId,omitempty"`
+	Initialized  bool       `json:"initialized"`
+	ToolCount    int        `json:"toolCount"`
+	Tools        []string   `json:"tools"`
+	External     bool       `json:"external"`               // True for external URL servers
+	LocalProcess bool       `json:"localProcess"`           // True for local process servers
+	SSH          bool       `json:"ssh"`                    // True for SSH servers
+	SSHHost      string     `json:"sshHost,omitempty"`      // SSH hostname
+	OpenAPI      bool       `json:"openapi"`                // True for OpenAPI servers
+	OpenAPISpec  string     `json:"openapiSpec,omitempty"`  // OpenAPI spec location
+	OutputFormat string     `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
 	Healthy      *bool      `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
 	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
 	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
@@ -1733,7 +1760,7 @@ type MCPServerStatus struct {
 // ReplicaSet. Uptime is derived from StartedAt at read time by the consumer.
 type ReplicaStatus struct {
 	ReplicaID       int        `json:"replicaId"`
-	State           string     `json:"state"`                     // "healthy" | "unhealthy" | "restarting"
+	State           string     `json:"state"` // "healthy" | "unhealthy" | "restarting"
 	Healthy         bool       `json:"healthy"`
 	InFlight        int64      `json:"inFlight"`
 	StartedAt       time.Time  `json:"startedAt,omitempty"`

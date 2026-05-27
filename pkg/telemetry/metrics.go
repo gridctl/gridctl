@@ -44,7 +44,20 @@ type MetricsSnapshotLine struct {
 	// takes the most recent non-nil ToolUsage per server (resetting on a
 	// token Reset) to rehydrate Audit Mode's usage history across restarts.
 	ToolUsage map[string]metrics.ToolStat `json:"tool_usage,omitempty"`
+	// PromptUsage carries *cumulative* per-skill prompts/get call counters
+	// (skillName -> calls + last-called) at flush time. Unlike ToolUsage it
+	// is global rather than per-server, so it is written only on lines for
+	// the reserved PromptUsageNamespace by the dedicated prompt-usage writer.
+	// omitempty keeps every per-server line byte-identical.
+	PromptUsage map[string]metrics.ToolStat `json:"prompt_usage,omitempty"`
 }
+
+// PromptUsageNamespace is the reserved flusher key under which global
+// per-skill prompts/get usage is persisted. It is not a real MCP server: the
+// skills registry is not a stack.MCPServers entry, so the gateway builder
+// registers a dedicated writer for it explicitly. The leading/trailing
+// underscores keep it from colliding with any user-defined server name.
+const PromptUsageNamespace = "__skills__"
 
 // MetricsFlusher periodically serializes per-server token counters from a
 // metrics.Accumulator and appends one NDJSON line per server with non-zero
@@ -62,6 +75,13 @@ type MetricsFlusher struct {
 	prevCost  map[string]metrics.CostMicroUSDCounts  // serverName -> last cost snapshot (parallel to prev)
 	prevTools map[string]map[string]metrics.ToolStat // serverName -> last per-tool snapshot (parallel to prev)
 
+	// Global prompt (skill) usage. The skills registry is not a per-server
+	// entry, so it gets a single dedicated writer rather than living in the
+	// per-server writers map. prevPrompts tracks the last flushed snapshot
+	// for change detection, mirroring prevTools.
+	promptWriter *lumberjack.Logger
+	prevPrompts  map[string]metrics.ToolStat
+
 	stop     chan struct{}
 	done     chan struct{}
 	started  bool
@@ -75,14 +95,15 @@ func NewMetricsFlusher(acc *metrics.Accumulator, interval time.Duration) *Metric
 		interval = DefaultMetricsFlushInterval
 	}
 	return &MetricsFlusher{
-		acc:       acc,
-		interval:  interval,
-		writers:   make(map[string]*lumberjack.Logger),
-		prev:      make(map[string]metrics.TokenCounts),
-		prevCost:  make(map[string]metrics.CostMicroUSDCounts),
-		prevTools: make(map[string]map[string]metrics.ToolStat),
-		stop:      make(chan struct{}),
-		done:      make(chan struct{}),
+		acc:         acc,
+		interval:    interval,
+		writers:     make(map[string]*lumberjack.Logger),
+		prev:        make(map[string]metrics.TokenCounts),
+		prevCost:    make(map[string]metrics.CostMicroUSDCounts),
+		prevTools:   make(map[string]map[string]metrics.ToolStat),
+		prevPrompts: make(map[string]metrics.ToolStat),
+		stop:        make(chan struct{}),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -150,6 +171,56 @@ func (f *MetricsFlusher) RemoveServer(name string) {
 	delete(f.prevTools, name)
 }
 
+// SetPromptUsageWriter installs (or replaces) the writer for the global
+// prompt-usage namespace. Unlike AddServer this is a single writer because
+// skill usage is not per-server; the gateway builder wires it explicitly off
+// the stack-global metrics toggle since the skills registry is not a
+// stack.MCPServers entry. Idempotent: re-installing closes the prior handle.
+func (f *MetricsFlusher) SetPromptUsageWriter(path string, opts LogOpts) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.promptWriter != nil {
+		_ = f.promptWriter.Close()
+	}
+
+	if opts.MaxSizeMB <= 0 {
+		opts.MaxSizeMB = 100
+	}
+	if opts.MaxBackups <= 0 {
+		opts.MaxBackups = 5
+	}
+	if opts.MaxAgeDays <= 0 {
+		opts.MaxAgeDays = 7
+	}
+
+	lj := &lumberjack.Logger{
+		Filename:   path,
+		MaxSize:    opts.MaxSizeMB,
+		MaxBackups: opts.MaxBackups,
+		MaxAge:     opts.MaxAgeDays,
+		Compress:   true,
+	}
+	if err := touchMode0600(path); err != nil {
+		return fmt.Errorf("telemetry prompt-usage writer: %w", err)
+	}
+	f.promptWriter = lj
+	return nil
+}
+
+// RemovePromptUsageWriter stops persisting prompt usage and closes its
+// writer. The previous-snapshot tracking is dropped so re-installing produces
+// a fresh cumulative line. Safe to call when no writer is configured.
+func (f *MetricsFlusher) RemovePromptUsageWriter() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.promptWriter != nil {
+		_ = f.promptWriter.Close()
+		f.promptWriter = nil
+	}
+	f.prevPrompts = make(map[string]metrics.ToolStat)
+}
+
 // ConfiguredServers returns the names currently persisting metrics.
 func (f *MetricsFlusher) ConfiguredServers() []string {
 	f.mu.Lock()
@@ -191,12 +262,16 @@ func (f *MetricsFlusher) Stop() {
 	f.stopOnce.Do(func() { close(f.stop) })
 	<-f.done
 
-	// Close all per-server writers after the final flush.
+	// Close all per-server writers and the prompt-usage writer after the
+	// final flush.
 	f.mu.Lock()
 	for _, lj := range f.writers {
 		if lj != nil {
 			_ = lj.Close()
 		}
+	}
+	if f.promptWriter != nil {
+		_ = f.promptWriter.Close()
 	}
 	f.mu.Unlock()
 }
@@ -232,6 +307,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 	snap := f.acc.Snapshot()
 	costSnap := f.acc.CostMicroSnapshot()
 	toolSnap := f.acc.ToolUsageSnapshot()
+	promptSnap := f.acc.PromptUsageSnapshot()
 
 	type planned struct {
 		writer *lumberjack.Logger
@@ -342,6 +418,23 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		f.prev[name] = current
 		f.prevCost[name] = currentCost
 		f.prevTools[name] = currentTools
+	}
+
+	// Prompt (skill) usage is global cumulative state under a dedicated
+	// writer, not part of any per-server line. Emit one line whenever the
+	// counts advanced since the last flush; reuse toolUsageChanged since both
+	// are map[string]ToolStat. The line carries no token/cost diff, so it is
+	// never a reset line.
+	if f.promptWriter != nil && toolUsageChanged(f.prevPrompts, promptSnap) {
+		plan = append(plan, planned{
+			writer: f.promptWriter,
+			line: MetricsSnapshotLine{
+				Time:        now.UTC(),
+				Server:      PromptUsageNamespace,
+				PromptUsage: promptSnap,
+			},
+		})
+		f.prevPrompts = promptSnap
 	}
 	f.mu.Unlock()
 
@@ -572,6 +665,65 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 	for name, tools := range latestTools {
 		f.prevTools[name] = tools
 	}
+	f.mu.Unlock()
+	return nil
+}
+
+// SeedPromptUsageFromFile reads up to the last n NDJSON entries from path and
+// restores cumulative per-skill prompts/get counts via RestorePromptUsage so
+// skill usage survives a gateway restart. It seeds prevPrompts too so the
+// next flush computes a change against the restored baseline rather than
+// re-emitting it. Prompt usage is a cumulative snapshot (like ToolUsage), so
+// the most recent non-nil PromptUsage line wins.
+//
+// Missing or empty files return nil (expected on first run). Malformed lines
+// are skipped without aborting.
+func (f *MetricsFlusher) SeedPromptUsageFromFile(path string, n int) error {
+	if path == "" || f.acc == nil {
+		return nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("seed prompt usage from %q: %w", path, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("seed prompt usage scan %q: %w", path, err)
+	}
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+
+	var latest map[string]metrics.ToolStat
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var rec MetricsSnapshotLine
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			continue
+		}
+		if rec.PromptUsage != nil {
+			latest = rec.PromptUsage
+		}
+	}
+	if len(latest) == 0 {
+		return nil
+	}
+	f.acc.RestorePromptUsage(latest)
+	f.mu.Lock()
+	f.prevPrompts = latest
 	f.mu.Unlock()
 	return nil
 }

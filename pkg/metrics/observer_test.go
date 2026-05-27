@@ -43,6 +43,28 @@ func TestObserver_ObserveToolCall(t *testing.T) {
 	}
 }
 
+func TestObserver_ObservePromptGet(t *testing.T) {
+	counter := token.NewHeuristicCounter(4)
+	acc := NewAccumulator(100)
+	obs := NewObserver(counter, acc)
+
+	obs.ObservePromptGet(mcp.PromptGetObservation{PromptName: "code-review", ClientID: "claude-code"})
+	obs.ObservePromptGet(mcp.PromptGetObservation{PromptName: "code-review"})
+
+	snap := acc.PromptUsageSnapshot()
+	if got := snap["code-review"].Calls; got != 2 {
+		t.Errorf("code-review calls = %d, want 2", got)
+	}
+	// Prompt serving must never appear in tool usage (Tools Audit Mode).
+	if tu := acc.ToolUsageSnapshot(); tu != nil {
+		t.Errorf("prompt get leaked into tool usage: %v", tu)
+	}
+	// And it must not record any token/cost usage.
+	if s := acc.Snapshot(); s.Session.TotalTokens != 0 {
+		t.Errorf("prompt get recorded tokens = %d, want 0", s.Session.TotalTokens)
+	}
+}
+
 func TestObserver_PerReplica(t *testing.T) {
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)

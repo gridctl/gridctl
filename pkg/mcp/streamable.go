@@ -27,7 +27,7 @@ type streamableEvent struct {
 type StreamableSession struct {
 	ID string
 
-	histMu sync.Mutex
+	histMu  sync.Mutex
 	history []*streamableEvent
 	nextID  atomic.Int64
 
@@ -355,7 +355,7 @@ func (s *StreamableHTTPServer) handleRequest(ctx context.Context, session *Strea
 	case "prompts/list":
 		return s.handlePromptsList(req)
 	case "prompts/get":
-		return s.handlePromptsGet(req)
+		return s.handlePromptsGet(ctx, req)
 	case "resources/list":
 		return s.handleResourcesList(req)
 	case "resources/read":
@@ -395,7 +395,7 @@ func (s *StreamableHTTPServer) handlePromptsList(req *jsonrpc.Request) jsonrpc.R
 	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
-func (s *StreamableHTTPServer) handlePromptsGet(req *jsonrpc.Request) jsonrpc.Response {
+func (s *StreamableHTTPServer) handlePromptsGet(ctx context.Context, req *jsonrpc.Request) jsonrpc.Response {
 	if req.Params == nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "params required for prompts/get")
 	}
@@ -403,7 +403,7 @@ func (s *StreamableHTTPServer) handlePromptsGet(req *jsonrpc.Request) jsonrpc.Re
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid prompts/get params")
 	}
-	result, err := s.gateway.HandlePromptsGet(params)
+	result, err := s.gateway.HandlePromptsGet(ctx, params)
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}

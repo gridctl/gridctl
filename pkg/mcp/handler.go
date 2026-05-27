@@ -119,7 +119,7 @@ func (h *Handler) handleMethod(r *http.Request, req *jsonrpc.Request) jsonrpc.Re
 	case "prompts/list":
 		resp = h.handlePromptsList(req)
 	case "prompts/get":
-		resp = h.handlePromptsGet(req)
+		resp = h.handlePromptsGet(r, req)
 	case "resources/list":
 		resp = h.handleResourcesList(req)
 	case "resources/read":
@@ -197,8 +197,10 @@ func (h *Handler) handlePromptsList(req *jsonrpc.Request) jsonrpc.Response {
 	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
-// handlePromptsGet handles the prompts/get request.
-func (h *Handler) handlePromptsGet(req *jsonrpc.Request) jsonrpc.Response {
+// handlePromptsGet handles the prompts/get request. The request context
+// (created by handleMethod) is threaded into the gateway so the prompt-get
+// observer can attribute usage per client.
+func (h *Handler) handlePromptsGet(r *http.Request, req *jsonrpc.Request) jsonrpc.Response {
 	if req.Params == nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "params required for prompts/get")
 	}
@@ -206,7 +208,7 @@ func (h *Handler) handlePromptsGet(req *jsonrpc.Request) jsonrpc.Response {
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid prompts/get params")
 	}
-	result, err := h.gateway.HandlePromptsGet(params)
+	result, err := h.gateway.HandlePromptsGet(r.Context(), params)
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}

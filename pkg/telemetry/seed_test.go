@@ -524,6 +524,88 @@ func approxCostEq(a, b float64) bool {
 	return d < eps
 }
 
+// TestEndToEnd_PromptUsagePersistAndReseed is the prompt-usage analogue of
+// TestEndToEnd_MetricsPersistAndReseed: after a daemon restart, per-skill
+// prompts/get counts and last-used timestamps come back from disk so the
+// Skills Library "Never used" facet stays honest across restarts. This guards
+// the persistence-writer pitfall (without the dedicated prompt-usage writer
+// the counts would record in memory but never reach disk or seed).
+func TestEndToEnd_PromptUsagePersistAndReseed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metrics.jsonl")
+
+	// === Daemon "instance 1" ===
+	acc1 := metrics.NewAccumulator(100)
+	f1 := NewMetricsFlusher(acc1, time.Hour)
+	if err := f1.SetPromptUsageWriter(path, LogOpts{}); err != nil {
+		t.Fatalf("SetPromptUsageWriter: %v", err)
+	}
+	acc1.RecordPromptGet("code-review")
+	acc1.RecordPromptGet("code-review")
+	acc1.RecordPromptGet("summarize")
+	f1.flushOnce(time.Now())
+
+	// "Restart": close instance 1's writer so the file is fully flushed.
+	f1.mu.Lock()
+	if f1.promptWriter != nil {
+		_ = f1.promptWriter.Close()
+	}
+	f1.mu.Unlock()
+
+	// === Daemon "instance 2" ===
+	acc2 := metrics.NewAccumulator(100)
+	f2 := NewMetricsFlusher(acc2, time.Hour)
+	if err := f2.SetPromptUsageWriter(path, LogOpts{}); err != nil {
+		t.Fatalf("SetPromptUsageWriter: %v", err)
+	}
+	if err := f2.SeedPromptUsageFromFile(path, 100); err != nil {
+		t.Fatalf("SeedPromptUsageFromFile: %v", err)
+	}
+
+	// Pre-restart counts are visible immediately via the snapshot.
+	snap := acc2.PromptUsageSnapshot()
+	if got := snap["code-review"].Calls; got != 2 {
+		t.Errorf("seeded code-review calls = %d, want 2", got)
+	}
+	if got := snap["summarize"].Calls; got != 1 {
+		t.Errorf("seeded summarize calls = %d, want 1", got)
+	}
+	if snap["code-review"].LastCalledAt.IsZero() {
+		t.Error("seeded code-review LastCalledAt should be non-zero")
+	}
+
+	// A live call after restart continues from the restored count, and a flush
+	// emits the new cumulative snapshot (3 for code-review).
+	acc2.RecordPromptGet("code-review")
+	f2.flushOnce(time.Now())
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	lines := splitNonEmpty(string(data))
+	var last MetricsSnapshotLine
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil {
+		t.Fatalf("unmarshal last line: %v", err)
+	}
+	if last.Server != PromptUsageNamespace {
+		t.Errorf("last line server = %q, want %q", last.Server, PromptUsageNamespace)
+	}
+	if got := last.PromptUsage["code-review"].Calls; got != 3 {
+		t.Errorf("post-seed code-review calls = %d, want 3 (2 seeded + 1 live)", got)
+	}
+}
+
+// TestMetricsFlusher_PromptUsageMissingFileNoError confirms seeding from an
+// absent prompt-usage file is a clean no-op (expected on first run).
+func TestMetricsFlusher_PromptUsageMissingFileNoError(t *testing.T) {
+	acc := metrics.NewAccumulator(100)
+	f := NewMetricsFlusher(acc, time.Hour)
+	if err := f.SeedPromptUsageFromFile(filepath.Join(t.TempDir(), "missing.jsonl"), 100); err != nil {
+		t.Errorf("missing file should be a no-op, got %v", err)
+	}
+}
+
 // splitNonEmpty splits on '\n' and discards empty entries.
 func splitNonEmpty(s string) []string {
 	var out []string
