@@ -147,6 +147,44 @@ describe('LibraryWorkspace', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
+  describe('KPI summary header', () => {
+    it('renders a clickable KPI card per state with search-aware counts', () => {
+      renderAt('/library');
+      // SAMPLE_SKILLS: 3 total, 1 active, 1 draft, 1 disabled.
+      expect(screen.getByRole('button', { name: 'Total (3)' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Active (1)' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Draft (1)' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Disabled (1)' })).toBeInTheDocument();
+    });
+
+    it('applies the matching ?filter when a KPI card is clicked', async () => {
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Draft (1)' }));
+      await waitFor(() => expect(currentSearch).toContain('filter=draft'));
+      // Only the draft skill remains visible.
+      expect(screen.getByText('draft-summarizer')).toBeInTheDocument();
+      expect(screen.queryByText('incident-triage')).not.toBeInTheDocument();
+    });
+
+    it('clears the filter when Total is clicked (counts stay search-aware, not tab-aware)', async () => {
+      let currentSearch = '?filter=draft';
+      renderAt('/library?filter=draft', (s) => { currentSearch = s; });
+
+      // Counts come from the unfiltered search results, so Total is still 3.
+      fireEvent.click(screen.getByRole('button', { name: 'Total (3)' }));
+      await waitFor(() => expect(currentSearch).not.toContain('filter='));
+      expect(screen.getByText('incident-triage')).toBeInTheDocument();
+    });
+
+    it('marks the KPI card matching ?filter as active', () => {
+      renderAt('/library?filter=active');
+      expect(screen.getByRole('button', { name: 'Active (1)' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Total (3)' })).toHaveAttribute('aria-pressed', 'false');
+    });
+  });
+
   describe('inspector pane', () => {
     it('shows the empty state when nothing is selected', () => {
       renderAt('/library');
