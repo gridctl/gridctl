@@ -227,6 +227,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("GET /api/tools/catalog", s.handleToolsCatalog)
 	mux.HandleFunc("GET /api/tools/usage", s.handleToolsUsage)
+	mux.HandleFunc("GET /api/skills/usage", s.handleSkillsUsage)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
 	mux.HandleFunc("/api/metrics/tokens", s.handleMetricsTokens)
 	mux.HandleFunc("/api/metrics/cost", s.handleMetricsCost)
