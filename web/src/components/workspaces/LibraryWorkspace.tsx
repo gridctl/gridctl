@@ -39,13 +39,6 @@ function isGroupMode(value: string | null): value is GroupMode {
   return value === 'source' || value === 'category' || value === 'none';
 }
 
-const TABS: { key: FilterTab; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'active', label: 'Active' },
-  { key: 'draft', label: 'Draft' },
-  { key: 'disabled', label: 'Disabled' },
-];
-
 function isFilterTab(value: string | null): value is FilterTab {
   return value === 'active' || value === 'draft' || value === 'disabled' || value === 'all';
 }
@@ -65,7 +58,6 @@ export function LibraryWorkspace() {
   // Registry is fetched by the global usePolling cycle in AppShell — read from
   // the store instead of starting a second polling loop here.
   const skills = useRegistryStore((s) => s.skills);
-  const status = useRegistryStore((s) => s.status);
   const sources = useRegistryStore((s) => s.sources);
 
   // null means "not loaded yet"; the deep-link error toast must wait for a
@@ -400,8 +392,9 @@ export function LibraryWorkspace() {
             onNewSkill={handleNewSkill}
             onRefresh={refreshRegistry}
             onPopout={handlePopout}
-            totalSkills={status?.totalSkills ?? skills?.length ?? 0}
-            activeSkills={status?.activeSkills ?? 0}
+            counts={tabCounts}
+            activeTab={activeTab}
+            onSelectFilter={setActiveTab}
             compact={compact}
           />
 
@@ -427,37 +420,11 @@ export function LibraryWorkspace() {
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex gap-1 flex-wrap">
-                {TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-colors',
-                      activeTab === tab.key
-                        ? 'bg-primary/10 text-primary border border-primary/25'
-                        : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
-                    )}
-                  >
-                    {tab.label}
-                    <span
-                      className={cn(
-                        'text-[10px] px-1.5 py-0 rounded-full font-mono min-w-[18px] text-center transition-colors',
-                        activeTab === tab.key
-                          ? 'bg-primary/15 text-primary'
-                          : 'bg-surface-highlight text-text-muted',
-                      )}
-                    >
-                      {tabCounts[tab.key]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {hasSources && (
+            {hasSources && (
+              <div className="flex items-center justify-end gap-2 flex-wrap">
                 <GroupByControl mode={groupMode} onChange={setGroupMode} />
-              )}
-            </div>
+              </div>
+            )}
 
             {groupMode === 'source' && activeSource && activeSourceLabel && (
               <div className="flex">
@@ -601,46 +568,122 @@ function GroupByControl({ mode, onChange }: { mode: GroupMode; onChange: (m: Gro
   );
 }
 
+// Muted state-color dots, aligned with StateBadge. They are a secondary,
+// aria-hidden cue — every KPI is conveyed by its text label + count, so the
+// row never relies on color alone.
+const STATE_DOT: Record<ItemState, string> = {
+  active: 'bg-emerald-400',
+  draft: 'bg-amber-400',
+  disabled: 'bg-text-muted',
+};
+
+// KPI cards double as the state filter: clicking one applies that ?filter, and
+// "Total" clears it. Counts are search-aware (they come from tabCounts),
+// matching the tab strip these cards replaced. Appending a metric here (e.g.
+// failing validation, once that data exists) extends the row without churn.
+const KPI_METRICS: { key: FilterTab; label: string; dot: ItemState | null }[] = [
+  { key: 'all', label: 'Total', dot: null },
+  { key: 'active', label: 'Active', dot: 'active' },
+  { key: 'draft', label: 'Draft', dot: 'draft' },
+  { key: 'disabled', label: 'Disabled', dot: 'disabled' },
+];
+
 interface LibraryHeaderProps {
   onNewSkill: () => void;
   onRefresh: () => void;
   onPopout: () => void;
-  totalSkills: number;
-  activeSkills: number;
+  counts: Record<FilterTab, number>;
+  activeTab: FilterTab;
+  onSelectFilter: (tab: FilterTab) => void;
   compact: boolean;
 }
 
-function LibraryHeader({ onNewSkill, onRefresh, onPopout, totalSkills, activeSkills, compact }: LibraryHeaderProps) {
+function LibraryHeader({ onNewSkill, onRefresh, onPopout, counts, activeTab, onSelectFilter, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
   return (
     <header className={cn(
-      'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle flex items-center justify-between px-6',
+      'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 flex flex-col gap-2',
       compact ? 'py-2' : 'py-3',
     )}>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3">
         <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">
           library
         </div>
-        <div className="font-mono text-[10px] text-text-muted">
-          {totalSkills} {totalSkills === 1 ? 'skill' : 'skills'}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onNewSkill}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+          >
+            <Plus size={12} /> New Skill
+          </button>
+          <IconButton icon={RefreshCw} onClick={onRefresh} tooltip="Refresh" size="sm" variant="ghost" />
+          <PopoutButton onClick={onPopout} disabled={registryDetached} tooltip="Open in new window" />
         </div>
-        {activeSkills > 0 && (
-          <div className="font-mono text-[10px] text-status-running">
-            {activeSkills} active
-          </div>
-        )}
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onNewSkill}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
-        >
-          <Plus size={12} /> New Skill
-        </button>
-        <IconButton icon={RefreshCw} onClick={onRefresh} tooltip="Refresh" size="sm" variant="ghost" />
-        <PopoutButton onClick={onPopout} disabled={registryDetached} tooltip="Open in new window" />
+
+      {/* KPI summary cards — the first-class dashboard signal, and the primary
+          state filter. They replace the old tab strip, so the URL contract
+          (?filter) and selected-state live in exactly one place. */}
+      <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter skills by state">
+        {KPI_METRICS.map((metric) => (
+          <KpiCard
+            key={metric.key}
+            label={metric.label}
+            count={counts[metric.key]}
+            dot={metric.dot}
+            active={activeTab === metric.key}
+            compact={compact}
+            onClick={() => onSelectFilter(metric.key)}
+          />
+        ))}
       </div>
     </header>
+  );
+}
+
+interface KpiCardProps {
+  label: string;
+  count: number;
+  dot: ItemState | null;
+  active: boolean;
+  compact: boolean;
+  onClick: () => void;
+}
+
+function KpiCard({ label, count, dot, active, compact, onClick }: KpiCardProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={`${label} (${count})`}
+      className={cn(
+        'flex flex-col items-start rounded-lg border transition-colors text-left min-w-[60px]',
+        compact ? 'px-2.5 py-1' : 'px-3 py-1.5',
+        active
+          ? 'bg-primary/10 border-primary/30'
+          : 'bg-background/40 border-border/40 hover:border-border hover:bg-surface-highlight',
+      )}
+    >
+      <span className="flex items-center gap-1.5">
+        {dot && (
+          <span aria-hidden="true" className={cn('inline-block w-1.5 h-1.5 rounded-full flex-shrink-0', STATE_DOT[dot])} />
+        )}
+        <span className={cn(
+          'text-[10px] uppercase tracking-wider font-medium',
+          active ? 'text-primary' : 'text-text-muted',
+        )}>
+          {label}
+        </span>
+      </span>
+      <span className={cn(
+        'font-mono leading-none mt-0.5',
+        compact ? 'text-xs' : 'text-sm',
+        active ? 'text-primary' : 'text-text-secondary',
+      )}>
+        {count}
+      </span>
+    </button>
   );
 }
 
