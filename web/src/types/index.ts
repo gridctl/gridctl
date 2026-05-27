@@ -243,6 +243,25 @@ export interface ToolUsageResponse {
   servers: Record<string, Record<string, ToolUsageStat>>;
 }
 
+// One skill's observed usage from GET /api/skills/usage. lastCalledAt is
+// explicitly null (not omitted) when a skill has a count but no recorded
+// timestamp, matching the endpoint's documented shape.
+export interface SkillUsageStat {
+  calls: number;
+  lastCalledAt: string | null;
+}
+
+// GET /api/skills/usage: per-skill prompts/get call counts + last-called
+// times, keyed by skill name. Joined to the registry list by name on the
+// frontend (the registry payload is unchanged). observedSince is when this
+// gateway process began recording; with metrics persistence enabled the
+// restored counts may predate it, so a skill missing from `skills` means
+// "no recorded calls", not a guaranteed longer disuse window.
+export interface SkillUsageResponse {
+  observedSince: string | null;
+  skills: Record<string, SkillUsageStat>;
+}
+
 // Node status for UI display
 export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle';
 
