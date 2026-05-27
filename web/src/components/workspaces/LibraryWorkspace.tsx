@@ -13,6 +13,7 @@ import { PopoutButton } from '../ui/PopoutButton';
 import { SkillEditor } from '../registry/SkillEditor';
 import { SkillCardSkeleton } from '../registry/SkillCardSkeleton';
 import { LibraryGrid, type GroupMode } from '../registry/LibraryGrid';
+import { SkillDetailPanel } from '../registry/SkillDetailPanel';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { showToast } from '../ui/Toast';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
@@ -154,6 +155,22 @@ export function LibraryWorkspace() {
     );
   }, [setSearchParams]);
 
+  // Inspector selection — the skill shown in the right-rail SkillDetailPanel.
+  // URL-synced as ?selected=<name> (replace history) so reload and deep-links
+  // restore it; kept distinct from /library/:skillName, which opens the editor.
+  const selectedName = searchParams.get('selected');
+  const setSelectedName = useCallback((name: string | null) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (name) next.set('selected', name);
+        else next.delete('selected');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   // Editor + delete confirm state
   const [showEditor, setShowEditor] = useState(false);
   const [editingSkill, setEditingSkill] = useState<AgentSkill | undefined>();
@@ -193,6 +210,20 @@ export function LibraryWorkspace() {
       navigate({ pathname: '/library', search: searchParams.toString() }, { replace: true });
     }
   }, [navigate, searchParams, skillName]);
+
+  // Esc closes the inspector — but only when no modal is open and focus isn't in
+  // a text input (the search box keeps its own clear affordance).
+  useEffect(() => {
+    if (!selectedName) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || showEditor) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      setSelectedName(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedName, showEditor, setSelectedName]);
 
   const refreshRegistry = useCallback(async () => {
     try {
@@ -245,12 +276,15 @@ export function LibraryWorkspace() {
       await deleteRegistrySkill(confirmDelete);
       showToast('success', 'Skill deleted');
       refreshRegistry();
+      // Drop the inspector selection if it pointed at the deleted skill, so the
+      // URL doesn't carry a dead ?selected= param.
+      if (confirmDelete === selectedName) setSelectedName(null);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setConfirmDelete(null);
     }
-  }, [confirmDelete, refreshRegistry]);
+  }, [confirmDelete, refreshRegistry, selectedName, setSelectedName]);
 
   const handleNewSkill = useCallback(() => {
     setEditingSkill(undefined);
@@ -323,9 +357,44 @@ export function LibraryWorkspace() {
     return info ? `${info.owner}/${info.repo}` : activeSource;
   }, [activeSource, sources]);
 
+  // Inspector state, derived from the in-store skills (no per-skill fetch). An
+  // unknown ?selected= simply yields null → the panel's empty state.
+  const selectedSkillObj = useMemo(
+    () => (selectedName ? (skills ?? []).find((s) => s.name === selectedName) ?? null : null),
+    [selectedName, skills],
+  );
+
+  // Other skills sharing the selected skill's top-level category, for the
+  // inspector's "Related skills" list.
+  const relatedSkills = useMemo(() => {
+    if (!selectedSkillObj?.dir) return [];
+    const key = selectedSkillObj.dir.split('/')[0];
+    return (skills ?? []).filter(
+      (s) => s.name !== selectedSkillObj.name && s.dir?.split('/')[0] === key,
+    );
+  }, [selectedSkillObj, skills]);
+
+  const inspector = (
+    <SkillDetailPanel
+      skill={selectedSkillObj}
+      source={selectedSkillObj ? sourceMap.get(selectedSkillObj.name) : undefined}
+      relatedSkills={relatedSkills}
+      onClose={() => setSelectedName(null)}
+      onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
+      onToggle={(s) => (s.state === 'active' ? handleDisable(s) : handleEnable(s))}
+      onDelete={(s) => setConfirmDelete(s.name)}
+      onSelectRelated={(name) => setSelectedName(name)}
+    />
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-      <WorkspaceShell workspace="library" defaultLeftPct={0} defaultRightPct={0}>
+      <WorkspaceShell
+        workspace="library"
+        defaultRightPct={30}
+        minRightPx={300}
+        right={inspector}
+      >
         <main className="flex flex-col h-full overflow-hidden">
           <LibraryHeader
             onNewSkill={handleNewSkill}
@@ -463,6 +532,8 @@ export function LibraryWorkspace() {
                 onDisable={handleDisable}
                 onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
                 onDelete={(s) => setConfirmDelete(s.name)}
+                onSelect={(s) => setSelectedName(s.name)}
+                activeSkillName={selectedName}
               />
             )}
           </div>
