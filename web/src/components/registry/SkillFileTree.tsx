@@ -15,9 +15,12 @@ import type { SkillFile } from '../../types';
 interface SkillFileTreeProps {
   skillName: string;
   onSelectFile?: (path: string, content: string) => void;
+  /** Hide the write affordances (add file, delete file) for read-only surfaces
+   *  like the Library inspector. Defaults to false (full editor behavior). */
+  readOnly?: boolean;
 }
 
-export function SkillFileTree({ skillName, onSelectFile }: SkillFileTreeProps) {
+export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: SkillFileTreeProps) {
   const [files, setFiles] = useState<SkillFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(['scripts', 'references', 'assets']));
@@ -79,16 +82,18 @@ export function SkillFileTree({ skillName, onSelectFile }: SkillFileTreeProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-1.5">
         <span className="text-[10px] text-text-muted uppercase tracking-wider">Files</span>
-        <button
-          onClick={() => setShowNewFile(!showNewFile)}
-          className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
-        >
-          <Plus size={10} /> Add
-        </button>
+        {!readOnly && (
+          <button
+            onClick={() => setShowNewFile(!showNewFile)}
+            className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
+          >
+            <Plus size={10} /> Add
+          </button>
+        )}
       </div>
 
       {/* New file input */}
-      {showNewFile && (
+      {!readOnly && showNewFile && (
         <div className="px-3 pb-2 flex items-center gap-1.5">
           <input
             value={newFilePath}
@@ -139,14 +144,16 @@ export function SkillFileTree({ skillName, onSelectFile }: SkillFileTreeProps) {
                       <span className="text-[10px] text-text-muted font-mono">
                         {formatFileSize(file.size)}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFile(file.path)}
-                        title="Delete file"
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
-                      >
-                        <Trash2 size={10} />
-                      </button>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFile(file.path)}
+                          title="Delete file"
+                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
