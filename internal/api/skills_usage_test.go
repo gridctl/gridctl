@@ -78,8 +78,8 @@ func TestHandleSkillsUsage_NoAccumulatorReturns503(t *testing.T) {
 
 // TestHandleSkillsUsage_SurvivesRestoreSeed asserts the endpoint surfaces
 // usage that was restored from disk (the persistence path), not just usage
-// recorded live this process — i.e. the Skills Library reflects pre-restart
-// history.
+// recorded live this process (i.e. the Skills Library reflects pre-restart
+// history).
 func TestHandleSkillsUsage_SurvivesRestoreSeed(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	last := time.Now().Add(-3 * time.Hour).Truncate(time.Second)

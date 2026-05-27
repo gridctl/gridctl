@@ -524,13 +524,12 @@ func approxCostEq(a, b float64) bool {
 	return d < eps
 }
 
-// splitNonEmpty splits on '\n' and discards empty entries.
 // TestEndToEnd_PromptUsagePersistAndReseed is the prompt-usage analogue of
 // TestEndToEnd_MetricsPersistAndReseed: after a daemon restart, per-skill
 // prompts/get counts and last-used timestamps come back from disk so the
 // Skills Library "Never used" facet stays honest across restarts. This guards
-// the persistence-writer pitfall — without the dedicated prompt-usage writer
-// the counts would record in memory but never reach disk or seed.
+// the persistence-writer pitfall (without the dedicated prompt-usage writer
+// the counts would record in memory but never reach disk or seed).
 func TestEndToEnd_PromptUsagePersistAndReseed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "metrics.jsonl")
@@ -607,6 +606,7 @@ func TestMetricsFlusher_PromptUsageMissingFileNoError(t *testing.T) {
 	}
 }
 
+// splitNonEmpty splits on '\n' and discards empty entries.
 func splitNonEmpty(s string) []string {
 	var out []string
 	for _, l := range strings.Split(s, "\n") {
