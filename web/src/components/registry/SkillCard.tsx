@@ -13,6 +13,11 @@ export interface SkillCardProps {
   onDelete: (skill: AgentSkill) => void;
   /** Imported-from source, when this skill came from a git source. */
   source?: SkillSourceStatus;
+  /** Select this card into the inspector. When omitted (e.g. the detached
+   *  grid), the card body is not interactive. */
+  onSelect?: (skill: AgentSkill) => void;
+  /** Whether this card is the one shown in the inspector. */
+  isActive?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -24,6 +29,8 @@ export const SkillCard = memo(({
   onEdit,
   onDelete,
   source,
+  onSelect,
+  isActive = false,
   className,
   style,
 }: SkillCardProps) => {
@@ -35,19 +42,41 @@ export const SkillCard = memo(({
   return (
     <div
       style={style}
+      aria-current={isActive ? 'true' : undefined}
       className={cn(
         'group relative rounded-xl overflow-hidden flex flex-col',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.02]',
         'border-white/[0.08] hover:border-primary/40 focus-within:border-primary/40 hover:shadow-node-hover',
+        isActive && 'border-primary/50 bg-primary/[0.06] shadow-node-hover',
         className,
       )}
     >
-      {/* Top accent line — muted at rest, warms on hover/focus */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 group-hover:via-primary/40 group-focus-within:via-primary/40 to-transparent transition-colors duration-200" />
+      {/* Top accent line — muted at rest, warms on hover/focus (and when active) */}
+      <div className={cn(
+        'absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent to-transparent transition-colors duration-200',
+        'via-white/10 group-hover:via-primary/40 group-focus-within:via-primary/40',
+        isActive && 'via-primary/50',
+      )} />
 
-      {/* Card body */}
-      <div className="p-3 flex flex-col gap-2 flex-1">
+      {/* Card body — clickable to open the inspector */}
+      <div
+        className={cn('p-3 flex flex-col gap-2 flex-1', onSelect && 'cursor-pointer')}
+        role={onSelect ? 'button' : undefined}
+        tabIndex={onSelect ? 0 : undefined}
+        aria-label={onSelect ? `Inspect ${skill.name}` : undefined}
+        onClick={onSelect ? () => onSelect(skill) : undefined}
+        onKeyDown={
+          onSelect
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelect(skill);
+                }
+              }
+            : undefined
+        }
+      >
         {/* Header: icon + name + state badge */}
         <div className="flex items-start gap-2">
           <div className="p-1.5 rounded-md border bg-surface-highlight/60 border-border/40 flex-shrink-0 mt-0.5 transition-colors duration-200 group-hover:bg-primary/10 group-hover:border-primary/20 group-focus-within:bg-primary/10 group-focus-within:border-primary/20">
