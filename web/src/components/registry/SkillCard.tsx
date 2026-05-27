@@ -3,6 +3,8 @@ import { BookOpen, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
+import { skillCategory, skillMetaSummary } from '../../lib/skillMeta';
+import { toTitleCase } from '../../lib/text';
 import type { AgentSkill, SkillSourceStatus } from '../../types';
 
 export interface SkillCardProps {
@@ -39,6 +41,10 @@ export const SkillCard = memo(({
     else onEnable(s);
   };
 
+  // Scannability signals, both derived from fields the skill already carries.
+  const category = skillCategory(skill.dir);
+  const metaSummary = skillMetaSummary(skill).join(' · ');
+
   return (
     <div
       style={style}
@@ -58,6 +64,11 @@ export const SkillCard = memo(({
         'via-white/10 group-hover:via-primary/40 group-focus-within:via-primary/40',
         isActive && 'via-primary/50',
       )} />
+
+      {/* Left accent — a single neutral, static anchor for cross-card scanning.
+          Category-agnostic (not a per-category color), conveyed only as visual
+          rhythm; the category itself reads as text in the metadata line. */}
+      <div aria-hidden="true" className="absolute top-0 bottom-0 left-0 w-0.5 bg-white/10" />
 
       {/* Card body — clickable to open the inspector */}
       <div
@@ -104,6 +115,26 @@ export const SkillCard = memo(({
         )}>
           {skill.description || 'No description'}
         </p>
+
+        {/* Metadata line: category + weight summary, drawn only from existing
+            fields. Fixed height (h-4) keeps every card the same height and
+            reserves the trailing slot for a future validation chip — no
+            reflow when one lands. Empty when a skill has no category or
+            summary. */}
+        <div
+          data-testid="skill-meta"
+          className="flex items-center gap-1.5 h-4 min-w-0 log-text-detail text-text-muted"
+        >
+          {category && (
+            <span className="uppercase tracking-wider font-medium flex-shrink-0">
+              {toTitleCase(category)}
+            </span>
+          )}
+          {category && metaSummary && (
+            <span aria-hidden="true" className="text-text-muted/40">·</span>
+          )}
+          {metaSummary && <span className="truncate min-w-0">{metaSummary}</span>}
+        </div>
       </div>
 
       {/* Footer: actions */}
