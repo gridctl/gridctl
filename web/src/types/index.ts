@@ -546,6 +546,29 @@ export interface UpdateSummary {
   sources: SourceUpdateSummary[];
 }
 
+export interface SkillSyncResult {
+  skill: string;
+  imported?: number;
+  warnings?: string[];
+  error?: string;
+}
+
+export interface SourceSyncResult {
+  name: string;
+  repo: string;
+  pinned?: boolean;
+  skills?: SkillSyncResult[];
+  error?: string;
+}
+
+export interface SourceSyncSummary {
+  sources: SourceSyncResult[];
+  syncedSources: number;
+  updatedSkills: number;
+  failedSources: number;
+  pinnedSources: number;
+}
+
 // --- Telemetry Persistence Types (Phase 4) ---
 
 // Three signal types persisted to disk. Lower-case wire shape matches the
