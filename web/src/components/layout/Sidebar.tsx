@@ -9,7 +9,6 @@ import {
   KeyRound,
   FileJson,
   HeartPulse,
-  Monitor,
   Gauge,
   FileOutput,
   Activity,
@@ -28,6 +27,7 @@ import { ToolsEditor } from '../sidebar/ToolsEditor';
 import { AutoscalePanel } from '../status/AutoscalePanel';
 import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
+import { getClientIcon } from '../../lib/clientIcons';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -74,9 +74,9 @@ export function Sidebar() {
   // Client-specific data
   const clientData = isClient ? (data as ClientNodeData) : null;
 
-  // Icon logic: Monitor for clients, Globe for external, Cpu for local process, KeyRound for SSH, FileJson for OpenAPI, Terminal for container-based
+  // Icon logic: per-client brand icon for clients, Globe for external, Cpu for local process, KeyRound for SSH, FileJson for OpenAPI, Terminal for container-based
   const Icon = isClient
-    ? Monitor
+    ? getClientIcon(clientData?.slug ?? '')
     : isServer
       ? isExternal
         ? Globe
@@ -89,8 +89,8 @@ export function Sidebar() {
               : Terminal
       : Box;
 
-  // Color logic: primary (amber) for clients, violet for MCP servers, teal for resources
-  const colorClass = isClient ? 'primary' : isServer ? 'violet' : 'secondary';
+  // Color logic: neutral monochrome for clients (matches their topology nodes), violet for MCP servers, teal for resources
+  const colorClass = isClient ? 'neutral' : isServer ? 'violet' : 'secondary';
 
   const handleShowLogs = () => {
     setBottomPanelOpen(true);
@@ -115,9 +115,9 @@ export function Sidebar() {
       <div
         className={cn(
           'absolute top-0 left-0 bottom-0 w-px',
-          colorClass === 'primary' && 'bg-gradient-to-b from-primary/40 via-primary/20 to-transparent',
           colorClass === 'violet' && 'bg-gradient-to-b from-violet-500/40 via-violet-500/20 to-transparent',
-          colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent'
+          colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent',
+          colorClass === 'neutral' && 'bg-gradient-to-b from-white/20 via-white/10 to-transparent'
         )}
       />
 
