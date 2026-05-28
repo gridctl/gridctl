@@ -180,6 +180,34 @@ func TestResolveSemVerConstraint(t *testing.T) {
 	}
 }
 
+func TestIsPinnedRef(t *testing.T) {
+	tests := []struct {
+		ref  string
+		want bool
+	}{
+		{"", false},
+		{"main", false},
+		{"master", false},
+		{"develop", false},
+		{"v1.2.3", true},
+		{"1.0.0", true},
+		{"release-2026", false},
+		{"^1.0", false},
+		{"~1.2", false},
+		{"abc1234567890abc1234567890abc1234567890a", true}, // 40-char hex SHA
+		{"abc1234", false},                                 // short SHA, not pinned
+		{"ABC1234567890ABC1234567890ABC1234567890A", true}, // uppercase hex
+		{"feature.x", true},                                // dot heuristic catches false positive
+		{"not-hex-but-40-chars-long-1234567890123zz", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ref, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsPinnedRef(tt.ref))
+		})
+	}
+}
+
 func TestRepoToName(t *testing.T) {
 	tests := []struct {
 		repo string
@@ -192,7 +220,7 @@ func TestRepoToName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.repo, func(t *testing.T) {
-			assert.Equal(t, tt.want, repoToName(tt.repo))
+			assert.Equal(t, tt.want, RepoToName(tt.repo))
 		})
 	}
 }

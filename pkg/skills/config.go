@@ -112,7 +112,7 @@ func LoadSkillsConfig(path string) (*SkillsConfig, error) {
 			return nil, fmt.Errorf("source %d: repo is required", i)
 		}
 		if src.Name == "" {
-			cfg.Sources[i].Name = repoToName(src.Repo)
+			cfg.Sources[i].Name = RepoToName(src.Repo)
 		}
 	}
 
@@ -123,6 +123,49 @@ func LoadSkillsConfig(path string) (*SkillsConfig, error) {
 func SkillsConfigPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".gridctl", "skills.yaml")
+}
+
+// IsPinnedRef returns true when ref looks like an immutable pin (a specific
+// version tag containing a ".", or a full 40-character commit SHA). Bare
+// branch names and empty refs return false so they are treated as floating.
+//
+// This is a heuristic, not a guarantee: a tag like "release-2026" with no dot
+// will read as unpinned, and a branch named "feature.x" will read as pinned.
+// Used by aggregate sync to skip pins by default so a bulk operation does
+// not silently bump a user's intentionally-fixed version.
+func IsPinnedRef(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	if isFullSHA(ref) {
+		return true
+	}
+	if IsSemVerConstraint(ref) {
+		return false
+	}
+	for _, r := range ref {
+		if r == '.' {
+			return true
+		}
+	}
+	return false
+}
+
+// isFullSHA reports whether s is exactly 40 lowercase or uppercase hex chars.
+func isFullSHA(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // IsSemVerConstraint returns true if the ref looks like a semver constraint.
@@ -170,10 +213,11 @@ func ResolveSemVerConstraint(constraintStr string, tags []string) (string, error
 	return bestTag, nil
 }
 
-// repoToName extracts a short name from a repo URL.
-func repoToName(repo string) string {
+// RepoToName extracts a short name from a repo URL (the last path segment
+// with any ".git" suffix stripped). Exported so callers like the CLI can
+// match the source names this package uses without duplicating the logic.
+func RepoToName(repo string) string {
 	base := filepath.Base(repo)
-	// Remove .git suffix
 	if ext := filepath.Ext(base); ext == ".git" {
 		base = base[:len(base)-len(ext)]
 	}
