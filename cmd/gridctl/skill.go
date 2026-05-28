@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -70,10 +73,18 @@ var skillListCmd = &cobra.Command{
 }
 
 var skillUpdateCmd = &cobra.Command{
-	Use:   "update [name]",
-	Short: "Update imported skills",
-	Long:  "Fetch latest from source repositories and apply updates.",
-	Args:  cobra.MaximumNArgs(1),
+	Use:     "update [name]",
+	Aliases: []string{"sync"},
+	Short:   "Update imported skills (alias: sync)",
+	Long: `Fetch latest from source repositories and apply updates.
+
+With no name, every imported skill is checked. By default, skills whose
+on-disk SKILL.md has been locally modified since the last import are
+refused; pass --force to overwrite them anyway.
+
+This command is also available as 'gridctl skill sync' for parity with the
+"Sync sources" affordance in the web UI Library.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := ""
 		if len(args) > 0 {
@@ -391,6 +402,36 @@ func runSkillList() error {
 	return nil
 }
 
+// driftedSkills returns the names of skills with local edits to their on-disk
+// SKILL.md. When skillName is non-empty, only that skill is inspected (so
+// `gridctl skill update foo` doesn't pay to hash every installed skill).
+func driftedSkills(store *registry.Store, skillName string) ([]string, error) {
+	if skillName != "" {
+		sk, err := store.GetSkill(skillName)
+		if err != nil {
+			return nil, nil // skill not found — let imp.Update produce the real error
+		}
+		dir := sk.Dir
+		if dir == "" {
+			dir = sk.Name
+		}
+		skillDir := filepath.Join(registryDir(), "skills", dir)
+		origin, err := skills.ReadOrigin(skillDir)
+		if err != nil || origin.InstalledHash == "" {
+			return nil, nil
+		}
+		current, err := skills.ContentHashFile(filepath.Join(skillDir, "SKILL.md"))
+		if err != nil {
+			return nil, nil
+		}
+		if current != origin.InstalledHash {
+			return []string{skillName}, nil
+		}
+		return nil, nil
+	}
+	return skills.DetectDrift(context.Background(), store, skills.LockFilePath(), "")
+}
+
 func runSkillUpdate(name string) error {
 	store, err := loadRegistry()
 	if err != nil {
@@ -399,6 +440,23 @@ func runSkillUpdate(name string) error {
 
 	imp := newImporter(store)
 	printer := output.New()
+
+	// Drift check (unless --force or --dry-run). Refuse rather than silently
+	// overwrite local edits to imported SKILL.md files.
+	if !skillUpdateForce && !skillUpdateDryRun {
+		drifted, err := driftedSkills(store, name)
+		if err != nil {
+			return fmt.Errorf("checking drift: %w", err)
+		}
+		if len(drifted) > 0 {
+			fmt.Fprintln(os.Stderr, "The following skills have local edits that would be overwritten:")
+			for _, d := range drifted {
+				fmt.Fprintf(os.Stderr, "  - %s\n", d)
+			}
+			fmt.Fprintln(os.Stderr, "\nRe-run with --force to overwrite, or revert local changes first.")
+			return fmt.Errorf("refusing to overwrite locally-edited skills")
+		}
+	}
 
 	if name != "" {
 		result, err := imp.Update(name, skillUpdateDryRun, skillUpdateForce)
@@ -414,18 +472,47 @@ func runSkillUpdate(name string) error {
 		return nil
 	}
 
-	// Update all remote skills
+	// Update all remote skills, grouped by source so we can honor pins and
+	// print an aggregate summary at the end.
 	allSkills := store.ListSkills()
-	updated := 0
+	type skillRef struct {
+		sk     *registry.AgentSkill
+		ref    string
+		source string
+	}
+	var remoteSkills []skillRef
+	sourcesSeen := map[string]string{} // source name → ref (one is enough for pin check)
 	for _, sk := range allSkills {
 		skillDir := skillDirPath(sk)
 		if !skills.HasOrigin(skillDir) {
 			continue
 		}
-
-		result, err := imp.Update(sk.Name, skillUpdateDryRun, skillUpdateForce)
+		origin, err := skills.ReadOrigin(skillDir)
 		if err != nil {
-			printer.Warn("Failed to update", "skill", sk.Name, "error", err)
+			continue
+		}
+		sourceName := skills.RepoToName(origin.Repo)
+		sourcesSeen[sourceName] = origin.Ref
+		remoteSkills = append(remoteSkills, skillRef{sk: sk, ref: origin.Ref, source: sourceName})
+	}
+
+	var (
+		updatedSkills int
+		failedSources = map[string]bool{}
+		syncedSources = map[string]bool{}
+		pinnedSources = map[string]bool{}
+	)
+
+	for _, sr := range remoteSkills {
+		if skills.IsPinnedRef(sr.ref) {
+			pinnedSources[sr.source] = true
+			continue
+		}
+
+		result, err := imp.Update(sr.sk.Name, skillUpdateDryRun, skillUpdateForce)
+		if err != nil {
+			printer.Warn("Failed to update", "skill", sr.sk.Name, "error", err)
+			failedSources[sr.source] = true
 			continue
 		}
 		for _, w := range result.Warnings {
@@ -433,16 +520,39 @@ func runSkillUpdate(name string) error {
 		}
 		for _, imported := range result.Imported {
 			printer.Info("Updated skill", "name", imported.Name)
-			updated++
+			updatedSkills++
+		}
+		if !failedSources[sr.source] {
+			syncedSources[sr.source] = true
 		}
 	}
 
-	if updated == 0 && !skillUpdateDryRun {
-		fmt.Println("All skills are up to date")
+	// Sources can show up in both syncedSources and failedSources; the
+	// failed-skill loop sets failedSources but doesn't unset syncedSources.
+	// Reconcile so a source with any failure counts as failed.
+	for src := range failedSources {
+		delete(syncedSources, src)
 	}
+
+	if skillUpdateDryRun {
+		return nil
+	}
+
+	if len(pinnedSources) > 0 {
+		names := make([]string, 0, len(pinnedSources))
+		for n := range pinnedSources {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		fmt.Printf("Skipped pinned sources: %s (use 'gridctl skill update <name>' to force)\n", strings.Join(names, ", "))
+	}
+
+	fmt.Printf("Synced %d source(s), %d skill(s) updated, %d failed, %d pinned\n",
+		len(syncedSources), updatedSkills, len(failedSources), len(pinnedSources))
 
 	return nil
 }
+
 
 func runSkillRemove(name string) error {
 	store, err := loadRegistry()
