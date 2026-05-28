@@ -12,6 +12,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/registry"
+	"github.com/gridctl/gridctl/pkg/skills"
 )
 
 // setupRegistryTestServer creates a Server with a temp registry store for testing.
@@ -284,6 +285,58 @@ func TestHandleRegistry_DeleteSkill(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected 404 after delete, got %d", rec.Code)
+	}
+}
+
+// TestHandleRegistry_DeleteSkill_CleansLockFile verifies that deleting a skill
+// via the HTTP/UI path also scrubs it from skills.lock.yaml, so a later sync
+// doesn't try to update a now-deleted skill. Regression for ghost-skill sync
+// failures.
+func TestHandleRegistry_DeleteSkill_CleansLockFile(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "skill-a", registry.StateActive)
+	seedSkill(t, regServer, "skill-b", registry.StateActive)
+	seedSkillSource(t, srv, "my-source", "https://github.com/org/repo", "skill-a", "skill-b")
+
+	handler := srv.Handler()
+
+	// Delete the first skill: it should leave the source intact with skill-b.
+	req := httptest.NewRequest(http.MethodDelete, "/api/registry/skills/skill-a", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	lf, err := skills.ReadLockFile(srv.lockFilePath())
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	src, ok := lf.Sources["my-source"]
+	if !ok {
+		t.Fatalf("expected my-source to remain after deleting one of two skills")
+	}
+	if _, present := src.Skills["skill-a"]; present {
+		t.Errorf("expected skill-a removed from lock file, still present")
+	}
+	if _, present := src.Skills["skill-b"]; !present {
+		t.Errorf("expected skill-b to remain in lock file")
+	}
+
+	// Delete the second skill: the now-empty source should be dropped.
+	req = httptest.NewRequest(http.MethodDelete, "/api/registry/skills/skill-b", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	lf, err = skills.ReadLockFile(srv.lockFilePath())
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if _, ok := lf.Sources["my-source"]; ok {
+		t.Errorf("expected empty source dropped from lock file, still present")
 	}
 }
 
