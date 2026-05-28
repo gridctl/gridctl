@@ -6,11 +6,33 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Bulk skill sync.** `POST /api/skills/sources/update` syncs every imported
+  skill source in parallel (cap 3), returning a `SourceSyncSummary` with
+  per-source results plus aggregate counters (`syncedSources`,
+  `updatedSkills`, `failedSources`, `pinnedSources`). Pinned sources (refs
+  shaped like `v1.0.0` or full commit SHAs) are silently skipped to avoid
+  bulk operations bumping intentionally-fixed versions. `GET /api/skills/sources`
+  now populates the `updateAvailable` flag by reading the background-checker
+  cache, so the existing per-source "Update" pill in the Library surfaces
+  reliably.
+- **`gridctl skill sync` CLI alias** for `gridctl skill update`, matching
+  the verb used in the web UI. `gridctl skill update` (no name) now prints
+  a final summary line (`Synced N source(s), M skill(s) updated, K failed,
+  L pinned`) and refuses by default when any imported skill's on-disk
+  `SKILL.md` has been locally edited; pass `--force` to overwrite.
+
 - **Grok Build client support.** `gridctl link grok` / `gridctl unlink grok`
   now manage the gateway entry in xAI Grok Build's `~/.grok/config.toml`,
   writing an `[mcp_servers.<name>]` table over native streamable HTTP. It is
   auto-detected by the interactive `link` and `--all` flows and appears in the
   web UI client list. This is gridctl's first TOML-based client provisioner.
+
+### Fixed
+
+- **Skill state preserved across sync.** `Importer.Update` no longer
+  silently re-activates skills that the user disabled. The fix threads a
+  new `PreserveState` flag through `ImportOptions` so re-imports inherit
+  the existing skill's `state`. The legacy `skill add` path is unchanged.
 
 ### Removed
 
