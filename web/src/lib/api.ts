@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -1056,6 +1056,17 @@ export async function updateSkillSource(name: string): Promise<{ source: string;
     `/api/skills/sources/${encodeURIComponent(name)}/update`,
     'POST',
   );
+}
+
+/**
+ * Sync every imported source in one server-side fan-out. Pinned sources
+ * (refs shaped like v1.0.0 or full commit SHAs) are silently skipped. The
+ * response carries per-source results plus aggregate counters.
+ *
+ * POST /api/skills/sources/update
+ */
+export async function syncAllSources(): Promise<SourceSyncSummary> {
+  return mutateJSON<SourceSyncSummary>('/api/skills/sources/update', 'POST');
 }
 
 /**
