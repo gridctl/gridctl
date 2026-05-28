@@ -1,8 +1,8 @@
-import { X, type LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { X } from 'lucide-react';
+import type { ComponentType, ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 
-type AccentTone = 'primary' | 'secondary' | 'tertiary' | 'violet' | 'muted';
+type AccentTone = 'primary' | 'secondary' | 'tertiary' | 'violet' | 'muted' | 'neutral';
 
 const ACCENT_BG: Record<AccentTone, string> = {
   primary: 'bg-primary/10 border-primary/20',
@@ -10,6 +10,8 @@ const ACCENT_BG: Record<AccentTone, string> = {
   tertiary: 'bg-tertiary/10 border-tertiary/20',
   violet: 'bg-violet-500/10 border-violet-500/20',
   muted: 'bg-surface-elevated/50 border-border/30',
+  // Mirrors the monochrome client node: neutral container, white glyph.
+  neutral: 'bg-white/[0.04] border-white/10',
 };
 
 const ACCENT_TEXT: Record<AccentTone, string> = {
@@ -18,12 +20,13 @@ const ACCENT_TEXT: Record<AccentTone, string> = {
   tertiary: 'text-tertiary',
   violet: 'text-violet-400',
   muted: 'text-text-muted',
+  neutral: 'text-text-primary',
 };
 
 interface InspectorHeaderProps {
   title: string;
   subtitle?: ReactNode;
-  icon?: LucideIcon;
+  icon?: ComponentType<{ size?: number; className?: string }>;
   accent?: AccentTone;
   onClose?: () => void;
   onDetach?: () => void;

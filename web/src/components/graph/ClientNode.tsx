@@ -1,10 +1,10 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Monitor } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { useUIStore } from '../../stores/useUIStore';
 import { LAYOUT } from '../../lib/constants';
+import { getClientIcon } from '../../lib/clientIcons';
 import type { ClientNodeData } from '../../types';
 
 interface ClientNodeProps {
@@ -14,6 +14,7 @@ interface ClientNodeProps {
 
 const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
   const isCompact = useUIStore((s) => s.compactCards);
+  const Icon = getClientIcon(data.slug);
 
   if (isCompact) {
     return (
@@ -21,19 +22,19 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
         className={cn(
           'w-40 rounded-xl relative',
           'backdrop-blur-xl border transition-all duration-200 ease-out',
-          'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
+          'bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
           'shadow-bevel',
           'flex items-center px-2.5 gap-2',
-          selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
-          !selected && 'border-border hover:shadow-node-hover hover:border-primary/60'
+          selected && 'border-text-secondary ring-2 ring-white/15',
+          !selected && 'border-border hover:shadow-node-hover hover:border-text-secondary/40'
         )}
         style={{ height: LAYOUT.CLIENT_HEIGHT_COMPACT }}
       >
         {/* Top accent */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
-        <div className="p-1.5 rounded-md border bg-primary/10 border-primary/25 flex-shrink-0">
-          <Monitor size={14} className="text-primary" />
+        <div className="p-1.5 rounded-md border bg-white/[0.04] border-white/10 flex-shrink-0">
+          <Icon size={14} className="text-text-primary" />
         </div>
         <span className="font-semibold text-xs text-text-primary truncate min-w-0">
           {data.name}
@@ -44,8 +45,8 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
           type="source"
           position={Position.Right}
           className={cn(
-            '!w-2.5 !h-2.5 !bg-primary !border-2 !border-background !rounded-full',
-            'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
+            '!w-2.5 !h-2.5 !bg-text-secondary !border-2 !border-background !rounded-full',
+            'transition-all duration-200 hover:!scale-125'
           )}
           id="output"
         />
@@ -58,20 +59,20 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
       className={cn(
         'w-40 rounded-xl relative',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
-        'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
+        'bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
         'shadow-bevel',
         'flex flex-col items-center justify-center text-center p-3 gap-1',
-        selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
-        !selected && 'border-primary/25 hover:shadow-node-hover hover:border-primary/40'
+        selected && 'border-text-secondary ring-2 ring-white/15',
+        !selected && 'border-border hover:shadow-node-hover hover:border-text-secondary/40'
       )}
       style={{ height: 120 }}
     >
       {/* Top accent */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
       {/* Icon */}
-      <div className="p-2 rounded-lg border bg-primary/10 border-primary/25">
-        <Monitor size={20} className="text-primary" />
+      <div className="p-2 rounded-lg border bg-white/[0.04] border-white/10">
+        <Icon size={20} className="text-text-primary" />
       </div>
 
       {/* Name */}
@@ -95,8 +96,8 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
         type="source"
         position={Position.Right}
         className={cn(
-          '!w-2.5 !h-2.5 !bg-primary !border-2 !border-background !rounded-full',
-          'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
+          '!w-2.5 !h-2.5 !bg-text-secondary !border-2 !border-background !rounded-full',
+          'transition-all duration-200 hover:!scale-125'
         )}
         id="output"
       />
