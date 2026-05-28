@@ -32,9 +32,14 @@ func UpdateCachePath() string {
 	return filepath.Join(home, ".gridctl", "cache", "skill-updates.yaml")
 }
 
-// ReadUpdateCache reads the cached update status.
+// ReadUpdateCache reads the cached update status from the default path.
 func ReadUpdateCache() (*UpdateStatus, error) {
-	path := UpdateCachePath()
+	return ReadUpdateCacheAt(UpdateCachePath())
+}
+
+// ReadUpdateCacheAt reads the cached update status from an explicit path.
+// Returns (nil, nil) when the file does not exist so callers can fail open.
+func ReadUpdateCacheAt(path string) (*UpdateStatus, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -50,9 +55,13 @@ func ReadUpdateCache() (*UpdateStatus, error) {
 	return &status, nil
 }
 
-// WriteUpdateCache writes the update status to cache.
+// WriteUpdateCache writes the update status to the default cache path.
 func WriteUpdateCache(status *UpdateStatus) error {
-	path := UpdateCachePath()
+	return WriteUpdateCacheAt(UpdateCachePath(), status)
+}
+
+// WriteUpdateCacheAt writes the update status to an explicit path.
+func WriteUpdateCacheAt(path string, status *UpdateStatus) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
