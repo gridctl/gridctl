@@ -20,6 +20,16 @@ All notable changes to gridctl will be documented in this file.
   a final summary line (`Synced N source(s), M skill(s) updated, K failed,
   L pinned`) and refuses by default when any imported skill's on-disk
   `SKILL.md` has been locally edited; pass `--force` to overwrite.
+- **"Sync sources" button on the Library workspace.** Pulls every imported
+  skill source in one click. Hidden when no sources are imported. When the
+  background checker has flagged updates, the button morphs to a labeled
+  amber pill `Sync sources (N updates)`; otherwise it sits as a quiet
+  icon-only affordance. Success and mixed-result toasts; a Details overlay
+  lists per-source failures with the backend's error message. The Library
+  header's existing "Refresh" icon swapped to `RotateCw` so the two
+  affordances no longer share the same circular-arrow glyph. Per-source
+  pill in the source group header reworded from "Update" to "Sync" for
+  verb consistency.
 
 - **Grok Build client support.** `gridctl link grok` / `gridctl unlink grok`
   now manage the gateway entry in xAI Grok Build's `~/.grok/config.toml`,
