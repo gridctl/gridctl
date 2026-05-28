@@ -6,6 +6,18 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Per-client brand icons in the Topology view.** Each client node now renders
+  its product brand mark (Claude, Cursor, Windsurf, Gemini, OpenCode, Grok,
+  Cline, Roo Code, Goose) instead of a generic monitor glyph, selected by the
+  client's `slug` via the tree-shaken `@lobehub/icons` package. Claude Desktop
+  and Claude Code share the Claude mark. Clients without a brand icon
+  (`vscode`, `continue`, `anythingllm`, `zed`) fall back to the monitor glyph,
+  so a node is never blank. Client node styling (border, icon container, top
+  accent, source handle, and selected state) moved from amber to a single
+  neutral monochrome tone so the white icons read cleanly. The client detail
+  inspector mirrors this: its header shows the brand icon on a neutral accent
+  instead of the amber monitor.
+
 - **Bulk skill sync.** `POST /api/skills/sources/update` syncs every imported
   skill source in parallel (cap 3), returning a `SourceSyncSummary` with
   per-source results plus aggregate counters (`syncedSources`,
