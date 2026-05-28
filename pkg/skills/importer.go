@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
@@ -83,6 +84,10 @@ type ImportOptions struct {
 	Rename     string   // Rename the skill on import
 	Selected   []string // Only import skills with these names (empty = import all)
 	Auth       AuthConfig
+	// PreserveState carries over the existing skill's State (draft/active/
+	// disabled) instead of resetting it. Used by Update so that re-syncing
+	// a source does not silently re-activate skills the user disabled.
+	PreserveState bool
 }
 
 // ImportResult contains the results of an import operation.
@@ -113,6 +118,11 @@ type Importer struct {
 	lockPath           string
 	logger             *slog.Logger
 	credentialResolver CredentialResolver
+	// lockfileMu serializes read-modify-write windows on skills.lock.yaml.
+	// Held only across the file RMW, not the surrounding git work, so
+	// concurrent callers (e.g. handleSkillSourcesSyncAll's bounded fan-out)
+	// still parallelize their clones.
+	lockfileMu sync.Mutex
 }
 
 // NewImporter creates a new skill importer.
@@ -156,10 +166,6 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	imp.logger.Info("discovered skills", "count", len(result.Skills))
 
 	importResult := &ImportResult{}
-	lf, err := ReadLockFile(imp.lockPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading lock file: %w", err)
-	}
 
 	// Build selection set for O(1) lookup (empty = import all)
 	selectedSet := make(map[string]bool, len(opts.Selected))
@@ -217,13 +223,20 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			continue
 		}
 
-		// Set state
+		// Set state. PreserveState carries over the existing skill's State
+		// across a re-import (used by Update); otherwise NoActivate decides
+		// between draft and active.
 		discovered.Skill.Name = skillName
+		state := registry.StateActive
 		if opts.NoActivate {
-			discovered.Skill.State = registry.StateDraft
-		} else {
-			discovered.Skill.State = registry.StateActive
+			state = registry.StateDraft
 		}
+		if opts.PreserveState {
+			if existing, err := imp.store.GetSkill(skillName); err == nil && existing.State != "" {
+				state = existing.State
+			}
+		}
+		discovered.Skill.State = state
 
 		// Save to registry
 		if err := imp.store.SaveSkill(discovered.Skill); err != nil {
@@ -234,6 +247,12 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		// Compute fingerprint
 		fp := ComputeFingerprint(discovered.Skill)
 
+		// Snapshot the just-written SKILL.md hash so DetectDrift can later
+		// distinguish user edits from upstream changes. ContentHash records
+		// the upstream file as fetched; InstalledHash records what we wrote.
+		skillDir := imp.skillDir(skillName)
+		installedHash, _ := ContentHashFile(filepath.Join(skillDir, "SKILL.md"))
+
 		// Write origin sidecar. CredentialRef (if any) is persisted as an
 		// opaque reference string — the raw token is never written to disk.
 		origin := &Origin{
@@ -243,11 +262,11 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			CommitSHA:     result.CommitSHA,
 			ImportedAt:    time.Now().UTC(),
 			ContentHash:   discovered.ContentHash,
+			InstalledHash: installedHash,
 			Fingerprint:   fp,
 			CredentialRef: opts.Auth.CredentialRef,
 		}
 
-		skillDir := imp.skillDir(skillName)
 		if err := WriteOrigin(skillDir, origin); err != nil {
 			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to write origin for %s: %v", skillName, err))
 		}
@@ -271,9 +290,19 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		imp.logger.Info("imported skill", "name", skillName)
 	}
 
-	// Update lock file
+	// Update lock file. Re-read inside the critical section so concurrent
+	// Import calls (e.g. from handleSkillSourcesSyncAll's bounded fan-out)
+	// observe each other's writes instead of clobbering them.
 	if len(lockedSkills) > 0 {
-		sourceName := repoToName(opts.Repo)
+		imp.lockfileMu.Lock()
+		defer imp.lockfileMu.Unlock()
+
+		lf, err := ReadLockFile(imp.lockPath)
+		if err != nil {
+			return importResult, fmt.Errorf("reading lock file: %w", err)
+		}
+
+		sourceName := RepoToName(opts.Repo)
 		lf.SetSource(sourceName, LockedSource{
 			Repo:          opts.Repo,
 			Ref:           opts.Ref,
@@ -356,12 +385,13 @@ func (imp *Importer) Update(skillName string, dryRun, force bool) (*ImportResult
 	oldFingerprint := origin.Fingerprint
 
 	result, err := imp.Import(ImportOptions{
-		Repo:  origin.Repo,
-		Ref:   origin.Ref,
-		Path:  origin.Path,
-		Trust: true,
-		Force: true,
-		Auth:  auth,
+		Repo:          origin.Repo,
+		Ref:           origin.Ref,
+		Path:          origin.Path,
+		Trust:         true,
+		Force:         true,
+		Auth:          auth,
+		PreserveState: true,
 	})
 	if err != nil {
 		return result, err
