@@ -55,7 +55,7 @@ The same operations are exposed as CLI subcommands. Use these when scripting or 
 | Activate a draft skill | `gridctl activate <name>` |
 | Validate a skill's frontmatter | `gridctl skill validate <name>` |
 | Import skills from a git repo | `gridctl skill add <repo-url>` |
-| Update an imported skill | `gridctl skill update [name]` |
+| Update imported skills (alias `sync`) | `gridctl skill update [name]` |
 | Pin an imported skill to a ref | `gridctl skill pin <name> <ref>` |
 | Remove a skill | `gridctl skill remove <name>` |
 
@@ -63,7 +63,7 @@ See [`docs/cli-reference.md`](./cli-reference.md) for the full flag set.
 
 ## Git-imported skills
 
-Skills don't have to be authored locally. `gridctl skill add <repo-url>` clones a remote repository, walks it for `SKILL.md` files, and pulls each one into the local registry. Pin to a ref with `gridctl skill pin`; refresh with `gridctl skill update`.
+Skills don't have to be authored locally. `gridctl skill add <repo-url>` clones a remote repository, walks it for `SKILL.md` files, and pulls each one into the local registry. Pin to a ref with `gridctl skill pin`; refresh with `gridctl skill update` (also available as `gridctl skill sync` for parity with the Library page's "Sync sources" action). With no name argument, every imported skill is checked; pinned sources (tags like `v1.0.0` or full commit SHAs) are skipped unless updated explicitly. Sync preserves each skill's enable/disable state and refuses to overwrite locally-edited SKILL.md files unless `--force` is passed.
 
 Supported auth flows for private repos:
 
