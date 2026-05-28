@@ -664,6 +664,11 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 	sort.Strings(names)
 
 	results := make([]SourceSyncResult, len(names))
+	// ghostsBySource collects, per source index, the names of skills that are
+	// recorded in the lock file but no longer present in the registry (e.g.
+	// deleted via the UI). Each goroutine writes only its own index, so the
+	// slice is race-free without a mutex. Pruned once after the fan-out.
+	ghostsBySource := make([][]string, len(names))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, syncAllConcurrency)
 
@@ -702,6 +707,21 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 					continue
 				}
 				entry := SkillSyncResult{Skill: skillName}
+
+				// The skill is in the lock file but no longer in the registry
+				// (deleted out from under the lock file, e.g. via the UI).
+				// Updating it would fail reading the missing origin sidecar and
+				// surface as a spurious failure. Record it for pruning and skip.
+				// We gate on registry presence rather than the Update error so a
+				// present skill whose update merely failed (transient/auth) is
+				// still reported and retained.
+				if _, err := store.GetSkill(skillName); err != nil {
+					ghostsBySource[idx] = append(ghostsBySource[idx], skillName)
+					entry.Warnings = []string{"skill no longer in registry; removed stale lock entry"}
+					results[idx].Skills = append(results[idx].Skills, entry)
+					continue
+				}
+
 				result, updErr := imp.Update(skillName, false, false)
 				if updErr != nil {
 					entry.Error = gitpkg.RedactError(updErr).Error()
@@ -715,6 +735,27 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 	}
 
 	wg.Wait()
+
+	// Prune stale lock entries for skills that were deleted from the registry.
+	// Done on the main goroutine after the fan-out so the lock-file write can't
+	// race the in-flight Update calls (which may write the lock file via the
+	// importer). Re-read first to pick up any writes those updates made.
+	var ghosts []string
+	for _, g := range ghostsBySource {
+		ghosts = append(ghosts, g...)
+	}
+	if len(ghosts) > 0 {
+		if lf2, err := skills.ReadLockFile(lockPath); err != nil {
+			logger.Warn("sync: failed to read lock file to prune stale skills", "error", err)
+		} else {
+			for _, skillName := range ghosts {
+				lf2.RemoveSkill(skillName)
+			}
+			if err := skills.WriteLockFile(lockPath, lf2); err != nil {
+				logger.Warn("sync: failed to write lock file after pruning stale skills", "error", err)
+			}
+		}
+	}
 
 	summary := SourceSyncSummary{Sources: results}
 	for _, r := range results {
