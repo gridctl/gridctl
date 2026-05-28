@@ -62,10 +62,12 @@ type Server struct {
 	probeLimiter *probeLimiter
 
 	// Skill source paths. Empty values fall back to the global defaults
-	// (skills.LockFilePath / skills.SkillsConfigPath) so production code is
-	// unchanged; tests inject temp paths to stay isolated from $HOME.
-	skillLockPath    string
-	skillsConfigPath string
+	// (skills.LockFilePath / skills.SkillsConfigPath / skills.UpdateCachePath)
+	// so production code is unchanged; tests inject temp paths to stay
+	// isolated from $HOME.
+	skillLockPath        string
+	skillsConfigPath     string
+	skillUpdateCachePath string
 }
 
 // NewServer creates a new API server.
@@ -188,6 +190,12 @@ func (s *Server) SetSkillSourcePaths(lockPath, configPath string) {
 	s.skillsConfigPath = configPath
 }
 
+// SetSkillUpdateCachePath overrides the skill update cache path. Empty keeps
+// the global default. Tests use this to isolate from $HOME/.gridctl/cache.
+func (s *Server) SetSkillUpdateCachePath(path string) {
+	s.skillUpdateCachePath = path
+}
+
 // RegistryServer returns the registry server.
 func (s *Server) RegistryServer() *registry.Server {
 	return s.registryServer
@@ -299,6 +307,7 @@ func (s *Server) Handler() http.Handler {
 	// Skills endpoints (remote skill import)
 	mux.HandleFunc("GET /api/skills/sources", s.handleSkillSourcesList)
 	mux.HandleFunc("POST /api/skills/sources", s.handleSkillSourceAdd)
+	mux.HandleFunc("POST /api/skills/sources/update", s.handleSkillSourcesSyncAll)
 	mux.HandleFunc("GET /api/skills/updates", s.handleSkillUpdates)
 	mux.HandleFunc("DELETE /api/skills/sources/{name}", s.handleSkillSourceRemove)
 	mux.HandleFunc("POST /api/skills/sources/{name}/check", s.handleSkillSourceCheck)

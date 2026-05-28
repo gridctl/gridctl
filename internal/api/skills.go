@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
+	"sync"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
@@ -30,6 +32,16 @@ func (s *Server) configFilePath() string {
 		return s.skillsConfigPath
 	}
 	return skills.SkillsConfigPath()
+}
+
+// updateCachePath returns the configured skill-updates cache path, falling
+// back to the global default. Tests inject a temp path via
+// SetSkillUpdateCachePath.
+func (s *Server) updateCachePath() string {
+	if s.skillUpdateCachePath != "" {
+		return s.skillUpdateCachePath
+	}
+	return skills.UpdateCachePath()
 }
 
 // SkillSourceStatus represents a skill source with its update status.
@@ -198,6 +210,11 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) 
 		cfg = skills.DefaultSkillsConfig()
 	}
 
+	// Read the background-checker cache so we can mark sources with pending
+	// updates without forcing a live git fetch on every page load. Fail
+	// open: a missing/unreadable cache leaves UpdateAvail=false.
+	updateStatus, _ := skills.ReadUpdateCacheAt(s.updateCachePath())
+
 	var sources []SkillSourceStatus
 
 	// Build sources from lock file (which records what's actually imported)
@@ -234,6 +251,14 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) 
 				entry.State = string(sk.State)
 			}
 			src.Skills = append(src.Skills, entry)
+
+			// The cache is keyed by skill name; if any skill in this source
+			// has a pending update, surface it at the source level.
+			if updateStatus != nil {
+				if _, ok := updateStatus.Updates[skillName]; ok {
+					src.UpdateAvail = true
+				}
+			}
 		}
 
 		sources = append(sources, src)
@@ -575,6 +600,149 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 		"commitSha": result.CommitSHA,
 		"skills":    previews,
 	})
+}
+
+// SourceSyncSummary is the aggregate response from a bulk sync.
+type SourceSyncSummary struct {
+	Sources       []SourceSyncResult `json:"sources"`
+	SyncedSources int                `json:"syncedSources"`
+	UpdatedSkills int                `json:"updatedSkills"`
+	FailedSources int                `json:"failedSources"`
+	PinnedSources int                `json:"pinnedSources"`
+}
+
+// SourceSyncResult is the per-source outcome of a bulk sync.
+type SourceSyncResult struct {
+	Name   string            `json:"name"`
+	Repo   string            `json:"repo"`
+	Pinned bool              `json:"pinned,omitempty"`
+	Skills []SkillSyncResult `json:"skills,omitempty"`
+	Error  string            `json:"error,omitempty"`
+}
+
+// SkillSyncResult is the per-skill outcome within a sync.
+type SkillSyncResult struct {
+	Skill    string   `json:"skill"`
+	Imported int      `json:"imported,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+	Error    string   `json:"error,omitempty"`
+}
+
+// syncAllConcurrency caps the number of sources synced in parallel. Matches
+// the background-checker's bound to keep behavior consistent and to avoid
+// saturating shared git hosts under bulk operations.
+const syncAllConcurrency = 3
+
+// handleSkillSourcesSyncAll syncs every imported source in parallel, honoring
+// pins. Mirrors the per-source semantics of handleSkillSourceUpdate.
+// POST /api/skills/sources/update
+func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Request) {
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+	lockPath := s.lockFilePath()
+	lf, err := skills.ReadLockFile(lockPath)
+	if err != nil {
+		writeJSONError(w, "Failed to read lock file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	store := s.registryServer.Store()
+	registryDir := store.Dir()
+	logger := slog.Default()
+	imp := skills.NewImporter(store, registryDir, lockPath, logger)
+	imp.SetCredentialResolver(s.credentialResolver())
+
+	// Pre-sort source names for deterministic output.
+	names := make([]string, 0, len(lf.Sources))
+	for name := range lf.Sources {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	results := make([]SourceSyncResult, len(names))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, syncAllConcurrency)
+
+	for i, name := range names {
+		src := lf.Sources[name]
+		results[i] = SourceSyncResult{Name: name, Repo: src.Repo}
+
+		if skills.IsPinnedRef(src.Ref) {
+			results[i].Pinned = true
+			continue
+		}
+
+		wg.Add(1)
+		go func(idx int, sourceName string, source skills.LockedSource) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// Skill names sorted so per-skill output order is stable too.
+			skillNames := make([]string, 0, len(source.Skills))
+			for sn := range source.Skills {
+				skillNames = append(skillNames, sn)
+			}
+			sort.Strings(skillNames)
+
+			for _, skillName := range skillNames {
+				// Stop processing further skills in this source if the
+				// client disconnected. In-flight Update calls still complete
+				// (Importer.Update doesn't accept ctx today) but no new
+				// fetches are kicked off.
+				if ctx.Err() != nil {
+					results[idx].Skills = append(results[idx].Skills, SkillSyncResult{
+						Skill: skillName,
+						Error: "canceled",
+					})
+					continue
+				}
+				entry := SkillSyncResult{Skill: skillName}
+				result, updErr := imp.Update(skillName, false, false)
+				if updErr != nil {
+					entry.Error = gitpkg.RedactError(updErr).Error()
+				} else {
+					entry.Imported = len(result.Imported)
+					entry.Warnings = result.Warnings
+				}
+				results[idx].Skills = append(results[idx].Skills, entry)
+			}
+		}(i, name, src)
+	}
+
+	wg.Wait()
+
+	summary := SourceSyncSummary{Sources: results}
+	for _, r := range results {
+		switch {
+		case r.Pinned:
+			summary.PinnedSources++
+		case r.Error != "":
+			summary.FailedSources++
+		default:
+			// Source had at least one skill error → counts as failed.
+			sourceFailed := false
+			for _, sk := range r.Skills {
+				if sk.Error != "" {
+					sourceFailed = true
+				}
+				summary.UpdatedSkills += sk.Imported
+			}
+			if sourceFailed {
+				summary.FailedSources++
+			} else {
+				summary.SyncedSources++
+			}
+		}
+	}
+
+	s.refreshRegistryRouter()
+
+	writeJSON(w, summary)
 }
 
 // handleSkillUpdates returns pending update summary across all sources.
