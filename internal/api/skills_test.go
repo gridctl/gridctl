@@ -276,6 +276,93 @@ func TestHandleSkills_SyncAll_HonorsPinsAndCountsFailures(t *testing.T) {
 	}
 }
 
+// TestHandleSkills_SyncAll_PrunesGhostSkill verifies that a lock entry whose
+// skill no longer exists in the registry is skipped (not reported as a failure)
+// and pruned from the lock file. Regression for ghost-skill sync failures: the
+// skill was deleted from the registry but its lock entry lingered.
+func TestHandleSkills_SyncAll_PrunesGhostSkill(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	// Note: the ghost skill is NOT seeded into the registry — only into the
+	// lock file, simulating a skill deleted out from under the lock entry.
+	seedSkillSource(t, srv, "ghost-source", "https://github.com/org/repo", "ghost-skill")
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/update", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var summary SourceSyncSummary
+	if err := json.NewDecoder(rec.Body).Decode(&summary); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if summary.FailedSources != 0 {
+		t.Errorf("expected ghost not to fail the source, got FailedSources=%d", summary.FailedSources)
+	}
+	if len(summary.Sources) != 1 || len(summary.Sources[0].Skills) != 1 {
+		t.Fatalf("expected 1 source with 1 skill result, got %+v", summary.Sources)
+	}
+	if got := summary.Sources[0].Skills[0]; got.Error != "" {
+		t.Errorf("expected no error for ghost skill, got %q", got.Error)
+	}
+
+	// The stale entry should be pruned; the now-empty source dropped.
+	lf, err := skills.ReadLockFile(srv.lockFilePath())
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if _, _, found := lf.FindSkillSource("ghost-skill"); found {
+		t.Errorf("expected ghost-skill pruned from lock file, still present")
+	}
+}
+
+// TestHandleSkills_SyncAll_RetainsPresentSkillOnUpdateError verifies that a
+// skill still present in the registry whose update fails (e.g. transient/repo
+// error) is reported as a failure and is NOT pruned from the lock file. Guards
+// against the ghost-prune logic over-pruning live skills.
+func TestHandleSkills_SyncAll_RetainsPresentSkillOnUpdateError(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "live-skill", registry.StateActive)
+	// Source points at a non-existent repo so Update errors, but the skill is
+	// present in the registry, so it must not be treated as a ghost.
+	seedSkillSource(t, srv, "live-source", "/nonexistent/path/to/repo", "live-skill")
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/update", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var summary SourceSyncSummary
+	if err := json.NewDecoder(rec.Body).Decode(&summary); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if summary.FailedSources != 1 {
+		t.Errorf("expected the update error to fail the source, got FailedSources=%d", summary.FailedSources)
+	}
+	if len(summary.Sources) != 1 || len(summary.Sources[0].Skills) != 1 {
+		t.Fatalf("expected 1 source with 1 skill result, got %+v", summary.Sources)
+	}
+	if summary.Sources[0].Skills[0].Error == "" {
+		t.Errorf("expected an error reported for the present-but-failing skill")
+	}
+
+	// The live skill's lock entry must be retained.
+	lf, err := skills.ReadLockFile(srv.lockFilePath())
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if _, _, found := lf.FindSkillSource("live-skill"); !found {
+		t.Errorf("expected live-skill retained in lock file, was pruned")
+	}
+}
+
 func TestHandleSkills_SyncAll_EmptyLockFile(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 
