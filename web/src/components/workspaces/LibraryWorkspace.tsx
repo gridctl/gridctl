@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlignJustify,
   BookOpen,
+  CloudDownload,
   LayoutGrid,
   List,
   Plus,
@@ -23,6 +24,7 @@ import { LibraryGrid, type GroupMode } from '../registry/LibraryGrid';
 import { LibraryTable } from '../registry/LibraryTable';
 import { SkillDetailPanel } from '../registry/SkillDetailPanel';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { useSkillUsage } from '../../hooks/useSkillUsage';
@@ -38,10 +40,11 @@ import {
   fetchRegistryStatus,
   fetchSkillSources,
   setRegistrySkillsBatch,
+  syncAllSources,
 } from '../../lib/api';
 import { extractRepoInfo } from '../../lib/repo';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
-import type { AgentSkill, ItemState, SkillSourceStatus, SkillUsageStat } from '../../types';
+import type { AgentSkill, ItemState, SkillSourceStatus, SkillUsageStat, SourceSyncResult } from '../../types';
 
 type FilterTab = 'all' | ItemState;
 type SortMode = 'name' | 'state' | 'files' | 'usage';
@@ -292,6 +295,11 @@ export function LibraryWorkspace() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
+  // Sync sources state. `syncing` disables the workspace-level button; the
+  // failure list is captured for the Details overlay opened from the toast.
+  const [syncing, setSyncing] = useState(false);
+  const [syncFailures, setSyncFailures] = useState<SourceSyncResult[] | null>(null);
+
   // Multi-select state. Names only (not skill objects) so the selection
   // survives filter, sort, group, and refresh; stale names are pruned at the
   // point of use against the live skill set.
@@ -384,6 +392,41 @@ export function LibraryWorkspace() {
       // Sources unavailable — progressive disclosure.
     }
   }, [refreshRegistry]);
+
+  // Bulk sync every imported source via the aggregate backend endpoint.
+  // Surfaces an aggregated toast; failures expose a Details action that
+  // opens an overlay listing the per-source error messages.
+  const handleSyncAll = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const summary = await syncAllSources();
+      await refreshAll();
+      const failures = summary.sources.filter((s) => s.error || s.skills?.some((k) => k.error));
+      if (failures.length === 0) {
+        if (summary.updatedSkills === 0) {
+          showToast('success', 'All sources up to date');
+        } else {
+          showToast(
+            'success',
+            `Synced ${summary.syncedSources} source${summary.syncedSources === 1 ? '' : 's'}, ${summary.updatedSkills} skill${summary.updatedSkills === 1 ? '' : 's'} updated`,
+          );
+        }
+      } else {
+        const okCount = summary.syncedSources;
+        const failCount = failures.length;
+        showToast(
+          'warning',
+          `Synced ${okCount} of ${okCount + failCount} sources. ${failCount} failed`,
+          { action: { label: 'Details', onClick: () => setSyncFailures(failures) }, duration: 6000 },
+        );
+      }
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  }, [syncing, refreshAll]);
 
   const handleEnable = useCallback(async (skill: AgentSkill) => {
     try {
@@ -621,6 +664,9 @@ export function LibraryWorkspace() {
           <LibraryHeader
             onNewSkill={handleNewSkill}
             onRefresh={refreshRegistry}
+            onSync={handleSyncAll}
+            sources={sources ?? []}
+            syncing={syncing}
             onPopout={handlePopout}
             counts={tabCounts}
             activeTab={activeTab}
@@ -839,6 +885,13 @@ export function LibraryWorkspace() {
         onSaved={refreshRegistry}
         skill={editingSkill}
       />
+
+      {syncFailures && (
+        <SyncFailuresDialog
+          failures={syncFailures}
+          onClose={() => setSyncFailures(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1092,6 +1145,9 @@ const KPI_METRICS: { key: FilterTab; label: string; dot: ItemState | null }[] = 
 interface LibraryHeaderProps {
   onNewSkill: () => void;
   onRefresh: () => void;
+  onSync: () => void;
+  sources: SkillSourceStatus[];
+  syncing: boolean;
   onPopout: () => void;
   counts: Record<FilterTab, number>;
   activeTab: FilterTab;
@@ -1104,8 +1160,10 @@ interface LibraryHeaderProps {
   compact: boolean;
 }
 
-function LibraryHeader({ onNewSkill, onRefresh, onPopout, counts, activeTab, onSelectFilter, neverUsedCount, usageFilterActive, onToggleNeverUsed, compact }: LibraryHeaderProps) {
+function LibraryHeader({ onNewSkill, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, neverUsedCount, usageFilterActive, onToggleNeverUsed, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
+  const hasSources = sources.length > 0;
+  const updateCount = sources.filter((s) => s.updateAvailable).length;
   return (
     <header className={cn(
       'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 flex flex-col gap-2',
@@ -1122,6 +1180,12 @@ function LibraryHeader({ onNewSkill, onRefresh, onPopout, counts, activeTab, onS
           >
             <Plus size={12} /> New Skill
           </button>
+          <SyncSourcesButton
+            hasSources={hasSources}
+            updateCount={updateCount}
+            syncing={syncing}
+            onClick={onSync}
+          />
           <IconButton icon={RefreshCw} onClick={onRefresh} tooltip="Refresh" size="sm" variant="ghost" />
           <PopoutButton onClick={onPopout} disabled={registryDetached} tooltip="Open in new window" />
         </div>
@@ -1202,6 +1266,113 @@ function KpiCard({ label, count, dot, active, compact, onClick }: KpiCardProps) 
         {count}
       </span>
     </button>
+  );
+}
+
+interface SyncSourcesButtonProps {
+  hasSources: boolean;
+  updateCount: number;
+  syncing: boolean;
+  onClick: () => void;
+}
+
+/**
+ * Workspace-level "Sync sources" affordance. Three states:
+ * - hidden when no imported sources exist (feature is dormant)
+ * - amber pill "Sync sources (N updates)" when any source has updateAvailable
+ * - low-emphasis IconButton otherwise (lets users force a sync anyway)
+ *
+ * During sync the button disables and the label morphs inside an aria-live
+ * region so screen readers announce the in-flight state. `CloudDownload`
+ * differentiates the sync action from the local Refresh button (which uses
+ * `RefreshCw`, matching the global Header convention).
+ */
+function SyncSourcesButton({ hasSources, updateCount, syncing, onClick }: SyncSourcesButtonProps) {
+  if (!hasSources) return null;
+
+  const hasUpdates = updateCount > 0;
+  const ariaLabel = syncing
+    ? 'Syncing skill sources'
+    : hasUpdates
+      ? `Sync sources, ${updateCount} ${updateCount === 1 ? 'update' : 'updates'} available`
+      : 'Sync sources from git';
+
+  if (hasUpdates) {
+    // Pill mirrors the per-source amber pill in SourceGroupHeader so the two
+    // affordances read as the same family.
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={syncing}
+        aria-label={ariaLabel}
+        aria-busy={syncing}
+        title={ariaLabel}
+        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-colors disabled:opacity-60"
+      >
+        <CloudDownload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
+        <span aria-live="polite">
+          {syncing ? 'Syncing…' : `Sync sources (${updateCount} update${updateCount === 1 ? '' : 's'})`}
+        </span>
+      </button>
+    );
+  }
+
+  // No pending updates: a quiet IconButton lets users force a sync without
+  // the chrome implying anything is wrong. The aria-label morph carries the
+  // in-flight announcement; no separate live region is needed.
+  return (
+    <IconButton
+      icon={CloudDownload}
+      onClick={onClick}
+      disabled={syncing}
+      tooltip={ariaLabel}
+      size="sm"
+      variant="ghost"
+      className={syncing ? 'animate-pulse' : undefined}
+    />
+  );
+}
+
+interface SyncFailuresDialogProps {
+  failures: SourceSyncResult[];
+  onClose: () => void;
+}
+
+/**
+ * Listing of per-source failures from a bulk sync, opened from the toast's
+ * "Details" action. Wraps the shared Modal so focus trap, Escape, and panel
+ * chrome stay consistent with every other dialog in the app. The backend's
+ * error message is rendered verbatim so users can act on auth failures,
+ * missing repos, etc.
+ */
+function SyncFailuresDialog({ failures, onClose }: SyncFailuresDialogProps) {
+  return (
+    <Modal isOpen onClose={onClose} title="Sync failures">
+      <ul className="space-y-3">
+        {failures.map((src) => {
+          const skillErrors = (src.skills ?? []).filter((k) => k.error);
+          return (
+            <li key={src.name} className="border border-border/30 rounded-md p-3">
+              <div className="text-xs font-mono text-text-secondary mb-1.5">{src.name}</div>
+              {src.error && (
+                <div className="text-xs text-status-error whitespace-pre-wrap">{src.error}</div>
+              )}
+              {skillErrors.length > 0 && (
+                <ul className="space-y-1 mt-1">
+                  {skillErrors.map((sk) => (
+                    <li key={sk.skill} className="text-xs">
+                      <span className="text-text-muted">{sk.skill}:</span>{' '}
+                      <span className="text-status-error whitespace-pre-wrap">{sk.error}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Modal>
   );
 }
 
