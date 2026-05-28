@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 
 	"github.com/gridctl/gridctl/pkg/registry"
+	"github.com/gridctl/gridctl/pkg/skills"
 )
 
 // handleRegistryStatus returns registry summary counts.
@@ -123,6 +125,22 @@ func (s *Server) handleRegistrySkillDelete(w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, "Failed to delete skill: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Scrub the skill from the lock file so a later sync doesn't try to update
+	// a now-deleted skill (which no longer has an origin sidecar) and report it
+	// as a failure. Mirrors the CLI path (skills.Importer.Remove). The registry
+	// deletion above is authoritative; lock cleanup is best-effort and a failure
+	// here is logged, not surfaced to the caller.
+	lockPath := s.lockFilePath()
+	if lf, err := skills.ReadLockFile(lockPath); err != nil {
+		slog.Default().Warn("delete skill: failed to read lock file for cleanup", "skill", name, "error", err)
+	} else if _, _, found := lf.FindSkillSource(name); found {
+		lf.RemoveSkill(name)
+		if err := skills.WriteLockFile(lockPath, lf); err != nil {
+			slog.Default().Warn("delete skill: failed to write lock file after cleanup", "skill", name, "error", err)
+		}
+	}
+
 	s.refreshRegistryRouter()
 	w.WriteHeader(http.StatusNoContent)
 }
