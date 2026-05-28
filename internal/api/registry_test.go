@@ -31,6 +31,7 @@ func setupRegistryTestServer(t *testing.T) (*Server, *registry.Server) {
 		filepath.Join(dir, "skills.lock.yaml"),
 		filepath.Join(dir, "skills.yaml"),
 	)
+	apiServer.SetSkillUpdateCachePath(filepath.Join(dir, "skill-updates.yaml"))
 	return apiServer, regServer
 }
 
