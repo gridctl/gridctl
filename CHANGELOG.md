@@ -51,6 +51,18 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixed
 
+- **Sync no longer reports ghost-skill failures for deleted skills.** Deleting a
+  skill from the Library UI (`DELETE /api/registry/skills/{name}`) now also
+  scrubs it from `skills.lock.yaml`, matching the CLI path (`gridctl skill rm`).
+  Previously the UI delete left an orphaned lock entry, so the next bulk sync
+  tried to update the now-deleted skill and surfaced a spurious
+  `has no origin (not an imported skill)` failure for each one. Bulk sync is
+  also self-healing: a lock entry whose skill is no longer in the registry is
+  skipped and pruned from the lock file instead of failing the source, which
+  clears lock files that already accumulated orphaned entries. Skills still
+  present in the registry whose update genuinely fails are unaffected — they are
+  still reported and retained.
+
 - **Skill state preserved across sync.** `Importer.Update` no longer
   silently re-activates skills that the user disabled. The fix threads a
   new `PreserveState` flag through `ImportOptions` so re-imports inherit
