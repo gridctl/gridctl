@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { LibraryWorkspace } from '../components/workspaces/LibraryWorkspace';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { setRegistrySkillsBatch, fetchSkillUsage } from '../lib/api';
+import { setRegistrySkillsBatch, fetchSkillUsage, syncAllSources } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import type { AgentSkill, SkillSourceStatus } from '../types';
@@ -19,6 +19,13 @@ vi.mock('../lib/api', () => ({
   fetchRegistrySkills: vi.fn().mockResolvedValue([]),
   fetchSkillSources: vi.fn().mockResolvedValue([]),
   updateSkillSource: vi.fn().mockResolvedValue({ source: 'acme-skills', results: [] }),
+  syncAllSources: vi.fn().mockResolvedValue({
+    sources: [],
+    syncedSources: 0,
+    updatedSkills: 0,
+    failedSources: 0,
+    pinnedSources: 0,
+  }),
   activateRegistrySkill: vi.fn().mockResolvedValue(undefined),
   disableRegistrySkill: vi.fn().mockResolvedValue(undefined),
   deleteRegistrySkill: vi.fn().mockResolvedValue(undefined),
@@ -495,6 +502,92 @@ describe('LibraryWorkspace', () => {
       expect(await screen.findByRole('button', { name: 'Active (2)' })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /never used/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /last used/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('sync sources button', () => {
+    it('is hidden when no sources are imported', () => {
+      useRegistryStore.setState({ skills: SAMPLE_SKILLS, sources: [] });
+      renderAt('/library');
+      expect(screen.queryByRole('button', { name: /sync sources/i })).not.toBeInTheDocument();
+    });
+
+    it('renders as a low-emphasis icon button when sources have no pending updates', () => {
+      useRegistryStore.setState({ skills: SAMPLE_SKILLS, sources: SAMPLE_SOURCES });
+      renderAt('/library');
+      const btn = screen.getByRole('button', { name: /sync sources from git/i });
+      expect(btn).toBeInTheDocument();
+      // Quiet variant has no update-count label in its accessible name.
+      expect(btn.textContent).not.toMatch(/\d+\s+update/i);
+    });
+
+    it('morphs to "Sync sources (N updates)" when sources have updateAvailable', () => {
+      const sourcesWithUpdates: SkillSourceStatus[] = [
+        { ...SAMPLE_SOURCES[0], updateAvailable: true },
+        {
+          name: 'other',
+          repo: 'https://github.com/other/skills',
+          autoUpdate: false,
+          updateInterval: '',
+          updateAvailable: true,
+          skills: [],
+        },
+      ];
+      useRegistryStore.setState({ skills: SAMPLE_SKILLS, sources: sourcesWithUpdates });
+      renderAt('/library');
+      expect(screen.getByRole('button', { name: /sync sources, 2 updates available/i })).toBeInTheDocument();
+      expect(screen.getByText('Sync sources (2 updates)')).toBeInTheDocument();
+    });
+
+    it('calls syncAllSources on click and toasts the no-change summary', async () => {
+      useRegistryStore.setState({ skills: SAMPLE_SKILLS, sources: SAMPLE_SOURCES });
+      renderAt('/library');
+      fireEvent.click(screen.getByRole('button', { name: /sync sources from git/i }));
+      await waitFor(() => expect(syncAllSources).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(showToast).toHaveBeenCalledWith('success', 'All sources up to date'),
+      );
+    });
+
+    it('toasts the happy-path summary when skills were updated', async () => {
+      vi.mocked(syncAllSources).mockResolvedValueOnce({
+        sources: [
+          { name: 'acme-skills', repo: 'https://github.com/acme/skills', skills: [{ skill: 'draft-summarizer', imported: 1 }] },
+        ],
+        syncedSources: 1,
+        updatedSkills: 1,
+        failedSources: 0,
+        pinnedSources: 0,
+      });
+      useRegistryStore.setState({ skills: SAMPLE_SKILLS, sources: SAMPLE_SOURCES });
+      renderAt('/library');
+      fireEvent.click(screen.getByRole('button', { name: /sync sources from git/i }));
+      await waitFor(() =>
+        expect(showToast).toHaveBeenCalledWith('success', 'Synced 1 source, 1 skill updated'),
+      );
+    });
+
+    it('warns and exposes a Details action when any source failed', async () => {
+      vi.mocked(syncAllSources).mockResolvedValueOnce({
+        sources: [
+          { name: 'acme-skills', repo: 'https://github.com/acme/skills', skills: [{ skill: 'draft-summarizer', imported: 1 }] },
+          { name: 'broken', repo: 'https://github.com/broken/repo', error: 'authentication required' },
+        ],
+        syncedSources: 1,
+        updatedSkills: 1,
+        failedSources: 1,
+        pinnedSources: 0,
+      });
+      useRegistryStore.setState({ skills: SAMPLE_SKILLS, sources: SAMPLE_SOURCES });
+      renderAt('/library');
+      fireEvent.click(screen.getByRole('button', { name: /sync sources from git/i }));
+      await waitFor(() =>
+        expect(showToast).toHaveBeenCalledWith(
+          'warning',
+          'Synced 1 of 2 sources. 1 failed',
+          expect.objectContaining({ action: expect.objectContaining({ label: 'Details' }) }),
+        ),
+      );
     });
   });
 });
