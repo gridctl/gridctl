@@ -11,13 +11,20 @@ import (
 // Origin tracks the remote source of an imported skill.
 // Stored as .origin.json alongside the SKILL.md file.
 type Origin struct {
-	Repo        string       `json:"repo"`
-	Ref         string       `json:"ref"`
-	Path        string       `json:"path,omitempty"`
-	CommitSHA   string       `json:"commitSha"`
-	ImportedAt  time.Time    `json:"importedAt"`
-	ContentHash string       `json:"contentHash"`
-	Fingerprint *Fingerprint `json:"fingerprint,omitempty"`
+	Repo        string    `json:"repo"`
+	Ref         string    `json:"ref"`
+	Path        string    `json:"path,omitempty"`
+	CommitSHA   string    `json:"commitSha"`
+	ImportedAt  time.Time `json:"importedAt"`
+	ContentHash string    `json:"contentHash"`
+	// InstalledHash is the SHA-256 of the SKILL.md as written to disk
+	// immediately after the last import. DetectDrift compares the current
+	// on-disk hash against this to surface local user edits. Distinct from
+	// ContentHash, which records the upstream file as fetched (and which
+	// diverges from the installed file because of frontmatter render
+	// normalization and state injection).
+	InstalledHash string       `json:"installedHash,omitempty"`
+	Fingerprint   *Fingerprint `json:"fingerprint,omitempty"`
 	// CredentialRef is an opaque reference like "${vault:GIT_TOKEN}" used to
 	// re-resolve credentials on skill update. Raw token values are never
 	// persisted — only the reference string.
