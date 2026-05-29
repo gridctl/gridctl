@@ -15,6 +15,7 @@ import type {
   AutoscaleDecisionKind,
 } from '../types';
 import { transformToNodesAndEdges } from '../lib/transform';
+import { appendToolFanout } from '../lib/graph/toolFanout';
 import { useRegistryStore } from './useRegistryStore';
 import { useUIStore } from './useUIStore';
 import { usePinsStore } from './usePinsStore';
@@ -74,6 +75,10 @@ interface StackState {
 
   // === UI State ===
   selectedNodeId: string | null;
+  // Server node ids (e.g. "mcp-github") whose tools are fanned out on the
+  // canvas. Independent per server and preserved across polling refreshes so
+  // an expanded server stays expanded when the graph data refetches.
+  expandedServers: Set<string>;
   connectionStatus: ConnectionStatus;
   lastUpdated: Date | null;
   isLoading: boolean;
@@ -88,6 +93,9 @@ interface StackState {
   setLoading: (loading: boolean) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
   selectNode: (nodeId: string | null) => void;
+  toggleServerExpanded: (serverId: string) => void;
+  expandServer: (serverId: string) => void;
+  collapseServer: (serverId: string) => void;
   refreshNodesAndEdges: () => void;
   resetLayout: () => void;
 
@@ -117,6 +125,7 @@ export const useStackStore = create<StackState>()(
     autoscaleDecisions: {},
     autoscaleLastSeen: {},
     selectedNodeId: null,
+    expandedServers: new Set<string>(),
     connectionStatus: 'disconnected',
     lastUpdated: null,
     isLoading: true,
@@ -174,6 +183,33 @@ export const useStackStore = create<StackState>()(
 
     selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
+    toggleServerExpanded: (serverId) => {
+      const next = new Set(get().expandedServers);
+      if (next.has(serverId)) {
+        next.delete(serverId);
+      } else {
+        next.add(serverId);
+      }
+      set({ expandedServers: next });
+      get().refreshNodesAndEdges();
+    },
+
+    expandServer: (serverId) => {
+      if (get().expandedServers.has(serverId)) return;
+      const next = new Set(get().expandedServers);
+      next.add(serverId);
+      set({ expandedServers: next });
+      get().refreshNodesAndEdges();
+    },
+
+    collapseServer: (serverId) => {
+      if (!get().expandedServers.has(serverId)) return;
+      const next = new Set(get().expandedServers);
+      next.delete(serverId);
+      set({ expandedServers: next });
+      get().refreshNodesAndEdges();
+    },
+
     refreshNodesAndEdges: () => {
       const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode, draggedPositions } = get();
       if (!gatewayInfo) return;
@@ -209,7 +245,15 @@ export const useStackStore = create<StackState>()(
         }
       }
 
-      set({ nodes, edges });
+      // Append tool fan-out for any expanded servers AFTER backbone layout so
+      // expanding never reflows the three-column backbone (tool nodes are laid
+      // out locally relative to their server, not through the zone engine).
+      const fanned = appendToolFanout(nodes, edges, get().expandedServers, {
+        compact: isCompact,
+        draggedPositions: draggedPositions.size > 0 ? draggedPositions : undefined,
+      });
+
+      set({ nodes: fanned.nodes, edges: fanned.edges });
     },
 
     resetLayout: () => {
@@ -231,7 +275,12 @@ export const useStackStore = create<StackState>()(
         codeMode,
         isCompact,
       );
-      set({ nodes, edges, draggedPositions: new Map() });
+      // Re-derive tool fan-out from scratch too (positions are local to the
+      // freshly-laid-out servers; no dragged positions survive a reset).
+      const fanned = appendToolFanout(nodes, edges, get().expandedServers, {
+        compact: isCompact,
+      });
+      set({ nodes: fanned.nodes, edges: fanned.edges, draggedPositions: new Map() });
     },
 
     onNodesChange: (changes) => {
