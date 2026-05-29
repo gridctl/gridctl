@@ -89,7 +89,7 @@ func TestReplicas_StacklessMode(t *testing.T) {
 
 	// A single server name — tool list must not leak replica ids into the
 	// prefix. Every tool is exposed as "<serverName>__<tool>".
-	toolsRes, err := gw.HandleToolsList()
+	toolsRes, err := gw.HandleToolsListUnscoped()
 	if err != nil {
 		t.Fatalf("HandleToolsList: %v", err)
 	}
