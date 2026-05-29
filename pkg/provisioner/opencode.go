@@ -66,7 +66,7 @@ func (o *OpenCode) IsLinked(configPath string, serverName string) (bool, error) 
 func (o *OpenCode) buildEntry(opts LinkOptions) map[string]any {
 	url := opts.GatewayURL
 	if opts.Port > 0 {
-		url = GatewayHTTPURL(opts.Port)
+		url = gatewayHTTPURLForOpts(opts)
 	}
 	return httpConfig(url, "remote")
 }
