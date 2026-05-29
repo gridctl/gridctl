@@ -1,11 +1,12 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, LockOpen, Lock } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, LockOpen, Lock, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useUIStore } from '../../stores/useUIStore';
+import { useStackStore } from '../../stores/useStackStore';
 import { useTokenHeat } from '../../hooks/useTokenHeat';
 import { LAYOUT } from '../../lib/constants';
 import { TelemetryNodeDot } from '../telemetry/TelemetryNodeDot';
@@ -22,6 +23,14 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const isCompact = useUIStore((s) => s.compactCards);
   const isServer = data.type === 'mcp-server';
   const heatIntensity = useTokenHeat(isServer ? data.name : '');
+
+  // Tool fan-out expand/collapse (servers only). The node id matches the
+  // convention in lib/graph/nodes.ts (`mcp-<name>`).
+  const serverNodeId = `mcp-${data.name}`;
+  const isExpanded = useStackStore((s) => s.expandedServers.has(serverNodeId));
+  const toggleServerExpanded = useStackStore((s) => s.toggleServerExpanded);
+  const serverToolCount = isServer ? (data as MCPServerNodeData).toolCount : 0;
+  const canExpand = isServer && (serverToolCount ?? 0) > 0;
   const isExternal = isServer && (data as MCPServerNodeData).external;
   const isLocalProcess = isServer && (data as MCPServerNodeData).localProcess;
   const isSSH = isServer && (data as MCPServerNodeData).ssh;
@@ -146,6 +155,28 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             <span className="text-[10px] text-text-muted font-mono">
               {toolCount}t
             </span>
+          )}
+          {/* Tool fan-out toggle. Stops propagation so it expands tools
+              without also selecting the node / opening the sidebar. */}
+          {canExpand && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleServerExpanded(serverNodeId);
+              }}
+              aria-expanded={isExpanded}
+              aria-label={isExpanded ? `Collapse ${data.name} tools` : `Expand ${data.name} tools`}
+              title={isExpanded ? 'Collapse tools' : 'Expand tools'}
+              className={cn(
+                'flex items-center justify-center w-5 h-5 rounded-md border transition-colors duration-200',
+                isExpanded
+                  ? 'border-violet-500/40 bg-violet-500/15 text-violet-300'
+                  : 'border-border/50 text-text-muted hover:border-violet-400/50 hover:text-violet-300'
+              )}
+            >
+              {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            </button>
           )}
           <StatusDot status={data.status} pulse={!isCompact} />
         </div>
