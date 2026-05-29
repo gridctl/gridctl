@@ -143,6 +143,7 @@ export function createClientNodes(clients: ClientStatus[]): Node[] {
         slug: client.slug,
         transport: client.transport,
         configPath: client.configPath,
+        effectiveScope: client.effectiveScope,
         status: 'running' as const,
       },
       draggable: true,
