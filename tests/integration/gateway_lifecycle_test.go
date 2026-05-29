@@ -52,7 +52,7 @@ func TestGatewayRegisterHTTPServer(t *testing.T) {
 		t.Errorf("expected server name 'test-http', got %q", statuses[0].Name)
 	}
 
-	result, err := gw.HandleToolsList()
+	result, err := gw.HandleToolsListUnscoped()
 	if err != nil {
 		t.Fatalf("HandleToolsList: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestGatewayUnregisterServer(t *testing.T) {
 	}
 
 	// Confirm tools visible before unregister.
-	before, err := gw.HandleToolsList()
+	before, err := gw.HandleToolsListUnscoped()
 	if err != nil {
 		t.Fatalf("HandleToolsList (before unregister): %v", err)
 	}
@@ -116,7 +116,7 @@ func TestGatewayUnregisterServer(t *testing.T) {
 		t.Errorf("expected empty Status() after unregister, got %d entries", len(statuses))
 	}
 
-	after, err := gw.HandleToolsList()
+	after, err := gw.HandleToolsListUnscoped()
 	if err != nil {
 		t.Fatalf("HandleToolsList (after unregister): %v", err)
 	}
