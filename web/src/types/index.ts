@@ -395,7 +395,26 @@ export interface SkillGroupNodeData extends NodeDataBase {
   untestedSkills: number;
 }
 
-export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | ClientNodeData | SkillNodeData | SkillGroupNodeData;
+// Tool fan-out node data — one node per visible tool of an expanded server.
+export interface ToolNodeData extends NodeDataBase {
+  type: 'tool';
+  name: string;          // Unprefixed tool name (e.g. "search-repos")
+  serverName: string;    // Owning MCP server name
+  serverNodeId: string;  // Parent server node id (e.g. "mcp-github")
+}
+
+// Aggregate "+N more" node shown when an expanded server exceeds the fan-out
+// cap. Carries the hidden tool names so the node can list them in a popover
+// rather than mounting more canvas nodes.
+export interface ToolOverflowNodeData extends NodeDataBase {
+  type: 'tool-overflow';
+  serverName: string;
+  serverNodeId: string;
+  overflowCount: number; // Number of tools beyond the cap (the N in "+N more")
+  hiddenTools: string[]; // The unprefixed names of the capped-out tools
+}
+
+export type NodeData = GatewayNodeData | MCPServerNodeData | ResourceNodeData | ClientNodeData | SkillNodeData | SkillGroupNodeData | ToolNodeData | ToolOverflowNodeData;
 
 // Connection status for real-time updates
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
