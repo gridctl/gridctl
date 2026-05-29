@@ -64,6 +64,26 @@ export function Canvas() {
   // Path highlighting for selected agents
   const highlightState = usePathHighlight(nodes, edges, selectedNodeId);
 
+  // Auto-fit the view to a focused client's reachable subgraph. The fit key
+  // captures the highlighted node set, so the view re-fits whenever that set
+  // changes - including expanding a reachable server while the client stays
+  // focused, which brings the newly-fanned-out tools into frame.
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const isClientSelected =
+    (selectedNode?.data as { type?: string } | undefined)?.type === 'client';
+  const fitKey = isClientSelected
+    ? [...highlightState.highlightedNodeIds].sort().join(',')
+    : '';
+  useEffect(() => {
+    if (!fitKey) return;
+    const ids = fitKey.split(',').map((id) => ({ id }));
+    // Defer one frame so React Flow has mounted/measured any new tool nodes.
+    const raf = requestAnimationFrame(() => {
+      fitView({ nodes: ids, padding: 0.25, duration: 400, maxZoom: 1.5 });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [fitKey, fitView]);
+
   // Evolvable grid - main lines at 100px, sub-grid dots at 20px fade in at >0.8x
   const showSubGrid = zoom > 0.8;
   const subGridOpacity = Math.min((zoom - 0.8) * 2.5, 1); // Fade from 0.8 to 1.2
@@ -116,11 +136,13 @@ export function Canvas() {
     setSidebarOpen(true);
   }, [selectNode, setSidebarOpen]);
 
-  // Handle pane click (deselect)
+  // Handle pane click (deselect). Reset focus and zoom back out to frame the
+  // whole graph, complementing the zoom-to-fit on client selection.
   const onPaneClick = useCallback(() => {
     selectNode(null);
     setSidebarOpen(false);
-  }, [selectNode, setSidebarOpen]);
+    fitView({ padding: 0.2, duration: 400 });
+  }, [selectNode, setSidebarOpen, fitView]);
 
   // No-op connect handler (wiring mode no longer supports agent connections)
   const onConnect = useCallback((_connection: Connection) => {}, []);
