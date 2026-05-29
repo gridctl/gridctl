@@ -87,6 +87,16 @@ export interface ResourceStatus {
   network?: string;
 }
 
+// Backend-computed per-client access scope (from the stack.yaml `clients:` block).
+// Mirrors mcp.ClientScopeResult. When no clients: block is configured,
+// `configured` is false and `unscoped` is true.
+export interface ClientScopeResult {
+  configured: boolean;  // A clients: block exists in the stack
+  unscoped: boolean;    // This client reaches the full tool surface
+  servers: string[];    // Reachable server names
+  tools: string[];      // Reachable prefixed tool names (server__tool)
+}
+
 // LLM client status from GET /api/clients
 export interface ClientStatus {
   name: string;       // Human-readable name (e.g., "Claude Desktop")
@@ -95,6 +105,7 @@ export interface ClientStatus {
   linked: boolean;    // Whether gridctl entry exists in client config
   transport: string;  // "native SSE", "native HTTP", or "mcp-remote bridge"
   configPath?: string; // Config file path (only if detected)
+  effectiveScope?: ClientScopeResult; // Per-client access scope (when scoping is configured)
 }
 
 // Token counts for a session or server
