@@ -634,6 +634,15 @@ body::before {
   overflow: visible !important;
 }
 
+/* Re-assert clipping for truncated tool fan-out labels. The rule above forces
+   overflow:visible on every node descendant, which otherwise defeats the
+   `truncate` utility (it needs overflow:hidden) and lets long tool names spill
+   past the pill. Higher specificity + !important wins it back, scoped to the
+   label so badges/handles/dots still overflow freely. */
+.react-flow__node .tool-label {
+  overflow: hidden !important;
+}
+
 .react-flow__edge.animated .react-flow__edge-path {
   transform: translateZ(0);
   backface-visibility: hidden;
