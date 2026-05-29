@@ -19,7 +19,7 @@ func newClaudeDesktop() *ClaudeDesktop {
 	c.buildEntry = func(opts LinkOptions) map[string]any {
 		url := opts.GatewayURL
 		if opts.Port > 0 {
-			url = GatewayHTTPURL(opts.Port)
+			url = gatewayHTTPURLForOpts(opts)
 		}
 		return bridgeConfig(url)
 	}
