@@ -66,7 +66,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
                 className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-violet-500/10"
               >
                 <Wrench size={10} className="text-violet-400/80 flex-shrink-0" />
-                <span className="font-mono text-[11px] text-text-secondary truncate" title={tool}>
+                <span className="min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate" title={tool}>
                   {tool}
                 </span>
               </li>
