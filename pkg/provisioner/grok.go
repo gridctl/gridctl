@@ -51,7 +51,7 @@ func (g *GrokBuild) Detect() (string, bool) {
 func (g *GrokBuild) buildEntry(opts LinkOptions) map[string]any {
 	url := opts.GatewayURL
 	if opts.Port > 0 {
-		url = GatewayHTTPURL(opts.Port)
+		url = gatewayHTTPURLForOpts(opts)
 	}
 	return map[string]any{
 		"url":     url,
