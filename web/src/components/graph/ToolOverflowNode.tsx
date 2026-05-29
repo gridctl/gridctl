@@ -35,14 +35,14 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
         className={cn(
           'animate-slide-in-right',
           'w-full flex items-center gap-2 px-2.5 rounded-lg',
-          'border border-dashed border-violet-500/40 bg-violet-500/[0.06]',
+          'border border-dashed border-text-secondary/40 bg-white/[0.03]',
           'backdrop-blur-xl text-left',
-          'transition-colors duration-200 hover:border-violet-400/70 hover:bg-violet-500/10'
+          'transition-colors duration-200 hover:border-text-secondary/70 hover:bg-white/[0.06]'
         )}
         style={{ height: LAYOUT.TOOL_HEIGHT }}
       >
-        <MoreHorizontal size={12} className="text-violet-300 flex-shrink-0" />
-        <span className="font-mono text-[11px] text-violet-200/90 tracking-tight">
+        <MoreHorizontal size={12} className="text-text-secondary flex-shrink-0" />
+        <span className="font-mono text-[11px] text-text-secondary tracking-tight">
           +{data.overflowCount} more
         </span>
       </button>
@@ -51,7 +51,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
         <div
           className={cn(
             'absolute left-0 top-full mt-1.5 z-50 w-full',
-            'rounded-lg border border-violet-500/25 bg-surface-elevated/95',
+            'rounded-lg border border-border bg-surface-elevated/95',
             'backdrop-blur-xl shadow-bevel p-1.5',
             'max-h-48 overflow-y-auto animate-fade-in-scale'
           )}
@@ -63,10 +63,10 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
             {data.hiddenTools.map((tool) => (
               <li
                 key={tool}
-                className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-violet-500/10"
+                className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-white/[0.06]"
               >
-                <Wrench size={10} className="text-violet-400/80 flex-shrink-0" />
-                <span className="min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate" title={tool}>
+                <Wrench size={10} className="text-text-secondary/80 flex-shrink-0" />
+                <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate" title={tool}>
                   {tool}
                 </span>
               </li>
@@ -79,7 +79,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
         type="target"
         position={Position.Left}
         className={cn(
-          '!w-2 !h-2 !bg-violet-500 !border-2 !border-background !rounded-full',
+          '!w-2 !h-2 !bg-text-secondary !border-2 !border-background !rounded-full',
           'transition-all duration-200'
         )}
         id="input"
