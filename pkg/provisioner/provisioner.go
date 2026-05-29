@@ -6,6 +6,7 @@ package provisioner
 import (
 	"errors"
 	"fmt"
+	"net/url"
 )
 
 // Sentinel errors for link operations.
@@ -47,6 +48,7 @@ type LinkOptions struct {
 	GatewayURL string // e.g., "http://localhost:8180/sse"
 	Port       int    // Gateway port for HTTP URL construction
 	ServerName string // Key name in config (default: "gridctl")
+	ClientID   string // Stable client identifier embedded as the `client` query param (empty = none)
 	Force      bool   // Overwrite existing entry
 	DryRun     bool   // Show what would change without modifying files
 }
@@ -206,4 +208,30 @@ func GatewayURL(port int) string {
 // GatewayHTTPURL constructs the streamable HTTP gateway URL from a port.
 func GatewayHTTPURL(port int) string {
 	return fmt.Sprintf("http://localhost:%d/mcp", port)
+}
+
+// gatewayHTTPURLForOpts returns the streamable HTTP gateway URL with the stable
+// client identifier embedded as the `client` query parameter when one is set.
+// Used by HTTP-native provisioners that rebuild the URL from the port and would
+// otherwise drop the parameter already present on opts.GatewayURL.
+func gatewayHTTPURLForOpts(opts LinkOptions) string {
+	return AppendClientParam(GatewayHTTPURL(opts.Port), opts.ClientID)
+}
+
+// AppendClientParam adds (or replaces) the `client` query parameter on a gateway
+// URL so the gateway can resolve the connecting client's stable access
+// identifier from the wire. Returns the URL unchanged when clientID is empty or
+// the URL cannot be parsed.
+func AppendClientParam(rawURL, clientID string) string {
+	if clientID == "" {
+		return rawURL
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	q.Set("client", clientID)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
