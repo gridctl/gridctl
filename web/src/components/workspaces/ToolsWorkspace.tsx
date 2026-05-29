@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Users,
   Wrench,
   X,
 } from 'lucide-react';
@@ -36,6 +37,7 @@ import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatusDot } from '../ui/StatusDot';
 import { FleetActions } from './FleetActions';
+import { ClientAccessEditor } from './ClientAccessEditor';
 import { ToolDetailPanel } from './ToolDetailPanel';
 import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
 
@@ -137,6 +139,8 @@ export function ToolsWorkspace() {
   const [auditWindow, setAuditWindow] = useState<AuditWindow>(DEFAULT_AUDIT_WINDOW);
   // Fleet bulk-action panel (expose-all / hide-pattern across servers).
   const [fleetOpen, setFleetOpen] = useState(false);
+  // Per-client access editor (which servers each client may reach).
+  const [accessOpen, setAccessOpen] = useState(false);
   const { usage, fetchedAt } = useToolUsage(auditMode);
   const windowMs = auditWindowMs(auditWindow);
   const usageByServer = usage?.servers;
@@ -265,6 +269,7 @@ export function ToolsWorkspace() {
             observedSince={usage?.observedSince}
             onOpenFleet={() => setFleetOpen(true)}
             fleetDisabled={servers.length === 0}
+            onOpenAccess={() => setAccessOpen(true)}
           />
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
@@ -318,6 +323,12 @@ export function ToolsWorkspace() {
         servers={servers}
         activeServerName={activeServerName}
       />
+
+      <ClientAccessEditor
+        isOpen={accessOpen}
+        onClose={() => setAccessOpen(false)}
+        servers={servers}
+      />
     </div>
   );
 }
@@ -338,6 +349,7 @@ interface ToolsHeaderProps {
   observedSince?: string;
   onOpenFleet: () => void;
   fleetDisabled: boolean;
+  onOpenAccess: () => void;
 }
 
 function ToolsHeader({
@@ -352,6 +364,7 @@ function ToolsHeader({
   observedSince,
   onOpenFleet,
   fleetDisabled,
+  onOpenAccess,
 }: ToolsHeaderProps) {
   const searching = query.trim().length > 0;
   const windowLabel = AUDIT_WINDOWS.find((w) => w.id === auditWindow)?.label ?? '7 days';
@@ -371,6 +384,18 @@ function ToolsHeader({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenAccess}
+            aria-label="Open per-client access editor"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+              'bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border',
+            )}
+          >
+            <Users size={11} aria-hidden="true" />
+            Access
+          </button>
           <button
             type="button"
             onClick={onOpenFleet}
