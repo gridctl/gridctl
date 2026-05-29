@@ -1,0 +1,61 @@
+# Per-Client Access Scoping Example
+#
+# Demonstrates the top-level `clients:` block, which restricts which servers and
+# tools each connecting client can reach (least-privilege per client).
+#
+# Semantics (Kubernetes NetworkPolicy style):
+#   - No `clients:` block at all  -> every client sees every tool (legacy).
+#   - Block present + client in a profile -> limited to that profile's allow-list.
+#   - Block present + client not in any profile -> governed by `default:`
+#     (`deny` unless set to `allow`).
+#
+# Scope coverage is tools only; skills (MCP prompts) and resources stay global.
+#
+# Bind a linked client to a profile so enforcement uses a stable identifier:
+#   gridctl link cursor --client-id cursor
+#
+# Usage:
+#   gridctl apply examples/access-control/per-client-scoping.yaml
+#
+version: "1"
+name: per-client-scoping-demo
+
+network:
+  name: per-client-scoping-net
+
+mcp-servers:
+  - name: github
+    image: alpine:latest
+    port: 8080
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+  - name: gitlab
+    image: alpine:latest
+    port: 8081
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+# Per-client access scoping.
+clients:
+  # Unlisted clients are denied entirely. Set to "allow" to instead let
+  # unlisted clients see everything (looser, opt-out posture).
+  default: deny
+
+  profiles:
+    # Server-level allow-list: cursor reaches every tool on github, nothing else.
+    cursor:
+      servers:
+        - github
+
+    # Tool-level allow-list: claude-code reaches only these two prefixed tools.
+    claude-code:
+      tools:
+        - github__search-repos
+        - gitlab__list-issues
+
+    # Alias reconciliation: a client whose clientInfo.name is "Custom Agent"
+    # maps to this profile without relying on the built-in normalization.
+    team-bot:
+      aliases:
+        - "Custom Agent"
+      servers:
+        - gitlab
