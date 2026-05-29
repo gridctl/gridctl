@@ -34,7 +34,7 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 
 | Command | Purpose |
 |---|---|
-| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview. |
+| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--client-id <id>` to bind the link to a `clients:` access profile. |
 | `gridctl unlink [client]` | Remove gridctl from an LLM client's config. |
 
 ## Skills
