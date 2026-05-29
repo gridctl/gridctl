@@ -185,19 +185,27 @@ describe('appendToolFanout', () => {
     expect(result.nodes.filter((n) => n.type === 'tool')).toHaveLength(0);
   });
 
-  it('places each expanded server in its own horizontal lane', () => {
-    // Both servers sit at the same X; lanes must separate their columns.
+  it('stacks expanded servers as non-overlapping vertical bands in one column', () => {
+    // Two servers at the same X; bands must share a column and tile vertically.
     const sameXNodes: Node[] = [
-      makeServerNode('a', ['a1'], 800, 0),
+      makeServerNode('a', ['a1', 'a2'], 800, 0),
       makeServerNode('b', ['b1'], 800, 300),
     ];
     const result = appendToolFanout(sameXNodes, [], new Set(['mcp-a', 'mcp-b']));
 
-    const aTool = result.nodes.find((n) => n.id === toolNodeId('mcp-a', 'a1'));
-    const bTool = result.nodes.find((n) => n.id === toolNodeId('mcp-b', 'b1'));
+    const toolNodes = result.nodes.filter((n) => n.type === 'tool');
+    // All tools share a single column X.
+    expect(new Set(toolNodes.map((n) => n.position.x)).size).toBe(1);
 
-    // Lane 0 vs lane 1 -> distinct X columns, so the fans never overlap.
-    expect(aTool?.position.x).not.toBe(bTool?.position.x);
-    expect(bTool!.position.x).toBeGreaterThan(aTool!.position.x);
+    const aTools = result.nodes.filter(
+      (n) => (n.data as { serverNodeId?: string }).serverNodeId === 'mcp-a'
+    );
+    const bTools = result.nodes.filter(
+      (n) => (n.data as { serverNodeId?: string }).serverNodeId === 'mcp-b'
+    );
+    // Server a is above server b, so a's band sits entirely above b's band.
+    const aMaxY = Math.max(...aTools.map((n) => n.position.y));
+    const bMinY = Math.min(...bTools.map((n) => n.position.y));
+    expect(bMinY).toBeGreaterThan(aMaxY);
   });
 });
