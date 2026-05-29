@@ -87,6 +87,7 @@ export type EdgeRelationType =
   | 'gateway-to-resource'     // Gateway manages resource
   | 'gateway-to-skill'        // Gateway serves a registered skill
   | 'gateway-to-skill-group'  // Gateway serves a skill directory group
+  | 'server-to-tool'          // MCP server fans out to one of its tools
   | 'agent-uses-server'       // Agent uses specific MCP server (via uses field)
   | 'agent-uses-agent';       // Agent delegates to another agent (A2A)
 
