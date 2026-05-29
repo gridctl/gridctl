@@ -59,18 +59,26 @@ interface FanoutOptions {
   compact?: boolean;
   /** User-dragged positions to preserve (keyed by node id). */
   draggedPositions?: Map<string, { x: number; y: number }>;
+  /**
+   * Lane index for this server among the currently-expanded servers. Servers
+   * all share the same X (the "servers" column), so without a lane offset
+   * every expanded server's tools would stack in the same place. Each lane
+   * steps the tool column further right so columns never overlap.
+   */
+  laneIndex?: number;
 }
 
 /**
  * Build the tool + overflow nodes and server -> tool edges for a single
  * expanded server, positioned in a local vertical column to the server's
- * right and centered on the server's vertical midpoint.
+ * right and centered on the server's vertical midpoint. `laneIndex` offsets
+ * the column horizontally so multiple expanded servers do not collide.
  */
 export function createToolFanout(
   serverNode: Node,
   options: FanoutOptions = {}
 ): { nodes: Node[]; edges: Edge[] } {
-  const { compact = false, draggedPositions } = options;
+  const { compact = false, draggedPositions, laneIndex = 0 } = options;
   const data = serverNode.data as { name?: string; tools?: string[] };
   const tools = data.tools ?? [];
   if (tools.length === 0) {
@@ -85,7 +93,9 @@ export function createToolFanout(
     serverNode,
     compact
   );
-  const columnX = serverNode.position.x + serverWidth + LAYOUT.TOOL_OFFSET_X;
+  const laneStride = LAYOUT.TOOL_WIDTH + LAYOUT.TOOL_LANE_GAP;
+  const columnX =
+    serverNode.position.x + serverWidth + LAYOUT.TOOL_OFFSET_X + laneIndex * laneStride;
   const serverCenterY = serverNode.position.y + serverHeight / 2;
 
   const itemCount = visible.length + (overflow.length > 0 ? 1 : 0);
@@ -173,12 +183,16 @@ export function appendToolFanout(
   const extraNodes: Node[] = [];
   const extraEdges: Edge[] = [];
 
+  // Assign each expanded server its own lane in the order servers appear
+  // (top to bottom), so their tool columns are separated horizontally.
+  let laneIndex = 0;
   for (const node of nodes) {
     const nodeData = node.data as { type?: string };
     if (nodeData.type !== 'mcp-server' || !expandedServers.has(node.id)) {
       continue;
     }
-    const fanout = createToolFanout(node, options);
+    const fanout = createToolFanout(node, { ...options, laneIndex });
+    laneIndex += 1;
     extraNodes.push(...fanout.nodes);
     extraEdges.push(...fanout.edges);
   }
