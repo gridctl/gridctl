@@ -106,8 +106,12 @@ export function Canvas() {
     });
   }, [edges, highlightState]);
 
-  // Handle node selection
-  const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string }) => {
+  // Handle node selection. Tool fan-out nodes are read-only affordances: a
+  // click should not select them or open the sidebar (the "+N more" node
+  // handles its own popover internally).
+  const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string; data?: { type?: string } }) => {
+    const nodeType = node.data?.type;
+    if (nodeType === 'tool' || nodeType === 'tool-overflow') return;
     selectNode(node.id);
     setSidebarOpen(true);
   }, [selectNode, setSidebarOpen]);
