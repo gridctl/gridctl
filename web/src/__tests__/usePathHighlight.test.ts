@@ -156,6 +156,46 @@ describe('computeHighlightState', () => {
   });
 });
 
+describe('computeHighlightState with expanded tool fan-out', () => {
+  // Graph where client-a reaches mcp-x (expanded, 1 tool) but not mcp-z.
+  // mcp-z is also expanded but off the client's path.
+  function makeGraphWithTools(): { nodes: Node[]; edges: Edge[] } {
+    const { nodes, edges } = makeGraph();
+    nodes.push(
+      { id: 'mcp-z', position: { x: 0, y: 0 }, data: { type: 'mcp-server' } },
+      { id: 'tool-mcp-x-search', position: { x: 0, y: 0 }, data: { type: 'tool', serverNodeId: 'mcp-x' } },
+      { id: 'tool-overflow-mcp-x', position: { x: 0, y: 0 }, data: { type: 'tool-overflow', serverNodeId: 'mcp-x' } },
+      { id: 'tool-mcp-z-secret', position: { x: 0, y: 0 }, data: { type: 'tool', serverNodeId: 'mcp-z' } }
+    );
+    edges.push(
+      { id: 'edge-tool-mcp-x-search', source: 'mcp-x', target: 'tool-mcp-x-search', data: { relationType: 'server-to-tool', isHighlightable: false } },
+      { id: 'edge-tool-overflow-mcp-x', source: 'mcp-x', target: 'tool-overflow-mcp-x', data: { relationType: 'server-to-tool', isHighlightable: false } },
+      { id: 'edge-tool-mcp-z-secret', source: 'mcp-z', target: 'tool-mcp-z-secret', data: { relationType: 'server-to-tool', isHighlightable: false } }
+    );
+    return { nodes, edges };
+  }
+
+  it('highlights the tools (and overflow) of a reachable, expanded server', () => {
+    const { nodes, edges } = makeGraphWithTools();
+    const state = computeHighlightState(nodes, edges, 'client-a');
+
+    expect(state.highlightedNodeIds.has('tool-mcp-x-search')).toBe(true);
+    expect(state.highlightedNodeIds.has('tool-overflow-mcp-x')).toBe(true);
+    expect(state.highlightedEdgeIds.has('edge-tool-mcp-x-search')).toBe(true);
+    expect(state.highlightedEdgeIds.has('edge-tool-overflow-mcp-x')).toBe(true);
+  });
+
+  it('does not highlight tools of a server outside the client path', () => {
+    const { nodes, edges } = makeGraphWithTools();
+    const state = computeHighlightState(nodes, edges, 'client-a');
+
+    // mcp-z is not reachable from client-a, so its tools stay dimmed.
+    expect(state.highlightedNodeIds.has('mcp-z')).toBe(false);
+    expect(state.highlightedNodeIds.has('tool-mcp-z-secret')).toBe(false);
+    expect(state.highlightedEdgeIds.has('edge-tool-mcp-z-secret')).toBe(false);
+  });
+});
+
 describe('isNodeDimmed / isEdgeDimmed', () => {
   it('dims nothing when there is no selection', () => {
     const state = computeHighlightState([], [], null);
