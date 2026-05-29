@@ -9,6 +9,7 @@
 import { useMemo } from 'react';
 import type { Node, Edge } from '@xyflow/react';
 import type { EdgeMetadata } from '../lib/graph/types';
+import type { ClientScopeResult } from '../types';
 
 /**
  * Highlight state returned by the hook
@@ -94,23 +95,77 @@ function includeHighlightedServerTools(
   highlightedNodeIds: Set<string>,
   highlightedEdgeIds: Set<string>,
   nodes: Node[],
-  edges: Edge[]
+  edges: Edge[],
+  inScopeTools?: Set<string>
 ): void {
   for (const node of nodes) {
-    const data = node.data as { type?: string; serverNodeId?: string };
+    const data = node.data as {
+      type?: string;
+      serverNodeId?: string;
+      serverName?: string;
+      name?: string;
+    };
     if (
       (data.type === 'tool' || data.type === 'tool-overflow') &&
       data.serverNodeId &&
       highlightedNodeIds.has(data.serverNodeId)
     ) {
+      // When a per-client tool scope is active, only individual tool nodes
+      // whose prefixed name (server__tool) is in scope light up; out-of-scope
+      // tools stay dimmed. The "+N more" overflow follows its server.
+      if (inScopeTools && data.type === 'tool') {
+        const prefixed = `${data.serverName}__${data.name}`;
+        if (!inScopeTools.has(prefixed)) continue;
+      }
       highlightedNodeIds.add(node.id);
     }
   }
 
   for (const edge of edges) {
     const meta = edge.data as EdgeMetadata | undefined;
-    if (meta?.relationType === 'server-to-tool' && highlightedNodeIds.has(edge.source)) {
+    if (
+      meta?.relationType === 'server-to-tool' &&
+      highlightedNodeIds.has(edge.source) &&
+      highlightedNodeIds.has(edge.target)
+    ) {
       highlightedEdgeIds.add(edge.id);
+    }
+  }
+}
+
+/**
+ * Narrow an already-traced highlight to a client's real access scope, in place.
+ *
+ * Removes any highlighted MCP-server node whose name is not in the client's
+ * `effectiveScope.servers`, along with the edges leading to it. The gateway and
+ * client stay highlighted, so a client scoped to nothing shows as reaching the
+ * gateway and stopping there (the empty-state) rather than the full graph.
+ * Tools of pruned servers fall out automatically since their parent server is
+ * no longer highlighted.
+ */
+function narrowToClientScope(
+  highlightedNodeIds: Set<string>,
+  highlightedEdgeIds: Set<string>,
+  nodes: Node[],
+  edges: Edge[],
+  scope: ClientScopeResult
+): void {
+  const inScopeServers = new Set(scope.servers);
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+  const removed = new Set<string>();
+  for (const id of highlightedNodeIds) {
+    const data = nodeById.get(id)?.data as { type?: string; name?: string } | undefined;
+    if (data?.type === 'mcp-server' && !inScopeServers.has(data.name ?? '')) {
+      removed.add(id);
+    }
+  }
+  for (const id of removed) {
+    highlightedNodeIds.delete(id);
+  }
+  for (const edge of edges) {
+    if (removed.has(edge.target)) {
+      highlightedEdgeIds.delete(edge.id);
     }
   }
 }
@@ -150,18 +205,34 @@ export function computeHighlightState(
   }
 
   const nodeData = selectedNode.data as Record<string, unknown>;
+  const isClient = nodeData?.type === 'client';
 
   // Client nodes: highlight the transitive client -> gateway -> servers path.
   // Other node types: just highlight the selected node.
-  const { highlightedNodeIds, highlightedEdgeIds } =
-    nodeData?.type === 'client'
-      ? traceReachablePath(selectedNodeId, edges)
-      : {
-          highlightedNodeIds: new Set([selectedNodeId]),
-          highlightedEdgeIds: new Set<string>(),
-        };
+  const { highlightedNodeIds, highlightedEdgeIds } = isClient
+    ? traceReachablePath(selectedNodeId, edges)
+    : {
+        highlightedNodeIds: new Set([selectedNodeId]),
+        highlightedEdgeIds: new Set<string>(),
+      };
 
-  includeHighlightedServerTools(highlightedNodeIds, highlightedEdgeIds, nodes, edges);
+  // When the selected client has a configured, narrowed scope, restrict the
+  // highlight to what it can actually reach. An absent or `unscoped` scope
+  // preserves the gateway-exposed reach (the no-clients-block case).
+  const scope = nodeData?.effectiveScope as ClientScopeResult | undefined;
+  let inScopeTools: Set<string> | undefined;
+  if (isClient && scope && scope.configured && !scope.unscoped) {
+    narrowToClientScope(highlightedNodeIds, highlightedEdgeIds, nodes, edges, scope);
+    inScopeTools = new Set(scope.tools);
+  }
+
+  includeHighlightedServerTools(
+    highlightedNodeIds,
+    highlightedEdgeIds,
+    nodes,
+    edges,
+    inScopeTools
+  );
 
   return { highlightedNodeIds, highlightedEdgeIds, hasSelection: true };
 }
