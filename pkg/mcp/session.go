@@ -12,12 +12,18 @@ const maxSessions = 1000
 
 // Session represents an MCP client session.
 type Session struct {
-	ID          string
-	ClientInfo  ClientInfo
+	ID         string
+	ClientInfo ClientInfo
 	// ClientID is the normalized form of ClientInfo.Name (see NormalizeClientID).
 	// It is the stable attribution dimension threaded through tool-call observers
 	// so cost and token aggregates can be grouped per originating client.
-	ClientID    string
+	ClientID string
+	// AccessID is the stable identifier used to scope this client's tool access
+	// (the key under stack.yaml `clients:`). It is the explicit link-time
+	// identifier when the client declares one (the `client` query parameter or
+	// X-Gridctl-Client-Id header), otherwise it falls back to ClientID. Both are
+	// normalized so configuration, the wire, and the UI reconcile on one form.
+	AccessID    string
 	Initialized bool
 	CreatedAt   time.Time
 	LastSeen    time.Time
@@ -38,7 +44,12 @@ func NewSessionManager() *SessionManager {
 
 // Create creates a new session. If the session count exceeds maxSessions,
 // the oldest session (by LastSeen) is evicted.
-func (m *SessionManager) Create(clientInfo ClientInfo) *Session {
+//
+// accessID is the explicit, link-time-assigned client identifier resolved from
+// the connection (query parameter or header); pass "" when the client declared
+// none, in which case the normalized clientInfo.name becomes the access id.
+// Both forms are normalized so enforcement, config, and UI reconcile.
+func (m *SessionManager) Create(clientInfo ClientInfo, accessID string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -46,11 +57,18 @@ func (m *SessionManager) Create(clientInfo ClientInfo) *Session {
 		m.evictOldest()
 	}
 
+	normalized := NormalizeClientID(clientInfo.Name)
+	resolvedAccess := NormalizeClientID(accessID)
+	if resolvedAccess == "" {
+		resolvedAccess = normalized
+	}
+
 	id := generateSessionID()
 	session := &Session{
 		ID:          id,
 		ClientInfo:  clientInfo,
-		ClientID:    NormalizeClientID(clientInfo.Name),
+		ClientID:    normalized,
+		AccessID:    resolvedAccess,
 		Initialized: true,
 		CreatedAt:   time.Now(),
 		LastSeen:    time.Now(),
