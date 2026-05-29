@@ -184,4 +184,20 @@ describe('appendToolFanout', () => {
     );
     expect(result.nodes.filter((n) => n.type === 'tool')).toHaveLength(0);
   });
+
+  it('places each expanded server in its own horizontal lane', () => {
+    // Both servers sit at the same X; lanes must separate their columns.
+    const sameXNodes: Node[] = [
+      makeServerNode('a', ['a1'], 800, 0),
+      makeServerNode('b', ['b1'], 800, 300),
+    ];
+    const result = appendToolFanout(sameXNodes, [], new Set(['mcp-a', 'mcp-b']));
+
+    const aTool = result.nodes.find((n) => n.id === toolNodeId('mcp-a', 'a1'));
+    const bTool = result.nodes.find((n) => n.id === toolNodeId('mcp-b', 'b1'));
+
+    // Lane 0 vs lane 1 -> distinct X columns, so the fans never overlap.
+    expect(aTool?.position.x).not.toBe(bTool?.position.x);
+    expect(bTool!.position.x).toBeGreaterThan(aTool!.position.x);
+  });
 });
