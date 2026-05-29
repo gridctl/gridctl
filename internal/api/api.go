@@ -451,7 +451,7 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, _ := s.gateway.HandleToolsList()
+	result, _ := s.gateway.HandleToolsListUnscoped()
 	writeJSON(w, result)
 }
 
@@ -987,6 +987,11 @@ type ClientStatus struct {
 	Linked     bool   `json:"linked"`
 	Transport  string `json:"transport"`
 	ConfigPath string `json:"configPath,omitempty"`
+	// EffectiveScope is the backend-computed per-client tool access scope when a
+	// `clients:` block is configured: the servers and prefixed tools this client
+	// can reach. nil when no access scoping is in effect, so the frontend can
+	// distinguish "unscoped (legacy)" from "scoped to nothing".
+	EffectiveScope *mcp.ClientScopeResult `json:"effectiveScope,omitempty"`
 }
 
 // handleClients returns detected LLM clients and their link status.
@@ -1007,17 +1012,27 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 		serverName = "gridctl"
 	}
 
+	scopingOn := s.gateway != nil && s.gateway.ClientAccessConfigured()
+
 	infos := s.provisioners.AllClientInfo(serverName)
 	statuses := make([]ClientStatus, 0, len(infos))
 	for _, info := range infos {
-		statuses = append(statuses, ClientStatus{
+		status := ClientStatus{
 			Name:       info.Name,
 			Slug:       info.Slug,
 			Detected:   info.Detected,
 			Linked:     info.Linked,
 			Transport:  info.Transport,
 			ConfigPath: info.ConfigPath,
-		})
+		}
+		// Surface the backend-computed effective scope keyed on the client's
+		// stable identifier (its slug, which is what `gridctl link` assigns and
+		// what stack.yaml profiles are keyed on).
+		if scopingOn {
+			scope := s.gateway.ClientScope(info.Slug)
+			status.EffectiveScope = &scope
+		}
+		statuses = append(statuses, status)
 	}
 
 	writeJSON(w, statuses)
