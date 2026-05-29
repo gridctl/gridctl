@@ -63,7 +63,7 @@ func TestCodeMode_CostAttributionThroughSandbox(t *testing.T) {
 	gw.SetToolCallObserver(obs)
 
 	cm := mcp.NewCodeMode(5 * time.Second)
-	tools, err := gw.HandleToolsList()
+	tools, err := gw.HandleToolsListUnscoped()
 	if err != nil {
 		t.Fatalf("HandleToolsList: %v", err)
 	}
