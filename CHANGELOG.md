@@ -6,6 +6,28 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Per-client access scoping (`clients:` block).** A new optional top-level
+  `clients:` block in `stack.yaml` lets an operator restrict which servers and
+  tools each connecting client can reach, following Kubernetes NetworkPolicy
+  semantics: omitting the block preserves today's behavior (every client sees
+  every tool), while adding it opts into least-privilege — a client matching a
+  profile is limited to that profile's `servers:`/`tools:` allow-list, and a
+  client matching no profile is governed by `default:` (`deny` unless set to
+  `allow`). The filter is applied at a single chokepoint that every exposure
+  path funnels through — `tools/list`, `tools/call` rejection, and the code-mode
+  search/execute tool universe — so a scoped client cannot reach a denied tool
+  via code mode. Enforcement keys on a stable client identifier reconciled
+  across the wire, configuration, and the UI: `gridctl link --client-id <id>`
+  embeds the identifier as the `client` query parameter on the gateway URL (the
+  `X-Gridctl-Client-Id` header also works), profiles may declare `aliases:` for
+  divergent wire names, and the normalized `clientInfo.name` is the fallback.
+  Unknown server or tool references in a profile fail config validation. A
+  `clients:` change applies on hot-reload to all subsequent `tools/list` and
+  `tools/call` requests, including existing sessions. The `/api/clients`
+  response now carries each client's backend-computed effective scope. Scope
+  coverage for v1 is tools only: skills (served as MCP prompts) and resources
+  remain globally visible.
+
 - **Tool fan-out in the Topology view.** Each MCP server node now has an
   expand chevron; clicking it fans that server's tools out as nodes in a local
   column to the server's right, and clicking again collapses them. Fan-out is
