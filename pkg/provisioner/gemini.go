@@ -19,7 +19,7 @@ func newGeminiCLI() *GeminiCLI {
 	c.buildEntry = func(opts LinkOptions) map[string]any {
 		url := opts.GatewayURL
 		if opts.Port > 0 {
-			url = GatewayHTTPURL(opts.Port)
+			url = gatewayHTTPURLForOpts(opts)
 		}
 		return httpConfig(url, "streamable-http")
 	}
