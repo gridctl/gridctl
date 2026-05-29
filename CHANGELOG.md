@@ -18,6 +18,13 @@ All notable changes to gridctl will be documented in this file.
   locally so expanding never reflows the three-column backbone. Server -> tool
   edges are non-highlightable, so they stay out of the client-reach highlight.
   Expansion state lives in the stack store and survives polling refreshes.
+  When multiple servers are expanded, each gets its own horizontal lane so
+  their tool columns never overlap. A focused client's reachable servers carry
+  their highlight onto their fanned-out tools, so expanding a reachable server
+  while a client is selected shows its tools at full opacity (tools of
+  out-of-scope servers stay dimmed). Selecting a client zooms the view to fit
+  its reachable subgraph, re-fitting as servers are expanded; clicking empty
+  canvas zooms back out to the whole graph.
 
 - **Multi-hop client path highlight in the Topology view.** Clicking a client
   node now lights up its full transitive reach (client → gateway → the servers
