@@ -1,12 +1,14 @@
 /**
  * Path highlighting hook for butterfly layout
  *
- * Computes which nodes and edges should be highlighted based on
- * the selected node. For clients, traces the path: Client -> Gateway.
+ * Computes which nodes and edges should be highlighted based on the
+ * selected node. For clients, traces the full transitive reachable path:
+ * Client -> Gateway -> the servers that client can reach.
  */
 
 import { useMemo } from 'react';
 import type { Node, Edge } from '@xyflow/react';
+import type { EdgeMetadata } from '../lib/graph/types';
 
 /**
  * Highlight state returned by the hook
@@ -20,11 +22,120 @@ export interface HighlightState {
   hasSelection: boolean;
 }
 
+/** Empty highlight state - nothing selected, nothing dimmed. */
+function emptyHighlight(): HighlightState {
+  return {
+    highlightedNodeIds: new Set<string>(),
+    highlightedEdgeIds: new Set<string>(),
+    hasSelection: false,
+  };
+}
+
+/**
+ * Trace the transitive reachable path outward from a node.
+ *
+ * Performs a breadth-first walk following only outgoing highlightable edges
+ * (source -> target). Edge metadata's `isHighlightable` flag gates traversal,
+ * so a client reaches the gateway and the servers behind it, but not the
+ * resources or skill groups the gateway also manages (those edges are not
+ * highlightable). When per-client scoping lands, the scoped-out gateway ->
+ * server edges drop out of this walk and the highlight narrows automatically.
+ *
+ * @param startId - Node to start the walk from
+ * @param edges - All edges in the graph
+ * @returns Highlighted node and edge ID sets, including the start node
+ */
+function traceReachablePath(
+  startId: string,
+  edges: Edge[]
+): { highlightedNodeIds: Set<string>; highlightedEdgeIds: Set<string> } {
+  const highlightedNodeIds = new Set<string>([startId]);
+  const highlightedEdgeIds = new Set<string>();
+
+  // Index outgoing highlightable edges by source for an O(1) frontier expand.
+  const outgoing = new Map<string, Edge[]>();
+  for (const edge of edges) {
+    const meta = edge.data as EdgeMetadata | undefined;
+    if (!meta?.isHighlightable) continue;
+    const bucket = outgoing.get(edge.source);
+    if (bucket) {
+      bucket.push(edge);
+    } else {
+      outgoing.set(edge.source, [edge]);
+    }
+  }
+
+  const queue = [startId];
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    for (const edge of outgoing.get(current) ?? []) {
+      highlightedEdgeIds.add(edge.id);
+      if (!highlightedNodeIds.has(edge.target)) {
+        highlightedNodeIds.add(edge.target);
+        queue.push(edge.target);
+      }
+    }
+  }
+
+  return { highlightedNodeIds, highlightedEdgeIds };
+}
+
+/**
+ * Compute path highlighting based on the selected node.
+ *
+ * When a client is selected: highlight the transitive client -> gateway ->
+ * reachable-servers path. For other node types: highlight only the selected
+ * node. Pure function so it can be unit-tested without React.
+ *
+ * @param nodes - All nodes in the graph
+ * @param edges - All edges in the graph
+ * @param selectedNodeId - Currently selected node ID, or null
+ * @returns Highlight state with sets of node/edge IDs
+ */
+export function computeHighlightState(
+  nodes: Node[],
+  edges: Edge[],
+  selectedNodeId: string | null
+): HighlightState {
+  // No selection = no highlighting
+  if (!selectedNodeId) {
+    return emptyHighlight();
+  }
+
+  // Find the selected node
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  if (!selectedNode) {
+    return {
+      highlightedNodeIds: new Set([selectedNodeId]),
+      highlightedEdgeIds: new Set<string>(),
+      hasSelection: true,
+    };
+  }
+
+  const nodeData = selectedNode.data as Record<string, unknown>;
+
+  // Client nodes: highlight the transitive client -> gateway -> servers path.
+  if (nodeData?.type === 'client') {
+    const { highlightedNodeIds, highlightedEdgeIds } = traceReachablePath(
+      selectedNodeId,
+      edges
+    );
+    return { highlightedNodeIds, highlightedEdgeIds, hasSelection: true };
+  }
+
+  // For all other node types, just highlight the selected node.
+  return {
+    highlightedNodeIds: new Set([selectedNodeId]),
+    highlightedEdgeIds: new Set<string>(),
+    hasSelection: true,
+  };
+}
+
 /**
  * Compute path highlighting based on selected node
  *
- * When a client is selected: highlight client -> gateway path.
- * For other node types: just highlight the selected node.
+ * When a client is selected: highlight client -> gateway -> reachable-servers
+ * path. For other node types: just highlight the selected node.
  *
  * @param nodes - All nodes in the graph
  * @param edges - All edges in the graph
@@ -36,51 +147,10 @@ export function usePathHighlight(
   edges: Edge[],
   selectedNodeId: string | null
 ): HighlightState {
-  return useMemo(() => {
-    // No selection = no highlighting
-    if (!selectedNodeId) {
-      return {
-        highlightedNodeIds: new Set<string>(),
-        highlightedEdgeIds: new Set<string>(),
-        hasSelection: false,
-      };
-    }
-
-    // Find the selected node
-    const selectedNode = nodes.find((n) => n.id === selectedNodeId);
-    if (!selectedNode) {
-      return {
-        highlightedNodeIds: new Set([selectedNodeId]),
-        highlightedEdgeIds: new Set<string>(),
-        hasSelection: true,
-      };
-    }
-
-    const nodeData = selectedNode.data as Record<string, unknown>;
-
-    // Client nodes: highlight client -> gateway path
-    if (nodeData?.type === 'client') {
-      const highlightedNodeIds = new Set<string>([selectedNodeId]);
-      const highlightedEdgeIds = new Set<string>();
-
-      for (const edge of edges) {
-        if (edge.source === selectedNodeId && edge.target === 'gateway') {
-          highlightedEdgeIds.add(edge.id);
-          highlightedNodeIds.add('gateway');
-          break;
-        }
-      }
-
-      return { highlightedNodeIds, highlightedEdgeIds, hasSelection: true };
-    }
-
-    // For all other node types, just highlight the selected node
-    return {
-      highlightedNodeIds: new Set([selectedNodeId]),
-      highlightedEdgeIds: new Set<string>(),
-      hasSelection: true,
-    };
-  }, [nodes, edges, selectedNodeId]);
+  return useMemo(
+    () => computeHighlightState(nodes, edges, selectedNodeId),
+    [nodes, edges, selectedNodeId]
+  );
 }
 
 /**
