@@ -18,12 +18,55 @@ type Stack struct {
 	Networks   []Network        `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
 	MCPServers []MCPServer      `yaml:"mcp-servers"`
 	Resources  []Resource       `yaml:"resources,omitempty"`
+	Clients    *ClientsConfig   `yaml:"clients,omitempty"` // Optional per-client access scoping (NetworkPolicy semantics)
 
 	// References is the variable-usage index, derived during expandStackVars:
 	// which consumers reference each ${var:KEY}/${vault:KEY} key. It is computed
 	// from the stack, not persisted with it — the yaml/json "-" tags keep it out
 	// of every existing serialization path. Nil until a stack is loaded/expanded.
 	References ReferenceIndex `yaml:"-" json:"-"`
+}
+
+// ClientsConfig is the optional top-level per-client access scoping block.
+// Its presence opts a stack into NetworkPolicy semantics:
+//
+//   - Omitting the entire `clients:` block preserves legacy behavior — every
+//     connecting client sees every tool (Article IX back-compat).
+//   - With the block present, a connecting client that matches a profile is
+//     restricted to that profile's allow-list; a client matching no profile is
+//     governed by Default ("deny" unless set to "allow").
+//
+// The map key in Profiles is the stable client identifier assigned at
+// `gridctl link` time, which is also the identifier shown in the UI and carried
+// on the wire (the `client` query parameter / X-Gridctl-Client-Id header). It is
+// reconciled with the connecting client's normalized identity, so the same
+// string keys configuration, enforcement, and the topology view.
+//
+// Scope coverage for v1 is tools only: skills (served as MCP prompts) and
+// resources remain globally visible. This is an explicit, documented decision;
+// extending scope to prompts/resources is deferred.
+type ClientsConfig struct {
+	// Default is the policy for clients that match no profile: "deny" (the
+	// default when empty) or "allow".
+	Default string `yaml:"default,omitempty"`
+	// Profiles maps a stable client identifier to its access allow-list.
+	Profiles map[string]ClientProfile `yaml:"profiles,omitempty"`
+}
+
+// ClientProfile is one client's tool access allow-list. Servers and Tools are
+// both allow-lists; an empty Servers list means "all servers" and an empty
+// Tools list means "all tools within the allowed servers". Tools are matched
+// against the router's prefixed names (e.g. "github__search-repos").
+type ClientProfile struct {
+	// Aliases are raw clientInfo.name values that should resolve to this
+	// profile, for reconciling a wire identity that differs from the profile
+	// key without relying on the built-in normalization heuristic.
+	Aliases []string `yaml:"aliases,omitempty"`
+	// Servers is an allow-list of MCP server names. Empty means all servers.
+	Servers []string `yaml:"servers,omitempty"`
+	// Tools is an allow-list of prefixed tool names. Empty means all tools
+	// within the allowed servers.
+	Tools []string `yaml:"tools,omitempty"`
 }
 
 // LoggingConfig configures log file output with automatic rotation.
