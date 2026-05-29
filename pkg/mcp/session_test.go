@@ -20,7 +20,7 @@ func TestSessionManager_Create(t *testing.T) {
 	m := NewSessionManager()
 	clientInfo := ClientInfo{Name: "test-client", Version: "1.0"}
 
-	session := m.Create(clientInfo)
+	session := m.Create(clientInfo, "")
 
 	if session == nil {
 		t.Fatal("Create returned nil session")
@@ -48,7 +48,7 @@ func TestSessionManager_Create_UniqueIDs(t *testing.T) {
 
 	ids := make(map[string]bool)
 	for i := 0; i < 100; i++ {
-		session := m.Create(clientInfo)
+		session := m.Create(clientInfo, "")
 		if ids[session.ID] {
 			t.Fatalf("duplicate session ID generated: %s", session.ID)
 		}
@@ -60,7 +60,7 @@ func TestSessionManager_Get(t *testing.T) {
 	m := NewSessionManager()
 	clientInfo := ClientInfo{Name: "test-client", Version: "1.0"}
 
-	created := m.Create(clientInfo)
+	created := m.Create(clientInfo, "")
 	retrieved := m.Get(created.ID)
 
 	if retrieved == nil {
@@ -84,7 +84,7 @@ func TestSessionManager_Touch(t *testing.T) {
 	m := NewSessionManager()
 	clientInfo := ClientInfo{Name: "test-client", Version: "1.0"}
 
-	session := m.Create(clientInfo)
+	session := m.Create(clientInfo, "")
 	originalLastSeen := session.LastSeen
 
 	// Wait a bit to ensure time difference
@@ -109,7 +109,7 @@ func TestSessionManager_Delete(t *testing.T) {
 	m := NewSessionManager()
 	clientInfo := ClientInfo{Name: "test-client", Version: "1.0"}
 
-	session := m.Create(clientInfo)
+	session := m.Create(clientInfo, "")
 	m.Delete(session.ID)
 
 	if m.Get(session.ID) != nil {
@@ -121,9 +121,9 @@ func TestSessionManager_List(t *testing.T) {
 	m := NewSessionManager()
 	clientInfo := ClientInfo{Name: "client", Version: "1.0"}
 
-	m.Create(clientInfo)
-	m.Create(clientInfo)
-	m.Create(clientInfo)
+	m.Create(clientInfo, "")
+	m.Create(clientInfo, "")
+	m.Create(clientInfo, "")
 
 	sessions := m.List()
 	if len(sessions) != 3 {
@@ -136,7 +136,7 @@ func TestSessionManager_Cleanup(t *testing.T) {
 	clientInfo := ClientInfo{Name: "client", Version: "1.0"}
 
 	// Create a session
-	session := m.Create(clientInfo)
+	session := m.Create(clientInfo, "")
 
 	// Manually set LastSeen to the past
 	m.mu.Lock()
@@ -159,7 +159,7 @@ func TestSessionManager_Cleanup_KeepsRecent(t *testing.T) {
 	clientInfo := ClientInfo{Name: "client", Version: "1.0"}
 
 	// Create a fresh session
-	session := m.Create(clientInfo)
+	session := m.Create(clientInfo, "")
 
 	// Cleanup sessions older than 1 hour (this session is recent)
 	removed := m.Cleanup(1 * time.Hour)
@@ -180,8 +180,8 @@ func TestSessionManager_Count(t *testing.T) {
 		t.Errorf("expected 0, got %d", m.Count())
 	}
 
-	m.Create(clientInfo)
-	m.Create(clientInfo)
+	m.Create(clientInfo, "")
+	m.Create(clientInfo, "")
 
 	if m.Count() != 2 {
 		t.Errorf("expected 2, got %d", m.Count())
@@ -194,7 +194,7 @@ func TestSessionManager_EvictOldest(t *testing.T) {
 
 	// Fill to capacity
 	for i := 0; i < maxSessions; i++ {
-		m.Create(clientInfo)
+		m.Create(clientInfo, "")
 	}
 
 	if m.Count() != maxSessions {
@@ -212,7 +212,7 @@ func TestSessionManager_EvictOldest(t *testing.T) {
 	m.mu.Unlock()
 
 	// Create one more - should evict the oldest
-	m.Create(clientInfo)
+	m.Create(clientInfo, "")
 
 	if m.Count() != maxSessions {
 		t.Errorf("expected %d after eviction, got %d", maxSessions, m.Count())
@@ -228,7 +228,7 @@ func TestSessionManager_EvictOldest_EvictsCorrectSession(t *testing.T) {
 
 	// Fill to capacity
 	for i := 0; i < maxSessions; i++ {
-		m.Create(clientInfo)
+		m.Create(clientInfo, "")
 	}
 
 	// Make two sessions old, but one older than the other
@@ -245,7 +245,7 @@ func TestSessionManager_EvictOldest_EvictsCorrectSession(t *testing.T) {
 	m.mu.Unlock()
 
 	// Create one more - should evict the *oldest* (ids[0])
-	m.Create(clientInfo)
+	m.Create(clientInfo, "")
 
 	if m.Get(ids[0]) != nil {
 		t.Error("oldest session (2h old) should have been evicted")
@@ -268,7 +268,7 @@ func TestSessionManager_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			session := m.Create(clientInfo)
+			session := m.Create(clientInfo, "")
 			createdIDs.Store(session.ID, true)
 		}()
 	}
