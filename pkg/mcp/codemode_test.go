@@ -395,7 +395,7 @@ func TestGateway_CodeMode_ToolsList(t *testing.T) {
 	gw := NewGateway()
 	gw.SetCodeMode(30 * time.Second)
 
-	result, err := gw.HandleToolsList()
+	result, err := gw.HandleToolsList(context.Background())
 	if err != nil {
 		t.Fatalf("HandleToolsList failed: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestGateway_CodeMode_Off(t *testing.T) {
 	gw := NewGateway()
 	// Code mode not enabled — should return aggregated tools as usual
 
-	result, err := gw.HandleToolsList()
+	result, err := gw.HandleToolsList(context.Background())
 	if err != nil {
 		t.Fatalf("HandleToolsList failed: %v", err)
 	}
