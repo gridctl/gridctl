@@ -6,6 +6,16 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Multi-hop client path highlight in the Topology view.** Clicking a client
+  node now lights up its full transitive reach (client → gateway → the servers
+  it can reach) and fades everything outside that path (resources, skill
+  groups, and sibling clients) rather than only the client → gateway hop. The
+  highlight walks outgoing highlightable edges, so it follows whatever the
+  gateway exposes today and will narrow automatically once per-client scoping
+  lands. Faded nodes and edges stay visible (dimmed, not hidden); clicking
+  empty canvas resets focus. Highlighting is opacity/emphasis only - the
+  backbone layout does not reflow, and edges keep their neutral color.
+
 - **Per-client brand icons in the Topology view.** Each client node now renders
   its product brand mark (Claude, Cursor, Windsurf, Gemini, OpenCode, Grok,
   Cline, Roo Code, Goose) instead of a generic monitor glyph, selected by the
