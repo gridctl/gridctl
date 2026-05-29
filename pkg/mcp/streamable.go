@@ -200,8 +200,9 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 	// observers can attribute calls per client. Sessions created before
 	// PR 2 may have an empty ClientID; WithClientID is a no-op in that case.
 	ctx := r.Context()
-	if gSession := s.gateway.sessions.Get(sessionID); gSession != nil && gSession.ClientID != "" {
+	if gSession := s.gateway.sessions.Get(sessionID); gSession != nil {
 		ctx = WithClientID(ctx, gSession.ClientID)
+		ctx = WithClientAccessID(ctx, gSession.AccessID)
 	}
 
 	resp := s.handleRequest(ctx, session, &req)
@@ -217,7 +218,7 @@ func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.R
 		_ = json.Unmarshal(req.Params, &params)
 	}
 
-	result, gSession, err := s.gateway.HandleInitialize(params)
+	result, gSession, err := s.gateway.HandleInitialize(params, clientAccessIDFromRequest(r))
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
@@ -349,7 +350,7 @@ func (s *StreamableHTTPServer) handleRequest(ctx context.Context, session *Strea
 	case "notifications/initialized":
 		return jsonrpc.NewSuccessResponse(req.ID, nil)
 	case "tools/list":
-		return s.handleToolsList(session, req)
+		return s.handleToolsList(ctx, session, req)
 	case "tools/call":
 		return s.handleToolsCall(ctx, session, req)
 	case "prompts/list":
@@ -367,8 +368,8 @@ func (s *StreamableHTTPServer) handleRequest(ctx context.Context, session *Strea
 	}
 }
 
-func (s *StreamableHTTPServer) handleToolsList(_ *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
-	result, err := s.gateway.HandleToolsList()
+func (s *StreamableHTTPServer) handleToolsList(ctx context.Context, _ *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
+	result, err := s.gateway.HandleToolsList(ctx)
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
