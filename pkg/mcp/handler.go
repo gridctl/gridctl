@@ -79,8 +79,9 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 	// initialize request itself has no session yet — its ClientID lands on
 	// the spawned session and applies to subsequent calls.
 	if sid := r.Header.Get("Mcp-Session-Id"); sid != "" {
-		if sess := h.gateway.sessions.Get(sid); sess != nil && sess.ClientID != "" {
+		if sess := h.gateway.sessions.Get(sid); sess != nil {
 			ctx = WithClientID(ctx, sess.ClientID)
+			ctx = WithClientAccessID(ctx, sess.AccessID)
 		}
 	}
 	r = r.WithContext(ctx)
@@ -109,7 +110,7 @@ func (h *Handler) handleMethod(r *http.Request, req *jsonrpc.Request) jsonrpc.Re
 	var resp jsonrpc.Response
 	switch req.Method {
 	case "initialize":
-		resp = h.handleInitialize(req)
+		resp = h.handleInitialize(r, req)
 	case "notifications/initialized":
 		resp = jsonrpc.NewSuccessResponse(req.ID, nil)
 	case "tools/list":
@@ -136,8 +137,10 @@ func (h *Handler) handleMethod(r *http.Request, req *jsonrpc.Request) jsonrpc.Re
 	return resp
 }
 
-// handleInitialize handles the initialize request.
-func (h *Handler) handleInitialize(req *jsonrpc.Request) jsonrpc.Response {
+// handleInitialize handles the initialize request. The connecting client's
+// explicit access identifier (query parameter or header) is resolved here and
+// stored on the spawned session for per-client scope enforcement.
+func (h *Handler) handleInitialize(r *http.Request, req *jsonrpc.Request) jsonrpc.Response {
 	var params InitializeParams
 	if req.Params != nil {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -145,7 +148,7 @@ func (h *Handler) handleInitialize(req *jsonrpc.Request) jsonrpc.Response {
 		}
 	}
 
-	result, _, err := h.gateway.HandleInitialize(params)
+	result, _, err := h.gateway.HandleInitialize(params, clientAccessIDFromRequest(r))
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
@@ -155,7 +158,7 @@ func (h *Handler) handleInitialize(req *jsonrpc.Request) jsonrpc.Response {
 
 // handleToolsList handles the tools/list request.
 func (h *Handler) handleToolsList(r *http.Request, req *jsonrpc.Request) jsonrpc.Response {
-	result, err := h.gateway.HandleToolsList()
+	result, err := h.gateway.HandleToolsList(r.Context())
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
