@@ -126,7 +126,7 @@ func computeSchemaTokens(gateway *mcp.Gateway) map[string]optimize.PinStat {
 	if gateway == nil {
 		return nil
 	}
-	result, err := gateway.HandleToolsList()
+	result, err := gateway.HandleToolsListUnscoped()
 	if err != nil || result == nil || len(result.Tools) == 0 {
 		return nil
 	}
