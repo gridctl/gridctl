@@ -15,11 +15,12 @@ import (
 )
 
 var (
-	linkPort   int
-	linkAll    bool
-	linkName   string
-	linkDryRun bool
-	linkForce  bool
+	linkPort     int
+	linkAll      bool
+	linkName     string
+	linkClientID string
+	linkDryRun   bool
+	linkForce    bool
 )
 
 var linkCmd = &cobra.Command{
@@ -45,6 +46,7 @@ func init() {
 	linkCmd.Flags().IntVarP(&linkPort, "port", "p", 0, "Gateway port (default: auto-detect from running stack, else 8180)")
 	linkCmd.Flags().BoolVarP(&linkAll, "all", "a", false, "Link all detected clients at once")
 	linkCmd.Flags().StringVarP(&linkName, "name", "n", "gridctl", "Server name in client config")
+	linkCmd.Flags().StringVar(&linkClientID, "client-id", "", "Stable client identifier for per-client access scoping (matches a stack.yaml clients: profile)")
 	linkCmd.Flags().BoolVar(&linkDryRun, "dry-run", false, "Show what would change without modifying files")
 	linkCmd.Flags().BoolVar(&linkForce, "force", false, "Overwrite existing gridctl entry even if present")
 }
@@ -54,12 +56,16 @@ func runLink(client string) error {
 	registry := provisioner.NewRegistry()
 
 	port := resolveGatewayPort(linkPort)
-	gatewayURL := provisioner.GatewayURL(port)
+	// Embed the stable client identifier (when set) on the gateway URL so the
+	// gateway resolves the connecting client's access scope from the wire rather
+	// than from the clientInfo.name normalization heuristic alone.
+	gatewayURL := provisioner.AppendClientParam(provisioner.GatewayURL(port), linkClientID)
 
 	opts := provisioner.LinkOptions{
 		GatewayURL: gatewayURL,
 		Port:       port,
 		ServerName: linkName,
+		ClientID:   linkClientID,
 		Force:      linkForce,
 		DryRun:     linkDryRun,
 	}
