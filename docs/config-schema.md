@@ -617,6 +617,87 @@ resources:
 
 ---
 
+## Clients (per-client access scoping)
+
+The optional top-level `clients:` block restricts which servers and tools each
+connecting client can reach. It follows Kubernetes NetworkPolicy semantics:
+
+- **No `clients:` block** → every client sees every tool (the default, and the
+  behavior of every stack written before this feature existed).
+- **Block present** → a client matching a profile is limited to that profile's
+  allow-list; a client matching no profile is governed by `default:`.
+
+```yaml
+clients:
+  default: deny          # policy for unlisted clients: deny (default) or allow
+  profiles:
+    cursor:              # stable client identifier (see "Client identity" below)
+      servers:           # allow-list of server names; empty = all servers
+        - github
+    claude-code:
+      tools:             # allow-list of prefixed tool names; empty = all tools
+        - github__search-repos
+        - gitlab__list-issues
+    team-bot:
+      aliases:           # wire clientInfo.name values that map to this profile
+        - "Custom Agent"
+      servers:
+        - github
+```
+
+### Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `default` | string | No | `deny` | Policy for clients matching no profile: `deny` or `allow` |
+| `profiles` | map | No | - | Map of stable client identifier → allow-list |
+| `profiles.<id>.servers` | []string | No | - | Allowed server names. Empty means all servers |
+| `profiles.<id>.tools` | []string | No | - | Allowed prefixed tool names (`server__tool`). Empty means all tools within the allowed servers |
+| `profiles.<id>.aliases` | []string | No | - | Raw `clientInfo.name` values that resolve to this profile |
+
+A profile's effective scope is the intersection of its `servers:` and `tools:`
+allow-lists with each server's own `tools:` whitelist. A profile with neither
+`servers:` nor `tools:` is listed but unrestricted (sees everything). Unknown
+server references — directly or via a tool prefix — fail config validation.
+
+### Client identity
+
+Enforcement keys on a **stable client identifier** that reconciles the wire
+identity with the configuration and UI identity. It is resolved per session, in
+priority order:
+
+1. The `client` query parameter on the gateway URL, or the
+   `X-Gridctl-Client-Id` header. `gridctl link --client-id <id>` embeds the
+   query parameter into the URL it writes, so the identifier assigned at link
+   time is exactly the one enforced and displayed.
+2. A profile `aliases:` entry matching the connecting client's
+   `clientInfo.name`.
+3. The normalized `clientInfo.name` (the fallback heuristic).
+
+All identifiers are normalized (lowercased, hyphenated) so configuration, the
+wire, and the UI reconcile on one canonical form.
+
+The identifier is self-declared by the connecting client (it sets its own
+`client` parameter, header, or `clientInfo.name`). Per-client scoping is
+therefore a least-privilege guardrail for cooperating clients, not an
+authentication boundary against a hostile client that can choose its own
+identity. Identity-based access control (IdP / OAuth / JWT) is out of scope.
+
+### Scope coverage (v1)
+
+Scoping covers **tools only**. Skills (served as MCP prompts) and resources
+remain globally visible to every client. Extending scope to prompts and
+resources is deferred.
+
+### Reload semantics
+
+The gateway re-resolves each client's scope from the live configuration on every
+`tools/list` and `tools/call`. A `clients:` change applied via hot-reload (file
+watch or `POST /api/reload`) therefore takes effect on the next request,
+including for already-established sessions — no restart required.
+
+---
+
 ## Skill Sources
 
 Skill sources are declared in `~/.gridctl/skills.yaml`. Each source points at a git repository that gridctl clones to discover `SKILL.md` files. Sources may be public or authenticated.
