@@ -151,6 +151,12 @@ type Gateway struct {
 
 	autoMu      sync.RWMutex
 	autoscalers map[string]*Autoscaler // name -> scaler for autoscaled replica sets
+
+	// clientPolicy is the per-client tool access filter resolved from the
+	// stack.yaml `clients:` block. nil means no block was configured and every
+	// client sees every tool (legacy behavior). Guarded by mu; replaced
+	// wholesale on apply and hot-reload.
+	clientPolicy *ClientAccessPolicy
 }
 
 // NewGateway creates a new MCP gateway.
@@ -217,6 +223,58 @@ func (g *Gateway) SetCodeMode(timeout time.Duration) {
 	cm.SetLogger(g.logger)
 	g.codeMode = cm
 	g.codeModeStr = "on"
+}
+
+// SetClientAccessPolicy installs the per-client tool access filter. Passing nil
+// disables scoping (every client sees every tool). The gateway re-resolves
+// scope from the live policy on every tools/list and tools/call, so a hot
+// reload that swaps the policy takes effect on the next request — including for
+// already-established sessions.
+func (g *Gateway) SetClientAccessPolicy(policy *ClientAccessPolicy) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.clientPolicy = policy
+}
+
+// clientAccessPolicy returns the current policy under a read lock.
+func (g *Gateway) clientAccessPolicy() *ClientAccessPolicy {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.clientPolicy
+}
+
+// scopeToolsForContext narrows tools to those the connecting client (resolved
+// from ctx) is allowed to see. It is the single chokepoint every tool-exposure
+// path funnels through so the code-mode universe cannot bypass the filter.
+func (g *Gateway) scopeToolsForContext(ctx context.Context, tools []Tool) []Tool {
+	policy := g.clientAccessPolicy()
+	if policy == nil {
+		return tools
+	}
+	return policy.Filter(ClientAccessIDFromContext(ctx), tools)
+}
+
+// clientAllowsToolCall reports whether the connecting client (resolved from
+// ctx) may invoke the given prefixed tool. Always true when no policy is set.
+func (g *Gateway) clientAllowsToolCall(ctx context.Context, prefixedName string) bool {
+	policy := g.clientAccessPolicy()
+	if policy == nil {
+		return true
+	}
+	return policy.Allows(ClientAccessIDFromContext(ctx), prefixedName)
+}
+
+// ClientAccessConfigured reports whether a `clients:` access block is in effect.
+func (g *Gateway) ClientAccessConfigured() bool {
+	return g.clientAccessPolicy() != nil
+}
+
+// ClientScope returns the backend-computed effective scope for the given access
+// identifier: the servers and prefixed tools it can reach after intersecting
+// its allow-list with the live tool surface. Used by the topology/clients API
+// so the frontend renders the real per-client subgraph.
+func (g *Gateway) ClientScope(accessID string) ClientScopeResult {
+	return g.clientAccessPolicy().scopeResult(NormalizeClientID(accessID), g.router.CatalogTools())
 }
 
 // SetDefaultOutputFormat sets the gateway-level default output format.
@@ -1200,8 +1258,13 @@ func (g *Gateway) buildInstructions() string {
 
 // HandleInitialize handles the initialize request. It creates a new session and
 // returns both the result and the session so callers can use the session ID.
-func (g *Gateway) HandleInitialize(params InitializeParams) (*InitializeResult, *Session, error) {
-	session := g.sessions.Create(params.ClientInfo)
+//
+// accessID is the explicit, link-time-assigned client identifier resolved from
+// the connection (the `client` query parameter or X-Gridctl-Client-Id header);
+// pass "" when the client declared none so the gateway falls back to the
+// normalized clientInfo.name for access scoping.
+func (g *Gateway) HandleInitialize(params InitializeParams, accessID string) (*InitializeResult, *Session, error) {
+	session := g.sessions.Create(params.ClientInfo, accessID)
 
 	caps := Capabilities{
 		Tools: &ToolsCapability{
@@ -1227,9 +1290,11 @@ func (g *Gateway) HandleInitialize(params InitializeParams) (*InitializeResult, 
 	}, session, nil
 }
 
-// HandleToolsList returns all aggregated tools.
-// When code mode is active, returns the two meta-tools instead.
-func (g *Gateway) HandleToolsList() (*ToolsListResult, error) {
+// HandleToolsList returns all aggregated tools, scoped to what the connecting
+// client (resolved from ctx) is allowed to see. When code mode is active,
+// returns the two meta-tools instead (the scoped universe is applied to the
+// code-mode search/execute path in HandleToolsCall).
+func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error) {
 	g.mu.RLock()
 	cm := g.codeMode
 	g.mu.RUnlock()
@@ -1238,9 +1303,25 @@ func (g *Gateway) HandleToolsList() (*ToolsListResult, error) {
 		return cm.ToolsList(), nil
 	}
 
-	tools := g.router.AggregatedTools()
+	tools := g.scopeToolsForContext(ctx, g.router.AggregatedTools())
 	g.logToolCountHint(len(tools))
 	return &ToolsListResult{Tools: tools}, nil
+}
+
+// HandleToolsListUnscoped returns the full aggregated tool surface, ignoring
+// any per-client access scope. It backs operator-facing, informational paths
+// (the web console tool list and the optimize schema-token measurement) that
+// must see every tool regardless of client scoping. Like HandleToolsList it
+// returns the code-mode meta-tools when code mode is active.
+func (g *Gateway) HandleToolsListUnscoped() (*ToolsListResult, error) {
+	g.mu.RLock()
+	cm := g.codeMode
+	g.mu.RUnlock()
+
+	if cm != nil {
+		return cm.ToolsList(), nil
+	}
+	return &ToolsListResult{Tools: g.router.AggregatedTools()}, nil
 }
 
 // HandleToolsCatalog returns the full downstream tool inventory with each
@@ -1260,8 +1341,23 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	g.mu.RUnlock()
 
 	if cm != nil && cm.IsMetaTool(params.Name) {
-		allTools := g.router.AggregatedTools()
+		// Scope the code-mode tool universe to the connecting client. Code mode
+		// sources its search/execute surface from the same aggregated tool set
+		// as the direct path, so without this filter a scoped client could
+		// discover and call denied tools via code mode.
+		allTools := g.scopeToolsForContext(ctx, g.router.AggregatedTools())
 		return cm.HandleCall(ctx, params, g, allTools)
+	}
+
+	// Enforce the per-client access scope on the direct tools/call path. A
+	// denied call is rejected before routing; denials are logged at debug.
+	if !g.clientAllowsToolCall(ctx, params.Name) {
+		g.logger.Debug("tool call denied by client access policy",
+			"client", ClientAccessIDFromContext(ctx), "tool", params.Name)
+		return &ToolCallResult{
+			Content: []Content{NewTextContent(fmt.Sprintf("Error: tool %q is not in this client's access scope", params.Name))},
+			IsError: true,
+		}, nil
 	}
 
 	// Child span: routing decision.
