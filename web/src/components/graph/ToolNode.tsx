@@ -29,7 +29,9 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
       title={`${data.serverName} · ${data.name}`}
     >
       <Wrench size={11} className="text-violet-400 flex-shrink-0" />
-      <span className="font-mono text-[11px] text-text-secondary truncate tracking-tight">
+      {/* min-w-0 lets the flex item shrink so truncate actually clips long
+          tool names instead of overflowing the pill. */}
+      <span className="min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate tracking-tight">
         {data.name}
       </span>
 
