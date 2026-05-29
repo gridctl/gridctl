@@ -696,6 +696,18 @@ The gateway re-resolves each client's scope from the live configuration on every
 watch or `POST /api/reload`) therefore takes effect on the next request,
 including for already-established sessions — no restart required.
 
+### Editing in the web UI
+
+The Tools workspace has an **Access** button that opens a per-client editor:
+pick which servers each linked client may reach and save. This writes a
+server-level profile (`servers:` allow-list) to the `clients:` block via an
+atomic, conflict-detected write and triggers a hot reload, so the topology view
+then reflects the new scope on the next poll. Saving the first profile creates
+the `clients:` block, which flips clients you have not listed to the `default:`
+policy (deny); the editor warns before that happens. Finer tool-level
+allow-lists (`tools:`) are enforced by the gateway but edited directly in
+stack.yaml.
+
 ---
 
 ## Skill Sources

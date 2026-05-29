@@ -196,6 +196,104 @@ describe('computeHighlightState with expanded tool fan-out', () => {
   });
 });
 
+describe('computeHighlightState with per-client effective scope', () => {
+  // client-a reaches servers x and y at the gateway, each with tools. The
+  // client's effectiveScope narrows what is actually highlighted.
+  function makeScopedGraph(scope: unknown): { nodes: Node[]; edges: Edge[] } {
+    const nodes: Node[] = [
+      { id: 'client-a', position: { x: 0, y: 0 }, data: { type: 'client', effectiveScope: scope } },
+      { id: 'gateway', position: { x: 0, y: 0 }, data: { type: 'gateway' } },
+      { id: 'mcp-x', position: { x: 0, y: 0 }, data: { type: 'mcp-server', name: 'x' } },
+      { id: 'mcp-y', position: { x: 0, y: 0 }, data: { type: 'mcp-server', name: 'y' } },
+      { id: 'tool-mcp-x-search', position: { x: 0, y: 0 }, data: { type: 'tool', serverNodeId: 'mcp-x', serverName: 'x', name: 'search' } },
+      { id: 'tool-mcp-x-write', position: { x: 0, y: 0 }, data: { type: 'tool', serverNodeId: 'mcp-x', serverName: 'x', name: 'write' } },
+      { id: 'tool-mcp-y-read', position: { x: 0, y: 0 }, data: { type: 'tool', serverNodeId: 'mcp-y', serverName: 'y', name: 'read' } },
+    ];
+    const edges: Edge[] = [
+      { id: 'e-c-g', source: 'client-a', target: 'gateway', data: { relationType: 'client-to-gateway', isHighlightable: true } },
+      { id: 'e-g-x', source: 'gateway', target: 'mcp-x', data: { relationType: 'gateway-to-server', isHighlightable: true } },
+      { id: 'e-g-y', source: 'gateway', target: 'mcp-y', data: { relationType: 'gateway-to-server', isHighlightable: true } },
+      { id: 'e-x-search', source: 'mcp-x', target: 'tool-mcp-x-search', data: { relationType: 'server-to-tool', isHighlightable: false } },
+      { id: 'e-x-write', source: 'mcp-x', target: 'tool-mcp-x-write', data: { relationType: 'server-to-tool', isHighlightable: false } },
+      { id: 'e-y-read', source: 'mcp-y', target: 'tool-mcp-y-read', data: { relationType: 'server-to-tool', isHighlightable: false } },
+    ];
+    return { nodes, edges };
+  }
+
+  it('narrows reachable servers to the client scope (server-level)', () => {
+    const { nodes, edges } = makeScopedGraph({
+      configured: true,
+      unscoped: false,
+      servers: ['x'],
+      tools: ['x__search', 'x__write'],
+    });
+    const state = computeHighlightState(nodes, edges, 'client-a');
+
+    expect(state.highlightedNodeIds.has('mcp-x')).toBe(true);
+    expect(state.highlightedNodeIds.has('mcp-y')).toBe(false); // out of scope -> dimmed
+    expect(state.highlightedEdgeIds.has('e-g-x')).toBe(true);
+    expect(state.highlightedEdgeIds.has('e-g-y')).toBe(false);
+    // Gateway still on the path.
+    expect(state.highlightedNodeIds.has('gateway')).toBe(true);
+  });
+
+  it('dims tools of an in-scope server that are not in the tool scope', () => {
+    const { nodes, edges } = makeScopedGraph({
+      configured: true,
+      unscoped: false,
+      servers: ['x'],
+      tools: ['x__search'], // only search is in scope; write is not
+    });
+    const state = computeHighlightState(nodes, edges, 'client-a');
+
+    expect(state.highlightedNodeIds.has('tool-mcp-x-search')).toBe(true);
+    expect(state.highlightedNodeIds.has('tool-mcp-x-write')).toBe(false);
+    expect(state.highlightedEdgeIds.has('e-x-search')).toBe(true);
+    expect(state.highlightedEdgeIds.has('e-x-write')).toBe(false);
+  });
+
+  it('shows a scoped-to-nothing client reaching only the gateway', () => {
+    const { nodes, edges } = makeScopedGraph({
+      configured: true,
+      unscoped: false,
+      servers: [],
+      tools: [],
+    });
+    const state = computeHighlightState(nodes, edges, 'client-a');
+
+    expect([...state.highlightedNodeIds].sort()).toEqual(['client-a', 'gateway']);
+    expect(state.highlightedNodeIds.has('mcp-x')).toBe(false);
+    expect(state.highlightedNodeIds.has('tool-mcp-x-search')).toBe(false);
+  });
+
+  it('preserves full gateway-exposed reach when scope is unscoped', () => {
+    const { nodes, edges } = makeScopedGraph({
+      configured: true,
+      unscoped: true,
+      servers: [],
+      tools: [],
+    });
+    const state = computeHighlightState(nodes, edges, 'client-a');
+
+    // unscoped: no narrowing, so both servers and all their tools light up.
+    expect(state.highlightedNodeIds.has('mcp-x')).toBe(true);
+    expect(state.highlightedNodeIds.has('mcp-y')).toBe(true);
+    expect(state.highlightedNodeIds.has('tool-mcp-x-write')).toBe(true);
+  });
+
+  it('preserves full reach when no clients block is configured', () => {
+    const { nodes, edges } = makeScopedGraph({
+      configured: false,
+      unscoped: true,
+      servers: [],
+      tools: [],
+    });
+    const state = computeHighlightState(nodes, edges, 'client-a');
+    expect(state.highlightedNodeIds.has('mcp-x')).toBe(true);
+    expect(state.highlightedNodeIds.has('mcp-y')).toBe(true);
+  });
+});
+
 describe('isNodeDimmed / isEdgeDimmed', () => {
   it('dims nothing when there is no selection', () => {
     const state = computeHighlightState([], [], null);

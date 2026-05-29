@@ -350,6 +350,90 @@ export async function setServerToolsBatch(
   return data as SetServerToolsBatchResponse;
 }
 
+// ClientScopeError carries the structured envelope from the per-client scope
+// write endpoint, mirroring SetServerToolsError:
+//   - "stack_modified" (409): the stack file changed on disk since read.
+//   - "unknown_server"/"unknown_tool" (422): the scope references a server or
+//     tool the gateway does not know about (stale UI).
+//   - "reload_failed" (502): the YAML write succeeded but the reload failed.
+export class ClientScopeError extends Error {
+  code: string;
+  hint?: string;
+  httpStatus: number;
+
+  constructor(code: string, message: string, hint: string | undefined, httpStatus: number) {
+    super(message);
+    this.name = 'ClientScopeError';
+    this.code = code;
+    this.hint = hint;
+    this.httpStatus = httpStatus;
+  }
+}
+
+// ClientScopeUpdate is the allow-list written for one client profile. Each axis
+// is independent: an omitted field leaves that axis untouched (so a server-only
+// edit preserves an operator's tool list), while a present array replaces it.
+export interface ClientScopeUpdate {
+  servers?: string[];
+  tools?: string[];
+}
+
+// UpdateClientScopeResponse is the success payload from the write endpoint.
+export interface UpdateClientScopeResponse {
+  client: string;
+  profileKey: string;
+  servers: string[];
+  tools: string[];
+  reloaded: boolean;
+  reloadedAt?: string;
+}
+
+/**
+ * Persist a client's access profile (allowed servers and/or tools) to the live
+ * stack YAML's `clients:` block and trigger a hot reload. The slug is the
+ * client identifier; the gateway normalizes it to the stable profile key.
+ *
+ * Rejects with ClientScopeError on 409/422/502 (structured envelope), AuthError
+ * on 401, or a plain Error otherwise.
+ * PUT /api/clients/{slug}/scope
+ */
+export async function updateClientScope(
+  slug: string,
+  update: ClientScopeUpdate,
+): Promise<UpdateClientScopeResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/clients/${encodeURIComponent(slug)}/scope`,
+    {
+      method: 'PUT',
+      headers: buildHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(update),
+    },
+  );
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err === 'object' && typeof err.code === 'string') {
+      throw new ClientScopeError(
+        err.code,
+        err.message ?? 'Update client scope failed',
+        err.hint,
+        response.status,
+      );
+    }
+    const msg =
+      typeof err === 'string'
+        ? err
+        : `Update client scope failed: ${response.status} ${response.statusText}`;
+    throw new Error(msg);
+  }
+
+  return data as UpdateClientScopeResponse;
+}
+
 // === Structured Log Entry (from gateway) ===
 
 export interface LogEntry {

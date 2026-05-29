@@ -242,6 +242,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/optimize", s.handleOptimize)
 	mux.HandleFunc("GET /api/traces", s.handleTraces)
 	mux.HandleFunc("GET /api/traces/{traceId}", s.handleTraces)
+	mux.HandleFunc("PUT /api/clients/{slug}/scope", s.handleSetClientScope)
 	mux.HandleFunc("/api/clients", s.handleClients)
 	mux.HandleFunc("/api/reload", s.handleReload)
 	mux.HandleFunc("/health", s.handleHealth)

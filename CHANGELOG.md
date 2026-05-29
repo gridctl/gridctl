@@ -6,6 +6,19 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Per-client access in the topology and Tools workspace.** The topology view
+  now reflects each client's real access: clicking a client highlights only the
+  servers and tools its configured scope can reach, fading everything else
+  (a client scoped to nothing shows it reaching the gateway and stopping there).
+  A new "Access" button in the Tools workspace opens a per-client editor that
+  sets which servers each linked client may reach and writes the result to the
+  `clients:` block in stack.yaml via an atomic, conflict-detected write
+  (`PUT /api/clients/{slug}/scope`), triggering a hot reload. Saving the first
+  profile warns that it creates the `clients:` block and flips unlisted clients
+  to deny-by-default. The `/api/clients` response carries each client's
+  effective scope. (Tool-level allow-lists remain enforced and editable directly
+  in stack.yaml.)
+
 - **Per-client access scoping (`clients:` block).** A new optional top-level
   `clients:` block in `stack.yaml` lets an operator restrict which servers and
   tools each connecting client can reach, following Kubernetes NetworkPolicy
