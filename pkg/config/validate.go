@@ -452,10 +452,85 @@ func Validate(s *Stack) error {
 		// In simple mode, resource.Network is ignored (per design decision)
 	}
 
+	// Per-client access scoping validation
+	errs = append(errs, validateClients(s, serverNames)...)
+
 	if len(errs) > 0 {
 		return errs
 	}
 	return nil
+}
+
+// validateClients checks the optional `clients:` access block. It fails when
+// the default policy is invalid or a profile references an unknown server —
+// directly or via a tool prefix — so a misconfigured allow-list surfaces as a
+// clear error rather than silently granting or denying access. serverNames is
+// the set of declared MCP server names.
+//
+// Tool references are validated structurally: each must be a prefixed
+// "server__tool" name whose server is declared. The existence of the specific
+// tool cannot be checked at load time (downstream tools are only known once
+// servers are running), so an unknown tool on a known server is not a load-time
+// error; it simply never appears in the client's effective scope.
+func validateClients(s *Stack, serverNames map[string]bool) ValidationErrors {
+	var errs ValidationErrors
+	if s.Clients == nil {
+		return errs
+	}
+
+	switch s.Clients.Default {
+	case "", "deny", "allow":
+		// valid
+	default:
+		errs = append(errs, ValidationError{"clients.default", "must be 'allow' or 'deny'"})
+	}
+
+	for name, profile := range s.Clients.Profiles {
+		prefix := fmt.Sprintf("clients.profiles[%s]", name)
+		if name == "" {
+			errs = append(errs, ValidationError{"clients.profiles", "profile name must not be empty"})
+		}
+		for i, server := range profile.Servers {
+			if !serverNames[server] {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s.servers[%d]", prefix, i),
+					fmt.Sprintf("references unknown MCP server '%s'", server),
+				})
+			}
+		}
+		for i, tool := range profile.Tools {
+			server, _, ok := splitPrefixedToolName(tool)
+			if !ok {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s.tools[%d]", prefix, i),
+					fmt.Sprintf("tool '%s' must be a prefixed name (server__tool)", tool),
+				})
+				continue
+			}
+			if !serverNames[server] {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s.tools[%d]", prefix, i),
+					fmt.Sprintf("tool '%s' references unknown MCP server '%s'", tool, server),
+				})
+			}
+		}
+	}
+	return errs
+}
+
+// splitPrefixedToolName splits a "server__tool" name into its server and tool
+// parts without importing pkg/mcp (which would create an import cycle). It is
+// intentionally stricter than mcp.ParsePrefixedTool — it also rejects an empty
+// server or tool half — so config validation rejects malformed names that the
+// looser runtime parser would otherwise accept. Returns ok=false when the name
+// is not a well-formed prefixed name.
+func splitPrefixedToolName(prefixed string) (server, tool string, ok bool) {
+	const delim = "__"
+	idx := strings.Index(prefixed, delim)
+	if idx <= 0 || idx+len(delim) >= len(prefixed) {
+		return "", "", false
+	}
+	return prefixed[:idx], prefixed[idx+len(delim):], true
 }
 
 // validateAutoscale validates the autoscale block on one MCP server. prefix is
