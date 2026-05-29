@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"unicode"
 )
@@ -10,6 +11,14 @@ import (
 // normalized client ID through the tool-call path. Tool-call observers
 // read the value via ClientIDFromContext to attribute calls per client.
 type clientIDKey struct{}
+
+// clientAccessIDKey is the context key under which the gateway propagates the
+// connecting client's stable access identifier (see Session.AccessID). The
+// per-client access filter reads it via ClientAccessIDFromContext to scope the
+// exposed tool surface. It is kept distinct from clientIDKey: ClientID is the
+// telemetry attribution dimension, while AccessID is the enforcement key the
+// operator configures under stack.yaml `clients:`.
+type clientAccessIDKey struct{}
 
 // WithClientID returns a child context carrying the given normalized client ID.
 // An empty id leaves the context unchanged so callers do not have to pre-check.
@@ -25,6 +34,44 @@ func WithClientID(ctx context.Context, id string) context.Context {
 func ClientIDFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(clientIDKey{}).(string)
 	return v
+}
+
+// WithClientAccessID returns a child context carrying the connecting client's
+// stable access identifier. An empty id leaves the context unchanged.
+func WithClientAccessID(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clientAccessIDKey{}, id)
+}
+
+// ClientAccessIDFromContext returns the access identifier previously stored on
+// ctx via WithClientAccessID, or "" when none is available.
+func ClientAccessIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(clientAccessIDKey{}).(string)
+	return v
+}
+
+// ClientAccessIDHeader is the HTTP header an upstream client may set to declare
+// its stable access identifier explicitly, bypassing the clientInfo.name
+// normalization heuristic. `gridctl link --client-id` embeds the same value as
+// the `client` query parameter on the gateway URL it writes.
+const ClientAccessIDHeader = "X-Gridctl-Client-Id"
+
+// clientAccessIDFromRequest extracts the explicit, link-time-assigned client
+// identifier from a request: the `client` query parameter takes precedence,
+// then the X-Gridctl-Client-Id header. Returns "" when neither is present, in
+// which case the gateway falls back to NormalizeClientID(clientInfo.name).
+func clientAccessIDFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if r.URL != nil {
+		if v := strings.TrimSpace(r.URL.Query().Get("client")); v != "" {
+			return v
+		}
+	}
+	return strings.TrimSpace(r.Header.Get(ClientAccessIDHeader))
 }
 
 // clientNameAliases maps the noisy `clientInfo.name` strings emitted by
