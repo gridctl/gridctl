@@ -81,11 +81,48 @@ function traceReachablePath(
 }
 
 /**
+ * Fold the fanned-out tools of already-highlighted servers into the highlight
+ * sets, in place. A tool (or "+N more") node inherits its parent server's
+ * highlight state via its `serverNodeId`, and the server -> tool edge follows.
+ *
+ * This is what lets a client stay focused while you expand one of its
+ * reachable servers: the new tool nodes light up in scope instead of being
+ * dimmed with everything off the path. Tools of an out-of-scope server keep
+ * their dimmed state because that server is not in the highlighted set.
+ */
+function includeHighlightedServerTools(
+  highlightedNodeIds: Set<string>,
+  highlightedEdgeIds: Set<string>,
+  nodes: Node[],
+  edges: Edge[]
+): void {
+  for (const node of nodes) {
+    const data = node.data as { type?: string; serverNodeId?: string };
+    if (
+      (data.type === 'tool' || data.type === 'tool-overflow') &&
+      data.serverNodeId &&
+      highlightedNodeIds.has(data.serverNodeId)
+    ) {
+      highlightedNodeIds.add(node.id);
+    }
+  }
+
+  for (const edge of edges) {
+    const meta = edge.data as EdgeMetadata | undefined;
+    if (meta?.relationType === 'server-to-tool' && highlightedNodeIds.has(edge.source)) {
+      highlightedEdgeIds.add(edge.id);
+    }
+  }
+}
+
+/**
  * Compute path highlighting based on the selected node.
  *
  * When a client is selected: highlight the transitive client -> gateway ->
  * reachable-servers path. For other node types: highlight only the selected
- * node. Pure function so it can be unit-tested without React.
+ * node. In every case, the fanned-out tools of a highlighted server are
+ * highlighted too, so expanding a reachable server in focus mode keeps its
+ * tools at full opacity. Pure function so it can be unit-tested without React.
  *
  * @param nodes - All nodes in the graph
  * @param edges - All edges in the graph
@@ -115,20 +152,18 @@ export function computeHighlightState(
   const nodeData = selectedNode.data as Record<string, unknown>;
 
   // Client nodes: highlight the transitive client -> gateway -> servers path.
-  if (nodeData?.type === 'client') {
-    const { highlightedNodeIds, highlightedEdgeIds } = traceReachablePath(
-      selectedNodeId,
-      edges
-    );
-    return { highlightedNodeIds, highlightedEdgeIds, hasSelection: true };
-  }
+  // Other node types: just highlight the selected node.
+  const { highlightedNodeIds, highlightedEdgeIds } =
+    nodeData?.type === 'client'
+      ? traceReachablePath(selectedNodeId, edges)
+      : {
+          highlightedNodeIds: new Set([selectedNodeId]),
+          highlightedEdgeIds: new Set<string>(),
+        };
 
-  // For all other node types, just highlight the selected node.
-  return {
-    highlightedNodeIds: new Set([selectedNodeId]),
-    highlightedEdgeIds: new Set<string>(),
-    hasSelection: true,
-  };
+  includeHighlightedServerTools(highlightedNodeIds, highlightedEdgeIds, nodes, edges);
+
+  return { highlightedNodeIds, highlightedEdgeIds, hasSelection: true };
 }
 
 /**
