@@ -268,10 +268,55 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/clients
     "detected": true,
     "linked": true,
     "transport": "sse",
-    "configPath": "/Users/user/Library/Application Support/Claude/claude_desktop_config.json"
+    "configPath": "/Users/user/Library/Application Support/Claude/claude_desktop_config.json",
+    "effectiveScope": {
+      "configured": true,
+      "unscoped": false,
+      "servers": ["github"],
+      "tools": ["github__search-repos", "github__create-issue"]
+    }
   }
 ]
 ```
+
+`effectiveScope` is the backend-computed per-client access scope when a
+`clients:` block is configured (servers and prefixed tools the client can
+reach). It is absent when no scoping is in effect.
+
+#### `PUT /api/clients/{slug}/scope`
+
+Sets a client's server-level access profile in the `clients:` block of the live
+stack YAML and triggers a hot reload. The slug is normalized to the stable
+profile key used for enforcement. The write is atomic and conflict-detected.
+
+**Auth:** Yes
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"servers": ["github"], "tools": []}' \
+  http://localhost:8180/api/clients/cursor/scope
+```
+
+**Request body:** `servers` and `tools` are allow-lists; an empty `tools`
+leaves the client unrestricted within its allowed servers.
+
+**Response (200):**
+```json
+{
+  "client": "cursor",
+  "profileKey": "cursor",
+  "servers": ["github"],
+  "tools": [],
+  "reloaded": true,
+  "reloadedAt": "2026-05-29T17:00:00Z"
+}
+```
+
+**Errors:** `422` (`unknown_server`/`unknown_tool`) when the scope references a
+server or tool the gateway does not know; `409` (`stack_modified`) when the
+stack file changed on disk since it was read; `502` (`reload_failed`) when the
+write succeeded but the hot reload failed.
 
 ---
 
