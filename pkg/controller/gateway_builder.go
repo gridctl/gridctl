@@ -167,6 +167,10 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		inst.Gateway.SetMaxToolResultBytes(b.stack.Gateway.MaxToolResultBytes)
 	}
 
+	// Phase 1a4: Install the per-client access policy (nil when no clients:
+	// block is configured, preserving legacy "everyone sees everything").
+	inst.Gateway.SetClientAccessPolicy(mcp.NewClientAccessPolicy(clientAccessSpec(b.stack)))
+
 	// Phase 1b: Create registry server (internal MCP server)
 	regDir := filepath.Join(state.BaseDir(), "registry")
 	if b.registryDir != "" {
@@ -564,6 +568,27 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 }
 
 // applyTelemetryConfig walks the stack's MCP servers and registers per-
+// clientAccessSpec translates the stack's optional `clients:` block into the
+// config-agnostic spec the gateway consumes. Returns nil when no block is
+// configured, which the gateway treats as "every client sees every tool".
+func clientAccessSpec(stack *config.Stack) *mcp.ClientAccessSpec {
+	if stack == nil || stack.Clients == nil {
+		return nil
+	}
+	spec := &mcp.ClientAccessSpec{
+		Default:  stack.Clients.Default,
+		Profiles: make(map[string]mcp.ClientProfileSpec, len(stack.Clients.Profiles)),
+	}
+	for name, profile := range stack.Clients.Profiles {
+		spec.Profiles[name] = mcp.ClientProfileSpec{
+			Aliases: profile.Aliases,
+			Servers: profile.Servers,
+			Tools:   profile.Tools,
+		}
+	}
+	return spec
+}
+
 // server file writers for every signal a server opts into. Idempotent:
 // re-running with a changed stack adds new writers and removes ones that
 // flipped to off. Used both at initial Build time and from the hot-reload
@@ -813,6 +838,9 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// callback fires under reload.Handler.mu — keep it allocation-light.
 	reloadHandler.SetOnConfigApplied(func(newCfg *config.Stack) {
 		b.stack = newCfg
+		// Re-resolve the per-client access policy from the reloaded config so a
+		// `clients:` change takes effect on the next tools/list and tools/call.
+		inst.Gateway.SetClientAccessPolicy(mcp.NewClientAccessPolicy(clientAccessSpec(newCfg)))
 		b.applyTelemetryConfig(inst.APIServer, handler)
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
