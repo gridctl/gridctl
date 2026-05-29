@@ -14,7 +14,7 @@ export const LAYOUT = {
   TOOL_HEIGHT: 34,     // Tool fan-out pill height
   TOOL_GAP: 14,        // Vertical gap between fanned-out tool nodes
   TOOL_OFFSET_X: 72,   // Horizontal gap from server right edge to tool column
-  TOOL_LANE_GAP: 64,   // Horizontal gap between adjacent expanded servers' tool lanes
+  TOOL_BAND_GAP: 48,   // Vertical gap between adjacent expanded servers' tool bands
   // Dagre layout spacing
   NODE_SPACING: 60,    // Vertical spacing between nodes in same rank
   RANK_SPACING: 120,   // Horizontal spacing between tiers (gateway -> servers -> etc)
