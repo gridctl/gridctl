@@ -6,6 +6,13 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Access Scope in the client inspector.** Selecting a client in the topology
+  now shows an "Access Scope" inspector section summarizing its real reach
+  ("N of M servers" when scoped, or "Unscoped · all servers" otherwise) with the
+  reachable servers listed, plus an "Edit Scope" button that opens the per-client
+  access editor focused on that client. The Tools workspace "Access" button is
+  now styled as a primary action for discoverability. Both open the same editor.
+
 - **Per-client access in the topology and Tools workspace.** The topology view
   now reflects each client's real access: clicking a client highlights only the
   servers and tools its configured scope can reach, fading everything else
