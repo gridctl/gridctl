@@ -277,6 +277,43 @@ func (g *Gateway) ClientScope(accessID string) ClientScopeResult {
 	return g.clientAccessPolicy().scopeResult(NormalizeClientID(accessID), g.router.CatalogTools())
 }
 
+// ClientScopePreview computes the effective scope a client WOULD have under a
+// hypothetical server/tool allow-list, intersected with the live tool surface,
+// without mutating any installed policy (read-only). It backs the per-client
+// "what changes" preview the Topology Access Lens shows before a commit.
+//
+// servers and tools are tri-state allow-lists matching the PUT /scope contract:
+// a nil tools slice preserves the client's currently-configured tool allow-list
+// (so a server-only draft never appears to clobber an operator-authored tool
+// list), while a non-nil tools slice replaces it. A listed client's scope
+// depends only on its own profile, so simulating one profile in isolation is
+// faithful to what enforcement would compute after the write.
+func (g *Gateway) ClientScopePreview(accessID string, servers, tools []string) ClientScopeResult {
+	key := NormalizeClientID(accessID)
+	if tools == nil {
+		if _, saved, listed := g.clientAccessPolicy().profileAllowLists(key); listed {
+			tools = saved
+		}
+	}
+	spec := &ClientAccessSpec{
+		Profiles: map[string]ClientProfileSpec{
+			key: {Servers: servers, Tools: tools},
+		},
+	}
+	return NewClientAccessPolicy(spec).scopeResult(key, g.router.CatalogTools())
+}
+
+// CatalogToolNames returns every prefixed tool name on the live surface,
+// unscoped. The scope preview uses its length as the "of N tools" denominator.
+func (g *Gateway) CatalogToolNames() []string {
+	tools := g.router.CatalogTools()
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Name)
+	}
+	return names
+}
+
 // SetDefaultOutputFormat sets the gateway-level default output format.
 func (g *Gateway) SetDefaultOutputFormat(format string) {
 	g.mu.Lock()
