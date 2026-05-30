@@ -294,6 +294,51 @@ describe('computeHighlightState with per-client effective scope', () => {
   });
 });
 
+describe('computeHighlightState with a draft scope override (Access Lens)', () => {
+  // Saved scope reaches only x; the draft override grants y instead, proving the
+  // override drives the highlight in place of the saved effectiveScope.
+  function makeGraph(savedScope: unknown): { nodes: Node[]; edges: Edge[] } {
+    const nodes: Node[] = [
+      { id: 'client-a', position: { x: 0, y: 0 }, data: { type: 'client', effectiveScope: savedScope } },
+      { id: 'gateway', position: { x: 0, y: 0 }, data: { type: 'gateway' } },
+      { id: 'mcp-x', position: { x: 0, y: 0 }, data: { type: 'mcp-server', name: 'x' } },
+      { id: 'mcp-y', position: { x: 0, y: 0 }, data: { type: 'mcp-server', name: 'y' } },
+    ];
+    const edges: Edge[] = [
+      { id: 'e-c-g', source: 'client-a', target: 'gateway', data: { relationType: 'client-to-gateway', isHighlightable: true } },
+      { id: 'e-g-x', source: 'gateway', target: 'mcp-x', data: { relationType: 'gateway-to-server', isHighlightable: true } },
+      { id: 'e-g-y', source: 'gateway', target: 'mcp-y', data: { relationType: 'gateway-to-server', isHighlightable: true } },
+    ];
+    return { nodes, edges };
+  }
+
+  const savedScope = { configured: true, unscoped: false, servers: ['x'], tools: ['x__a'] };
+
+  it('lights the draft servers, not the saved scope', () => {
+    const { nodes, edges } = makeGraph(savedScope);
+    const draft = { configured: true, unscoped: false, servers: ['y'], tools: ['y__b'] };
+    const state = computeHighlightState(nodes, edges, 'client-a', draft);
+
+    expect(state.highlightedNodeIds.has('mcp-y')).toBe(true);
+    expect(state.highlightedNodeIds.has('mcp-x')).toBe(false);
+  });
+
+  it('falls back to the saved scope when override is null', () => {
+    const { nodes, edges } = makeGraph(savedScope);
+    const state = computeHighlightState(nodes, edges, 'client-a', null);
+    expect(state.highlightedNodeIds.has('mcp-x')).toBe(true);
+    expect(state.highlightedNodeIds.has('mcp-y')).toBe(false);
+  });
+
+  it('lights both servers when the draft grants both', () => {
+    const { nodes, edges } = makeGraph(savedScope);
+    const draft = { configured: true, unscoped: false, servers: ['x', 'y'], tools: ['x__a', 'y__b'] };
+    const state = computeHighlightState(nodes, edges, 'client-a', draft);
+    expect(state.highlightedNodeIds.has('mcp-x')).toBe(true);
+    expect(state.highlightedNodeIds.has('mcp-y')).toBe(true);
+  });
+});
+
 describe('isNodeDimmed / isEdgeDimmed', () => {
   it('dims nothing when there is no selection', () => {
     const state = computeHighlightState([], [], null);
