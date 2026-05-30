@@ -144,6 +144,13 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   showVault: boolean;
   setShowVault: (show: boolean) => void;
   toggleVault: () => void;
+
+  // Per-client access editor: opened from the Topology inspector ("Edit Scope")
+  // seeded to a specific client. Transient (not persisted).
+  accessEditorOpen: boolean;
+  accessEditorSeedSlug: string | null;
+  openAccessEditor: (slug?: string | null) => void;
+  closeAccessEditor: () => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -191,6 +198,10 @@ export const useUIStore = create<UIState>()(
       // Command palette (always starts closed)
       commandPaletteOpen: false,
 
+      // Access editor (always starts closed)
+      accessEditorOpen: false,
+      accessEditorSeedSlug: null,
+
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setActiveTab: (activeTab) => set({ activeTab }),
@@ -225,6 +236,10 @@ export const useUIStore = create<UIState>()(
       showVault: false,
       setShowVault: (showVault) => set({ showVault }),
       toggleVault: () => set((s) => ({ showVault: !s.showVault })),
+
+      openAccessEditor: (slug) =>
+        set({ accessEditorOpen: true, accessEditorSeedSlug: slug ?? null }),
+      closeAccessEditor: () => set({ accessEditorOpen: false, accessEditorSeedSlug: null }),
 
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),

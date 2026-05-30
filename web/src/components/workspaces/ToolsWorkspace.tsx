@@ -390,7 +390,7 @@ function ToolsHeader({
             aria-label="Open per-client access editor"
             className={cn(
               'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
-              'bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border',
+              'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20 hover:border-primary/50',
             )}
           >
             <Users size={11} aria-hidden="true" />

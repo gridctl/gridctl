@@ -344,6 +344,7 @@ export interface ClientNodeData extends NodeDataBase {
   transport: string;
   configPath?: string;
   status: NodeStatus;
+  effectiveScope?: ClientScopeResult; // Per-client access scope (mirrors ClientStatus.effectiveScope)
 }
 
 // --- Agent Skills Registry Types ---
