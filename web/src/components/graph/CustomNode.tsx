@@ -7,6 +7,7 @@ import { StatusDot } from '../ui/StatusDot';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
+import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { useTokenHeat } from '../../hooks/useTokenHeat';
 import { LAYOUT } from '../../lib/constants';
 import { TelemetryNodeDot } from '../telemetry/TelemetryNodeDot';
@@ -31,6 +32,17 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   const toggleServerExpanded = useStackStore((s) => s.toggleServerExpanded);
   const serverToolCount = isServer ? (data as MCPServerNodeData).toolCount : 0;
   const canExpand = isServer && (serverToolCount ?? 0) > 0;
+
+  // Access Lens draft visuals: when the lens targets the currently-selected
+  // client, server nodes become grant/revoke targets. Granted = amber ring +
+  // inner glow; revoked = desaturated + dashed border. Reads the shared draft
+  // store so the canvas and the slide-over stay in sync.
+  const lensEnabled = useAccessLensStore((s) => s.enabled);
+  const lensClientSlug = useAccessLensStore((s) => s.clientSlug);
+  const selectedNodeId = useStackStore((s) => s.selectedNodeId);
+  const lensGranted = useAccessLensStore((s) => s.draft.includes(data.name));
+  const lensActiveForNode =
+    isServer && lensEnabled && lensClientSlug != null && selectedNodeId === `client-${lensClientSlug}`;
   const isExternal = isServer && (data as MCPServerNodeData).external;
   const isLocalProcess = isServer && (data as MCPServerNodeData).localProcess;
   const isSSH = isServer && (data as MCPServerNodeData).ssh;
@@ -73,8 +85,14 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         autoscale?.lastDecision === 'up' && 'ring-2 ring-inset ring-primary/40 animate-pulse-glow',
         autoscale?.lastDecision === 'down' && 'ring-2 ring-inset ring-secondary/40',
         !selected && 'hover:shadow-node-hover',
-        !selected && isServer && 'hover:border-violet-400/60',
-        !selected && !isServer && 'hover:border-secondary/70'
+        !selected && isServer && !lensActiveForNode && 'hover:border-violet-400/60',
+        !selected && !isServer && 'hover:border-secondary/70',
+        // Access Lens draft state (overrides the violet server accents).
+        lensActiveForNode && 'cursor-pointer',
+        lensActiveForNode && lensGranted &&
+          'border-primary/60 ring-2 ring-primary/60 shadow-[inset_0_0_24px_rgba(245,158,11,0.18),0_0_16px_rgba(245,158,11,0.22)]',
+        lensActiveForNode && !lensGranted &&
+          'border-dashed border-border/50 saturate-[0.35]'
       )}
       style={{
         height: isCompact ? LAYOUT.NODE_HEIGHT_COMPACT : undefined,
