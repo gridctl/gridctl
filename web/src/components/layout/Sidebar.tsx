@@ -33,6 +33,7 @@ import { getClientIcon } from '../../lib/clientIcons';
 import { summarizeClientReach } from '../../lib/clientScope';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
+import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatRelativeTime } from '../../lib/time';
 import type { MCPServerNodeData, ResourceNodeData, ClientNodeData } from '../../types';
@@ -47,7 +48,8 @@ export function Sidebar() {
   const autoscaleDecisions = useStackStore((s) => s.autoscaleDecisions);
   const clients = useStackStore((s) => s.clients);
   const mcpServers = useStackStore((s) => s.mcpServers);
-  const openAccessEditor = useUIStore((s) => s.openAccessEditor);
+  const enableAccessLens = useAccessLensStore((s) => s.setEnabled);
+  const openAccessLensEditor = useAccessLensStore((s) => s.openSlideOver);
   const { openDetachedWindow } = useWindowManager();
   const navigate = useNavigate();
 
@@ -377,7 +379,12 @@ export function Sidebar() {
 
                 <button
                   type="button"
-                  onClick={() => openAccessEditor(clientData.slug)}
+                  onClick={() => {
+                    // Enter Access Lens on this (already-selected) client and open
+                    // the slide-over beside the canvas, so edits preview live.
+                    enableAccessLens(true);
+                    openAccessLensEditor();
+                  }}
                   className={cn(
                     'w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
                     'bg-primary/10 text-primary border border-primary/30',
