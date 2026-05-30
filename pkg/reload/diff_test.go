@@ -284,6 +284,107 @@ func TestComputeDiff_AutoscaleToStaticIsRestart(t *testing.T) {
 	}
 }
 
+func TestComputeDiff_ClientsOnlyChange(t *testing.T) {
+	servers := []config.MCPServer{{Name: "github", Image: "image1", Port: 3000}}
+	old := &config.Stack{
+		Name:       "test",
+		Network:    config.Network{Name: "test-net", Driver: "bridge"},
+		MCPServers: servers,
+	}
+	new := &config.Stack{
+		Name:       "test",
+		Network:    config.Network{Name: "test-net", Driver: "bridge"},
+		MCPServers: servers,
+		Clients: &config.ClientsConfig{
+			Profiles: map[string]config.ClientProfile{
+				"grok": {Servers: []string{"github"}},
+			},
+		},
+	}
+
+	diff := ComputeDiff(old, new)
+	if !diff.ClientsChanged {
+		t.Error("expected ClientsChanged to be true")
+	}
+	if diff.IsEmpty() {
+		t.Error("expected non-empty diff for a clients-only change")
+	}
+	// A clients-only change must not touch containers, networks, or resources.
+	if len(diff.MCPServers.Added) != 0 || len(diff.MCPServers.Removed) != 0 ||
+		len(diff.MCPServers.Modified) != 0 || len(diff.MCPServers.AutoscalePolicyChanges) != 0 {
+		t.Error("expected no MCP server changes for a clients-only change")
+	}
+	if len(diff.Resources.Added) != 0 || len(diff.Resources.Removed) != 0 ||
+		len(diff.Resources.Modified) != 0 {
+		t.Error("expected no resource changes for a clients-only change")
+	}
+	if diff.NetworkChanged {
+		t.Error("expected NetworkChanged to be false for a clients-only change")
+	}
+}
+
+func TestComputeDiff_ClientsIdentical(t *testing.T) {
+	clients := &config.ClientsConfig{
+		Default: "deny",
+		Profiles: map[string]config.ClientProfile{
+			"grok": {Servers: []string{"github"}},
+		},
+	}
+	old := &config.Stack{
+		Name:    "test",
+		Network: config.Network{Name: "test-net", Driver: "bridge"},
+		Clients: clients,
+	}
+	new := &config.Stack{
+		Name:    "test",
+		Network: config.Network{Name: "test-net", Driver: "bridge"},
+		Clients: &config.ClientsConfig{
+			Default: "deny",
+			Profiles: map[string]config.ClientProfile{
+				"grok": {Servers: []string{"github"}},
+			},
+		},
+	}
+
+	diff := ComputeDiff(old, new)
+	if diff.ClientsChanged {
+		t.Error("expected ClientsChanged to be false for identical clients blocks")
+	}
+	if !diff.IsEmpty() {
+		t.Error("expected empty diff for stacks with identical clients blocks")
+	}
+}
+
+func TestComputeDiff_ClientsNilToSet(t *testing.T) {
+	old := &config.Stack{Name: "test", Network: config.Network{Name: "test-net", Driver: "bridge"}}
+	new := &config.Stack{
+		Name:    "test",
+		Network: config.Network{Name: "test-net", Driver: "bridge"},
+		Clients: &config.ClientsConfig{
+			Profiles: map[string]config.ClientProfile{"grok": {Servers: []string{"github"}}},
+		},
+	}
+
+	if !ComputeDiff(old, new).ClientsChanged {
+		t.Error("expected adding a clients block to be detected")
+	}
+}
+
+func TestComputeDiff_ClientsSetToNil(t *testing.T) {
+	old := &config.Stack{
+		Name:    "test",
+		Network: config.Network{Name: "test-net", Driver: "bridge"},
+		Clients: &config.ClientsConfig{
+			Profiles: map[string]config.ClientProfile{"grok": {Servers: []string{"github"}}},
+		},
+	}
+	new := &config.Stack{Name: "test", Network: config.Network{Name: "test-net", Driver: "bridge"}}
+
+	if !ComputeDiff(old, new).ClientsChanged {
+		t.Error("expected removing a clients block to be detected")
+	}
+}
+
 func TestComputeDiff_AutoscaleWithUnrelatedChangeIsRestart(t *testing.T) {
 	oldS := config.MCPServer{Name: "junos", Command: []string{"python", "j.py"},
 		Autoscale: &config.AutoscaleConfig{Min: 1, Max: 4, TargetInFlight: 3}}
