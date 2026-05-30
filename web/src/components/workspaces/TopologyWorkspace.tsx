@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
 import { Canvas } from '../graph/Canvas';
-import { ClientAccessEditor } from './ClientAccessEditor';
+import { AccessLens } from '../topology/AccessLens';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -23,9 +23,6 @@ export function TopologyWorkspace() {
   const error = useStackStore((s) => s.error);
   const mcpServers = useStackStore((s) => s.mcpServers);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
-  const accessEditorOpen = useUIStore((s) => s.accessEditorOpen);
-  const accessEditorSeedSlug = useUIStore((s) => s.accessEditorSeedSlug);
-  const closeAccessEditor = useUIStore((s) => s.closeAccessEditor);
 
   const accessServers = useMemo(
     () => [...mcpServers].sort((a, b) => a.name.localeCompare(b.name)),
@@ -111,6 +108,11 @@ export function TopologyWorkspace() {
           )}
 
           <Canvas />
+
+          {/* Access Lens authoring surface: header toggle, slide-over editor,
+              action bar, commit gate, and dirty-exit guard. Mounted in the
+              canvas column so its absolute overlays anchor to the canvas. */}
+          <AccessLens servers={accessServers} />
         </div>
 
         {sidebarOpen && (
@@ -126,16 +128,6 @@ export function TopologyWorkspace() {
           </aside>
         )}
       </div>
-
-      {/* Per-client access editor, opened from the inspector's "Edit Scope"
-          seeded to the inspected client. */}
-      <ClientAccessEditor
-        key={accessEditorSeedSlug ?? 'default'}
-        isOpen={accessEditorOpen}
-        onClose={closeAccessEditor}
-        servers={accessServers}
-        initialSlug={accessEditorSeedSlug}
-      />
     </div>
   );
 }
