@@ -434,6 +434,78 @@ export async function updateClientScope(
   return data as UpdateClientScopeResponse;
 }
 
+// ClientScopeImpact is one client's before/after access delta in a scope
+// preview. Mirrors api.clientScopeImpact.
+export interface ClientScopeImpact {
+  name: string;
+  slug: string;
+  beforeServers: number;
+  afterServers: number;
+  beforeTools: number;
+  afterTools: number;
+  lostServers: string[] | null;
+  gainedServers: string[] | null;
+}
+
+// ClientScopePreview is the read-only result of POST /scope/preview: the exact
+// stack.yaml patch a commit would write plus its per-client consequences.
+// Mirrors api.scopePreviewResponse.
+export interface ClientScopePreview {
+  client: string;
+  profileKey: string;
+  createsBlock: boolean;
+  lockout: boolean;
+  totalServers: number;
+  totalTools: number;
+  diff: string;
+  selected: ClientScopeImpact;
+  affected: ClientScopeImpact[] | null;
+}
+
+/**
+ * Preview committing a client access draft without writing. Returns the exact
+ * YAML patch and the per-client impact computed server-side (the faithful
+ * source the commit gate renders). Rejects with ClientScopeError on 422 (stale
+ * server/tool reference), AuthError on 401, or a plain Error otherwise.
+ * POST /api/clients/{slug}/scope/preview
+ */
+export async function previewClientScope(
+  slug: string,
+  update: ClientScopeUpdate,
+): Promise<ClientScopePreview> {
+  const response = await fetch(
+    `${API_BASE}/api/clients/${encodeURIComponent(slug)}/scope/preview`,
+    {
+      method: 'POST',
+      headers: buildHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(update),
+    },
+  );
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err === 'object' && typeof err.code === 'string') {
+      throw new ClientScopeError(
+        err.code,
+        err.message ?? 'Scope preview failed',
+        err.hint,
+        response.status,
+      );
+    }
+    const msg =
+      typeof err === 'string'
+        ? err
+        : `Scope preview failed: ${response.status} ${response.statusText}`;
+    throw new Error(msg);
+  }
+
+  return data as ClientScopePreview;
+}
+
 // === Structured Log Entry (from gateway) ===
 
 export interface LogEntry {
