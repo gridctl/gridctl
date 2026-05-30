@@ -144,6 +144,17 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixed
 
+- **Per-client access scoping now takes effect on hot reload.** Changes that
+  touched only the `clients:` block (saving a scope through the Topology Access
+  Lens / `PUT /api/clients/{slug}/scope`, or a watched edit) were classified as
+  "no changes" by the reload diff, so the reload short-circuited before rebuilding
+  the gateway's in-memory access policy. The file was written and the API reported
+  a successful reload, but the running gateway kept its stale (usually unscoped)
+  policy, so the saved restriction was silently not enforced until a restart. The
+  reload diff now detects `clients:` changes (`ConfigDiff.ClientsChanged`), so the
+  policy is rebuilt in place with no container or network churn. Cold start was
+  unaffected.
+
 - **Sync no longer reports ghost-skill failures for deleted skills.** Deleting a
   skill from the Library UI (`DELETE /api/registry/skills/{name}`) now also
   scrubs it from `skills.lock.yaml`, matching the CLI path (`gridctl skill rm`).
