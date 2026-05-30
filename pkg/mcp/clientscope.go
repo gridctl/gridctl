@@ -167,6 +167,30 @@ type ClientScopeResult struct {
 	Tools []string `json:"tools"`
 }
 
+// profileAllowLists returns the configured server and tool allow-lists for a
+// profile key, as sorted slices, plus whether a profile exists. It lets the
+// preview path preserve an operator-authored tool allow-list when a server-only
+// draft is simulated (tools nil = "leave that axis untouched"). A nil policy or
+// an unlisted key returns empty lists and false.
+func (p *ClientAccessPolicy) profileAllowLists(key string) (servers, tools []string, listed bool) {
+	if p == nil {
+		return nil, nil, false
+	}
+	prof, ok := p.profiles[NormalizeClientID(key)]
+	if !ok {
+		return nil, nil, false
+	}
+	for s := range prof.servers {
+		servers = append(servers, s)
+	}
+	for t := range prof.tools {
+		tools = append(tools, t)
+	}
+	sort.Strings(servers)
+	sort.Strings(tools)
+	return servers, tools, true
+}
+
 // scopeResult computes the effective scope for accessID against a fully-known
 // tool surface. allTools is the global (unscoped) catalog of prefixed tools.
 func (p *ClientAccessPolicy) scopeResult(accessID string, allTools []Tool) ClientScopeResult {
