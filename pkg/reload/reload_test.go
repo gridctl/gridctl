@@ -178,6 +178,71 @@ mcp-servers:
 	}
 }
 
+func TestHandler_Reload_ClientsOnlyChange(t *testing.T) {
+	// A change touching only the `clients:` block must still apply: it needs an
+	// in-memory policy refresh (the onConfigApplied hook) but no container work.
+	base := `
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+`
+	stackPath := writeStackFile(t, base)
+
+	initialCfg, err := config.LoadStack(stackPath)
+	if err != nil {
+		t.Fatalf("failed to load initial config: %v", err)
+	}
+
+	h, _ := setupHandler(t, stackPath, initialCfg)
+
+	hookFired := false
+	var applied *config.Stack
+	h.SetOnConfigApplied(func(newCfg *config.Stack) {
+		hookFired = true
+		applied = newCfg
+	})
+	// A clients-only change must not register or restart any server.
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
+		t.Errorf("registerServer must not be called for a clients-only change (server %q)", server.Name)
+		return nil
+	})
+
+	// Edit the file in place: same server, now with a clients block.
+	withClients := base + `clients:
+  profiles:
+    grok:
+      servers:
+        - server1
+`
+	if err := os.WriteFile(stackPath, []byte(withClients), 0644); err != nil {
+		t.Fatalf("failed to rewrite stack file: %v", err)
+	}
+
+	result, err := h.Reload(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("expected success, got: %s", result.Message)
+	}
+	if result.Message == "no changes detected" {
+		t.Error("clients-only change should not be treated as no changes")
+	}
+	if !hookFired {
+		t.Error("expected onConfigApplied to fire so the access policy is rebuilt")
+	}
+	if applied == nil || applied.Clients == nil {
+		t.Fatal("expected the applied config to carry the new clients block")
+	}
+	if h.CurrentConfig().Clients == nil {
+		t.Error("expected currentCfg to be swapped to the config with the clients block")
+	}
+}
+
 func TestHandler_Reload_ConfigLoadFailure(t *testing.T) {
 	stackPath := writeStackFile(t, "invalid: yaml: content: [")
 
