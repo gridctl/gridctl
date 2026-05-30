@@ -14,6 +14,8 @@ import {
   Activity,
   Database,
   ArrowUpRight,
+  ShieldCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
@@ -28,6 +30,7 @@ import { AutoscalePanel } from '../status/AutoscalePanel';
 import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { getClientIcon } from '../../lib/clientIcons';
+import { summarizeClientReach } from '../../lib/clientScope';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -42,6 +45,9 @@ export function Sidebar() {
   const selectNode = useStackStore((s) => s.selectNode);
   const autoscaleHistory = useStackStore((s) => s.autoscaleHistory);
   const autoscaleDecisions = useStackStore((s) => s.autoscaleDecisions);
+  const clients = useStackStore((s) => s.clients);
+  const mcpServers = useStackStore((s) => s.mcpServers);
+  const openAccessEditor = useUIStore((s) => s.openAccessEditor);
   const { openDetachedWindow } = useWindowManager();
   const navigate = useNavigate();
 
@@ -317,6 +323,74 @@ export function Sidebar() {
             )}
           </div>
         </InspectorSection>
+
+        {/* Access Scope Section (clients only) */}
+        {isClient && clientData && (() => {
+          // Read scope from the live store client (canonical, refreshes on poll)
+          // and fall back to the node snapshot.
+          const liveClient = clients.find((c) => c.slug === clientData.slug);
+          const scope = liveClient?.effectiveScope ?? clientData.effectiveScope;
+          const reach = summarizeClientReach(
+            scope,
+            mcpServers.map((s) => s.name),
+          );
+          return (
+            <InspectorSection title="Access Scope" icon={ShieldCheck} defaultOpen>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-text-muted">Reach</span>
+                  {reach.scoped ? (
+                    <span className="text-xs px-2 py-0.5 rounded-md font-mono font-medium bg-primary/10 text-primary">
+                      {reach.reachableCount} of {reach.totalCount} servers
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2 py-0.5 rounded-md font-mono font-medium bg-secondary/10 text-secondary">
+                      Unscoped · all servers
+                    </span>
+                  )}
+                </div>
+
+                {reach.scoped ? (
+                  reach.servers.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {reach.servers.map((name) => (
+                        <span
+                          key={name}
+                          className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background/60 border border-border/40 text-text-secondary"
+                        >
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-text-muted leading-relaxed">
+                      Reaches the gateway but no servers. Unlisted under a deny default, this client
+                      sees nothing.
+                    </p>
+                  )
+                ) : (
+                  <p className="text-[11px] text-text-muted leading-relaxed">
+                    No <span className="font-mono text-text-secondary">clients</span> scope applies;
+                    this client can reach every MCP server in the stack.
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => openAccessEditor(clientData.slug)}
+                  className={cn(
+                    'w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
+                    'bg-primary/10 text-primary border border-primary/30',
+                    'hover:bg-primary/20 hover:border-primary/50',
+                  )}
+                >
+                  <SlidersHorizontal size={14} />
+                  Edit Scope
+                </button>
+              </div>
+            </InspectorSection>
+          );
+        })()}
 
         {/* Token Usage Section (MCP servers only) */}
         {isServer && (
