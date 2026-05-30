@@ -182,12 +182,17 @@ function narrowToClientScope(
  * @param nodes - All nodes in the graph
  * @param edges - All edges in the graph
  * @param selectedNodeId - Currently selected node ID, or null
+ * @param scopeOverride - When set and a client is selected, this scope is used
+ *   in place of the client node's saved `effectiveScope`. The Topology Access
+ *   Lens passes a draft `ClientScopeResult` here so the canvas re-lights live
+ *   against the unsaved draft. Passing null/undefined uses the saved scope.
  * @returns Highlight state with sets of node/edge IDs
  */
 export function computeHighlightState(
   nodes: Node[],
   edges: Edge[],
-  selectedNodeId: string | null
+  selectedNodeId: string | null,
+  scopeOverride?: ClientScopeResult | null
 ): HighlightState {
   // No selection = no highlighting
   if (!selectedNodeId) {
@@ -218,8 +223,9 @@ export function computeHighlightState(
 
   // When the selected client has a configured, narrowed scope, restrict the
   // highlight to what it can actually reach. An absent or `unscoped` scope
-  // preserves the gateway-exposed reach (the no-clients-block case).
-  const scope = nodeData?.effectiveScope as ClientScopeResult | undefined;
+  // preserves the gateway-exposed reach (the no-clients-block case). A
+  // scopeOverride (the Access Lens draft) takes precedence over the saved scope.
+  const scope = (scopeOverride ?? nodeData?.effectiveScope) as ClientScopeResult | undefined;
   let inScopeTools: Set<string> | undefined;
   if (isClient && scope && scope.configured && !scope.unscoped) {
     narrowToClientScope(highlightedNodeIds, highlightedEdgeIds, nodes, edges, scope);
@@ -246,16 +252,18 @@ export function computeHighlightState(
  * @param nodes - All nodes in the graph
  * @param edges - All edges in the graph
  * @param selectedNodeId - Currently selected node ID, or null
+ * @param scopeOverride - Optional draft scope to preview (see computeHighlightState)
  * @returns Highlight state with sets of node/edge IDs
  */
 export function usePathHighlight(
   nodes: Node[],
   edges: Edge[],
-  selectedNodeId: string | null
+  selectedNodeId: string | null,
+  scopeOverride?: ClientScopeResult | null
 ): HighlightState {
   return useMemo(
-    () => computeHighlightState(nodes, edges, selectedNodeId),
-    [nodes, edges, selectedNodeId]
+    () => computeHighlightState(nodes, edges, selectedNodeId, scopeOverride),
+    [nodes, edges, selectedNodeId, scopeOverride]
   );
 }
 
