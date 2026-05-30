@@ -1,6 +1,8 @@
 package reload
 
 import (
+	"reflect"
+
 	"github.com/gridctl/gridctl/pkg/config"
 )
 
@@ -10,6 +12,10 @@ type ConfigDiff struct {
 	Resources  ResourceDiff
 	// NetworkChanged indicates if the network config changed (requires full restart)
 	NetworkChanged bool
+	// ClientsChanged indicates the per-client access (`clients:`) block changed.
+	// It needs an in-memory policy refresh (via the reload's onConfigApplied hook)
+	// but no container or network work, so it must still mark the diff non-empty.
+	ClientsChanged bool
 }
 
 // MCPServerDiff contains changes to MCP servers.
@@ -53,7 +59,8 @@ func (d *ConfigDiff) IsEmpty() bool {
 		len(d.Resources.Added) == 0 &&
 		len(d.Resources.Removed) == 0 &&
 		len(d.Resources.Modified) == 0 &&
-		!d.NetworkChanged
+		!d.NetworkChanged &&
+		!d.ClientsChanged
 }
 
 // ComputeDiff computes the differences between two stack configurations.
@@ -69,7 +76,19 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Diff resources
 	diff.Resources = diffResources(old.Resources, new.Resources)
 
+	// Detect per-client access (`clients:`) changes
+	diff.ClientsChanged = clientsChanged(old, new)
+
 	return diff
+}
+
+// clientsChanged reports whether the per-client access (`clients:`) block
+// differs between two stacks. A change here requires the gateway's in-memory
+// ClientAccessPolicy to be rebuilt (via the reload's onConfigApplied hook) but
+// touches no containers, networks, or resources. DeepEqual handles the nil↔set
+// transitions (block added or removed) directly.
+func clientsChanged(old, new *config.Stack) bool {
+	return !reflect.DeepEqual(old.Clients, new.Clients)
 }
 
 func isNetworkChanged(old, new *config.Stack) bool {
