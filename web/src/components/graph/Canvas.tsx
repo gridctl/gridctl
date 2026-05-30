@@ -13,6 +13,7 @@ import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
+import { useAccessLensStore, buildDraftScope } from '../../stores/useAccessLensStore';
 import { COLORS } from '../../lib/constants';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
@@ -48,6 +49,26 @@ export function Canvas() {
   const showSecretHeatmap = useUIStore((s) => s.showSecretHeatmap);
   const toggleSecretHeatmap = useUIStore((s) => s.toggleSecretHeatmap);
 
+  // Access Lens: a draft per-client scope edited on the canvas. When active for
+  // the selected client, the highlight previews the draft instead of the saved
+  // scope, and clicking a server node grants/revokes it in the draft.
+  const mcpServers = useStackStore((s) => s.mcpServers);
+  const lensEnabled = useAccessLensStore((s) => s.enabled);
+  const lensClientSlug = useAccessLensStore((s) => s.clientSlug);
+  const lensDraft = useAccessLensStore((s) => s.draft);
+  const lensSavedTools = useAccessLensStore((s) => s.savedTools);
+  const toggleDraftServer = useAccessLensStore((s) => s.toggleServer);
+
+  // The lens edits exactly the selected client; a mismatch (or no client
+  // selected) means the canvas behaves normally.
+  const lensActive =
+    lensEnabled && lensClientSlug != null && selectedNodeId === `client-${lensClientSlug}`;
+
+  const scopeOverride = useMemo(
+    () => (lensActive ? buildDraftScope(lensDraft, mcpServers, lensSavedTools) : null),
+    [lensActive, lensDraft, mcpServers, lensSavedTools],
+  );
+
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { zoom } = useViewport();
@@ -61,8 +82,9 @@ export function Canvas() {
     }
   }, [compactCards, resetLayout]);
 
-  // Path highlighting for selected agents
-  const highlightState = usePathHighlight(nodes, edges, selectedNodeId);
+  // Path highlighting for selected agents. In Access Lens, the draft scope
+  // override re-lights the canvas live against unsaved edits.
+  const highlightState = usePathHighlight(nodes, edges, selectedNodeId, scopeOverride);
 
   // Auto-fit the view to a focused client's reachable subgraph. The fit key
   // captures the highlighted node set, so the view re-fits whenever that set
@@ -129,12 +151,18 @@ export function Canvas() {
   // Handle node selection. Tool fan-out nodes are read-only affordances: a
   // click should not select them or open the sidebar (the "+N more" node
   // handles its own popover internally).
-  const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string; data?: { type?: string } }) => {
+  const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string; data?: { type?: string; name?: string } }) => {
     const nodeType = node.data?.type;
     if (nodeType === 'tool' || nodeType === 'tool-overflow') return;
+    // In Access Lens, a server-node click grants/revokes it in the draft instead
+    // of selecting it — the draft mutates, never the stack (commit gate writes).
+    if (lensActive && nodeType === 'mcp-server' && node.data?.name) {
+      toggleDraftServer(node.data.name);
+      return;
+    }
     selectNode(node.id);
     setSidebarOpen(true);
-  }, [selectNode, setSidebarOpen]);
+  }, [selectNode, setSidebarOpen, lensActive, toggleDraftServer]);
 
   // Handle pane click (deselect). Reset focus and zoom back out to frame the
   // whole graph, complementing the zoom-to-fit on client selection.
