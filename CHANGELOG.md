@@ -6,6 +6,23 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Topology Access Lens — author per-client scope on the canvas.** A new
+  "Access Lens" toggle in the Topology header turns the graph into an editing
+  surface: with a client selected, MCP server nodes become draft grant/revoke
+  targets. Clicking a server (or its checkbox in the new right-anchored
+  slide-over editor, which keeps the canvas interactive) stages the change in a
+  draft and re-lights the canvas live against it — granted servers carry an amber
+  ring, denied ones desaturate. Both surfaces edit one shared draft; nothing is
+  written until an explicit commit. A floating action bar shows live impact
+  ("N servers granted · M tools visible") with Save/Discard. Saving opens a
+  commit gate showing the exact `stack.yaml` patch diff and a per-client impact
+  summary (which clients lose access, a first-block deny-by-default warning, and
+  a blocking lockout warning when a draft would leave a client reaching nothing),
+  backed by a read-only `POST /api/clients/{slug}/scope/preview` endpoint that
+  computes the patch and consequences server-side without writing. A dirty draft
+  prompts discard-with-confirm on mode exit, client change, or navigation. Tool
+  allow-lists are preserved on every save.
+
 - **Access Scope in the client inspector.** Selecting a client in the topology
   now shows an "Access Scope" inspector section summarizing its real reach
   ("N of M servers" when scoped, or "Unscoped · all servers" otherwise) with the
