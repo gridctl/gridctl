@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in this repository. Follows the [agents.md](https://agents.md) open specification — a single, predictable entry point for agent-relevant context. Human-facing onboarding lives in `README.md` and `CONTRIBUTING.md`; agent-specific tooling files (`CLAUDE.md`, etc.) re-export this file rather than duplicating it.
+Guidance for AI coding agents working in this repository. Follows the [agents.md](https://agents.md) open specification: a single, predictable entry point for agent-relevant context. Human-facing onboarding lives in `README.md` and `CONTRIBUTING.md`; agent-specific tooling files (`CLAUDE.md`, etc.) re-export this file rather than duplicating it.
 
 ## What gridctl is
 
@@ -16,8 +16,8 @@ The Makefile is the entry point for everything. Common targets:
 | `make build-go` | Backend only. Skips the embed tag if `cmd/gridctl/web/dist` is absent (UI 404s in that case). |
 | `make build-web` | Frontend only (`cd web && npm run build`). |
 | `make dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
-| `make test` | `go test -v ./...` — unit tests only. |
-| `make test-integration` | `go test -v -tags=integration ./tests/integration/...`. Requires Docker (or Podman) — these tests hit real container runtimes per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
+| `make test` | `go test -v ./...` (unit tests only). |
+| `make test-integration` | `go test -v -tags=integration ./tests/integration/...`. Requires Docker (or Podman). These tests hit real container runtimes per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `make test-frontend` | `cd web && npm test` (Vitest). |
 | `make generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
 | `make update-pricing` | Refreshes the embedded LiteLLM pricing snapshot at `pkg/pricing/data/model_prices.json` (weekly cadence). |
@@ -37,8 +37,8 @@ go test -v -race -tags=integration -run TestGatewayLifecycle ./tests/integration
 Lint:
 
 ```bash
-golangci-lint run                # backend (gosec is enabled — see .golangci.yml for the curated exclusions)
-cd web && npm run lint           # frontend; pre-existing errors live in src/pages/Detached*.tsx — scope review to files you touched
+golangci-lint run                # backend (gosec is enabled; see .golangci.yml for the curated exclusions)
+cd web && npm run lint           # frontend; pre-existing errors live in src/pages/Detached*.tsx (scope review to files you touched)
 ```
 
 ## Code architecture
@@ -46,7 +46,7 @@ cd web && npm run lint           # frontend; pre-existing errors live in src/pag
 The shape of the codebase from the outside in:
 
 ```
-cmd/gridctl/        Cobra CLI entry points — one file per subcommand (apply, serve, link, var, skill, optimize, …).
+cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, optimize, …).
                     embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
 internal/server/    HTTP server bootstrap: mounts the API, the embedded UI, and the MCP transports.
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, …).
@@ -58,14 +58,14 @@ pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime
 pkg/builder/        Image building from git or local Dockerfiles, with a content-addressed cache.
 pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks.
-pkg/registry/       Skills registry — discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
+pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
 pkg/skills/         Remote skill management (git import, lockfile, fingerprinting, updater).
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, opencode, grok, goose,
                     cline, anythingllm, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`.
 pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs.
 pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.
-pkg/optimize/       Cost analysis — feeds `gridctl optimize` and the UI's findings panel using the embedded LiteLLM prices.
+pkg/optimize/       Cost analysis: feeds `gridctl optimize` and the UI's findings panel using the embedded LiteLLM prices.
 pkg/telemetry/      Tool-call accounting (counts, latency, cost). Buffered in-memory; surfaced via /api/telemetry.
 pkg/tracing/        OTLP exporter + in-memory trace buffer for `gridctl traces` and the UI traces panel.
 pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path).
@@ -91,13 +91,13 @@ End-to-end for the web UI: React store action → `/api/...` handler in `interna
 
 `CONSTITUTION.md` is binding for every change. Articles that most often catch a refactor by surprise:
 
-- **III — Test-first:** every exported function gets a test before merge; bug fixes need a regression test.
-- **IV — Integration tests use real dependencies:** anything under `tests/integration/` runs against real Docker/Podman and must pass `-race`. Mocks are unit-test only.
-- **V — No panics in `pkg/` or `internal/`:** return errors. CLI init in `cmd/` is the only place panic is allowed.
-- **VI — Context propagation:** any I/O, blocking, or external call takes `context.Context` as the first arg and respects cancellation.
-- **IX — Stack YAML back-compat:** new `stack.yaml` fields are optional with a default that preserves existing behavior. Renames and removals are breaking changes.
-- **X — Machine-readable CLI output:** structured commands need a `--format json` (or equivalent) and meaningful exit codes (`0`/`1`/`2`).
-- **XIV — Structured logging:** use `log/slog` in library code; no `fmt.Println` / `log.Printf`.
-- **XV — Changelog discipline:** every user-visible change lands an entry under `[Unreleased]` in `CHANGELOG.md` in the same PR.
+- **III (Test-first):** every exported function gets a test before merge; bug fixes need a regression test.
+- **IV (Integration tests use real dependencies):** anything under `tests/integration/` runs against real Docker/Podman and must pass `-race`. Mocks are unit-test only.
+- **V (No panics in `pkg/` or `internal/`):** return errors. CLI init in `cmd/` is the only place panic is allowed.
+- **VI (Context propagation):** any I/O, blocking, or external call takes `context.Context` as the first arg and respects cancellation.
+- **IX (Stack YAML back-compat):** new `stack.yaml` fields are optional with a default that preserves existing behavior. Renames and removals are breaking changes.
+- **X (Machine-readable CLI output):** structured commands need a `--format json` (or equivalent) and meaningful exit codes (`0`/`1`/`2`).
+- **XIV (Structured logging):** use `log/slog` in library code; no `fmt.Println` / `log.Printf`.
+- **XV (Changelog discipline):** every user-visible change lands an entry under `[Unreleased]` in `CHANGELOG.md` in the same PR.
 
-`CONTRIBUTING.md` covers branch prefixes, commit format, and the PR/CI process — follow it rather than re-deriving conventions.
+`CONTRIBUTING.md` covers branch prefixes, commit format, and the PR/CI process; follow it rather than re-deriving conventions.
