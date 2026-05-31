@@ -55,7 +55,7 @@ Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients a
 
 ## Variables
 
-The variable store holds both secrets (encrypted at rest, redacted in logs) and plaintext configuration. Reference entries from stack YAML with `${var:KEY}` — see [Variable Expansion](config-schema.md#variable-expansion).
+The variable store holds both secrets (encrypted at rest, redacted in logs) and plaintext configuration. Reference entries from stack YAML with `${var:KEY}` (see [Variable Expansion](config-schema.md#variable-expansion)).
 
 | Command | Purpose |
 |---|---|
