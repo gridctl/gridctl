@@ -23,17 +23,17 @@
 
 ![Gridctl](assets/gridctl.gif)
 
-Gridctl aggregates tools from [MCP](https://modelcontextprotocol.io/) servers into a single gateway and serves [Agent Skills](https://agentskills.io) as MCP prompts to upstream clients. Define your stack in YAML, apply with one command, and connect Claude Desktop — or any MCP client — through one endpoint.
+Gridctl aggregates tools from [MCP](https://modelcontextprotocol.io/) servers into a single gateway and serves [Agent Skills](https://agentskills.io) as MCP prompts to upstream clients. Define your stack in YAML, apply with one command, and connect Claude Desktop (or any MCP client) through one endpoint.
 
 ```bash
 gridctl apply stack.yaml
 ```
 
-Designed for fast, ephemeral, stateless environments — inspired by [Containerlab](https://containerlab.dev).
+Designed for fast, ephemeral, stateless environments, inspired by [Containerlab](https://containerlab.dev).
 
 ## ⚡️ Why gridctl
 
-MCP servers are everywhere — different transports, different hosting models, different `.json` files accumulating like dust. Skills are a separate sprawl on top. Switching projects shouldn't mean rewriting every client config.
+MCP servers are everywhere: different transports, different hosting models, different `.json` files accumulating like dust. Skills are a separate sprawl on top. Switching projects shouldn't mean rewriting every client config.
 
 Gridctl gives you one declarative file for everything you want connected, one local endpoint your client talks to, and a UI that shows you what's actually running. Build fast, throw it away, rebuild it tomorrow.
 
@@ -136,7 +136,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 
 ### Stack as Code
 
-Declarative, version-controlled MCP environments. Validate before you commit, plan before you apply, and detect the moment your environment drifts from what's in version control. Drift detection runs in the background — the canvas flags servers running but absent from your spec, and declarations in your spec that haven't been deployed.
+Declarative, version-controlled MCP environments. Validate before you commit, plan before you apply, and detect the moment your environment drifts from what's in version control. Drift detection runs in the background: the canvas flags servers running but absent from your spec, and declarations in your spec that haven't been deployed.
 
 ```bash
 gridctl validate stack.yaml    # Lint and schema-check the spec (exit 0/1/2)
@@ -149,7 +149,7 @@ Learn more → [Configuration Reference](docs/config-schema.md)
 
 ### `gridctl optimize` & Cost Observability
 
-Every tool call is priced against an embedded snapshot of LiteLLM model rates. `gridctl optimize` scans the running gateway and surfaces actionable findings with weekly USD impact — unused servers, unused tools, schema overhead, format-conversion shortfalls, and expensive-model-on-cheap-task patterns — plus a paste-ready YAML remediation for each.
+Every tool call is priced against an embedded snapshot of LiteLLM model rates. `gridctl optimize` scans the running gateway and surfaces actionable findings with weekly USD impact (unused servers, unused tools, schema overhead, format-conversion shortfalls, and expensive-model-on-cheap-task patterns), plus a paste-ready YAML remediation for each.
 
 ```bash
 gridctl optimize                          # styled findings table
@@ -161,7 +161,7 @@ Learn more → [Cost Observability](docs/cost-observability.md)
 
 ### Output Format Conversion
 
-Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into `TOON` or `CSV` before they reach the client — reducing token consumption by **25–61%** for tabular and key-value data. Non-JSON responses and payloads over 1 MB are passed through unchanged.
+Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into `TOON` or `CSV` before they reach the client, reducing token consumption by **25–61%** for tabular and key-value data. Non-JSON responses and payloads over 1 MB are passed through unchanged.
 
 ```yaml
 gateway:
@@ -176,7 +176,7 @@ Learn more → [Configuration Reference](docs/config-schema.md)
 
 ### Skill Library
 
-Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author in the Library workspace in the web UI (or via `gridctl skill *` on the CLI), activate, and the prompt becomes available to Claude Desktop, Claude Code, Cursor, Codex — anything that speaks MCP.
+Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author in the Library workspace in the web UI (or via `gridctl skill *` on the CLI), activate, and the prompt becomes available to Claude Desktop, Claude Code, Cursor, Codex, or anything that speaks MCP.
 
 ```bash
 gridctl skill list                        # Show what's in the registry
@@ -184,7 +184,7 @@ gridctl skill add <git-repo>              # Import skills from a remote repo
 gridctl activate my-skill                 # Promote a draft → active
 ```
 
-Skills follow the [agentskills.io specification](https://agentskills.io) — author them as plain markdown with frontmatter and they work with every skill-aware client, not just gridctl.
+Skills follow the [agentskills.io specification](https://agentskills.io): author them as plain markdown with frontmatter and they work with every skill-aware client, not just gridctl.
 
 Learn more → [Skills guide](docs/skills.md)
 
@@ -203,10 +203,10 @@ Learn more → [Skills guide](docs/skills.md)
 
 ## 📖 Documentation
 
-- **Getting started** — [Installation](docs/installation.md)
-- **Reference** — [CLI](docs/cli-reference.md) · [Configuration](docs/config-schema.md) · [REST API](docs/api-reference.md)
-- **Guides** — [Skills](docs/skills.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
-- **Operations** — [Project Status](docs/project-status.md) · [Troubleshooting](docs/troubleshooting.md)
+- **Getting started**: [Installation](docs/installation.md)
+- **Reference**: [CLI](docs/cli-reference.md) · [Configuration](docs/config-schema.md) · [REST API](docs/api-reference.md)
+- **Guides**: [Skills](docs/skills.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
+- **Operations**: [Project Status](docs/project-status.md) · [Troubleshooting](docs/troubleshooting.md)
 
 Full index at [`docs/`](docs/README.md).
 
