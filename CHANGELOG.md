@@ -6,12 +6,12 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
-- **Topology Access Lens — author per-client scope on the canvas.** A new
+- **Topology Access Lens: author per-client scope on the canvas.** A new
   "Access Lens" toggle in the Topology header turns the graph into an editing
   surface: with a client selected, MCP server nodes become draft grant/revoke
   targets. Clicking a server (or its checkbox in the new right-anchored
   slide-over editor, which keeps the canvas interactive) stages the change in a
-  draft and re-lights the canvas live against it — granted servers carry an amber
+  draft and re-lights the canvas live against it: granted servers carry an amber
   ring, denied ones desaturate. Both surfaces edit one shared draft; nothing is
   written until an explicit commit. A floating action bar shows live impact
   ("N servers granted · M tools visible") with Save/Discard. Saving opens a
@@ -47,12 +47,12 @@ All notable changes to gridctl will be documented in this file.
   `clients:` block in `stack.yaml` lets an operator restrict which servers and
   tools each connecting client can reach, following Kubernetes NetworkPolicy
   semantics: omitting the block preserves today's behavior (every client sees
-  every tool), while adding it opts into least-privilege — a client matching a
+  every tool), while adding it opts into least-privilege: a client matching a
   profile is limited to that profile's `servers:`/`tools:` allow-list, and a
   client matching no profile is governed by `default:` (`deny` unless set to
   `allow`). The filter is applied at a single chokepoint that every exposure
-  path funnels through — `tools/list`, `tools/call` rejection, and the code-mode
-  search/execute tool universe — so a scoped client cannot reach a denied tool
+  path funnels through (`tools/list`, `tools/call` rejection, and the code-mode
+  search/execute tool universe), so a scoped client cannot reach a denied tool
   via code mode. Enforcement keys on a stable client identifier reconciled
   across the wire, configuration, and the UI: `gridctl link --client-id <id>`
   embeds the identifier as the `client` query parameter on the gateway URL (the
@@ -164,7 +164,7 @@ All notable changes to gridctl will be documented in this file.
   also self-healing: a lock entry whose skill is no longer in the registry is
   skipped and pruned from the lock file instead of failing the source, which
   clears lock files that already accumulated orphaned entries. Skills still
-  present in the registry whose update genuinely fails are unaffected — they are
+  present in the registry whose update genuinely fails are unaffected; they are
   still reported and retained.
 
 - **Skill state preserved across sync.** `Importer.Update` no longer
@@ -220,7 +220,7 @@ All notable changes to gridctl will be documented in this file.
   parameters, doc comments, and error messages in `pkg/mcp/router.go` and
   `pkg/mcp/gateway.go` now use `serverName` and "server" terminology
   consistently. `PrefixTool` / `ParsePrefixedTool` keep their public
-  signatures; only their named-return parameters changed (godoc only —
+  signatures; only their named-return parameters changed (godoc only;
   no Go ABI change). Public interface and method names (`AgentClient`,
   `AddClient`, `RemoveClient`) are unchanged.
 - **CLI command registration consolidated** in `cmd/gridctl/root.go`.
@@ -232,7 +232,7 @@ All notable changes to gridctl will be documented in this file.
 ### Migration
 
 - Bookmarks for `/skills`, `/runs`, `/runs/:id`, and `/agent` now redirect
-  to `/library` silently — no error toast, no 404.
+  to `/library` silently: no error toast, no 404.
 - Callers of the typed-skill CLI (`gridctl agent dev`, `gridctl run`,
   `gridctl runs *`) and the `/api/agent/*` / `/api/playground/*` REST
   surfaces need to migrate to an external agent runtime (LangGraph,
@@ -257,7 +257,7 @@ All notable changes to gridctl will be documented in this file.
   carry `Deprecation: true`, `Sunset`, and `Link` headers pointing at the
   canonical surface.
 - **Vault on-disk format bumped to v2** (`{"version": 2, "variables": [...],
-  "sets": [...]}`). Loading is backward-compatible — v0 (legacy flat array)
+  "sets": [...]}`). Loading is backward-compatible: v0 (legacy flat array)
   and v1 (`{"secrets": [...]}`) files migrate in-memory with every entry
   defaulting to `is_secret=true`, `type=string` (Article XII). Every save
   writes v2.
@@ -265,7 +265,7 @@ All notable changes to gridctl will be documented in this file.
   window name string changed from `gridctl-vault` to `gridctl-var`.
 - **`web/src/lib/api.ts` `VaultSecret` interface renamed to `Variable`**;
   every `*VaultSecret*` / `*VaultSet*` function renamed to its
-  `*Variable*` / `*VariableSet*` counterpart. No JS-level aliases — the
+  `*Variable*` / `*VariableSet*` counterpart. No JS-level aliases; the
   hard rename forces every callsite to update.
 
 ### Added
@@ -300,7 +300,7 @@ All notable changes to gridctl will be documented in this file.
 ### Changed
 
 - **Log redaction now only applies to values stored with `--secret`**
-  (the default). Plaintext variables — REGION, CLUSTER_ID, account IDs —
+  (the default). Plaintext variables (REGION, CLUSTER_ID, account IDs)
   appear unredacted in logs, ending the masking fatigue that came from
   treating every vault value as sensitive. Wired through
   `Store.Values()` → `RegisterRedactValues` at every existing callsite
@@ -338,14 +338,14 @@ All notable changes to gridctl will be documented in this file.
 - Single-writer multi-agent orchestrator ([#588](https://github.com/gridctl/gridctl/pull/588))
 - JSONL run persistence, time-travel resume, approval gates ([#598](https://github.com/gridctl/gridctl/pull/598))
 - Add visual IDE for agent runtime (phase F slices 1–3) ([#599](https://github.com/gridctl/gridctl/pull/599))
-- Phase G — CLI surface (run, agent build/validate) ([#600](https://github.com/gridctl/gridctl/pull/600))
-- Phase H — optimize heuristics, observed wrapper, AGENTS.md sync ([#601](https://github.com/gridctl/gridctl/pull/601))
+- Phase G: CLI surface (run, agent build/validate) ([#600](https://github.com/gridctl/gridctl/pull/600))
+- Phase H: optimize heuristics, observed wrapper, AGENTS.md sync ([#601](https://github.com/gridctl/gridctl/pull/601))
 - Add agent init --lang and --prompt-only flags ([#605](https://github.com/gridctl/gridctl/pull/605))
-- Phase 2 — Go skill scaffold body + compile-check ([#606](https://github.com/gridctl/gridctl/pull/606))
-- Phase 3 — skill.RunContext cut + TS hybrid parity ([#607](https://github.com/gridctl/gridctl/pull/607))
+- Phase 2: Go skill scaffold body + compile-check ([#606](https://github.com/gridctl/gridctl/pull/606))
+- Phase 3: skill.RunContext cut + TS hybrid parity ([#607](https://github.com/gridctl/gridctl/pull/607))
 - Real go build path with manifest guardrails ([#608](https://github.com/gridctl/gridctl/pull/608))
-- Phase 5 — gateway-builder go plugin loader ([#609](https://github.com/gridctl/gridctl/pull/609))
-- Phase 6 — three-flavor skill examples and Anthropic compat test ([#610](https://github.com/gridctl/gridctl/pull/610))
+- Phase 5: gateway-builder go plugin loader ([#609](https://github.com/gridctl/gridctl/pull/609))
+- Phase 6: three-flavor skill examples and Anthropic compat test ([#610](https://github.com/gridctl/gridctl/pull/610))
 - Add agent skill launch endpoint ([#625](https://github.com/gridctl/gridctl/pull/625))
 - Add agent skill run launcher UI ([#626](https://github.com/gridctl/gridctl/pull/626))
 - Emit per-node telemetry from typed-skill runs ([#630](https://github.com/gridctl/gridctl/pull/630))
