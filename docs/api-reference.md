@@ -211,7 +211,7 @@ Returns per-(server, tool) usage observed by the gateway: cumulative call count 
 
 Usage is recorded for both direct tool calls and tools invoked through code mode's `execute` (both flow through the same observer). For servers with metrics persistence enabled, the data is restored from disk on startup so it survives gateway restarts; otherwise it reflects activity since the last gateway start.
 
-`observedSince` is when this gateway process began recording. With persistence enabled, restored counts and timestamps may predate it — clients should treat tools absent from `servers` (or with no `lastCalledAt`) as "no recorded calls" rather than asserting a longer disuse history than `observedSince` supports.
+`observedSince` is when this gateway process began recording. With persistence enabled, restored counts and timestamps may predate it; clients should treat tools absent from `servers` (or with no `lastCalledAt`) as "no recorded calls" rather than asserting a longer disuse history than `observedSince` supports.
 
 **Auth:** Yes
 
@@ -579,7 +579,7 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 
 #### `PUT /api/mcp-servers/tools`
 
-Applies tool-whitelist changes to **multiple** servers in one atomic `stack.yaml` write and triggers a **single** hot reload — the fleet-bulk counterpart to the per-server endpoint above. Powers the Tools workspace bulk actions (fleet-wide expose-all / clear / pattern filtering), where applying N servers via N single-server calls would cost N reloads.
+Applies tool-whitelist changes to **multiple** servers in one atomic `stack.yaml` write and triggers a **single** hot reload, the fleet-bulk counterpart to the per-server endpoint above. Powers the Tools workspace bulk actions (fleet-wide expose-all / clear / pattern filtering), where applying N servers via N single-server calls would cost N reloads.
 
 **Transaction semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. This prevents a half-applied fleet edit. The reload runs once after the single write.
 
