@@ -30,17 +30,17 @@ The frontmatter follows the [agentskills.io spec](https://agentskills.io/specifi
 
 The registry implements the MCP `prompts/list` and `prompts/get` endpoints. When an upstream client connects to gridctl, it sees every active skill as a prompt. The user picks the prompt; the client sends `prompts/get`; the gateway returns the post-frontmatter body verbatim.
 
-There is no template expansion, no variable substitution, no execution layer. The body is the artifact. If you write `{{servername}}` in your skill, it surfaces to the client as the literal string `{{servername}}` — the client may choose to fill it in, but gridctl never does.
+There is no template expansion, no variable substitution, no execution layer. The body is the artifact. If you write `{{servername}}` in your skill, it surfaces to the client as the literal string `{{servername}}`; the client may choose to fill it in, but gridctl never does.
 
 ## Authoring in the Library workspace
 
 The web UI's Library tab (⌘2 in the unified shell, also available as the detached `library-window` page) is the primary authoring surface.
 
 - **List** every skill in the registry. Filter by state (`active` / `draft` / `disabled`) or by name.
-- **Create** a new skill — gridctl prompts for the name, populates default frontmatter, and opens the editor on the body.
+- **Create** a new skill: gridctl prompts for the name, populates default frontmatter, and opens the editor on the body.
 - **Edit** the body and frontmatter inline. The SkillEditor renders a side-by-side YAML form (for frontmatter) plus a markdown editor (for the body), with validation against the agentskills.io schema.
 - **Activate / disable** a skill via the state badge. Disabled skills stay on disk but are dropped from `prompts/list` responses.
-- **Delete** a skill — removes the directory from the registry.
+- **Delete** a skill: removes the directory from the registry.
 
 The Library is backed by the REST endpoints under `/api/registry/skills/*` (see [`docs/api-reference.md`](./api-reference.md)). Everything you can do in the UI you can also do over HTTP.
 
@@ -67,9 +67,9 @@ Skills don't have to be authored locally. `gridctl skill add <repo-url>` clones 
 
 Supported auth flows for private repos:
 
-- `--auth-token <pat>` — an ephemeral HTTPS personal access token, suitable for CI.
-- `--vault-key <key>` — resolves the token from a `${var:KEY}` entry; suitable for long-running daemons.
-- `--ssh-key <path>` — SSH private key path.
+- `--auth-token <pat>`: an ephemeral HTTPS personal access token, suitable for CI.
+- `--vault-key <key>`: resolves the token from a `${var:KEY}` entry; suitable for long-running daemons.
+- `--ssh-key <path>`: SSH private key path.
 
 ## What gridctl deliberately does not do
 
@@ -79,13 +79,13 @@ A short list of choices worth knowing about.
 
 **`kind:` in the frontmatter.** File presence used to be the discriminator between flavors. With execution removed there is only one flavor (prompt-only); a `kind:` field would carry no information.
 
-**Template expansion in the body.** The agentskills.io spec is permissive about body content; clients are free to interpret `{{...}}` placeholders however they like. gridctl does not template-expand them server-side — that policy belongs in the client, where the model and the conversation context live.
+**Template expansion in the body.** The agentskills.io spec is permissive about body content; clients are free to interpret `{{...}}` placeholders however they like. gridctl does not template-expand them server-side; that policy belongs in the client, where the model and the conversation context live.
 
-**A marketplace.** `gridctl skill add <git-repo>` is the closest thing — a per-repo distribution mechanism. There is no central index, by design; if you want to share skills, publish them as a git repo and others can `skill add` from it.
+**A marketplace.** `gridctl skill add <git-repo>` is the closest thing, a per-repo distribution mechanism. There is no central index, by design; if you want to share skills, publish them as a git repo and others can `skill add` from it.
 
 ## References
 
-- [agentskills.io specification](https://agentskills.io/specification) — the SKILL.md schema gridctl reads.
-- [`docs/api-reference.md`](./api-reference.md) — the REST surface backing the Library workspace.
-- [`docs/cli-reference.md`](./cli-reference.md) — the CLI subcommands.
-- [`docs/project-status.md`](./project-status.md) — current stability tiers for skill features.
+- [agentskills.io specification](https://agentskills.io/specification): the SKILL.md schema gridctl reads.
+- [`docs/api-reference.md`](./api-reference.md): the REST surface backing the Library workspace.
+- [`docs/cli-reference.md`](./cli-reference.md): the CLI subcommands.
+- [`docs/project-status.md`](./project-status.md): current stability tiers for skill features.
