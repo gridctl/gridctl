@@ -137,7 +137,7 @@ failed to start server on port 9000: listen tcp :9000: bind: address already in 
    gridctl destroy
    ```
 
-3. Start on a different port — `--port` sets the gateway/web UI port (default `8180`), `--base-port` sets the MCP server host-port allocation base (default `9000`):
+3. Start on a different port: `--port` sets the gateway/web UI port (default `8180`), `--base-port` sets the MCP server host-port allocation base (default `9000`):
    ```bash
    gridctl apply stack.yaml --port 8181 --base-port 9100
    ```
