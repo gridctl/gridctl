@@ -9,24 +9,32 @@ The root configuration object.
 ```yaml
 version: "1"
 name: my-stack
+extends: base-stack.yaml
 gateway: ...
+logging: ...
+telemetry: ...
 secrets: ...
 network: ...
 networks: ...
 mcp-servers: ...
 resources: ...
+clients: ...
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `version` | string | No | `"1"` | Configuration format version |
 | `name` | string | **Yes** | - | Stack identifier. Used for container naming and network defaults |
+| `extends` | string | No | - | Path to a parent stack file this stack composes on top of |
 | `gateway` | object | No | - | Gateway-level settings (auth, CORS, code mode) |
+| `logging` | object | No | - | Log file output with rotation (see [Logging](#logging)) |
+| `telemetry` | object | No | - | Opt-in disk persistence for logs/metrics/traces (see [Telemetry Persistence](#telemetry-persistence)) |
 | `secrets` | object | No | - | Variable set references for automatic secret injection |
 | `network` | object | No | See below | Single network configuration (simple mode) |
 | `networks` | []object | No | - | Multiple network configurations (advanced mode) |
 | `mcp-servers` | []object | No | - | MCP server definitions |
 | `resources` | []object | No | - | Supporting container definitions (databases, caches, etc.) |
+| `clients` | object | No | - | Per-client access scoping (see [Clients](#clients-per-client-access-scoping)) |
 
 ---
 
@@ -56,6 +64,7 @@ gateway:
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` *(experimental)* |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 *(experimental)* |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
+| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Results over the limit are truncated with a suffix noting the original size. `0` uses the default (64 KB) |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
 | `tokenizer_api_key` | string | No | - | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${var:KEY}` references |
@@ -151,6 +160,27 @@ gateway:
 
 > Cloud backends typically require auth headers (e.g. `x-honeycomb-team` for Honeycomb).
 > Use an OTel Collector as a proxy to inject headers without embedding credentials in `stack.yaml`.
+
+---
+
+## Logging
+
+Optional log file output with automatic rotation. When `file` is set, logs are written to both the in-memory ring buffer (web UI) and the file simultaneously. This is distinct from [Telemetry Persistence](#telemetry-persistence), which captures per-server signals.
+
+```yaml
+logging:
+  file: /var/log/gridctl.log
+  maxSizeMB: 100
+  maxAgeDays: 7
+  maxBackups: 3
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `file` | string | No | - | Path to the log file. When set, logs are also written here |
+| `maxSizeMB` | int | No | `100` | Maximum log file size in MB before rotation |
+| `maxAgeDays` | int | No | `7` | Maximum days to retain rotated log files |
+| `maxBackups` | int | No | `3` | Maximum number of compressed rotated files to keep |
 
 ---
 
@@ -658,7 +688,7 @@ clients:
 A profile's effective scope is the intersection of its `servers:` and `tools:`
 allow-lists with each server's own `tools:` whitelist. A profile with neither
 `servers:` nor `tools:` is listed but unrestricted (sees everything). Unknown
-server references — directly or via a tool prefix — fail config validation.
+server references (directly or via a tool prefix) fail config validation.
 
 ### Client identity
 
@@ -694,7 +724,7 @@ resources is deferred.
 The gateway re-resolves each client's scope from the live configuration on every
 `tools/list` and `tools/call`. A `clients:` change applied via hot-reload (file
 watch or `POST /api/reload`) therefore takes effect on the next request,
-including for already-established sessions — no restart required.
+including for already-established sessions, with no restart required.
 
 ### Editing in the web UI
 
@@ -809,7 +839,7 @@ configuration. The on-disk metadata distinguishes them:
 | Secret (default) | `gridctl var set KEY` | Encrypted at rest when the store is locked; values are replaced with `[REDACTED]` in logs. |
 | Plaintext | `gridctl var set KEY --value value --plaintext` | Stored alongside secrets but kept legible in logs and the web UI. |
 
-Secrets and plaintext variables share the same lookup path — `${var:KEY}`
+Secrets and plaintext variables share the same lookup path: `${var:KEY}`
 works for both. The unification means a `stack.yaml` can carry environment
 knobs (region, cluster ID, account ID) without leaking them through redaction
 fatigue, and without forcing the operator into a parallel `.env` workflow.
