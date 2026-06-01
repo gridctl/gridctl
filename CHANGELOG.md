@@ -8,10 +8,10 @@ All notable changes to gridctl will be documented in this file.
 
 - **Inspect a tool from the Topology canvas.** Clicking a fanned-out tool pill
   on an expanded server now opens a canvas-anchored detail popover with the
-  tool's qualified name, description, a collapsible input-schema preview, and a
-  best-effort "last used" line (fetched on demand; absent when the tool has no
-  recorded calls). Two actions are included: "Open in Tools" deep-links to the
-  tool in the Tools workspace, and "Copy name" copies the prefixed
+  tool's qualified name, description, and a best-effort "last used" line
+  (fetched on demand; absent when the tool has no recorded calls). Two actions
+  are included: "Open in Tools" deep-links to the tool in the Tools workspace
+  (where its full input schema is shown), and "Copy name" copies the prefixed
   `server__tool` name. The "+N more" overflow popover's listed tools are
   clickable to the same detail, and the pill is keyboard-activatable. The
   popover dismisses on Escape, an outside click, or a re-click. This retires the
