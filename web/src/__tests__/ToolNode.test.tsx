@@ -92,6 +92,18 @@ describe('ToolNode', () => {
     expect(screen.queryByText('github__search-repos')).not.toBeInTheDocument();
   });
 
+  it('reveals the input schema only after expanding it', async () => {
+    renderNode();
+    fireEvent.click(trigger());
+    await screen.findByText('github__search-repos');
+    // Collapsed by default to keep the popover compact.
+    expect(screen.queryByRole('region', { name: /input schema/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /input schema/i }));
+    expect(
+      screen.getByRole('region', { name: /github__search-repos input schema/i }),
+    ).toBeInTheDocument();
+  });
+
   it('renders empty states when the tool is absent from the catalog', async () => {
     useStackStore.setState({ toolCatalog: [] });
     renderNode();
