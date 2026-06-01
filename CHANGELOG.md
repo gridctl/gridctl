@@ -6,6 +6,17 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Inspect a tool from the Topology canvas.** Clicking a fanned-out tool pill
+  on an expanded server now opens a canvas-anchored detail popover with the
+  tool's qualified name, description, a collapsible input-schema preview, and a
+  best-effort "last used" line (fetched on demand; absent when the tool has no
+  recorded calls). Two actions are included: "Open in Tools" deep-links to the
+  tool in the Tools workspace, and "Copy name" copies the prefixed
+  `server__tool` name. The "+N more" overflow popover's listed tools are
+  clickable to the same detail, and the pill is keyboard-activatable. The
+  popover dismisses on Escape, an outside click, or a re-click. This retires the
+  staging decision that left the fan-out nodes non-interactive.
+
 - **Topology Access Lens: author per-client scope on the canvas.** A new
   "Access Lens" toggle in the Topology header turns the graph into an editing
   surface: with a client selected, MCP server nodes become draft grant/revoke
