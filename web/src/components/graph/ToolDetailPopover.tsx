@@ -138,9 +138,10 @@ const ToolDetailPopover = memo(({ serverName, toolName, onClose }: ToolDetailPop
             (entry?.inputSchema ? (
               <CodeViewer
                 language="json"
+                wrap
                 content={JSON.stringify(entry.inputSchema, null, 2)}
                 ariaLabel={`${prefixedName} input schema`}
-                className="rounded-md border border-border/30 bg-background/80 max-h-48"
+                className="w-full overflow-hidden rounded-md border border-border/30 bg-background/80 max-h-48"
               />
             ) : (
               <p className="text-[10px] text-text-muted/70 italic">No input schema available.</p>
