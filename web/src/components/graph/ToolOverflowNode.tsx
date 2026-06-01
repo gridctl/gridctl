@@ -3,6 +3,8 @@ import { Handle, Position } from '@xyflow/react';
 import { MoreHorizontal, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { LAYOUT } from '../../lib/constants';
+import { useDismiss } from '../../hooks/useDismiss';
+import ToolDetailPopover from './ToolDetailPopover';
 import type { ToolOverflowNodeData } from '../../types';
 
 interface ToolOverflowNodeProps {
@@ -15,9 +17,25 @@ interface ToolOverflowNodeProps {
  * remaining tools rather than mounting more canvas nodes, so a large server
  * stays legible. The popover lives inside this single node, anchored to it,
  * so it pans and zooms with the canvas.
+ *
+ * Each listed tool is itself a button that opens the same canvas-anchored
+ * detail popover the visible tool pills use, so the hidden tools are just as
+ * inspectable as the ones below the cap.
  */
 const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
   const [open, setOpen] = useState(false);
+  // The hidden tool whose detail popover is showing, or null. Distinct from
+  // `open` (the list itself) so the list stays put while a detail is inspected.
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
+
+  const closeAll = useCallback(() => {
+    setOpen(false);
+    setSelectedTool(null);
+  }, []);
+
+  // One wrapper ref covers the trigger, the list, and any open detail popover,
+  // so an outside click or Escape dismisses the whole node's overlays at once.
+  const wrapperRef = useDismiss<HTMLDivElement>(open || selectedTool !== null, closeAll);
 
   const toggle = useCallback((event: React.MouseEvent) => {
     // Keep the click from bubbling to the canvas node-selection handler.
@@ -26,7 +44,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
   }, []);
 
   return (
-    <div className="relative nodrag" style={{ width: LAYOUT.TOOL_WIDTH }}>
+    <div ref={wrapperRef} className="relative nodrag" style={{ width: LAYOUT.TOOL_WIDTH }}>
       <button
         type="button"
         onClick={toggle}
@@ -61,14 +79,25 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
           </div>
           <ul className="space-y-0.5">
             {data.hiddenTools.map((tool) => (
-              <li
-                key={tool}
-                className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-white/[0.06]"
-              >
-                <Wrench size={10} className="text-text-secondary/80 flex-shrink-0" />
-                <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate" title={tool}>
-                  {tool}
-                </span>
+              <li key={tool}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedTool(tool);
+                  }}
+                  aria-label={`Show details for ${data.serverName} tool ${tool}`}
+                  className={cn(
+                    'w-full flex items-center gap-1.5 px-1.5 py-1 rounded-md text-left',
+                    'hover:bg-white/[0.06] transition-colors',
+                    selectedTool === tool && 'bg-white/[0.06]',
+                  )}
+                >
+                  <Wrench size={10} className="text-text-secondary/80 flex-shrink-0" aria-hidden="true" />
+                  <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate" title={tool}>
+                    {tool}
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
@@ -84,6 +113,14 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
         )}
         id="input"
       />
+
+      {selectedTool && (
+        <ToolDetailPopover
+          serverName={data.serverName}
+          toolName={selectedTool}
+          onClose={() => setSelectedTool(null)}
+        />
+      )}
     </div>
   );
 });
