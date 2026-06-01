@@ -148,9 +148,10 @@ export function Canvas() {
     });
   }, [edges, highlightState]);
 
-  // Handle node selection. Tool fan-out nodes are read-only affordances: a
-  // click should not select them or open the sidebar (the "+N more" node
-  // handles its own popover internally).
+  // Handle node selection. Tool fan-out nodes own their own click handling:
+  // each renders an anchored detail popover internally, so a canvas-level click
+  // must not select them or open the sidebar. The node already stops
+  // propagation; this early return is the belt-and-suspenders guard.
   const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string; data?: { type?: string; name?: string } }) => {
     const nodeType = node.data?.type;
     if (nodeType === 'tool' || nodeType === 'tool-overflow') return;
