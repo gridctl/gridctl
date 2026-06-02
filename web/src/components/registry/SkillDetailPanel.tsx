@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { BookOpen, GitBranch, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
+import { useRef, useState, type ReactNode } from 'react';
+import { BookOpen, Code2, Eye, GitBranch, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { extractRepoInfo } from '../../lib/repo';
 import { toTitleCase } from '../../lib/text';
@@ -67,13 +67,19 @@ export function SkillDetailPanel({
   onSelectRelated,
 }: SkillDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<SkillTab>('overview');
+  const [viewSource, setViewSource] = useState(false);
+  const [prevName, setPrevName] = useState(skill?.name);
   const tablistRef = useRef<HTMLDivElement>(null);
 
-  // Reset to Overview when the selected skill changes, so switching skills never
-  // strands the user on Files (which would refetch for the new skill).
-  useEffect(() => {
+  // Reset to Overview (and rendered view) when the selected skill changes, so
+  // switching skills never strands the user on Files (which would refetch for
+  // the new skill) or on a raw-source view of the previous skill. Adjusting
+  // state during render (rather than in an effect) avoids a cascading re-render.
+  if (skill?.name !== prevName) {
+    setPrevName(skill?.name);
     setActiveTab('overview');
-  }, [skill?.name]);
+    setViewSource(false);
+  }
 
   if (!skill) {
     return (
@@ -192,13 +198,34 @@ export function SkillDetailPanel({
           id={tabPanelId('instructions')}
           aria-labelledby={tabBtnId('instructions')}
           hidden={activeTab !== 'instructions'}
-          className="px-4 py-4"
+          className="px-4 py-4 space-y-3"
         >
           {activeTab === 'instructions' && (
-            <MarkdownPreview
-              content={skill.body}
-              emptyHint="This skill has no instructions."
-            />
+            <>
+              {skill.body && (
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setViewSource((v) => !v)}
+                    aria-pressed={viewSource}
+                    className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-text-muted hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight border border-border/40 rounded-md transition-colors"
+                  >
+                    {viewSource ? <Eye size={11} /> : <Code2 size={11} />}
+                    {viewSource ? 'Rendered' : 'View source'}
+                  </button>
+                </div>
+              )}
+              {viewSource ? (
+                <pre className="text-xs font-mono text-text-secondary whitespace-pre-wrap break-words bg-background/40 border border-border/30 rounded-lg p-3 overflow-x-auto">
+                  {skill.body}
+                </pre>
+              ) : (
+                <MarkdownPreview
+                  content={skill.body}
+                  emptyHint="This skill has no instructions."
+                />
+              )}
+            </>
           )}
         </div>
 
