@@ -19,7 +19,8 @@ vi.mock('../lib/api', () => ({
 import ToolNode from '../components/graph/ToolNode';
 import { fetchToolUsage } from '../lib/api';
 import { useStackStore } from '../stores/useStackStore';
-import type { ToolNodeData } from '../types';
+import { useAccessLensStore } from '../stores/useAccessLensStore';
+import type { MCPServerStatus, ToolNodeData } from '../types';
 
 function LocationProbe() {
   const loc = useLocation();
@@ -53,7 +54,12 @@ beforeEach(() => {
         inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
       },
     ],
+    // Default to no selection so the lens stays inactive for the base tests.
+    selectedNodeId: null,
   });
+  // Reset the Access Lens so the default tests render in inspect-only mode.
+  useAccessLensStore.getState().clearDraft();
+  useAccessLensStore.setState({ enabled: false });
   (fetchToolUsage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ servers: {} });
 });
 
@@ -131,5 +137,53 @@ describe('ToolNode', () => {
     // Wait for the popover (and its usage fetch) to settle, then assert absence.
     await screen.findByText('github__search-repos');
     expect(screen.queryByText(/Last used/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('ToolNode (Access Lens edit mode)', () => {
+  const GITHUB: MCPServerStatus = {
+    name: 'github',
+    transport: 'http',
+    initialized: true,
+    toolCount: 2,
+    tools: ['search-repos', 'create-issue'],
+  };
+
+  // Put the lens in edit mode for the github server of the selected client.
+  function enterEditMode() {
+    useStackStore.setState({ mcpServers: [GITHUB], selectedNodeId: 'client-gemini' });
+    useAccessLensStore.getState().seed({
+      slug: 'gemini',
+      name: 'Gemini',
+      baseline: ['github'],
+      savedTools: [],
+      createsBlock: false,
+      serverTools: { github: ['search-repos', 'create-issue'] },
+    });
+    useAccessLensStore.setState({ enabled: true });
+  }
+
+  it('renders the pill as a checked toggle (server is All by default)', () => {
+    enterEditMode();
+    renderNode();
+    const toggle = screen.getByRole('checkbox', { name: /revoke github tool search-repos/i });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('clicking the pill removes just that tool (all minus one)', () => {
+    enterEditMode();
+    renderNode();
+    fireEvent.click(screen.getByRole('checkbox', { name: /revoke github tool search-repos/i }));
+    const s = useAccessLensStore.getState();
+    expect(s.toolMode.github).toBe('custom');
+    // search-repos removed; the other tool survives.
+    expect(s.customSel.github).toEqual(['create-issue']);
+  });
+
+  it('keeps an info button for inspecting while editing', async () => {
+    enterEditMode();
+    renderNode();
+    fireEvent.click(screen.getByRole('button', { name: /show details for github tool search-repos/i }));
+    expect(await screen.findByText('github__search-repos')).toBeInTheDocument();
   });
 });

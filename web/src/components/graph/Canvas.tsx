@@ -13,7 +13,7 @@ import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
-import { useAccessLensStore, buildDraftScope } from '../../stores/useAccessLensStore';
+import { useAccessLensStore, buildDraftScope, flattenTools, isDirty } from '../../stores/useAccessLensStore';
 import { COLORS } from '../../lib/constants';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
@@ -56,7 +56,11 @@ export function Canvas() {
   const lensEnabled = useAccessLensStore((s) => s.enabled);
   const lensClientSlug = useAccessLensStore((s) => s.clientSlug);
   const lensDraft = useAccessLensStore((s) => s.draft);
+  const lensToolMode = useAccessLensStore((s) => s.toolMode);
+  const lensCustomSel = useAccessLensStore((s) => s.customSel);
   const lensSavedTools = useAccessLensStore((s) => s.savedTools);
+  const lensBaselineTools = useAccessLensStore((s) => s.baselineTools);
+  const lensToolsTouched = useAccessLensStore((s) => s.toolsTouched);
   const toggleDraftServer = useAccessLensStore((s) => s.toggleServer);
 
   // The lens edits exactly the selected client; a mismatch (or no client
@@ -64,10 +68,27 @@ export function Canvas() {
   const lensActive =
     lensEnabled && lensClientSlug != null && selectedNodeId === `client-${lensClientSlug}`;
 
-  const scopeOverride = useMemo(
-    () => (lensActive ? buildDraftScope(lensDraft, mcpServers, lensSavedTools) : null),
-    [lensActive, lensDraft, mcpServers, lensSavedTools],
-  );
+  // Re-light the canvas against the live draft, including per-server tool
+  // narrowing. Use the same tool list a commit would write: the flattened
+  // All/Custom intent when the operator has touched a tool group, else the saved
+  // list (an untouched commit omits the axis, so the backend keeps savedTools).
+  const scopeOverride = useMemo(() => {
+    if (!lensActive) return null;
+    const serverTools = Object.fromEntries(mcpServers.map((s) => [s.name, s.tools ?? []]));
+    const flat = flattenTools(lensDraft, serverTools, lensToolMode, lensCustomSel);
+    const toolsDirty = lensToolsTouched && isDirty(flat, lensBaselineTools);
+    const effective = toolsDirty ? flat : lensSavedTools;
+    return buildDraftScope(lensDraft, mcpServers, effective);
+  }, [
+    lensActive,
+    lensDraft,
+    mcpServers,
+    lensToolMode,
+    lensCustomSel,
+    lensToolsTouched,
+    lensBaselineTools,
+    lensSavedTools,
+  ]);
 
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -90,12 +111,18 @@ export function Canvas() {
   // captures the highlighted node set, so the view re-fits whenever that set
   // changes - including expanding a reachable server while the client stays
   // focused, which brings the newly-fanned-out tools into frame.
+  //
+  // Suppressed while actively editing in Access Lens: the draft scope narrows
+  // the reachable set on every tool/server toggle, and auto-refitting then would
+  // yank the canvas out from under the operator (and recenter the servers behind
+  // the slide-over panel). Selecting the client already framed it; hold still.
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const isClientSelected =
     (selectedNode?.data as { type?: string } | undefined)?.type === 'client';
-  const fitKey = isClientSelected
-    ? [...highlightState.highlightedNodeIds].sort().join(',')
-    : '';
+  const fitKey =
+    isClientSelected && !lensActive
+      ? [...highlightState.highlightedNodeIds].sort().join(',')
+      : '';
   useEffect(() => {
     if (!fitKey) return;
     const ids = fitKey.split(',').map((id) => ({ id }));
@@ -143,10 +170,16 @@ export function Canvas() {
       const isHighlighted = highlightState.highlightedEdgeIds.has(edge.id);
       return {
         ...edge,
-        className: cn(edge.className, isHighlighted ? 'highlighted' : 'dimmed'),
+        // Freeze the energy-flow animation while editing in Access Lens so the
+        // canvas stays calm and the scope edits are the only thing moving.
+        className: cn(
+          edge.className,
+          isHighlighted ? 'highlighted' : 'dimmed',
+          lensActive && 'lens-frozen',
+        ),
       };
     });
-  }, [edges, highlightState]);
+  }, [edges, highlightState, lensActive]);
 
   // Handle node selection. Tool fan-out nodes own their own click handling:
   // each renders an anchored detail popover internally, so a canvas-level click

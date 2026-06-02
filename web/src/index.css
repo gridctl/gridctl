@@ -705,6 +705,14 @@ body::before {
   filter: drop-shadow(0 0 4px currentColor);
 }
 
+/* Access Lens: render edges as calm, solid lines while editing scope — the
+   energy-flow animation is stopped and the dash pattern dropped, so nothing
+   marches. Defined after the `.animated` rule so it wins on equal specificity. */
+.react-flow__edge.lens-frozen .react-flow__edge-path {
+  animation: none !important;
+  stroke-dasharray: none !important;
+}
+
 /* Reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   *,

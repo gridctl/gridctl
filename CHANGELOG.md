@@ -31,8 +31,27 @@ All notable changes to gridctl will be documented in this file.
   a blocking lockout warning when a draft would leave a client reaching nothing),
   backed by a read-only `POST /api/clients/{slug}/scope/preview` endpoint that
   computes the patch and consequences server-side without writing. A dirty draft
-  prompts discard-with-confirm on mode exit, client change, or navigation. Tool
-  allow-lists are preserved on every save.
+  prompts discard-with-confirm on mode exit, client change, or navigation.
+
+- **Access Lens: narrow a granted server to specific tools.** Each granted
+  server carries an "All tools" (default) or "Custom" per-client choice, written
+  to the client's tool allow-list. The **canvas is the primary surface**: with a
+  server expanded in Access Lens, its fanned-out tool pills become grant/revoke
+  toggles — clicking a pill on an "All" server narrows it to every other tool,
+  and the path highlight dims what the client loses live. Tools beyond the
+  fan-out cap stay reachable as toggles inside the "+N more" list, and a small
+  info button preserves inspect-while-editing. The slide-over editor is the
+  searchable, keyboard-accessible fallback for large servers: each server shows
+  its All/Custom choice and a live count, with the tool checklist (tri-state
+  select-all, filter, descriptions from the tool catalog) one click away. A
+  "scoped" badge marks restricted servers, the commit gate lists each restriction
+  ("playwright: 3 of 28 tools"), and a collapsible "raw tools allow-list" shows
+  and copies the exact prefixed entries for operators migrating from hand-edited
+  `stack.yaml`. The tool axis is written only when deliberately edited, so a
+  server-only change still preserves an existing hand-authored allow-list; an
+  empty Custom selection is blocked rather than silently widening to "all". The
+  view no longer auto-refits while editing in Access Lens, so toggling tools
+  never yanks the canvas out from under you.
 
 - **Access Scope in the client inspector.** Selecting a client in the topology
   now shows an "Access Scope" inspector section summarizing its real reach
