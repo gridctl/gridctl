@@ -837,3 +837,216 @@ body::before {
   color: var(--color-text-secondary);
   font-style: italic;
 }
+
+/* ============================================
+   SKILL LIBRARY - Markdown instructions rendering
+   Scope for MarkdownPreview (Library inspector
+   Instructions tab + SkillEditor preview pane).
+   ============================================ */
+.skill-md {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.skill-md > :first-child { margin-top: 0; }
+.skill-md > :last-child { margin-bottom: 0; }
+
+.skill-md h1,
+.skill-md h2,
+.skill-md h3,
+.skill-md h4 {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.skill-md h1 {
+  font-size: 18px;
+  margin: 0 0 0.75em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.skill-md h2 { font-size: 15px; margin: 1.4em 0 0.5em; }
+.skill-md h3 { font-size: 13px; margin: 1.1em 0 0.35em; }
+.skill-md h4 { font-size: 12px; margin: 1em 0 0.3em; color: var(--color-text-secondary); }
+
+.skill-md p { margin: 0 0 0.7em; }
+.skill-md strong { color: var(--color-text-primary); font-weight: 600; }
+.skill-md em { color: var(--color-text-secondary); }
+.skill-md a { color: var(--color-primary); text-decoration: none; }
+.skill-md a:hover { text-decoration: underline; }
+
+.skill-md ul,
+.skill-md ol { margin: 0.5em 0 0.7em; padding-left: 1.3em; }
+.skill-md li { margin: 0.2em 0; }
+.skill-md li::marker { color: var(--color-text-muted); }
+
+.skill-md hr {
+  border: 0;
+  border-top: 1px solid var(--color-border-subtle);
+  margin: 1.25em 0;
+}
+
+/* Inline code only (fenced blocks are styled via .md-code below). */
+.skill-md :not(pre) > code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.85em;
+  color: var(--color-primary-light);
+  background: var(--color-surface-highlight);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+
+.skill-md blockquote {
+  border-left: 2px solid var(--color-border);
+  margin: 0.7em 0;
+  padding: 0.1em 0 0.1em 0.9em;
+  color: var(--color-text-muted);
+}
+
+.skill-md table {
+  display: block;
+  width: 100%;
+  border-collapse: collapse;
+  overflow-x: auto;
+  margin: 0.7em 0;
+  font-size: 12px;
+}
+.skill-md th,
+.skill-md td {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+.skill-md th {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  background: var(--color-surface-elevated);
+}
+.skill-md td { color: var(--color-text-secondary); }
+
+/* --- Fenced code blocks (custom marked renderer) --- */
+.skill-md .md-code {
+  margin: 0.8em 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-background);
+}
+.skill-md .md-code__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3em 0.6em;
+  background: var(--color-surface-elevated);
+  border-bottom: 1px solid var(--color-border);
+}
+.skill-md .md-code__lang {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+.skill-md .md-code__copy {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.15em 0.5em;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.skill-md .md-code__copy:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-muted);
+}
+.skill-md .md-code__copy[data-copied] {
+  color: var(--color-status-running);
+  border-color: var(--color-status-running);
+}
+.skill-md .md-code pre {
+  margin: 0;
+  padding: 0.75em 0.85em;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow-x: auto;
+}
+.skill-md .md-code code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  background: none;
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+
+/* Prism token colors, tuned for the near-black surface. */
+.skill-md .token.comment,
+.skill-md .token.prolog,
+.skill-md .token.doctype,
+.skill-md .token.cdata { color: #6b7280; font-style: italic; }
+.skill-md .token.punctuation { color: #8b8b93; }
+.skill-md .token.property,
+.skill-md .token.tag,
+.skill-md .token.boolean,
+.skill-md .token.number,
+.skill-md .token.constant,
+.skill-md .token.symbol { color: var(--color-tertiary-light); }
+.skill-md .token.selector,
+.skill-md .token.attr-name,
+.skill-md .token.string,
+.skill-md .token.char,
+.skill-md .token.builtin,
+.skill-md .token.inserted { color: var(--color-secondary-light); }
+.skill-md .token.operator,
+.skill-md .token.entity,
+.skill-md .token.url { color: #c4b5fd; }
+.skill-md .token.atrule,
+.skill-md .token.attr-value,
+.skill-md .token.keyword { color: var(--color-primary-light); }
+.skill-md .token.function,
+.skill-md .token.class-name { color: #93c5fd; }
+.skill-md .token.regex,
+.skill-md .token.important,
+.skill-md .token.variable { color: var(--color-primary); }
+
+/* --- GitHub-style alert callouts (marked-alert) --- */
+.skill-md .markdown-alert {
+  margin: 0.8em 0;
+  padding: 0.6em 0.85em;
+  border-left: 3px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface-elevated);
+}
+.skill-md .markdown-alert > :first-child { margin-top: 0; }
+.skill-md .markdown-alert > :last-child { margin-bottom: 0; }
+.skill-md .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.3em;
+}
+.skill-md .markdown-alert-title svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+.skill-md .markdown-alert-note { border-left-color: var(--color-secondary); }
+.skill-md .markdown-alert-note .markdown-alert-title { color: var(--color-secondary-light); }
+.skill-md .markdown-alert-tip { border-left-color: var(--color-status-running); }
+.skill-md .markdown-alert-tip .markdown-alert-title { color: var(--color-status-running); }
+.skill-md .markdown-alert-important { border-left-color: var(--color-tertiary); }
+.skill-md .markdown-alert-important .markdown-alert-title { color: var(--color-tertiary-light); }
+.skill-md .markdown-alert-warning { border-left-color: var(--color-primary); }
+.skill-md .markdown-alert-warning .markdown-alert-title { color: var(--color-primary-light); }
+.skill-md .markdown-alert-caution { border-left-color: var(--color-status-error); }
+.skill-md .markdown-alert-caution .markdown-alert-title { color: var(--color-status-error); }
