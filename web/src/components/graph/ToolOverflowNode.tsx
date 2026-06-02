@@ -1,9 +1,10 @@
 import { memo, useState, useCallback } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { MoreHorizontal, Wrench } from 'lucide-react';
+import { Check, MoreHorizontal, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { LAYOUT } from '../../lib/constants';
 import { useDismiss } from '../../hooks/useDismiss';
+import { useAccessLensTool } from '../../hooks/useAccessLensTool';
 import ToolDetailPopover from './ToolDetailPopover';
 import type { ToolOverflowNodeData } from '../../types';
 
@@ -43,6 +44,11 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
     setOpen((prev) => !prev);
   }, []);
 
+  // In Access Lens edit mode the hidden-tool rows become grant/revoke toggles,
+  // so tools beyond the fan-out cap stay reachable on the canvas (not just in
+  // the slide-over). Outside edit mode the rows open the detail popover.
+  const { editMode, isOn, toggle: toggleScope } = useAccessLensTool(data.serverName);
+
   return (
     <div ref={wrapperRef} className="relative nodrag" style={{ width: LAYOUT.TOOL_WIDTH }}>
       <button
@@ -78,28 +84,50 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
             {data.serverName} · {data.overflowCount} more
           </div>
           <ul className="space-y-0.5">
-            {data.hiddenTools.map((tool) => (
-              <li key={tool}>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedTool(tool);
-                  }}
-                  aria-label={`Show details for ${data.serverName} tool ${tool}`}
-                  className={cn(
-                    'w-full flex items-center gap-1.5 px-1.5 py-1 rounded-md text-left',
-                    'hover:bg-white/[0.06] transition-colors',
-                    selectedTool === tool && 'bg-white/[0.06]',
-                  )}
-                >
-                  <Wrench size={10} className="text-text-secondary/80 flex-shrink-0" aria-hidden="true" />
-                  <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate" title={tool}>
-                    {tool}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {data.hiddenTools.map((tool) => {
+              const on = isOn(tool);
+              return (
+                <li key={tool}>
+                  <button
+                    type="button"
+                    role={editMode ? 'checkbox' : undefined}
+                    aria-checked={editMode ? on : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (editMode) toggleScope(tool);
+                      else setSelectedTool(tool);
+                    }}
+                    aria-label={
+                      editMode
+                        ? `${on ? 'Revoke' : 'Grant'} ${data.serverName} tool ${tool}`
+                        : `Show details for ${data.serverName} tool ${tool}`
+                    }
+                    className={cn(
+                      'w-full flex items-center gap-1.5 px-1.5 py-1 rounded-md text-left',
+                      'hover:bg-white/[0.06] transition-colors',
+                      selectedTool === tool && 'bg-white/[0.06]',
+                      editMode && !on && 'opacity-60',
+                    )}
+                  >
+                    {editMode ? (
+                      <span
+                        className={cn(
+                          'w-3 h-3 rounded border flex items-center justify-center flex-shrink-0',
+                          on ? 'bg-white/15 border-white/70' : 'border-border/60 bg-background/50',
+                        )}
+                      >
+                        {on && <Check size={8} className="text-white" aria-hidden="true" />}
+                      </span>
+                    ) : (
+                      <Wrench size={10} className="text-text-secondary/80 flex-shrink-0" aria-hidden="true" />
+                    )}
+                    <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate" title={tool}>
+                      {tool}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

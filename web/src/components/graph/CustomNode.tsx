@@ -90,7 +90,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         // Access Lens draft state (overrides the violet server accents).
         lensActiveForNode && 'cursor-pointer',
         lensActiveForNode && lensGranted &&
-          'border-primary/60 ring-2 ring-primary/60 shadow-[inset_0_0_24px_rgba(245,158,11,0.18),0_0_16px_rgba(245,158,11,0.22)]',
+          'border-white/70 ring-2 ring-white/40 shadow-[inset_0_0_24px_rgba(255,255,255,0.10),0_0_16px_rgba(255,255,255,0.16)]',
         lensActiveForNode && !lensGranted &&
           'border-dashed border-border/50 saturate-[0.35]'
       )}

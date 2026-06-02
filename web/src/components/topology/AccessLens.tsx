@@ -6,8 +6,9 @@ import { useStackStore } from '../../stores/useStackStore';
 import {
   useAccessLensStore,
   isDirty,
-  canSaveDraft,
   buildDraftScope,
+  flattenTools,
+  hasEmptyCustomGrant,
   canonical,
   type SeedParams,
 } from '../../stores/useAccessLensStore';
@@ -46,6 +47,10 @@ export function AccessLens({ servers }: AccessLensProps) {
   const clientName = useAccessLensStore((s) => s.clientName);
   const draft = useAccessLensStore((s) => s.draft);
   const baseline = useAccessLensStore((s) => s.baseline);
+  const toolMode = useAccessLensStore((s) => s.toolMode);
+  const customSel = useAccessLensStore((s) => s.customSel);
+  const baselineTools = useAccessLensStore((s) => s.baselineTools);
+  const toolsTouched = useAccessLensStore((s) => s.toolsTouched);
   const savedTools = useAccessLensStore((s) => s.savedTools);
   const setEnabled = useAccessLensStore((s) => s.setEnabled);
   const seed = useAccessLensStore((s) => s.seed);
@@ -65,8 +70,39 @@ export function AccessLens({ servers }: AccessLensProps) {
   // Client-switch and navigate-away confirms are store-driven (see below).
   const [exit, setExit] = useState<ExitRequest | null>(null);
 
-  const dirty = clientSlug != null && isDirty(draft, baseline);
-  const canSave = clientSlug != null && canSaveDraft(draft, baseline);
+  const serverToolMap = useMemo(
+    () => Object.fromEntries(servers.map((s) => [s.name, s.tools ?? []])),
+    [servers],
+  );
+  // The flattened tool allow-list the current draft would write (see
+  // flattenTools), and whether it is a deliberate, effective change: only a
+  // touched-and-different tool axis counts, so server-only edits preserve a
+  // client's hand-authored tool list rather than clobbering it.
+  const flatTools = useMemo(
+    () => flattenTools(draft, serverToolMap, toolMode, customSel),
+    [draft, serverToolMap, toolMode, customSel],
+  );
+  const toolsDirty = toolsTouched && isDirty(flatTools, baselineTools);
+  const emptyCustom = hasEmptyCustomGrant(draft, toolMode, customSel);
+  // The tool list the draft would actually result in: when the operator has not
+  // touched a tool group, the commit OMITS the axis and the backend keeps the
+  // saved list, so the live preview must reflect savedTools — not the freshly
+  // flattened intent — or the canvas would show more reach than a save grants.
+  const previewToolList = toolsDirty ? flatTools : savedTools;
+  // A granted server that is still initializing has an unknown tool universe, so
+  // a restrictive flat list would silently drop it (and keep its tools hidden
+  // once it comes up). Block the save until it reports its tools.
+  const pendingInit =
+    toolsDirty && draft.some((n) => servers.find((s) => s.name === n)?.initialized === false);
+
+  const serversDirty = clientSlug != null && isDirty(draft, baseline);
+  const dirty = clientSlug != null && (serversDirty || toolsDirty);
+  const canSave =
+    clientSlug != null &&
+    draft.length > 0 &&
+    (serversDirty || toolsDirty) &&
+    !emptyCustom &&
+    !pendingInit;
 
   const selectedClient = useMemo<ClientStatus | null>(() => {
     if (!selectedNodeId?.startsWith('client-')) return null;
@@ -83,8 +119,9 @@ export function AccessLens({ servers }: AccessLensProps) {
       baseline: baselineServers(client, allServerNames),
       savedTools: client.effectiveScope?.tools ?? [],
       createsBlock: !client.effectiveScope?.configured,
+      serverTools: serverToolMap,
     }),
-    [allServerNames],
+    [allServerNames, serverToolMap],
   );
 
   // Seed / re-seed the draft as the selected client changes, guarding a dirty
@@ -96,7 +133,9 @@ export function AccessLens({ servers }: AccessLensProps) {
 
     if (selectedClient.slug === clientSlug) {
       const fresh = canonical(baselineServers(selectedClient, allServerNames));
-      if (!isDirty(draft, baseline) && isDirty(fresh, baseline)) {
+      // Reseed a same-client baseline only when a refresh moved it AND there is
+      // no in-progress edit (server OR tool) to clobber.
+      if (!isDirty(draft, baseline) && !toolsDirty && isDirty(fresh, baseline)) {
         seed(makeSeed(selectedClient));
       }
       return;
@@ -105,7 +144,7 @@ export function AccessLens({ servers }: AccessLensProps) {
     // A different client became selected. A dirty draft must be confirmed before
     // we retarget — stash the intent in the store (a store update is allowed in
     // an effect; React setState is not).
-    if (clientSlug != null && isDirty(draft, baseline)) {
+    if (clientSlug != null && (isDirty(draft, baseline) || toolsDirty)) {
       requestSwitch(selectedClient.slug);
       return;
     }
@@ -116,6 +155,7 @@ export function AccessLens({ servers }: AccessLensProps) {
     clientSlug,
     draft,
     baseline,
+    toolsDirty,
     allServerNames,
     pendingSwitchSlug,
     makeSeed,
@@ -169,8 +209,8 @@ export function AccessLens({ servers }: AccessLensProps) {
   }, [enabled, gateOpen, slideOverOpen, hasPendingExit, requestDisable]);
 
   const toolsVisible = useMemo(
-    () => (clientSlug ? buildDraftScope(draft, servers, savedTools).tools.length : 0),
-    [clientSlug, draft, servers, savedTools],
+    () => (clientSlug ? buildDraftScope(draft, servers, previewToolList).tools.length : 0),
+    [clientSlug, draft, servers, previewToolList],
   );
 
   // Unify the three exit-confirm sources into one descriptor. Mode-off is local
@@ -274,6 +314,11 @@ export function AccessLens({ servers }: AccessLensProps) {
               <span className="font-mono text-primary">{toolsVisible}</span> tool
               {toolsVisible === 1 ? '' : 's'} visible
             </span>
+            {pendingInit && (
+              <span className="text-[10px] text-status-pending" role="status">
+                A granted server is still initializing — wait before narrowing tools.
+              </span>
+            )}
             <div className="h-4 w-px bg-border/50" aria-hidden="true" />
             <button
               type="button"
@@ -303,6 +348,7 @@ export function AccessLens({ servers }: AccessLensProps) {
       )}
 
       <AccessLensCommitGate
+        servers={servers}
         isOpen={gateOpen}
         onClose={() => setGateOpen(false)}
         onCommitted={() => {
