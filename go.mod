@@ -2,7 +2,7 @@ module github.com/gridctl/gridctl
 
 go 1.26
 
-toolchain go1.26.3
+toolchain go1.26.4
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
