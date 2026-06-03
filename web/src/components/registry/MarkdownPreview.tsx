@@ -1,11 +1,6 @@
-import { useMemo } from 'react';
-import { marked } from 'marked';
+import { useEffect, useMemo, useRef } from 'react';
 import { cn } from '../../lib/cn';
-
-/** Render SKILL.md markdown to HTML with GFM + line breaks. */
-export function renderMarkdown(content: string): string {
-  return marked.parse(content, { breaks: true, gfm: true }) as string;
-}
+import { renderMarkdown } from '../../lib/markdown';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -15,14 +10,52 @@ interface MarkdownPreviewProps {
 
 /**
  * Read-only markdown renderer shared by the SkillEditor preview pane and the
- * Library inspector's Instructions tab, so both render SKILL.md bodies with the
- * same `prose` treatment.
+ * Library inspector's Instructions tab, so both render SKILL.md bodies the same
+ * way: sanitized HTML with syntax-highlighted, copyable code blocks and
+ * GitHub-style alert callouts. Styling lives under the `.skill-md` scope in
+ * index.css. Copy buttons are wired via one delegated listener rather than by
+ * re-injecting HTML.
  */
 export function MarkdownPreview({
   content,
   emptyHint = 'Preview will appear here as you type...',
 }: MarkdownPreviewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const html = useMemo(() => (content ? renderMarkdown(content) : ''), [content]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const timers = new Set<number>();
+
+    function onClick(e: MouseEvent) {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-copy]');
+      if (!btn) return;
+      const encoded = btn.getAttribute('data-code');
+      if (encoded == null) return;
+      void navigator.clipboard
+        ?.writeText(decodeURIComponent(encoded))
+        .then(() => {
+          btn.setAttribute('data-copied', '');
+          btn.textContent = 'Copied';
+          const t = window.setTimeout(() => {
+            btn.removeAttribute('data-copied');
+            btn.textContent = 'Copy';
+            timers.delete(t);
+          }, 1500);
+          timers.add(t);
+        })
+        .catch(() => {
+          /* clipboard may be unavailable; ignore */
+        });
+    }
+
+    el.addEventListener('click', onClick);
+    return () => {
+      el.removeEventListener('click', onClick);
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [html]);
 
   if (!content) {
     return (
@@ -34,34 +67,8 @@ export function MarkdownPreview({
 
   return (
     <div
-      className={cn(
-        'prose prose-invert prose-sm max-w-none',
-        // Headings
-        'prose-headings:text-text-primary prose-headings:font-semibold prose-headings:tracking-tight',
-        'prose-h1:text-lg prose-h1:border-b prose-h1:border-border/30 prose-h1:pb-2 prose-h1:mb-4',
-        'prose-h2:text-base prose-h2:mt-6 prose-h2:mb-2',
-        'prose-h3:text-sm prose-h3:mt-4 prose-h3:mb-1',
-        // Body text
-        'prose-p:text-text-secondary prose-p:text-sm prose-p:leading-relaxed',
-        // Code
-        'prose-code:text-primary prose-code:bg-surface-highlight prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:font-mono prose-code:before:content-none prose-code:after:content-none',
-        'prose-pre:bg-background/60 prose-pre:border prose-pre:border-border/30 prose-pre:rounded-lg prose-pre:text-xs',
-        // Links
-        'prose-a:text-primary prose-a:no-underline hover:prose-a:underline',
-        // Lists
-        'prose-li:text-text-secondary prose-li:text-sm prose-li:marker:text-text-muted',
-        'prose-ul:my-2 prose-ol:my-2',
-        // Strong / emphasis
-        'prose-strong:text-text-primary',
-        'prose-em:text-text-secondary',
-        // Blockquotes
-        'prose-blockquote:border-primary/40 prose-blockquote:text-text-muted prose-blockquote:not-italic',
-        // Tables
-        'prose-th:text-text-primary prose-th:text-xs prose-th:uppercase prose-th:tracking-wider prose-th:font-medium',
-        'prose-td:text-text-secondary prose-td:text-sm',
-        // Horizontal rules
-        'prose-hr:border-border/30',
-      )}
+      ref={containerRef}
+      className={cn('skill-md max-w-none')}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

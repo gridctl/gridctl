@@ -4,7 +4,25 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **Sanitize rendered skill markdown.** Skill bodies (which can be imported from
+  remote git) are now passed through DOMPurify after Markdown rendering, closing
+  an XSS vector where raw HTML or event handlers in a `SKILL.md` could execute in
+  the dashboard. Sanitization runs on the rendered output, never the source.
+
 ### Added
+
+- **Richer skill instructions in the Library.** The Library inspector's
+  Instructions tab and the SkillEditor preview now render `SKILL.md` bodies as a
+  designed surface rather than raw browser-default markdown: fenced code blocks
+  are syntax-highlighted (bash, python, javascript, typescript, json, yaml) and
+  carry a language label plus a one-click copy button that copies the original
+  source (not the highlighted markup), and GitHub-style alert blockquotes
+  (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`) render as
+  colored callouts. A "View source" toggle in the Instructions header swaps to
+  the verbatim raw body, so the exact text served to agents is always one click
+  away. The agent-facing MCP prompt surface is unchanged.
 
 - **Inspect a tool from the Topology canvas.** Clicking a fanned-out tool pill
   on an expanded server now opens a canvas-anchored detail popover with the
