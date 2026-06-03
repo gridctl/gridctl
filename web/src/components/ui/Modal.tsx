@@ -3,30 +3,38 @@ import { X, Maximize2, Minimize2, ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 
-type ModalSize = 'default' | 'wide' | 'full';
+type ModalSize = 'default' | 'wide' | 'full' | 'fullscreen';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
-  /** Allow user to toggle between default and wide sizes */
+  /** Show an expand toggle that steps the panel up one size from its base
+   *  (default -> wide, wide -> full, full -> fullscreen). */
   expandable?: boolean;
   /** Callback to pop out into a new window */
   onPopout?: () => void;
   /** Disable popout button (e.g., already detached) */
   popoutDisabled?: boolean;
-  /** Force a specific size (overrides internal expand toggle) */
+  /** Base size of the panel (the expand toggle steps up from here) */
   size?: ModalSize;
   /** Flush mode: panel fills the entire viewport (for detached windows) */
   flush?: boolean;
 }
 
+// 'full' and 'fullscreen' pin the panel height (rather than letting content
+// drive it) so full-height children like the skill editor can size with
+// percentages and actually grow when the panel does.
 const sizeClasses: Record<ModalSize, string> = {
-  default: 'max-w-lg',
-  wide: 'max-w-3xl',
-  full: 'max-w-5xl',
+  default: 'max-w-lg max-h-[85vh]',
+  wide: 'max-w-3xl max-h-[85vh]',
+  full: 'max-w-5xl h-[85vh]',
+  fullscreen: 'max-w-[96vw] h-[94vh]',
 };
+
+// Expansion ladder for the expand toggle.
+const SIZE_ORDER: ModalSize[] = ['default', 'wide', 'full', 'fullscreen'];
 
 export function Modal({
   isOpen,
@@ -71,7 +79,12 @@ export function Modal({
 
   if (!isOpen) return null;
 
-  const currentSize = forcedSize ?? (expanded ? 'wide' : 'default');
+  // The expand toggle steps one size up from the base; a base already at the
+  // top of the ladder has nothing to expand to, so the button is hidden.
+  const baseSize = forcedSize ?? 'default';
+  const expandedSize = SIZE_ORDER[Math.min(SIZE_ORDER.indexOf(baseSize) + 1, SIZE_ORDER.length - 1)];
+  const canExpand = !!expandable && expandedSize !== baseSize && !flush;
+  const currentSize = expanded && canExpand ? expandedSize : baseSize;
 
   return (
     <div
@@ -96,8 +109,8 @@ export function Modal({
           flush
             ? 'flex-1 min-h-0 bg-surface-elevated'
             : cn(
-                'glass-panel-elevated rounded-xl w-full mx-4 max-h-[85vh] shadow-lg',
-                'transition-[max-width] duration-300 ease-out',
+                'glass-panel-elevated rounded-xl w-full mx-4 shadow-lg',
+                'transition-[max-width,height] duration-300 ease-out',
                 sizeClasses[currentSize],
               ),
         )}
@@ -106,7 +119,7 @@ export function Modal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/30 flex-shrink-0">
           <h2 id={titleId} className="text-sm font-medium text-text-primary">{title}</h2>
           <div className="flex items-center gap-1">
-            {expandable && (
+            {canExpand && (
               <button
                 onClick={() => setExpanded(!expanded)}
                 title={expanded ? 'Compact view' : 'Expanded view'}
