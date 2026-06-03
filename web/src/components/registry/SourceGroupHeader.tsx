@@ -4,6 +4,8 @@ import { cn } from '../../lib/cn';
 import { showToast } from '../ui/Toast';
 import { updateSkillSource } from '../../lib/api';
 import { extractRepoInfo } from '../../lib/repo';
+import { summarizeSkillResults, syncCountsMessage } from '../../lib/skillSync';
+import { DriftSyncDialog } from './DriftSyncDialog';
 import type { SkillSourceStatus } from '../../types';
 
 interface SourceGroupHeaderProps {
@@ -36,24 +38,43 @@ export function SourceGroupHeader({
   onUpdated,
 }: SourceGroupHeaderProps) {
   const [updating, setUpdating] = useState(false);
+  const [confirmDrift, setConfirmDrift] = useState(false);
 
   const repoInfo = source ? extractRepoInfo(source.repo) : null;
   const label = source ? (repoInfo ? `${repoInfo.owner}/${repoInfo.repo}` : source.name) : 'My Skills';
   const shortSha = source?.commitSha ? source.commitSha.slice(0, 7) : null;
+  const drifted = source?.driftedSkills ?? [];
 
-  const handleUpdate = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const runSync = async (force: boolean) => {
     if (!source || updating) return;
     setUpdating(true);
     try {
-      await updateSkillSource(source.name);
-      showToast('success', `Synced "${source.name}"`);
+      const { results } = await updateSkillSource(source.name, force ? { force } : undefined);
+      const counts = summarizeSkillResults(results);
+      const detail = syncCountsMessage(counts);
+      showToast(
+        counts.failed > 0 ? 'warning' : 'success',
+        detail ? `Synced "${source.name}": ${detail}` : `"${source.name}" is up to date`,
+      );
       onUpdated?.();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Sync failed');
     } finally {
       setUpdating(false);
+      setConfirmDrift(false);
     }
+  };
+
+  // Sync clean sources silently; warn before a sync that would touch
+  // locally-edited skills so the user picks skip vs overwrite.
+  const handleUpdate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!source || updating) return;
+    if (drifted.length > 0) {
+      setConfirmDrift(true);
+      return;
+    }
+    void runSync(false);
   };
 
   return (
@@ -116,6 +137,17 @@ export function SourceGroupHeader({
         </span>
       </div>
       <div className="border-b border-border/30" />
+      {source && (
+        <DriftSyncDialog
+          isOpen={confirmDrift}
+          title={`Sync ${label}`}
+          driftedSkills={drifted}
+          busy={updating}
+          onCancel={() => setConfirmDrift(false)}
+          onSkip={() => void runSync(false)}
+          onOverwrite={() => void runSync(true)}
+        />
+      )}
     </div>
   );
 }

@@ -12,15 +12,40 @@ import {
   GripVertical,
   Eye,
   EyeOff,
+  Bold,
+  List,
+  Code2,
+  Heading,
+  Files,
+  GitBranch,
+  GitCompareArrows,
+  RotateCcw,
+  Unlink,
+  GitFork,
 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 import { SkillFileTree } from './SkillFileTree';
 import { MarkdownPreview } from './MarkdownPreview';
-import { createRegistrySkill, updateRegistrySkill, validateSkillContent } from '../../lib/api';
+import { SkillCompareDialog } from './SkillCompareDialog';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import {
+  createRegistrySkill,
+  updateRegistrySkill,
+  validateSkillContent,
+  resetSkill,
+  detachSkill,
+} from '../../lib/api';
 import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
+import { extractRepoInfo } from '../../lib/repo';
+import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit';
 import { cn } from '../../lib/cn';
-import type { AgentSkill, ItemState, SkillValidationResult } from '../../types';
+import { useUIStore } from '../../stores/useUIStore';
+import type { AgentSkill, ItemState, SkillSourceStatus, SkillValidationResult } from '../../types';
+
+// One-time hint shown the first time a user saves an edit to a remote skill,
+// explaining that the edit becomes a local customization sync will preserve.
+const LOCAL_EDIT_NOTE_KEY = 'gridctl-skill-local-edit-note-seen';
 
 // --- Types ---
 
@@ -127,10 +152,13 @@ function createDebouncedValidator(
 
 // --- Resizable split pane hook ---
 
-function useSplitPane(defaultRatio = 0.5, minRatio = 0.25, maxRatio = 0.75) {
+function useSplitPane(defaultRatio = 0.5, minRatio = 0.25, maxRatio = 0.75, onCommit?: (ratio: number) => void) {
   const [ratio, setRatio] = useState(defaultRatio);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Latest ratio during a drag, read on mouse-up so the committed value (which
+  // we persist) is the final position rather than a stale render snapshot.
+  const ratioRef = useRef(defaultRatio);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -144,6 +172,7 @@ function useSplitPane(defaultRatio = 0.5, minRatio = 0.25, maxRatio = 0.75) {
         const rect = containerRef.current.getBoundingClientRect();
         const x = moveEvent.clientX - rect.left;
         const newRatio = Math.min(maxRatio, Math.max(minRatio, x / rect.width));
+        ratioRef.current = newRatio;
         setRatio(newRatio);
       };
 
@@ -153,12 +182,13 @@ function useSplitPane(defaultRatio = 0.5, minRatio = 0.25, maxRatio = 0.75) {
         document.body.style.userSelect = '';
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
+        onCommit?.(ratioRef.current);
       };
 
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     },
-    [minRatio, maxRatio],
+    [minRatio, maxRatio, onCommit],
   );
 
   return { ratio, containerRef, handleMouseDown, isDragging };
@@ -354,6 +384,9 @@ interface SkillEditorProps {
   onClose: () => void;
   onSaved: () => void;
   skill?: AgentSkill;
+  /** Owning git source, when this skill was imported. Drives the provenance
+   *  strip and reconciliation actions (compare/reset/detach/fork). */
+  source?: SkillSourceStatus;
   onPopout?: () => void;
   popoutDisabled?: boolean;
   size?: 'default' | 'wide' | 'full';
@@ -365,6 +398,7 @@ export function SkillEditor({
   onClose,
   onSaved,
   skill,
+  source,
   onPopout,
   popoutDisabled,
   size,
@@ -372,6 +406,24 @@ export function SkillEditor({
 }: SkillEditorProps) {
   const isNew = !skill;
   const idCounter = useRef(0);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const originalBodyRef = useRef('');
+
+  // Persisted editor view preferences (frontmatter/preview/split).
+  const editorPrefs = useUIStore((s) => s.editorPrefs);
+  const setEditorPrefs = useUIStore((s) => s.setEditorPrefs);
+
+  // Provenance / reconciliation
+  const repoInfo = source ? extractRepoInfo(source.repo) : null;
+  const isRemote = !!source && !isNew;
+  const hasLocalEdits = (source?.driftedSkills?.includes(skill?.name ?? '') ?? false) && !isNew;
+  const [showCompare, setShowCompare] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'reset' | 'detach' | null>(null);
+  const [forking, setForking] = useState(false);
+  const [forkName, setForkName] = useState('');
+  const [reconciling, setReconciling] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
 
   // Editor state
   const [name, setName] = useState('');
@@ -384,19 +436,51 @@ export function SkillEditor({
   const [state, setState] = useState<ItemState>('draft');
   const [body, setBody] = useState('');
 
-  // UI state
-  const [showFrontmatter, setShowFrontmatter] = useState(true);
-  const [showPreview, setShowPreview] = useState(true);
+  // UI state. Existing skills open with frontmatter collapsed (body-first); a
+  // new skill always opens it so its required fields are reachable. Preview and
+  // split ratio come from persisted prefs.
+  const [showFrontmatter, setShowFrontmatter] = useState(isNew ? true : editorPrefs.showFrontmatter);
+  const [showPreview, setShowPreview] = useState(editorPrefs.showPreview);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<SkillValidationResult | null>(null);
 
-  // Resizable split pane
-  const { ratio, containerRef, handleMouseDown: handleSplitMouseDown, isDragging: splitDragging } = useSplitPane(0.5, 0.25, 0.75);
+  const toggleFrontmatter = useCallback(() => {
+    setShowFrontmatter((prev) => {
+      const next = !prev;
+      setEditorPrefs({ showFrontmatter: next });
+      return next;
+    });
+  }, [setEditorPrefs]);
+
+  const togglePreview = useCallback(() => {
+    setShowPreview((prev) => {
+      const next = !prev;
+      setEditorPrefs({ showPreview: next });
+      return next;
+    });
+  }, [setEditorPrefs]);
+
+  // Resizable split pane: body-heavy by default; committed ratio persisted.
+  const persistRatio = useCallback((r: number) => setEditorPrefs({ splitRatio: r }), [setEditorPrefs]);
+  const { ratio, containerRef, handleMouseDown: handleSplitMouseDown, isDragging: splitDragging } = useSplitPane(editorPrefs.splitRatio, 0.25, 0.75, persistRatio);
 
   // Computed
   const lineCount = useMemo(() => body.split('\n').length, [body]);
   const charCount = body.length;
+
+  // One-line frontmatter summary shown while the section is collapsed.
+  const frontmatterSummary = useMemo(() => {
+    const metaCount = metadata.filter((m) => m.key).length;
+    const criteriaCount = criteria.filter((c) => c.given && c.when && c.then).length;
+    const parts = [
+      license || 'no license',
+      `${metaCount} metadata`,
+      `${criteriaCount} criteria`,
+      state,
+    ];
+    return parts.join(' · ');
+  }, [license, metadata, criteria, state]);
 
   // --- Initialize from skill prop ---
 
@@ -428,6 +512,7 @@ export function SkillEditor({
       );
       setState(skill.state);
       setBody(skill.body ?? '');
+      originalBodyRef.current = skill.body ?? '';
     } else {
       setName('');
       setDescription('');
@@ -438,9 +523,19 @@ export function SkillEditor({
       setCriteria([{ id: ++idCounter.current, given: '', when: 'the skill is called', then: '' }]);
       setState('draft');
       setBody('');
+      originalBodyRef.current = '';
     }
     setError(null);
     setValidation(null);
+    // A new skill always opens with frontmatter expanded (its required fields
+    // must be reachable); an existing skill honors the persisted preference.
+    setShowFrontmatter(skill ? useUIStore.getState().editorPrefs.showFrontmatter : true);
+    // Reset transient reconciliation UI when the open skill changes.
+    setShowCompare(false);
+    setPendingAction(null);
+    setForking(false);
+    setForkName('');
+    setShowFiles(false);
   }, [skill, isOpen]);
 
   // --- Metadata management ---
@@ -520,6 +615,22 @@ export function SkillEditor({
       } else {
         await updateRegistrySkill(skill!.name, skillData);
         showToast('success', `Skill "${name}" updated`);
+        // First time a tracked skill is edited, explain that the change becomes
+        // a local customization that future syncs will preserve.
+        if (isRemote && body !== originalBodyRef.current) {
+          try {
+            if (!localStorage.getItem(LOCAL_EDIT_NOTE_KEY)) {
+              localStorage.setItem(LOCAL_EDIT_NOTE_KEY, '1');
+              showToast(
+                'warning',
+                'Saved as a local customization. Future syncs will skip this skill unless you overwrite.',
+                { duration: 6000 },
+              );
+            }
+          } catch {
+            // localStorage unavailable (private mode): skip the one-time note.
+          }
+        }
       }
       onSaved();
       onClose();
@@ -530,7 +641,108 @@ export function SkillEditor({
     } finally {
       setSaving(false);
     }
-  }, [saving, name, description, metadata, criteria, body, state, skill, license, compatibility, allowedTools, isNew, onSaved, onClose]);
+  }, [saving, name, description, metadata, criteria, body, state, skill, license, compatibility, allowedTools, isNew, isRemote, onSaved, onClose]);
+
+  // --- Markdown toolbar ---
+
+  const applyMarkdown = useCallback((action: MarkdownAction) => {
+    const ta = bodyRef.current;
+    if (!ta) return;
+    const next = applyMarkdownAction(body, ta.selectionStart, ta.selectionEnd, action);
+    setBody(next.value);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(next.selStart, next.selEnd);
+    });
+  }, [body]);
+
+  // --- Scroll sync: the preview follows the editor proportionally ---
+
+  // Proportional (fraction-of-scrollable-height) mapping. The rendered preview
+  // is taller or shorter than the source, so an exact line mapping is not
+  // possible without a source map; fraction tracking keeps both panes aligned
+  // closely enough to feel tethered.
+  const handleEditorScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    const ta = e.currentTarget;
+    const preview = previewRef.current;
+    if (!preview) return;
+    const srcMax = ta.scrollHeight - ta.clientHeight;
+    if (srcMax <= 0) return;
+    const dstMax = preview.scrollHeight - preview.clientHeight;
+    preview.scrollTop = (ta.scrollTop / srcMax) * dstMax;
+  }, []);
+
+  // --- Reconciliation actions (remote skills only) ---
+
+  const handleReset = useCallback(async () => {
+    if (!source || !skill) return;
+    setReconciling(true);
+    try {
+      await resetSkill(source.name, skill.name);
+      showToast('success', `"${skill.name}" reset to upstream`);
+      onSaved();
+      onClose();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Reset failed');
+    } finally {
+      setReconciling(false);
+      setPendingAction(null);
+    }
+  }, [source, skill, onSaved, onClose]);
+
+  const handleDetach = useCallback(async () => {
+    if (!source || !skill) return;
+    setReconciling(true);
+    try {
+      await detachSkill(source.name, skill.name);
+      showToast('success', `"${skill.name}" detached; now a local skill`);
+      onSaved();
+      onClose();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Detach failed');
+    } finally {
+      setReconciling(false);
+      setPendingAction(null);
+    }
+  }, [source, skill, onSaved, onClose]);
+
+  const handleFork = useCallback(async () => {
+    const newName = forkName.trim();
+    if (!newName) return;
+    setReconciling(true);
+    try {
+      const metadataRecord: Record<string, string> = {};
+      for (const entry of metadata) {
+        if (entry.key) metadataRecord[entry.key] = entry.value;
+      }
+      const criteriaStrings = criteria
+        .filter((c) => c.given && c.when && c.then)
+        .map((c) => `GIVEN ${c.given} WHEN ${c.when} THEN ${c.then}`);
+      // A fork is a brand-new local skill (no origin) seeded from the current
+      // editor fields, so it captures any unsaved local edits.
+      const copy: AgentSkill = {
+        name: newName,
+        description,
+        body,
+        state,
+        fileCount: 0,
+        ...(license && { license }),
+        ...(compatibility && { compatibility }),
+        ...(Object.keys(metadataRecord).length > 0 && { metadata: metadataRecord }),
+        ...(allowedTools && { allowedTools }),
+        ...(criteriaStrings.length > 0 && { acceptanceCriteria: criteriaStrings }),
+      };
+      await createRegistrySkill(copy);
+      showToast('success', `Forked as "${newName}"`);
+      onSaved();
+      onClose();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Fork failed (name may already exist)');
+    } finally {
+      setReconciling(false);
+      setForking(false);
+    }
+  }, [forkName, description, body, state, license, compatibility, metadata, allowedTools, criteria, onSaved, onClose]);
 
   // --- Keyboard shortcut: Cmd/Ctrl+S to save ---
 
@@ -557,7 +769,10 @@ export function SkillEditor({
       onPopout={onPopout}
       popoutDisabled={popoutDisabled}
     >
-      <div className="flex flex-col h-[calc(85vh-3.5rem)] -mx-6 -my-4">
+      {/* Fill the modal's padded content box (100% + the cancelled py-4) so the
+          editor grows with the panel: 85vh base, 94vh expanded, full viewport
+          when detached. */}
+      <div className="flex flex-col h-[calc(100%+2rem)] -mx-6 -my-4">
         {/* Header bar with state toggle, preview toggle, and save */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-border/50 bg-surface-elevated/30 flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
@@ -569,7 +784,7 @@ export function SkillEditor({
           <div className="flex items-center gap-3">
             {/* Preview toggle */}
             <button
-              onClick={() => setShowPreview(!showPreview)}
+              onClick={togglePreview}
               title={showPreview ? 'Hide preview' : 'Show preview'}
               className={cn(
                 'p-1.5 rounded-lg transition-all duration-200 group',
@@ -614,17 +829,95 @@ export function SkillEditor({
           </div>
         )}
 
-        {/* Frontmatter helpers (collapsible, scrollable) */}
+        {/* Provenance strip: only for skills tracked from a git source */}
+        {isRemote && source && (
+          <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-2 border-b border-border/30 bg-surface/40 flex-shrink-0">
+            <div className="flex items-center gap-2 min-w-0 text-[11px] text-text-muted">
+              <GitBranch size={12} className="text-text-muted/70 flex-shrink-0" />
+              <span className="truncate">
+                Tracked from{' '}
+                <span className="font-mono text-text-secondary">
+                  {repoInfo ? `${repoInfo.owner}/${repoInfo.repo}` : source.name}
+                </span>
+                {source.commitSha && (
+                  <span className="font-mono text-text-muted/70">@{source.commitSha.slice(0, 7)}</span>
+                )}
+                {source.lastFetched && (
+                  <span className="text-text-muted/70">
+                    {' '}· synced {new Date(source.lastFetched).toLocaleDateString()}
+                  </span>
+                )}
+              </span>
+              {hasLocalEdits && (
+                <span
+                  title="Edited locally; a sync will skip this unless you overwrite"
+                  className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300"
+                >
+                  Local edits
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <ProvenanceAction icon={GitCompareArrows} label="Compare" onClick={() => setShowCompare(true)} disabled={reconciling} />
+              <ProvenanceAction icon={RotateCcw} label="Reset" onClick={() => setPendingAction('reset')} disabled={reconciling} />
+              <ProvenanceAction icon={Unlink} label="Detach" onClick={() => setPendingAction('detach')} disabled={reconciling} />
+              <ProvenanceAction icon={GitFork} label="Fork as…" onClick={() => { setForkName(`${skill!.name}-local`); setForking(true); }} disabled={reconciling} />
+            </div>
+          </div>
+        )}
+
+        {/* Fork-as inline input */}
+        {forking && (
+          <div className="flex items-center gap-2 px-5 py-2 border-b border-border/30 bg-background/40 flex-shrink-0">
+            <span className="text-[11px] text-text-muted flex-shrink-0">Fork as a new local skill:</span>
+            <input
+              autoFocus
+              value={forkName}
+              onChange={(e) => setForkName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleFork(); if (e.key === 'Escape') setForking(false); }}
+              placeholder="new-skill-name"
+              className="flex-1 max-w-xs bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
+            />
+            <button
+              onClick={handleFork}
+              disabled={!forkName.trim() || reconciling}
+              className={cn(
+                'px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-background hover:bg-primary-light transition-colors',
+                (!forkName.trim() || reconciling) && 'opacity-50 cursor-not-allowed',
+              )}
+            >
+              Fork
+            </button>
+            <button
+              onClick={() => setForking(false)}
+              className="px-3 py-1.5 text-xs rounded-lg text-text-secondary hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Frontmatter helpers (collapsible, scrollable). Collapsed by default
+            for existing skills so the body gets the room; a one-line summary
+            keeps the key fields glanceable, with "Edit metadata" to expand. */}
         <div className="border-b border-border/30 flex-shrink-0">
           <button
-            onClick={() => setShowFrontmatter(!showFrontmatter)}
-            className="w-full flex items-center justify-between px-5 py-2.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+            onClick={toggleFrontmatter}
+            className="w-full flex items-center justify-between gap-3 px-5 py-2.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
           >
-            <span className="flex items-center gap-2">
-              <Settings size={14} />
-              <span className="uppercase tracking-wider">Frontmatter</span>
+            <span className="flex items-center gap-2 min-w-0">
+              <Settings size={14} className="flex-shrink-0" />
+              <span className="uppercase tracking-wider flex-shrink-0">Frontmatter</span>
+              {!showFrontmatter && (
+                <span className="truncate text-text-muted/70 normal-case tracking-normal">
+                  {frontmatterSummary}
+                </span>
+              )}
             </span>
-            {showFrontmatter ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span className="flex items-center gap-1.5 flex-shrink-0">
+              {!showFrontmatter && <span className="text-[10px] text-primary/80">Edit metadata</span>}
+              {showFrontmatter ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
           </button>
 
           {showFrontmatter && (
@@ -718,14 +1011,29 @@ export function SkillEditor({
           )}
         </div>
 
-        {/* File tree (only for existing skills) */}
+        {/* File tree (existing skills), demoted behind a pill so it no longer
+            crowds the editor; expands on demand. */}
         {!isNew && skill && (
-          <SkillFileTree
-            skillName={skill.name}
-            onSelectFile={(path) => {
-              showToast('success', `Selected: ${path}`);
-            }}
-          />
+          <div className="border-b border-border/30 flex-shrink-0">
+            <button
+              onClick={() => setShowFiles((v) => !v)}
+              className="flex items-center gap-1.5 px-5 py-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+            >
+              <Files size={12} />
+              <span>Files ({skill.fileCount})</span>
+              {showFiles ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            </button>
+            {showFiles && (
+              <div className="max-h-[22vh] overflow-y-auto scrollbar-dark border-t border-border/20">
+                <SkillFileTree
+                  skillName={skill.name}
+                  onSelectFile={(path) => {
+                    showToast('success', `Selected: ${path}`);
+                  }}
+                />
+              </div>
+            )}
+          </div>
         )}
 
         {/* Editor area: split pane when preview on, full-width when off */}
@@ -741,12 +1049,21 @@ export function SkillEditor({
             )}
             style={showPreview ? { width: `${ratio * 100}%` } : { width: '100%' }}
           >
-            <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
+            <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border/20 flex-shrink-0">
               <span className="text-xs text-text-muted uppercase tracking-wider">Markdown</span>
+              {/* Minimal formatting toolbar: inserts at the textarea cursor */}
+              <div className="flex items-center gap-0.5">
+                <ToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
+                <ToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
+                <ToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} />
+                <ToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} />
+              </div>
             </div>
             <textarea
+              ref={bodyRef}
               value={body}
               onChange={(e) => setBody(e.target.value)}
+              onScroll={handleEditorScroll}
               placeholder={'# Skill Instructions\n\nWrite markdown instructions that the agent will follow...\n\n## Steps\n\n1. First step\n2. Second step'}
               className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none focus:outline-none leading-relaxed"
               spellCheck={false}
@@ -769,7 +1086,7 @@ export function SkillEditor({
                 <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
                   <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
                 </div>
-                <div className="flex-1 overflow-y-auto scrollbar-dark">
+                <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
                   <div className="px-5 py-4">
                     <MarkdownPreview content={body} />
                   </div>
@@ -808,6 +1125,103 @@ export function SkillEditor({
           </div>
         </div>
       </div>
+
+      {/* Reconciliation: compare-with-upstream and reset/detach confirms */}
+      {isRemote && source && skill && (
+        <SkillCompareDialog
+          isOpen={showCompare}
+          sourceName={source.name}
+          skillName={skill.name}
+          onClose={() => setShowCompare(false)}
+          onTookUpstream={() => { setShowCompare(false); onSaved(); onClose(); }}
+        />
+      )}
+
+      <ConfirmDialog
+        isOpen={pendingAction === 'reset'}
+        onClose={() => setPendingAction(null)}
+        onConfirm={handleReset}
+        title="Reset to upstream"
+        message={
+          <>
+            <p>
+              Replace <span className="font-mono text-primary">{skill?.name}</span> with the latest
+              upstream content?
+            </p>
+            <p>Your local edits are backed up next to the skill before they are overwritten.</p>
+          </>
+        }
+        confirmLabel="Reset to upstream"
+        autoFocus="cancel"
+      />
+
+      <ConfirmDialog
+        isOpen={pendingAction === 'detach'}
+        onClose={() => setPendingAction(null)}
+        onConfirm={handleDetach}
+        title="Detach from source"
+        message={
+          <>
+            <p>
+              Stop tracking <span className="font-mono text-primary">{skill?.name}</span> from its
+              source?
+            </p>
+            <p>The skill and your edits stay; it becomes a local skill that sync no longer touches.</p>
+          </>
+        }
+        confirmLabel="Detach"
+      />
     </Modal>
+  );
+}
+
+// --- Small toolbar / provenance action buttons ---
+
+function ToolbarButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof Bold;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="p-1.5 rounded-md text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+    >
+      <Icon size={13} />
+    </button>
+  );
+}
+
+function ProvenanceAction({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: typeof Bold;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors',
+        'text-text-secondary hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight border border-border/40',
+        disabled && 'opacity-50 cursor-not-allowed',
+      )}
+    >
+      <Icon size={11} /> {label}
+    </button>
   );
 }

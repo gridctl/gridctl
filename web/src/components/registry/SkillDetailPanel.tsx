@@ -105,6 +105,7 @@ export function SkillDetailPanel({
   };
 
   const repoInfo = source ? extractRepoInfo(source.repo) : null;
+  const hasLocalEdits = source?.driftedSkills?.includes(skill.name) ?? false;
 
   return (
     <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-l border-border-subtle">
@@ -123,6 +124,14 @@ export function SkillDetailPanel({
               >
                 <GitBranch size={10} />
                 {repoInfo ? `${repoInfo.owner}/${repoInfo.repo}` : source.name}
+              </span>
+            )}
+            {hasLocalEdits && (
+              <span
+                title="Edited locally; a sync will skip this unless you overwrite"
+                className="inline-flex items-center text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300"
+              >
+                Modified
               </span>
             )}
           </div>

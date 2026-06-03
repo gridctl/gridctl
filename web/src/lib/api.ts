@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -1204,25 +1204,72 @@ export async function checkSkillSource(name: string): Promise<SourceUpdateCheck>
 }
 
 /**
- * Apply available updates for a source
+ * Apply available updates for a source. Without `force`, locally-edited
+ * (drifted) skills are skipped and reported as `skipped: "local edits"`; with
+ * `force` they are overwritten (the server writes a SKILL.md.pre-<sha> backup
+ * first). An optional `skills` filter restricts the operation to named skills.
  * POST /api/skills/sources/{name}/update
  */
-export async function updateSkillSource(name: string): Promise<{ source: string; results: unknown[] }> {
-  return mutateJSON<{ source: string; results: unknown[] }>(
+export async function updateSkillSource(
+  name: string,
+  opts?: { force?: boolean; skills?: string[] },
+): Promise<{ source: string; results: SkillSyncResult[] }> {
+  return mutateJSON<{ source: string; results: SkillSyncResult[] }>(
     `/api/skills/sources/${encodeURIComponent(name)}/update`,
     'POST',
+    opts && (opts.force || opts.skills?.length) ? opts : undefined,
   );
 }
 
 /**
  * Sync every imported source in one server-side fan-out. Pinned sources
- * (refs shaped like v1.0.0 or full commit SHAs) are silently skipped. The
+ * (refs shaped like v1.0.0 or full commit SHAs) are silently skipped. Without
+ * `force`, drifted skills are skipped; with `force` they are overwritten. The
  * response carries per-source results plus aggregate counters.
  *
  * POST /api/skills/sources/update
  */
-export async function syncAllSources(): Promise<SourceSyncSummary> {
-  return mutateJSON<SourceSyncSummary>('/api/skills/sources/update', 'POST');
+export async function syncAllSources(opts?: { force?: boolean }): Promise<SourceSyncSummary> {
+  return mutateJSON<SourceSyncSummary>(
+    '/api/skills/sources/update',
+    'POST',
+    opts?.force ? opts : undefined,
+  );
+}
+
+/**
+ * Compare a tracked skill's on-disk SKILL.md against the latest upstream
+ * content. Read-only: nothing is written to disk and no SHAs change.
+ * GET /api/skills/sources/{name}/skills/{skill}/diff
+ */
+export async function fetchSkillDiff(source: string, skill: string): Promise<SkillDiffResponse> {
+  return fetchJSON<SkillDiffResponse>(
+    `/api/skills/sources/${encodeURIComponent(source)}/skills/${encodeURIComponent(skill)}/diff`,
+  );
+}
+
+/**
+ * Detach a skill from its source: removes the origin sidecar and lock entry so
+ * the skill becomes local-only and is no longer touched by sync.
+ * POST /api/skills/sources/{name}/skills/{skill}/detach
+ */
+export async function detachSkill(source: string, skill: string): Promise<{ detached: string }> {
+  return mutateJSON<{ detached: string }>(
+    `/api/skills/sources/${encodeURIComponent(source)}/skills/${encodeURIComponent(skill)}/detach`,
+    'POST',
+  );
+}
+
+/**
+ * Reset a single skill to its upstream content. The server backs up the
+ * current (possibly edited) SKILL.md before force-restoring it.
+ * POST /api/skills/sources/{name}/skills/{skill}/reset
+ */
+export async function resetSkill(source: string, skill: string): Promise<SkillSyncResult> {
+  return mutateJSON<SkillSyncResult>(
+    `/api/skills/sources/${encodeURIComponent(source)}/skills/${encodeURIComponent(skill)}/reset`,
+    'POST',
+  );
 }
 
 /**

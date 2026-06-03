@@ -70,10 +70,29 @@ function normalizeCompactMode(raw: unknown): CompactModeMap {
   return out;
 }
 
+// Skill editor view preferences, persisted so the editor reopens the way the
+// user left it. Body-heavy split and collapsed frontmatter are the defaults for
+// existing skills (a new skill forces frontmatter open so its fields are fillable).
+export interface EditorPrefs {
+  showFrontmatter: boolean;
+  showPreview: boolean;
+  splitRatio: number;
+}
+
+export const EDITOR_PREFS_DEFAULTS: EditorPrefs = {
+  showFrontmatter: false,
+  showPreview: true,
+  splitRatio: 0.62,
+};
+
 interface UIState extends WorkspaceSlice, CompactModeSlice {
   sidebarOpen: boolean;
   activeTab: SidebarTab;
   edgeStyle: EdgeStyle;
+
+  // Skill editor view preferences
+  editorPrefs: EditorPrefs;
+  setEditorPrefs: (prefs: Partial<EditorPrefs>) => void;
 
   // Compact card mode
   compactCards: boolean;
@@ -161,6 +180,11 @@ export const useUIStore = create<UIState>()(
       sidebarOpen: false,
       activeTab: 'details',
       edgeStyle: 'default', // Bezier curves
+
+      // Skill editor view preferences
+      editorPrefs: { ...EDITOR_PREFS_DEFAULTS },
+      setEditorPrefs: (prefs) =>
+        set((s) => ({ editorPrefs: { ...s.editorPrefs, ...prefs } })),
 
       // Compact cards default
       compactCards: false,
@@ -255,6 +279,7 @@ export const useUIStore = create<UIState>()(
         edgeStyle: state.edgeStyle,
         compactCards: state.compactCards,
         compactMode: state.compactMode,
+        editorPrefs: state.editorPrefs,
       }),
       merge: (persisted, current) => ({
         ...current,

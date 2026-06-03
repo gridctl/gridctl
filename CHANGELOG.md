@@ -13,6 +13,25 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Reconcile and edit git-sourced skills in the Library.** The Library now
+  surfaces local edits to imported skills and lets you reconcile them. Skill
+  cards, the detail panel, and the editor show a "Modified" badge when a tracked
+  `SKILL.md` has local edits. Clicking Sync on a source (or the workspace-wide
+  Sync) that has edited skills opens a confirm listing them, with "keep my edits
+  (skip these)" and "overwrite local edits" choices instead of silently
+  clobbering them; toasts report updated, kept, and overwritten counts. The
+  skill editor grew a provenance strip (tracked-from owner/repo@sha, last synced)
+  with Compare-with-upstream (a local-vs-upstream diff with Keep mine / Take
+  upstream), Reset to upstream, Detach from source, and Fork-as actions. The
+  editor also opens body-first now: frontmatter collapses to a one-line summary
+  by default for existing skills, the split defaults to a body-heavy ratio, the
+  preview/ratio/frontmatter state persists across reopens, a minimal markdown
+  toolbar inserts at the cursor, the preview pane scroll-follows the editor, and
+  the file tree is demoted behind a "Files (N)" pill. The modal's expand toggle
+  (previously a no-op for the editor) now steps it up to a near-fullscreen view,
+  and the editor body grows with the panel. None of this changes the bytes
+  served to agents.
+
 - **Reconciliation API for git-sourced skills.** The skills HTTP API gained the
   building blocks for editing imported skills safely. `GET /api/skills/sources`
   now reports drift (`driftedSkills` per source, `hasLocalEdits` per skill). The
