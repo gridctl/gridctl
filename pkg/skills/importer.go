@@ -367,17 +367,20 @@ func (imp *Importer) Update(skillName string, dryRun, force bool) (*ImportResult
 		return nil, fmt.Errorf("checking updates: %w", err)
 	}
 
-	if !changed {
+	// force re-installs from upstream even when the commit is unchanged, so a
+	// caller can discard local edits and restore the tracked version (reset).
+	// Without force, an unchanged commit is a no-op.
+	if !changed && !force {
 		return &ImportResult{
 			Warnings: []string{fmt.Sprintf("%s is already up to date", skillName)},
 		}, nil
 	}
 
-	imp.logger.Info("update available", "skill", skillName, "current", origin.CommitSHA[:8], "latest", newSHA[:8])
+	imp.logger.Info("update available", "skill", skillName, "current", ShortSHA(origin.CommitSHA), "latest", ShortSHA(newSHA))
 
 	if dryRun {
 		return &ImportResult{
-			Warnings: []string{fmt.Sprintf("%s: update available (%s → %s)", skillName, origin.CommitSHA[:8], newSHA[:8])},
+			Warnings: []string{fmt.Sprintf("%s: update available (%s → %s)", skillName, ShortSHA(origin.CommitSHA), ShortSHA(newSHA))},
 		}, nil
 	}
 
