@@ -319,6 +319,11 @@ func (s *Server) Handler() http.Handler {
 	// leaking them into query strings or browser history.
 	mux.HandleFunc("GET /api/skills/sources/{name}/preview", s.handleSkillSourcePreview)
 	mux.HandleFunc("POST /api/skills/sources/{name}/preview", s.handleSkillSourcePreview)
+	// Per-skill reconciliation: compare with upstream, detach to local-only, or
+	// reset (force-overwrite with backup) a single tracked skill.
+	mux.HandleFunc("GET /api/skills/sources/{name}/skills/{skill}/diff", s.handleSkillDiff)
+	mux.HandleFunc("POST /api/skills/sources/{name}/skills/{skill}/detach", s.handleSkillDetach)
+	mux.HandleFunc("POST /api/skills/sources/{name}/skills/{skill}/reset", s.handleSkillReset)
 
 	// Wizard endpoints
 	mux.HandleFunc("GET /api/wizard/drafts", s.handleWizardDraftsList)
