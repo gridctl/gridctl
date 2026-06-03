@@ -507,6 +507,8 @@ export interface SkillSourceEntry {
   state: string;
   isRemote: boolean;
   contentHash?: string;
+  /** True when the on-disk SKILL.md diverges from the last installed snapshot. */
+  hasLocalEdits?: boolean;
 }
 
 export interface SkillSourceStatus {
@@ -520,6 +522,8 @@ export interface SkillSourceStatus {
   lastFetched?: string;
   commitSha?: string;
   updateAvailable: boolean;
+  /** Names of skills in this source with local edits a sync would overwrite. */
+  driftedSkills?: string[];
 }
 
 export interface SkillPreview {
@@ -582,6 +586,19 @@ export interface SkillSyncResult {
   imported?: number;
   warnings?: string[];
   error?: string;
+  /** Reason a drifted skill was left untouched (e.g. "local edits"). */
+  skipped?: string;
+  /** File name of the pre-overwrite backup written when force-overwritten. */
+  backup?: string;
+}
+
+/** Local vs upstream comparison for a single tracked skill (no writes). */
+export interface SkillDiffResponse {
+  skill: string;
+  local: string;
+  upstream: string;
+  unifiedDiff?: string;
+  drifted: boolean;
 }
 
 export interface SourceSyncResult {
@@ -596,6 +613,7 @@ export interface SourceSyncSummary {
   sources: SourceSyncResult[];
   syncedSources: number;
   updatedSkills: number;
+  skippedSkills?: number;
   failedSources: number;
   pinnedSources: number;
 }
