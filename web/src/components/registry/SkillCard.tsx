@@ -55,6 +55,7 @@ export const SkillCard = memo(({
   // Scannability signals, both derived from fields the skill already carries.
   const category = skillCategory(skill.dir);
   const metaSummary = skillMetaSummary(skill).join(' · ');
+  const hasLocalEdits = source?.driftedSkills?.includes(skill.name) ?? false;
 
   return (
     <div
@@ -133,6 +134,14 @@ export const SkillCard = memo(({
               className="flex-shrink-0 inline-flex items-center text-text-muted/50 transition-colors group-hover:text-text-muted/80 mt-0.5"
             >
               <GitBranch size={12} />
+            </span>
+          )}
+          {hasLocalEdits && (
+            <span
+              title="Edited locally; a sync will skip this unless you overwrite"
+              className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300 mt-0.5"
+            >
+              Modified
             </span>
           )}
           <StateBadge state={skill.state} />
