@@ -407,6 +407,7 @@ export function SkillEditor({
   const isNew = !skill;
   const idCounter = useRef(0);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const originalBodyRef = useRef('');
 
   // Persisted editor view preferences (frontmatter/preview/split).
@@ -654,6 +655,22 @@ export function SkillEditor({
       ta.setSelectionRange(next.selStart, next.selEnd);
     });
   }, [body]);
+
+  // --- Scroll sync: the preview follows the editor proportionally ---
+
+  // Proportional (fraction-of-scrollable-height) mapping. The rendered preview
+  // is taller or shorter than the source, so an exact line mapping is not
+  // possible without a source map; fraction tracking keeps both panes aligned
+  // closely enough to feel tethered.
+  const handleEditorScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    const ta = e.currentTarget;
+    const preview = previewRef.current;
+    if (!preview) return;
+    const srcMax = ta.scrollHeight - ta.clientHeight;
+    if (srcMax <= 0) return;
+    const dstMax = preview.scrollHeight - preview.clientHeight;
+    preview.scrollTop = (ta.scrollTop / srcMax) * dstMax;
+  }, []);
 
   // --- Reconciliation actions (remote skills only) ---
 
@@ -1043,6 +1060,7 @@ export function SkillEditor({
               ref={bodyRef}
               value={body}
               onChange={(e) => setBody(e.target.value)}
+              onScroll={handleEditorScroll}
               placeholder={'# Skill Instructions\n\nWrite markdown instructions that the agent will follow...\n\n## Steps\n\n1. First step\n2. Second step'}
               className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none focus:outline-none leading-relaxed"
               spellCheck={false}
@@ -1065,7 +1083,7 @@ export function SkillEditor({
                 <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
                   <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
                 </div>
-                <div className="flex-1 overflow-y-auto scrollbar-dark">
+                <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
                   <div className="px-5 py-4">
                     <MarkdownPreview content={body} />
                   </div>
