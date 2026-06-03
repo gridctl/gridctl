@@ -71,6 +71,32 @@ Supported auth flows for private repos:
 - `--vault-key <key>`: resolves the token from a `${var:KEY}` entry; suitable for long-running daemons.
 - `--ssh-key <path>`: SSH private key path.
 
+### Reconciling local edits (web UI)
+
+A `SKILL.md` imported from git can be edited in the Library workspace. An edited
+file is "drifted" from its installed snapshot, and the same protection the CLI
+applies (`gridctl skill update` refuses to overwrite a drifted skill unless
+`--force`) now applies to the web API:
+
+- `GET /api/skills/sources` reports drift: each source carries `driftedSkills`
+  and each skill entry carries `hasLocalEdits`.
+- `POST /api/skills/sources/{name}/update` and `POST /api/skills/sources/update`
+  accept an optional body `{ "force": bool, "skills": [..] }`. Without `force`, a
+  drifted skill is skipped (reported as `skipped: "local edits"`) while its
+  version tracking is advanced to the latest upstream commit, so it stops showing
+  as an available update but its on-disk content and drift status are preserved.
+  With `force: true`, the current `SKILL.md` is copied to `SKILL.md.pre-<sha>`
+  next to it before being overwritten.
+- `GET /api/skills/sources/{name}/skills/{skill}/diff` returns the local vs
+  upstream `SKILL.md` (plus a unified diff) without writing anything to disk.
+- `POST /api/skills/sources/{name}/skills/{skill}/detach` removes the skill's
+  origin sidecar and lock entry so it becomes local-only.
+- `POST /api/skills/sources/{name}/skills/{skill}/reset` backs up and
+  force-restores a single skill to its upstream content.
+
+The bytes served to agents are never changed by any of this beyond the explicit
+overwrite a `reset` or `force` sync performs.
+
 ## What gridctl deliberately does not do
 
 A short list of choices worth knowing about.
