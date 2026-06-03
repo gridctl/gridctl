@@ -769,7 +769,10 @@ export function SkillEditor({
       onPopout={onPopout}
       popoutDisabled={popoutDisabled}
     >
-      <div className="flex flex-col h-[calc(85vh-3.5rem)] -mx-6 -my-4">
+      {/* Fill the modal's padded content box (100% + the cancelled py-4) so the
+          editor grows with the panel: 85vh base, 94vh expanded, full viewport
+          when detached. */}
+      <div className="flex flex-col h-[calc(100%+2rem)] -mx-6 -my-4">
         {/* Header bar with state toggle, preview toggle, and save */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-border/50 bg-surface-elevated/30 flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
