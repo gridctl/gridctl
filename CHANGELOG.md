@@ -27,8 +27,10 @@ All notable changes to gridctl will be documented in this file.
   by default for existing skills, the split defaults to a body-heavy ratio, the
   preview/ratio/frontmatter state persists across reopens, a minimal markdown
   toolbar inserts at the cursor, the preview pane scroll-follows the editor, and
-  the file tree is demoted behind a "Files (N)" pill. None of this changes the
-  bytes served to agents.
+  the file tree is demoted behind a "Files (N)" pill. The modal's expand toggle
+  (previously a no-op for the editor) now steps it up to a near-fullscreen view,
+  and the editor body grows with the panel. None of this changes the bytes
+  served to agents.
 
 - **Reconciliation API for git-sourced skills.** The skills HTTP API gained the
   building blocks for editing imported skills safely. `GET /api/skills/sources`
