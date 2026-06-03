@@ -563,7 +563,7 @@ describe('LibraryWorkspace', () => {
       renderAt('/library');
       fireEvent.click(screen.getByRole('button', { name: /sync sources from git/i }));
       await waitFor(() =>
-        expect(showToast).toHaveBeenCalledWith('success', 'Synced 1 source, 1 skill updated'),
+        expect(showToast).toHaveBeenCalledWith('success', 'Sync complete: 1 updated'),
       );
     });
 
