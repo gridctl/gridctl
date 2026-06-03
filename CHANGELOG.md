@@ -13,6 +13,17 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Reconciliation API for git-sourced skills.** The skills HTTP API gained the
+  building blocks for editing imported skills safely. `GET /api/skills/sources`
+  now reports drift (`driftedSkills` per source, `hasLocalEdits` per skill). The
+  per-source and bulk update endpoints accept an optional `{ "force": bool,
+  "skills": [..] }` body. Three per-skill endpoints were added: `GET
+  .../skills/{skill}/diff` (local vs upstream `SKILL.md` plus a unified diff,
+  computed without writing to disk), `POST .../skills/{skill}/detach` (drop the
+  origin sidecar and lock entry to make a skill local-only), and `POST
+  .../skills/{skill}/reset` (back up and force-restore a single skill to
+  upstream). All new fields are additive and optional.
+
 - **Richer skill instructions in the Library.** The Library inspector's
   Instructions tab and the SkillEditor preview now render `SKILL.md` bodies as a
   designed surface rather than raw browser-default markdown: fenced code blocks
@@ -191,6 +202,25 @@ All notable changes to gridctl will be documented in this file.
   web UI client list. This is gridctl's first TOML-based client provisioner.
 
 ### Fixed
+
+- **The web UI no longer silently overwrites locally-edited skills on sync.**
+  Both sync paths (`POST /api/skills/sources/{name}/update` and the bulk `POST
+  /api/skills/sources/update`) called the importer with no drift check, so
+  clicking "Sync" discarded any local edits to an imported `SKILL.md` — the data
+  loss the CLI already guards against. Drifted skills are now skipped by default
+  (reported as `skipped: "local edits"`) while their version tracking is advanced
+  to the latest upstream commit, so the reviewed version stops showing as an
+  available update without touching the on-disk file or its installed-hash
+  baseline (drift stays visible). Passing `force: true` overwrites as before, but
+  first writes a `SKILL.md.pre-<sha>` backup next to the file. A `--force` skill
+  update (CLI or `reset`) now also re-installs from upstream even when the commit
+  is unchanged, so it can be used to discard local edits and restore the tracked
+  version.
+
+- **`govulncheck` CI gate passes again.** Bumped the Go toolchain to `go1.26.4`,
+  which carries the fixes for `GO-2026-5037` (crypto/x509) and `GO-2026-5039`
+  (net/textproto). The Gatekeeper workflow reads its Go version from `go.mod`, so
+  no workflow change was needed.
 
 - **Per-client access scoping now takes effect on hot reload.** Changes that
   touched only the `clients:` block (saving a scope through the Topology Access
