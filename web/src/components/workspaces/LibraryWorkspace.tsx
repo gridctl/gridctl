@@ -23,9 +23,11 @@ import { SkillCardSkeleton } from '../registry/SkillCardSkeleton';
 import { LibraryGrid, type GroupMode } from '../registry/LibraryGrid';
 import { LibraryTable } from '../registry/LibraryTable';
 import { SkillDetailPanel } from '../registry/SkillDetailPanel';
+import { DriftSyncDialog } from '../registry/DriftSyncDialog';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
+import { summarizeSkillResults, syncCountsMessage, addCounts, type SyncCounts } from '../../lib/skillSync';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { useSkillUsage } from '../../hooks/useSkillUsage';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -299,6 +301,7 @@ export function LibraryWorkspace() {
   // failure list is captured for the Details overlay opened from the toast.
   const [syncing, setSyncing] = useState(false);
   const [syncFailures, setSyncFailures] = useState<SourceSyncResult[] | null>(null);
+  const [confirmSyncDrift, setConfirmSyncDrift] = useState(false);
 
   // Multi-select state. Names only (not skill objects) so the selection
   // survives filter, sort, group, and refresh; stale names are pruned at the
@@ -393,40 +396,60 @@ export function LibraryWorkspace() {
     }
   }, [refreshRegistry]);
 
+  // Aggregate the locally-edited skills across every source, for the bulk-sync
+  // drift warning and to decide whether a sync needs confirmation.
+  const driftedAcrossSources = useMemo(
+    () => (sources ?? []).flatMap((s) => s.driftedSkills ?? []),
+    [sources],
+  );
+
   // Bulk sync every imported source via the aggregate backend endpoint.
   // Surfaces an aggregated toast; failures expose a Details action that
   // opens an overlay listing the per-source error messages.
-  const handleSyncAll = useCallback(async () => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      const summary = await syncAllSources();
-      await refreshAll();
-      const failures = summary.sources.filter((s) => s.error || s.skills?.some((k) => k.error));
-      if (failures.length === 0) {
-        if (summary.updatedSkills === 0) {
-          showToast('success', 'All sources up to date');
+  const runSyncAll = useCallback(
+    async (force: boolean) => {
+      if (syncing) return;
+      setSyncing(true);
+      setConfirmSyncDrift(false);
+      try {
+        const summary = await syncAllSources(force ? { force } : undefined);
+        await refreshAll();
+        const counts = (summary.sources ?? []).reduce<SyncCounts>(
+          (acc, s) => addCounts(acc, summarizeSkillResults(s.skills)),
+          { updated: 0, skipped: 0, overwritten: 0, failed: 0 },
+        );
+        const failures = summary.sources.filter((s) => s.error || s.skills?.some((k) => k.error));
+        if (failures.length === 0) {
+          const detail = syncCountsMessage(counts);
+          showToast('success', detail ? `Sync complete: ${detail}` : 'All sources up to date');
         } else {
+          const okCount = summary.syncedSources;
+          const failCount = failures.length;
           showToast(
-            'success',
-            `Synced ${summary.syncedSources} source${summary.syncedSources === 1 ? '' : 's'}, ${summary.updatedSkills} skill${summary.updatedSkills === 1 ? '' : 's'} updated`,
+            'warning',
+            `Synced ${okCount} of ${okCount + failCount} sources. ${failCount} failed`,
+            { action: { label: 'Details', onClick: () => setSyncFailures(failures) }, duration: 6000 },
           );
         }
-      } else {
-        const okCount = summary.syncedSources;
-        const failCount = failures.length;
-        showToast(
-          'warning',
-          `Synced ${okCount} of ${okCount + failCount} sources. ${failCount} failed`,
-          { action: { label: 'Details', onClick: () => setSyncFailures(failures) }, duration: 6000 },
-        );
+      } catch (err) {
+        showToast('error', err instanceof Error ? err.message : 'Sync failed');
+      } finally {
+        setSyncing(false);
       }
-    } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Sync failed');
-    } finally {
-      setSyncing(false);
+    },
+    [syncing, refreshAll],
+  );
+
+  // Sync clean sources silently; when any source has local edits, warn first so
+  // the user chooses to keep or overwrite them.
+  const handleSyncAll = useCallback(() => {
+    if (syncing) return;
+    if (driftedAcrossSources.length > 0) {
+      setConfirmSyncDrift(true);
+      return;
     }
-  }, [syncing, refreshAll]);
+    void runSyncAll(false);
+  }, [syncing, driftedAcrossSources, runSyncAll]);
 
   const handleEnable = useCallback(async (skill: AgentSkill) => {
     try {
@@ -882,8 +905,19 @@ export function LibraryWorkspace() {
       <SkillEditor
         isOpen={showEditor}
         onClose={handleEditorClose}
-        onSaved={refreshRegistry}
+        onSaved={refreshAll}
         skill={editingSkill}
+        source={editingSkill ? sourceMap.get(editingSkill.name) : undefined}
+      />
+
+      <DriftSyncDialog
+        isOpen={confirmSyncDrift}
+        title="Sync all sources"
+        driftedSkills={driftedAcrossSources}
+        busy={syncing}
+        onCancel={() => setConfirmSyncDrift(false)}
+        onSkip={() => void runSyncAll(false)}
+        onOverwrite={() => void runSyncAll(true)}
       />
 
       {syncFailures && (
