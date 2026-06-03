@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,6 +57,9 @@ type SkillSourceStatus struct {
 	LastFetched    string             `json:"lastFetched,omitempty"`
 	CommitSHA      string             `json:"commitSha,omitempty"`
 	UpdateAvail    bool               `json:"updateAvailable"`
+	// DriftedSkills lists the skills in this source whose on-disk SKILL.md has
+	// local edits (drift) that a sync would otherwise overwrite.
+	DriftedSkills []string `json:"driftedSkills,omitempty"`
 }
 
 // SkillSourceEntry represents a single skill within a source.
@@ -65,6 +69,9 @@ type SkillSourceEntry struct {
 	State       string `json:"state"`
 	IsRemote    bool   `json:"isRemote"`
 	ContentHash string `json:"contentHash,omitempty"`
+	// HasLocalEdits is true when the on-disk SKILL.md diverges from the hash
+	// snapshotted at the last import/sync (i.e. the user edited it locally).
+	HasLocalEdits bool `json:"hasLocalEdits"`
 }
 
 // SkillPreview represents a previewed skill from a repo (not yet imported).
@@ -194,7 +201,7 @@ func writeGitError(w http.ResponseWriter, prefix string, err error) {
 
 // handleSkillSourcesList returns all configured skill sources with update status.
 // GET /api/skills/sources
-func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleSkillSourcesList(w http.ResponseWriter, r *http.Request) {
 	if s.registryServer == nil {
 		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
 		return
@@ -202,6 +209,16 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) 
 	store := s.registryServer.Store()
 	lockPath := s.lockFilePath()
 	lf, _ := skills.ReadLockFile(lockPath)
+
+	// Per-skill drift (local edits). Local hashing only — no git fetch — so it
+	// is cheap enough to compute on every list. Fails open to "no drift" on
+	// error so a transient read problem never hides sources.
+	driftedSet := make(map[string]bool)
+	if drifted, err := skills.DetectDrift(r.Context(), store, lockPath, ""); err == nil {
+		for _, name := range drifted {
+			driftedSet[name] = true
+		}
+	}
 
 	// Load skills.yaml config
 	cfg, err := skills.LoadSkillsConfig(s.configFilePath())
@@ -250,6 +267,10 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) 
 				entry.Description = sk.Description
 				entry.State = string(sk.State)
 			}
+			if driftedSet[skillName] {
+				entry.HasLocalEdits = true
+				src.DriftedSkills = append(src.DriftedSkills, skillName)
+			}
 			src.Skills = append(src.Skills, entry)
 
 			// The cache is keyed by skill name; if any skill in this source
@@ -261,6 +282,7 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, _ *http.Request) 
 			}
 		}
 
+		sort.Strings(src.DriftedSkills)
 		sources = append(sources, src)
 	}
 
@@ -443,7 +465,74 @@ func (s *Server) resolveCheckAuth(req *AuthRequest, storedRef string) (skills.Au
 	}, nil
 }
 
-// handleSkillSourceUpdate applies available updates for a source.
+// syncSkill applies the drift-safe update policy to a single skill within a
+// source and returns its per-skill outcome:
+//   - not drifted: updated normally.
+//   - drifted, force=false: skipped ("local edits"). Its tracking metadata is
+//     advanced to the latest upstream commit so it stops showing as an
+//     available update, but the on-disk SKILL.md and InstalledHash are left
+//     untouched (drift remains visible).
+//   - drifted, force=true: the current SKILL.md is backed up, then overwritten.
+//
+// authCfg is used only for the on-demand FetchAndCompare (skip-advance and
+// backup naming); Importer.Update independently re-resolves credentials from
+// the stored origin.
+func (s *Server) syncSkill(ctx context.Context, imp *skills.Importer, authCfg skills.AuthConfig, src skills.LockedSource, skillName string, drifted, force bool) SkillSyncResult {
+	entry := SkillSyncResult{Skill: skillName}
+
+	if !drifted {
+		result, err := imp.Update(skillName, false, false)
+		if err != nil {
+			entry.Error = gitpkg.RedactError(err).Error()
+			return entry
+		}
+		entry.Imported = len(result.Imported)
+		entry.Warnings = result.Warnings
+		return entry
+	}
+
+	if !force {
+		// Skip the overwrite but advance tracking to the latest upstream commit
+		// so the reviewed version no longer reads as "update available".
+		if newSHA, changed, ferr := skills.FetchAndCompare(src.Repo, src.Ref, src.CommitSHA, authCfg, slog.Default()); ferr == nil && changed && newSHA != "" {
+			if aerr := imp.AdvanceTracking(ctx, skillName, newSHA); aerr != nil {
+				entry.Warnings = append(entry.Warnings, "failed to advance tracking: "+aerr.Error())
+			}
+		}
+		entry.Skipped = "local edits"
+		return entry
+	}
+
+	// Forced overwrite of a drifted skill: back up the current SKILL.md first.
+	newSHA, _, _ := skills.FetchAndCompare(src.Repo, src.Ref, src.CommitSHA, authCfg, slog.Default())
+	if backup, berr := imp.BackupSkillFile(ctx, skillName, skills.ShortSHA(newSHA)); berr != nil {
+		entry.Warnings = append(entry.Warnings, "backup failed: "+berr.Error())
+	} else {
+		entry.Backup = backup
+	}
+
+	result, err := imp.Update(skillName, false, true)
+	if err != nil {
+		entry.Error = gitpkg.RedactError(err).Error()
+		return entry
+	}
+	entry.Imported = len(result.Imported)
+	entry.Warnings = append(entry.Warnings, result.Warnings...)
+	return entry
+}
+
+// skillUpdateRequest is the optional body accepted by the per-source and
+// sync-all update endpoints. All fields are optional; an empty body preserves
+// the historical "update everything, skip drifted" behavior with force=false.
+type skillUpdateRequest struct {
+	Force  bool         `json:"force,omitempty"`
+	Skills []string     `json:"skills,omitempty"` // restrict to these skills (empty = all)
+	Auth   *AuthRequest `json:"auth,omitempty"`
+}
+
+// handleSkillSourceUpdate applies available updates for a source. Locally-edited
+// (drifted) skills are skipped unless force is set; an optional skills filter
+// restricts the operation to named skills.
 // POST /api/skills/sources/{name}/update
 func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request) {
 	sourceName := r.PathValue("name")
@@ -451,6 +540,11 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 	if s.registryServer == nil {
 		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
 		return
+	}
+
+	var req skillUpdateRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
 	lockPath := s.lockFilePath()
@@ -468,22 +562,44 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 
 	store := s.registryServer.Store()
 	registryDir := store.Dir()
+	ctx := r.Context()
+
+	authCfg, err := s.resolveCheckAuth(req.Auth, src.CredentialRef)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	imp := skills.NewImporter(store, registryDir, lockPath, slog.Default())
 	imp.SetCredentialResolver(s.credentialResolver())
 
-	// Update each skill from this source. Importer.Update re-resolves the
-	// stored CredentialRef from the origin using the resolver we just set.
-	var results []map[string]any
-	for skillName := range src.Skills {
-		result, err := imp.Update(skillName, false, false)
-		entry := map[string]any{"skill": skillName}
-		if err != nil {
-			entry["error"] = gitpkg.RedactError(err).Error()
-		} else {
-			entry["imported"] = len(result.Imported)
-			entry["warnings"] = result.Warnings
+	// Drifted skills in this source (local edits). Computed once up front.
+	driftedSet := make(map[string]bool)
+	if drifted, derr := skills.DetectDrift(ctx, store, lockPath, sourceName); derr == nil {
+		for _, name := range drifted {
+			driftedSet[name] = true
 		}
-		results = append(results, entry)
+	}
+
+	// Optional filter: restrict to named skills that actually belong to this
+	// source. An empty filter means all skills in the source.
+	filter := make(map[string]bool, len(req.Skills))
+	for _, name := range req.Skills {
+		filter[name] = true
+	}
+
+	skillNames := make([]string, 0, len(src.Skills))
+	for skillName := range src.Skills {
+		if len(filter) > 0 && !filter[skillName] {
+			continue
+		}
+		skillNames = append(skillNames, skillName)
+	}
+	sort.Strings(skillNames)
+
+	results := make([]SkillSyncResult, 0, len(skillNames))
+	for _, skillName := range skillNames {
+		results = append(results, s.syncSkill(ctx, imp, authCfg, src, skillName, driftedSet[skillName], req.Force))
 	}
 
 	s.refreshRegistryRouter()
@@ -607,6 +723,7 @@ type SourceSyncSummary struct {
 	Sources       []SourceSyncResult `json:"sources"`
 	SyncedSources int                `json:"syncedSources"`
 	UpdatedSkills int                `json:"updatedSkills"`
+	SkippedSkills int                `json:"skippedSkills"`
 	FailedSources int                `json:"failedSources"`
 	PinnedSources int                `json:"pinnedSources"`
 }
@@ -626,6 +743,12 @@ type SkillSyncResult struct {
 	Imported int      `json:"imported,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
 	Error    string   `json:"error,omitempty"`
+	// Skipped, when set, is the reason a drifted skill was left untouched
+	// (e.g. "local edits"). Its tracking metadata is still advanced.
+	Skipped string `json:"skipped,omitempty"`
+	// Backup is the file name of the pre-overwrite SKILL.md backup written
+	// when a drifted skill was force-overwritten.
+	Backup string `json:"backup,omitempty"`
 }
 
 // syncAllConcurrency caps the number of sources synced in parallel. Matches
@@ -643,6 +766,12 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 	}
 
 	ctx := r.Context()
+
+	var req skillUpdateRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
 	lockPath := s.lockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
@@ -655,6 +784,16 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 	logger := slog.Default()
 	imp := skills.NewImporter(store, registryDir, lockPath, logger)
 	imp.SetCredentialResolver(s.credentialResolver())
+
+	// Drift (local edits) across every imported skill, computed once before the
+	// fan-out so the goroutines never read the lock file while it is being
+	// rewritten. Local hashing only — no git fetch.
+	driftedSet := make(map[string]bool)
+	if drifted, derr := skills.DetectDrift(ctx, store, lockPath, ""); derr == nil {
+		for _, name := range drifted {
+			driftedSet[name] = true
+		}
+	}
 
 	// Pre-sort source names for deterministic output.
 	names := make([]string, 0, len(lf.Sources))
@@ -687,6 +826,11 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			// Best-effort auth for the on-demand fetches in syncSkill (skip
+			// tracking-advance, backup naming). Errors are non-fatal: Update
+			// independently resolves credentials from the stored origin.
+			authCfg, _ := s.resolveCheckAuth(req.Auth, source.CredentialRef)
+
 			// Skill names sorted so per-skill output order is stable too.
 			skillNames := make([]string, 0, len(source.Skills))
 			for sn := range source.Skills {
@@ -706,7 +850,6 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 					})
 					continue
 				}
-				entry := SkillSyncResult{Skill: skillName}
 
 				// The skill is in the lock file but no longer in the registry
 				// (deleted out from under the lock file, e.g. via the UI).
@@ -717,18 +860,14 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 				// still reported and retained.
 				if _, err := store.GetSkill(skillName); err != nil {
 					ghostsBySource[idx] = append(ghostsBySource[idx], skillName)
-					entry.Warnings = []string{"skill no longer in registry; removed stale lock entry"}
-					results[idx].Skills = append(results[idx].Skills, entry)
+					results[idx].Skills = append(results[idx].Skills, SkillSyncResult{
+						Skill:    skillName,
+						Warnings: []string{"skill no longer in registry; removed stale lock entry"},
+					})
 					continue
 				}
 
-				result, updErr := imp.Update(skillName, false, false)
-				if updErr != nil {
-					entry.Error = gitpkg.RedactError(updErr).Error()
-				} else {
-					entry.Imported = len(result.Imported)
-					entry.Warnings = result.Warnings
-				}
+				entry := s.syncSkill(ctx, imp, authCfg, source, skillName, driftedSet[skillName], req.Force)
 				results[idx].Skills = append(results[idx].Skills, entry)
 			}
 		}(i, name, src)
@@ -772,6 +911,9 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 					sourceFailed = true
 				}
 				summary.UpdatedSkills += sk.Imported
+				if sk.Skipped != "" {
+					summary.SkippedSkills++
+				}
 			}
 			if sourceFailed {
 				summary.FailedSources++
@@ -832,4 +974,154 @@ func (s *Server) handleSkillUpdates(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	writeJSON(w, summary)
+}
+
+// SkillDiffResponse is the body of the per-skill compare-with-upstream endpoint.
+type SkillDiffResponse struct {
+	Skill       string `json:"skill"`
+	Local       string `json:"local"`
+	Upstream    string `json:"upstream"`
+	UnifiedDiff string `json:"unifiedDiff,omitempty"`
+	Drifted     bool   `json:"drifted"`
+}
+
+// handleSkillDiff returns the local vs upstream SKILL.md for an imported skill
+// without writing anything to the registry. The upstream side is the content
+// an update would install; auth is taken from the skill's stored credentialRef.
+// GET /api/skills/sources/{name}/skills/{skill}/diff
+func (s *Server) handleSkillDiff(w http.ResponseWriter, r *http.Request) {
+	skillName := r.PathValue("skill")
+
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	store := s.registryServer.Store()
+	imp := skills.NewImporter(store, store.Dir(), s.lockFilePath(), slog.Default())
+	imp.SetCredentialResolver(s.credentialResolver())
+
+	diff, err := imp.Diff(r.Context(), skillName)
+	if err != nil {
+		writeGitError(w, "Diff failed: ", err)
+		return
+	}
+
+	writeJSON(w, SkillDiffResponse{
+		Skill:       diff.Skill,
+		Local:       diff.Local,
+		Upstream:    diff.Upstream,
+		UnifiedDiff: unifiedDiff(diff.Local, diff.Upstream, 3),
+		Drifted:     diff.Drifted,
+	})
+}
+
+// handleSkillDetach removes a skill's origin sidecar and lock-file entry so it
+// becomes local-only and is no longer touched by sync.
+// POST /api/skills/sources/{name}/skills/{skill}/detach
+func (s *Server) handleSkillDetach(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.PathValue("name")
+	skillName := r.PathValue("skill")
+
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	lockPath := s.lockFilePath()
+	lf, err := skills.ReadLockFile(lockPath)
+	if err != nil {
+		writeJSONError(w, "Failed to read lock file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	src, ok := lf.Sources[sourceName]
+	if !ok {
+		writeJSONError(w, "Source not found: "+sourceName, http.StatusNotFound)
+		return
+	}
+	if _, ok := src.Skills[skillName]; !ok {
+		writeJSONError(w, "Skill not found in source: "+skillName, http.StatusNotFound)
+		return
+	}
+
+	store := s.registryServer.Store()
+	imp := skills.NewImporter(store, store.Dir(), lockPath, slog.Default())
+
+	if err := imp.Detach(r.Context(), skillName); err != nil {
+		writeJSONError(w, "Detach failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.refreshRegistryRouter()
+
+	writeJSON(w, map[string]any{"detached": skillName})
+}
+
+// handleSkillReset force-updates a single skill to its upstream content,
+// backing up the current (possibly edited) SKILL.md first.
+// POST /api/skills/sources/{name}/skills/{skill}/reset
+func (s *Server) handleSkillReset(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.PathValue("name")
+	skillName := r.PathValue("skill")
+
+	if s.registryServer == nil {
+		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req skillUpdateRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	lockPath := s.lockFilePath()
+	lf, err := skills.ReadLockFile(lockPath)
+	if err != nil {
+		writeJSONError(w, "Failed to read lock file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	src, ok := lf.Sources[sourceName]
+	if !ok {
+		writeJSONError(w, "Source not found: "+sourceName, http.StatusNotFound)
+		return
+	}
+	if _, ok := src.Skills[skillName]; !ok {
+		writeJSONError(w, "Skill not found in source: "+skillName, http.StatusNotFound)
+		return
+	}
+
+	store := s.registryServer.Store()
+	ctx := r.Context()
+
+	authCfg, err := s.resolveCheckAuth(req.Auth, src.CredentialRef)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	imp := skills.NewImporter(store, store.Dir(), lockPath, slog.Default())
+	imp.SetCredentialResolver(s.credentialResolver())
+
+	// Reset always overwrites to upstream. Pass drifted=true so a locally-edited
+	// skill is backed up before the overwrite; a clean skill simply re-pulls.
+	drifted := false
+	if d, derr := skills.DetectDrift(ctx, store, lockPath, sourceName); derr == nil {
+		for _, name := range d {
+			if name == skillName {
+				drifted = true
+				break
+			}
+		}
+	}
+
+	entry := s.syncSkill(ctx, imp, authCfg, src, skillName, drifted, true)
+
+	s.refreshRegistryRouter()
+
+	if entry.Error != "" {
+		writeJSONError(w, "Reset failed: "+entry.Error, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, entry)
 }
