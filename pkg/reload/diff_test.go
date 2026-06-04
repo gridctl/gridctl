@@ -160,7 +160,6 @@ func TestComputeDiff_NetworkChanged(t *testing.T) {
 	}
 }
 
-
 func TestComputeDiff_ResourceChanges(t *testing.T) {
 	old := &config.Stack{
 		Name: "test",
@@ -474,5 +473,61 @@ func TestComputeDiff_RedundantPerServerModelIsNoOp(t *testing.T) {
 
 	if diff.ModelAttributionChanged {
 		t.Error("redundant per-server model must not flag a change")
+	}
+}
+
+func TestComputeDiff_ClientModelsOnlyChange(t *testing.T) {
+	servers := []config.MCPServer{{Name: "github", Image: "image1", Port: 3000}}
+	old := &config.Stack{Name: "test", MCPServers: servers}
+	new := &config.Stack{
+		Name:         "test",
+		MCPServers:   servers,
+		ClientModels: map[string]string{"claude-code": "claude-opus-4-7"},
+	}
+
+	diff := ComputeDiff(old, new)
+
+	if !diff.ModelAttributionChanged {
+		t.Error("expected ModelAttributionChanged for a client_models-only edit")
+	}
+	if diff.IsEmpty() {
+		t.Error("client_models-only edit must mark the diff non-empty so onConfigApplied fires")
+	}
+	if len(diff.MCPServers.Modified) != 0 {
+		t.Errorf("Modified = %d, want 0 (pricing metadata must not restart servers)",
+			len(diff.MCPServers.Modified))
+	}
+	if diff.ClientsChanged {
+		t.Error("client_models must not flag ClientsChanged (access stays separate)")
+	}
+}
+
+func TestComputeDiff_ClientModelsUnchanged(t *testing.T) {
+	servers := []config.MCPServer{{Name: "github", Image: "image1", Port: 3000}}
+	models := map[string]string{"claude-code": "claude-opus-4-7"}
+	old := &config.Stack{Name: "test", MCPServers: servers, ClientModels: models}
+	new := &config.Stack{Name: "test", MCPServers: servers, ClientModels: map[string]string{"claude-code": "claude-opus-4-7"}}
+
+	diff := ComputeDiff(old, new)
+
+	if diff.ModelAttributionChanged {
+		t.Error("identical client_models must not flag a change")
+	}
+	if !diff.IsEmpty() {
+		t.Error("identical stacks must produce an empty diff")
+	}
+}
+
+func TestComputeDiff_ClientModelValueChange(t *testing.T) {
+	servers := []config.MCPServer{{Name: "github", Image: "image1", Port: 3000}}
+	old := &config.Stack{Name: "test", MCPServers: servers,
+		ClientModels: map[string]string{"claude-code": "claude-opus-4-7"}}
+	new := &config.Stack{Name: "test", MCPServers: servers,
+		ClientModels: map[string]string{"claude-code": "claude-haiku-4-5"}}
+
+	diff := ComputeDiff(old, new)
+
+	if !diff.ModelAttributionChanged {
+		t.Error("expected ModelAttributionChanged when a client's model changes")
 	}
 }
