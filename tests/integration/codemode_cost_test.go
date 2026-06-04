@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -59,7 +60,7 @@ func TestCodeMode_CostAttributionThroughSandbox(t *testing.T) {
 	counter := token.NewHeuristicCounter(4)
 	acc := metrics.NewAccumulator(100)
 	obs := metrics.NewObserver(counter, acc)
-	obs.SetModelResolver(func(string) string { return "test-model" })
+	obs.SetModelResolver(func(string, string) string { return "test-model" })
 	gw.SetToolCallObserver(obs)
 
 	cm := mcp.NewCodeMode(5 * time.Second)
@@ -142,6 +143,15 @@ type staticPricingSource struct {
 func (s staticPricingSource) Lookup(model string) (pricing.Rates, bool) {
 	r, ok := s.rates[model]
 	return r, ok
+}
+
+func (s staticPricingSource) Models() []string {
+	models := make([]string, 0, len(s.rates))
+	for id := range s.rates {
+		models = append(models, id)
+	}
+	sort.Strings(models)
+	return models
 }
 
 func (s staticPricingSource) Name() string { return "integration-fixture" }
