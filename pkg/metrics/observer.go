@@ -8,11 +8,13 @@ import (
 	"github.com/gridctl/gridctl/pkg/token"
 )
 
-// ModelResolver returns the configured model ID for a server, or "" when
-// the server has no model attribution. Used by the Observer when a tool
-// result does not carry a model in its CallUsage metadata. Resolvers must
-// be safe for concurrent calls.
-type ModelResolver func(serverName string) string
+// ModelResolver returns the configured model ID for a call, or "" when no
+// attribution is configured. Used by the Observer when a tool result does
+// not carry a model in its CallUsage metadata. clientID is the normalized
+// calling-client identifier ("" for anonymous or legacy observation paths);
+// resolvers consult client-level attribution first and fall back to
+// server-level. Resolvers must be safe for concurrent calls.
+type ModelResolver func(serverName, clientID string) string
 
 // Observer implements mcp.ToolCallObserver and mcp.ClientObserver by
 // counting tokens, pricing the call against the active pricing.Source,
@@ -35,10 +37,10 @@ func NewObserver(counter token.Counter, accumulator *Accumulator) *Observer {
 	}
 }
 
-// SetModelResolver installs the server -> model resolver used as a fallback
-// when a tool result does not carry a model in its CallUsage. Passing nil
-// clears the resolver, after which only call-level model attribution is
-// honored.
+// SetModelResolver installs the client/server -> model resolver used as a
+// fallback when a tool result does not carry a model in its CallUsage.
+// Passing nil clears the resolver, after which only call-level model
+// attribution is honored.
 func (o *Observer) SetModelResolver(r ModelResolver) {
 	o.modelResolver = r
 }
@@ -99,7 +101,7 @@ func (o *Observer) observe(serverName string, replicaID int, clientID, toolName 
 		summary.CacheCreationTokens = usageMeta.CacheCreationTokens
 	}
 
-	model := o.resolveModel(serverName, usageMeta)
+	model := o.resolveModel(serverName, clientID, usageMeta)
 	if model == "" {
 		return summary
 	}
@@ -127,13 +129,14 @@ func (o *Observer) observe(serverName string, replicaID int, clientID, toolName 
 }
 
 // resolveModel picks the model ID for a call: the call-level model wins,
-// then the server-level resolver fallback, then "" (skip pricing).
-func (o *Observer) resolveModel(serverName string, usage *mcp.CallUsage) string {
+// then the configured resolver (client-level attribution before
+// server-level, per the resolver contract), then "" (skip pricing).
+func (o *Observer) resolveModel(serverName, clientID string, usage *mcp.CallUsage) string {
 	if usage != nil && usage.Model != "" {
 		return usage.Model
 	}
 	if o.modelResolver != nil {
-		return o.modelResolver(serverName)
+		return o.modelResolver(serverName, clientID)
 	}
 	return ""
 }
