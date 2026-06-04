@@ -1,6 +1,26 @@
 # Cost Observability
 
-Gridctl prices every observed tool call against an embedded snapshot of LiteLLM's [`model_prices_and_context_window.json`](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json). The cost layer lives in `pkg/pricing` (rate table + normalization) and `pkg/metrics` (parallel cost counters alongside the existing token counters). Surfacing cost in the REST API, Web UI, and `gridctl optimize` CLI ships in follow-up PRs; this document describes the foundation that landed first.
+Gridctl prices every observed tool call against an embedded snapshot of LiteLLM's [`model_prices_and_context_window.json`](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json). The cost layer lives in `pkg/pricing` (rate table + normalization) and `pkg/metrics` (parallel cost counters alongside the existing token counters). Cost surfaces in the REST API (`/api/status`, `/api/metrics/cost`), the Web UI Metrics tab, the `gridctl optimize` CLI, opt-in metrics persistence, and the `gen_ai.cost.usd` span attribute on tool-call traces.
+
+## Model attribution (required for cost data)
+
+Pricing a call requires knowing which model the tokens are billed against. The gateway sits below the LLM client and cannot observe the client's model choice, so attribution is declared in `stack.yaml`: a per-server `model` field, with a stack-wide `gateway.default_model` fallback for servers that do not set their own.
+
+```yaml
+gateway:
+  default_model: claude-haiku-4-5   # prices any server without its own model
+
+mcp-servers:
+  - name: jira
+    image: mcp/atlassian:latest
+    model: claude-opus-4-7          # overrides the default for this server
+```
+
+Without attribution, tokens and latency record normally but cost stays zero, and the dashboard's cost card shows a configuration hint instead of a number. Resolution is per server: the server's own `model` wins, then `gateway.default_model`, then no attribution (pricing skipped for that server's calls). Edits to either field hot-reload through the file watcher without restarting any server; subsequent calls price against the updated mapping.
+
+A tool result that carries its own model in usage metadata takes precedence over the configured mapping at the call level. The MCP wire shape for that metadata is not yet standardized, so configured attribution is the operative path today.
+
+Cost figures are estimates — tokenizer-approximated counts multiplied by published list rates. They are built for comparing servers, spotting waste, and trending over time, not for reconciling invoices.
 
 ## Refreshing pricing data
 
