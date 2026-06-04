@@ -52,6 +52,11 @@ type Server struct {
 	gatewayAddr   string // e.g. "http://localhost:8180" — used to build MCP config for CLI proxy
 	tokenizerName string // active tokenizer mode: "embedded" or "api"
 
+	// modelAttribution returns the server -> model mapping used to price
+	// tool calls. Nil (or an empty map) means no cost attribution is
+	// configured. Must be safe for concurrent calls.
+	modelAttribution func() map[string]string
+
 	// startWatcher, when set, starts a file watcher on the given stack path.
 	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
 	startWatcher func(stackPath string)
@@ -175,6 +180,24 @@ func (s *Server) SetGatewayAddr(addr string) {
 // SetTokenizerName sets the active tokenizer mode for display in /api/status.
 func (s *Server) SetTokenizerName(name string) {
 	s.tokenizerName = name
+}
+
+// SetModelAttribution sets a getter for the server -> model mapping used to
+// price tool calls. The getter (rather than a static map) lets hot reloads of
+// `model:` / `default_model:` reach handlers without re-wiring; it must be
+// safe for concurrent calls. Feeds the optimize model stats and the
+// /api/status cost_attribution flag.
+func (s *Server) SetModelAttribution(get func() map[string]string) {
+	s.modelAttribution = get
+}
+
+// modelAttributionMap returns the current server -> model mapping, or nil
+// when no attribution getter is wired or nothing is configured.
+func (s *Server) modelAttributionMap() map[string]string {
+	if s.modelAttribution == nil {
+		return nil
+	}
+	return s.modelAttribution()
 }
 
 // SetStartWatcher sets a callback that activates live-reload file watching for
@@ -382,7 +405,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		CodeMode   string                   `json:"code_mode,omitempty"`
 		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
 		Cost       *metrics.CostUsage       `json:"cost,omitempty"`
-		StackName  string                   `json:"stack_name,omitempty"`
+		// CostAttribution reports whether any server has a model configured
+		// for pricing. False lets the UI explain why cost stays empty
+		// (set `model:` in stack.yaml) instead of showing a bare $0.00.
+		CostAttribution bool   `json:"cost_attribution,omitempty"`
+		StackName       string `json:"stack_name,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:      s.gateway.ServerInfo().Name,
@@ -413,6 +440,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			status.Cost = &cost
 		}
 	}
+	status.CostAttribution = len(s.modelAttributionMap()) > 0
 
 	writeJSON(w, status)
 }
