@@ -8,6 +8,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/optimize"
+	"github.com/gridctl/gridctl/pkg/pricing"
 )
 
 func TestHandleOptimize_NoAccumulator_503(t *testing.T) {
@@ -190,5 +191,73 @@ func TestHandleOptimize_MinImpactRespected(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200; got %d", rec.Code)
+	}
+}
+
+// staticPricingSource is a deterministic pricing.Source for model-stat tests.
+type staticPricingSource struct {
+	rates map[string]pricing.Rates
+}
+
+func (s staticPricingSource) Lookup(model string) (pricing.Rates, bool) {
+	r, ok := s.rates[model]
+	return r, ok
+}
+
+func (s staticPricingSource) Name() string { return "api-test-fixture" }
+
+func TestLookupModelStats(t *testing.T) {
+	prev := pricing.CurrentSource()
+	t.Cleanup(func() { pricing.SetSource(prev) })
+	pricing.SetSource(staticPricingSource{rates: map[string]pricing.Rates{
+		"claude-opus-4-7": {InputPerToken: 15e-6, OutputPerToken: 75e-6},
+	}})
+
+	t.Run("nil attribution returns nil", func(t *testing.T) {
+		if got := lookupModelStats(nil); got != nil {
+			t.Errorf("lookupModelStats(nil) = %v, want nil", got)
+		}
+	})
+
+	t.Run("attributed server resolves rates and names the model", func(t *testing.T) {
+		got := lookupModelStats(map[string]string{"jira": "claude-opus-4-7"})
+		stat, ok := got["jira"]
+		if !ok {
+			t.Fatalf("expected stat for jira; got %v", got)
+		}
+		if stat.Model != "claude-opus-4-7" {
+			t.Errorf("Model = %q, want claude-opus-4-7", stat.Model)
+		}
+		if stat.InputUSDPerToken != 15e-6 {
+			t.Errorf("InputUSDPerToken = %v, want 15e-6", stat.InputUSDPerToken)
+		}
+		if stat.OutputUSDPerToken != 75e-6 {
+			t.Errorf("OutputUSDPerToken = %v, want 75e-6", stat.OutputUSDPerToken)
+		}
+	})
+
+	t.Run("unknown model is omitted", func(t *testing.T) {
+		got := lookupModelStats(map[string]string{"jira": "not-in-pricing-table"})
+		if got != nil {
+			t.Errorf("expected nil for pricing-unknown model; got %v", got)
+		}
+	})
+}
+
+func TestOptimizeStats_ModelStats_FromAttribution(t *testing.T) {
+	prev := pricing.CurrentSource()
+	t.Cleanup(func() { pricing.SetSource(prev) })
+	pricing.SetSource(staticPricingSource{rates: map[string]pricing.Rates{
+		"claude-opus-4-7": {InputPerToken: 15e-6, OutputPerToken: 75e-6},
+	}})
+
+	srv := newTestServerWithMetrics(t)
+	srv.SetModelAttribution(func() map[string]string {
+		return map[string]string{"jira": "claude-opus-4-7"}
+	})
+
+	stats := srv.optimizeStats()
+	if stats.ModelStats["jira"].Model != "claude-opus-4-7" {
+		t.Errorf("ModelStats[jira].Model = %q, want claude-opus-4-7", stats.ModelStats["jira"].Model)
 	}
 }
