@@ -222,6 +222,23 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixed
 
+- **Cost observability now produces data.** The cost pipeline (pricing engine,
+  accumulator, REST API, UI cost card, optimize heuristics, `gen_ai.cost.usd`
+  spans) was fully built but its trigger was never wired: no production code
+  installed a model resolver on the metrics observer, so every deployment
+  recorded zero cost forever while tokens recorded normally. Stack YAML gains
+  an optional per-server `model:` field plus a `gateway.default_model`
+  fallback; when set, the gateway prices each observed call against the
+  embedded LiteLLM rates and cost flows through every existing surface
+  (`/api/status`, `/api/metrics/cost`, the Metrics tab, per-client
+  attribution, metrics persistence, traces, and the
+  `expensive_model_on_cheap_task` heuristic, which can now name the model).
+  Both fields hot-reload without restarting servers — pricing metadata never
+  warrants a container restart. Stacks without a model behave exactly as
+  before (tokens recorded, zero cost), and the dashboard cost card now shows
+  a "set `model:` to enable estimates" hint instead of a bare $0.00 when
+  attribution is not configured.
+
 - **The web UI no longer silently overwrites locally-edited skills on sync.**
   Both sync paths (`POST /api/skills/sources/{name}/update` and the bulk `POST
   /api/skills/sources/update`) called the importer with no drift check, so
