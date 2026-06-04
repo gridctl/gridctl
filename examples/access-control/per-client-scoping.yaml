@@ -59,3 +59,12 @@ clients:
         - "Custom Agent"
       servers:
         - gitlab
+
+# Cost attribution (pricing, not access): declare which model each client
+# runs so its tool calls are priced at that model's rates. Keys are the same
+# stable client IDs the profiles above use. This map is independent of the
+# clients: block — it never restricts anything, and works in stacks with no
+# clients: block at all.
+client_models:
+  claude-code: claude-opus-4-7
+  cursor: claude-sonnet-4-6
