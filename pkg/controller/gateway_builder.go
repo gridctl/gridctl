@@ -77,11 +77,23 @@ type GatewayBuilder struct {
 	// time. Nil when no server in the stack opts in.
 	telemetry *telemetryWiring
 
-	// modelAttribution holds the server -> effective model mapping used to
+	// modelAttribution holds the client and server model mappings used to
 	// price tool calls. Stored behind an atomic pointer so the hot-reload
-	// hook can swap the mapping without racing in-flight observations; the
-	// observer's resolver closure reads through it on every call.
-	modelAttribution atomic.Pointer[map[string]string]
+	// hook can swap both mappings together without racing in-flight
+	// observations; the observer's resolver closure reads through it on
+	// every call.
+	modelAttribution atomic.Pointer[modelAttribution]
+}
+
+// modelAttribution is the resolved cost-attribution state derived from a
+// stack: clients maps normalized client IDs to their declared models
+// (stack.yaml client_models), servers maps server names to their effective
+// models (per-server model: with gateway default_model folded in). The
+// resolver consults clients first — the model is a property of the calling
+// client's session; the server tier is the coarser fallback.
+type modelAttribution struct {
+	clients map[string]string
+	servers map[string]string
 }
 
 // telemetryWiring bundles the three per-signal writers + the otlptrace
@@ -799,28 +811,47 @@ func (b *GatewayBuilder) buildTokenCounter() (token.Counter, error) {
 }
 
 // wireModelAttribution installs the cost-attribution model resolver on the
-// observer and exposes the same mapping to the API server (for the optimize
-// model stats and the /api/status cost_attribution flag). The resolver is
-// always installed: an empty mapping resolves every server to "", which keeps
-// the observer's cost path inert exactly as if no resolver were set, while
-// letting a hot reload activate attribution later without an unsynchronized
-// SetModelResolver swap racing in-flight observations.
+// observer and exposes the underlying mappings to the API server (for the
+// optimize model stats, the /api/status cost_attribution flag, and the
+// client_models exposure). The resolver is always installed: empty mappings
+// resolve every call to "", which keeps the observer's cost path inert
+// exactly as if no resolver were set, while letting a hot reload activate
+// attribution later without an unsynchronized SetModelResolver swap racing
+// in-flight observations.
+//
+// Resolution precedence within the resolver: the calling client's declared
+// model (client_models) wins over the server's effective model. An empty
+// clientID — anonymous sessions and the legacy ObserveToolCall path — skips
+// the client tier and lands on the server tier, preserving pre-client
+// behavior exactly.
 func (b *GatewayBuilder) wireModelAttribution(observer *metrics.Observer, apiServer *api.Server) {
 	b.refreshModelAttribution(b.stack)
-	observer.SetModelResolver(func(serverName string) string {
-		return (*b.modelAttribution.Load())[serverName]
+	observer.SetModelResolver(func(serverName, clientID string) string {
+		attribution := b.modelAttribution.Load()
+		if clientID != "" {
+			if model := attribution.clients[clientID]; model != "" {
+				return model
+			}
+		}
+		return attribution.servers[serverName]
 	})
 	apiServer.SetModelAttribution(func() map[string]string {
-		return *b.modelAttribution.Load()
+		return b.modelAttribution.Load().servers
+	})
+	apiServer.SetClientModelAttribution(func() map[string]string {
+		return b.modelAttribution.Load().clients
 	})
 }
 
-// refreshModelAttribution re-resolves the server -> model mapping from the
-// given stack. Called at build time and from the hot-reload hook so `model:`
-// and `default_model:` edits take effect on the next observed call.
+// refreshModelAttribution re-resolves the client and server model mappings
+// from the given stack. Called at build time and from the hot-reload hook so
+// `client_models:`, `model:`, and `default_model:` edits take effect on the
+// next observed call.
 func (b *GatewayBuilder) refreshModelAttribution(cfg *config.Stack) {
-	attribution := cfg.ModelAttribution()
-	b.modelAttribution.Store(&attribution)
+	b.modelAttribution.Store(&modelAttribution{
+		clients: cfg.ClientModelAttribution(),
+		servers: cfg.ModelAttribution(),
+	})
 }
 
 // buildTracingConfig extracts tracing config from gateway config with defaults.
@@ -874,8 +905,8 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// Re-resolve the per-client access policy from the reloaded config so a
 		// `clients:` change takes effect on the next tools/list and tools/call.
 		inst.Gateway.SetClientAccessPolicy(mcp.NewClientAccessPolicy(clientAccessSpec(newCfg)))
-		// Re-resolve cost attribution so `model:` / `default_model:` edits
-		// price subsequent calls without a restart.
+		// Re-resolve cost attribution so `client_models:`, `model:`, and
+		// `default_model:` edits price subsequent calls without a restart.
 		b.refreshModelAttribution(newCfg)
 		b.applyTelemetryConfig(inst.APIServer, handler)
 	})
