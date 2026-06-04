@@ -105,6 +105,7 @@ export interface ClientStatus {
   linked: boolean;    // Whether gridctl entry exists in client config
   transport: string;  // "native SSE", "native HTTP", or "mcp-remote bridge"
   configPath?: string; // Config file path (only if detected)
+  model?: string;     // Declared pricing model from client_models (pricing only, not access)
   effectiveScope?: ClientScopeResult; // Per-client access scope (when scoping is configured)
 }
 
@@ -217,8 +218,24 @@ export interface GatewayStatus {
   code_mode?: string;      // "on" when code mode is active (omitted when off)
   token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
   cost?: CostUsage;        // Cost snapshot (omitted until any cost is recorded)
-  cost_attribution?: boolean; // True when any server has a model: configured for pricing
+  cost_attribution?: boolean; // True when any client or server has a pricing model configured
+  client_models?: Record<string, string>; // Declared client -> model pricing map (client_models)
   stack_name?: string;     // Active stack name; omitted in stackless mode
+}
+
+// Response from GET /api/pricing/models
+export interface PricingModelsResponse {
+  source: string;   // Active pricing source name (e.g. "litellm")
+  models: string[]; // Sorted canonical model IDs the source can price
+}
+
+// Response from PUT /api/clients/{slug}/model
+export interface UpdateClientModelResponse {
+  client: string;
+  profileKey: string;
+  model: string;
+  reloaded: boolean;
+  reloadedAt?: string;
 }
 
 // Tool definition matching mcp.Tool
