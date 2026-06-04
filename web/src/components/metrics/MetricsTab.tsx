@@ -44,6 +44,7 @@ export function MetricsTab() {
   const bottomPanelTab = useUIStore((s) => s.bottomPanelTab);
   const tokenUsage = useStackStore((s) => s.tokenUsage);
   const costUsage = useStackStore((s) => s.costUsage);
+  const costAttribution = useStackStore((s) => s.costAttribution);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
   const { openDetachedWindow } = useWindowManager();
   const [timeRange, setTimeRange] = useState<TimeRange>('live');
@@ -188,6 +189,10 @@ export function MetricsTab() {
   // displaying "—" then matches the UX spec ("never a fabricated number").
   const sessionCostUSD = costUsage?.session.total_usd;
   const hasCost = sessionCostUSD !== undefined;
+  // Without model attribution the gateway cannot price calls, so cost stays
+  // absent or $0.00 forever. Surface the config hint instead of leaving the
+  // user to wonder whether traffic is free.
+  const showAttributionHint = !costAttribution && !(sessionCostUSD && sessionCostUSD > 0);
 
   const hasData =
     sessionTotal > 0 ||
@@ -400,7 +405,7 @@ export function MetricsTab() {
               <KPICard label="Input Tokens" value={sessionInput} colorClass="text-secondary" />
               <KPICard label="Output Tokens" value={sessionOutput} colorClass="text-primary" />
               <KPICard label="Total Tokens" value={sessionTotal} colorClass="text-text-primary" />
-              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} />
+              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} showHint={showAttributionHint} />
               {savingsPercent > 0 && (
                 <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
                   <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Format Savings</span>
@@ -593,8 +598,18 @@ function KPICard({ label, value, colorClass }: { label: string; value: number; c
 // hasn't priced any calls yet (per the UX spec: never show a fabricated
 // number). The icon stays muted-by-default; the value carries the accent
 // so the card reads as "cost-flavored" without competing with the amber
-// Output KPI to its left.
-function CostKPICard({ usd, hasCost }: { usd: number | undefined; hasCost: boolean }) {
+// Output KPI to its left. When no server has model attribution configured
+// (showHint), a one-line pointer explains how to enable estimates — without
+// it, cost can never populate and the dash/$0.00 reads as "free."
+function CostKPICard({
+  usd,
+  hasCost,
+  showHint,
+}: {
+  usd: number | undefined;
+  hasCost: boolean;
+  showHint?: boolean;
+}) {
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
       <span className="text-[10px] text-text-muted uppercase tracking-wider flex items-center gap-1 mb-1">
@@ -609,6 +624,11 @@ function CostKPICard({ usd, hasCost }: { usd: number | undefined; hasCost: boole
       >
         {hasCost ? formatUSD(usd ?? 0) : '—'}
       </span>
+      {showHint && (
+        <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
+          Set <code className="font-mono">model:</code> in stack.yaml to enable estimates
+        </span>
+      )}
     </div>
   );
 }
