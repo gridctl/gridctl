@@ -4,12 +4,20 @@
 # - Multiple MCP servers with different transports
 # - Server-level tool filtering
 # - Environment variable expansion
+# - Cost attribution via model IDs
 #
 # Usage:
 #   gridctl apply examples/getting-started/mcp-basic.yaml
 #
 version: "1"
 name: mcp-basic
+
+# Cost attribution: declaring which model your client runs lets the gateway
+# price tool calls against embedded LiteLLM rates (estimates, not billing
+# truth). default_model covers every server; a per-server `model:` overrides
+# it. Omit both and cost stays zero (tokens still record).
+gateway:
+  default_model: claude-opus-4-7
 
 network:
   name: mcp-basic-net
@@ -38,6 +46,7 @@ mcp-servers:
     command: ["sh", "-c", "while true; do sleep 3600; done"]
     description: "Primary tools server"
     tools: ["read", "list", "search"]  # Only these tools are exposed to clients
+    # model: claude-haiku-4-5   # per-server pricing override of gateway.default_model
     # telemetry:
     #   persist:
     #     traces: false   # explicit override: skip traces for this server only
