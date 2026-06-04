@@ -20,6 +20,16 @@ type Stack struct {
 	Resources  []Resource       `yaml:"resources,omitempty"`
 	Clients    *ClientsConfig   `yaml:"clients,omitempty"` // Optional per-client access scoping (NetworkPolicy semantics)
 
+	// ClientModels declares which model each connecting client runs, purely
+	// for cost attribution: tool calls from a declared client are priced at
+	// that model's rates ahead of any per-server model or gateway
+	// default_model. Keys are stable client identifiers (the same form used
+	// by clients.profiles and shown on the topology — e.g. "claude-code").
+	// The map has zero effect on access policy: declaring a model never
+	// requires a clients: block and never restricts an unlisted client.
+	// Empty (the default) disables the client pricing tier.
+	ClientModels map[string]string `yaml:"client_models,omitempty" json:"client_models,omitempty"`
+
 	// References is the variable-usage index, derived during expandStackVars:
 	// which consumers reference each ${var:KEY}/${vault:KEY} key. It is computed
 	// from the stack, not persisted with it — the yaml/json "-" tags keep it out
@@ -290,6 +300,30 @@ type MCPServer struct {
 	// zero. Unknown model IDs are best-effort — they log a single WARN and
 	// price as zero rather than failing validation.
 	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+}
+
+// ClientModelAttribution returns the client ID -> model mapping used to
+// price tool calls by calling client, the highest-precedence configured tier
+// (a call-level model reported by the server still wins over it). Entries
+// with empty values are skipped. Returns nil when nothing is configured,
+// which keeps the client pricing tier inert. Keys are NOT re-normalized:
+// they must already be canonical client IDs (see NormalizeClientID in
+// pkg/mcp/clientid.go); ValidateWithIssues warns on keys that are not.
+func (s *Stack) ClientModelAttribution() map[string]string {
+	if s == nil || len(s.ClientModels) == 0 {
+		return nil
+	}
+	var out map[string]string
+	for client, model := range s.ClientModels {
+		if client == "" || model == "" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string, len(s.ClientModels))
+		}
+		out[client] = model
+	}
+	return out
 }
 
 // ModelAttribution builds the server name -> effective model mapping used to
