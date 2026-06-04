@@ -3,10 +3,13 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gridctl/gridctl/pkg/pricing"
 )
 
 func TestValidateWithIssues_ValidStack(t *testing.T) {
@@ -68,7 +71,6 @@ func TestValidateWithIssues_WarningNoAuth(t *testing.T) {
 	}
 	assert.True(t, found, "expected warning about missing auth")
 }
-
 
 func TestValidateWithIssues_MixedErrorsAndWarnings(t *testing.T) {
 	stack := &Stack{
@@ -201,4 +203,73 @@ func TestValidationResult_Counts(t *testing.T) {
 
 	assert.Equal(t, 2, result.ErrorCount)
 	assert.Equal(t, 1, result.WarningCount)
+}
+
+// modelWarningSource is a deterministic pricing.Source for warning tests.
+type modelWarningSource struct{ known map[string]bool }
+
+func (s modelWarningSource) Lookup(model string) (pricing.Rates, bool) {
+	if s.known[model] {
+		return pricing.Rates{InputPerToken: 1e-6}, true
+	}
+	return pricing.Rates{}, false
+}
+
+func (s modelWarningSource) Models() []string { return nil }
+
+func (s modelWarningSource) Name() string { return "health-test-fixture" }
+
+func TestValidateWithIssues_ModelWarnings(t *testing.T) {
+	prev := pricing.CurrentSource()
+	t.Cleanup(func() { pricing.SetSource(prev) })
+	pricing.SetSource(modelWarningSource{known: map[string]bool{"known-model": true}})
+
+	stack := &Stack{
+		Version: "1",
+		Name:    "test",
+		Network: Network{Name: "test-net"},
+		Gateway: &GatewayConfig{DefaultModel: "unknown-default"},
+		MCPServers: []MCPServer{
+			{Name: "a", Image: "img", Port: 3000, Model: "unknown-server-model"},
+			{Name: "b", Image: "img", Port: 3001, Model: "known-model"},
+		},
+		ClientModels: map[string]string{
+			"claude-code": "known-model",
+			"gemini-cli":  "unknown-client-model",
+			"Claude Code": "known-model", // non-normalized key
+		},
+	}
+
+	result := ValidateWithIssues(stack)
+
+	warnings := map[string]string{}
+	for _, issue := range result.Issues {
+		if issue.Severity == SeverityWarning {
+			warnings[issue.Field] = issue.Message
+		}
+	}
+
+	for _, field := range []string{
+		"gateway.default_model",
+		"mcp-servers[0].model",
+		"client_models.gemini-cli",
+		"client_models.Claude Code",
+	} {
+		if _, ok := warnings[field]; !ok {
+			t.Errorf("expected warning for %s; got %v", field, warnings)
+		}
+	}
+	if msg, ok := warnings["client_models.Claude Code"]; ok && !strings.Contains(msg, `"claude-code"`) {
+		t.Errorf("non-normalized key warning should name the canonical form; got %q", msg)
+	}
+	if _, ok := warnings["mcp-servers[1].model"]; ok {
+		t.Error("known model must not warn")
+	}
+	if _, ok := warnings["client_models.claude-code"]; ok {
+		t.Error("known model on normalized key must not warn")
+	}
+	// Warnings never flip validity.
+	if !result.Valid {
+		t.Error("model warnings must not invalidate the stack")
+	}
 }
