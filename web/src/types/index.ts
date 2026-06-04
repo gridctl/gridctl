@@ -217,6 +217,7 @@ export interface GatewayStatus {
   code_mode?: string;      // "on" when code mode is active (omitted when off)
   token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
   cost?: CostUsage;        // Cost snapshot (omitted until any cost is recorded)
+  cost_attribution?: boolean; // True when any server has a model: configured for pricing
   stack_name?: string;     // Active stack name; omitted in stackless mode
 }
 
