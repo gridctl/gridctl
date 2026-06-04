@@ -63,6 +63,7 @@ gateway:
 | `auth` | object | No | - | Authentication configuration |
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` *(experimental)* |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 *(experimental)* |
+| `default_model` | string | No | - | Model ID used to price tool calls for servers without their own `model` field (e.g. `"claude-opus-4-7"`). Enables cost observability; figures are estimates from the embedded LiteLLM rates, not billing truth. Empty disables cost attribution for servers without a per-server `model` |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
 | `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Results over the limit are truncated with a suffix noting the original size. `0` uses the default (64 KB) |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
@@ -455,6 +456,7 @@ mcp-servers:
 | `replica_policy` | string | No | `"round-robin"` | Dispatch policy when `replicas > 1` or `autoscale` is set: `"round-robin"` or `"least-connections"` |
 | `autoscale` | object | No | - | Reactive autoscaling block. Mutually exclusive with `replicas`. Not supported for external URL or OpenAPI transports. See [Autoscale](#autoscale) |
 | `telemetry` | object | No | - | Per-server telemetry persistence overrides. See [Per-server Overrides](#per-server-overrides) |
+| `model` | string | No | - | Model ID used to price this server's tool calls (e.g. `"claude-opus-4-7"`). Overrides `gateway.default_model`. Enables cost observability for this server; figures are estimates from the embedded LiteLLM rates. Unknown model IDs log a single WARN and price as zero. Edits hot-reload without restarting the server. See [Cost Observability](cost-observability.md) |
 
 **Type determination rules:**
 - Must have exactly one of: `image`, `source`, `url`, `command` (alone), `ssh` + `command`, or `openapi`
