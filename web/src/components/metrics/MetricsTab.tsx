@@ -18,7 +18,7 @@ import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
-import { fetchTokenMetrics, clearTokenMetrics, fetchCostMetrics } from '../../lib/api';
+import { fetchTokenMetrics, clearTokenMetrics, fetchCostMetrics, fetchPricingModels, updateClientModel } from '../../lib/api';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatCompactNumber, formatUSD } from '../../lib/format';
 import { POLLING } from '../../lib/constants';
@@ -45,6 +45,7 @@ export function MetricsTab() {
   const tokenUsage = useStackStore((s) => s.tokenUsage);
   const costUsage = useStackStore((s) => s.costUsage);
   const costAttribution = useStackStore((s) => s.costAttribution);
+  const clientModels = useStackStore((s) => s.clientModels);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
   const { openDetachedWindow } = useWindowManager();
   const [timeRange, setTimeRange] = useState<TimeRange>('live');
@@ -497,6 +498,7 @@ export function MetricsTab() {
                   <thead>
                     <tr className="border-b border-border/30">
                       <ClientSortableHeader label="Client" column="name" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} />
+                      <th className="px-3 py-1.5 text-left text-[10px] font-medium text-text-muted uppercase tracking-wider">Model</th>
                       <ClientSortableHeader label="Input" column="input" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
                       <ClientSortableHeader label="Output" column="output" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
                       <ClientSortableHeader label="Total" column="total" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
@@ -507,6 +509,13 @@ export function MetricsTab() {
                     {sortedClients.map((client) => (
                       <tr key={client.name} className="border-b border-border/20 last:border-0 hover:bg-surface-highlight/30 transition-colors">
                         <td className="px-3 py-2 font-medium text-text-primary font-mono">{client.name}</td>
+                        <td className="px-3 py-2">
+                          <ClientModelCell
+                            client={client.name}
+                            declaredModel={clientModels[client.name]}
+                            costAttribution={costAttribution}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(client.input)}</td>
                         <td className="px-3 py-2 text-right text-primary tabular-nums">{formatCompactNumber(client.output)}</td>
                         <td className="px-3 py-2 text-right text-text-primary font-semibold tabular-nums">{formatCompactNumber(client.total)}</td>
@@ -630,6 +639,154 @@ function CostKPICard({
         </span>
       )}
     </div>
+  );
+}
+
+// pricingModelsCache memoizes the known-models list for the lifetime of the
+// page: the embedded pricing snapshot only changes on a gateway rebuild, so
+// one fetch (triggered by the first edit) serves every cell.
+let pricingModelsCache: string[] | null = null;
+
+const MODEL_PRECEDENCE_HINT =
+  'Pricing precedence: client model (client_models) > server model > gateway default_model. ' +
+  'A declared client model is a session-level default — it cannot track mid-session model switches.';
+
+// ClientModelCell shows which model a client's calls are priced as and lets
+// the operator set it inline. A pill with "· client" provenance renders only
+// for clients explicitly declared in client_models; non-declaring clients
+// aggregate heterogeneous per-server/default rates, so they get a muted
+// "per-server" (when any attribution is configured) rather than an invented
+// single model. Clicking opens a combobox backed by /api/pricing/models;
+// free text is allowed (unknown IDs price as zero, best-effort).
+function ClientModelCell({
+  client,
+  declaredModel,
+  costAttribution,
+}: {
+  client: string;
+  declaredModel?: string;
+  costAttribution: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [models, setModels] = useState<string[]>(pricingModelsCache ?? []);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const openEditor = useCallback(() => {
+    setDraft(declaredModel ?? '');
+    setSaveError(null);
+    setEditing(true);
+    if (pricingModelsCache === null) {
+      fetchPricingModels()
+        .then((resp) => {
+          pricingModelsCache = resp.models;
+          setModels(resp.models);
+        })
+        .catch(() => {
+          // Combobox degrades to free text; pricing is best-effort anyway.
+        });
+    }
+  }, [declaredModel]);
+
+  const save = useCallback(async () => {
+    const model = draft.trim();
+    if (model === (declaredModel ?? '')) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await updateClientModel(client, model);
+      // Optimistic store update so the pill reflects the save before the
+      // next status poll lands; the poll then confirms from the backend.
+      const current = useStackStore.getState().clientModels;
+      const next = { ...current };
+      if (model === '') {
+        delete next[client];
+      } else {
+        next[client] = model;
+      }
+      useStackStore.setState({ clientModels: next });
+      setEditing(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }, [client, draft, declaredModel]);
+
+  if (editing) {
+    const datalistId = `pricing-models-${client}`;
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input
+          autoFocus
+          list={datalistId}
+          value={draft}
+          disabled={saving}
+          placeholder="claude-opus-4-7"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void save();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          title={saveError ?? 'Enter to save, Esc to cancel. Clear and save to remove.'}
+          className={cn(
+            'w-44 rounded bg-surface-highlight/60 border px-1.5 py-0.5 text-[11px] font-mono',
+            'text-text-primary placeholder:text-text-muted/50 focus:outline-none',
+            saveError ? 'border-status-error/60' : 'border-border/50 focus:border-primary/50',
+          )}
+        />
+        <datalist id={datalistId}>
+          {models.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void save()}
+          className="text-[10px] text-primary hover:text-primary/80 disabled:opacity-50"
+        >
+          {saving ? '…' : 'save'}
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => setEditing(false)}
+          className="text-[10px] text-text-muted hover:text-text-secondary disabled:opacity-50"
+        >
+          cancel
+        </button>
+      </span>
+    );
+  }
+
+  if (declaredModel) {
+    return (
+      <button
+        type="button"
+        onClick={openEditor}
+        title={MODEL_PRECEDENCE_HINT}
+        className="inline-flex items-center gap-1 rounded-full bg-surface-highlight/60 border border-border/40 px-2 py-0.5 hover:border-primary/40 transition-colors"
+      >
+        <span className="text-[10px] font-mono text-text-primary">{declaredModel}</span>
+        <span className="text-[9px] text-text-muted/70">· client</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={openEditor}
+      title={MODEL_PRECEDENCE_HINT}
+      className="text-[10px] text-text-muted/60 hover:text-text-secondary transition-colors"
+    >
+      {costAttribution ? 'per-server' : 'set model'}
+    </button>
   );
 }
 
