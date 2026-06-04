@@ -84,6 +84,7 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
 function DetachedMetricsPageContent() {
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [costUsage, setCostUsage] = useState<CostUsage | null>(null);
+  const [costAttribution, setCostAttribution] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('live');
   const [isPaused, setIsPaused] = useState(false);
   const [metricsData, setMetricsData] = useState<TokenMetricsResponse | null>(null);
@@ -108,6 +109,7 @@ function DetachedMetricsPageContent() {
         const status: GatewayStatus = await fetchStatus();
         setTokenUsage(status.token_usage ?? null);
         setCostUsage(status.cost ?? null);
+        setCostAttribution(status.cost_attribution ?? false);
       } catch {
         // Ignore status errors
       }
@@ -209,6 +211,9 @@ function DetachedMetricsPageContent() {
   const savedTokens = tokenUsage?.format_savings.saved_tokens ?? 0;
   const sessionCostUSD = costUsage?.session.total_usd;
   const hasCost = sessionCostUSD !== undefined;
+  // Mirrors MetricsTab: without model attribution the gateway cannot price
+  // calls, so explain the config requirement instead of a bare dash/$0.00.
+  const showAttributionHint = !costAttribution && !(sessionCostUSD && sessionCostUSD > 0);
   const hasData =
     sessionTotal > 0 ||
     (metricsData?.data_points?.length ?? 0) > 0 ||
@@ -434,7 +439,7 @@ function DetachedMetricsPageContent() {
               <KPICard label="Input Tokens" value={sessionInput} colorClass="text-secondary" />
               <KPICard label="Output Tokens" value={sessionOutput} colorClass="text-primary" />
               <KPICard label="Total Tokens" value={sessionTotal} colorClass="text-text-primary" />
-              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} />
+              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} showHint={showAttributionHint} />
               {savingsPercent > 0 && (
                 <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
                   <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Format Savings</span>
@@ -600,7 +605,15 @@ function KPICard({ label, value, colorClass }: { label: string; value: number; c
   );
 }
 
-function CostKPICard({ usd, hasCost }: { usd: number | undefined; hasCost: boolean }) {
+function CostKPICard({
+  usd,
+  hasCost,
+  showHint,
+}: {
+  usd: number | undefined;
+  hasCost: boolean;
+  showHint?: boolean;
+}) {
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
       <span className="text-[10px] text-text-muted uppercase tracking-wider flex items-center gap-1 mb-1">
@@ -615,6 +628,11 @@ function CostKPICard({ usd, hasCost }: { usd: number | undefined; hasCost: boole
       >
         {hasCost ? formatUSD(usd ?? 0) : '—'}
       </span>
+      {showHint && (
+        <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
+          Set <code className="font-mono">model:</code> in stack.yaml to enable estimates
+        </span>
+      )}
     </div>
   );
 }
