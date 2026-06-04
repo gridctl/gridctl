@@ -60,6 +60,7 @@ interface StackState {
   codeMode: string | null;  // Gateway code mode status ("on" when active)
   tokenUsage: TokenUsage | null; // Token usage metrics from status response
   costUsage: CostUsage | null;   // USD cost snapshot; null when no cost recorded
+  costAttribution: boolean; // True when any server has a model: configured for pricing
   stackName: string;        // Active stack name; empty string in stackless mode
 
   // === React Flow State ===
@@ -117,6 +118,7 @@ export const useStackStore = create<StackState>()(
     codeMode: null,
     tokenUsage: null,
     costUsage: null,
+    costAttribution: false,
     stackName: '',
     nodes: [],
     edges: [],
@@ -149,6 +151,7 @@ export const useStackStore = create<StackState>()(
         codeMode: status.code_mode || null,
         tokenUsage: status.token_usage ?? null,
         costUsage: status.cost ?? null,
+        costAttribution: status.cost_attribution ?? false,
         stackName: status.stack_name || '',
         autoscaleHistory: folded.history,
         autoscaleDecisions: folded.decisions,
