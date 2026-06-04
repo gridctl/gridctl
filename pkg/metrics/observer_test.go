@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"sort"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -122,7 +123,7 @@ func TestObserver_RecordsCostWithCacheTokens(t *testing.T) {
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)
 	obs := NewObserver(counter, acc)
-	obs.SetModelResolver(func(string) string { return "claude-fixture" })
+	obs.SetModelResolver(func(string, string) string { return "claude-fixture" })
 
 	args := map[string]any{"q": "hello"}
 	result := &mcp.ToolCallResult{
@@ -231,7 +232,7 @@ func TestObserver_CallLevelModelOverridesResolver(t *testing.T) {
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)
 	obs := NewObserver(counter, acc)
-	obs.SetModelResolver(func(string) string { return "server-model" })
+	obs.SetModelResolver(func(string, string) string { return "server-model" })
 
 	result := &mcp.ToolCallResult{
 		Content: []mcp.Content{mcp.NewTextContent("x")},
@@ -263,6 +264,16 @@ func (s staticSource) Lookup(model string) (pricing.Rates, bool) {
 	r, ok := s.rates[model]
 	return r, ok
 }
+
+func (s staticSource) Models() []string {
+	models := make([]string, 0, len(s.rates))
+	for id := range s.rates {
+		models = append(models, id)
+	}
+	sort.Strings(models)
+	return models
+}
+
 func (s staticSource) Name() string { return s.name }
 
 func approxUSDEq(a, b float64) bool {
