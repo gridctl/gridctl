@@ -53,9 +53,15 @@ type Server struct {
 	tokenizerName string // active tokenizer mode: "embedded" or "api"
 
 	// modelAttribution returns the server -> model mapping used to price
-	// tool calls. Nil (or an empty map) means no cost attribution is
-	// configured. Must be safe for concurrent calls.
+	// tool calls. Nil (or an empty map) means no server-level cost
+	// attribution is configured. Must be safe for concurrent calls.
 	modelAttribution func() map[string]string
+
+	// clientModelAttribution returns the client ID -> model mapping
+	// (stack.yaml client_models) used to price tool calls by calling
+	// client. Nil (or an empty map) means no client-level attribution is
+	// configured. Must be safe for concurrent calls.
+	clientModelAttribution func() map[string]string
 
 	// startWatcher, when set, starts a file watcher on the given stack path.
 	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
@@ -191,6 +197,15 @@ func (s *Server) SetModelAttribution(get func() map[string]string) {
 	s.modelAttribution = get
 }
 
+// SetClientModelAttribution sets a getter for the client ID -> model mapping
+// (stack.yaml client_models) used to price tool calls by calling client.
+// Same contract as SetModelAttribution: the getter follows hot reloads and
+// must be safe for concurrent calls. Feeds the /api/status client_models
+// exposure, the cost_attribution flag, and the /api/clients model field.
+func (s *Server) SetClientModelAttribution(get func() map[string]string) {
+	s.clientModelAttribution = get
+}
+
 // modelAttributionMap returns the current server -> model mapping, or nil
 // when no attribution getter is wired or nothing is configured.
 func (s *Server) modelAttributionMap() map[string]string {
@@ -198,6 +213,15 @@ func (s *Server) modelAttributionMap() map[string]string {
 		return nil
 	}
 	return s.modelAttribution()
+}
+
+// clientModelAttributionMap returns the current client -> model mapping, or
+// nil when no attribution getter is wired or nothing is configured.
+func (s *Server) clientModelAttributionMap() map[string]string {
+	if s.clientModelAttribution == nil {
+		return nil
+	}
+	return s.clientModelAttribution()
 }
 
 // SetStartWatcher sets a callback that activates live-reload file watching for
@@ -267,7 +291,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/traces/{traceId}", s.handleTraces)
 	mux.HandleFunc("POST /api/clients/{slug}/scope/preview", s.handleClientScopePreview)
 	mux.HandleFunc("PUT /api/clients/{slug}/scope", s.handleSetClientScope)
+	mux.HandleFunc("PUT /api/clients/{slug}/model", s.handleSetClientModel)
 	mux.HandleFunc("/api/clients", s.handleClients)
+	mux.HandleFunc("GET /api/pricing/models", s.handlePricingModels)
 	mux.HandleFunc("/api/reload", s.handleReload)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ready", s.handleReady)
@@ -405,11 +431,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		CodeMode   string                   `json:"code_mode,omitempty"`
 		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
 		Cost       *metrics.CostUsage       `json:"cost,omitempty"`
-		// CostAttribution reports whether any server has a model configured
-		// for pricing. False lets the UI explain why cost stays empty
-		// (set `model:` in stack.yaml) instead of showing a bare $0.00.
-		CostAttribution bool   `json:"cost_attribution,omitempty"`
-		StackName       string `json:"stack_name,omitempty"`
+		// CostAttribution reports whether any client or server has a model
+		// configured for pricing. False lets the UI explain why cost stays
+		// empty (set `client_models:` or `model:` in stack.yaml) instead of
+		// showing a bare $0.00.
+		CostAttribution bool `json:"cost_attribution,omitempty"`
+		// ClientModels is the declared client ID -> model pricing map from
+		// stack.yaml client_models. Omitted when empty. The UI uses it to
+		// label per-client cost with the model it was priced as.
+		ClientModels map[string]string `json:"client_models,omitempty"`
+		StackName    string            `json:"stack_name,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:      s.gateway.ServerInfo().Name,
@@ -440,7 +471,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			status.Cost = &cost
 		}
 	}
-	status.CostAttribution = len(s.modelAttributionMap()) > 0
+	status.ClientModels = s.clientModelAttributionMap()
+	status.CostAttribution = len(s.modelAttributionMap()) > 0 || len(status.ClientModels) > 0
 
 	writeJSON(w, status)
 }
@@ -1022,6 +1054,10 @@ type ClientStatus struct {
 	Linked     bool   `json:"linked"`
 	Transport  string `json:"transport"`
 	ConfigPath string `json:"configPath,omitempty"`
+	// Model is the client's declared pricing model from stack.yaml
+	// client_models, when present. Pricing attribution only — it carries no
+	// access-control meaning and is independent of EffectiveScope.
+	Model string `json:"model,omitempty"`
 	// EffectiveScope is the backend-computed per-client tool access scope when a
 	// `clients:` block is configured: the servers and prefixed tools this client
 	// can reach. nil when no access scoping is in effect, so the frontend can
@@ -1048,6 +1084,7 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scopingOn := s.gateway != nil && s.gateway.ClientAccessConfigured()
+	clientModels := s.clientModelAttributionMap()
 
 	infos := s.provisioners.AllClientInfo(serverName)
 	statuses := make([]ClientStatus, 0, len(infos))
@@ -1059,6 +1096,7 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 			Linked:     info.Linked,
 			Transport:  info.Transport,
 			ConfigPath: info.ConfigPath,
+			Model:      clientModels[info.Slug],
 		}
 		// Surface the backend-computed effective scope keyed on the client's
 		// stable identifier (its slug, which is what `gridctl link` assigns and
