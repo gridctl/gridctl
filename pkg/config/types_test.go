@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -209,5 +210,96 @@ func TestStack_NonContainerWorkloads(t *testing.T) {
 	workloads := stack.NonContainerWorkloads()
 	if len(workloads) != 2 {
 		t.Fatalf("expected 2 non-container workloads, got %d", len(workloads))
+	}
+}
+
+func TestStack_ModelAttribution(t *testing.T) {
+	tests := []struct {
+		name  string
+		stack *Stack
+		want  map[string]string
+	}{
+		{
+			name:  "nil stack",
+			stack: nil,
+			want:  nil,
+		},
+		{
+			name:  "no models configured",
+			stack: &Stack{MCPServers: []MCPServer{{Name: "a"}, {Name: "b"}}},
+			want:  nil,
+		},
+		{
+			name: "per-server model only",
+			stack: &Stack{MCPServers: []MCPServer{
+				{Name: "a", Model: "claude-opus-4-7"},
+				{Name: "b"},
+			}},
+			want: map[string]string{"a": "claude-opus-4-7"},
+		},
+		{
+			name: "default model fills unset servers",
+			stack: &Stack{
+				Gateway: &GatewayConfig{DefaultModel: "claude-haiku-4-5"},
+				MCPServers: []MCPServer{
+					{Name: "a", Model: "claude-opus-4-7"},
+					{Name: "b"},
+				},
+			},
+			want: map[string]string{
+				"a": "claude-opus-4-7",
+				"b": "claude-haiku-4-5",
+			},
+		},
+		{
+			name: "default model only",
+			stack: &Stack{
+				Gateway:    &GatewayConfig{DefaultModel: "claude-haiku-4-5"},
+				MCPServers: []MCPServer{{Name: "a"}, {Name: "b"}},
+			},
+			want: map[string]string{
+				"a": "claude-haiku-4-5",
+				"b": "claude-haiku-4-5",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.stack.ModelAttribution()
+			if len(got) != len(tt.want) {
+				t.Fatalf("ModelAttribution() = %v, want %v", got, tt.want)
+			}
+			for server, model := range tt.want {
+				if got[server] != model {
+					t.Errorf("ModelAttribution()[%q] = %q, want %q", server, got[server], model)
+				}
+			}
+		})
+	}
+}
+
+func TestMCPServer_ModelYAMLRoundTrip(t *testing.T) {
+	in := MCPServer{Name: "priced", Image: "mcp/priced:latest", Model: "claude-opus-4-7"}
+	raw, err := yaml.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out MCPServer
+	if err := yaml.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.Model != "claude-opus-4-7" {
+		t.Errorf("Model round-trip = %q, want %q", out.Model, "claude-opus-4-7")
+	}
+
+	// A server without a model must not serialize the field (Article IX:
+	// the zero value is indistinguishable from a pre-model stack.yaml).
+	raw, err = yaml.Marshal(MCPServer{Name: "plain"})
+	if err != nil {
+		t.Fatalf("marshal plain: %v", err)
+	}
+	if strings.Contains(string(raw), "model:") {
+		t.Errorf("zero-value Model serialized: %s", raw)
 	}
 }
