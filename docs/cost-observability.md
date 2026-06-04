@@ -4,23 +4,36 @@ Gridctl prices every observed tool call against an embedded snapshot of LiteLLM'
 
 ## Model attribution (required for cost data)
 
-Pricing a call requires knowing which model the tokens are billed against. The gateway sits below the LLM client and cannot observe the client's model choice, so attribution is declared in `stack.yaml`: a per-server `model` field, with a stack-wide `gateway.default_model` fallback for servers that do not set their own.
+Pricing a call requires knowing which model the tokens are billed against. The gateway sits below the LLM client and cannot observe the client's model choice — and the MCP protocol never carries it — so attribution is declared in `stack.yaml`. Resolution per tool call, highest precedence first:
+
+| Precedence | Source | Declared where |
+|---|---|---|
+| 1 | Call-level usage metadata | Reported by the MCP server per call (no standardized wire shape yet; inert today) |
+| 2 | Calling client's model | Top-level `client_models:` map |
+| 3 | Target server's model | `model:` on the server entry |
+| 4 | Stack-wide default | `gateway.default_model` |
+
+The client tier exists because a model is a property of the calling client's session, not the tool server: when Claude Code on Opus and Gemini CLI on Gemini share the same servers, only a per-client declaration prices both correctly. `client_models:` is purely a pricing declaration — it never creates or implies access restrictions (that is the separate `clients:` block).
 
 ```yaml
 gateway:
-  default_model: claude-haiku-4-5   # prices any server without its own model
+  default_model: claude-haiku-4-5   # floor for anything not declared below
+
+client_models:
+  claude-code: claude-opus-4-7      # this client's calls price as Opus
+  gemini-cli: gemini-2.5-pro        # regardless of which server they hit
 
 mcp-servers:
   - name: jira
     image: mcp/atlassian:latest
-    model: claude-opus-4-7          # overrides the default for this server
+    model: claude-opus-4-7          # prices undeclared clients' calls to this server
 ```
 
-Without attribution, tokens and latency record normally but cost stays zero, and the dashboard's cost card shows a configuration hint instead of a number. Resolution is per server: the server's own `model` wins, then `gateway.default_model`, then no attribution (pricing skipped for that server's calls). Edits to either field hot-reload through the file watcher without restarting any server; subsequent calls price against the updated mapping.
+Without any attribution, tokens and latency record normally but cost stays zero, and the dashboard's cost card shows a configuration hint instead of a number. Anonymous calls (no client identity on the session) skip the client tier and resolve via the server tier. Edits to any of these fields hot-reload through the file watcher without restarting any server; subsequent calls price against the updated mapping. The Metrics tab's Top Clients panel shows each declared client's model with `· client` provenance and supports inline editing backed by the known-models list (`GET /api/pricing/models`); clients without a declaration aggregate whatever server/default rates their calls hit, so no single model is shown for them.
 
-A tool result that carries its own model in usage metadata takes precedence over the configured mapping at the call level. The MCP wire shape for that metadata is not yet standardized, so configured attribution is the operative path today.
+Two limitations to keep expectations honest. A declared client model is a session-level default: the gateway cannot see a mid-session model switch (e.g. `/model` in Claude Code), so calls keep pricing at the declared model until the declaration changes. And validation is soft by design: model IDs unknown to the pricing snapshot, or `client_models` keys that are not normalized client IDs (`gridctl validate` warns and suggests the canonical form), produce warnings — never errors — and price as zero.
 
-Cost figures are estimates — tokenizer-approximated counts multiplied by published list rates. They are built for comparing servers, spotting waste, and trending over time, not for reconciling invoices.
+Cost figures are estimates — tokenizer-approximated counts multiplied by published list rates. They are built for comparing servers and clients, spotting waste, and trending over time, not for reconciling invoices.
 
 ## Refreshing pricing data
 
