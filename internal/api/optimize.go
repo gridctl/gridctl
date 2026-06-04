@@ -111,7 +111,7 @@ func (s *Server) optimizeStats() optimize.Stats {
 		}
 		stats.ServerCallCount = computeServerCallCount(acc.ToolUsageSnapshot())
 	}
-	stats.ModelStats = lookupModelStats(stats.Servers)
+	stats.ModelStats = lookupModelStats(s.modelAttributionMap())
 	return stats
 }
 
@@ -191,19 +191,32 @@ func computeServerCallCount(toolUsage map[string]map[string]metrics.ToolStat) ma
 	return out
 }
 
-// lookupModelStats consults the active pricing.Source for a default
-// model attribution per server. The current gateway has no per-server
-// model resolver wired into a public accessor, so this returns an
-// empty map for now — the expensive_model_on_cheap_task heuristic
-// falls back to inferring rate from observed cost÷tokens, which still
-// correctly identifies Opus-tier traffic.
-//
-// When a future PR exposes per-server model attribution, populate the
-// returned map here so the heuristic can name the model in its
-// summary instead of saying "an Opus-tier model."
-func lookupModelStats(_ []optimize.ServerInfo) map[string]optimize.ModelStat {
-	_ = pricing.CurrentSource()
-	return nil
+// lookupModelStats resolves per-token rates from the active pricing.Source
+// for each server with model attribution (a `model:` field or the gateway
+// `default_model:`), so expensive_model_on_cheap_task can read the rate
+// directly and name the model in its summary. Servers without attribution —
+// or whose model is unknown to the pricing source — are omitted; the
+// heuristic falls back to inferring rate from observed cost÷tokens.
+func lookupModelStats(models map[string]string) map[string]optimize.ModelStat {
+	if len(models) == 0 {
+		return nil
+	}
+	out := make(map[string]optimize.ModelStat, len(models))
+	for server, model := range models {
+		rates, ok := pricing.Lookup(model)
+		if !ok {
+			continue
+		}
+		out[server] = optimize.ModelStat{
+			Model:             model,
+			InputUSDPerToken:  rates.InputPerToken,
+			OutputUSDPerToken: rates.OutputPerToken,
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // parseFloatQuery returns the float64 value of a query parameter, or 0
