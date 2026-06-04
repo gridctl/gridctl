@@ -401,3 +401,78 @@ func TestComputeDiff_AutoscaleWithUnrelatedChangeIsRestart(t *testing.T) {
 	}
 }
 
+func TestComputeDiff_ModelAttributionOnlyChange(t *testing.T) {
+	servers := func(model string) []config.MCPServer {
+		return []config.MCPServer{{Name: "github", Image: "image1", Port: 3000, Model: model}}
+	}
+	old := &config.Stack{Name: "test", MCPServers: servers("")}
+	new := &config.Stack{Name: "test", MCPServers: servers("claude-opus-4-7")}
+
+	diff := ComputeDiff(old, new)
+
+	if !diff.ModelAttributionChanged {
+		t.Error("expected ModelAttributionChanged for a model-only edit")
+	}
+	if diff.IsEmpty() {
+		t.Error("model-only edit must mark the diff non-empty so onConfigApplied fires")
+	}
+	if len(diff.MCPServers.Modified) != 0 {
+		t.Errorf("Modified = %d, want 0 (pricing metadata must not restart the server)",
+			len(diff.MCPServers.Modified))
+	}
+}
+
+func TestComputeDiff_DefaultModelChange(t *testing.T) {
+	servers := []config.MCPServer{{Name: "github", Image: "image1", Port: 3000}}
+	old := &config.Stack{Name: "test", MCPServers: servers}
+	new := &config.Stack{
+		Name:       "test",
+		MCPServers: servers,
+		Gateway:    &config.GatewayConfig{DefaultModel: "claude-haiku-4-5"},
+	}
+
+	diff := ComputeDiff(old, new)
+
+	if !diff.ModelAttributionChanged {
+		t.Error("expected ModelAttributionChanged for a default_model edit")
+	}
+	if diff.IsEmpty() {
+		t.Error("default_model edit must mark the diff non-empty")
+	}
+}
+
+func TestComputeDiff_ModelAttributionUnchanged(t *testing.T) {
+	servers := []config.MCPServer{{Name: "github", Image: "image1", Port: 3000, Model: "claude-opus-4-7"}}
+	old := &config.Stack{Name: "test", MCPServers: servers}
+	new := &config.Stack{Name: "test", MCPServers: servers}
+
+	diff := ComputeDiff(old, new)
+
+	if diff.ModelAttributionChanged {
+		t.Error("identical model attribution must not flag a change")
+	}
+	if !diff.IsEmpty() {
+		t.Error("identical stacks must produce an empty diff")
+	}
+}
+
+func TestComputeDiff_RedundantPerServerModelIsNoOp(t *testing.T) {
+	// Adding a per-server model identical to the gateway default does not
+	// change the effective mapping, so the diff stays empty.
+	old := &config.Stack{
+		Name:       "test",
+		MCPServers: []config.MCPServer{{Name: "github", Image: "image1", Port: 3000}},
+		Gateway:    &config.GatewayConfig{DefaultModel: "claude-opus-4-7"},
+	}
+	new := &config.Stack{
+		Name:       "test",
+		MCPServers: []config.MCPServer{{Name: "github", Image: "image1", Port: 3000, Model: "claude-opus-4-7"}},
+		Gateway:    &config.GatewayConfig{DefaultModel: "claude-opus-4-7"},
+	}
+
+	diff := ComputeDiff(old, new)
+
+	if diff.ModelAttributionChanged {
+		t.Error("redundant per-server model must not flag a change")
+	}
+}
