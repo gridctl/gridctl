@@ -187,6 +187,13 @@ type GatewayConfig struct {
 	// Security configures security features such as schema pinning. When nil, defaults apply.
 	Security *GatewaySecurityConfig `yaml:"security,omitempty" json:"security,omitempty"`
 
+	// DefaultModel is the model ID used to price tool calls for servers that
+	// do not set their own model field (e.g. "claude-opus-4-7"). Rates come
+	// from the embedded LiteLLM pricing snapshot; resulting figures are
+	// estimates, not billing truth. Empty (the default) disables cost
+	// attribution for servers without a per-server model.
+	DefaultModel string `yaml:"default_model,omitempty" json:"default_model,omitempty"`
+
 	// Tokenizer selects the token counting strategy.
 	// Values: "embedded" (default) uses the cl100k_base BPE vocabulary (pure Go, no network).
 	// "api" uses Anthropic's count_tokens endpoint for exact counts — Anthropic-specific,
@@ -275,6 +282,43 @@ type MCPServer struct {
 	// Telemetry, when set, overrides stack-global telemetry persistence for
 	// this server. nil fields inherit; *bool fields explicitly opt in or out.
 	Telemetry *MCPServerTelemetry `yaml:"telemetry,omitempty" json:"telemetry,omitempty"`
+
+	// Model is the model ID used to price this server's tool calls against
+	// the embedded LiteLLM pricing snapshot (e.g. "claude-opus-4-7").
+	// Overrides gateway.default_model for this server. Empty (the default)
+	// means no cost attribution: tokens are still recorded but cost stays
+	// zero. Unknown model IDs are best-effort — they log a single WARN and
+	// price as zero rather than failing validation.
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+}
+
+// ModelAttribution builds the server name -> effective model mapping used to
+// price tool calls: a server's own Model field wins, then the gateway-level
+// DefaultModel. Servers with no effective model are omitted. Returns nil when
+// no attribution is configured anywhere, which keeps the cost path inert.
+func (s *Stack) ModelAttribution() map[string]string {
+	if s == nil {
+		return nil
+	}
+	var defaultModel string
+	if s.Gateway != nil {
+		defaultModel = s.Gateway.DefaultModel
+	}
+	var out map[string]string
+	for _, server := range s.MCPServers {
+		model := server.Model
+		if model == "" {
+			model = defaultModel
+		}
+		if model == "" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string, len(s.MCPServers))
+		}
+		out[server.Name] = model
+	}
+	return out
 }
 
 // AutoscaleConfig controls reactive autoscaling of a ReplicaSet. All fields are
