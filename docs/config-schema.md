@@ -740,6 +740,44 @@ policy (deny); the editor warns before that happens. Finer tool-level
 allow-lists (`tools:`) are enforced by the gateway but edited directly in
 stack.yaml.
 
+Declaring which model a client runs for cost estimates is a separate,
+access-inert concern — see [Client Models](#client-models-pricing-attribution)
+below.
+
+---
+
+## Client Models (pricing attribution)
+
+The optional top-level `client_models:` map declares which model each
+connecting client runs, purely for cost attribution: tool calls from a
+declared client are priced at that model's rates. This is **pricing, not
+access** — the map never requires a `clients:` block, never restricts any
+client, and has zero effect on the access policy described in
+[Clients](#clients-per-client-access-scoping) above (which is access, not
+pricing).
+
+```yaml
+gateway:
+  default_model: claude-haiku-4-5   # pricing floor for anything not declared
+
+client_models:
+  claude-code: claude-opus-4-7
+  gemini-cli: gemini-2.5-pro
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `client_models` | map | No | - | Stable client identifier → model ID used to price that client's tool calls. Keys are the same identifiers used by `clients.profiles` and shown on the topology (e.g. `claude-code`). Values are model IDs from the embedded LiteLLM pricing snapshot (e.g. `claude-opus-4-7`) |
+
+Pricing resolution per tool call, highest precedence first: call-level usage
+metadata (when a server reports one) > the calling client's `client_models`
+entry > the target server's `model:` > `gateway.default_model`. Unknown model
+IDs and keys that are not normalized client IDs surface as validation
+warnings (never errors) and price as zero. Edits hot-reload without
+restarting any server. The Metrics tab's Top Clients panel shows each
+declared client's model and lets you edit it inline; see
+[Cost Observability](cost-observability.md) for semantics and limitations.
+
 ---
 
 ## Skill Sources

@@ -303,3 +303,113 @@ func TestMCPServer_ModelYAMLRoundTrip(t *testing.T) {
 		t.Errorf("zero-value Model serialized: %s", raw)
 	}
 }
+
+func TestStack_ClientModelAttribution(t *testing.T) {
+	tests := []struct {
+		name  string
+		stack *Stack
+		want  map[string]string
+	}{
+		{
+			name:  "nil stack",
+			stack: nil,
+			want:  nil,
+		},
+		{
+			name:  "no client models",
+			stack: &Stack{MCPServers: []MCPServer{{Name: "a"}}},
+			want:  nil,
+		},
+		{
+			name: "declared clients",
+			stack: &Stack{ClientModels: map[string]string{
+				"claude-code": "claude-opus-4-7",
+				"gemini-cli":  "gemini-2.5-pro",
+			}},
+			want: map[string]string{
+				"claude-code": "claude-opus-4-7",
+				"gemini-cli":  "gemini-2.5-pro",
+			},
+		},
+		{
+			name: "empty values skipped",
+			stack: &Stack{ClientModels: map[string]string{
+				"claude-code": "claude-opus-4-7",
+				"gemini-cli":  "",
+			}},
+			want: map[string]string{"claude-code": "claude-opus-4-7"},
+		},
+		{
+			name:  "all values empty returns nil",
+			stack: &Stack{ClientModels: map[string]string{"gemini-cli": ""}},
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.stack.ClientModelAttribution()
+			if len(got) != len(tt.want) {
+				t.Fatalf("ClientModelAttribution() = %v, want %v", got, tt.want)
+			}
+			for client, model := range tt.want {
+				if got[client] != model {
+					t.Errorf("ClientModelAttribution()[%q] = %q, want %q", client, got[client], model)
+				}
+			}
+		})
+	}
+}
+
+func TestStack_ClientModelsYAMLRoundTrip(t *testing.T) {
+	in := Stack{
+		Name:         "test",
+		ClientModels: map[string]string{"claude-code": "claude-opus-4-7"},
+	}
+	raw, err := yaml.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out Stack
+	if err := yaml.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.ClientModels["claude-code"] != "claude-opus-4-7" {
+		t.Errorf("ClientModels round-trip = %v", out.ClientModels)
+	}
+
+	// A stack without client models must not serialize the key (Article IX:
+	// the zero value is indistinguishable from a pre-feature stack.yaml).
+	raw, err = yaml.Marshal(Stack{Name: "plain"})
+	if err != nil {
+		t.Fatalf("marshal plain: %v", err)
+	}
+	if strings.Contains(string(raw), "client_models") {
+		t.Errorf("zero-value ClientModels serialized: %s", raw)
+	}
+}
+
+// TestStack_ClientModelsAccessInert pins the design constraint that drove
+// the top-level client_models map: declaring pricing models must never
+// create or imply an access policy. The clients: block stays nil.
+func TestStack_ClientModelsAccessInert(t *testing.T) {
+	src := `
+name: pricing-only
+client_models:
+  claude-code: claude-opus-4-7
+mcp-servers:
+  - name: github
+    image: mcp/github:latest
+    port: 3000
+`
+	var stack Stack
+	if err := yaml.Unmarshal([]byte(src), &stack); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if stack.Clients != nil {
+		t.Error("client_models must not materialize a clients: access block")
+	}
+	if stack.ClientModelAttribution()["claude-code"] != "claude-opus-4-7" {
+		t.Errorf("attribution = %v", stack.ClientModelAttribution())
+	}
+}

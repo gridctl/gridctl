@@ -59,10 +59,13 @@ func (c Cost) Total() float64 {
 }
 
 // Source is the abstraction for a per-model rate table. Implementations are
-// expected to be safe for concurrent Lookup. Name is a short identifier
-// (e.g. "litellm") used in logs and diagnostic output.
+// expected to be safe for concurrent Lookup and Models. Name is a short
+// identifier (e.g. "litellm") used in logs and diagnostic output. Models
+// returns the sorted canonical model IDs the source can price — used to
+// populate pickers in the UI; callers must not mutate the returned slice.
 type Source interface {
 	Lookup(model string) (Rates, bool)
+	Models() []string
 	Name() string
 }
 
@@ -101,6 +104,12 @@ func CurrentSource() Source {
 // the model is unknown.
 func Lookup(model string) (Rates, bool) {
 	return activeSource.Load().s.Lookup(model)
+}
+
+// KnownModels returns the sorted canonical model IDs the active Source can
+// price. Callers must not mutate the returned slice.
+func KnownModels() []string {
+	return activeSource.Load().s.Models()
 }
 
 // Calculate returns the total USD cost for a tool call. When the model has

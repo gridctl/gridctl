@@ -13,6 +13,23 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Per-client model attribution for cost observability.** A new top-level
+  `client_models:` map in stack.yaml declares which model each client runs
+  (e.g. `claude-code: claude-opus-4-7`), and the gateway prices that client's
+  tool calls at those rates ahead of the per-server `model:` and
+  `gateway.default_model` tiers — so multi-client stacks (Claude Code on Opus,
+  Gemini CLI on Gemini, sharing the same servers) get correctly attributed
+  per-client cost. The map is pricing-only and access-inert: it never requires
+  a `clients:` block and never restricts any client. Edits hot-reload without
+  restarting servers. The Metrics tab's Top Clients panel gains a Model column
+  showing each declared client's model with provenance and inline editing
+  backed by the new `GET /api/pricing/models` known-models list and a
+  dedicated `PUT /api/clients/{slug}/model` endpoint (atomic, comment-
+  preserving YAML writes). `gridctl validate` now warns (never errors) on
+  model IDs unknown to the pricing snapshot and on `client_models` keys that
+  are not normalized client IDs. Stacks without the map behave exactly as
+  before; anonymous calls keep pricing via the server/default tiers.
+
 - **Reconcile and edit git-sourced skills in the Library.** The Library now
   surfaces local edits to imported skills and lets you reconcile them. Skill
   cards, the detail panel, and the editor show a "Modified" badge when a tracked

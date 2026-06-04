@@ -1,6 +1,7 @@
 package pricing
 
 import (
+	"sort"
 	"sync"
 	"testing"
 )
@@ -14,6 +15,15 @@ type fakeSource struct {
 func (s *fakeSource) Lookup(model string) (Rates, bool) {
 	r, ok := s.rates[model]
 	return r, ok
+}
+
+func (s *fakeSource) Models() []string {
+	models := make([]string, 0, len(s.rates))
+	for id := range s.rates {
+		models = append(models, id)
+	}
+	sort.Strings(models)
+	return models
 }
 
 func (s *fakeSource) Name() string { return s.name }
@@ -213,4 +223,28 @@ func approxEqual(a, b float64) bool {
 		d = -d
 	}
 	return d < eps
+}
+
+func TestKnownModels(t *testing.T) {
+	// Against a deterministic source: sorted, complete, and matching Models().
+	src := &fakeSource{name: "fixture", rates: map[string]Rates{
+		"zeta-model":  {InputPerToken: 1},
+		"alpha-model": {InputPerToken: 2},
+	}}
+	withSource(t, src, func() {
+		got := KnownModels()
+		want := []string{"alpha-model", "zeta-model"}
+		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Errorf("KnownModels() = %v, want %v", got, want)
+		}
+	})
+
+	// Against the embedded LiteLLM source: non-empty and sorted.
+	models := NewLiteLLMSource().Models()
+	if len(models) == 0 {
+		t.Fatal("embedded source returned no models")
+	}
+	if !sort.StringsAreSorted(models) {
+		t.Error("Models() must return a sorted slice")
+	}
 }

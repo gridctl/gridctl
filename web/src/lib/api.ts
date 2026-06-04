@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -521,6 +521,51 @@ export interface LogEntry {
  * Fetch structured gateway logs
  * GET /api/logs
  */
+/**
+ * Fetch the canonical model IDs known to the active pricing source.
+ * GET /api/pricing/models
+ */
+export async function fetchPricingModels(): Promise<PricingModelsResponse> {
+  return fetchJSON<PricingModelsResponse>('/api/pricing/models');
+}
+
+/**
+ * Set (or clear, with an empty string) a client's pricing model in the
+ * stack's client_models map. Pricing attribution only — never touches the
+ * clients: access block.
+ * PUT /api/clients/{slug}/model
+ */
+export async function updateClientModel(
+  slug: string,
+  model: string,
+): Promise<UpdateClientModelResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/clients/${encodeURIComponent(slug)}/model`,
+    {
+      method: 'PUT',
+      headers: buildHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ model }),
+    },
+  );
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    const msg =
+      err && typeof err === 'object' && typeof err.message === 'string'
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : `Update client model failed: ${response.status} ${response.statusText}`;
+    throw new Error(msg);
+  }
+
+  return data as UpdateClientModelResponse;
+}
+
 export async function fetchGatewayLogs(lines = 100, level?: string): Promise<LogEntry[]> {
   let url = `${API_BASE}/api/logs?lines=${lines}`;
   if (level) {
