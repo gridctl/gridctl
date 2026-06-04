@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/metrics"
@@ -202,6 +203,15 @@ type staticPricingSource struct {
 func (s staticPricingSource) Lookup(model string) (pricing.Rates, bool) {
 	r, ok := s.rates[model]
 	return r, ok
+}
+
+func (s staticPricingSource) Models() []string {
+	models := make([]string, 0, len(s.rates))
+	for id := range s.rates {
+		models = append(models, id)
+	}
+	sort.Strings(models)
+	return models
 }
 
 func (s staticPricingSource) Name() string { return "api-test-fixture" }
