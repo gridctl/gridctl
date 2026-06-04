@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -30,8 +31,9 @@ type litellmEntry struct {
 // model_prices_and_context_window.json. The full file is parsed once at
 // construction and held in memory; lookups are constant-time map reads.
 type LiteLLMSource struct {
-	rates map[string]Rates // canonical model ID -> rates
-	warn  warnOnce         // logs unknown models a single time per ID
+	rates  map[string]Rates // canonical model ID -> rates
+	models []string         // sorted canonical model IDs (cached for Models)
+	warn   warnOnce         // logs unknown models a single time per ID
 }
 
 // NewLiteLLMSource parses the embedded LiteLLM pricing data and returns a
@@ -41,11 +43,20 @@ type LiteLLMSource struct {
 // malformed.
 func NewLiteLLMSource() *LiteLLMSource {
 	rates := parseLiteLLMRates(rawModelPrices)
-	return &LiteLLMSource{rates: rates}
+	models := make([]string, 0, len(rates))
+	for id := range rates {
+		models = append(models, id)
+	}
+	sort.Strings(models)
+	return &LiteLLMSource{rates: rates, models: models}
 }
 
 // Name returns "litellm".
 func (s *LiteLLMSource) Name() string { return "litellm" }
+
+// Models returns the sorted canonical model IDs in the rate table, computed
+// once at construction. Callers must not mutate the returned slice.
+func (s *LiteLLMSource) Models() []string { return s.models }
 
 // Lookup returns the per-token rates for the given model ID. Probes the
 // rate table in order from most specific to most general:
