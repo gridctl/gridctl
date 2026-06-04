@@ -17,11 +17,12 @@ type ConfigDiff struct {
 	// It needs an in-memory policy refresh (via the reload's onConfigApplied hook)
 	// but no container or network work, so it must still mark the diff non-empty.
 	ClientsChanged bool
-	// ModelAttributionChanged indicates the server -> model mapping used for
-	// cost attribution changed (a server's `model:` or the gateway's
-	// `default_model:`). Like ClientsChanged it needs only an in-memory
-	// refresh via the onConfigApplied hook — pricing metadata never warrants
-	// a container restart — but it must still mark the diff non-empty.
+	// ModelAttributionChanged indicates the server and/or client model
+	// mappings used for cost attribution changed (a server's `model:`, the
+	// gateway's `default_model:`, or a `client_models:` entry). Like
+	// ClientsChanged it needs only an in-memory refresh via the
+	// onConfigApplied hook — pricing metadata never warrants a container
+	// restart — but it must still mark the diff non-empty.
 	ModelAttributionChanged bool
 }
 
@@ -87,18 +88,20 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect per-client access (`clients:`) changes
 	diff.ClientsChanged = clientsChanged(old, new)
 
-	// Detect cost-attribution (`model:` / `default_model:`) changes
+	// Detect cost-attribution (`client_models:` / `model:` / `default_model:`) changes
 	diff.ModelAttributionChanged = modelAttributionChanged(old, new)
 
 	return diff
 }
 
-// modelAttributionChanged reports whether the effective server -> model
-// mapping differs between two stacks. Comparing the resolved maps (rather
-// than raw fields) means a no-op edit — e.g. adding a per-server model:
-// identical to the gateway default_model — does not mark the diff non-empty.
+// modelAttributionChanged reports whether the effective cost-attribution
+// mappings — server -> model and client -> model — differ between two
+// stacks. Comparing the resolved maps (rather than raw fields) means a
+// no-op edit — e.g. adding a per-server model: identical to the gateway
+// default_model — does not mark the diff non-empty.
 func modelAttributionChanged(old, new *config.Stack) bool {
-	return !maps.Equal(old.ModelAttribution(), new.ModelAttribution())
+	return !maps.Equal(old.ModelAttribution(), new.ModelAttribution()) ||
+		!maps.Equal(old.ClientModelAttribution(), new.ClientModelAttribution())
 }
 
 // clientsChanged reports whether the per-client access (`clients:`) block
@@ -406,4 +409,3 @@ func openAPIEqual(a, b *config.OpenAPIConfig) bool {
 	}
 	return true
 }
-
