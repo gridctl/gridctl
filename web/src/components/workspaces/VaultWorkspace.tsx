@@ -24,20 +24,21 @@ import { IconButton } from '../ui/IconButton';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { showToast } from '../ui/Toast';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
-import { SecretItem } from '../vault/SecretItem';
 import { NewSetForm } from '../vault/NewSetForm';
+import { VariableInspector } from '../vault/VariableInspector';
 import { VariableQuickAddForm } from '../vault/VariableQuickAddForm';
+import { VariableRow, VARIABLE_ROW_GRID } from '../vault/VariableRow';
 import { VaultEncryptForm } from '../vault/VaultEncryptForm';
 import { VaultLockPrompt } from '../vault/VaultLockPrompt';
 import { EnvImportModal } from '../vault/EnvImportModal';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useVaultManager } from '../../hooks/useVaultManager';
+import { useListNav } from '../../hooks/useListNav';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { usePageFileDrop } from '../../hooks/usePageFileDrop';
 import { isImportableFile } from '../../lib/parseFile';
-import { validateVariableInput } from '../vault/variableTypeHelpers';
-import type { Consumer, Variable, VariableType } from '../../lib/api';
+import type { Consumer, Variable } from '../../lib/api';
 
 const ALL_SETS_KEY = '__all__';
 
@@ -130,14 +131,26 @@ export function VaultWorkspace() {
     );
   }, [setSearchParams]);
 
-  // ---- Local UI state -----------------------------------------------------
-  // Edit state — mirrors VaultPanel: validate type on save, preserve is_secret.
-  const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const [editType, setEditType] = useState<VariableType>('string');
-  const [editIsSecret, setEditIsSecret] = useState(true);
-  const [showEditValue, setShowEditValue] = useState(false);
+  // Inspector selection — the variable shown in the right-rail inspector.
+  // URL-synced as ?selected=<key> (replace history) so reload and deep-links
+  // restore it, mirroring the Library workspace.
+  const selectedKey = searchParams.get('selected');
+  const setSelectedKey = useCallback(
+    (key: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (key) next.set('selected', key);
+          else next.delete('selected');
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
+  // ---- Local UI state -----------------------------------------------------
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmDeleteSet, setConfirmDeleteSet] = useState<string | null>(null);
 
@@ -196,6 +209,27 @@ export function VaultWorkspace() {
     );
   }, [filteredBySet, searchQuery]);
 
+  // The inspector shows the selection only while it survives the active
+  // filters; a filtered-out key keeps its URL param (the pane falls back to
+  // the overview) so clearing the filter restores the selection.
+  const selectedVariable = useMemo(
+    () => filteredBySearch.find((v) => v.key === selectedKey) ?? null,
+    [filteredBySearch, selectedKey],
+  );
+
+  // A key that no longer exists at all (deleted, vault locked) clears the
+  // param. Guarded on a loaded list so initial load never wipes a deep link.
+  useEffect(() => {
+    if (!selectedKey) return;
+    if (locked) {
+      setSelectedKey(null);
+      return;
+    }
+    if (vaultVariables && !vaultVariables.some((v) => v.key === selectedKey)) {
+      setSelectedKey(null);
+    }
+  }, [selectedKey, locked, vaultVariables, setSelectedKey]);
+
   // ---- Handlers -----------------------------------------------------------
   const handleUnlock = useCallback(
     async (passphrase: string) => {
@@ -215,23 +249,6 @@ export function VaultWorkspace() {
     [lock, encrypted],
   );
 
-  const handleReveal = useCallback(
-    async (key: string) => {
-      const target = allVariables.find((v) => v.key === key);
-      const isPlaintext = target ? !target.is_secret : false;
-      try {
-        await revealedState.reveal(
-          key,
-          async () => (await getVar(key)).value,
-          !isPlaintext,
-        );
-      } catch {
-        showToast('error', `Failed to reveal ${key}`);
-      }
-    },
-    [allVariables, revealedState, getVar],
-  );
-
   const handleCreate = useCallback(
     async (input: Parameters<typeof createVar>[0]) => {
       await createVar(input);
@@ -241,55 +258,18 @@ export function VaultWorkspace() {
     [createVar],
   );
 
-  const handleEdit = useCallback(
-    (key: string) => {
-      const current = allVariables.find((v) => v.key === key);
-      setEditingKey(key);
-      setEditValue('');
-      setEditType(current?.type ?? 'string');
-      setEditIsSecret(current?.is_secret ?? true);
-      setShowEditValue(false);
-    },
-    [allVariables],
-  );
-
-  const handleEditSave = useCallback(async () => {
-    if (!editingKey || !editValue) return;
-    const validation = validateVariableInput(editType, editValue);
-    if (!validation.ok) {
-      showToast('error', validation.error);
-      return;
-    }
-    try {
-      await updateVar(editingKey, {
-        value: validation.normalized,
-        type: editType,
-        isSecret: editIsSecret,
-      });
-      setEditingKey(null);
-      setEditValue('');
-      showToast('success', `Variable "${editingKey}" updated`);
-    } catch {
-      showToast('error', 'Failed to update variable');
-    }
-  }, [editingKey, editValue, editType, editIsSecret, updateVar]);
-
-  const handleEditCancel = useCallback(() => {
-    setEditingKey(null);
-    setEditValue('');
-    setShowEditValue(false);
-  }, []);
-
   const handleDeleteConfirm = useCallback(async () => {
     if (!confirmDelete) return;
     try {
       await deleteVar(confirmDelete);
       setConfirmDelete(null);
+      // The inspector falls back to its overview once its subject is gone.
+      if (confirmDelete === selectedKey) setSelectedKey(null);
       showToast('success', `Variable "${confirmDelete}" deleted`);
     } catch {
       showToast('error', 'Failed to delete variable');
     }
-  }, [confirmDelete, deleteVar]);
+  }, [confirmDelete, deleteVar, selectedKey, setSelectedKey]);
 
   const handleCreateSet = useCallback(async () => {
     const name = newSetName.trim();
@@ -379,6 +359,32 @@ export function VaultWorkspace() {
     onFiles: handleDroppedFiles,
   });
 
+  // ---- Keyboard navigation ------------------------------------------------
+  // Bumping the counter asks the inspector to enter edit mode for the current
+  // selection ('e' / Enter from the list). The inspector ignores it when
+  // nothing is selected.
+  const [editSignal, setEditSignal] = useState(0);
+  const requestInspectorEdit = useCallback(() => {
+    setEditSignal((s) => s + 1);
+  }, []);
+
+  const selectedIndex = useMemo(
+    () => filteredBySearch.findIndex((v) => v.key === selectedKey),
+    [filteredBySearch, selectedKey],
+  );
+
+  useListNav({
+    itemCount: filteredBySearch.length,
+    selectedIndex,
+    setSelectedIndex: (i) => {
+      const next = filteredBySearch[i];
+      if (next) setSelectedKey(next.key);
+    },
+    onEnter: requestInspectorEdit,
+    onEdit: requestInspectorEdit,
+    enabled: !locked && !importOpen,
+  });
+
   const closeImport = useCallback(() => {
     setImportOpen(false);
     setDroppedText('');
@@ -422,14 +428,35 @@ export function VaultWorkspace() {
     />
   );
 
+  const inspector = (
+    <VariableInspector
+      variable={selectedVariable}
+      consumers={selectedVariable ? (usage[selectedVariable.key] ?? []) : []}
+      allVariables={vaultVariables}
+      usage={usage}
+      setNames={setNames}
+      locked={locked}
+      compact={compact}
+      editSignal={editSignal}
+      getValue={getVar}
+      onUpdate={updateVar}
+      onAssignSet={handleAssignSet}
+      onDelete={(key) => setConfirmDelete(key)}
+      onConsumerClick={handleConsumerClick}
+      onClose={() => setSelectedKey(null)}
+    />
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceShell
         workspace="vault"
         defaultLeftPct={20}
-        defaultRightPct={0}
+        defaultRightPct={30}
         left={leftRail}
+        right={inspector}
         minLeftPx={200}
+        minRightPx={300}
       >
         <main className="flex flex-col h-full overflow-hidden">
           <VaultHeader
@@ -535,7 +562,7 @@ export function VaultWorkspace() {
                 )}
 
                 {loading && !vaultVariables && (
-                  <div className="p-6 space-y-3 max-w-3xl">
+                  <div className="p-6 space-y-3">
                     {[1, 2, 3, 4].map((i) => (
                       <div
                         key={i}
@@ -565,19 +592,9 @@ export function VaultWorkspace() {
                     variables={filteredBySearch}
                     revealed={revealedState.revealed}
                     usage={usage}
-                    editingKey={editingKey}
-                    editValue={editValue}
-                    showEditValue={showEditValue}
-                    setNames={setNames}
-                    onReveal={handleReveal}
-                    onEdit={handleEdit}
-                    onDelete={(key) => setConfirmDelete(key)}
-                    onEditValueChange={setEditValue}
-                    onEditToggleShow={() => setShowEditValue(!showEditValue)}
-                    onEditSave={handleEditSave}
-                    onEditCancel={handleEditCancel}
-                    onAssignSet={handleAssignSet}
-                    onConsumerClick={handleConsumerClick}
+                    selectedKey={selectedKey}
+                    onSelect={setSelectedKey}
+                    compact={compact}
                   />
                 )}
               </div>
@@ -965,64 +982,61 @@ function SetPill({
 // Body states
 // ---------------------------------------------------------------------------
 
+// Fixed-length mask for secret previews — independent of the real value's
+// length so the row leaks nothing.
+const SECRET_PREVIEW = '••••••••••';
+
 interface VariableListProps {
   variables: Variable[];
   revealed: Record<string, string>;
   usage: Record<string, Consumer[]>;
-  editingKey: string | null;
-  editValue: string;
-  showEditValue: boolean;
-  setNames: string[];
-  onReveal: (key: string) => void;
-  onEdit: (key: string) => void;
-  onDelete: (key: string) => void;
-  onEditValueChange: (val: string) => void;
-  onEditToggleShow: () => void;
-  onEditSave: () => void;
-  onEditCancel: () => void;
-  onAssignSet: (key: string, set: string) => void;
-  onConsumerClick: (consumer: Consumer) => void;
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+  compact: boolean;
 }
 
+// Table-like list: aligned columns under a sticky header row, with all depth
+// (value, consumers, actions) living in the right-rail inspector. Rows select;
+// they no longer expand or edit inline.
 function VariableList({
   variables,
   revealed,
   usage,
-  editingKey,
-  editValue,
-  showEditValue,
-  setNames,
-  onReveal,
-  onEdit,
-  onDelete,
-  onEditValueChange,
-  onEditToggleShow,
-  onEditSave,
-  onEditCancel,
-  onAssignSet,
-  onConsumerClick,
+  selectedKey,
+  onSelect,
+  compact,
 }: VariableListProps) {
+  const headerLabel =
+    'text-[9px] uppercase tracking-[0.24em] text-text-muted/50';
   return (
-    <div className="px-6 py-4 space-y-2 max-w-3xl">
+    <div role="listbox" aria-label="Variables" className="pb-4">
+      <div
+        aria-hidden="true"
+        className={cn(
+          'sticky top-0 z-10 px-6 border-l-2 border-l-transparent border-b border-border-subtle bg-background/95 backdrop-blur-sm',
+          VARIABLE_ROW_GRID,
+          compact ? 'py-1' : 'py-1.5',
+        )}
+      >
+        <span className={headerLabel}>key</span>
+        <span className={headerLabel}>type</span>
+        <span className={headerLabel}>set</span>
+        <span className={headerLabel}>value</span>
+        <span className={cn(headerLabel, 'text-right')}>used by</span>
+      </div>
       {variables.map((variable) => (
-        <SecretItem
+        <VariableRow
           key={variable.key}
-          secret={variable}
-          revealed={revealed[variable.key]}
-          consumers={usage[variable.key]}
-          onConsumerClick={onConsumerClick}
-          isEditing={editingKey === variable.key}
-          editValue={editValue}
-          showEditValue={showEditValue}
-          onReveal={() => onReveal(variable.key)}
-          onEdit={() => onEdit(variable.key)}
-          onDelete={() => onDelete(variable.key)}
-          onEditValueChange={onEditValueChange}
-          onEditToggleShow={onEditToggleShow}
-          onEditSave={onEditSave}
-          onEditCancel={onEditCancel}
-          sets={setNames}
-          onAssignSet={(set) => onAssignSet(variable.key, set)}
+          variable={variable}
+          selected={variable.key === selectedKey}
+          onSelect={() => onSelect(variable.key)}
+          preview={
+            variable.is_secret
+              ? SECRET_PREVIEW
+              : (revealed[variable.key] ?? '•••')
+          }
+          consumerCount={(usage[variable.key] ?? []).length}
+          compact={compact}
         />
       ))}
     </div>

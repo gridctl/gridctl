@@ -46,6 +46,12 @@ export function validateVariableInput(
   }
 }
 
+// parseBool interprets a stored bool value's truthy tokens (the subset of
+// what validateVariableInput accepts that means "true").
+export function parseBool(value: string): boolean {
+  return ['true', '1', 'yes', 't'].includes(value.trim().toLowerCase());
+}
+
 // getValuePlaceholder produces an input placeholder that mirrors what
 // validateVariableInput accepts: comma-separated for `list` (not a JSON
 // array), lowercase tokens for `bool`, etc. Visibility only changes the

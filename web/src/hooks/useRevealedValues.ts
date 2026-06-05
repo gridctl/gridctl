@@ -25,6 +25,9 @@ const REVEAL_TIMEOUT_MS = 10_000;
 export function useRevealedValues(): UseRevealedValuesResult {
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Per-key generation counter: hide() bumps it so an in-flight reveal that
+  // started before the hide can't re-add the value once its fetch resolves.
+  const generations = useRef<Record<string, number>>({});
   const revealedRef = useRef(revealed);
 
   // Mirror the latest revealed map into a ref so callbacks can read it
@@ -50,6 +53,7 @@ export function useRevealedValues(): UseRevealedValuesResult {
 
   const hide = useCallback(
     (key: string) => {
+      generations.current[key] = (generations.current[key] ?? 0) + 1;
       setRevealed((prev) => {
         if (prev[key] === undefined) return prev;
         const next = { ...prev };
@@ -74,7 +78,12 @@ export function useRevealedValues(): UseRevealedValuesResult {
         hide(key);
         return;
       }
+      const generation = generations.current[key] ?? 0;
       const value = await getValue();
+      // A hide() while the fetch was in flight invalidates this reveal —
+      // dropping the result keeps "hidden means hidden" across fast
+      // selection switches.
+      if ((generations.current[key] ?? 0) !== generation) return;
       setRevealed((prev) => ({ ...prev, [key]: value }));
       if (autoHide) {
         timers.current[key] = setTimeout(() => {
