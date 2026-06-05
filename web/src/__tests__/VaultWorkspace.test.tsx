@@ -204,13 +204,151 @@ describe('VaultWorkspace — server filter', () => {
         <VaultWorkspace />
       </MemoryRouter>,
     );
-    // Expand the POSTGRES_URL row, then trigger its Delete action.
-    const row = await screen.findByRole('button', { name: /POSTGRES_URL/i });
+    // Select the POSTGRES_URL row, then delete from the inspector header.
+    const row = await screen.findByRole('option', { name: /POSTGRES_URL/i });
     fireEvent.click(row);
-    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: /delete variable/i }),
+    );
 
     expect(await screen.findByText(/used by 1 consumer/i)).toBeInTheDocument();
     expect(screen.getByText(/may break it/i)).toBeInTheDocument();
+  });
+});
+
+describe('VaultWorkspace — inspector selection', () => {
+  const testVariables = [
+    { key: 'POSTGRES_URL', type: 'string' as const, is_secret: true },
+    { key: 'REDIS_URL', type: 'string' as const, is_secret: true },
+  ];
+  const testUsage = {
+    POSTGRES_URL: [
+      { kind: 'mcp-server' as const, name: 'postgres', field: 'env.POSTGRES_URL' },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: false,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(testVariables);
+    vi.mocked(api.fetchVariableSets).mockResolvedValue([]);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue(testUsage);
+    vi.mocked(api.deleteVariable).mockResolvedValue(undefined);
+    useVaultStore.setState({
+      variables: testVariables,
+      sets: [],
+      usage: testUsage,
+      recentlyEdited: {},
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+  });
+
+  it('shows the overview pane while nothing is selected', async () => {
+    renderWorkspace();
+    expect(await screen.findByText('Variables overview')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'POSTGRES_URL' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('selects a row on click and shows its detail with usage first', async () => {
+    renderWorkspace();
+    const row = await screen.findByRole('option', { name: /POSTGRES_URL/i });
+    fireEvent.click(row);
+
+    expect(
+      await screen.findByRole('option', { name: /POSTGRES_URL/i, selected: true }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'POSTGRES_URL' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Referenced in stack')).toBeInTheDocument();
+    expect(screen.getByText(/used by 1 site/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /go to postgres/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('restores the selection from a ?selected= deep link', async () => {
+    render(
+      <MemoryRouter initialEntries={['/vault?selected=POSTGRES_URL']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByRole('option', { name: /POSTGRES_URL/i, selected: true }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'POSTGRES_URL' }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the orphan callout for a variable with no consumers', async () => {
+    renderWorkspace();
+    const row = await screen.findByRole('option', { name: /REDIS_URL/i });
+    fireEvent.click(row);
+    expect(
+      await screen.findByText(/not referenced by/i),
+    ).toBeInTheDocument();
+  });
+
+  it('falls back to the overview when the selection is filtered out', async () => {
+    // The search query keeps REDIS_URL only, so the selected POSTGRES_URL is
+    // filtered out of the list and the pane shows the overview instead.
+    render(
+      <MemoryRouter initialEntries={['/vault?selected=POSTGRES_URL&q=REDIS']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Variables overview')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: /POSTGRES_URL/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('clears the selection after deleting the inspected variable', async () => {
+    renderWorkspace();
+    const row = await screen.findByRole('option', { name: /POSTGRES_URL/i });
+    fireEvent.click(row);
+    fireEvent.click(
+      await screen.findByRole('button', { name: /delete variable/i }),
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: /delete "POSTGRES_URL"/i }),
+    );
+
+    expect(await screen.findByText('Variables overview')).toBeInTheDocument();
+    expect(vi.mocked(api.deleteVariable)).toHaveBeenCalledWith('POSTGRES_URL');
+  });
+
+  it('closes the inspector via its close button', async () => {
+    renderWorkspace();
+    fireEvent.click(
+      await screen.findByRole('option', { name: /POSTGRES_URL/i }),
+    );
+    await screen.findByRole('heading', { name: 'POSTGRES_URL' });
+    fireEvent.click(screen.getByRole('button', { name: /close inspector/i }));
+    expect(await screen.findByText('Variables overview')).toBeInTheDocument();
+  });
+
+  it('moves the selection with arrow keys', async () => {
+    renderWorkspace();
+    await screen.findByRole('option', { name: /POSTGRES_URL/i });
+
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' });
+    expect(
+      await screen.findByRole('option', { name: /POSTGRES_URL/i, selected: true }),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' });
+    expect(
+      await screen.findByRole('option', { name: /REDIS_URL/i, selected: true }),
+    ).toBeInTheDocument();
   });
 });
 
