@@ -13,6 +13,22 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Variables workspace master-detail inspector.** The Variables tab now uses
+  the same list-plus-inspector layout as Library and Tools: a denser,
+  table-like variable list (key, type, set, value preview, and used-by count
+  in aligned columns under a sticky header) with a persistent right-rail
+  inspector for the selected variable. The inspector leads with the stack
+  usage index — every `${var:KEY}` reference site, clickable through to the
+  topology node — followed by a type-aware value view (pretty JSON, list
+  chips, bool/number literals), copy-without-reveal as the primary secret
+  action, edit-in-pane with the full typed editors, set reassignment, and a
+  one-step rotate for string secrets. Selection is URL-synced
+  (`?selected=KEY`) for deep links, arrow keys move it from the list, and
+  with nothing selected the rail shows an at-a-glance overview (counts by
+  type, secrets vs plaintext, unreferenced variables) instead of empty space.
+  Inline row expand/edit is retired in the workspace; the sidebar
+  quick-access panel is unchanged.
+
 - **Per-client model attribution for cost observability.** A new top-level
   `client_models:` map in stack.yaml declares which model each client runs
   (e.g. `claude-code: claude-opus-4-7`), and the gateway prices that client's
