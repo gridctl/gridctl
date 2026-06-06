@@ -63,6 +63,16 @@ type Server struct {
 	// configured. Must be safe for concurrent calls.
 	clientModelAttribution func() map[string]string
 
+	// declaredServerModels returns the server -> model mapping as DECLARED
+	// in stack.yaml (per-server model: only, no default_model folded in).
+	// The UI needs the declared value as the edit baseline; the effective
+	// value comes from modelAttribution. Must be safe for concurrent calls.
+	declaredServerModels func() map[string]string
+
+	// defaultModel returns the gateway-level default_model from stack.yaml,
+	// or "" when none is configured. Must be safe for concurrent calls.
+	defaultModel func() string
+
 	// startWatcher, when set, starts a file watcher on the given stack path.
 	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
 	startWatcher func(stackPath string)
@@ -224,6 +234,39 @@ func (s *Server) clientModelAttributionMap() map[string]string {
 	return s.clientModelAttribution()
 }
 
+// SetDeclaredServerModels sets a getter for the server -> model mapping as
+// declared in stack.yaml (per-server model: only). Same contract as
+// SetModelAttribution: the getter follows hot reloads and must be safe for
+// concurrent calls. Feeds the /api/status server model exposure.
+func (s *Server) SetDeclaredServerModels(get func() map[string]string) {
+	s.declaredServerModels = get
+}
+
+// SetDefaultModel sets a getter for the gateway-level default_model. The
+// getter follows hot reloads and must be safe for concurrent calls. Feeds
+// the /api/status default_model exposure.
+func (s *Server) SetDefaultModel(get func() string) {
+	s.defaultModel = get
+}
+
+// declaredServerModelsMap returns the current declared server -> model
+// mapping, or nil when no getter is wired or nothing is configured.
+func (s *Server) declaredServerModelsMap() map[string]string {
+	if s.declaredServerModels == nil {
+		return nil
+	}
+	return s.declaredServerModels()
+}
+
+// defaultModelValue returns the current gateway default_model, or "" when no
+// getter is wired or none is configured.
+func (s *Server) defaultModelValue() string {
+	if s.defaultModel == nil {
+		return ""
+	}
+	return s.defaultModel()
+}
+
 // SetStartWatcher sets a callback that activates live-reload file watching for
 // the given stack path. Called by POST /api/stack/initialize after cold-loading.
 func (s *Server) SetStartWatcher(fn func(stackPath string)) {
@@ -278,6 +321,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/mcp-servers/{name}/restart", s.handleMCPServerRestart)
 	mux.HandleFunc("PUT /api/mcp-servers/tools", s.handleSetServerToolsBatch)
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
+	mux.HandleFunc("PUT /api/mcp-servers/{name}/model", s.handleSetServerModel)
+	mux.HandleFunc("PUT /api/gateway/default-model", s.handleSetDefaultModel)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("GET /api/tools/catalog", s.handleToolsCatalog)
@@ -440,7 +485,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// stack.yaml client_models. Omitted when empty. The UI uses it to
 		// label per-client cost with the model it was priced as.
 		ClientModels map[string]string `json:"client_models,omitempty"`
-		StackName    string            `json:"stack_name,omitempty"`
+		// ServerModels is the EFFECTIVE server -> model pricing map (a
+		// server's own model: with gateway default_model folded in).
+		// Omitted when no server-tier attribution is configured. The
+		// declared per-server value rides on each MCPServerStatus.Model.
+		ServerModels map[string]string `json:"server_models,omitempty"`
+		// DefaultModel is the gateway-level default_model from stack.yaml.
+		// Omitted when not configured. Lets the UI render "inherits
+		// default: <id>" provenance for servers without their own model.
+		DefaultModel string `json:"default_model,omitempty"`
+		StackName    string `json:"stack_name,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:      s.gateway.ServerInfo().Name,
@@ -472,7 +526,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	status.ClientModels = s.clientModelAttributionMap()
-	status.CostAttribution = len(s.modelAttributionMap()) > 0 || len(status.ClientModels) > 0
+	status.ServerModels = s.modelAttributionMap()
+	status.DefaultModel = s.defaultModelValue()
+	status.CostAttribution = len(status.ServerModels) > 0 || len(status.ClientModels) > 0
 
 	writeJSON(w, status)
 }
@@ -562,6 +618,10 @@ type MCPServerStatus struct {
 	LastCheck     *string  `json:"lastCheck,omitempty"`
 	HealthError   string   `json:"healthError,omitempty"`
 	ToolWhitelist []string `json:"toolWhitelist,omitempty"`
+	// Model is the pricing model DECLARED on this server in stack.yaml
+	// (model: field only — a gateway default_model is not folded in here).
+	// Empty when the server inherits the default or has no attribution.
+	Model string `json:"model,omitempty"`
 
 	Replicas  []mcp.ReplicaStatus  `json:"replicas,omitempty"`
 	Autoscale *mcp.AutoscaleStatus `json:"autoscale,omitempty"`
@@ -569,6 +629,7 @@ type MCPServerStatus struct {
 
 func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 	mcpStatuses := s.gateway.Status()
+	declaredModels := s.declaredServerModelsMap()
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
 		status := MCPServerStatus{
@@ -588,6 +649,7 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 			Healthy:       ms.Healthy,
 			HealthError:   ms.HealthError,
 			ToolWhitelist: ms.ToolWhitelist,
+			Model:         declaredModels[ms.Name],
 			Replicas:      ms.Replicas,
 			Autoscale:     ms.Autoscale,
 		}
