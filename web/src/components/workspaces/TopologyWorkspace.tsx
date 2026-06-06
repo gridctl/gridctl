@@ -3,6 +3,7 @@ import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
 import { Canvas } from '../graph/Canvas';
 import { AccessLens } from '../topology/AccessLens';
+import { PricingManagerHost } from '../pricing/PricingManagerHost';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -113,6 +114,11 @@ export function TopologyWorkspace() {
               action bar, commit gate, and dirty-exit guard. Mounted in the
               canvas column so its absolute overlays anchor to the canvas. */}
           <AccessLens servers={accessServers} />
+
+          {/* Pricing models manager: the canonical three-tier cost-attribution
+              editor. Same canvas-column anchoring as the Access Lens
+              slide-over; opened from Metrics, the inspector, or the palette. */}
+          <PricingManagerHost />
         </div>
 
         {sidebarOpen && (
