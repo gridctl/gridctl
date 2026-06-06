@@ -342,6 +342,22 @@ func toolsSequenceNode(tools []string) *yaml.Node {
 	return seq
 }
 
+// encodeStackYAML marshals a patched document with the package-standard
+// two-space indent. Shared by every yaml.Node patcher so the round-trip
+// encoding never drifts between endpoints.
+func encodeStackYAML(root *yaml.Node) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(root); err != nil {
+		return nil, fmt.Errorf("marshal stack yaml: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("marshal stack yaml: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
 // atomicWrite writes data to path via a same-directory temp file + fsync +
 // rename. A mid-write crash leaves the original file intact; a mid-rename
 // crash on a POSIX filesystem leaves either the old or the new file at path,
