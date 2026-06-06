@@ -15,6 +15,7 @@ import {
   KeyRound,
   ShieldCheck,
 } from 'lucide-react';
+import { ModelPicker } from '../../pricing/ModelPicker';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { AutoscaleFormData, MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
@@ -443,6 +444,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
   const advancedCount =
     (data.tools?.length ?? 0) +
     (data.outputFormat ? 1 : 0) +
+    (data.model ? 1 : 0) +
     (data.buildArgs ? Object.keys(data.buildArgs).length : 0) +
     (data.network ? 1 : 0) +
     (data.pinSchemas !== undefined ? 1 : 0) +
@@ -1369,6 +1371,20 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className={labelClass}>Pricing Model (cost estimates)</label>
+          <ModelPicker
+            value={data.model ?? ''}
+            onCommit={(model) => onChange({ model: model || undefined })}
+            commitOnBlur
+            widthClass="w-full"
+            placeholder="Inherit gateway default"
+          />
+          <p className="text-[10px] text-text-muted mt-1">
+            Prices this server's tool calls. Overrides the gateway default; pricing only, no behavior change
+          </p>
         </div>
 
         {visibility.buildArgs && (
