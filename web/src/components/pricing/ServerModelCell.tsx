@@ -101,7 +101,7 @@ export function ServerModelCell({
         type="button"
         onClick={openEditor}
         title={MODEL_PRECEDENCE_HINT}
-        className="text-[10px] text-text-muted/60 hover:text-text-secondary transition-colors font-mono"
+        className="text-[10px] text-text-muted/70 hover:text-secondary transition-colors font-mono"
       >
         default: {defaultModel}
       </button>
@@ -113,7 +113,7 @@ export function ServerModelCell({
       type="button"
       onClick={openEditor}
       title={MODEL_PRECEDENCE_HINT}
-      className="text-[10px] text-text-muted/60 hover:text-text-secondary transition-colors"
+      className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
     >
       set model
     </button>

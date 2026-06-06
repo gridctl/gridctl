@@ -308,7 +308,7 @@ export function ModelPicker({
       )}
 
       {isUnknown && (
-        <p className="mt-0.5 text-[9px] leading-snug text-status-pending/80">{UNKNOWN_MODEL_NOTE}</p>
+        <p className="mt-0.5 text-[10px] leading-snug text-status-pending">{UNKNOWN_MODEL_NOTE}</p>
       )}
     </div>
   );

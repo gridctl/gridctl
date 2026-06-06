@@ -104,8 +104,8 @@ export function PricingManagerSlideOver({
         </TierSection>
 
         <div className="border-t border-border/30 pt-3 space-y-1.5">
-          <p className="text-[9px] text-text-muted/60 leading-relaxed">{SNAPSHOT_NOTE}</p>
-          <p className="text-[9px] text-text-muted/60 leading-relaxed">
+          <p className="text-[10px] text-text-muted leading-relaxed">{SNAPSHOT_NOTE}</p>
+          <p className="text-[10px] text-text-muted leading-relaxed">
             Unknown IDs record tokens but price as $0. A declared client model is a session
             default and cannot observe mid-session model switches.
           </p>
@@ -130,9 +130,9 @@ function TierSection({
     <section>
       <div className="flex items-center gap-1.5 mb-1">
         {icon}
-        <h3 className="text-[11px] font-medium text-text-secondary">{title}</h3>
+        <h3 className="text-xs font-medium text-text-secondary">{title}</h3>
       </div>
-      <p className="text-[9px] text-text-muted/60 mb-2 leading-relaxed">{note}</p>
+      <p className="text-[11px] text-text-muted mb-2 leading-relaxed">{note}</p>
       <div className="space-y-1.5">{children}</div>
     </section>
   );
@@ -141,7 +141,7 @@ function TierSection({
 function TierRow({ name, children }: { name: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 min-h-[26px]">
-      <span className="text-[11px] font-mono text-text-primary truncate" title={name}>
+      <span className="text-xs font-mono text-text-primary truncate" title={name}>
         {name}
       </span>
       <div className="flex-shrink-0">{children}</div>
@@ -239,7 +239,7 @@ function DefaultModelRow({
         setEditing(true);
       }}
       title={MODEL_PRECEDENCE_HINT}
-      className="text-[10px] text-text-muted/60 hover:text-text-secondary transition-colors"
+      className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
     >
       set default model
     </button>

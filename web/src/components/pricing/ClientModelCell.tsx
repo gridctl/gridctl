@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { cn } from '../../lib/cn';
 import { updateClientModel } from '../../lib/api';
 import { showToast } from '../ui/Toast';
 import { ModelPicker } from './ModelPicker';
@@ -106,7 +107,15 @@ export function ClientModelCell({
         setEditing(true);
       }}
       title={MODEL_PRECEDENCE_HINT}
-      className="text-[10px] text-text-muted/60 hover:text-text-secondary transition-colors"
+      className={cn(
+        'text-[10px] transition-colors',
+        costAttribution
+          ? // Informational state that happens to be clickable: stays quiet
+            // in dense tables, brightens to the accent on hover.
+            'text-text-muted/70 hover:text-secondary'
+          : // Empty-state CTA: the house interactive-text pattern.
+            'text-secondary hover:text-secondary-light',
+      )}
     >
       {costAttribution ? 'per-server' : 'set model'}
     </button>

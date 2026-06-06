@@ -425,11 +425,11 @@ export function Sidebar() {
                       </span>
                     </span>
                   ) : !isClient && defaultModel ? (
-                    <span className="text-[10px] font-mono text-text-muted/70">
+                    <span className="text-xs font-mono text-text-muted">
                       default: {defaultModel}
                     </span>
                   ) : (
-                    <span className="text-[10px] text-text-muted/60">
+                    <span className="text-xs text-text-muted">
                       {isClient && costAttribution ? 'per-server' : 'not configured'}
                     </span>
                   )}
