@@ -3,6 +3,7 @@ import { useReactFlow } from '@xyflow/react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
+  DollarSign,
   Key,
   Library,
   Terminal,
@@ -49,6 +50,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const toggleSpecMode = useUIStore((s) => s.toggleSpecMode);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const setShowVault = useUIStore((s) => s.setShowVault);
+  const setPricingManagerOpen = useUIStore((s) => s.setPricingManagerOpen);
 
   const mcpServers = useStackStore((s) => s.mcpServers);
   const selectNode = useStackStore((s) => s.selectNode);
@@ -236,6 +238,18 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         keywords: ['wizard', 'create', 'new', 'server', 'add', 'resource'],
         onSelect: () => useWizardStore.getState().open(),
       },
+      {
+        id: 'action:pricing-models',
+        label: 'Edit pricing models',
+        section: 'global',
+        icon: <DollarSign size={14} />,
+        keywords: ['pricing', 'cost', 'model', 'models', 'attribution', 'usd', 'edit'],
+        onSelect: () => {
+          // The manager mounts in the Topology workspace's canvas column.
+          navigate('/topology');
+          setPricingManagerOpen(true);
+        },
+      },
     ];
     registerCommands('canvas-actions', commands);
     return () => unregisterCommands('canvas-actions');
@@ -250,6 +264,8 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     toggleDriftOverlay,
     toggleCompactCards,
     toggleSpecMode,
+    setPricingManagerOpen,
+    navigate,
     onRefresh,
   ]);
 
