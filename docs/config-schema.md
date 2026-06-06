@@ -774,8 +774,9 @@ metadata (when a server reports one) > the calling client's `client_models`
 entry > the target server's `model:` > `gateway.default_model`. Unknown model
 IDs and keys that are not normalized client IDs surface as validation
 warnings (never errors) and price as zero. Edits hot-reload without
-restarting any server. The Metrics tab's Top Clients panel shows each
-declared client's model and lets you edit it inline; see
+restarting any server. All three tiers are editable in the web UI: inline in
+the Metrics tab's client and server tables, or through the "Pricing models"
+manager (Metrics toolbar, sidebar inspector, or command palette); see
 [Cost Observability](cost-observability.md) for semantics and limitations.
 
 ---
