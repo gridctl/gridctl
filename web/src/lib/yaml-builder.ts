@@ -72,6 +72,9 @@ export interface MCPServerFormData {
   buildArgs?: Record<string, string>;
   tools?: string[];
   outputFormat?: string;
+  // Pricing model for cost estimates (model: in YAML). Overrides
+  // gateway.default_model for this server; optional and pricing-only.
+  model?: string;
   network?: string;
   pinSchemas?: boolean;
   // Replicas (mutually exclusive with autoscale)
@@ -112,6 +115,9 @@ export interface StackFormData {
     codeMode?: string;
     codeModeTimeout?: number;
     outputFormat?: string;
+    // Stack-wide pricing floor (default_model: in YAML). Prices every
+    // server without its own model; optional and pricing-only.
+    defaultModel?: string;
     maxToolResultBytes?: number;
     tracing?: {
       enabled?: boolean;
@@ -281,6 +287,7 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
     lines.push(serializeArray(data.tools, indentLevel + 4));
   }
   if (data.outputFormat) lines.push(`${inner}output_format: ${data.outputFormat}`);
+  if (data.model) lines.push(`${inner}model: ${yamlValue(data.model)}`);
   if (data.network) lines.push(`${inner}network: ${data.network}`);
   if (data.pinSchemas !== undefined) lines.push(`${inner}pin_schemas: ${data.pinSchemas}`);
 
@@ -376,6 +383,7 @@ function buildStack(data: StackFormData): string {
     if (data.gateway.codeMode) lines.push(`  code_mode: ${data.gateway.codeMode}`);
     if (data.gateway.codeModeTimeout) lines.push(`  code_mode_timeout: ${data.gateway.codeModeTimeout}`);
     if (data.gateway.outputFormat) lines.push(`  output_format: ${data.gateway.outputFormat}`);
+    if (data.gateway.defaultModel) lines.push(`  default_model: ${yamlValue(data.gateway.defaultModel)}`);
     if (data.gateway.maxToolResultBytes) lines.push(`  maxToolResultBytes: ${data.gateway.maxToolResultBytes}`);
 
     const gw = data.gateway;
