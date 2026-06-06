@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -195,16 +194,7 @@ func patchClientModels(source []byte, clientKey, model string) ([]byte, error) {
 		replaceOrInsertScalar(modelsNode, clientKey, model)
 	}
 
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(&root); err != nil {
-		return nil, fmt.Errorf("marshal stack yaml: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("marshal stack yaml: %w", err)
-	}
-	return buf.Bytes(), nil
+	return encodeStackYAML(&root)
 }
 
 // replaceOrInsertScalar sets mapping[key] to a string scalar, replacing an
