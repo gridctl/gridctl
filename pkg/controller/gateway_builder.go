@@ -91,9 +91,14 @@ type GatewayBuilder struct {
 // models (per-server model: with gateway default_model folded in). The
 // resolver consults clients first — the model is a property of the calling
 // client's session; the server tier is the coarser fallback.
+// declaredServers and defaultModel carry the raw (un-folded) declarations so
+// the API can show provenance: which servers set their own model and what
+// the gateway default is.
 type modelAttribution struct {
-	clients map[string]string
-	servers map[string]string
+	clients         map[string]string
+	servers         map[string]string
+	declaredServers map[string]string
+	defaultModel    string
 }
 
 // telemetryWiring bundles the three per-signal writers + the otlptrace
@@ -841,6 +846,12 @@ func (b *GatewayBuilder) wireModelAttribution(observer *metrics.Observer, apiSer
 	apiServer.SetClientModelAttribution(func() map[string]string {
 		return b.modelAttribution.Load().clients
 	})
+	apiServer.SetDeclaredServerModels(func() map[string]string {
+		return b.modelAttribution.Load().declaredServers
+	})
+	apiServer.SetDefaultModel(func() string {
+		return b.modelAttribution.Load().defaultModel
+	})
 }
 
 // refreshModelAttribution re-resolves the client and server model mappings
@@ -849,9 +860,38 @@ func (b *GatewayBuilder) wireModelAttribution(observer *metrics.Observer, apiSer
 // next observed call.
 func (b *GatewayBuilder) refreshModelAttribution(cfg *config.Stack) {
 	b.modelAttribution.Store(&modelAttribution{
-		clients: cfg.ClientModelAttribution(),
-		servers: cfg.ModelAttribution(),
+		clients:         cfg.ClientModelAttribution(),
+		servers:         cfg.ModelAttribution(),
+		declaredServers: declaredServerModels(cfg),
+		defaultModel:    gatewayDefaultModel(cfg),
 	})
+}
+
+// declaredServerModels collects the raw per-server model: declarations
+// (no gateway default folded in). Returns nil when nothing is declared.
+func declaredServerModels(cfg *config.Stack) map[string]string {
+	if cfg == nil {
+		return nil
+	}
+	var out map[string]string
+	for _, server := range cfg.MCPServers {
+		if server.Model == "" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string, len(cfg.MCPServers))
+		}
+		out[server.Name] = server.Model
+	}
+	return out
+}
+
+// gatewayDefaultModel returns gateway.default_model, or "" when unset.
+func gatewayDefaultModel(cfg *config.Stack) string {
+	if cfg == nil || cfg.Gateway == nil {
+		return ""
+	}
+	return cfg.Gateway.DefaultModel
 }
 
 // buildTracingConfig extracts tracing config from gateway config with defaults.
