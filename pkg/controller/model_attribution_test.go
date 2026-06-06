@@ -302,6 +302,49 @@ func TestClientModelsAccessInert(t *testing.T) {
 	}
 }
 
+// TestRefreshModelAttribution_DeclaredAndDefaultExposed verifies the raw
+// declarations ride alongside the effective maps: declaredServers carries
+// only per-server model: fields (no default folded in) and defaultModel
+// carries gateway.default_model, both following hot reloads. These feed the
+// /api/status provenance exposure.
+func TestRefreshModelAttribution_DeclaredAndDefaultExposed(t *testing.T) {
+	stack := &config.Stack{
+		Name:    "test",
+		Gateway: &config.GatewayConfig{DefaultModel: "fallback-model"},
+		MCPServers: []config.MCPServer{
+			{Name: "a", Model: "claude-fixture"},
+			{Name: "b"},
+		},
+	}
+	builder, _, _, _ := newAttributionFixture(t, stack)
+
+	attribution := builder.modelAttribution.Load()
+	if attribution.defaultModel != "fallback-model" {
+		t.Errorf("defaultModel = %q, want fallback-model", attribution.defaultModel)
+	}
+	if got := attribution.declaredServers["a"]; got != "claude-fixture" {
+		t.Errorf("declaredServers[a] = %q, want claude-fixture", got)
+	}
+	if _, ok := attribution.declaredServers["b"]; ok {
+		t.Error("declaredServers must not fold the gateway default into undeclared servers")
+	}
+	// The effective map DOES fold the default in.
+	if got := attribution.servers["b"]; got != "fallback-model" {
+		t.Errorf("servers[b] = %q, want fallback-model (effective map folds default)", got)
+	}
+
+	// A hot reload that drops everything clears both exposures.
+	builder.refreshModelAttribution(&config.Stack{
+		Name:       "test",
+		MCPServers: []config.MCPServer{{Name: "a"}, {Name: "b"}},
+	})
+	attribution = builder.modelAttribution.Load()
+	if attribution.defaultModel != "" || len(attribution.declaredServers) != 0 {
+		t.Errorf("cleared stack must clear declared exposure; got default=%q declared=%v",
+			attribution.defaultModel, attribution.declaredServers)
+	}
+}
+
 // approxUSD mirrors the metrics package's float comparison for USD values.
 func approxUSD(a, b float64) bool {
 	d := a - b
