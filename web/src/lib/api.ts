@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse } from '../types';
+import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -564,6 +564,74 @@ export async function updateClientModel(
   }
 
   return data as UpdateClientModelResponse;
+}
+
+/**
+ * Set (or clear, with an empty string) an MCP server's pricing model
+ * (the server's model: field). Pricing attribution only.
+ * PUT /api/mcp-servers/{name}/model
+ */
+export async function updateServerModel(
+  name: string,
+  model: string,
+): Promise<UpdateServerModelResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/mcp-servers/${encodeURIComponent(name)}/model`,
+    {
+      method: 'PUT',
+      headers: buildHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ model }),
+    },
+  );
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    const msg =
+      err && typeof err === 'object' && typeof err.message === 'string'
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : `Update server model failed: ${response.status} ${response.statusText}`;
+    throw new Error(msg);
+  }
+
+  return data as UpdateServerModelResponse;
+}
+
+/**
+ * Set (or clear, with an empty string) the gateway-level default pricing
+ * model (gateway.default_model). Pricing attribution only.
+ * PUT /api/gateway/default-model
+ */
+export async function updateDefaultModel(
+  model: string,
+): Promise<UpdateDefaultModelResponse> {
+  const response = await fetch(`${API_BASE}/api/gateway/default-model`, {
+    method: 'PUT',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ model }),
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    const msg =
+      err && typeof err === 'object' && typeof err.message === 'string'
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : `Update default model failed: ${response.status} ${response.statusText}`;
+    throw new Error(msg);
+  }
+
+  return data as UpdateDefaultModelResponse;
 }
 
 export async function fetchGatewayLogs(lines = 100, level?: string): Promise<LogEntry[]> {
