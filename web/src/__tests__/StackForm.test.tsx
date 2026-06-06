@@ -354,6 +354,44 @@ describe('StackForm Gateway Advanced section', () => {
   });
 });
 
+describe('YAML serialization — pricing fields', () => {
+  it('serializes gateway default_model when set', () => {
+    const yaml = buildYAML({
+      type: 'stack',
+      data: {
+        name: 'my-stack',
+        gateway: { defaultModel: 'claude-haiku-4-5' },
+      },
+    });
+    expect(yaml).toContain('gateway:');
+    expect(yaml).toContain('default_model: claude-haiku-4-5');
+  });
+
+  it('omits default_model when unset', () => {
+    const yaml = buildYAML({
+      type: 'stack',
+      data: { name: 'my-stack', gateway: { codeMode: 'on' } },
+    });
+    expect(yaml).not.toContain('default_model');
+  });
+
+  it('serializes per-server model when set', () => {
+    const yaml = buildYAML({
+      type: 'stack',
+      data: {
+        name: 'my-stack',
+        mcpServers: [
+          { name: 'github', serverType: 'container', image: 'mcp/github:latest', model: 'claude-opus-4-7' },
+          { name: 'gitlab', serverType: 'container', image: 'mcp/gitlab:latest' },
+        ],
+      },
+    });
+    expect(yaml).toContain('model: claude-opus-4-7');
+    // The model-less sibling must not gain a model key.
+    expect(yaml.match(/ model:/g)).toHaveLength(1);
+  });
+});
+
 describe('YAML serialization — gateway advanced fields', () => {
   it('serializes api_key auth with header', () => {
     const yaml = buildYAML({
