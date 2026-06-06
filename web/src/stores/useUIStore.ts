@@ -170,6 +170,12 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   accessEditorSeedSlug: string | null;
   openAccessEditor: (slug?: string | null) => void;
   closeAccessEditor: () => void;
+
+  // Pricing models manager: the canonical three-tier cost-attribution
+  // editor, opened from Metrics, the inspector, or the command palette.
+  // Transient (not persisted).
+  pricingManagerOpen: boolean;
+  setPricingManagerOpen: (open: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -264,6 +270,9 @@ export const useUIStore = create<UIState>()(
       openAccessEditor: (slug) =>
         set({ accessEditorOpen: true, accessEditorSeedSlug: slug ?? null }),
       closeAccessEditor: () => set({ accessEditorOpen: false, accessEditorSeedSlug: null }),
+
+      pricingManagerOpen: false,
+      setPricingManagerOpen: (pricingManagerOpen) => set({ pricingManagerOpen }),
 
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
