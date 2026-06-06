@@ -75,6 +75,10 @@ export interface MCPServerStatus {
   // whitelist" (expose all tools the gateway loaded). Present and non-empty
   // means the operator has curated a subset.
   toolWhitelist?: string[];
+  // Pricing model DECLARED on this server in stack.yaml (model: field only;
+  // a gateway default_model is not folded in). Absent when the server
+  // inherits the default or has no attribution.
+  model?: string;
   replicas?: ReplicaStatus[]; // Per-replica runtime status
   autoscale?: AutoscaleStatus; // Live autoscale snapshot (absent when not configured)
 }
@@ -220,6 +224,8 @@ export interface GatewayStatus {
   cost?: CostUsage;        // Cost snapshot (omitted until any cost is recorded)
   cost_attribution?: boolean; // True when any client or server has a pricing model configured
   client_models?: Record<string, string>; // Declared client -> model pricing map (client_models)
+  server_models?: Record<string, string>; // EFFECTIVE server -> model map (model: with default_model folded in)
+  default_model?: string;  // Gateway-level default_model (omitted when not configured)
   stack_name?: string;     // Active stack name; omitted in stackless mode
 }
 
@@ -233,6 +239,21 @@ export interface PricingModelsResponse {
 export interface UpdateClientModelResponse {
   client: string;
   profileKey: string;
+  model: string;
+  reloaded: boolean;
+  reloadedAt?: string;
+}
+
+// Response from PUT /api/mcp-servers/{name}/model
+export interface UpdateServerModelResponse {
+  server: string;
+  model: string;
+  reloaded: boolean;
+  reloadedAt?: string;
+}
+
+// Response from PUT /api/gateway/default-model
+export interface UpdateDefaultModelResponse {
   model: string;
   reloaded: boolean;
   reloadedAt?: string;
