@@ -29,7 +29,17 @@ mcp-servers:
     model: claude-opus-4-7          # prices undeclared clients' calls to this server
 ```
 
-Without any attribution, tokens and latency record normally but cost stays zero, and the dashboard's cost card shows a configuration hint instead of a number. Anonymous calls (no client identity on the session) skip the client tier and resolve via the server tier. Edits to any of these fields hot-reload through the file watcher without restarting any server; subsequent calls price against the updated mapping. The Metrics tab's Top Clients panel shows each declared client's model with `· client` provenance and supports inline editing backed by the known-models list (`GET /api/pricing/models`); clients without a declaration aggregate whatever server/default rates their calls hit, so no single model is shown for them.
+Without any attribution, tokens and latency record normally but cost stays zero, and the dashboard's cost card shows a configuration hint instead of a number. Anonymous calls (no client identity on the session) skip the client tier and resolve via the server tier. Edits to any of these fields hot-reload through the file watcher without restarting any server; subsequent calls price against the updated mapping.
+
+### Editing attribution in the UI
+
+All three declared tiers are editable in the web UI without touching `stack.yaml`. The shared model picker is a searchable, provider-grouped combobox over the known-models list (`GET /api/pricing/models`); free-text IDs outside the list are accepted (best-effort pricing, soft warning, $0).
+
+- **Metrics tab** (and the detached `/metrics` window): the Top Clients panel shows each declared client's model with `· client` provenance and edits inline; the per-server table shows `· server` pills or muted `default: <id>` inheritance and edits inline. Clients without a declaration aggregate whatever server/default rates their calls hit, so no single model is shown for them.
+- **Pricing models manager**: a slide-over listing all three tiers in precedence order (clients, servers, gateway default). Opened from the Metrics toolbar's `$` button, the sidebar inspector's Pricing section, or the command palette ("Edit pricing models").
+- **Creation wizard**: `gateway.default_model` (Pricing section) and per-server `model:` (Advanced section) can be set before the first apply.
+
+Writes go through dedicated pricing endpoints (`PUT /api/clients/{slug}/model`, `PUT /api/mcp-servers/{name}/model`, `PUT /api/gateway/default-model`) that patch only the relevant key, preserve comments and ordering, and never create or touch a `clients:` access block. A concurrent external edit surfaces as a 409 conflict so the UI can re-fetch; successful saves hot-reload immediately.
 
 Two limitations to keep expectations honest. A declared client model is a session-level default: the gateway cannot see a mid-session model switch (e.g. `/model` in Claude Code), so calls keep pricing at the declared model until the declaration changes. And validation is soft by design: model IDs unknown to the pricing snapshot, or `client_models` keys that are not normalized client IDs (`gridctl validate` warns and suggests the canonical form), produce warnings — never errors — and price as zero.
 
