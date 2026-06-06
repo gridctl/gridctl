@@ -13,6 +13,7 @@ import {
   Trash2,
   AlertCircle,
   Zap,
+  DollarSign,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
@@ -23,6 +24,7 @@ import type {
 } from '../../../lib/yaml-builder';
 import { VariablesPopover } from '../VariablesPopover';
 import { VaultSetSelector } from '../VaultSetSelector';
+import { ModelPicker } from '../../pricing/ModelPicker';
 import { MCPServerForm } from './MCPServerForm';
 
 // --- Shared form primitives ---
@@ -963,6 +965,33 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             />
             <p className="text-[10px] text-text-muted mt-1">Bytes. Default: 64KB (65536)</p>
           </div>
+        </div>
+      </Section>
+
+      {/* Section 2c: Pricing — collapsed by default; cost attribution is
+          optional and pricing-only (no behavior change). */}
+      <Section
+        title="Pricing"
+        icon={DollarSign}
+        expanded={expandedSections.has('pricing')}
+        onToggle={() => toggleSection('pricing')}
+        badge={data.gateway?.defaultModel ? '1' : undefined}
+      >
+        <div>
+          <label className={labelClass}>Default Pricing Model</label>
+          <ModelPicker
+            value={data.gateway?.defaultModel ?? ''}
+            onCommit={(model) =>
+              onChange({ gateway: { ...data.gateway, defaultModel: model || undefined } })
+            }
+            commitOnBlur
+            widthClass="w-full"
+            placeholder="e.g. claude-opus-4-7"
+          />
+          <p className="text-[10px] text-text-muted mt-1">
+            Stack-wide floor for cost estimates: prices every server without its own model.
+            Per-client models (client_models) can be set after apply, from the Metrics tab
+          </p>
         </div>
       </Section>
 
