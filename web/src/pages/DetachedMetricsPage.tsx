@@ -15,6 +15,10 @@ import { fetchStatus, fetchTokenMetrics, fetchCostMetrics, clearTokenMetrics } f
 import { formatCompactNumber, formatUSD } from '../lib/format';
 import { POLLING } from '../lib/constants';
 import { AreaChart } from '../components/chart/AreaChart';
+import { ClientModelCell } from '../components/pricing/ClientModelCell';
+import { ServerModelCell } from '../components/pricing/ServerModelCell';
+import { PricingManagerSlideOver } from '../components/pricing/PricingManagerSlideOver';
+import { ATTRIBUTION_HINT } from '../components/pricing/constants';
 import type { GatewayStatus, TokenMetricsResponse, CostMetricsResponse, TokenUsage, CostUsage } from '../types';
 import {
   Pause,
@@ -85,6 +89,11 @@ function DetachedMetricsPageContent() {
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [costUsage, setCostUsage] = useState<CostUsage | null>(null);
   const [costAttribution, setCostAttribution] = useState(false);
+  const [clientModels, setClientModels] = useState<Record<string, string>>({});
+  const [serverDeclared, setServerDeclared] = useState<Record<string, string>>({});
+  const [serverNames, setServerNames] = useState<string[]>([]);
+  const [defaultModel, setDefaultModel] = useState('');
+  const [pricingManagerOpen, setPricingManagerOpen] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('live');
   const [isPaused, setIsPaused] = useState(false);
   const [metricsData, setMetricsData] = useState<TokenMetricsResponse | null>(null);
@@ -110,6 +119,14 @@ function DetachedMetricsPageContent() {
         setTokenUsage(status.token_usage ?? null);
         setCostUsage(status.cost ?? null);
         setCostAttribution(status.cost_attribution ?? false);
+        setClientModels(status.client_models ?? {});
+        setDefaultModel(status.default_model ?? '');
+        const declared: Record<string, string> = {};
+        for (const s of status['mcp-servers'] ?? []) {
+          if (s.model) declared[s.name] = s.model;
+        }
+        setServerDeclared(declared);
+        setServerNames((status['mcp-servers'] ?? []).map((s) => s.name));
       } catch {
         // Ignore status errors
       }
@@ -187,6 +204,32 @@ function DetachedMetricsPageContent() {
       setClientSortDirection('desc');
     }
   };
+
+  // Optimistic local updates after a successful model save. The detached
+  // window owns local state (not the main window's store); the next status
+  // poll confirms from the backend, and the main window catches up on its
+  // own poll.
+  const handleClientModelSaved = useCallback((client: string, model: string) => {
+    setClientModels((prev) => {
+      const next = { ...prev };
+      if (model === '') delete next[client];
+      else next[client] = model;
+      return next;
+    });
+  }, []);
+
+  const handleServerModelSaved = useCallback((server: string, model: string) => {
+    setServerDeclared((prev) => {
+      const next = { ...prev };
+      if (model === '') delete next[server];
+      else next[server] = model;
+      return next;
+    });
+  }, []);
+
+  const handleDefaultModelSaved = useCallback((model: string) => {
+    setDefaultModel(model);
+  }, []);
 
   // Per-server data
   const perServerEntries = tokenUsage?.per_server
@@ -382,6 +425,14 @@ function DetachedMetricsPageContent() {
             )}
           </div>
 
+          <IconButton
+            icon={DollarSign}
+            onClick={() => setPricingManagerOpen(true)}
+            tooltip="Edit pricing models"
+            size="sm"
+            variant="ghost"
+          />
+
           <div className="w-px h-4 bg-border/50 mx-1" />
           <IconButton
             icon={isFullscreen ? Minimize2 : Maximize2}
@@ -518,6 +569,7 @@ function DetachedMetricsPageContent() {
                   <thead>
                     <tr className="border-b border-border/30">
                       <ClientSortableHeader label="Client" column="name" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} />
+                      <th className="px-3 py-1.5 text-left text-[10px] font-medium text-text-muted uppercase tracking-wider">Model</th>
                       <ClientSortableHeader label="Input" column="input" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
                       <ClientSortableHeader label="Output" column="output" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
                       <ClientSortableHeader label="Total" column="total" sortColumn={clientSortColumn} sortDirection={clientSortDirection} onSort={handleClientSort} align="right" />
@@ -528,6 +580,14 @@ function DetachedMetricsPageContent() {
                     {sortedClients.map((client) => (
                       <tr key={client.name} className="border-b border-border/20 last:border-0 hover:bg-surface-highlight/30 transition-colors">
                         <td className="px-3 py-2 font-medium text-text-primary font-mono">{client.name}</td>
+                        <td className="px-3 py-2">
+                          <ClientModelCell
+                            client={client.name}
+                            declaredModel={clientModels[client.name]}
+                            costAttribution={costAttribution}
+                            onSaved={handleClientModelSaved}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(client.input)}</td>
                         <td className="px-3 py-2 text-right text-primary tabular-nums">{formatCompactNumber(client.output)}</td>
                         <td className="px-3 py-2 text-right text-text-primary font-semibold tabular-nums">{formatCompactNumber(client.total)}</td>
@@ -548,6 +608,7 @@ function DetachedMetricsPageContent() {
                   <thead>
                     <tr className="border-b border-border/30">
                       <SortableHeader label="Server" column="name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} />
+                      <th className="px-3 py-1.5 text-left text-[10px] font-medium text-text-muted uppercase tracking-wider">Model</th>
                       <SortableHeader label="Input" column="input" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} align="right" />
                       <SortableHeader label="Output" column="output" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} align="right" />
                       <SortableHeader label="Total" column="total" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} align="right" />
@@ -557,6 +618,14 @@ function DetachedMetricsPageContent() {
                     {sortedServers.map((server) => (
                       <tr key={server.name} className="border-b border-border/20 hover:bg-surface-highlight/30 transition-colors">
                         <td className="px-3 py-2 font-medium text-text-primary font-mono">{server.name}</td>
+                        <td className="px-3 py-2">
+                          <ServerModelCell
+                            server={server.name}
+                            declaredModel={serverDeclared[server.name]}
+                            defaultModel={defaultModel}
+                            onSaved={handleServerModelSaved}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(server.input)}</td>
                         <td className="px-3 py-2 text-right text-primary tabular-nums">{formatCompactNumber(server.output)}</td>
                         <td className="px-3 py-2 text-right text-text-primary font-semibold tabular-nums">{formatCompactNumber(server.total)}</td>
@@ -591,6 +660,24 @@ function DetachedMetricsPageContent() {
       {showClearConfirm && (
         <div className="fixed inset-0 z-40" onClick={() => setShowClearConfirm(false)} />
       )}
+
+      {/* Pricing models manager — detached host: data from this window's
+          local status poll, optimistic updates into the same local state. */}
+      <PricingManagerSlideOver
+        open={pricingManagerOpen}
+        onClose={() => setPricingManagerOpen(false)}
+        defaultModel={defaultModel}
+        servers={serverNames.map((name) => ({ name, declaredModel: serverDeclared[name] }))}
+        clients={[...new Set([
+          ...Object.keys(clientModels),
+          ...Object.keys(tokenUsage?.per_client ?? {}),
+          ...Object.keys(costUsage?.per_client ?? {}),
+        ])].sort().map((name) => ({ name, declaredModel: clientModels[name] }))}
+        costAttribution={costAttribution}
+        onClientSaved={handleClientModelSaved}
+        onServerSaved={handleServerModelSaved}
+        onDefaultSaved={handleDefaultModelSaved}
+      />
     </div>
   );
 }
@@ -630,7 +717,7 @@ function CostKPICard({
       </span>
       {showHint && (
         <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
-          Set <code className="font-mono">model:</code> in stack.yaml to enable estimates
+          {ATTRIBUTION_HINT}
         </span>
       )}
     </div>
