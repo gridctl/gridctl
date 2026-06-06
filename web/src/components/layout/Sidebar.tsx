@@ -16,6 +16,7 @@ import {
   ArrowUpRight,
   ShieldCheck,
   SlidersHorizontal,
+  DollarSign,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
@@ -48,6 +49,10 @@ export function Sidebar() {
   const autoscaleDecisions = useStackStore((s) => s.autoscaleDecisions);
   const clients = useStackStore((s) => s.clients);
   const mcpServers = useStackStore((s) => s.mcpServers);
+  const clientModels = useStackStore((s) => s.clientModels);
+  const defaultModel = useStackStore((s) => s.defaultModel);
+  const costAttribution = useStackStore((s) => s.costAttribution);
+  const setPricingManagerOpen = useUIStore((s) => s.setPricingManagerOpen);
   const enableAccessLens = useAccessLensStore((s) => s.setEnabled);
   const openAccessLensEditor = useAccessLensStore((s) => s.openSlideOver);
   const { openDetachedWindow } = useWindowManager();
@@ -393,6 +398,54 @@ export function Sidebar() {
                 >
                   <SlidersHorizontal size={14} />
                   Edit Scope
+                </button>
+              </div>
+            </InspectorSection>
+          );
+        })()}
+
+        {/* Pricing Section (clients and MCP servers) — which model this
+            node's calls are priced as, with a path into the manager. */}
+        {(isClient || isServer) && (() => {
+          const declared = isClient
+            ? clientModels[clientData?.slug ?? '']
+            : mcpServers.find((s) => s.name === data.name)?.model;
+          return (
+            <InspectorSection title="Pricing" icon={DollarSign}>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center gap-3">
+                  <span className="text-sm text-text-muted">
+                    {isClient ? 'Priced as' : 'Pricing model'}
+                  </span>
+                  {declared ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-surface-highlight/60 border border-border/40 px-2 py-0.5">
+                      <span className="text-[10px] font-mono text-text-primary">{declared}</span>
+                      <span className="text-[9px] text-text-muted/70">
+                        {isClient ? '· client' : '· server'}
+                      </span>
+                    </span>
+                  ) : !isClient && defaultModel ? (
+                    <span className="text-[10px] font-mono text-text-muted/70">
+                      default: {defaultModel}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-text-muted/60">
+                      {isClient && costAttribution ? 'per-server' : 'not configured'}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPricingManagerOpen(true)}
+                  className={cn(
+                    'w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all',
+                    'bg-surface-elevated/60 border border-border/50',
+                    'hover:bg-surface-highlight hover:border-text-muted/30',
+                    'text-text-secondary hover:text-text-primary',
+                  )}
+                >
+                  <DollarSign size={12} />
+                  Edit Pricing Models
                 </button>
               </div>
             </InspectorSection>
