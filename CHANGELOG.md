@@ -13,6 +13,26 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **In-UI pricing model editing across all three attribution tiers.** Cost
+  attribution no longer requires hand-editing stack.yaml: the per-server
+  `model:` and `gateway.default_model` tiers join `client_models:` as
+  editable from the web UI, through new `PUT /api/mcp-servers/{name}/model`
+  and `PUT /api/gateway/default-model` endpoints (atomic, comment-preserving
+  YAML writes with 409 conflict detection and hot reload, mirroring the
+  client-model endpoint). The old datalist editor is replaced by a shared
+  searchable model picker over the embedded LiteLLM snapshot — provider
+  grouping, keyboard navigation, virtualized for the full ~2,700-ID list,
+  free text allowed with a soft "prices as $0" note for unknown IDs. A new
+  "Pricing models" slide-over manager lists all three tiers in precedence
+  order and opens from the Metrics toolbar, the sidebar inspector's new
+  Pricing section (clients and servers show their priced-as model with
+  provenance), or the command palette ("Edit pricing models"). The Metrics
+  per-server table gains a Model column with `· server` pills and muted
+  `default:` inheritance, the creation wizard gains pricing fields
+  (`gateway.default_model` in a Pricing section, per-server model under
+  Advanced), and `/api/status` now exposes `server_models`, `default_model`,
+  and each server's declared `model` for the UI.
+
 - **Variables workspace master-detail inspector.** The Variables tab now uses
   the same list-plus-inspector layout as Library and Tools: a denser,
   table-like variable list (key, type, set, value preview, and used-by count
@@ -254,6 +274,12 @@ All notable changes to gridctl will be documented in this file.
   web UI client list. This is gridctl's first TOML-based client provisioner.
 
 ### Fixed
+
+- **Detached metrics window missing the client Model column.** The popout
+  `/metrics` window now has full parity with the Metrics tab: the Top Clients
+  Model column with inline editing, the per-server Model column, and the
+  pricing manager. The stale cost hint ("Set `model:` in stack.yaml") in both
+  surfaces is replaced with copy that points at the in-UI edit path.
 
 - **Cost observability now produces data.** The cost pipeline (pricing engine,
   accumulator, REST API, UI cost card, optimize heuristics, `gen_ai.cost.usd`
