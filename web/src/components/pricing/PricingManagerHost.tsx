@@ -15,6 +15,8 @@ export function PricingManagerHost() {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const defaultModel = useStackStore((s) => s.defaultModel);
   const clientModels = useStackStore((s) => s.clientModels);
+  const effectiveClientModels = useStackStore((s) => s.effectiveClientModels);
+  const effectiveServerModels = useStackStore((s) => s.effectiveServerModels);
   const costUsage = useStackStore((s) => s.costUsage);
   const tokenUsage = useStackStore((s) => s.tokenUsage);
   const costAttribution = useStackStore((s) => s.costAttribution);
@@ -48,6 +50,8 @@ export function PricingManagerHost() {
       servers={servers}
       clients={clients}
       costAttribution={costAttribution}
+      effectiveClientModels={effectiveClientModels}
+      effectiveServerModels={effectiveServerModels}
       onClientSaved={setClientModelLocal}
       onServerSaved={setServerModelLocal}
       onDefaultSaved={setDefaultModelLocal}

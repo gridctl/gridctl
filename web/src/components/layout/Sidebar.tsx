@@ -37,6 +37,8 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatRelativeTime } from '../../lib/time';
+import { EffectiveModelTag } from '../pricing/EffectiveModelTag';
+import { MODEL_PRECEDENCE_HINT } from '../pricing/constants';
 import type { MCPServerNodeData, ResourceNodeData, ClientNodeData } from '../../types';
 
 export function Sidebar() {
@@ -50,6 +52,8 @@ export function Sidebar() {
   const clients = useStackStore((s) => s.clients);
   const mcpServers = useStackStore((s) => s.mcpServers);
   const clientModels = useStackStore((s) => s.clientModels);
+  const effectiveClientModels = useStackStore((s) => s.effectiveClientModels);
+  const effectiveServerModels = useStackStore((s) => s.effectiveServerModels);
   const defaultModel = useStackStore((s) => s.defaultModel);
   const costAttribution = useStackStore((s) => s.costAttribution);
   const setPricingManagerOpen = useUIStore((s) => s.setPricingManagerOpen);
@@ -410,6 +414,13 @@ export function Sidebar() {
           const declared = isClient
             ? clientModels[clientData?.slug ?? '']
             : mcpServers.find((s) => s.name === data.name)?.model;
+          const effective = isClient
+            ? effectiveClientModels[clientData?.slug ?? '']
+            : effectiveServerModels[data.name];
+          // Show the read-only Effective line only when it adds information
+          // beyond the declared line: a mixed blend or unpriced traffic.
+          const showEffective =
+            effective && (effective.provenance === 'mixed' || effective.provenance === 'none');
           return (
             <InspectorSection title="Pricing" icon={DollarSign}>
               <div className="space-y-3">
@@ -434,6 +445,14 @@ export function Sidebar() {
                     </span>
                   )}
                 </div>
+                {showEffective && effective && (
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-sm text-text-muted" title={MODEL_PRECEDENCE_HINT}>
+                      Effective
+                    </span>
+                    <EffectiveModelTag effective={effective} onClick={() => setPricingManagerOpen(true)} />
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setPricingManagerOpen(true)}

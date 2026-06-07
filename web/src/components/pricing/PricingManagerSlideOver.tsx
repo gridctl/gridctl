@@ -6,7 +6,9 @@ import { updateDefaultModel } from '../../lib/api';
 import { ModelPicker } from './ModelPicker';
 import { ClientModelCell } from './ClientModelCell';
 import { ServerModelCell } from './ServerModelCell';
+import { EffectiveModelTag } from './EffectiveModelTag';
 import { MODEL_PRECEDENCE_HINT, SNAPSHOT_NOTE } from './constants';
+import type { EffectiveModel } from '../../types';
 
 export interface PricingManagerSlideOverProps {
   open: boolean;
@@ -18,6 +20,9 @@ export interface PricingManagerSlideOverProps {
   /** Declared clients plus clients observed in cost/token data. */
   clients: Array<{ name: string; declaredModel?: string }>;
   costAttribution: boolean;
+  /** Read-only effective model + provenance per client / server (optional). */
+  effectiveClientModels?: Record<string, EffectiveModel>;
+  effectiveServerModels?: Record<string, EffectiveModel>;
   onClientSaved: (client: string, model: string) => void;
   onServerSaved: (server: string, model: string) => void;
   onDefaultSaved: (model: string) => void;
@@ -42,6 +47,8 @@ export function PricingManagerSlideOver({
   servers,
   clients,
   costAttribution,
+  effectiveClientModels,
+  effectiveServerModels,
   onClientSaved,
   onServerSaved,
   onDefaultSaved,
@@ -62,7 +69,11 @@ export function PricingManagerSlideOver({
             </p>
           ) : (
             clients.map((c) => (
-              <TierRow key={c.name} name={c.name}>
+              <TierRow key={c.name} name={c.name} effective={c.declaredModel ? effectiveClientModels?.[c.name] : undefined}>
+                {/* The manager's job is editing, so the cell keeps its
+                    editable affordance for undeclared rows; mixed/none
+                    provenance surfaces in the read-only Effective sub-line
+                    (drift) rather than replacing the editor. */}
                 <ClientModelCell
                   client={c.name}
                   declaredModel={c.declaredModel}
@@ -83,7 +94,7 @@ export function PricingManagerSlideOver({
             <p className="text-[10px] text-text-muted/60 italic">No MCP servers in the stack.</p>
           ) : (
             servers.map((s) => (
-              <TierRow key={s.name} name={s.name}>
+              <TierRow key={s.name} name={s.name} effective={s.declaredModel ? effectiveServerModels?.[s.name] : undefined}>
                 <ServerModelCell
                   server={s.name}
                   declaredModel={s.declaredModel}
@@ -138,13 +149,34 @@ function TierSection({
   );
 }
 
-function TierRow({ name, children }: { name: string; children: React.ReactNode }) {
+function TierRow({
+  name,
+  effective,
+  children,
+}: {
+  name: string;
+  effective?: EffectiveModel;
+  children: React.ReactNode;
+}) {
+  // A declared row whose traffic actually priced under a blend of models is
+  // the drift signal worth surfacing read-only beside the editable cell.
+  const showDrift = effective?.provenance === 'mixed';
   return (
-    <div className="flex items-center justify-between gap-3 min-h-[26px]">
-      <span className="text-xs font-mono text-text-primary truncate" title={name}>
-        {name}
-      </span>
-      <div className="flex-shrink-0">{children}</div>
+    <div className="flex flex-col gap-0.5 min-h-[26px] justify-center">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-mono text-text-primary truncate" title={name}>
+          {name}
+        </span>
+        <div className="flex-shrink-0">{children}</div>
+      </div>
+      {showDrift && effective && (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[9px] text-text-muted/60 uppercase tracking-wider">Effective</span>
+          <div className="flex-shrink-0">
+            <EffectiveModelTag effective={effective} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

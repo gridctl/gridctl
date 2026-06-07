@@ -4,14 +4,17 @@ import { updateClientModel } from '../../lib/api';
 import { showToast } from '../ui/Toast';
 import { ModelPicker } from './ModelPicker';
 import { MODEL_PRECEDENCE_HINT } from './constants';
+import { EffectiveModelTag } from './EffectiveModelTag';
+import type { EffectiveModel } from '../../types';
 
 // ClientModelCell shows which model a client's calls are priced as and lets
 // the operator set it inline. A pill with "· client" provenance renders only
 // for clients explicitly declared in client_models; non-declaring clients
-// aggregate heterogeneous per-server/default rates, so they get a muted
-// "per-server" (when any attribution is configured) rather than an invented
-// single model. Clicking opens the shared ModelPicker combobox; free text is
-// allowed (unknown IDs price as zero, best-effort).
+// aggregate heterogeneous per-server/default rates. For those, `effective`
+// surfaces the read-only provenance (mixed: dominant model + share; none:
+// "unpriced") instead of a bare "per-server". Clicking the declared pill
+// opens the inline ModelPicker; clicking a mixed/none tag opens the pricing
+// manager so a declaration is one step away.
 //
 // State stays with the host: `declaredModel` is the saved value and
 // `onSaved` reports a successful write so the main window can update its
@@ -19,13 +22,17 @@ import { MODEL_PRECEDENCE_HINT } from './constants';
 export function ClientModelCell({
   client,
   declaredModel,
+  effective,
   costAttribution,
   onSaved,
+  onOpenManager,
 }: {
   client: string;
   declaredModel?: string;
+  effective?: EffectiveModel;
   costAttribution: boolean;
   onSaved: (client: string, model: string) => void;
+  onOpenManager?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -97,6 +104,13 @@ export function ClientModelCell({
         <span className="text-[9px] text-text-muted/70">· client</span>
       </button>
     );
+  }
+
+  // No declaration. When observed cost yields a mixed/none provenance, surface
+  // it read-only (a click opens the manager to declare). Otherwise fall back
+  // to the original per-server / set-model affordance.
+  if (effective && (effective.provenance === 'mixed' || effective.provenance === 'none')) {
+    return <EffectiveModelTag effective={effective} onClick={onOpenManager} />;
   }
 
   return (

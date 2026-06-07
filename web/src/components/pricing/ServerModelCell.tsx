@@ -3,23 +3,31 @@ import { updateServerModel } from '../../lib/api';
 import { showToast } from '../ui/Toast';
 import { ModelPicker } from './ModelPicker';
 import { MODEL_PRECEDENCE_HINT } from './constants';
+import { EffectiveModelTag } from './EffectiveModelTag';
+import type { EffectiveModel } from '../../types';
 
 // ServerModelCell mirrors ClientModelCell for the server tier: a pill with
 // "· server" provenance when the server declares its own model:, a muted
 // "default: <id>" when it inherits gateway.default_model, and "set model"
-// when no attribution applies. Clicking edits inline through the shared
-// ModelPicker; an empty save clears the server's model: key so it falls
-// back to the default.
+// when no attribution applies. When the server has no single declaration but
+// observed cost yields a mixed provenance (a server priced under more than
+// one model over time), `effective` surfaces it read-only. Clicking the
+// declared/default affordances edits inline; clicking a mixed/none tag opens
+// the pricing manager.
 export function ServerModelCell({
   server,
   declaredModel,
   defaultModel,
+  effective,
   onSaved,
+  onOpenManager,
 }: {
   server: string;
   declaredModel?: string;
   defaultModel: string;
+  effective?: EffectiveModel;
   onSaved: (server: string, model: string) => void;
+  onOpenManager?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -95,6 +103,12 @@ export function ServerModelCell({
     );
   }
 
+  // A heterogeneous pricing history (mixed) reflects reality better than a
+  // single "default:" label, so it takes precedence over the default below.
+  if (effective?.provenance === 'mixed') {
+    return <EffectiveModelTag effective={effective} onClick={onOpenManager} />;
+  }
+
   if (defaultModel) {
     return (
       <button
@@ -106,6 +120,10 @@ export function ServerModelCell({
         default: {defaultModel}
       </button>
     );
+  }
+
+  if (effective?.provenance === 'none') {
+    return <EffectiveModelTag effective={effective} onClick={onOpenManager} />;
   }
 
   return (
