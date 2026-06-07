@@ -39,6 +39,60 @@ describe('ClientModelCell', () => {
     expect(screen.getByText('per-server')).toBeInTheDocument();
   });
 
+  it('renders a mixed-provenance tag with dominant model and share', () => {
+    const onOpenManager = vi.fn();
+    render(
+      <ClientModelCell
+        client="cursor"
+        costAttribution
+        effective={{
+          provenance: 'mixed',
+          model: 'claude-opus-4-7',
+          share: 0.82,
+          models: [
+            { model: 'claude-opus-4-7', cost_usd: 0.82, share: 0.82 },
+            { model: 'claude-haiku-4-5', cost_usd: 0.18, share: 0.18 },
+          ],
+        }}
+        onSaved={vi.fn()}
+        onOpenManager={onOpenManager}
+      />,
+    );
+    expect(screen.getByText('claude-opus-4-7')).toBeInTheDocument();
+    expect(screen.getByText('· 82% · mixed')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('claude-opus-4-7'));
+    expect(onOpenManager).toHaveBeenCalled();
+  });
+
+  it('renders an unpriced tag for none provenance', () => {
+    render(
+      <ClientModelCell
+        client="gemini-cli"
+        costAttribution
+        effective={{ provenance: 'none' }}
+        onSaved={vi.fn()}
+        onOpenManager={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('unpriced')).toBeInTheDocument();
+    // Never a blank cell, and the declared "per-server" fallback is replaced.
+    expect(screen.queryByText('per-server')).not.toBeInTheDocument();
+  });
+
+  it('declared model takes precedence over effective provenance', () => {
+    render(
+      <ClientModelCell
+        client="claude-code"
+        declaredModel="claude-opus-4-7"
+        costAttribution
+        effective={{ provenance: 'mixed', model: 'claude-haiku-4-5', share: 0.6 }}
+        onSaved={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('· client')).toBeInTheDocument();
+    expect(screen.queryByText(/mixed/)).not.toBeInTheDocument();
+  });
+
   it('saves a committed model and reports it to the host', async () => {
     const onSaved = vi.fn();
     const update = vi.spyOn(apiModule, 'updateClientModel').mockResolvedValue({
