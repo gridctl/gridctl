@@ -81,6 +81,17 @@ type Finding struct {
 	// resolves the finding. Multi-line strings are allowed.
 	Remediation string `json:"remediation"`
 
+	// Model names the model the finding refers to, when one is known. Set
+	// by expensive_model_on_cheap_task from the dominant model that priced
+	// the server's traffic. Empty when only an effective rate was available.
+	Model string `json:"model,omitempty"`
+
+	// Provenance describes how Model was determined: "declared" when it is
+	// the model that priced the server's recorded cost; empty when the
+	// finding fired on a rate inferred from observed cost÷tokens with no
+	// model identity. Mirrors the effective-model provenance vocabulary.
+	Provenance string `json:"provenance,omitempty"`
+
 	// DetectedAt is the wall-clock time the report was generated, not
 	// the time the underlying condition began.
 	DetectedAt time.Time `json:"detected_at"`
@@ -204,6 +215,13 @@ type Stats struct {
 	// causes expensive_model_on_cheap_task to fall back to inferring
 	// the rate from observed cost÷tokens.
 	ModelStats map[string]ModelStat
+
+	// ModelHistograms carries the per-server breakdown of recorded cost by
+	// the model that priced it (server -> model ID -> USD). When present it
+	// names the dominant model exactly (the model that priced the most
+	// cost), which resolveDominantRate prefers over the declared ModelStat
+	// or the cost÷tokens fallback. nil leaves the existing behavior intact.
+	ModelHistograms map[string]map[string]float64
 }
 
 // PinStat carries the schema-overhead inputs for a single server. The
@@ -685,9 +703,13 @@ func detectExpensiveModelOnCheapTask(stats Stats, now time.Time) []Finding {
 		if avgTokensPerCall > expensiveModelMaxAvgTokensPerCall {
 			continue
 		}
-		rate, modelName := resolveDominantRate(stats.ModelStats[srv.Name], usage)
+		rate, modelName := resolveDominantRate(stats.ModelStats[srv.Name], stats.ModelHistograms[srv.Name], usage)
 		if rate < expensiveModelInputRateThreshold {
 			continue
+		}
+		provenance := ""
+		if modelName != "" {
+			provenance = "declared"
 		}
 		out = append(out, Finding{
 			ID:               "expensive-model-cheap-task-" + srv.Name,
@@ -698,6 +720,8 @@ func detectExpensiveModelOnCheapTask(stats Stats, now time.Time) []Finding {
 			Server:           srv.Name,
 			ImpactUSDPerWeek: 0, // informational; client-side model swap is the action
 			Remediation:      remediationExpensiveModel(srv, modelName),
+			Model:            modelName,
+			Provenance:       provenance,
 			DetectedAt:       now,
 		})
 	}
@@ -730,18 +754,17 @@ func remediationFormatShortfall(srv ServerInfo) string {
 
 func summaryExpensiveModel(srv ServerInfo, usage ServerUsage, nCalls int64, modelName string, rate float64) string {
 	avg := float64(usage.TotalTokens) / float64(nCalls)
-	model := modelName
-	if model == "" {
-		model = "an Opus-tier model"
+	if modelName == "" {
+		return "Server '" + srv.Name + "' is priced at an Opus-tier rate (" + formatRatePerMillion(rate) + " per million input tokens) but the average call is only " + formatRatio(avg) + " tokens — a simple-lookup pattern. The model selection lives client-side; consider routing this server to a cheaper model when possible."
 	}
-	return "Server '" + srv.Name + "' is being called with " + model + " (" + formatRatePerMillion(rate) + " per million input tokens) but the average call is only " + formatRatio(avg) + " tokens — a simple-lookup pattern. The model selection lives client-side; consider routing this server to a cheaper model when possible."
+	return "Server '" + srv.Name + "' traffic is priced as " + modelName + " (" + formatRatePerMillion(rate) + " per million input tokens) but the average call is only " + formatRatio(avg) + " tokens — a simple-lookup pattern. The model selection lives client-side; consider routing this server to a cheaper model when possible."
 }
 
 func remediationExpensiveModel(srv ServerInfo, modelName string) string {
 	if modelName == "" {
 		return "# Model selection is client-side; pick a smaller model (e.g. Haiku, gpt-4o-mini) for prompts that primarily call '" + srv.Name + "'."
 	}
-	return "# Currently observed model: " + modelName + "\n# Model selection is client-side; pick a smaller model (e.g. Haiku, gpt-4o-mini) for prompts that primarily call '" + srv.Name + "'."
+	return "# Priced as (declared): " + modelName + "\n# Model selection is client-side; pick a smaller model (e.g. Haiku, gpt-4o-mini) for prompts that primarily call '" + srv.Name + "'."
 }
 
 func usesFormatConversion(format string) bool {
@@ -753,7 +776,31 @@ func usesFormatConversion(format string) bool {
 	}
 }
 
-func resolveDominantRate(ms ModelStat, usage ServerUsage) (float64, string) {
+// resolveDominantRate returns the effective input-token rate and the model
+// name for a server's expensive-model check. Resolution order:
+//
+//  1. The histogram's dominant model (the model that priced the most cost) is
+//     the exact, observed attribution. When it has a known rate (ms carries
+//     that model's rate), use it.
+//  2. The declared ModelStat rate, when present.
+//  3. The cost÷tokens fallback — an effective rate with no model identity.
+//
+// histogram maps model ID -> recorded USD for this server; nil leaves the
+// pre-histogram behavior. ms is expected to carry the dominant model's rate
+// when the call site resolved one (the API layer looks it up against the
+// pricing source).
+func resolveDominantRate(ms ModelStat, histogram map[string]float64, usage ServerUsage) (float64, string) {
+	dominant := DominantModel(histogram)
+	if dominant != "" {
+		// The histogram names the model exactly. Prefer its rate when the
+		// call site supplied one for this same model.
+		if ms.InputUSDPerToken > 0 && ms.Model == dominant {
+			return ms.InputUSDPerToken, dominant
+		}
+		if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
+			return usage.TotalCostUSD / float64(usage.TotalTokens), dominant
+		}
+	}
 	if ms.InputUSDPerToken > 0 {
 		return ms.InputUSDPerToken, ms.Model
 	}
@@ -761,6 +808,22 @@ func resolveDominantRate(ms ModelStat, usage ServerUsage) (float64, string) {
 		return usage.TotalCostUSD / float64(usage.TotalTokens), ms.Model
 	}
 	return 0, ms.Model
+}
+
+// DominantModel returns the model ID with the highest recorded cost in a
+// histogram (model ID -> USD), breaking ties by model ID for determinism.
+// Empty when the histogram is nil or empty. Exported so the API layer
+// resolves "the dominant model" with the exact same tie-break rule this
+// package uses, keeping the two in agreement.
+func DominantModel(histogram map[string]float64) string {
+	var best string
+	var bestCost float64
+	for model, cost := range histogram {
+		if cost > bestCost || (cost == bestCost && (best == "" || model < best)) {
+			best, bestCost = model, cost
+		}
+	}
+	return best
 }
 
 func filterByImpact(in []Finding, min float64) []Finding {

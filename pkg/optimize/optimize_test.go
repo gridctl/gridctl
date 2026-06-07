@@ -523,8 +523,57 @@ func TestAnalyze_ExpensiveModel_FiresOnHighRateLowAvgTokens(t *testing.T) {
 	if !strings.Contains(hit.Summary, "claude-opus-4-7") {
 		t.Errorf("summary should name the model; got %q", hit.Summary)
 	}
+	if hit.Model != "claude-opus-4-7" {
+		t.Errorf("finding Model = %q, want claude-opus-4-7", hit.Model)
+	}
+	if hit.Provenance != "declared" {
+		t.Errorf("finding Provenance = %q, want declared", hit.Provenance)
+	}
 	if hit.ImpactUSDPerWeek != 0 {
 		t.Errorf("impact must be zero (informational only); got %v", hit.ImpactUSDPerWeek)
+	}
+}
+
+// TestAnalyze_ExpensiveModel_NamesDominantHistogramModel verifies the finding
+// names the model that priced the most cost (from the histogram) even when no
+// declared ModelStat exists, and labels its provenance declared.
+func TestAnalyze_ExpensiveModel_NamesDominantHistogramModel(t *testing.T) {
+	stats := baseStats()
+	stats.Servers = []ServerInfo{
+		{Name: "lookup", Tools: []string{"get_user"}, Initialized: true},
+	}
+	// Effective rate = 0.0005 / 10 = 5e-5 = $50/M, above threshold.
+	stats.Usage = map[string]ServerUsage{
+		"lookup": {OutputTokens: 5, TotalTokens: 10, TotalCostUSD: 0.0005},
+	}
+	stats.ServerCallCount = map[string]int64{"lookup": 50}
+	stats.ToolUsage = map[string]map[string]ToolStat{
+		"lookup": {"get_user": {Calls: 50, LastCalledAt: fixedNow.Add(-1 * time.Hour)}},
+	}
+	// No declared ModelStat; the histogram names the dominant model exactly.
+	stats.ModelHistograms = map[string]map[string]float64{
+		"lookup": {"claude-opus-4-7": 0.0004, "claude-haiku-4-5": 0.0001},
+	}
+
+	rep := Analyze(stats, Options{})
+	var hit *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Heuristic == "expensive_model_on_cheap_task" {
+			hit = &rep.Findings[i]
+			break
+		}
+	}
+	if hit == nil {
+		t.Fatal("expected expensive_model_on_cheap_task finding")
+	}
+	if hit.Model != "claude-opus-4-7" {
+		t.Errorf("finding should name dominant histogram model; got Model=%q", hit.Model)
+	}
+	if hit.Provenance != "declared" {
+		t.Errorf("provenance = %q, want declared", hit.Provenance)
+	}
+	if !strings.Contains(hit.Summary, "claude-opus-4-7") {
+		t.Errorf("summary should name the dominant model; got %q", hit.Summary)
 	}
 }
 
