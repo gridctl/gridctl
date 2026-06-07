@@ -18,8 +18,8 @@ import { AreaChart } from '../components/chart/AreaChart';
 import { ClientModelCell } from '../components/pricing/ClientModelCell';
 import { ServerModelCell } from '../components/pricing/ServerModelCell';
 import { PricingManagerSlideOver } from '../components/pricing/PricingManagerSlideOver';
-import { ATTRIBUTION_HINT } from '../components/pricing/constants';
-import type { GatewayStatus, TokenMetricsResponse, CostMetricsResponse, TokenUsage, CostUsage } from '../types';
+import { ATTRIBUTION_HINT, MIXED_PROVENANCE_NOTE } from '../components/pricing/constants';
+import type { GatewayStatus, TokenMetricsResponse, CostMetricsResponse, TokenUsage, CostUsage, EffectiveModel } from '../types';
 import {
   Pause,
   Play,
@@ -91,6 +91,8 @@ function DetachedMetricsPageContent() {
   const [costAttribution, setCostAttribution] = useState(false);
   const [clientModels, setClientModels] = useState<Record<string, string>>({});
   const [serverDeclared, setServerDeclared] = useState<Record<string, string>>({});
+  const [effectiveClientModels, setEffectiveClientModels] = useState<Record<string, EffectiveModel>>({});
+  const [effectiveServerModels, setEffectiveServerModels] = useState<Record<string, EffectiveModel>>({});
   const [serverNames, setServerNames] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState('');
   const [pricingManagerOpen, setPricingManagerOpen] = useState(false);
@@ -120,6 +122,8 @@ function DetachedMetricsPageContent() {
         setCostUsage(status.cost ?? null);
         setCostAttribution(status.cost_attribution ?? false);
         setClientModels(status.client_models ?? {});
+        setEffectiveClientModels(status.effective_client_models ?? {});
+        setEffectiveServerModels(status.effective_server_models ?? {});
         setDefaultModel(status.default_model ?? '');
         const declared: Record<string, string> = {};
         for (const s of status['mcp-servers'] ?? []) {
@@ -257,6 +261,9 @@ function DetachedMetricsPageContent() {
   // Mirrors MetricsTab: without model attribution the gateway cannot price
   // calls, so explain the config requirement instead of a bare dash/$0.00.
   const showAttributionHint = !costAttribution && !(sessionCostUSD && sessionCostUSD > 0);
+  const hasMixedProvenance =
+    Object.values(effectiveClientModels).some((e) => e.provenance === 'mixed') ||
+    Object.values(effectiveServerModels).some((e) => e.provenance === 'mixed');
   const hasData =
     sessionTotal > 0 ||
     (metricsData?.data_points?.length ?? 0) > 0 ||
@@ -490,7 +497,7 @@ function DetachedMetricsPageContent() {
               <KPICard label="Input Tokens" value={sessionInput} colorClass="text-secondary" />
               <KPICard label="Output Tokens" value={sessionOutput} colorClass="text-primary" />
               <KPICard label="Total Tokens" value={sessionTotal} colorClass="text-text-primary" />
-              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} showHint={showAttributionHint} />
+              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} showHint={showAttributionHint} showMixedNote={hasMixedProvenance} />
               {savingsPercent > 0 && (
                 <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
                   <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Format Savings</span>
@@ -584,8 +591,10 @@ function DetachedMetricsPageContent() {
                           <ClientModelCell
                             client={client.name}
                             declaredModel={clientModels[client.name]}
+                            effective={effectiveClientModels[client.name]}
                             costAttribution={costAttribution}
                             onSaved={handleClientModelSaved}
+                            onOpenManager={() => setPricingManagerOpen(true)}
                           />
                         </td>
                         <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(client.input)}</td>
@@ -623,7 +632,9 @@ function DetachedMetricsPageContent() {
                             server={server.name}
                             declaredModel={serverDeclared[server.name]}
                             defaultModel={defaultModel}
+                            effective={effectiveServerModels[server.name]}
                             onSaved={handleServerModelSaved}
+                            onOpenManager={() => setPricingManagerOpen(true)}
                           />
                         </td>
                         <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(server.input)}</td>
@@ -674,6 +685,8 @@ function DetachedMetricsPageContent() {
           ...Object.keys(costUsage?.per_client ?? {}),
         ])].sort().map((name) => ({ name, declaredModel: clientModels[name] }))}
         costAttribution={costAttribution}
+        effectiveClientModels={effectiveClientModels}
+        effectiveServerModels={effectiveServerModels}
         onClientSaved={handleClientModelSaved}
         onServerSaved={handleServerModelSaved}
         onDefaultSaved={handleDefaultModelSaved}
@@ -696,10 +709,12 @@ function CostKPICard({
   usd,
   hasCost,
   showHint,
+  showMixedNote,
 }: {
   usd: number | undefined;
   hasCost: boolean;
   showHint?: boolean;
+  showMixedNote?: boolean;
 }) {
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
@@ -718,6 +733,11 @@ function CostKPICard({
       {showHint && (
         <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
           {ATTRIBUTION_HINT}
+        </span>
+      )}
+      {!showHint && showMixedNote && (
+        <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
+          {MIXED_PROVENANCE_NOTE}
         </span>
       )}
     </div>

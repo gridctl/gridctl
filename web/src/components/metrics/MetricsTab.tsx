@@ -26,7 +26,7 @@ import { AreaChart } from '../chart/AreaChart';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { ClientModelCell } from '../pricing/ClientModelCell';
 import { ServerModelCell } from '../pricing/ServerModelCell';
-import { ATTRIBUTION_HINT } from '../pricing/constants';
+import { ATTRIBUTION_HINT, MIXED_PROVENANCE_NOTE } from '../pricing/constants';
 import type { TokenMetricsResponse, CostMetricsResponse } from '../../types';
 
 type TimeRange = 'live' | '1h' | '6h' | '24h' | '7d';
@@ -49,6 +49,8 @@ export function MetricsTab() {
   const costUsage = useStackStore((s) => s.costUsage);
   const costAttribution = useStackStore((s) => s.costAttribution);
   const clientModels = useStackStore((s) => s.clientModels);
+  const effectiveClientModels = useStackStore((s) => s.effectiveClientModels);
+  const effectiveServerModels = useStackStore((s) => s.effectiveServerModels);
   const mcpServers = useStackStore((s) => s.mcpServers);
   const defaultModel = useStackStore((s) => s.defaultModel);
   const setClientModelLocal = useStackStore((s) => s.setClientModelLocal);
@@ -212,6 +214,15 @@ export function MetricsTab() {
   // absent or $0.00 forever. Surface the config hint instead of leaving the
   // user to wonder whether traffic is free.
   const showAttributionHint = !costAttribution && !(sessionCostUSD && sessionCostUSD > 0);
+
+  // The honesty subline appears whenever any client or server resolved to a
+  // blend of pricing models — a reminder that cost is priced by declarations,
+  // not observed client behavior.
+  const hasMixedProvenance = useMemo(() => {
+    const anyMixed = (m: Record<string, { provenance: string }>) =>
+      Object.values(m).some((e) => e.provenance === 'mixed');
+    return anyMixed(effectiveClientModels) || anyMixed(effectiveServerModels);
+  }, [effectiveClientModels, effectiveServerModels]);
 
   const hasData =
     sessionTotal > 0 ||
@@ -432,7 +443,7 @@ export function MetricsTab() {
               <KPICard label="Input Tokens" value={sessionInput} colorClass="text-secondary" />
               <KPICard label="Output Tokens" value={sessionOutput} colorClass="text-primary" />
               <KPICard label="Total Tokens" value={sessionTotal} colorClass="text-text-primary" />
-              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} showHint={showAttributionHint} />
+              <CostKPICard usd={sessionCostUSD} hasCost={hasCost} showHint={showAttributionHint} showMixedNote={hasMixedProvenance} />
               {savingsPercent > 0 && (
                 <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
                   <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Format Savings</span>
@@ -539,8 +550,10 @@ export function MetricsTab() {
                           <ClientModelCell
                             client={client.name}
                             declaredModel={clientModels[client.name]}
+                            effective={effectiveClientModels[client.name]}
                             costAttribution={costAttribution}
                             onSaved={setClientModelLocal}
+                            onOpenManager={() => setPricingManagerOpen(true)}
                           />
                         </td>
                         <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(client.input)}</td>
@@ -605,7 +618,9 @@ export function MetricsTab() {
                             server={server.name}
                             declaredModel={declaredServerModels[server.name]}
                             defaultModel={defaultModel}
+                            effective={effectiveServerModels[server.name]}
                             onSaved={setServerModelLocal}
+                            onOpenManager={() => setPricingManagerOpen(true)}
                           />
                         </td>
                         <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(server.input)}</td>
@@ -650,10 +665,12 @@ function CostKPICard({
   usd,
   hasCost,
   showHint,
+  showMixedNote,
 }: {
   usd: number | undefined;
   hasCost: boolean;
   showHint?: boolean;
+  showMixedNote?: boolean;
 }) {
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
@@ -672,6 +689,11 @@ function CostKPICard({
       {showHint && (
         <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
           {ATTRIBUTION_HINT}
+        </span>
+      )}
+      {!showHint && showMixedNote && (
+        <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
+          {MIXED_PROVENANCE_NOTE}
         </span>
       )}
     </div>
