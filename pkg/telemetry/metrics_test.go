@@ -678,6 +678,85 @@ func TestMetricsFlusher_ToolUsagePersistence(t *testing.T) {
 	})
 }
 
+// TestMetricsFlusher_ModelCostPersistence covers effective-model provenance
+// surviving a gateway restart: a flush writes the cumulative per-model cost
+// histogram, a fresh accumulator restores it via SeedFromFile so a replayed
+// cost arrives with its provenance intact, and a token reset drops the
+// carried-over histogram so a wiped accumulator does not resurrect stale
+// model attribution.
+func TestMetricsFlusher_ModelCostPersistence(t *testing.T) {
+	t.Run("flush persists model histogram and seed restores it", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		acc := metrics.NewAccumulator(100)
+		acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, metrics.CostBreakdown{Input: 0.30, Output: 0.10})
+
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.AddServer("github", path, LogOpts{}); err != nil {
+			t.Fatalf("AddServer: %v", err)
+		}
+		f.flushOnce(time.Now())
+
+		var persisted map[string]metrics.ModelMicroCounts
+		for _, l := range readMetricsLines(t, path) {
+			var rec MetricsSnapshotLine
+			if err := json.Unmarshal([]byte(l), &rec); err == nil && rec.ModelCost != nil {
+				persisted = rec.ModelCost
+			}
+		}
+		if persisted == nil {
+			t.Fatal("no flushed line carried model_cost")
+		}
+		if got := persisted["claude-opus-4-7"].CostMicroUSD; got != 400_000 {
+			t.Errorf("persisted opus cost = %d micro-USD, want 400000", got)
+		}
+
+		// Restart: fresh accumulator seeded from the same file.
+		acc2 := metrics.NewAccumulator(100)
+		f2 := NewMetricsFlusher(acc2, time.Hour)
+		if err := f2.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+		snap := acc2.CostSnapshot()
+		m := snap.PerServerModels["github"]["claude-opus-4-7"]
+		if m.CostUSD < 0.399 || m.CostUSD > 0.401 {
+			t.Errorf("restored opus cost = %v, want ~0.40", m.CostUSD)
+		}
+		if m.InputTokens != 100 || m.OutputTokens != 50 {
+			t.Errorf("restored opus tokens = (%d,%d), want (100,50)", m.InputTokens, m.OutputTokens)
+		}
+	})
+
+	t.Run("token reset drops carried-over model histogram on seed", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:      time.Now().Add(-time.Hour).UTC(),
+			Server:    "github",
+			Total:     metrics.TokenCounts{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+			ModelCost: map[string]metrics.ModelMicroCounts{"claude-opus-4-7": {CostMicroUSD: 400_000, InputTokens: 100, OutputTokens: 50}},
+		})
+		writeRawLine(t, path, `{"reset":true,"ts":"2026-05-06T00:00:00Z","server":"github"}`)
+		writeMetricsLine(t, path, MetricsSnapshotLine{
+			Time:   time.Now().UTC(),
+			Server: "github",
+			Reset:  true,
+			Total:  metrics.TokenCounts{},
+		})
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+		if snap := acc.CostSnapshot(); snap.PerServerModels != nil {
+			t.Errorf("post-reset seed should restore no model histogram; got %v", snap.PerServerModels)
+		}
+	})
+}
+
 // writeMetricsLine appends one MetricsSnapshotLine as NDJSON to path.
 func writeMetricsLine(t *testing.T, path string, line MetricsSnapshotLine) {
 	t.Helper()

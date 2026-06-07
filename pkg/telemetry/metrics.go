@@ -50,6 +50,14 @@ type MetricsSnapshotLine struct {
 	// the reserved PromptUsageNamespace by the dedicated prompt-usage writer.
 	// omitempty keeps every per-server line byte-identical.
 	PromptUsage map[string]metrics.ToolStat `json:"prompt_usage,omitempty"`
+	// ModelCost carries the server's *cumulative* per-model cost histogram
+	// (modelID -> cost + token volume priced under it) at flush time — the
+	// effective-model-provenance analogue of CostTotal. Persisted as a
+	// cumulative snapshot (like ToolUsage), not a diff: SeedFromFile takes
+	// the most recent non-nil ModelCost per server (cleared on a token
+	// Reset) so provenance survives a restart alongside the cost it explains.
+	// omitempty keeps pre-histogram and token-only lines byte-identical.
+	ModelCost map[string]metrics.ModelMicroCounts `json:"model_cost,omitempty"`
 }
 
 // PromptUsageNamespace is the reserved flusher key under which global
@@ -69,11 +77,12 @@ type MetricsFlusher struct {
 	interval time.Duration
 	logger   *slog.Logger
 
-	mu        sync.Mutex
-	writers   map[string]*lumberjack.Logger          // serverName -> writer
-	prev      map[string]metrics.TokenCounts         // serverName -> last token snapshot
-	prevCost  map[string]metrics.CostMicroUSDCounts  // serverName -> last cost snapshot (parallel to prev)
-	prevTools map[string]map[string]metrics.ToolStat // serverName -> last per-tool snapshot (parallel to prev)
+	mu         sync.Mutex
+	writers    map[string]*lumberjack.Logger                  // serverName -> writer
+	prev       map[string]metrics.TokenCounts                 // serverName -> last token snapshot
+	prevCost   map[string]metrics.CostMicroUSDCounts          // serverName -> last cost snapshot (parallel to prev)
+	prevTools  map[string]map[string]metrics.ToolStat         // serverName -> last per-tool snapshot (parallel to prev)
+	prevModels map[string]map[string]metrics.ModelMicroCounts // serverName -> last per-model cost snapshot (parallel to prev)
 
 	// Global prompt (skill) usage. The skills registry is not a per-server
 	// entry, so it gets a single dedicated writer rather than living in the
@@ -101,6 +110,7 @@ func NewMetricsFlusher(acc *metrics.Accumulator, interval time.Duration) *Metric
 		prev:        make(map[string]metrics.TokenCounts),
 		prevCost:    make(map[string]metrics.CostMicroUSDCounts),
 		prevTools:   make(map[string]map[string]metrics.ToolStat),
+		prevModels:  make(map[string]map[string]metrics.ModelMicroCounts),
 		prevPrompts: make(map[string]metrics.ToolStat),
 		stop:        make(chan struct{}),
 		done:        make(chan struct{}),
@@ -169,6 +179,7 @@ func (f *MetricsFlusher) RemoveServer(name string) {
 	delete(f.prev, name)
 	delete(f.prevCost, name)
 	delete(f.prevTools, name)
+	delete(f.prevModels, name)
 }
 
 // SetPromptUsageWriter installs (or replaces) the writer for the global
@@ -307,6 +318,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 	snap := f.acc.Snapshot()
 	costSnap := f.acc.CostMicroSnapshot()
 	toolSnap := f.acc.ToolUsageSnapshot()
+	modelSnap := f.acc.ServerModelMicroSnapshot()
 	promptSnap := f.acc.PromptUsageSnapshot()
 
 	type planned struct {
@@ -326,6 +338,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		// the zero CostMicroUSDCounts so the diff math stays uniform.
 		currentCost := costSnap[name]
 		currentTools := toolSnap[name]
+		currentModels := modelSnap[name]
 		prev, hadPrev := f.prev[name]
 		prevCost, hadPrevCost := f.prevCost[name]
 		// Per-tool usage has no diff/reset machinery — it persists as a
@@ -334,6 +347,12 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		// attribute tokens), mirroring how cost forces a line independently
 		// of the token diff.
 		toolChanged := toolUsageChanged(f.prevTools[name], currentTools)
+		// Per-model cost is also a cumulative snapshot. A model histogram
+		// only advances when cost advances, so a changed histogram already
+		// coincides with a non-zero cost diff — but track it explicitly for
+		// symmetry with toolChanged and to stay robust if that coupling
+		// ever changes.
+		modelChanged := modelCostChanged(f.prevModels[name], currentModels)
 		line := MetricsSnapshotLine{
 			Time:   now.UTC(),
 			Server: name,
@@ -389,7 +408,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		// emits because it carries the post-reset boundary signal even
 		// when the post-reset state is zero.
 		tokenDiffZero := tokenDiff.InputTokens == 0 && tokenDiff.OutputTokens == 0 && tokenDiff.TotalTokens == 0
-		if !line.Reset && !line.CostReset && tokenDiffZero && costDiff.IsZero() && !toolChanged {
+		if !line.Reset && !line.CostReset && tokenDiffZero && costDiff.IsZero() && !toolChanged && !modelChanged {
 			continue
 		}
 
@@ -408,6 +427,12 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		if len(currentTools) > 0 {
 			line.ToolUsage = currentTools
 		}
+		// Carry the freshest cumulative model histogram on every emitted
+		// line so the most recent line per server holds the latest
+		// provenance snapshot for SeedFromFile to restore.
+		if len(currentModels) > 0 {
+			line.ModelCost = currentModels
+		}
 
 		plan = append(plan, planned{writer: writer, line: line})
 		// Update prev / prevCost under the lock — even if the write fails
@@ -418,6 +443,7 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		f.prev[name] = current
 		f.prevCost[name] = currentCost
 		f.prevTools[name] = currentTools
+		f.prevModels[name] = currentModels
 	}
 
 	// Prompt (skill) usage is global cumulative state under a dedicated
@@ -509,6 +535,22 @@ func toolUsageChanged(prev, current map[string]metrics.ToolStat) bool {
 	return false
 }
 
+// modelCostChanged reports whether a server's cumulative per-model cost
+// histogram differs between two snapshots. A new model key or any changed
+// cost component returns true. Comparing cost alone suffices: token volume
+// in a bucket only advances together with cost.
+func modelCostChanged(prev, current map[string]metrics.ModelMicroCounts) bool {
+	if len(prev) != len(current) {
+		return true
+	}
+	for model, cur := range current {
+		if p, ok := prev[model]; !ok || p.CostMicroUSD != cur.CostMicroUSD {
+			return true
+		}
+	}
+	return false
+}
+
 // SeedFromFile reads up to the last n NDJSON entries from path and seeds
 // these surfaces atomically: cumulative per-server token totals (via
 // Restore), cumulative per-server cost totals (via RestoreCost), cumulative
@@ -584,6 +626,7 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 	latest := make(map[string]metrics.TokenCounts)
 	latestCost := make(map[string]metrics.CostMicroUSDCounts)
 	latestTools := make(map[string]map[string]metrics.ToolStat)
+	latestModels := make(map[string]map[string]metrics.ModelMicroCounts)
 	series := make([]seriesPoint, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -608,9 +651,16 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 		// Any ToolUsage on this same line (post-reset activity) then wins.
 		if rec.Reset {
 			delete(latestTools, rec.Server)
+			delete(latestModels, rec.Server)
 		}
 		if rec.ToolUsage != nil {
 			latestTools[rec.Server] = rec.ToolUsage
+		}
+		// Model histograms ride the same cumulative-snapshot contract as
+		// tool usage: most recent non-nil wins, cleared on a token Reset so
+		// stale provenance never outlives the cost it explained.
+		if rec.ModelCost != nil {
+			latestModels[rec.Server] = rec.ModelCost
 		}
 		// Reset and CostReset are independent: a token-reset line skips
 		// token replay (Diff is the full carryover, replaying would spike
@@ -655,6 +705,7 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 	f.acc.Restore(latest)
 	f.acc.RestoreCost(latestCost)
 	f.acc.RestoreToolUsage(latestTools)
+	f.acc.RestoreServerModels(latestModels)
 	f.mu.Lock()
 	for name, counts := range latest {
 		f.prev[name] = counts
@@ -664,6 +715,9 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 	}
 	for name, tools := range latestTools {
 		f.prevTools[name] = tools
+	}
+	for name, models := range latestModels {
+		f.prevModels[name] = models
 	}
 	f.mu.Unlock()
 	return nil
