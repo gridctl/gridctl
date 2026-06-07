@@ -79,6 +79,9 @@ export interface MCPServerStatus {
   // a gateway default_model is not folded in). Absent when the server
   // inherits the default or has no attribution.
   model?: string;
+  // Which model actually priced this server's recorded cost, with provenance.
+  // Read-only; absent when the server has no observed traffic.
+  effectiveModel?: EffectiveModel;
   replicas?: ReplicaStatus[]; // Per-replica runtime status
   autoscale?: AutoscaleStatus; // Live autoscale snapshot (absent when not configured)
 }
@@ -110,6 +113,9 @@ export interface ClientStatus {
   transport: string;  // "native SSE", "native HTTP", or "mcp-remote bridge"
   configPath?: string; // Config file path (only if detected)
   model?: string;     // Declared pricing model from client_models (pricing only, not access)
+  // Which model actually priced this client's recorded cost, with provenance.
+  // Read-only; absent when the client has no observed traffic.
+  effectiveModel?: EffectiveModel;
   effectiveScope?: ClientScopeResult; // Per-client access scope (when scoping is configured)
 }
 
@@ -213,6 +219,29 @@ export interface OptimizeReport {
   generated_at: string;
 }
 
+// Model provenance for an effective-model attribution. Mirrors the
+// pkg/optimize / internal/api vocabulary. `declared` = one model priced all
+// recorded cost; `mixed` = multiple models priced the traffic; `none` =
+// traffic observed but nothing priced (cost $0). The set is open so a future
+// `reported` (a wire-level model signal) can extend it.
+export type ModelProvenance = 'declared' | 'mixed' | 'none';
+
+// One model's slice of an entity's recorded cost.
+export interface ModelShare {
+  model: string;
+  cost_usd: number;
+  share: number; // 0–1 of the entity's total recorded cost
+}
+
+// Which model(s) priced an entity's traffic, with provenance. Describes which
+// declaration gridctl applied when pricing — NOT what the upstream client ran.
+export interface EffectiveModel {
+  model?: string;             // dominant model (omitted for `none`)
+  provenance: ModelProvenance;
+  share?: number;             // dominant model's cost share (omitted for `none`)
+  models?: ModelShare[];      // full breakdown, descending by cost
+}
+
 // Gateway status response from GET /api/status
 export interface GatewayStatus {
   gateway: ServerInfo;
@@ -226,6 +255,10 @@ export interface GatewayStatus {
   client_models?: Record<string, string>; // Declared client -> model pricing map (client_models)
   server_models?: Record<string, string>; // EFFECTIVE server -> model map (model: with default_model folded in)
   default_model?: string;  // Gateway-level default_model (omitted when not configured)
+  // Effective model + provenance per client / server, derived read-only from
+  // observed cost. Omitted until traffic is observed.
+  effective_client_models?: Record<string, EffectiveModel>;
+  effective_server_models?: Record<string, EffectiveModel>;
   stack_name?: string;     // Active stack name; omitted in stackless mode
 }
 

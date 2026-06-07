@@ -17,3 +17,15 @@ export const ATTRIBUTION_HINT =
 export const SNAPSHOT_NOTE =
   'Models come from the embedded LiteLLM snapshot (refreshed via make update-pricing at gateway rebuild).';
 export const UNKNOWN_MODEL_NOTE = 'Unknown model · records tokens but prices as $0';
+
+// Shown on the Cost KPI when any client/server has `mixed` provenance. The
+// honesty contract: provenance describes which declaration priced the
+// traffic, never what the upstream client actually ran.
+export const MIXED_PROVENANCE_NOTE =
+  'Cost is priced by your declared models, not observed client behavior. ' +
+  'A blend of rates means a client hit servers priced at different models, or a declaration changed.';
+
+// Tooltip on a `none` effective-model cell: traffic ran but nothing priced it.
+export const UNPRICED_NOTE =
+  'Traffic observed but no pricing model applied, so cost is $0. ' +
+  'Declare a client or server model to price it.';

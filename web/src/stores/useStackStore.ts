@@ -11,6 +11,7 @@ import type {
   Tool,
   TokenUsage,
   CostUsage,
+  EffectiveModel,
   ConnectionStatus,
   AutoscaleDecisionKind,
 } from '../types';
@@ -64,6 +65,10 @@ interface StackState {
   clientModels: Record<string, string>; // Declared client -> model pricing map (client_models)
   serverModels: Record<string, string>; // EFFECTIVE server -> model map (model: with default folded in)
   defaultModel: string;     // Gateway-level default_model; empty when not configured
+  // Effective model + provenance per client / server, derived read-only from
+  // observed cost. Empty until traffic is observed.
+  effectiveClientModels: Record<string, EffectiveModel>;
+  effectiveServerModels: Record<string, EffectiveModel>;
   stackName: string;        // Active stack name; empty string in stackless mode
 
   // === React Flow State ===
@@ -134,6 +139,8 @@ export const useStackStore = create<StackState>()(
     costAttribution: false,
     clientModels: {},
     serverModels: {},
+    effectiveClientModels: {},
+    effectiveServerModels: {},
     defaultModel: '',
     stackName: '',
     nodes: [],
@@ -170,6 +177,8 @@ export const useStackStore = create<StackState>()(
         costAttribution: status.cost_attribution ?? false,
         clientModels: status.client_models ?? {},
         serverModels: status.server_models ?? {},
+        effectiveClientModels: status.effective_client_models ?? {},
+        effectiveServerModels: status.effective_server_models ?? {},
         defaultModel: status.default_model ?? '',
         stackName: status.stack_name || '',
         autoscaleHistory: folded.history,
