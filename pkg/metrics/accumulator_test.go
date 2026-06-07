@@ -461,6 +461,174 @@ func TestAccumulator_RecordCost_ZeroIsNoop(t *testing.T) {
 	}
 }
 
+// --- Model histogram tests ---
+
+func TestAccumulator_RecordCostWithModel_SingleModel(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.10, Output: 0.20})
+	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 40, 10, CostBreakdown{Input: 0.05, Output: 0.05})
+
+	snap := acc.CostSnapshot()
+
+	srv := snap.PerServerModels["github"]
+	if len(srv) != 1 {
+		t.Fatalf("expected 1 server model bucket, got %d (%+v)", len(srv), srv)
+	}
+	m := srv["claude-opus-4-7"]
+	if !approxCostEq(m.CostUSD, 0.40) {
+		t.Errorf("server model cost = %v, want 0.40", m.CostUSD)
+	}
+	if m.InputTokens != 140 || m.OutputTokens != 60 {
+		t.Errorf("server model tokens = (%d,%d), want (140,60)", m.InputTokens, m.OutputTokens)
+	}
+
+	cli := snap.PerClientModels["claude-code"]
+	if len(cli) != 1 {
+		t.Fatalf("expected 1 client model bucket, got %d (%+v)", len(cli), cli)
+	}
+	if !approxCostEq(cli["claude-opus-4-7"].CostUSD, 0.40) {
+		t.Errorf("client model cost = %v, want 0.40", cli["claude-opus-4-7"].CostUSD)
+	}
+}
+
+func TestAccumulator_RecordCostWithModel_MultipleModels(t *testing.T) {
+	acc := NewAccumulator(100)
+	// One undeclared client whose calls hit two servers priced at different models.
+	acc.RecordCostWithModel("github", -1, "cursor", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.80, Output: 0.10})
+	acc.RecordCostWithModel("lookup", -1, "cursor", "claude-haiku-4-5", 100, 50, CostBreakdown{Input: 0.05, Output: 0.05})
+
+	snap := acc.CostSnapshot()
+	cli := snap.PerClientModels["cursor"]
+	if len(cli) != 2 {
+		t.Fatalf("expected 2 client model buckets, got %d (%+v)", len(cli), cli)
+	}
+	if !approxCostEq(cli["claude-opus-4-7"].CostUSD, 0.90) {
+		t.Errorf("opus cost = %v, want 0.90", cli["claude-opus-4-7"].CostUSD)
+	}
+	if !approxCostEq(cli["claude-haiku-4-5"].CostUSD, 0.10) {
+		t.Errorf("haiku cost = %v, want 0.10", cli["claude-haiku-4-5"].CostUSD)
+	}
+}
+
+func TestAccumulator_RecordCostWithModel_EmptyModelSkipsHistogram(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCostWithModel("github", -1, "claude-code", "", 100, 50, CostBreakdown{Input: 0.10, Output: 0.20})
+
+	snap := acc.CostSnapshot()
+	if snap.PerServerModels != nil {
+		t.Errorf("empty model must not create a histogram; got %+v", snap.PerServerModels)
+	}
+	// Plain cost is still recorded.
+	if !approxCostEq(snap.PerServer["github"].TotalUSD, 0.30) {
+		t.Errorf("plain cost should still record; got %v", snap.PerServer["github"].TotalUSD)
+	}
+}
+
+func TestAccumulator_RecordCostWithModel_ZeroCostNoop(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 0, 0, CostBreakdown{})
+	snap := acc.CostSnapshot()
+	if snap.PerServerModels != nil || snap.PerClientModels != nil {
+		t.Errorf("zero-cost record must not create histograms; got server=%+v client=%+v",
+			snap.PerServerModels, snap.PerClientModels)
+	}
+}
+
+func TestAccumulator_RecordCostWithModel_AnonymousSkipsClientHistogram(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCostWithModel("github", -1, "", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.10, Output: 0.20})
+	snap := acc.CostSnapshot()
+	if _, ok := snap.PerServerModels["github"]; !ok {
+		t.Error("anonymous call should still record per-server model histogram")
+	}
+	if snap.PerClientModels != nil {
+		t.Errorf("anonymous call must not create per-client histogram; got %+v", snap.PerClientModels)
+	}
+}
+
+func TestAccumulator_RecordCostWithModel_Concurrent(t *testing.T) {
+	acc := NewAccumulator(1000)
+	var wg sync.WaitGroup
+	const goroutines = 50
+	const calls = 50
+	models := []string{"claude-opus-4-7", "claude-haiku-4-5"}
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < calls; j++ {
+				acc.RecordCostWithModel("server", -1, "client", models[(g+j)%2], 1, 1, CostBreakdown{Input: 0.001, Output: 0.001})
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	snap := acc.CostSnapshot()
+	var total float64
+	for _, m := range snap.PerServerModels["server"] {
+		total += m.CostUSD
+	}
+	want := 0.002 * float64(goroutines*calls)
+	if !approxCostEq(total, want) {
+		t.Errorf("histogram total under concurrent writes = %v, want %v", total, want)
+	}
+}
+
+func TestAccumulator_RestoreServerModels_RoundTrip(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.30, Output: 0.10})
+	acc.RecordCostWithModel("lookup", -1, "claude-code", "claude-haiku-4-5", 80, 20, CostBreakdown{Input: 0.05, Output: 0.05})
+
+	persisted := acc.ServerModelMicroSnapshot()
+	if len(persisted) != 2 {
+		t.Fatalf("expected 2 servers in micro snapshot, got %d", len(persisted))
+	}
+
+	// Restore into a fresh accumulator (the restart case).
+	restored := NewAccumulator(100)
+	restored.RestoreServerModels(persisted)
+
+	snap := restored.CostSnapshot()
+	g := snap.PerServerModels["github"]["claude-opus-4-7"]
+	if !approxCostEq(g.CostUSD, 0.40) || g.InputTokens != 100 || g.OutputTokens != 50 {
+		t.Errorf("github bucket after restore = %+v, want cost 0.40 tokens (100,50)", g)
+	}
+	l := snap.PerServerModels["lookup"]["claude-haiku-4-5"]
+	if !approxCostEq(l.CostUSD, 0.10) {
+		t.Errorf("lookup bucket cost after restore = %v, want 0.10", l.CostUSD)
+	}
+}
+
+func TestAccumulator_RestoreServerModels_EmptyIsNoop(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RestoreServerModels(nil)
+	if acc.ServerModelMicroSnapshot() != nil {
+		t.Error("restoring an empty map should leave histograms empty")
+	}
+}
+
+func TestAccumulator_ClearCost_DropsModelHistograms(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.30, Output: 0.10})
+	acc.ClearCost()
+	snap := acc.CostSnapshot()
+	if snap.PerServerModels != nil || snap.PerClientModels != nil {
+		t.Errorf("ClearCost must drop model histograms; got server=%+v client=%+v",
+			snap.PerServerModels, snap.PerClientModels)
+	}
+}
+
+func TestAccumulator_Clear_DropsModelHistograms(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.30, Output: 0.10})
+	acc.Clear()
+	snap := acc.CostSnapshot()
+	if snap.PerServerModels != nil || snap.PerClientModels != nil {
+		t.Errorf("Clear must drop model histograms; got server=%+v client=%+v",
+			snap.PerServerModels, snap.PerClientModels)
+	}
+}
+
 func TestAccumulator_QueryCost(t *testing.T) {
 	acc := NewAccumulator(100)
 	acc.RecordCost("server-a", -1, CostBreakdown{Input: 0.10, Output: 0.20})

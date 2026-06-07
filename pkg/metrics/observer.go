@@ -117,7 +117,7 @@ func (o *Observer) observe(serverName string, replicaID int, clientID, toolName 
 	if !ok {
 		return summary
 	}
-	o.accumulator.RecordCostWithClient(serverName, replicaID, clientID, CostBreakdown{
+	o.accumulator.RecordCostWithModel(serverName, replicaID, clientID, model, inputTokens, outputTokens, CostBreakdown{
 		Input:      cost.Input,
 		Output:     cost.Output,
 		CacheRead:  cost.CacheRead,
