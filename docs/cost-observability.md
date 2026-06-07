@@ -45,6 +45,22 @@ Two limitations to keep expectations honest. A declared client model is a sessio
 
 Cost figures are estimates — tokenizer-approximated counts multiplied by published list rates. They are built for comparing servers and clients, spotting waste, and trending over time, not for reconciling invoices.
 
+## Effective models (provenance)
+
+The four declared tiers answer "which model *should* price this call". Once calls land, gridctl also records which model *did* price each recorded dollar, per client and per server, and surfaces it as an **effective model** with provenance. This is exact recording, not inference: the resolved model is known at the moment cost is recorded, so the effective model is the model gridctl actually applied — never a guess reverse-engineered from the cost.
+
+| Provenance | Meaning | Shown as |
+|---|---|---|
+| `declared` | One model priced all of this entity's recorded cost | The model, unchanged from before |
+| `mixed` | Two or more models priced the traffic (an undeclared client hitting servers with different `model:` values, or a declaration changed mid-session) | `<dominant> · NN%` with the full breakdown on hover |
+| `none` | Traffic was observed but no attribution resolved, so cost is $0 | A muted `unpriced` tag |
+
+Effective models appear in the Metrics tab's Top Clients and per-server tables (and the detached metrics window), the sidebar inspector's Pricing section, the Pricing models manager, and on `/api/status` as `effective_client_models` / `effective_server_models`. A `mixed` cell is clickable: it opens the Pricing models manager so declaring a single client model — which collapses the blend for future traffic — is one step away.
+
+**What provenance does and does not mean.** A provenance label describes which *declaration* priced the traffic, not which model the upstream client actually ran. The gateway sits below the LLM client and cannot observe the client's model choice (the same reason attribution is declared in the first place). So `mixed` means "your declarations priced this traffic at more than one rate", not "the client used several models", and the UI never says "detected" or "used". True declared-vs-actual drift detection is not possible without a model signal on the wire; the effective model is the honest, exact record of what gridctl applied. Statistical inference of the client's model from the observed cost/token ratio was evaluated and rejected: gridctl computes the cost itself from the resolved model, so such inference would only restate the declaration it started from.
+
+Effective-model history persists alongside cost, so the provenance you see after a gateway restart matches what it was before. `gridctl optimize`'s `expensive_model_on_cheap_task` finding names the dominant model that priced a server's traffic and labels its provenance in both the table detail and `--format json`.
+
 ## Refreshing pricing data
 
 The pricing snapshot is embedded at build time via `//go:embed pkg/pricing/data/model_prices.json`. Refresh it when providers adjust rates or add new models:

@@ -13,6 +13,25 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Effective model attribution with provenance.** Gridctl now records which
+  model priced each recorded dollar — per client and per server — and surfaces
+  an "effective model" with provenance (`declared` when one model priced all of
+  an entity's cost, `mixed` when several did, `none` when traffic was observed
+  but nothing priced it). This is exact recording at observation time, not
+  inference: the resolved model is known when cost is recorded. The model
+  histograms persist and replay alongside cost, so provenance survives a
+  restart. `/api/status` gains additive `effective_client_models` /
+  `effective_server_models` maps (and the client/server status objects gain an
+  `effectiveModel` field); the Metrics tab and detached window show a
+  `<dominant> · NN%` pill for mixed clients/servers (clickable into the pricing
+  manager) and a muted `unpriced` tag for none, with a one-line honesty note on
+  the Cost card when any blend is present; the sidebar inspector and pricing
+  manager surface the same read-only effective info. `gridctl optimize`'s
+  `expensive_model_on_cheap_task` finding names the dominant model and labels
+  its provenance. Provenance describes which declaration priced the traffic, not
+  what the client actually ran — the gateway cannot observe the client's model
+  choice, so the labels never claim detection. See `docs/cost-observability.md`.
+
 - **In-UI pricing model editing across all three attribution tiers.** Cost
   attribution no longer requires hand-editing stack.yaml: the per-server
   `model:` and `gateway.default_model` tiers join `client_models:` as
