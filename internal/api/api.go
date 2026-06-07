@@ -267,6 +267,23 @@ func (s *Server) defaultModelValue() string {
 	return s.defaultModel()
 }
 
+// effectiveClientModels and effectiveServerModels derive the read-time
+// effective-model + provenance maps from the live accumulator snapshots.
+// Return nil when no accumulator is wired or no traffic has been observed.
+func (s *Server) effectiveClientModels() map[string]EffectiveModel {
+	if s.metricsAccumulator == nil {
+		return nil
+	}
+	return deriveEffectiveModels(s.metricsAccumulator.Snapshot().PerClient, s.metricsAccumulator.CostSnapshot().PerClientModels)
+}
+
+func (s *Server) effectiveServerModels() map[string]EffectiveModel {
+	if s.metricsAccumulator == nil {
+		return nil
+	}
+	return deriveEffectiveModels(s.metricsAccumulator.Snapshot().PerServer, s.metricsAccumulator.CostSnapshot().PerServerModels)
+}
+
 // SetStartWatcher sets a callback that activates live-reload file watching for
 // the given stack path. Called by POST /api/stack/initialize after cold-loading.
 func (s *Server) SetStartWatcher(fn func(stackPath string)) {
@@ -494,7 +511,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// Omitted when not configured. Lets the UI render "inherits
 		// default: <id>" provenance for servers without their own model.
 		DefaultModel string `json:"default_model,omitempty"`
-		StackName    string `json:"stack_name,omitempty"`
+		// EffectiveClientModels and EffectiveServerModels report which model
+		// actually priced each client's / server's recorded cost, with
+		// provenance (declared | mixed | none). Derived read-only from the
+		// accumulator's model histograms; they describe which declaration
+		// gridctl applied, not what the upstream client ran. Omitted when no
+		// traffic has been observed.
+		EffectiveClientModels map[string]EffectiveModel `json:"effective_client_models,omitempty"`
+		EffectiveServerModels map[string]EffectiveModel `json:"effective_server_models,omitempty"`
+		StackName             string                    `json:"stack_name,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:      s.gateway.ServerInfo().Name,
@@ -521,9 +546,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if s.metricsAccumulator != nil {
 		snap := s.metricsAccumulator.Snapshot()
 		status.TokenUsage = &snap
-		if cost := s.metricsAccumulator.CostSnapshot(); !costSnapshotIsZero(cost) {
+		cost := s.metricsAccumulator.CostSnapshot()
+		if !costSnapshotIsZero(cost) {
 			status.Cost = &cost
 		}
+		status.EffectiveClientModels = deriveEffectiveModels(snap.PerClient, cost.PerClientModels)
+		status.EffectiveServerModels = deriveEffectiveModels(snap.PerServer, cost.PerServerModels)
 	}
 	status.ClientModels = s.clientModelAttributionMap()
 	status.ServerModels = s.modelAttributionMap()
@@ -622,6 +650,10 @@ type MCPServerStatus struct {
 	// (model: field only — a gateway default_model is not folded in here).
 	// Empty when the server inherits the default or has no attribution.
 	Model string `json:"model,omitempty"`
+	// EffectiveModel reports which model actually priced this server's
+	// recorded cost, with provenance (declared | mixed | none). Read-only
+	// and derived from observed cost; nil when the server has no traffic.
+	EffectiveModel *EffectiveModel `json:"effectiveModel,omitempty"`
 
 	Replicas  []mcp.ReplicaStatus  `json:"replicas,omitempty"`
 	Autoscale *mcp.AutoscaleStatus `json:"autoscale,omitempty"`
@@ -630,6 +662,7 @@ type MCPServerStatus struct {
 func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 	mcpStatuses := s.gateway.Status()
 	declaredModels := s.declaredServerModelsMap()
+	effective := s.effectiveServerModels()
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
 		status := MCPServerStatus{
@@ -656,6 +689,9 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)
 			status.LastCheck = &ts
+		}
+		if em, ok := effective[ms.Name]; ok {
+			status.EffectiveModel = &em
 		}
 		statuses[i] = status
 	}
@@ -1120,6 +1156,10 @@ type ClientStatus struct {
 	// client_models, when present. Pricing attribution only — it carries no
 	// access-control meaning and is independent of EffectiveScope.
 	Model string `json:"model,omitempty"`
+	// EffectiveModel reports which model actually priced this client's
+	// recorded cost, with provenance (declared | mixed | none). Read-only
+	// and derived from observed cost; nil when the client has no traffic.
+	EffectiveModel *EffectiveModel `json:"effectiveModel,omitempty"`
 	// EffectiveScope is the backend-computed per-client tool access scope when a
 	// `clients:` block is configured: the servers and prefixed tools this client
 	// can reach. nil when no access scoping is in effect, so the frontend can
@@ -1147,6 +1187,7 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 
 	scopingOn := s.gateway != nil && s.gateway.ClientAccessConfigured()
 	clientModels := s.clientModelAttributionMap()
+	effective := s.effectiveClientModels()
 
 	infos := s.provisioners.AllClientInfo(serverName)
 	statuses := make([]ClientStatus, 0, len(infos))
@@ -1159,6 +1200,9 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 			Transport:  info.Transport,
 			ConfigPath: info.ConfigPath,
 			Model:      clientModels[info.Slug],
+		}
+		if em, ok := effective[info.Slug]; ok {
+			status.EffectiveModel = &em
 		}
 		// Surface the backend-computed effective scope keyed on the client's
 		// stable identifier (its slug, which is what `gridctl link` assigns and

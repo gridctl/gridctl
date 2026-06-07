@@ -110,9 +110,71 @@ func (s *Server) optimizeStats() optimize.Stats {
 			SavingsPercent:  snap.FormatSavings.SavingsPercent,
 		}
 		stats.ServerCallCount = computeServerCallCount(acc.ToolUsageSnapshot())
+		stats.ModelHistograms = serverModelHistograms(acc.CostSnapshot().PerServerModels)
 	}
+	// Declared per-server attribution provides rates; the histogram (when
+	// present) names the model that actually priced traffic. Merge so the
+	// dominant histogram model rides with its looked-up rate, which
+	// resolveDominantRate prefers over the declared value.
 	stats.ModelStats = lookupModelStats(s.modelAttributionMap())
+	stats.ModelStats = mergeHistogramModelStats(stats.ModelStats, stats.ModelHistograms)
 	return stats
+}
+
+// serverModelHistograms flattens the accumulator's per-server model cost
+// histogram (model -> ModelCost) into the model -> USD shape pkg/optimize
+// consumes. Returns nil when no histogram data exists so the optimize path
+// keeps its pre-histogram behavior.
+func serverModelHistograms(perServer map[string]map[string]metrics.ModelCost) map[string]map[string]float64 {
+	if len(perServer) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]float64, len(perServer))
+	for server, models := range perServer {
+		inner := make(map[string]float64, len(models))
+		for model, mc := range models {
+			inner[model] = mc.CostUSD
+		}
+		out[server] = inner
+	}
+	return out
+}
+
+// mergeHistogramModelStats ensures each server's dominant histogram model
+// carries its pricing rate in ModelStats, so resolveDominantRate can name the
+// exact model that priced traffic with a real (not cost÷tokens) rate. A
+// declared ModelStat for the same server is overridden only when the
+// dominant histogram model differs and prices successfully.
+func mergeHistogramModelStats(declared map[string]optimize.ModelStat, histograms map[string]map[string]float64) map[string]optimize.ModelStat {
+	if len(histograms) == 0 {
+		return declared
+	}
+	out := declared
+	if out == nil {
+		out = make(map[string]optimize.ModelStat)
+	}
+	for server, models := range histograms {
+		dominant := optimize.DominantModel(models)
+		if dominant == "" {
+			continue
+		}
+		if existing, ok := out[server]; ok && existing.Model == dominant {
+			continue // declared rate already names the dominant model
+		}
+		rates, ok := pricing.Lookup(dominant)
+		if !ok {
+			continue
+		}
+		out[server] = optimize.ModelStat{
+			Model:             dominant,
+			InputUSDPerToken:  rates.InputPerToken,
+			OutputUSDPerToken: rates.OutputPerToken,
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // computeSchemaTokens estimates per-server schema-overhead tokens by

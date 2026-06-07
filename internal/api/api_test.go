@@ -1307,6 +1307,57 @@ func TestHandleStatus_IncludesTokenUsage(t *testing.T) {
 	}
 }
 
+func TestHandleStatus_IncludesEffectiveModels(t *testing.T) {
+	srv := newTestServerWithMetrics(t)
+	// A client whose calls priced under two different models -> mixed; a
+	// server priced under a single model -> declared.
+	srv.metricsAccumulator.RecordReplicaWithClient("github", -1, "cursor", 100, 50)
+	srv.metricsAccumulator.RecordCostWithModel("github", -1, "cursor", "claude-opus-4-7", 100, 50, metrics.CostBreakdown{Input: 0.80, Output: 0.10})
+	srv.metricsAccumulator.RecordReplicaWithClient("lookup", -1, "cursor", 100, 50)
+	srv.metricsAccumulator.RecordCostWithModel("lookup", -1, "cursor", "claude-haiku-4-5", 100, 50, metrics.CostBreakdown{Input: 0.05, Output: 0.05})
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result struct {
+		EffectiveClientModels map[string]EffectiveModel `json:"effective_client_models"`
+		EffectiveServerModels map[string]EffectiveModel `json:"effective_server_models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	cursor, ok := result.EffectiveClientModels["cursor"]
+	if !ok {
+		t.Fatalf("expected effective_client_models[cursor]; got %+v", result.EffectiveClientModels)
+	}
+	if cursor.Provenance != "mixed" {
+		t.Errorf("cursor provenance = %q, want mixed", cursor.Provenance)
+	}
+	if cursor.Model != "claude-opus-4-7" {
+		t.Errorf("cursor dominant model = %q, want claude-opus-4-7", cursor.Model)
+	}
+	if len(cursor.Models) != 2 {
+		t.Errorf("cursor breakdown len = %d, want 2", len(cursor.Models))
+	}
+
+	github, ok := result.EffectiveServerModels["github"]
+	if !ok {
+		t.Fatalf("expected effective_server_models[github]; got %+v", result.EffectiveServerModels)
+	}
+	if github.Provenance != "declared" {
+		t.Errorf("github provenance = %q, want declared", github.Provenance)
+	}
+	if github.Model != "claude-opus-4-7" {
+		t.Errorf("github model = %q, want claude-opus-4-7", github.Model)
+	}
+}
+
 func TestHandleStatus_NoTokenUsageWithoutAccumulator(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
