@@ -26,6 +26,7 @@ export function ClientModelCell({
   costAttribution,
   onSaved,
   onOpenManager,
+  pickerAlign,
 }: {
   client: string;
   declaredModel?: string;
@@ -33,6 +34,7 @@ export function ClientModelCell({
   costAttribution: boolean;
   onSaved: (client: string, model: string) => void;
   onOpenManager?: () => void;
+  pickerAlign?: 'left' | 'right';
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -75,6 +77,7 @@ export function ClientModelCell({
           disabled={saving}
           autoFocus
           widthClass="w-52"
+          align={pickerAlign}
           error={saveError}
         />
         <button

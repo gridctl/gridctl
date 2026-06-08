@@ -298,8 +298,11 @@ All notable changes to gridctl will be documented in this file.
   the narrow editor cell's width, so IDs like
   `anthropic.claude-3-opus-20240229` were cut off with no readable fallback.
   The popover now grows to fit the widest option (capped so it stays on screen),
-  and the footer previews the highlighted row's full ID verbatim during keyboard
-  navigation.
+  the footer previews the highlighted row's full ID verbatim during keyboard
+  navigation, and the popover can anchor to its right edge so it grows inward
+  instead of overflowing a narrow container. The pricing manager slide-over is
+  wider with larger labels, so model names are readable without the horizontal
+  scrollbar the cramped panel produced.
 
 - **Detached metrics window missing the client Model column.** The popout
   `/metrics` window now has full parity with the Metrics tab: the Top Clients

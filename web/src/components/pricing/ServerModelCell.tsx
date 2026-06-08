@@ -21,6 +21,7 @@ export function ServerModelCell({
   effective,
   onSaved,
   onOpenManager,
+  pickerAlign,
 }: {
   server: string;
   declaredModel?: string;
@@ -28,6 +29,7 @@ export function ServerModelCell({
   effective?: EffectiveModel;
   onSaved: (server: string, model: string) => void;
   onOpenManager?: () => void;
+  pickerAlign?: 'left' | 'right';
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -70,6 +72,7 @@ export function ServerModelCell({
           disabled={saving}
           autoFocus
           widthClass="w-52"
+          align={pickerAlign}
           error={saveError}
         />
         <button

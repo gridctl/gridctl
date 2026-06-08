@@ -65,6 +65,12 @@ export interface ModelPickerProps {
   autoFocus?: boolean;
   /** Width class for the input; defaults to the metrics-cell width. */
   widthClass?: string;
+  /**
+   * Edge the option popover anchors to. 'left' (default) grows rightward;
+   * 'right' grows leftward, which keeps the popover inside a narrow container
+   * when the input sits against its right edge (e.g. the pricing slide-over).
+   */
+  align?: 'left' | 'right';
   /** Non-null renders the error state (red border + title). */
   error?: string | null;
   /**
@@ -90,6 +96,7 @@ export function ModelPicker({
   disabled = false,
   autoFocus = false,
   widthClass = 'w-52',
+  align = 'left',
   error = null,
   commitOnBlur = false,
 }: ModelPickerProps) {
@@ -279,7 +286,11 @@ export function ModelPicker({
 
       {open && rows.length > 0 && (
         <div
-          className="absolute left-0 top-full mt-1 z-50 min-w-full w-max max-w-[min(420px,90vw)] rounded-md border border-border/50 bg-surface-elevated shadow-xl overflow-hidden"
+          className={cn(
+            'absolute top-full mt-1 z-50 min-w-full w-max max-w-[min(420px,90vw)]',
+            'rounded-md border border-border/50 bg-surface-elevated shadow-xl overflow-hidden',
+            align === 'right' ? 'right-0' : 'left-0',
+          )}
         >
           <div
             ref={scrollRef}
