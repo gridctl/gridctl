@@ -57,6 +57,9 @@ web/coverage/
 tmp/
 temp/
 
+# Pricing refresh temp file (make update-pricing writes here before atomic mv)
+pkg/pricing/data/.model_prices.*
+
 # Mock server binaries and PID files
 examples/_mock-servers/local-stdio-server/mock-stdio-server
 examples/_mock-servers/mock-mcp-server/mock-mcp-server
