@@ -63,6 +63,19 @@ describe('ModelPicker', () => {
     expect(onCommit).toHaveBeenCalledWith('claude-opus-4-7');
   });
 
+  it('previews the highlighted option ID in the footer', async () => {
+    render(<ModelPicker value="" onCommit={vi.fn()} autoFocus />);
+    await waitFor(() => expect(screen.getAllByRole('option').length).toBe(MODELS.length));
+
+    fireEvent.keyDown(getInput(), { key: 'ArrowDown' });
+    // The footer mirrors the first highlighted item verbatim; the option row
+    // shows the same ID, so scope the assertion to the footer node.
+    await waitFor(() => {
+      const previews = screen.getAllByText('claude-haiku-4-5');
+      expect(previews.some((el) => el.classList.contains('break-all'))).toBe(true);
+    });
+  });
+
   it('passes free text through on Enter when nothing is highlighted', async () => {
     const onCommit = vi.fn();
     render(<ModelPicker value="" onCommit={onCommit} autoFocus />);

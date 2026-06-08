@@ -104,6 +104,11 @@ export function ModelPicker({
   const knownSet = useMemo(() => new Set(models), [models]);
   const isUnknown = draft.trim() !== '' && models.length > 0 && !knownSet.has(draft.trim());
 
+  // Full ID of the highlighted row, shown verbatim in the footer so an ID
+  // wider than the popover stays readable during keyboard navigation.
+  const activeRow = open && active >= 0 ? rows[active] : undefined;
+  const activeId = activeRow?.kind === 'item' ? activeRow.id : '';
+
   const virtualize = rows.length > VIRTUALIZE_AT;
   const virtualizer = useVirtualizer({
     count: virtualize ? rows.length : 0,
@@ -274,7 +279,7 @@ export function ModelPicker({
 
       {open && rows.length > 0 && (
         <div
-          className="absolute left-0 right-0 top-full mt-1 z-50 rounded-md border border-border/50 bg-surface-elevated shadow-xl overflow-hidden"
+          className="absolute left-0 top-full mt-1 z-50 min-w-full w-max max-w-[min(420px,90vw)] rounded-md border border-border/50 bg-surface-elevated shadow-xl overflow-hidden"
         >
           <div
             ref={scrollRef}
@@ -302,7 +307,13 @@ export function ModelPicker({
             )}
           </div>
           <div className="px-2 py-1 border-t border-border/30 text-[9px] text-text-muted/60 select-none">
-            {models.length > 0 ? `${models.length} models · LiteLLM snapshot` : 'Loading models…'}
+            {activeId ? (
+              <span className="font-mono text-text-secondary break-all">{activeId}</span>
+            ) : models.length > 0 ? (
+              `${models.length} models · LiteLLM snapshot`
+            ) : (
+              'Loading models…'
+            )}
           </div>
         </div>
       )}

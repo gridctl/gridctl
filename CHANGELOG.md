@@ -294,6 +294,13 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixed
 
+- **Pricing model picker truncated long model IDs.** The dropdown was pinned to
+  the narrow editor cell's width, so IDs like
+  `anthropic.claude-3-opus-20240229` were cut off with no readable fallback.
+  The popover now grows to fit the widest option (capped so it stays on screen),
+  and the footer previews the highlighted row's full ID verbatim during keyboard
+  navigation.
+
 - **Detached metrics window missing the client Model column.** The popout
   `/metrics` window now has full parity with the Metrics tab: the Top Clients
   Model column with inline editing, the per-server Model column, and the
