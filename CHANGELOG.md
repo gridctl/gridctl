@@ -13,6 +13,11 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Refreshed the embedded LiteLLM pricing snapshot.** Updated
+  `pkg/pricing/data/model_prices.json` to the current upstream table so newly
+  released models (e.g. `claude-opus-4-8`) appear in the cost-model picker and
+  price correctly.
+
 - **Effective model attribution with provenance.** Gridctl now records which
   model priced each recorded dollar — per client and per server — and surfaces
   an "effective model" with provenance (`declared` when one model priced all of
