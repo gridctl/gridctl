@@ -1,4 +1,4 @@
-.PHONY: all build build-web build-go dev clean help test test-coverage test-integration test-frontend mock-servers clean-mock-servers generate update-pricing
+.PHONY: all build build-web build-go dev clean help test test-coverage test-integration test-frontend mock-servers clean-mock-servers generate update-pricing validate-pricing
 
 # Version from git tags (fallback to dev)
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -125,14 +125,28 @@ PRICING_URL := https://raw.githubusercontent.com/BerriAI/litellm/main/model_pric
 PRICING_DEST := pkg/pricing/data/model_prices.json
 update-pricing:
 	@echo "Refreshing pricing data from $(PRICING_URL)..."
-	@tmp=$$(mktemp); \
+	@tmp=$$(mktemp $(dir $(PRICING_DEST)).model_prices.XXXXXX); \
 	if curl -sSL --fail --max-time 30 -o $$tmp $(PRICING_URL); then \
-		mv $$tmp $(PRICING_DEST); \
-		echo "Updated $(PRICING_DEST) ($$(wc -c < $(PRICING_DEST)) bytes)."; \
+		if scripts/validate-pricing.sh $$tmp $(PRICING_DEST); then \
+			mv $$tmp $(PRICING_DEST); \
+			echo "Updated $(PRICING_DEST) ($$(wc -c < $(PRICING_DEST)) bytes)."; \
+		else \
+			rm -f $$tmp; \
+			echo "ERROR: pricing validation failed; keeping existing $(PRICING_DEST)." >&2; \
+			exit 1; \
+		fi; \
 	else \
 		rm -f $$tmp; \
 		echo "WARN: pricing refresh failed; keeping existing $(PRICING_DEST)."; \
 	fi
+
+# Validate a pricing snapshot without fetching. Defaults to the committed file;
+# point it at any candidate with FILE=/path/to/table.json to test the gate (it is
+# always compared against the committed snapshot's entry count). Exits non-zero on
+# malformed, empty, or substantially-shrunken input. Shared by update-pricing and
+# the scheduled refresh workflow.
+validate-pricing:
+	@scripts/validate-pricing.sh "$${FILE:-$(PRICING_DEST)}" "$(PRICING_DEST)"
 
 # Generate mocks (requires mockgen: go install go.uber.org/mock/mockgen@latest)
 generate:
@@ -158,6 +172,7 @@ help:
 	@echo "  make test-integration - Run integration tests (requires Docker)"
 	@echo "  make generate   - Regenerate mock files (requires mockgen)"
 	@echo "  make update-pricing - Refresh embedded LiteLLM pricing data (weekly)"
+	@echo "  make validate-pricing [FILE=...] - Validate a pricing snapshot (gate for update-pricing)"
 	@echo "  make mock-servers [PORT=9001] - Build and run mock MCP servers for examples"
 	@echo "  make clean-mock-servers - Stop and remove mock MCP servers"
 	@echo "  make help       - Show this help message"
