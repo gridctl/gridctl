@@ -1,0 +1,68 @@
+name: Update Pricing Snapshot
+
+# Keeps the embedded LiteLLM pricing snapshot
+# (pkg/pricing/data/model_prices.json) current without a maintainer remembering
+# to run `make update-pricing`. Weekly, this fetches the upstream table, runs it
+# through the validation gate (scripts/validate-pricing.sh), and — only when the
+# table actually changed — opens or updates a single reviewable PR. The binary
+# still embeds only the committed file; nothing here touches the build.
+
+on:
+  schedule:
+    # Mondays at 06:00 UTC. Weekly is enough — upstream churn is gradual and a
+    # human reviews every refresh PR.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fetches upstream, validates the candidate (JSON / non-empty / model
+      # floor / shrink guard), and replaces the committed file only on success.
+      # A malformed or truncated upstream response fails the job loudly rather
+      # than committing bad data; a network failure leaves the file untouched.
+      # jq, curl, and make are preinstalled on ubuntu-latest.
+      - name: Refresh pricing snapshot (validated)
+        run: make update-pricing
+
+      # peter-evans/create-pull-request is a no-op when the working tree is
+      # clean (table unchanged), and reuses the same branch/PR on re-runs so the
+      # refresh never opens duplicates.
+      #
+      # NOTE: the default GITHUB_TOKEN does not trigger downstream workflows
+      # (Gatekeeper, etc.) on the PR it opens. If CI must run on the auto-PR,
+      # swap in a PAT or GitHub App token here. Kept on GITHUB_TOKEN for v1.
+      # Also requires Settings -> Actions -> General -> "Allow GitHub Actions to
+      # create and approve pull requests" to be enabled, or this step fails.
+      - name: Create or update pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          branch: chore/update-pricing
+          delete-branch: true
+          sign-commits: true
+          commit-message: "chore: update LiteLLM pricing snapshot"
+          title: "chore: update LiteLLM pricing snapshot"
+          labels: chore
+          body: |
+            Automated refresh of the embedded LiteLLM pricing snapshot
+            (`pkg/pricing/data/model_prices.json`).
+
+            The upstream table was fetched and passed the validation gate
+            (`make update-pricing` → `scripts/validate-pricing.sh`: valid JSON,
+            non-empty, model-count floor, and shrink guard). The diff below is
+            the price-table delta.
+
+            Review and merge to ship the updated rates. This PR is opened by the
+            scheduled `Update Pricing Snapshot` workflow; re-runs update it in
+            place rather than opening duplicates.
