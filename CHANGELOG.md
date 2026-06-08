@@ -13,6 +13,17 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Automated LiteLLM pricing snapshot refresh.** A scheduled
+  `Update Pricing Snapshot` workflow fetches the upstream LiteLLM table weekly,
+  runs it through a validation gate (`make validate-pricing` →
+  `scripts/validate-pricing.sh`: valid JSON, non-empty, a model-count floor, and
+  an 80% shrink guard), and opens or updates a single reviewable PR only when the
+  table changed. `make update-pricing` now runs the same gate before replacing
+  the committed snapshot, so a poisoned, empty, or truncated upstream response
+  fails loudly instead of landing silently. The build is unchanged: the binary
+  still embeds only the committed file, with no live fetch at build or release
+  time.
+
 - **Refreshed the embedded LiteLLM pricing snapshot.** Updated
   `pkg/pricing/data/model_prices.json` to the current upstream table so newly
   released models (e.g. `claude-opus-4-8`) appear in the cost-model picker and
