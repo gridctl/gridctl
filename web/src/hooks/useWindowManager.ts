@@ -11,11 +11,13 @@ const WINDOW_TITLES: Record<string, string> = {
   traces: 'Gridctl - Traces',
 };
 
-// The `registry` window type points at /library-window after the workspace
-// promotion; other types render at /<type>. Keeping the type key as
-// `registry` avoids churning every call-site and stored detached state.
+// Window types whose detached route differs from the default /<type>. Both
+// `registry` and `metrics` had their /<type> path claimed by an in-shell
+// workspace; the popout moves aside while the type key stays put, so no
+// call-site, broadcast channel, or stored detached state has to change.
 const WINDOW_PATHS: Record<string, string> = {
   registry: '/library-window',
+  metrics: '/metrics-window',
 };
 
 type DetachableWindow = 'logs' | 'sidebar' | 'editor' | 'registry' | 'metrics' | 'traces';
