@@ -111,8 +111,8 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         label: 'Open Metrics',
         section: 'global',
         icon: <BarChart2 size={14} />,
-        keywords: ['metrics', 'stats', 'tokens', 'usage', 'charts', 'open'],
-        onSelect: () => setBottomPanelTab('metrics'),
+        keywords: ['metrics', 'stats', 'tokens', 'usage', 'cost', 'charts', 'dashboard', 'open'],
+        onSelect: () => navigate('/metrics'),
       },
       {
         id: 'navigate:spec',
