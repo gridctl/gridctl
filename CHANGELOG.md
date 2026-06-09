@@ -13,6 +13,22 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Metrics promoted to a first-class workspace.** Cost and token observability
+  is now a top-level workspace (`/metrics`, switcher pill, Cmd/Ctrl+5) alongside
+  Topology, Library, Variables, and Tools, replacing the buried bottom-panel tab
+  as the primary surface. The dashboard is a three-rail layout: a scope
+  navigator (overview / clients / servers / models), a center with the session
+  KPI row, token and estimated-cost trend charts, the active breakdown, and a
+  ranked cost-by-model mix, plus a right-rail inspector that details the selected
+  client or server (per-entity sparklines, cost provenance, and the inline
+  pricing-model editor). Scope and selection are URL-synced so reload and deep
+  links survive. The bottom Metrics tab is retained as a glance-only summary (KPI
+  row, one sparkline, and a "View all in Metrics" link), and the detached popout
+  moves to `/metrics-window`. The status bar token counter now links to the
+  workspace and gains an estimated-cost chip. The bottom tab, workspace, and
+  detached window all render one shared dashboard body, removing the prior
+  duplication between them. No stack.yaml or API changes.
+
 - **Automated LiteLLM pricing snapshot refresh.** A scheduled
   `Update Pricing Snapshot` workflow fetches the upstream LiteLLM table weekly,
   runs it through a validation gate (`make validate-pricing` →
