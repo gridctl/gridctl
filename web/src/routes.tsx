@@ -15,6 +15,7 @@ const TopologyWorkspace = lazy(() => import('./components/workspaces/TopologyWor
 const LibraryWorkspace = lazy(() => import('./components/workspaces/LibraryWorkspace'));
 const VaultWorkspace = lazy(() => import('./components/workspaces/VaultWorkspace'));
 const ToolsWorkspace = lazy(() => import('./components/workspaces/ToolsWorkspace'));
+const MetricsWorkspace = lazy(() => import('./components/workspaces/MetricsWorkspace'));
 
 export function AppRoutes() {
   return (
@@ -65,6 +66,14 @@ export function AppRoutes() {
             </Suspense>
           }
         />
+        <Route
+          path="/metrics"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <MetricsWorkspace />
+            </Suspense>
+          }
+        />
       </Route>
 
       {/* Root redirect — chooses a workspace based on stack + storage. */}
@@ -85,7 +94,9 @@ export function AppRoutes() {
       {/* /registry → /library-window: silent redirect for bookmarks and
           existing detached window handles. */}
       <Route path="/registry" element={<Navigate to="/library-window" replace />} />
-      <Route path="/metrics" element={<DetachedMetricsPage />} />
+      {/* /metrics is now the in-shell Metrics workspace; the detached popout
+          renders at /metrics-window (window type key stays `metrics`). */}
+      <Route path="/metrics-window" element={<DetachedMetricsPage />} />
       <Route path="/traces" element={<DetachedTracesPage />} />
     </Routes>
   );
