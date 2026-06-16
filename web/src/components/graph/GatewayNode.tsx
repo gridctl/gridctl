@@ -142,20 +142,29 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
           </div>
         )}
 
-        {/* Code Mode badge */}
-        {data.codeMode && data.codeMode !== 'off' && (
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20">
-            <Code size={12} className="text-primary" />
-            <span className="text-[11px] text-primary font-semibold tracking-wide">Code Mode</span>
-          </div>
-        )}
-
-        {/* Status indicator */}
-        <div className="flex items-center gap-2.5 pt-2 mt-1 border-t border-border/50">
-          <span className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running">
+        {/* Read-only status footer. These pills reflect gateway state and are
+            not interactive: Code Mode is configured in stack.yaml and cannot be
+            toggled at runtime, so it must not carry action chrome (hover,
+            cursor, focus ring). Grouping it beside "Gateway Active" reads them
+            both as liveness indicators rather than buttons. */}
+        <div className="flex items-center gap-2 pt-2 mt-1 border-t border-border/50">
+          <span
+            role="status"
+            className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running"
+          >
             <StatusDot status="running" />
             Gateway Active
           </span>
+          {data.codeMode && data.codeMode !== 'off' && (
+            <span
+              role="status"
+              title="Code mode is enabled (configured in stack.yaml)"
+              className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-primary/10 border-primary/20 text-primary"
+            >
+              <Code size={11} />
+              Code Mode
+            </span>
+          )}
         </div>
       </div>
 

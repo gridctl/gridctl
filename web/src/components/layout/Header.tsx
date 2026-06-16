@@ -1,7 +1,6 @@
-import { RefreshCw, Settings, Zap, RotateCcw, Plus, Command, Layers } from 'lucide-react';
+import { RefreshCw, Settings, RotateCcw, Plus, Command } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import { cn } from '../../lib/cn';
-import { StatusDot } from '../ui/StatusDot';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -22,7 +21,6 @@ interface HeaderProps {
 
 export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const gatewayInfo = useStackStore((s) => s.gatewayInfo);
-  const mcpServers = useStackStore((s) => s.mcpServers);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
   const showVault = useUIStore((s) => s.showVault);
@@ -95,9 +93,9 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
     executeReload();
   }, [executeReload]);
 
-  const runningCount = (mcpServers ?? []).filter((s) => s.initialized).length;
-  const totalCount = (mcpServers ?? []).length;
-  const unhealthyCount = (mcpServers ?? []).filter((s) => s.healthy === false).length;
+  // Connection state and server health are surfaced continuously in the global
+  // StatusBar; the header no longer mirrors them. We keep `isConnected` only to
+  // gate the persistence control, which is meaningless before the gateway is up.
   const isConnected = connectionStatus === 'connected';
 
   return (
@@ -124,52 +122,6 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         <WorkspaceSwitcher />
       </div>
 
-      {/* Center: Status Pills */}
-      <div className="flex items-center gap-3">
-        {/* Connection Status */}
-        <div className={cn(
-          'flex items-center gap-2 px-3 py-1.5 rounded-full',
-          'bg-surface-elevated/60 backdrop-blur-sm border',
-          isConnected ? 'border-status-running/20' : 'border-status-error/20'
-        )}>
-          <StatusDot status={isConnected ? 'running' : 'error'} />
-          <span className="text-xs font-medium text-text-secondary">
-            {isConnected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-
-        {/* Active Stack Name */}
-        {isConnected && gatewayInfo?.name && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-elevated/60 backdrop-blur-sm border border-border/50">
-            <Layers size={12} className="text-primary" />
-            <span className="text-xs font-medium text-text-secondary font-mono">
-              {gatewayInfo.name}
-            </span>
-          </div>
-        )}
-
-        {/* Telemetry Persistence Pill (between stack name and server count) */}
-        {isConnected && <HeaderTelemetryPill />}
-
-        {/* Server Count */}
-        {totalCount > 0 && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-elevated/60 backdrop-blur-sm border border-border/50">
-            <Zap size={12} className="text-primary" />
-            <span className="text-xs font-medium">
-              <span className="text-status-running">{runningCount}</span>
-              <span className="text-text-muted mx-0.5">/</span>
-              <span className="text-text-secondary">{totalCount}</span>
-              <span className="text-text-muted ml-1.5">active</span>
-              {unhealthyCount > 0 && (
-                <span className="text-status-error ml-1.5">
-                  ({unhealthyCount} unhealthy)
-                </span>
-              )}
-            </span>
-          </div>
-        )}
-      </div>
-
       {/* Reload notification */}
       {reloadMessage && (
         <div className={cn(
@@ -184,8 +136,12 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         </div>
       )}
 
-      {/* Right: Actions */}
+      {/* Right: Persistence quick-toggle + Actions. Persistence is the one
+          genuinely actionable control from the old status cluster, so it stays
+          in the header next to the other actions. */}
       <div className="flex items-center gap-2">
+        {isConnected && <HeaderTelemetryPill />}
+        {isConnected && <div className="w-px h-5 bg-border/50 mx-0.5" />}
         <IconButton
           icon={Command}
           onClick={toggleCommandPalette}

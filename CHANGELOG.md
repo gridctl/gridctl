@@ -437,6 +437,18 @@ All notable changes to gridctl will be documented in this file.
 
 ### Changed
 
+- **Decluttered the header status cluster.** The top bar no longer mirrors the
+  connection state, the gateway name, or the active-server count, all of which
+  were drawn a second time in the always-visible bottom StatusBar. Only the
+  Persistence quick-toggle remains, relocated next to the header action icons.
+  Connection status and server health continue to live in the StatusBar; no
+  information is lost. The gateway version still shows beside the logo.
+- **Gateway "Code Mode" now reads as read-only status, not an action.** The Code
+  Mode indicator on the gateway node and in the StatusBar carried primary-action
+  styling but no behavior; code mode is configured in `stack.yaml` and cannot be
+  toggled at runtime. It is now grouped with "Gateway Active" as a non-interactive
+  `role="status"` pill (no hover, cursor, or focus affordance), removing the false
+  affordance.
 - **UI reduced from 4 workspaces to 2.** Topology (`⌘1`) and Library (`⌘2`)
   are the only top-nav workspaces; the Stage and Runs pills, the
   bottom-panel Runs tab, and the StatusBar's Live/Paused chip are gone.
