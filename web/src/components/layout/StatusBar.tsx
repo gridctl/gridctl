@@ -92,9 +92,10 @@ export function StatusBar() {
           </div>
         )}
 
-        {/* Code Mode indicator */}
+        {/* Code Mode indicator — read-only status, not an action (code mode is
+            configured in stack.yaml and cannot be toggled at runtime). */}
         {codeMode && codeMode !== 'off' && (
-          <div className="flex items-center gap-2 text-text-muted">
+          <div role="status" className="flex items-center gap-2 text-text-muted">
             <Code size={11} className="text-primary" />
             <span className="text-primary font-semibold">Code Mode</span>
           </div>
