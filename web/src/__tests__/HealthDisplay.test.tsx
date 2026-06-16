@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 
 // Mock @xyflow/react before importing components that use it
@@ -87,69 +86,8 @@ describe('CustomNode health indicator', () => {
   });
 });
 
-// Test Header unhealthy count
-describe('Header unhealthy count', () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  it('shows unhealthy count when servers are unhealthy', async () => {
-    // Mock the store module
-    vi.doMock('../stores/useStackStore', () => ({
-      useStackStore: (selector: (s: Record<string, unknown>) => unknown) => {
-        const state = {
-          gatewayInfo: { name: 'test', version: '0.1.0' },
-          mcpServers: [
-            { name: 's1', initialized: true, healthy: true, toolCount: 1, tools: [] },
-            { name: 's2', initialized: true, healthy: false, toolCount: 2, tools: [], healthError: 'timeout' },
-            { name: 's3', initialized: true, healthy: false, toolCount: 0, tools: [], healthError: 'refused' },
-          ],
-          connectionStatus: 'connected',
-        };
-        return selector(state);
-      },
-    }));
-
-    // Mock logo import
-    vi.doMock('../assets/brand/logo.svg', () => ({ default: 'logo.svg' }));
-
-    const { Header } = await import('../components/layout/Header');
-    render(
-      <MemoryRouter>
-        <Header />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByText('(2 unhealthy)')).toBeInTheDocument();
-  });
-
-  it('does not show unhealthy count when all servers healthy', async () => {
-    vi.doMock('../stores/useStackStore', () => ({
-      useStackStore: (selector: (s: Record<string, unknown>) => unknown) => {
-        const state = {
-          gatewayInfo: { name: 'test', version: '0.1.0' },
-          mcpServers: [
-            { name: 's1', initialized: true, healthy: true, toolCount: 1, tools: [] },
-            { name: 's2', initialized: true, healthy: true, toolCount: 2, tools: [] },
-          ],
-          connectionStatus: 'connected',
-        };
-        return selector(state);
-      },
-    }));
-
-    vi.doMock('../assets/brand/logo.svg', () => ({ default: 'logo.svg' }));
-
-    const { Header } = await import('../components/layout/Header');
-    render(
-      <MemoryRouter>
-        <Header />
-      </MemoryRouter>,
-    );
-
-    expect(screen.queryByText(/unhealthy/)).not.toBeInTheDocument();
-  });
-});
+// Unhealthy server-count coverage moved to StatusBar.test.tsx: the header no
+// longer mirrors server health (it lives only in the StatusBar now).
 
 // Test OpenAPI server type display
 describe('CustomNode OpenAPI type', () => {
