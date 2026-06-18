@@ -98,6 +98,11 @@ export function AppRoutes() {
           renders at /metrics-window (window type key stays `metrics`). */}
       <Route path="/metrics-window" element={<DetachedMetricsPage />} />
       <Route path="/traces" element={<DetachedTracesPage />} />
+
+      {/* Catch-all: any unmatched URL (typo, stale bookmark, removed route)
+          redirects to the root, where RootRedirect resolves the landing
+          workspace. Keeps unknown paths from rendering a blank page. */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

@@ -35,3 +35,13 @@ export const WORKSPACE_LABELS: Record<Workspace, string> = Object.fromEntries(
 export function isWorkspace(value: unknown): value is Workspace {
   return typeof value === 'string' && (WORKSPACES as readonly string[]).includes(value);
 }
+
+// Base product name used for the document title.
+export const DOCUMENT_TITLE_BASE = 'Gridctl';
+
+// Builds the browser tab title for the active workspace, e.g. "Gridctl -
+// Variables". Falls back to the base name for non-workspace or transitional
+// paths so the tab never shows "Gridctl - undefined".
+export function documentTitleForWorkspace(ws: Workspace | null): string {
+  return ws ? `${DOCUMENT_TITLE_BASE} - ${WORKSPACE_LABELS[ws]}` : DOCUMENT_TITLE_BASE;
+}

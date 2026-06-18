@@ -6,9 +6,15 @@ import (
 
 // handleListPins returns all servers' pin records.
 // GET /api/pins
+//
+// When schema pinning is not configured the store is nil. That is a normal,
+// expected state rather than an error, so this returns 200 with an empty object
+// (the same shape as a configured-but-empty store). The UI polls this endpoint
+// on every refresh cycle; returning a 5xx here would log a console error on each
+// poll for stacks that simply do not enable pinning.
 func (s *Server) handleListPins(w http.ResponseWriter, r *http.Request) {
 	if s.pinStore == nil {
-		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
+		writeJSON(w, map[string]any{})
 		return
 	}
 	servers := s.pinStore.GetAll()
