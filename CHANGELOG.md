@@ -6,6 +6,19 @@ All notable changes to gridctl will be documented in this file.
 
 ### Security
 
+- **Schema pinning is now enforced at runtime.** TOFU schema pinning was fully
+  built and documented as enabled by default, but the pin store and drift
+  verifier were never wired into the gateway serve and apply paths, so in the
+  running daemon nothing was ever pinned, `/api/pins` was always empty, and a
+  downstream MCP server could silently change its tool definitions (a rug pull,
+  CVE-2025-54136 class) without a warning or block. The gateway now installs the
+  verifier and shares one pin store with the API and CLI on both the stack-backed
+  and stackless paths, defaulting to `enabled: true` and `action: warn` per the
+  documented contract. Existing stacks gain non-fatal drift detection with no
+  configuration change; `action: block` and per-server `pin_schemas: false`
+  continue to work. The `schema_pinning.enabled` field is now a tri-state so that
+  setting only `action:` no longer disables pinning by omission.
+
 - **Sanitize rendered skill markdown.** Skill bodies (which can be imported from
   remote git) are now passed through DOMPurify after Markdown rendering, closing
   an XSS vector where raw HTML or event handlers in a `SKILL.md` could execute in

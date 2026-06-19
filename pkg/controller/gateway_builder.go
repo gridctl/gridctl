@@ -149,6 +149,45 @@ func (b *GatewayBuilder) SetPinStore(ps *pins.PinStore) {
 	b.pinStore = ps
 }
 
+// resolveSchemaPinning returns the effective gateway schema-pinning settings,
+// applying the documented defaults (enabled, "warn") when the stack omits the
+// security block or individual fields. Enabled is a *bool so an omitted
+// `enabled:` inherits the default-on behavior rather than YAML's zero value.
+func resolveSchemaPinning(stack *config.Stack) (enabled bool, action string) {
+	enabled, action = true, "warn"
+	if stack == nil || stack.Gateway == nil || stack.Gateway.Security == nil {
+		return enabled, action
+	}
+	sp := stack.Gateway.Security.SchemaPinning
+	if sp == nil {
+		return enabled, action
+	}
+	if sp.Enabled != nil {
+		enabled = *sp.Enabled
+	}
+	if sp.Action == "block" {
+		action = "block"
+	}
+	return enabled, action
+}
+
+// installSchemaPinning shares a single pin store between the API server (for
+// read-only inspection at /api/pins) and the gateway's TOFU verifier (for drift
+// detection and the warn/block policy), so the UI reflects exactly what the
+// gateway enforces. It is a no-op when no store is provided or when pinning is
+// disabled for the stack, leaving both halves unset.
+func installSchemaPinning(gateway *mcp.Gateway, server *api.Server, stack *config.Stack, ps *pins.PinStore) {
+	if ps == nil {
+		return
+	}
+	enabled, action := resolveSchemaPinning(stack)
+	if !enabled {
+		return
+	}
+	server.SetPinStore(ps)
+	gateway.SetSchemaVerifier(pins.NewGatewayAdapter(ps), action)
+}
+
 // BuildAndRun constructs the gateway and runs it until shutdown.
 // This is the main blocking call that replaces the old runGateway() function.
 func (b *GatewayBuilder) BuildAndRun(ctx context.Context, verbose bool) error {
@@ -500,9 +539,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		server.SetVaultStore(b.vaultStore)
 	}
 
-	if b.pinStore != nil {
-		server.SetPinStore(b.pinStore)
-	}
+	installSchemaPinning(gateway, server, b.stack, b.pinStore)
 
 	// Wire token usage metrics
 	counter, err := b.buildTokenCounter()

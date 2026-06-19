@@ -356,6 +356,15 @@ func (g *Gateway) SetSchemaVerifier(sv SchemaVerifier, action string) {
 	}
 }
 
+// SchemaVerifier returns the wired TOFU schema verifier, or nil when schema
+// pinning is not installed. Exposed so callers and tests can confirm whether
+// the gateway is enforcing pinning.
+func (g *Gateway) SchemaVerifier() SchemaVerifier {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.schemaVerifier
+}
+
 // ResetServerPins clears the stored pin record for serverName, if the wired
 // SchemaVerifier also implements PinResetter. Called before re-registering a
 // modified server during hot reload so the next VerifyOrPin re-pins from scratch
