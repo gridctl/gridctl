@@ -37,6 +37,21 @@ function renderRedirect(initial: string) {
   );
 }
 
+// Mirrors the catch-all in routes.tsx: unmatched URLs redirect to "/", where
+// RootRedirect resolves the landing workspace.
+function renderCatchAll(initial: string) {
+  return render(
+    <MemoryRouter initialEntries={[initial]}>
+      <Routes>
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="/topology" element={<div>topology-page</div>} />
+        <Route path="/library" element={<div>library-page</div>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 function LocationProbe() {
   const location = useLocation();
   return (
@@ -134,5 +149,19 @@ describe('legacy workspace redirects', () => {
   it('redirects /runs/:runID → /library', () => {
     renderRedirect('/runs/abc123');
     expect(screen.getByText('library-page')).toBeInTheDocument();
+  });
+});
+
+describe('catch-all route', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useStackStore.setState({ gatewayInfo: null });
+    useRegistryStore.setState({ skills: [] });
+  });
+
+  it('redirects an unknown URL to the resolved landing workspace', () => {
+    renderCatchAll('/does-not-exist');
+    // No skills declared, so RootRedirect lands on /topology rather than a blank page.
+    expect(screen.getByText('topology-page')).toBeInTheDocument();
   });
 });

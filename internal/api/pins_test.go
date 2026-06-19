@@ -28,8 +28,19 @@ func TestHandlePins_NoStore(t *testing.T) {
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	// An unconfigured pin store is a normal state, not an error: the list
+	// endpoint returns 200 with an empty object so the polling UI does not log
+	// a console error on every refresh cycle.
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(result))
 	}
 }
 

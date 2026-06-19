@@ -15,7 +15,7 @@ import { usePolling } from '../../hooks/usePolling';
 import { useSSEShutdown } from '../../hooks/useSSEShutdown';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
-import { isWorkspace, type Workspace } from '../../types/workspace';
+import { documentTitleForWorkspace, isWorkspace, type Workspace } from '../../types/workspace';
 import {
   LAST_WORKSPACE_GLOBAL_KEY,
   LAST_WORKSPACE_PER_STACK_PREFIX,
@@ -88,6 +88,13 @@ function AppShellInner() {
     setActiveWorkspace(ws);
     persistLastWorkspace(ws, stackId);
   }, [pathname, stackId, setActiveWorkspace]);
+
+  // Reflect the active workspace in the document title so browser tabs and
+  // history entries are identifiable. Falls back to the base name for
+  // non-workspace paths.
+  useEffect(() => {
+    document.title = documentTitleForWorkspace(workspaceFromPath(pathname));
+  }, [pathname]);
 
   const handleBottomPanelResize = useCallback((delta: number) => {
     setBottomPanelHeight((prev) => {

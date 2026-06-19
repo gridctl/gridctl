@@ -326,6 +326,15 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixed
 
+- **Web UI console noise, blank unknown routes, and the default tab title.**
+  Three small dashboard fixes. `GET /api/pins` now returns `200` with an empty
+  object when schema pinning is not configured, instead of a `503` that the
+  polling UI logged as a console error every refresh cycle. Unmatched URLs (a
+  typo, a stale bookmark, or a removed route) now redirect to the landing
+  workspace rather than rendering a blank page. The browser tab title reads
+  "Gridctl" (and appends the active workspace, for example "Gridctl - Topology")
+  instead of the build-tool default "web".
+
 - **Pricing model picker truncated long model IDs.** The dropdown was pinned to
   the narrow editor cell's width, so IDs like
   `anthropic.claude-3-opus-20240229` were cut off with no readable fallback.
