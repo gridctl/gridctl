@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -279,6 +280,13 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	flag.Parse()
+
+	// MOCK_ECHO_DESC overrides the echo tool's description so tests can simulate
+	// a downstream server silently changing its tool schema between connects
+	// (a "rug pull"), exercising schema-pinning drift detection.
+	if desc := os.Getenv("MOCK_ECHO_DESC"); desc != "" {
+		sampleTools[0].Description = desc
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", handleMCP)

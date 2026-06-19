@@ -223,7 +223,10 @@ type GatewaySecurityConfig struct {
 // SchemaPinningConfig controls the schema pinning feature.
 type SchemaPinningConfig struct {
 	// Enabled controls whether schema pinning is active. Default: true.
-	Enabled bool `yaml:"enabled" json:"enabled"`
+	// A pointer so an omitted `enabled:` inherits the default-on behavior
+	// rather than YAML's zero value (false); set it explicitly to false to
+	// disable pinning for the whole stack.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	// Action is the response when drift is detected: "warn" (default) or "block".
 	// warn: log a structured diff and continue serving.
 	// block: reject all tool calls from the drifted server until approved.
@@ -249,21 +252,21 @@ type Network struct {
 
 // MCPServer defines an MCP server (container-based or external).
 type MCPServer struct {
-	Name      string            `yaml:"name"`
-	Image     string            `yaml:"image,omitempty"`
-	Source    *Source           `yaml:"source,omitempty"`
-	URL       string            `yaml:"url,omitempty"`       // External server URL (no container)
-	Port      int               `yaml:"port,omitempty"`      // For HTTP transport (container-based)
-	Transport string            `yaml:"transport,omitempty"` // "http" (default), "stdio", or "sse"
-	Command   []string          `yaml:"command,omitempty"`   // Override container command or remote command for SSH
-	Env       map[string]string `yaml:"env,omitempty"`
-	BuildArgs map[string]string `yaml:"build_args,omitempty"`
-	Network   string            `yaml:"network,omitempty"`   // Network to join (for multi-network mode)
-	SSH       *SSHConfig        `yaml:"ssh,omitempty"`       // SSH connection config for remote servers
-	OpenAPI   *OpenAPIConfig    `yaml:"openapi,omitempty"`   // OpenAPI spec config for API-backed servers
-	Tools        []string          `yaml:"tools,omitempty"`          // Tool whitelist (empty = all tools exposed)
-	OutputFormat string            `yaml:"output_format,omitempty"`  // Output format override: "json", "toon", "csv", "text"
-	PinSchemas   *bool             `yaml:"pin_schemas,omitempty"`    // Override gateway schema pinning for this server (nil = inherit)
+	Name         string            `yaml:"name"`
+	Image        string            `yaml:"image,omitempty"`
+	Source       *Source           `yaml:"source,omitempty"`
+	URL          string            `yaml:"url,omitempty"`       // External server URL (no container)
+	Port         int               `yaml:"port,omitempty"`      // For HTTP transport (container-based)
+	Transport    string            `yaml:"transport,omitempty"` // "http" (default), "stdio", or "sse"
+	Command      []string          `yaml:"command,omitempty"`   // Override container command or remote command for SSH
+	Env          map[string]string `yaml:"env,omitempty"`
+	BuildArgs    map[string]string `yaml:"build_args,omitempty"`
+	Network      string            `yaml:"network,omitempty"`       // Network to join (for multi-network mode)
+	SSH          *SSHConfig        `yaml:"ssh,omitempty"`           // SSH connection config for remote servers
+	OpenAPI      *OpenAPIConfig    `yaml:"openapi,omitempty"`       // OpenAPI spec config for API-backed servers
+	Tools        []string          `yaml:"tools,omitempty"`         // Tool whitelist (empty = all tools exposed)
+	OutputFormat string            `yaml:"output_format,omitempty"` // Output format override: "json", "toon", "csv", "text"
+	PinSchemas   *bool             `yaml:"pin_schemas,omitempty"`   // Override gateway schema pinning for this server (nil = inherit)
 	// ReadyTimeout overrides the HTTP/SSE readiness wait for container-based servers.
 	// Accepts any time.Duration string (e.g. "60s", "2m"). Empty/"0" inherits the gateway default (30s).
 	// Ignored for stdio, local process, SSH, OpenAPI, and external transports.
@@ -480,12 +483,12 @@ type OperationsFilter struct {
 
 // SSHConfig defines SSH connection parameters for remote MCP servers.
 type SSHConfig struct {
-	Host           string `yaml:"host"`                        // Required: hostname or IP address
-	User           string `yaml:"user"`                        // Required: SSH username
-	Port           int    `yaml:"port,omitempty"`              // Optional: SSH port (default 22)
-	IdentityFile   string `yaml:"identityFile,omitempty"`      // Optional: path to SSH private key
-	KnownHostsFile string `yaml:"knownHostsFile,omitempty"`    // Optional: path to known_hosts file; enables StrictHostKeyChecking=yes
-	JumpHost       string `yaml:"jumpHost,omitempty"`          // Optional: bastion/jump host ([user@]host[:port])
+	Host           string `yaml:"host"`                     // Required: hostname or IP address
+	User           string `yaml:"user"`                     // Required: SSH username
+	Port           int    `yaml:"port,omitempty"`           // Optional: SSH port (default 22)
+	IdentityFile   string `yaml:"identityFile,omitempty"`   // Optional: path to SSH private key
+	KnownHostsFile string `yaml:"knownHostsFile,omitempty"` // Optional: path to known_hosts file; enables StrictHostKeyChecking=yes
+	JumpHost       string `yaml:"jumpHost,omitempty"`       // Optional: bastion/jump host ([user@]host[:port])
 }
 
 // IsExternal returns true if this is an external MCP server (URL-only, no container).
@@ -693,4 +696,3 @@ func (s *Stack) SetDefaults() {
 		}
 	}
 }
-

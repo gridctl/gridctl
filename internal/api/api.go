@@ -161,6 +161,13 @@ func (s *Server) SetPinStore(ps *pins.PinStore) {
 	s.pinStore = ps
 }
 
+// PinStore returns the wired pin store, or nil when schema pinning is not
+// configured. Exposed so callers and tests can confirm whether pin management
+// is active.
+func (s *Server) PinStore() *pins.PinStore {
+	return s.pinStore
+}
+
 // SetVaultStore sets the vault store for secrets management.
 func (s *Server) SetVaultStore(v *vault.Store) {
 	s.vaultStore = v

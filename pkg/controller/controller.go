@@ -15,6 +15,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -202,6 +203,7 @@ func (sc *StackController) buildAndRunStackless(ctx context.Context, verbose boo
 	if sc.vaultStore != nil {
 		builder.SetVaultStore(sc.vaultStore)
 	}
+	builder.SetPinStore(newPinStore(stack.Name))
 	return builder.BuildAndRun(ctx, verbose)
 }
 
@@ -485,7 +487,21 @@ func (sc *StackController) newGatewayBuilder(stack *config.Stack, rt *runtime.Or
 	builder.SetVersion(sc.version)
 	builder.SetWebFS(sc.webFS)
 	builder.SetVaultStore(sc.vaultStore)
+	builder.SetPinStore(newPinStore(stack.Name))
 	return builder
+}
+
+// newPinStore loads the on-disk schema pin store for a stack so the running
+// daemon and the `gridctl pins` CLI share the same
+// ~/.gridctl/pins/{stack}.json. A load failure is non-fatal: the first run has
+// no file, so the store starts empty and pins each server on first connect.
+func newPinStore(stackName string) *pins.PinStore {
+	ps := pins.New(stackName)
+	if err := ps.Load(); err != nil {
+		slog.Warn("pins: load failed; starting with an empty store",
+			"stack", stackName, "error", err)
+	}
+	return ps
 }
 
 // createRuntime detects the container runtime and creates an Orchestrator.
