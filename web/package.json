@@ -37,7 +37,7 @@
     "react-resizable-panels": "^4.11.2",
     "react-router-dom": "^7.17.0",
     "recharts": "^3.8.1",
-    "tailwind-merge": "^3.5.0",
+    "tailwind-merge": "^3.6.0",
     "yaml": "^2.9.0",
     "zustand": "^5.0.14"
   },
