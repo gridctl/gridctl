@@ -197,6 +197,52 @@ replica_policy: least-connections
 	}
 }
 
+func TestTracingConfig_MaxTracesYAMLRoundTrip(t *testing.T) {
+	tests := []struct {
+		name          string
+		yamlIn        string
+		wantMaxTraces int
+	}{
+		{
+			name: "no max_traces field",
+			yamlIn: `enabled: true
+`,
+			wantMaxTraces: 0,
+		},
+		{
+			name: "explicit max_traces",
+			yamlIn: `enabled: true
+max_traces: 250
+`,
+			wantMaxTraces: 250,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var tcfg TracingConfig
+			if err := yaml.Unmarshal([]byte(tc.yamlIn), &tcfg); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if tcfg.MaxTraces != tc.wantMaxTraces {
+				t.Errorf("MaxTraces = %d, want %d", tcfg.MaxTraces, tc.wantMaxTraces)
+			}
+
+			out, err := yaml.Marshal(&tcfg)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var got TracingConfig
+			if err := yaml.Unmarshal(out, &got); err != nil {
+				t.Fatalf("re-unmarshal: %v", err)
+			}
+			if got.MaxTraces != tcfg.MaxTraces {
+				t.Errorf("round-trip mismatch: got %d, want %d", got.MaxTraces, tcfg.MaxTraces)
+			}
+		})
+	}
+}
+
 func TestStack_NonContainerWorkloads(t *testing.T) {
 	stack := Stack{
 		Name: "test",
