@@ -606,6 +606,12 @@ All notable changes to gridctl will be documented in this file.
   always used the default of 1000. The field is now wired through to the tracing
   provider; an unset or non-positive value continues to use the 1000 default.
 
+- **`gateway.tracing.enabled` is now a tri-state.** The field was a plain `bool`,
+  so a `tracing:` block that set other fields but omitted `enabled:` silently
+  disabled tracing (the omitted key resolved to `false`, overriding the documented
+  default of `true`). It is now a `*bool`: an omitted `enabled:` inherits the
+  default-on behavior, and `enabled: false` still disables explicitly.
+
 ## [0.1.0-beta.10] - 2026-05-18
 
 
