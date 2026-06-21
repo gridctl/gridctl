@@ -947,6 +947,9 @@ func buildTracingConfig(gw *config.GatewayConfig) *tracing.Config {
 	}
 	cfg.Export = t.Export
 	cfg.Endpoint = t.Endpoint
+	if t.MaxTraces > 0 {
+		cfg.MaxTraces = t.MaxTraces
+	}
 	return cfg
 }
 
