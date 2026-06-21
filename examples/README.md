@@ -19,7 +19,10 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [🔐 access-control/](access-control/) | Tool filtering and security patterns |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
-| [🔑 secrets-vault/](secrets-vault/) | Vault secrets and variable sets |
+| [🔑 secrets-vault/](secrets-vault/) | Encrypted variables and variable sets |
+| [📈 autoscale/](autoscale/) | Static replicas and reactive autoscaling |
+| [🧳 portable-stack/](portable-stack/) | Single-file portable stack with inlined config |
+| [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
 | [📋 registry/](registry/) | Skills registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
 
@@ -30,37 +33,34 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 3. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 4. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
 5. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts
-6. **Workflows**: `registry/items/workflow-basic/` - executable skill workflows
+6. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
 > **Note:** Getting-started examples use placeholder containers to focus on infrastructure concepts.
 > Transport and platform examples include real MCP server implementations.
 
 ## 📊 Feature Matrix
 
-| Example | Transports | Tool Filtering | External | OpenAPI | Registry | Workflows | Code Mode | Vault |
-|---------|------------|----------------|----------|---------|----------|-----------|-----------|-------|
-| mcp-basic | - | ✅ | - | - | - | - | - | - |
-| local-mcp | stdio | - | - | - | - | - | - | - |
-| ssh-mcp | ssh+stdio | - | - | - | - | - | - | - |
-| external-mcp | http, sse | - | ✅ | - | - | - | - | - |
-| atlassian-mcp | sse | - | ✅ | - | - | - | - | - |
-| chrome-devtools-mcp | stdio | - | ✅ | - | - | - | - | - |
-| context7-mcp | stdio | - | ✅ | - | - | - | - | - |
-| github-mcp | stdio | - | ✅ | - | - | - | - | - |
-| zapier-mcp | stdio | - | ✅ | - | - | - | - | - |
-| openapi-basic | openapi | - | - | ✅ | - | - | - | - |
-| openapi-auth | openapi | - | - | ✅ | - | - | - | - |
-| tool-filtering | - | ✅ | - | - | - | - | - | - |
-| code-mode-basic | - | - | - | - | - | - | ✅ | - |
-| gateway-basic | http | - | ✅ | - | - | - | - | - |
-| gateway-remote | http | - | ✅ | - | - | - | - | - |
-| vault-basic | stdio | - | - | - | - | - | - | ✅ |
-| vault-sets | - | - | - | - | - | - | - | ✅ |
-| registry-basic | stdio | - | - | - | ✅ | - | - | - |
-| registry-advanced | stdio | - | - | - | ✅ | - | - | - |
-| workflow-basic | stdio | - | - | - | ✅ | ✅ | - | - |
-| workflow-parallel | stdio | - | - | - | ✅ | ✅ | - | - |
-| workflow-conditional | stdio | - | - | - | ✅ | ✅ | - | - |
+| Example | Transports | Tool Filtering | External | OpenAPI | Registry | Code Mode | Variables |
+|---------|------------|----------------|----------|---------|----------|-----------|-----------|
+| mcp-basic | - | ✅ | - | - | - | - | - |
+| local-mcp | stdio | - | - | - | - | - | - |
+| ssh-mcp | ssh+stdio | - | - | - | - | - | - |
+| external-mcp | http, sse | - | ✅ | - | - | - | - |
+| atlassian-mcp | sse | - | ✅ | - | - | - | - |
+| chrome-devtools-mcp | stdio | - | ✅ | - | - | - | - |
+| context7-mcp | stdio | - | ✅ | - | - | - | - |
+| github-mcp | stdio | - | ✅ | - | - | - | - |
+| zapier-mcp | stdio | - | ✅ | - | - | - | - |
+| openapi-basic | openapi | - | - | ✅ | - | - | - |
+| openapi-auth | openapi | - | - | ✅ | - | - | - |
+| tool-filtering | - | ✅ | - | - | - | - | - |
+| code-mode-basic | - | - | - | - | - | ✅ | - |
+| gateway-basic | http | - | ✅ | - | - | - | - |
+| gateway-remote | http | - | ✅ | - | - | - | - |
+| var-basic | stdio | - | - | - | - | - | ✅ |
+| var-sets | - | - | - | - | - | - | ✅ |
+| registry-basic | stdio | - | - | - | ✅ | - | - |
+| registry-advanced | stdio | - | - | - | ✅ | - | - |
 
 ## 💻 Usage Pattern
 
