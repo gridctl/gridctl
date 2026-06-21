@@ -547,6 +547,7 @@ OpenAPI specification configuration for API-backed MCP servers.
 | `spec` | string | **Yes** | - | URL or local file path to OpenAPI spec (JSON or YAML) |
 | `baseUrl` | string | No | - | Override the base URL from the spec |
 | `auth` | object | No | - | API authentication (see below) |
+| `tls` | object | No | - | TLS / mTLS configuration (see OpenAPI TLS below) |
 | `operations` | object | No | - | Operation filter (see below) |
 
 **OpenAPI Auth:**
