@@ -20,13 +20,13 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 |---|---|
 | `gridctl validate <stack.yaml>` | Validate stack YAML (exit `0`/`1`/`2`); `--format json` for machine-readable output. |
 | `gridctl plan <stack.yaml>` | Preview changes against running state; `-y` / `--auto-approve` to apply. |
-| `gridctl apply <stack.yaml>` | Start containers and the MCP gateway. Flags: `-f` foreground, `-p` port, `--base-port`, `--watch`, `--flash`, `--code-mode`, `--no-cache`, `--no-expand`, `-v` JSON dump, `-q` quiet, `--log-file <path>`. |
+| `gridctl apply <stack.yaml>` | Start containers and the MCP gateway. Flags: `-f` foreground, `-p` port, `--base-port`, `-w` / `--watch`, `--flash`, `--code-mode`, `--no-cache`, `--no-expand`, `-v` verbose (print full stack as JSON), `-q` quiet, `--log-file <path>`. |
 | `gridctl reload [stack-name]` | Hot reload a running stack's spec. |
 | `gridctl destroy <stack.yaml>` | Stop and remove all containers for the stack. |
-| `gridctl export` | Reverse-engineer `stack.yaml` from running state; `-o <dir>` write to directory, `--format json`. |
+| `gridctl export` | Reverse-engineer `stack.yaml` from running state; `-o <dir>` write to directory, `--format yaml\|json` (default `yaml`). |
 | `gridctl serve` | Start the web UI and API without managing a stack (stackless mode). |
 | `gridctl stop` | Stop the stackless gridctl daemon. |
-| `gridctl status` | Show running stacks; `--replicas` expands to one row per replica. |
+| `gridctl status` | Show running stacks; `-s` / `--stack` filters to one stack, `--replicas` expands to one row per replica. |
 | `gridctl info` | Show the detected container runtime (Docker/Podman). |
 | `gridctl version` | Print version information. |
 
@@ -34,8 +34,8 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 
 | Command | Purpose |
 |---|---|
-| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--client-id <id>` to bind the link to a `clients:` access profile. |
-| `gridctl unlink [client]` | Remove gridctl from an LLM client's config. |
+| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--name <name>` to set the server entry name (default `gridctl`), `--client-id <id>` to bind the link to a `clients:` access profile, `--force` to overwrite an existing entry. |
+| `gridctl unlink [client]` | Remove gridctl from an LLM client's config; `-a` / `--all` for every client, `--name <name>` to target a non-default entry, `--dry-run` to preview. |
 
 ## Skills
 
@@ -44,14 +44,14 @@ Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients a
 | Command | Purpose |
 |---|---|
 | `gridctl skill list` | List skills in the registry (`--remote` for imported skills only). |
-| `gridctl skill add <repo-url>` | Import skills from a git repository. Auth flags: `--auth-token <pat>` (ephemeral HTTPS PAT, CI), `--vault-key <key>` (resolves from `${var:KEY}`), `--ssh-key <path>` (SSH). |
-| `gridctl skill update [name]` | Update imported skills (all when name omitted). |
+| `gridctl skill add <repo-url>` | Import skills from a git repository. `--ref` / `--path` pin branch or subdirectory; `--no-activate` imports as draft; `--trust` skips the security-scan confirmation; `--force` overwrites existing skills; `--rename <name>` renames on import (single skill only). Auth flags: `--auth-token <pat>` (ephemeral HTTPS PAT, CI), `--vault-key <key>` (resolves from `${var:KEY}`), `--ssh-key <path>` (SSH). |
+| `gridctl skill update [name]` | Update imported skills (all when name omitted); alias `gridctl skill sync`. `--dry-run` previews, `--force` updates even when no change is detected. |
 | `gridctl skill remove <name>` | Remove an imported skill. |
 | `gridctl skill pin <name> <ref>` | Pin a skill to a specific git ref. |
 | `gridctl skill info <name>` | Show origin and update status. |
-| `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation. |
+| `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation (`--duration`, default `10m`, before auto-cleanup). Auth flags: `--auth-token <pat>`, `--vault-key <key>`, `--ssh-key <path>`. |
 | `gridctl skill validate <name>` | Validate a skill definition. |
-| `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `--format json` for machine output, `--quiet` to suppress the success line. |
+| `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `-s` / `--stack` to target a stack (auto-detected when only one runs), `--format json` for machine output, `-q` / `--quiet` to suppress the success line. |
 
 ## Variables
 
@@ -75,6 +75,8 @@ The variable store holds both secrets (encrypted at rest, redacted in logs) and 
 
 ## Pins (TOFU schema pinning)
 
+All `pins` subcommands accept `--stack <name>` (auto-detected when only one stack is deployed).
+
 | Command | Purpose |
 |---|---|
 | `gridctl pins list` | Status of all pinned servers. |
@@ -89,6 +91,7 @@ The variable store holds both secrets (encrypted at rest, redacted in logs) and 
 | `gridctl traces` | Show recent distributed traces (table view). |
 | `gridctl traces <trace-id>` | Span waterfall for a single trace. |
 | `gridctl traces --follow` | Stream traces as they arrive. |
+| `gridctl traces --stack <name>` | Query a specific stack (`-s` shorthand; defaults to the first running stack). |
 | `gridctl traces --server <name>` | Filter by MCP server name. |
 | `gridctl traces --errors` | Show only error traces. |
 | `gridctl traces --min-duration 100ms` | Filter by minimum duration. |
