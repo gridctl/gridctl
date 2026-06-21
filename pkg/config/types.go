@@ -154,7 +154,10 @@ type Secrets struct {
 // TracingConfig configures distributed tracing for the gateway.
 type TracingConfig struct {
 	// Enabled controls whether tracing is active. Default: true.
-	Enabled bool `yaml:"enabled" json:"enabled"`
+	// A pointer so an omitted `enabled:` inherits the default-on behavior
+	// rather than YAML's zero value (false); set it explicitly to false to
+	// disable tracing.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	// Sampling is the head-based sampling rate [0.0, 1.0]. Default: 1.0.
 	Sampling float64 `yaml:"sampling,omitempty" json:"sampling,omitempty"`
 	// Retention is how long completed traces are kept in memory (e.g. "24h"). Default: "24h".
