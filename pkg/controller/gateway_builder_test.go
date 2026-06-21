@@ -73,17 +73,17 @@ func TestBuildTracingConfig_MaxTraces(t *testing.T) {
 		},
 		{
 			name: "explicit value is honored",
-			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: true, MaxTraces: 50}},
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: boolPtr(true), MaxTraces: 50}},
 			want: 50,
 		},
 		{
 			name: "zero value preserves default",
-			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: true, MaxTraces: 0}},
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: boolPtr(true), MaxTraces: 0}},
 			want: defaultMaxTraces,
 		},
 		{
 			name: "negative value preserves default",
-			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: true, MaxTraces: -5}},
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: boolPtr(true), MaxTraces: -5}},
 			want: defaultMaxTraces,
 		},
 	}
@@ -93,6 +93,49 @@ func TestBuildTracingConfig_MaxTraces(t *testing.T) {
 			cfg := buildTracingConfig(tt.gw)
 			if cfg.MaxTraces != tt.want {
 				t.Errorf("MaxTraces = %d, want %d", cfg.MaxTraces, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildTracingConfig_Enabled(t *testing.T) {
+	tests := []struct {
+		name string
+		gw   *config.GatewayConfig
+		want bool
+	}{
+		{
+			name: "nil gateway defaults to enabled",
+			gw:   nil,
+			want: true,
+		},
+		{
+			name: "nil tracing block defaults to enabled",
+			gw:   &config.GatewayConfig{},
+			want: true,
+		},
+		{
+			name: "tracing block without enabled preserves default",
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Sampling: 0.5}},
+			want: true,
+		},
+		{
+			name: "explicit false disables",
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: boolPtr(false)}},
+			want: false,
+		},
+		{
+			name: "explicit true enables",
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: boolPtr(true)}},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := buildTracingConfig(tt.gw)
+			if cfg.Enabled != tt.want {
+				t.Errorf("Enabled = %v, want %v", cfg.Enabled, tt.want)
 			}
 		})
 	}
