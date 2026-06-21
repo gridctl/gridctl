@@ -938,7 +938,9 @@ func buildTracingConfig(gw *config.GatewayConfig) *tracing.Config {
 		return cfg
 	}
 	t := gw.Tracing
-	cfg.Enabled = t.Enabled
+	if t.Enabled != nil {
+		cfg.Enabled = *t.Enabled
+	}
 	if t.Sampling > 0 {
 		cfg.Sampling = t.Sampling
 	}
