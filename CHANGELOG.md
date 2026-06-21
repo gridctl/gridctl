@@ -598,6 +598,14 @@ All notable changes to gridctl will be documented in this file.
   `vault-*`). Version references in `docs/installation.md` and
   `docs/project-status.md` bumped to `v0.1.0-beta.10`.
 
+### Fixed
+
+- **`gateway.tracing.max_traces` is now honored from `stack.yaml`.** The field
+  was documented but silently ignored: the stack schema had no `MaxTraces` field,
+  so the value was dropped during YAML decode and the in-memory trace ring buffer
+  always used the default of 1000. The field is now wired through to the tracing
+  provider; an unset or non-positive value continues to use the 1000 default.
+
 ## [0.1.0-beta.10] - 2026-05-18
 
 
