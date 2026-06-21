@@ -243,6 +243,45 @@ max_traces: 250
 	}
 }
 
+func TestTracingConfig_EnabledYAMLTriState(t *testing.T) {
+	tests := []struct {
+		name   string
+		yamlIn string
+		want   *bool
+	}{
+		{
+			name: "omitted enabled stays nil (inherits default)",
+			yamlIn: `sampling: 0.5
+`,
+			want: nil,
+		},
+		{
+			name: "explicit false",
+			yamlIn: `enabled: false
+`,
+			want: boolPtr(false),
+		},
+		{
+			name: "explicit true",
+			yamlIn: `enabled: true
+`,
+			want: boolPtr(true),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var tcfg TracingConfig
+			if err := yaml.Unmarshal([]byte(tc.yamlIn), &tcfg); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if !boolPtrEqual(tcfg.Enabled, tc.want) {
+				t.Errorf("Enabled = %v, want %v", tcfg.Enabled, tc.want)
+			}
+		})
+	}
+}
+
 func TestStack_NonContainerWorkloads(t *testing.T) {
 	stack := Stack{
 		Name: "test",
