@@ -52,6 +52,52 @@ func TestGatewayBuilder_BuildLogging_Existing(t *testing.T) {
 }
 
 
+func TestBuildTracingConfig_MaxTraces(t *testing.T) {
+	// The documented default ring buffer capacity (docs/config-schema.md).
+	const defaultMaxTraces = 1000
+
+	tests := []struct {
+		name string
+		gw   *config.GatewayConfig
+		want int
+	}{
+		{
+			name: "nil gateway uses default",
+			gw:   nil,
+			want: defaultMaxTraces,
+		},
+		{
+			name: "nil tracing block uses default",
+			gw:   &config.GatewayConfig{},
+			want: defaultMaxTraces,
+		},
+		{
+			name: "explicit value is honored",
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: true, MaxTraces: 50}},
+			want: 50,
+		},
+		{
+			name: "zero value preserves default",
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: true, MaxTraces: 0}},
+			want: defaultMaxTraces,
+		},
+		{
+			name: "negative value preserves default",
+			gw:   &config.GatewayConfig{Tracing: &config.TracingConfig{Enabled: true, MaxTraces: -5}},
+			want: defaultMaxTraces,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := buildTracingConfig(tt.gw)
+			if cfg.MaxTraces != tt.want {
+				t.Errorf("MaxTraces = %d, want %d", cfg.MaxTraces, tt.want)
+			}
+		})
+	}
+}
+
 func TestGatewayBuilder_SetVersion(t *testing.T) {
 	builder := NewGatewayBuilder(Config{}, &config.Stack{}, "", nil, &runtime.UpResult{})
 	builder.SetVersion("v0.1.0")
