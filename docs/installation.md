@@ -61,7 +61,7 @@ cd gridctl && make build
 gridctl upgrade            # check + prompt + upgrade (standalone install)
 gridctl upgrade --check    # only check; do not install
 gridctl upgrade --yes      # non-interactive (CI)
-gridctl upgrade --version v0.1.0-beta.6   # install a specific version
+gridctl upgrade --version v0.1.0-beta.10   # install a specific version
 ```
 
 If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recommends `brew upgrade gridctl/tap/gridctl` instead.
