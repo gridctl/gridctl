@@ -163,6 +163,8 @@ type TracingConfig struct {
 	Export string `yaml:"export,omitempty" json:"export,omitempty"`
 	// Endpoint is the OTLP endpoint URL (e.g. "http://localhost:4318").
 	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+	// MaxTraces is the in-memory ring buffer capacity (number of traces). Default: 1000.
+	MaxTraces int `yaml:"max_traces,omitempty" json:"max_traces,omitempty"`
 }
 
 // GatewayConfig holds optional gateway-level configuration.
