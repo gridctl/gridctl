@@ -580,6 +580,24 @@ All notable changes to gridctl will be documented in this file.
   `missing variable(s): X. To fix: gridctl var set X` (was
   `missing vault secret(s): X. To fix: gridctl vault set X`).
 
+### Documentation
+
+- **Synced docs with the codebase.** `docs/api-reference.md` now documents the
+  previously undocumented REST routes (stack management, skill sources, stack
+  wizard, traces, telemetry inventory, per-client and per-server model
+  attribution, pricing models, and more) and corrects the registry file routes
+  to the variadic `{path...}` form. `docs/cli-reference.md` picks up missing
+  flags (`link`/`unlink` `--name`, `skill add` `--no-activate`/`--trust`,
+  `skill update` `sync` alias, `skill try` auth and `--duration` flags,
+  `activate`/`status`/`traces`/`pins` `--stack`) and corrects `export --format`,
+  `apply -v`, `apply -w`, `link --force`, and `skill add` `--ref`/`--path`/`--force`/`--rename`.
+  `docs/config-schema.md` lists the OpenAPI `tls` field in its
+  table. The examples READMEs drop the removed executable-workflow surface and
+  the `examples/README.md` category and feature tables now match the directories
+  on disk (`autoscale`, `portable-stack`, `tracing`; `var-*` instead of
+  `vault-*`). Version references in `docs/installation.md` and
+  `docs/project-status.md` bumped to `v0.1.0-beta.10`.
+
 ## [0.1.0-beta.10] - 2026-05-18
 
 
