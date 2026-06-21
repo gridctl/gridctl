@@ -167,7 +167,36 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `per_replica` | map | USD cost keyed by `(server, replica_id)` (omitted when no replica-aware traffic has been observed) |
 | `per_client` | map | USD cost keyed by normalized MCP client name (omitted when no per-client traffic has been observed) |
 
-**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server, and `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers).
+**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server, `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers), `model` (string, omitted when empty) showing the declared per-server pricing model, and `effectiveModel` (object, omitted until traffic is observed) reporting which model actually priced the server's recorded cost.
+
+**Cost-attribution fields** appear at the top level when any client or server declares a pricing model in `stack.yaml`, and are omitted otherwise:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cost_attribution` | bool | True when at least one client or server has a declared model, so the UI shows real cost instead of `$0.00` |
+| `default_model` | string | Gateway-level `default_model` from `stack.yaml` |
+| `server_models` | map | Effective server -> model map (per-server `model:` with `default_model` folded in) |
+| `client_models` | map | Declared client ID -> model map from `client_models:` |
+| `effective_server_models` | map | Server -> `{model, provenance, share, models}` reporting which model priced each server's cost (`provenance` is `declared`, `mixed`, or `none`) |
+| `effective_client_models` | map | Client -> effective-model object, same shape as above |
+
+#### `GET /api/sessions`
+
+Returns the active Streamable HTTP MCP session count and the list of session IDs.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/sessions
+```
+
+**Response:**
+```json
+{
+  "count": 2,
+  "sessions": ["sess-abc123", "sess-def456"]
+}
+```
 
 #### `GET /api/mcp-servers`
 
@@ -205,6 +234,29 @@ Returns all aggregated tools from registered MCP servers.
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools
 ```
 
+#### `GET /api/tools/catalog`
+
+Returns the full downstream tool inventory (each tool's raw description and input schema) for the web console, regardless of code mode. Read-only and informational: it does not change what MCP clients see from `tools/list`. The response shape matches [`/api/tools`](#get-apitools).
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/catalog
+```
+
+**Response:**
+```json
+{
+  "tools": [
+    {
+      "name": "github__get_file_contents",
+      "description": "Get file contents from a repository",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ]
+}
+```
+
 #### `GET /api/tools/usage`
 
 Returns per-(server, tool) usage observed by the gateway: cumulative call count and the last-called timestamp. Powers the Tools workspace **Audit Mode**, which separates actively-used, configured-but-unused, and disabled tools.
@@ -233,6 +285,31 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/usage
 ```
 
 `servers` is an object keyed by server name; each value maps unprefixed tool names to their stats. Tools that have never been called are omitted. Returns `503` when no metrics accumulator is configured.
+
+#### `GET /api/skills/usage`
+
+Returns per-skill cumulative `prompts/get` usage observed by the gateway: a call count and the last-called timestamp for each registry skill that has been served. Powers the Skills Library's usage labelling. The data is seeded from disk on startup when metrics persistence is enabled, so it survives gateway restarts; otherwise it reflects activity since the last gateway start.
+
+`observedSince` is when this gateway process began recording; with persistence enabled, restored counts may predate it, so the Library uses it to label the young-tracking-window case rather than calling a skill unused. Both `observedSince` and a skill's `lastCalledAt` are rendered as `null` (not omitted) when no value exists, keeping the join shape stable.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/usage
+```
+
+**Response:**
+```json
+{
+  "observedSince": "2026-05-20T10:00:00Z",
+  "skills": {
+    "code-review": { "calls": 17, "lastCalledAt": "2026-05-24T09:13:00Z" },
+    "release-notes": { "calls": 2, "lastCalledAt": null }
+  }
+}
+```
+
+`skills` is always a non-nil object (`{}` when nothing has been served). Returns `503` when no metrics accumulator is configured.
 
 #### `GET /api/logs`
 
@@ -282,6 +359,51 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/clients
 `effectiveScope` is the backend-computed per-client access scope when a
 `clients:` block is configured (servers and prefixed tools the client can
 reach). It is absent when no scoping is in effect.
+
+Each client entry also carries `model` (string, omitted when empty) for the declared per-client pricing model and `effectiveModel` (object, omitted until traffic is observed) reporting which model actually priced the client's cost, with `provenance` (`declared`, `mixed`, or `none`).
+
+#### `POST /api/clients/{slug}/scope/preview`
+
+Computes what committing a per-client access-scope draft would do, without touching the stack file. Returns the exact YAML patch the matching `PUT .../scope` would write plus a per-client impact summary, so the UI's commit gate can render the consequences (and block a lockout) before saving.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"servers": ["github"], "tools": []}' \
+  http://localhost:8180/api/clients/cursor/scope/preview
+```
+
+**Request body:** same shape as the scope `PUT` (`servers` and `tools` allow-lists). At least one of `servers` or `tools` must be set.
+
+**Response (200):**
+```json
+{
+  "client": "cursor",
+  "profileKey": "cursor",
+  "createsBlock": true,
+  "lockout": false,
+  "totalServers": 4,
+  "totalTools": 43,
+  "diff": "--- stack.yaml\n+++ stack.yaml\n@@ ...",
+  "selected": {
+    "name": "Cursor",
+    "slug": "cursor",
+    "beforeServers": 4,
+    "afterServers": 1,
+    "beforeTools": 43,
+    "afterTools": 12,
+    "lostServers": ["gitlab", "jira", "slack"],
+    "gainedServers": []
+  },
+  "affected": []
+}
+```
+
+`createsBlock` is `true` when no `clients:` block exists yet, in which case `affected` lists the other linked clients that flip to default-deny. `lockout` is `true` when the resulting scope would leave the client able to reach nothing.
+
+**Errors:** `400 invalid_client` (empty after normalization) or a missing scope axis; `422` (`unknown_server`/`unknown_tool`) when the draft references a server or tool the gateway does not know; `503` when no stack file is configured or the gateway is unavailable.
 
 #### `PUT /api/clients/{slug}/scope`
 
@@ -474,6 +596,82 @@ Returns `503` when no metrics accumulator is configured; `404` when `stack` does
 
 ---
 
+### Traces
+
+Read the gateway's in-memory distributed-trace buffer. Each trace captures the spans for one upstream operation (tool call, prompt, etc.).
+
+#### `GET /api/traces`
+
+Returns recent trace summaries, newest first.
+
+**Auth:** Yes
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `server` | string | - | Filter to traces for this server |
+| `errors` | bool | `false` | When `true`, return only traces that contain an error |
+| `minDuration` | string | - | Go duration (e.g. `"250ms"`, `"2s"`); drop traces shorter than this |
+| `limit` | int | `100` | Maximum number of traces to return |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/traces?errors=true&limit=20"
+```
+
+**Response:**
+```json
+{
+  "traces": [
+    {
+      "traceId": "a1b2c3",
+      "rootSpanId": "root-1",
+      "operation": "tools/call",
+      "server": "github",
+      "startTime": "2026-05-29T17:00:00.123456789Z",
+      "duration": 142,
+      "spanCount": 3,
+      "hasError": false,
+      "status": "ok"
+    }
+  ],
+  "total": 1
+}
+```
+
+`duration` is in milliseconds. `status` is `"ok"` or `"error"`. Returns `{"traces": [], "total": 0}` when no trace buffer is configured.
+
+#### `GET /api/traces/{traceId}`
+
+Returns the full span tree for a single trace.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/traces/a1b2c3
+```
+
+**Response:**
+```json
+{
+  "traceId": "a1b2c3",
+  "spans": [
+    {
+      "spanId": "root-1",
+      "parentId": "",
+      "name": "tools/call github__create_issue",
+      "startTime": "2026-05-29T17:00:00.123456789Z",
+      "duration": 142,
+      "status": "ok",
+      "attributes": { "server": "github" },
+      "events": []
+    }
+  ]
+}
+```
+
+Returns `404` when the trace ID is not in the buffer.
+
+---
+
 ### Hot Reload
 
 #### `POST /api/reload`
@@ -517,6 +715,251 @@ Returns `503` if reload is not enabled (gateway started without `--watch`).
 
 ---
 
+### Stack Management
+
+Endpoints for validating, inspecting, and editing the active stack spec. Most write paths use the same lock + hash + atomic-write pattern as the tool-whitelist editor: concurrent external edits surface as `409 stack_modified`, and a successful write may trigger a hot reload (`502 reload_failed` when the YAML saved but reload failed).
+
+#### `POST /api/stack/validate`
+
+Validates a stack YAML body without saving. Matches `gridctl validate` semantics (env expansion, defaults, full rule set).
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/yaml" \
+  --data-binary @stack.yaml \
+  http://localhost:8180/api/stack/validate
+```
+
+**Response:** `ValidationResult` JSON (`valid`, `errorCount`, `warningCount`, `issues[]`).
+
+#### `GET /api/stack/plan`
+
+Compares the on-disk stack file against the running state and returns a plan diff. Powers the canvas drift indicator.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/plan
+```
+
+Returns `503` when no stack is deployed.
+
+#### `GET /api/stack/health`
+
+Returns aggregate spec health: validation status, drift vs running state, dependency resolution, and per-replica health for multi-replica servers.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/health
+```
+
+**Response:**
+```json
+{
+  "validation": { "status": "valid", "errorCount": 0, "warningCount": 0 },
+  "drift": { "status": "in-sync" },
+  "dependencies": { "status": "resolved" },
+  "replicas": {
+    "github": [
+      { "replicaId": "github-0", "state": "healthy", "inFlight": 0, "uptimeSeconds": 3600 }
+    ]
+  }
+}
+```
+
+`validation.status` is `valid`, `warnings`, or `errors`. `drift.status` is `in-sync`, `drifted`, or `unknown`.
+
+#### `GET /api/stack/spec`
+
+Returns the raw `stack.yaml` content for the active stack.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/spec
+```
+
+**Response:**
+```json
+{ "path": "/path/to/stack.yaml", "content": "version: \"1\"\n..." }
+```
+
+#### `GET /api/stack/export`
+
+Returns the active stack as sanitized exportable YAML (sensitive env values replaced with `${vault:...}` placeholders).
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/export
+```
+
+**Response:**
+```json
+{ "content": "version: \"1\"\n...", "format": "yaml" }
+```
+
+#### `GET /api/stack/secrets-map`
+
+Returns which nodes reference which vault/variable keys. Safe while the vault is locked (no secret values).
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/secrets-map
+```
+
+**Response:**
+```json
+{
+  "secrets": { "DB_PASSWORD": ["postgres"] },
+  "nodes": { "postgres": ["DB_PASSWORD"] }
+}
+```
+
+#### `GET /api/stack/recipes`
+
+Returns built-in stack templates for the wizard.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/recipes
+```
+
+**Response:** JSON array of `{id, name, description, category, spec}` objects.
+
+#### `POST /api/stack/append`
+
+Appends an `mcp-server` or `resource` snippet to the live `stack.yaml`. The snippet is validated before write; comments and key ordering elsewhere in the file are preserved.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resourceType": "mcp-server", "yaml": "name: new-server\nimage: alpine\n..."}' \
+  http://localhost:8180/api/stack/append
+```
+
+`resourceType` must be `mcp-server` or `resource`. Returns `422` with a `validation` object when the post-append stack would be invalid.
+
+#### `POST /api/stack/initialize`
+
+Cold-loads a saved stack into a stackless daemon (`gridctl serve`). Starts the file watcher when one is configured.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-stack"}' \
+  http://localhost:8180/api/stack/initialize
+```
+
+Loads `~/.gridctl/stacks/<name>.yaml`. Returns `409` when a stack is already loaded; `400` with per-server `errors[]` when initialization fails.
+
+#### `PATCH /api/stack/telemetry`
+
+Updates the top-level `telemetry:` block in the live stack YAML (persist defaults and retention). Returns a refreshed telemetry inventory in the response.
+
+**Auth:** Yes
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"persist": {"logs": true, "metrics": true}, "retention": {"max_size_mb": 50}}' \
+  http://localhost:8180/api/stack/telemetry
+```
+
+At least one `persist` or `retention` field must be set. Omitted sub-fields are left unchanged.
+
+---
+
+### Stack Library
+
+Saved stacks live under `~/.gridctl/stacks/` as `<name>.yaml`.
+
+#### `GET /api/stacks`
+
+Lists saved stacks.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stacks
+```
+
+**Response:**
+```json
+{ "stacks": [{ "name": "my-stack", "path": "/Users/me/.gridctl/stacks/my-stack.yaml" }] }
+```
+
+#### `POST /api/stacks`
+
+Saves a stack YAML to the library.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-stack", "yaml": "version: \"1\"\nname: my-stack\n..."}' \
+  http://localhost:8180/api/stacks
+```
+
+`name` must match `[a-zA-Z0-9_-]+`. Returns `400` when the YAML does not parse as a valid stack.
+
+---
+
+### Wizard Drafts
+
+Persists in-progress wizard form state under `~/.gridctl/cache/wizard-drafts/`.
+
+#### `GET /api/wizard/drafts`
+
+Lists saved wizard drafts, newest first.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/wizard/drafts
+```
+
+**Response:** JSON array of `{id, name, resourceType, formData, createdAt, updatedAt}`.
+
+#### `POST /api/wizard/drafts`
+
+Creates a new wizard draft.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "GitHub MCP", "resourceType": "mcp-server", "formData": {}}' \
+  http://localhost:8180/api/wizard/drafts
+```
+
+**Response:** `201 Created` with the draft object (server-generated `id`).
+
+#### `DELETE /api/wizard/drafts/{id}`
+
+Deletes a wizard draft.
+
+**Auth:** Yes
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/wizard/drafts/abc123
+```
+
+**Response:** `204 No Content`
+
+---
+
 ### MCP Server Control
 
 #### `POST /api/mcp-servers/{name}/restart`
@@ -540,6 +983,22 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-ser
 **Errors:**
 - `404` - Server name not found in gateway
 - `500` - Restart failed (container error, connection timeout, etc.)
+
+#### `GET /api/mcp-servers/{name}/logs`
+
+Returns structured log entries from the gateway log buffer filtered to the named server.
+
+**Auth:** Yes
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `lines` | int | `100` | Number of recent log entries to return for this server |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/mcp-servers/github/logs?lines=50"
+```
+
+The response is the same JSON array of buffered entries as [`/api/logs`](#get-apilogs), limited to entries tagged with the requested server. Returns an empty array (`[]`) when no log buffer is configured.
 
 #### `PUT /api/mcp-servers/{name}/tools`
 
@@ -667,6 +1126,178 @@ Error codes:
 - Other codes (422) - Probe ran but the upstream rejected the handshake
 
 Env-var values present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
+
+#### `PATCH /api/mcp-servers/{name}/telemetry`
+
+Updates the per-server `telemetry.persist` overrides in the live stack YAML. Each signal (`logs`, `metrics`, `traces`) can be set to `true`, `false`, or `null` (clear the override and inherit the stack default). Send `persist: null` to remove the entire per-server telemetry block.
+
+**Auth:** Yes
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"persist": {"logs": true, "metrics": null}}' \
+  http://localhost:8180/api/mcp-servers/github/telemetry
+```
+
+**Response:** `{success: true, inventory: [...]}` — same inventory shape as `GET /api/telemetry/inventory`.
+
+**Errors:** `404` when the server is not in the stack; `409 stack_modified`; `502 reload_failed`; `503` when no stack file is configured.
+
+---
+
+### Model Attribution
+
+These endpoints declare the pricing model used to cost tool calls, written into the live `stack.yaml` and applied via a hot reload. They affect cost attribution only and carry no access-control meaning. Precedence at pricing time is call-level, then client, then server, then gateway default. Unknown model IDs are accepted (best-effort pricing), surfacing only as load-time validation warnings. Each write is atomic and conflict-detected; an external edit between read and write returns `409`.
+
+#### `PUT /api/mcp-servers/{name}/model`
+
+Sets (or clears) a single MCP server's pricing model (`model:` in its `stack.yaml` entry). An empty string removes the key so the server falls back to `gateway.default_model`.
+
+**Auth:** Yes
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-opus-4-7"}' \
+  http://localhost:8180/api/mcp-servers/github/model
+```
+
+**Response:**
+```json
+{
+  "server": "github",
+  "model": "claude-opus-4-7",
+  "reloaded": true,
+  "reloadedAt": "2026-05-29T17:00:00Z"
+}
+```
+
+`reloaded` is `false` (and `reloadedAt` omitted) when the daemon is running without live-reload.
+
+**Errors:**
+- `404` - Server not found in the stack file
+- `409 stack_modified` - Stack file changed on disk between read and write
+- `502 reload_failed` - YAML written but hot reload failed
+- `503` - No stack file configured (stackless mode)
+
+#### `PUT /api/gateway/default-model`
+
+Sets (or clears) the stack-wide fallback pricing model (`gateway.default_model`). An empty string removes the key; the `gateway:` block is created when absent and removed again when clearing empties a block this endpoint created.
+
+**Auth:** Yes
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-sonnet-4-5"}' \
+  http://localhost:8180/api/gateway/default-model
+```
+
+**Response:**
+```json
+{
+  "model": "claude-sonnet-4-5",
+  "reloaded": true,
+  "reloadedAt": "2026-05-29T17:00:00Z"
+}
+```
+
+**Errors:** `409 stack_modified`, `502 reload_failed`, `503` (no stack file), as for the per-server endpoint above.
+
+#### `PUT /api/clients/{slug}/model`
+
+Sets (or clears) a single client's pricing model in the top-level `client_models:` map. An empty string removes the client's entry, and the whole `client_models:` map is removed when it empties. The slug is normalized to the stable profile key. This path never creates or touches a `clients:` access block (whose presence would flip the stack into default-deny access semantics).
+
+**Auth:** Yes
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-opus-4-7"}' \
+  http://localhost:8180/api/clients/cursor/model
+```
+
+**Response:**
+```json
+{
+  "client": "cursor",
+  "profileKey": "cursor",
+  "model": "claude-opus-4-7",
+  "reloaded": true,
+  "reloadedAt": "2026-05-29T17:00:00Z"
+}
+```
+
+**Errors:** `409 stack_modified`, `502 reload_failed`, `503` (no stack file), plus `400 invalid_client` when the slug is empty after normalization.
+
+#### `GET /api/pricing/models`
+
+Returns the canonical model IDs known to the active pricing source, for UI model pickers. Free-text IDs outside this list are still accepted everywhere (best-effort pricing).
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pricing/models
+```
+
+**Response:**
+```json
+{
+  "source": "litellm",
+  "models": ["claude-opus-4-7", "claude-sonnet-4-5", "gpt-4o"]
+}
+```
+
+---
+
+### Telemetry Persistence
+
+Inspect and manage on-disk telemetry files under `~/.gridctl/telemetry/`. Complements the `gridctl telemetry` CLI.
+
+#### `GET /api/telemetry/inventory`
+
+Returns one record per `(server, signal)` pair that has at least one file on disk.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/telemetry/inventory
+```
+
+**Response:**
+```json
+[
+  {
+    "server": "github",
+    "signal": "logs",
+    "path": "/Users/me/.gridctl/telemetry/my-stack/github/logs.jsonl",
+    "sizeBytes": 4096,
+    "oldestTime": "2026-05-20T10:00:00Z",
+    "newestTime": "2026-05-24T09:00:00Z",
+    "fileCount": 1
+  }
+]
+```
+
+Returns `[]` when no stack is loaded or nothing has been persisted.
+
+#### `DELETE /api/telemetry`
+
+Wipes persisted telemetry files for the active stack.
+
+**Auth:** Yes
+
+| Query Param | Type | Description |
+|-------------|------|-------------|
+| `server` | string | Limit to one MCP server |
+| `signal` | string | Limit to `logs`, `metrics`, or `traces` |
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/telemetry?server=github&signal=logs"
+```
+
+Both query params are optional; omitting both wipes every server and signal. **Response:** `{success: true, inventory: [...]}` with the post-wipe inventory.
 
 ---
 
@@ -869,6 +1500,27 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/DB_P
 {"key": "DB_PASSWORD", "set": "production", "status": "updated"}
 ```
 
+#### `GET /api/var/usage`
+
+Returns which stack nodes reference each `${var:KEY}` in the active stack. Derived from the loaded stack file only — no secret values, safe while the vault is locked.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/usage
+```
+
+**Response:**
+```json
+{
+  "DB_PASSWORD": [
+    { "kind": "resource", "name": "postgres", "field": "env.POSTGRES_PASSWORD" }
+  ]
+}
+```
+
+Returns `{}` when no stack is deployed.
+
 #### `POST /api/var/import`
 
 Bulk imports secrets.
@@ -986,6 +1638,124 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/
 
 ---
 
+### Skill Sources *(experimental)*
+
+Manage git-imported skill dependencies (`skills.yaml` + lock file). Mirrors `gridctl skill *` operations for the Library workspace.
+
+Auth for private repos accepts an optional `auth` object on mutating endpoints:
+
+```json
+{
+  "method": "token",
+  "token": "ghp_...",
+  "credentialRef": "${vault:GIT_TOKEN}",
+  "sshKeyPath": "/path/to/key"
+}
+```
+
+`credentialRef` is resolved against the live vault; raw `token` values are transient and never persisted.
+
+#### `GET /api/skills/sources`
+
+Lists imported sources with skill entries, auto-update settings, drift markers, and cached update availability.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/sources
+```
+
+#### `POST /api/skills/sources`
+
+Imports skills from a git repository.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repo": "https://github.com/org/skills", "ref": "main", "trust": false, "selected": ["code-review"]}' \
+  http://localhost:8180/api/skills/sources
+```
+
+**Response:** `201 Created` with the import result. Git errors return `401`/`404`/`400` with redacted messages.
+
+#### `POST /api/skills/sources/update`
+
+Syncs every imported source in parallel (respects pinned refs). Optional body: `{force: true, skills: ["name"], auth: {...}}`.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/sources/update
+```
+
+**Response:** `{sources[], syncedSources, updatedSkills, skippedSkills, failedSources, pinnedSources}`.
+
+#### `GET /api/skills/updates`
+
+Live-fetches upstream SHAs and returns pending update counts per source.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/updates
+```
+
+#### `DELETE /api/skills/sources/{name}`
+
+Removes a source and all skills it imported.
+
+**Auth:** Yes
+
+#### `POST /api/skills/sources/{name}/check`
+
+Checks whether a source has upstream changes without applying them.
+
+**Auth:** Yes
+
+**Response:** `{source, currentSha, latestSha, hasUpdate}`.
+
+#### `POST /api/skills/sources/{name}/update`
+
+Applies available updates for one source. Locally edited (drifted) skills are skipped unless `force: true`.
+
+**Auth:** Yes
+
+#### `GET /api/skills/sources/{name}/preview`
+
+#### `POST /api/skills/sources/{name}/preview`
+
+Previews skills in a repo without importing. GET accepts `repo`, `ref`, and `path` query params; POST accepts the same fields plus optional `auth` in the body. When `repo` is omitted, the stored source URL is used.
+
+**Auth:** Yes
+
+**Response:** `{repo, ref, commitSha, skills: [{name, description, body, valid, errors, warnings, findings, exists}]}`.
+
+#### `GET /api/skills/sources/{name}/skills/{skill}/diff`
+
+Returns local vs upstream `SKILL.md` with a unified diff. Read-only.
+
+**Auth:** Yes
+
+**Response:** `{skill, local, upstream, unifiedDiff, drifted}`.
+
+#### `POST /api/skills/sources/{name}/skills/{skill}/detach`
+
+Detaches a skill from its source so sync no longer touches it.
+
+**Auth:** Yes
+
+**Response:** `{detached: "<skill>"}`.
+
+#### `POST /api/skills/sources/{name}/skills/{skill}/reset`
+
+Force-updates a single skill to upstream content, backing up the current file first.
+
+**Auth:** Yes
+
+---
+
 ### Registry (Agent Skills) *(experimental)*
 
 Manage reusable skills stored as SKILL.md files. Skills have three lifecycle states: `draft`, `active`, and `disabled`.
@@ -1058,6 +1828,41 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registr
 }
 ```
 
+#### `PUT /api/registry/skills/batch`
+
+Sets the state of multiple skills in one request, then refreshes the registry router once. Only `active` and `disabled` are accepted (bulk actions enable or disable; they never set `draft`).
+
+**Auth:** Yes
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"skills": [
+        {"name": "code-review", "state": "active"},
+        {"name": "release-notes", "state": "disabled"}
+      ]}' \
+  http://localhost:8180/api/registry/skills/batch
+```
+
+The body must include a non-empty `skills` array; each entry needs a `name` and a `state`. Skill names must be unique within the batch.
+
+**Validation is all-or-nothing:** every entry is checked (known skill, valid state) before any write, so an unknown skill (`404`) or invalid state (`400`) rejects the whole batch with nothing changed. The write phase itself is best-effort: a mid-batch save failure (`500`) can leave earlier entries persisted.
+
+**Response:**
+```json
+{
+  "skills": [
+    {"name": "code-review", "state": "active"},
+    {"name": "release-notes", "state": "disabled"}
+  ]
+}
+```
+
+**Errors:**
+- `400` - Empty `skills` array, an entry missing `name`, a duplicate skill, or an invalid state
+- `404` - A named skill does not exist
+- `503` - Registry not available
+
 #### `GET /api/registry/skills/{name}`
 
 Returns a specific skill.
@@ -1096,23 +1901,23 @@ Lists files in a skill directory.
 
 **Auth:** Yes
 
-#### `GET /api/registry/skills/{name}/files/{path}`
+#### `GET /api/registry/skills/{name}/files/{path...}`
 
-Reads a file from a skill directory. Content-Type is detected from file extension.
+Reads a file from a skill directory. Content-Type is detected from file extension. The `{path...}` segment is variadic, so nested sub-paths (e.g. `references/api/spec.json`) are supported.
 
 **Auth:** Yes
 
-#### `PUT /api/registry/skills/{name}/files/{path}`
+#### `PUT /api/registry/skills/{name}/files/{path...}`
 
-Writes a file to a skill directory. Body is raw file content. Maximum 1MB.
+Writes a file to a skill directory. Body is raw file content. Maximum 1MB. The `{path...}` segment is variadic, so nested sub-paths are supported (parent directories are created as needed).
 
 **Auth:** Yes
 
 **Response:** `204 No Content`
 
-#### `DELETE /api/registry/skills/{name}/files/{path}`
+#### `DELETE /api/registry/skills/{name}/files/{path...}`
 
-Deletes a file from a skill directory.
+Deletes a file from a skill directory. The `{path...}` segment is variadic, so nested sub-paths are supported.
 
 **Auth:** Yes
 
