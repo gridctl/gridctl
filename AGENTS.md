@@ -60,7 +60,7 @@ pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
 pkg/skills/         Remote skill management (git import, lockfile, fingerprinting, updater).
-pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, opencode, grok, goose,
+pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`.
 pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs.
