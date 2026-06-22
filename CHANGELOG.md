@@ -26,6 +26,16 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
+- **Google Antigravity is now a `gridctl link` target.** `gridctl link
+  antigravity` wires gridctl into the Antigravity IDE's MCP config
+  (`~/.gemini/config/mcp_config.json`, the Antigravity 2.0 shared IDE/CLI path,
+  with the pre-2.0 `~/.gemini/antigravity/` path detected as a fallback). The
+  entry uses Antigravity's `serverUrl` field pointing at the gateway's streamable
+  HTTP `/mcp` endpoint, so no mcp-remote bridge is needed. Because Antigravity
+  caps each MCP server at 100 tools, pair it with `gateway.code_mode: on` to
+  collapse a large stack to the two `search`/`execute` meta-tools. The web
+  Topology view renders the Antigravity brand icon.
+
 - **Metrics promoted to a first-class workspace.** Cost and token observability
   is now a top-level workspace (`/metrics`, switcher pill, Cmd/Ctrl+5) alongside
   Topology, Library, Variables, and Tools, replacing the buried bottom-panel tab

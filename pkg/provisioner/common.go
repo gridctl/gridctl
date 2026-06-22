@@ -264,6 +264,8 @@ func getProvisionerBase(prov ClientProvisioner) (*mcpServersProvisioner, bool) {
 		return &p.mcpServersProvisioner, true
 	case *GeminiCLI:
 		return &p.mcpServersProvisioner, true
+	case *Antigravity:
+		return &p.mcpServersProvisioner, true
 	case *AnythingLLM:
 		return &p.mcpServersProvisioner, true
 	default:

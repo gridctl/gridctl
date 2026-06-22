@@ -51,7 +51,7 @@ func TestNewRegistry(t *testing.T) {
 	slugs := r.AllSlugs()
 
 	expected := []string{
-		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "opencode", "grok",
+		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "antigravity", "opencode", "grok",
 		"continue", "cline", "anythingllm", "roo", "zed", "goose",
 	}
 	if len(slugs) != len(expected) {
@@ -78,6 +78,7 @@ func TestRegistry_FindBySlug(t *testing.T) {
 		{"windsurf", true, "Windsurf"},
 		{"vscode", true, "VS Code"},
 		{"gemini", true, "Gemini CLI"},
+		{"antigravity", true, "Antigravity"},
 		{"opencode", true, "OpenCode"},
 		{"grok", true, "Grok Build"},
 		{"continue", true, "Continue"},
@@ -971,6 +972,7 @@ func TestClientProvisioners_ImplementInterface(t *testing.T) {
 		newWindsurf(),
 		newVSCode(),
 		newGeminiCLI(),
+		newAntigravity(),
 		newOpenCode(),
 		newGrokBuild(),
 		newContinueDev(),
@@ -2580,6 +2582,7 @@ func TestTransportDescriptionFor(t *testing.T) {
 		{"Claude Desktop", newClaudeDesktop(), "mcp-remote bridge"},
 		{"Claude Code", newClaudeCode(), "native HTTP"},
 		{"GeminiCLI", newGeminiCLI(), "native HTTP"},
+		{"Antigravity", newAntigravity(), "native HTTP"},
 		{"OpenCode", newOpenCode(), "native HTTP"},
 		{"Grok Build", newGrokBuild(), "native HTTP"},
 		{"VS Code", newVSCode(), "native SSE"},
@@ -2605,7 +2608,7 @@ func TestNewRegistry_WithNewClients(t *testing.T) {
 	slugs := r.AllSlugs()
 
 	expected := []string{
-		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "opencode", "grok",
+		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "antigravity", "opencode", "grok",
 		"continue", "cline", "anythingllm", "roo", "zed", "goose",
 	}
 	if len(slugs) != len(expected) {
@@ -2710,6 +2713,7 @@ func TestNewClientProvisioners_ImplementInterface(t *testing.T) {
 	clients := []ClientProvisioner{
 		newClaudeCode(),
 		newGeminiCLI(),
+		newAntigravity(),
 		newOpenCode(),
 		newGrokBuild(),
 		newZed(),
@@ -3005,6 +3009,314 @@ func TestDryRunDiff_GrokBuild(t *testing.T) {
 	}
 	if !strings.Contains(after, "http://localhost:8180/mcp") {
 		t.Error("after should contain the HTTP gateway URL")
+	}
+}
+
+// --- Antigravity Tests ---
+
+func antigravityLinkOpts() LinkOptions {
+	return LinkOptions{
+		GatewayURL: "http://localhost:8180/sse",
+		Port:       8180,
+		ServerName: "gridctl",
+	}
+}
+
+func TestAntigravity_Link(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	a := newAntigravity()
+	if err := a.Link(configPath, antigravityLinkOpts()); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	// Antigravity uses the `serverUrl` field pointing at the streamable /mcp
+	// endpoint, not `url` and not the /sse endpoint.
+	if entry["serverUrl"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected serverUrl=http://localhost:8180/mcp, got %v", entry["serverUrl"])
+	}
+	if _, ok := entry["url"]; ok {
+		t.Error("entry should not contain a `url` field")
+	}
+}
+
+func TestAntigravity_Link_ClientID(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	a := newAntigravity()
+	opts := antigravityLinkOpts()
+	opts.ClientID = "antigravity"
+	if err := a.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	if entry["serverUrl"] != "http://localhost:8180/mcp?client=antigravity" {
+		t.Errorf("expected serverUrl with client param, got %v", entry["serverUrl"])
+	}
+}
+
+func TestAntigravity_Link_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	a := newAntigravity()
+	if err := a.Link(configPath, antigravityLinkOpts()); err != nil {
+		t.Fatal(err)
+	}
+
+	err := a.Link(configPath, antigravityLinkOpts())
+	if err != ErrAlreadyLinked {
+		t.Errorf("expected ErrAlreadyLinked, got: %v", err)
+	}
+}
+
+func TestAntigravity_Link_Conflict(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcpServers": map[string]any{
+			"gridctl": map[string]any{
+				"serverUrl": "https://remote.example.com/mcp",
+			},
+		},
+	})
+
+	a := newAntigravity()
+	err := a.Link(configPath, antigravityLinkOpts())
+	if err != ErrConflict {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+}
+
+func TestAntigravity_Link_Force(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcpServers": map[string]any{
+			"gridctl": map[string]any{
+				"serverUrl": "https://remote.example.com/mcp",
+			},
+		},
+	})
+
+	a := newAntigravity()
+	opts := antigravityLinkOpts()
+	opts.Force = true
+	if err := a.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	if entry["serverUrl"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected serverUrl after force, got %v", entry["serverUrl"])
+	}
+}
+
+func TestAntigravity_Link_PreservesOtherConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcpServers": map[string]any{
+			"other": map[string]any{
+				"serverUrl": "https://other.example.com/mcp",
+			},
+		},
+	})
+
+	a := newAntigravity()
+	if err := a.Link(configPath, antigravityLinkOpts()); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	if _, ok := servers["other"]; !ok {
+		t.Error("existing mcpServers entry should be preserved")
+	}
+	if _, ok := servers["gridctl"]; !ok {
+		t.Error("gridctl entry should be added")
+	}
+}
+
+func TestAntigravity_Unlink(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcpServers": map[string]any{
+			"gridctl": map[string]any{
+				"serverUrl": "http://localhost:8180/mcp",
+			},
+			"other": map[string]any{
+				"serverUrl": "https://other.example.com/mcp",
+			},
+		},
+	})
+
+	a := newAntigravity()
+	if err := a.Unlink(configPath, "gridctl"); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	if _, ok := servers["gridctl"]; ok {
+		t.Error("gridctl should have been removed")
+	}
+	if _, ok := servers["other"]; !ok {
+		t.Error("other entry should be preserved")
+	}
+}
+
+func TestAntigravity_Unlink_NotLinked(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcpServers": map[string]any{},
+	})
+
+	a := newAntigravity()
+	err := a.Unlink(configPath, "gridctl")
+	if err != ErrNotLinked {
+		t.Errorf("expected ErrNotLinked, got: %v", err)
+	}
+}
+
+func TestAntigravity_Detect(t *testing.T) {
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, ".gemini", "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(configDir, "mcp_config.json")
+
+	a := newAntigravity()
+	a.paths = map[string]string{
+		"linux":   configPath,
+		"darwin":  configPath,
+		"windows": configPath,
+	}
+
+	path, found := a.Detect()
+	if !found {
+		t.Error("expected Detect to find Antigravity via the 2.0 config directory")
+	}
+	if path != configPath {
+		t.Errorf("expected path %q, got %q", configPath, path)
+	}
+}
+
+func TestAntigravity_Detect_LegacyFallback(t *testing.T) {
+	dir := t.TempDir()
+	// Only the pre-2.0 directory exists; the 2.0 path is absent.
+	legacyDir := filepath.Join(dir, ".gemini", "antigravity")
+	if err := os.MkdirAll(legacyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	primaryPath := filepath.Join(dir, ".gemini", "config", "mcp_config.json")
+	legacyPath := filepath.Join(legacyDir, "mcp_config.json")
+
+	a := newAntigravity()
+	a.paths = map[string]string{
+		"linux":   primaryPath,
+		"darwin":  primaryPath,
+		"windows": primaryPath,
+	}
+	a.legacyPaths = map[string]string{
+		"linux":   legacyPath,
+		"darwin":  legacyPath,
+		"windows": legacyPath,
+	}
+
+	path, found := a.Detect()
+	if !found {
+		t.Error("expected Detect to fall back to the pre-2.0 config path")
+	}
+	if path != legacyPath {
+		t.Errorf("expected legacy path %q, got %q", legacyPath, path)
+	}
+}
+
+func TestAntigravity_Detect_Negative(t *testing.T) {
+	dir := t.TempDir()
+	primaryPath := filepath.Join(dir, "nope", ".gemini", "config", "mcp_config.json")
+	legacyPath := filepath.Join(dir, "nope", ".gemini", "antigravity", "mcp_config.json")
+
+	a := newAntigravity()
+	a.paths = map[string]string{
+		"linux":   primaryPath,
+		"darwin":  primaryPath,
+		"windows": primaryPath,
+	}
+	a.legacyPaths = map[string]string{
+		"linux":   legacyPath,
+		"darwin":  legacyPath,
+		"windows": legacyPath,
+	}
+
+	if _, found := a.Detect(); found {
+		t.Error("expected Detect to not find Antigravity")
+	}
+}
+
+func TestAntigravity_IsLinked(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+
+	a := newAntigravity()
+
+	linked, err := a.IsLinked(configPath, "gridctl")
+	if err != nil || linked {
+		t.Errorf("expected not linked, got linked=%v err=%v", linked, err)
+	}
+
+	if err := a.Link(configPath, antigravityLinkOpts()); err != nil {
+		t.Fatal(err)
+	}
+
+	linked, err = a.IsLinked(configPath, "gridctl")
+	if err != nil || !linked {
+		t.Errorf("expected linked, got linked=%v err=%v", linked, err)
+	}
+}
+
+func TestDryRunDiff_Antigravity(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_config.json")
+	writeTestJSON(t, configPath, map[string]any{"mcpServers": map[string]any{}})
+
+	a := newAntigravity()
+	opts := antigravityLinkOpts()
+
+	before, after, err := DryRunDiff(configPath, a, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(before, "gridctl") {
+		t.Error("before should not contain gridctl")
+	}
+	if !strings.Contains(after, "gridctl") {
+		t.Error("after should contain gridctl")
+	}
+	if !strings.Contains(after, "serverUrl") {
+		t.Error("after should contain the serverUrl field")
+	}
+	if !strings.Contains(after, "http://localhost:8180/mcp") {
+		t.Error("after should contain the streamable HTTP gateway URL")
 	}
 }
 
