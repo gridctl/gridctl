@@ -85,6 +85,7 @@ func NewRegistry() *Registry {
 			newWindsurf(),
 			newVSCode(),
 			newGeminiCLI(),
+			newAntigravity(),
 			newOpenCode(),
 			newGrokBuild(),
 			// Tier 2
@@ -161,7 +162,7 @@ func TransportDescriptionFor(prov ClientProvisioner) string {
 		return "mcp-remote bridge"
 	}
 	switch prov.(type) {
-	case *ClaudeCode, *GeminiCLI, *OpenCode, *GrokBuild:
+	case *ClaudeCode, *GeminiCLI, *Antigravity, *OpenCode, *GrokBuild:
 		return "native HTTP"
 	default:
 		return "native SSE"
