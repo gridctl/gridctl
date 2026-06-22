@@ -130,6 +130,19 @@ Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemin
 
 Restart Claude Desktop after editing. All tools from your stack are now available.
 
+#### Antigravity
+```json
+{
+  "mcpServers": {
+    "gridctl": {
+      "serverUrl": "http://localhost:8180/mcp"
+    }
+  }
+}
+```
+
+Antigravity borrows Windsurf's `serverUrl` field but speaks streamable HTTP, so point it at the `/mcp` endpoint (not `/sse`). The IDE and CLI share `~/.gemini/config/mcp_config.json` on Antigravity 2.0. Since Antigravity caps each MCP server at 100 tools, pair a large stack with `gateway.code_mode: on`.
+
 </details>
 
 ## 🎬 Features
