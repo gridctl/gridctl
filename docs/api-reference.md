@@ -802,24 +802,6 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/export
 { "content": "version: \"1\"\n...", "format": "yaml" }
 ```
 
-#### `GET /api/stack/secrets-map`
-
-Returns which nodes reference which vault/variable keys. Safe while the vault is locked (no secret values).
-
-**Auth:** Yes
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/secrets-map
-```
-
-**Response:**
-```json
-{
-  "secrets": { "DB_PASSWORD": ["postgres"] },
-  "nodes": { "postgres": ["DB_PASSWORD"] }
-}
-```
-
 #### `GET /api/stack/recipes`
 
 Returns built-in stack templates for the wizard.
