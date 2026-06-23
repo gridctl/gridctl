@@ -14,7 +14,6 @@ import {
   ZoomIn,
   ZoomOut,
   Eye,
-  GitBranch,
   LayoutGrid,
   Flame,
   Server,
@@ -45,7 +44,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
   const toggleHeatMap = useUIStore((s) => s.toggleHeatMap);
-  const toggleDriftOverlay = useUIStore((s) => s.toggleDriftOverlay);
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
   const toggleSpecMode = useUIStore((s) => s.toggleSpecMode);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
@@ -204,15 +202,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         onSelect: () => toggleHeatMap(),
       },
       {
-        id: 'canvas:toggle-drift',
-        label: 'Toggle drift overlay',
-        section: 'canvas',
-        workspaces: ['topology'],
-        icon: <GitBranch size={14} />,
-        keywords: ['drift', 'overlay', 'diff', 'changes', 'diverged', 'toggle'],
-        onSelect: () => toggleDriftOverlay(),
-      },
-      {
         id: 'canvas:toggle-compact',
         label: 'Toggle compact cards',
         section: 'canvas',
@@ -227,7 +216,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         section: 'canvas',
         workspaces: ['topology'],
         icon: <Eye size={14} />,
-        keywords: ['spec', 'mode', 'ghost', 'undeployed', 'preview', 'toggle'],
+        keywords: ['spec', 'mode', 'ghost', 'undeployed', 'preview', 'drift', 'diff', 'changes', 'diverged', 'toggle'],
         onSelect: () => toggleSpecMode(),
       },
       {
@@ -261,7 +250,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     zoomOut,
     toggleBottomPanel,
     toggleHeatMap,
-    toggleDriftOverlay,
     toggleCompactCards,
     toggleSpecMode,
     setPricingManagerOpen,
