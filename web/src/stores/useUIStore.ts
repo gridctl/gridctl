@@ -101,17 +101,9 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // Token heat overlay on graph nodes
   showHeatMap: boolean;
 
-  // Drift detection overlay on canvas
-  showDriftOverlay: boolean;
-
-  // Canvas spec mode — shows ghost nodes for undeployed spec items
+  // Canvas spec mode — shows ghost nodes for undeployed spec items and
+  // drift indicators for items that diverge from the running stack
   showSpecMode: boolean;
-
-  // Canvas wiring mode — drag connections between nodes
-  showWiringMode: boolean;
-
-  // Secret heatmap overlay
-  showSecretHeatmap: boolean;
 
   // Latency heat overlay on canvas edges
   showLatencyHeat: boolean;
@@ -136,10 +128,7 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   toggleEdgeStyle: () => void;
   toggleCompactCards: () => void;
   toggleHeatMap: () => void;
-  toggleDriftOverlay: () => void;
   toggleSpecMode: () => void;
-  toggleWiringMode: () => void;
-  toggleSecretHeatmap: () => void;
   toggleLatencyHeat: () => void;
 
   // Bottom panel actions
@@ -199,17 +188,8 @@ export const useUIStore = create<UIState>()(
       // Token heat overlay default
       showHeatMap: false,
 
-      // Drift overlay default
-      showDriftOverlay: false,
-
       // Spec mode default
       showSpecMode: false,
-
-      // Wiring mode default
-      showWiringMode: false,
-
-      // Secret heatmap default
-      showSecretHeatmap: false,
 
       // Latency heat overlay default
       showLatencyHeat: false,
@@ -245,14 +225,8 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ compactCards: !s.compactCards })),
       toggleHeatMap: () =>
         set((s) => ({ showHeatMap: !s.showHeatMap })),
-      toggleDriftOverlay: () =>
-        set((s) => ({ showDriftOverlay: !s.showDriftOverlay })),
       toggleSpecMode: () =>
         set((s) => ({ showSpecMode: !s.showSpecMode })),
-      toggleWiringMode: () =>
-        set((s) => ({ showWiringMode: !s.showWiringMode })),
-      toggleSecretHeatmap: () =>
-        set((s) => ({ showSecretHeatmap: !s.showSecretHeatmap })),
       toggleLatencyHeat: () =>
         set((s) => ({ showLatencyHeat: !s.showLatencyHeat })),
 
