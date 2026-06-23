@@ -1203,17 +1203,6 @@ export async function fetchStackExport(): Promise<{ content: string; format: str
 }
 
 /**
- * Get secret-to-node mapping for heatmap overlay
- * GET /api/stack/secrets-map
- */
-export async function fetchSecretsMap(): Promise<{
-  secrets: Record<string, string[]>;
-  nodes: Record<string, string[]>;
-}> {
-  return fetchJSON('/api/stack/secrets-map');
-}
-
-/**
  * Get available stack recipes
  * GET /api/stack/recipes
  */
