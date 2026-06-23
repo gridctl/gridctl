@@ -185,7 +185,7 @@ func TestAuthMiddleware_BearerEmptyToken(t *testing.T) {
 func TestAuthMiddleware_StaticFilesBypass(t *testing.T) {
 	handler := authMiddleware("bearer", "mysecret", "", okHandler())
 
-	paths := []string{"/", "/index.html", "/assets/index-abc123.js", "/assets/index-abc123.css", "/vite.svg", "/favicon.ico"}
+	paths := []string{"/", "/index.html", "/assets/index-abc123.js", "/assets/index-abc123.css", "/favicon.png", "/favicon.ico"}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -227,7 +227,7 @@ func TestIsProtectedPath(t *testing.T) {
 		}
 	}
 
-	unprotected := []string{"/", "/index.html", "/assets/main.js", "/vite.svg", "/health", "/ready"}
+	unprotected := []string{"/", "/index.html", "/assets/main.js", "/favicon.png", "/health", "/ready"}
 	for _, path := range unprotected {
 		if isProtectedPath(path) {
 			t.Errorf("expected %s to be unprotected", path)
