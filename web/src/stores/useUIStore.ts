@@ -105,9 +105,6 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // drift indicators for items that diverge from the running stack
   showSpecMode: boolean;
 
-  // Latency heat overlay on canvas edges
-  showLatencyHeat: boolean;
-
   // Bottom panel state
   bottomPanelOpen: boolean;
   bottomPanelTab: BottomPanelTab;
@@ -129,7 +126,6 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   toggleCompactCards: () => void;
   toggleHeatMap: () => void;
   toggleSpecMode: () => void;
-  toggleLatencyHeat: () => void;
 
   // Bottom panel actions
   setBottomPanelOpen: (open: boolean) => void;
@@ -191,9 +187,6 @@ export const useUIStore = create<UIState>()(
       // Spec mode default
       showSpecMode: false,
 
-      // Latency heat overlay default
-      showLatencyHeat: false,
-
       // Bottom panel defaults
       bottomPanelOpen: false,
       bottomPanelTab: 'logs',
@@ -227,8 +220,6 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ showHeatMap: !s.showHeatMap })),
       toggleSpecMode: () =>
         set((s) => ({ showSpecMode: !s.showSpecMode })),
-      toggleLatencyHeat: () =>
-        set((s) => ({ showLatencyHeat: !s.showLatencyHeat })),
 
       // Bottom panel actions
       setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
