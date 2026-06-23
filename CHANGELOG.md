@@ -2,629 +2,78 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-beta.11] - 2026-06-23
 
-### Security
 
-- **Schema pinning is now enforced at runtime.** TOFU schema pinning was fully
-  built and documented as enabled by default, but the pin store and drift
-  verifier were never wired into the gateway serve and apply paths, so in the
-  running daemon nothing was ever pinned, `/api/pins` was always empty, and a
-  downstream MCP server could silently change its tool definitions (a rug pull,
-  CVE-2025-54136 class) without a warning or block. The gateway now installs the
-  verifier and shares one pin store with the API and CLI on both the stack-backed
-  and stackless paths, defaulting to `enabled: true` and `action: warn` per the
-  documented contract. Existing stacks gain non-fatal drift detection with no
-  configuration change; `action: block` and per-server `pin_schemas: false`
-  continue to work. The `schema_pinning.enabled` field is now a tri-state so that
-  setting only `action:` no longer disables pinning by omission.
+### Bug Fixes
 
-- **Sanitize rendered skill markdown.** Skill bodies (which can be imported from
-  remote git) are now passed through DOMPurify after Markdown rendering, closing
-  an XSS vector where raw HTML or event handlers in a `SKILL.md` could execute in
-  the dashboard. Sanitization runs on the rendered output, never the source.
 
-### Added
+- Adapt variable form value placeholder to type and visibility ([#672](https://github.com/gridctl/gridctl/pull/672))
+- Stop popout button from closing its own window ([#674](https://github.com/gridctl/gridctl/pull/674))
+- Clean up vestigial agent surface residue ([#684](https://github.com/gridctl/gridctl/pull/684))
+- Show plaintext variable value unmasked in inputs ([#694](https://github.com/gridctl/gridctl/pull/694))
+- Clean lock file on UI skill delete and self-heal ghost entries during sync ([#741](https://github.com/gridctl/gridctl/pull/741))
+- Reload per-client clients block changes into gateway policy ([#761](https://github.com/gridctl/gridctl/pull/761))
+- Make web skill sync drift-safe ([#769](https://github.com/gridctl/gridctl/pull/769))
+- Wire cost model attribution so cost data populates ([#772](https://github.com/gridctl/gridctl/pull/772))
+- Quiet pins 503 poll, catch unknown routes, set tab title ([#806](https://github.com/gridctl/gridctl/pull/806))
+- Wire schema pinning into the gateway serve path ([#808](https://github.com/gridctl/gridctl/pull/808))
+- Honor gateway.tracing.max_traces from stack.yaml ([#817](https://github.com/gridctl/gridctl/pull/817))
+- Make gateway.tracing.enabled tri-state default-on ([#819](https://github.com/gridctl/gridctl/pull/819))
 
-- **Google Antigravity is now a `gridctl link` target.** `gridctl link
-  antigravity` wires gridctl into the Antigravity IDE's MCP config
-  (`~/.gemini/config/mcp_config.json`, the Antigravity 2.0 shared IDE/CLI path,
-  with the pre-2.0 `~/.gemini/antigravity/` path detected as a fallback). The
-  entry uses Antigravity's `serverUrl` field pointing at the gateway's streamable
-  HTTP `/mcp` endpoint, so no mcp-remote bridge is needed. Because Antigravity
-  caps each MCP server at 100 tools, pair it with `gateway.code_mode: on` to
-  collapse a large stack to the two `search`/`execute` meta-tools. The web
-  Topology view renders the Antigravity brand icon.
+### Features
 
-- **Metrics promoted to a first-class workspace.** Cost and token observability
-  is now a top-level workspace (`/metrics`, switcher pill, Cmd/Ctrl+5) alongside
-  Topology, Library, Variables, and Tools, replacing the buried bottom-panel tab
-  as the primary surface. The dashboard is a three-rail layout: a scope
-  navigator (overview / clients / servers / models), a center with the session
-  KPI row, token and estimated-cost trend charts, the active breakdown, and a
-  ranked cost-by-model mix, plus a right-rail inspector that details the selected
-  client or server (per-entity sparklines, cost provenance, and the inline
-  pricing-model editor). Scope and selection are URL-synced so reload and deep
-  links survive. The bottom Metrics tab is retained as a glance-only summary (KPI
-  row, one sparkline, and a "View all in Metrics" link), and the detached popout
-  moves to `/metrics-window`. The status bar token counter now links to the
-  workspace and gains an estimated-cost chip. The bottom tab, workspace, and
-  detached window all render one shared dashboard body, removing the prior
-  duplication between them. No stack.yaml or API changes.
 
-- **Automated LiteLLM pricing snapshot refresh.** A scheduled
-  `Update Pricing Snapshot` workflow fetches the upstream LiteLLM table weekly,
-  runs it through a validation gate (`make validate-pricing` →
-  `scripts/validate-pricing.sh`: valid JSON, non-empty, a model-count floor, and
-  an 80% shrink guard), and opens or updates a single reviewable PR only when the
-  table changed. `make update-pricing` now runs the same gate before replacing
-  the committed snapshot, so a poisoned, empty, or truncated upstream response
-  fails loudly instead of landing silently. The build is unchanged: the binary
-  still embeds only the committed file, with no live fetch at build or release
-  time.
+- Unified variable store — gridctl var (PR 1) ([#670](https://github.com/gridctl/gridctl/pull/670))
+- Add Library workspace and rename Skills tab to Stage ([#676](https://github.com/gridctl/gridctl/pull/676))
+- Promote Variables to a first-class workspace ([#691](https://github.com/gridctl/gridctl/pull/691))
+- Bridge topology server nodes to vault workspace ([#692](https://github.com/gridctl/gridctl/pull/692))
+- Index variable usage and expose GET /api/var/usage ([#702](https://github.com/gridctl/gridctl/pull/702))
+- Surface variable usage in the Variables workspace ([#703](https://github.com/gridctl/gridctl/pull/703))
+- Variable set recently-edited indicator ([#705](https://github.com/gridctl/gridctl/pull/705))
+- Drag-and-drop import on the Variables workspace ([#707](https://github.com/gridctl/gridctl/pull/707))
+- Secret generator for the Variables workspace ([#709](https://github.com/gridctl/gridctl/pull/709))
+- Rich type editors for the Variables workspace ([#711](https://github.com/gridctl/gridctl/pull/711))
+- Add fleet-wide Tools workspace ([#714](https://github.com/gridctl/gridctl/pull/714))
+- Add Audit Mode to the Tools workspace ([#715](https://github.com/gridctl/gridctl/pull/715))
+- Add fleet bulk actions to the Tools workspace ([#716](https://github.com/gridctl/gridctl/pull/716))
+- Add tool detail panel to the Tools workspace ([#717](https://github.com/gridctl/gridctl/pull/717))
+- Group the Skills Library by provenance ([#719](https://github.com/gridctl/gridctl/pull/719))
+- Skills Library inspector pane ([#722](https://github.com/gridctl/gridctl/pull/722))
+- Differentiate skill cards with category and metadata ([#724](https://github.com/gridctl/gridctl/pull/724))
+- Add Grok Build as a supported client ([#726](https://github.com/gridctl/gridctl/pull/726))
+- Add KPI summary header to the Skills Library ([#728](https://github.com/gridctl/gridctl/pull/728))
+- Add sort control and facet chips to the Skills Library ([#729](https://github.com/gridctl/gridctl/pull/729))
+- Add table view and bulk actions to the Skills Library ([#730](https://github.com/gridctl/gridctl/pull/730))
+- Skill usage analytics (backend) ([#732](https://github.com/gridctl/gridctl/pull/732))
+- Skill usage analytics (frontend) ([#733](https://github.com/gridctl/gridctl/pull/733))
+- Skills sync backend (state-preservation fix, aggregate endpoint, sync alias) ([#736](https://github.com/gridctl/gridctl/pull/736))
+- Library Sync sources button with failures details modal ([#737](https://github.com/gridctl/gridctl/pull/737))
+- Per-client brand icons in Topology view ([#739](https://github.com/gridctl/gridctl/pull/739))
+- Multi-hop client path highlight in topology ([#743](https://github.com/gridctl/gridctl/pull/743))
+- Tool fan-out in topology view ([#744](https://github.com/gridctl/gridctl/pull/744))
+- Per-client access scoping (backend access model) ([#745](https://github.com/gridctl/gridctl/pull/745))
+- Wire topology to per-client scope + access editor ([#746](https://github.com/gridctl/gridctl/pull/746))
+- Client Access Scope inspector + discoverable Tools Access ([#748](https://github.com/gridctl/gridctl/pull/748))
+- Topology Access Lens — draft-staged per-client access authoring ([#749](https://github.com/gridctl/gridctl/pull/749))
+- Interactive tool fan-out pills in Topology view ([#764](https://github.com/gridctl/gridctl/pull/764))
+- Add per-client tool scoping to Access Lens ([#765](https://github.com/gridctl/gridctl/pull/765))
+- Smarter skill markdown rendering in the Library dashboard ([#767](https://github.com/gridctl/gridctl/pull/767))
+- Skills editor UX and drift reconciliation UI ([#770](https://github.com/gridctl/gridctl/pull/770))
+- Per-client model attribution for cost observability ([#774](https://github.com/gridctl/gridctl/pull/774))
+- Variables workspace master-detail inspector ([#776](https://github.com/gridctl/gridctl/pull/776))
+- In-UI cost model editing across all three pricing tiers ([#778](https://github.com/gridctl/gridctl/pull/778))
+- Effective model attribution with provenance ([#787](https://github.com/gridctl/gridctl/pull/787))
+- Promote Metrics to a first-class workspace ([#792](https://github.com/gridctl/gridctl/pull/792))
+- Add Google Antigravity as a gridctl link target ([#821](https://github.com/gridctl/gridctl/pull/821))
 
-- **Refreshed the embedded LiteLLM pricing snapshot.** Updated
-  `pkg/pricing/data/model_prices.json` to the current upstream table so newly
-  released models (e.g. `claude-opus-4-8`) appear in the cost-model picker and
-  price correctly.
+### Refactoring
 
-- **Effective model attribution with provenance.** Gridctl now records which
-  model priced each recorded dollar — per client and per server — and surfaces
-  an "effective model" with provenance (`declared` when one model priced all of
-  an entity's cost, `mixed` when several did, `none` when traffic was observed
-  but nothing priced it). This is exact recording at observation time, not
-  inference: the resolved model is known when cost is recorded. The model
-  histograms persist and replay alongside cost, so provenance survives a
-  restart. `/api/status` gains additive `effective_client_models` /
-  `effective_server_models` maps (and the client/server status objects gain an
-  `effectiveModel` field); the Metrics tab and detached window show a
-  `<dominant> · NN%` pill for mixed clients/servers (clickable into the pricing
-  manager) and a muted `unpriced` tag for none, with a one-line honesty note on
-  the Cost card when any blend is present; the sidebar inspector and pricing
-  manager surface the same read-only effective info. `gridctl optimize`'s
-  `expensive_model_on_cheap_task` finding names the dominant model and labels
-  its provenance. Provenance describes which declaration priced the traffic, not
-  what the client actually ran — the gateway cannot observe the client's model
-  choice, so the labels never claim detection. See `docs/cost-observability.md`.
 
-- **In-UI pricing model editing across all three attribution tiers.** Cost
-  attribution no longer requires hand-editing stack.yaml: the per-server
-  `model:` and `gateway.default_model` tiers join `client_models:` as
-  editable from the web UI, through new `PUT /api/mcp-servers/{name}/model`
-  and `PUT /api/gateway/default-model` endpoints (atomic, comment-preserving
-  YAML writes with 409 conflict detection and hot reload, mirroring the
-  client-model endpoint). The old datalist editor is replaced by a shared
-  searchable model picker over the embedded LiteLLM snapshot — provider
-  grouping, keyboard navigation, virtualized for the full ~2,700-ID list,
-  free text allowed with a soft "prices as $0" note for unknown IDs. A new
-  "Pricing models" slide-over manager lists all three tiers in precedence
-  order and opens from the Metrics toolbar, the sidebar inspector's new
-  Pricing section (clients and servers show their priced-as model with
-  provenance), or the command palette ("Edit pricing models"). The Metrics
-  per-server table gains a Model column with `· server` pills and muted
-  `default:` inheritance, the creation wizard gains pricing fields
-  (`gateway.default_model` in a Pricing section, per-server model under
-  Advanced), and `/api/status` now exposes `server_models`, `default_model`,
-  and each server's declared `model` for the UI.
-
-- **Variables workspace master-detail inspector.** The Variables tab now uses
-  the same list-plus-inspector layout as Library and Tools: a denser,
-  table-like variable list (key, type, set, value preview, and used-by count
-  in aligned columns under a sticky header) with a persistent right-rail
-  inspector for the selected variable. The inspector leads with the stack
-  usage index — every `${var:KEY}` reference site, clickable through to the
-  topology node — followed by a type-aware value view (pretty JSON, list
-  chips, bool/number literals), copy-without-reveal as the primary secret
-  action, edit-in-pane with the full typed editors, set reassignment, and a
-  one-step rotate for string secrets. Selection is URL-synced
-  (`?selected=KEY`) for deep links, arrow keys move it from the list, and
-  with nothing selected the rail shows an at-a-glance overview (counts by
-  type, secrets vs plaintext, unreferenced variables) instead of empty space.
-  Inline row expand/edit is retired in the workspace; the sidebar
-  quick-access panel is unchanged.
-
-- **Per-client model attribution for cost observability.** A new top-level
-  `client_models:` map in stack.yaml declares which model each client runs
-  (e.g. `claude-code: claude-opus-4-7`), and the gateway prices that client's
-  tool calls at those rates ahead of the per-server `model:` and
-  `gateway.default_model` tiers — so multi-client stacks (Claude Code on Opus,
-  Gemini CLI on Gemini, sharing the same servers) get correctly attributed
-  per-client cost. The map is pricing-only and access-inert: it never requires
-  a `clients:` block and never restricts any client. Edits hot-reload without
-  restarting servers. The Metrics tab's Top Clients panel gains a Model column
-  showing each declared client's model with provenance and inline editing
-  backed by the new `GET /api/pricing/models` known-models list and a
-  dedicated `PUT /api/clients/{slug}/model` endpoint (atomic, comment-
-  preserving YAML writes). `gridctl validate` now warns (never errors) on
-  model IDs unknown to the pricing snapshot and on `client_models` keys that
-  are not normalized client IDs. Stacks without the map behave exactly as
-  before; anonymous calls keep pricing via the server/default tiers.
-
-- **Reconcile and edit git-sourced skills in the Library.** The Library now
-  surfaces local edits to imported skills and lets you reconcile them. Skill
-  cards, the detail panel, and the editor show a "Modified" badge when a tracked
-  `SKILL.md` has local edits. Clicking Sync on a source (or the workspace-wide
-  Sync) that has edited skills opens a confirm listing them, with "keep my edits
-  (skip these)" and "overwrite local edits" choices instead of silently
-  clobbering them; toasts report updated, kept, and overwritten counts. The
-  skill editor grew a provenance strip (tracked-from owner/repo@sha, last synced)
-  with Compare-with-upstream (a local-vs-upstream diff with Keep mine / Take
-  upstream), Reset to upstream, Detach from source, and Fork-as actions. The
-  editor also opens body-first now: frontmatter collapses to a one-line summary
-  by default for existing skills, the split defaults to a body-heavy ratio, the
-  preview/ratio/frontmatter state persists across reopens, a minimal markdown
-  toolbar inserts at the cursor, the preview pane scroll-follows the editor, and
-  the file tree is demoted behind a "Files (N)" pill. The modal's expand toggle
-  (previously a no-op for the editor) now steps it up to a near-fullscreen view,
-  and the editor body grows with the panel. None of this changes the bytes
-  served to agents.
-
-- **Reconciliation API for git-sourced skills.** The skills HTTP API gained the
-  building blocks for editing imported skills safely. `GET /api/skills/sources`
-  now reports drift (`driftedSkills` per source, `hasLocalEdits` per skill). The
-  per-source and bulk update endpoints accept an optional `{ "force": bool,
-  "skills": [..] }` body. Three per-skill endpoints were added: `GET
-  .../skills/{skill}/diff` (local vs upstream `SKILL.md` plus a unified diff,
-  computed without writing to disk), `POST .../skills/{skill}/detach` (drop the
-  origin sidecar and lock entry to make a skill local-only), and `POST
-  .../skills/{skill}/reset` (back up and force-restore a single skill to
-  upstream). All new fields are additive and optional.
-
-- **Richer skill instructions in the Library.** The Library inspector's
-  Instructions tab and the SkillEditor preview now render `SKILL.md` bodies as a
-  designed surface rather than raw browser-default markdown: fenced code blocks
-  are syntax-highlighted (bash, python, javascript, typescript, json, yaml) and
-  carry a language label plus a one-click copy button that copies the original
-  source (not the highlighted markup), and GitHub-style alert blockquotes
-  (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`) render as
-  colored callouts. A "View source" toggle in the Instructions header swaps to
-  the verbatim raw body, so the exact text served to agents is always one click
-  away. The agent-facing MCP prompt surface is unchanged.
-
-- **Inspect a tool from the Topology canvas.** Clicking a fanned-out tool pill
-  on an expanded server now opens a canvas-anchored detail popover with the
-  tool's qualified name, description, and a best-effort "last used" line
-  (fetched on demand; absent when the tool has no recorded calls). Two actions
-  are included: "Open in Tools" deep-links to the tool in the Tools workspace
-  (where its full input schema is shown), and "Copy name" copies the prefixed
-  `server__tool` name. The "+N more" overflow popover's listed tools are
-  clickable to the same detail, and the pill is keyboard-activatable. The
-  popover dismisses on Escape, an outside click, or a re-click. This retires the
-  staging decision that left the fan-out nodes non-interactive.
-
-- **Topology Access Lens: author per-client scope on the canvas.** A new
-  "Access Lens" toggle in the Topology header turns the graph into an editing
-  surface: with a client selected, MCP server nodes become draft grant/revoke
-  targets. Clicking a server (or its checkbox in the new right-anchored
-  slide-over editor, which keeps the canvas interactive) stages the change in a
-  draft and re-lights the canvas live against it: granted servers carry an amber
-  ring, denied ones desaturate. Both surfaces edit one shared draft; nothing is
-  written until an explicit commit. A floating action bar shows live impact
-  ("N servers granted · M tools visible") with Save/Discard. Saving opens a
-  commit gate showing the exact `stack.yaml` patch diff and a per-client impact
-  summary (which clients lose access, a first-block deny-by-default warning, and
-  a blocking lockout warning when a draft would leave a client reaching nothing),
-  backed by a read-only `POST /api/clients/{slug}/scope/preview` endpoint that
-  computes the patch and consequences server-side without writing. A dirty draft
-  prompts discard-with-confirm on mode exit, client change, or navigation.
-
-- **Access Lens: narrow a granted server to specific tools.** Each granted
-  server carries an "All tools" (default) or "Custom" per-client choice, written
-  to the client's tool allow-list. The **canvas is the primary surface**: with a
-  server expanded in Access Lens, its fanned-out tool pills become grant/revoke
-  toggles — clicking a pill on an "All" server narrows it to every other tool,
-  and the path highlight dims what the client loses live. Tools beyond the
-  fan-out cap stay reachable as toggles inside the "+N more" list, and a small
-  info button preserves inspect-while-editing. The slide-over editor is the
-  searchable, keyboard-accessible fallback for large servers: each server shows
-  its All/Custom choice and a live count, with the tool checklist (tri-state
-  select-all, filter, descriptions from the tool catalog) one click away. A
-  "scoped" badge marks restricted servers, the commit gate lists each restriction
-  ("playwright: 3 of 28 tools"), and a collapsible "raw tools allow-list" shows
-  and copies the exact prefixed entries for operators migrating from hand-edited
-  `stack.yaml`. The tool axis is written only when deliberately edited, so a
-  server-only change still preserves an existing hand-authored allow-list; an
-  empty Custom selection is blocked rather than silently widening to "all". The
-  view no longer auto-refits while editing in Access Lens, so toggling tools
-  never yanks the canvas out from under you.
-
-- **Access Scope in the client inspector.** Selecting a client in the topology
-  now shows an "Access Scope" inspector section summarizing its real reach
-  ("N of M servers" when scoped, or "Unscoped · all servers" otherwise) with the
-  reachable servers listed, plus an "Edit Scope" button that opens the per-client
-  access editor focused on that client. The Tools workspace "Access" button is
-  now styled as a primary action for discoverability. Both open the same editor.
-
-- **Per-client access in the topology and Tools workspace.** The topology view
-  now reflects each client's real access: clicking a client highlights only the
-  servers and tools its configured scope can reach, fading everything else
-  (a client scoped to nothing shows it reaching the gateway and stopping there).
-  A new "Access" button in the Tools workspace opens a per-client editor that
-  sets which servers each linked client may reach and writes the result to the
-  `clients:` block in stack.yaml via an atomic, conflict-detected write
-  (`PUT /api/clients/{slug}/scope`), triggering a hot reload. Saving the first
-  profile warns that it creates the `clients:` block and flips unlisted clients
-  to deny-by-default. The `/api/clients` response carries each client's
-  effective scope. (Tool-level allow-lists remain enforced and editable directly
-  in stack.yaml.)
-
-- **Per-client access scoping (`clients:` block).** A new optional top-level
-  `clients:` block in `stack.yaml` lets an operator restrict which servers and
-  tools each connecting client can reach, following Kubernetes NetworkPolicy
-  semantics: omitting the block preserves today's behavior (every client sees
-  every tool), while adding it opts into least-privilege: a client matching a
-  profile is limited to that profile's `servers:`/`tools:` allow-list, and a
-  client matching no profile is governed by `default:` (`deny` unless set to
-  `allow`). The filter is applied at a single chokepoint that every exposure
-  path funnels through (`tools/list`, `tools/call` rejection, and the code-mode
-  search/execute tool universe), so a scoped client cannot reach a denied tool
-  via code mode. Enforcement keys on a stable client identifier reconciled
-  across the wire, configuration, and the UI: `gridctl link --client-id <id>`
-  embeds the identifier as the `client` query parameter on the gateway URL (the
-  `X-Gridctl-Client-Id` header also works), profiles may declare `aliases:` for
-  divergent wire names, and the normalized `clientInfo.name` is the fallback.
-  Unknown server or tool references in a profile fail config validation. A
-  `clients:` change applies on hot-reload to all subsequent `tools/list` and
-  `tools/call` requests, including existing sessions. The `/api/clients`
-  response now carries each client's backend-computed effective scope. Scope
-  coverage for v1 is tools only: skills (served as MCP prompts) and resources
-  remain globally visible.
-
-- **Tool fan-out in the Topology view.** Each MCP server node now has an
-  expand chevron; clicking it fans that server's tools out as nodes in a local
-  column to the server's right, and clicking again collapses them. Fan-out is
-  an explicit per-server action independent of the client path highlight, and
-  multiple servers can be expanded at once. The fan-out is capped at 10 tool
-  nodes; a server with more collapses the remainder into a single "+N more"
-  node whose in-node popover lists the hidden tools, so an 80-tool server never
-  starbursts the canvas. Tool nodes are sourced from the existing server tool
-  data (no new backend endpoint), slide in when mounted, and are laid out
-  locally so expanding never reflows the three-column backbone. Tool pills use
-  the neutral linked-client theme (not the violet server theme), so tools read
-  as a distinct tier from the servers they belong to, and long tool names
-  truncate with the full name in a tooltip. Server -> tool edges are
-  non-highlightable, so they stay out of the client-reach highlight. Expansion
-  state lives in the stack store and survives polling refreshes. When multiple
-  servers are expanded, their tools share one column and each server's tools
-  form a vertical band stacked in server order, so the per-server edge bundles
-  do not cross. A focused client's reachable servers carry their highlight onto
-  their fanned-out tools, so expanding a reachable server while a client is
-  selected shows its tools at full opacity (tools of out-of-scope servers stay
-  dimmed). Selecting a client zooms the view to fit its reachable subgraph,
-  re-fitting as servers are expanded; clicking empty canvas zooms back out to
-  the whole graph.
-
-- **Multi-hop client path highlight in the Topology view.** Clicking a client
-  node now lights up its full transitive reach (client → gateway → the servers
-  it can reach) and fades everything outside that path (resources, skill
-  groups, and sibling clients) rather than only the client → gateway hop. The
-  highlight walks outgoing highlightable edges, so it follows whatever the
-  gateway exposes today and will narrow automatically once per-client scoping
-  lands. Faded nodes and edges stay visible (dimmed, not hidden); clicking
-  empty canvas resets focus. Highlighting is opacity/emphasis only - the
-  backbone layout does not reflow, and edges keep their neutral color.
-
-- **Per-client brand icons in the Topology view.** Each client node now renders
-  its product brand mark (Claude, Cursor, Windsurf, Gemini, OpenCode, Grok,
-  Cline, Roo Code, Goose) instead of a generic monitor glyph, selected by the
-  client's `slug` via the tree-shaken `@lobehub/icons` package. Claude Desktop
-  and Claude Code share the Claude mark. Clients without a brand icon
-  (`vscode`, `continue`, `anythingllm`, `zed`) fall back to the monitor glyph,
-  so a node is never blank. Client node styling (border, icon container, top
-  accent, source handle, and selected state) moved from amber to a single
-  neutral monochrome tone so the white icons read cleanly. The client detail
-  inspector mirrors this: its header shows the brand icon on a neutral accent
-  instead of the amber monitor.
-
-- **Bulk skill sync.** `POST /api/skills/sources/update` syncs every imported
-  skill source in parallel (cap 3), returning a `SourceSyncSummary` with
-  per-source results plus aggregate counters (`syncedSources`,
-  `updatedSkills`, `failedSources`, `pinnedSources`). Pinned sources (refs
-  shaped like `v1.0.0` or full commit SHAs) are silently skipped to avoid
-  bulk operations bumping intentionally-fixed versions. `GET /api/skills/sources`
-  now populates the `updateAvailable` flag by reading the background-checker
-  cache, so the existing per-source "Update" pill in the Library surfaces
-  reliably.
-- **`gridctl skill sync` CLI alias** for `gridctl skill update`, matching
-  the verb used in the web UI. `gridctl skill update` (no name) now prints
-  a final summary line (`Synced N source(s), M skill(s) updated, K failed,
-  L pinned`) and refuses by default when any imported skill's on-disk
-  `SKILL.md` has been locally edited; pass `--force` to overwrite.
-- **"Sync sources" button on the Library workspace.** Pulls every imported
-  skill source in one click. Hidden when no sources are imported. When the
-  background checker has flagged updates, the button morphs to a labeled
-  amber pill `Sync sources (N updates)`; otherwise it sits as a quiet
-  icon-only affordance. Success and mixed-result toasts; a Details overlay
-  lists per-source failures with the backend's error message. The Library
-  header's existing "Refresh" icon swapped to `RotateCw` so the two
-  affordances no longer share the same circular-arrow glyph. Per-source
-  pill in the source group header reworded from "Update" to "Sync" for
-  verb consistency.
-
-- **Grok Build client support.** `gridctl link grok` / `gridctl unlink grok`
-  now manage the gateway entry in xAI Grok Build's `~/.grok/config.toml`,
-  writing an `[mcp_servers.<name>]` table over native streamable HTTP. It is
-  auto-detected by the interactive `link` and `--all` flows and appears in the
-  web UI client list. This is gridctl's first TOML-based client provisioner.
-
-### Fixed
-
-- **Web UI console noise, blank unknown routes, and the default tab title.**
-  Three small dashboard fixes. `GET /api/pins` now returns `200` with an empty
-  object when schema pinning is not configured, instead of a `503` that the
-  polling UI logged as a console error every refresh cycle. Unmatched URLs (a
-  typo, a stale bookmark, or a removed route) now redirect to the landing
-  workspace rather than rendering a blank page. The browser tab title reads
-  "Gridctl" (and appends the active workspace, for example "Gridctl - Topology")
-  instead of the build-tool default "web".
-
-- **Pricing model picker truncated long model IDs.** The dropdown was pinned to
-  the narrow editor cell's width, so IDs like
-  `anthropic.claude-3-opus-20240229` were cut off with no readable fallback.
-  The popover now grows to fit the widest option (capped so it stays on screen),
-  the footer previews the highlighted row's full ID verbatim during keyboard
-  navigation, and the popover can anchor to its right edge so it grows inward
-  instead of overflowing a narrow container. The pricing manager slide-over is
-  wider with larger labels, so model names are readable without the horizontal
-  scrollbar the cramped panel produced.
-
-- **Detached metrics window missing the client Model column.** The popout
-  `/metrics` window now has full parity with the Metrics tab: the Top Clients
-  Model column with inline editing, the per-server Model column, and the
-  pricing manager. The stale cost hint ("Set `model:` in stack.yaml") in both
-  surfaces is replaced with copy that points at the in-UI edit path.
-
-- **Cost observability now produces data.** The cost pipeline (pricing engine,
-  accumulator, REST API, UI cost card, optimize heuristics, `gen_ai.cost.usd`
-  spans) was fully built but its trigger was never wired: no production code
-  installed a model resolver on the metrics observer, so every deployment
-  recorded zero cost forever while tokens recorded normally. Stack YAML gains
-  an optional per-server `model:` field plus a `gateway.default_model`
-  fallback; when set, the gateway prices each observed call against the
-  embedded LiteLLM rates and cost flows through every existing surface
-  (`/api/status`, `/api/metrics/cost`, the Metrics tab, per-client
-  attribution, metrics persistence, traces, and the
-  `expensive_model_on_cheap_task` heuristic, which can now name the model).
-  Both fields hot-reload without restarting servers — pricing metadata never
-  warrants a container restart. Stacks without a model behave exactly as
-  before (tokens recorded, zero cost), and the dashboard cost card now shows
-  a "set `model:` to enable estimates" hint instead of a bare $0.00 when
-  attribution is not configured.
-
-- **The web UI no longer silently overwrites locally-edited skills on sync.**
-  Both sync paths (`POST /api/skills/sources/{name}/update` and the bulk `POST
-  /api/skills/sources/update`) called the importer with no drift check, so
-  clicking "Sync" discarded any local edits to an imported `SKILL.md` — the data
-  loss the CLI already guards against. Drifted skills are now skipped by default
-  (reported as `skipped: "local edits"`) while their version tracking is advanced
-  to the latest upstream commit, so the reviewed version stops showing as an
-  available update without touching the on-disk file or its installed-hash
-  baseline (drift stays visible). Passing `force: true` overwrites as before, but
-  first writes a `SKILL.md.pre-<sha>` backup next to the file. A `--force` skill
-  update (CLI or `reset`) now also re-installs from upstream even when the commit
-  is unchanged, so it can be used to discard local edits and restore the tracked
-  version.
-
-- **`govulncheck` CI gate passes again.** Bumped the Go toolchain to `go1.26.4`,
-  which carries the fixes for `GO-2026-5037` (crypto/x509) and `GO-2026-5039`
-  (net/textproto). The Gatekeeper workflow reads its Go version from `go.mod`, so
-  no workflow change was needed.
-
-- **Per-client access scoping now takes effect on hot reload.** Changes that
-  touched only the `clients:` block (saving a scope through the Topology Access
-  Lens / `PUT /api/clients/{slug}/scope`, or a watched edit) were classified as
-  "no changes" by the reload diff, so the reload short-circuited before rebuilding
-  the gateway's in-memory access policy. The file was written and the API reported
-  a successful reload, but the running gateway kept its stale (usually unscoped)
-  policy, so the saved restriction was silently not enforced until a restart. The
-  reload diff now detects `clients:` changes (`ConfigDiff.ClientsChanged`), so the
-  policy is rebuilt in place with no container or network churn. Cold start was
-  unaffected.
-
-- **Sync no longer reports ghost-skill failures for deleted skills.** Deleting a
-  skill from the Library UI (`DELETE /api/registry/skills/{name}`) now also
-  scrubs it from `skills.lock.yaml`, matching the CLI path (`gridctl skill rm`).
-  Previously the UI delete left an orphaned lock entry, so the next bulk sync
-  tried to update the now-deleted skill and surfaced a spurious
-  `has no origin (not an imported skill)` failure for each one. Bulk sync is
-  also self-healing: a lock entry whose skill is no longer in the registry is
-  skipped and pruned from the lock file instead of failing the source, which
-  clears lock files that already accumulated orphaned entries. Skills still
-  present in the registry whose update genuinely fails are unaffected; they are
-  still reported and retained.
-
-- **Skill state preserved across sync.** `Importer.Update` no longer
-  silently re-activates skills that the user disabled. The fix threads a
-  new `PreserveState` flag through `ImportOptions` so re-imports inherit
-  the existing skill's `state`. The legacy `skill add` path is unchanged.
-
-### Removed
-
-- **Agent runtime surface removed.** gridctl 0.1.x retires the typed-skill
-  execution layer (TS goja sandbox, Go plugins, run ledger, approval gates,
-  agent IDE) and refocuses on its MCP-gateway-with-skill-library niche.
-  Specifically removed:
-  - **CLI subcommands**: `gridctl agent {init,dev,build,validate}`,
-    `gridctl run`, `gridctl runs {list,inspect,trace,resume,approve}`.
-  - **REST endpoints**: `/api/agent/*` (dev server, runs, watcher SSE) and
-    `/api/playground/*`.
-  - **UI workspaces**: Stage (`/skills`), Runs (`/runs`, `/runs/:id`), and
-    the Playground tab. `/skills`, `/runs`, `/runs/:id`, and `/agent` now
-    redirect to `/library`.
-  - **Typed-skill flavors**: TS handlers (`skill.ts` + `agent.json`) and Go
-    plugins (`skill.go` + `dist/skill.so`). Skills are now served
-    exclusively as MCP prompts; the file-presence discriminator is gone
-    because there is only one flavor.
-- **Go packages removed**: `pkg/agent/` in its entirety (orchestrator,
-  runtime, sandbox, persist, dev, skill SDK, internal/eino, llm provider
-  abstraction). `pkg/optimize/` heuristics that read the run ledger are
-  also gone; `pkg/optimize/` itself stays.
-- **`X-Agent-Name` CORS header dropped** from the gateway's
-  `Access-Control-Allow-Headers` allowlist and from `docs/api-reference.md`.
-  The header was advertised but never read by any production handler after
-  the agent surface removal.
-- **Dead frontend `restartAgent` / `stopAgent` helpers** removed from
-  `web/src/lib/api.ts`. The functions targeted server routes that no
-  longer exist (`/api/agents/{name}/{restart,stop}`) and had no callers.
-
-### Changed
-
-- **Decluttered the header status cluster.** The top bar no longer mirrors the
-  connection state, the gateway name, or the active-server count, all of which
-  were drawn a second time in the always-visible bottom StatusBar. Only the
-  Persistence quick-toggle remains, relocated next to the header action icons.
-  Connection status and server health continue to live in the StatusBar; no
-  information is lost. The gateway version still shows beside the logo.
-- **Gateway "Code Mode" now reads as read-only status, not an action.** The Code
-  Mode indicator on the gateway node and in the StatusBar carried primary-action
-  styling but no behavior; code mode is configured in `stack.yaml` and cannot be
-  toggled at runtime. It is now grouped with "Gateway Active" as a non-interactive
-  `role="status"` pill (no hover, cursor, or focus affordance), removing the false
-  affordance.
-- **UI reduced from 4 workspaces to 2.** Topology (`⌘1`) and Library (`⌘2`)
-  are the only top-nav workspaces; the Stage and Runs pills, the
-  bottom-panel Runs tab, and the StatusBar's Live/Paused chip are gone.
-- **`navigate:workspace-library` command palette entry rebound** from `⌘3`
-  to `⌘2` to match the new shortcut layout.
-- **Documentation rewritten** to match: `docs/skills.md` drops every
-  TS/Go/sandbox/agent-IDE section and reframes around prompt-only skills +
-  the Library workspace + the MCP-prompt serving model. `docs/cli-reference.md`
-  loses the Skills-authoring and Runs tables. `README.md`'s one-liner shifts
-  from "MCP servers and Agent Skills" to "MCP gateway with built-in skill
-  library"; the "Skills (Early Access)" and "Visual Agent IDE" feature
-  blocks are replaced with a single Skill Library section. `AGENTS.md` is
-  removed (pre-1.0 working notes; no replacement).
-- **`pkg/mcp` internal naming clarified.** Local variables, named-return
-  parameters, doc comments, and error messages in `pkg/mcp/router.go` and
-  `pkg/mcp/gateway.go` now use `serverName` and "server" terminology
-  consistently. `PrefixTool` / `ParsePrefixedTool` keep their public
-  signatures; only their named-return parameters changed (godoc only;
-  no Go ABI change). Public interface and method names (`AgentClient`,
-  `AddClient`, `RemoveClient`) are unchanged.
-- **CLI command registration consolidated** in `cmd/gridctl/root.go`.
-  `reload`, `telemetry`, `traces`, `upgrade`, `export`, and `version`
-  previously self-registered via their own `init()` functions; they now
-  appear in the canonical `rootCmd.AddCommand(...)` list in `root.go`
-  alongside the other 16 commands.
-- **New browser favicon.** The dashboard tab icon is now the gridctl chevron
-  mark (`web/public/favicon.png`, 32×32) instead of the default Vite logo;
-  `web/public/vite.svg` is removed and `web/index.html` points `rel="icon"`
-  at the PNG.
-
-### Migration
-
-- Bookmarks for `/skills`, `/runs`, `/runs/:id`, and `/agent` now redirect
-  to `/library` silently: no error toast, no 404.
-- Callers of the typed-skill CLI (`gridctl agent dev`, `gridctl run`,
-  `gridctl runs *`) and the `/api/agent/*` / `/api/playground/*` REST
-  surfaces need to migrate to an external agent runtime (LangGraph,
-  CrewAI, AutoGen, OpenAI Agents SDK) and use gridctl underneath as the
-  MCP gateway. Skills authored as prompt-only `SKILL.md` files surface to
-  upstream MCP clients unchanged.
-
-### Breaking
-
-- **API route `GET /api/agents/{name}/logs` renamed to
-  `GET /api/mcp-servers/{name}/logs`** to match the existing
-  `/api/mcp-servers/{name}/restart` and `/api/mcp-servers/{name}/tools`
-  convention. No backwards-compatibility redirect (pre-1.0, no documented
-  external consumer). The frontend `fetchAgentLogs` helper was renamed to
-  `fetchServerLogs`; every caller in `web/src/` was updated.
-- **`gridctl vault` renamed to `gridctl var`.** The unified variable store
-  now holds both secrets and non-sensitive configuration. `gridctl vault
-  <sub>` continues to work through the beta cycle and emits a one-time
-  deprecation warning per process; the alias is removed at v1.0.
-- **API routes `/api/vault/*` renamed to `/api/var/*`.** The legacy paths
-  continue to serve identical responses through the beta cycle and now
-  carry `Deprecation: true`, `Sunset`, and `Link` headers pointing at the
-  canonical surface.
-- **Vault on-disk format bumped to v2** (`{"version": 2, "variables": [...],
-  "sets": [...]}`). Loading is backward-compatible: v0 (legacy flat array)
-  and v1 (`{"secrets": [...]}`) files migrate in-memory with every entry
-  defaulting to `is_secret=true`, `type=string` (Article XII). Every save
-  writes v2.
-- **Web UI route `/vault` redirects to `/var`** silently. The detached
-  window name string changed from `gridctl-vault` to `gridctl-var`.
-- **`web/src/lib/api.ts` `VaultSecret` interface renamed to `Variable`**;
-  every `*VaultSecret*` / `*VaultSet*` function renamed to its
-  `*Variable*` / `*VariableSet*` counterpart. No JS-level aliases; the
-  hard rename forces every callsite to update.
-
-### Added
-
-- **`gridctl var` command tree** mirroring the previous `vault` surface
-  (`set`, `get`, `list`, `delete`, `import`, `export`, `lock`, `unlock`,
-  `change-passphrase`, `sets {list,create,delete}`).
-- **`--secret` / `--plaintext` flags on `gridctl var set`** with secure
-  defaults (Article XII). Passing both is a clean error.
-- **`--type` flag on `gridctl var set`** with validation for `string`
-  (default), `json`, `list`, `number`, `bool`. PR 1 records the type as
-  metadata; PR 2 will wire type-aware expansion.
-- **`.env` metadata markers** for `gridctl var import` / `export`:
-  `# @type=...` and `# @public` lines preceding a `KEY=VALUE` entry tag
-  the variable's type and visibility on import; export emits them.
-- **JSON import/export** in the canonical `{"variables": [...]}` shape
-  round-trips type and visibility. Legacy `{KEY: value}` JSON files still
-  import losslessly into secrets.
-- **`${var:KEY}` stack YAML syntax** is the canonical reference form.
-  `${vault:KEY}` still resolves and emits a one-time-per-process
-  deprecation warning.
-- **Web UI affordances**: Type badge and Visibility (lock/eye) icon on
-  every variable row; Type selector and Secret/Plaintext toggle in the
-  add and wizard popover forms; JSON validation hint before submission.
-- **Variables popover (renamed from Secrets popover)** in the stack
-  wizard surfaces both secret and plaintext entries with distinct icons
-  and emits `${var:KEY}` on insert.
-- **`examples/portable-stack/`** demonstrates the headline use case
-  (region/cluster as plaintext vars, DB password as secret) with a
-  `stack.yaml` that's safe to commit to git.
-
-### Changed
-
-- **Log redaction now only applies to values stored with `--secret`**
-  (the default). Plaintext variables (REGION, CLUSTER_ID, account IDs)
-  appear unredacted in logs, ending the masking fatigue that came from
-  treating every vault value as sensitive. Wired through
-  `Store.Values()` → `RegisterRedactValues` at every existing callsite
-  (controller startup, daemon reload).
-- **Web UI**: plaintext variables display their value unmasked by default.
-  Only secret rows show bullets and require Reveal; the 10-second
-  auto-hide timer applies to secrets only.
-- **Stack expansion error wording** now says
-  `missing variable(s): X. To fix: gridctl var set X` (was
-  `missing vault secret(s): X. To fix: gridctl vault set X`).
-
-### Documentation
-
-- **Synced docs with the codebase.** `docs/api-reference.md` now documents the
-  previously undocumented REST routes (stack management, skill sources, stack
-  wizard, traces, telemetry inventory, per-client and per-server model
-  attribution, pricing models, and more) and corrects the registry file routes
-  to the variadic `{path...}` form. `docs/cli-reference.md` picks up missing
-  flags (`link`/`unlink` `--name`, `skill add` `--no-activate`/`--trust`,
-  `skill update` `sync` alias, `skill try` auth and `--duration` flags,
-  `activate`/`status`/`traces`/`pins` `--stack`) and corrects `export --format`,
-  `apply -v`, `apply -w`, `link --force`, and `skill add` `--ref`/`--path`/`--force`/`--rename`.
-  `docs/config-schema.md` lists the OpenAPI `tls` field in its
-  table. The examples READMEs drop the removed executable-workflow surface and
-  the `examples/README.md` category and feature tables now match the directories
-  on disk (`autoscale`, `portable-stack`, `tracing`; `var-*` instead of
-  `vault-*`). Version references in `docs/installation.md` and
-  `docs/project-status.md` bumped to `v0.1.0-beta.10`.
-
-### Fixed
-
-- **`gateway.tracing.max_traces` is now honored from `stack.yaml`.** The field
-  was documented but silently ignored: the stack schema had no `MaxTraces` field,
-  so the value was dropped during YAML decode and the in-memory trace ring buffer
-  always used the default of 1000. The field is now wired through to the tracing
-  provider; an unset or non-positive value continues to use the 1000 default.
-
-- **`gateway.tracing.enabled` is now a tri-state.** The field was a plain `bool`,
-  so a `tracing:` block that set other fields but omitted `enabled:` silently
-  disabled tracing (the omitted key resolved to `false`, overriding the documented
-  default of `true`). It is now a `*bool`: an omitted `enabled:` inherits the
-  default-on behavior, and `enabled: false` still disables explicitly.
+- Extract shared vault hooks and atoms ([#689](https://github.com/gridctl/gridctl/pull/689))
+- Scope Vault sidebar to quick-lookup ([#690](https://github.com/gridctl/gridctl/pull/690))
+- Extract useToolsEditor hook for reuse ([#713](https://github.com/gridctl/gridctl/pull/713))
+- Declutter header status cluster and fix Code Mode affordance ([#803](https://github.com/gridctl/gridctl/pull/803))
 
 ## [0.1.0-beta.10] - 2026-05-18
 
