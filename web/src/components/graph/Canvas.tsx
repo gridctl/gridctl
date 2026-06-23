@@ -5,9 +5,8 @@ import {
   BackgroundVariant,
   useReactFlow,
   useViewport,
-  type Connection,
 } from '@xyflow/react';
-import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Database, GitCompareArrows, Eye, Cable, KeyRound } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Database, Eye } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
@@ -18,10 +17,7 @@ import { COLORS } from '../../lib/constants';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
 import { CanvasBase } from '../canvas/CanvasBase';
-import { DriftOverlay } from '../spec/DriftOverlay';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
-import { SecretHeatmapOverlay } from '../spec/SecretHeatmapOverlay';
-import { WiringModeOverlay } from './WiringModeOverlay';
 
 export function Canvas() {
   const nodes = useStackStore((s) => s.nodes);
@@ -40,14 +36,8 @@ export function Canvas() {
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
   const showHeatMap = useUIStore((s) => s.showHeatMap);
   const toggleHeatMap = useUIStore((s) => s.toggleHeatMap);
-  const showDriftOverlay = useUIStore((s) => s.showDriftOverlay);
-  const toggleDriftOverlay = useUIStore((s) => s.toggleDriftOverlay);
   const showSpecMode = useUIStore((s) => s.showSpecMode);
   const toggleSpecMode = useUIStore((s) => s.toggleSpecMode);
-  const showWiringMode = useUIStore((s) => s.showWiringMode);
-  const toggleWiringMode = useUIStore((s) => s.toggleWiringMode);
-  const showSecretHeatmap = useUIStore((s) => s.showSecretHeatmap);
-  const toggleSecretHeatmap = useUIStore((s) => s.toggleSecretHeatmap);
 
   // Access Lens: a draft per-client scope edited on the canvas. When active for
   // the selected client, the highlight previews the draft instead of the saved
@@ -206,8 +196,9 @@ export function Canvas() {
     fitView({ padding: 0.2, duration: 400 });
   }, [selectNode, setSidebarOpen, fitView]);
 
-  // No-op connect handler (wiring mode no longer supports agent connections)
-  const onConnect = useCallback((_connection: Connection) => {}, []);
+  // No-op connect handler. The canvas does not support drawing connections;
+  // per-client access is edited through Access Lens, not by dragging edges.
+  const onConnect = useCallback(() => {}, []);
 
   const isEmpty = !nodes || nodes.length === 0;
   const hasActiveStack = connectionStatus === 'connected' && gatewayInfo !== null;
@@ -367,16 +358,6 @@ export function Canvas() {
             <Flame className="w-4 h-4" />
           </button>
           <button
-            onClick={toggleDriftOverlay}
-            className={cn(
-              'control-button',
-              showDriftOverlay && 'ring-1 ring-primary/30'
-            )}
-            title={showDriftOverlay ? 'Hide drift overlay' : 'Show drift overlay'}
-          >
-            <GitCompareArrows className="w-4 h-4" />
-          </button>
-          <button
             onClick={toggleSpecMode}
             className={cn(
               'control-button',
@@ -386,50 +367,12 @@ export function Canvas() {
           >
             <Eye className="w-4 h-4" />
           </button>
-          <button
-            onClick={toggleWiringMode}
-            className={cn(
-              'control-button',
-              showWiringMode && 'ring-1 ring-tertiary/30'
-            )}
-            title={showWiringMode ? 'Exit wiring mode' : 'Enter wiring mode'}
-          >
-            <Cable className="w-4 h-4" />
-          </button>
-          <button
-            onClick={toggleSecretHeatmap}
-            className={cn(
-              'control-button',
-              showSecretHeatmap && 'ring-1 ring-tertiary/30'
-            )}
-            title={showSecretHeatmap ? 'Hide secret heatmap' : 'Show secret heatmap'}
-          >
-            <KeyRound className="w-4 h-4" />
-          </button>
         </Panel>
       </CanvasBase>
-      {showDriftOverlay && (
-        <div className="absolute inset-0 pointer-events-none bg-primary/[0.02] z-10" />
-      )}
-      {showDriftOverlay && (
-        <DriftOverlay className="absolute inset-0 z-20" />
-      )}
       {showSpecMode && (
         <>
           <div className="absolute inset-0 pointer-events-none bg-secondary/[0.02] z-10" />
           <SpecModeOverlay className="absolute inset-0 z-20" />
-        </>
-      )}
-      {showWiringMode && (
-        <>
-          <div className="absolute inset-0 pointer-events-none bg-tertiary/[0.02] z-10" />
-          <WiringModeOverlay className="absolute inset-0 z-20" />
-        </>
-      )}
-      {showSecretHeatmap && (
-        <>
-          <div className="absolute inset-0 pointer-events-none bg-tertiary/[0.02] z-10" />
-          <SecretHeatmapOverlay className="absolute inset-0 z-20" />
         </>
       )}
     </div>
