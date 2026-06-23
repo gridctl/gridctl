@@ -6,7 +6,7 @@ import {
   useReactFlow,
   useViewport,
 } from '@xyflow/react';
-import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Flame, Layers, Server, Database, Eye } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Layers, Server, Database } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
@@ -18,6 +18,7 @@ import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
 import { CanvasBase } from '../canvas/CanvasBase';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
+import { OverlaysMenu } from './OverlaysMenu';
 
 export function Canvas() {
   const nodes = useStackStore((s) => s.nodes);
@@ -34,10 +35,8 @@ export function Canvas() {
   const toggleEdgeStyle = useUIStore((s) => s.toggleEdgeStyle);
   const compactCards = useUIStore((s) => s.compactCards);
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
-  const showHeatMap = useUIStore((s) => s.showHeatMap);
-  const toggleHeatMap = useUIStore((s) => s.toggleHeatMap);
+  // Read only for the overlay mount below; the toggles live in OverlaysMenu.
   const showSpecMode = useUIStore((s) => s.showSpecMode);
-  const toggleSpecMode = useUIStore((s) => s.toggleSpecMode);
 
   // Access Lens: a draft per-client scope edited on the canvas. When active for
   // the selected client, the highlight previews the draft instead of the saved
@@ -347,26 +346,7 @@ export function Canvas() {
               <Rows3 className="w-4 h-4" />
             )}
           </button>
-          <button
-            onClick={toggleHeatMap}
-            className={cn(
-              'control-button',
-              showHeatMap && 'ring-1 ring-primary/30'
-            )}
-            title={showHeatMap ? 'Hide token heat map' : 'Show token heat map'}
-          >
-            <Flame className="w-4 h-4" />
-          </button>
-          <button
-            onClick={toggleSpecMode}
-            className={cn(
-              'control-button',
-              showSpecMode && 'ring-1 ring-secondary/30'
-            )}
-            title={showSpecMode ? 'Exit spec mode' : 'Enter spec mode'}
-          >
-            <Eye className="w-4 h-4" />
-          </button>
+          <OverlaysMenu />
         </Panel>
       </CanvasBase>
       {showSpecMode && (
