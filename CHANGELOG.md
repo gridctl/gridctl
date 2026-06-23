@@ -2,6 +2,16 @@
 
 All notable changes to gridctl will be documented in this file.
 
+## [Unreleased]
+
+### Removed
+
+- Remove the dead Wiring Mode canvas overlay, the Secret Heatmap overlay (and its `/api/stack/secrets-map` endpoint), and the Drift overlay from the topology toolbar
+
+### Changed
+
+- Fold spec-vs-running drift into Spec Mode: it now reports changed items alongside undeployed and untracked ones, so the single Spec lens covers drift
+
 ## [0.1.0-beta.11] - 2026-06-23
 
 
