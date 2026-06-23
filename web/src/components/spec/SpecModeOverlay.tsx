@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Pencil } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useSpecStore } from '../../stores/useSpecStore';
 
@@ -9,20 +9,22 @@ interface SpecModeOverlayProps {
 
 /**
  * Canvas overlay for spec mode — shows ghost nodes for items declared
- * in the spec but not deployed, and warning badges for running items
- * not in the spec.
+ * in the spec but not deployed, warning badges for running items not in
+ * the spec, and changed badges for items that diverge from the running stack.
  */
 export function SpecModeOverlay({ className }: SpecModeOverlayProps) {
   const health = useSpecStore((s) => s.health);
   const drift = health?.drift;
 
-  const { ghostItems, warningItems } = useMemo(() => {
+  const { ghostItems, warningItems, changedItems } = useMemo(() => {
     const added = drift?.added ?? [];
     const removed = drift?.removed ?? [];
+    const changed = drift?.changed ?? [];
 
     return {
       ghostItems: added,
       warningItems: removed,
+      changedItems: changed,
     };
   }, [drift]);
 
@@ -49,7 +51,11 @@ export function SpecModeOverlay({ className }: SpecModeOverlayProps) {
             Spec Mode
             {ghostItems.length > 0 && ` — ${ghostItems.length} not deployed`}
             {warningItems.length > 0 && ` — ${warningItems.length} not in spec`}
+            {changedItems.length > 0 && ` — ${changedItems.length} changed`}
           </span>
+          {drift.status === 'unknown' && (
+            <span className="text-[9px] text-text-muted">(drift unknown)</span>
+          )}
         </div>
       </div>
 
@@ -81,6 +87,23 @@ export function SpecModeOverlay({ className }: SpecModeOverlayProps) {
               <EyeOff size={10} className="text-status-pending" />
               <span className="text-[10px] text-text-muted font-mono">{name}</span>
               <span className="text-[8px] text-status-pending uppercase tracking-wider">Untracked</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Changed badges — declared and running but diverging from the spec */}
+      {changedItems.length > 0 && (
+        <div className="pointer-events-auto absolute bottom-14 left-1/2 -translate-x-1/2 z-20 space-y-1">
+          {changedItems.map((name) => (
+            <div
+              key={name}
+              className="glass-panel rounded-lg px-2.5 py-1.5 flex items-center gap-2 border border-secondary/30"
+              title={`"${name}" differs from the spec`}
+            >
+              <Pencil size={10} className="text-secondary" />
+              <span className="text-[10px] text-text-muted font-mono">{name}</span>
+              <span className="text-[8px] text-secondary uppercase tracking-wider">Changed</span>
             </div>
           ))}
         </div>
