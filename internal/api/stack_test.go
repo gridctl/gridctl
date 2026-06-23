@@ -142,18 +142,6 @@ func TestHandleStackExport_NoStackFile(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
-func TestHandleStackSecretsMap_NoStackFile(t *testing.T) {
-	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/secrets-map", nil)
-	w := httptest.NewRecorder()
-
-	s.handleStackSecretsMap(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), `"secrets"`)
-	assert.Contains(t, w.Body.String(), `"nodes"`)
-}
-
 func TestHandleStackRecipes(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/api/stack/recipes", nil)
@@ -190,14 +178,6 @@ func TestSanitizeStackSecrets(t *testing.T) {
 	}
 }
 
-func TestAppendUnique(t *testing.T) {
-	result := appendUnique([]string{"a", "b"}, "c")
-	assert.Equal(t, []string{"a", "b", "c"}, result)
-
-	result = appendUnique([]string{"a", "b"}, "a")
-	assert.Equal(t, []string{"a", "b"}, result)
-}
-
 func TestHandleStackSpec_WithStackFile(t *testing.T) {
 	sf := writeTestStack(t)
 	s := &Server{stackFile: sf}
@@ -225,22 +205,6 @@ func TestHandleStackExport_WithStackFile(t *testing.T) {
 	// Secrets should be sanitized — DB_PASSWORD should be vault ref
 	assert.Contains(t, body, "${vault:")
 	assert.NotContains(t, body, "secret123")
-}
-
-func TestHandleStackSecretsMap_WithStackFile(t *testing.T) {
-	sf := writeTestStack(t)
-	s := &Server{stackFile: sf}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/secrets-map", nil)
-	w := httptest.NewRecorder()
-
-	s.handleStackSecretsMap(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "secrets")
-	assert.Contains(t, body, "nodes")
-	// vault refs should appear as secret keys
-	assert.Contains(t, body, "MY_KEY")
 }
 
 func TestHandleStackHealth_WithStackFile(t *testing.T) {
@@ -408,7 +372,6 @@ func TestHandleStack_Routing(t *testing.T) {
 		{"health GET", http.MethodGet, "/api/stack/health", http.StatusOK},
 		{"spec GET no stack", http.MethodGet, "/api/stack/spec", http.StatusServiceUnavailable},
 		{"export GET no stack", http.MethodGet, "/api/stack/export", http.StatusServiceUnavailable},
-		{"secrets-map GET", http.MethodGet, "/api/stack/secrets-map", http.StatusOK},
 		{"recipes GET", http.MethodGet, "/api/stack/recipes", http.StatusOK},
 		{"unknown path", http.MethodGet, "/api/stack/unknown", http.StatusNotFound},
 		{"validate wrong method", http.MethodGet, "/api/stack/validate", http.StatusMethodNotAllowed},
