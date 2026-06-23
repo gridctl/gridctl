@@ -437,59 +437,6 @@ func sanitizeStackSecrets(stack *config.Stack) {
 	}
 }
 
-// handleStackSecretsMap returns which nodes reference which vault secrets.
-// GET /api/stack/secrets-map
-func (s *Server) handleStackSecretsMap(w http.ResponseWriter, r *http.Request) {
-	if s.stackFile == "" {
-		writeJSON(w, map[string]any{"secrets": map[string]any{}, "nodes": map[string]any{}})
-		return
-	}
-
-	stack, _, err := config.ValidateStackFile(s.stackFile)
-	if err != nil {
-		writeJSONError(w, "Failed to load stack: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Build maps: secret -> nodes, node -> secrets
-	secretToNodes := make(map[string][]string)
-	nodeToSecrets := make(map[string][]string)
-
-	extractVaultRefs := func(env map[string]string, nodeName string) {
-		if env == nil {
-			return
-		}
-		for _, val := range env {
-			if strings.HasPrefix(val, "${vault:") && strings.HasSuffix(val, "}") && len(val) > 9 {
-				secretKey := val[8 : len(val)-1]
-				secretToNodes[secretKey] = appendUnique(secretToNodes[secretKey], nodeName)
-				nodeToSecrets[nodeName] = appendUnique(nodeToSecrets[nodeName], secretKey)
-			}
-		}
-	}
-
-	for _, srv := range stack.MCPServers {
-		extractVaultRefs(srv.Env, srv.Name)
-	}
-	for _, res := range stack.Resources {
-		extractVaultRefs(res.Env, res.Name)
-	}
-
-	writeJSON(w, map[string]any{
-		"secrets": secretToNodes,
-		"nodes":   nodeToSecrets,
-	})
-}
-
-func appendUnique(slice []string, item string) []string {
-	for _, s := range slice {
-		if s == item {
-			return slice
-		}
-	}
-	return append(slice, item)
-}
-
 // handleStackRecipes returns available stack recipes/templates.
 // GET /api/stack/recipes
 func (s *Server) handleStackRecipes(w http.ResponseWriter, r *http.Request) {
