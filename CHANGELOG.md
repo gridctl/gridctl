@@ -506,6 +506,10 @@ All notable changes to gridctl will be documented in this file.
   previously self-registered via their own `init()` functions; they now
   appear in the canonical `rootCmd.AddCommand(...)` list in `root.go`
   alongside the other 16 commands.
+- **New browser favicon.** The dashboard tab icon is now the gridctl chevron
+  mark (`web/public/favicon.png`, 32×32) instead of the default Vite logo;
+  `web/public/vite.svg` is removed and `web/index.html` points `rel="icon"`
+  at the PNG.
 
 ### Migration
 
