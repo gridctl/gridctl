@@ -385,7 +385,7 @@ interface ScopeRailProps {
 
 function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, modelCount }: ScopeRailProps) {
   return (
-    <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-r border-border-subtle">
+    <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
         <div className="text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">breakdown</div>
       </div>
