@@ -11,6 +11,7 @@ All notable changes to gridctl will be documented in this file.
 ### Changed
 
 - Translate the topology node and tool-detail glass surfaces to frosted (translucent) glass in the light theme, so the canvas shows through softly and the glass language stays consistent with the dark theme
+- Give every workspace a consistent depth hierarchy: detail/inspector panes now read as an opaque elevated surface (pure white in the light theme) lifted above a recessed list canvas, the pane divider is stronger, and a soft shadow falls from the detail pane onto the list. A thin amber leading edge ties each detail pane to the active list item, and the selected skill card's left accent warms to amber. Applies across Topology, Library, Variables, Tools, and Metrics in both themes
 
 ### Removed
 
