@@ -9,6 +9,7 @@ import { DetachedEditorPage } from './pages/DetachedEditorPage';
 import { DetachedRegistryPage } from './pages/DetachedRegistryPage';
 import { DetachedMetricsPage } from './pages/DetachedMetricsPage';
 import { DetachedTracesPage } from './pages/DetachedTracesPage';
+import { useThemeSync } from './themes/useThemeSync';
 
 // Each workspace is code-split into its own chunk.
 const TopologyWorkspace = lazy(() => import('./components/workspaces/TopologyWorkspace'));
@@ -18,6 +19,10 @@ const ToolsWorkspace = lazy(() => import('./components/workspaces/ToolsWorkspace
 const MetricsWorkspace = lazy(() => import('./components/workspaces/MetricsWorkspace'));
 
 export function AppRoutes() {
+  // Single mount point for theme application + cross-window sync; covers the
+  // main shell and every detached popout route below.
+  useThemeSync();
+
   return (
     <Routes>
       {/* Unified shell parent route. Workspaces render as children inside

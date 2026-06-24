@@ -2,7 +2,13 @@ import { useEffect, useRef, useCallback } from 'react';
 
 // Message types for cross-window communication
 export interface BroadcastMessage {
-  type: 'STATE_UPDATE' | 'WINDOW_OPENED' | 'WINDOW_CLOSED' | 'REQUEST_STATE' | 'SELECTION_CHANGE';
+  type:
+    | 'STATE_UPDATE'
+    | 'WINDOW_OPENED'
+    | 'WINDOW_CLOSED'
+    | 'REQUEST_STATE'
+    | 'SELECTION_CHANGE'
+    | 'THEME_CHANGE';
   payload?: unknown;
   source: 'main' | 'detached';
   timestamp: number;

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { StateCreator } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { WORKSPACES, type Workspace } from '../types/workspace';
+import { DEFAULT_THEME_MODE, isThemeMode, type ThemeMode } from '../themes/types';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
 type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces' | 'pins';
@@ -91,6 +92,11 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   activeTab: SidebarTab;
   edgeStyle: EdgeStyle;
 
+  // Appearance: light / dark / system. The resolved theme is applied to <html>
+  // by themes/useThemeSync; this just holds the user's choice. Persisted.
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+
   // Skill editor view preferences
   editorPrefs: EditorPrefs;
   setEditorPrefs: (prefs: Partial<EditorPrefs>) => void;
@@ -172,6 +178,12 @@ export const useUIStore = create<UIState>()(
       sidebarOpen: false,
       activeTab: 'details',
       edgeStyle: 'default', // Bezier curves
+
+      // Appearance — defaults to 'system' so the OS preference (incl. an
+      // accessibility choice) is honored on first run; resolves to dark when
+      // the OS has no preference.
+      themeMode: DEFAULT_THEME_MODE,
+      setThemeMode: (themeMode) => set({ themeMode }),
 
       // Skill editor view preferences
       editorPrefs: { ...EDITOR_PREFS_DEFAULTS },
@@ -255,14 +267,21 @@ export const useUIStore = create<UIState>()(
         compactCards: state.compactCards,
         compactMode: state.compactMode,
         editorPrefs: state.editorPrefs,
+        themeMode: state.themeMode,
       }),
-      merge: (persisted, current) => ({
-        ...current,
-        ...(persisted as Partial<UIState>),
-        // Re-normalize to guarantee every workspace key is present even if a
-        // user upgrades from a build that only persisted a subset.
-        compactMode: normalizeCompactMode((persisted as { compactMode?: unknown })?.compactMode),
-      }),
+      merge: (persisted, current) => {
+        const p = persisted as Partial<UIState> | undefined;
+        return {
+          ...current,
+          ...(p ?? {}),
+          // Re-normalize to guarantee every workspace key is present even if a
+          // user upgrades from a build that only persisted a subset.
+          compactMode: normalizeCompactMode((p as { compactMode?: unknown })?.compactMode),
+          // Guard against a stale/invalid persisted theme (e.g. upgrade from a
+          // build without this field) so boot never lands on undefined.
+          themeMode: isThemeMode(p?.themeMode) ? p.themeMode : current.themeMode,
+        };
+      },
     }
   )
 );
