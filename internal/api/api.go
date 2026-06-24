@@ -609,6 +609,11 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, _ := s.gateway.HandleToolsListUnscoped()
+	// Always serialize an empty inventory as [], never null: web consumers
+	// index into the list (e.g. fuzzy search) where a null would throw.
+	if result != nil && result.Tools == nil {
+		result.Tools = []mcp.Tool{}
+	}
 	writeJSON(w, result)
 }
 
@@ -623,6 +628,10 @@ func (s *Server) handleToolsCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, _ := s.gateway.HandleToolsCatalog()
+	// Always serialize an empty catalog as [], never null (see handleTools).
+	if result != nil && result.Tools == nil {
+		result.Tools = []mcp.Tool{}
+	}
 	writeJSON(w, result)
 }
 

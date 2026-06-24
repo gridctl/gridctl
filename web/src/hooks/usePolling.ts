@@ -35,8 +35,11 @@ export function usePolling() {
       ]);
 
       setGatewayStatus(status);
-      setTools(toolsResult.tools);
-      setToolCatalog(catalogResult.tools);
+      // Coalesce to []: these endpoints serialize an empty inventory as null
+      // (nil Go slice) in stackless mode, and downstream consumers index into
+      // the catalog (e.g. useFuzzySearch → new Fuse) where null would throw.
+      setTools(toolsResult.tools ?? []);
+      setToolCatalog(catalogResult.tools ?? []);
       setAuthRequired(false);
 
       // Fetch clients separately — failure should not block core updates

@@ -224,8 +224,10 @@ export function useToolsEditor(
           fetchToolCatalog(),
         ]);
         useStackStore.getState().setGatewayStatus(status);
-        useStackStore.getState().setTools(toolsList.tools);
-        useStackStore.getState().setToolCatalog(catalogList.tools);
+        // Coalesce to []: stackless responses carry null tool lists (nil Go
+        // slice) that would crash list/search consumers downstream.
+        useStackStore.getState().setTools(toolsList.tools ?? []);
+        useStackStore.getState().setToolCatalog(catalogList.tools ?? []);
       } catch {
         /* ignore refresh failures — the page will re-poll shortly */
       }

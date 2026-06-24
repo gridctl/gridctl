@@ -419,6 +419,33 @@ func TestHandleTools_Empty(t *testing.T) {
 	}
 }
 
+// TestHandleTools_EmptySerializesArrayNotNull guards the contract that an
+// empty tool inventory serializes as [] rather than null. A null body reached
+// the web UI's fuzzy search (new Fuse(null)) and crashed the Tools workspace
+// to a blank screen. Decoding JSON can't catch this (null and [] both decode
+// to a zero-length slice), so assert on the raw body.
+func TestHandleTools_EmptySerializesArrayNotNull(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	for _, path := range []string{"/api/tools", "/api/tools/catalog"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: expected 200, got %d", path, rec.Code)
+		}
+		body := strings.TrimSpace(rec.Body.String())
+		if strings.Contains(body, `"tools":null`) {
+			t.Errorf("%s: tools serialized as null: %s", path, body)
+		}
+		if !strings.Contains(body, `"tools":[]`) {
+			t.Errorf("%s: expected \"tools\":[] in body, got %s", path, body)
+		}
+	}
+}
+
 func TestHandleTools_WithTools(t *testing.T) {
 	srv := newTestServer(t)
 

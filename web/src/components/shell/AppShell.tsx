@@ -8,6 +8,7 @@ import { AuthPrompt } from '../auth/AuthPrompt';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ToastContainer } from '../ui/Toast';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useAuthStore } from '../../stores/useAuthStore';
@@ -145,7 +146,13 @@ function AppShellInner() {
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
       <main className="relative overflow-hidden" style={{ minHeight: 100 }}>
-        <Outlet />
+        {/* Contain a workspace render throw so the shell (header, nav, status
+            bar) stays mounted and the user can navigate away. Resetting on the
+            route path lets navigation recover a crashed workspace without a
+            full reload. */}
+        <ErrorBoundary variant="inline" resetKey={pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
       <div className="flex flex-col h-full overflow-hidden">
