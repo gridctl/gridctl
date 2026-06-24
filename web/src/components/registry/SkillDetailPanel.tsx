@@ -5,7 +5,7 @@ import { extractRepoInfo } from '../../lib/repo';
 import { toTitleCase } from '../../lib/text';
 import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
 import { formatLastUsed } from '../../lib/toolAudit';
-import { InspectorHeader, InspectorTabList, InspectorTabButton } from '../inspector';
+import { InspectorHeader, InspectorTabList, InspectorTabButton, PaneAnchor } from '../inspector';
 import { IconButton } from '../ui/IconButton';
 import { StateBadge } from './StateBadge';
 import { MarkdownPreview } from './MarkdownPreview';
@@ -83,7 +83,8 @@ export function SkillDetailPanel({
 
   if (!skill) {
     return (
-      <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-l border-border-subtle">
+      <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+        <PaneAnchor />
         <SkillDetailEmpty />
       </aside>
     );
@@ -108,7 +109,8 @@ export function SkillDetailPanel({
   const hasLocalEdits = source?.driftedSkills?.includes(skill.name) ?? false;
 
   return (
-    <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-l border-border-subtle">
+    <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+      <PaneAnchor />
       <InspectorHeader
         title={skill.name}
         icon={BookOpen}
