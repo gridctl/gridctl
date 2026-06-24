@@ -8,72 +8,77 @@ export default {
     extend: {
       colors: {
         // ============================================
-        // OBSIDIAN OBSERVATORY - Color System
+        // Theme tokens resolve to CSS custom properties so every generated
+        // utility (bg-primary, text-text-muted, border-border, …) re-keys per
+        // [data-theme]. Raw values live in src/index.css: @theme is the dark
+        // ("Obsidian Observatory") default; :root[data-theme='light'] is
+        // "Observatory Day". Do not hardcode hexes here — it would defeat the
+        // light-mode override.
         // ============================================
-
-        // Core Obsidian Palette
-        background: '#08080a',
+        background: 'var(--color-background)',
         surface: {
-          DEFAULT: '#111113',
-          elevated: '#18181b',
-          highlight: '#1f1f23',
+          DEFAULT: 'var(--color-surface)',
+          elevated: 'var(--color-surface-elevated)',
+          highlight: 'var(--color-surface-highlight)',
         },
         border: {
-          DEFAULT: '#27272a',
-          subtle: 'rgba(255, 255, 255, 0.06)',
+          DEFAULT: 'var(--color-border)',
+          subtle: 'var(--color-border-subtle)',
         },
 
         // Primary - Warm Amber (Energy, Activity)
         primary: {
-          DEFAULT: '#f59e0b',
-          light: '#fbbf24',
-          dark: '#d97706',
+          DEFAULT: 'var(--color-primary)',
+          light: 'var(--color-primary-light)',
+          dark: 'var(--color-primary-dark)',
         },
 
         // Secondary - Deep Teal (Technical, Data)
         secondary: {
-          DEFAULT: '#0d9488',
-          light: '#14b8a6',
-          dark: '#0f766e',
+          DEFAULT: 'var(--color-secondary)',
+          light: 'var(--color-secondary-light)',
+          dark: 'var(--color-secondary-dark)',
         },
 
         // Tertiary - Purple/Violet (Agents, AI)
         tertiary: {
-          DEFAULT: '#8b5cf6',
-          light: '#a78bfa',
-          dark: '#7c3aed',
+          DEFAULT: 'var(--color-tertiary)',
+          light: 'var(--color-tertiary-light)',
+          dark: 'var(--color-tertiary-dark)',
         },
 
         // Status colors
         status: {
-          running: '#10b981',
-          stopped: '#52525b',
-          error: '#f43f5e',
-          pending: '#eab308',
+          running: 'var(--color-status-running)',
+          stopped: 'var(--color-status-stopped)',
+          error: 'var(--color-status-error)',
+          pending: 'var(--color-status-pending)',
         },
 
-        // Text hierarchy - Warm whites
+        // Text hierarchy
         text: {
-          primary: '#fafaf9',
-          secondary: '#a8a29e',
-          muted: '#78716c',
+          primary: 'var(--color-text-primary)',
+          secondary: 'var(--color-text-secondary)',
+          muted: 'var(--color-text-muted)',
         },
       },
       fontFamily: {
         sans: ['Outfit', 'system-ui', 'sans-serif'],
         mono: ['IBM Plex Mono', 'Fira Code', 'monospace'],
       },
+      // Shadows resolve to theme-scoped vars (src/index.css) so glow becomes a
+      // soft drop-shadow on light and depth shadows lighten appropriately.
       boxShadow: {
-        'sm': '0 1px 2px rgba(0, 0, 0, 0.5)',
-        'md': '0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3)',
-        'lg': '0 8px 32px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.3)',
-        'node': '0 4px 24px rgba(0, 0, 0, 0.4)',
-        'node-hover': '0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)',
-        'glow-primary': '0 0 20px rgba(245, 158, 11, 0.15), 0 0 40px rgba(245, 158, 11, 0.1)',
-        'glow-secondary': '0 0 20px rgba(13, 148, 136, 0.15), 0 0 40px rgba(13, 148, 136, 0.1)',
-        'glow-tertiary': '0 0 20px rgba(139, 92, 246, 0.15), 0 0 40px rgba(139, 92, 246, 0.1)',
-        'glow-success': '0 0 12px rgba(16, 185, 129, 0.2)',
-        'glow-error': '0 0 12px rgba(244, 63, 94, 0.2)',
+        'sm': 'var(--shadow-sm)',
+        'md': 'var(--shadow-md)',
+        'lg': 'var(--shadow-lg)',
+        'node': 'var(--shadow-node)',
+        'node-hover': 'var(--shadow-node-hover)',
+        'glow-primary': 'var(--shadow-glow-primary)',
+        'glow-secondary': 'var(--shadow-glow-secondary)',
+        'glow-tertiary': 'var(--shadow-glow-tertiary)',
+        'glow-success': '0 0 12px var(--color-status-running-glow)',
+        'glow-error': '0 0 12px var(--color-status-error-glow)',
       },
       animation: {
         'fade-in-up': 'fade-in-up 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards',

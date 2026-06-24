@@ -64,10 +64,126 @@
   /* Glass effect */
   --glass-bg: rgba(17, 17, 19, 0.8);
   --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-elevated-bg: rgba(24, 24, 27, 0.9);
+
+  /* Theme-aware compositing helpers (overridden per data-theme).
+     Extracted from inline literals so light mode can invert them. */
+  --bevel-highlight: rgba(255, 255, 255, 0.06);
+  --minimap-mask: rgba(8, 8, 10, 0.85);
+  --selection-bg: rgba(245, 158, 11, 0.06);
+  --selection-border: rgba(245, 158, 11, 0.3);
+  --shadow-node: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --shadow-node-hover: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --grain-opacity: 0.015;
 }
 
-:root {
+/* ============================================
+   THEME PALETTES
+   Dark ("Obsidian Observatory") is the default and lives in the @theme block
+   above so its values seed :root and every Tailwind color/shadow utility
+   resolves to var(--color-*) / var(--shadow-*). The light ("Observatory Day")
+   block re-keys those same custom properties; both Tailwind utilities and the
+   structural CSS below pick up the swap with no per-component changes.
+   data-theme is set synchronously by the boot script in index.html (anti-FOUC)
+   and by themes/applyTheme.ts at runtime.
+   ============================================ */
+
+:root,
+:root[data-theme='dark'] {
   color-scheme: dark;
+}
+
+/* Observatory Day — a hand-keyed warm-neutral light theme. Glow is dropped in
+   favour of soft drop-shadows + borders; the amber accent is re-keyed darker so
+   it clears WCAG on light surfaces (amber-500 on white is ~1.9:1). */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* Neutral-cool light gray canvas: white nodes separate cleanly and the warm
+     amber/status accents pop against it (warm-on-cool). */
+  --color-background: #eceef1;
+  --color-surface: #f4f6f8;
+  --color-surface-elevated: #ffffff;
+  --color-surface-highlight: #e1e4e9;
+  --color-border: #d3d7de;
+  --color-border-subtle: rgba(15, 23, 42, 0.08);
+
+  /* Primary — re-keyed amber (amber-700/800) for contrast on light */
+  --color-primary: #b45309;
+  --color-primary-light: #9a3412;
+  --color-primary-dark: #92400e;
+  --color-primary-glow: rgba(180, 83, 9, 0.18);
+
+  /* Secondary — deep teal */
+  --color-secondary: #0f766e;
+  --color-secondary-light: #115e59;
+  --color-secondary-dark: #134e4a;
+  --color-secondary-glow: rgba(15, 118, 110, 0.16);
+
+  /* Tertiary — violet */
+  --color-tertiary: #7c3aed;
+  --color-tertiary-light: #6d28d9;
+  --color-tertiary-dark: #5b21b6;
+  --color-tertiary-glow: rgba(124, 58, 237, 0.15);
+
+  /* Status — saturated enough to read clearly against the bright canvas */
+  --color-status-running: #059669;
+  --color-status-running-glow: rgba(5, 150, 105, 0.25);
+  --color-status-stopped: #9ca3af;
+  --color-status-error: #e11d48;
+  --color-status-error-glow: rgba(225, 29, 72, 0.2);
+  --color-status-pending: #b45309;
+  --color-status-pending-glow: rgba(180, 83, 9, 0.2);
+  --color-status-idle: #6b7280;
+
+  /* Text — neutral near-black ramp; muted is darkened a shade from the warm
+     palette so secondary descriptions stay readable on the bright canvas. */
+  --color-text-primary: #1a1c20;
+  --color-text-secondary: #4b515b;
+  --color-text-muted: #687078;
+
+  /* Shadows — saturated transparent cool-slate, not black; elevation comes from
+     these + borders rather than the dark-mode lighter-surface trick. */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 10px 32px rgba(15, 23, 42, 0.11), 0 4px 12px rgba(15, 23, 42, 0.07);
+  --shadow-node: 0 4px 20px rgba(15, 23, 42, 0.09);
+  --shadow-node-hover: 0 8px 32px rgba(15, 23, 42, 0.13), 0 0 0 1px rgba(15, 23, 42, 0.06);
+
+  /* Glow dropped on light — map glow tokens to soft accent drop-shadows. */
+  --shadow-glow-primary: 0 2px 10px var(--color-primary-glow);
+  --shadow-glow-secondary: 0 2px 10px var(--color-secondary-glow);
+  --shadow-glow-tertiary: 0 2px 10px var(--color-tertiary-glow);
+
+  /* Glass — light translucent panes with dark text */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --glass-elevated-bg: rgba(255, 255, 255, 0.86);
+
+  /* Compositing helpers inverted for light */
+  --bevel-highlight: rgba(255, 255, 255, 0.7);
+  --minimap-mask: rgba(236, 238, 241, 0.6);
+  --selection-bg: rgba(180, 83, 9, 0.08);
+  --selection-border: rgba(180, 83, 9, 0.4);
+  --grain-opacity: 0;
+}
+
+/* Brief color-only crossfade applied during a theme switch (themes/applyTheme.ts
+   adds .theme-transitioning to <html> for ~200ms). Gated behind no-preference so
+   it never fires for reduced-motion users; layout properties are never animated. */
+@media (prefers-reduced-motion: no-preference) {
+  .theme-transitioning,
+  .theme-transitioning *,
+  .theme-transitioning *::before,
+  .theme-transitioning *::after {
+    transition:
+      background-color 180ms ease,
+      border-color 180ms ease,
+      color 180ms ease,
+      fill 180ms ease,
+      stroke 180ms ease,
+      box-shadow 180ms ease !important;
+  }
 }
 
 html, body, #root {
@@ -75,7 +191,7 @@ html, body, #root {
   width: 100%;
   margin: 0;
   padding: 0;
-  background-color: #08080a;
+  background-color: var(--color-background);
 }
 
 body {
@@ -96,7 +212,7 @@ body::before {
   position: fixed;
   inset: 0;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  opacity: 0.015;
+  opacity: var(--grain-opacity, 0.015);
   pointer-events: none;
   z-index: 0;
 }
@@ -224,7 +340,7 @@ body::before {
 }
 
 .react-flow__minimap-mask {
-  fill: rgba(8, 8, 10, 0.85);
+  fill: var(--minimap-mask);
 }
 
 .react-flow__minimap-node {
@@ -262,8 +378,8 @@ body::before {
 
 /* Selection box */
 .react-flow__selection {
-  background-color: rgba(245, 158, 11, 0.06);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background-color: var(--selection-bg);
+  border: 1px solid var(--selection-border);
 }
 
 /* ============================================
@@ -305,32 +421,32 @@ body::before {
   backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 var(--bevel-highlight);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .node-glass:hover {
   border-color: var(--color-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--shadow-lg);
+  box-shadow: inset 0 1px 0 var(--bevel-highlight), var(--shadow-lg);
 }
 
 /* Primary variant (MCP servers) - Amber accent */
 .node-glass-primary {
   background: linear-gradient(
     135deg,
-    rgba(17, 17, 19, 0.9) 0%,
-    rgba(245, 158, 11, 0.03) 100%
+    var(--glass-bg) 0%,
+    color-mix(in srgb, var(--color-primary) 4%, transparent) 100%
   );
   backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 var(--bevel-highlight);
 }
 
 .node-glass-primary.selected {
   border-color: var(--color-primary);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 var(--bevel-highlight),
     0 0 0 1px var(--color-primary),
     var(--shadow-glow-primary),
     var(--shadow-lg);
@@ -340,19 +456,19 @@ body::before {
 .node-glass-secondary {
   background: linear-gradient(
     135deg,
-    rgba(17, 17, 19, 0.9) 0%,
-    rgba(13, 148, 136, 0.03) 100%
+    var(--glass-bg) 0%,
+    color-mix(in srgb, var(--color-secondary) 4%, transparent) 100%
   );
   backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 var(--bevel-highlight);
 }
 
 .node-glass-secondary.selected {
   border-color: var(--color-secondary);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 var(--bevel-highlight),
     0 0 0 1px var(--color-secondary),
     var(--shadow-glow-secondary),
     var(--shadow-lg);
@@ -362,19 +478,19 @@ body::before {
 .node-gateway {
   background: linear-gradient(
     180deg,
-    rgba(17, 17, 19, 0.95) 0%,
-    rgba(245, 158, 11, 0.05) 100%
+    var(--glass-elevated-bg) 0%,
+    color-mix(in srgb, var(--color-primary) 6%, transparent) 100%
   );
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
   border-radius: 16px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--shadow-lg);
+  box-shadow: inset 0 1px 0 var(--bevel-highlight), var(--shadow-lg);
 }
 
 .node-gateway.selected {
   border-color: var(--color-primary);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 var(--bevel-highlight),
     0 0 0 2px var(--color-primary),
     var(--shadow-glow-primary),
     var(--shadow-lg);
@@ -595,7 +711,7 @@ body::before {
 }
 
 .glass-panel-elevated {
-  background: rgba(24, 24, 27, 0.9);
+  background: var(--glass-elevated-bg);
   backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
@@ -605,11 +721,11 @@ body::before {
 /* Top-edge inset highlight — fakes light catching a beveled glass surface.
    Compose with other shadows via comma separation. */
 .shadow-bevel {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 var(--bevel-highlight);
 }
 
 .shadow-lg-bevel {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--shadow-lg);
+  box-shadow: inset 0 1px 0 var(--bevel-highlight), var(--shadow-lg);
 }
 
 /* ============================================
@@ -790,8 +906,8 @@ body::before {
 .prose-playground code {
   font-family: var(--font-mono);
   font-size: 10px;
-  background: rgba(13, 148, 136, 0.08);
-  border: 1px solid rgba(13, 148, 136, 0.15);
+  background: color-mix(in srgb, var(--color-secondary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 16%, transparent);
   color: var(--color-secondary-light);
   padding: 0.1em 0.35em;
   border-radius: 3px;
@@ -828,7 +944,7 @@ body::before {
 .prose-playground a {
   color: var(--color-secondary-light);
   text-decoration: underline;
-  text-decoration-color: rgba(13, 148, 136, 0.3);
+  text-decoration-color: color-mix(in srgb, var(--color-secondary) 35%, transparent);
 }
 .prose-playground blockquote {
   border-left: 2px solid var(--color-secondary);
@@ -985,12 +1101,12 @@ body::before {
   color: var(--color-text-secondary);
 }
 
-/* Prism token colors, tuned for the near-black surface. */
+/* Prism token colors, mapped to theme tokens so they re-key per data-theme. */
 .skill-md .token.comment,
 .skill-md .token.prolog,
 .skill-md .token.doctype,
-.skill-md .token.cdata { color: #6b7280; font-style: italic; }
-.skill-md .token.punctuation { color: #8b8b93; }
+.skill-md .token.cdata { color: var(--color-text-muted); font-style: italic; }
+.skill-md .token.punctuation { color: var(--color-text-secondary); }
 .skill-md .token.property,
 .skill-md .token.tag,
 .skill-md .token.boolean,
@@ -1005,12 +1121,12 @@ body::before {
 .skill-md .token.inserted { color: var(--color-secondary-light); }
 .skill-md .token.operator,
 .skill-md .token.entity,
-.skill-md .token.url { color: #c4b5fd; }
+.skill-md .token.url { color: var(--color-tertiary); }
 .skill-md .token.atrule,
 .skill-md .token.attr-value,
 .skill-md .token.keyword { color: var(--color-primary-light); }
 .skill-md .token.function,
-.skill-md .token.class-name { color: #93c5fd; }
+.skill-md .token.class-name { color: var(--color-secondary); }
 .skill-md .token.regex,
 .skill-md .token.important,
 .skill-md .token.variable { color: var(--color-primary); }
