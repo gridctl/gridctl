@@ -122,7 +122,7 @@ export function TopologyWorkspace() {
         </div>
 
         {sidebarOpen && (
-          <aside className="flex flex-row overflow-hidden bg-surface/80 backdrop-blur-xl border-l border-border/50">
+          <aside className="flex flex-row overflow-hidden bg-surface-elevated border-l border-border shadow-pane-left">
             <ResizeHandle
               direction="vertical"
               onResize={handleSidebarResize}
