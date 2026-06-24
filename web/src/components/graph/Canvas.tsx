@@ -13,7 +13,7 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { useAccessLensStore, buildDraftScope, flattenTools, isDirty } from '../../stores/useAccessLensStore';
-import { COLORS } from '../../lib/constants';
+import { useThemeColors } from '../../themes/useTheme';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
 import { CanvasBase } from '../canvas/CanvasBase';
@@ -82,6 +82,8 @@ export function Canvas() {
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { zoom } = useViewport();
+  // Live theme colors so JS-set edge/grid colors follow [data-theme].
+  const colors = useThemeColors();
 
   // Reset layout when compact cards toggle changes
   const prevCompactRef = useRef(compactCards);
@@ -131,9 +133,9 @@ export function Canvas() {
     type: edgeStyle,
     style: {
       strokeWidth: 2,
-      stroke: COLORS.border,
+      stroke: colors.border,
     },
-  }), [edgeStyle]);
+  }), [edgeStyle, colors.border]);
 
   // Apply highlighting classes to nodes based on the selected agent's path.
   const styledNodes = useMemo(() => {
@@ -275,7 +277,7 @@ export function Canvas() {
           {
             variant: BackgroundVariant.Lines,
             gap: 100,
-            color: 'rgba(100, 116, 139, 0.15)',
+            color: colors.border,
           },
         ]}
       >

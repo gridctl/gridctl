@@ -11,7 +11,8 @@ import { CreationWizard } from '../wizard/CreationWizard';
 import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useWizardStore } from '../../stores/useWizardStore';
-import logoSvg from '../../assets/brand/logo.svg';
+import { LogoWordmark } from './LogoWordmark';
+import { ThemePicker } from '../shell/ThemePicker';
 import { WorkspaceSwitcher } from '../shell/WorkspaceSwitcher';
 
 interface HeaderProps {
@@ -106,12 +107,8 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       {/* Left: Logo & Version + Workspace Switcher */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
-          {/* Brand Logo */}
-          <img
-            src={logoSvg}
-            alt="Gridctl"
-            className="h-10 w-auto block"
-          />
+          {/* Brand Logo — inline so "ctl" follows the theme (readable on light) */}
+          <LogoWordmark className="h-10 w-auto block" />
           {/* Version */}
           {gatewayInfo?.version && (
             <span className="text-xs font-mono text-text-muted tracking-wide">
@@ -142,6 +139,9 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       <div className="flex items-center gap-2">
         {isConnected && <HeaderTelemetryPill />}
         {isConnected && <div className="w-px h-5 bg-border/50 mx-0.5" />}
+        {/* Appearance (light/dark/system) — prominent in the action cluster */}
+        <ThemePicker variant="header" placement="down" />
+        <div className="w-px h-5 bg-border/50 mx-0.5" />
         <IconButton
           icon={Command}
           onClick={toggleCommandPalette}

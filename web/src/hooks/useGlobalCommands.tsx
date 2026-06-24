@@ -21,7 +21,11 @@ import {
   Plus,
   PanelBottom,
   Compass,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
+import type { ThemeMode } from '../themes/types';
 import { useCommandRegistry } from './useCommandRegistry';
 import { useUIStore } from '../stores/useUIStore';
 import { useStackStore } from '../stores/useStackStore';
@@ -49,6 +53,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const setShowVault = useUIStore((s) => s.setShowVault);
   const setPricingManagerOpen = useUIStore((s) => s.setPricingManagerOpen);
+  const setThemeMode = useUIStore((s) => s.setThemeMode);
 
   const mcpServers = useStackStore((s) => s.mcpServers);
   const selectNode = useStackStore((s) => s.selectNode);
@@ -139,6 +144,39 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     setShowVault,
     navigate,
   ]);
+
+  // Appearance — theme switching, mirrors the StatusBar ThemePicker.
+  useEffect(() => {
+    const set = (mode: ThemeMode) => () => setThemeMode(mode);
+    const commands: PaletteCommand[] = [
+      {
+        id: 'appearance:light',
+        label: 'Appearance: Use Light theme',
+        section: 'global',
+        icon: <Sun size={14} />,
+        keywords: ['appearance', 'theme', 'light', 'day', 'observatory'],
+        onSelect: set('light'),
+      },
+      {
+        id: 'appearance:dark',
+        label: 'Appearance: Use Dark theme',
+        section: 'global',
+        icon: <Moon size={14} />,
+        keywords: ['appearance', 'theme', 'dark', 'night', 'obsidian'],
+        onSelect: set('dark'),
+      },
+      {
+        id: 'appearance:system',
+        label: 'Appearance: Use System theme',
+        section: 'global',
+        icon: <Monitor size={14} />,
+        keywords: ['appearance', 'theme', 'system', 'auto', 'os', 'preference'],
+        onSelect: set('system'),
+      },
+    ];
+    registerCommands('appearance', commands);
+    return () => unregisterCommands('appearance');
+  }, [registerCommands, unregisterCommands, setThemeMode]);
 
   // Canvas actions and global actions
   useEffect(() => {

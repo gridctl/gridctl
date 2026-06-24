@@ -4,35 +4,14 @@ import { json, jsonParseLinter } from '@codemirror/lang-json';
 import { linter, lintGutter } from '@codemirror/lint';
 import { EditorView, keymap } from '@codemirror/view';
 import { Prec } from '@codemirror/state';
+import { useResolvedTheme } from '../../themes/useTheme';
+import { buildEditorTheme } from '../../themes/codemirror';
 
 // An empty editor isn't "invalid JSON" yet — skip linting whitespace-only
 // content so a fresh field doesn't show a red gutter marker.
 const parseLinter = jsonParseLinter();
 const jsonLintSource = (view: EditorView) =>
   view.state.doc.toString().trim() === '' ? [] : parseLinter(view);
-
-// Dark theme tuned to the app palette (see web/src/index.css tokens). Kept
-// minimal — transparent surface, monospace, no chrome — so the editor reads as
-// an inline field rather than a full IDE.
-const editorTheme = EditorView.theme(
-  {
-    '&': { backgroundColor: 'transparent', fontSize: '12px' },
-    '&.cm-focused': { outline: 'none' },
-    '.cm-content': {
-      fontFamily:
-        'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-      caretColor: '#fafaf9',
-    },
-    '.cm-gutters': {
-      backgroundColor: 'transparent',
-      border: 'none',
-      color: 'rgba(120,113,108,0.5)',
-    },
-    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.02)' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-  },
-  { dark: true },
-);
 
 // JsonValueEditor wraps CodeMirror 6 for editing `json` variable values. It
 // provides syntax highlighting and an inline lint gutter (parse errors marked
@@ -56,6 +35,11 @@ export default function JsonValueEditor({
   compact?: boolean;
   ariaLabel?: string;
 }) {
+  // Rebuild the editor chrome theme on theme change (CodeMirror's `dark` flag
+  // and a few colors aren't CSS-var driven).
+  const resolved = useResolvedTheme();
+  const editorTheme = useMemo(() => buildEditorTheme(resolved), [resolved]);
+
   const extensions = useMemo(
     () => [
       json(),
