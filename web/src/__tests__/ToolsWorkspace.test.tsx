@@ -150,6 +150,22 @@ describe('ToolsWorkspace', () => {
   });
 });
 
+describe('ToolsWorkspace — empty stack', () => {
+  it('renders the empty state without crashing when there are no servers and the catalog is null', () => {
+    // Regression: in stackless mode the catalog API returns {"tools": null}.
+    // That null used to reach new Fuse(null) via useFuzzySearch and throw
+    // during render, unmounting the whole app to a blank screen.
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [],
+      tools: null as unknown as Tool[],
+      toolCatalog: null as unknown as Tool[],
+    });
+    expect(() => renderAt('/tools')).not.toThrow();
+    expect(screen.getByText(/no mcp servers yet/i)).toBeInTheDocument();
+  });
+});
+
 describe('ToolsWorkspace — Audit Mode', () => {
   afterEach(() => {
     vi.restoreAllMocks();
