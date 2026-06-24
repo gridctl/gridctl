@@ -84,7 +84,6 @@ export function SkillDetailPanel({
   if (!skill) {
     return (
       <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
-        <PaneAnchor />
         <SkillDetailEmpty />
       </aside>
     );
