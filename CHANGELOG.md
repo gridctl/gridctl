@@ -8,6 +8,10 @@ All notable changes to gridctl will be documented in this file.
 
 - Add a theme picker to the web UI with a Light / Dark / System triad: the dark "Obsidian Observatory" stays the default, a new hand-keyed light theme ("Observatory Day") is added, and System follows the OS `prefers-color-scheme` live. Choose it from the header (Appearance) or the command palette ("Appearance: …"); the choice persists, applies before first paint (no flash), and syncs across detached windows
 
+### Fixed
+
+- Stop the Tools workspace from crashing to a blank screen when no MCP servers are attached. The tool-catalog endpoint now returns an empty array (never null) in stackless mode, the store and fuzzy-search hook coalesce a missing list to empty, and a shared error boundary now wraps the workspace outlet (and the app root) so a render error degrades to a recoverable message with the navigation intact instead of unmounting the whole UI
+
 ### Changed
 
 - Translate the topology node and tool-detail glass surfaces to frosted (translucent) glass in the light theme, so the canvas shows through softly and the glass language stays consistent with the dark theme
