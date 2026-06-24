@@ -197,7 +197,6 @@ function InspectorStat({ label, value, className }: { label: string; value: stri
 function InspectorOverview({ onOpenManager }: { onOpenManager: () => void }) {
   return (
     <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
-      <PaneAnchor />
       <div className="flex-shrink-0 px-4 py-3 border-b border-border-subtle">
         <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">about cost</div>
       </div>

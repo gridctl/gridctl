@@ -43,9 +43,9 @@ export function ToolDetailPanel({
 }: ToolDetailPanelProps) {
   return (
     <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
-      <PaneAnchor />
       {tool ? (
         <>
+          <PaneAnchor />
           <InspectorHeader
             title={tool.name}
             icon={Wrench}

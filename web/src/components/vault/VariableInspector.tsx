@@ -266,7 +266,6 @@ export function VariableInspector({
         aria-label="Variable inspector"
         className="relative h-full flex flex-col bg-surface-elevated border-l border-border"
       >
-        <PaneAnchor />
         <InspectorOverview
           variables={allVariables}
           usage={usage}
