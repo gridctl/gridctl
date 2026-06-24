@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -362,13 +361,11 @@ mcp-servers:
 	}
 }
 
-// TestVaultSyntaxDeprecation verifies that ${vault:KEY} produces the
-// deprecation warning exactly once per process even when the input has
-// multiple ${vault:KEY} occurrences (Article XIV: no per-occurrence spam).
-func TestVaultSyntaxDeprecation(t *testing.T) {
-	// Reset the once so this test can observe its own first invocation.
-	vaultSyntaxDeprecationOnce = sync.Once{}
-
+// TestVaultSyntaxNoDeprecationWarning verifies that ${vault:KEY} still resolves
+// correctly and no longer emits a deprecation warning. The alias is retained for
+// back-compat; the prior once-per-process warning was removed because it was
+// noisy on every stack stand-up.
+func TestVaultSyntaxNoDeprecationWarning(t *testing.T) {
 	var buf bytes.Buffer
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
@@ -376,28 +373,12 @@ func TestVaultSyntaxDeprecation(t *testing.T) {
 
 	vault := &mockVault{secrets: map[string]string{"A": "1", "B": "2"}}
 
-	// Many vault refs in one expansion → one warning.
-	_, _, _ = ExpandString("${vault:A}-${vault:B}-${vault:A}", VaultResolver(vault))
-
-	out := buf.String()
-	count := strings.Count(out, "syntax is deprecated")
-	if count != 1 {
-		t.Errorf("deprecation warning count = %d, want 1; buf=%q", count, out)
+	out, _, _ := ExpandString("${vault:A}-${vault:B}-${vault:A}", VaultResolver(vault))
+	if out != "1-2-1" {
+		t.Errorf("expansion = %q, want %q", out, "1-2-1")
 	}
-
-	// Second expansion in the same process → still exactly one warning.
-	buf.Reset()
-	_, _, _ = ExpandString("${vault:A}", VaultResolver(vault))
 	if strings.Contains(buf.String(), "deprecated") {
-		t.Errorf("deprecation warning fired again on subsequent call; output: %q", buf.String())
-	}
-
-	// ${var:KEY} must NOT produce a warning.
-	vaultSyntaxDeprecationOnce = sync.Once{}
-	buf.Reset()
-	_, _, _ = ExpandString("${var:A}", VaultResolver(vault))
-	if strings.Contains(buf.String(), "deprecated") {
-		t.Errorf("${var:KEY} produced a deprecation warning; output: %q", buf.String())
+		t.Errorf("${vault:KEY} emitted a deprecation warning; output: %q", buf.String())
 	}
 }
 
