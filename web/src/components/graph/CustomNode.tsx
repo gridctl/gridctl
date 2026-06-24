@@ -73,7 +73,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   return (
     <div
       className={cn(
-        'w-64 rounded-xl relative',
+        'w-64 rounded-xl relative frost-surface',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
         'shadow-bevel',
         isServer

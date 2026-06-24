@@ -194,6 +194,16 @@ html, body, #root {
   background-color: var(--color-background);
 }
 
+/* Frosted-glass surfaces in light theme. Topology nodes and the tool-detail
+   popover paint an opaque Tailwind surface (from-surface/95, bg-surface-
+   elevated/95) that reads as a flat white card on the bright canvas. In light
+   only, drop them to a translucent white so the existing backdrop-blur frosts
+   the canvas/grid behind them — cohesive with the dark glass language. Dark
+   keeps its opaque surfaces (no rule), since glass fades into the inky bg. */
+:root[data-theme='light'] .frost-surface {
+  background: rgba(255, 255, 255, 0.6) !important;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-text-primary);
