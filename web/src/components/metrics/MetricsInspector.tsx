@@ -2,6 +2,7 @@ import { X, DollarSign } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { formatCompactNumber, formatUSD } from '../../lib/format';
 import { AreaChart } from '../chart/AreaChart';
+import { PaneAnchor } from '../inspector';
 import { ClientModelCell } from '../pricing/ClientModelCell';
 import { ServerModelCell } from '../pricing/ServerModelCell';
 import {
@@ -65,7 +66,8 @@ export function MetricsInspector({
   const costSeriesHasData = costSeries.some((d) => d['Cost (USD)'] > 0);
 
   return (
-    <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-l border-border-subtle">
+    <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+      <PaneAnchor />
       <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-subtle">
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">
@@ -194,7 +196,8 @@ function InspectorStat({ label, value, className }: { label: string; value: stri
 // empty rail, carrying the same honesty copy the cards use.
 function InspectorOverview({ onOpenManager }: { onOpenManager: () => void }) {
   return (
-    <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-l border-border-subtle">
+    <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+      <PaneAnchor />
       <div className="flex-shrink-0 px-4 py-3 border-b border-border-subtle">
         <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">about cost</div>
       </div>
