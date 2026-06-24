@@ -74,6 +74,7 @@ export default {
         'lg': 'var(--shadow-lg)',
         'node': 'var(--shadow-node)',
         'node-hover': 'var(--shadow-node-hover)',
+        'pane-left': 'var(--shadow-pane-left)',
         'glow-primary': 'var(--shadow-glow-primary)',
         'glow-secondary': 'var(--shadow-glow-secondary)',
         'glow-tertiary': 'var(--shadow-glow-tertiary)',
