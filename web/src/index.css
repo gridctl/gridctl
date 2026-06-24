@@ -74,6 +74,9 @@
   --selection-border: rgba(245, 158, 11, 0.3);
   --shadow-node: 0 4px 24px rgba(0, 0, 0, 0.4);
   --shadow-node-hover: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  /* Soft directional shadow cast leftward by an elevated detail/inspector pane
+     onto the recessed list behind it. Tight, diffuse, no spread. */
+  --shadow-pane-left: -12px 0 28px -16px rgba(0, 0, 0, 0.7);
   --grain-opacity: 0.015;
 }
 
@@ -149,6 +152,8 @@
   --shadow-lg: 0 10px 32px rgba(15, 23, 42, 0.11), 0 4px 12px rgba(15, 23, 42, 0.07);
   --shadow-node: 0 4px 20px rgba(15, 23, 42, 0.09);
   --shadow-node-hover: 0 8px 32px rgba(15, 23, 42, 0.13), 0 0 0 1px rgba(15, 23, 42, 0.06);
+  /* Cool-slate edge shadow (matches the light palette's other elevation cues) */
+  --shadow-pane-left: -12px 0 26px -16px rgba(15, 23, 42, 0.16);
 
   /* Glow dropped on light — map glow tokens to soft accent drop-shadows. */
   --shadow-glow-primary: 0 2px 10px var(--color-primary-glow);
