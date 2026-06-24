@@ -831,7 +831,7 @@ function VaultLeftRail({
   locked,
 }: VaultLeftRailProps) {
   return (
-    <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-r border-border-subtle">
+    <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div
         className={cn(
           'flex-shrink-0 px-3 border-b border-border-subtle/60',
