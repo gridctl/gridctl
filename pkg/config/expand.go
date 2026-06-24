@@ -1,10 +1,8 @@
 package config
 
 import (
-	"log/slog"
 	"os"
 	"regexp"
-	"sync"
 )
 
 // Resolver looks up a variable by name. Returns value and whether it exists.
@@ -48,7 +46,7 @@ func VaultResolver(vault VaultLookup) Resolver {
 //   - ${VAR:-default}     — use default if undefined or empty
 //   - ${VAR:+replacement} — use replacement if defined and non-empty
 //   - ${var:KEY}          — variable store reference (canonical)
-//   - ${vault:KEY}        — deprecated alias for ${var:KEY}; warned once per process
+//   - ${vault:KEY}        — alias for ${var:KEY}, retained for back-compat
 //
 // The alternation tries the braced form first (longer match), then the bare $VAR form.
 var expandRegex = regexp.MustCompile(
@@ -56,21 +54,6 @@ var expandRegex = regexp.MustCompile(
 		`|` +
 		`\$([a-zA-Z_][a-zA-Z0-9_]*)`, // $VAR form
 )
-
-// vaultSyntaxDeprecationOnce ensures the "${vault:KEY}" syntax deprecation
-// banner prints at most once per process, even if a stack has dozens of
-// references. Resetting is exposed for tests; production code should never
-// touch it.
-var vaultSyntaxDeprecationOnce sync.Once
-
-// warnVaultSyntaxDeprecated logs the once-per-process deprecation warning for
-// stack files that still use ${vault:KEY}. The canonical syntax going forward
-// is ${var:KEY}; both resolve identically through the beta cycle.
-func warnVaultSyntaxDeprecated() {
-	vaultSyntaxDeprecationOnce.Do(func() {
-		slog.Warn(`"${vault:KEY}" syntax is deprecated, use "${var:KEY}" instead. Removal at v1.0.`)
-	})
-}
 
 // ExpandString expands variable references in a string using the given resolver.
 // All patterns are matched in a single pass to prevent double-expansion of values
@@ -113,13 +96,10 @@ func ExpandStringRefs(s string, resolve Resolver) (expanded string, storeRefs []
 		}
 
 		// Braced ${...} form. `var` and `vault` are both store-prefixed
-		// references; `var` is canonical and `vault` is the deprecated alias
-		// retained through beta.
+		// references; `var` is canonical and `vault` is a back-compat alias
+		// that resolves identically.
 		prefix := parts[1]
 		isStoreRef := prefix == "vault" || prefix == "var"
-		if prefix == "vault" {
-			warnVaultSyntaxDeprecated()
-		}
 		varName := parts[2]
 		op := parts[3]
 		operand := parts[4]
