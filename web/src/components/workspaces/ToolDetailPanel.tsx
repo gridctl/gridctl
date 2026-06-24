@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { CodeViewer } from '../ui/CodeViewer';
-import { InspectorHeader } from '../inspector';
+import { InspectorHeader, PaneAnchor } from '../inspector';
 import { formatLastUsed, type AuditState } from '../../lib/toolAudit';
 import type { ToolRow } from '../../hooks/useToolsEditor';
 
@@ -42,7 +42,8 @@ export function ToolDetailPanel({
   onClose,
 }: ToolDetailPanelProps) {
   return (
-    <aside className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-l border-border-subtle">
+    <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+      <PaneAnchor />
       {tool ? (
         <>
           <InspectorHeader
