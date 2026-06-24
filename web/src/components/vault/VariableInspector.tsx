@@ -21,7 +21,7 @@ import { CodeViewer } from '../ui/CodeViewer';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { IconButton } from '../ui/IconButton';
 import { showToast } from '../ui/Toast';
-import { InspectorHeader } from '../inspector';
+import { InspectorHeader, PaneAnchor } from '../inspector';
 import { generateSecret } from '../../lib/generateSecret';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { ConsumerList } from './ConsumerList';
@@ -264,8 +264,9 @@ export function VariableInspector({
     return (
       <aside
         aria-label="Variable inspector"
-        className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-l border-border-subtle"
+        className="relative h-full flex flex-col bg-surface-elevated border-l border-border"
       >
+        <PaneAnchor />
         <InspectorOverview
           variables={allVariables}
           usage={usage}
@@ -282,8 +283,9 @@ export function VariableInspector({
   return (
     <aside
       aria-label="Variable inspector"
-      className="h-full flex flex-col bg-surface/40 backdrop-blur-sm border-l border-border-subtle"
+      className="relative h-full flex flex-col bg-surface-elevated border-l border-border"
     >
+      <PaneAnchor />
       <InspectorHeader
         title={variable.key}
         icon={variable.is_secret ? Lock : Eye}
