@@ -4,11 +4,49 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#08080a" />
     <title>Gridctl</title>
-    <style>html,body,#root{background:#08080a;margin:0;padding:0;height:100%;width:100%}</style>
+    <style>html,body,#root{margin:0;padding:0;height:100%;width:100%}</style>
+    <!-- Anti-FOUC: resolve and apply the theme before the React bundle parses so
+         the first paint matches the persisted choice. Reads the same
+         localStorage key as useUIStore (zustand persist) and mirrors
+         themes/applyTheme.ts. Keep the BG hexes in sync with index.css
+         (--color-background): dark #08080a, light "Observatory Day" #eceef1. -->
+    <script>
+      (function () {
+        var bg = '#08080a';
+        try {
+          var mode = 'system';
+          var raw = localStorage.getItem('gridctl-ui-storage');
+          if (raw) {
+            var m = JSON.parse(raw);
+            var t = m && m.state && m.state.themeMode;
+            if (t === 'light' || t === 'dark' || t === 'system') mode = t;
+          }
+          var resolved = mode;
+          if (mode === 'system') {
+            resolved =
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          }
+          var root = document.documentElement;
+          root.dataset.theme = resolved;
+          root.style.colorScheme = resolved;
+          bg = resolved === 'light' ? '#eceef1' : '#08080a';
+          root.style.backgroundColor = bg;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.style.colorScheme = 'dark';
+        }
+        document.head.insertAdjacentHTML(
+          'beforeend',
+          '<meta name="theme-color" content="' + bg + '" />',
+        );
+      })();
+    </script>
   </head>
-  <body style="background:#08080a">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
