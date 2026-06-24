@@ -149,7 +149,10 @@ export function WorkspaceShell({
           collapsedSize={0}
           panelRef={rightPanelRef}
         >
-          <div className="h-full overflow-hidden">{right}</div>
+          {/* Elevated detail pane: the leftward edge shadow lets it read as
+              lifted above the recessed list. Lives on the wrapper so the cast
+              shadow is not clipped by the pane's own internal overflow. */}
+          <div className="h-full overflow-hidden shadow-pane-left">{right}</div>
         </Panel>
       )}
     </Group>
@@ -179,7 +182,7 @@ function SeparatorBody({ orientation }: SeparatorBodyProps) {
       <div
         className={cn(
           'absolute transition-colors duration-150',
-          'bg-border/40',
+          'bg-border',
           'group-hover/separator:bg-primary/30',
           'group-data-[separator-active=true]/separator:bg-primary/50',
           isVertical ? 'w-px inset-y-0 left-1/2 -translate-x-px' : 'h-px inset-x-0 top-1/2 -translate-y-px',
