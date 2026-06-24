@@ -77,10 +77,18 @@ export const SkillCard = memo(({
         isActive && 'via-primary/50',
       )} />
 
-      {/* Left accent — a single neutral, static anchor for cross-card scanning.
-          Category-agnostic (not a per-category color), conveyed only as visual
-          rhythm; the category itself reads as text in the metadata line. */}
-      <div aria-hidden="true" className="absolute top-0 bottom-0 left-0 w-0.5 bg-white/10" />
+      {/* Left accent — neutral at rest for cross-card scanning rhythm, warming
+          to amber only while this card is the active selection. The amber bar
+          rhymes with the detail pane's leading edge (PaneAnchor), tracing a
+          breadcrumb from the selected card to its expanded properties. It marks
+          transient selection, not category identity (which reads as text). */}
+      <div
+        aria-hidden="true"
+        className={cn(
+          'absolute top-0 bottom-0 left-0 w-0.5 transition-colors duration-200',
+          isActive ? 'bg-primary' : 'bg-white/10',
+        )}
+      />
 
       {/* Card body — clickable to open the inspector */}
       <div
