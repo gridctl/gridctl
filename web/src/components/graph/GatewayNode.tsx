@@ -17,7 +17,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
   return (
     <div
       className={cn(
-        'w-60 rounded-2xl',
+        'w-60 rounded-2xl frost-surface',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
         'backdrop-blur-xl border border-border',
         'shadow-lg-bevel transition-all duration-300 ease-out',

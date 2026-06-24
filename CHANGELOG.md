@@ -6,10 +6,15 @@ All notable changes to gridctl will be documented in this file.
 
 ### Added
 
-- Add a theme picker to the web UI with a Light / Dark / System triad: the dark "Obsidian Observatory" stays the default, a new hand-keyed light theme ("Observatory Day") is added, and System follows the OS `prefers-color-scheme` live. Choose it from the StatusBar (Appearance) or the command palette ("Appearance: …"); the choice persists, applies before first paint (no flash), and syncs across detached windows
+- Add a theme picker to the web UI with a Light / Dark / System triad: the dark "Obsidian Observatory" stays the default, a new hand-keyed light theme ("Observatory Day") is added, and System follows the OS `prefers-color-scheme` live. Choose it from the header (Appearance) or the command palette ("Appearance: …"); the choice persists, applies before first paint (no flash), and syncs across detached windows
+
+### Changed
+
+- Translate the topology node and tool-detail glass surfaces to frosted (translucent) glass in the light theme, so the canvas shows through softly and the glass language stays consistent with the dark theme
 
 ### Removed
 
+- Remove the one-time `${vault:KEY}` deprecation warning logged on stack load; the alias still resolves to `${var:KEY}`, the warning was just noise on every stand-up
 - Remove the dead Wiring Mode canvas overlay, the Secret Heatmap overlay (and its `/api/stack/secrets-map` endpoint), and the Drift overlay from the topology toolbar
 - Remove the dead latency-heat overlay code (`showLatencyHeat` store state and the unused `useLatencyHeat` hook), which was never wired to any UI or node
 

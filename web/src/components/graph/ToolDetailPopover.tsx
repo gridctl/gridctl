@@ -81,7 +81,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, onClose }: ToolDetailPop
       // pane/node handlers; dismissal is the parent's job via useDismiss.
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        'nodrag absolute left-full top-0 ml-2 z-50 w-72',
+        'nodrag absolute left-full top-0 ml-2 z-50 w-72 frost-surface',
         'rounded-lg border border-border bg-surface-elevated/95',
         'backdrop-blur-xl shadow-bevel animate-fade-in-scale',
       )}
