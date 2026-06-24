@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Add a theme picker to the web UI with a Light / Dark / System triad: the dark "Obsidian Observatory" stays the default, a new hand-keyed light theme ("Observatory Day") is added, and System follows the OS `prefers-color-scheme` live. Choose it from the StatusBar (Appearance) or the command palette ("Appearance: …"); the choice persists, applies before first paint (no flash), and syncs across detached windows
+
 ### Removed
 
 - Remove the dead Wiring Mode canvas overlay, the Secret Heatmap overlay (and its `/api/stack/secrets-map` endpoint), and the Drift overlay from the topology toolbar
