@@ -296,9 +296,16 @@ type ToolsListResult struct {
 }
 
 // ToolCallParams contains parameters for tools/call.
+//
+// Arguments is intentionally not tagged omitempty: the MCP tools/call contract
+// expects arguments to always be present as an object, and strict downstream
+// servers reject a missing field as "expected object, received undefined". An
+// empty map therefore marshals as {}. Callers must pass a non-nil map; the
+// outbound chokepoint in RPCClient.CallTool normalizes nil to an empty map so
+// it never serializes as null.
 type ToolCallParams struct {
 	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments,omitempty"`
+	Arguments map[string]any `json:"arguments"`
 }
 
 // ToolCallResult is the response to tools/call.
