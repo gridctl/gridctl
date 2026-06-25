@@ -2,34 +2,28 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-beta.12] - 2026-06-25
 
-### Added
 
-- Add a theme picker to the web UI with a Light / Dark / System triad: the dark "Obsidian Observatory" stays the default, a new hand-keyed light theme ("Observatory Day") is added, and System follows the OS `prefers-color-scheme` live. Choose it from the header (Appearance) or the command palette ("Appearance: …"); the choice persists, applies before first paint (no flash), and syncs across detached windows
+### Bug Fixes
 
-### Fixed
 
-- Stop dropping empty tool arguments on the gateway's outbound `tools/call`. An empty (or absent) argument object was omitted from the request entirely, so strict downstream servers (e.g. the Atlassian remote) rejected no-argument tools with `expected object, received undefined` — which looked like an authentication failure. The `arguments` field is now always sent as an object (`{}` when empty), so tools like `getAccessibleAtlassianResources` work in code mode
-- Stop the Tools workspace from crashing to a blank screen when no MCP servers are attached. The tool-catalog endpoint now returns an empty array (never null) in stackless mode, the store and fuzzy-search hook coalesce a missing list to empty, and a shared error boundary now wraps the workspace outlet (and the app root) so a render error degrades to a recoverable message with the navigation intact instead of unmounting the whole UI
+- Gate detail-pane anchor to selected state ([#833](https://github.com/gridctl/gridctl/pull/833))
+- Stop Tools workspace blanking when no servers attached ([#835](https://github.com/gridctl/gridctl/pull/835))
+- Always send an arguments object on outbound tools/call ([#837](https://github.com/gridctl/gridctl/pull/837))
 
-### Changed
+### Features
 
-- Translate the topology node and tool-detail glass surfaces to frosted (translucent) glass in the light theme, so the canvas shows through softly and the glass language stays consistent with the dark theme
-- Give every workspace a consistent depth hierarchy: detail/inspector panes now read as an opaque elevated surface (pure white in the light theme) lifted above a recessed list canvas, the pane divider is stronger, and a soft shadow falls from the detail pane onto the list. A thin amber leading edge ties each detail pane to the active list item, and the selected skill card's left accent warms to amber. Applies across Topology, Library, Variables, Tools, and Metrics in both themes
 
-### Removed
+- Add light/dark/system theme picker ([#828](https://github.com/gridctl/gridctl/pull/828))
+- Frost light-theme node and panel glass ([#829](https://github.com/gridctl/gridctl/pull/829))
+- Consistent depth hierarchy across workspaces ([#831](https://github.com/gridctl/gridctl/pull/831))
 
-- Remove the one-time `${vault:KEY}` deprecation warning logged on stack load; the alias still resolves to `${var:KEY}`, the warning was just noise on every stand-up
-- Remove the dead Wiring Mode canvas overlay, the Secret Heatmap overlay (and its `/api/stack/secrets-map` endpoint), and the Drift overlay from the topology toolbar
-- Remove the dead latency-heat overlay code (`showLatencyHeat` store state and the unused `useLatencyHeat` hook), which was never wired to any UI or node
+### Refactoring
 
-### Changed
 
-- Fold spec-vs-running drift into Spec Mode: it now reports changed items alongside undeployed and untracked ones, so the single Spec lens covers drift
-- Group the canvas graph overlays (token heat, spec mode) behind a single Overlays toolbar menu, trimming the control bar to seven buttons
-
-## [0.1.0-beta.11] - 2026-06-23
+- Clean up topology canvas overlays ([#826](https://github.com/gridctl/gridctl/pull/826))
+- Group canvas overlays and drop dead latency-heat code ([#827](https://github.com/gridctl/gridctl/pull/827))## [0.1.0-beta.11] - 2026-06-23
 
 
 ### Bug Fixes
@@ -100,9 +94,7 @@ All notable changes to gridctl will be documented in this file.
 - Extract shared vault hooks and atoms ([#689](https://github.com/gridctl/gridctl/pull/689))
 - Scope Vault sidebar to quick-lookup ([#690](https://github.com/gridctl/gridctl/pull/690))
 - Extract useToolsEditor hook for reuse ([#713](https://github.com/gridctl/gridctl/pull/713))
-- Declutter header status cluster and fix Code Mode affordance ([#803](https://github.com/gridctl/gridctl/pull/803))
-
-## [0.1.0-beta.10] - 2026-05-18
+- Declutter header status cluster and fix Code Mode affordance ([#803](https://github.com/gridctl/gridctl/pull/803))## [0.1.0-beta.10] - 2026-05-18
 
 
 ### Bug Fixes
@@ -128,14 +120,14 @@ All notable changes to gridctl will be documented in this file.
 - Single-writer multi-agent orchestrator ([#588](https://github.com/gridctl/gridctl/pull/588))
 - JSONL run persistence, time-travel resume, approval gates ([#598](https://github.com/gridctl/gridctl/pull/598))
 - Add visual IDE for agent runtime (phase F slices 1–3) ([#599](https://github.com/gridctl/gridctl/pull/599))
-- Phase G: CLI surface (run, agent build/validate) ([#600](https://github.com/gridctl/gridctl/pull/600))
-- Phase H: optimize heuristics, observed wrapper, AGENTS.md sync ([#601](https://github.com/gridctl/gridctl/pull/601))
+- Phase G — CLI surface (run, agent build/validate) ([#600](https://github.com/gridctl/gridctl/pull/600))
+- Phase H — optimize heuristics, observed wrapper, AGENTS.md sync ([#601](https://github.com/gridctl/gridctl/pull/601))
 - Add agent init --lang and --prompt-only flags ([#605](https://github.com/gridctl/gridctl/pull/605))
-- Phase 2: Go skill scaffold body + compile-check ([#606](https://github.com/gridctl/gridctl/pull/606))
-- Phase 3: skill.RunContext cut + TS hybrid parity ([#607](https://github.com/gridctl/gridctl/pull/607))
+- Phase 2 — Go skill scaffold body + compile-check ([#606](https://github.com/gridctl/gridctl/pull/606))
+- Phase 3 — skill.RunContext cut + TS hybrid parity ([#607](https://github.com/gridctl/gridctl/pull/607))
 - Real go build path with manifest guardrails ([#608](https://github.com/gridctl/gridctl/pull/608))
-- Phase 5: gateway-builder go plugin loader ([#609](https://github.com/gridctl/gridctl/pull/609))
-- Phase 6: three-flavor skill examples and Anthropic compat test ([#610](https://github.com/gridctl/gridctl/pull/610))
+- Phase 5 — gateway-builder go plugin loader ([#609](https://github.com/gridctl/gridctl/pull/609))
+- Phase 6 — three-flavor skill examples and Anthropic compat test ([#610](https://github.com/gridctl/gridctl/pull/610))
 - Add agent skill launch endpoint ([#625](https://github.com/gridctl/gridctl/pull/625))
 - Add agent skill run launcher UI ([#626](https://github.com/gridctl/gridctl/pull/626))
 - Emit per-node telemetry from typed-skill runs ([#630](https://github.com/gridctl/gridctl/pull/630))
