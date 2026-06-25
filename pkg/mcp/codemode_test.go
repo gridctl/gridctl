@@ -202,6 +202,76 @@ func TestSandbox_ToolCall(t *testing.T) {
 	}
 }
 
+// TestSandbox_ToolCall_EmptyArgsForwardedAsObject is a regression test: an
+// empty object literal {} passed to mcp.callTool must reach the caller as a
+// non-nil, empty map. A nil map would serialize downstream as a missing
+// arguments field (or null), which strict servers reject with
+// "expected object, received undefined".
+func TestSandbox_ToolCall_EmptyArgsForwardedAsObject(t *testing.T) {
+	sandbox := NewSandbox(5 * time.Second)
+
+	var captured map[string]any
+	var capturedSet bool
+	caller := &mockToolCaller{
+		callFn: func(_ context.Context, _ string, arguments map[string]any) (*ToolCallResult, error) {
+			captured = arguments
+			capturedSet = true
+			return &ToolCallResult{Content: []Content{NewTextContent(`"ok"`)}}, nil
+		},
+	}
+
+	allowedTools := []Tool{
+		{Name: "server__echo"},
+	}
+
+	code := `mcp.callTool("server", "echo", {}); "done";`
+	result, err := sandbox.Execute(context.Background(), code, caller, allowedTools)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if result.Value != `"done"` {
+		t.Errorf("Expected '\"done\"', got '%s'", result.Value)
+	}
+	if !capturedSet {
+		t.Fatal("caller was never invoked")
+	}
+	if captured == nil {
+		t.Fatal("arguments forwarded as nil; expected a non-nil empty map")
+	}
+	if len(captured) != 0 {
+		t.Errorf("arguments should be empty, got %v", captured)
+	}
+}
+
+// TestSandbox_ToolCall_NonEmptyArgsForwarded confirms the empty-args fix does
+// not disturb forwarding of populated argument objects.
+func TestSandbox_ToolCall_NonEmptyArgsForwarded(t *testing.T) {
+	sandbox := NewSandbox(5 * time.Second)
+
+	var captured map[string]any
+	caller := &mockToolCaller{
+		callFn: func(_ context.Context, _ string, arguments map[string]any) (*ToolCallResult, error) {
+			captured = arguments
+			return &ToolCallResult{Content: []Content{NewTextContent(`"ok"`)}}, nil
+		},
+	}
+
+	allowedTools := []Tool{
+		{Name: "server__echo"},
+	}
+
+	code := `mcp.callTool("server", "echo", {a: 1}); "done";`
+	if _, err := sandbox.Execute(context.Background(), code, caller, allowedTools); err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if len(captured) != 1 {
+		t.Fatalf("expected one argument, got %v", captured)
+	}
+	if _, ok := captured["a"]; !ok {
+		t.Errorf("expected argument key 'a', got %v", captured)
+	}
+}
+
 func TestSandbox_ACLEnforcement(t *testing.T) {
 	sandbox := NewSandbox(5 * time.Second)
 	caller := &mockToolCaller{
