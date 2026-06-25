@@ -10,6 +10,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixed
 
+- Stop dropping empty tool arguments on the gateway's outbound `tools/call`. An empty (or absent) argument object was omitted from the request entirely, so strict downstream servers (e.g. the Atlassian remote) rejected no-argument tools with `expected object, received undefined` — which looked like an authentication failure. The `arguments` field is now always sent as an object (`{}` when empty), so tools like `getAccessibleAtlassianResources` work in code mode
 - Stop the Tools workspace from crashing to a blank screen when no MCP servers are attached. The tool-catalog endpoint now returns an empty array (never null) in stackless mode, the store and fuzzy-search hook coalesce a missing list to empty, and a shared error boundary now wraps the workspace outlet (and the app root) so a render error degrades to a recoverable message with the navigation intact instead of unmounting the whole UI
 
 ### Changed

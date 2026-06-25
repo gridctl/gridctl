@@ -199,6 +199,14 @@ func (r *RPCClient) RefreshTools(ctx context.Context) error {
 
 // CallTool invokes a tool on the downstream agent.
 func (r *RPCClient) CallTool(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
+	// Normalize a nil map to an empty one so the request always carries an
+	// arguments object ({}) rather than null. Strict downstream servers reject
+	// both a missing field and null for no-argument tools. A caller-provided
+	// map is left untouched.
+	if arguments == nil {
+		arguments = map[string]any{}
+	}
+
 	params := ToolCallParams{
 		Name:      name,
 		Arguments: arguments,
