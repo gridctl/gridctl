@@ -227,6 +227,50 @@ func newFakeRPCClient(name string, ft *fakeTransport) *RPCClient {
 	return r
 }
 
+// TestRPCClient_CallTool_AlwaysSendsArgumentsObject is a regression test for a
+// bug where empty or nil tool arguments were dropped from (or sent as null in)
+// the outbound tools/call request, causing strict downstream servers to fail
+// with "expected object, received undefined". The arguments field must always
+// marshal as an object: {} when empty or nil, and the populated map otherwise.
+func TestRPCClient_CallTool_AlwaysSendsArgumentsObject(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments map[string]any
+		wantJSON  string
+	}{
+		{"empty map", map[string]any{}, `{"name":"server__echo","arguments":{}}`},
+		{"nil map", nil, `{"name":"server__echo","arguments":{}}`},
+		{"populated map", map[string]any{"a": float64(1)}, `{"name":"server__echo","arguments":{"a":1}}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var capturedParams []byte
+			ft := &fakeTransport{
+				callFn: func(_ context.Context, method string, params any, _ any) error {
+					if method != "tools/call" {
+						t.Errorf("expected method 'tools/call', got %q", method)
+					}
+					b, err := json.Marshal(params)
+					if err != nil {
+						t.Fatalf("marshal params: %v", err)
+					}
+					capturedParams = b
+					return nil
+				},
+			}
+			r := newFakeRPCClient("test", ft)
+
+			if _, err := r.CallTool(context.Background(), "server__echo", tt.arguments); err != nil {
+				t.Fatalf("CallTool() error = %v", err)
+			}
+			if got := string(capturedParams); got != tt.wantJSON {
+				t.Errorf("outbound params = %s, want %s", got, tt.wantJSON)
+			}
+		})
+	}
+}
+
 func TestRPCClient_Name(t *testing.T) {
 	ft := &fakeTransport{}
 	r := newFakeRPCClient("test-server", ft)
