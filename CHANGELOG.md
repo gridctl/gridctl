@@ -2,6 +2,14 @@
 
 All notable changes to gridctl will be documented in this file.
 
+## [Unreleased]
+
+
+### Features
+
+
+- Add a text-size control to the Library Instructions and Tools detail panes
+
 ## [0.1.0-beta.12] - 2026-06-25
 
 
