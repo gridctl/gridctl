@@ -25,9 +25,29 @@ set -euo pipefail
 #              reachable via Docker client SDK calls.
 #              Fixed in Moby v29.3.1 but v29+ not yet published to Go module
 #              proxy. Remove suppression once github.com/docker/docker@v29+ lands.
+#
+# GO-2026-5746 # CVE-2026-41567 | Moby `PUT /containers/{id}/archive` executes a
+#              container binary on the host (`docker cp` into a container). Not
+#              reachable: gridctl never calls CopyToContainer/CopyFromContainer/
+#              ContainerArchive. No fixed release (govulncheck "Fixed in: N/A");
+#              flagged at import/init level only. Revisit once a fixed
+#              github.com/docker/docker release lands.
+#
+# GO-2026-5668 # CVE-2026-41568 | Moby `docker cp` race condition allows creating
+#              arbitrary empty files on the host via symlink swap. Not reachable:
+#              gridctl uses no container copy/archive APIs. No fixed release
+#              ("Fixed in: N/A"). Revisit once a fixed docker release lands.
+#
+# GO-2026-5617 # CVE-2026-42306 | Moby `docker cp` race condition allows bind
+#              mount redirection to a host path. Not reachable: gridctl uses no
+#              container copy/archive APIs. No fixed release ("Fixed in: N/A").
+#              Revisit once a fixed docker release lands.
 SUPPRESSED=(
   "GO-2026-4887"
   "GO-2026-4883"
+  "GO-2026-5746"
+  "GO-2026-5668"
+  "GO-2026-5617"
 )
 
 # ---------------------------------------------------------------------------
