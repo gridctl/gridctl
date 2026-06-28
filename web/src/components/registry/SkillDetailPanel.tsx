@@ -7,9 +7,11 @@ import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
 import { formatLastUsed } from '../../lib/toolAudit';
 import { InspectorHeader, InspectorTabList, InspectorTabButton, PaneAnchor } from '../inspector';
 import { IconButton } from '../ui/IconButton';
+import { ZoomControls } from '../ui/ZoomControls';
 import { StateBadge } from './StateBadge';
 import { MarkdownPreview } from './MarkdownPreview';
 import { SkillFileTree } from './SkillFileTree';
+import { useTextZoom } from '../../hooks/useTextZoom';
 import type { AgentSkill, SkillSourceStatus, SkillUsageStat } from '../../types';
 
 type SkillTab = 'overview' | 'instructions' | 'files';
@@ -70,6 +72,24 @@ export function SkillDetailPanel({
   const [viewSource, setViewSource] = useState(false);
   const [prevName, setPrevName] = useState(skill?.name);
   const tablistRef = useRef<HTMLDivElement>(null);
+
+  // Content text-size control for the rendered Instructions markdown. Scoped to
+  // this pane (own storageKey) like the Logs/Traces zoom; the .skill-md scope
+  // reads --text-zoom-size off the wrapper, so 13px stays the default.
+  const instructionsRef = useRef<HTMLDivElement>(null);
+  const {
+    fontSize: instrFontSize,
+    zoomIn: instrZoomIn,
+    zoomOut: instrZoomOut,
+    resetZoom: instrResetZoom,
+    isMin: instrIsMin,
+    isMax: instrIsMax,
+    isDefault: instrIsDefault,
+  } = useTextZoom({
+    storageKey: 'gridctl-library-zoom',
+    defaultSize: 13,
+    containerRef: instructionsRef,
+  });
 
   // Reset to Overview (and rendered view) when the selected skill changes, so
   // switching skills never strands the user on Files (which would refetch for
@@ -209,11 +229,28 @@ export function SkillDetailPanel({
           aria-labelledby={tabBtnId('instructions')}
           hidden={activeTab !== 'instructions'}
           className="px-4 py-4 space-y-3"
+          ref={instructionsRef}
+          style={{ '--text-zoom-size': `${instrFontSize}px` } as React.CSSProperties}
         >
           {activeTab === 'instructions' && (
             <>
               {skill.body && (
-                <div className="flex items-center justify-end">
+                <div className="flex items-center justify-between gap-2">
+                  {/* Text-size control acts on the rendered markdown only, so
+                      hide it in raw-source view where it would do nothing. */}
+                  {viewSource ? (
+                    <span />
+                  ) : (
+                    <ZoomControls
+                      fontSize={instrFontSize}
+                      onZoomIn={instrZoomIn}
+                      onZoomOut={instrZoomOut}
+                      onReset={instrResetZoom}
+                      isMin={instrIsMin}
+                      isMax={instrIsMax}
+                      isDefault={instrIsDefault}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => setViewSource((v) => !v)}
