@@ -1,9 +1,11 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { CodeViewer } from '../ui/CodeViewer';
+import { ZoomControls } from '../ui/ZoomControls';
 import { InspectorHeader, PaneAnchor } from '../inspector';
 import { formatLastUsed, type AuditState } from '../../lib/toolAudit';
+import { useTextZoom } from '../../hooks/useTextZoom';
 import type { ToolRow } from '../../hooks/useToolsEditor';
 
 // Per-state styling for the audit row, mirroring the list's AUDIT_STYLES.
@@ -41,6 +43,15 @@ export function ToolDetailPanel({
   lastCalledAt,
   onClose,
 }: ToolDetailPanelProps) {
+  // Content text-size control for the description + JSON schema, scoped to this
+  // pane (own storageKey) like the Logs/Traces zoom; 12px stays the default.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
+    storageKey: 'gridctl-tools-zoom',
+    defaultSize: 12,
+    containerRef: contentRef,
+  });
+
   return (
     <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       {tool ? (
@@ -51,6 +62,17 @@ export function ToolDetailPanel({
             icon={Wrench}
             accent="primary"
             onClose={onClose}
+            actions={
+              <ZoomControls
+                fontSize={fontSize}
+                onZoomIn={zoomIn}
+                onZoomOut={zoomOut}
+                onReset={resetZoom}
+                isMin={isMin}
+                isMax={isMax}
+                isDefault={isDefault}
+              />
+            }
             subtitle={
               <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                 <span className="text-[10px] font-mono text-primary/80 truncate">{serverName}</span>
@@ -68,10 +90,16 @@ export function ToolDetailPanel({
             }
           />
 
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-4 py-4 space-y-5">
+          <div
+            ref={contentRef}
+            className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-4 py-4 space-y-5"
+          >
             <Section title="Description">
               {tool.description ? (
-                <p className="text-xs text-text-secondary leading-relaxed whitespace-pre-wrap break-words">
+                <p
+                  className="text-text-secondary leading-relaxed whitespace-pre-wrap break-words"
+                  style={{ fontSize }}
+                >
                   {tool.description}
                 </p>
               ) : (
@@ -84,6 +112,7 @@ export function ToolDetailPanel({
                 <CodeViewer
                   language="json"
                   content={JSON.stringify(schema, null, 2)}
+                  fontSize={fontSize}
                   ariaLabel={`${tool.name} input schema`}
                   className="rounded-md border border-border/30 bg-background/80 max-h-[45vh]"
                 />
