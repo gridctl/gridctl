@@ -976,7 +976,10 @@ body::before {
    ============================================ */
 .skill-md {
   color: var(--color-text-secondary);
-  font-size: 13px;
+  /* Scales with the reading-pane text-size control (useTextZoom sets
+     --text-zoom-size on the wrapping container). Children below use em so the
+     whole hierarchy scales from this single base; 13px stays the default. */
+  font-size: var(--text-zoom-size, 13px);
   line-height: 1.6;
   word-break: break-word;
 }
@@ -993,14 +996,14 @@ body::before {
   line-height: 1.3;
 }
 .skill-md h1 {
-  font-size: 18px;
+  font-size: 1.385em;
   margin: 0 0 0.75em;
   padding-bottom: 0.4em;
   border-bottom: 1px solid var(--color-border-subtle);
 }
-.skill-md h2 { font-size: 15px; margin: 1.4em 0 0.5em; }
-.skill-md h3 { font-size: 13px; margin: 1.1em 0 0.35em; }
-.skill-md h4 { font-size: 12px; margin: 1em 0 0.3em; color: var(--color-text-secondary); }
+.skill-md h2 { font-size: 1.154em; margin: 1.4em 0 0.5em; }
+.skill-md h3 { font-size: 1em; margin: 1.1em 0 0.35em; }
+.skill-md h4 { font-size: 0.923em; margin: 1em 0 0.3em; color: var(--color-text-secondary); }
 
 .skill-md p { margin: 0 0 0.7em; }
 .skill-md strong { color: var(--color-text-primary); font-weight: 600; }
@@ -1042,7 +1045,7 @@ body::before {
   border-collapse: collapse;
   overflow-x: auto;
   margin: 0.7em 0;
-  font-size: 12px;
+  font-size: 0.923em;
 }
 .skill-md th,
 .skill-md td {
@@ -1075,14 +1078,14 @@ body::before {
 }
 .skill-md .md-code__lang {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
+  font-size: 0.769em;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
 }
 .skill-md .md-code__copy {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
+  font-size: 0.769em;
   color: var(--color-text-muted);
   background: transparent;
   border: 1px solid var(--color-border);
@@ -1109,7 +1112,7 @@ body::before {
 }
 .skill-md .md-code code {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
+  font-size: 0.923em;
   line-height: 1.55;
   background: none;
   padding: 0;
