@@ -121,4 +121,16 @@ describe('SkillDetailPanel', () => {
     fireEvent.click(screen.getByText('incident-postmortem'));
     expect(onSelectRelated).toHaveBeenCalledWith('incident-postmortem');
   });
+
+  it('shows the text-size control only on the rendered Instructions view', () => {
+    renderPanel();
+    // Not on Overview.
+    expect(screen.queryByTitle(/increase font size/i)).not.toBeInTheDocument();
+    // Present on the rendered Instructions tab.
+    fireEvent.click(screen.getByRole('tab', { name: 'Instructions' }));
+    expect(screen.getByTitle(/increase font size/i)).toBeInTheDocument();
+    // Hidden when viewing raw source (where it would do nothing).
+    fireEvent.click(screen.getByRole('button', { name: /view source/i }));
+    expect(screen.queryByTitle(/increase font size/i)).not.toBeInTheDocument();
+  });
 });
