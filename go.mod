@@ -19,7 +19,7 @@ require (
 	github.com/jedib0t/go-pretty/v6 v6.8.1
 	github.com/mattn/go-isatty v0.0.22
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/pelletier/go-toml/v2 v2.4.0
+	github.com/pelletier/go-toml/v2 v2.4.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/tailscale/hujson v0.0.0-20250605163823-992244df8c5a
