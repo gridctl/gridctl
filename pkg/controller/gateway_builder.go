@@ -1008,18 +1008,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			if !result.Success {
 				return fmt.Errorf("%s", result.Message)
 			}
-			// Refresh registry if it exists
-			if inst.RegistryServer != nil {
-				if refreshErr := inst.RegistryServer.RefreshTools(watchCtx); refreshErr != nil {
-					slog.New(handler).Warn("registry refresh failed", "error", refreshErr)
-				}
-				if inst.RegistryServer.HasContent() {
-					inst.Gateway.Router().AddClient(inst.RegistryServer)
-				} else {
-					inst.Gateway.Router().RemoveClient("registry")
-				}
-				inst.Gateway.Router().RefreshTools()
-			}
+			refreshRegistry(watchCtx, inst, slog.New(handler))
 			return nil
 		})
 		watcher.SetLogger(slog.New(handler))
@@ -1034,6 +1023,26 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// Expose the watcher starter so initialize can activate it on demand.
 	inst.APIServer.SetStartWatcher(startWatcher)
 
+	// Watch the registry skills directory so skills added to disk out-of-band
+	// (hand-authored, or written by `gridctl skill add/update/remove` while the
+	// daemon runs) are reflected in the running gateway — activation, the UI
+	// listing, and the MCP prompt set — without a restart. This is independent
+	// of --watch, which only governs the stack.yaml watcher.
+	if inst.RegistryServer != nil {
+		regLogger := slog.New(handler)
+		skillsDir := filepath.Join(inst.RegistryServer.Store().Dir(), "skills")
+		regWatcher := reload.NewDirWatcher(skillsDir, func() error {
+			refreshRegistry(ctx, inst, regLogger)
+			return nil
+		})
+		regWatcher.SetLogger(regLogger)
+		go func() {
+			if err := regWatcher.Watch(ctx); err != nil && err != context.Canceled {
+				regLogger.Error("registry watcher error", "error", err)
+			}
+		}()
+	}
+
 	if b.config.Watch {
 		startWatcher(b.stackPath)
 
@@ -1041,6 +1050,27 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			fmt.Printf("\nFile watcher enabled for: %s\n", b.stackPath)
 		}
 	}
+}
+
+// refreshRegistry reloads the registry store from disk and re-syncs the
+// gateway router with the result. It is shared by the stack-reload callback
+// and the registry directory watcher so the two paths cannot drift: the
+// store is reloaded, the registry client is added or removed from the router
+// depending on whether any skills remain, and the router's tool set is
+// refreshed. A failed reload is logged and tolerated rather than fatal.
+func refreshRegistry(ctx context.Context, inst *GatewayInstance, logger *slog.Logger) {
+	if inst.RegistryServer == nil {
+		return
+	}
+	if err := inst.RegistryServer.RefreshTools(ctx); err != nil {
+		logger.Warn("registry refresh failed", "error", err)
+	}
+	if inst.RegistryServer.HasContent() {
+		inst.Gateway.Router().AddClient(inst.RegistryServer)
+	} else {
+		inst.Gateway.Router().RemoveClient("registry")
+	}
+	inst.Gateway.Router().RefreshTools()
 }
 
 // printEndpoints prints the gateway endpoint information.
