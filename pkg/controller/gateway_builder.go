@@ -1031,6 +1031,13 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	if inst.RegistryServer != nil {
 		regLogger := slog.New(handler)
 		skillsDir := filepath.Join(inst.RegistryServer.Store().Dir(), "skills")
+		// Create the directory synchronously so the watcher arms on the tight
+		// skills subtree rather than a busier ancestor like ~/.gridctl. The
+		// watcher itself is write-free and tolerates a missing directory, so a
+		// failure here is non-fatal.
+		if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+			regLogger.Warn("could not create registry skills directory for watching", "path", skillsDir, "error", err)
+		}
 		regWatcher := reload.NewDirWatcher(skillsDir, func() error {
 			refreshRegistry(ctx, inst, regLogger)
 			return nil
