@@ -78,9 +78,10 @@ func TestDirWatcher_DebouncesBurst(t *testing.T) {
 	}
 }
 
-func TestDirWatcher_CreatesMissingRoot(t *testing.T) {
-	// The registry skills directory may not exist yet at startup. Watch must
-	// create it rather than failing, and then observe writes into it.
+func TestDirWatcher_DetectsLateCreatedRoot(t *testing.T) {
+	// The registry skills directory may not exist yet at startup. The watcher
+	// must not create it (it is write-free), but must observe it being created
+	// later by watching the nearest existing ancestor, then pick up writes.
 	root := filepath.Join(t.TempDir(), "registry", "skills")
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Fatalf("precondition: root should not exist yet")
@@ -91,10 +92,12 @@ func TestDirWatcher_CreatesMissingRoot(t *testing.T) {
 	w.SetDebounce(50 * time.Millisecond)
 	defer startDirWatcher(t, w)()
 
-	if _, err := os.Stat(root); err != nil {
-		t.Fatalf("expected watcher to create the root directory: %v", err)
+	// The watcher must not have created the directory.
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("watcher should not create the root directory")
 	}
 
+	// Create the root and a skill inside it after the watcher started.
 	skillDir := filepath.Join(root, "late")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -103,7 +106,7 @@ func TestDirWatcher_CreatesMissingRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	if calls.Load() == 0 {
 		t.Fatal("expected onChange to fire for a skill added after startup")
 	}

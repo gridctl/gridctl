@@ -56,21 +56,19 @@ func (w *DirWatcher) SetDebounce(d time.Duration) {
 // Watch starts watching the directory tree for changes. It blocks until the
 // context is cancelled.
 //
-// The root may not exist yet at startup (the registry skills directory is only
-// created when the first skill is saved). Watch creates it so there is always a
-// stable directory to watch, sidestepping the need to re-arm when it appears.
+// The root may not exist yet (the registry skills directory is created lazily).
+// Watch never creates it — that is the caller's job — and instead watches the
+// nearest existing ancestor so the root's eventual creation is observed and the
+// subtree armed. Staying write-free keeps the watcher safe to run against a
+// directory another goroutine may be removing (e.g. a test's temp dir).
 func (w *DirWatcher) Watch(ctx context.Context) error {
-	if err := os.MkdirAll(w.root, 0o755); err != nil {
-		return err
-	}
-
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
 	defer watcher.Close()
 
-	w.addTree(watcher, w.root)
+	w.arm(watcher)
 	w.logger.Info("watching directory for changes", "path", w.root)
 
 	var debounceTimer *time.Timer
@@ -120,6 +118,30 @@ func (w *DirWatcher) Watch(ctx context.Context) error {
 			}
 			w.logger.Error("watcher error", "error", err)
 		}
+	}
+}
+
+// arm registers the existing subtree under root plus the nearest existing
+// ancestor directory. Watching an ancestor lets the watcher observe root being
+// created when it does not exist yet (the directory-create event fires on the
+// ancestor, after which addTree picks up the new subtree). arm never creates
+// directories.
+func (w *DirWatcher) arm(watcher *fsnotify.Watcher) {
+	w.addTree(watcher, w.root)
+
+	dir := w.root
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return
+		}
+		if _, err := os.Stat(parent); err == nil {
+			if addErr := watcher.Add(parent); addErr != nil {
+				w.logger.Debug("failed to watch ancestor directory, skipping", "path", parent, "error", addErr)
+			}
+			return
+		}
+		dir = parent
 	}
 }
 
