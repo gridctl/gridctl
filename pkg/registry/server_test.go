@@ -306,6 +306,36 @@ func TestServer_RefreshTools_ReloadsStore(t *testing.T) {
 	}
 }
 
+// TestServer_RefreshTools_PicksUpOutOfBandSkill reproduces the activation bug:
+// a skill written directly into the registry skills directory after the daemon
+// started is invisible to the in-memory store (so `gridctl activate` 404s) until
+// the store is refreshed. RefreshTools must reconcile it.
+func TestServer_RefreshTools_PicksUpOutOfBandSkill(t *testing.T) {
+	srv, dir := setupTestServer(t)
+
+	if err := srv.Initialize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Skill added out-of-band (e.g. hand-authored or by a CLI write) after init.
+	writeTestSkill(t, dir, "node-state-snapshot", "Snapshot node state", "# Snapshot\n\nDo it.", StateDraft)
+
+	if _, err := srv.Store().GetSkill("node-state-snapshot"); err == nil {
+		t.Fatal("expected skill to be missing from the stale in-memory store before refresh")
+	}
+
+	if err := srv.RefreshTools(context.Background()); err != nil {
+		t.Fatalf("RefreshTools() error: %v", err)
+	}
+
+	if _, err := srv.Store().GetSkill("node-state-snapshot"); err != nil {
+		t.Fatalf("expected skill to be activatable after refresh, got: %v", err)
+	}
+	if !srv.HasContent() {
+		t.Error("expected HasContent() true after an out-of-band skill was reconciled")
+	}
+}
+
 func TestServer_Store(t *testing.T) {
 	store := NewStore(t.TempDir())
 	srv := New(store)

@@ -5,6 +5,11 @@ All notable changes to gridctl will be documented in this file.
 ## [Unreleased]
 
 
+### Bug Fixes
+
+
+- Reflect skills added to the registry directory on disk in the running daemon without a restart, so a skill that validates can be activated and appears in the UI
+
 ### Features
 
 
