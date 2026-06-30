@@ -2,20 +2,18 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-beta.13] - 2026-06-30
 
 
 ### Bug Fixes
 
 
-- Reflect skills added to the registry directory on disk in the running daemon without a restart, so a skill that validates can be activated and appears in the UI
+- Refresh daemon registry when skills change on disk ([#844](https://github.com/gridctl/gridctl/pull/844))
 
 ### Features
 
 
-- Add a text-size control to the Library Instructions and Tools detail panes
-
-## [0.1.0-beta.12] - 2026-06-25
+- Text-size control for reading-heavy detail panes ([#841](https://github.com/gridctl/gridctl/pull/841))## [0.1.0-beta.12] - 2026-06-25
 
 
 ### Bug Fixes
