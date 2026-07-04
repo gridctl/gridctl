@@ -165,10 +165,11 @@ func (r *Router) AggregatedTools() []Tool {
 		for _, tool := range toolsOf(r.sets[name]) {
 			prefixedName := PrefixTool(name, tool.Name)
 			prefixedTool := Tool{
-				Name:        prefixedName,
-				Title:       prefixedName,
-				Description: fmt.Sprintf("MCP server: %s. Call using the exact tool name %q. %s", name, prefixedName, tool.Description),
-				InputSchema: tool.InputSchema,
+				Name:         prefixedName,
+				Title:        prefixedName,
+				Description:  fmt.Sprintf("MCP server: %s. Call using the exact tool name %q. %s", name, prefixedName, tool.Description),
+				InputSchema:  tool.InputSchema,
+				OutputSchema: tool.OutputSchema,
 			}
 			tools = append(tools, prefixedTool)
 		}
@@ -195,10 +196,11 @@ func (r *Router) CatalogTools() []Tool {
 	for _, name := range names {
 		for _, tool := range toolsOf(r.sets[name]) {
 			tools = append(tools, Tool{
-				Name:        PrefixTool(name, tool.Name),
-				Title:       tool.Title,
-				Description: tool.Description,
-				InputSchema: tool.InputSchema,
+				Name:         PrefixTool(name, tool.Name),
+				Title:        tool.Title,
+				Description:  tool.Description,
+				InputSchema:  tool.InputSchema,
+				OutputSchema: tool.OutputSchema,
 			})
 		}
 	}

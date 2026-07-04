@@ -269,6 +269,12 @@ type Tool struct {
 	Title       string          `json:"title,omitempty"`
 	Description string          `json:"description,omitempty"`
 	InputSchema json.RawMessage `json:"inputSchema"`
+
+	// OutputSchema is the optional JSON Schema describing the tool's
+	// structuredContent. Raw pass-through (same rationale as InputSchema):
+	// the gateway must forward it without loss for clients that validate
+	// structured results against it.
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 }
 
 // InputSchemaObject is a helper for building simple input schemas.
@@ -312,6 +318,12 @@ type ToolCallParams struct {
 type ToolCallResult struct {
 	Content []Content `json:"content"`
 	IsError bool      `json:"isError,omitempty"`
+
+	// StructuredContent is the optional machine-readable result that the
+	// MCP spec allows alongside Content. Raw pass-through: the gateway
+	// forwards it byte-for-byte, exactly as it does for text content and
+	// IsError — upstream servers own the shape.
+	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
 
 	// Usage carries optional usage metadata reported alongside a tool
 	// result — model ID, cache-read/cache-write tokens. The field is
