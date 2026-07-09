@@ -9,13 +9,13 @@ function defaultData(overrides?: Partial<MCPServerFormData>): MCPServerFormData 
   return { name: '', serverType: 'container', ...overrides };
 }
 
-const noop = (_data: Partial<MCPServerFormData>) => {};
+type OnChange = (data: Partial<MCPServerFormData>) => void;
 
 describe('MCPServerForm', () => {
-  let onChange: typeof noop;
+  let onChange: OnChange;
 
   beforeEach(() => {
-    onChange = vi.fn<typeof noop>();
+    onChange = vi.fn<OnChange>();
   });
 
   it('renders all 5 accordion sections', () => {
@@ -202,7 +202,7 @@ describe('MCPServerForm', () => {
 });
 
 describe('MCPServerForm field visibility', () => {
-  const onChange = vi.fn<typeof noop>();
+  const onChange = vi.fn<OnChange>();
 
   it('hides image/port/transport for local process type', () => {
     render(<MCPServerForm data={defaultData({ serverType: 'local' })} onChange={onChange} />);
@@ -233,7 +233,7 @@ describe('MCPServerForm field visibility', () => {
 });
 
 describe('MCPServerForm SSH advanced fields', () => {
-  const onChange = vi.fn<typeof noop>();
+  const onChange = vi.fn<OnChange>();
 
   it('shows knownHostsFile and jumpHost fields for ssh type', () => {
     render(<MCPServerForm data={defaultData({ serverType: 'ssh' })} onChange={onChange} />);
@@ -249,7 +249,7 @@ describe('MCPServerForm SSH advanced fields', () => {
 });
 
 describe('MCPServerForm OpenAPI new auth types', () => {
-  const onChange = vi.fn<typeof noop>();
+  const onChange = vi.fn<OnChange>();
 
   it('shows query auth fields when query is selected', () => {
     render(
@@ -311,7 +311,7 @@ describe('MCPServerForm OpenAPI new auth types', () => {
 });
 
 describe('MCPServerForm TLS section', () => {
-  const onChange = vi.fn<typeof noop>();
+  const onChange = vi.fn<OnChange>();
 
   it('shows TLS / mTLS section header for OpenAPI type', () => {
     render(<MCPServerForm data={defaultData({ serverType: 'openapi' })} onChange={onChange} />);
@@ -342,7 +342,7 @@ describe('MCPServerForm TLS section', () => {
 });
 
 describe('MCPServerForm pin_schemas select', () => {
-  const onChange = vi.fn<typeof noop>();
+  const onChange = vi.fn<OnChange>();
 
   it('shows schema pinning select in advanced section', () => {
     render(<MCPServerForm data={defaultData()} onChange={onChange} />);
