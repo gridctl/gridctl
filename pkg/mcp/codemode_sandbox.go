@@ -150,6 +150,17 @@ func (s *Sandbox) Execute(ctx context.Context, code string, caller ToolCaller, a
 				panic(vm.NewGoError(fmt.Errorf("tool error: %s", text)))
 			}
 
+			// Prefer structuredContent when the server provides it: it is the
+			// declared machine-readable result, not a text scrape. Falls back
+			// to parsing text content below, so the returned shape stays a
+			// native JS value either way.
+			if len(result.StructuredContent) > 0 {
+				var parsed any
+				if json.Unmarshal(result.StructuredContent, &parsed) == nil {
+					return vm.ToValue(parsed)
+				}
+			}
+
 			// Parse the tool result content into a native JS value
 			// so agents can immediately access fields (e.g., result.field)
 			for _, c := range result.Content {
