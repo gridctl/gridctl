@@ -48,7 +48,6 @@ The shape of the codebase from the outside in:
 ```
 cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, optimize, …).
                     embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
-internal/server/    HTTP server bootstrap: mounts the API, the embedded UI, and the MCP transports.
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, …).
                     The Server struct in api.go wires together every pkg/* subsystem the UI needs to talk to.
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
@@ -69,7 +68,9 @@ pkg/optimize/       Cost analysis: feeds `gridctl optimize` and the UI's finding
 pkg/telemetry/      Tool-call accounting (counts, latency, cost). Buffered in-memory; surfaced via /api/telemetry.
 pkg/tracing/        OTLP exporter + in-memory trace buffer for `gridctl traces` and the UI traces panel.
 pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path).
-pkg/metrics/, pkg/token/, pkg/format/, pkg/pricing/, pkg/output/, pkg/logging/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/controller/, pkg/dockerclient/   Supporting libs.
+pkg/controller/     Application composition root: builds the gateway, mounts the API server, embedded UI, and MCP transports
+                    (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
+pkg/metrics/, pkg/token/, pkg/format/, pkg/pricing/, pkg/output/, pkg/logging/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. The Detached*Page files
@@ -83,7 +84,7 @@ docs/               User-facing documentation (cli-reference, config-schema, ski
                     api-reference, installation, project-status, troubleshooting).
 ```
 
-End-to-end request flow for an upstream MCP tool call: client → `internal/server` HTTP listener → `pkg/mcp` transport (SSE/streamable/stdio) → `mcp.Gateway` router → per-server `mcp.Client` (process/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back.
+End-to-end request flow for an upstream MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `pkg/mcp` transport (SSE/streamable/stdio) → `mcp.Gateway` router → per-server `mcp.Client` (process/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back.
 
 End-to-end for the web UI: React store action → `/api/...` handler in `internal/api/` → method on `Server` → call into the relevant `pkg/*` subsystem → JSON response → store update → component re-render.
 
