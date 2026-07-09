@@ -16,6 +16,11 @@ All notable changes to gridctl will be documented in this file.
 
 - Enforce a zero-error frontend lint baseline in CI (gatekeeper now runs eslint on every PR)
 
+### Removed
+
+
+- Delete the unused `internal/server` package and the legacy pre-transport JSON-RPC handler; the gateway lifecycle integration test now exercises the production streamable transport
+
 ## [0.1.0-beta.13] - 2026-06-30
 
 
