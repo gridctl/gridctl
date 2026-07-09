@@ -79,8 +79,9 @@ func postProbe(t *testing.T, handler http.Handler, body any, sessionID string) *
 
 func TestProbeHandler_ExternalURL_Success(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object"}`)
+	outputSchema := json.RawMessage(`{"type":"object","properties":{"status":{"type":"string"}}}`)
 	srv := newProbeServer(t, &recordingClient{tools: []mcp.Tool{
-		{Name: "search", Description: "web search", InputSchema: schema},
+		{Name: "search", Description: "web search", InputSchema: schema, OutputSchema: outputSchema},
 	}})
 	rec := postProbe(t, srv.Handler(), map[string]any{
 		"url": "https://example.com/mcp",
@@ -95,6 +96,9 @@ func TestProbeHandler_ExternalURL_Success(t *testing.T) {
 	}
 	if len(got.Tools) != 1 || got.Tools[0].Name != "search" {
 		t.Fatalf("tools mismatch: %+v", got.Tools)
+	}
+	if string(got.Tools[0].OutputSchema) != string(outputSchema) {
+		t.Fatalf("outputSchema not passed through: %s", got.Tools[0].OutputSchema)
 	}
 	if got.ProbedAt == "" {
 		t.Fatalf("probedAt missing")
