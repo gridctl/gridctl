@@ -1666,6 +1666,9 @@ const defaultMaxToolResultBytes = 65536
 
 // applyTruncation truncates oversized tool results before they enter the log buffer.
 // It modifies result.Content in place. Results at or under the limit are unchanged.
+// Oversized structuredContent is dropped rather than clipped: a byte-clipped JSON
+// document is invalid, and clients fall back to Content per the MCP spec. The drop
+// is surfaced as a text notice so it is never silent.
 func (g *Gateway) applyTruncation(serverName, toolName string, result *ToolCallResult) {
 	if result == nil {
 		return
@@ -1690,6 +1693,16 @@ func (g *Gateway) applyTruncation(serverName, toolName string, result *ToolCallR
 				"original_bytes", len(c.Text), "limit_bytes", limit)
 			result.Content[i].Text = truncated
 		}
+	}
+
+	if limit > 0 && len(result.StructuredContent) > limit {
+		g.logger.Warn("structured content dropped: exceeds result size limit",
+			"tool", toolName, "server", serverName,
+			"original_bytes", len(result.StructuredContent), "limit_bytes", limit)
+		result.Content = append(result.Content, NewTextContent(fmt.Sprintf(
+			"[structuredContent dropped: %d bytes exceeds the %d-byte result limit]",
+			len(result.StructuredContent), limit)))
+		result.StructuredContent = nil
 	}
 }
 
