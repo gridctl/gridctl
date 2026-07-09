@@ -1617,6 +1617,7 @@ export interface ProbedTool {
   name: string;
   description?: string;
   inputSchema: unknown;
+  outputSchema?: unknown;
 }
 
 export interface ProbeSuccess {
