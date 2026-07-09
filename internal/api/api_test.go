@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1736,4 +1739,39 @@ func mapKeys(m map[string]json.RawMessage) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// captureSlog swaps the default slog logger for one writing to the returned
+// buffer, restoring the previous logger when the test ends.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// A container-list failure must degrade to an empty resource list (so
+// /api/status stays serveable) while logging the outage, and must not be
+// silently identical to an empty stack.
+func TestGetResourceStatuses_ListErrorLogsWarning(t *testing.T) {
+	srv := newTestServer(t)
+	srv.SetDockerClient(&mockDockerClient{listError: errors.New("docker daemon unreachable")})
+	srv.SetStackName("test-stack")
+
+	logs := captureSlog(t)
+
+	statuses := srv.getResourceStatuses(context.Background())
+	if len(statuses) != 0 {
+		t.Fatalf("expected empty statuses on list error, got %d", len(statuses))
+	}
+
+	out := logs.String()
+	if !strings.Contains(out, "failed to list resource containers") {
+		t.Errorf("expected list-failure warning in log, got: %q", out)
+	}
+	if !strings.Contains(out, "docker daemon unreachable") {
+		t.Errorf("expected underlying error in log, got: %q", out)
+	}
 }
