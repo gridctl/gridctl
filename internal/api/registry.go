@@ -443,7 +443,11 @@ func (s *Server) refreshRegistryRouter() {
 	if s.registryServer == nil {
 		return
 	}
-	_ = s.registryServer.RefreshTools(context.Background())
+	// Background context on purpose: the refresh mutates shared router state
+	// and must run to completion even if the triggering request is cancelled.
+	if err := s.registryServer.RefreshTools(context.Background()); err != nil {
+		slog.Warn("registry: tool refresh failed; router keeps previous tool set", "error", err)
+	}
 	if s.registryServer.HasContent() {
 		s.gateway.Router().AddClient(s.registryServer)
 	} else {
