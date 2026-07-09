@@ -20,9 +20,6 @@ import (
 // scenario can be simulated across two connects.
 func startMockServerEnv(t *testing.T, port int, env ...string) {
 	t.Helper()
-	if mockHTTPServerBin == "" {
-		t.Skip("mock server binary not available")
-	}
 	cmd := exec.Command(mockHTTPServerBin, "-port", fmt.Sprintf("%d", port))
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stderr = os.Stderr
