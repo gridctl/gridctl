@@ -10,6 +10,7 @@ All notable changes to gridctl will be documented in this file.
 
 - Fail the integration test suite when the mock MCP server binaries do not compile, instead of silently skipping the dependent tests and reporting green
 - Update keyboard list-navigation state via an effect instead of during render, removing a latent concurrent-rendering hazard
+- Log vault reload failures, resource-listing failures, and registry refresh failures instead of silently discarding them; a corrupt vault file or Docker outage is now diagnosable from the logs
 
 ### Features
 

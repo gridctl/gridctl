@@ -3,6 +3,7 @@ package vault
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -198,7 +199,7 @@ func skipJSONWhitespace(b []byte) []byte {
 func (s *Store) Get(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 
 	v, ok := s.variables[key]
 	if !ok {
@@ -212,7 +213,7 @@ func (s *Store) Get(key string) (string, bool) {
 func (s *Store) GetVariable(key string) (Variable, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 
 	v, ok := s.variables[key]
 	return v, ok
@@ -330,7 +331,7 @@ func (s *Store) Delete(key string) error {
 func (s *Store) List() []Variable {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 
 	result := make([]Variable, 0, len(s.variables))
 	for _, v := range s.variables {
@@ -390,7 +391,7 @@ func (s *Store) ImportVariables(vars []Variable) (int, error) {
 func (s *Store) Export() map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 
 	result := make(map[string]string, len(s.variables))
 	for k, v := range s.variables {
@@ -403,7 +404,7 @@ func (s *Store) Export() map[string]string {
 func (s *Store) Keys() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 
 	keys := make([]string, 0, len(s.variables))
 	for k := range s.variables {
@@ -417,7 +418,7 @@ func (s *Store) Keys() []string {
 func (s *Store) Has(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 	_, ok := s.variables[key]
 	return ok
 }
@@ -428,7 +429,7 @@ func (s *Store) Has(key string) bool {
 func (s *Store) Values() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 
 	vals := make([]string, 0, len(s.variables))
 	for _, v := range s.variables {
@@ -472,7 +473,7 @@ func (s *Store) SetSecretSet(key, setName string) error {
 func (s *Store) ListSets() []SetSummary {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 
 	// Count members per set
 	counts := make(map[string]int)
@@ -547,7 +548,7 @@ func (s *Store) DeleteSet(name string) error {
 func (s *Store) GetSetSecrets(setName string) []Variable {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 
 	var result []Variable
 	for _, v := range s.variables {
@@ -565,7 +566,7 @@ func (s *Store) GetSetSecrets(setName string) []Variable {
 func (s *Store) IsLocked() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 	return s.locked
 }
 
@@ -575,7 +576,7 @@ func (s *Store) IsLocked() bool {
 func (s *Store) IsEncrypted() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.reloadIfChanged()
+	s.reloadOrWarn()
 	return s.encrypted
 }
 
@@ -788,6 +789,17 @@ func (s *Store) stampMtimeLocked() {
 	}
 	s.mtime = info.ModTime()
 	s.size = info.Size()
+}
+
+// reloadOrWarn refreshes in-memory state from disk, logging (rather than
+// discarding) a reload failure so a corrupt or unreadable backing file is
+// observable instead of silently serving stale variables. Logs the base
+// directory only; never variable values. The caller must hold the write lock.
+func (s *Store) reloadOrWarn() {
+	if err := s.reloadIfChanged(); err != nil {
+		slog.Warn("vault: reload from disk failed; serving last known state",
+			"dir", s.baseDir, "error", err)
+	}
 }
 
 // reloadIfChanged refreshes in-memory state to match the current shape of
