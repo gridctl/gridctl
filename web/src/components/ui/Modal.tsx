@@ -51,6 +51,14 @@ export function Modal({
   const titleId = useId();
   const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen });
 
+  // Reset expanded state when the modal closes (state adjustment during
+  // render, so the reset commits with the close instead of one render later).
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (!isOpen) setExpanded(false);
+  }
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -71,11 +79,6 @@ export function Modal({
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
   }, [isOpen, handleKeyDown]);
-
-  // Reset expanded state when modal closes
-  useEffect(() => {
-    if (!isOpen) setExpanded(false);
-  }, [isOpen]);
 
   if (!isOpen) return null;
 
