@@ -17,7 +17,7 @@ All notable changes to gridctl will be documented in this file.
 
 
 - Enforce a zero-error frontend lint baseline in CI (gatekeeper now runs eslint on every PR)
-- Show the official Model Context Protocol mark on the gateway node and gateway sidebar headers in the web UI, replacing the generic pulse icon
+- Show the official Model Context Protocol mark on the gateway node and gateway sidebar headers in the web UI, replacing the generic pulse icon and its looping ping animation; liveness stays with the "Gateway Active" status pill
 
 ### Removed
 
