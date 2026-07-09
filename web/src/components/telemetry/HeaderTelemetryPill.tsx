@@ -33,6 +33,7 @@ const ABBREV: Record<TelemetrySignal, string> = {
   traces: 'Traces',
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- test seam; exported for unit tests alongside the pill
 export function buildPillLabel(global: Partial<Record<TelemetrySignal, boolean>>): string {
   const on = SIGNALS.filter((s) => global[s] === true);
   if (on.length === 0) return 'Persistence: Off';
