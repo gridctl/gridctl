@@ -33,6 +33,7 @@ export function LogViewer({ agentName, onClose }: LogViewerProps) {
 
   // Initial fetch and polling
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     fetchLogs();
 
     if (!isPaused) {
