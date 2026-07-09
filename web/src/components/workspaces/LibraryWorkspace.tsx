@@ -334,6 +334,7 @@ export function LibraryWorkspace() {
     const found = (skills ?? []).find((s) => s.name === skillName);
     lastResolvedSkillRef.current = skillName;
     if (found) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- deep-link resolution must wait for the async registry load; guarded by lastResolvedSkillRef so it runs once per param change
       setEditingSkill(found);
       setShowEditor(true);
     } else {
