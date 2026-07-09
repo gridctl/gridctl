@@ -83,6 +83,7 @@ export function OptimizeSection() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     load();
     intervalRef.current = window.setInterval(load, POLLING.METRICS);
     return () => {
