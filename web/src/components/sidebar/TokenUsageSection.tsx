@@ -36,6 +36,7 @@ export function TokenUsageSection({ serverName }: TokenUsageSectionProps) {
   useEffect(() => {
     if (!sidebarOpen || !serverTokens) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     loadSparkline();
     intervalRef.current = window.setInterval(loadSparkline, POLLING.METRICS);
 
