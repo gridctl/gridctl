@@ -10,6 +10,11 @@ export default defineConfig({
       '@uiw/react-codemirror': fileURLToPath(
         new URL('./src/test/codemirrorStub.tsx', import.meta.url),
       ),
+      // The @lobehub/icons barrel drags in JSON modules Node ESM can't load
+      // under vitest; swap every icon for a plain svg stub.
+      '@lobehub/icons': fileURLToPath(
+        new URL('./src/test/lobehubStub.tsx', import.meta.url),
+      ),
     },
   },
   test: {
