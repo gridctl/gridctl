@@ -71,6 +71,7 @@ export function WipeTelemetryDialog({ isOpen, onClose, onConfirm, scope, title, 
 
 // Used by tests so the wipe modal renders deterministic text from a
 // fixture without standing up the whole telemetry store.
+// eslint-disable-next-line react-refresh/only-export-components -- test seam; exported for unit tests alongside the dialog
 export function _testFormatScope(scope: InventoryRecord[]): {
   totalBytes: string;
   servers: number;
