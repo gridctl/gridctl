@@ -76,9 +76,18 @@ function DetachedTracesPageContent() {
     }
   }, [serverFilter, errorsOnly]);
 
-  // Initial load
-  useEffect(() => {
+  // Flag loading when the filters change (state adjustment during render, so
+  // the spinner commits together with the filter switch).
+  const filterKey = `${serverFilter}|${errorsOnly}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
     setIsLoading(true);
+  }
+
+  // Initial load and reload on filter change
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     load();
   }, [load]);
 
