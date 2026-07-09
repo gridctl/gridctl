@@ -1,9 +1,12 @@
 package vault
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -1215,6 +1218,46 @@ func TestStore_ReloadIgnoresCorruptFile(t *testing.T) {
 	val, ok := store.Get("KEY")
 	if !ok || val != "val" {
 		t.Errorf("Get(KEY) after corrupt overwrite = %q, %v; want %q, true", val, ok, "val")
+	}
+}
+
+// captureSlog swaps the default slog logger for one writing to the returned
+// buffer, restoring the previous logger when the test ends.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+func TestStore_ReloadFailureLogsWarning(t *testing.T) {
+	// A failing reload must keep serving the last known state (covered by
+	// TestStore_ReloadIgnoresCorruptFile) AND leave a diagnosable warning in
+	// the log instead of discarding the error.
+	dir := t.TempDir()
+
+	store := NewStore(dir)
+	if err := store.Set("KEY", "val"); err != nil {
+		t.Fatalf("Set(): %v", err)
+	}
+
+	logs := captureSlog(t)
+
+	path := filepath.Join(dir, "secrets.json")
+	if err := os.WriteFile(path, []byte("not valid json {{{"), 0600); err != nil {
+		t.Fatalf("write garbage: %v", err)
+	}
+
+	val, ok := store.Get("KEY")
+	if !ok || val != "val" {
+		t.Errorf("Get(KEY) after corrupt overwrite = %q, %v; want %q, true", val, ok, "val")
+	}
+
+	out := logs.String()
+	if !strings.Contains(out, "reload from disk failed") {
+		t.Errorf("expected reload-failure warning in log, got: %q", out)
 	}
 }
 
