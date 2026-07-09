@@ -33,16 +33,10 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
 
       {/* Header */}
       <div className="px-4 py-3.5 flex items-center gap-3 border-b border-primary/10 bg-primary/[0.02] relative">
-        {/* Glowing logo */}
-        <div className="relative">
-          <div className="p-2.5 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl border border-primary/30 shadow-glow-primary">
-            <MCP size={20} className="text-primary" />
-          </div>
-          {/* Pulse effect */}
-          <div
-            className="absolute inset-0 rounded-xl bg-primary/20 animate-ping"
-            style={{ animationDuration: '4s', animationIterationCount: 'infinite' }}
-          />
+        {/* Glowing logo. Liveness is signaled by the "Gateway Active" pill's
+            StatusDot ring below, so the mark itself stays static. */}
+        <div className="p-2.5 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl border border-primary/30 shadow-glow-primary">
+          <MCP size={20} className="text-primary" />
         </div>
         <div>
           <h3 className="font-bold text-sm text-text-primary tracking-tight">{data.name}</h3>
