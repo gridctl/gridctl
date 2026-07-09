@@ -47,9 +47,12 @@ export function useListNav({
   enabled = true,
 }: UseListNavOptions): void {
   // Keep latest values in a ref so the listener doesn't need to re-bind every
-  // time selectedIndex changes.
+  // time selectedIndex changes. Written in an effect (not during render) so an
+  // abandoned concurrent render can't leak values into the committed tree.
   const state = useRef({ itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle });
-  state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle };
+  useEffect(() => {
+    state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle };
+  });
 
   useEffect(() => {
     if (!enabled) return;
