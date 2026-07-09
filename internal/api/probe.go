@@ -216,9 +216,10 @@ func (r probeRequest) toMCPServer() config.MCPServer {
 }
 
 type probeToolWire struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"inputSchema"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description,omitempty"`
+	InputSchema  json.RawMessage `json:"inputSchema"`
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 }
 
 type probeResponse struct {
@@ -266,9 +267,10 @@ func toToolsWire(tools []mcp.Tool) []probeToolWire {
 	out := make([]probeToolWire, len(tools))
 	for i, t := range tools {
 		out[i] = probeToolWire{
-			Name:        t.Name,
-			Description: t.Description,
-			InputSchema: t.InputSchema,
+			Name:         t.Name,
+			Description:  t.Description,
+			InputSchema:  t.InputSchema,
+			OutputSchema: t.OutputSchema,
 		}
 	}
 	return out
