@@ -41,7 +41,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
           {/* Pulse effect */}
           <div
             className="absolute inset-0 rounded-xl bg-primary/20 animate-ping"
-            style={{ animationDuration: '2s', animationIterationCount: 'infinite' }}
+            style={{ animationDuration: '4s', animationIterationCount: 'infinite' }}
           />
         </div>
         <div>
