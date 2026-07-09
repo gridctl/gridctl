@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { NodeTypes } from '@xyflow/react';
 import CustomNode from './CustomNode';
 import GatewayNode from './GatewayNode';
 import ClientNode from './ClientNode';
@@ -7,9 +7,9 @@ import SkillGroupNode from './SkillGroupNode';
 import ToolNode from './ToolNode';
 import ToolOverflowNode from './ToolOverflowNode';
 
-// Use 'any' to bypass React Flow's strict typing
-// The components receive props correctly at runtime
-export const nodeTypes: Record<string, ComponentType<any>> = {
+// NodeTypes erases each component's concrete node-data generic, which is why
+// the components can be registered here without casting.
+export const nodeTypes: NodeTypes = {
   mcpServer: CustomNode,
   resource: CustomNode,
   gateway: GatewayNode,
