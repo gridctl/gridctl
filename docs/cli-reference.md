@@ -25,16 +25,16 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 | `gridctl destroy <stack.yaml>` | Stop and remove all containers for the stack. |
 | `gridctl export` | Reverse-engineer `stack.yaml` from running state; `-o <dir>` write to directory, `--format yaml\|json` (default `yaml`). |
 | `gridctl serve` | Start the web UI and API without managing a stack (stackless mode). |
-| `gridctl stop` | Stop the stackless gridctl daemon. |
+| `gridctl stop` | Stop the stackless gridctl daemon; `--force` kills the process if graceful shutdown fails. |
 | `gridctl status` | Show running stacks; `-s` / `--stack` filters to one stack, `--replicas` expands to one row per replica. |
-| `gridctl info` | Show the detected container runtime (Docker/Podman). |
+| `gridctl info` | Show runtime and environment information: detected runtime (Docker/Podman), socket path, version, host alias, SELinux state, and rootless network stack. |
 | `gridctl version` | Print version information. |
 
 ## LLM clients
 
 | Command | Purpose |
 |---|---|
-| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--name <name>` to set the server entry name (default `gridctl`), `--client-id <id>` to bind the link to a `clients:` access profile, `--force` to overwrite an existing entry. |
+| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--name <name>` to set the server entry name (default `gridctl`), `--client-id <id>` to bind the link to a `clients:` access profile, `--force` to overwrite an existing entry, `-p` / `--port <port>` to target a non-default gateway port (auto-detected from the running daemon, else 8180). |
 | `gridctl unlink [client]` | Remove gridctl from an LLM client's config; `-a` / `--all` for every client, `--name <name>` to target a non-default entry, `--dry-run` to preview. |
 
 ## Skills
@@ -59,7 +59,7 @@ The variable store holds both secrets (encrypted at rest, redacted in logs) and 
 
 | Command | Purpose |
 |---|---|
-| `gridctl var set <key>` | Store a variable (interactive prompt, or `--value`). Secret by default; `--plaintext` for non-sensitive config visible in logs. `--type <string\|json\|list\|number\|bool>` tags the value's shape; `--set <name>` assigns it to a variable set. |
+| `gridctl var set <key>` | Store a variable (interactive prompt, or `--value`). Secret by default (`--secret` makes that explicit); `--plaintext` for non-sensitive config visible in logs. `--type <string\|json\|list\|number\|bool>` tags the value's shape; `--set <name>` assigns it to a variable set. |
 | `gridctl var get <key>` | Retrieve a variable (secrets masked; `--plain` to unmask). |
 | `gridctl var list` | List all variables with type, visibility, and set assignment (`--format json`). |
 | `gridctl var delete <key>` | Remove a variable (`--force` to skip confirmation). |
