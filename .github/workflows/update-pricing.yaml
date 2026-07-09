@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Fetches upstream, validates the candidate (JSON / non-empty / model
       # floor / shrink guard), and replaces the committed file only on success.
