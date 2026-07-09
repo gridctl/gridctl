@@ -40,12 +40,13 @@ function DetachedEditorContent() {
     }
   }, []);
 
+  // No item to load means nothing pending (state adjustment during render;
+  // converges in one pass).
+  if (!itemName && loading) setLoading(false);
+
   // Load the item being edited
   useEffect(() => {
-    if (!itemName) {
-      setLoading(false);
-      return;
-    }
+    if (!itemName) return;
 
     const loadItem = async () => {
       try {
