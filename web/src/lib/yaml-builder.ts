@@ -347,7 +347,7 @@ function stripListItem(yaml: string): string {
   return yaml
     .replace(/^- /, '')
     .split('\n')
-    .map((line) => line.replace(/^  /, ''))
+    .map((line) => line.replace(/^ {2}/, ''))
     .join('\n');
 }
 
