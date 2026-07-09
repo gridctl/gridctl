@@ -29,13 +29,18 @@ export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: Revie
   const [copied, setCopied] = useState(false);
   const [deploying, setDeploying] = useState(false);
 
+  // Flag validation pending when the YAML changes (state adjustment during
+  // render, so the spinner commits together with the change). Runs on first
+  // render too, replacing the old validate-on-mount effect prefix.
+  const [prevYaml, setPrevYaml] = useState<string | null>(null);
+  if (prevYaml !== yaml) {
+    setPrevYaml(yaml);
+    setValidating(yaml.trim().length > 0);
+    if (!yaml.trim()) setIssues([]);
+  }
+
   const validate = useCallback(async () => {
-    if (!yaml.trim()) {
-      setIssues([]);
-      setValidating(false);
-      return;
-    }
-    setValidating(true);
+    if (!yaml.trim()) return;
     try {
       const result = await validateStackSpec(yaml);
       setIssues(result.issues || []);
@@ -49,6 +54,7 @@ export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: Revie
   }, [yaml]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     validate();
   }, [validate]);
 
