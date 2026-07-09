@@ -44,7 +44,7 @@ const SparkChart = React.forwardRef<HTMLDivElement, SparkChartProps>(
     {
       data,
       categories,
-      index,
+      index: _index,
       colors = ["teal", "amber"],
       type = "default",
       className,

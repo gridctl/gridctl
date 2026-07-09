@@ -38,7 +38,7 @@ Lint:
 
 ```bash
 golangci-lint run                # backend (gosec is enabled; see .golangci.yml for the curated exclusions)
-cd web && npm run lint           # frontend; pre-existing errors live in src/pages/Detached*.tsx (scope review to files you touched)
+cd web && npm run lint           # frontend; zero-error baseline, enforced by the gatekeeper frontend CI job
 ```
 
 ## Code architecture

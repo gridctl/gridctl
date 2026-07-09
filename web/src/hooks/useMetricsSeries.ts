@@ -91,6 +91,7 @@ export function useMetricsSeries({
   // loading flag itself, so the effect body stays free of synchronous setState.
   useEffect(() => {
     if (!enabled) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     void loadMetrics();
   }, [enabled, loadMetrics]);
 

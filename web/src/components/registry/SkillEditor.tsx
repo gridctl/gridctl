@@ -484,6 +484,11 @@ export function SkillEditor({
 
   // --- Initialize from skill prop ---
 
+  // Deliberate reset-on-open: this effect re-initializes the whole editor
+  // whenever the skill object or isOpen changes (including refetch-after-save
+  // and reopen-with-same-skill). A key-based remount from the four call sites
+  // would drop those semantics, so the sync setState here is intentional.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     idCounter.current = 0;
     if (skill) {
@@ -537,6 +542,7 @@ export function SkillEditor({
     setForkName('');
     setShowFiles(false);
   }, [skill, isOpen]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // --- Metadata management ---
 

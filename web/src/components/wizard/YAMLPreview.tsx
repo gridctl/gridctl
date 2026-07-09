@@ -12,7 +12,7 @@ interface YAMLPreviewProps {
 // Syntax highlighting for YAML
 function highlightYAML(yaml: string): Array<{ lineNum: number; html: string }> {
   return yaml.split('\n').map((line, i) => {
-    let html = line
+    const html = line
       // Variable store references — canonical ${var:KEY} plus the
       // deprecated ${vault:KEY} alias still in flight.
       .replace(/(\$\{(?:vault|var):[^}]+\})/, '<span class="text-tertiary font-medium">$1</span>')

@@ -13,13 +13,13 @@ vi.mock('../lib/api', () => ({
   createVariable: vi.fn().mockResolvedValue(undefined),
 }));
 
-const selectNoop = (_reference: string) => {};
+type OnSelect = (reference: string) => void;
 
 describe('VariablesPopover', () => {
-  let onSelect: typeof selectNoop;
+  let onSelect: OnSelect;
 
   beforeEach(() => {
-    onSelect = vi.fn<typeof selectNoop>();
+    onSelect = vi.fn<OnSelect>();
     useVaultStore.setState({ variables: null });
   });
 

@@ -153,13 +153,11 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
     }
   }, [confirmDelete, refreshRegistry]);
 
-  // Clamp selected index when the filtered list shrinks
-  useEffect(() => {
-    if (filteredSkills.length === 0) return;
-    if (selectedIndex >= filteredSkills.length) {
-      setSelectedIndex(filteredSkills.length - 1);
-    }
-  }, [filteredSkills.length, selectedIndex]);
+  // Clamp selected index when the filtered list shrinks (state adjustment
+  // during render; converges in one pass, no extra committed frame).
+  if (filteredSkills.length > 0 && selectedIndex >= filteredSkills.length) {
+    setSelectedIndex(filteredSkills.length - 1);
+  }
 
   // Scroll the selected row into view on change
   useEffect(() => {

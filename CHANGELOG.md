@@ -9,6 +9,12 @@ All notable changes to gridctl will be documented in this file.
 
 
 - Fail the integration test suite when the mock MCP server binaries do not compile, instead of silently skipping the dependent tests and reporting green
+- Update keyboard list-navigation state via an effect instead of during render, removing a latent concurrent-rendering hazard
+
+### Features
+
+
+- Enforce a zero-error frontend lint baseline in CI (gatekeeper now runs eslint on every PR)
 
 ## [0.1.0-beta.13] - 2026-06-30
 

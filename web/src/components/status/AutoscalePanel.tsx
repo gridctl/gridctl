@@ -45,6 +45,7 @@ function DwellPhrase({ status }: { status: AutoscaleStatus }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- test seam; exported for unit tests alongside the panel
 export function dwellPhrase(status: AutoscaleStatus): string {
   if (status.idleToZero && status.current === 0) {
     return 'Idle · scaled to zero';

@@ -132,13 +132,19 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const bottomPanelTab = useUIStore((s) => s.bottomPanelTab);
   const activeWorkspace = useUIStore((s) => s.activeWorkspace);
 
+  // Clear the query when the palette closes (state adjustment during render,
+  // so the reset commits with the close instead of one render later).
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (!isOpen) setInputValue('');
+  }
+
   // Capture focused element before opening
   useEffect(() => {
     if (isOpen) {
       previousFocusRef.current =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    } else {
-      setInputValue('');
     }
   }, [isOpen]);
 

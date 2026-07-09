@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 interface UseListNavOptions {
   itemCount: number;
@@ -47,9 +47,14 @@ export function useListNav({
   enabled = true,
 }: UseListNavOptions): void {
   // Keep latest values in a ref so the listener doesn't need to re-bind every
-  // time selectedIndex changes.
+  // time selectedIndex changes. Written in a layout effect (not during render,
+  // so an abandoned concurrent render can't leak values; not a passive effect,
+  // because the document-level listener can fire between commit and passive
+  // flush and must never read a stale selectedIndex).
   const state = useRef({ itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle });
-  state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle };
+  useLayoutEffect(() => {
+    state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle };
+  });
 
   useEffect(() => {
     if (!enabled) return;

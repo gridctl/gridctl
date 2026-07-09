@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { KeyRound, Search, Plus, X, Loader2, Check } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -70,12 +70,15 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
       .catch(() => {});
   }, [open, setVariables]);
 
-  // Compute position on open; reposition on scroll or resize
-  useEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
+  // Drop the stale position when the popover closes (state adjustment during
+  // render; commits with the close, no extra frame).
+  if (!open && position !== null) setPosition(null);
+
+  // Compute position on open; reposition on scroll or resize. Layout effect
+  // because the position comes from a DOM measurement and must land before
+  // paint to avoid a misplaced first frame.
+  useLayoutEffect(() => {
+    if (!open) return;
     updatePosition();
     window.addEventListener('scroll', updatePosition, true);
     window.addEventListener('resize', updatePosition);

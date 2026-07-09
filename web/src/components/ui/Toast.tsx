@@ -24,6 +24,7 @@ let toasts: Toast[] = [];
 let listeners: (() => void)[] = [];
 let nextId = 0;
 
+// eslint-disable-next-line react-refresh/only-export-components -- imperative toast API lives with its container by design; HMR falls back to a full reload for this module
 export function showToast(type: 'success' | 'error' | 'warning', message: string, options?: ToastOptions) {
   const id = String(++nextId);
   const duration = options?.duration ?? 3000;

@@ -36,7 +36,7 @@ function DetachedLogsPageContent() {
   const [logs, setLogs] = useState<ParsedLog[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(initialAgent !== null);
   const [error, setError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(initialAgent);
   const [nodes, setNodes] = useState<NodeOption[]>([]);
@@ -99,6 +99,18 @@ function DetachedLogsPageContent() {
   // Determine if selected is gateway
   const isGateway = selectedAgent === 'Gateway';
 
+  // Reset log state when the selected agent changes (state adjustment during
+  // render, so the reset commits together with the switch).
+  const [prevAgent, setPrevAgent] = useState(selectedAgent);
+  if (prevAgent !== selectedAgent) {
+    setPrevAgent(selectedAgent);
+    setLogs([]);
+    setError(null);
+    setExpandedIndex(null);
+    setSearchQuery('');
+    setIsLoading(selectedAgent !== null);
+  }
+
   const fetchLogs = useCallback(async () => {
     if (!selectedAgent) return;
 
@@ -118,19 +130,13 @@ function DetachedLogsPageContent() {
     }
   }, [selectedAgent, isGateway]);
 
-  // Reset logs when agent changes
+  // Fetch and mirror the selection into the URL on mount and agent change
   useEffect(() => {
-    setLogs([]);
-    setError(null);
-    setExpandedIndex(null);
-    setSearchQuery('');
-    setIsLoading(true);
     if (selectedAgent) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
       fetchLogs();
-      // Update URL
       setSearchParams({ agent: selectedAgent });
     } else {
-      setIsLoading(false);
       setSearchParams({});
     }
   }, [selectedAgent, fetchLogs, setSearchParams]);

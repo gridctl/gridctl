@@ -30,10 +30,18 @@ export function LogsTab() {
 
   const selectedData = useSelectedNodeData() as NodeData | undefined;
 
+  // Determine log source: gateway or agent
+  const isGateway = selectedData?.type === 'gateway';
+  const agentName: string | null =
+    selectedData && selectedData.type !== 'gateway' && selectedData.type !== 'skill-group' && selectedData.type !== 'skill'
+      ? (selectedData as { name: string }).name
+      : null;
+  const hasSource = isGateway || agentName !== null;
+
   const [logs, setLogs] = useState<ParsedLog[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(hasSource);
   const [error, setError] = useState<string | null>(null);
 
   // Filter state
@@ -50,13 +58,18 @@ export function LogsTab() {
   const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } =
     useLogFontSize(containerRef);
 
-  // Determine log source: gateway or agent
-  const isGateway = selectedData?.type === 'gateway';
-  const agentName: string | null =
-    selectedData && selectedData.type !== 'gateway' && selectedData.type !== 'skill-group' && selectedData.type !== 'skill'
-      ? (selectedData as { name: string }).name
-      : null;
-  const hasSource = isGateway || agentName !== null;
+  // Reset log state when the source changes (state adjustment during render,
+  // so the reset commits together with the source switch).
+  const sourceKey = `${isGateway}:${agentName ?? ''}`;
+  const [prevSourceKey, setPrevSourceKey] = useState(sourceKey);
+  if (prevSourceKey !== sourceKey) {
+    setPrevSourceKey(sourceKey);
+    setLogs([]);
+    setError(null);
+    setExpandedIndex(null);
+    setSearchQuery('');
+    setIsLoading(hasSource);
+  }
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -75,19 +88,11 @@ export function LogsTab() {
     }
   }, [isGateway, agentName]);
 
-  // Reset logs when source changes
+  // Fetch on mount and whenever the source changes
   useEffect(() => {
-    setLogs([]);
-    setError(null);
-    setExpandedIndex(null);
-    setSearchQuery('');
-    if (hasSource) {
-      setIsLoading(true);
-      fetchLogs();
-    } else {
-      setIsLoading(false);
-    }
-  }, [hasSource, isGateway, agentName, fetchLogs]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
+    if (hasSource) fetchLogs();
+  }, [hasSource, fetchLogs]);
 
   // Polling for logs — only when logs tab is active
   useEffect(() => {

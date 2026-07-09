@@ -24,13 +24,13 @@ function defaultData(overrides?: Partial<StackFormData>): StackFormData {
   return { name: '', version: '1', ...overrides };
 }
 
-const noop = (_data: Partial<StackFormData>) => {};
+type OnChange = (data: Partial<StackFormData>) => void;
 
 describe('StackForm', () => {
-  let onChange: typeof noop;
+  let onChange: OnChange;
 
   beforeEach(() => {
-    onChange = vi.fn<typeof noop>();
+    onChange = vi.fn<OnChange>();
   });
 
   it('renders all 8 accordion sections', () => {
@@ -225,8 +225,8 @@ describe('StackForm', () => {
 });
 
 describe('StackForm gateway api_key auth', () => {
-  let onChange: typeof noop;
-  beforeEach(() => { onChange = vi.fn<typeof noop>(); });
+  let onChange: OnChange;
+  beforeEach(() => { onChange = vi.fn<OnChange>(); });
 
   it('shows api_key option in auth dropdown when gateway section is expanded', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
@@ -260,8 +260,8 @@ describe('StackForm gateway api_key auth', () => {
 });
 
 describe('StackForm Gateway Advanced section', () => {
-  let onChange: typeof noop;
-  beforeEach(() => { onChange = vi.fn<typeof noop>(); });
+  let onChange: OnChange;
+  beforeEach(() => { onChange = vi.fn<OnChange>(); });
 
   it('shows Gateway Advanced section collapsed by default', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
@@ -507,8 +507,8 @@ describe('YAML serialization — gateway advanced fields', () => {
 });
 
 describe('StackForm Logging section', () => {
-  let onChange: typeof noop;
-  beforeEach(() => { onChange = vi.fn<typeof noop>(); });
+  let onChange: OnChange;
+  beforeEach(() => { onChange = vi.fn<OnChange>(); });
 
   it('renders Logging accordion collapsed by default', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
