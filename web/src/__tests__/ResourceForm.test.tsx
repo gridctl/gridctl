@@ -8,13 +8,13 @@ function defaultData(overrides?: Partial<ResourceFormData>): ResourceFormData {
   return { name: '', image: '', ...overrides };
 }
 
-const noop = (_data: Partial<ResourceFormData>) => {};
+type OnChange = (data: Partial<ResourceFormData>) => void;
 
 describe('ResourceForm', () => {
-  let onChange: typeof noop;
+  let onChange: OnChange;
 
   beforeEach(() => {
-    onChange = vi.fn<typeof noop>();
+    onChange = vi.fn<OnChange>();
   });
 
   it('renders all 6 accordion sections', () => {
