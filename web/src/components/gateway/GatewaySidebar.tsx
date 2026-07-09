@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, ArrowRight, ChevronDown, ChevronRight, Library, Lightbulb, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronRight, Library, Lightbulb, X } from 'lucide-react';
+import { MCP } from '@lobehub/icons';
 import { OptimizeSection } from '../sidebar/OptimizeSection';
 import { cn } from '../../lib/cn';
 import { useSelectedNodeData } from '../../stores/useStackStore';
@@ -26,7 +27,7 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
       <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30">
         <div className="flex items-center gap-3 min-w-0">
           <div className="p-2 rounded-xl flex-shrink-0 border bg-primary/10 border-primary/20">
-            <Activity size={16} className="text-primary" />
+            <MCP size={16} className="text-primary" />
           </div>
           <div className="min-w-0">
             <h2 className="font-semibold text-text-primary truncate tracking-tight">
