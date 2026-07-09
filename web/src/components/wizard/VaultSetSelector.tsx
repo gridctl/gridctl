@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, Plus, X, Loader2, Check } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -48,12 +48,15 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
     }
   }, []);
 
-  // Reposition on scroll or resize while open
-  useEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
+  // Drop the stale position when the popover closes (state adjustment during
+  // render; commits with the close, no extra frame).
+  if (!open && position !== null) setPosition(null);
+
+  // Reposition on scroll or resize while open. Layout effect because the
+  // position comes from a DOM measurement and must land before paint to
+  // avoid a misplaced first frame.
+  useLayoutEffect(() => {
+    if (!open) return;
     updatePosition();
     window.addEventListener('scroll', updatePosition, true);
     window.addEventListener('resize', updatePosition);
