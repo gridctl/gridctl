@@ -212,11 +212,14 @@ func TestGatewayGracefulShutdown(t *testing.T) {
 		t.Fatalf("RegisterMCPServer: %v", err)
 	}
 
-	// Start the gateway HTTP server on a free port.
+	// Start the gateway HTTP server on a free port, fronted by the production
+	// streamable transport exactly as the daemon mounts it at /mcp.
 	gatewayPort := freePort(t)
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", mcp.NewStreamableHTTPServer(gw, nil))
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", gatewayPort),
-		Handler: mcp.NewHandler(gw),
+		Handler: mux,
 	}
 
 	srvDone := make(chan error, 1)
@@ -225,20 +228,39 @@ func TestGatewayGracefulShutdown(t *testing.T) {
 	}()
 
 	waitForPort(t, ctx, gatewayPort)
+	mcpURL := fmt.Sprintf("http://127.0.0.1:%d/mcp", gatewayPort)
 
-	// Verify the gateway responds to a tools/list JSON-RPC call.
-	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
-	resp, err := http.Post(
-		fmt.Sprintf("http://127.0.0.1:%d/mcp", gatewayPort),
-		"application/json",
-		strings.NewReader(body),
-	)
+	// The streamable transport requires an initialize handshake first; the
+	// assigned session ID comes back in the Mcp-Session-Id response header.
+	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"lifecycle-test","version":"0.0.1"},"capabilities":{}}}`
+	initResp, err := http.Post(mcpURL, "application/json", strings.NewReader(initBody))
 	if err != nil {
-		t.Fatalf("POST to gateway: %v", err)
+		t.Fatalf("POST initialize to gateway: %v", err)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200 OK from gateway, got %d", resp.StatusCode)
+	initResp.Body.Close()
+	if initResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from initialize, got %d", initResp.StatusCode)
+	}
+	sessionID := initResp.Header.Get("Mcp-Session-Id")
+	if sessionID == "" {
+		t.Fatal("expected Mcp-Session-Id header on initialize response")
+	}
+
+	// Verify the gateway responds to a tools/list call within the session.
+	listBody := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
+	listReq, err := http.NewRequestWithContext(ctx, http.MethodPost, mcpURL, strings.NewReader(listBody))
+	if err != nil {
+		t.Fatalf("build tools/list request: %v", err)
+	}
+	listReq.Header.Set("Content-Type", "application/json")
+	listReq.Header.Set("Mcp-Session-Id", sessionID)
+	listResp, err := http.DefaultClient.Do(listReq)
+	if err != nil {
+		t.Fatalf("POST tools/list to gateway: %v", err)
+	}
+	listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK from tools/list, got %d", listResp.StatusCode)
 	}
 
 	// Graceful shutdown.
