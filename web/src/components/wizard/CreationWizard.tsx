@@ -131,8 +131,10 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
     reset,
   } = useWizardStore();
 
-  const mcpServers = useStackStore((s) => s.mcpServers) ?? [];
-  const resources = useStackStore((s) => s.resources) ?? [];
+  const mcpServersRaw = useStackStore((s) => s.mcpServers);
+  const resourcesRaw = useStackStore((s) => s.resources);
+  const mcpServers = useMemo(() => mcpServersRaw ?? [], [mcpServersRaw]);
+  const resources = useMemo(() => resourcesRaw ?? [], [resourcesRaw]);
   const skills = useRegistryStore((s) => s.skills);
   const counts = useMemo(
     () => getResourceCounts(mcpServers, resources, skills),
