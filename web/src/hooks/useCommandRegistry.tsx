@@ -174,6 +174,7 @@ export function CommandRegistryProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- context provider + hook pair; splitting the file would separate the API from its provider
 export function useCommandRegistry(): CommandRegistryContextValue {
   const ctx = useContext(CommandRegistryContext);
   if (!ctx) throw new Error('useCommandRegistry must be used within a CommandRegistryProvider');
