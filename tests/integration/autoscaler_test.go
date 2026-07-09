@@ -48,9 +48,6 @@ func TestAutoscaler_ColdStart_IdleToZero(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	if mockStdioBin == "" {
-		t.Skip("mock stdio server binary not available")
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -107,9 +104,6 @@ func TestAutoscaler_ColdStart_IdleToZero(t *testing.T) {
 func TestAutoscaler_TickScalesUp_SustainedLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
-	}
-	if mockStdioBin == "" {
-		t.Skip("mock stdio server binary not available")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -176,9 +170,6 @@ func TestAutoscaler_TickScalesDown_IdleShrinksToMin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	if mockStdioBin == "" {
-		t.Skip("mock stdio server binary not available")
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -240,9 +231,6 @@ func TestAutoscaler_TickScalesDown_IdleShrinksToMin(t *testing.T) {
 func TestAutoscaler_UpdatePolicy_TakesEffectOnNextTick(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
-	}
-	if mockStdioBin == "" {
-		t.Skip("mock stdio server binary not available")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -342,9 +330,6 @@ func (f *faultySpawner) Reap(ctx context.Context, r *mcp.Replica) error {
 func TestAutoscaler_SpawnerError_Recovers(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
-	}
-	if mockStdioBin == "" {
-		t.Skip("mock stdio server binary not available")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
