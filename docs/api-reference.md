@@ -1954,30 +1954,41 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/mcp \
 
 Tool names are namespaced as `{server}__{tool}` to prevent collisions.
 
-#### `GET /sse`
+The streamable HTTP transport also serves two other verbs on `/mcp`:
 
-Server-Sent Events connection for bidirectional MCP communication.
+#### `GET /mcp`
+
+Opens a server-to-client SSE stream for the session identified by the
+`Mcp-Session-Id` header. Clients may send `Last-Event-ID` to resume a
+disconnected stream.
 
 **Auth:** Yes
 
-The SSE connection sends an initial `endpoint` event with the URL for posting messages:
+#### `DELETE /mcp`
+
+Terminates the session identified by the `Mcp-Session-Id` header.
+
+**Auth:** Yes
+
+#### `GET /sse` (legacy compatibility)
+
+Compatibility shim for clients that still probe the retired SSE transport.
+Emits a single `endpoint` event directing the client to the streamable
+endpoint, then closes; there are no sessions and no keepalives:
 
 ```
 event: endpoint
-data: http://localhost:8180/message?sessionId=abc123
+data: POST /mcp
 ```
-
-Keepalive comments are sent every 30 seconds.
-
-#### `POST /message`
-
-Message endpoint for SSE clients. Accepts JSON-RPC requests and returns responses.
 
 **Auth:** Yes
 
-| Query Param | Type | Description |
-|-------------|------|-------------|
-| `sessionId` | string | Session ID from the SSE endpoint event |
+#### `POST /message` (retired)
+
+Always returns `410 Gone` with a message pointing at `POST /mcp`. The
+session-based SSE message endpoint was retired with the legacy transport.
+
+**Auth:** Yes
 
 ---
 
