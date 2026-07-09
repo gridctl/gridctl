@@ -3,9 +3,13 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
+
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 // The MCP spec allows CallToolResult.structuredContent alongside content, and
@@ -79,6 +83,114 @@ func TestGateway_CallTool_StructuredContentPassthrough(t *testing.T) {
 	}
 	if result.Content[0].Text != "hello" {
 		t.Errorf("text content changed: %+v", result.Content)
+	}
+}
+
+func TestGateway_CallTool_StructuredContentDroppedOverLimit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	g.SetLogger(logging.NewDiscardLogger())
+	g.SetMaxToolResultBytes(100)
+	ctx := context.Background()
+
+	oversized := json.RawMessage(`{"blob":"` + strings.Repeat("a", 500) + `"}`)
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
+		{Name: "probe", Description: "Probe tool"},
+	})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{
+			Content:           []Content{NewTextContent("ok")},
+			StructuredContent: oversized,
+		}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+	g.SetServerMeta(MCPServerConfig{Name: "agent1"})
+
+	result, err := g.HandleToolsCall(ctx, ToolCallParams{Name: "agent1__probe", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.StructuredContent != nil {
+		t.Errorf("oversized structuredContent must be dropped, got %d bytes", len(result.StructuredContent))
+	}
+	notice := result.Content[len(result.Content)-1].Text
+	if !strings.Contains(notice, "structuredContent dropped") {
+		t.Errorf("expected a drop notice in content, got: %s", notice)
+	}
+}
+
+func TestGateway_CallTool_StructuredContentKeptUnderLimit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	g.SetLogger(logging.NewDiscardLogger())
+	g.SetMaxToolResultBytes(1000)
+	ctx := context.Background()
+
+	structured := json.RawMessage(`{"status":"ok"}`)
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{
+		{Name: "probe", Description: "Probe tool"},
+	})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{
+			Content:           []Content{NewTextContent("ok")},
+			StructuredContent: structured,
+		}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+	g.SetServerMeta(MCPServerConfig{Name: "agent1"})
+
+	result, err := g.HandleToolsCall(ctx, ToolCallParams{Name: "agent1__probe", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(result.StructuredContent) != string(structured) {
+		t.Errorf("structuredContent under the limit must pass through unchanged: %s", result.StructuredContent)
+	}
+	if len(result.Content) != 1 {
+		t.Errorf("no drop notice expected, got content: %+v", result.Content)
+	}
+}
+
+func TestSandbox_ToolCall_StructuredContentPreferred(t *testing.T) {
+	sandbox := NewSandbox(5 * time.Second)
+	caller := &mockToolCaller{
+		callFn: func(context.Context, string, map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{
+				Content:           []Content{NewTextContent("Verdict: pass (score 7)")},
+				StructuredContent: json.RawMessage(`{"verdict":"pass","score":7}`),
+			}, nil
+		},
+	}
+	allowedTools := []Tool{{Name: "myserver__probe"}}
+
+	code := `var r = mcp.callTool("myserver", "probe", {}); r.verdict + ":" + r.score;`
+	result, err := sandbox.Execute(context.Background(), code, caller, allowedTools)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if result.Value != `"pass:7"` {
+		t.Errorf("expected structuredContent fields, got %s", result.Value)
+	}
+}
+
+func TestSandbox_ToolCall_TextFallbackWithoutStructuredContent(t *testing.T) {
+	sandbox := NewSandbox(5 * time.Second)
+	caller := &mockToolCaller{
+		callFn: func(context.Context, string, map[string]any) (*ToolCallResult, error) {
+			return &ToolCallResult{Content: []Content{NewTextContent(`{"items":[1,2,3]}`)}}, nil
+		},
+	}
+	allowedTools := []Tool{{Name: "myserver__probe"}}
+
+	code := `mcp.callTool("myserver", "probe", {}).items.length;`
+	result, err := sandbox.Execute(context.Background(), code, caller, allowedTools)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if result.Value != "3" {
+		t.Errorf("expected text-content fallback to still parse, got %s", result.Value)
 	}
 }
 
