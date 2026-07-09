@@ -2,6 +2,14 @@
 
 All notable changes to gridctl will be documented in this file.
 
+## [Unreleased]
+
+
+### Bug Fixes
+
+
+- Fail the integration test suite when the mock MCP server binaries do not compile, instead of silently skipping the dependent tests and reporting green
+
 ## [0.1.0-beta.13] - 2026-06-30
 
 

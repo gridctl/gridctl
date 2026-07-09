@@ -20,9 +20,6 @@ func TestReplicas_MixedCounts(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	if mockHTTPServerBin == "" {
-		t.Skip("mock server binary not available")
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

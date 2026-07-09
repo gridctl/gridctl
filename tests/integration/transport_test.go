@@ -18,14 +18,16 @@ import (
 )
 
 // Package-level paths to compiled mock server binaries.
-// Set by TestMain; individual tests skip if empty.
+// Set by TestMain before any test runs; a build failure fails the suite.
 var (
 	mockHTTPServerBin string
 	mockStdioBin      string
 )
 
 // TestMain compiles the mock server binaries once for the entire integration
-// test suite and cleans up after all tests complete.
+// test suite and cleans up after all tests complete. A failure to prepare the
+// binaries fails the whole suite rather than letting dependent tests skip,
+// so CI cannot go green while the mock servers do not compile.
 func TestMain(m *testing.M) {
 	os.Exit(runIntegrationTests(m))
 }
@@ -33,15 +35,15 @@ func TestMain(m *testing.M) {
 func runIntegrationTests(m *testing.M) int {
 	tmpDir, err := os.MkdirTemp("", "gridctl-transport-*")
 	if err != nil {
-		log.Printf("warning: failed to create temp dir for mock binaries: %v", err)
-		return m.Run()
+		log.Printf("failed to create temp dir for mock binaries: %v", err)
+		return 1
 	}
 	defer os.RemoveAll(tmpDir)
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		log.Printf("warning: failed to get working directory: %v", err)
-		return m.Run()
+		log.Printf("failed to get working directory: %v", err)
+		return 1
 	}
 
 	// Build mock HTTP/SSE server.
@@ -50,10 +52,10 @@ func runIntegrationTests(m *testing.M) int {
 	buildCmd := exec.Command("go", "build", "-o", httpBin, ".")
 	buildCmd.Dir = httpSrc
 	if out, err := buildCmd.CombinedOutput(); err != nil {
-		log.Printf("warning: failed to build mock-mcp-server: %v\n%s", err, out)
-	} else {
-		mockHTTPServerBin = httpBin
+		log.Printf("failed to build mock-mcp-server: %v\n%s", err, out)
+		return 1
 	}
+	mockHTTPServerBin = httpBin
 
 	// Build mock stdio server.
 	stdioSrc := filepath.Join(cwd, "..", "..", "examples", "_mock-servers", "local-stdio-server")
@@ -61,10 +63,10 @@ func runIntegrationTests(m *testing.M) int {
 	buildCmd = exec.Command("go", "build", "-o", stdioBin, ".")
 	buildCmd.Dir = stdioSrc
 	if out, err := buildCmd.CombinedOutput(); err != nil {
-		log.Printf("warning: failed to build local-stdio-server: %v\n%s", err, out)
-	} else {
-		mockStdioBin = stdioBin
+		log.Printf("failed to build local-stdio-server: %v\n%s", err, out)
+		return 1
 	}
+	mockStdioBin = stdioBin
 
 	return m.Run()
 }
@@ -82,12 +84,9 @@ func freePort(t *testing.T) int {
 }
 
 // startMockServer starts a mock server binary as a subprocess and registers
-// cleanup. The test is skipped if the binary path is empty.
+// cleanup.
 func startMockServer(t *testing.T, bin string, args ...string) {
 	t.Helper()
-	if bin == "" {
-		t.Skip("mock server binary not available")
-	}
 	cmd := exec.Command(bin, args...)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -227,9 +226,6 @@ func TestSSETransportConnect(t *testing.T) {
 func TestStdioTransportConnect(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
-	}
-	if mockStdioBin == "" {
-		t.Skip("mock stdio server binary not available")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
