@@ -26,7 +26,7 @@ var exportCmd = &cobra.Command{
 	Long: `Generate a complete Stack Spec from the currently running deployment.
 Reverse-engineers stack.yaml from gateway state files.
 
-Secrets are never included — only ${vault:KEY} placeholders are used.
+Secrets are never included — only ${var:KEY} placeholders are used.
 If remote skills are active, a skills.yaml is also generated.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runExport()
@@ -72,7 +72,7 @@ func runExport() error {
 	return outputYAML(stack)
 }
 
-// sanitizeSecrets replaces raw secret-like env values with ${vault:KEY} placeholders.
+// sanitizeSecrets replaces raw secret-like env values with ${var:KEY} placeholders.
 func sanitizeSecrets(stack *config.Stack) {
 	for i := range stack.MCPServers {
 		sanitizeEnvMap(stack.MCPServers[i].Env, stack.MCPServers[i].Name)
@@ -82,17 +82,19 @@ func sanitizeSecrets(stack *config.Stack) {
 	}
 }
 
-// sanitizeEnvMap replaces values that are not already vault references
-// and look like sensitive values with ${vault:KEY} placeholders.
+// sanitizeEnvMap replaces values that are not already variable references
+// and look like sensitive values with ${var:KEY} placeholders. ${vault:KEY}
+// is the deprecated alias of ${var:KEY}; both are recognized on input, only
+// the canonical form is generated.
 func sanitizeEnvMap(env map[string]string, prefix string) {
 	for key, val := range env {
-		// Already a vault reference — leave as-is
-		if len(val) > 8 && val[:7] == "${vault:" {
+		// Already a variable reference — leave as-is
+		if strings.HasPrefix(val, "${var:") || strings.HasPrefix(val, "${vault:") {
 			continue
 		}
 		// Check if key looks sensitive
 		if isSensitiveKey(key) {
-			env[key] = fmt.Sprintf("${vault:%s_%s}", prefix, key)
+			env[key] = fmt.Sprintf("${var:%s_%s}", prefix, key)
 		}
 	}
 }
