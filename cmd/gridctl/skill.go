@@ -230,7 +230,7 @@ func buildAuthConfigFromFlags(token, vaultKey, sshKey string) (skills.AuthConfig
 	case token != "":
 		return skills.AuthConfig{Method: "token", Token: token}, nil
 	case vaultKey != "":
-		ref := fmt.Sprintf("${vault:%s}", vaultKey)
+		ref := fmt.Sprintf("${var:%s}", vaultKey)
 		resolved, err := cliCredentialResolver(ref)
 		if err != nil {
 			return skills.AuthConfig{}, err
@@ -240,7 +240,8 @@ func buildAuthConfigFromFlags(token, vaultKey, sshKey string) (skills.AuthConfig
 	return skills.AuthConfig{}, nil
 }
 
-// cliCredentialResolver resolves a "${vault:KEY}" reference via the local
+// cliCredentialResolver resolves a "${var:KEY}" (or legacy "${vault:KEY}")
+// reference via the local
 // vault, unlocking it if necessary. Wired onto the CLI's Importer so
 // `skill update` can re-resolve stored references automatically.
 func cliCredentialResolver(ref string) (string, error) {
