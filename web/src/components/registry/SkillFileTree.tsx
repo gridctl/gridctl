@@ -22,15 +22,22 @@ interface SkillFileTreeProps {
 
 export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: SkillFileTreeProps) {
   const [files, setFiles] = useState<SkillFile[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!skillName);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(['scripts', 'references', 'assets']));
   const [showNewFile, setShowNewFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState('');
 
+  // Flag loading when the skill changes (state adjustment during render, so
+  // the spinner commits together with the switch).
+  const [prevSkillName, setPrevSkillName] = useState(skillName);
+  if (prevSkillName !== skillName) {
+    setPrevSkillName(skillName);
+    setLoading(!!skillName);
+  }
+
   // Fetch files on mount and when skill changes
   useEffect(() => {
     if (!skillName) return;
-    setLoading(true);
     fetchSkillFiles(skillName)
       .then(setFiles)
       .catch(() => setFiles([]))
