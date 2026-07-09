@@ -1,6 +1,9 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Activity, Server, Database, Wrench, Radio, Monitor, Code, Library, ExternalLink } from 'lucide-react';
+import { Server, Database, Wrench, Radio, Monitor, Code, Library, ExternalLink } from 'lucide-react';
+// Named import only — @lobehub/icons sets `sideEffects: false`, so Vite
+// tree-shakes this down to the MCP icon module (see lib/clientIcons.tsx).
+import { MCP } from '@lobehub/icons';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -33,7 +36,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {/* Glowing logo */}
         <div className="relative">
           <div className="p-2.5 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl border border-primary/30 shadow-glow-primary">
-            <Activity size={20} className="text-primary" />
+            <MCP size={20} className="text-primary" />
           </div>
           {/* Pulse effect */}
           <div
