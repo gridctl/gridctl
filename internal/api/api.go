@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -533,7 +534,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			Tokenizer: s.tokenizerName,
 		},
 		MCPServers: s.getMCPServerStatuses(),
-		Resources:  s.getResourceStatuses(),
+		Resources:  s.getResourceStatuses(r.Context()),
 		Sessions:   s.gateway.SessionCount(),
 	}
 	// Only expose stack_name when a user-defined stack is loaded.
@@ -784,15 +785,19 @@ type ResourceStatus struct {
 	Status string `json:"status"`
 }
 
-// getResourceStatuses returns status of all resource containers.
-func (s *Server) getResourceStatuses() []ResourceStatus {
+// getResourceStatuses returns status of all resource containers. A listing
+// failure is logged and reported as an empty slice so /api/status stays
+// serveable during a runtime outage; the warning distinguishes that outage
+// from a stack with no resources.
+func (s *Server) getResourceStatuses(ctx context.Context) []ResourceStatus {
 	if s.dockerClient == nil || s.stackName == "" {
 		return []ResourceStatus{}
 	}
 
-	ctx := context.Background()
 	containers, err := docker.ListManagedContainers(ctx, s.dockerClient, s.stackName)
 	if err != nil {
+		slog.Warn("status: failed to list resource containers; reporting none",
+			"stack", s.stackName, "error", err)
 		return []ResourceStatus{}
 	}
 
