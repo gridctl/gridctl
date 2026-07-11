@@ -14,7 +14,7 @@ require (
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/evanw/esbuild v0.28.1
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getkin/kin-openapi v0.140.0
+	github.com/getkin/kin-openapi v0.141.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/jedib0t/go-pretty/v6 v6.8.2
 	github.com/mattn/go-isatty v0.0.22
@@ -85,8 +85,8 @@ require (
 	github.com/moby/term v0.5.2 // indirect
 	github.com/morikuni/aec v1.1.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
-	github.com/oasdiff/yaml v0.1.0 // indirect
-	github.com/oasdiff/yaml3 v0.0.13 // indirect
+	github.com/oasdiff/yaml v0.1.1 // indirect
+	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
