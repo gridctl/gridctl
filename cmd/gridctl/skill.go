@@ -53,9 +53,11 @@ var (
 )
 
 var skillAddCmd = &cobra.Command{
-	Use:     "add <repo-url>",
-	Short:   "Import skills from a git repository",
-	Long:    "Clone a repository, discover SKILL.md files, and import them into the local registry.",
+	Use:   "add <repo-url>",
+	Short: "Import skills from a git repository",
+	Long:  "Clone a repository, discover SKILL.md files, and import them into the local registry.",
+	Example: `  gridctl skill add https://github.com/acme/skills
+  gridctl skill add git@github.com:acme/private-skills.git --vault-key GH_TOKEN`,
 	Args:    cobra.ExactArgs(1),
 	PreRunE: validateSkillAuthFlags(&skillAddAuthToken, &skillAddVaultKey),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -68,9 +70,15 @@ var skillListCmd = &cobra.Command{
 	Short: "List all skills with origin info",
 	Long:  "List all skills showing source origin (local/remote) and update status.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		if skillListFormat, err = resolveFormat(skillListFormat, cmd.Flags().Changed("format"), *skillListJSON); err != nil {
+			return err
+		}
 		return runSkillList()
 	},
 }
+
+var skillListJSON *bool
 
 var skillUpdateCmd = &cobra.Command{
 	Use:     "update [name]",
@@ -158,6 +166,7 @@ func init() {
 
 	skillListCmd.Flags().BoolVar(&skillListRemote, "remote", false, "Show only remote (imported) skills")
 	skillListCmd.Flags().StringVar(&skillListFormat, "format", "", "Output format (json)")
+	skillListJSON = addJSONAlias(skillListCmd)
 
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateDryRun, "dry-run", false, "Show changes without applying")
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateForce, "force", false, "Force update even if no changes detected")
@@ -553,7 +562,6 @@ func runSkillUpdate(name string) error {
 
 	return nil
 }
-
 
 func runSkillRemove(name string) error {
 	store, err := loadRegistry()
