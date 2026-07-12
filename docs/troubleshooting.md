@@ -2,6 +2,8 @@
 
 Common issues and resolutions for gridctl.
 
+Start with `gridctl doctor`: it runs most of the environment checks below automatically (runtime detection, socket reachability, version floor, gateway port, `npx` availability, state hygiene, and vault status) and prints a verdict with a remediation hint for each.
+
 ---
 
 ## Container Runtime
@@ -521,7 +523,9 @@ The UI keeps showing the authentication prompt after entering a valid token.
 
 If your issue isn't covered here:
 
-1. Check `gridctl status` for the current state of your stack
-2. Review container logs: `docker logs gridctl-<stack>-<name>`
-3. Run with verbose logging: `gridctl apply <stack.yaml> --verbose`
-4. Open an issue at [github.com/gridctl/gridctl/issues](https://github.com/gridctl/gridctl/issues)
+1. Run `gridctl doctor` for automated environment checks with remediation hints
+2. Check `gridctl status` for the current state of your stack
+3. Tail the gateway daemon log: `gridctl logs [stack] -f`
+4. Review an MCP server's container logs: `gridctl logs --server <name>` (or `docker logs gridctl-<stack>-<name>`)
+5. Run with verbose logging: `gridctl apply <stack.yaml> --verbose`
+6. Open an issue at [github.com/gridctl/gridctl/issues](https://github.com/gridctl/gridctl/issues)
