@@ -17,6 +17,7 @@ type Printer struct {
 	out    io.Writer
 	logger *log.Logger
 	isTTY  bool
+	color  bool
 }
 
 // New creates a Printer writing to stdout with amber theme.
@@ -27,13 +28,14 @@ func New() *Printer {
 // NewWithWriter creates a Printer with a custom writer.
 func NewWithWriter(w io.Writer) *Printer {
 	isTTY := isTerminal(w)
+	color := ColorEnabled(w)
 
 	logger := log.NewWithOptions(w, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      time.TimeOnly, // HH:MM:SS
 	})
 
-	if isTTY {
+	if color {
 		logger.SetStyles(amberStyles())
 	}
 
@@ -41,6 +43,7 @@ func NewWithWriter(w io.Writer) *Printer {
 		out:    w,
 		logger: logger,
 		isTTY:  isTTY,
+		color:  color,
 	}
 }
 
@@ -88,10 +91,15 @@ func (p *Printer) Banner(ver string) {
 		return
 	}
 
-	// Colors
-	amber := lipgloss.NewStyle().Foreground(ColorAmber)
-	white := lipgloss.NewStyle().Foreground(ColorWhite)
-	muted := lipgloss.NewStyle().Foreground(ColorMuted)
+	// Colors (no-ops when color is disabled, e.g. NO_COLOR or --no-color)
+	amber := lipgloss.NewStyle()
+	white := lipgloss.NewStyle()
+	muted := lipgloss.NewStyle()
+	if p.color {
+		amber = amber.Foreground(ColorAmber)
+		white = white.Foreground(ColorWhite)
+		muted = muted.Foreground(ColorMuted)
+	}
 
 	// "grid" part in amber
 	gridPart := []string{
@@ -127,6 +135,20 @@ func (p *Printer) Banner(ver string) {
 
 	// Version line
 	fmt.Fprintf(p.out, "\n  %s %s\n\n", muted.Render("version"), amber.Render(ver))
+}
+
+// Hint prints a short next-step suggestion. Hints are conversational
+// chrome: they are suppressed when the writer is not a terminal so
+// scripts, pipes, and JSON consumers never see them.
+func (p *Printer) Hint(format string, args ...any) {
+	if !p.isTTY {
+		return
+	}
+	msg := fmt.Sprintf(format, args...)
+	if p.color {
+		msg = lipgloss.NewStyle().Foreground(ColorMuted).Render(msg)
+	}
+	fmt.Fprintf(p.out, "\n%s\n", msg)
 }
 
 // Print writes a message directly to output without formatting.

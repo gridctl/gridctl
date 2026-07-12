@@ -65,9 +65,7 @@ func runUnlink(client string) error {
 func unlinkSingleClient(printer *output.Printer, registry *provisioner.Registry, slug string) error {
 	prov, ok := registry.FindBySlug(slug)
 	if !ok {
-		printer.Error(fmt.Sprintf("%s is not a supported client", slug))
-		printer.Print("Supported clients: %s\n", strings.Join(registry.AllSlugs(), ", "))
-		return fmt.Errorf("%s: not a supported client", slug)
+		return unknownClientError(registry, slug)
 	}
 
 	configPath, found := prov.Detect()

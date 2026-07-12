@@ -60,6 +60,9 @@ in logs (e.g. REGION, CLUSTER_ID).
 
 Use --type to validate and tag the value's shape: string (default), json,
 list, number, or bool.`,
+	Example: `  gridctl var set GITHUB_TOKEN             Prompt for a secret value
+  gridctl var set REGION --value us-east-1 --plaintext
+  gridctl var set FEATURES --type list --value "a,b,c"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runVarSet(args[0])
@@ -83,9 +86,15 @@ var varListCmd = &cobra.Command{
 	Short: "List all variables",
 	Long:  "List all variables with type and visibility. Values are never shown.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		if varListFmt, err = resolveFormat(varListFmt, cmd.Flags().Changed("format"), *varListJSON); err != nil {
+			return err
+		}
 		return runVarList()
 	},
 }
+
+var varListJSON *bool
 
 var varDeleteCmd = &cobra.Command{
 	Use:   "delete <KEY>",
@@ -197,6 +206,7 @@ func init() {
 	varGetCmd.Flags().BoolVar(&varGetPlain, "plain", false, "Show unmasked value")
 	varDeleteCmd.Flags().BoolVar(&varDeleteForce, "force", false, "Skip confirmation")
 	varListCmd.Flags().StringVar(&varListFmt, "format", "table", "Output format (table, json)")
+	varListJSON = addJSONAlias(varListCmd)
 	varImportCmd.Flags().StringVar(&varImportFmt, "format", "", "File format (env, json). Auto-detected if omitted")
 	varExportCmd.Flags().StringVar(&varExportFmt, "format", "env", "Export format (env, json)")
 	varExportCmd.Flags().BoolVar(&varExportPlain, "plain", false, "Show unmasked values")

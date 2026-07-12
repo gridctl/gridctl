@@ -75,7 +75,7 @@ func (p *Printer) Summary(workloads []WorkloadSummary) {
 
 	for _, w := range workloads {
 		state := w.State
-		if p.isTTY {
+		if p.color {
 			state = colorState(w.State)
 		}
 		t.AppendRow(table.Row{w.Name, w.Type, w.Transport, state})
@@ -132,7 +132,7 @@ func (p *Printer) Gateways(gateways []GatewaySummary) {
 
 	for _, g := range gateways {
 		status := g.Status
-		if p.isTTY {
+		if p.color {
 			status = colorState(g.Status)
 		}
 		if hasCodeMode {
@@ -175,12 +175,12 @@ func (p *Printer) Containers(containers []ContainerSummary) {
 
 	for _, c := range containers {
 		state := c.State
-		if p.isTTY {
+		if p.color {
 			state = colorState(c.State)
 		}
 		if hasPins {
 			pinStatus := c.PinStatus
-			if p.isTTY {
+			if p.color {
 				pinStatus = colorPinStatus(c.PinStatus)
 			}
 			t.AppendRow(table.Row{c.ID, c.Name, c.Type, c.Image, state, pinStatus, c.Message})
@@ -222,7 +222,7 @@ func (p *Printer) MCPServers(rows []MCPServerRollup) {
 	}
 	for _, r := range rows {
 		state := r.State
-		if p.isTTY {
+		if p.color {
 			state = colorReplicaState(r.State)
 		}
 		if hasAutoscale {
@@ -263,7 +263,7 @@ func (p *Printer) Replicas(rows []ReplicaDetail) {
 	}
 	for _, r := range rows {
 		state := r.State
-		if p.isTTY {
+		if p.color {
 			state = colorReplicaState(r.State)
 		}
 		if hasAutoscale {
@@ -311,7 +311,7 @@ func colorPinStatus(status string) string {
 // tableStyle returns the standard amber-themed table style.
 func (p *Printer) tableStyle() table.Style {
 	style := table.StyleRounded
-	if p.isTTY {
+	if p.color {
 		style.Color.Header = text.Colors{text.FgHiYellow, text.Bold}
 		style.Color.Border = text.Colors{text.FgHiBlack}
 	}
@@ -321,7 +321,7 @@ func (p *Printer) tableStyle() table.Style {
 
 // Section prints a section header.
 func (p *Printer) Section(title string) {
-	if p.isTTY {
+	if p.color {
 		style := lipgloss.NewStyle().Foreground(ColorAmber).Bold(true)
 		p.Println(style.Render(title))
 	} else {
