@@ -16,6 +16,13 @@ All notable changes to gridctl will be documented in this file.
 ### Features
 
 
+- Add `gridctl logs` (daemon log tail/follow, container logs via `--server`), `gridctl doctor` (verdict-style environment checks with remediation hints and meaningful exit codes), and `gridctl open` / `gridctl ui` (open the web UI, `--print` / `--json` supported)
+- Group `gridctl --help` by domain with a quick-start block, add `Example:` sections to core commands, and drop the subcommand footer from leaf commands
+- Print runtime errors once with no usage dump; flag and argument mistakes keep a short help pointer, and unknown commands and `link`/`unlink` client slugs get "did you mean" suggestions
+- Add `--json` to `status` and `info` (experimental schemas) and as a `--format json` alias on `validate`, `plan`, `optimize`, `activate`, `skill list`, and `var list`
+- Colorize `gridctl plan` diffs with Terraform-style `+`/`~`/`-` symbols on TTYs
+- Accept a stack name or file path in `gridctl destroy`, print a notice when bare `gridctl apply` starts stackless mode, and add next-step hints after `status`, `destroy`, and `apply`
+- Honor `NO_COLOR`, `TERM=dumb`, and a new global `--no-color` flag across all CLI output, including help text
 - Enforce a zero-error frontend lint baseline in CI (gatekeeper now runs eslint on every PR)
 - Show the official Model Context Protocol mark on the gateway node and gateway sidebar headers in the web UI, replacing the generic pulse icon and its looping ping animation; liveness stays with the "Gateway Active" status pill
 
