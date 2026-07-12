@@ -1,7 +1,10 @@
 package main
 
 import (
+	"os"
 	"strings"
+
+	"github.com/gridctl/gridctl/pkg/output"
 
 	"github.com/spf13/cobra"
 )
@@ -16,30 +19,65 @@ const (
 	colorReset  = "\033[0m"
 )
 
-// colorize applies color to text
+// helpColorEnabled reports whether help output should carry ANSI colors.
+// Checked lazily at render time because --help bypasses PersistentPreRun,
+// so the --no-color flag must be consulted directly.
+func helpColorEnabled() bool {
+	return !noColorFlag && output.ColorEnabled(os.Stdout)
+}
+
+// colorize applies color to text when color output is enabled.
 func colorize(color, text string) string {
+	if !helpColorEnabled() {
+		return text
+	}
 	return color + text + colorReset
 }
 
-// Custom help template matching Containerlab style with Obsidian Observatory colors
+// Custom help template matching Containerlab style with Obsidian Observatory
+// colors. Sections render via the header func so colors respect the color
+// contract (TTY, NO_COLOR, TERM=dumb, --no-color). Commands render under
+// cobra groups on the root; ungrouped subcommands keep a flat list. The
+// trailing subcommand footer only renders for commands that have them.
 var helpTemplate = `{{with .Long}}{{. | trimTrailingWhitespaces}}
 
-{{end}}` + colorAmber + `USAGE` + colorReset + `
-  {{.UseLine | colorizeUsage}}
+{{end}}{{if not .HasParent}}{{header "QUICK START"}}
+  gridctl apply stack.yaml    Deploy a stack of MCP servers
+  gridctl link                Connect your LLM client
+  gridctl status              See what is running
 
-{{if .HasAvailableSubCommands}}` + colorAmber + `COMMANDS` + colorReset + `
+{{end}}{{header "USAGE"}}
+  {{.UseLine | colorizeUsage}}
+{{if and .HasAvailableSubCommands .Groups}}{{$root := .}}{{range $grp := .Groups}}
+{{header $grp.Title}}
+{{range $root.Commands}}{{if and (eq .GroupID $grp.ID) .IsAvailableCommand}}  {{colorizeCmd .Name}} {{.Short}}
+{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+{{header "OTHER"}}
+{{range .Commands}}{{if and (eq .GroupID "") .IsAvailableCommand}}  {{colorizeCmd .Name}} {{.Short}}
+{{end}}{{end}}{{end}}{{else if .HasAvailableSubCommands}}
+{{header "COMMANDS"}}
 {{range .Commands}}{{if .IsAvailableCommand}}  {{colorizeCmd .Name}} {{.Short}}
-{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}` + colorAmber + `FLAGS` + colorReset + `
+{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+{{header "FLAGS"}}
 {{.LocalFlags.FlagUsages | colorizeFlags}}{{end}}{{if .HasAvailableInheritedFlags}}
-` + colorAmber + `GLOBAL FLAGS` + colorReset + `
+{{header "GLOBAL FLAGS"}}
 {{.InheritedFlags.FlagUsages | colorizeFlags}}{{end}}{{if .HasExample}}
-` + colorAmber + `EXAMPLES` + colorReset + `
-{{.Example}}{{end}}
+{{header "EXAMPLES"}}
+{{.Example}}
+{{end}}{{if .HasAvailableSubCommands}}
 Use "{{.CommandPath}} [command] --help" for more information about a command.
-`
+{{end}}`
+
+// header renders a section header in amber when color is enabled.
+func header(title string) string {
+	return colorize(colorAmber, title)
+}
 
 // colorizeUsage colors the usage line
 func colorizeUsage(usage string) string {
+	if !helpColorEnabled() {
+		return usage
+	}
 	// Color the command name in teal, arguments in purple, flags in muted
 	parts := strings.Fields(usage)
 	if len(parts) == 0 {
@@ -77,6 +115,9 @@ func colorizeCmd(name string) string {
 
 // colorizeFlags colors flag definitions
 func colorizeFlags(flags string) string {
+	if !helpColorEnabled() {
+		return flags
+	}
 	lines := strings.Split(flags, "\n")
 	var result []string
 
@@ -146,6 +187,7 @@ func initHelp() {
 	cobra.AddTemplateFunc("colorizeUsage", colorizeUsage)
 	cobra.AddTemplateFunc("colorizeCmd", colorizeCmd)
 	cobra.AddTemplateFunc("colorizeFlags", colorizeFlags)
+	cobra.AddTemplateFunc("header", header)
 
 	rootCmd.SetHelpTemplate(helpTemplate)
 }
