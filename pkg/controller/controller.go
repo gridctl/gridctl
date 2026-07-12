@@ -182,7 +182,10 @@ func (sc *StackController) runStacklessDaemonMode() error {
 	fmt.Printf("  Web UI: http://localhost:%d\n", sc.config.Port)
 	fmt.Printf("  PID:    %d\n", pid)
 	fmt.Printf("  Logs:   %s\n", state.LogPath("gridctl"))
+	// Teardown instructions always print (scripts capture them); extra
+	// conversational hints go through Printer.Hint and are TTY-only.
 	fmt.Printf("\nUse 'gridctl stop' to stop.\n")
+	output.New().Hint("Load a stack with 'gridctl apply <stack.yaml>', or 'gridctl open' for the web UI")
 	return nil
 }
 
@@ -469,7 +472,10 @@ func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stac
 		summaries := BuildWorkloadSummaries(stack, result)
 		printer.Summary(summaries)
 		printer.Info("Gateway running", "url", fmt.Sprintf("http://localhost:%d", st.Port))
+		// Teardown instructions always print (scripts capture them); extra
+		// conversational hints go through Printer.Hint and are TTY-only.
 		printer.Print("\nUse 'gridctl destroy %s' to stop\n", sc.config.StackPath)
+		printer.Hint("Follow the daemon with 'gridctl logs', or 'gridctl open' for the web UI")
 	} else {
 		fmt.Printf("Stack '%s' started successfully\n", stack.Name)
 		fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
