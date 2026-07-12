@@ -1,6 +1,10 @@
 # CLI Reference
 
-Commands are grouped by domain. Run `gridctl <command> --help` for the full flag set; the tables below cover the high-value flags an operator reaches for daily.
+Commands are grouped by domain, matching the groups in `gridctl --help`. Run `gridctl <command> --help` for the full flag set; the tables below cover the high-value flags an operator reaches for daily.
+
+Global flags: `--runtime <docker|podman>` overrides runtime auto-detection, and `--no-color` disables styled output. Color is also suppressed automatically when output is piped, when `NO_COLOR` is set ([no-color.org](https://no-color.org/)), or when `TERM=dumb`.
+
+Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (`validate`, `plan`, `optimize`, `activate`, `skill list`, and `var list`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. The `status`, `info`, and `doctor` JSON schemas are experimental until 1.0.
 
 ## Contents
 
@@ -12,23 +16,22 @@ Commands are grouped by domain. Run `gridctl <command> --help` for the full flag
 - [Traces](#traces)
 - [Optimize](#optimize)
 - [Telemetry](#telemetry)
-- [Upgrade](#upgrade)
+- [System](#system)
 
 ## Stack lifecycle
 
 | Command | Purpose |
 |---|---|
-| `gridctl validate <stack.yaml>` | Validate stack YAML (exit `0`/`1`/`2`); `--format json` for machine-readable output. |
-| `gridctl plan <stack.yaml>` | Preview changes against running state; `-y` / `--auto-approve` to apply. |
-| `gridctl apply <stack.yaml>` | Start containers and the MCP gateway. Flags: `-f` foreground, `-p` port, `--base-port`, `-w` / `--watch`, `--flash`, `--code-mode`, `--no-cache`, `--no-expand`, `-v` verbose (print full stack as JSON), `-q` quiet, `--log-file <path>`. |
-| `gridctl reload [stack-name]` | Hot reload a running stack's spec. |
-| `gridctl destroy <stack.yaml>` | Stop and remove all containers for the stack. |
+| `gridctl validate <stack.yaml>` | Validate stack YAML (exit `0`/`1`/`2`); `--format json` or `--json` for machine-readable output. |
+| `gridctl plan <stack.yaml>` | Preview changes against running state with Terraform-style colored `+`/`~`/`-` symbols; `-y` / `--auto-approve` to apply, `--format json` or `--json` for machine output. |
+| `gridctl apply <stack.yaml>` | Start containers and the MCP gateway. Without a stack file, starts stackless mode (same as `serve`) and prints a notice. Flags: `-f` foreground, `-p` port, `--base-port`, `-w` / `--watch`, `--flash`, `--code-mode`, `--no-cache`, `--no-expand`, `-v` verbose (print full stack as JSON), `-q` quiet, `--log-file <path>`. |
+| `gridctl reload [stack-name]` | Hot reload a running stack's spec (accepts a stack name or file path). |
+| `gridctl destroy <stack.yaml\|stack-name>` | Stop and remove all containers for the stack, by file or by the name shown in `gridctl status`. |
 | `gridctl export` | Reverse-engineer `stack.yaml` from running state; `-o <dir>` write to directory, `--format yaml\|json` (default `yaml`). |
 | `gridctl serve` | Start the web UI and API without managing a stack (stackless mode). |
 | `gridctl stop` | Stop the stackless gridctl daemon; `--force` kills the process if graceful shutdown fails. |
-| `gridctl status` | Show running stacks; `-s` / `--stack` filters to one stack, `--replicas` expands to one row per replica. |
-| `gridctl info` | Show runtime and environment information: detected runtime (Docker/Podman), socket path, version, host alias, SELinux state, and rootless network stack. |
-| `gridctl version` | Print version information. |
+| `gridctl status` | Show running stacks; `-s` / `--stack` filters to one stack, `--replicas` expands to one row per replica, `--json` for machine-readable output (experimental schema). |
+| `gridctl logs [stack]` | Tail the gateway daemon log (`~/.gridctl/logs/<stack>.log`). `-f` / `--follow` streams, `-n` / `--tail <N>` picks the line count (default 100), `--server <name>` streams a containerized MCP server's logs instead. Stack auto-detected when exactly one is running. |
 
 ## LLM clients
 
@@ -43,7 +46,7 @@ Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients a
 
 | Command | Purpose |
 |---|---|
-| `gridctl skill list` | List skills in the registry (`--remote` for imported skills only). |
+| `gridctl skill list` | List skills in the registry (`--remote` for imported skills only, `--format json` or `--json` for machine output). |
 | `gridctl skill add <repo-url>` | Import skills from a git repository. `--ref` / `--path` pin branch or subdirectory; `--no-activate` imports as draft; `--trust` skips the security-scan confirmation; `--force` overwrites existing skills; `--rename <name>` renames on import (single skill only). Auth flags: `--auth-token <pat>` (ephemeral HTTPS PAT, CI), `--vault-key <key>` (resolves from `${var:KEY}`), `--ssh-key <path>` (SSH). |
 | `gridctl skill update [name]` | Update imported skills (all when name omitted); alias `gridctl skill sync`. `--dry-run` previews, `--force` updates even when no change is detected. |
 | `gridctl skill remove <name>` | Remove an imported skill. |
@@ -51,7 +54,7 @@ Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients a
 | `gridctl skill info <name>` | Show origin and update status. |
 | `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation (`--duration`, default `10m`, before auto-cleanup). Auth flags: `--auth-token <pat>`, `--vault-key <key>`, `--ssh-key <path>`. |
 | `gridctl skill validate <name>` | Validate a skill definition. |
-| `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `-s` / `--stack` to target a stack (auto-detected when only one runs), `--format json` for machine output, `-q` / `--quiet` to suppress the success line. |
+| `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `-s` / `--stack` to target a stack (auto-detected when only one runs), `--format json` or `--json` for machine output, `-q` / `--quiet` to suppress the success line. |
 
 ## Variables
 
@@ -61,7 +64,7 @@ The variable store holds both secrets (encrypted at rest, redacted in logs) and 
 |---|---|
 | `gridctl var set <key>` | Store a variable (interactive prompt, or `--value`). Secret by default (`--secret` makes that explicit); `--plaintext` for non-sensitive config visible in logs. `--type <string\|json\|list\|number\|bool>` tags the value's shape; `--set <name>` assigns it to a variable set. |
 | `gridctl var get <key>` | Retrieve a variable (secrets masked; `--plain` to unmask). |
-| `gridctl var list` | List all variables with type, visibility, and set assignment (`--format json`). |
+| `gridctl var list` | List all variables with type, visibility, and set assignment (`--format json` or `--json`). |
 | `gridctl var delete <key>` | Remove a variable (`--force` to skip confirmation). |
 | `gridctl var import <file>` | Import from `.env` or `.json` (`--format` to override auto-detection; `# @public` / `# @type=` markers tag entries). |
 | `gridctl var export` | Export variables (`--format env\|json`, `--plain` to unmask). |
@@ -105,7 +108,7 @@ All `pins` subcommands accept `--stack <name>` (auto-detected when only one stac
 | `gridctl optimize --stack <name>` | Pick a specific stack when more than one is running. |
 | `gridctl optimize --min-impact 0.10` | Filter findings below a weekly USD impact threshold (info findings always shown). |
 | `gridctl optimize --severity warn,critical` | Allowlist by severity. |
-| `gridctl optimize --format json` | Machine-readable `OptimizeReport` (exit `0`/`1`/`2`). |
+| `gridctl optimize --format json` | Machine-readable `OptimizeReport` (exit `0`/`1`/`2`); `--json` is an alias. |
 
 ## Telemetry
 
@@ -117,15 +120,15 @@ Inspect and manage opt-in telemetry persistence under `~/.gridctl/telemetry/`. O
 | `gridctl telemetry wipe [stack]` | Delete persisted telemetry files. `--server <name>` and `--signal <logs\|metrics\|traces>` scope the wipe; `-y` / `--yes` skips the prompt. |
 | `gridctl telemetry tail <stack> <server>` | Follow the active `<signal>.jsonl` file (lumberjack rotations detected automatically). `--signal <logs\|metrics\|traces>` is required. |
 
-## Upgrade
+## System
 
 | Command | Purpose |
 |---|---|
-| `gridctl upgrade` | Check + prompt + upgrade (standalone install). |
-| `gridctl upgrade --check` | Only check for updates; do not install. |
-| `gridctl upgrade --yes` | Non-interactive (CI / cron). |
-| `gridctl upgrade --version <tag>` | Install a specific release tag (allows downgrades). |
-| `gridctl upgrade --force` | Bypass Homebrew detection and the up-to-date short-circuit. |
+| `gridctl info` | Show runtime and environment facts: detected runtime (Docker/Podman), socket path, version, host alias, SELinux state, and rootless network stack. `--json` for machine output. Always exits 0; for judgments, use `doctor`. |
+| `gridctl doctor` | Run opinionated environment checks with remediation hints: runtime detection, socket reachability, version floor, gateway port, `npx` availability, state directory hygiene, stale state files, and vault status. `--json` for a machine-readable report, `-q` to print only failures. Exit `0` (no errors), `1` (errors), `2` (doctor failed). |
+| `gridctl open` | Open the web UI in the default browser (alias: `gridctl ui`). Port resolves from the first running stack; `-s` / `--stack` picks one, `-p` / `--port` overrides, `--path` sets the URL path, `--print` prints the URL only, `--json` emits `{"url": ...}`. |
+| `gridctl version` | Print version information. |
+| `gridctl upgrade` | Check + prompt + upgrade (standalone install). `--check` only checks; `--yes` non-interactive (CI / cron); `--version <tag>` installs a specific release tag (allows downgrades); `--force` bypasses Homebrew detection and the up-to-date short-circuit. |
 
 ---
 
