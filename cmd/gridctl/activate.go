@@ -48,7 +48,11 @@ Exit codes:
   1  skill not found
   2  infrastructure error (gateway unreachable, conflict, registry unavailable)`,
 	Args: cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		if activateFormat, err = resolveFormat(activateFormat, cmd.Flags().Changed("format"), *activateJSON); err != nil {
+			return err
+		}
 		port, err := resolveActivatePort(activateStack)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -64,10 +68,13 @@ Exit codes:
 	},
 }
 
+var activateJSON *bool
+
 func init() {
 	activateCmd.Flags().StringVarP(&activateStack, "stack", "s", "", "Stack to query (auto-detected when only one stack is running)")
 	activateCmd.Flags().StringVar(&activateFormat, "format", "", "Output format: 'json' for machine-readable output")
 	activateCmd.Flags().BoolVarP(&activateQuiet, "quiet", "q", false, "Suppress the human-readable success line")
+	activateJSON = addJSONAlias(activateCmd)
 }
 
 // resolveActivatePort mirrors resolveTestPort. Kept separate so error
