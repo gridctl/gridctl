@@ -24,12 +24,19 @@ Exit codes:
   2  Warnings only (no errors)`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		if validateFormat, err = resolveFormat(validateFormat, cmd.Flags().Changed("format"), *validateJSON); err != nil {
+			return err
+		}
 		return runValidate(args[0])
 	},
 }
 
+var validateJSON *bool
+
 func init() {
 	validateCmd.Flags().StringVar(&validateFormat, "format", "", "Output format: json for machine-readable output")
+	validateJSON = addJSONAlias(validateCmd)
 }
 
 func runValidate(stackPath string) error {
