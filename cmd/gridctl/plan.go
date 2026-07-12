@@ -3,13 +3,15 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/controller"
+	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
@@ -31,14 +33,21 @@ added, removed, and modified servers, agents, and resources.
 Use -y or --auto-approve to auto-approve and apply changes.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		if planFormat, err = resolveFormat(planFormat, cmd.Flags().Changed("format"), *planJSON); err != nil {
+			return err
+		}
 		return runPlan(args[0])
 	},
 }
+
+var planJSON *bool
 
 func init() {
 	planCmd.Flags().BoolVarP(&planAutoApprove, "yes", "y", false, "Auto-approve and apply changes")
 	planCmd.Flags().BoolVar(&planAutoApproveCI, "auto-approve", false, "Auto-approve and apply changes (CI/CD equivalent of -y)")
 	planCmd.Flags().StringVar(&planFormat, "format", "", "Output format: json for machine-readable output")
+	planJSON = addJSONAlias(planCmd)
 }
 
 func runPlan(stackPath string) error {
@@ -62,12 +71,10 @@ func runPlan(stackPath string) error {
 	diff := config.ComputePlan(proposed, current)
 
 	if planFormat == "json" {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(diff)
+		return output.EncodeJSON(os.Stdout, diff)
 	}
 
-	printPlanDiff(diff)
+	printPlanDiff(os.Stdout, diff)
 
 	if !diff.HasChanges {
 		return nil
@@ -126,31 +133,45 @@ func loadCurrentStack(stackName string) (*config.Stack, error) {
 	return current, nil
 }
 
-func printPlanDiff(diff *config.PlanDiff) {
+// printPlanDiff renders the human plan view. Symbols mirror the Terraform
+// convention: + add (green), - destroy (red), ~ update (amber). Colors
+// follow the color contract, so piped output stays plain.
+func printPlanDiff(w io.Writer, diff *config.PlanDiff) {
 	if !diff.HasChanges {
-		fmt.Println("No changes. Stack is up to date.")
+		fmt.Fprintln(w, "No changes. Stack is up to date.")
 		return
 	}
 
-	fmt.Printf("Plan: %s\n\n", diff.Summary)
+	color := output.ColorEnabled(w)
+	header := fmt.Sprintf("Plan: %s", diff.Summary)
+	if color {
+		header = lipgloss.NewStyle().Foreground(output.ColorAmber).Bold(true).Render(header)
+	}
+	fmt.Fprintf(w, "%s\n\n", header)
 
+	muted := lipgloss.NewStyle().Foreground(output.ColorMuted)
 	for _, item := range diff.Items {
 		var symbol, label string
+		var symbolColor lipgloss.Color
 		switch item.Action {
 		case config.DiffAdd:
-			symbol = "+"
-			label = "add"
+			symbol, label, symbolColor = "+", "add", output.ColorGreen
 		case config.DiffRemove:
-			symbol = "-"
-			label = "destroy"
+			symbol, label, symbolColor = "-", "destroy", output.ColorRed
 		case config.DiffChange:
-			symbol = "~"
-			label = "update"
+			symbol, label, symbolColor = "~", "update", output.ColorAmber
 		}
 
-		fmt.Printf("  %s %s %q (%s)\n", symbol, item.Kind, item.Name, label)
+		line := fmt.Sprintf("%s %s %q (%s)", symbol, item.Kind, item.Name, label)
+		if color {
+			line = lipgloss.NewStyle().Foreground(symbolColor).Render(line)
+		}
+		fmt.Fprintf(w, "  %s\n", line)
 		for _, detail := range item.Details {
-			fmt.Printf("      %s\n", detail)
+			if color {
+				detail = muted.Render(detail)
+			}
+			fmt.Fprintf(w, "      %s\n", detail)
 		}
 	}
 }
