@@ -18,37 +18,46 @@ import (
 )
 
 var (
-	applyVerbose      bool
-	applyQuiet        bool
-	applyNoCache      bool
-	applyPort         int
-	applyBasePort     int
-	applyForeground   bool
-	applyDaemonChild  bool
-	applyNoExpand     bool
-	applyWatch        bool
-	applyFlash        bool
-	applyCodeMode     bool
-	applyLogFile      string
+	applyVerbose     bool
+	applyQuiet       bool
+	applyNoCache     bool
+	applyPort        int
+	applyBasePort    int
+	applyForeground  bool
+	applyDaemonChild bool
+	applyNoExpand    bool
+	applyWatch       bool
+	applyFlash       bool
+	applyCodeMode    bool
+	applyLogFile     string
 )
 
 var applyCmd = &cobra.Command{
 	Use:   "apply [stack.yaml]",
 	Short: "Start MCP servers defined in a stack file",
 	Long: `Reads a stack YAML file and starts all defined MCP servers and resources.
+When called without a stack file, starts the API server and web UI in
+stackless mode instead (the same as 'gridctl serve'); a notice is printed
+so the fallback is never silent.
 
 Creates a Docker network, pulls/builds images as needed, and starts containers.
 The MCP gateway runs as a background daemon by default.
 
-When called without a stack file, starts the API server and web UI in stackless
-mode. Vault and wizard endpoints are fully functional; stack-dependent endpoints
-return 503 until a stack is loaded.
+In stackless mode, vault and wizard endpoints are fully functional;
+stack-dependent endpoints return 503 until a stack is loaded.
 
 Use --foreground (-f) to run in foreground with verbose output.
 Use --flash to auto-link detected LLM clients after apply.`,
+	Example: `  gridctl apply stack.yaml             Deploy a stack as a background daemon
+  gridctl apply stack.yaml -f          Run in foreground (ctrl-C to stop)
+  gridctl apply stack.yaml --watch     Hot reload on stack file changes
+  gridctl apply                        Start the API and web UI without a stack`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
+			if !applyDaemonChild {
+				fmt.Fprintln(os.Stderr, "No stack file given; starting stackless API/UI (same as 'gridctl serve').")
+			}
 			return runServeStackless()
 		}
 		return runApply(args[0])
@@ -199,6 +208,6 @@ func flashLinkClients(port int) {
 func showLinkHint() {
 	registry := provisioner.NewRegistry()
 	if !registry.IsAnyLinked("gridctl") {
-		fmt.Println("\n  Tip: Run 'gridctl link' to connect your LLM client to this gateway")
+		output.New().Hint("Tip: run 'gridctl link' to connect your LLM client, or 'gridctl open' for the web UI")
 	}
 }
