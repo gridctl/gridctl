@@ -32,6 +32,10 @@ Without arguments, detects installed LLM clients and presents a selection list.
 With a client name, links that specific client directly.
 
 Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, roo, zed, goose`,
+	Example: `  gridctl link                 Pick from detected clients interactively
+  gridctl link claude          Link Claude Desktop directly
+  gridctl link --all           Link every detected client
+  gridctl link claude --dry-run  Preview the config change`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var client string
@@ -87,9 +91,7 @@ func runLink(client string) error {
 func linkSingleClient(printer *output.Printer, registry *provisioner.Registry, slug string, opts provisioner.LinkOptions) error {
 	prov, ok := registry.FindBySlug(slug)
 	if !ok {
-		printer.Error(fmt.Sprintf("%s is not a supported client", slug))
-		printer.Print("Supported clients: %s\n", strings.Join(registry.AllSlugs(), ", "))
-		return fmt.Errorf("%s: not a supported client", slug)
+		return unknownClientError(registry, slug)
 	}
 
 	configPath, found := prov.Detect()
@@ -266,6 +268,18 @@ func showDryRun(printer *output.Printer, prov provisioner.ClientProvisioner, con
 	printer.Print("  %s\n\n", strings.ReplaceAll(after, "\n", "\n  "))
 	printer.Print("  No changes made (dry run).\n\n")
 	return nil
+}
+
+// unknownClientError builds the single-print error for an unrecognized
+// client slug, including a "did you mean" suggestion within edit distance
+// two. The suggestion is never auto-run.
+func unknownClientError(registry *provisioner.Registry, slug string) error {
+	msg := fmt.Sprintf("unknown client %q", slug)
+	if s := output.Suggest(slug, registry.AllSlugs()); s != "" {
+		msg += fmt.Sprintf("\nDid you mean %q?", s)
+	}
+	msg += "\nSupported clients: " + strings.Join(registry.AllSlugs(), ", ")
+	return errors.New(msg)
 }
 
 // resolveGatewayPort auto-detects the port from a running stack, falls back to 8180.
