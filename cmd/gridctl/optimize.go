@@ -24,8 +24,8 @@ const optimizeHTTPTimeout = 10 * time.Second
 // and cmd/gridctl/validate.go so CI scripts can rely on a stable
 // contract.
 const (
-	optimizeExitOK            = 0
-	optimizeExitFindings      = 1
+	optimizeExitOK             = 0
+	optimizeExitFindings       = 1
 	optimizeExitInfrastructure = 2
 )
 
@@ -50,6 +50,10 @@ Exit codes:
   1  at least one warn or critical finding
   2  infrastructure error (gateway unreachable, wrong stack)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		if optimizeFormat, err = resolveFormat(optimizeFormat, cmd.Flags().Changed("format"), *optimizeJSON); err != nil {
+			return err
+		}
 		port, err := resolveOptimizePort(optimizeStack)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -83,7 +87,10 @@ func init() {
 	optimizeCmd.Flags().Float64Var(&optimizeMinImpact, "min-impact", 0, "Filter findings below this weekly USD impact (info findings always shown)")
 	optimizeCmd.Flags().StringVar(&optimizeSeverity, "severity", "", "Comma-separated severity allowlist: info,warn,critical")
 	optimizeCmd.Flags().StringVar(&optimizeFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
+	optimizeJSON = addJSONAlias(optimizeCmd)
 }
+
+var optimizeJSON *bool
 
 // resolveOptimizePort finds the port of a running gateway, optionally
 // filtered by stack name. Mirrors resolveTracesPort, but emits errors
