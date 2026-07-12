@@ -19,9 +19,46 @@ import (
 )
 
 var (
-	statusStack          string
-	statusShowReplicas   bool
+	statusStack        string
+	statusShowReplicas bool
+	statusJSON         bool
 )
+
+// statusGatewayJSON is one gateway entry of `gridctl status --json`.
+// The schema is experimental until 1.0.
+type statusGatewayJSON struct {
+	Name      string    `json:"name"`
+	Port      int       `json:"port"`
+	PID       int       `json:"pid"`
+	Status    string    `json:"status"`
+	StartedAt time.Time `json:"started_at"`
+	CodeMode  string    `json:"code_mode,omitempty"`
+}
+
+// statusContainerJSON is one container entry of `gridctl status --json`.
+type statusContainerJSON struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Image     string `json:"image"`
+	State     string `json:"state"`
+	Message   string `json:"message,omitempty"`
+	PinStatus string `json:"pin_status,omitempty"`
+}
+
+// statusMCPServerJSON is one MCP server entry of `gridctl status --json`,
+// mirroring the gateway API payload plus the owning stack.
+type statusMCPServerJSON struct {
+	Stack string `json:"stack"`
+	mcpServerAPI
+}
+
+// statusReport is the machine-readable shape of `gridctl status --json`.
+type statusReport struct {
+	Gateways   []statusGatewayJSON   `json:"gateways"`
+	Containers []statusContainerJSON `json:"containers"`
+	MCPServers []statusMCPServerJSON `json:"mcp_servers"`
+}
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
@@ -31,18 +68,27 @@ var statusCmd = &cobra.Command{
 Shows running gateways with their ports, and container states.
 Use --stack to filter by a specific stack.
 Use --replicas to expand multi-replica servers to one row per replica.`,
+	Example: `  gridctl status               Show all gateways and containers
+  gridctl status --replicas    One row per replica
+  gridctl status --json        Machine-readable output (experimental schema)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus(statusStack, statusShowReplicas)
+		return runStatus(statusStack, statusShowReplicas, statusJSON)
 	},
 }
 
 func init() {
 	statusCmd.Flags().StringVarP(&statusStack, "stack", "s", "", "Only show containers from this stack")
 	statusCmd.Flags().BoolVar(&statusShowReplicas, "replicas", false, "Expand to one row per replica instead of rolled-up per-server state")
+	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "Output status as JSON (experimental schema)")
 }
 
-func runStatus(stack string, showReplicas bool) error {
+func runStatus(stack string, showReplicas, asJSON bool) error {
+	// In JSON mode all human chrome (warnings, hints) moves to stderr so
+	// stdout carries nothing but the document.
 	printer := output.New()
+	if asJSON {
+		printer = output.NewWithWriter(os.Stderr)
+	}
 
 	// Show gateway status from state files
 	states, err := state.List()
@@ -58,8 +104,9 @@ func runStatus(stack string, showReplicas bool) error {
 		}
 	}
 
-	// Build gateway summaries
+	// Build gateway summaries (table rows) and their JSON mirror
 	var gateways []output.GatewaySummary
+	gatewaysJSON := make([]statusGatewayJSON, 0, len(filteredStates))
 	for _, s := range filteredStates {
 		status := "stopped"
 		if state.IsRunning(&s) {
@@ -77,6 +124,14 @@ func runStatus(stack string, showReplicas bool) error {
 			gw.CodeMode = queryCodeMode(s.Port)
 		}
 		gateways = append(gateways, gw)
+		gatewaysJSON = append(gatewaysJSON, statusGatewayJSON{
+			Name:      s.StackName,
+			Port:      s.Port,
+			PID:       s.PID,
+			Status:    status,
+			StartedAt: s.StartedAt,
+			CodeMode:  gw.CodeMode,
+		})
 	}
 
 	// Load pin status for all filtered stacks (best-effort; errors are non-fatal).
@@ -84,6 +139,7 @@ func runStatus(stack string, showReplicas bool) error {
 
 	// Show container status (graceful degradation when Docker unavailable)
 	var containers []output.ContainerSummary
+	containersJSON := make([]statusContainerJSON, 0)
 	rt, err := runtime.New()
 	if err != nil {
 		printer.Warn("could not initialize runtime — container status unavailable", "error", err)
@@ -120,12 +176,39 @@ func runStatus(stack string, showReplicas bool) error {
 					Message:   s.Message,
 					PinStatus: pinLabels[workloadName],
 				})
+				containersJSON = append(containersJSON, statusContainerJSON{
+					ID:        id,
+					Name:      workloadName,
+					Type:      string(s.Type),
+					Image:     s.Image,
+					State:     string(s.State),
+					Message:   s.Message,
+					PinStatus: pinLabels[workloadName],
+				})
 			}
 		}
 	}
 
+	if asJSON {
+		report := statusReport{
+			Gateways:   gatewaysJSON,
+			Containers: containersJSON,
+			MCPServers: make([]statusMCPServerJSON, 0),
+		}
+		for _, s := range filteredStates {
+			if !state.IsRunning(&s) {
+				continue
+			}
+			for _, srv := range queryMCPServers(s.Port) {
+				report.MCPServers = append(report.MCPServers, statusMCPServerJSON{Stack: s.StackName, mcpServerAPI: srv})
+			}
+		}
+		return output.EncodeJSON(os.Stdout, report)
+	}
+
 	if len(containers) == 0 && len(gateways) == 0 {
 		printer.Info("No managed gateways or containers found")
+		printer.Hint("Try: gridctl apply <stack.yaml>  or  gridctl serve")
 		return nil
 	}
 
@@ -182,14 +265,14 @@ func queryTraceCount(port int) int {
 // to render rolled-up and per-replica views. Defined locally so the CLI does
 // not pull in the internal/api package.
 type mcpServerAPI struct {
-	Name         string            `json:"name"`
-	Transport    string            `json:"transport"`
-	External     bool              `json:"external"`
-	LocalProcess bool              `json:"localProcess"`
-	SSH          bool              `json:"ssh"`
-	OpenAPI      bool              `json:"openapi"`
-	Replicas     []mcpReplicaAPI   `json:"replicas,omitempty"`
-	Autoscale    *autoscaleAPI     `json:"autoscale,omitempty"`
+	Name         string          `json:"name"`
+	Transport    string          `json:"transport"`
+	External     bool            `json:"external"`
+	LocalProcess bool            `json:"localProcess"`
+	SSH          bool            `json:"ssh"`
+	OpenAPI      bool            `json:"openapi"`
+	Replicas     []mcpReplicaAPI `json:"replicas,omitempty"`
+	Autoscale    *autoscaleAPI   `json:"autoscale,omitempty"`
 }
 
 // autoscaleAPI mirrors the subset of mcp.AutoscaleStatus the CLI renders in
