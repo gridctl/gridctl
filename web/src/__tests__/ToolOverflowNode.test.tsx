@@ -26,12 +26,17 @@ const data: ToolOverflowNodeData = {
   hiddenTools: ['create-issue', 'delete-repo'],
 };
 
-function renderNode() {
+function renderNode(nodeData: ToolOverflowNodeData = data) {
   return render(
     <MemoryRouter initialEntries={['/']}>
-      <ToolOverflowNode data={data} />
+      <ToolOverflowNode data={nodeData} />
     </MemoryRouter>,
   );
+}
+
+function makeData(count: number): ToolOverflowNodeData {
+  const hiddenTools = Array.from({ length: count }, (_, i) => `tool-${i}`);
+  return { ...data, overflowCount: count, hiddenTools };
 }
 
 beforeEach(() => {
@@ -74,6 +79,60 @@ describe('ToolOverflowNode', () => {
     fireEvent.click(screen.getByRole('button', { name: /show details for github tool delete-repo/i }));
     expect(await screen.findByText('github__delete-repo')).toBeInTheDocument();
     expect(screen.getByText(/No description available/i)).toBeInTheDocument();
+  });
+
+  it('marks the open panel scrollable inside react-flow', () => {
+    const { container } = renderNode();
+    fireEvent.click(screen.getByRole('button', { name: /show 2 more github tools/i }));
+    // node-scroll wins overflow back from the react-flow overflow:visible
+    // !important rule; nowheel keeps the wheel from zooming the canvas.
+    const panel = container.querySelector('.node-scroll');
+    expect(panel).not.toBeNull();
+    expect(panel).toHaveClass('nowheel');
+  });
+
+  it('lays hidden tools out in columns of 10', () => {
+    const { container } = renderNode(makeData(30));
+    fireEvent.click(screen.getByRole('button', { name: /show 30 more github tools/i }));
+    const list = container.querySelector('ul');
+    expect(list).toHaveStyle({
+      gridTemplateRows: 'repeat(10, min-content)',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    });
+    const panel = container.querySelector('.node-scroll');
+    expect(panel).toHaveStyle({ width: '600px' });
+  });
+
+  it('caps the grid at four columns and grows rows past 40 tools', () => {
+    const { container } = renderNode(makeData(100));
+    fireEvent.click(screen.getByRole('button', { name: /show 100 more github tools/i }));
+    const list = container.querySelector('ul');
+    expect(list).toHaveStyle({
+      gridTemplateRows: 'repeat(25, min-content)',
+      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    });
+  });
+
+  it('opens the detail popover past the panel edge so the tool list stays visible', async () => {
+    const { container } = renderNode();
+    fireEvent.click(screen.getByRole('button', { name: /show 2 more github tools/i }));
+    fireEvent.click(screen.getByRole('button', { name: /show details for github tool create-issue/i }));
+    const card = (await screen.findByText('github__create-issue')).closest('.w-72');
+    // One column of hidden tools -> the panel is 200px wide; the card starts
+    // just past its right edge instead of the pill default (left-full), which
+    // would cover the panel.
+    expect(card).toHaveStyle({ left: '208px', top: '100%' });
+    expect(container.querySelector('.left-full')).toBeNull();
+  });
+
+  it('marks the detail popover scroller scrollable inside react-flow', async () => {
+    const { container } = renderNode();
+    fireEvent.click(screen.getByRole('button', { name: /show 2 more github tools/i }));
+    fireEvent.click(screen.getByRole('button', { name: /show details for github tool create-issue/i }));
+    expect(await screen.findByText('github__create-issue')).toBeInTheDocument();
+    const scrollers = container.querySelectorAll('.node-scroll.nowheel');
+    // The overflow list panel plus the detail popover's body.
+    expect(scrollers.length).toBe(2);
   });
 
   it('dismisses overlays on Escape', async () => {
