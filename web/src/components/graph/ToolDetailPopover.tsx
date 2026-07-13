@@ -12,6 +12,10 @@ interface ToolDetailPopoverProps {
   serverName: string;
   // Unprefixed tool name (as carried by fan-out nodes).
   toolName: string;
+  // Positioning override for the card root. Tool pills use the default anchor
+  // (just right of the pill); the overflow node positions the card past the
+  // right edge of its tool-list panel, whose width the popover cannot know.
+  positionStyle?: React.CSSProperties;
   onClose: () => void;
 }
 
@@ -28,7 +32,7 @@ interface ToolDetailPopoverProps {
  * compact canvas popover. "Open in Tools" deep-links to the workspace rail,
  * which shows the full schema with room to read it.
  */
-const ToolDetailPopover = memo(({ serverName, toolName, onClose }: ToolDetailPopoverProps) => {
+const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }: ToolDetailPopoverProps) => {
   const navigate = useNavigate();
   const prefixedName = `${serverName}${TOOL_NAME_DELIMITER}${toolName}`;
 
@@ -80,8 +84,10 @@ const ToolDetailPopover = memo(({ serverName, toolName, onClose }: ToolDetailPop
       // stopPropagation so a click inside the card never reaches the canvas
       // pane/node handlers; dismissal is the parent's job via useDismiss.
       onClick={(e) => e.stopPropagation()}
+      style={positionStyle}
       className={cn(
-        'nodrag absolute left-full top-0 ml-2 z-50 w-72 frost-surface',
+        'nodrag absolute z-50 w-72 frost-surface',
+        !positionStyle && 'left-full top-0 ml-2',
         'rounded-lg border border-border bg-surface-elevated/95',
         'backdrop-blur-xl shadow-bevel animate-fade-in-scale',
       )}
@@ -107,7 +113,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, onClose }: ToolDetailPop
         </button>
       </div>
 
-      <div className="px-3 py-2.5 space-y-3 max-h-80 overflow-y-auto scrollbar-dark">
+      <div className="px-3 py-2.5 space-y-3 max-h-80 overflow-y-auto scrollbar-dark node-scroll nowheel">
         <section className="space-y-1">
           <h4 className="text-[9px] uppercase tracking-[0.18em] text-text-muted/70">Description</h4>
           {entry?.description ? (
