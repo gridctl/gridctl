@@ -774,6 +774,14 @@ body::before {
   overflow: hidden !important;
 }
 
+/* Re-assert scrolling for in-node popovers (tool overflow list, tool detail).
+   Same conflict as .tool-label: the blanket rule above forces overflow:visible
+   on every node descendant, which defeats overflow-y-auto and lets popover
+   content paint past the panel border onto the canvas. */
+.react-flow__node .node-scroll {
+  overflow-y: auto !important;
+}
+
 .react-flow__edge.animated .react-flow__edge-path {
   transform: translateZ(0);
   backface-visibility: hidden;
