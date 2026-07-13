@@ -21,6 +21,26 @@ import { getNodeDimensions } from './utils';
 /** Maximum number of tool nodes mounted per expanded server. */
 export const TOOL_FANOUT_CAP = 10;
 
+/** Rows per column in the "+N more" popover grid. */
+export const OVERFLOW_GRID_ROWS = 10;
+
+/** Maximum columns in the "+N more" popover grid. */
+export const OVERFLOW_GRID_MAX_COLS = 4;
+
+/**
+ * Column-grid shape for the overflow popover: hidden tools stack
+ * OVERFLOW_GRID_ROWS per column and columns grow rightward, capped at
+ * OVERFLOW_GRID_MAX_COLS. Beyond the cap (count > 40) rows exceed 10 and the
+ * panel scrolls vertically instead of widening further.
+ */
+export function overflowGridShape(count: number): { rows: number; cols: number } {
+  if (count <= 0) {
+    return { rows: 0, cols: 0 };
+  }
+  const cols = Math.min(OVERFLOW_GRID_MAX_COLS, Math.ceil(count / OVERFLOW_GRID_ROWS));
+  return { rows: Math.ceil(count / cols), cols };
+}
+
 /** Stable id for a tool fan-out node. */
 export function toolNodeId(serverNodeId: string, toolName: string): string {
   return `tool-${serverNodeId}-${toolName}`;
