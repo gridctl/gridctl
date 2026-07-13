@@ -3,6 +3,7 @@ import { Handle, Position } from '@xyflow/react';
 import { Check, MoreHorizontal, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { LAYOUT } from '../../lib/constants';
+import { overflowGridShape } from '../../lib/graph/toolFanout';
 import { useDismiss } from '../../hooks/useDismiss';
 import { useAccessLensTool } from '../../hooks/useAccessLensTool';
 import ToolDetailPopover from './ToolDetailPopover';
@@ -49,6 +50,11 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
   // the slide-over). Outside edit mode the rows open the detail popover.
   const { editMode, isOn, toggle: toggleScope } = useAccessLensTool(data.serverName);
 
+  // Hidden tools lay out in columns of 10 growing rightward, so typical lists
+  // are fully visible with no scrolling; beyond the column cap the panel
+  // scrolls vertically.
+  const { rows, cols } = overflowGridShape(data.hiddenTools.length);
+
   return (
     <div ref={wrapperRef} className="relative nodrag" style={{ width: LAYOUT.TOOL_WIDTH }}>
       <button
@@ -74,16 +80,27 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
       {open && (
         <div
           className={cn(
-            'absolute left-0 top-full mt-1.5 z-50 w-full',
+            'absolute left-0 top-full mt-1.5 z-50',
             'rounded-lg border border-border bg-surface-elevated/95',
             'backdrop-blur-xl shadow-bevel p-1.5',
-            'max-h-48 overflow-y-auto animate-fade-in-scale'
+            // node-scroll wins overflow-y:auto back from the react-flow
+            // overflow:visible !important rule; nowheel lets the wheel scroll
+            // the list instead of zooming the canvas.
+            'max-h-80 node-scroll nowheel scrollbar-dark animate-fade-in-scale'
           )}
+          style={{ width: cols * LAYOUT.TOOL_WIDTH }}
         >
           <div className="px-1.5 py-1 text-[9px] uppercase tracking-widest text-text-muted">
             {data.serverName} · {data.overflowCount} more
           </div>
-          <ul className="space-y-0.5">
+          <ul
+            className="grid gap-y-0.5 gap-x-1.5"
+            style={{
+              gridAutoFlow: 'column',
+              gridTemplateRows: `repeat(${rows}, min-content)`,
+              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+            }}
+          >
             {data.hiddenTools.map((tool) => {
               const on = isOn(tool);
               return (
@@ -146,6 +163,9 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
         <ToolDetailPopover
           serverName={data.serverName}
           toolName={selectedTool}
+          // Top-aligned with the panel (top-full + its mt-1.5), just past its
+          // right edge, so the card never covers the list being browsed.
+          positionStyle={{ left: cols * LAYOUT.TOOL_WIDTH + 8, top: '100%', marginTop: 6 }}
           onClose={() => setSelectedTool(null)}
         />
       )}
