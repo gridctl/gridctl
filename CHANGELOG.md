@@ -12,6 +12,7 @@ All notable changes to gridctl will be documented in this file.
 - Update keyboard list-navigation state via an effect instead of during render, removing a latent concurrent-rendering hazard
 - Log vault reload failures, resource-listing failures, and registry refresh failures instead of silently discarding them; a corrupt vault file or Docker outage is now diagnosable from the logs
 - Generate canonical `${var:KEY}` placeholders from `gridctl export` and `skill --vault-key` instead of the deprecated `${vault:KEY}` syntax; both syntaxes still resolve
+- Keep the topology "+N more" tool popover's content inside its panel instead of painting past the border and off the viewport; hidden tools now lay out in columns of 10 (up to four, scrolling beyond that), the tool detail card opens beside the panel instead of covering it, and both popovers scroll with the mouse wheel instead of zooming the canvas
 
 ### Features
 
