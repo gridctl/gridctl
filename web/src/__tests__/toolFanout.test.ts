@@ -6,6 +6,7 @@ import {
   computeToolFanout,
   createToolFanout,
   appendToolFanout,
+  overflowGridShape,
   toolNodeId,
   overflowNodeId,
 } from '../lib/graph/toolFanout';
@@ -53,6 +54,31 @@ describe('computeToolFanout (cap logic)', () => {
     const { visible, overflow } = computeToolFanout(names(4), 2);
     expect(visible).toEqual(['tool-0', 'tool-1']);
     expect(overflow).toEqual(['tool-2', 'tool-3']);
+  });
+});
+
+describe('overflowGridShape (popover grid)', () => {
+  it.each([
+    { count: 0, rows: 0, cols: 0 },
+    { count: 1, rows: 1, cols: 1 },
+    { count: 10, rows: 10, cols: 1 },
+    { count: 11, rows: 6, cols: 2 },
+    { count: 30, rows: 10, cols: 3 },
+    { count: 40, rows: 10, cols: 4 },
+    // Past the column cap the grid grows rows (the panel scrolls) not columns.
+    { count: 41, rows: 11, cols: 4 },
+    { count: 100, rows: 25, cols: 4 },
+  ])('shapes $count tools into $rows rows x $cols cols', ({ count, rows, cols }) => {
+    expect(overflowGridShape(count)).toEqual({ rows, cols });
+  });
+
+  it('never leaves an empty column', () => {
+    for (let count = 1; count <= 120; count++) {
+      const { rows, cols } = overflowGridShape(count);
+      expect(rows * cols).toBeGreaterThanOrEqual(count);
+      // Dropping a column must not still fit every tool.
+      expect(rows * (cols - 1)).toBeLessThan(count);
+    }
   });
 });
 
