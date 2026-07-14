@@ -210,6 +210,15 @@ export function Sidebar() {
                 );
               })()}
 
+            {isServer && serverData?.protocolVersion && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-text-muted">Protocol</span>
+                <span className="text-xs text-text-secondary font-mono bg-background/50 px-2 py-1 rounded-md">
+                  {serverData.protocolVersion}
+                </span>
+              </div>
+            )}
+
             {isServer && serverData?.outputFormat && serverData.outputFormat !== 'json' && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-text-muted">Format</span>
