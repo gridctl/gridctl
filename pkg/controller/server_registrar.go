@@ -88,25 +88,40 @@ func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpRes
 		serverCfg := serverConfigs[server.Name]
 
 		if serverCfg.Autoscale != nil {
-			if err := r.registerAutoscaled(ctx, serverCfg, stack, stackPath, nextHostPort); err != nil {
+			err := r.registerAutoscaled(ctx, serverCfg, stack, stackPath, nextHostPort)
+			if err != nil {
 				r.logger.Warn("failed to register autoscaled MCP server", "name", server.Name, "error", err)
 			}
+			r.recordOutcome(server.Name, err)
 			continue
 		}
 
 		cfgs := r.buildReplicaConfigs(server, serverCfg, stackPath)
 		if len(cfgs) == 0 {
 			r.logger.Warn("no replica configs built", "name", server.Name)
+			r.recordOutcome(server.Name, fmt.Errorf("no replica configs built"))
 			continue
 		}
 		policy := serverCfg.ReplicaPolicy
 		if policy == "" {
 			policy = mcp.ReplicaPolicyRoundRobin
 		}
-		if err := r.gateway.RegisterMCPReplicaSet(ctx, server.Name, policy, cfgs); err != nil {
+		err := r.gateway.RegisterMCPReplicaSet(ctx, server.Name, policy, cfgs)
+		if err != nil {
 			r.logger.Warn("failed to register MCP server", "name", server.Name, "error", err)
 		}
+		r.recordOutcome(server.Name, err)
 	}
+}
+
+// recordOutcome reflects a registration attempt in gateway status: failures
+// surface the server as failed, successes clear any earlier failure.
+func (r *ServerRegistrar) recordOutcome(name string, err error) {
+	if err != nil {
+		r.gateway.RecordRegistrationFailure(name, err)
+		return
+	}
+	r.gateway.ClearRegistrationFailure(name)
 }
 
 // ReplicaRuntime carries the runtime handles for one replica that the reload
@@ -124,7 +139,9 @@ type ReplicaRuntime struct {
 // SSH / OpenAPI servers that were not container-provisioned, pass a slice of
 // zero-valued ReplicaRuntime entries of the desired length (or a single-entry
 // slice for the single-replica case).
-func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
+func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) (err error) {
+	defer func() { r.recordOutcome(server.Name, err) }()
+
 	// Autoscaled servers ignore the caller's replica slice — the Spawner
 	// owns provisioning. This path runs for hot-reload adds of autoscaled
 	// servers; the reload handler passes placeholder runtimes it wouldn't
