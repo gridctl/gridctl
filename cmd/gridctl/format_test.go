@@ -9,7 +9,7 @@ import (
 // TestJSONAliasRegistered guards against a command gaining resolveFormat
 // wiring without the matching --json flag registration (or vice versa).
 func TestJSONAliasRegistered(t *testing.T) {
-	for _, cmd := range []*cobra.Command{validateCmd, planCmd, optimizeCmd, activateCmd, skillListCmd, varListCmd, statusCmd, infoCmd, doctorCmd, openCmd} {
+	for _, cmd := range []*cobra.Command{validateCmd, planCmd, optimizeCmd, activateCmd, skillListCmd, varListCmd, statusCmd, infoCmd, doctorCmd, openCmd, pinsListCmd, pinsVerifyCmd} {
 		if cmd.Flags().Lookup("json") == nil {
 			t.Errorf("command %q is missing its --json flag", cmd.Name())
 		}
