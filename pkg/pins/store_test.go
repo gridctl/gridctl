@@ -2,8 +2,10 @@ package pins
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -418,4 +420,296 @@ func newTestStoreAt(t *testing.T, stackName, dir string) *PinStore {
 	}
 	ps.data = ps.emptyPinFile()
 	return ps
+}
+
+// --- outputSchema fingerprinting ---
+
+func TestHashTool_ChangedOutputSchemaProducesDifferentHash(t *testing.T) {
+	base := mcp.Tool{
+		Name:         "t",
+		Description:  "d",
+		InputSchema:  json.RawMessage(`{}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`),
+	}
+	modified := mcp.Tool{
+		Name:         "t",
+		Description:  "d",
+		InputSchema:  json.RawMessage(`{}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"string"}}}`),
+	}
+
+	h1, _ := hashTool(base)
+	h2, _ := hashTool(modified)
+	if h1 == h2 {
+		t.Error("changed outputSchema should produce different hash")
+	}
+}
+
+func TestHashTool_OmittedOutputSchemaMatchesEmpty(t *testing.T) {
+	omitted := mcp.Tool{Name: "t", Description: "d", InputSchema: json.RawMessage(`{}`)}
+	cases := []struct {
+		name string
+		raw  json.RawMessage
+	}{
+		{"json null", json.RawMessage("null")},
+		{"empty object", json.RawMessage("{}")},
+	}
+
+	want, err := hashTool(omitted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withEmpty := mcp.Tool{Name: "t", Description: "d", InputSchema: json.RawMessage(`{}`), OutputSchema: tc.raw}
+			got, err := hashTool(withEmpty)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Errorf("omitted vs %s outputSchema should hash identically", tc.name)
+			}
+		})
+	}
+}
+
+func TestHashTool_CurrentSchemePrefixed(t *testing.T) {
+	h, err := hashTool(mcp.Tool{Name: "t", Description: "d", InputSchema: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(h, schemeV2Prefix) {
+		t.Errorf("current-scheme hash should carry %q prefix, got %s", schemeV2Prefix, h)
+	}
+
+	legacy, err := hashToolLegacy(mcp.Tool{Name: "t", Description: "d", InputSchema: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(legacy, schemeV2Prefix) {
+		t.Errorf("legacy hash must stay unprefixed, got %s", legacy)
+	}
+}
+
+// --- legacy pin migration ---
+
+// writeLegacyPinFile persists a version-1 pin file whose hashes were computed
+// under the legacy (pre-outputSchema) scheme, simulating a store written by an
+// older gridctl.
+func writeLegacyPinFile(t *testing.T, dir, stackName, serverName string, tools []mcp.Tool) {
+	t.Helper()
+	now := time.Now().UTC()
+	records := make(map[string]*PinRecord, len(tools))
+	hashes := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		h, err := hashToolLegacy(tool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		records[tool.Name] = &PinRecord{Hash: h, Name: tool.Name, Description: tool.Description, PinnedAt: now}
+		hashes = append(hashes, h)
+	}
+	pf := PinFile{
+		Version:   "1",
+		Stack:     stackName,
+		CreatedAt: now,
+		Servers: map[string]*ServerPins{
+			serverName: {
+				ServerHash:     hashStrings(hashes),
+				PinnedAt:       now,
+				LastVerifiedAt: now,
+				ToolCount:      len(tools),
+				Status:         StatusPinned,
+				Tools:          records,
+			},
+		},
+	}
+	data, err := json.MarshalIndent(pf, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, stackName+".json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyOrPin_LegacyPinsUpgradeWithoutDrift(t *testing.T) {
+	dir := t.TempDir()
+	tools := []mcp.Tool{
+		{Name: "tool_a", Description: "A", InputSchema: json.RawMessage(`{"a":1}`)},
+		{Name: "tool_b", Description: "B", InputSchema: json.RawMessage(`{}`)},
+	}
+	writeLegacyPinFile(t, dir, "legacy", "srv", tools)
+
+	ps := newTestStoreAt(t, "legacy", dir)
+	if err := ps.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result, err := ps.VerifyOrPin("srv", tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VerifyStatusVerified {
+		t.Fatalf("legacy pins must verify clean across the scheme change, got %q", result.Status)
+	}
+	if result.HasDrift() {
+		t.Fatal("scheme change must never present as drift")
+	}
+
+	// Clean legacy pins are rewritten under the current scheme.
+	sp, _ := ps.GetServer("srv")
+	for name, pin := range sp.Tools {
+		if !strings.HasPrefix(pin.Hash, schemeV2Prefix) {
+			t.Errorf("pin %q not upgraded to current scheme: %s", name, pin.Hash)
+		}
+	}
+
+	// The persisted file is now current-version and verifies clean again.
+	data, err := os.ReadFile(filepath.Join(dir, "legacy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pf PinFile
+	if err := json.Unmarshal(data, &pf); err != nil {
+		t.Fatal(err)
+	}
+	if pf.Version != fileVersion {
+		t.Errorf("expected file version %q after migration, got %q", fileVersion, pf.Version)
+	}
+
+	result, err = ps.VerifyOrPin("srv", tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VerifyStatusVerified {
+		t.Errorf("expected clean verify after migration, got %q", result.Status)
+	}
+}
+
+func TestVerifyOrPin_LegacyPinRealDriftStillDetected(t *testing.T) {
+	dir := t.TempDir()
+	original := []mcp.Tool{{Name: "tool_a", Description: "original", InputSchema: json.RawMessage(`{}`)}}
+	writeLegacyPinFile(t, dir, "legacy", "srv", original)
+
+	ps := newTestStoreAt(t, "legacy", dir)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	drifted := []mcp.Tool{{Name: "tool_a", Description: "INJECTED", InputSchema: json.RawMessage(`{}`)}}
+	result, err := ps.VerifyOrPin("srv", drifted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VerifyStatusDrift {
+		t.Fatalf("expected drift on a legacy pin with a real change, got %q", result.Status)
+	}
+
+	// Drifted pins keep their recorded scheme until approved.
+	sp, _ := ps.GetServer("srv")
+	if strings.HasPrefix(sp.Tools["tool_a"].Hash, schemeV2Prefix) {
+		t.Error("drifted pin must not be silently rewritten to the current scheme")
+	}
+}
+
+func TestVerify_ReadOnlyDoesNotMigrate(t *testing.T) {
+	dir := t.TempDir()
+	tools := []mcp.Tool{{Name: "tool_a", Description: "A", InputSchema: json.RawMessage(`{}`)}}
+	writeLegacyPinFile(t, dir, "legacy", "srv", tools)
+
+	ps := newTestStoreAt(t, "legacy", dir)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ps.Verify("srv", tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VerifyStatusVerified {
+		t.Fatalf("expected clean read-only verify, got %q", result.Status)
+	}
+
+	sp, _ := ps.GetServer("srv")
+	if strings.HasPrefix(sp.Tools["tool_a"].Hash, schemeV2Prefix) {
+		t.Error("read-only Verify must not rewrite pin schemes")
+	}
+}
+
+func TestPinStore_OutputSchemaDriftDetected(t *testing.T) {
+	ps := newTestStore(t, "mystack")
+
+	original := []mcp.Tool{{
+		Name:         "tool_a",
+		Description:  "A",
+		InputSchema:  json.RawMessage(`{}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"result":{"type":"string"}}}`),
+	}}
+	if _, err := ps.VerifyOrPin("server1", original); err != nil {
+		t.Fatal(err)
+	}
+
+	drifted := []mcp.Tool{{
+		Name:         "tool_a",
+		Description:  "A",
+		InputSchema:  json.RawMessage(`{}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"result":{"type":"string"},"exfil":{"type":"string"}}}`),
+	}}
+	result, err := ps.VerifyOrPin("server1", drifted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VerifyStatusDrift {
+		t.Fatalf("expected drift on outputSchema change, got %q", result.Status)
+	}
+
+	// Approve re-pins the changed contract; the next verify is clean.
+	if err := ps.Approve("server1", drifted); err != nil {
+		t.Fatal(err)
+	}
+	result, err = ps.VerifyOrPin("server1", drifted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VerifyStatusVerified {
+		t.Errorf("expected verified after approve, got %q", result.Status)
+	}
+}
+
+// --- pin file versioning ---
+
+func TestLoad_UnknownVersionFails(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"version":"99","stack":"future","created_at":"2026-01-01T00:00:00Z","servers":{}}`
+	if err := os.WriteFile(filepath.Join(dir, "future.json"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ps := newTestStoreAt(t, "future", dir)
+	err := ps.Load()
+	if !errors.Is(err, ErrNewerVersion) {
+		t.Fatalf("expected ErrNewerVersion, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "newer gridctl") {
+		t.Errorf("error should tell the user to upgrade, got: %v", err)
+	}
+}
+
+func TestLoad_CorruptReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{truncated"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ps := newTestStoreAt(t, "bad", dir)
+	err := ps.Load()
+	if !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("expected ErrCorrupt, got: %v", err)
+	}
+
+	// The in-memory store must be usable for callers that continue anyway.
+	if got := len(ps.GetAll()); got != 0 {
+		t.Errorf("expected empty store after corrupt load, got %d servers", got)
+	}
 }
