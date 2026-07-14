@@ -68,6 +68,10 @@ export interface MCPServerStatus {
   healthy?: boolean; // Health check result (undefined if not yet checked)
   lastCheck?: string; // RFC3339 timestamp of last health check
   healthError?: string; // Error message if unhealthy
+  // True for servers that never registered with the gateway (initialize
+  // failure, unsupported protocol version, unreachable endpoint). Such
+  // entries carry only name/healthy/healthError.
+  registrationFailed?: boolean;
   openapi?: boolean; // True for OpenAPI-backed servers
   openapiSpec?: string; // OpenAPI spec URL or file path
   outputFormat?: string; // Configured output format (e.g. "toon", "csv")
