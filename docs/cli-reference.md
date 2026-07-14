@@ -4,7 +4,7 @@ Commands are grouped by domain, matching the groups in `gridctl --help`. Run `gr
 
 Global flags: `--runtime <docker|podman>` overrides runtime auto-detection, and `--no-color` disables styled output. Color is also suppressed automatically when output is piped, when `NO_COLOR` is set ([no-color.org](https://no-color.org/)), or when `TERM=dumb`.
 
-Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (`validate`, `plan`, `optimize`, `activate`, `skill list`, and `var list`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. The `status`, `info`, and `doctor` JSON schemas are experimental until 1.0.
+Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (`validate`, `plan`, `optimize`, `activate`, `skill list`, `var list`, `pins list`, and `pins verify`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. The `status`, `info`, and `doctor` JSON schemas are experimental until 1.0.
 
 ## Contents
 
@@ -82,8 +82,8 @@ All `pins` subcommands accept `--stack <name>` (auto-detected when only one stac
 
 | Command | Purpose |
 |---|---|
-| `gridctl pins list` | Status of all pinned servers. |
-| `gridctl pins verify [server]` | Verify pins (`--exit-code` for CI: exit `1` on drift). |
+| `gridctl pins list` | Status of all pinned servers; `--format json` or `--json` for machine output. |
+| `gridctl pins verify [server]` | Verify pins (exit `0` clean, `1` on drift, `2` on infrastructure error); `--format json` or `--json` for machine output with a `has_drift` flag. |
 | `gridctl pins approve <server>` | Re-pin current tool definitions, clearing drift. |
 | `gridctl pins reset <server>` | Delete pins (re-pinned on next apply). |
 
