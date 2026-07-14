@@ -60,6 +60,11 @@ describe('getMCPServerStatus', () => {
       'error',
     ],
     [
+      'registration-failed server (uninitialized, unhealthy, no replicas)',
+      makeServer({ initialized: false, healthy: false, healthError: 'unsupported protocol version from server: "1999-01-01"' }),
+      'error',
+    ],
+    [
       'autoscaled server with at least one live replica is not idle',
       makeServer({
         initialized: true,
