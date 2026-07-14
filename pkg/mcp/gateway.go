@@ -1944,6 +1944,12 @@ type MCPServerStatus struct {
 	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
 	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
 
+	// ProtocolVersion is the MCP protocol version the downstream server
+	// reported at initialize. Empty for servers that omit it (lax pre-header
+	// implementations), OpenAPI adapters (no MCP handshake), and servers that
+	// have not completed a handshake.
+	ProtocolVersion string `json:"protocolVersion,omitempty"`
+
 	// RegistrationFailed marks a server that never registered with the
 	// gateway (initialize failure, unsupported protocol version, unreachable
 	// endpoint). Such entries carry only Name, Healthy=false, and HealthError;
@@ -2060,6 +2066,17 @@ func allToolsOf(client AgentClient) []Tool {
 	return client.Tools()
 }
 
+// protocolVersionOf returns the protocol version a client's downstream server
+// reported at initialize, or "" for clients that do not track one. Type
+// assertion (like allToolsSource) keeps this off the AgentClient interface so
+// mocks and future clients are not forced to implement it.
+func protocolVersionOf(client AgentClient) string {
+	if pv, ok := client.(interface{ ProtocolVersion() string }); ok {
+		return pv.ProtocolVersion()
+	}
+	return ""
+}
+
 // Status returns status of all registered MCP servers.
 // Note: This only returns actual MCP servers, not A2A adapters or other
 // clients added directly to the router.
@@ -2142,6 +2159,9 @@ func (g *Gateway) Status() []MCPServerStatus {
 			OpenAPI:       meta.OpenAPI,
 			OutputFormat:  outputFormat,
 			ToolWhitelist: meta.Tools,
+		}
+		if client != nil {
+			status.ProtocolVersion = protocolVersionOf(client)
 		}
 		if meta.OpenAPIConfig != nil {
 			status.OpenAPISpec = meta.OpenAPIConfig.Spec
