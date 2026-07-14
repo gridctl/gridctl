@@ -168,6 +168,25 @@ func TestHandleReady_NotInitialized(t *testing.T) {
 	}
 }
 
+func TestHandleReady_RegistrationFailureDoesNotBlock(t *testing.T) {
+	srv := newTestServer(t)
+	srv.SetStackFile("/stack.yaml") // stack file required for ready check
+
+	// A server that failed registration surfaces in Status() as
+	// Initialized=false with RegistrationFailed=true. It will never become
+	// ready, so it must not wedge /ready at 503.
+	srv.gateway.RecordRegistrationFailure("broken-server", errors.New(`unsupported protocol version from server: "1999-01-01"`))
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 despite registration failure, got %d", rec.Code)
+	}
+}
+
 func TestHandleReady_IdleAutoscaled(t *testing.T) {
 	srv := newTestServer(t)
 	srv.SetStackFile("/stack.yaml") // stack file required for ready check
