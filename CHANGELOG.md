@@ -26,6 +26,7 @@ All notable changes to gridctl will be documented in this file.
 - Honor `NO_COLOR`, `TERM=dumb`, and a new global `--no-color` flag across all CLI output, including help text
 - Enforce a zero-error frontend lint baseline in CI (gatekeeper now runs eslint on every PR)
 - Show the official Model Context Protocol mark on the gateway node and gateway sidebar headers in the web UI, replacing the generic pulse icon and its looping ping animation; liveness stays with the "Gateway Active" status pill
+- Attribute token cost per tool: the observer now records each tool's input/output tokens and estimated cost alongside its call count, `GET /api/tools/usage` carries `inputTokens`/`outputTokens`/`costUsd` (omitted when unpriced, never `$0`), per-tool history persists across gateway restarts, `gridctl optimize` unused-tool findings report a real weekly dollar impact (per-tool schema context tax instead of the previous `$0` stub), and the web UI gains a Tools scope on the Metrics workspace (server-qualified rows, cost-descending default sort, inspector on row select, detached-window parity) plus calls/tokens/cost in the Tools detail panel's Usage section outside Audit Mode
 
 ### Removed
 
