@@ -90,7 +90,9 @@ func (o *Observer) observe(serverName string, replicaID int, clientID, toolName 
 	}
 
 	o.accumulator.RecordReplicaWithClient(serverName, replicaID, clientID, inputTokens, outputTokens)
-	o.accumulator.RecordToolCall(serverName, toolName)
+	// Per-tool attribution no-ops on the legacy path (empty toolName), so a
+	// legacy observer never creates a phantom "" tool entry.
+	o.accumulator.RecordToolCallUsage(serverName, toolName, inputTokens, outputTokens)
 
 	summary := mcp.ToolCallSummary{
 		InputTokens:  inputTokens,
@@ -117,12 +119,14 @@ func (o *Observer) observe(serverName string, replicaID int, clientID, toolName 
 	if !ok {
 		return summary
 	}
-	o.accumulator.RecordCostWithModel(serverName, replicaID, clientID, model, inputTokens, outputTokens, CostBreakdown{
+	breakdown := CostBreakdown{
 		Input:      cost.Input,
 		Output:     cost.Output,
 		CacheRead:  cost.CacheRead,
 		CacheWrite: cost.CacheWrite,
-	})
+	}
+	o.accumulator.RecordCostWithModel(serverName, replicaID, clientID, model, inputTokens, outputTokens, breakdown)
+	o.accumulator.RecordToolCost(serverName, toolName, breakdown)
 	summary.CostUSD = cost.Input + cost.Output + cost.CacheRead + cost.CacheWrite
 	summary.HasCost = summary.CostUSD > 0
 	return summary
