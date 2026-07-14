@@ -662,6 +662,12 @@ type MCPServerStatus struct {
 	LastCheck     *string  `json:"lastCheck,omitempty"`
 	HealthError   string   `json:"healthError,omitempty"`
 	ToolWhitelist []string `json:"toolWhitelist,omitempty"`
+	// ProtocolVersion is the MCP protocol version the downstream server
+	// reported at initialize; empty for lax servers and OpenAPI adapters.
+	ProtocolVersion string `json:"protocolVersion,omitempty"`
+	// RegistrationFailed marks a server that never registered with the
+	// gateway; the UI shows it as failed instead of omitting the node.
+	RegistrationFailed bool `json:"registrationFailed,omitempty"`
 	// Model is the pricing model DECLARED on this server in stack.yaml
 	// (model: field only — a gateway default_model is not folded in here).
 	// Empty when the server inherits the default or has no attribution.
@@ -682,25 +688,27 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
 		status := MCPServerStatus{
-			Name:          ms.Name,
-			Transport:     string(ms.Transport),
-			Endpoint:      ms.Endpoint,
-			Initialized:   ms.Initialized,
-			ToolCount:     ms.ToolCount,
-			Tools:         ms.Tools,
-			External:      ms.External,
-			LocalProcess:  ms.LocalProcess,
-			SSH:           ms.SSH,
-			SSHHost:       ms.SSHHost,
-			OpenAPI:       ms.OpenAPI,
-			OpenAPISpec:   ms.OpenAPISpec,
-			OutputFormat:  ms.OutputFormat,
-			Healthy:       ms.Healthy,
-			HealthError:   ms.HealthError,
-			ToolWhitelist: ms.ToolWhitelist,
-			Model:         declaredModels[ms.Name],
-			Replicas:      ms.Replicas,
-			Autoscale:     ms.Autoscale,
+			Name:               ms.Name,
+			Transport:          string(ms.Transport),
+			Endpoint:           ms.Endpoint,
+			Initialized:        ms.Initialized,
+			ToolCount:          ms.ToolCount,
+			Tools:              ms.Tools,
+			External:           ms.External,
+			LocalProcess:       ms.LocalProcess,
+			SSH:                ms.SSH,
+			SSHHost:            ms.SSHHost,
+			OpenAPI:            ms.OpenAPI,
+			OpenAPISpec:        ms.OpenAPISpec,
+			OutputFormat:       ms.OutputFormat,
+			Healthy:            ms.Healthy,
+			HealthError:        ms.HealthError,
+			ToolWhitelist:      ms.ToolWhitelist,
+			ProtocolVersion:    ms.ProtocolVersion,
+			RegistrationFailed: ms.RegistrationFailed,
+			Model:              declaredModels[ms.Name],
+			Replicas:           ms.Replicas,
+			Autoscale:          ms.Autoscale,
 		}
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)
