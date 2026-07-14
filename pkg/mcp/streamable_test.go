@@ -18,18 +18,7 @@ import (
 // initializeStreamable sends an initialize request and returns the session ID.
 func initializeStreamable(t *testing.T, srv *StreamableHTTPServer) string {
 	t.Helper()
-	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2024-11-05",
-			"clientInfo":      map[string]any{"name": "test-client", "version": "1.0"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
+	w := initializeWithVersion(t, srv, "2024-11-05")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("initialize: expected 200, got %d: %s", w.Code, w.Body.String())
@@ -119,6 +108,167 @@ func TestStreamableHTTPServer_Initialize_ParsesProtocolVersion(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("session %s not in SessionIDs()", sessionID)
+	}
+}
+
+// initializeWithVersion posts an initialize request with the given
+// protocolVersion (omitted when empty) and returns the raw recorder.
+func initializeWithVersion(t *testing.T, srv *StreamableHTTPServer, version string) *httptest.ResponseRecorder {
+	t.Helper()
+	params := map[string]any{
+		"clientInfo": map[string]any{"name": "test-client", "version": "1.0"},
+	}
+	if version != "" {
+		params["protocolVersion"] = version
+	}
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params":  params,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	return w
+}
+
+func TestStreamableHTTPServer_Initialize_VersionNegotiation(t *testing.T) {
+	tests := []struct {
+		name      string
+		requested string
+		want      string
+	}{
+		{"echoes supported version", "2025-06-18", "2025-06-18"},
+		{"counter-offers latest on unknown version", "1999-01-01", MCPProtocolVersion},
+		{"counter-offers latest on absent version", "", MCPProtocolVersion},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := NewStreamableHTTPServer(NewGateway(), nil)
+			w := initializeWithVersion(t, srv, tt.requested)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			var resp jsonrpc.Response
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Error != nil {
+				t.Fatalf("initialize must never fail for version reasons: %s", resp.Error.Message)
+			}
+			var result InitializeResult
+			if err := json.Unmarshal(resp.Result, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.ProtocolVersion != tt.want {
+				t.Errorf("expected negotiated version %q, got %q", tt.want, result.ProtocolVersion)
+			}
+		})
+	}
+}
+
+func TestStreamableHTTPServer_Initialize_MalformedParams(t *testing.T) {
+	srv := NewStreamableHTTPServer(NewGateway(), nil)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":"not-an-object"}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with JSON-RPC error, got %d", w.Code)
+	}
+	var resp jsonrpc.Response
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected JSON-RPC error for malformed initialize params")
+	}
+	if resp.Error.Code != jsonrpc.InvalidParams {
+		t.Errorf("expected InvalidParams code %d, got %d", jsonrpc.InvalidParams, resp.Error.Code)
+	}
+	if srv.SessionCount() != 0 {
+		t.Errorf("expected no session for rejected initialize, got %d", srv.SessionCount())
+	}
+}
+
+func TestStreamableHTTPServer_ProtocolVersionHeader(t *testing.T) {
+	tests := []struct {
+		name       string
+		header     string
+		wantStatus int
+	}{
+		{"absent header allowed", "", http.StatusOK},
+		{"supported header allowed", "2025-06-18", http.StatusOK},
+		{"latest header allowed", MCPProtocolVersion, http.StatusOK},
+		{"unsupported header rejected", "1999-01-01", http.StatusBadRequest},
+		{"garbage header rejected", "bogus", http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := NewStreamableHTTPServer(NewGateway(), nil)
+			sessionID := initializeStreamable(t, srv)
+
+			body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "ping"})
+			req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+			req.Header.Set("Mcp-Session-Id", sessionID)
+			if tt.header != "" {
+				req.Header.Set("MCP-Protocol-Version", tt.header)
+			}
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
+			}
+			if tt.wantStatus == http.StatusBadRequest && !strings.Contains(w.Body.String(), MCPProtocolVersion) {
+				t.Errorf("expected 400 body to name supported versions, got: %s", w.Body.String())
+			}
+		})
+	}
+}
+
+func TestStreamableHTTPServer_ProtocolVersionHeader_InitializeExempt(t *testing.T) {
+	srv := NewStreamableHTTPServer(NewGateway(), nil)
+
+	// A client cannot know the negotiated version before negotiating, so the
+	// initialize request itself never fails header validation.
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"clientInfo":      map[string]any{"name": "c", "version": "1"},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("MCP-Protocol-Version", "bogus")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected initialize to be exempt from header validation, got %d", w.Code)
+	}
+}
+
+func TestStreamableHTTPServer_ProtocolVersionHeader_GetAndDelete(t *testing.T) {
+	srv := NewStreamableHTTPServer(NewGateway(), nil)
+	sessionID := initializeStreamable(t, srv)
+
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		req := httptest.NewRequest(method, "/mcp", nil)
+		req.Header.Set("Mcp-Session-Id", sessionID)
+		req.Header.Set("MCP-Protocol-Version", "bogus")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400 for unsupported header, got %d", method, w.Code)
+		}
 	}
 }
 
