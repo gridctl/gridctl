@@ -146,6 +146,101 @@ func TestAnalyze_UnusedTool_FiresWhenToolColdInWindow(t *testing.T) {
 	if !strings.Contains(hit.Remediation, "list_issues") {
 		t.Errorf("remediation should reference tool name; got %q", hit.Remediation)
 	}
+	if hit.ImpactUSDPerWeek <= 0 {
+		t.Errorf("ImpactUSDPerWeek = %v, want >0 (schema-tax impact)", hit.ImpactUSDPerWeek)
+	}
+}
+
+func TestAnalyze_UnusedTool_ImpactFromMeasuredSchemaTokens(t *testing.T) {
+	stats := baseStats()
+	stats.Servers = []ServerInfo{
+		{Name: "github", Tools: []string{"create_issue", "list_issues"}, Initialized: true},
+	}
+	// Observed rate = 0.001 / 100 = 1e-5 USD per token.
+	stats.Usage = map[string]ServerUsage{
+		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+	}
+	stats.ToolUsage = map[string]map[string]ToolStat{
+		"github": {
+			"create_issue": {Calls: 3, LastCalledAt: fixedNow.Add(-2 * time.Hour)},
+		},
+	}
+	stats.ToolSchemaTokens = map[string]map[string]int{
+		"github": {"list_issues": 800},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	hit := findToolFinding(t, rep, "unused_tool", "list_issues")
+	// 800 schema tokens × 500 prompts/week × 1e-5 USD/token = $4.00/week.
+	want := 800.0 * estimatedPromptsPerWeek * 1e-5
+	if diff := hit.ImpactUSDPerWeek - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("ImpactUSDPerWeek = %v, want %v", hit.ImpactUSDPerWeek, want)
+	}
+}
+
+func TestAnalyze_UnusedTool_ImpactFallsBackWithoutSchemaTokens(t *testing.T) {
+	stats := baseStats()
+	stats.Servers = []ServerInfo{
+		{Name: "github", Tools: []string{"create_issue", "list_issues"}, Initialized: true},
+	}
+	stats.Usage = map[string]ServerUsage{
+		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+	}
+	stats.ToolUsage = map[string]map[string]ToolStat{
+		"github": {
+			"create_issue": {Calls: 3, LastCalledAt: fixedNow.Add(-2 * time.Hour)},
+		},
+	}
+	// stats.ToolSchemaTokens intentionally nil — no live tools/list measurement.
+
+	rep := Analyze(stats, Options{})
+
+	hit := findToolFinding(t, rep, "unused_tool", "list_issues")
+	// estimatedToolSchemaTokens × 500 prompts/week × observed 1e-5 USD/token.
+	want := float64(estimatedToolSchemaTokens) * estimatedPromptsPerWeek * 1e-5
+	if diff := hit.ImpactUSDPerWeek - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("ImpactUSDPerWeek = %v, want %v (conservative fallback)", hit.ImpactUSDPerWeek, want)
+	}
+}
+
+func TestAnalyze_UnusedTool_ImpactCappedAtServerEstimate(t *testing.T) {
+	stats := baseStats()
+	stats.Servers = []ServerInfo{
+		{Name: "github", Tools: []string{"create_issue", "list_issues"}, Initialized: true},
+	}
+	stats.Usage = map[string]ServerUsage{
+		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+	}
+	stats.ToolUsage = map[string]map[string]ToolStat{
+		"github": {
+			"create_issue": {Calls: 3, LastCalledAt: fixedNow.Add(-2 * time.Hour)},
+		},
+	}
+	// An oversized single-tool schema must not over-promise.
+	stats.ToolSchemaTokens = map[string]map[string]int{
+		"github": {"list_issues": 50_000},
+	}
+
+	rep := Analyze(stats, Options{})
+
+	hit := findToolFinding(t, rep, "unused_tool", "list_issues")
+	want := float64(estimatedSchemaOverheadTokens) * estimatedPromptsPerWeek * 1e-5
+	if diff := hit.ImpactUSDPerWeek - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("ImpactUSDPerWeek = %v, want %v (capped)", hit.ImpactUSDPerWeek, want)
+	}
+}
+
+// findToolFinding returns the finding for (heuristic, tool) or fails the test.
+func findToolFinding(t *testing.T, rep OptimizeReport, heuristic, tool string) *Finding {
+	t.Helper()
+	for i := range rep.Findings {
+		if rep.Findings[i].Heuristic == heuristic && rep.Findings[i].Tool == tool {
+			return &rep.Findings[i]
+		}
+	}
+	t.Fatalf("expected %s finding for %s; findings: %+v", heuristic, tool, rep.Findings)
+	return nil
 }
 
 func TestAnalyze_UnusedTool_HonorsWhitelist(t *testing.T) {
