@@ -167,7 +167,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `per_replica` | map | USD cost keyed by `(server, replica_id)` (omitted when no replica-aware traffic has been observed) |
 | `per_client` | map | USD cost keyed by normalized MCP client name (omitted when no per-client traffic has been observed) |
 
-**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server, `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers), `model` (string, omitted when empty) showing the declared per-server pricing model, and `effectiveModel` (object, omitted until traffic is observed) reporting which model actually priced the server's recorded cost.
+**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server, `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers), `model` (string, omitted when empty) showing the declared per-server pricing model, and `effectiveModel` (object, omitted until traffic is observed) reporting which model actually priced the server's recorded cost. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent.
 
 **Cost-attribution fields** appear at the top level when any client or server declares a pricing model in `stack.yaml`, and are omitted otherwise:
 
@@ -1908,6 +1908,16 @@ Deletes a file from a skill directory. The `{path...}` segment is variadic, so n
 ---
 
 ### MCP Protocol
+
+The gateway negotiates the MCP protocol version at `initialize`: a requested
+version in the supported set (`2025-11-25`, `2025-06-18`, `2025-03-26`,
+`2024-11-05`) is echoed back, and any other value receives a successful
+response carrying the latest supported version (the client decides whether to
+disconnect). Post-initialize requests on `/mcp` (POST, GET, and DELETE) may
+carry the `MCP-Protocol-Version` header; an absent header is accepted (the
+session-negotiated version applies), while an unsupported value is rejected
+with `400 Bad Request` naming the supported set. Malformed `initialize`
+params return a JSON-RPC `InvalidParams` error.
 
 #### `POST /mcp`
 
