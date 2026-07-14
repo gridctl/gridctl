@@ -180,6 +180,10 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if !s.checkProtocolVersionHeader(w, r) {
+		return
+	}
+
 	sessionID := r.Header.Get("Mcp-Session-Id")
 	if sessionID == "" {
 		http.Error(w, "Mcp-Session-Id header required", http.StatusNotFound)
@@ -210,12 +214,33 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// checkProtocolVersionHeader enforces the MCP-Protocol-Version header on
+// post-initialize requests. Per the transport spec, an absent header is
+// tolerated (the session-negotiated version applies), while a present but
+// unsupported value gets a 400 naming the supported set. The spec leaves
+// header-vs-body precedence undefined (modelcontextprotocol#2721); gridctl's
+// stance is that the session-negotiated version is authoritative and the
+// header is validated for supported-set membership only.
+func (s *StreamableHTTPServer) checkProtocolVersionHeader(w http.ResponseWriter, r *http.Request) bool {
+	v := r.Header.Get("MCP-Protocol-Version")
+	if v == "" || IsSupportedProtocolVersion(v) {
+		return true
+	}
+	http.Error(w, fmt.Sprintf("unsupported protocol version %q (supported: %s)",
+		v, supportedProtocolVersionList()), http.StatusBadRequest)
+	return false
+}
+
 // handleInitialize processes an initialize request and creates a new session.
 // The assigned Mcp-Session-Id is returned in the response header.
 func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.Request, req *jsonrpc.Request) {
 	var params InitializeParams
-	if req.Params != nil {
-		_ = json.Unmarshal(req.Params, &params)
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "invalid initialize params: "+err.Error()))
+			return
+		}
 	}
 
 	result, gSession, err := s.gateway.HandleInitialize(params, clientAccessIDFromRequest(r))
@@ -239,6 +264,10 @@ func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.R
 // handleGet handles GET /mcp — opens a server→client SSE stream.
 // Clients can provide Last-Event-ID to resume after a disconnection.
 func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request) {
+	if !s.checkProtocolVersionHeader(w, r) {
+		return
+	}
+
 	sessionID := r.Header.Get("Mcp-Session-Id")
 	if sessionID == "" {
 		http.Error(w, "Mcp-Session-Id header required", http.StatusNotFound)
@@ -305,6 +334,10 @@ func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request)
 
 // handleDelete handles DELETE /mcp — terminates a session.
 func (s *StreamableHTTPServer) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.checkProtocolVersionHeader(w, r) {
+		return
+	}
+
 	sessionID := r.Header.Get("Mcp-Session-Id")
 	if sessionID == "" {
 		http.Error(w, "Mcp-Session-Id header required", http.StatusBadRequest)
