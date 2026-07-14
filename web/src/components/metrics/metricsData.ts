@@ -3,6 +3,7 @@
 // export both components and plain functions). The bottom glance tab, the
 // Metrics workspace, and the detached window all derive their numbers here so
 // cost/token math is defined exactly once.
+import { TOOL_NAME_DELIMITER } from '../../lib/constants';
 import type {
   CostUsage,
   EffectiveModel,
@@ -10,6 +11,7 @@ import type {
   TokenMetricsResponse,
   CostMetricsResponse,
   TokenUsage,
+  ToolUsageResponse,
 } from '../../types';
 
 export type SortDirection = 'asc' | 'desc';
@@ -19,13 +21,19 @@ export type SortDirection = 'asc' | 'desc';
 export type BreakdownSortColumn = 'name' | 'input' | 'output' | 'total' | 'cost';
 
 // A single row in a breakdown table. `cost` is optional: undefined means
-// pricing-unknown (rendered as an em-dash, never $0).
+// pricing-unknown (rendered as an em-dash, never $0). Tool rows carry the
+// server/tool split (names collide across servers, so `name` is the unique
+// server-prefixed key while the table renders the two parts) plus the call
+// count for the inspector.
 export interface BreakdownRow {
   name: string;
   input: number;
   output: number;
   total: number;
   cost?: number;
+  server?: string;
+  tool?: string;
+  calls?: number;
 }
 
 export function derivePerServerRows(
@@ -56,6 +64,29 @@ export function derivePerClientRows(
     total: tokenClients[name]?.total_tokens ?? 0,
     cost: costClients[name]?.total_usd,
   }));
+}
+
+// Rows for the Metrics "Tools" scope, one per (server, tool) with recorded
+// calls. Fed by GET /api/tools/usage rather than the status snapshot — the
+// tools pipeline is the single per-tool data source everywhere in the UI.
+export function derivePerToolRows(usage: ToolUsageResponse | null): BreakdownRow[] {
+  if (!usage?.servers) return [];
+  const rows: BreakdownRow[] = [];
+  for (const [server, tools] of Object.entries(usage.servers)) {
+    for (const [tool, stat] of Object.entries(tools)) {
+      rows.push({
+        name: `${server}${TOOL_NAME_DELIMITER}${tool}`,
+        server,
+        tool,
+        calls: stat.calls,
+        input: stat.inputTokens ?? 0,
+        output: stat.outputTokens ?? 0,
+        total: (stat.inputTokens ?? 0) + (stat.outputTokens ?? 0),
+        cost: stat.costUsd,
+      });
+    }
+  }
+  return rows;
 }
 
 export function sortBreakdownRows(
