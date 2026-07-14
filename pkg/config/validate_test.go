@@ -1599,3 +1599,70 @@ func TestStack_SetDefaults_AutoscaleKeepsReplicasZero(t *testing.T) {
 		t.Errorf("static server: Replicas = %d, want 1", got)
 	}
 }
+
+func TestValidate_SchemaPinningAction(t *testing.T) {
+	base := func() *Stack {
+		return &Stack{
+			Name:       "test",
+			Network:    Network{Name: "test-net"},
+			MCPServers: []MCPServer{{Name: "s1", Image: "alpine", Port: 3000}},
+		}
+	}
+	withAction := func(action string) *Stack {
+		s := base()
+		s.Gateway = &GatewayConfig{
+			Security: &GatewaySecurityConfig{
+				SchemaPinning: &SchemaPinningConfig{Action: action},
+			},
+		}
+		return s
+	}
+
+	tests := []struct {
+		name    string
+		stack   *Stack
+		wantErr bool
+		errMsg  string
+	}{
+		{name: "valid action warn", stack: withAction("warn")},
+		{name: "valid action block", stack: withAction("block")},
+		{name: "empty action is valid", stack: withAction("")},
+		{
+			name: "no security block is valid",
+			stack: func() *Stack {
+				s := base()
+				s.Gateway = &GatewayConfig{}
+				return s
+			}(),
+		},
+		{name: "no gateway config is valid", stack: base()},
+		{
+			name:    "typo blocked is rejected",
+			stack:   withAction("blocked"),
+			wantErr: true,
+			errMsg:  "gateway.security.schema_pinning.action",
+		},
+		{
+			name:    "typo warning is rejected",
+			stack:   withAction("warning"),
+			wantErr: true,
+			errMsg:  "must be one of: warn, block",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(tc.stack)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.errMsg != "" && !strings.Contains(err.Error(), tc.errMsg) {
+					t.Errorf("expected error containing %q, got %q", tc.errMsg, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
