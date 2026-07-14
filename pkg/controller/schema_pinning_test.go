@@ -1,6 +1,9 @@
 package controller
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gridctl/gridctl/internal/api"
@@ -85,4 +88,47 @@ func TestInstallSchemaPinning(t *testing.T) {
 			t.Error("expected no-op when store is nil")
 		}
 	})
+}
+
+// --- loadPinStore policy ---
+
+func TestLoadPinStore_MissingFileStartsEmpty(t *testing.T) {
+	ps, err := loadPinStore(pins.NewWithPath(t.TempDir(), "fresh"), "fresh")
+	if err != nil {
+		t.Fatalf("missing file must be the normal first run, got: %v", err)
+	}
+	if ps == nil {
+		t.Fatal("expected a usable store")
+	}
+}
+
+func TestLoadPinStore_CorruptFileStartsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{truncated"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ps, err := loadPinStore(pins.NewWithPath(dir, "bad"), "bad")
+	if err != nil {
+		t.Fatalf("corrupt file must self-heal so the daemon starts, got: %v", err)
+	}
+	if got := len(ps.GetAll()); got != 0 {
+		t.Errorf("expected empty store after corrupt load, got %d servers", got)
+	}
+}
+
+func TestLoadPinStore_NewerVersionAborts(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"version":"99","stack":"future","created_at":"2026-01-01T00:00:00Z","servers":{}}`
+	if err := os.WriteFile(filepath.Join(dir, "future.json"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ps, err := loadPinStore(pins.NewWithPath(dir, "future"), "future")
+	if !errors.Is(err, pins.ErrNewerVersion) {
+		t.Fatalf("a newer-version pin file must abort the build, got ps=%v err=%v", ps, err)
+	}
+	if ps != nil {
+		t.Error("no store may be returned when the load aborts; an empty store would overwrite the newer file")
+	}
 }
