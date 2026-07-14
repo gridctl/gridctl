@@ -196,6 +196,14 @@ type Stats struct {
 	// data source is available so the heuristic skips silently.
 	PinStats map[string]PinStat
 
+	// ToolSchemaTokens is the estimated schema-token cost of each
+	// individual tool definition, keyed server -> tool. Populated from
+	// the same live tools/list measurement as PinStats. Used by
+	// unused_tool to price the context tax an unused tool's definition
+	// adds to every prompt. nil (or a missing tool) falls back to a
+	// conservative per-tool estimate.
+	ToolSchemaTokens map[string]map[string]int
+
 	// FormatBaseline is the session-wide format-conversion savings rate
 	// observed across servers that DO use `output_format: toon|csv`.
 	// Used by the format_savings_shortfall heuristic to project savings
@@ -276,10 +284,15 @@ type ModelStat struct {
 
 // ToolStat mirrors metrics.ToolStat so pkg/optimize stays free of an
 // import on pkg/metrics. Callers can populate it directly from
-// metrics.Accumulator.ToolUsageSnapshot().
+// metrics.Accumulator.ToolUsageSnapshot(). InputTokens/OutputTokens and
+// CostUSD carry the tool's observed traffic and priced spend; zero values
+// simply mean "nothing recorded" and no heuristic treats them as measured.
 type ToolStat struct {
 	Calls        int64
 	LastCalledAt time.Time
+	InputTokens  int64
+	OutputTokens int64
+	CostUSD      float64
 }
 
 // Options tunes the Analyze pass. All fields are optional.
@@ -316,6 +329,13 @@ const (
 	// tokens, the Anthropic Sonnet rate, is a defensible mid-range
 	// number across providers in 2026.
 	estimatedInputUSDPerToken = 3.0 / 1_000_000.0
+
+	// estimatedToolSchemaTokens is the fallback schema cost of a single
+	// tool definition when no measured per-tool count is available.
+	// Published measurements put real tools at roughly 100-1,000 tokens;
+	// 300 deliberately understates the median so unused_tool impact
+	// never over-promises on unmeasured tools.
+	estimatedToolSchemaTokens = 300
 
 	// schemaOverheadMinSchemaTokens is the floor on schema size below
 	// which schema_overhead never fires — small servers never push a
@@ -496,7 +516,7 @@ func detectUnusedTools(stats Stats, now, cutoff time.Time) []Finding {
 				Summary:          summaryUnusedTool(srv.Name, tool),
 				Server:           srv.Name,
 				Tool:             tool,
-				ImpactUSDPerWeek: 0, // per-tool schema savings land in PR 5
+				ImpactUSDPerWeek: unusedToolImpact(usage, stats.ToolSchemaTokens[srv.Name][tool]),
 				Remediation:      remediationUnusedTool(srv, tool),
 				DetectedAt:       now,
 			})
@@ -505,8 +525,37 @@ func detectUnusedTools(stats Stats, now, cutoff time.Time) []Finding {
 	return out
 }
 
+// observedPerTokenRate returns the server's effective per-token rate
+// (recorded cost ÷ recorded tokens) when it has priced traffic, and the
+// conservative default estimate otherwise. The impact heuristics share
+// this so a future correction to the rate derivation lands in one place.
+func observedPerTokenRate(usage ServerUsage) float64 {
+	if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
+		return usage.TotalCostUSD / float64(usage.TotalTokens)
+	}
+	return estimatedInputUSDPerToken
+}
+
+// unusedToolImpact prices the context tax of one unused tool's schema:
+// the tokens its definition adds to every prompt × estimated weekly
+// prompts × the server's per-token rate. An unused tool has zero observed
+// spend by definition, so this is the schema-tax analogue of
+// unusedServerImpact, not a measured-spend number — the same discipline
+// applies: observed rate when the server has priced traffic, the
+// conservative default otherwise, and a cap so a single oversized schema
+// never over-promises.
+func unusedToolImpact(usage ServerUsage, schemaTokens int) float64 {
+	tokens := schemaTokens
+	if tokens <= 0 {
+		tokens = estimatedToolSchemaTokens
+	}
+	if tokens > estimatedSchemaOverheadTokens {
+		tokens = estimatedSchemaOverheadTokens // cap at the per-server estimate to stay conservative
+	}
+	return float64(tokens) * estimatedPromptsPerWeek * observedPerTokenRate(usage)
+}
+
 func unusedServerImpact(srv ServerInfo, usage ServerUsage) float64 {
-	rate := estimatedInputUSDPerToken
 	// If the server has any historic cost we use its observed per-token
 	// rate; otherwise we fall back to the conservative default. We do
 	// not invent numbers when there is no data — usage stays zero, so
@@ -515,9 +564,7 @@ func unusedServerImpact(srv ServerInfo, usage ServerUsage) float64 {
 	// defensible upper bound for the unused_server case (which has no
 	// usage data by definition) without claiming an impact we did not
 	// measure end-to-end.
-	if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
-		rate = usage.TotalCostUSD / float64(usage.TotalTokens)
-	}
+	rate := observedPerTokenRate(usage)
 	tools := len(srv.Tools)
 	if tools <= 0 {
 		tools = 1
@@ -651,10 +698,7 @@ func detectFormatSavingsShortfall(stats Stats, now time.Time) []Finding {
 		// when no cost has been recorded yet (rare for a server with
 		// >5K output tokens but possible right after pricing data was
 		// cleared via DELETE /api/metrics/cost).
-		rate := estimatedInputUSDPerToken
-		if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
-			rate = usage.TotalCostUSD / float64(usage.TotalTokens)
-		}
+		rate := observedPerTokenRate(usage)
 		projectedSavedTokens := float64(usage.OutputTokens) * stats.FormatBaseline.SavingsPercent / 100.0
 		impact := projectedSavedTokens * rate * formatShortfallProjectionWeeks
 		out = append(out, Finding{
@@ -729,11 +773,7 @@ func detectExpensiveModelOnCheapTask(stats Stats, now time.Time) []Finding {
 }
 
 func schemaOverheadImpact(schemaTokens int, usage ServerUsage) float64 {
-	rate := estimatedInputUSDPerToken
-	if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
-		rate = usage.TotalCostUSD / float64(usage.TotalTokens)
-	}
-	return float64(schemaTokens) * estimatedPromptsPerWeek * rate
+	return float64(schemaTokens) * estimatedPromptsPerWeek * observedPerTokenRate(usage)
 }
 
 func summarySchemaOverhead(srv ServerInfo, pin PinStat, usage ServerUsage, ratio float64) string {
