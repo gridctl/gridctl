@@ -24,6 +24,9 @@ type ClientBase struct {
 	allTools      []Tool
 	serverInfo    ServerInfo
 	toolWhitelist []string
+	// protocolVersion is the MCP protocol version the downstream server
+	// reported at initialize; empty for lax servers that omit it.
+	protocolVersion string
 }
 
 // Tools returns the cached tool list filtered by the whitelist, if any.
@@ -83,6 +86,23 @@ func (b *ClientBase) SetInitialized(info ServerInfo) {
 	defer b.mu.Unlock()
 	b.initialized = true
 	b.serverInfo = info
+}
+
+// SetProtocolVersion records the protocol version the downstream server
+// reported at initialize.
+func (b *ClientBase) SetProtocolVersion(v string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.protocolVersion = v
+}
+
+// ProtocolVersion returns the protocol version the downstream server reported
+// at initialize; empty when the server omitted it or the handshake has not
+// completed.
+func (b *ClientBase) ProtocolVersion() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.protocolVersion
 }
 
 // filterTools returns only tools whose names are in the whitelist.
@@ -202,6 +222,7 @@ func (r *RPCClient) Initialize(ctx context.Context) error {
 		}
 	}
 
+	r.SetProtocolVersion(result.ProtocolVersion)
 	r.SetInitialized(result.ServerInfo)
 
 	// Send initialized notification (non-fatal)
