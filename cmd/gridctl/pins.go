@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/state"
 
@@ -18,8 +20,26 @@ import (
 
 const pinsAPITimeout = 10 * time.Second
 
-var pinsStack string
-var pinsExitCode bool
+// Exit codes match the conventions in cmd/gridctl/optimize.go and
+// cmd/gridctl/validate.go so CI scripts can rely on a stable contract.
+const (
+	pinsExitOK             = 0
+	pinsExitDrift          = 1
+	pinsExitInfrastructure = 2
+)
+
+// pinsJSONSchemaVersion identifies the shape of the pins list/verify JSON
+// documents. Evolution within a version is append-only.
+const pinsJSONSchemaVersion = 1
+
+var (
+	pinsStack        string
+	pinsExitCode     bool
+	pinsListFormat   string
+	pinsListJSON     *bool
+	pinsVerifyFormat string
+	pinsVerifyJSON   *bool
+)
 
 var pinsCmd = &cobra.Command{
 	Use:   "pins",
@@ -30,22 +50,51 @@ var pinsCmd = &cobra.Command{
 var pinsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List pin status for all servers in a stack",
+	Long: `List pin status for all servers in a stack.
+
+Default output is a styled table; use '--format json' for machine-readable
+output.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runPinsList()
+		format, err := resolveFormat(pinsListFormat, cmd.Flags().Changed("format"), *pinsListJSON)
+		if err != nil {
+			return err
+		}
+		return runPinsList(format)
 	},
 }
 
 var pinsVerifyCmd = &cobra.Command{
 	Use:   "verify [server]",
 	Short: "Show verification status for servers",
-	Long:  "Show pin verification status. Pass --exit-code to exit 1 on drift (for CI).",
-	Args:  cobra.MaximumNArgs(1),
+	Long: `Show pin verification status.
+
+Default output is one line per server; use '--format json' for a
+machine-readable document with a top-level has_drift flag.
+
+Exit codes:
+  0  all pins verified (or nothing pinned yet)
+  1  drift detected
+  2  infrastructure error (no stack, unreadable pin store, unknown server)`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		format, err := resolveFormat(pinsVerifyFormat, cmd.Flags().Changed("format"), *pinsVerifyJSON)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(pinsExitInfrastructure)
+		}
 		server := ""
 		if len(args) == 1 {
 			server = args[0]
 		}
-		return runPinsVerify(server)
+		stackName, servers, err := loadPinsForCLI()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(pinsExitInfrastructure)
+		}
+		if exit := pinsVerifyExit(os.Stdout, os.Stderr, stackName, servers, server, format); exit != pinsExitOK {
+			os.Exit(exit)
+		}
+		return nil
 	},
 }
 
@@ -71,7 +120,16 @@ var pinsResetCmd = &cobra.Command{
 
 func init() {
 	pinsCmd.PersistentFlags().StringVar(&pinsStack, "stack", "", "Stack name (auto-detected if only one stack is deployed)")
+
+	pinsListCmd.Flags().StringVar(&pinsListFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
+	pinsListJSON = addJSONAlias(pinsListCmd)
+
+	pinsVerifyCmd.Flags().StringVar(&pinsVerifyFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
+	pinsVerifyJSON = addJSONAlias(pinsVerifyCmd)
+
+	// Kept so existing CI invocations don't break; drift exits 1 regardless.
 	pinsVerifyCmd.Flags().BoolVar(&pinsExitCode, "exit-code", false, "Exit with code 1 if drift is detected (for CI)")
+	_ = pinsVerifyCmd.Flags().MarkDeprecated("exit-code", "drift now exits 1 by default")
 
 	pinsCmd.AddCommand(pinsListCmd)
 	pinsCmd.AddCommand(pinsVerifyCmd)
@@ -123,18 +181,95 @@ func resolveRunningStack() (*state.DaemonState, error) {
 	return st, nil
 }
 
-func runPinsList() error {
+// pinsListDoc is the machine-readable document emitted by `pins list --format json`.
+// Server records carry the same shape as GET /api/pins.
+type pinsListDoc struct {
+	SchemaVersion int                         `json:"schema_version"`
+	Stack         string                      `json:"stack"`
+	Servers       map[string]*pins.ServerPins `json:"servers"`
+}
+
+// pinsVerifyServer is one server's entry in the verify JSON document.
+type pinsVerifyServer struct {
+	Name           string    `json:"name"`
+	Status         string    `json:"status"`
+	ToolCount      int       `json:"tool_count"`
+	LastVerifiedAt time.Time `json:"last_verified_at"`
+}
+
+// pinsVerifyDoc is the machine-readable document emitted by `pins verify --format json`.
+type pinsVerifyDoc struct {
+	SchemaVersion int                `json:"schema_version"`
+	Stack         string             `json:"stack"`
+	HasDrift      bool               `json:"has_drift"`
+	Servers       []pinsVerifyServer `json:"servers"`
+}
+
+// buildPinsVerifyDoc assembles the verify report from stored pin records,
+// sorted by server name. Drift is judged from the persisted status, matching
+// what the gateway last observed.
+func buildPinsVerifyDoc(stackName string, servers map[string]*pins.ServerPins) pinsVerifyDoc {
+	doc := pinsVerifyDoc{
+		SchemaVersion: pinsJSONSchemaVersion,
+		Stack:         stackName,
+		Servers:       make([]pinsVerifyServer, 0, len(servers)),
+	}
+	for _, name := range sortedMapKeys(servers) {
+		sp := servers[name]
+		doc.Servers = append(doc.Servers, pinsVerifyServer{
+			Name:           name,
+			Status:         sp.Status,
+			ToolCount:      sp.ToolCount,
+			LastVerifiedAt: sp.LastVerifiedAt,
+		})
+		if sp.Status == pins.StatusDrift {
+			doc.HasDrift = true
+		}
+	}
+	return doc
+}
+
+// renderPinsVerifyText prints the human one-line-per-server view.
+func renderPinsVerifyText(w io.Writer, doc pinsVerifyDoc) {
+	for _, sv := range doc.Servers {
+		switch sv.Status {
+		case pins.StatusDrift:
+			fmt.Fprintf(w, "  ✗ %-24s drift detected\n", sv.Name)
+		case pins.StatusApprovedPendingRedeploy:
+			fmt.Fprintf(w, "  ~ %-24s %d tools approved, pending redeploy\n", sv.Name, sv.ToolCount)
+		default:
+			fmt.Fprintf(w, "  ✓ %-24s %d tools verified\n", sv.Name, sv.ToolCount)
+		}
+	}
+}
+
+// loadPinsForCLI resolves the stack and reads its pin store from disk.
+func loadPinsForCLI() (string, map[string]*pins.ServerPins, error) {
 	stackName, err := resolveStack()
+	if err != nil {
+		return "", nil, err
+	}
+	ps := pins.New(stackName)
+	if err := ps.Load(); err != nil {
+		return "", nil, err
+	}
+	return stackName, ps.GetAll(), nil
+}
+
+func runPinsList(format string) error {
+	stackName, servers, err := loadPinsForCLI()
 	if err != nil {
 		return err
 	}
 
-	ps := pins.New(stackName)
-	if err := ps.Load(); err != nil {
-		return err
+	if strings.EqualFold(format, "json") {
+		return output.EncodeJSON(os.Stdout, pinsListDoc{
+			SchemaVersion: pinsJSONSchemaVersion,
+			Stack:         stackName,
+			Servers:       servers,
+		})
 	}
 
-	servers := ps.GetAll()
 	if len(servers) == 0 {
 		fmt.Printf("No pins found for stack '%s'. Deploy the stack first.\n", stackName)
 		return nil
@@ -161,51 +296,50 @@ func runPinsList() error {
 	return nil
 }
 
-func runPinsVerify(server string) error {
-	stackName, err := resolveStack()
-	if err != nil {
-		return err
-	}
+// pinsVerifyExit renders the verify report and returns the process exit code:
+// 0 all verified (or nothing pinned yet), 1 drift detected, 2 infrastructure
+// error. An empty store is the normal pre-pin state after a fresh deploy, so
+// it succeeds; a named server absent from a non-empty store is an error, since
+// verifying it is impossible and a typo should not pass a CI gate.
+func pinsVerifyExit(stdout, stderr io.Writer, stackName string, servers map[string]*pins.ServerPins, server, format string) int {
+	asJSON := strings.EqualFold(format, "json")
 
-	ps := pins.New(stackName)
-	if err := ps.Load(); err != nil {
-		return err
-	}
-
-	servers := ps.GetAll()
 	if len(servers) == 0 {
-		fmt.Printf("No pins found for stack '%s'. Deploy the stack first.\n", stackName)
-		return nil
+		if asJSON {
+			if err := output.EncodeJSON(stdout, buildPinsVerifyDoc(stackName, servers)); err != nil {
+				fmt.Fprintln(stderr, err)
+				return pinsExitInfrastructure
+			}
+		} else {
+			fmt.Fprintf(stdout, "No pins found for stack '%s'. Deploy the stack first.\n", stackName)
+		}
+		return pinsExitOK
 	}
 
 	if server != "" {
 		sp, ok := servers[server]
 		if !ok {
-			return fmt.Errorf("no pins found for server %q. Deploy the stack first", server)
+			fmt.Fprintf(stderr, "no pins found for server %q. Deploy the stack first\n", server)
+			return pinsExitInfrastructure
 		}
 		servers = map[string]*pins.ServerPins{server: sp}
 	}
 
-	names := sortedMapKeys(servers)
-	hasDrift := false
+	doc := buildPinsVerifyDoc(stackName, servers)
 
-	for _, name := range names {
-		sp := servers[name]
-		switch sp.Status {
-		case pins.StatusDrift:
-			hasDrift = true
-			fmt.Printf("  ✗ %-24s drift detected\n", name)
-		case pins.StatusApprovedPendingRedeploy:
-			fmt.Printf("  ~ %-24s %d tools approved, pending redeploy\n", name, sp.ToolCount)
-		default:
-			fmt.Printf("  ✓ %-24s %d tools verified\n", name, sp.ToolCount)
+	if asJSON {
+		if err := output.EncodeJSON(stdout, doc); err != nil {
+			fmt.Fprintln(stderr, err)
+			return pinsExitInfrastructure
 		}
+	} else {
+		renderPinsVerifyText(stdout, doc)
 	}
 
-	if pinsExitCode && hasDrift {
-		os.Exit(1)
+	if doc.HasDrift {
+		return pinsExitDrift
 	}
-	return nil
+	return pinsExitOK
 }
 
 func runPinsApprove(server string) error {
