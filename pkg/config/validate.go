@@ -87,6 +87,16 @@ func Validate(s *Stack) error {
 		errs = append(errs, ValidationError{"gateway.maxToolResultBytes", "must be a non-negative integer"})
 	}
 
+	// Gateway schema pinning action validation. Unknown values must be
+	// rejected: the gateway only honors "block", so a typo would silently
+	// downgrade a security policy to warn.
+	if s.Gateway != nil && s.Gateway.Security != nil && s.Gateway.Security.SchemaPinning != nil {
+		action := s.Gateway.Security.SchemaPinning.Action
+		if action != "" && action != "warn" && action != "block" {
+			errs = append(errs, ValidationError{"gateway.security.schema_pinning.action", "must be one of: warn, block"})
+		}
+	}
+
 	// Telemetry retention validation
 	if s.Telemetry != nil && s.Telemetry.Retention != nil {
 		errs = append(errs, validateTelemetryRetention(s.Telemetry.Retention)...)
