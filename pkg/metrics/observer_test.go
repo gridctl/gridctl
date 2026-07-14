@@ -216,6 +216,92 @@ func TestObserver_SkipsCostWhenModelUnknown(t *testing.T) {
 	}
 }
 
+// TestObserver_PerToolAttribution verifies the client-aware path records
+// per-tool tokens for every call and per-tool cost only for priced calls,
+// with the tool's cost matching what the per-server counters recorded for
+// the same traffic.
+func TestObserver_PerToolAttribution(t *testing.T) {
+	prev := pricing.CurrentSource()
+	defer pricing.SetSource(prev)
+	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
+		"claude-fixture": {InputPerToken: 3e-6, OutputPerToken: 15e-6},
+	}})
+
+	counter := token.NewHeuristicCounter(4)
+	acc := NewAccumulator(100)
+	obs := NewObserver(counter, acc)
+	obs.SetModelResolver(func(serverName, _ string) string {
+		if serverName == "priced" {
+			return "claude-fixture"
+		}
+		return ""
+	})
+
+	args := map[string]any{"q": "hello"}
+	result := &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("response")}}
+
+	obs.ObserveToolCallWithClient(context.Background(), mcp.ToolCallObservation{
+		ServerName: "priced", ReplicaID: -1, ClientID: "client-a", ToolName: "create_issue",
+		Arguments: args, Result: result,
+	})
+	obs.ObserveToolCallWithClient(context.Background(), mcp.ToolCallObservation{
+		ServerName: "unpriced", ReplicaID: -1, ClientID: "client-a", ToolName: "read_file",
+		Arguments: args, Result: result,
+	})
+
+	snap := acc.ToolUsageSnapshot()
+
+	priced := snap["priced"]["create_issue"]
+	inputTokens := int64(token.CountJSON(counter, args))
+	outputTokens := int64(counter.Count("response"))
+	if priced.InputTokens != inputTokens || priced.OutputTokens != outputTokens {
+		t.Errorf("priced tool tokens = %d/%d, want %d/%d", priced.InputTokens, priced.OutputTokens, inputTokens, outputTokens)
+	}
+	if priced.CostMicroUSD <= 0 {
+		t.Errorf("priced tool CostMicroUSD = %d, want >0", priced.CostMicroUSD)
+	}
+	// The tool's cost equals the server's cost — it was the only call.
+	serverCost := acc.CostSnapshot().PerServer["priced"].TotalUSD
+	if !approxUSDEq(priced.CostUSD(), serverCost) {
+		t.Errorf("per-tool cost %v != per-server cost %v", priced.CostUSD(), serverCost)
+	}
+
+	unpriced := snap["unpriced"]["read_file"]
+	if unpriced.InputTokens != inputTokens || unpriced.OutputTokens != outputTokens {
+		t.Errorf("unpriced tool tokens = %d/%d, want %d/%d", unpriced.InputTokens, unpriced.OutputTokens, inputTokens, outputTokens)
+	}
+	if unpriced.CostMicroUSD != 0 {
+		t.Errorf("unpriced tool CostMicroUSD = %d, want 0", unpriced.CostMicroUSD)
+	}
+}
+
+// TestObserver_LegacyPathRecordsNoPhantomTool verifies the legacy observer
+// entry point (no tool name) never creates a "" tool entry — even when the
+// call is priced and per-server cost is recorded.
+func TestObserver_LegacyPathRecordsNoPhantomTool(t *testing.T) {
+	prev := pricing.CurrentSource()
+	defer pricing.SetSource(prev)
+	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
+		"claude-fixture": {InputPerToken: 3e-6, OutputPerToken: 15e-6},
+	}})
+
+	counter := token.NewHeuristicCounter(4)
+	acc := NewAccumulator(100)
+	obs := NewObserver(counter, acc)
+	obs.SetModelResolver(func(string, string) string { return "claude-fixture" })
+
+	args := map[string]any{"q": "hello"}
+	result := &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("response")}}
+	obs.ObserveToolCall("server-a", -1, args, result)
+
+	if cost := acc.CostSnapshot().PerServer["server-a"].TotalUSD; cost <= 0 {
+		t.Fatalf("per-server cost = %v, want >0 (the call itself is priced)", cost)
+	}
+	if snap := acc.ToolUsageSnapshot(); snap != nil {
+		t.Errorf("legacy path must not create per-tool entries; got %v", snap)
+	}
+}
+
 // TestObserver_CallLevelModelOverridesResolver confirms a model carried in
 // the call's CallUsage takes precedence over the server-level resolver —
 // gateway operators can override per-server defaults at the call site
