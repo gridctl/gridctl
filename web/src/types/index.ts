@@ -68,6 +68,13 @@ export interface MCPServerStatus {
   healthy?: boolean; // Health check result (undefined if not yet checked)
   lastCheck?: string; // RFC3339 timestamp of last health check
   healthError?: string; // Error message if unhealthy
+  // MCP protocol version the downstream server reported at initialize; absent
+  // for lax servers that omit it and for OpenAPI adapters (no MCP handshake).
+  protocolVersion?: string;
+  // True for servers that never registered with the gateway (initialize
+  // failure, unsupported protocol version, unreachable endpoint). Such
+  // entries carry only name/healthy/healthError.
+  registrationFailed?: boolean;
   openapi?: boolean; // True for OpenAPI-backed servers
   openapiSpec?: string; // OpenAPI spec URL or file path
   outputFormat?: string; // Configured output format (e.g. "toon", "csv")
@@ -392,6 +399,7 @@ export interface MCPServerNodeData extends NodeDataBase {
   healthy?: boolean; // Health check result
   lastCheck?: string; // RFC3339 timestamp of last health check
   healthError?: string; // Error message if unhealthy
+  protocolVersion?: string; // MCP protocol version reported at initialize
   openapi?: boolean; // True for OpenAPI-backed servers
   openapiSpec?: string; // OpenAPI spec URL or file path
   outputFormat?: string; // Configured output format (e.g. "toon", "csv")

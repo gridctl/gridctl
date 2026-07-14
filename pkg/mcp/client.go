@@ -20,11 +20,21 @@ import (
 // Client communicates with a downstream MCP server.
 type Client struct {
 	RPCClient
-	endpoint    string
-	httpClient  *http.Client
-	requestID   atomic.Int64
-	sessionID   string // MCP session ID for stateful servers
-	pingTimeout time.Duration // 0 = use DefaultPingTimeout
+	endpoint        string
+	httpClient      *http.Client
+	requestID       atomic.Int64
+	sessionID       string        // MCP session ID for stateful servers
+	protocolVersion string        // negotiated at initialize; stamped on subsequent requests
+	pingTimeout     time.Duration // 0 = use DefaultPingTimeout
+}
+
+// setProtocolVersion records the version negotiated at initialize so
+// sendHTTP can stamp the MCP-Protocol-Version header on every
+// post-initialize request, as the Streamable HTTP spec requires.
+func (c *Client) setProtocolVersion(v string) {
+	c.mu.Lock()
+	c.protocolVersion = v
+	c.mu.Unlock()
 }
 
 // SetPingTimeout overrides the per-ping deadline used by Ping. Zero restores
@@ -124,10 +134,15 @@ func (c *Client) sendHTTP(ctx context.Context, req jsonrpc.Request) (*jsonrpc.Re
 	// Inject W3C traceparent/tracestate into outgoing request headers.
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(httpReq.Header))
 
-	// Include session ID if we have one (for stateful MCP servers)
+	// Include session ID if we have one (for stateful MCP servers) and the
+	// protocol version negotiated at initialize (required by the spec on all
+	// post-initialize requests).
 	c.mu.RLock()
 	if c.sessionID != "" {
 		httpReq.Header.Set("Mcp-Session-Id", c.sessionID)
+	}
+	if c.protocolVersion != "" {
+		httpReq.Header.Set("MCP-Protocol-Version", c.protocolVersion)
 	}
 	c.mu.RUnlock()
 

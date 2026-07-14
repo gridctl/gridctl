@@ -24,6 +24,9 @@ type ClientBase struct {
 	allTools      []Tool
 	serverInfo    ServerInfo
 	toolWhitelist []string
+	// protocolVersion is the MCP protocol version the downstream server
+	// reported at initialize; empty for lax servers that omit it.
+	protocolVersion string
 }
 
 // Tools returns the cached tool list filtered by the whitelist, if any.
@@ -85,6 +88,23 @@ func (b *ClientBase) SetInitialized(info ServerInfo) {
 	b.serverInfo = info
 }
 
+// SetProtocolVersion records the protocol version the downstream server
+// reported at initialize.
+func (b *ClientBase) SetProtocolVersion(v string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.protocolVersion = v
+}
+
+// ProtocolVersion returns the protocol version the downstream server reported
+// at initialize; empty when the server omitted it or the handshake has not
+// completed.
+func (b *ClientBase) ProtocolVersion() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.protocolVersion
+}
+
 // filterTools returns only tools whose names are in the whitelist.
 func filterTools(tools []Tool, whitelist []string) []Tool {
 	allowed := make(map[string]bool, len(whitelist))
@@ -113,6 +133,14 @@ type transporter interface {
 // connector, RPCClient.Initialize() calls Connect() before the handshake.
 type connector interface {
 	Connect(ctx context.Context) error
+}
+
+// protocolVersionSetter is an optional interface for transports that carry the
+// negotiated protocol version on subsequent requests (HTTP stamps it as the
+// MCP-Protocol-Version header). RPCClient.Initialize() calls it with the
+// version the downstream server negotiated.
+type protocolVersionSetter interface {
+	setProtocolVersion(v string)
 }
 
 // RPCClient provides shared JSON-RPC protocol methods for MCP transport clients.
@@ -177,6 +205,24 @@ func (r *RPCClient) Initialize(ctx context.Context) error {
 		return fmt.Errorf("initialize: %w", err)
 	}
 
+	// Reject servers negotiating a version we do not support; proceeding
+	// silently risks tool calls failing in undebuggable ways later. An empty
+	// version is tolerated for back-compat with lax servers that omit it.
+	if result.ProtocolVersion != "" && !IsSupportedProtocolVersion(result.ProtocolVersion) {
+		return fmt.Errorf("unsupported protocol version from server: %q (supported: %s)",
+			result.ProtocolVersion, supportedProtocolVersionList())
+	}
+
+	// Hand the negotiated version to transports that stamp it on subsequent
+	// requests (the Streamable HTTP spec requires the MCP-Protocol-Version
+	// header on every post-initialize request).
+	if result.ProtocolVersion != "" {
+		if setter, ok := r.transport.(protocolVersionSetter); ok {
+			setter.setProtocolVersion(result.ProtocolVersion)
+		}
+	}
+
+	r.SetProtocolVersion(result.ProtocolVersion)
 	r.SetInitialized(result.ServerInfo)
 
 	// Send initialized notification (non-fatal)

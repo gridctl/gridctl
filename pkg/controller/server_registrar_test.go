@@ -635,6 +635,24 @@ func TestServerRegistrar_RegisterAll_WithExternalServer(t *testing.T) {
 
 	// Should not panic — logs warning on failure
 	r.RegisterAll(ctx, result, stack, "/path/stack.yaml")
+
+	// The failure must surface in gateway status rather than silently
+	// omitting the server.
+	var found bool
+	for _, s := range gw.Status() {
+		if s.Name == "ext-server" {
+			found = true
+			if s.Healthy == nil || *s.Healthy {
+				t.Error("expected failed server to report healthy=false")
+			}
+			if s.HealthError == "" {
+				t.Error("expected failed server to carry a failure message")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected failed server to appear in gateway status")
+	}
 }
 
 func TestServerRegistrar_RegisterOne_External(t *testing.T) {
@@ -654,6 +672,17 @@ func TestServerRegistrar_RegisterOne_External(t *testing.T) {
 	err := r.RegisterOne(ctx, server, []ReplicaRuntime{{}}, "/path/stack.yaml")
 	if err == nil {
 		t.Error("expected error for unreachable server")
+	}
+
+	// The failure must be recorded for status surfacing.
+	var found bool
+	for _, s := range gw.Status() {
+		if s.Name == "ext" && s.HealthError != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected RegisterOne failure to surface in gateway status")
 	}
 }
 

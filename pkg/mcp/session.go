@@ -23,10 +23,14 @@ type Session struct {
 	// identifier when the client declares one (the `client` query parameter or
 	// X-Gridctl-Client-Id header), otherwise it falls back to ClientID. Both are
 	// normalized so configuration, the wire, and the UI reconcile on one form.
-	AccessID    string
-	Initialized bool
-	CreatedAt   time.Time
-	LastSeen    time.Time
+	AccessID string
+	// ProtocolVersion is the MCP protocol version negotiated at initialize
+	// (echo of the client's requested version when supported, otherwise the
+	// latest supported version).
+	ProtocolVersion string
+	Initialized     bool
+	CreatedAt       time.Time
+	LastSeen        time.Time
 }
 
 // SessionManager manages client sessions.
@@ -49,7 +53,9 @@ func NewSessionManager() *SessionManager {
 // the connection (query parameter or header); pass "" when the client declared
 // none, in which case the normalized clientInfo.name becomes the access id.
 // Both forms are normalized so enforcement, config, and UI reconcile.
-func (m *SessionManager) Create(clientInfo ClientInfo, accessID string) *Session {
+//
+// protocolVersion is the MCP protocol version negotiated for this session.
+func (m *SessionManager) Create(clientInfo ClientInfo, accessID, protocolVersion string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -65,13 +71,14 @@ func (m *SessionManager) Create(clientInfo ClientInfo, accessID string) *Session
 
 	id := generateSessionID()
 	session := &Session{
-		ID:          id,
-		ClientInfo:  clientInfo,
-		ClientID:    normalized,
-		AccessID:    resolvedAccess,
-		Initialized: true,
-		CreatedAt:   time.Now(),
-		LastSeen:    time.Now(),
+		ID:              id,
+		ClientInfo:      clientInfo,
+		ClientID:        normalized,
+		AccessID:        resolvedAccess,
+		ProtocolVersion: protocolVersion,
+		Initialized:     true,
+		CreatedAt:       time.Now(),
+		LastSeen:        time.Now(),
 	}
 	m.sessions[id] = session
 	return session

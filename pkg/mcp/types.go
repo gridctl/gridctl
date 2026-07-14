@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -193,8 +194,47 @@ func pingTimeoutOrDefault(d time.Duration) time.Duration {
 	return DefaultPingTimeout
 }
 
-// MCPProtocolVersion is the MCP protocol version supported by this implementation.
+// MCPProtocolVersion is the latest MCP protocol version supported by this
+// implementation.
 const MCPProtocolVersion = "2025-11-25"
+
+// SupportedProtocolVersions lists every MCP protocol version this
+// implementation accepts, newest first. Order expresses preference; support
+// is decided by membership, never by comparing version strings (future
+// identifiers are not guaranteed to be date-shaped).
+var SupportedProtocolVersions = []string{
+	"2025-11-25",
+	"2025-06-18",
+	"2025-03-26",
+	"2024-11-05",
+}
+
+// IsSupportedProtocolVersion reports whether v is in SupportedProtocolVersions.
+func IsSupportedProtocolVersion(v string) bool {
+	for _, s := range SupportedProtocolVersions {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// supportedProtocolVersionList renders the supported set for error messages.
+func supportedProtocolVersionList() string {
+	return strings.Join(SupportedProtocolVersions, ", ")
+}
+
+// NegotiateProtocolVersion implements the server side of MCP version
+// negotiation: echo the requested version when it is supported, otherwise
+// counter-offer the latest supported version in a successful response (the
+// client decides whether to disconnect). Initialize never fails for version
+// reasons.
+func NegotiateProtocolVersion(requested string) string {
+	if IsSupportedProtocolVersion(requested) {
+		return requested
+	}
+	return MCPProtocolVersion
+}
 
 // Default timeouts for MCP transport clients.
 const (

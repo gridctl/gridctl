@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pins"
@@ -271,6 +272,9 @@ type mcpServerAPI struct {
 	LocalProcess bool            `json:"localProcess"`
 	SSH          bool            `json:"ssh"`
 	OpenAPI      bool            `json:"openapi"`
+	Healthy      *bool           `json:"healthy,omitempty"`
+	HealthError  string          `json:"healthError,omitempty"`
+	RegFailed    bool            `json:"registrationFailed,omitempty"`
 	Replicas     []mcpReplicaAPI `json:"replicas,omitempty"`
 	Autoscale    *autoscaleAPI   `json:"autoscale,omitempty"`
 }
@@ -332,9 +336,22 @@ func buildMCPRollup(servers []mcpServerAPI) []output.MCPServerRollup {
 		n := len(srv.Replicas)
 		if n == 0 {
 			// Autoscaled servers can legitimately report 0 replicas (scale-
-			// to-zero): show the autoscale stats but still label unknown.
+			// to-zero): show the autoscale stats. Checked before the failed
+			// branch because a stale unhealthy rollup can linger for one
+			// health interval after the last replica is reaped.
 			if srv.Autoscale != nil {
 				row.State = "idle"
+				rows = append(rows, row)
+				continue
+			}
+			// A server that failed gateway registration reports healthy=false
+			// with the failure reason and no replicas; show it as failed
+			// rather than omitting the row.
+			if srv.Healthy != nil && !*srv.Healthy {
+				if srv.RegFailed {
+					row.Type = "—"
+				}
+				row.State = formatFailedState(srv.HealthError)
 				rows = append(rows, row)
 				continue
 			}
@@ -367,6 +384,24 @@ func buildMCPRollup(servers []mcpServerAPI) []output.MCPServerRollup {
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// formatFailedState renders the State cell for a server that failed gateway
+// registration, truncating long error messages so the table stays readable.
+// The full message is available via --json and /api/mcp-servers.
+func formatFailedState(healthError string) string {
+	if healthError == "" {
+		return "failed"
+	}
+	const maxErrLen = 60
+	if len(healthError) > maxErrLen {
+		cut := maxErrLen - 1
+		for cut > 0 && !utf8.RuneStart(healthError[cut]) {
+			cut--
+		}
+		healthError = healthError[:cut] + "…"
+	}
+	return fmt.Sprintf("failed (%s)", healthError)
 }
 
 // formatAutoscaleCell produces the "min/current/max (target=N)" render used

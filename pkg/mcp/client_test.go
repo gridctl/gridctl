@@ -1,10 +1,64 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
+
+func TestClient_SendsNegotiatedProtocolVersionHeader(t *testing.T) {
+	var mu sync.Mutex
+	headersByMethod := make(map[string]string)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jsonrpc.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		mu.Lock()
+		headersByMethod[req.Method] = r.Header.Get("MCP-Protocol-Version")
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			result := InitializeResult{
+				ProtocolVersion: "2025-06-18",
+				ServerInfo:      ServerInfo{Name: "test", Version: "1.0"},
+			}
+			_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, result))
+		case "tools/list":
+			_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, ToolsListResult{}))
+		default:
+			_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, nil))
+		}
+	}))
+	defer ts.Close()
+
+	c := NewClient("test", ts.URL)
+	if err := c.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if err := c.RefreshTools(context.Background()); err != nil {
+		t.Fatalf("RefreshTools: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if v := headersByMethod["initialize"]; v != "" {
+		t.Errorf("initialize must not carry a negotiated version header, got %q", v)
+	}
+	if v := headersByMethod["tools/list"]; v != "2025-06-18" {
+		t.Errorf("expected post-initialize requests to carry the negotiated version, got %q", v)
+	}
+}
 
 func TestClient_ParseSSEResponse_Notifications(t *testing.T) {
 	// Simulate an SSE stream with a notification followed by a result

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 
@@ -342,6 +343,112 @@ func TestRPCClient_Initialize(t *testing.T) {
 	}
 	if r.ServerInfo().Name != "test-mcp" {
 		t.Errorf("expected server name 'test-mcp', got %q", r.ServerInfo().Name)
+	}
+	if r.ProtocolVersion() != MCPProtocolVersion {
+		t.Errorf("expected reported protocol version %q, got %q", MCPProtocolVersion, r.ProtocolVersion())
+	}
+}
+
+func TestClientBase_ProtocolVersion(t *testing.T) {
+	var b ClientBase
+	if b.ProtocolVersion() != "" {
+		t.Errorf("expected empty version before handshake, got %q", b.ProtocolVersion())
+	}
+	b.SetProtocolVersion("2025-06-18")
+	if b.ProtocolVersion() != "2025-06-18" {
+		t.Errorf("expected stored version, got %q", b.ProtocolVersion())
+	}
+}
+
+func TestRPCClient_Initialize_UnsupportedServerVersion(t *testing.T) {
+	var calledMethods []string
+	ft := &fakeTransport{
+		callFn: func(_ context.Context, method string, _ any, result any) error {
+			calledMethods = append(calledMethods, method)
+			if method == "initialize" {
+				if r, ok := result.(*InitializeResult); ok {
+					r.ProtocolVersion = "1999-01-01"
+					r.ServerInfo = ServerInfo{Name: "old-server", Version: "0.1"}
+				}
+			}
+			return nil
+		},
+		sendFn: func(_ context.Context, method string, _ any) error {
+			calledMethods = append(calledMethods, method)
+			return nil
+		},
+	}
+
+	r := newFakeRPCClient("test", ft)
+
+	err := r.Initialize(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unsupported server protocol version")
+	}
+	if !strings.Contains(err.Error(), `"1999-01-01"`) {
+		t.Errorf("expected error to name the server's version, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), MCPProtocolVersion) {
+		t.Errorf("expected error to name the supported versions, got: %v", err)
+	}
+	if r.IsInitialized() {
+		t.Error("client must not be initialized after version mismatch")
+	}
+	for _, m := range calledMethods {
+		if m == "notifications/initialized" {
+			t.Error("initialized notification must not be sent after version mismatch")
+		}
+	}
+}
+
+func TestRPCClient_Initialize_EmptyServerVersion(t *testing.T) {
+	// Lax servers that omit protocolVersion are tolerated for back-compat.
+	ft := &fakeTransport{
+		callFn: func(_ context.Context, method string, _ any, result any) error {
+			if method == "initialize" {
+				if r, ok := result.(*InitializeResult); ok {
+					r.ServerInfo = ServerInfo{Name: "lax-server", Version: "1.0"}
+				}
+			}
+			return nil
+		},
+		sendFn: func(_ context.Context, _ string, _ any) error { return nil },
+	}
+
+	r := newFakeRPCClient("test", ft)
+
+	if err := r.Initialize(context.Background()); err != nil {
+		t.Fatalf("empty server version should be tolerated: %v", err)
+	}
+	if !r.IsInitialized() {
+		t.Error("expected client to be initialized")
+	}
+	if r.ProtocolVersion() != "" {
+		t.Errorf("expected empty version for lax server, got %q", r.ProtocolVersion())
+	}
+}
+
+func TestRPCClient_Initialize_OldSupportedServerVersion(t *testing.T) {
+	ft := &fakeTransport{
+		callFn: func(_ context.Context, method string, _ any, result any) error {
+			if method == "initialize" {
+				if r, ok := result.(*InitializeResult); ok {
+					r.ProtocolVersion = "2024-11-05"
+					r.ServerInfo = ServerInfo{Name: "old-but-fine", Version: "1.0"}
+				}
+			}
+			return nil
+		},
+		sendFn: func(_ context.Context, _ string, _ any) error { return nil },
+	}
+
+	r := newFakeRPCClient("test", ft)
+
+	if err := r.Initialize(context.Background()); err != nil {
+		t.Fatalf("old supported version should be accepted: %v", err)
+	}
+	if !r.IsInitialized() {
+		t.Error("expected client to be initialized")
 	}
 }
 

@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -237,9 +238,22 @@ func TestGatewayGracefulShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST initialize to gateway: %v", err)
 	}
-	initResp.Body.Close()
 	if initResp.StatusCode != http.StatusOK {
+		initResp.Body.Close()
 		t.Fatalf("expected 200 OK from initialize, got %d", initResp.StatusCode)
+	}
+	var initRPC struct {
+		Result struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(initResp.Body).Decode(&initRPC); err != nil {
+		t.Fatalf("decode initialize response: %v", err)
+	}
+	initResp.Body.Close()
+	// The gateway must echo a supported requested version, not assert its latest.
+	if initRPC.Result.ProtocolVersion != "2025-06-18" {
+		t.Fatalf("expected gateway to echo requested protocol version 2025-06-18, got %q", initRPC.Result.ProtocolVersion)
 	}
 	sessionID := initResp.Header.Get("Mcp-Session-Id")
 	if sessionID == "" {

@@ -662,6 +662,12 @@ type MCPServerStatus struct {
 	LastCheck     *string  `json:"lastCheck,omitempty"`
 	HealthError   string   `json:"healthError,omitempty"`
 	ToolWhitelist []string `json:"toolWhitelist,omitempty"`
+	// ProtocolVersion is the MCP protocol version the downstream server
+	// reported at initialize; empty for lax servers and OpenAPI adapters.
+	ProtocolVersion string `json:"protocolVersion,omitempty"`
+	// RegistrationFailed marks a server that never registered with the
+	// gateway; the UI shows it as failed instead of omitting the node.
+	RegistrationFailed bool `json:"registrationFailed,omitempty"`
 	// Model is the pricing model DECLARED on this server in stack.yaml
 	// (model: field only — a gateway default_model is not folded in here).
 	// Empty when the server inherits the default or has no attribution.
@@ -682,25 +688,27 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
 		status := MCPServerStatus{
-			Name:          ms.Name,
-			Transport:     string(ms.Transport),
-			Endpoint:      ms.Endpoint,
-			Initialized:   ms.Initialized,
-			ToolCount:     ms.ToolCount,
-			Tools:         ms.Tools,
-			External:      ms.External,
-			LocalProcess:  ms.LocalProcess,
-			SSH:           ms.SSH,
-			SSHHost:       ms.SSHHost,
-			OpenAPI:       ms.OpenAPI,
-			OpenAPISpec:   ms.OpenAPISpec,
-			OutputFormat:  ms.OutputFormat,
-			Healthy:       ms.Healthy,
-			HealthError:   ms.HealthError,
-			ToolWhitelist: ms.ToolWhitelist,
-			Model:         declaredModels[ms.Name],
-			Replicas:      ms.Replicas,
-			Autoscale:     ms.Autoscale,
+			Name:               ms.Name,
+			Transport:          string(ms.Transport),
+			Endpoint:           ms.Endpoint,
+			Initialized:        ms.Initialized,
+			ToolCount:          ms.ToolCount,
+			Tools:              ms.Tools,
+			External:           ms.External,
+			LocalProcess:       ms.LocalProcess,
+			SSH:                ms.SSH,
+			SSHHost:            ms.SSHHost,
+			OpenAPI:            ms.OpenAPI,
+			OpenAPISpec:        ms.OpenAPISpec,
+			OutputFormat:       ms.OutputFormat,
+			Healthy:            ms.Healthy,
+			HealthError:        ms.HealthError,
+			ToolWhitelist:      ms.ToolWhitelist,
+			ProtocolVersion:    ms.ProtocolVersion,
+			RegistrationFailed: ms.RegistrationFailed,
+			Model:              declaredModels[ms.Name],
+			Replicas:           ms.Replicas,
+			Autoscale:          ms.Autoscale,
 		}
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)
@@ -1147,12 +1155,19 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	// Check all MCP servers are initialized. Autoscaled servers that have
 	// scaled to zero deliberately have no client and therefore report
 	// Initialized=false; they can cold-start on demand and are not a failed
-	// state, so do not reject them here.
+	// state, so do not reject them here. Registration failures do not gate
+	// readiness either: before they were surfaced in Status() the daemon
+	// reported ready with those servers silently absent, and a permanently
+	// failed server must not wedge /ready at 503 (apply's readiness wait
+	// would time out even though the gateway serves every healthy server).
 	for _, status := range s.gateway.Status() {
 		if status.Initialized {
 			continue
 		}
 		if status.Autoscale != nil && len(status.Replicas) == 0 {
+			continue
+		}
+		if status.RegistrationFailed {
 			continue
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)

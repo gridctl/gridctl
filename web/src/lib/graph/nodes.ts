@@ -19,12 +19,13 @@ export function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
   if (server.autoscale && (!server.replicas || server.replicas.length === 0)) {
     return 'idle';
   }
-  if (!server.initialized) {
-    return 'initializing';
-  }
-  // If health check has run and server is unhealthy, show error
+  // Unhealthy wins over initializing: registration failures report both
+  // healthy=false and initialized=false, and must render as errors.
   if (server.healthy === false) {
     return 'error';
+  }
+  if (!server.initialized) {
+    return 'initializing';
   }
   return 'running';
 }
@@ -97,6 +98,7 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       healthy: server.healthy,
       lastCheck: server.lastCheck,
       healthError: server.healthError,
+      protocolVersion: server.protocolVersion,
       openapi: server.openapi,
       openapiSpec: server.openapiSpec,
       outputFormat: server.outputFormat,

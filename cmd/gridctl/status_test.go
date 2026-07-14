@@ -95,6 +95,40 @@ func TestBuildMCPRollup_AllUnhealthy(t *testing.T) {
 	}
 }
 
+func TestBuildMCPRollup_RegistrationFailed(t *testing.T) {
+	failed := false
+	servers := []mcpServerAPI{
+		{
+			Name:        "broken",
+			External:    true,
+			Healthy:     &failed,
+			HealthError: `unsupported protocol version from server: "1999-01-01"`,
+		},
+	}
+
+	rows := buildMCPRollup(servers)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if !strings.HasPrefix(rows[0].State, "failed") {
+		t.Errorf("expected failed state, got %q", rows[0].State)
+	}
+	if !strings.Contains(rows[0].State, "1999-01-01") {
+		t.Errorf("expected failure reason in state, got %q", rows[0].State)
+	}
+}
+
+func TestFormatFailedState_TruncatesLongErrors(t *testing.T) {
+	long := strings.Repeat("x", 200)
+	got := formatFailedState(long)
+	if len(got) > 80 {
+		t.Errorf("expected truncated state cell, got %d chars", len(got))
+	}
+	if formatFailedState("") != "failed" {
+		t.Errorf("expected bare 'failed' for empty error, got %q", formatFailedState(""))
+	}
+}
+
 func TestBuildReplicaDetails(t *testing.T) {
 	now := time.Now()
 	servers := []mcpServerAPI{

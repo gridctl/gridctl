@@ -91,9 +91,15 @@ export function AccessLens({ servers }: AccessLensProps) {
   const previewToolList = toolsDirty ? flatTools : savedTools;
   // A granted server that is still initializing has an unknown tool universe, so
   // a restrictive flat list would silently drop it (and keep its tools hidden
-  // once it comes up). Block the save until it reports its tools.
+  // once it comes up). Block the save until it reports its tools. Servers that
+  // failed registration outright are exempt: they will never report tools, so
+  // blocking on them would wedge saves forever.
   const pendingInit =
-    toolsDirty && draft.some((n) => servers.find((s) => s.name === n)?.initialized === false);
+    toolsDirty &&
+    draft.some((n) => {
+      const server = servers.find((s) => s.name === n);
+      return server?.initialized === false && !server.registrationFailed;
+    });
 
   const serversDirty = clientSlug != null && isDirty(draft, baseline);
   const dirty = clientSlug != null && (serversDirty || toolsDirty);
