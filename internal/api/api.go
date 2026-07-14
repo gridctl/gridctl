@@ -1147,12 +1147,19 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	// Check all MCP servers are initialized. Autoscaled servers that have
 	// scaled to zero deliberately have no client and therefore report
 	// Initialized=false; they can cold-start on demand and are not a failed
-	// state, so do not reject them here.
+	// state, so do not reject them here. Registration failures do not gate
+	// readiness either: before they were surfaced in Status() the daemon
+	// reported ready with those servers silently absent, and a permanently
+	// failed server must not wedge /ready at 503 (apply's readiness wait
+	// would time out even though the gateway serves every healthy server).
 	for _, status := range s.gateway.Status() {
 		if status.Initialized {
 			continue
 		}
 		if status.Autoscale != nil && len(status.Replicas) == 0 {
+			continue
+		}
+		if status.RegistrationFailed {
 			continue
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
