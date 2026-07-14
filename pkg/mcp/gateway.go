@@ -133,6 +133,9 @@ type Gateway struct {
 	health        map[string]*HealthStatus         // name -> rollup health (public API)
 	replicaHealth map[string]map[int]*HealthStatus // name -> replica_id -> health
 
+	regFailMu            sync.RWMutex
+	registrationFailures map[string]string // name -> error message for servers that failed to register
+
 	toolCallObserver  ToolCallObserver  // optional observer for tool call metrics
 	promptGetObserver PromptGetObserver // optional observer for prompt-get (skill usage) metrics
 
@@ -169,11 +172,12 @@ func NewGateway() *Gateway {
 			Name:    "gridctl-gateway",
 			Version: "dev",
 		},
-		serverMeta:     make(map[string]MCPServerConfig),
-		health:         make(map[string]*HealthStatus),
-		replicaHealth:  make(map[string]map[int]*HealthStatus),
-		blockedServers: make(map[string]bool),
-		autoscalers:    make(map[string]*Autoscaler),
+		serverMeta:           make(map[string]MCPServerConfig),
+		health:               make(map[string]*HealthStatus),
+		replicaHealth:        make(map[string]map[int]*HealthStatus),
+		blockedServers:       make(map[string]bool),
+		autoscalers:          make(map[string]*Autoscaler),
+		registrationFailures: make(map[string]string),
 	}
 }
 
@@ -1101,17 +1105,31 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 		}
 	}
 
-	// Initialize MCP connection
+	// Initialize MCP connection. Close the client on failure: for stdio,
+	// process, and SSH transports Connect() has already spawned a child that
+	// would otherwise be orphaned (a downstream server rejected for an
+	// unsupported protocol version fails here deterministically on every
+	// retry).
 	if err := agentClient.Initialize(ctx); err != nil {
+		closeAgentClient(agentClient)
 		return nil, fmt.Errorf("initializing MCP server %s: %w", cfg.Name, err)
 	}
 
 	// Fetch tools (will be filtered by whitelist if set)
 	if err := agentClient.RefreshTools(ctx); err != nil {
+		closeAgentClient(agentClient)
 		return nil, fmt.Errorf("fetching tools from %s: %w", cfg.Name, err)
 	}
 
 	return agentClient, nil
+}
+
+// closeAgentClient releases a client's transport resources when registration
+// fails partway. Best-effort: not every transport implements Close.
+func closeAgentClient(client AgentClient) {
+	if closer, ok := client.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
 }
 
 // SetServerMeta stores metadata for an MCP server without connecting to it.
@@ -1131,6 +1149,26 @@ func (g *Gateway) UnregisterMCPServer(name string) {
 	g.mu.Lock()
 	delete(g.serverMeta, name)
 	g.mu.Unlock()
+	g.ClearRegistrationFailure(name)
+}
+
+// RecordRegistrationFailure records why a server could not be registered so
+// Status() surfaces it instead of silently omitting the server. A later
+// attempt overwrites the entry; success or unregistration clears it.
+func (g *Gateway) RecordRegistrationFailure(name string, err error) {
+	if name == "" || err == nil {
+		return
+	}
+	g.regFailMu.Lock()
+	g.registrationFailures[name] = err.Error()
+	g.regFailMu.Unlock()
+}
+
+// ClearRegistrationFailure removes any recorded registration failure for name.
+func (g *Gateway) ClearRegistrationFailure(name string) {
+	g.regFailMu.Lock()
+	delete(g.registrationFailures, name)
+	g.regFailMu.Unlock()
 }
 
 // RestartMCPServer restarts an individual MCP server by name.
@@ -1163,14 +1201,20 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 		if g.dockerCli != nil && cfg.ContainerID != "" {
 			timeout := 10
 			if err := g.dockerCli.ContainerRestart(ctx, cfg.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
-				return fmt.Errorf("restarting container for %s: %w", name, err)
+				err = fmt.Errorf("restarting container for %s: %w", name, err)
+				// The server was already unregistered; record the failure so
+				// it does not silently vanish from status and the UI.
+				g.RecordRegistrationFailure(name, err)
+				return err
 			}
 		}
 	}
 
 	// Re-register using stored config (creates new client, initializes MCP, fetches tools)
 	if err := g.RegisterMCPServer(ctx, cfg); err != nil {
-		return fmt.Errorf("re-registering MCP server %s: %w", name, err)
+		err = fmt.Errorf("re-registering MCP server %s: %w", name, err)
+		g.RecordRegistrationFailure(name, err)
+		return err
 	}
 
 	// Update health status to healthy
@@ -1310,7 +1354,11 @@ func (g *Gateway) buildInstructions() string {
 // pass "" when the client declared none so the gateway falls back to the
 // normalized clientInfo.name for access scoping.
 func (g *Gateway) HandleInitialize(params InitializeParams, accessID string) (*InitializeResult, *Session, error) {
-	session := g.sessions.Create(params.ClientInfo, accessID)
+	// Echo the client's requested protocol version when supported, otherwise
+	// counter-offer the latest supported version (per the MCP lifecycle spec,
+	// the client decides whether to disconnect). Never fail for version reasons.
+	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
+	session := g.sessions.Create(params.ClientInfo, accessID, protocolVersion)
 
 	caps := Capabilities{
 		Tools: &ToolsCapability{
@@ -1329,7 +1377,7 @@ func (g *Gateway) HandleInitialize(params InitializeParams, accessID string) (*I
 	}
 
 	return &InitializeResult{
-		ProtocolVersion: MCPProtocolVersion,
+		ProtocolVersion: protocolVersion,
 		ServerInfo:      g.ServerInfo(),
 		Capabilities:    caps,
 		Instructions:    g.buildInstructions(),
@@ -1896,6 +1944,13 @@ type MCPServerStatus struct {
 	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
 	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
 
+	// RegistrationFailed marks a server that never registered with the
+	// gateway (initialize failure, unsupported protocol version, unreachable
+	// endpoint). Such entries carry only Name, Healthy=false, and HealthError;
+	// they are surfaced so a declared server is never silently absent, and
+	// they do not gate readiness.
+	RegistrationFailed bool `json:"registrationFailed,omitempty"`
+
 	// ToolWhitelist is the tools: field from the stack YAML for this server.
 	// Empty (nil) means no whitelist is configured and the server is exposing
 	// every tool it advertises. The UI uses this to distinguish "curated" from
@@ -2110,6 +2165,25 @@ func (g *Gateway) Status() []MCPServerStatus {
 
 		statuses = append(statuses, status)
 	}
+
+	// Servers that failed registration entirely have no router client and no
+	// serverMeta entry; surface them as unhealthy rows so they are never a
+	// silent absence in the CLI or the UI.
+	g.regFailMu.RLock()
+	for name, msg := range g.registrationFailures {
+		if seen[name] {
+			continue
+		}
+		failed := false
+		statuses = append(statuses, MCPServerStatus{
+			Name:               name,
+			Tools:              []string{},
+			Healthy:            &failed,
+			HealthError:        msg,
+			RegistrationFailed: true,
+		})
+	}
+	g.regFailMu.RUnlock()
 
 	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
 	return statuses
