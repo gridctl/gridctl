@@ -112,7 +112,7 @@ gateway:
 
 **Schema Pinning:**
 
-Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definitions on first connect and verifying them on every subsequent reconnect or reload.
+Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definitions (name, description, input schema, and output schema) on first connect and verifying them on every subsequent reconnect or reload.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -120,6 +120,8 @@ Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definit
 | `action` | string | No | `"warn"` | Drift response: `"warn"` logs the diff and continues; `"block"` rejects tool calls from the drifted server until approved |
 
 Pin files are stored in `~/.gridctl/pins/{stackName}.json`. Use `gridctl pins` subcommands to inspect, approve, or reset pins. Per-server opt-out is available via the `pin_schemas: false` field on any `mcp-servers` entry.
+
+Pins recorded before output schemas were fingerprinted are upgraded in place: each pin verifies under the scheme it was recorded with, and clean pins are silently rewritten to the current scheme (which pins the output schema for the first time) on the next verify cycle. A fingerprint-scheme change never surfaces as drift.
 
 ### Tracing
 
