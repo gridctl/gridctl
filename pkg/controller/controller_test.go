@@ -369,7 +369,10 @@ func TestNewGatewayBuilder(t *testing.T) {
 	rt := runtime.NewOrchestrator(nil, nil)
 	result := &runtime.UpResult{}
 
-	builder := sc.newGatewayBuilder(stack, rt, result)
+	builder, err := sc.newGatewayBuilder(stack, rt, result)
+	if err != nil {
+		t.Fatalf("newGatewayBuilder: %v", err)
+	}
 	if builder == nil {
 		t.Fatal("expected non-nil builder")
 	}
