@@ -23,6 +23,14 @@ vi.mock('../lib/api', async (importActual) => {
     fetchTokenMetrics: vi.fn().mockResolvedValue({ range: '30m', interval: '1m', data_points: [], per_server: {} }),
     fetchCostMetrics: vi.fn().mockResolvedValue({ range: '30m', interval: '1m', data_points: [], per_server: {}, per_client: {} }),
     clearTokenMetrics: vi.fn().mockResolvedValue(undefined),
+    fetchToolUsage: vi.fn().mockResolvedValue({
+      servers: {
+        github: {
+          create_issue: { calls: 4, lastCalledAt: '2026-07-01T00:00:00Z', inputTokens: 120, outputTokens: 80, costUsd: 0.02 },
+          list_repos: { calls: 1, inputTokens: 30, outputTokens: 10 },
+        },
+      },
+    }),
   };
 });
 
@@ -81,6 +89,7 @@ describe('MetricsWorkspace', () => {
     expect(screen.getByRole('button', { name: /^overview/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^clients/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^servers/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^tools/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^models/i })).toBeInTheDocument();
     // KPI row carries the session total.
     expect(screen.getByText('Total Tokens')).toBeInTheDocument();
@@ -109,6 +118,27 @@ describe('MetricsWorkspace', () => {
   it('shows the model-mix panel under the models scope', () => {
     renderAt('/metrics?scope=models');
     expect(screen.getByText('Cost by Model')).toBeInTheDocument();
+  });
+
+  it('shows the per-tool breakdown with server-qualified names under the tools scope', async () => {
+    renderAt('/metrics?scope=tools');
+    expect(await screen.findByText('Per-Tool')).toBeInTheDocument();
+    // Rows render server › tool so name collisions across servers stay distinct.
+    expect(await screen.findByText('create_issue')).toBeInTheDocument();
+    expect(screen.getByText('list_repos')).toBeInTheDocument();
+    // Priced tool shows a cost; unpriced tool shows the em dash, never $0.
+    expect(screen.getByText('$0.020')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+  });
+
+  it('selects a tool row into the inspector without a pricing-model editor', async () => {
+    renderAt('/metrics?scope=tools');
+    fireEvent.click(await screen.findByText('create_issue'));
+    // The inspector shows the tool's KPI grid (Calls is tools-only)…
+    expect(await screen.findByText('Calls')).toBeInTheDocument();
+    // …but no pricing editor: a tool's cost inherits client/server attribution.
+    expect(screen.queryByText('Pricing model')).not.toBeInTheDocument();
   });
 
   it('shows the onboarding empty state when there is no traffic', async () => {
