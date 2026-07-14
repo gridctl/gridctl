@@ -115,6 +115,14 @@ type connector interface {
 	Connect(ctx context.Context) error
 }
 
+// protocolVersionSetter is an optional interface for transports that carry the
+// negotiated protocol version on subsequent requests (HTTP stamps it as the
+// MCP-Protocol-Version header). RPCClient.Initialize() calls it with the
+// version the downstream server negotiated.
+type protocolVersionSetter interface {
+	setProtocolVersion(v string)
+}
+
 // RPCClient provides shared JSON-RPC protocol methods for MCP transport clients.
 // It embeds ClientBase for state management and delegates I/O to a transporter.
 //
@@ -175,6 +183,23 @@ func (r *RPCClient) Initialize(ctx context.Context) error {
 	var result InitializeResult
 	if err := r.transport.call(ctx, "initialize", params, &result); err != nil {
 		return fmt.Errorf("initialize: %w", err)
+	}
+
+	// Reject servers negotiating a version we do not support; proceeding
+	// silently risks tool calls failing in undebuggable ways later. An empty
+	// version is tolerated for back-compat with lax servers that omit it.
+	if result.ProtocolVersion != "" && !IsSupportedProtocolVersion(result.ProtocolVersion) {
+		return fmt.Errorf("unsupported protocol version from server: %q (supported: %s)",
+			result.ProtocolVersion, supportedProtocolVersionList())
+	}
+
+	// Hand the negotiated version to transports that stamp it on subsequent
+	// requests (the Streamable HTTP spec requires the MCP-Protocol-Version
+	// header on every post-initialize request).
+	if result.ProtocolVersion != "" {
+		if setter, ok := r.transport.(protocolVersionSetter); ok {
+			setter.setProtocolVersion(result.ProtocolVersion)
+		}
 	}
 
 	r.SetInitialized(result.ServerInfo)
