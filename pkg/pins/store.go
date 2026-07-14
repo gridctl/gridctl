@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -19,8 +20,24 @@ import (
 
 const (
 	lockTimeout = 5 * time.Second
-	fileVersion = "1"
+	fileVersion = "2"
 	filePerm    = os.FileMode(0600)
+)
+
+// schemeV2Prefix marks digests computed under the current hash scheme, which
+// covers name, description, inputSchema, and outputSchema. Unprefixed digests
+// are the legacy scheme (no outputSchema). Verification recomputes under the
+// scheme recorded on each pin so a scheme change never presents as drift;
+// VerifyOrPin rewrites clean legacy pins to the current scheme.
+const schemeV2Prefix = "h2:"
+
+// Sentinel errors reported by Load. A caller that prefers availability over
+// strictness (the daemon) may match ErrCorrupt and continue with the empty
+// store Load leaves behind; ErrNewerVersion must never be papered over, or
+// this binary would re-pin from scratch and overwrite the newer file.
+var (
+	ErrCorrupt      = errors.New("corrupt pin file")
+	ErrNewerVersion = errors.New("pin file written by a newer gridctl")
 )
 
 // PinStore manages TOFU schema pins for a deployed stack.
@@ -58,7 +75,10 @@ func NewWithPath(dir, stackName string) *PinStore {
 
 // Load reads the pin file from disk into memory.
 // If the file does not exist, the store starts empty (ready for first pin).
-// If the file is corrupt, it is discarded and a warning is logged.
+// A file that cannot be parsed returns an error wrapping ErrCorrupt, and a
+// file written by a newer gridctl returns one wrapping ErrNewerVersion; in
+// both cases the in-memory store is reset to empty so a caller that chooses
+// to continue anyway has a usable store.
 func (ps *PinStore) Load() error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -74,9 +94,14 @@ func (ps *PinStore) Load() error {
 
 	var pf PinFile
 	if err := json.Unmarshal(data, &pf); err != nil {
-		slog.Warn("pins: corrupt pin file, starting fresh", "path", ps.path, "error", err)
 		ps.data = ps.emptyPinFile()
-		return nil
+		return fmt.Errorf("pins: %w at %s: %v", ErrCorrupt, ps.path, err)
+	}
+	switch pf.Version {
+	case "", "1", fileVersion:
+	default:
+		ps.data = ps.emptyPinFile()
+		return fmt.Errorf("pins: %w: %s has version %q; upgrade gridctl to use it", ErrNewerVersion, ps.path, pf.Version)
 	}
 	if pf.Servers == nil {
 		pf.Servers = make(map[string]*ServerPins)
@@ -273,6 +298,30 @@ func (ps *PinStore) verifyAndUpdate(serverName string, sp *ServerPins, tools []m
 			"removed", result.RemovedTools)
 	}
 
+	// Rewrite clean legacy pins under the current digest scheme. Drifted
+	// pins keep their recorded scheme so the diff stays meaningful; they
+	// adopt the current scheme when approved.
+	modified := make(map[string]bool, len(result.ModifiedTools))
+	for _, d := range result.ModifiedTools {
+		modified[d.Name] = true
+	}
+	upgraded := 0
+	for _, t := range tools {
+		pin := sp.Tools[t.Name]
+		if pin == nil || modified[t.Name] || strings.HasPrefix(pin.Hash, schemeV2Prefix) {
+			continue
+		}
+		h, err := hashTool(t)
+		if err != nil {
+			return nil, fmt.Errorf("pins: rehashing tool %q: %w", t.Name, err)
+		}
+		pin.Hash = h
+		upgraded++
+	}
+	if upgraded > 0 {
+		slog.Info("pins: upgraded pin scheme", "server", serverName, "tools", upgraded)
+	}
+
 	sp.ServerHash = serverHashFromPins(sp.Tools)
 
 	if err := ps.saveLocked(); err != nil {
@@ -300,7 +349,7 @@ func (ps *PinStore) buildVerifyResult(serverName string, sp *ServerPins, tools [
 			result.RemovedTools = append(result.RemovedTools, name)
 			continue
 		}
-		h, err := hashTool(t)
+		h, err := hashToolForPin(pin.Hash, t)
 		if err != nil {
 			return nil, fmt.Errorf("pins: hashing tool %q during verify: %w", name, err)
 		}
@@ -348,6 +397,10 @@ func (ps *PinStore) saveLocked() error {
 		return fmt.Errorf("pins: creating pins directory: %w", err)
 	}
 
+	// Any file this binary writes is current-version: both digest schemes
+	// remain readable, so loaded legacy files are upgraded on first save.
+	ps.data.Version = fileVersion
+
 	data, err := json.MarshalIndent(ps.data, "", "  ")
 	if err != nil {
 		return fmt.Errorf("pins: marshaling pin file: %w", err)
@@ -383,16 +436,42 @@ func (ps *PinStore) emptyPinFile() *PinFile {
 
 // --- hash functions ---
 
-// hashTool computes a deterministic SHA256 digest of a tool's definition.
-// inputSchema is canonically serialized (recursively sorted object keys) before hashing
-// to ensure identical schemas produce identical hashes regardless of key order.
+// hashTool computes a deterministic SHA256 digest of a tool's definition under
+// the current scheme: name, description, inputSchema, and outputSchema. Both
+// schemas are canonically serialized (recursively sorted object keys) before
+// hashing so identical schemas produce identical hashes regardless of key
+// order, and absent/null/empty schemas all normalize to "{}".
 func hashTool(t mcp.Tool) (string, error) {
+	input, err := canonicalSchema(t.InputSchema)
+	if err != nil {
+		return "", fmt.Errorf("pins: canonicalizing inputSchema for %q: %w", t.Name, err)
+	}
+	output, err := canonicalSchema(t.OutputSchema)
+	if err != nil {
+		return "", fmt.Errorf("pins: canonicalizing outputSchema for %q: %w", t.Name, err)
+	}
+	sum := sha256.Sum256([]byte(t.Name + "\n" + t.Description + "\n" + input + "\n" + output))
+	return schemeV2Prefix + hex.EncodeToString(sum[:]), nil
+}
+
+// hashToolLegacy computes the pre-outputSchema digest (unprefixed scheme),
+// kept so pins recorded before outputSchema fingerprinting keep verifying.
+func hashToolLegacy(t mcp.Tool) (string, error) {
 	canonical, err := canonicalSchema(t.InputSchema)
 	if err != nil {
 		return "", fmt.Errorf("pins: canonicalizing schema for %q: %w", t.Name, err)
 	}
 	sum := sha256.Sum256([]byte(t.Name + "\n" + t.Description + "\n" + canonical))
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// hashToolForPin recomputes a tool's digest under the scheme recorded in
+// pinnedHash, so a scheme change never presents as drift.
+func hashToolForPin(pinnedHash string, t mcp.Tool) (string, error) {
+	if strings.HasPrefix(pinnedHash, schemeV2Prefix) {
+		return hashTool(t)
+	}
+	return hashToolLegacy(t)
 }
 
 // canonicalSchema produces a deterministic JSON string from a json.RawMessage
