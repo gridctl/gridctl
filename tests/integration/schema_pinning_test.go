@@ -94,6 +94,49 @@ func TestSchemaPinningDriftDetection(t *testing.T) {
 	}
 }
 
+// TestSchemaPinningOutputSchemaDrift verifies that a change confined to a
+// tool's outputSchema is caught as drift: the output contract is a
+// server-controlled field that flows into model context, so it is fingerprinted
+// like the input schema. The baseline connect serves the echo tool without an
+// outputSchema; the second connect adds one under the same server name.
+func TestSchemaPinningOutputSchemaDrift(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	gw := mcp.NewGateway()
+	store := pins.NewWithPath(t.TempDir(), "output-drift-test")
+	gw.SetSchemaVerifier(pins.NewGatewayAdapter(store), "warn")
+
+	// First connect: baseline without an outputSchema gets pinned.
+	portA := freePort(t)
+	startMockServerEnv(t, portA)
+	waitForPort(t, ctx, portA)
+	if err := registerMock(ctx, gw, "mock", portA, nil); err != nil {
+		t.Fatalf("register (baseline): %v", err)
+	}
+	if sp, ok := store.GetServer("mock"); !ok || sp.Status != pins.StatusPinned {
+		t.Fatalf("baseline: want status %q, got ok=%v status=%q", pins.StatusPinned, ok, statusOf(sp))
+	}
+
+	// Second connect: identical tool definitions except echo now declares an
+	// output contract. Only the outputSchema differs, so any drift signal
+	// comes from the output-schema fingerprint.
+	portB := freePort(t)
+	startMockServerEnv(t, portB, `MOCK_ECHO_OUTPUT_SCHEMA={"type":"object","properties":{"echoed":{"type":"string"}}}`)
+	waitForPort(t, ctx, portB)
+	gw.Router().RemoveClient("mock")
+	if err := registerMock(ctx, gw, "mock", portB, nil); err != nil {
+		t.Fatalf("register (output drifted): %v", err)
+	}
+	if sp, ok := store.GetServer("mock"); !ok || sp.Status != pins.StatusDrift {
+		t.Fatalf("after outputSchema change: want status %q, got ok=%v status=%q", pins.StatusDrift, ok, statusOf(sp))
+	}
+}
+
 // TestSchemaPinningPerServerOptOut verifies that a server with pin_schemas:false
 // is never pinned even when a verifier is installed, so its schema changes do
 // not surface as drift.
