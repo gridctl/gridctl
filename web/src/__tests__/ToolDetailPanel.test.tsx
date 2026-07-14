@@ -61,4 +61,29 @@ describe('ToolDetailPanel', () => {
     expect(screen.getByText('13px')).toBeInTheDocument();
     expect(localStorage.getItem('gridctl-tools-zoom')).toBe('13');
   });
+
+  it('shows the Usage section with calls, tokens, and cost outside audit mode', () => {
+    renderPanel({
+      usage: { calls: 12, lastCalledAt: '2026-07-01T00:00:00Z', inputTokens: 1200, outputTokens: 400, costUsd: 0.0345 },
+    });
+    expect(screen.getByText('Usage')).toBeInTheDocument();
+    expect(screen.getByText('Calls')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('1.2k')).toBeInTheDocument();
+    expect(screen.getByText('400')).toBeInTheDocument();
+    // Priced usage shows an estimated cost with the est. label.
+    expect(screen.getByText('Cost · est.')).toBeInTheDocument();
+    expect(screen.getByText('$0.035')).toBeInTheDocument();
+  });
+
+  it('renders an em dash, never $0, when usage is unpriced', () => {
+    renderPanel({ usage: { calls: 3, inputTokens: 100, outputTokens: 50 } });
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText(/\$0\.00/)).not.toBeInTheDocument();
+  });
+
+  it('hides the Usage section without usage data or audit state', () => {
+    renderPanel();
+    expect(screen.queryByText('Usage')).not.toBeInTheDocument();
+  });
 });
