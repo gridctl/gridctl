@@ -314,6 +314,9 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		// Start new server
 		if err := h.startMCPServer(ctx, change.New, newCfg); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to reload %s: %v", change.Name, err))
+			// The old server was already unregistered; record the failure so
+			// the server surfaces as failed instead of silently vanishing.
+			h.gateway.RecordRegistrationFailure(change.Name, err)
 			continue
 		}
 
@@ -326,6 +329,7 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 
 		if err := h.startMCPServer(ctx, server, newCfg); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to add %s: %v", server.Name, err))
+			h.gateway.RecordRegistrationFailure(server.Name, err)
 			continue
 		}
 
