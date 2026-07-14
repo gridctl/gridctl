@@ -259,7 +259,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/catalog
 
 #### `GET /api/tools/usage`
 
-Returns per-(server, tool) usage observed by the gateway: cumulative call count and the last-called timestamp. Powers the Tools workspace **Audit Mode**, which separates actively-used, configured-but-unused, and disabled tools.
+Returns per-(server, tool) usage observed by the gateway: cumulative call count, last-called timestamp, token counts, and estimated cost. Powers the Tools workspace **Audit Mode** (which separates actively-used, configured-but-unused, and disabled tools), the Tools detail panel's Usage section, and the Metrics workspace's Tools scope.
 
 Usage is recorded for both direct tool calls and tools invoked through code mode's `execute` (both flow through the same observer). For servers with metrics persistence enabled, the data is restored from disk on startup so it survives gateway restarts; otherwise it reflects activity since the last gateway start.
 
@@ -277,14 +277,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/usage
   "observedSince": "2026-05-20T10:00:00Z",
   "servers": {
     "github": {
-      "create_issue": { "calls": 42, "lastCalledAt": "2026-05-24T09:13:00Z" },
-      "list_repos": { "calls": 3, "lastCalledAt": "2026-05-21T08:00:00Z" }
+      "create_issue": { "calls": 42, "lastCalledAt": "2026-05-24T09:13:00Z", "inputTokens": 5120, "outputTokens": 18400, "costUsd": 0.291 },
+      "list_repos": { "calls": 3, "lastCalledAt": "2026-05-21T08:00:00Z", "inputTokens": 240, "outputTokens": 900 }
     }
   }
 }
 ```
 
-`servers` is an object keyed by server name; each value maps unprefixed tool names to their stats. Tools that have never been called are omitted. Returns `503` when no metrics accumulator is configured.
+`servers` is an object keyed by server name; each value maps unprefixed tool names to their stats. Tools that have never been called are omitted. `inputTokens` and `outputTokens` are the cumulative tokens of the tool's own calls (omitted when zero). `costUsd` is the cumulative estimated cost of the tool's priced calls and is omitted entirely (never `0`) when no call was priced, for example when no pricing model is declared. Returns `503` when no metrics accumulator is configured.
 
 #### `GET /api/skills/usage`
 
