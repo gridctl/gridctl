@@ -133,15 +133,22 @@ export function ToolsWorkspace() {
 
   // ---- Audit Mode ---------------------------------------------------------
   // An overlay that classifies each tool as used / configured-but-unused /
-  // disabled against a lookback window. Usage is fetched only while the mode
-  // is on (the hook idles otherwise) so the editor pays nothing when it's off.
+  // disabled against a lookback window.
   const [auditMode, setAuditMode] = useState(false);
   const [auditWindow, setAuditWindow] = useState<AuditWindow>(DEFAULT_AUDIT_WINDOW);
   // Fleet bulk-action panel (expose-all / hide-pattern across servers).
   const [fleetOpen, setFleetOpen] = useState(false);
   // Per-client access editor (which servers each client may reach).
   const [accessOpen, setAccessOpen] = useState(false);
-  const { usage, fetchedAt } = useToolUsage(auditMode);
+  // The tool whose detail is shown in the right rail. Distinct from the
+  // whitelist selection (the checkboxes) — this is the "active" tool. Picking a
+  // global-search result sets it so that tool is revealed on arrival. Declared
+  // here (above the usage hook) because usage polling is gated on it.
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
+  // Usage polls while something consumes it: Audit Mode's classification, or
+  // the detail panel's Usage section for the selected tool (shown outside
+  // Audit Mode too). Otherwise the hook idles so the editor pays nothing.
+  const { usage, fetchedAt } = useToolUsage(auditMode || selectedTool != null);
   const windowMs = auditWindowMs(auditWindow);
   const usageByServer = usage?.servers;
 
@@ -161,10 +168,6 @@ export function ToolsWorkspace() {
   // A pending target set while the active editor has unsaved edits. The switch
   // commits (URL change) only after the user discards.
   const [pendingServer, setPendingServer] = useState<string | null>(null);
-  // The tool whose detail is shown in the right rail. Distinct from the
-  // whitelist selection (the checkboxes) — this is the "active" tool. Picking a
-  // global-search result sets it so that tool is revealed on arrival.
-  const [selectedTool, setSelectedTool] = useState<string | null>(null);
 
   // Switch to a server (or reveal a tool on the active one). Unsaved edits on
   // the current server route through a confirm dialog before the switch
@@ -213,9 +216,8 @@ export function ToolsWorkspace() {
     return toolCatalog.find((t) => t.name === prefixed)?.inputSchema;
   }, [selectedTool, activeServerName, toolCatalog]);
   const selectedEnabled = selectedTool ? editor.selected.has(selectedTool) : false;
-  const selectedLastCalled = selectedTool
-    ? usageByServer?.[activeServerName]?.[selectedTool]?.lastCalledAt
-    : undefined;
+  const selectedUsage = selectedTool ? usageByServer?.[activeServerName]?.[selectedTool] : undefined;
+  const selectedLastCalled = selectedUsage?.lastCalledAt;
   const selectedAuditState = useMemo(() => {
     if (!auditMode || !selectedTool || fetchedAt == null) return null;
     return classifyTool(selectedEnabled, selectedLastCalled, windowMs, fetchedAt);
@@ -240,6 +242,7 @@ export function ToolsWorkspace() {
       enabled={selectedEnabled}
       auditMode={auditMode}
       auditState={selectedAuditState}
+      usage={selectedUsage}
       lastCalledAt={selectedLastCalled}
       onClose={() => setSelectedTool(null)}
     />

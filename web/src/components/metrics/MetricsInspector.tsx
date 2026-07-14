@@ -1,7 +1,7 @@
 import { X, DollarSign } from 'lucide-react';
-import { cn } from '../../lib/cn';
 import { formatCompactNumber, formatUSD } from '../../lib/format';
 import { AreaChart } from '../chart/AreaChart';
+import { InspectorStat } from './metricsShared';
 import { PaneAnchor } from '../inspector';
 import { ClientModelCell } from '../pricing/ClientModelCell';
 import { ServerModelCell } from '../pricing/ServerModelCell';
@@ -14,7 +14,7 @@ import {
 import type { BreakdownRow } from './metricsData';
 import type { CostDataPoint, EffectiveModel, TokenDataPoint } from '../../types';
 
-export type MetricsInspectorScope = 'clients' | 'servers';
+export type MetricsInspectorScope = 'clients' | 'servers' | 'tools';
 
 interface MetricsInspectorProps {
   scope: MetricsInspectorScope;
@@ -34,10 +34,13 @@ interface MetricsInspectorProps {
 }
 
 // MetricsInspector is the workspace right rail: a per-entity detail view for
-// the selected client or server. It hosts the inline model editor (relocated
-// here so the breakdown tables stay scannable), the entity's KPI numbers,
-// per-entity sparklines, and the cost-provenance note. With nothing selected
-// it falls back to a cost-provenance legend explaining the attribution model.
+// the selected client, server, or tool. It hosts the inline model editor
+// (relocated here so the breakdown tables stay scannable), the entity's KPI
+// numbers, per-entity sparklines, and the cost-provenance note. Tools have no
+// pricing model of their own (their cost inherits the client/server
+// attribution), so the tools scope shows the KPI numbers without the editor.
+// With nothing selected it falls back to a cost-provenance legend explaining
+// the attribution model.
 export function MetricsInspector({
   scope,
   row,
@@ -71,11 +74,16 @@ export function MetricsInspector({
       <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-subtle">
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">
-            {scope === 'clients' ? 'client' : 'server'}
+            {scope === 'clients' ? 'client' : scope === 'tools' ? 'tool' : 'server'}
           </div>
           <div className="font-mono text-sm text-text-primary truncate" title={row.name}>
-            {row.name}
+            {row.tool ?? row.name}
           </div>
+          {scope === 'tools' && row.server && (
+            <div className="font-mono text-[10px] text-text-muted truncate" title={row.server}>
+              {row.server}
+            </div>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -87,42 +95,48 @@ export function MetricsInspector({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark p-4 space-y-4">
-        {/* Pricing model editor */}
-        <section className="space-y-1.5">
-          <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">Pricing model</h3>
-          <div title={MODEL_PRECEDENCE_HINT}>
-            {scope === 'clients' ? (
-              <ClientModelCell
-                client={row.name}
-                declaredModel={declaredModel}
-                effective={effective}
-                costAttribution={costAttribution}
-                onSaved={onClientSaved}
-                onOpenManager={onOpenManager}
-                pickerAlign="left"
-              />
-            ) : (
-              <ServerModelCell
-                server={row.name}
-                declaredModel={declaredModel}
-                defaultModel={defaultModel}
-                effective={effective}
-                onSaved={onServerSaved}
-                onOpenManager={onOpenManager}
-                pickerAlign="left"
-              />
+        {/* Pricing model editor — clients/servers only; a tool's cost inherits
+            the client/server attribution and has no model of its own. */}
+        {scope !== 'tools' && (
+          <section className="space-y-1.5">
+            <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">Pricing model</h3>
+            <div title={MODEL_PRECEDENCE_HINT}>
+              {scope === 'clients' ? (
+                <ClientModelCell
+                  client={row.name}
+                  declaredModel={declaredModel}
+                  effective={effective}
+                  costAttribution={costAttribution}
+                  onSaved={onClientSaved}
+                  onOpenManager={onOpenManager}
+                  pickerAlign="left"
+                />
+              ) : (
+                <ServerModelCell
+                  server={row.name}
+                  declaredModel={declaredModel}
+                  defaultModel={defaultModel}
+                  effective={effective}
+                  onSaved={onServerSaved}
+                  onOpenManager={onOpenManager}
+                  pickerAlign="left"
+                />
+              )}
+            </div>
+            {effective?.provenance === 'mixed' && (
+              <p className="text-[10px] leading-snug text-text-muted/70">{MIXED_PROVENANCE_NOTE}</p>
             )}
-          </div>
-          {effective?.provenance === 'mixed' && (
-            <p className="text-[10px] leading-snug text-text-muted/70">{MIXED_PROVENANCE_NOTE}</p>
-          )}
-          {effective?.provenance === 'none' && (
-            <p className="text-[10px] leading-snug text-text-muted/70">{UNPRICED_NOTE}</p>
-          )}
-        </section>
+            {effective?.provenance === 'none' && (
+              <p className="text-[10px] leading-snug text-text-muted/70">{UNPRICED_NOTE}</p>
+            )}
+          </section>
+        )}
 
         {/* KPI numbers */}
         <section className="grid grid-cols-2 gap-2">
+          {row.calls !== undefined && (
+            <InspectorStat label="Calls" value={formatCompactNumber(row.calls)} className="text-text-primary" />
+          )}
           <InspectorStat label="Input" value={formatCompactNumber(row.input)} className="text-secondary" />
           <InspectorStat label="Output" value={formatCompactNumber(row.output)} className="text-primary" />
           <InspectorStat label="Total" value={formatCompactNumber(row.total)} className="text-text-primary" />
@@ -132,6 +146,14 @@ export function MetricsInspector({
             className={row.cost === undefined ? 'text-text-muted' : 'text-emerald-400'}
           />
         </section>
+        {scope === 'tools' && row.cost === undefined && (
+          // Not ATTRIBUTION_HINT: its copy points at the Top Clients table,
+          // which the Tools scope does not render.
+          <p className="text-[10px] leading-snug text-text-muted/70">
+            No priced calls yet. Set a pricing model on a client or server (Clients/Servers scope), or a
+            gateway default, to enable estimates.
+          </p>
+        )}
 
         {/* Token sparkline */}
         {tokenSeries.length > 0 && (
@@ -183,15 +205,6 @@ export function MetricsInspector({
   );
 }
 
-function InspectorStat({ label, value, className }: { label: string; value: string; className?: string }) {
-  return (
-    <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-2.5">
-      <span className="text-[9px] text-text-muted uppercase tracking-wider block mb-0.5">{label}</span>
-      <span className={cn('text-sm font-bold tabular-nums', className)}>{value}</span>
-    </div>
-  );
-}
-
 // Shown when nothing is selected — a cost-provenance legend rather than an
 // empty rail, carrying the same honesty copy the cards use.
 function InspectorOverview({ onOpenManager }: { onOpenManager: () => void }) {
@@ -202,7 +215,7 @@ function InspectorOverview({ onOpenManager }: { onOpenManager: () => void }) {
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark p-4 space-y-3 text-[11px] leading-relaxed text-text-muted">
         <p>
-          Select a client or server to inspect its tokens, estimated cost, and pricing model.
+          Select a client, server, or tool to inspect its tokens, estimated cost, and pricing model.
         </p>
         <p className="text-text-secondary">{ATTRIBUTION_HINT}.</p>
         <div className="space-y-1.5 pt-1">

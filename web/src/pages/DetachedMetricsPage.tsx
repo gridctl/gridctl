@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { BarChart3, AlertCircle, Maximize2, Minimize2, Users, Server } from 'lucide-react';
+import { BarChart3, AlertCircle, Maximize2, Minimize2, Users, Server, Wrench } from 'lucide-react';
 import { IconButton } from '../components/ui/IconButton';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
@@ -10,13 +10,15 @@ import { ClientModelCell } from '../components/pricing/ClientModelCell';
 import { ServerModelCell } from '../components/pricing/ServerModelCell';
 import { PricingManagerSlideOver } from '../components/pricing/PricingManagerSlideOver';
 import { useMetricsSeries, type MetricsTimeRange } from '../hooks/useMetricsSeries';
+import { useToolUsage } from '../hooks/useToolUsage';
 import { MetricsControls } from '../components/metrics/MetricsControls';
-import { MetricsKpiRow, TokenChart, CostChart, PanelHeader, BreakdownTable } from '../components/metrics/metricsShared';
+import { MetricsKpiRow, TokenChart, CostChart, PanelHeader, BreakdownTable, ScrollableBreakdown } from '../components/metrics/metricsShared';
 import {
   buildTokenChartData,
   buildCostChartData,
   derivePerServerRows,
   derivePerClientRows,
+  derivePerToolRows,
   deriveSessionKpis,
   hasMetricsData,
   sortBreakdownRows,
@@ -45,9 +47,15 @@ function DetachedMetricsPageContent() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [clientSortColumn, setClientSortColumn] = useState<BreakdownSortColumn>('cost');
   const [clientSortDirection, setClientSortDirection] = useState<SortDirection>('desc');
+  const [toolSortColumn, setToolSortColumn] = useState<BreakdownSortColumn>('cost');
+  const [toolSortDirection, setToolSortDirection] = useState<SortDirection>('desc');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useDetachedWindowSync('metrics');
+
+  // Per-tool usage for the Per-Tool panel — the same GET /api/tools/usage
+  // pipeline the Tools workspace and Metrics Tools scope consume.
+  const { usage: toolUsageData } = useToolUsage(true);
 
   const { metricsData, costData, isLoading, error, reload, clear } = useMetricsSeries({
     timeRange,
@@ -98,6 +106,14 @@ function DetachedMetricsPageContent() {
     }
   };
 
+  const handleToolSort = (column: BreakdownSortColumn) => {
+    if (toolSortColumn === column) setToolSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setToolSortColumn(column);
+      setToolSortDirection('desc');
+    }
+  };
+
   // Optimistic local updates after a successful model save. The detached
   // window owns local state (not the main window's store); the next status
   // poll confirms from the backend, and the main window catches up on its own.
@@ -136,6 +152,7 @@ function DetachedMetricsPageContent() {
     clientSortColumn,
     clientSortDirection,
   );
+  const sortedTools = sortBreakdownRows(derivePerToolRows(toolUsageData), toolSortColumn, toolSortDirection);
   const chartData = buildTokenChartData(metricsData);
   const costChartData = buildCostChartData(costData);
   const costSeriesHasData = costChartData.some((d) => d['Cost (USD)'] > 0);
@@ -283,6 +300,21 @@ function DetachedMetricsPageContent() {
                     />
                   )}
                 />
+              </PanelHeader>
+            )}
+
+            {sortedTools.length > 0 && (
+              <PanelHeader icon={Wrench} label="Per-Tool">
+                <ScrollableBreakdown>
+                  <BreakdownTable
+                    rows={sortedTools}
+                    nameLabel="Tool"
+                    sortColumn={toolSortColumn}
+                    sortDirection={toolSortDirection}
+                    onSort={handleToolSort}
+                    showCost
+                  />
+                </ScrollableBreakdown>
               </PanelHeader>
             )}
           </div>

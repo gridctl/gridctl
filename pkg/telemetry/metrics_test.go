@@ -615,6 +615,56 @@ func TestMetricsFlusher_ToolUsagePersistence(t *testing.T) {
 		}
 	})
 
+	t.Run("per-tool tokens and cost round-trip through flush and seed", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		acc := metrics.NewAccumulator(100)
+		acc.Record("github", 100, 50)
+		acc.RecordToolCallUsage("github", "create_issue", 100, 50)
+		acc.RecordToolCost("github", "create_issue", metrics.CostBreakdown{Input: 0.001, Output: 0.002})
+
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.AddServer("github", path, LogOpts{}); err != nil {
+			t.Fatalf("AddServer: %v", err)
+		}
+		f.flushOnce(time.Now())
+
+		acc2 := metrics.NewAccumulator(100)
+		f2 := NewMetricsFlusher(acc2, time.Hour)
+		if err := f2.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+		stat := acc2.ToolUsageSnapshot()["github"]["create_issue"]
+		if stat.InputTokens != 100 || stat.OutputTokens != 50 {
+			t.Errorf("restored tokens = %d/%d, want 100/50", stat.InputTokens, stat.OutputTokens)
+		}
+		if want := int64(3000); stat.CostMicroUSD != want {
+			t.Errorf("restored CostMicroUSD = %d, want %d", stat.CostMicroUSD, want)
+		}
+	})
+
+	t.Run("legacy tool_usage lines without token or cost fields seed cleanly", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "metrics.jsonl")
+
+		// A line written before per-tool cost attribution: calls only.
+		writeRawLine(t, path, `{"ts":"2026-05-06T00:00:00Z","server":"github","diff":{"input_tokens":100,"output_tokens":50,"total_tokens":150},"total":{"input_tokens":100,"output_tokens":50,"total_tokens":150},"tool_usage":{"create_issue":{"calls":4,"last_called_at":"2026-05-06T00:00:00Z"}}}`)
+
+		acc := metrics.NewAccumulator(100)
+		f := NewMetricsFlusher(acc, time.Hour)
+		if err := f.SeedFromFile(path, 100); err != nil {
+			t.Fatalf("SeedFromFile: %v", err)
+		}
+		stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
+		if stat.Calls != 4 {
+			t.Errorf("restored calls = %d, want 4", stat.Calls)
+		}
+		if stat.InputTokens != 0 || stat.OutputTokens != 0 || stat.CostMicroUSD != 0 {
+			t.Errorf("legacy line must restore zero tokens/cost; got %+v", stat)
+		}
+	})
+
 	t.Run("tool-only delta forces a line without a token change", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "metrics.jsonl")

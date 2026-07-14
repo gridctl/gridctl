@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BarChart3, Boxes, Layers, Server, Users } from 'lucide-react';
+import { BarChart3, Boxes, Layers, Server, Users, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useListNav } from '../../hooks/useListNav';
+import { useToolUsage } from '../../hooks/useToolUsage';
 import { useMetricsSeries, type MetricsTimeRange } from '../../hooks/useMetricsSeries';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { PopoutButton } from '../ui/PopoutButton';
@@ -22,6 +23,7 @@ import {
   PanelHeader,
   BreakdownTable,
   ModelMixBars,
+  ScrollableBreakdown,
 } from '../metrics/metricsShared';
 import {
   aggregateModelMix,
@@ -29,6 +31,7 @@ import {
   buildCostChartData,
   derivePerServerRows,
   derivePerClientRows,
+  derivePerToolRows,
   deriveSessionKpis,
   hasMetricsData,
   sortBreakdownRows,
@@ -37,8 +40,8 @@ import {
   type SortDirection,
 } from '../metrics/metricsData';
 
-type Scope = 'overview' | 'clients' | 'servers' | 'models';
-const SCOPES: Scope[] = ['overview', 'clients', 'servers', 'models'];
+type Scope = 'overview' | 'clients' | 'servers' | 'tools' | 'models';
+const SCOPES: Scope[] = ['overview', 'clients', 'servers', 'tools', 'models'];
 
 function isScope(v: string | null): v is Scope {
   return v != null && (SCOPES as string[]).includes(v);
@@ -46,7 +49,7 @@ function isScope(v: string | null): v is Scope {
 
 // MetricsWorkspace is the first-class cost/token observability surface, sibling
 // to Topology, Library, Variables, and Tools. The left rail is a scope
-// navigator (overview / clients / servers / models); the center carries the
+// navigator (overview / clients / servers / tools / models); the center carries the
 // session KPI row, the trend charts, and the active scope's breakdown; the
 // right rail inspects the selected client or server (and hosts its inline
 // pricing-model editor). Scope and selection are URL-synced so reload and
@@ -75,6 +78,8 @@ export function MetricsWorkspace() {
   const [isPaused, setIsPaused] = useState(false);
   const [serverSort, setServerSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
   const [clientSort, setClientSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
+  // Cost-descending default so the most expensive tools surface first.
+  const [toolSort, setToolSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
   // Polite announcement for range/refresh, read by screen readers.
   const [liveMsg, setLiveMsg] = useState('');
 
@@ -83,6 +88,11 @@ export function MetricsWorkspace() {
     paused: isPaused,
     perClient: true,
   });
+
+  // Per-tool usage powers the Tools scope (and its rail count badge), so the
+  // poll runs whenever the workspace is mounted — same 15s cadence Audit Mode
+  // uses, against the same single per-tool data source.
+  const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
 
   // ---- URL state ----------------------------------------------------------
   const scope: Scope = isScope(searchParams.get('scope')) ? (searchParams.get('scope') as Scope) : 'overview';
@@ -141,23 +151,28 @@ export function MetricsWorkspace() {
     () => sortBreakdownRows(derivePerClientRows(tokenUsage, costUsage), clientSort.col, clientSort.dir),
     [tokenUsage, costUsage, clientSort],
   );
+  const toolRows = useMemo(
+    () => sortBreakdownRows(derivePerToolRows(toolUsageData), toolSort.col, toolSort.dir),
+    [toolUsageData, toolSort],
+  );
   const modelMix = useMemo(
     () => aggregateModelMix(effectiveServerModels, effectiveClientModels),
     [effectiveServerModels, effectiveClientModels],
   );
 
-  // Rows for the active selectable scope (clients/servers), used by the
+  // Rows for the active selectable scope (clients/servers/tools), used by the
   // inspector lookup and keyboard navigation.
   const activeRows: BreakdownRow[] = useMemo(
-    () => (scope === 'servers' ? serverRows : scope === 'clients' ? clientRows : []),
-    [scope, serverRows, clientRows],
+    () =>
+      scope === 'servers' ? serverRows : scope === 'clients' ? clientRows : scope === 'tools' ? toolRows : [],
+    [scope, serverRows, clientRows, toolRows],
   );
   const selectedRow = useMemo(
     () => activeRows.find((r) => r.name === selected) ?? null,
     [activeRows, selected],
   );
 
-  // Keyboard nav over the active breakdown (clients/servers only).
+  // Keyboard nav over the active breakdown (clients/servers/tools).
   const selectedIndex = useMemo(
     () => activeRows.findIndex((r) => r.name === selected),
     [activeRows, selected],
@@ -169,16 +184,18 @@ export function MetricsWorkspace() {
       const next = activeRows[i];
       if (next) setSelected(next.name);
     },
-    enabled: scope === 'clients' || scope === 'servers',
+    enabled: scope === 'clients' || scope === 'servers' || scope === 'tools',
   });
 
   const sortServers = (col: BreakdownSortColumn) =>
     setServerSort((s) => (s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' }));
   const sortClients = (col: BreakdownSortColumn) =>
     setClientSort((s) => (s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' }));
+  const sortTools = (col: BreakdownSortColumn) =>
+    setToolSort((s) => (s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' }));
 
   // ---- Inspector wiring ---------------------------------------------------
-  const inspectorScope = scope === 'servers' ? 'servers' : 'clients';
+  const inspectorScope = scope === 'servers' ? 'servers' : scope === 'tools' ? 'tools' : 'clients';
   const inspectorTokenPoints =
     selectedRow && scope === 'servers' ? metricsData?.per_server?.[selectedRow.name] : undefined;
   const inspectorCostPoints =
@@ -187,17 +204,22 @@ export function MetricsWorkspace() {
       : selectedRow && scope === 'clients'
         ? costData?.per_client?.[selectedRow.name]
         : undefined;
+  // Tools have no pricing model of their own — their cost inherits the
+  // client/server attribution — so the model editor wiring stays scoped to
+  // clients/servers.
   const inspectorDeclared =
     scope === 'servers' ? declaredServerModels[selectedRow?.name ?? ''] : clientModels[selectedRow?.name ?? ''];
   const inspectorEffective =
     scope === 'servers'
       ? effectiveServerModels[selectedRow?.name ?? '']
-      : effectiveClientModels[selectedRow?.name ?? ''];
+      : scope === 'tools'
+        ? undefined
+        : effectiveClientModels[selectedRow?.name ?? ''];
 
   const inspector = (
     <MetricsInspector
       scope={inspectorScope}
-      row={scope === 'clients' || scope === 'servers' ? selectedRow : null}
+      row={scope === 'clients' || scope === 'servers' || scope === 'tools' ? selectedRow : null}
       effective={inspectorEffective}
       declaredModel={inspectorDeclared}
       defaultModel={defaultModel}
@@ -218,6 +240,7 @@ export function MetricsWorkspace() {
       onSelectScope={setScope}
       clientCount={clientRows.length}
       serverCount={serverRows.length}
+      toolCount={toolRows.length}
       modelCount={modelMix.length}
     />
   );
@@ -304,6 +327,31 @@ export function MetricsWorkspace() {
                   </PanelHeader>
                 )}
 
+                {scope === 'tools' && (
+                  <PanelHeader icon={Wrench} label="Per-Tool">
+                    {toolRows.length > 0 ? (
+                      <ScrollableBreakdown>
+                        <BreakdownTable
+                          rows={toolRows}
+                          nameLabel="Tool"
+                          sortColumn={toolSort.col}
+                          sortDirection={toolSort.dir}
+                          onSort={sortTools}
+                          showCost
+                          selectedName={selected}
+                          onSelectRow={setSelected}
+                        />
+                      </ScrollableBreakdown>
+                    ) : toolUsageError ? (
+                      // A failed fetch is not "no usage" — say the data source
+                      // is unavailable instead of implying calls went unrecorded.
+                      <EmptyScopeNote text={`Tool usage unavailable: ${toolUsageError}`} />
+                    ) : (
+                      <EmptyScopeNote text="No per-tool usage recorded yet. Tool rows appear after the first tool call; cost needs a pricing model." />
+                    )}
+                  </PanelHeader>
+                )}
+
                 {scope === 'clients' && (
                   <PanelHeader icon={Users} label="Top Clients">
                     {clientRows.length > 0 ? (
@@ -380,10 +428,11 @@ interface ScopeRailProps {
   onSelectScope: (s: Scope) => void;
   clientCount: number;
   serverCount: number;
+  toolCount: number;
   modelCount: number;
 }
 
-function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, modelCount }: ScopeRailProps) {
+function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, toolCount, modelCount }: ScopeRailProps) {
   return (
     <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
@@ -393,6 +442,7 @@ function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, mo
         <ScopePill label="Overview" icon={BarChart3} active={scope === 'overview'} onClick={() => onSelectScope('overview')} />
         <ScopePill label="Clients" icon={Users} count={clientCount} active={scope === 'clients'} onClick={() => onSelectScope('clients')} />
         <ScopePill label="Servers" icon={Server} count={serverCount} active={scope === 'servers'} onClick={() => onSelectScope('servers')} />
+        <ScopePill label="Tools" icon={Wrench} count={toolCount} active={scope === 'tools'} onClick={() => onSelectScope('tools')} />
         <ScopePill label="Models" icon={Boxes} count={modelCount} active={scope === 'models'} onClick={() => onSelectScope('models')} />
       </div>
     </aside>

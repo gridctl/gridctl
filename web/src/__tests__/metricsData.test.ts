@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   derivePerServerRows,
   derivePerClientRows,
+  derivePerToolRows,
   sortBreakdownRows,
   aggregateModelMix,
   deriveSessionKpis,
@@ -16,6 +17,7 @@ import type {
   EffectiveModel,
   TokenMetricsResponse,
   CostMetricsResponse,
+  ToolUsageResponse,
 } from '../types';
 
 function tokenUsage(over: Partial<TokenUsage> = {}): TokenUsage {
@@ -67,6 +69,54 @@ describe('derivePerClientRows', () => {
     expect(rows.find((r) => r.name === 'claude')!.cost).toBeUndefined();
     expect(rows.find((r) => r.name === 'cursor')!.cost).toBe(0.01);
     expect(rows.find((r) => r.name === 'cursor')!.total).toBe(0);
+  });
+});
+
+describe('derivePerToolRows', () => {
+  const usage: ToolUsageResponse = {
+    servers: {
+      github: {
+        create_issue: { calls: 4, lastCalledAt: '2026-07-01T00:00:00Z', inputTokens: 120, outputTokens: 80, costUsd: 0.003 },
+        list_repos: { calls: 1, inputTokens: 30, outputTokens: 10 },
+      },
+      atlassian: {
+        // Same tool name on another server must stay a distinct row.
+        create_issue: { calls: 2, inputTokens: 5, outputTokens: 5 },
+      },
+    },
+  };
+
+  it('flattens server→tool usage into rows with unique server-prefixed names', () => {
+    const rows = derivePerToolRows(usage);
+    expect(rows).toHaveLength(3);
+    const names = rows.map((r) => r.name).sort();
+    expect(names).toEqual(['atlassian__create_issue', 'github__create_issue', 'github__list_repos']);
+    const gh = rows.find((r) => r.name === 'github__create_issue')!;
+    expect(gh.server).toBe('github');
+    expect(gh.tool).toBe('create_issue');
+    expect(gh.calls).toBe(4);
+    expect(gh.input).toBe(120);
+    expect(gh.output).toBe(80);
+    expect(gh.total).toBe(200);
+    expect(gh.cost).toBe(0.003);
+  });
+
+  it('leaves cost undefined for unpriced tools (em-dash rule)', () => {
+    const rows = derivePerToolRows(usage);
+    expect(rows.find((r) => r.name === 'github__list_repos')!.cost).toBeUndefined();
+  });
+
+  it('defaults missing token fields to zero (legacy gateway responses)', () => {
+    const legacy: ToolUsageResponse = { servers: { github: { old_tool: { calls: 7 } } } };
+    const row = derivePerToolRows(legacy)[0];
+    expect(row.input).toBe(0);
+    expect(row.output).toBe(0);
+    expect(row.total).toBe(0);
+    expect(row.calls).toBe(7);
+  });
+
+  it('returns [] for null usage', () => {
+    expect(derivePerToolRows(null)).toEqual([]);
   });
 });
 

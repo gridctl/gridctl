@@ -269,21 +269,39 @@ type modelCounters struct {
 
 // ToolStat is the snapshot shape for per-(server, tool) call tracking.
 // Used by pkg/optimize to detect tools that have not seen any calls
-// inside a freshness window. Calls is the cumulative count since the
-// accumulator was created or last cleared; LastCalledAt is the wall-clock
-// time the most recent call was recorded, or the zero value when no
-// calls have been recorded.
+// inside a freshness window and to attribute observed spend per tool.
+// Calls is the cumulative count since the accumulator was created or
+// last cleared; LastCalledAt is the wall-clock time the most recent call
+// was recorded, or the zero value when no calls have been recorded.
+// InputTokens/OutputTokens are the cumulative token counts of the tool's
+// own calls; CostMicroUSD is the cumulative priced cost of those calls
+// in micro-USD (zero when no call was priced). The token/cost fields are
+// omitempty so persisted lines written before per-tool cost attribution
+// stay byte-identical.
 type ToolStat struct {
 	Calls        int64     `json:"calls"`
 	LastCalledAt time.Time `json:"last_called_at,omitempty"`
+	InputTokens  int64     `json:"input_tokens,omitempty"`
+	OutputTokens int64     `json:"output_tokens,omitempty"`
+	CostMicroUSD int64     `json:"cost_micro_usd,omitempty"`
+}
+
+// CostUSD returns the tool's cumulative priced cost in USD.
+func (t ToolStat) CostUSD() float64 {
+	return microToUSD(t.CostMicroUSD)
 }
 
 // toolUsage holds per-(server, tool) atomic counters. lastCalledNanos
 // stores time.UnixNano so the read path can produce a time.Time without
-// taking a lock. Keyed by (serverName -> toolName) in the accumulator.
+// taking a lock. Cost is stored in micro-USD (matching modelCounters) so
+// the counter stays a lock-free integer. Keyed by (serverName -> toolName)
+// in the accumulator.
 type toolUsage struct {
 	calls           atomic.Int64
 	lastCalledNanos atomic.Int64
+	inputTokens     atomic.Int64
+	outputTokens    atomic.Int64
+	costMicroUSD    atomic.Int64
 }
 
 // promptUsage holds per-skill atomic counters for prompts/get serving. Same
@@ -539,6 +557,43 @@ func (a *Accumulator) RecordToolCall(serverName, toolName string) {
 	tu.lastCalledNanos.Store(time.Now().UnixNano())
 }
 
+// RecordToolCallUsage is RecordToolCall plus the call's token counts: one
+// bucket lookup increments the call counter, stamps the last-called
+// timestamp, and adds input/output tokens, so the observer's hot path
+// touches the tool-usage map once per call.
+//
+// An empty serverName or toolName is a no-op so callers without per-tool
+// attribution (legacy ToolCallObserver path) can invoke unconditionally.
+func (a *Accumulator) RecordToolCallUsage(serverName, toolName string, inputTokens, outputTokens int) {
+	if serverName == "" || toolName == "" {
+		return
+	}
+	tu := a.getOrCreateToolUsage(serverName, toolName)
+	tu.calls.Add(1)
+	tu.lastCalledNanos.Store(time.Now().UnixNano())
+	tu.inputTokens.Add(int64(inputTokens))
+	tu.outputTokens.Add(int64(outputTokens))
+}
+
+// RecordToolCost adds a priced call's USD cost to the per-(server, tool)
+// micro-USD counter. Called only when the observer priced the call, so an
+// unpriced call leaves the tool's cost untouched (never a fabricated $0).
+//
+// An empty serverName or toolName is a no-op so callers without per-tool
+// attribution (legacy ToolCallObserver path) can invoke unconditionally.
+func (a *Accumulator) RecordToolCost(serverName, toolName string, cost CostBreakdown) {
+	if serverName == "" || toolName == "" {
+		return
+	}
+	if cost.IsZero() || !cost.IsValid() {
+		return
+	}
+	totalMicro := usdToMicro(cost.Input) + usdToMicro(cost.Output) +
+		usdToMicro(cost.CacheRead) + usdToMicro(cost.CacheWrite)
+	tu := a.getOrCreateToolUsage(serverName, toolName)
+	tu.costMicroUSD.Add(totalMicro)
+}
+
 func (a *Accumulator) getOrCreateToolUsage(serverName, toolName string) *toolUsage {
 	a.toolUsageMu.RLock()
 	if m, ok := a.toolUsage[serverName]; ok {
@@ -582,7 +637,13 @@ func (a *Accumulator) ToolUsageSnapshot() map[string]map[string]ToolStat {
 			if nanos := tu.lastCalledNanos.Load(); nanos > 0 {
 				lastCalled = time.Unix(0, nanos)
 			}
-			inner[toolName] = ToolStat{Calls: calls, LastCalledAt: lastCalled}
+			inner[toolName] = ToolStat{
+				Calls:        calls,
+				LastCalledAt: lastCalled,
+				InputTokens:  tu.inputTokens.Load(),
+				OutputTokens: tu.outputTokens.Load(),
+				CostMicroUSD: tu.costMicroUSD.Load(),
+			}
 		}
 		out[serverName] = inner
 	}
@@ -600,10 +661,12 @@ func (a *Accumulator) ToolUsageSnapshot() map[string]map[string]ToolStat {
 // code-mode calls (Gateway.CallTool → HandleToolsCall → Observer →
 // RecordToolCall), so a restored snapshot reflects both equally.
 //
-// Restore is max-wins per counter: an existing in-memory value is kept when
-// it already exceeds the restored one (defensive against a seed racing late
-// initialization). Entries with no recorded calls are skipped so the snapshot
-// stays sparse. An empty map is a no-op.
+// Restore is max-wins per counter — calls, tokens, and micro-USD cost alike:
+// an existing in-memory value is kept when it already exceeds the restored one
+// (defensive against a seed racing late initialization; all four counters are
+// monotonic between resets, so max-wins never double-counts). Entries with no
+// recorded calls are skipped so the snapshot stays sparse. An empty map is a
+// no-op.
 func (a *Accumulator) RestoreToolUsage(perServer map[string]map[string]ToolStat) {
 	if len(perServer) == 0 {
 		return
@@ -635,6 +698,15 @@ func (a *Accumulator) RestoreToolUsage(perServer map[string]map[string]ToolStat)
 				if nanos := stat.LastCalledAt.UnixNano(); nanos > tu.lastCalledNanos.Load() {
 					tu.lastCalledNanos.Store(nanos)
 				}
+			}
+			if stat.InputTokens > tu.inputTokens.Load() {
+				tu.inputTokens.Store(stat.InputTokens)
+			}
+			if stat.OutputTokens > tu.outputTokens.Load() {
+				tu.outputTokens.Store(stat.OutputTokens)
+			}
+			if stat.CostMicroUSD > tu.costMicroUSD.Load() {
+				tu.costMicroUSD.Store(stat.CostMicroUSD)
 			}
 		}
 	}
@@ -1801,6 +1873,16 @@ func (a *Accumulator) ClearCost() {
 		cc.cacheWriteCostMicroUSD.Store(0)
 	}
 	a.clientMu.RUnlock()
+
+	// Per-tool cost is cost data; per-tool calls and tokens are usage data
+	// and survive a cost wipe (mirroring how server token counters persist).
+	a.toolUsageMu.RLock()
+	for _, tools := range a.toolUsage {
+		for _, tu := range tools {
+			tu.costMicroUSD.Store(0)
+		}
+	}
+	a.toolUsageMu.RUnlock()
 
 	// Model histograms are pure cost data — drop them entirely (rather than
 	// zeroing) so a cleared entity reports provenance `none`, not a `mixed`

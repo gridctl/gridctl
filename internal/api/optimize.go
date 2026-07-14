@@ -82,7 +82,13 @@ func (s *Server) optimizeStats() optimize.Stats {
 			for serverName, tools := range toolSnap {
 				inner := make(map[string]optimize.ToolStat, len(tools))
 				for toolName, stat := range tools {
-					inner[toolName] = optimize.ToolStat{Calls: stat.Calls, LastCalledAt: stat.LastCalledAt}
+					inner[toolName] = optimize.ToolStat{
+						Calls:        stat.Calls,
+						LastCalledAt: stat.LastCalledAt,
+						InputTokens:  stat.InputTokens,
+						OutputTokens: stat.OutputTokens,
+						CostUSD:      stat.CostUSD(),
+					}
 				}
 				stats.ToolUsage[serverName] = inner
 			}
@@ -100,7 +106,7 @@ func (s *Server) optimizeStats() optimize.Stats {
 				OutputFormat:  ms.OutputFormat,
 			})
 		}
-		stats.PinStats = computeSchemaTokens(s.gateway)
+		stats.PinStats, stats.ToolSchemaTokens = computeSchemaTokens(s.gateway)
 	}
 	if acc := s.metricsAccumulator; acc != nil {
 		snap := acc.Snapshot()
@@ -177,24 +183,26 @@ func mergeHistogramModelStats(declared map[string]optimize.ModelStat, histograms
 	return out
 }
 
-// computeSchemaTokens estimates per-server schema-overhead tokens by
-// marshaling the live tool list through the gateway and applying a
-// chars-per-token heuristic. The pin store's PinRecord has SHA256
-// hashes only, not byte counts, so we go to the live source. The
-// schema_overhead heuristic treats this as a measurement, not a
-// guess — every byte counted here is a byte the gateway actually
-// shipped on the last tools/list response.
-func computeSchemaTokens(gateway *mcp.Gateway) map[string]optimize.PinStat {
+// computeSchemaTokens estimates schema-overhead tokens by marshaling the
+// live tool list through the gateway and applying a chars-per-token
+// heuristic, aggregated per server (for schema_overhead) and per tool
+// (for unused_tool impact) in one pass. The pin store's PinRecord has
+// SHA256 hashes only, not byte counts, so we go to the live source. The
+// consuming heuristics treat this as a measurement, not a guess — every
+// byte counted here is a byte the gateway actually shipped on the last
+// tools/list response.
+func computeSchemaTokens(gateway *mcp.Gateway) (map[string]optimize.PinStat, map[string]map[string]int) {
 	if gateway == nil {
-		return nil
+		return nil, nil
 	}
 	result, err := gateway.HandleToolsListUnscoped()
 	if err != nil || result == nil || len(result.Tools) == 0 {
-		return nil
+		return nil, nil
 	}
 	bytesPerServer := make(map[string]int, len(result.Tools))
+	tokensPerTool := make(map[string]map[string]int, len(result.Tools))
 	for _, tool := range result.Tools {
-		serverName, _, ok := splitPrefixedTool(tool.Name)
+		serverName, toolName, ok := splitPrefixedTool(tool.Name)
 		if !ok {
 			continue
 		}
@@ -203,20 +211,26 @@ func computeSchemaTokens(gateway *mcp.Gateway) map[string]optimize.PinStat {
 			continue
 		}
 		bytesPerServer[serverName] += len(raw)
-	}
-	if len(bytesPerServer) == 0 {
-		return nil
-	}
-	out := make(map[string]optimize.PinStat, len(bytesPerServer))
-	for name, bytes := range bytesPerServer {
+		inner, ok := tokensPerTool[serverName]
+		if !ok {
+			inner = make(map[string]int)
+			tokensPerTool[serverName] = inner
+		}
 		// Approximate token count via the OpenAI rule-of-thumb of ~4
 		// characters per token. JSON Schemas trend slightly token-dense
 		// because of curly braces and quoting, but ~4 is the right
 		// order of magnitude and we don't need precision for a
 		// threshold-driven heuristic.
+		inner[toolName] = len(raw) / 4
+	}
+	if len(bytesPerServer) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]optimize.PinStat, len(bytesPerServer))
+	for name, bytes := range bytesPerServer {
 		out[name] = optimize.PinStat{SchemaTokens: bytes / 4}
 	}
-	return out
+	return out, tokensPerTool
 }
 
 // splitPrefixedTool extracts the server name from the gateway's

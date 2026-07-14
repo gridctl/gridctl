@@ -1,12 +1,15 @@
 import { useRef, type ReactNode } from 'react';
 import { Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { formatCompactNumber, formatUSD } from '../../lib/format';
 import { CodeViewer } from '../ui/CodeViewer';
 import { ZoomControls } from '../ui/ZoomControls';
 import { InspectorHeader, PaneAnchor } from '../inspector';
+import { InspectorStat } from '../metrics/metricsShared';
 import { formatLastUsed, type AuditState } from '../../lib/toolAudit';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import type { ToolRow } from '../../hooks/useToolsEditor';
+import type { ToolUsageStat } from '../../types';
 
 // Per-state styling for the audit row, mirroring the list's AUDIT_STYLES.
 const AUDIT_LABEL: Record<AuditState, { text: string; dot: string; label: string }> = {
@@ -25,6 +28,9 @@ interface ToolDetailPanelProps {
   enabled: boolean;
   auditMode: boolean;
   auditState: AuditState | null;
+  // The tool's observed usage (calls/tokens/cost), when any call has been
+  // recorded. Shown whenever present — not gated on Audit Mode.
+  usage?: ToolUsageStat;
   lastCalledAt?: string;
   onClose: () => void;
 }
@@ -40,6 +46,7 @@ export function ToolDetailPanel({
   enabled,
   auditMode,
   auditState,
+  usage,
   lastCalledAt,
   onClose,
 }: ToolDetailPanelProps) {
@@ -121,21 +128,40 @@ export function ToolDetailPanel({
               )}
             </Section>
 
-            {auditMode && auditState && (
+            {(usage || (auditMode && auditState)) && (
               <Section title="Usage">
-                <div
-                  className={cn(
-                    'flex items-center gap-1.5 text-[11px]',
-                    AUDIT_LABEL[auditState].text,
+                <div className="space-y-2">
+                  {auditMode && auditState && (
+                    <div
+                      className={cn(
+                        'flex items-center gap-1.5 text-[11px]',
+                        AUDIT_LABEL[auditState].text,
+                      )}
+                    >
+                      <span
+                        className={cn('inline-block w-1.5 h-1.5 rounded-full', AUDIT_LABEL[auditState].dot)}
+                        aria-hidden="true"
+                      />
+                      <span>{AUDIT_LABEL[auditState].label}</span>
+                      {auditState !== 'disabled' && (
+                        <span className="text-text-muted/70">· {formatLastUsed(lastCalledAt)}</span>
+                      )}
+                    </div>
                   )}
-                >
-                  <span
-                    className={cn('inline-block w-1.5 h-1.5 rounded-full', AUDIT_LABEL[auditState].dot)}
-                    aria-hidden="true"
-                  />
-                  <span>{AUDIT_LABEL[auditState].label}</span>
-                  {auditState !== 'disabled' && (
-                    <span className="text-text-muted/70">· {formatLastUsed(lastCalledAt)}</span>
+                  {usage && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <InspectorStat label="Calls" value={formatCompactNumber(usage.calls)} className="text-text-primary" />
+                      <InspectorStat label="Last used" value={formatLastUsed(usage.lastCalledAt)} className="text-text-secondary" />
+                      <InspectorStat label="Input" value={formatCompactNumber(usage.inputTokens ?? 0)} className="text-secondary" />
+                      <InspectorStat label="Output" value={formatCompactNumber(usage.outputTokens ?? 0)} className="text-primary" />
+                      {/* Cost only when a pricing model priced the calls — the
+                          em-dash rule every cost surface follows. */}
+                      <InspectorStat
+                        label="Cost · est."
+                        value={usage.costUsd === undefined ? '—' : formatUSD(usage.costUsd)}
+                        className={usage.costUsd === undefined ? 'text-text-muted' : 'text-emerald-400'}
+                      />
+                    </div>
                   )}
                 </div>
               </Section>

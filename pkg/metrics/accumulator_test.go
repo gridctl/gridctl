@@ -911,6 +911,86 @@ func TestAccumulator_RecordToolCall_EmptyArgsAreNoOp(t *testing.T) {
 	}
 }
 
+func TestAccumulator_RecordToolCallUsage(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordToolCallUsage("github", "create_issue", 120, 340)
+	acc.RecordToolCallUsage("github", "create_issue", 80, 60)
+
+	stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
+	if stat.Calls != 2 {
+		t.Errorf("Calls = %d, want 2", stat.Calls)
+	}
+	if stat.LastCalledAt.IsZero() {
+		t.Error("LastCalledAt should be non-zero")
+	}
+	if stat.InputTokens != 200 {
+		t.Errorf("InputTokens = %d, want 200", stat.InputTokens)
+	}
+	if stat.OutputTokens != 400 {
+		t.Errorf("OutputTokens = %d, want 400", stat.OutputTokens)
+	}
+	if stat.CostMicroUSD != 0 {
+		t.Errorf("CostMicroUSD = %d, want 0 (no priced call)", stat.CostMicroUSD)
+	}
+}
+
+func TestAccumulator_RecordToolCallUsage_EmptyArgsAreNoOp(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordToolCallUsage("", "create_issue", 10, 10)
+	acc.RecordToolCallUsage("github", "", 10, 10)
+	if snap := acc.ToolUsageSnapshot(); len(snap) != 0 {
+		t.Errorf("expected empty tool usage; got %v", snap)
+	}
+}
+
+func TestAccumulator_RecordToolCost(t *testing.T) {
+	acc := NewAccumulator(100)
+
+	acc.RecordToolCall("github", "create_issue")
+	acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.001, Output: 0.002})
+	acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.0005, CacheRead: 0.0001})
+
+	stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
+	if want := int64(3600); stat.CostMicroUSD != want {
+		t.Errorf("CostMicroUSD = %d, want %d", stat.CostMicroUSD, want)
+	}
+	if got, want := stat.CostUSD(), 0.0036; got < want-1e-9 || got > want+1e-9 {
+		t.Errorf("CostUSD() = %v, want %v", got, want)
+	}
+}
+
+func TestAccumulator_RecordToolCost_GuardsInvalidInput(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordToolCost("", "create_issue", CostBreakdown{Input: 0.001})
+	acc.RecordToolCost("github", "", CostBreakdown{Input: 0.001})
+	if snap := acc.ToolUsageSnapshot(); len(snap) != 0 {
+		t.Errorf("expected empty tool usage after empty-name records; got %v", snap)
+	}
+	acc.RecordToolCall("github", "create_issue")
+	acc.RecordToolCost("github", "create_issue", CostBreakdown{})              // zero
+	acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: -0.01}) // invalid
+	if got := acc.ToolUsageSnapshot()["github"]["create_issue"].CostMicroUSD; got != 0 {
+		t.Errorf("CostMicroUSD = %d, want 0 after zero/invalid records", got)
+	}
+}
+
+func TestAccumulator_ClearCost_ZeroesToolCostKeepsUsage(t *testing.T) {
+	acc := NewAccumulator(100)
+	acc.RecordToolCallUsage("github", "create_issue", 100, 200)
+	acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.001})
+
+	acc.ClearCost()
+
+	stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
+	if stat.CostMicroUSD != 0 {
+		t.Errorf("CostMicroUSD = %d, want 0 after ClearCost", stat.CostMicroUSD)
+	}
+	if stat.Calls != 1 || stat.InputTokens != 100 || stat.OutputTokens != 200 {
+		t.Errorf("ClearCost must keep calls/tokens; got %+v", stat)
+	}
+}
+
 func TestAccumulator_ToolUsageSnapshot_EmptyAccumulator(t *testing.T) {
 	acc := NewAccumulator(100)
 	if snap := acc.ToolUsageSnapshot(); snap != nil {
@@ -986,6 +1066,47 @@ func TestAccumulator_RestoreToolUsage(t *testing.T) {
 		acc.RestoreToolUsage(nil)
 		if snap := acc.ToolUsageSnapshot(); snap != nil {
 			t.Errorf("nil restore should be no-op; got %v", snap)
+		}
+	})
+
+	t.Run("restores tokens and cost, then accumulates on top", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		acc.RestoreToolUsage(map[string]map[string]ToolStat{
+			"github": {
+				"create_issue": {Calls: 5, InputTokens: 500, OutputTokens: 300, CostMicroUSD: 1200},
+			},
+		})
+
+		stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
+		if stat.InputTokens != 500 || stat.OutputTokens != 300 || stat.CostMicroUSD != 1200 {
+			t.Fatalf("restored stat = %+v, want tokens 500/300 cost 1200", stat)
+		}
+
+		// Live traffic continues from the restored counters.
+		acc.RecordToolCallUsage("github", "create_issue", 10, 20)
+		acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.0001})
+		stat = acc.ToolUsageSnapshot()["github"]["create_issue"]
+		if stat.Calls != 6 || stat.InputTokens != 510 || stat.OutputTokens != 320 || stat.CostMicroUSD != 1300 {
+			t.Errorf("stat after restore+record = %+v, want calls 6, tokens 510/320, cost 1300", stat)
+		}
+	})
+
+	t.Run("max-wins per token and cost counter", func(t *testing.T) {
+		acc := NewAccumulator(100)
+		acc.RecordToolCallUsage("github", "create_issue", 1000, 1000)
+		acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.01}) // 10_000 micro
+		acc.RestoreToolUsage(map[string]map[string]ToolStat{
+			"github": {"create_issue": {Calls: 5, InputTokens: 100, OutputTokens: 2000, CostMicroUSD: 500}},
+		})
+		stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
+		if stat.InputTokens != 1000 {
+			t.Errorf("InputTokens = %d, want 1000 (live wins over smaller restore)", stat.InputTokens)
+		}
+		if stat.OutputTokens != 2000 {
+			t.Errorf("OutputTokens = %d, want 2000 (larger restore wins)", stat.OutputTokens)
+		}
+		if stat.CostMicroUSD != 10_000 {
+			t.Errorf("CostMicroUSD = %d, want 10000 (live wins over smaller restore)", stat.CostMicroUSD)
 		}
 	})
 }

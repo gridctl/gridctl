@@ -11,7 +11,11 @@ describe('fetchToolUsage', () => {
     const payload: ToolUsageResponse = {
       observedSince: '2026-05-20T10:00:00Z',
       servers: {
-        github: { create_issue: { calls: 2, lastCalledAt: '2026-05-24T09:00:00Z' } },
+        github: {
+          // Priced tool carries tokens + costUsd; unpriced omits costUsd.
+          create_issue: { calls: 2, lastCalledAt: '2026-05-24T09:00:00Z', inputTokens: 120, outputTokens: 80, costUsd: 0.003 },
+          list_repos: { calls: 1, inputTokens: 30, outputTokens: 10 },
+        },
       },
     };
     const fetchMock = vi.fn().mockResolvedValue({

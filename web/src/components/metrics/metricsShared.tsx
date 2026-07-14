@@ -311,6 +311,30 @@ export function SortableHeader({
   );
 }
 
+// ScrollableBreakdown bounds a long BreakdownTable (the per-tool list runs to
+// 100+ rows on a real stack) to an in-place scroll region with a sticky
+// header, shared by the Metrics workspace Tools scope and the detached
+// window's Per-Tool panel.
+export function ScrollableBreakdown({ children }: { children: ReactNode }) {
+  return (
+    <div className="max-h-[60vh] overflow-y-auto scrollbar-dark [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-[1] [&_thead_th]:bg-surface">
+      {children}
+    </div>
+  );
+}
+
+// InspectorStat renders one labeled KPI number, shared by the Metrics
+// inspector and the Tools detail panel so per-entity numbers read the same
+// in both workspaces.
+export function InspectorStat({ label, value, className }: { label: string; value: string; className?: string }) {
+  return (
+    <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-2.5">
+      <span className="text-[9px] text-text-muted uppercase tracking-wider block mb-0.5">{label}</span>
+      <span className={cn('text-sm font-bold tabular-nums', className)}>{value}</span>
+    </div>
+  );
+}
+
 // BreakdownTable renders the shared client/server breakdown. Each host injects
 // a Model cell via `renderModel`, shows a Cost column when `showCost`, and may
 // make rows selectable (`onSelectRow` + `selectedName`) to drive a detail
@@ -360,13 +384,39 @@ export function BreakdownTable({
               key={row.name}
               aria-selected={onSelectRow ? selected : undefined}
               onClick={onSelectRow ? () => onSelectRow(row.name) : undefined}
+              // Selectable rows are keyboard-reachable in place (Enter/Space),
+              // complementing the workspace-level arrow-key navigation. Only
+              // keydowns on the row itself count: events bubbling out of nested
+              // interactive elements (the inline model editor) must keep their
+              // native behavior.
+              tabIndex={onSelectRow ? 0 : undefined}
+              onKeyDown={
+                onSelectRow
+                  ? (e) => {
+                      if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        onSelectRow(row.name);
+                      }
+                    }
+                  : undefined
+              }
               className={cn(
                 'border-b border-border/20 last:border-0 transition-colors',
-                onSelectRow && 'cursor-pointer',
+                onSelectRow && 'cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary/60',
                 selected ? 'bg-primary/[0.07]' : 'hover:bg-surface-highlight/30',
               )}
             >
-              <td className="px-3 py-2 font-medium text-text-primary font-mono">{row.name}</td>
+              <td className="px-3 py-2 font-medium text-text-primary font-mono">
+                {row.server && row.tool ? (
+                  <>
+                    <span className="text-text-muted/70">{row.server}</span>
+                    <span className="text-text-muted/50" aria-hidden="true">{' › '}</span>
+                    {row.tool}
+                  </>
+                ) : (
+                  row.name
+                )}
+              </td>
               {renderModel && (
                 <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                   {renderModel(row)}

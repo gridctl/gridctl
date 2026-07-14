@@ -61,6 +61,19 @@ Effective models appear in the Metrics tab's Top Clients and per-server tables (
 
 Effective-model history persists alongside cost, so the provenance you see after a gateway restart matches what it was before. `gridctl optimize`'s `expensive_model_on_cheap_task` finding names the dominant model that priced a server's traffic and labels its provenance in both the table detail and `--format json`.
 
+## Per-tool cost
+
+Cost attribution extends below server/client/model granularity to the individual tool. The observer records each call's input/output tokens and, when the call is priced, its cost against the (server, tool) pair at the same point per-server cost is recorded, so the two views always agree on the same traffic.
+
+Where it surfaces:
+
+- **Metrics workspace, Tools scope** - A fifth entry on the scope rail lists every tool with recorded calls, sorted by cost descending by default. Rows are server-qualified (`server › tool`) because tool names collide across servers; selecting a row opens the inspector with the tool's calls, tokens, and estimated cost. The detached metrics window carries the same Per-Tool table.
+- **Tools workspace** - The detail panel's Usage section shows calls, last-used time, tokens, and estimated cost for the selected tool whenever traffic exists (Audit Mode is not required).
+- **`GET /api/tools/usage`** - Each tool stat carries `inputTokens`, `outputTokens`, and `costUsd` alongside `calls` and `lastCalledAt`. `costUsd` is omitted (not zero) when no call was priced.
+- **`gridctl optimize`** - Unused-tool findings report a real weekly dollar impact (see the heuristic notes below).
+
+Per-tool cost inherits every honesty rule of the wider cost system: it is an estimate (token counts × the resolved model's rate), it appears only once a pricing model is declared, unpriced tools render an em dash rather than $0, and provenance stays the existing declared/mixed/none vocabulary. Tools have no pricing model of their own; their cost follows the client/server attribution that priced the call. Per-tool history persists alongside the other metrics, so counts and spend survive a gateway restart.
+
 ## Refreshing pricing data
 
 The pricing snapshot is embedded at build time via `//go:embed pkg/pricing/data/model_prices.json`. Refresh it when providers adjust rates or add new models:
@@ -105,7 +118,7 @@ The package-level `Lookup` and `Calculate` functions read through the active sou
 `gridctl optimize` analyzes the running gateway and prints actionable cost-reduction findings. The package ships **five heuristics** in `pkg/optimize`:
 
 - **`unused_server`** - A server is registered in the stack but no tool calls have been observed from it. Removing it (or excluding all its tools) frees the JSON Schema overhead the server adds to every prompt. The reported weekly USD impact uses the server's observed per-token rate when available, otherwise falls back to a conservative default; the formula always derives from measured data.
-- **`unused_tool`** - A server *is* receiving traffic but a specific tool it exposes has not been called inside the lookback window (default 7 days) and is not already excluded via the server's `tools:` filter. Remediation suggests adding the tool to the exclusion list.
+- **`unused_tool`** - A server *is* receiving traffic but a specific tool it exposes has not been called inside the lookback window (default 7 days) and is not already excluded via the server's `tools:` filter. Remediation suggests adding the tool to the exclusion list. The weekly USD impact prices the schema context tax of the unused tool's definition: measured per-tool schema tokens (from the live tool list) × estimated weekly prompts × the server's observed per-token rate, with a conservative fallback and cap when no measurement is available. An unused tool has no observed spend by definition, so this is a schema-tax projection, not measured spend.
 - **`schema_overhead`** - A server's tool-list payload (the schema sent on every initialize / tools/list) is large relative to the value the server's tools have produced. The detector measures schema bytes off the live gateway tool list, applies a chars-per-token heuristic, and fires when the ratio of observed output tokens to schema tokens falls below the floor. Remediation prunes unused tools via the server's `tools:` filter.
 - **`format_savings_shortfall`** - A server emits raw JSON (no `output_format`) while other servers in the same session have already demonstrated meaningful savings from converting to TOON or CSV. Projected impact = baseline savings rate × the candidate's measured output tokens × its measured per-token cost. Remediation adds `output_format: toon` (or `csv`) to the server entry.
 - **`expensive_model_on_cheap_task`** *(informational)* - An Opus-tier model dominates traffic on a server whose calls average tiny prompts and tiny results. The detector either reads the rate directly when the gateway resolves a per-server model, or infers the rate from observed cost ÷ tokens. Severity is `info` because model selection lives client-side; gridctl can suggest the migration but cannot enforce it.
@@ -120,7 +133,7 @@ The CLI calls `GET /api/optimize` and renders the same `OptimizeReport` either a
 
 - The list of MCP servers and tools the gateway has registered (`gateway.Status()`).
 - Per-server token + cost totals from the `pkg/metrics` accumulator.
-- Per-(server, tool) call counts and last-called timestamps captured by the observer's tool-name attribution (PR 4 added the per-tool counter; gateways without per-tool data skip the `unused_tool` heuristic).
+- Per-(server, tool) call counts, last-called timestamps, token counts, and estimated cost captured by the observer's tool-name attribution (gateways without per-tool data skip the `unused_tool` heuristic).
 
 It deliberately does **not** read:
 

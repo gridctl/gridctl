@@ -314,6 +314,13 @@ export interface ToolUsageStat {
   // RFC3339; absent when the tool has a count but no recorded timestamp,
   // or (cross-referenced from the status list) has never been called.
   lastCalledAt?: string;
+  // Cumulative tokens of the tool's own calls; absent (zero) on responses
+  // from gateways predating per-tool cost attribution.
+  inputTokens?: number;
+  outputTokens?: number;
+  // Cumulative estimated cost of the tool's priced calls. Absent when no
+  // call was priced — the em-dash rule, never $0.
+  costUsd?: number;
 }
 
 // GET /api/tools/usage — per-(server, tool) call counts + last-called times,
