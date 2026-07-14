@@ -37,12 +37,16 @@ type MetricsSnapshotLine struct {
 	Total     metrics.TokenCounts         `json:"total"`
 	CostDiff  *metrics.CostMicroUSDCounts `json:"cost_diff,omitempty"`
 	CostTotal *metrics.CostMicroUSDCounts `json:"cost_total,omitempty"`
-	// ToolUsage carries the server's *cumulative* per-tool call counters
-	// (toolName -> calls + last-called) at flush time — the analogue of
-	// Total for tools, not a per-minute diff. omitempty keeps token-only
-	// minutes and legacy pre-tool-usage files byte-identical; SeedFromFile
-	// takes the most recent non-nil ToolUsage per server (resetting on a
-	// token Reset) to rehydrate Audit Mode's usage history across restarts.
+	// ToolUsage carries the server's *cumulative* per-tool counters
+	// (toolName -> calls + last-called + tokens + micro-USD cost) at flush
+	// time — the analogue of Total for tools, not a per-minute diff. The
+	// token/cost fields on ToolStat are omitempty, so lines written before
+	// per-tool cost attribution parse cleanly (zero values) and token-only
+	// entries keep their legacy serialization. omitempty on the map keeps
+	// token-only minutes and legacy pre-tool-usage files byte-identical;
+	// SeedFromFile takes the most recent non-nil ToolUsage per server
+	// (resetting on a token Reset) to rehydrate Audit Mode's usage history
+	// and per-tool spend across restarts.
 	ToolUsage map[string]metrics.ToolStat `json:"tool_usage,omitempty"`
 	// PromptUsage carries *cumulative* per-skill prompts/get call counters
 	// (skillName -> calls + last-called) at flush time. Unlike ToolUsage it
@@ -528,7 +532,14 @@ func toolUsageChanged(prev, current map[string]metrics.ToolStat) bool {
 		return true
 	}
 	for tool, cur := range current {
-		if p, ok := prev[tool]; !ok || p.Calls != cur.Calls {
+		// Every counter participates: CostMicroUSD can move independently of
+		// Calls (ClearCost zeroes it), and a snapshot can land between the
+		// observer's calls-counter and token-counter updates — comparing
+		// tokens ensures the next flush corrects an understated line instead
+		// of persisting it forever.
+		p, ok := prev[tool]
+		if !ok || p.Calls != cur.Calls || p.InputTokens != cur.InputTokens ||
+			p.OutputTokens != cur.OutputTokens || p.CostMicroUSD != cur.CostMicroUSD {
 			return true
 		}
 	}
