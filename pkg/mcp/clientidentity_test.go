@@ -92,7 +92,7 @@ func TestSessionAccessIDReconciliation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewSessionManager()
-			sess := m.Create(ClientInfo{Name: tt.clientName}, tt.explicitID)
+			sess := m.Create(ClientInfo{Name: tt.clientName}, tt.explicitID, MCPProtocolVersion)
 			if sess.ClientID != tt.wantClientID {
 				t.Errorf("ClientID = %q, want %q", sess.ClientID, tt.wantClientID)
 			}
