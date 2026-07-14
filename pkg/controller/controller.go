@@ -6,6 +6,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -206,7 +207,11 @@ func (sc *StackController) buildAndRunStackless(ctx context.Context, verbose boo
 	if sc.vaultStore != nil {
 		builder.SetVaultStore(sc.vaultStore)
 	}
-	builder.SetPinStore(newPinStore(stack.Name))
+	pinStore, err := newPinStore(stack.Name)
+	if err != nil {
+		return err
+	}
+	builder.SetPinStore(pinStore)
 	return builder.BuildAndRun(ctx, verbose)
 }
 
@@ -300,7 +305,10 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 
 	// Foreground mode: run gateway directly
 	if cfg.Foreground {
-		builder := sc.newGatewayBuilder(stack, rt, result)
+		builder, err := sc.newGatewayBuilder(stack, rt, result)
+		if err != nil {
+			return err
+		}
 		builder.SetExistingLogInfra(logBuffer, bufferHandler)
 		return builder.BuildAndRun(ctx, !cfg.Quiet)
 	}
@@ -388,7 +396,10 @@ func (sc *StackController) runDaemonChild(ctx context.Context, stack *config.Sta
 	// State-file lifetime tracks process lifetime; see runStacklessDaemonChild.
 	defer func() { _ = state.Delete(stack.Name) }()
 
-	builder := sc.newGatewayBuilder(stack, rt, result)
+	builder, err := sc.newGatewayBuilder(stack, rt, result)
+	if err != nil {
+		return err
+	}
 	return builder.BuildAndRun(ctx, false)
 }
 
@@ -488,26 +499,41 @@ func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stac
 }
 
 // newGatewayBuilder creates a configured GatewayBuilder.
-func (sc *StackController) newGatewayBuilder(stack *config.Stack, rt *runtime.Orchestrator, result *runtime.UpResult) *GatewayBuilder {
+func (sc *StackController) newGatewayBuilder(stack *config.Stack, rt *runtime.Orchestrator, result *runtime.UpResult) (*GatewayBuilder, error) {
 	builder := NewGatewayBuilder(sc.config, stack, sc.config.StackPath, rt, result)
 	builder.SetVersion(sc.version)
 	builder.SetWebFS(sc.webFS)
 	builder.SetVaultStore(sc.vaultStore)
-	builder.SetPinStore(newPinStore(stack.Name))
-	return builder
+	pinStore, err := newPinStore(stack.Name)
+	if err != nil {
+		return nil, err
+	}
+	builder.SetPinStore(pinStore)
+	return builder, nil
 }
 
 // newPinStore loads the on-disk schema pin store for a stack so the running
 // daemon and the `gridctl pins` CLI share the same
-// ~/.gridctl/pins/{stack}.json. A load failure is non-fatal: the first run has
-// no file, so the store starts empty and pins each server on first connect.
-func newPinStore(stackName string) *pins.PinStore {
-	ps := pins.New(stackName)
+// ~/.gridctl/pins/{stack}.json.
+func newPinStore(stackName string) (*pins.PinStore, error) {
+	return loadPinStore(pins.New(stackName), stackName)
+}
+
+// loadPinStore applies the daemon's load policy. A missing file is the normal
+// first run and a corrupt file is discarded with a warning so the daemon still
+// starts (servers re-pin on first connect). Any other failure aborts: a pin
+// file written by a newer gridctl must not be replaced by an empty store, or
+// the first save would re-pin every server over the newer file's trust state.
+func loadPinStore(ps *pins.PinStore, stackName string) (*pins.PinStore, error) {
 	if err := ps.Load(); err != nil {
-		slog.Warn("pins: load failed; starting with an empty store",
-			"stack", stackName, "error", err)
+		if errors.Is(err, pins.ErrCorrupt) {
+			slog.Warn("pins: corrupt pin file; starting with an empty store",
+				"stack", stackName, "error", err)
+			return ps, nil
+		}
+		return nil, err
 	}
-	return ps
+	return ps, nil
 }
 
 // createRuntime detects the container runtime and creates an Orchestrator.
