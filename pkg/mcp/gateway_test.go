@@ -53,7 +53,7 @@ func TestGateway_SetVersion(t *testing.T) {
 func TestGateway_HandleInitialize(t *testing.T) {
 	g := NewGateway()
 	params := InitializeParams{
-		ProtocolVersion: "2024-11-05",
+		ProtocolVersion: MCPProtocolVersion,
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
 		Capabilities:    Capabilities{},
 	}
@@ -74,6 +74,110 @@ func TestGateway_HandleInitialize(t *testing.T) {
 	}
 	if !result.Capabilities.Tools.ListChanged {
 		t.Error("expected Tools.ListChanged to be true")
+	}
+}
+
+func TestGateway_HandleInitialize_VersionNegotiation(t *testing.T) {
+	tests := []struct {
+		name      string
+		requested string
+		want      string
+	}{
+		{"echoes latest", "2025-11-25", "2025-11-25"},
+		{"echoes older supported version", "2025-06-18", "2025-06-18"},
+		{"echoes oldest supported version", "2024-11-05", "2024-11-05"},
+		{"counter-offers latest on unknown version", "1999-01-01", MCPProtocolVersion},
+		{"counter-offers latest on absent version", "", MCPProtocolVersion},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGateway()
+			params := InitializeParams{
+				ProtocolVersion: tt.requested,
+				ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
+			}
+
+			result, session, err := g.HandleInitialize(params, "")
+			if err != nil {
+				t.Fatalf("initialize must never fail for version reasons: %v", err)
+			}
+			if result.ProtocolVersion != tt.want {
+				t.Errorf("expected negotiated version %q, got %q", tt.want, result.ProtocolVersion)
+			}
+			if session.ProtocolVersion != tt.want {
+				t.Errorf("expected session version %q, got %q", tt.want, session.ProtocolVersion)
+			}
+		})
+	}
+}
+
+func TestGateway_RegistrationFailures_SurfaceInStatus(t *testing.T) {
+	g := NewGateway()
+
+	g.RecordRegistrationFailure("broken-server", fmt.Errorf("unsupported protocol version from server: %q", "1999-01-01"))
+
+	statuses := g.Status()
+	var found *MCPServerStatus
+	for i := range statuses {
+		if statuses[i].Name == "broken-server" {
+			found = &statuses[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected failed server to appear in Status()")
+	}
+	if found.Healthy == nil || *found.Healthy {
+		t.Error("expected failed server to report healthy=false")
+	}
+	if found.HealthError == "" {
+		t.Error("expected failed server to carry the failure message")
+	}
+	if found.Initialized {
+		t.Error("expected failed server to report initialized=false")
+	}
+
+	g.ClearRegistrationFailure("broken-server")
+	for _, s := range g.Status() {
+		if s.Name == "broken-server" {
+			t.Error("expected cleared failure to disappear from Status()")
+		}
+	}
+}
+
+func TestGateway_RestartMCPServer_FailureSurfacesInStatus(t *testing.T) {
+	g := NewGateway()
+	g.SetServerMeta(MCPServerConfig{
+		Name:      "flaky",
+		Transport: TransportHTTP,
+		Endpoint:  "http://127.0.0.1:1/nonexistent",
+		External:  true,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // force the re-registration to fail fast
+
+	if err := g.RestartMCPServer(ctx, "flaky"); err == nil {
+		t.Fatal("expected restart to fail for unreachable server")
+	}
+
+	var found bool
+	for _, s := range g.Status() {
+		if s.Name == "flaky" && s.RegistrationFailed && s.HealthError != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected failed restart to surface in Status() instead of vanishing")
+	}
+}
+
+func TestGateway_RecordRegistrationFailure_IgnoresNil(t *testing.T) {
+	g := NewGateway()
+	g.RecordRegistrationFailure("name", nil)
+	g.RecordRegistrationFailure("", fmt.Errorf("boom"))
+	if n := len(g.Status()); n != 0 {
+		t.Errorf("expected no status entries, got %d", n)
 	}
 }
 
