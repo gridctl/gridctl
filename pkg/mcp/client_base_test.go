@@ -344,6 +344,20 @@ func TestRPCClient_Initialize(t *testing.T) {
 	if r.ServerInfo().Name != "test-mcp" {
 		t.Errorf("expected server name 'test-mcp', got %q", r.ServerInfo().Name)
 	}
+	if r.ProtocolVersion() != MCPProtocolVersion {
+		t.Errorf("expected reported protocol version %q, got %q", MCPProtocolVersion, r.ProtocolVersion())
+	}
+}
+
+func TestClientBase_ProtocolVersion(t *testing.T) {
+	var b ClientBase
+	if b.ProtocolVersion() != "" {
+		t.Errorf("expected empty version before handshake, got %q", b.ProtocolVersion())
+	}
+	b.SetProtocolVersion("2025-06-18")
+	if b.ProtocolVersion() != "2025-06-18" {
+		t.Errorf("expected stored version, got %q", b.ProtocolVersion())
+	}
 }
 
 func TestRPCClient_Initialize_UnsupportedServerVersion(t *testing.T) {
@@ -408,6 +422,9 @@ func TestRPCClient_Initialize_EmptyServerVersion(t *testing.T) {
 	}
 	if !r.IsInitialized() {
 		t.Error("expected client to be initialized")
+	}
+	if r.ProtocolVersion() != "" {
+		t.Errorf("expected empty version for lax server, got %q", r.ProtocolVersion())
 	}
 }
 
