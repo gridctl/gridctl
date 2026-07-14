@@ -74,9 +74,10 @@ type ToolsCapability struct {
 }
 
 type Tool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description,omitempty"`
+	InputSchema  map[string]any `json:"inputSchema"`
+	OutputSchema map[string]any `json:"outputSchema,omitempty"`
 }
 
 type ToolsListResult struct {
@@ -286,6 +287,16 @@ func main() {
 	// (a "rug pull"), exercising schema-pinning drift detection.
 	if desc := os.Getenv("MOCK_ECHO_DESC"); desc != "" {
 		sampleTools[0].Description = desc
+	}
+
+	// MOCK_ECHO_OUTPUT_SCHEMA sets the echo tool's outputSchema from raw JSON so
+	// tests can simulate a server changing its output contract between connects.
+	if raw := os.Getenv("MOCK_ECHO_OUTPUT_SCHEMA"); raw != "" {
+		var schema map[string]any
+		if err := json.Unmarshal([]byte(raw), &schema); err != nil {
+			log.Fatalf("invalid MOCK_ECHO_OUTPUT_SCHEMA: %v", err)
+		}
+		sampleTools[0].OutputSchema = schema
 	}
 
 	mux := http.NewServeMux()
