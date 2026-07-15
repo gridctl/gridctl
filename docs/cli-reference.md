@@ -2,9 +2,11 @@
 
 Commands are grouped by domain, matching the groups in `gridctl --help`. Run `gridctl <command> --help` for the full flag set; the tables below cover the high-value flags an operator reaches for daily.
 
-Global flags: `--runtime <docker|podman>` overrides runtime auto-detection, and `--no-color` disables styled output. Color is also suppressed automatically when output is piped, when `NO_COLOR` is set ([no-color.org](https://no-color.org/)), or when `TERM=dumb`.
+Global flags: `--runtime <docker|podman>` overrides runtime auto-detection, `--no-color` disables styled output, and `--log-level <debug|info|warn|error>` sets the minimum log level (logs go to stderr, so JSON stdout stays parseable). Color is also suppressed automatically when output is piped, when `NO_COLOR` is set ([no-color.org](https://no-color.org/)), or when `TERM=dumb`.
 
 Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (`validate`, `plan`, `optimize`, `activate`, `skill list`, `var list`, `pins list`, and `pins verify`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. The `status`, `info`, and `doctor` JSON schemas are experimental until 1.0.
+
+Plain tables: `status`, `skill list`, `pins list`, `optimize`, and `telemetry status` accept `--plain` to render tables without box-drawing (2+-space column separation, one record per line) for `grep`/`awk` pipelines. Piped table output degrades to plain automatically; the flag forces it on a terminal. `--plain` cannot be combined with `--json`. The `var` family keeps `--plain` as its pre-existing "show unmasked value" flag (`var get`, `var export`); `var list` therefore has no formatting flag, though its piped output still degrades to the plain style.
 
 ## Contents
 
@@ -22,6 +24,7 @@ Machine-readable output: commands whose `--format` flag is a binary table-vs-JSO
 
 | Command | Purpose |
 |---|---|
+| `gridctl init [dir]` | Scaffold a commented starter `stack.yaml` that passes `validate` as-is (no runtime started). `--name <name>` sets the stack name (default: directory name), `--force` overwrites an existing file, `--example <minimal\|skills>` picks the variant (`skills` adds an example `SKILL.md`). |
 | `gridctl validate <stack.yaml>` | Validate stack YAML (exit `0`/`1`/`2`); `--format json` or `--json` for machine-readable output. |
 | `gridctl plan <stack.yaml>` | Preview changes against running state with Terraform-style colored `+`/`~`/`-` symbols; `-y` / `--auto-approve` to apply, `--format json` or `--json` for machine output. |
 | `gridctl apply <stack.yaml>` | Start containers and the MCP gateway. Without a stack file, starts stackless mode (same as `serve`) and prints a notice. Flags: `-f` foreground, `-p` port, `--base-port`, `-w` / `--watch`, `--flash`, `--code-mode`, `--no-cache`, `--no-expand`, `-v` verbose (print full stack as JSON), `-q` quiet, `--log-file <path>`. |
