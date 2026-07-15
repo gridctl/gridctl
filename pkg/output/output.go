@@ -4,6 +4,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"time"
 
@@ -12,12 +13,24 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
+// defaultLevel is the minimum log level applied to loggers created by New
+// and NewWithWriter. Wired to the global --log-level flag.
+var defaultLevel = log.InfoLevel
+
+// SetDefaultLevel sets the minimum level for subsequently created Printers.
+// charmbracelet/log levels share slog's numeric values, so the conversion
+// is direct.
+func SetDefaultLevel(l slog.Level) {
+	defaultLevel = log.Level(l)
+}
+
 // Printer handles terminal output with amber-themed styling.
 type Printer struct {
 	out    io.Writer
 	logger *log.Logger
 	isTTY  bool
 	color  bool
+	plain  bool
 }
 
 // New creates a Printer writing to stdout with amber theme.
@@ -33,6 +46,7 @@ func NewWithWriter(w io.Writer) *Printer {
 	logger := log.NewWithOptions(w, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      time.TimeOnly, // HH:MM:SS
+		Level:           defaultLevel,
 	})
 
 	if color {
@@ -53,6 +67,19 @@ func isTerminal(w io.Writer) bool {
 		return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 	}
 	return false
+}
+
+// IsTerminal reports whether w is an interactive terminal. Callers use it
+// to gate interactive chrome (spinners, prompts) that must never run
+// against pipes or CI logs.
+func IsTerminal(w io.Writer) bool {
+	return isTerminal(w)
+}
+
+// SetPlain forces grep-friendly table rendering (no box-drawing) even when
+// the writer is a terminal. Wired to per-command --plain flags.
+func (p *Printer) SetPlain(plain bool) {
+	p.plain = plain
 }
 
 // Info logs an info message with optional key-value pairs.
@@ -82,6 +109,11 @@ func (p *Printer) SetDebug(enabled bool) {
 	} else {
 		p.logger.SetLevel(log.InfoLevel)
 	}
+}
+
+// SetLevel sets the printer's minimum log level from an slog level.
+func (p *Printer) SetLevel(l slog.Level) {
+	p.logger.SetLevel(log.Level(l))
 }
 
 // Banner prints the ASCII logo with version information.
