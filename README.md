@@ -76,6 +76,9 @@ Installs the latest release to `~/.local/bin/gridctl`. Full instructions for Hom
 ## 🚦 Quick Start
 
 ```bash
+# Or scaffold your own starter stack.yaml
+gridctl init
+
 # Apply the example stack
 gridctl apply examples/getting-started/skills-basic.yaml
 
