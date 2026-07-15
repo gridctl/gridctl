@@ -4,6 +4,7 @@ import {
   AlignJustify,
   BookOpen,
   CloudDownload,
+  Globe,
   LayoutGrid,
   List,
   Plus,
@@ -24,6 +25,7 @@ import { LibraryGrid, type GroupMode } from '../registry/LibraryGrid';
 import { LibraryTable } from '../registry/LibraryTable';
 import { SkillDetailPanel } from '../registry/SkillDetailPanel';
 import { DriftSyncDialog } from '../registry/DriftSyncDialog';
+import { GlobalContextDialog } from '../context/GlobalContextDialog';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
@@ -293,6 +295,8 @@ export function LibraryWorkspace() {
 
   // Editor + delete confirm state
   const [showEditor, setShowEditor] = useState(false);
+  // Global Context management surface (canonical AGENTS.md sync).
+  const [showGlobalContext, setShowGlobalContext] = useState(false);
   const [editingSkill, setEditingSkill] = useState<AgentSkill | undefined>();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
@@ -687,6 +691,7 @@ export function LibraryWorkspace() {
         <main className="flex flex-col h-full overflow-hidden">
           <LibraryHeader
             onNewSkill={handleNewSkill}
+            onGlobalContext={() => setShowGlobalContext(true)}
             onRefresh={refreshRegistry}
             onSync={handleSyncAll}
             sources={sources ?? []}
@@ -909,6 +914,11 @@ export function LibraryWorkspace() {
         onSaved={refreshAll}
         skill={editingSkill}
         source={editingSkill ? sourceMap.get(editingSkill.name) : undefined}
+      />
+
+      <GlobalContextDialog
+        isOpen={showGlobalContext}
+        onClose={() => setShowGlobalContext(false)}
       />
 
       <DriftSyncDialog
@@ -1179,6 +1189,7 @@ const KPI_METRICS: { key: FilterTab; label: string; dot: ItemState | null }[] = 
 
 interface LibraryHeaderProps {
   onNewSkill: () => void;
+  onGlobalContext: () => void;
   onRefresh: () => void;
   onSync: () => void;
   sources: SkillSourceStatus[];
@@ -1195,7 +1206,7 @@ interface LibraryHeaderProps {
   compact: boolean;
 }
 
-function LibraryHeader({ onNewSkill, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, neverUsedCount, usageFilterActive, onToggleNeverUsed, compact }: LibraryHeaderProps) {
+function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, neverUsedCount, usageFilterActive, onToggleNeverUsed, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
   const hasSources = sources.length > 0;
   const updateCount = sources.filter((s) => s.updateAvailable).length;
@@ -1214,6 +1225,13 @@ function LibraryHeader({ onNewSkill, onRefresh, onSync, sources, syncing, onPopo
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
           >
             <Plus size={12} /> New Skill
+          </button>
+          <button
+            onClick={onGlobalContext}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
+            title="Manage the canonical global AGENTS.md synced to linked clients"
+          >
+            <Globe size={12} /> Global Context
           </button>
           <SyncSourcesButton
             hasSources={hasSources}
