@@ -20,7 +20,7 @@ gridctl ctx sync                     # propagate to every available client
 gridctl ctx status                   # per-client sync state
 ```
 
-The web UI offers the same surface in the Library workspace ("Global Context"): a split markdown editor with preview, per-client state chips, sync-all, and a three-way drift dialog.
+The web UI offers the same surface, reachable from the Library workspace header ("Global Context") and from a Global Context tile in the Create Resource wizard. First run shows the adoption-first setup: existing client files are listed with their paths and sizes, and the first one found is preselected over the starter template. After that, the editor takes over: a resizable markdown/preview split with a formatting toolbar and live marker validation, a collapsible per-client state strip that opens itself when anything needs attention, sync-all, and a three-way drift dialog. The editor's Import action reopens the source picker at any time to replace the canonical file from a client file or the template (a timestamped backup precedes the write; `gridctl ctx init --import <client> --force` is the CLI equivalent). The same operations are exposed over REST; see the [API reference](api-reference.md#global-context).
 
 ## Write strategies
 

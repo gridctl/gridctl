@@ -220,7 +220,7 @@ Learn more → [Skills guide](docs/skills.md)
 
 - **Getting started**: [Installation](docs/installation.md)
 - **Reference**: [CLI](docs/cli-reference.md) · [Configuration](docs/config-schema.md) · [REST API](docs/api-reference.md)
-- **Guides**: [Skills](docs/skills.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
+- **Guides**: [Skills](docs/skills.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
 - **Operations**: [Project Status](docs/project-status.md) · [Troubleshooting](docs/troubleshooting.md)
 
 Full index at [`docs/`](docs/README.md).

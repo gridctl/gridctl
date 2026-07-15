@@ -24,7 +24,7 @@ New to gridctl? Read in this order:
 
 | Document | Description |
 |----------|-------------|
-| [CLI Reference](cli-reference.md) | Every `gridctl` command, grouped by domain - stack lifecycle, skills, variables, optimize, telemetry, traces, upgrade |
+| [CLI Reference](cli-reference.md) | Every `gridctl` command, grouped by domain - stack lifecycle, global context, skills, variables, optimize, telemetry, traces, upgrade |
 | [Configuration Reference](config-schema.md) | Every field in `stack.yaml` - server types, networks, resources, auth, variables |
 | [REST API Reference](api-reference.md) | Gateway endpoints, request/response formats, authentication |
 
@@ -33,7 +33,7 @@ New to gridctl? Read in this order:
 | Document | Description |
 |----------|-------------|
 | [Skills](skills.md) | Author `SKILL.md` files and serve them as MCP prompts to upstream clients via the Library workspace or `gridctl skill *` |
-| [Global Context Sync](global-context.md) | Manage one canonical global AGENTS.md and project it into each linked client's global context file via `gridctl ctx` or the Library workspace |
+| [Global Context Sync](global-context.md) | Manage one canonical global AGENTS.md and project it into each linked client's global context file via `gridctl ctx`, the web UI, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
 | [Cost Observability](cost-observability.md) | LLM pricing, per-client attribution, and the `gridctl optimize` heuristics |
 
