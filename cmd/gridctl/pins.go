@@ -37,6 +37,7 @@ var (
 	pinsExitCode     bool
 	pinsListFormat   string
 	pinsListJSON     *bool
+	pinsListPlain    *bool
 	pinsVerifyFormat string
 	pinsVerifyJSON   *bool
 )
@@ -57,6 +58,9 @@ output.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(pinsListFormat, cmd.Flags().Changed("format"), *pinsListJSON)
 		if err != nil {
+			return err
+		}
+		if err := resolvePlain(*pinsListPlain, format); err != nil {
 			return err
 		}
 		return runPinsList(format)
@@ -123,6 +127,7 @@ func init() {
 
 	pinsListCmd.Flags().StringVar(&pinsListFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
 	pinsListJSON = addJSONAlias(pinsListCmd)
+	pinsListPlain = addPlainFlag(pinsListCmd)
 
 	pinsVerifyCmd.Flags().StringVar(&pinsVerifyFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
 	pinsVerifyJSON = addJSONAlias(pinsVerifyCmd)
@@ -277,9 +282,7 @@ func runPinsList(format string) error {
 
 	names := sortedMapKeys(servers)
 
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	t.SetStyle(table.StyleRounded)
+	t := output.NewTableWriter(os.Stdout, *pinsListPlain)
 	t.AppendHeader(table.Row{"SERVER", "TOOLS", "STATUS", "LAST VERIFIED"})
 
 	for _, name := range names {
