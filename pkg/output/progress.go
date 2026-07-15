@@ -154,4 +154,3 @@ func (r *Reporter) EndPhase(ok bool) {
 	}
 	fmt.Fprintf(r.w, "%s %s\n", mark, label)
 }
-
