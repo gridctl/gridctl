@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -127,6 +128,105 @@ func TestLogsAfterServe(t *testing.T) {
 	stop.Stderr = &stopOut
 	if err := stop.Run(); err != nil {
 		t.Fatalf("gridctl stop: %v\n%s", err, stopOut.String())
+	}
+}
+
+// TestInitScaffoldPassesValidate runs the real binary end to end:
+// `gridctl init` writes a stack.yaml that `gridctl validate` accepts, a
+// re-run without --force refuses, and `gridctl link` on a closed stdin
+// fails fast instead of hanging (Article IV: no mocks here).
+func TestInitScaffoldPassesValidate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	binPath := buildGridctlBinary(t)
+	dir := t.TempDir()
+
+	var out bytes.Buffer
+	initCmd := exec.Command(binPath, "init", dir, "--name", "demo")
+	initCmd.Stdout = &out
+	initCmd.Stderr = &out
+	if err := initCmd.Run(); err != nil {
+		t.Fatalf("gridctl init: %v\n%s", err, out.String())
+	}
+
+	stackPath := filepath.Join(dir, "stack.yaml")
+	var valOut bytes.Buffer
+	validate := exec.Command(binPath, "validate", stackPath)
+	validate.Stdout = &valOut
+	validate.Stderr = &valOut
+	if err := validate.Run(); err != nil {
+		t.Fatalf("scaffold failed gridctl validate: %v\n%s", err, valOut.String())
+	}
+
+	rerun := exec.Command(binPath, "init", dir)
+	var rerunOut bytes.Buffer
+	rerun.Stdout = &rerunOut
+	rerun.Stderr = &rerunOut
+	if err := rerun.Run(); err == nil {
+		t.Fatalf("init over an existing stack.yaml should fail without --force\n%s", rerunOut.String())
+	}
+	if !strings.Contains(rerunOut.String(), "--force") {
+		t.Errorf("overwrite refusal should name --force: %s", rerunOut.String())
+	}
+}
+
+// TestLinkFailsFastOnNonTTY guards the F14 non-TTY contract with the real
+// binary. With a detected client, bare `gridctl link` on a non-terminal
+// stdin must exit 1 immediately (naming the non-interactive options)
+// rather than block on a prompt; bare `gridctl unlink` with nothing
+// linked must stay a fast, successful no-op as before.
+func TestLinkFailsFastOnNonTTY(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	binPath := buildGridctlBinary(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Claude Code detects via ~/.claude.json on every platform, so this
+	// makes exactly one client detectable inside the redirected HOME.
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("seeding fake client config: %v", err)
+	}
+
+	run := func(sub string) (string, error) {
+		var out bytes.Buffer
+		cmd := exec.Command(binPath, sub)
+		cmd.Stdin = strings.NewReader("")
+		cmd.Stdout = &out
+		cmd.Stderr = &out
+
+		done := make(chan error, 1)
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("starting gridctl %s: %v", sub, err)
+		}
+		go func() { done <- cmd.Wait() }()
+
+		select {
+		case err := <-done:
+			return out.String(), err
+		case <-time.After(10 * time.Second):
+			_ = cmd.Process.Kill()
+			t.Fatalf("gridctl %s hung on non-TTY stdin", sub)
+			return "", nil
+		}
+	}
+
+	out, err := run("link")
+	if err == nil {
+		t.Errorf("gridctl link with a detected client on non-TTY stdin should exit non-zero\n%s", out)
+	}
+	if !strings.Contains(out, "--all") {
+		t.Errorf("gridctl link non-TTY error should name --all:\n%s", out)
+	}
+
+	// Nothing is linked in the fresh HOME, so unlink keeps its no-op
+	// contract for scripts: exit 0, no prompt, no guard error.
+	out, err = run("unlink")
+	if err != nil {
+		t.Errorf("gridctl unlink with nothing linked should stay a successful no-op, got %v\n%s", err, out)
 	}
 }
 
