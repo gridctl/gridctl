@@ -1620,6 +1620,229 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/
 
 ---
 
+### Global Context
+
+Manage the canonical global agent-context file (`~/.gridctl/context/AGENTS.md`) and its projection into each linked client's global context location. Backs `gridctl ctx` and the web UI's Global Context dialog; see [Global Context Sync](global-context.md) for concepts (write strategies, drift, adoption). These endpoints are pure file operations against the gateway host's home directory and work in stackless mode.
+
+#### `GET /api/context`
+
+Returns the canonical content and per-client sync state.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context
+```
+
+**Response:**
+```json
+{
+  "canonical": {
+    "path": "/home/user/.gridctl/context/AGENTS.md",
+    "exists": true,
+    "content": "# Global Agent Context\n..."
+  },
+  "needs_sync": false,
+  "clients": [
+    {
+      "slug": "claude-code",
+      "name": "Claude Code",
+      "supported": true,
+      "available": true,
+      "strategy": "dedicated-file",
+      "target_path": "/home/user/.claude/rules/gridctl.md",
+      "state": "in-sync",
+      "synced_at": "2026-07-15T13:22:12Z"
+    },
+    {
+      "slug": "cursor",
+      "name": "Cursor",
+      "supported": false,
+      "available": false,
+      "state": "unsupported",
+      "detail": "global User Rules are stored in app-internal storage; no supported file path"
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `canonical` | object | Canonical file path, existence, and content (`content` is empty when `exists` is false) |
+| `needs_sync` | bool | True when any client is `stale`, `drifted`, or `target-missing` |
+| `clients` | []object | One entry per known client |
+
+Per-client fields: `slug`, `name`, `supported`, `available` (client detected on this machine), `experimental` (omitted when false), `strategy` (`dedicated-file`, `import-shim`, or `block`; omitted for unsupported clients), `target_path`, `state`, `detail` (human-readable reason or hint), and `synced_at` (omitted when never synced).
+
+**State values:** `"in-sync"` | `"stale"` | `"drifted"` | `"target-missing"` | `"never-synced"` | `"unsupported"`
+
+#### `PUT /api/context`
+
+Saves the canonical content (creating the file when absent) and returns the same document as `GET /api/context`. A timestamped backup of the previous revision precedes the write.
+
+**Auth:** Yes
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"content": "# Global Agent Context\n\n- Prefer rg over grep.\n"}' \
+  http://localhost:8180/api/context
+```
+
+**Errors:**
+- `400` - Empty content, or content containing a reserved gridctl marker (`<!-- BEGIN GRIDCTL MANAGED -->`, `<!-- END GRIDCTL MANAGED -->`, or the managed-header prefix)
+
+#### `GET /api/context/scan`
+
+Reports what already exists at each supported client's global context location, for the adoption-first setup flow. Never writes.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context/scan
+```
+
+**Response:**
+```json
+{
+  "entries": [
+    {
+      "slug": "claude-code",
+      "name": "Claude Code",
+      "path": "/home/user/.claude/CLAUDE.md",
+      "exists": true,
+      "size": 1189
+    }
+  ]
+}
+```
+
+#### `POST /api/context/init`
+
+Bootstraps the canonical file from a chosen source and returns the refreshed document. With `force`, replaces an existing canonical file (a timestamped backup is taken first) - this is what the web UI's Import action calls.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"source": "client", "client": "claude-code"}' \
+  http://localhost:8180/api/context/init
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `source` | string | `"template"` (starter draft), `"client"` (adopt a client's existing file), or `"file"` (adopt an arbitrary path) |
+| `client` | string | Client slug; required when `source` is `"client"` |
+| `path` | string | File path; required when `source` is `"file"` |
+| `force` | bool | Overwrite an existing canonical file |
+
+**Errors:**
+- `400` - Invalid source, missing `client`/`path`, unknown client slug, or unsupported client
+- `409` - Canonical file already exists and `force` is false
+
+#### `POST /api/context/sync`
+
+Projects the canonical context to clients. An empty (or absent) body syncs every available client.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"clients": ["gemini"], "dry_run": true}' \
+  http://localhost:8180/api/context/sync
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `clients` | []string | Client slugs to sync; omit for all available clients |
+| `force` | bool | Overwrite drifted targets and repair corrupt managed blocks |
+| `dry_run` | bool | Report what would change (with diffs) without writing |
+
+**Response:**
+```json
+{
+  "dry_run": false,
+  "has_failures": false,
+  "results": [
+    {
+      "slug": "gemini",
+      "name": "Gemini CLI",
+      "strategy": "import-shim",
+      "target_path": "/home/user/.gemini/GEMINI.md",
+      "action": "updated",
+      "backup_path": "/home/user/.gemini/GEMINI.md.gridctl-backup-20260715-132212"
+    }
+  ]
+}
+```
+
+**Action values:** `"created"` | `"updated"` | `"unchanged"` | `"skipped-drift"` | `"skipped-unavailable"` | `"error"`, plus `"would-create"` | `"would-update"` under `dry_run`
+
+Unknown slugs, unsupported clients, and a missing canonical file abort the request (`400`/`404`); a per-client runtime failure becomes an `"error"` result row so earlier writes are still reported. Drifted targets are skipped (never silently overwritten) unless `force` is set.
+
+#### `POST /api/context/adopt/{slug}`
+
+Pulls a client's hand-edited managed content back into the canonical file, then re-syncs that client. Returns the refreshed document (other clients become `stale`). Only meaningful for dedicated-file and managed-block clients; import-shim clients reference the canonical file directly, so there is no copied content to adopt.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context/adopt/opencode
+```
+
+**Errors:**
+- `400` - Unsupported client
+- `404` - Unknown client slug, or no canonical file exists
+- `409` - Client was never synced or is not available
+
+#### `POST /api/context/unsync/{slug}`
+
+Removes what gridctl manages for one client and nothing else: dedicated files are deleted, shim lines and managed blocks are stripped. User-owned content is preserved.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context/unsync/gemini
+```
+
+**Response:**
+```json
+{
+  "slug": "gemini",
+  "target_path": "/home/user/.gemini/GEMINI.md",
+  "action": "removed-region"
+}
+```
+
+**Action values:** `"removed-file"` (dedicated file or a file gridctl created deleted) | `"removed-region"` (shim line or managed block stripped) | `"already-gone"`
+
+**Errors:**
+- `404` - Unknown client slug
+- `409` - Client was never synced
+
+#### `GET /api/context/diff/{slug}`
+
+Returns the unified diff between the canonical context and a client's managed content (empty when identical).
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context/diff/opencode
+```
+
+**Response:**
+```json
+{
+  "slug": "opencode",
+  "diff": "--- canonical\n+++ opencode\n@@ -1,3 +1,3 @@\n..."
+}
+```
+
+**Errors:**
+- `400` - Unsupported client
+- `404` - Unknown client slug, or no canonical file exists
+
+---
+
 ### Skill Sources *(experimental)*
 
 Manage git-imported skill dependencies (`skills.yaml` + lock file). Mirrors `gridctl skill *` operations for the Library workspace.

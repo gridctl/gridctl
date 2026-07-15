@@ -12,6 +12,7 @@ Plain tables: `status`, `skill list`, `pins list`, `optimize`, and `telemetry st
 
 - [Stack lifecycle](#stack-lifecycle)
 - [LLM clients](#llm-clients)
+- [Global context](#global-context)
 - [Skills](#skills)
 - [Variables](#variables)
 - [Pins (TOFU schema pinning)](#pins-tofu-schema-pinning)
@@ -42,6 +43,20 @@ Plain tables: `status`, `skill list`, `pins list`, `optimize`, and `telemetry st
 |---|---|
 | `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--name <name>` to set the server entry name (default `gridctl`), `--client-id <id>` to bind the link to a `clients:` access profile, `--force` to overwrite an existing entry, `-p` / `--port <port>` to target a non-default gateway port (auto-detected from the running daemon, else 8180). |
 | `gridctl unlink [client]` | Remove gridctl from an LLM client's config; `-a` / `--all` for every client, `--name <name>` to target a non-default entry, `--dry-run` to preview. |
+
+## Global context
+
+`gridctl ctx` manages one canonical global agent-context file (`~/.gridctl/context/AGENTS.md`) and projects it into each linked client's global context location. Per-project AGENTS.md files stay version-controlled in their repos and are never touched. See [`docs/global-context.md`](./global-context.md) for strategies, drift handling, and per-client coverage. All `ctx` commands are pure file operations; no running gateway is required.
+
+| Command | Purpose |
+|---|---|
+| `gridctl ctx init` | Scan every supported client's global context location and bootstrap the canonical file. `--import <client>` adopts an existing client file as canon, `--from <path>` adopts an arbitrary file, `--template` scaffolds the starter, `--force` overwrites an existing canonical file. The scan itself never writes. |
+| `gridctl ctx status` | Per-client sync state (`in-sync`, `stale`, `drifted`, `target-missing`, `never-synced`, `unsupported`); exit `0` clean, `1` when anything needs attention, `2` on error. `--format json` or `--json`, `--plain`. |
+| `gridctl ctx sync [client...]` | Project the canonical file to clients (all available clients when none named). `--dry-run` previews with diffs, `--force` overwrites drifted targets and repairs corrupt blocks, `--check` is CI mode (no writes, exit `1` on drift or pending sync), `--format json` or `--json`, `--plain`. Drifted targets are skipped with guidance, never silently overwritten; every write takes a timestamped backup. |
+| `gridctl ctx diff <client>` | Unified diff between the canonical context and a client's managed content (exit `0` identical, `1` differs, `2` error). |
+| `gridctl ctx adopt <client>` | Pull a client's hand edit back into the canonical file, then re-sync that client (other clients become stale). |
+| `gridctl ctx unsync [client...]` | Remove managed artifacts (`--all` for every synced client). Dedicated files are deleted; shim lines and managed blocks are stripped; user-owned content is preserved. |
+| `gridctl ctx edit` | Open the canonical file in `$VISUAL`/`$EDITOR`, then print sync state. |
 
 ## Skills
 

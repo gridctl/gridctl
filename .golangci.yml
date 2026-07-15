@@ -46,6 +46,12 @@ linters:
       - linters:
           - gosec
         text: "G304"
+      # G702: command injection taint — `ctx edit` intentionally execs the user's own $EDITOR,
+      # the same trust domain as the shell that invoked gridctl
+      - linters:
+          - gosec
+        path: "cmd/gridctl/ctx\\.go"
+        text: "G702"
       # G703: path traversal taint — CLI operates on user-controlled trusted paths throughout
       - linters:
           - gosec

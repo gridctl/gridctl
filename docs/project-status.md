@@ -34,6 +34,7 @@ Last updated: **v0.1.0-beta.10** (see [CHANGELOG.md](../CHANGELOG.md) for releas
 | Spec drift detection | Experimental | May change without notice |
 | Visual spec builder | Experimental | May change without notice |
 | Skills import (skill add) | Experimental | May change without notice |
+| Global context sync (ctx) | Experimental | May change without notice |
 | Distributed tracing | Experimental | May change without notice |
 | Cost observability | Experimental | May change without notice |
 | Typed skill SDK (Go, TS) | Removed in v0.1.x | Replaced by prompt-only skills |
@@ -48,6 +49,7 @@ Last updated: **v0.1.0-beta.10** (see [CHANGELOG.md](../CHANGELOG.md) for releas
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Code mode sandbox has no filesystem access (by design).
 - Skills registry is local-only with no remote discovery.
+- Global context sync covers 11 of 15 linkable clients; Claude Desktop, Cursor, AnythingLLM, and Grok Build expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
 - Web UI requires a modern browser (no IE11 support).
 
 ---

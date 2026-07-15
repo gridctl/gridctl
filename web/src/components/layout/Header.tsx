@@ -1,5 +1,6 @@
 import { RefreshCw, Settings, RotateCcw, Plus, Command } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
@@ -8,6 +9,7 @@ import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api'
 import { VaultPanel } from '../vault/VaultPanel';
 import { SpecDiffModal } from '../spec/SpecDiffModal';
 import { CreationWizard } from '../wizard/CreationWizard';
+import { GlobalContextDialog } from '../context/GlobalContextDialog';
 import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useWizardStore } from '../../stores/useWizardStore';
@@ -28,6 +30,8 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const setShowVault = useUIStore((s) => s.setShowVault);
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
   const [isReloading, setIsReloading] = useState(false);
+  // Global Context dialog, reachable from the creation wizard's tile.
+  const [showGlobalContext, setShowGlobalContext] = useState(false);
   const [reloadMessage, setReloadMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const dismissTimer = useRef<ReturnType<typeof setTimeout>>(null);
@@ -189,7 +193,22 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         onApply={executeReload}
         validationErrors={validationErrors}
       />
-      <CreationWizard onOpenVault={() => setShowVault(true)} onDeploy={onRefresh} />
+      <CreationWizard
+        onOpenVault={() => setShowVault(true)}
+        onOpenGlobalContext={() => setShowGlobalContext(true)}
+        onDeploy={onRefresh}
+      />
+      {/* Portaled: the header's backdrop-blur creates a containing block
+          that would trap the dialog's fixed positioning inside the 56px
+          header (same reason CreationWizard portals). */}
+      {showGlobalContext &&
+        createPortal(
+          <GlobalContextDialog
+            isOpen={showGlobalContext}
+            onClose={() => setShowGlobalContext(false)}
+          />,
+          document.body,
+        )}
     </header>
   );
 }

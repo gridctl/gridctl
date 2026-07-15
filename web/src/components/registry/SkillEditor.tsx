@@ -9,7 +9,6 @@ import {
   Check,
   AlertCircle,
   AlertTriangle,
-  GripVertical,
   Eye,
   EyeOff,
   Bold,
@@ -41,6 +40,8 @@ import { extractRepoInfo } from '../../lib/repo';
 import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit';
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
+import { useSplitPane } from '../../hooks/useSplitPane';
+import { SplitPaneHandle } from '../ui/SplitPane';
 import type { AgentSkill, ItemState, SkillSourceStatus, SkillValidationResult } from '../../types';
 
 // One-time hint shown the first time a user saves an edit to a remote skill,
@@ -150,49 +151,8 @@ function createDebouncedValidator(
   };
 }
 
-// --- Resizable split pane hook ---
-
-function useSplitPane(defaultRatio = 0.5, minRatio = 0.25, maxRatio = 0.75, onCommit?: (ratio: number) => void) {
-  const [ratio, setRatio] = useState(defaultRatio);
-  const [isDragging, setIsDragging] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  // Latest ratio during a drag, read on mouse-up so the committed value (which
-  // we persist) is the final position rather than a stale render snapshot.
-  const ratioRef = useRef(defaultRatio);
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      setIsDragging(true);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        const x = moveEvent.clientX - rect.left;
-        const newRatio = Math.min(maxRatio, Math.max(minRatio, x / rect.width));
-        ratioRef.current = newRatio;
-        setRatio(newRatio);
-      };
-
-      const handleMouseUp = () => {
-        setIsDragging(false);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-        onCommit?.(ratioRef.current);
-      };
-
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    },
-    [minRatio, maxRatio, onCommit],
-  );
-
-  return { ratio, containerRef, handleMouseDown, isDragging };
-}
+// Resizable split pane hook + handle: shared with the Global Context
+// editor via ui/SplitPane.
 
 // --- MetadataEditor ---
 
@@ -324,55 +284,6 @@ function AcceptanceCriteriaEditor({
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-// --- SplitPaneHandle ---
-
-function SplitPaneHandle({
-  onMouseDown,
-  isDragging,
-}: {
-  onMouseDown: (e: React.MouseEvent) => void;
-  isDragging: boolean;
-}) {
-  return (
-    <div
-      onMouseDown={onMouseDown}
-      className={cn(
-        'relative flex items-center justify-center cursor-col-resize select-none',
-        'w-2 hover:bg-primary/5 transition-colors duration-150',
-        isDragging && 'bg-primary/10',
-      )}
-    >
-      {/* Hit area */}
-      <div className="absolute inset-y-0 -inset-x-2" />
-      {/* Visible grip — subtle at rest, fully visible on hover/drag so the
-          resize affordance is discoverable without a blind mouse-over */}
-      <div
-        className={cn(
-          'flex flex-col gap-0.5 transition-opacity duration-150',
-          'opacity-30 group-hover/split:opacity-100',
-          isDragging && 'opacity-100',
-        )}
-      >
-        <GripVertical
-          size={12}
-          className={cn(
-            'text-text-muted transition-colors',
-            isDragging ? 'text-primary' : 'hover:text-primary/60',
-          )}
-        />
-      </div>
-      {/* Visible line */}
-      <div
-        className={cn(
-          'absolute top-1/2 -translate-y-1/2 w-px h-12 rounded-full transition-all duration-150',
-          'bg-border/30',
-          isDragging && 'bg-primary h-20 shadow-[0_0_8px_rgba(245,158,11,0.4)]',
-        )}
-      />
     </div>
   );
 }

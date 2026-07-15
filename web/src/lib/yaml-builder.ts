@@ -2,7 +2,7 @@
 // Converts structured wizard form data into valid YAML strings.
 // Never includes raw secrets — only ${var:KEY} references.
 
-export type ResourceType = 'stack' | 'mcp-server' | 'resource' | 'skill' | 'secret';
+export type ResourceType = 'stack' | 'mcp-server' | 'resource' | 'skill' | 'secret' | 'global-context';
 
 export type ServerType = 'container' | 'source' | 'external' | 'local' | 'ssh' | 'openapi';
 

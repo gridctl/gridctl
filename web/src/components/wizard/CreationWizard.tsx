@@ -6,6 +6,7 @@ import {
   Database,
   Puzzle,
   KeyRound,
+  Globe,
   ArrowLeft,
   ArrowRight,
   RotateCcw,
@@ -80,6 +81,14 @@ const resourceTypes: ResourceTypeCard[] = [
     color: 'text-status-pending',
     glowColor: 'rgba(234, 179, 8, 0.1)',
   },
+  {
+    type: 'global-context',
+    icon: Globe,
+    label: 'Global Context',
+    description: 'One AGENTS.md synced to every linked client',
+    color: 'text-secondary',
+    glowColor: 'rgba(13, 148, 136, 0.1)',
+  },
 ];
 
 const stepLabels: Record<WizardStep, string> = {
@@ -102,15 +111,17 @@ function getResourceCounts(
     resource: resources.length,
     skill: (skills ?? []).length,
     secret: 0, // Vault count not easily available
+    'global-context': 0, // Singleton; the dialog shows per-client state
   };
 }
 
 interface CreationWizardProps {
   onOpenVault?: () => void;
+  onOpenGlobalContext?: () => void;
   onDeploy?: () => void;
 }
 
-export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
+export function CreationWizard({ onOpenVault, onOpenGlobalContext, onDeploy }: CreationWizardProps) {
   const {
     isOpen,
     close,
@@ -158,18 +169,24 @@ export function CreationWizard({ onOpenVault, onDeploy }: CreationWizardProps) {
     setSelectedTemplate(templateId);
   }, [selectedType, setSelectedTemplate, updateFormData]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Skill skips template step; secret closes wizard and opens vault panel
+  // Skill skips template step; secret and global-context close the wizard
+  // and open their own dedicated surfaces (vault panel, context dialog).
   const handleTypeSelect = useCallback((type: ResourceType) => {
     if (type === 'secret') {
       close();
       onOpenVault?.();
       return;
     }
+    if (type === 'global-context') {
+      close();
+      onOpenGlobalContext?.();
+      return;
+    }
     setSelectedType(type);
     if (type === 'skill') {
       setStep('form');
     }
-  }, [setSelectedType, setStep, close, onOpenVault]);
+  }, [setSelectedType, setStep, close, onOpenVault, onOpenGlobalContext]);
 
   const yamlDebounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const [generatedYaml, setGeneratedYaml] = useState('');
