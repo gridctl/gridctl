@@ -130,6 +130,54 @@ describe('GlobalContextDialog', () => {
     });
   });
 
+  it('defaults the setup choice to the first existing client file', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(emptyDoc);
+    vi.mocked(scanGlobalContext).mockResolvedValue([
+      { slug: 'claude-code', name: 'Claude Code', path: '/home/u/.claude/CLAUDE.md', exists: true, size: 42 },
+    ]);
+    vi.mocked(initGlobalContext).mockResolvedValue(readyDoc);
+
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await waitFor(() => {
+      expect(screen.getByText('Import from Claude Code')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('radio', { name: /Import from Claude Code/ })).toBeChecked();
+
+    // Creating without touching the radios imports rather than templating.
+    fireEvent.click(screen.getByText('Create canonical file'));
+    await waitFor(() => {
+      expect(initGlobalContext).toHaveBeenCalledWith({ source: 'client', client: 'claude-code' });
+    });
+  });
+
+  it('reopens the source picker from the editor and replaces with force', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    vi.mocked(scanGlobalContext).mockResolvedValue([
+      { slug: 'claude-code', name: 'Claude Code', path: '/home/u/.claude/CLAUDE.md', exists: true, size: 42 },
+    ]);
+    vi.mocked(initGlobalContext).mockResolvedValue(readyDoc);
+
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await waitFor(() => {
+      expect(screen.getByText('Import')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Import'));
+    await waitFor(() => {
+      expect(screen.getByText('Import from Claude Code')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Replace canonical'));
+    await waitFor(() => {
+      expect(initGlobalContext).toHaveBeenCalledWith({
+        source: 'client',
+        client: 'claude-code',
+        force: true,
+      });
+    });
+  });
+
   it('renders per-client state chips and drift review action', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
 
