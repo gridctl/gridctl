@@ -443,10 +443,7 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 
 	logBuffer := logging.NewLogBuffer(1000)
 
-	logLevel := slog.LevelInfo
-	if b.config.Verbose {
-		logLevel = slog.LevelDebug
-	}
+	logLevel := effectiveLogLevel(b.config)
 
 	var innerHandler slog.Handler
 	if verbose {
