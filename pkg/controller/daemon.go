@@ -2,16 +2,27 @@ package controller
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/state"
 )
+
+// appendLogLevelArg forwards a non-default global --log-level to a forked
+// daemon child so its log file honors the requested verbosity.
+func appendLogLevelArg(args []string, lvl slog.Level) []string {
+	if lvl == slog.LevelInfo {
+		return args
+	}
+	return append(args, "--log-level", strings.ToLower(lvl.String()))
+}
 
 // DaemonManager handles daemon lifecycle: forking child processes and
 // waiting for readiness.
@@ -54,6 +65,7 @@ func (d *DaemonManager) Fork(stack *config.Stack) (int, error) {
 	if d.config.LogFile != "" {
 		args = append(args, "--log-file", d.config.LogFile)
 	}
+	args = appendLogLevelArg(args, effectiveLogLevel(d.config))
 	cmd := exec.Command(exe, args...)
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -101,6 +113,7 @@ func (d *DaemonManager) ForkStackless() (int, error) {
 	if d.config.LogFile != "" {
 		args = append(args, "--log-file", d.config.LogFile)
 	}
+	args = appendLogLevelArg(args, effectiveLogLevel(d.config))
 	cmd := exec.Command(exe, args...)
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
