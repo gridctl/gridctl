@@ -88,6 +88,7 @@ func runServeStackless() error {
 		Foreground:  applyForeground,
 		DaemonChild: applyDaemonChild,
 		LogFile:     applyLogFile,
+		LogLevel:    logLevel,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
@@ -116,6 +117,7 @@ func runApply(stackPath string) error {
 		CodeMode:    applyCodeMode,
 		Runtime:     runtimeFlag,
 		LogFile:     applyLogFile,
+		LogLevel:    logLevel,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
