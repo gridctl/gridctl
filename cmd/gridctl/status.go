@@ -23,6 +23,7 @@ var (
 	statusStack        string
 	statusShowReplicas bool
 	statusJSON         bool
+	statusPlain        *bool
 )
 
 // statusGatewayJSON is one gateway entry of `gridctl status --json`.
@@ -73,7 +74,14 @@ Use --replicas to expand multi-replica servers to one row per replica.`,
   gridctl status --replicas    One row per replica
   gridctl status --json        Machine-readable output (experimental schema)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus(statusStack, statusShowReplicas, statusJSON)
+		format := ""
+		if statusJSON {
+			format = "json"
+		}
+		if err := resolvePlain(*statusPlain, format); err != nil {
+			return err
+		}
+		return runStatus(statusStack, statusShowReplicas, statusJSON, *statusPlain)
 	},
 }
 
@@ -81,15 +89,17 @@ func init() {
 	statusCmd.Flags().StringVarP(&statusStack, "stack", "s", "", "Only show containers from this stack")
 	statusCmd.Flags().BoolVar(&statusShowReplicas, "replicas", false, "Expand to one row per replica instead of rolled-up per-server state")
 	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "Output status as JSON (experimental schema)")
+	statusPlain = addPlainFlag(statusCmd)
 }
 
-func runStatus(stack string, showReplicas, asJSON bool) error {
+func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 	// In JSON mode all human chrome (warnings, hints) moves to stderr so
 	// stdout carries nothing but the document.
 	printer := output.New()
 	if asJSON {
 		printer = output.NewWithWriter(os.Stderr)
 	}
+	printer.SetPlain(plain)
 
 	// Show gateway status from state files
 	states, err := state.List()
