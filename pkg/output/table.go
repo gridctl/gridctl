@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -75,7 +76,7 @@ func (p *Printer) Summary(workloads []WorkloadSummary) {
 
 	for _, w := range workloads {
 		state := w.State
-		if p.color {
+		if p.cellColor() {
 			state = colorState(w.State)
 		}
 		t.AppendRow(table.Row{w.Name, w.Type, w.Transport, state})
@@ -132,7 +133,7 @@ func (p *Printer) Gateways(gateways []GatewaySummary) {
 
 	for _, g := range gateways {
 		status := g.Status
-		if p.color {
+		if p.cellColor() {
 			status = colorState(g.Status)
 		}
 		if hasCodeMode {
@@ -175,12 +176,12 @@ func (p *Printer) Containers(containers []ContainerSummary) {
 
 	for _, c := range containers {
 		state := c.State
-		if p.color {
+		if p.cellColor() {
 			state = colorState(c.State)
 		}
 		if hasPins {
 			pinStatus := c.PinStatus
-			if p.color {
+			if p.cellColor() {
 				pinStatus = colorPinStatus(c.PinStatus)
 			}
 			t.AppendRow(table.Row{c.ID, c.Name, c.Type, c.Image, state, pinStatus, c.Message})
@@ -222,7 +223,7 @@ func (p *Printer) MCPServers(rows []MCPServerRollup) {
 	}
 	for _, r := range rows {
 		state := r.State
-		if p.color {
+		if p.cellColor() {
 			state = colorReplicaState(r.State)
 		}
 		if hasAutoscale {
@@ -263,7 +264,7 @@ func (p *Printer) Replicas(rows []ReplicaDetail) {
 	}
 	for _, r := range rows {
 		state := r.State
-		if p.color {
+		if p.cellColor() {
 			state = colorReplicaState(r.State)
 		}
 		if hasAutoscale {
@@ -308,15 +309,66 @@ func colorPinStatus(status string) string {
 	}
 }
 
-// tableStyle returns the standard amber-themed table style.
+// tableStyle returns the table style for this printer: the amber rounded
+// style on an interactive terminal, or the plain grep-friendly style when
+// --plain is set or the writer is not a terminal.
 func (p *Printer) tableStyle() table.Style {
+	if p.plain || !p.isTTY {
+		return plainTableStyle()
+	}
+	return roundedTableStyle(p.color)
+}
+
+// cellColor reports whether table cell values may carry color. Plain mode
+// stays colorless even on a terminal so its output is safe to parse.
+func (p *Printer) cellColor() bool {
+	return p.color && !p.plain
+}
+
+// roundedTableStyle is the standard amber-themed box style.
+func roundedTableStyle(color bool) table.Style {
 	style := table.StyleRounded
-	if p.color {
+	if color {
 		style.Color.Header = text.Colors{text.FgHiYellow, text.Bold}
 		style.Color.Border = text.Colors{text.FgHiBlack}
 	}
 	style.Options.SeparateRows = false
 	return style
+}
+
+// plainTableStyle is the grep-friendly style: no box-drawing, columns
+// separated by two spaces, one record per line, headers kept.
+func plainTableStyle() table.Style {
+	style := table.StyleDefault
+	style.Name = "gridctl-plain"
+	style.Box = table.BoxStyle{
+		MiddleVertical: "  ",
+	}
+	style.Color = table.ColorOptions{}
+	style.Options = table.Options{
+		DrawBorder:      false,
+		SeparateColumns: true,
+		SeparateFooter:  false,
+		SeparateHeader:  false,
+		SeparateRows:    false,
+	}
+	return style
+}
+
+// NewTableWriter returns a go-pretty table writer bound to w using the
+// shared gridctl style. Plain rendering is used when forced by a --plain
+// flag or when w is not a terminal, so piped output never contains box
+// runes. Commands that render tables outside a Printer share this
+// chokepoint instead of hand-rolling styles.
+func NewTableWriter(w io.Writer, plain bool) table.Writer {
+	t := table.NewWriter()
+	t.SetOutputMirror(w)
+	if plain || !isTerminal(w) {
+		t.SetStyle(plainTableStyle())
+	} else {
+		t.SetStyle(roundedTableStyle(ColorEnabled(w)))
+	}
+	return t
 }
 
 // Section prints a section header.
