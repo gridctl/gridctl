@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/telemetry"
 
@@ -23,11 +24,12 @@ import (
 )
 
 var (
-	telemetryStatusJSON bool
-	telemetryWipeServer string
-	telemetryWipeSignal string
-	telemetryWipeYes    bool
-	telemetryTailSignal string
+	telemetryStatusJSON  bool
+	telemetryStatusPlain *bool
+	telemetryWipeServer  string
+	telemetryWipeSignal  string
+	telemetryWipeYes     bool
+	telemetryTailSignal  string
 )
 
 var telemetryCmd = &cobra.Command{
@@ -49,6 +51,13 @@ With no argument, walks every stack under ~/.gridctl/telemetry/. Pass a stack
 name to scope the report. Use --json for machine-readable output.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		format := ""
+		if telemetryStatusJSON {
+			format = "json"
+		}
+		if err := resolvePlain(*telemetryStatusPlain, format); err != nil {
+			return err
+		}
 		stack := ""
 		if len(args) == 1 {
 			stack = args[0]
@@ -90,6 +99,7 @@ detected automatically. Press Ctrl-C to exit.`,
 
 func init() {
 	telemetryStatusCmd.Flags().BoolVar(&telemetryStatusJSON, "json", false, "Output as JSON")
+	telemetryStatusPlain = addPlainFlag(telemetryStatusCmd)
 
 	telemetryWipeCmd.Flags().StringVar(&telemetryWipeServer, "server", "", "Limit to a single MCP server")
 	telemetryWipeCmd.Flags().StringVar(&telemetryWipeSignal, "signal", "", "Limit to a single signal (logs, metrics, traces)")
@@ -196,7 +206,7 @@ func runTelemetryStatus(stack string, asJSON bool) error {
 		return nil
 	}
 
-	renderStatusTable(os.Stdout, rows)
+	renderStatusTable(os.Stdout, rows, *telemetryStatusPlain)
 	return nil
 }
 
@@ -221,10 +231,8 @@ func flattenInventories(invs []stackInventory) []statusRow {
 	return rows
 }
 
-func renderStatusTable(w io.Writer, rows []statusRow) {
-	t := table.NewWriter()
-	t.SetOutputMirror(w)
-	t.SetStyle(table.StyleRounded)
+func renderStatusTable(w io.Writer, rows []statusRow, plain bool) {
+	t := output.NewTableWriter(w, plain)
 	t.AppendHeader(table.Row{"STACK", "SERVER", "SIGNAL", "SIZE", "FILES", "OLDEST", "NEWEST"})
 	for _, r := range rows {
 		t.AppendRow(table.Row{
