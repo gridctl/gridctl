@@ -28,3 +28,20 @@ func addJSONAlias(cmd *cobra.Command) *bool {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Shorthand for --format json")
 	return &asJSON
 }
+
+// addPlainFlag registers the --plain table flag on cmd. The returned
+// pointer reports whether it was set.
+func addPlainFlag(cmd *cobra.Command) *bool {
+	var plain bool
+	cmd.Flags().BoolVar(&plain, "plain", false, "Render tables without box-drawing (grep/awk friendly)")
+	return &plain
+}
+
+// resolvePlain validates --plain against the resolved output format. Plain
+// tables and JSON are different consumers; combining them is a mistake.
+func resolvePlain(plain bool, format string) error {
+	if plain && strings.EqualFold(format, "json") {
+		return fmt.Errorf("cannot combine --plain with --json (or --format=json)")
+	}
+	return nil
+}
