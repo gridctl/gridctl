@@ -205,6 +205,10 @@ func init() {
 	varSetCmd.Flags().StringVar(&varSetType, "type", "string", "Value type: string, json, list, number, bool")
 	varGetCmd.Flags().BoolVar(&varGetPlain, "plain", false, "Show unmasked value")
 	varDeleteCmd.Flags().BoolVar(&varDeleteForce, "force", false, "Skip confirmation")
+	// No --plain here: in the var family --plain already means "unmask"
+	// (var get, var export), so a formatting flag with the same name would
+	// invite a credential leak. Piped var tables still auto-degrade to the
+	// plain style.
 	varListCmd.Flags().StringVar(&varListFmt, "format", "table", "Output format (table, json)")
 	varListJSON = addJSONAlias(varListCmd)
 	varImportCmd.Flags().StringVar(&varImportFmt, "format", "", "File format (env, json). Auto-detected if omitted")
@@ -415,9 +419,7 @@ func runVarList() error {
 		return nil
 	}
 
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	t.SetStyle(table.StyleRounded)
+	t := output.NewTableWriter(os.Stdout, false)
 	t.AppendHeader(table.Row{"Key", "Type", "Visibility", "Set"})
 	for _, v := range vars {
 		visibility := "secret"
@@ -569,9 +571,7 @@ func runVarSetsList() error {
 		return nil
 	}
 
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	t.SetStyle(table.StyleRounded)
+	t := output.NewTableWriter(os.Stdout, false)
 	t.AppendHeader(table.Row{"Set", "Variables"})
 	for _, s := range sets {
 		t.AppendRow(table.Row{s.Name, s.Count})
