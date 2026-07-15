@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
@@ -58,7 +55,9 @@ func runUnlink(client string) error {
 		return unlinkAllClients(printer, registry)
 	}
 
-	// Interactive: find linked clients
+	// Interactive: find linked clients. The selector guards against
+	// non-terminal stdin itself, so the zero-linked no-op and the
+	// single-client auto-unlink stay script-safe.
 	return unlinkInteractive(printer, registry)
 }
 
@@ -114,41 +113,27 @@ func unlinkInteractive(printer *output.Printer, registry *provisioner.Registry) 
 		return nil
 	}
 
+	return unlinkSelected(printer, linked)
+}
+
+// unlinkSelected unlinks a single linked client directly, or prompts when
+// several are linked. Split from unlinkInteractive so tests can drive it
+// with fake clients and a swapped selector.
+func unlinkSelected(printer *output.Printer, linked []provisioner.DetectedClient) error {
 	// If only one linked client, unlink directly
 	if len(linked) == 1 {
 		return doUnlink(printer, linked[0].Provisioner, linked[0].ConfigPath)
 	}
 
-	// Multiple linked clients — show list and let user choose
-	printer.Print("\n  Linked clients:\n\n")
-	for i, dc := range linked {
-		printer.Print("    %d. %-18s %s\n", i+1, dc.Provisioner.Name(), dc.ConfigPath)
-	}
-	printer.Print("\n")
-	printer.Print("  Select clients to unlink (comma-separated, or 'all'): ")
-
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
+	// Multiple linked clients — let the user pick.
+	selected, err := clientSelector("unlink", linked)
 	if err != nil {
-		return fmt.Errorf("reading input: %w", err)
-	}
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return nil
+		return err
 	}
 
-	var selected []provisioner.DetectedClient
-	if input == "all" {
-		selected = linked
-	} else {
-		for _, part := range strings.Split(input, ",") {
-			part = strings.TrimSpace(part)
-			var idx int
-			if _, err := fmt.Sscanf(part, "%d", &idx); err != nil || idx < 1 || idx > len(linked) {
-				continue
-			}
-			selected = append(selected, linked[idx-1])
-		}
+	if len(selected) == 0 {
+		printer.Info("No clients selected")
+		return nil
 	}
 
 	printer.Print("\n")
