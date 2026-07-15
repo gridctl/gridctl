@@ -77,7 +77,7 @@ func TestHasActionableFindings(t *testing.T) {
 
 func TestRenderOptimizeTable_NoFindings(t *testing.T) {
 	var buf bytes.Buffer
-	renderOptimizeTable(&buf, optimize.OptimizeReport{HealthScore: 100})
+	renderOptimizeTable(&buf, optimize.OptimizeReport{HealthScore: 100}, false)
 	if !strings.Contains(buf.String(), "No findings") {
 		t.Errorf("expected 'No findings' message; got: %s", buf.String())
 	}
@@ -101,7 +101,7 @@ func TestRenderOptimizeTable_PrintsRemediation(t *testing.T) {
 			DetectedAt:       time.Now(),
 		}},
 	}
-	renderOptimizeTable(&buf, report)
+	renderOptimizeTable(&buf, report, false)
 	out := buf.String()
 	for _, want := range []string{"github", "warn", "$1.50", "delete entry"} {
 		if !strings.Contains(out, want) {

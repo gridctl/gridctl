@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/optimize"
+	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -54,6 +55,9 @@ Exit codes:
 		if optimizeFormat, err = resolveFormat(optimizeFormat, cmd.Flags().Changed("format"), *optimizeJSON); err != nil {
 			return err
 		}
+		if err := resolvePlain(*optimizePlain, optimizeFormat); err != nil {
+			return err
+		}
 		port, err := resolveOptimizePort(optimizeStack)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -72,7 +76,7 @@ Exit codes:
 				return err
 			}
 		default:
-			renderOptimizeTable(os.Stdout, report)
+			renderOptimizeTable(os.Stdout, report, *optimizePlain)
 		}
 
 		if hasActionableFindings(report.Findings) {
@@ -88,9 +92,13 @@ func init() {
 	optimizeCmd.Flags().StringVar(&optimizeSeverity, "severity", "", "Comma-separated severity allowlist: info,warn,critical")
 	optimizeCmd.Flags().StringVar(&optimizeFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
 	optimizeJSON = addJSONAlias(optimizeCmd)
+	optimizePlain = addPlainFlag(optimizeCmd)
 }
 
-var optimizeJSON *bool
+var (
+	optimizeJSON  *bool
+	optimizePlain *bool
+)
 
 // resolveOptimizePort finds the port of a running gateway, optionally
 // filtered by stack name. Mirrors resolveTracesPort, but emits errors
@@ -170,15 +178,13 @@ func fetchOptimizeReport(port int, stack string, minImpact float64, severity str
 // renderOptimizeTable prints findings as a styled table mirroring the
 // pins-list / traces-list formatting. An empty report still prints the
 // health-score footer so users see "100" on a clean stack.
-func renderOptimizeTable(w io.Writer, report optimize.OptimizeReport) {
+func renderOptimizeTable(w io.Writer, report optimize.OptimizeReport, plain bool) {
 	if len(report.Findings) == 0 {
 		fmt.Fprintf(w, "No findings. Health score: %d/100\n", report.HealthScore)
 		return
 	}
 
-	t := table.NewWriter()
-	t.SetOutputMirror(w)
-	t.SetStyle(table.StyleRounded)
+	t := output.NewTableWriter(w, plain)
 	t.AppendHeader(table.Row{"SEVERITY", "TITLE", "WEEKLY $", "REMEDIATION"})
 
 	for _, f := range report.Findings {
