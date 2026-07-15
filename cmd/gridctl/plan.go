@@ -101,6 +101,7 @@ func runPlan(stackPath string) error {
 		Foreground: applyForeground,
 		Runtime:    runtimeFlag,
 		Replace:    true,
+		LogLevel:   logLevel,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
