@@ -135,7 +135,9 @@ function SetupView() {
         </div>
       </div>
 
-      <fieldset className="flex flex-col gap-2" aria-label="Choose a source">
+      {/* min-w-0 overrides the fieldset default min-inline-size:min-content,
+          which would otherwise let long mono paths blow past the max width. */}
+      <fieldset className="flex flex-col gap-2 min-w-0" aria-label="Choose a source">
         {[
           ...existing.map((e) => ({
             value: e.slug,
@@ -166,8 +168,8 @@ function SetupView() {
               checked={choice === opt.value}
               onChange={() => setChoice(opt.value)}
             />
-            <span className="text-sm text-text-primary">{opt.label}</span>
-            <span className={cn('text-[11px] text-text-muted truncate', opt.mono && 'font-mono')}>
+            <span className="text-sm text-text-primary whitespace-nowrap">{opt.label}</span>
+            <span className={cn('text-[11px] text-text-muted truncate min-w-0 flex-1', opt.mono && 'font-mono')}>
               {opt.hint}
             </span>
           </label>
