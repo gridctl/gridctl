@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/output"
@@ -84,7 +82,8 @@ func runLink(client string) error {
 		return linkAllClients(printer, registry, opts)
 	}
 
-	// Interactive mode
+	// Interactive mode. The selector guards against non-terminal stdin
+	// itself, so the zero-clients no-op below stays script-safe.
 	return linkInteractive(printer, registry, opts)
 }
 
@@ -172,33 +171,16 @@ func linkInteractive(printer *output.Printer, registry *provisioner.Registry, op
 		return nil
 	}
 
-	printer.Print("\n  Detected LLM clients:\n\n")
-	for i, dc := range detected {
-		printer.Print("    %d. %-18s %s\n", i+1, dc.Provisioner.Name(), dc.ConfigPath)
-	}
-	printer.Print("\n")
+	return linkSelected(printer, detected, opts)
+}
 
-	// Read selection
-	printer.Print("  Select clients to link (comma-separated, or 'all'): ")
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
+// linkSelected prompts for a subset of detected clients and links each
+// selection. Split from linkInteractive so tests can drive it with fake
+// clients and a swapped selector.
+func linkSelected(printer *output.Printer, detected []provisioner.DetectedClient, opts provisioner.LinkOptions) error {
+	selected, err := clientSelector("link", detected)
 	if err != nil {
-		return fmt.Errorf("reading input: %w", err)
-	}
-	input = strings.TrimSpace(input)
-
-	if input == "" {
-		return nil
-	}
-
-	var selected []provisioner.DetectedClient
-	if input == "all" {
-		selected = detected
-	} else {
-		indices := parseSelection(input, len(detected))
-		for _, idx := range indices {
-			selected = append(selected, detected[idx])
-		}
+		return err
 	}
 
 	if len(selected) == 0 {
@@ -319,19 +301,3 @@ func portFromURL(url string) string {
 	return url[start+1 : start+end]
 }
 
-// parseSelection parses comma-separated 1-based indices.
-func parseSelection(input string, max int) []int {
-	var indices []int
-	for _, part := range strings.Split(input, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		var idx int
-		if _, err := fmt.Sscanf(part, "%d", &idx); err != nil || idx < 1 || idx > max {
-			continue
-		}
-		indices = append(indices, idx-1)
-	}
-	return indices
-}
