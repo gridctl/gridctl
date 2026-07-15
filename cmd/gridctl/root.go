@@ -1,20 +1,28 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/output"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	runtimeFlag string
-	noColorFlag bool
+	runtimeFlag  string
+	noColorFlag  bool
+	logLevelFlag string
+	// logLevel is the parsed global --log-level, consumed by subcommands
+	// that configure their own slog handlers (apply, plan, serve).
+	logLevel slog.Level
 )
 
 // Command group IDs for the grouped root help (see help.go).
@@ -43,14 +51,38 @@ them via a single MCP gateway.`,
 	// reserved for flag and argument mistakes (see SetFlagErrorFunc below).
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		output.SetNoColor(noColorFlag)
+		lvl, err := parseLogLevelFlag(logLevelFlag)
+		if err != nil {
+			return err
+		}
+		logLevel = lvl
+		output.SetDefaultLevel(lvl)
+		// Re-level the default slog logger only when the user asked for a
+		// non-default level, so the stock output format stays untouched on
+		// the happy path. Logs go to stderr; --json stdout stays clean.
+		if lvl != slog.LevelInfo {
+			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})))
+		}
+		return nil
 	},
+}
+
+// parseLogLevelFlag validates the global --log-level value. Unknown values
+// are rejected rather than silently defaulting to info.
+func parseLogLevelFlag(s string) (slog.Level, error) {
+	switch strings.ToLower(s) {
+	case "debug", "info", "warn", "warning", "error":
+		return logging.ParseLevel(s), nil
+	}
+	return 0, fmt.Errorf("invalid --log-level %q (allowed: debug, info, warn, error)\nRun 'gridctl --help' for usage", s)
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&runtimeFlag, "runtime", "", "Container runtime to use (docker, podman). Auto-detected if not set.")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output (also honors NO_COLOR and TERM=dumb)")
+	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "info", "Minimum log level: debug, info, warn, error")
 
 	initHelp()
 
@@ -71,6 +103,7 @@ func init() {
 	})
 
 	for cmd, group := range map[*cobra.Command]string{
+		initCmd:      groupStack,
 		applyCmd:     groupStack,
 		planCmd:      groupStack,
 		validateCmd:  groupStack,
@@ -122,6 +155,12 @@ func printCLIError(w io.Writer, cmd *cobra.Command, err error) {
 	}
 	fmt.Fprintf(w, "%s %s\n", prefix, err)
 
+	// A stack file that does not exist is the classic first-run dead end;
+	// point at the scaffold instead of leaving the user to guess.
+	if isMissingStackFile(err) {
+		fmt.Fprintln(w, "Run 'gridctl init' to scaffold a stack.yaml, or check the path")
+	}
+
 	// Unknown-command and argument-count mistakes lose cobra's own usage
 	// output once SilenceUsage/SilenceErrors are set; restore a short help
 	// pointer for them (flag mistakes carry theirs via SetFlagErrorFunc,
@@ -134,6 +173,13 @@ func printCLIError(w io.Writer, cmd *cobra.Command, err error) {
 		path = cmd.CommandPath()
 	}
 	fmt.Fprintf(w, "Run '%s --help' for usage\n", path)
+}
+
+// isMissingStackFile reports whether err is a failed stack-file read on a
+// path that does not exist (pkg/config wraps the os error, so errors.Is
+// sees through the chain).
+func isMissingStackFile(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) && strings.Contains(err.Error(), "reading stack file")
 }
 
 // isUsageMistake reports whether err is an invocation mistake (unknown
