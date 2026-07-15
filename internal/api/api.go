@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gridctl/gridctl/internal/probe"
+	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -90,6 +92,13 @@ type Server struct {
 	skillLockPath        string
 	skillsConfigPath     string
 	skillUpdateCachePath string
+
+	// Global-context manager (pkg/contexts), lazily built against the
+	// real home directory on first use; tests inject a temp-dir manager
+	// via SetContextsManager. Pure file operations — works stackless.
+	contextsManager *contexts.Manager
+	contextsOnce    sync.Once
+	contextsErr     error
 }
 
 // NewServer creates a new API server.
@@ -373,6 +382,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/pins/{server}", s.handleGetServerPins)
 	mux.HandleFunc("POST /api/pins/{server}/approve", s.handleApprovePins)
 	mux.HandleFunc("DELETE /api/pins/{server}", s.handleResetPins)
+
+	// Global context (pkg/contexts) — pure file operations, stackless-safe.
+	mux.HandleFunc("GET /api/context", s.handleContextGet)
+	mux.HandleFunc("PUT /api/context", s.handleContextPut)
+	mux.HandleFunc("GET /api/context/scan", s.handleContextScan)
+	mux.HandleFunc("POST /api/context/init", s.handleContextInit)
+	mux.HandleFunc("POST /api/context/sync", s.handleContextSync)
+	mux.HandleFunc("POST /api/context/adopt/{slug}", s.handleContextAdopt)
+	mux.HandleFunc("POST /api/context/unsync/{slug}", s.handleContextUnsync)
+	mux.HandleFunc("GET /api/context/diff/{slug}", s.handleContextDiff)
 
 	// Variable store endpoints — canonical /api/var/* surface plus a
 	// deprecated /api/vault/* alias that wears Deprecation/Sunset headers.
