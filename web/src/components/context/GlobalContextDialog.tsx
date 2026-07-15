@@ -1,10 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
-import { CloudUpload, FileText, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  Bold,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Code2,
+  CloudUpload,
+  Eye,
+  EyeOff,
+  FileText,
+  Heading,
+  List,
+  MonitorSmartphone,
+  RefreshCw,
+} from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Modal } from '../ui/Modal';
 import { IconButton } from '../ui/IconButton';
 import { showToast } from '../ui/Toast';
+import { useSplitPane } from '../../hooks/useSplitPane';
+import { SplitPaneHandle } from '../ui/SplitPane';
 import { MarkdownPreview } from '../registry/MarkdownPreview';
+import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit';
 import { useContextStore } from '../../stores/useContextStore';
 import {
   adoptGlobalContext,
@@ -21,6 +39,15 @@ import {
   type ContextSyncResult,
 } from '../../lib/api';
 
+// Strings the managed-block parser treats as boundaries; the backend
+// rejects canonical content containing them, so the editor flags them
+// live instead of surfacing a save error.
+const RESERVED_MARKERS = [
+  '<!-- BEGIN GRIDCTL MANAGED -->',
+  '<!-- END GRIDCTL MANAGED -->',
+  '<!-- Managed by gridctl.',
+];
+
 interface GlobalContextDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -33,6 +60,9 @@ interface GlobalContextDialogProps {
  * client locations and offers import-or-template — nothing is written
  * until the user chooses. Per-project AGENTS.md files are out of scope
  * (they stay version-controlled in each repo).
+ *
+ * The editor mirrors SkillEditor's grammar: collapsible strip, formatting
+ * toolbar, resizable markdown/preview split, and a status bar.
  */
 export function GlobalContextDialog({ isOpen, onClose }: GlobalContextDialogProps) {
   const doc = useContextStore((s) => s.doc);
@@ -54,13 +84,8 @@ export function GlobalContextDialog({ isOpen, onClose }: GlobalContextDialogProp
       {error && !doc && (
         <div className="h-40 flex items-center justify-center text-sm text-status-error">{error}</div>
       )}
-      {error && doc && (
-        <div role="alert" className="mb-2 text-xs text-status-error">
-          Refresh failed: {error}
-        </div>
-      )}
       {doc && !doc.canonical.exists && <SetupView />}
-      {doc && doc.canonical.exists && <EditorView doc={doc} />}
+      {doc && doc.canonical.exists && <EditorView doc={doc} refreshError={error} />}
     </Modal>
   );
 }
@@ -180,7 +205,7 @@ function SetupView() {
         <button
           onClick={() => void handleCreate()}
           disabled={busy}
-          className="px-4 py-2 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors disabled:opacity-60"
+          className="px-4 py-2 text-xs font-medium rounded-lg transition-all bg-primary text-background hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {busy ? 'Creating…' : 'Create canonical file'}
         </button>
@@ -189,8 +214,12 @@ function SetupView() {
   );
 }
 
-/** Split editor + per-client sync state for an existing canonical file. */
-function EditorView({ doc }: { doc: ContextDoc }) {
+/**
+ * SkillEditor-grade editing surface: action header, collapsible clients
+ * strip, resizable markdown/preview split with a formatting toolbar, and
+ * a status bar with live marker validation and line/char counts.
+ */
+function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: string | null }) {
   const setDoc = useContextStore((s) => s.setDoc);
   const refresh = useContextStore((s) => s.refresh);
   // null draft = pristine (textarea mirrors the canonical content), so a
@@ -199,12 +228,20 @@ function EditorView({ doc }: { doc: ContextDoc }) {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [driftSlug, setDriftSlug] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
+
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const { ratio, containerRef, handleMouseDown, isDragging } = useSplitPane(0.5);
 
   const content = draft ?? doc.canonical.content;
   const dirty = draft !== null && draft !== doc.canonical.content;
+  const markerIssue = RESERVED_MARKERS.find((m) => content.includes(m)) ?? null;
+  const lineCount = content.split('\n').length;
+  const charCount = content.length;
 
   const handleSave = useCallback(async () => {
-    if (!dirty || draft === null) return;
+    if (!dirty || draft === null || markerIssue) return;
     const toSave = draft;
     setSaving(true);
     try {
@@ -219,7 +256,7 @@ function EditorView({ doc }: { doc: ContextDoc }) {
     } finally {
       setSaving(false);
     }
-  }, [dirty, draft, setDoc]);
+  }, [dirty, draft, markerIssue, setDoc]);
 
   const handleSyncAll = useCallback(async () => {
     setSyncing(true);
@@ -244,28 +281,58 @@ function EditorView({ doc }: { doc: ContextDoc }) {
     [handleSave],
   );
 
+  // Formatting toolbar: pure transform at the textarea cursor (shared
+  // with SkillEditor via lib/markdownEdit).
+  const applyMarkdown = useCallback(
+    (action: MarkdownAction) => {
+      const ta = bodyRef.current;
+      if (!ta) return;
+      const next = applyMarkdownAction(content, ta.selectionStart, ta.selectionEnd, action);
+      setDraft(next.value);
+      requestAnimationFrame(() => {
+        ta.focus();
+        ta.setSelectionRange(next.selStart, next.selEnd);
+      });
+    },
+    [content],
+  );
+
+  // Proportional scroll sync: the preview follows the editor closely
+  // enough to feel tethered (same approach as SkillEditor).
+  const handleEditorScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    const ta = e.currentTarget;
+    const preview = previewRef.current;
+    if (!preview) return;
+    const srcMax = ta.scrollHeight - ta.clientHeight;
+    if (srcMax <= 0) return;
+    const dstMax = preview.scrollHeight - preview.clientHeight;
+    preview.scrollTop = (ta.scrollTop / srcMax) * dstMax;
+  }, []);
+
   return (
-    <div className="flex flex-col gap-4 h-full min-h-0">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-[11px] text-text-muted font-mono truncate" title={doc.canonical.path}>
+    // Escape the Modal body padding so the panes run edge to edge, exactly
+    // like SkillEditor.
+    <div className="flex flex-col h-[calc(100%+2rem)] -mx-6 -my-4">
+      {/* Action header */}
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border/30 flex-shrink-0">
+        <span
+          className="text-[11px] text-text-muted font-mono truncate min-w-0"
+          title={doc.canonical.path}
+        >
           {doc.canonical.path}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
-            onClick={() => void handleSave()}
-            disabled={!dirty || saving}
-            className="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors disabled:opacity-50"
+            onClick={() => setShowPreview((p) => !p)}
+            title={showPreview ? 'Hide preview' : 'Show preview'}
+            className={cn(
+              'p-1.5 rounded-lg transition-all duration-200',
+              showPreview
+                ? 'text-text-muted hover:text-primary hover:bg-primary/10'
+                : 'text-primary bg-primary/10',
+            )}
           >
-            {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
-          </button>
-          <button
-            onClick={() => void handleSyncAll()}
-            disabled={syncing || dirty}
-            title={dirty ? 'Save before syncing' : 'Sync every available client'}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 border border-emerald-400/25 hover:bg-emerald-400/10 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
-            {syncing ? 'Syncing…' : 'Sync all'}
+            {showPreview ? <Eye size={14} /> : <EyeOff size={14} />}
           </button>
           <IconButton
             icon={RefreshCw}
@@ -274,24 +341,105 @@ function EditorView({ doc }: { doc: ContextDoc }) {
             size="sm"
             variant="ghost"
           />
+          <button
+            onClick={() => void handleSyncAll()}
+            disabled={syncing || dirty}
+            title={dirty ? 'Save before syncing' : 'Sync every available client'}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-400 border border-emerald-400/25 hover:bg-emerald-400/10 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
+            {syncing ? 'Syncing…' : 'Sync all'}
+          </button>
+          <button
+            onClick={() => void handleSave()}
+            disabled={!dirty || saving || !!markerIssue}
+            className={cn(
+              'px-4 py-2 text-xs font-medium rounded-lg transition-all',
+              'bg-primary text-background hover:bg-primary/90',
+              (!dirty || saving || !!markerIssue) && 'opacity-50 cursor-not-allowed',
+            )}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-1 min-h-0" style={{ minHeight: '260px' }}>
-        <textarea
-          value={content}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={handleKeyDown}
-          aria-label="Canonical global context"
-          spellCheck={false}
-          className="w-full h-full min-h-[240px] resize-none bg-background/60 border border-border/40 rounded-lg p-3 text-xs font-mono text-text-primary focus:outline-none focus:border-primary/50 scrollbar-dark"
-        />
-        <div className="hidden lg:block overflow-y-auto border border-border/30 rounded-lg p-3 scrollbar-dark">
-          <MarkdownPreview content={content} emptyHint="Canonical context preview" />
+      {refreshError && (
+        <div role="alert" className="px-5 py-2 bg-status-error/10 border-b border-status-error/30 flex-shrink-0 text-xs text-status-error">
+          Refresh failed: {refreshError}
         </div>
+      )}
+
+      <ClientsStrip clients={doc.clients} onReviewDrift={setDriftSlug} />
+
+      {/* Editor area: split pane when preview on, full-width when off */}
+      <div ref={containerRef} className="flex-1 flex min-h-0 group/split">
+        <div
+          className={cn('flex flex-col min-w-0 min-h-0', showPreview && 'border-r border-border/30')}
+          style={showPreview ? { width: `${ratio * 100}%` } : { width: '100%' }}
+        >
+          <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border/20 flex-shrink-0">
+            <span className="text-xs text-text-muted uppercase tracking-wider">Markdown</span>
+            <div className="flex items-center gap-0.5">
+              <EditorToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
+              <EditorToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
+              <EditorToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} />
+              <EditorToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} />
+            </div>
+          </div>
+          <textarea
+            ref={bodyRef}
+            value={content}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onScroll={handleEditorScroll}
+            aria-label="Canonical global context"
+            placeholder={'# Global Agent Context\n\nDurable cross-project preferences only...\n\n## Coding Style\n\n- Prefer clarity over cleverness.'}
+            className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none focus:outline-none leading-relaxed"
+            spellCheck={false}
+          />
+        </div>
+
+        {showPreview && (
+          <>
+            <SplitPaneHandle onMouseDown={handleMouseDown} isDragging={isDragging} />
+            <div className="flex flex-col min-w-0 min-h-0" style={{ width: `${(1 - ratio) * 100}%` }}>
+              <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
+                <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
+              </div>
+              <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
+                <div className="px-5 py-4">
+                  <MarkdownPreview content={content} emptyHint="Canonical context preview" />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
-      <ClientList clients={doc.clients} onReviewDrift={setDriftSlug} />
+      {/* Bottom status bar */}
+      <div className="flex items-center justify-between px-5 py-2 border-t border-border/30 bg-surface/50 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          {markerIssue ? (
+            <span className="text-xs flex items-center gap-1 text-status-error">
+              <AlertCircle size={12} />
+              contains the reserved gridctl marker {markerIssue}
+            </span>
+          ) : (
+            <span className="text-xs flex items-center gap-1 text-status-running">
+              <Check size={12} />
+              Valid
+            </span>
+          )}
+          {dirty && !markerIssue && (
+            <span className="text-xs text-text-muted">Unsaved changes</span>
+          )}
+        </div>
+        <div className="flex items-center gap-4 text-xs text-text-muted font-mono">
+          <span>{lineCount} lines</span>
+          <span>{charCount} chars</span>
+        </div>
+      </div>
 
       {driftSlug && (
         <DriftResolveDialog
@@ -315,6 +463,27 @@ function EditorView({ doc }: { doc: ContextDoc }) {
   );
 }
 
+function EditorToolbarButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof Bold;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="p-1.5 rounded-md text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+    >
+      <Icon size={13} />
+    </button>
+  );
+}
+
 const STATE_STYLE: Record<ContextState, string> = {
   'in-sync': 'text-emerald-400 border-emerald-400/25 bg-emerald-400/10',
   stale: 'text-amber-300 border-amber-400/30 bg-amber-400/10',
@@ -324,20 +493,86 @@ const STATE_STYLE: Record<ContextState, string> = {
   unsupported: 'text-text-muted/60 border-border/30 bg-background/30',
 };
 
-/** Per-client sync state rows with inline actions. */
-function ClientList({
+// States that make the clients strip open itself: the user must act.
+const ATTENTION_STATES: ContextState[] = ['drifted', 'stale', 'target-missing'];
+
+/**
+ * Collapsible per-client strip, modeled on SkillEditor's frontmatter and
+ * files strips: a one-line summary when collapsed, the actionable client
+ * rows when expanded. Auto-expands when any client needs attention.
+ */
+function ClientsStrip({
   clients,
   onReviewDrift,
 }: {
   clients: ContextClientStatus[];
   onReviewDrift: (slug: string) => void;
 }) {
+  const needsAttention = clients.some((c) => ATTENTION_STATES.includes(c.state));
+  const [expanded, setExpanded] = useState(needsAttention);
+  // Re-open when attention appears after a refresh (e.g. drift detected);
+  // never force-close a strip the user opened.
+  const [prevAttention, setPrevAttention] = useState(needsAttention);
+  if (needsAttention !== prevAttention) {
+    setPrevAttention(needsAttention);
+    if (needsAttention) setExpanded(true);
+  }
+
+  const counts = clients.reduce<Record<string, number>>((acc, c) => {
+    acc[c.state] = (acc[c.state] ?? 0) + 1;
+    return acc;
+  }, {});
+  const summary = (['in-sync', 'stale', 'drifted', 'target-missing', 'never-synced', 'unsupported'] as const)
+    .filter((s) => counts[s])
+    .map((s) => `${counts[s]} ${s}`)
+    .join(' · ');
+
+  return (
+    <div className="border-b border-border/30 bg-surface/40 flex-shrink-0">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-2 px-5 py-2 text-left hover:bg-surface-highlight/40 transition-colors"
+      >
+        {expanded ? (
+          <ChevronDown size={13} className="text-text-muted flex-shrink-0" />
+        ) : (
+          <ChevronRight size={13} className="text-text-muted flex-shrink-0" />
+        )}
+        <MonitorSmartphone size={13} className="text-text-muted/70 flex-shrink-0" aria-hidden="true" />
+        <span className="text-xs text-text-muted uppercase tracking-wider">Clients</span>
+        <span className="text-[11px] text-text-muted/80 truncate">{summary}</span>
+        {needsAttention && !expanded && (
+          <span className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300">
+            Needs attention
+          </span>
+        )}
+      </button>
+      {expanded && (
+        <ul className="divide-y divide-border/20 max-h-56 overflow-y-auto scrollbar-dark border-t border-border/20">
+          {clients.map((c) => (
+            <ClientRow key={c.slug} client={c} onReviewDrift={onReviewDrift} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** One client's row with inline actions. */
+function ClientRow({
+  client: c,
+  onReviewDrift,
+}: {
+  client: ContextClientStatus;
+  onReviewDrift: (slug: string) => void;
+}) {
   const refresh = useContextStore((s) => s.refresh);
-  const [busySlug, setBusySlug] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const act = useCallback(
-    async (slug: string, fn: () => Promise<unknown>, okMessage: string) => {
-      setBusySlug(slug);
+    async (fn: () => Promise<unknown>, okMessage: string) => {
+      setBusy(true);
       try {
         await fn();
         showToast('success', okMessage);
@@ -345,66 +580,53 @@ function ClientList({
       } catch (err) {
         showToast('error', err instanceof Error ? err.message : 'Action failed');
       } finally {
-        setBusySlug(null);
+        setBusy(false);
       }
     },
     [refresh],
   );
 
   return (
-    <div className="flex-shrink-0 border border-border/30 rounded-lg overflow-hidden">
-      <div className="px-3 py-2 bg-surface/60 border-b border-border/30 text-[10px] uppercase tracking-wider text-text-muted">
-        Clients
-      </div>
-      <ul className="divide-y divide-border/20 max-h-56 overflow-y-auto scrollbar-dark">
-        {clients.map((c) => (
-          <li key={c.slug} className="flex items-center gap-2.5 px-3 py-2">
-            <span
-              className={cn(
-                'text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap',
-                STATE_STYLE[c.state],
-              )}
-            >
-              {c.state}
-            </span>
-            <span className="text-xs text-text-primary whitespace-nowrap">
-              {c.name}
-              {c.experimental && c.supported && (
-                <span className="ml-1 text-[10px] text-amber-300/80">(experimental)</span>
-              )}
-            </span>
-            <span className="text-[11px] text-text-muted font-mono truncate flex-1" title={c.target_path ?? c.detail}>
-              {c.supported ? c.target_path : c.detail}
-              {c.supported && !c.available && c.state === 'never-synced' && ' (client not detected)'}
-            </span>
-            <span className="flex items-center gap-1.5">
-              {c.state === 'drifted' && (
-                <ClientAction label="Review" onClick={() => onReviewDrift(c.slug)} disabled={busySlug !== null} />
-              )}
-              {(c.state === 'stale' || c.state === 'target-missing' || (c.state === 'never-synced' && c.available)) && (
-                <ClientAction
-                  label={busySlug === c.slug ? 'Syncing…' : 'Sync'}
-                  disabled={busySlug !== null}
-                  onClick={() =>
-                    void act(c.slug, () => syncGlobalContext({ clients: [c.slug] }), `${c.name} synced`)
-                  }
-                />
-              )}
-              {(c.state === 'in-sync' || c.state === 'stale' || c.state === 'drifted') && (
-                <ClientAction
-                  label="Unsync"
-                  subtle
-                  disabled={busySlug !== null}
-                  onClick={() =>
-                    void act(c.slug, () => unsyncGlobalContext(c.slug), `${c.name} unsynced`)
-                  }
-                />
-              )}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <li className="flex items-center gap-2.5 px-5 py-2">
+      <span
+        className={cn(
+          'text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap',
+          STATE_STYLE[c.state],
+        )}
+      >
+        {c.state}
+      </span>
+      <span className="text-xs text-text-primary whitespace-nowrap">
+        {c.name}
+        {c.experimental && c.supported && (
+          <span className="ml-1 text-[10px] text-amber-300/80">(experimental)</span>
+        )}
+      </span>
+      <span className="text-[11px] text-text-muted font-mono truncate flex-1" title={c.target_path ?? c.detail}>
+        {c.supported ? c.target_path : c.detail}
+        {c.supported && !c.available && c.state === 'never-synced' && ' (client not detected)'}
+      </span>
+      <span className="flex items-center gap-1.5">
+        {c.state === 'drifted' && (
+          <ClientAction label="Review" onClick={() => onReviewDrift(c.slug)} disabled={busy} />
+        )}
+        {(c.state === 'stale' || c.state === 'target-missing' || (c.state === 'never-synced' && c.available)) && (
+          <ClientAction
+            label={busy ? 'Syncing…' : 'Sync'}
+            disabled={busy}
+            onClick={() => void act(() => syncGlobalContext({ clients: [c.slug] }), `${c.name} synced`)}
+          />
+        )}
+        {(c.state === 'in-sync' || c.state === 'stale' || c.state === 'drifted') && (
+          <ClientAction
+            label="Unsync"
+            subtle
+            disabled={busy}
+            onClick={() => void act(() => unsyncGlobalContext(c.slug), `${c.name} unsynced`)}
+          />
+        )}
+      </span>
+    </li>
   );
 }
 
