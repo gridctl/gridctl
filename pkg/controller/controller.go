@@ -56,10 +56,22 @@ type Config struct {
 	Foreground  bool
 	Watch       bool
 	DaemonChild bool
-	CodeMode    bool   // Enable code mode via CLI flag
-	Runtime     string // Explicit runtime selection (docker, podman)
-	Replace     bool   // Stop a running stack before deploying (used by plan apply)
-	LogFile     string // Path to log file (overrides stack.yaml logging.file)
+	CodeMode    bool       // Enable code mode via CLI flag
+	Runtime     string     // Explicit runtime selection (docker, podman)
+	Replace     bool       // Stop a running stack before deploying (used by plan apply)
+	LogFile     string     // Path to log file (overrides stack.yaml logging.file)
+	LogLevel    slog.Level // Minimum slog level (global --log-level; zero value is info)
+}
+
+// effectiveLogLevel resolves the slog level for handlers built from cfg.
+// Verbose only ever raises verbosity: it lowers the threshold to debug but
+// never mutes an explicit --log-level.
+func effectiveLogLevel(cfg Config) slog.Level {
+	lvl := cfg.LogLevel
+	if cfg.Verbose && lvl > slog.LevelDebug {
+		lvl = slog.LevelDebug
+	}
+	return lvl
 }
 
 // StackController orchestrates the full deploy lifecycle.
@@ -260,8 +272,9 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 		return sc.runDaemonChild(ctx, stack)
 	}
 
-	// Create output printer
+	// Create output printer and phase reporter
 	printer := sc.createPrinter(stack)
+	reporter := sc.createReporter()
 
 	// Start containers
 	rt, err := sc.createRuntime()
@@ -294,14 +307,18 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	// Set up logging for orchestrator
 	logBuffer, bufferHandler := sc.setupOrchestratorLogging(rt)
 
-	// Run workloads
+	// Run workloads. The pull/build window streams orchestrator logs, so
+	// this phase renders static lines only (no spinner interleave).
+	reporter.StartPhase("Pulling images & starting workloads", false)
 	result, err := rt.Up(ctx, stack, runtime.UpOptions{
 		NoCache:  cfg.NoCache,
 		BasePort: cfg.BasePort,
 	})
 	if err != nil {
+		reporter.EndPhase(false)
 		return fmt.Errorf("failed to start stack: %w", err)
 	}
+	reporter.EndPhase(true)
 
 	// Foreground mode: run gateway directly
 	if cfg.Foreground {
@@ -314,7 +331,7 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	}
 
 	// Daemon mode: fork child process
-	return sc.runDaemonMode(ctx, stack, result, printer)
+	return sc.runDaemonMode(ctx, stack, result, printer, reporter)
 }
 
 // checkState acquires a lock, cleans stale state, and checks if already running.
@@ -422,6 +439,18 @@ func (sc *StackController) createPrinter(stack *config.Stack) *output.Printer {
 	return printer
 }
 
+// createReporter builds the apply phase reporter. Quiet mode and daemon
+// children get nil (a no-op reporter): quiet promises no chrome, and the
+// child's stderr is the daemon log file. The reporter writes to stderr
+// (spinner convention) and animates only on an interactive, non-CI
+// terminal.
+func (sc *StackController) createReporter() *output.Reporter {
+	if sc.config.Quiet || sc.config.DaemonChild {
+		return nil
+	}
+	return output.NewReporter(os.Stderr)
+}
+
 // setupOrchestratorLogging configures logging for the runtime orchestrator.
 func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*logging.LogBuffer, slog.Handler) {
 	cfg := sc.config
@@ -435,11 +464,7 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 
 	if cfg.Foreground && !cfg.Quiet {
 		logBuffer := logging.NewLogBuffer(1000)
-		logLevel := slog.LevelInfo
-		if cfg.Verbose {
-			logLevel = slog.LevelDebug
-		}
-		innerHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+		innerHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: effectiveLogLevel(cfg)})
 		bufferHandler := logging.NewBufferHandler(logBuffer, innerHandler)
 		redactHandler := logging.NewRedactingHandler(bufferHandler)
 		registerVault(redactHandler)
@@ -448,11 +473,7 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 	}
 
 	if !cfg.Quiet {
-		logLevel := slog.LevelInfo
-		if cfg.Verbose {
-			logLevel = slog.LevelDebug
-		}
-		textHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+		textHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: effectiveLogLevel(cfg)})
 		redactHandler := logging.NewRedactingHandler(textHandler)
 		registerVault(redactHandler)
 		rt.SetLogger(slog.New(redactHandler))
@@ -462,21 +483,29 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 }
 
 // runDaemonMode forks a child process and waits for readiness.
-func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stack, result *runtime.UpResult, printer *output.Printer) error {
+func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stack, result *runtime.UpResult, printer *output.Printer, reporter *output.Reporter) error {
+	// Nothing else writes during the readiness wait, so this phase may
+	// animate. The reporter stops the spinner before any error returns.
+	reporter.StartPhase("Starting gateway", true)
+
 	daemon := NewDaemonManager(sc.config)
 	pid, err := daemon.Fork(stack)
 	if err != nil {
+		reporter.EndPhase(false)
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
 	if err := daemon.WaitForReady(sc.config.Port, 60*time.Second); err != nil {
+		reporter.EndPhase(false)
 		return fmt.Errorf("daemon failed to become ready: %w\nCheck logs at %s", err, state.LogPath(stack.Name))
 	}
 
 	st, err := state.Load(stack.Name)
 	if err != nil {
+		reporter.EndPhase(false)
 		return fmt.Errorf("daemon may have failed to start - check logs at %s", state.LogPath(stack.Name))
 	}
+	reporter.EndPhase(true)
 
 	// Print summary
 	if printer != nil {
