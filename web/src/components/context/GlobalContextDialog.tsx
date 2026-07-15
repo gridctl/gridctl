@@ -9,6 +9,7 @@ import {
   CloudUpload,
   Eye,
   EyeOff,
+  FileDown,
   FileText,
   Heading,
   List,
@@ -91,15 +92,11 @@ export function GlobalContextDialog({ isOpen, onClose }: GlobalContextDialogProp
 }
 
 /**
- * Adoption-first setup: scan every client's likely global context
- * location, then let the user import one file, or start from the short
- * starter template. The scan itself never writes.
+ * Scan every client's likely global context location. The scan itself
+ * never writes. Returns null while the scan is in flight.
  */
-function SetupView() {
-  const setDoc = useContextStore((s) => s.setDoc);
+function useContextScan(): ContextScanEntry[] | null {
   const [entries, setEntries] = useState<ContextScanEntry[] | null>(null);
-  const [choice, setChoice] = useState<string>('template');
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,15 +115,91 @@ function SetupView() {
     };
   }, []);
 
+  return entries;
+}
+
+/**
+ * Radio list of canonical-content sources: each existing client file
+ * (with its path and size), plus the starter template. Shared between
+ * first-run setup and the editor's Import dialog.
+ */
+function SourceOptions({
+  existing,
+  choice,
+  onChoice,
+  templateLabel,
+}: {
+  existing: ContextScanEntry[];
+  choice: string;
+  onChoice: (value: string) => void;
+  templateLabel: string;
+}) {
+  return (
+    // min-w-0 overrides the fieldset default min-inline-size:min-content,
+    // which would otherwise let long mono paths blow past the max width.
+    <fieldset className="flex flex-col gap-2 min-w-0" aria-label="Choose a source">
+      {[
+        ...existing.map((e) => ({
+          value: e.slug,
+          label: `Import from ${e.name}`,
+          hint: `${e.path} (${e.size} bytes)`,
+          mono: true,
+        })),
+        {
+          value: 'template',
+          label: templateLabel,
+          hint: 'a short draft to trim, not a finished file',
+          mono: false,
+        },
+      ].map((opt) => (
+        <label
+          key={opt.value}
+          className={cn(
+            'flex items-center gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors',
+            choice === opt.value
+              ? 'border-primary/40 bg-primary/10'
+              : 'border-border/40 hover:bg-surface-highlight',
+          )}
+        >
+          <input
+            type="radio"
+            name="context-source"
+            value={opt.value}
+            checked={choice === opt.value}
+            onChange={() => onChoice(opt.value)}
+          />
+          <span className="text-sm text-text-primary whitespace-nowrap">{opt.label}</span>
+          <span className={cn('text-[11px] text-text-muted truncate min-w-0 flex-1', opt.mono && 'font-mono')}>
+            {opt.hint}
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+/**
+ * Adoption-first setup: scan every client's likely global context
+ * location, then let the user import one file, or start from the short
+ * starter template. Defaults to the first existing file so adoption is
+ * the primary path, not the template.
+ */
+function SetupView() {
+  const setDoc = useContextStore((s) => s.setDoc);
+  const entries = useContextScan();
+  const [choice, setChoice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
   const existing = (entries ?? []).filter((e) => e.exists);
+  const selected = choice ?? existing[0]?.slug ?? 'template';
 
   const handleCreate = useCallback(async () => {
     setBusy(true);
     try {
       const doc =
-        choice === 'template'
+        selected === 'template'
           ? await initGlobalContext({ source: 'template' })
-          : await initGlobalContext({ source: 'client', client: choice });
+          : await initGlobalContext({ source: 'client', client: selected });
       setDoc(doc);
       showToast('success', 'Canonical global context created');
     } catch (err) {
@@ -134,7 +207,7 @@ function SetupView() {
     } finally {
       setBusy(false);
     }
-  }, [choice, setDoc]);
+  }, [selected, setDoc]);
 
   if (entries === null) {
     return (
@@ -160,46 +233,12 @@ function SetupView() {
         </div>
       </div>
 
-      {/* min-w-0 overrides the fieldset default min-inline-size:min-content,
-          which would otherwise let long mono paths blow past the max width. */}
-      <fieldset className="flex flex-col gap-2 min-w-0" aria-label="Choose a source">
-        {[
-          ...existing.map((e) => ({
-            value: e.slug,
-            label: `Import from ${e.name}`,
-            hint: `${e.path} (${e.size} bytes)`,
-            mono: true,
-          })),
-          {
-            value: 'template',
-            label: 'Start from the starter template',
-            hint: 'a short draft to trim, not a finished file',
-            mono: false,
-          },
-        ].map((opt) => (
-          <label
-            key={opt.value}
-            className={cn(
-              'flex items-center gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors',
-              choice === opt.value
-                ? 'border-primary/40 bg-primary/10'
-                : 'border-border/40 hover:bg-surface-highlight',
-            )}
-          >
-            <input
-              type="radio"
-              name="context-source"
-              value={opt.value}
-              checked={choice === opt.value}
-              onChange={() => setChoice(opt.value)}
-            />
-            <span className="text-sm text-text-primary whitespace-nowrap">{opt.label}</span>
-            <span className={cn('text-[11px] text-text-muted truncate min-w-0 flex-1', opt.mono && 'font-mono')}>
-              {opt.hint}
-            </span>
-          </label>
-        ))}
-      </fieldset>
+      <SourceOptions
+        existing={existing}
+        choice={selected}
+        onChoice={setChoice}
+        templateLabel="Start from the starter template"
+      />
 
       <div>
         <button
@@ -211,6 +250,84 @@ function SetupView() {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The setup-time source picker, reachable again after the canonical file
+ * exists: replace the canon with an existing client file (or the starter
+ * template). Goes through init with force; a timestamped backup of the
+ * previous canonical precedes the write.
+ */
+function ImportSourceDialog({
+  dirty,
+  onClose,
+  onImported,
+}: {
+  dirty: boolean;
+  onClose: () => void;
+  onImported: (doc: ContextDoc) => void;
+}) {
+  const entries = useContextScan();
+  const [choice, setChoice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const existing = (entries ?? []).filter((e) => e.exists);
+  const selected = choice ?? existing[0]?.slug ?? 'template';
+
+  const handleImport = useCallback(async () => {
+    setBusy(true);
+    try {
+      const doc =
+        selected === 'template'
+          ? await initGlobalContext({ source: 'template', force: true })
+          : await initGlobalContext({ source: 'client', client: selected, force: true });
+      showToast('success', 'Canonical context replaced. Run a sync to propagate.');
+      onImported(doc);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Import failed');
+      setBusy(false);
+    }
+  }, [selected, onImported]);
+
+  return (
+    <Modal isOpen onClose={onClose} title="Import global context" size="wide">
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-text-muted">
+          Replace the canonical context with an existing client file or the starter template.
+          A timestamped backup of the current canonical file precedes the write.
+          {dirty && ' Your unsaved editor changes will be discarded.'}
+        </p>
+        {entries === null ? (
+          <div className="h-24 flex items-center justify-center text-sm text-text-muted">
+            Scanning client context files…
+          </div>
+        ) : (
+          <SourceOptions
+            existing={existing}
+            choice={selected}
+            onChoice={setChoice}
+            templateLabel="Reset to the starter template"
+          />
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="px-3 py-1.5 text-xs text-text-muted border border-border/40 rounded-lg hover:bg-surface-highlight transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void handleImport()}
+            disabled={busy || entries === null}
+            className="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/25 rounded-lg hover:bg-primary/15 transition-colors disabled:opacity-50"
+          >
+            {busy ? 'Replacing…' : 'Replace canonical'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -228,6 +345,7 @@ function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: stri
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [driftSlug, setDriftSlug] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -342,6 +460,14 @@ function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: stri
             variant="ghost"
           />
           <button
+            onClick={() => setShowImport(true)}
+            title="Replace the canonical context from an existing client file"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-muted border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
+          >
+            <FileDown size={12} aria-hidden="true" />
+            Import
+          </button>
+          <button
             onClick={() => void handleSyncAll()}
             disabled={syncing || dirty}
             title={dirty ? 'Save before syncing' : 'Sync every available client'}
@@ -440,6 +566,19 @@ function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: stri
           <span>{charCount} chars</span>
         </div>
       </div>
+
+      {showImport && (
+        <ImportSourceDialog
+          dirty={dirty}
+          onClose={() => setShowImport(false)}
+          onImported={(next) => {
+            setShowImport(false);
+            setDoc(next);
+            // The import replaced the canon; any draft is now stale.
+            setDraft(null);
+          }}
+        />
+      )}
 
       {driftSlug && (
         <DriftResolveDialog
