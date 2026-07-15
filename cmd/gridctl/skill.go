@@ -74,11 +74,17 @@ var skillListCmd = &cobra.Command{
 		if skillListFormat, err = resolveFormat(skillListFormat, cmd.Flags().Changed("format"), *skillListJSON); err != nil {
 			return err
 		}
+		if err := resolvePlain(*skillListPlain, skillListFormat); err != nil {
+			return err
+		}
 		return runSkillList()
 	},
 }
 
-var skillListJSON *bool
+var (
+	skillListJSON  *bool
+	skillListPlain *bool
+)
 
 var skillUpdateCmd = &cobra.Command{
 	Use:     "update [name]",
@@ -167,6 +173,7 @@ func init() {
 	skillListCmd.Flags().BoolVar(&skillListRemote, "remote", false, "Show only remote (imported) skills")
 	skillListCmd.Flags().StringVar(&skillListFormat, "format", "", "Output format (json)")
 	skillListJSON = addJSONAlias(skillListCmd)
+	skillListPlain = addPlainFlag(skillListCmd)
 
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateDryRun, "dry-run", false, "Show changes without applying")
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateForce, "force", false, "Force update even if no changes detected")
@@ -391,9 +398,7 @@ func runSkillList() error {
 		return nil
 	}
 
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	t.SetStyle(table.StyleRounded)
+	t := output.NewTableWriter(os.Stdout, *skillListPlain)
 	t.AppendHeader(table.Row{"Name", "State", "Source", "Repo"})
 	for _, e := range entries {
 		repo := e.Repo
