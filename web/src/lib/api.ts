@@ -1847,3 +1847,115 @@ export async function wipeTelemetry(
 // Re-export the types used in mutation arguments so callers do not need to
 // reach into the types module separately.
 export type { TelemetryPersistDefaults, TelemetryRetention };
+
+// === Global Context API ===
+// Wire format is snake_case, mirroring pkg/contexts JSON tags.
+
+export type ContextState =
+  | 'unsupported'
+  | 'never-synced'
+  | 'in-sync'
+  | 'stale'
+  | 'drifted'
+  | 'target-missing';
+
+export interface ContextClientStatus {
+  slug: string;
+  name: string;
+  supported: boolean;
+  available: boolean;
+  experimental?: boolean;
+  strategy?: string;
+  target_path?: string;
+  state: ContextState;
+  detail?: string;
+  synced_at?: string;
+}
+
+export interface ContextDoc {
+  canonical: { path: string; exists: boolean; content: string };
+  needs_sync: boolean;
+  clients: ContextClientStatus[];
+}
+
+export interface ContextScanEntry {
+  slug: string;
+  name: string;
+  path: string;
+  exists: boolean;
+  size: number;
+}
+
+export interface ContextSyncResult {
+  slug: string;
+  name: string;
+  strategy: string;
+  target_path: string;
+  action: string;
+  backup_path?: string;
+  diff?: string;
+  error?: string;
+}
+
+export interface ContextSyncResponse {
+  dry_run: boolean;
+  has_failures: boolean;
+  results: ContextSyncResult[];
+}
+
+export interface ContextInitRequest {
+  source: 'template' | 'client' | 'file';
+  client?: string;
+  path?: string;
+  force?: boolean;
+}
+
+/** Canonical content plus per-client sync state. GET /api/context */
+export async function fetchGlobalContext(): Promise<ContextDoc> {
+  return fetchJSON<ContextDoc>('/api/context');
+}
+
+/** Save the canonical content. PUT /api/context */
+export async function saveGlobalContext(content: string): Promise<ContextDoc> {
+  return mutateJSON<ContextDoc>('/api/context', 'PUT', { content });
+}
+
+/** What exists at each client's likely global context path. GET /api/context/scan */
+export async function scanGlobalContext(): Promise<ContextScanEntry[]> {
+  const body = await fetchJSON<{ entries: ContextScanEntry[] | null }>('/api/context/scan');
+  return body.entries ?? [];
+}
+
+/** Bootstrap the canonical file from a chosen source. POST /api/context/init */
+export async function initGlobalContext(req: ContextInitRequest): Promise<ContextDoc> {
+  return mutateJSON<ContextDoc>('/api/context/init', 'POST', req);
+}
+
+/** Sync the canonical context to clients (all when clients is omitted). POST /api/context/sync */
+export async function syncGlobalContext(opts?: {
+  clients?: string[];
+  force?: boolean;
+  dryRun?: boolean;
+}): Promise<ContextSyncResponse> {
+  return mutateJSON<ContextSyncResponse>('/api/context/sync', 'POST', {
+    clients: opts?.clients,
+    force: opts?.force,
+    dry_run: opts?.dryRun,
+  });
+}
+
+/** Pull a client's managed content back into the canon. POST /api/context/adopt/{slug} */
+export async function adoptGlobalContext(slug: string): Promise<ContextDoc> {
+  return mutateJSON<ContextDoc>(`/api/context/adopt/${encodeURIComponent(slug)}`, 'POST');
+}
+
+/** Remove a client's managed artifact. POST /api/context/unsync/{slug} */
+export async function unsyncGlobalContext(slug: string): Promise<void> {
+  await mutateJSON<unknown>(`/api/context/unsync/${encodeURIComponent(slug)}`, 'POST');
+}
+
+/** Canonical-vs-target unified diff. GET /api/context/diff/{slug} */
+export async function fetchGlobalContextDiff(slug: string): Promise<string> {
+  const body = await fetchJSON<{ diff: string }>(`/api/context/diff/${encodeURIComponent(slug)}`);
+  return body.diff;
+}
