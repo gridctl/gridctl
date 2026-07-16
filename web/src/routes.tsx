@@ -17,6 +17,7 @@ const LibraryWorkspace = lazy(() => import('./components/workspaces/LibraryWorks
 const VaultWorkspace = lazy(() => import('./components/workspaces/VaultWorkspace'));
 const ToolsWorkspace = lazy(() => import('./components/workspaces/ToolsWorkspace'));
 const MetricsWorkspace = lazy(() => import('./components/workspaces/MetricsWorkspace'));
+const PinsWorkspace = lazy(() => import('./components/workspaces/PinsWorkspace'));
 
 export function AppRoutes() {
   // Single mount point for theme application + cross-window sync; covers the
@@ -76,6 +77,14 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<WorkspaceLoadingShell />}>
               <MetricsWorkspace />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/pins"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <PinsWorkspace />
             </Suspense>
           }
         />
