@@ -35,6 +35,7 @@ export const COMPACT_MODE_DEFAULTS: CompactModeMap = {
   vault: false,
   tools: false,
   metrics: false,
+  pins: false,
 };
 
 export interface CompactModeSlice {
