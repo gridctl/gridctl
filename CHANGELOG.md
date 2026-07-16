@@ -2,48 +2,33 @@
 
 All notable changes to gridctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-beta.14] - 2026-07-16
 
 
 ### Bug Fixes
 
 
-- Fail the integration test suite when the mock MCP server binaries do not compile, instead of silently skipping the dependent tests and reporting green
-- Update keyboard list-navigation state via an effect instead of during render, removing a latent concurrent-rendering hazard
-- Log vault reload failures, resource-listing failures, and registry refresh failures instead of silently discarding them; a corrupt vault file or Docker outage is now diagnosable from the logs
-- Generate canonical `${var:KEY}` placeholders from `gridctl export` and `skill --vault-key` instead of the deprecated `${vault:KEY}` syntax; both syntaxes still resolve
-- Keep the topology "+N more" tool popover's content inside its panel instead of painting past the border and off the viewport; hidden tools now lay out in columns of 10 (up to four, scrolling beyond that), the tool detail card opens beside the panel instead of covering it, and both popovers scroll with the mouse wheel instead of zooming the canvas
-- Fingerprint tool output schemas in TOFU schema pins: a downstream server changing a tool's `outputSchema` now surfaces as drift instead of passing silently. Existing pins verify under their recorded scheme and are silently upgraded (pinning the output schema for the first time) on the next clean verify cycle, so the scheme change itself never shows as drift or blocks a server; the pin file version bumps to 2, and an older gridctl reading an upgraded pin file will report drift until it re-pins. A pin file written by a newer gridctl now refuses to load with an upgrade message instead of being silently replaced by a fresh TOFU baseline, and a corrupt pin file is a hard error for the `pins` CLI (exit `2`) while the daemon still self-heals it with a warning
-- Reject invalid `gateway.security.schema_pinning.action` values at validation time; anything other than `warn` or `block` previously loaded silently as `warn`, so a typo could downgrade a `block` policy without notice. Stacks with a misspelled `action:` now fail `gridctl validate` and `apply` until corrected
+- Forward structuredContent and outputSchema through the gateway ([#849](https://github.com/gridctl/gridctl/pull/849))
+- Complete structuredContent support across gateway surfaces ([#856](https://github.com/gridctl/gridctl/pull/856))
+- Fail integration suite on mock build error ([#858](https://github.com/gridctl/gridctl/pull/858))
+- Surface swallowed errors on vault and status paths ([#866](https://github.com/gridctl/gridctl/pull/866))
+- Keep tool overflow popover content inside its panel ([#885](https://github.com/gridctl/gridctl/pull/885))
+- Pins hygiene - outputSchema fingerprinting, JSON output, action validation ([#891](https://github.com/gridctl/gridctl/pull/891))
 
 ### Features
 
 
-- Add `gridctl ctx`, global context sync: manage one canonical global AGENTS.md at `~/.gridctl/context/AGENTS.md` and project it into each linked client's global context location (`ctx init/status/sync/diff/adopt/unsync/edit`). Setup is adoption-first (`ctx init` scans existing client files and imports one, or scaffolds a short starter; the scan never writes). Each client uses the safest write mechanism it supports: a dedicated file in its rules directory (Claude Code, Roo Code, Continue, VS Code Copilot), a one-line `@`-import shim (Gemini CLI, Goose), or a marker-delimited managed block (OpenCode, Zed, Cline, Antigravity, Windsurf with its 6,000-character cap); content outside the managed region is never touched, every write takes a timestamped backup, and hand-edited targets are skipped with adopt/overwrite guidance instead of silently overwritten (`ctx sync --check` exits `1` for CI). Clients with no file mechanism (Claude Desktop, Cursor, AnythingLLM, Grok Build) are reported as unsupported with the reason. The web UI gains a matching Global Context surface, reachable from a Global Context tile in the Create Resource wizard and from the Library workspace header: a resizable markdown/preview split editor with a formatting toolbar and live validation (the same editing grammar as the skill editor), a collapsible per-client state strip that opens itself when anything needs attention, sync-all, a three-way drift dialog (adopt / overwrite / cancel), and an Import action that reopens the setup-time source picker to replace the canonical file later; setup preselects the first existing client file over the starter template. New verbs support `--format json`/`--json`, `--plain`, and `0`/`1`/`2` exit codes
-- Add `gridctl logs` (daemon log tail/follow, container logs via `--server`), `gridctl doctor` (verdict-style environment checks with remediation hints and meaningful exit codes), and `gridctl open` / `gridctl ui` (open the web UI, `--print` / `--json` supported)
-- Group `gridctl --help` by domain with a quick-start block, add `Example:` sections to core commands, and drop the subcommand footer from leaf commands
-- Print runtime errors once with no usage dump; flag and argument mistakes keep a short help pointer, and unknown commands and `link`/`unlink` client slugs get "did you mean" suggestions
-- Add `--json` to `status` and `info` (experimental schemas) and as a `--format json` alias on `validate`, `plan`, `optimize`, `activate`, `skill list`, and `var list`
-- Colorize `gridctl plan` diffs with Terraform-style `+`/`~`/`-` symbols on TTYs
-- Accept a stack name or file path in `gridctl destroy`, print a notice when bare `gridctl apply` starts stackless mode, and add next-step hints after `status`, `destroy`, and `apply`
-- Honor `NO_COLOR`, `TERM=dumb`, and a new global `--no-color` flag across all CLI output, including help text
-- Enforce a zero-error frontend lint baseline in CI (gatekeeper now runs eslint on every PR)
-- Show the official Model Context Protocol mark on the gateway node and gateway sidebar headers in the web UI, replacing the generic pulse icon and its looping ping animation; liveness stays with the "Gateway Active" status pill
-- Attribute token cost per tool: the observer now records each tool's input/output tokens and estimated cost alongside its call count, `GET /api/tools/usage` carries `inputTokens`/`outputTokens`/`costUsd` (omitted when unpriced, never `$0`), per-tool history persists across gateway restarts, `gridctl optimize` unused-tool findings report a real weekly dollar impact (per-tool schema context tax instead of the previous `$0` stub), and the web UI gains a Tools scope on the Metrics workspace (server-qualified rows, cost-descending default sort, inspector on row select, detached-window parity) plus calls/tokens/cost in the Tools detail panel's Usage section outside Audit Mode
-- Add `--format json` (and the `--json` alias) to `gridctl pins list` and `gridctl pins verify`, emitting versioned documents that mirror `/api/pins` (verify includes a top-level `has_drift` flag), and give `pins verify` the standard exit contract: `0` verified, `1` drift detected (now the default, no flag needed), `2` infrastructure error; `--exit-code` remains accepted as a deprecated no-op
-- Negotiate the MCP protocol version instead of ignoring it in both directions: the gateway echoes a client's requested version when supported (2024-11-05 through 2025-11-25) and counter-offers its latest otherwise, malformed initialize params return `InvalidParams` instead of being silently accepted, post-initialize streamable requests carrying an unsupported `MCP-Protocol-Version` header get a 400 naming the supported set, connections to downstream servers reporting an unsupported version fail with a clear error, and gridctl stamps the negotiated version on its own post-initialize requests to downstream HTTP servers; servers that fail gateway registration (version mismatch or otherwise) now appear as failed in `gridctl status` (text and `--json`) and as error-badged nodes on the Topology canvas instead of silently vanishing, without gating `/ready`; the version a downstream server reported at initialize surfaces as `protocolVersion` on `/api/mcp-servers` and as a Protocol row in the Topology server inspector
-- Add `--plain` to `status`, `skill list`, `pins list`, `optimize`, and `telemetry status`, rendering tables without box-drawing (2+-space columns, one record per line) for `grep`/`awk` pipelines; piped table output (including `var list`) now degrades to plain automatically, and `--plain` with `--json` is rejected. `var list` deliberately has no `--plain` flag: in the `var` family that flag already means "show unmasked value"
-- Add `gridctl init [dir]` to scaffold a commented starter `stack.yaml` that passes `validate` as-is (`--name`, `--force`, `--example minimal|skills`; the `skills` variant adds an example `SKILL.md`), and hint at `gridctl init` when `apply`, `plan`, or `validate` fail on a missing stack file
-- Add a global `--log-level debug|info|warn|error` flag threading through CLI output, the orchestrator, and forked daemon children; `apply -v` keeps its meaning and only ever raises verbosity
-- Replace the numbered `link`/`unlink` prompt with a multi-select form (accessible mode via the `ACCESSIBLE` environment variable, no-color aware, Ctrl-C aborts with no config writes), and fail fast with the non-interactive options when bare `link`/`unlink` runs without a terminal instead of hanging on stdin
-- Show apply phase progress ("Pulling images & starting workloads", "Starting gateway") as static lines, with a spinner on interactive non-CI terminals during the gateway readiness wait
+- Use official MCP logo on gateway node ([#870](https://github.com/gridctl/gridctl/pull/870))
+- Terminal experience v1 (errors, help groups, JSON, day-2 verbs) ([#882](https://github.com/gridctl/gridctl/pull/882))
+- Per-tool cost attribution ([#887](https://github.com/gridctl/gridctl/pull/887))
+- MCP protocol-version negotiation ([#889](https://github.com/gridctl/gridctl/pull/889))
+- Terminal experience v2 (--plain, init, log-level, interactive link, apply progress) ([#893](https://github.com/gridctl/gridctl/pull/893))
+- Global context sync across linked clients ([#895](https://github.com/gridctl/gridctl/pull/895))
 
-### Removed
+### Refactoring
 
 
-- Delete the unused `internal/server` package and the legacy pre-transport JSON-RPC handler; the gateway lifecycle integration test now exercises the production streamable transport
-
-## [0.1.0-beta.13] - 2026-06-30
+- Remove dead internal/server and legacy handler ([#862](https://github.com/gridctl/gridctl/pull/862))## [0.1.0-beta.13] - 2026-06-30
 
 
 ### Bug Fixes
