@@ -1,24 +1,16 @@
 import { useState } from 'react';
-import { Lock, LockOpen, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Lock, LockOpen, CheckCircle2, ChevronRight, Clock, RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { usePinsStore } from '../../stores/usePinsStore';
 import { approveServerPins, fetchServerPins } from '../../lib/api';
+import { pinStatusMeta } from './pinStatus';
 import { showToast } from '../ui/Toast';
 import { formatRelativeTime } from '../../lib/time';
 
-function statusLabel(status: string): { label: string; colorClass: string } {
-  switch (status) {
-    case 'drift':
-      return { label: 'Drift', colorClass: 'text-status-pending' };
-    case 'approved_pending_redeploy':
-      return { label: 'Approved', colorClass: 'text-status-running' };
-    default:
-      return { label: 'Pinned', colorClass: 'text-status-running' };
-  }
-}
-
 export function PinsPanel() {
   const pins = usePinsStore((s) => s.pins);
+  const navigate = useNavigate();
   const [approvingServers, setApprovingServers] = useState<Set<string>>(new Set());
 
   const handleApprove = async (serverName: string) => {
@@ -73,16 +65,23 @@ export function PinsPanel() {
         </thead>
         <tbody>
           {entries.map(([name, sp]) => {
-            const { label, colorClass } = statusLabel(sp.status);
+            const { label, colorClass } = pinStatusMeta(sp.status);
             const isApproving = approvingServers.has(name);
             const lastVerified = sp.last_verified_at
               ? formatRelativeTime(new Date(sp.last_verified_at))
               : '—';
 
+            const openWorkspace = () => navigate(`/pins?server=${encodeURIComponent(name)}`);
             return (
               <tr
                 key={name}
-                className="border-b border-border/20 hover:bg-surface-highlight/20 transition-colors"
+                onClick={() => {
+                  // A mouseup that ends a text-selection drag must not
+                  // navigate away from the text just selected.
+                  if (window.getSelection()?.toString()) return;
+                  openWorkspace();
+                }}
+                className="border-b border-border/20 hover:bg-surface-highlight/20 transition-colors cursor-pointer"
               >
                 <td className="px-4 py-2.5 font-mono text-text-primary">{name}</td>
                 <td className="px-4 py-2.5">
@@ -103,9 +102,14 @@ export function PinsPanel() {
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-right">
+                  <div className="flex items-center justify-end gap-2">
                   {sp.status === 'drift' && (
                     <button
-                      onClick={() => handleApprove(name)}
+                      onClick={(e) => {
+                        // Approving must not also trigger the row's navigation.
+                        e.stopPropagation();
+                        handleApprove(name);
+                      }}
                       disabled={isApproving}
                       className={cn(
                         'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ml-auto',
@@ -127,6 +131,19 @@ export function PinsPanel() {
                       )}
                     </button>
                   )}
+                  {/* The row's onClick is a mouse convenience; this button is
+                      the accessible affordance (keyboard focus + SR name). */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openWorkspace();
+                    }}
+                    aria-label={`Open ${name} in Pins workspace`}
+                    className="p-0.5 rounded text-text-muted/40 hover:text-text-primary hover:bg-surface-highlight transition-colors flex-shrink-0"
+                  >
+                    <ChevronRight size={13} aria-hidden="true" />
+                  </button>
+                  </div>
                 </td>
               </tr>
             );
