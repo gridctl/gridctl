@@ -2,6 +2,14 @@
 
 All notable changes to gridctl will be documented in this file.
 
+## [Unreleased]
+
+
+### Bug Fixes
+
+
+- Surface pin drift detail before approval: `GET /api/pins/{server}/diff` endpoint, `gridctl pins diff` subcommand with JSON output and 0/1/2 exit codes, and a first-class Pins workspace where the Approve action sits beside the rendered per-tool diff (non-printable characters escaped). Approvals can be bound to the reviewed snapshot via `expected_server_hash` / `pins approve --expect`, rejecting definitions that change after review
+
 ## [0.1.0-beta.14] - 2026-07-16
 
 
