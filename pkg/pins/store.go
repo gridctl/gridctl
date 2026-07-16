@@ -209,6 +209,24 @@ func (ps *PinStore) withFileLock(fn func() (*VerifyResult, error)) (*VerifyResul
 	return result, err
 }
 
+// HashTools computes the server-level fingerprint that Approve would store
+// for the given tools. It lets callers bind an approval to a reviewed
+// snapshot: capture the fingerprint when rendering a diff, then compare it
+// against the live one at approve time and reject on mismatch, closing the
+// window where a server swaps in unreviewed definitions between review and
+// approval.
+func HashTools(tools []mcp.Tool) (string, error) {
+	hashes := make([]string, 0, len(tools))
+	for _, t := range sortedTools(tools) {
+		h, err := hashTool(t)
+		if err != nil {
+			return "", fmt.Errorf("pins: hashing tool %q: %w", t.Name, err)
+		}
+		hashes = append(hashes, h)
+	}
+	return hashStrings(hashes), nil
+}
+
 // pinServer hashes all provided tools and stores them as a fresh pin record.
 // Caller must hold ps.mu.Lock().
 func (ps *PinStore) pinServer(serverName string, tools []mcp.Tool) (*VerifyResult, error) {
