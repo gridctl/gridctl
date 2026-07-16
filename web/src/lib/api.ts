@@ -1561,17 +1561,63 @@ export async function fetchServerPins(): Promise<Record<string, ServerPins>> {
   return fetchJSON<Record<string, ServerPins>>('/api/pins');
 }
 
+export interface PinsToolDiff {
+  name: string;
+  old_hash: string;
+  new_hash: string;
+  old_description: string;
+  new_description: string;
+}
+
+export interface PinsDiff {
+  server: string;
+  status: string;
+  // Fingerprint of the live definitions this diff was computed from; pass to
+  // approveServerPins to bind the approval to the reviewed snapshot.
+  live_server_hash: string;
+  modified_tools: PinsToolDiff[];
+  new_tools: string[];
+  removed_tools: string[];
+}
+
 /**
- * Approve current tool definitions for a server, clearing drift
+ * Fetch the per-tool delta between pinned and live tool definitions.
+ * Computed on demand server-side; never mutates pin state.
+ * GET /api/pins/{server}/diff
+ */
+export async function fetchPinsDiff(serverName: string): Promise<PinsDiff> {
+  return fetchJSON<PinsDiff>(`/api/pins/${encodeURIComponent(serverName)}/diff`);
+}
+
+/**
+ * Approve current tool definitions for a server, clearing drift.
+ * When expectedServerHash (from PinsDiff.live_server_hash) is provided, the
+ * gateway rejects the approval with 409 if the live definitions changed after
+ * the diff was reviewed, so nothing unreviewed can be pinned.
  * POST /api/pins/{server}/approve
  */
-export async function approveServerPins(serverName: string): Promise<void> {
+export async function approveServerPins(
+  serverName: string,
+  expectedServerHash?: string,
+): Promise<void> {
   const response = await fetch(`${API_BASE}/api/pins/${encodeURIComponent(serverName)}/approve`, {
     method: 'POST',
     headers: buildHeaders(),
+    ...(expectedServerHash
+      ? { body: JSON.stringify({ expected_server_hash: expectedServerHash }) }
+      : {}),
   });
   if (response.status === 401) throw new AuthError('Authentication required');
-  if (!response.ok) throw new Error(`API error: ${response.status} ${response.statusText}`);
+  if (!response.ok) {
+    let message = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body; keep the status-line message.
+    }
+    throw new Error(message);
+  }
 }
 
 // === JSON-RPC Helper (for MCP protocol calls) ===
