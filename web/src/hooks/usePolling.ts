@@ -1,9 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { usePinsStore } from '../stores/usePinsStore';
-import { useUIStore } from '../stores/useUIStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
@@ -13,6 +13,7 @@ let _prevDriftCount = 0;
 
 export function usePolling() {
   const intervalRef = useRef<number | null>(null);
+  const navigate = useNavigate();
 
   const setGatewayStatus = useStackStore((s) => s.setGatewayStatus);
   const setClients = useStackStore((s) => s.setClients);
@@ -60,7 +61,9 @@ export function usePolling() {
         const driftedCount = Object.values(pins).filter((sp) => sp.status === 'drift').length;
         if (driftedCount > 0 && _prevDriftCount === 0) {
           showToast('warning', `Schema drift detected on ${driftedCount} server${driftedCount > 1 ? 's' : ''}`, {
-            action: { label: 'View', onClick: () => useUIStore.getState().setBottomPanelTab('pins') },
+            // Land on the Pins workspace, where the per-tool diff and the
+            // Approve action live; drifted servers sort first there.
+            action: { label: 'View', onClick: () => navigate('/pins') },
             duration: 6000,
           });
         }
@@ -139,7 +142,7 @@ export function usePolling() {
         setConnectionStatus('error');
       }
     }
-  }, [setGatewayStatus, setClients, setTools, setToolCatalog, setError, setConnectionStatus, setAuthRequired, setLoading, refreshNodesAndEdges]);
+  }, [setGatewayStatus, setClients, setTools, setToolCatalog, setError, setConnectionStatus, setAuthRequired, setLoading, refreshNodesAndEdges, navigate]);
 
   useEffect(() => {
     // Don't poll while auth prompt is showing
