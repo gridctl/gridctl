@@ -21,6 +21,7 @@ import {
   Plus,
   PanelBottom,
   Compass,
+  Pin,
   Sun,
   Moon,
   Monitor,
@@ -116,6 +117,15 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         icon: <BarChart2 size={14} />,
         keywords: ['metrics', 'stats', 'tokens', 'usage', 'cost', 'charts', 'dashboard', 'open'],
         onSelect: () => navigate('/metrics'),
+      },
+      {
+        id: 'navigate:workspace-pins',
+        label: 'Go to Pins',
+        section: 'global',
+        icon: <Pin size={14} />,
+        shortcut: ['⌘', '6'],
+        keywords: ['pins', 'workspace', 'drift', 'schema', 'tofu', 'approve', 'go'],
+        onSelect: () => navigate('/pins'),
       },
       {
         id: 'navigate:spec',
