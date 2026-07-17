@@ -85,7 +85,9 @@ function buildSkillMDContent(fields: {
   if (fields.metadata && Object.keys(fields.metadata).length > 0) {
     lines.push('metadata:');
     for (const [k, v] of Object.entries(fields.metadata)) {
-      if (k) lines.push(`  ${k}: "${v}"`);
+      // Escape for a YAML double-quoted scalar; imported values may carry
+      // embedded quotes (e.g. nested metadata coerced to JSON strings).
+      if (k) lines.push(`  ${k}: "${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
     }
   }
   if (fields.acceptanceCriteria && fields.acceptanceCriteria.length > 0) {
