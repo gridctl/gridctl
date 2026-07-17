@@ -2,6 +2,9 @@ package skills
 
 import (
 	"context"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -238,4 +241,35 @@ func TestImporter_Diff_NoOrigin(t *testing.T) {
 
 	_, err := imp.Diff(context.Background(), "local-only")
 	assert.Error(t, err, "a skill without an origin cannot be diffed")
+}
+
+// TestImporterDiff_UpstreamMalformedSurfacesParseError verifies that when
+// the upstream SKILL.md no longer parses, Diff reports the parse failure
+// instead of the misleading "not found at upstream path".
+func TestImporterDiff_UpstreamMalformedSurfacesParseError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+	repoDir, repo := initSkillRepo(t, "# Test\n\nv1.\n")
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	_, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	require.NoError(t, err)
+
+	// Upstream pushes a SKILL.md with broken frontmatter.
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "SKILL.md"),
+		[]byte("---\nname: [unclosed\ndescription: broken\n---\n\nBody.\n"), 0644))
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Add("SKILL.md")
+	require.NoError(t, err)
+	_, err = wt.Commit("break frontmatter", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@test.com"},
+	})
+	require.NoError(t, err)
+
+	_, err = imp.Diff(context.Background(), "test-skill")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "not found at upstream path")
+	assert.Contains(t, err.Error(), "failed to parse")
 }
