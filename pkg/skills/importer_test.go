@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -437,4 +438,116 @@ func TestContentHashFile(t *testing.T) {
 	hash3, err := ContentHashFile(path3)
 	require.NoError(t, err)
 	assert.NotEqual(t, hash1, hash3)
+}
+
+// initRepoWithSkillContent creates a local git repo whose SKILL.md has the
+// given raw content (valid or intentionally malformed).
+func initRepoWithSkillContent(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	require.NoError(t, err)
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	for path, content := range files {
+		full := filepath.Join(dir, path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+		_, err = wt.Add(path)
+		require.NoError(t, err)
+	}
+	_, err = wt.Commit("initial", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@test.com"},
+	})
+	require.NoError(t, err)
+	return dir
+}
+
+// TestImporter_Import_AllMalformedNamesFiles verifies that when every
+// SKILL.md fails to parse, the error names the failing file instead of
+// claiming no SKILL.md files exist.
+func TestImporter_Import_AllMalformedNamesFiles(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+
+	repoDir := initRepoWithSkillContent(t, map[string]string{
+		"skills/broken/SKILL.md": "---\nname: [unclosed\ndescription: broken\n---\n\nBody.\n",
+	})
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "no SKILL.md files found")
+	assert.Contains(t, err.Error(), "failed to parse")
+	assert.Contains(t, err.Error(), filepath.Join("skills", "broken", "SKILL.md"))
+}
+
+// TestImporter_Import_MixedMalformedWarns verifies that valid skills import
+// while unparseable ones surface as warnings.
+func TestImporter_Import_MixedMalformedWarns(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+
+	repoDir := initRepoWithSkillContent(t, map[string]string{
+		"skills/good/SKILL.md":   "---\nname: good-skill\ndescription: valid\n---\n\nBody.\n",
+		"skills/broken/SKILL.md": "---\nname: [unclosed\ndescription: broken\n---\n\nBody.\n",
+	})
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	require.NoError(t, err)
+
+	require.Len(t, result.Imported, 1)
+	assert.Equal(t, "good-skill", result.Imported[0].Name)
+
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, filepath.Join("skills", "broken", "SKILL.md")) && strings.Contains(w, "failed to parse") {
+			found = true
+		}
+	}
+	assert.True(t, found, "warnings should name the malformed file, got %v", result.Warnings)
+}
+
+// TestImporter_Import_NestedMetadata verifies end-to-end import of a skill
+// whose metadata nests objects (openclaw/ClawHub convention).
+func TestImporter_Import_NestedMetadata(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+
+	repoDir := initRepoWithSkillContent(t, map[string]string{
+		"skills/nested/SKILL.md": `---
+name: nested-meta
+description: Skill with nested metadata
+metadata:
+  author: samber
+  version: "1.2.2"
+  openclaw:
+    emoji: "X"
+    requires:
+      bins:
+        - go
+---
+
+Body.
+`,
+	})
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	sk, err := store.GetSkill("nested-meta")
+	require.NoError(t, err)
+	assert.Equal(t, "samber", sk.Metadata["author"])
+	assert.Equal(t, "1.2.2", sk.Metadata["version"])
+	assert.NotEmpty(t, sk.Metadata["openclaw"])
 }
