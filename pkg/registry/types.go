@@ -14,16 +14,22 @@ const (
 	StateDisabled ItemState = "disabled"
 )
 
+// SkillMetadata holds the frontmatter metadata mapping. The agentskills.io
+// spec defines it as string-to-string, but ecosystems like openclaw/ClawHub
+// publish nested values there, so decoding is lenient: non-string values are
+// coerced to strings (see UnmarshalYAML in frontmatter.go).
+type SkillMetadata map[string]string
+
 // AgentSkill represents an Agent Skills standard SKILL.md file.
 // See https://agentskills.io/specification for the full spec.
 type AgentSkill struct {
 	// --- Frontmatter fields (from YAML between --- delimiters) ---
-	Name          string            `yaml:"name" json:"name"`
-	Description   string            `yaml:"description" json:"description"`
-	License       string            `yaml:"license,omitempty" json:"license,omitempty"`
-	Compatibility string            `yaml:"compatibility,omitempty" json:"compatibility,omitempty"`
-	Metadata      map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
-	AllowedTools  string            `yaml:"allowed-tools,omitempty" json:"allowedTools,omitempty"`
+	Name          string        `yaml:"name" json:"name"`
+	Description   string        `yaml:"description" json:"description"`
+	License       string        `yaml:"license,omitempty" json:"license,omitempty"`
+	Compatibility string        `yaml:"compatibility,omitempty" json:"compatibility,omitempty"`
+	Metadata      SkillMetadata `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	AllowedTools  string        `yaml:"allowed-tools,omitempty" json:"allowedTools,omitempty"`
 	// AcceptanceCriteria documents expected skill behavior as human-readable
 	// Given/When/Then scenarios. Gridctl extension; not part of agentskills.io spec.
 	// See https://agentskills.io/specification
