@@ -21,8 +21,10 @@ vi.mock('../components/ui/Toast', () => ({
 }));
 
 import { previewSkillSource, HTTPError } from '../lib/api';
+import { showToast } from '../components/ui/Toast';
 
 const mockPreview = vi.mocked(previewSkillSource);
+const mockToast = vi.mocked(showToast);
 
 describe('AddSourceStep — auth card', () => {
   beforeEach(() => {
@@ -156,5 +158,89 @@ describe('AddSourceStep — auth card', () => {
     await waitFor(() => expect(mockPreview).toHaveBeenCalledTimes(1));
     const [, params] = mockPreview.mock.calls[0];
     expect(params?.auth).toBeUndefined();
+  });
+});
+
+describe('AddSourceStep — malformed SKILL.md reporting', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockToast.mockReset();
+  });
+
+  const scan = (url = 'https://github.com/acme/skills') => {
+    fireEvent.change(screen.getByPlaceholderText(/https:\/\/github/i), {
+      target: { value: url },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /scan for skills/i }));
+  };
+
+  it('names the parse failure when all SKILL.md files are malformed', async () => {
+    mockPreview.mockResolvedValueOnce({
+      repo: 'https://github.com/acme/skills',
+      ref: '',
+      commitSha: 'abc',
+      skills: [],
+      malformed: [{ path: 'skills/broken/SKILL.md', error: 'parsing frontmatter: bad yaml' }],
+    });
+    const onPreview = vi.fn();
+
+    render(<AddSourceStep onPreviewLoaded={onPreview} />);
+    scan();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/1 SKILL\.md file found but none could be parsed/i),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText(/skills\/broken\/SKILL\.md/)).toBeInTheDocument();
+    expect(onPreview).not.toHaveBeenCalled();
+  });
+
+  it('keeps the plain message when the repository has no SKILL.md at all', async () => {
+    mockPreview.mockResolvedValueOnce({
+      repo: 'https://github.com/acme/skills',
+      ref: '',
+      commitSha: 'abc',
+      skills: [],
+      malformed: [],
+    });
+
+    render(<AddSourceStep onPreviewLoaded={vi.fn()} />);
+    scan();
+
+    await waitFor(() => {
+      expect(screen.getByText(/no SKILL\.md files found in this repository/i)).toBeInTheDocument();
+    });
+  });
+
+  it('warns via toast but proceeds when a mixed repo has some malformed files', async () => {
+    mockPreview.mockResolvedValueOnce({
+      repo: 'https://github.com/acme/skills',
+      ref: '',
+      commitSha: 'abc',
+      skills: [
+        {
+          name: 'good',
+          description: '',
+          body: '',
+          valid: true,
+          errors: [],
+          warnings: [],
+          findings: [],
+          exists: false,
+        },
+      ],
+      malformed: [{ path: 'skills/broken/SKILL.md', error: 'parsing frontmatter: bad yaml' }],
+    });
+    const onPreview = vi.fn();
+
+    render(<AddSourceStep onPreviewLoaded={onPreview} />);
+    scan();
+
+    await waitFor(() => expect(onPreview).toHaveBeenCalledTimes(1));
+    expect(mockToast).toHaveBeenCalledWith(
+      'warning',
+      expect.stringContaining('skills/broken/SKILL.md'),
+    );
   });
 });
