@@ -624,11 +624,18 @@ export interface SkillPreview {
   exists: boolean;
 }
 
+/** A SKILL.md that was found in the repository but could not be parsed. */
+export interface MalformedSkillFile {
+  path: string;
+  error: string;
+}
+
 export interface SkillPreviewResponse {
   repo: string;
   ref: string;
   commitSha: string;
   skills: SkillPreview[];
+  malformed?: MalformedSkillFile[];
 }
 
 export interface ImportedSkillResult {
