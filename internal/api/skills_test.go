@@ -4,9 +4,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/registry"
@@ -448,5 +454,89 @@ func TestStoreDir(t *testing.T) {
 
 	if store.Dir() != dir {
 		t.Errorf("expected Dir() = %q, got %q", dir, store.Dir())
+	}
+}
+
+// initPreviewTestRepo creates a local git repo with one valid and one
+// malformed SKILL.md for exercising the source-preview handler.
+func initPreviewTestRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("init repo: %v", err)
+	}
+
+	files := map[string]string{
+		"skills/good/SKILL.md":   "---\nname: good-skill\ndescription: valid\n---\n\nBody.\n",
+		"skills/broken/SKILL.md": "---\nname: [unclosed\ndescription: broken\n---\n\nBody.\n",
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("worktree: %v", err)
+	}
+	for path, content := range files {
+		full := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if _, err := wt.Add(path); err != nil {
+			t.Fatalf("add: %v", err)
+		}
+	}
+	if _, err := wt.Commit("initial", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@test.com"},
+	}); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	return dir
+}
+
+// TestHandleSkills_SourcePreview_ReportsMalformed pins the wire contract of
+// the preview response: valid skills under "skills", parse failures under
+// "malformed" with "path" and "error" keys (the wizard depends on all three).
+func TestHandleSkills_SourcePreview_ReportsMalformed(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	srv, _ := setupRegistryTestServer(t)
+	repoDir := initPreviewTestRepo(t)
+
+	body := strings.NewReader(`{"repo": ` + strconv.Quote(repoDir) + `}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/test-source/preview", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Skills []struct {
+			Name string `json:"name"`
+		} `json:"skills"`
+		Malformed []struct {
+			Path  string `json:"path"`
+			Error string `json:"error"`
+		} `json:"malformed"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if len(resp.Skills) != 1 || resp.Skills[0].Name != "good-skill" {
+		t.Fatalf("expected one good-skill preview, got %+v", resp.Skills)
+	}
+	if len(resp.Malformed) != 1 {
+		t.Fatalf("expected one malformed entry, got %+v", resp.Malformed)
+	}
+	if resp.Malformed[0].Path != filepath.Join("skills", "broken", "SKILL.md") {
+		t.Errorf("malformed path = %q", resp.Malformed[0].Path)
+	}
+	if !strings.Contains(resp.Malformed[0].Error, "parsing frontmatter") {
+		t.Errorf("malformed error = %q, want frontmatter parse error", resp.Malformed[0].Error)
 	}
 }
