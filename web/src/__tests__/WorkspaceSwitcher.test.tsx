@@ -15,7 +15,7 @@ function renderAt(path: string) {
 
 describe('WorkspaceSwitcher', () => {
   it('renders one pill per workspace, in WORKSPACE_CONFIG order', () => {
-    renderAt('/topology');
+    renderAt('/stack');
     const tablist = screen.getByRole('tablist', { name: /workspace/i });
     expect(tablist).toBeInTheDocument();
     const tabs = screen.getAllByRole('tab');
@@ -53,7 +53,7 @@ describe('WorkspaceSwitcher', () => {
   });
 
   it('links each pill to its workspace route', () => {
-    renderAt('/topology');
+    renderAt('/stack');
     for (const ws of WORKSPACE_CONFIG) {
       expect(screen.getByRole('tab', { name: ws.label })).toHaveAttribute(
         'href',

@@ -222,7 +222,7 @@ export interface SeedParams {
 }
 
 interface AccessLensState {
-  // Access Lens mode is on. Net-new to Topology (no prior mode toggle).
+  // Access Lens mode is on. Net-new to the Stack workspace (no prior mode toggle).
   enabled: boolean;
   // The slide-over editor (the keyboard-driven twin of canvas node toggling).
   slideOverOpen: boolean;

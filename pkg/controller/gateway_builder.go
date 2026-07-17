@@ -566,7 +566,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 
 	// Wire the wizard's "Discover tools" probe. Scope: external URL
 	// servers only — container / stdio / local-process / SSH / OpenAPI are
-	// curated post-deploy from the topology sidebar.
+	// curated post-deploy from the Stack sidebar.
 	probeCache := probe.NewCache(probe.DefaultTTL)
 	prober := probe.NewProber(probeCache)
 	if handler != nil {

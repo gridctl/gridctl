@@ -153,8 +153,7 @@ func (p *ClientAccessPolicy) Filter(accessID string, tools []Tool) []Tool {
 
 // ClientScopeResult reports a client's backend-computed effective scope: the
 // servers and prefixed tool names it can actually reach after intersecting its
-// allow-list with the live tool surface. It backs the per-client scope the
-// topology/clients API surfaces.
+// allow-list with the live tool surface. It backs the per-client // stack/clients API surfaces.
 type ClientScopeResult struct {
 	// Configured reports whether a `clients:` block exists at all.
 	Configured bool `json:"configured"`

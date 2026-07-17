@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import { ServerToolScopeGroup, type ScopeTool } from '../components/topology/ServerToolScopeGroup';
+import { ServerToolScopeGroup, type ScopeTool } from '../components/stack/ServerToolScopeGroup';
 
 const TOOLS: ScopeTool[] = [
   { name: 'search-repos', description: 'Search repositories' },

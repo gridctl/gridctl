@@ -66,7 +66,7 @@ describe('ToolsPicker', () => {
       ];
     });
 
-    it('renders an option for every topology tool and strips the server prefix', () => {
+    it('renders an option for every stack tool and strips the server prefix', () => {
       render(<Harness />);
       expect(screen.getByRole('option', { name: 'query' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'insert' })).toBeInTheDocument();
@@ -141,7 +141,7 @@ describe('ToolsPicker', () => {
   });
 
   describe('empty state', () => {
-    it('shows neutral empty copy (not an error) when no topology tools and no prior selections', () => {
+    it('shows neutral empty copy (not an error) when no stack tools and no prior selections', () => {
       render(<Harness />);
       expect(screen.getByText(/No tools found for/)).toBeInTheDocument();
       // Not styled/phrased as an error
@@ -159,7 +159,7 @@ describe('ToolsPicker', () => {
   });
 
   describe('manual-entry mode', () => {
-    it('defaults to manual mode when no topology tools but prior values exist', () => {
+    it('defaults to manual mode when no stack tools but prior values exist', () => {
       render(<Harness initial={['custom_tool']} />);
       // The manual-entry input is visible
       expect(screen.getByRole('textbox', { name: /tool 1/i })).toHaveValue('custom_tool');
@@ -179,7 +179,7 @@ describe('ToolsPicker', () => {
       expect(onChange).toHaveBeenLastCalledWith(['second']);
     });
 
-    it('"Back to search" returns to checklist mode when topology tools are available', () => {
+    it('"Back to search" returns to checklist mode when stack tools are available', () => {
       mockStoreState.tools = [tool('query')];
       render(<Harness />);
       // Start in checklist; toggle into manual
@@ -192,7 +192,7 @@ describe('ToolsPicker', () => {
       expect(screen.getByRole('option', { name: 'query' })).toBeInTheDocument();
     });
 
-    it('does not offer "Back to search" when topology has no tools', () => {
+    it('does not offer "Back to search" when the stack has no tools', () => {
       render(<Harness initial={['custom']} />);
       expect(
         screen.queryByRole('button', { name: /back to search/i }),
@@ -231,7 +231,7 @@ describe('ToolsPicker', () => {
 
     it('hides the Discover tools button for container-only configs', () => {
       // Post-descope: container/local-process configs are curated from the
-      // topology sidebar after deploy, not from the wizard.
+      // Stack sidebar after deploy, not from the wizard.
       render(
         <ToolsPicker
           serverName="x"
@@ -371,14 +371,14 @@ describe('ToolsPicker', () => {
   });
 
   describe('persistence of selection across store re-renders', () => {
-    it('keeps selection when topology tools update (simulates step navigation / rehydration)', () => {
+    it('keeps selection when stack tools update (simulates step navigation / rehydration)', () => {
       mockStoreState.tools = [tool('query'), tool('insert')];
       const { rerender } = render(<Harness initial={['query']} />);
       expect(screen.getByRole('option', { name: 'query' })).toHaveAttribute(
         'aria-checked',
         'true',
       );
-      // Simulate topology gaining a new tool (e.g., after deploy) — selection persists
+      // Simulate the stack gaining a new tool (e.g., after deploy) — selection persists
       mockStoreState.tools = [tool('query'), tool('insert'), tool('vacuum')];
       rerender(<Harness initial={['query']} />);
       expect(screen.getByRole('option', { name: 'query' })).toHaveAttribute(
@@ -387,7 +387,7 @@ describe('ToolsPicker', () => {
       );
     });
 
-    it('surfaces selected names that are not in the topology so they can be unchecked', () => {
+    it('surfaces selected names that are not in the stack so they can be unchecked', () => {
       mockStoreState.tools = [tool('query')];
       render(<Harness initial={['query', 'legacy_tool']} />);
       expect(screen.getByRole('option', { name: 'query' })).toBeInTheDocument();

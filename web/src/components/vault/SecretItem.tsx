@@ -36,7 +36,7 @@ export interface SecretItemProps {
   // index). Empty (the default) renders no badge — absence is the signal.
   consumers?: Consumer[];
   // onConsumerClick is invoked when a navigable consumer row is clicked;
-  // VaultWorkspace wires this to topology node selection. Omit to render
+  // VaultWorkspace wires this to canvas node selection. Omit to render
   // consumer rows as non-interactive.
   onConsumerClick?: (consumer: Consumer) => void;
   compact?: boolean;

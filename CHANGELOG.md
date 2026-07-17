@@ -5,6 +5,11 @@ All notable changes to gridctl will be documented in this file.
 ## [Unreleased]
 
 
+### Refactoring
+
+
+- Rename the Topology workspace to Stack in the web UI: tab label, command palette ("Go to Stack"), document title, and cross-references now match the `stack.yaml` / `gridctl` vocabulary the backend adopted when `--topology` became `--stack`. The tab icon changes from a network glyph to a layers glyph to match the label. The route moves from `/topology` to `/stack`; old `/topology` bookmarks redirect
+
 ### Bug Fixes
 
 

@@ -20,7 +20,7 @@ interface ToolsPickerProps {
   // Optional probe config. When provided and the transport is supported, a
   // "Discover tools" button appears in the empty state and calls the backend
   // probe endpoint. The picker treats an absent probeConfig as Phase 1
-  // behavior — topology lookups + manual-entry fallback only.
+  // behavior — live-stack lookups + manual-entry fallback only.
   probeConfig?: ProbeServerConfig | null;
 }
 
@@ -39,7 +39,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
   const [query, setQuery] = useState('');
   const probeState = useProbeServer();
 
-  const topologyTools: ToolOption[] = useMemo(() => {
+  const stackTools: ToolOption[] = useMemo(() => {
     if (!serverName) return [];
     const prefix = `${serverName}${TOOL_NAME_DELIMITER}`;
     return (tools ?? [])
@@ -51,20 +51,20 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
   }, [tools, serverName]);
 
   // Discovered tools come from the ephemeral probe endpoint for servers that
-  // are not yet in the topology. They are merged into the picker checklist
-  // on equal footing with topology tools; topology takes precedence when both
+  // are not yet in the stack. They are merged into the picker checklist
+  // on equal footing with stack tools; the stack takes precedence when both
   // exist because a running server is authoritative.
   const discoveredTools: ToolOption[] = useMemo(() => {
     if (!probeState.tools) return [];
     return probeState.tools.map((t) => ({ name: t.name, description: t.description }));
   }, [probeState.tools]);
 
-  const hasTools = topologyTools.length > 0 || discoveredTools.length > 0;
+  const hasTools = stackTools.length > 0 || discoveredTools.length > 0;
 
-  // Merge selected values that aren't in topology so existing stacks with
+  // Merge selected values that aren't in the stack so existing stacks with
   // `tools: [...]` still render those entries pre-checked in the picker.
   const displayTools: ToolOption[] = useMemo(() => {
-    const merged = new Map(topologyTools.map((t) => [t.name, t] as const));
+    const merged = new Map(stackTools.map((t) => [t.name, t] as const));
     for (const d of discoveredTools) {
       if (!merged.has(d.name)) merged.set(d.name, d);
     }
@@ -72,10 +72,10 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
       if (!merged.has(name)) merged.set(name, { name });
     }
     return [...merged.values()];
-  }, [topologyTools, discoveredTools, value]);
+  }, [stackTools, discoveredTools, value]);
 
   // When !hasTools AND there are already selected values (loaded from stack
-  // YAML for a server not in the topology), default to manual mode so the
+  // YAML for a server not in the stack), default to manual mode so the
   // user can see and edit their entries.
   const autoManual = !hasTools && value.length > 0;
   const inManualMode = modeOverride ?? autoManual;
@@ -127,7 +127,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
             <span className="font-mono text-text-secondary">
               {serverName || 'this server'}
             </span>{' '}
-            in the current topology.
+            in the current stack.
             {canProbe ? (
               <>
                 <br />
@@ -372,7 +372,7 @@ function ProbeErrorPanel({
 
 // isProbeSupported filters out configs the backend will refuse. The probe
 // endpoint only handles external URL servers — every other transport is
-// curated post-deploy from the topology sidebar, so the wizard hides the
+// curated post-deploy from the Stack sidebar, so the wizard hides the
 // button rather than offering a click that will 422.
 function isProbeSupported(cfg: ProbeServerConfig): boolean {
   if (cfg.ssh) return false;

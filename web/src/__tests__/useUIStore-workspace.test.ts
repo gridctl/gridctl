@@ -5,12 +5,12 @@ import { WORKSPACES } from '../types/workspace';
 
 describe('useUIStore workspace slice', () => {
   beforeEach(() => {
-    useUIStore.setState({ activeWorkspace: 'topology' });
+    useUIStore.setState({ activeWorkspace: 'stack' });
   });
 
-  it('defaults activeWorkspace to topology', () => {
+  it('defaults activeWorkspace to stack', () => {
     const { result } = renderHook(() => useUIStore((s) => s.activeWorkspace));
-    expect(result.current).toBe('topology');
+    expect(result.current).toBe('stack');
   });
 
   it('setActiveWorkspace updates state', () => {
@@ -46,12 +46,12 @@ describe('useUIStore compact mode slice', () => {
 
   it('setCompactMode updates a single workspace without touching the others', () => {
     act(() => {
-      useUIStore.getState().setCompactMode('topology', true);
+      useUIStore.getState().setCompactMode('stack', true);
     });
     const state = useUIStore.getState();
-    expect(state.compactMode.topology).toBe(true);
+    expect(state.compactMode.stack).toBe(true);
     for (const ws of WORKSPACES) {
-      if (ws === 'topology') continue;
+      if (ws === 'stack') continue;
       expect(state.compactMode[ws]).toBe(false);
     }
   });

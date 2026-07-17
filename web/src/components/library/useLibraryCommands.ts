@@ -29,7 +29,7 @@ interface UseLibraryCommandsOptions {
 
 /**
  * Workspace-scoped palette commands for /library. Registered on mount,
- * unregistered on unmount — so Topology, Stage, and Runs never see them.
+ * unregistered on unmount — so Stack, Stage, and Runs never see them.
  */
 export function useLibraryCommands({
   onNewSkill,

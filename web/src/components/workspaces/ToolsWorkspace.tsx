@@ -50,14 +50,14 @@ const AUDIT_STYLES: Record<AuditState, { dot: string; text: string; label: strin
 };
 
 // ToolsWorkspace is the fleet-wide tool-management surface, sibling to
-// Topology, Library, and Variables. The left rail lists every MCP server with
+// Stack, Library, and Variables. The left rail lists every MCP server with
 // an enabled/total badge; the main pane edits the selected server's whitelist
 // (reusing useToolsEditor) and previews each tool's input schema. A header
 // search spans every server's tools at once.
 //
 // The editor controller is owned here (not inside a child) so the workspace
 // can guard server switches against unsaved edits before the URL changes —
-// the sidebar's topology-based discard flow doesn't map onto URL selection.
+// the sidebar's stack-based discard flow doesn't map onto URL selection.
 export function ToolsWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
   const compact = useUIStore((s) => s.compactMode.tools);

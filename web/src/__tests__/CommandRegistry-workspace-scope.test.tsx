@@ -21,10 +21,10 @@ const cmds: PaletteCommand[] = [
     onSelect: noop,
   },
   {
-    id: 'topology:thing',
-    label: 'Topology-only thing',
+    id: 'stack:thing',
+    label: 'Stack-only thing',
     section: 'canvas',
-    workspaces: ['topology'],
+    workspaces: ['stack'],
     onSelect: noop,
   },
   {
@@ -41,24 +41,24 @@ describe('useCommandRegistry workspace scoping', () => {
     const { result } = renderHook(() => useCommandRegistry(), { wrapper: wrap });
     act(() => result.current.registerCommands('test', cmds));
     const ids = result.current.getSortedCommands().map((c) => c.id);
-    expect(ids).toEqual(expect.arrayContaining(['cross:nav', 'topology:thing', 'library:thing']));
+    expect(ids).toEqual(expect.arrayContaining(['cross:nav', 'stack:thing', 'library:thing']));
   });
 
   it('hides commands tagged for other workspaces', () => {
     const { result } = renderHook(() => useCommandRegistry(), { wrapper: wrap });
     act(() => result.current.registerCommands('test', cmds));
 
-    const onTopology = result.current.getSortedCommands(undefined, undefined, 'topology').map((c) => c.id);
-    expect(onTopology).toContain('cross:nav');
-    expect(onTopology).toContain('topology:thing');
-    expect(onTopology).not.toContain('library:thing');
+    const onStack = result.current.getSortedCommands(undefined, undefined, 'stack').map((c) => c.id);
+    expect(onStack).toContain('cross:nav');
+    expect(onStack).toContain('stack:thing');
+    expect(onStack).not.toContain('library:thing');
   });
 
   it('keeps untagged commands visible in every workspace', () => {
     const { result } = renderHook(() => useCommandRegistry(), { wrapper: wrap });
     act(() => result.current.registerCommands('test', cmds));
 
-    for (const ws of ['topology', 'library'] as const) {
+    for (const ws of ['stack', 'library'] as const) {
       const ids = result.current.getSortedCommands(undefined, undefined, ws).map((c) => c.id);
       expect(ids).toContain('cross:nav');
     }

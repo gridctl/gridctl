@@ -984,7 +984,7 @@ The response is the same JSON array of buffered entries as [`/api/logs`](#get-ap
 
 #### `PUT /api/mcp-servers/{name}/tools`
 
-Updates an MCP server's tool whitelist in the live `stack.yaml` and triggers a hot reload. Powers the live tool whitelist editor in the topology sidebar. The YAML write is atomic; concurrent external edits surface as `409` so the UI can re-fetch without clobbering changes.
+Updates an MCP server's tool whitelist in the live `stack.yaml` and triggers a hot reload. Powers the live tool whitelist editor in the Stack sidebar. The YAML write is atomic; concurrent external edits surface as `409` so the UI can re-fetch without clobbering changes.
 
 **Auth:** Yes
 

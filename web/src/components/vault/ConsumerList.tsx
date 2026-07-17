@@ -19,7 +19,7 @@ export interface ConsumerListProps {
 }
 
 // ConsumerList renders a variable's reference sites. Server/resource sites
-// are clickable (they navigate to a topology node); other kinds render as
+// are clickable (they navigate to a canvas node); other kinds render as
 // plain rows. Long lists collapse behind a "see all" toggle unless the host
 // disables it. Shared by SecretItem (VaultPanel) and VariableInspector.
 export function ConsumerList({

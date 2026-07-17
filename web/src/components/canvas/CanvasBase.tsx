@@ -64,7 +64,7 @@ const DEFAULT_BACKGROUNDS: BackgroundLayer[] = [
 ];
 
 /**
- * CanvasBase is the shared ReactFlow scaffolding for the Topology and Skills
+ * CanvasBase is the shared ReactFlow scaffolding for the Stack and Skills
  * workspaces. It owns the wrapper element, the ReactFlow component, the
  * Background layers, and the standard `proOptions`. Workspace-specific
  * pieces — custom node types, control panels, overlay layers — flow in via

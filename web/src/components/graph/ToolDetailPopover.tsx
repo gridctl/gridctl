@@ -37,7 +37,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
   const prefixedName = `${serverName}${TOOL_NAME_DELIMITER}${toolName}`;
 
   // The catalog is keyed by the prefixed name and is populated app-wide by the
-  // poll cycle, so it is already present on the Topology page. A missing entry
+  // poll cycle, so it is already present on the Stack page. A missing entry
   // (e.g. first paint before the first poll) renders an explicit empty state.
   // Select the array and resolve the entry in a memo so a poll that replaces an
   // unrelated tool does not re-run the lookup.

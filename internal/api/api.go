@@ -469,7 +469,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/wizard/drafts/{id}", s.handleWizardDraftDelete)
 
 	// Server probe — ephemeral tool enumeration used by the wizard's
-	// "Discover tools" flow for servers not yet loaded in the topology.
+	// "Discover tools" flow for servers not yet loaded in the stack.
 	mux.HandleFunc("POST /api/servers/probe", s.handleProbe)
 
 	// Registry endpoints

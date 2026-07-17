@@ -13,7 +13,7 @@ interface AccessLensEditorBodyProps {
 }
 
 // AccessLensEditorBody is the keyboard-driven twin of the canvas node toggling:
-// a checkbox list bound to the SAME Topology-scoped draft store the canvas reads
+// a checkbox list bound to the SAME Stack-scoped draft store the canvas reads
 // and writes, so checking a box here lights the node out there and vice versa.
 // Each granted server also carries a per-client tool-exposure control (All vs a
 // custom subset); the canvas stays server-level, so this slide-over is where

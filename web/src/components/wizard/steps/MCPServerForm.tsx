@@ -163,7 +163,7 @@ function showPortField(serverType: ServerType, transport: string): boolean {
 // Translate the wizard form into the probe endpoint's wire shape. Returns
 // null for every transport the probe does not support — which, after the
 // descope, is everything except external URL. Container / local-process /
-// SSH / OpenAPI servers are curated from the topology sidebar after deploy.
+// SSH / OpenAPI servers are curated from the Stack sidebar after deploy.
 function buildProbeConfig(data: MCPServerFormData): ProbeServerConfig | null {
   if (data.serverType !== 'external') return null;
   if (!data.url) return null;

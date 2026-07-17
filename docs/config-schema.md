@@ -451,7 +451,7 @@ mcp-servers:
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 | `ssh` | object | Conditional | - | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
-| `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. The web wizard populates this from the live topology for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH / OpenAPI servers are curated from the topology sidebar after deploy. Editable live from the topology sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
+| `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH / OpenAPI servers are curated from the Stack sidebar after deploy. Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | - | Override schema pinning for this server. `false` disables pinning regardless of gateway setting. Omit to inherit from `gateway.security.schema_pinning.enabled` |
 | `ready_timeout` | duration | No | `30s` | Readiness wait for container-based HTTP/SSE servers. Accepts any `time.Duration` string (e.g. `"60s"`, `"2m"`). When a container does not become ready within this window, the container is stopped and removed so a retry starts clean. Ignored for stdio, external, local process, SSH, and OpenAPI servers |
@@ -738,7 +738,7 @@ including for already-established sessions, with no restart required.
 The Tools workspace has an **Access** button that opens a per-client editor:
 pick which servers each linked client may reach and save. This writes a
 server-level profile (`servers:` allow-list) to the `clients:` block via an
-atomic, conflict-detected write and triggers a hot reload, so the topology view
+atomic, conflict-detected write and triggers a hot reload, so the Stack view
 then reflects the new scope on the next poll. Saving the first profile creates
 the `clients:` block, which flips clients you have not listed to the `default:`
 policy (deny); the editor warns before that happens. Finer tool-level
@@ -772,7 +772,7 @@ client_models:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `client_models` | map | No | - | Stable client identifier → model ID used to price that client's tool calls. Keys are the same identifiers used by `clients.profiles` and shown on the topology (e.g. `claude-code`). Values are model IDs from the embedded LiteLLM pricing snapshot (e.g. `claude-opus-4-7`) |
+| `client_models` | map | No | - | Stable client identifier → model ID used to price that client's tool calls. Keys are the same identifiers used by `clients.profiles` and shown on the Stack canvas (e.g. `claude-code`). Values are model IDs from the embedded LiteLLM pricing snapshot (e.g. `claude-opus-4-7`) |
 
 Pricing resolution per tool call, highest precedence first: call-level usage
 metadata (when a server reports one) > the calling client's `client_models`

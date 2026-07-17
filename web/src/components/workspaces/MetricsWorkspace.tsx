@@ -48,7 +48,7 @@ function isScope(v: string | null): v is Scope {
 }
 
 // MetricsWorkspace is the first-class cost/token observability surface, sibling
-// to Topology, Library, Variables, and Tools. The left rail is a scope
+// to Stack, Library, Variables, and Tools. The left rail is a scope
 // navigator (overview / clients / servers / tools / models); the center carries the
 // session KPI row, the trend charts, and the active scope's breakdown; the
 // right rail inspects the selected client or server (and hosts its inline

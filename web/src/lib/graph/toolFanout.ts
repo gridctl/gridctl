@@ -1,5 +1,5 @@
 /**
- * Tool fan-out derivation for the topology canvas.
+ * Tool fan-out derivation for the stack canvas.
  *
  * When an MCP server node is expanded, its tools fan out as nodes to the
  * right of the server. These helpers are pure: given the laid-out backbone

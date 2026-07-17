@@ -42,7 +42,7 @@ import type { Consumer, Variable } from '../../lib/api';
 
 const ALL_SETS_KEY = '__all__';
 
-// VaultWorkspace is the top-level Variables surface, sibling to Topology
+// VaultWorkspace is the top-level Variables surface, sibling to Stack
 // and Library. It owns the set-navigator, the variable table, the
 // lock/encrypt controls, and the bulk `.env` import flow that the sidebar
 // deliberately doesn't host.
@@ -82,7 +82,7 @@ export function VaultWorkspace() {
   // ---- URL state ----------------------------------------------------------
   const activeSet = searchParams.get('set') ?? ALL_SETS_KEY;
   const searchQuery = searchParams.get('q') ?? '';
-  // ?filter=server:<name> deep-links from Topology's server inspector. The
+  // ?filter=server:<name> deep-links from Stack's server inspector. The
   // server name is matched against variable keys as a substring — see
   // filteredByServer below for the documented limitation.
   const filterParam = searchParams.get('filter') ?? '';
@@ -390,9 +390,9 @@ export function VaultWorkspace() {
     setDroppedText('');
   }, []);
 
-  // Selecting a consumer highlights its topology node (ids are mcp-<name> /
+  // Selecting a consumer highlights its canvas node (ids are mcp-<name> /
   // resource-<name>). We stay on the Variables route — a toast points the user
-  // to Topology rather than yanking them out of their current view.
+  // to Stack rather than yanking them out of their current view.
   const handleConsumerClick = useCallback(
     (consumer: Consumer) => {
       const nodeId =
@@ -403,7 +403,7 @@ export function VaultWorkspace() {
             : null;
       if (!nodeId) return;
       selectNode(nodeId);
-      showToast('success', `Selected ${consumer.name} — open Topology to inspect`);
+      showToast('success', `Selected ${consumer.name} — open Stack to inspect`);
     },
     [selectNode],
   );
@@ -1049,7 +1049,7 @@ interface ServerFilterBannerProps {
   onClear: () => void;
 }
 
-// Inline banner shown when the workspace is deep-linked from a Topology
+// Inline banner shown when the workspace is deep-linked from a Stack
 // server node. Backed by the exact usage index (GET /api/var/usage): the filter
 // shows the variables that server actually references.
 function ServerFilterBanner({

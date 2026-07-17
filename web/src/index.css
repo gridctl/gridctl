@@ -199,7 +199,7 @@ html, body, #root {
   background-color: var(--color-background);
 }
 
-/* Frosted-glass surfaces in light theme. Topology nodes and the tool-detail
+/* Frosted-glass surfaces in light theme. Stack canvas nodes and the tool-detail
    popover paint an opaque Tailwind surface (from-surface/95, bg-surface-
    elevated/95) that reads as a flat white card on the bright canvas. In light
    only, drop them to a translucent white so the existing backdrop-blur frosts

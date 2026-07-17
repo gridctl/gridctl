@@ -203,10 +203,10 @@ func TestLoad_Success(t *testing.T) {
 	}
 
 	if loaded.StackName != original.StackName {
-		t.Errorf("TopologyName = %q, want %q", loaded.StackName, original.StackName)
+		t.Errorf("StackName = %q, want %q", loaded.StackName, original.StackName)
 	}
 	if loaded.StackFile != original.StackFile {
-		t.Errorf("TopologyFile = %q, want %q", loaded.StackFile, original.StackFile)
+		t.Errorf("StackFile = %q, want %q", loaded.StackFile, original.StackFile)
 	}
 	if loaded.PID != original.PID {
 		t.Errorf("PID = %d, want %d", loaded.PID, original.PID)

@@ -31,7 +31,7 @@ const BOTTOM_PANEL_MIN = 100;
 const BOTTOM_PANEL_MAX = 800;
 
 function workspaceFromPath(pathname: string): Workspace | null {
-  // First segment after the leading slash, e.g. /topology/foo → "topology"
+  // First segment after the leading slash, e.g. /stack/foo → "stack"
   const first = pathname.split('/').filter(Boolean)[0];
   return isWorkspace(first) ? first : null;
 }
@@ -104,7 +104,7 @@ function AppShellInner() {
     });
   }, []);
 
-  // Keyboard shortcuts. ⌘1/2 switch workspaces (Topology / Library);
+  // Keyboard shortcuts. ⌘1/2 switch workspaces (Stack / Library);
   // bottom-panel tab shortcuts were retired (tabs are still clickable in
   // the panel).
   useKeyboardShortcuts({

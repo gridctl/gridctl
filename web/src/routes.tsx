@@ -12,7 +12,7 @@ import { DetachedTracesPage } from './pages/DetachedTracesPage';
 import { useThemeSync } from './themes/useThemeSync';
 
 // Each workspace is code-split into its own chunk.
-const TopologyWorkspace = lazy(() => import('./components/workspaces/TopologyWorkspace'));
+const StackWorkspace = lazy(() => import('./components/workspaces/StackWorkspace'));
 const LibraryWorkspace = lazy(() => import('./components/workspaces/LibraryWorkspace'));
 const VaultWorkspace = lazy(() => import('./components/workspaces/VaultWorkspace'));
 const ToolsWorkspace = lazy(() => import('./components/workspaces/ToolsWorkspace'));
@@ -30,10 +30,10 @@ export function AppRoutes() {
           <AppShell>'s <Outlet />. */}
       <Route element={<AppShell />}>
         <Route
-          path="/topology"
+          path="/stack"
           element={
             <Suspense fallback={<WorkspaceLoadingShell />}>
-              <TopologyWorkspace />
+              <StackWorkspace />
             </Suspense>
           }
         />
@@ -98,6 +98,9 @@ export function AppRoutes() {
       <Route path="/skills" element={<Navigate to="/library" replace />} />
       <Route path="/runs" element={<Navigate to="/library" replace />} />
       <Route path="/runs/:runID" element={<Navigate to="/library" replace />} />
+      {/* /topology → /stack: the workspace was renamed when the UI label
+          caught up with the backend's Topology→Stack migration. */}
+      <Route path="/topology" element={<Navigate to="/stack" replace />} />
       <Route path="/agent" element={<Navigate to="/library" replace />} />
 
       {/* Detached windows stay frameless — outside AppShell on purpose. */}

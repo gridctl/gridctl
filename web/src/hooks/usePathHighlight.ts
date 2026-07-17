@@ -183,7 +183,7 @@ function narrowToClientScope(
  * @param edges - All edges in the graph
  * @param selectedNodeId - Currently selected node ID, or null
  * @param scopeOverride - When set and a client is selected, this scope is used
- *   in place of the client node's saved `effectiveScope`. The Topology Access
+ *   in place of the client node's saved `effectiveScope`. The Stack Access
  *   Lens passes a draft `ClientScopeResult` here so the canvas re-lights live
  *   against the unsaved draft. Passing null/undefined uses the saved scope.
  * @returns Highlight state with sets of node/edge IDs

@@ -520,7 +520,7 @@ mcp-servers:
 	path := writeTempFile(t, content)
 	topo, err := LoadStack(path)
 	if err != nil {
-		t.Fatalf("LoadTopology failed: %v", err)
+		t.Fatalf("LoadStack failed: %v", err)
 	}
 
 	if len(topo.MCPServers) != 2 {

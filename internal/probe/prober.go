@@ -56,10 +56,10 @@ type Result struct {
 }
 
 // unsupportedHint is the canonical guidance shown when the probe cannot run.
-// It points users at the post-deploy tool editor on the topology sidebar,
+// It points users at the post-deploy tool editor on the Stack sidebar,
 // which is the primary curation surface for container / local-process /
 // stdio / SSH / OpenAPI servers.
-const unsupportedHint = "Enter tool names manually in the wizard's Advanced section, or curate them from the topology sidebar after deploy."
+const unsupportedHint = "Enter tool names manually in the wizard's Advanced section, or curate them from the Stack sidebar after deploy."
 
 // Prober enumerates an MCP server's tools without registering it with the
 // gateway. Scope: external URL transport only.
@@ -68,7 +68,7 @@ const unsupportedHint = "Enter tool names manually in the wizard's Advanced sect
 // process, SSH, OpenAPI) the probe returns CodeUnsupportedTransport with a
 // hint pointing users at the post-deploy tool editor. Running a server
 // ephemerally before deploy is a niche workflow compared to the common
-// deploy-then-curate flow that the topology editor supports.
+// deploy-then-curate flow that the Stack sidebar editor supports.
 type Prober struct {
 	cache  *Cache
 	logger *slog.Logger
@@ -153,7 +153,7 @@ func (p *Prober) Probe(ctx context.Context, cfg config.MCPServer) (Result, *Erro
 
 // unsupportedReason returns a structured error for any transport the current
 // probe implementation does not handle. External URL is the only supported
-// path; every other transport routes to the topology editor post-deploy.
+// path; every other transport routes to the Stack sidebar editor post-deploy.
 func unsupportedReason(cfg config.MCPServer) *Error {
 	switch {
 	case cfg.IsSSH():
@@ -163,7 +163,7 @@ func unsupportedReason(cfg config.MCPServer) *Error {
 	case cfg.IsOpenAPI():
 		return newErr(CodeUnsupportedTransport,
 			"Probe not supported for openapi servers.",
-			"Use openapi.operations.include / exclude to curate tools, or the topology sidebar editor after deploy.")
+			"Use openapi.operations.include / exclude to curate tools, or the Stack sidebar editor after deploy.")
 	case cfg.IsLocalProcess():
 		return newErr(CodeUnsupportedTransport,
 			"Probe not supported for local-process servers.",
@@ -172,7 +172,7 @@ func unsupportedReason(cfg config.MCPServer) *Error {
 		return nil
 	default:
 		// Container-backed (image or source). Not supported for probe in this
-		// release — the common case is deploy-then-curate from the topology.
+		// release — the common case is deploy-then-curate from the Stack workspace.
 		return newErr(CodeUnsupportedTransport,
 			"Probe not supported for container servers.",
 			unsupportedHint)
