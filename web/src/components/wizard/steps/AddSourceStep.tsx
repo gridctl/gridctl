@@ -137,9 +137,24 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         auth,
       });
 
+      const malformed = result.malformed ?? [];
+
       if (result.skills.length === 0) {
-        setError('No SKILL.md files found in this repository');
+        if (malformed.length > 0) {
+          setError(
+            `${malformed.length} SKILL.md file${malformed.length === 1 ? '' : 's'} found but none could be parsed (${malformed[0].path}: ${malformed[0].error})`,
+          );
+        } else {
+          setError('No SKILL.md files found in this repository');
+        }
         return;
+      }
+
+      if (malformed.length > 0) {
+        showToast(
+          'warning',
+          `${malformed.length} SKILL.md file${malformed.length === 1 ? '' : 's'} could not be parsed and ${malformed.length === 1 ? 'is' : 'are'} not shown (${malformed[0].path})`,
+        );
       }
 
       onPreviewLoaded(result.skills, trimmedUrl, ref, path, auth);
