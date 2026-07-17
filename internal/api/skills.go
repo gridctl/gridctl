@@ -710,11 +710,17 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 		previews = []SkillPreview{}
 	}
 
+	malformed := result.Malformed
+	if malformed == nil {
+		malformed = []skills.MalformedSkill{}
+	}
+
 	writeJSON(w, map[string]any{
 		"repo":      repo,
 		"ref":       ref,
 		"commitSha": result.CommitSHA,
 		"skills":    previews,
+		"malformed": malformed,
 	})
 }
 
