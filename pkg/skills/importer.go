@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -160,12 +161,23 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	}
 
 	if len(result.Skills) == 0 {
+		if len(result.Malformed) > 0 {
+			return nil, fmt.Errorf("no importable skills found: %s", summarizeMalformed(result.Malformed))
+		}
 		return nil, fmt.Errorf("no SKILL.md files found in repository")
 	}
 
 	imp.logger.Info("discovered skills", "count", len(result.Skills))
 
 	importResult := &ImportResult{}
+	// Surface parse failures on fresh imports only. Update re-imports with
+	// PreserveState, and warning about a permanently broken sibling SKILL.md
+	// on every sync would just train users to ignore warnings.
+	if !opts.PreserveState {
+		for _, m := range result.Malformed {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: failed to parse: %s", m.Path, m.Err))
+		}
+	}
 
 	// Build selection set for O(1) lookup (empty = import all)
 	selectedSet := make(map[string]bool, len(opts.Selected))
@@ -319,6 +331,23 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	}
 
 	return importResult, nil
+}
+
+// summarizeMalformed renders malformed SKILL.md entries for the zero-skills
+// error, capped so a repository full of bad files stays readable.
+func summarizeMalformed(malformed []MalformedSkill) string {
+	const maxShown = 3
+	shown := malformed
+	suffix := ""
+	if len(malformed) > maxShown {
+		shown = malformed[:maxShown]
+		suffix = "; ..."
+	}
+	parts := make([]string, len(shown))
+	for i, m := range shown {
+		parts[i] = fmt.Sprintf("%s: %s", m.Path, m.Err)
+	}
+	return fmt.Sprintf("%d SKILL.md file(s) failed to parse (%s%s)", len(malformed), strings.Join(parts, "; "), suffix)
 }
 
 // Remove removes an imported skill and cleans up origin and lock entries.
