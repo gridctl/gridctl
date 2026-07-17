@@ -23,7 +23,7 @@ function readStoredWorkspace(stackId: string | null): Workspace | null {
 //   1. Per-stack localStorage override (set when the user switches workspaces)
 //   2. Global localStorage override
 //   3. Heuristic: stack declares skills → /library
-//   4. Default: /topology
+//   4. Default: /stack
 export function resolveLandingWorkspace(opts: {
   stackId: string | null;
   hasSkills: boolean;
@@ -31,5 +31,5 @@ export function resolveLandingWorkspace(opts: {
   const stored = readStoredWorkspace(opts.stackId);
   if (stored) return stored;
   if (opts.hasSkills) return 'library';
-  return 'topology';
+  return 'stack';
 }

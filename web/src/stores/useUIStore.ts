@@ -21,7 +21,7 @@ export const createWorkspaceSlice: StateCreator<
   [],
   WorkspaceSlice
 > = (set) => ({
-  activeWorkspace: 'topology',
+  activeWorkspace: 'stack',
   setActiveWorkspace: (activeWorkspace) => set({ activeWorkspace }),
 });
 
@@ -30,7 +30,7 @@ export const createWorkspaceSlice: StateCreator<
 export type CompactModeMap = Record<Workspace, boolean>;
 
 export const COMPACT_MODE_DEFAULTS: CompactModeMap = {
-  topology: false,
+  stack: false,
   library: false,
   vault: false,
   tools: false,
@@ -157,7 +157,7 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   setShowVault: (show: boolean) => void;
   toggleVault: () => void;
 
-  // Per-client access editor: opened from the Topology inspector ("Edit Scope")
+  // Per-client access editor: opened from the Stack inspector ("Edit Scope")
   // seeded to a specific client. Transient (not persisted).
   accessEditorOpen: boolean;
   accessEditorSeedSlug: string | null;

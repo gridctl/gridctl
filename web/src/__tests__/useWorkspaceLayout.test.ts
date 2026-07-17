@@ -6,14 +6,14 @@ describe('workspaceLayoutStorageKey', () => {
     expect(workspaceLayoutStorageKey('library', 'rails')).toBe(
       'gridctl:layout:library:rails:v1',
     );
-    expect(workspaceLayoutStorageKey('topology', 'inspector')).toBe(
-      'gridctl:layout:topology:inspector:v1',
+    expect(workspaceLayoutStorageKey('stack', 'inspector')).toBe(
+      'gridctl:layout:stack:inspector:v1',
     );
   });
 
   it('keeps workspaces isolated from one another', () => {
-    const topology = workspaceLayoutStorageKey('topology', 'rails');
+    const stack = workspaceLayoutStorageKey('stack', 'rails');
     const library = workspaceLayoutStorageKey('library', 'rails');
-    expect(topology).not.toEqual(library);
+    expect(stack).not.toEqual(library);
   });
 });

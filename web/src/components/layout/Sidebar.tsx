@@ -106,7 +106,7 @@ export function Sidebar() {
               : Terminal
       : Box;
 
-  // Color logic: neutral monochrome for clients (matches their topology nodes), violet for MCP servers, teal for resources
+  // Color logic: neutral monochrome for clients (matches their canvas nodes), violet for MCP servers, teal for resources
   const colorClass = isClient ? 'neutral' : isServer ? 'violet' : 'secondary';
 
   const handleShowLogs = () => {

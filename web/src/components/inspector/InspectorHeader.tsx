@@ -37,7 +37,7 @@ interface InspectorHeaderProps {
 }
 
 /**
- * InspectorHeader is the shared top-of-aside header for the Topology and
+ * InspectorHeader is the shared top-of-aside header for the Stack and
  * Skills inspectors. It owns the icon block, title, subtitle, and the
  * close/popout affordances; the badge/tag row sits in the subtitle slot
  * so each workspace can drop in its own metadata pills without forking.

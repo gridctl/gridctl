@@ -12,7 +12,7 @@ should follow.
 ├── <Header>           web/src/components/layout/Header.tsx
 │   └── <WorkspaceSwitcher>   pills bound to React Router NavLinks
 ├── <Outlet />         renders the active workspace body
-│   ├── <TopologyWorkspace>   /topology
+│   ├── <StackWorkspace>      /stack
 │   └── <LibraryWorkspace>    /library  (also /library/:skillName)
 ├── <BottomPanel>      Logs / Metrics / Spec / Traces / Pins
 ├── <StatusBar>        connection · servers · sessions · tokens · spec
@@ -42,7 +42,7 @@ useUIStore
 Each workspace owns its own data store and never imports another workspace's
 store:
 
-- Topology  → `useStackStore`
+- Stack     → `useStackStore`
 - Library   → `useRegistryStore`
 
 Several supporting stores (`useSpecStore`, `useAuthStore`, `usePinsStore`,
@@ -57,9 +57,9 @@ workspaces. Reach for them before duplicating UI:
 
 | Primitive | Location | Used by |
 |---|---|---|
-| `CanvasBase` | `components/canvas/` | Topology `graph/Canvas.tsx` |
+| `CanvasBase` | `components/canvas/` | Stack `graph/Canvas.tsx` |
 | `InspectorHeader` | `components/inspector/` | Inspectors that need the standard icon + title + close/popout strip |
-| `InspectorSection` | `components/inspector/` | Topology `Sidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern) |
+| `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern) |
 | `InspectorTabList` / `InspectorTabButton` | `components/inspector/` | Library tab list a11y wrapper |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
 
@@ -100,11 +100,11 @@ workspace-specific props.
 ```
 web/src/components/
 ├── shell/            AppShell, WorkspaceSwitcher, RootRedirect
-├── workspaces/       TopologyWorkspace, LibraryWorkspace
-├── layout/           Header, BottomPanel, StatusBar, Sidebar (Topology inspector)
+├── workspaces/       StackWorkspace, LibraryWorkspace
+├── layout/           Header, BottomPanel, StatusBar, Sidebar (Stack inspector)
 ├── inspector/        InspectorHeader, InspectorSection, InspectorTabList    ← shared primitives
 ├── canvas/           CanvasBase                                              ← shared React Flow scaffolding
-├── graph/            Topology Canvas + custom node types
+├── graph/            Stack Canvas + custom node types
 ├── registry/         Library workspace (LibraryGrid, SkillEditor, …)
 ├── palette/          CommandPalette (workspace-scoped via useCommandRegistry)
 └── ui/               Badge, Toast, IconButton, EmptyState, …

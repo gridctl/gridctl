@@ -29,7 +29,7 @@ function LocationProbe() {
 
 function renderPanel() {
   return render(
-    <MemoryRouter initialEntries={['/topology']}>
+    <MemoryRouter initialEntries={['/stack']}>
       <LocationProbe />
       <Routes>
         <Route path="*" element={<PinsPanel />} />
@@ -79,7 +79,7 @@ describe('PinsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /^approve$/i }));
 
     await waitFor(() => expect(approve).toHaveBeenCalledWith('zapier'));
-    expect(screen.getByTestId('location')).toHaveTextContent('/topology');
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
   });
 
   it('shows no Approve button for pinned servers', () => {

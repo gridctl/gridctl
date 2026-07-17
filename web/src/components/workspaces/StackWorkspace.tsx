@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
 import { Canvas } from '../graph/Canvas';
-import { AccessLens } from '../topology/AccessLens';
+import { AccessLens } from '../stack/AccessLens';
 import { PricingManagerHost } from '../pricing/PricingManagerHost';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { useStackStore } from '../../stores/useStackStore';
@@ -13,11 +13,11 @@ const SIDEBAR_DEFAULT = 320;
 const SIDEBAR_MIN = 280;
 const SIDEBAR_MAX = 600;
 
-// Topology workspace body: canvas, loading/error overlays, and the right-rail
+// Stack workspace body: canvas, loading/error overlays, and the right-rail
 // inspector. Rendered inside <AppShell>'s <main> outlet. CSS grid: a canvas
 // column plus a collapsible inspector column (0px when closed) so switching
 // workspaces doesn't shift the canvas.
-export function TopologyWorkspace() {
+export function StackWorkspace() {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
 
   const isLoading = useStackStore((s) => s.isLoading);
@@ -138,4 +138,4 @@ export function TopologyWorkspace() {
   );
 }
 
-export default TopologyWorkspace;
+export default StackWorkspace;

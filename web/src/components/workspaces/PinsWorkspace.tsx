@@ -28,7 +28,7 @@ import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { pinStatusMeta } from '../pins/pinStatus';
 import { showToast } from '../ui/Toast';
 
-// PinsWorkspace is the schema-pinning surface, sibling to Topology, Library,
+// PinsWorkspace is the schema-pinning surface, sibling to Stack, Library,
 // Variables, Tools, and Metrics. The left rail lists pinned servers (drifted
 // first); the center pane shows the selected server's drift diff (when any)
 // with the Approve action beside it, followed by its pinned tool records.

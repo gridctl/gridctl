@@ -13,16 +13,16 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
     pathname === `/${workspace.id}` || pathname.startsWith(`/${workspace.id}/`);
   const Icon = workspace.icon;
 
-  // Dirty-draft navigate-away guard. The Access Lens draft lives in the Topology
+  // Dirty-draft navigate-away guard. The Access Lens draft lives in the Stack
   // workspace; leaving it while dirty must confirm. BrowserRouter has no
   // useBlocker, so cancel the NavLink here and route through the store, which
   // AccessLens turns into a discard-with-confirm.
   const handleClick = (e: React.MouseEvent) => {
     const s = useAccessLensStore.getState();
-    const leavingTopology =
-      (pathname === '/topology' || pathname.startsWith('/topology/')) && workspace.id !== 'topology';
+    const leavingStack =
+      (pathname === '/stack' || pathname.startsWith('/stack/')) && workspace.id !== 'stack';
     const draftDirty = s.enabled && s.clientSlug != null && isDirty(s.draft, s.baseline);
-    if (leavingTopology && draftDirty) {
+    if (leavingStack && draftDirty) {
       e.preventDefault();
       s.requestExitNav(`/${workspace.id}`);
     }

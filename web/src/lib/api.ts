@@ -943,7 +943,7 @@ export async function fetchVariables(): Promise<Variable[]> {
 
 // ConsumerKind mirrors the backend config.ReferenceKind: where in the active
 // stack a ${var:KEY} reference appears. Only 'mcp-server' and 'resource' map to
-// topology nodes; the rest are stack/gateway/network-level sites.
+// canvas nodes; the rest are stack/gateway/network-level sites.
 export type ConsumerKind =
   | 'mcp-server'
   | 'resource'

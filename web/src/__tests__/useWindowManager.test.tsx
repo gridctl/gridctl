@@ -7,7 +7,7 @@ import { useWindowManager } from '../hooks/useWindowManager';
 
 // A test harness that calls useWindowManager from inside a component which is
 // conditionally rendered based on useUIStore.sidebarOpen. This mirrors how
-// Sidebar / GatewaySidebar are mounted under TopologyWorkspace: when
+// Sidebar / GatewaySidebar are mounted under StackWorkspace: when
 // openDetachedWindow('registry') flips sidebarOpen to false, this component
 // unmounts in the same commit. Before the fix, the unmount cleanup closed the
 // just-opened window. After the fix, the module-scope windowRefs survives the

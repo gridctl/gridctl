@@ -29,7 +29,7 @@ interface ExitRequest {
   cancel?: () => void;
 }
 
-// AccessLens is the Topology authoring surface: a header toggle that turns the
+// AccessLens is the Stack workspace's authoring surface: a header toggle that turns the
 // canvas into a draft editor for the selected client's server access, a floating
 // action bar reporting live impact, the right-anchored slide-over editor, the
 // commit gate (the only write boundary), and the dirty-draft discard-with-confirm
@@ -259,7 +259,7 @@ export function AccessLens({ servers }: AccessLensProps) {
 
   return (
     <>
-      {/* Header toggle — net-new to Topology. Amber when on, with aria-pressed. */}
+      {/* Header toggle — net-new to the Stack workspace. Amber when on, with aria-pressed. */}
       <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
         <button
           type="button"

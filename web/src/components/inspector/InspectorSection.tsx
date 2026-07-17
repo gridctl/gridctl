@@ -11,7 +11,7 @@ interface InspectorSectionProps {
 }
 
 /**
- * Collapsible section used inside both the Topology Sidebar and the
+ * Collapsible section used inside both the Stack Sidebar and the
  * detached-sidebar popout. Section headers carry an optional Lucide icon
  * and an optional count badge; the body slides via the same `max-h` +
  * opacity transition as before so existing visual tests are unaffected.

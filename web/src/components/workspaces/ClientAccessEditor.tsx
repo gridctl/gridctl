@@ -11,7 +11,7 @@ interface ClientAccessEditorProps {
   isOpen: boolean;
   onClose: () => void;
   servers: MCPServerStatus[];
-  // Optional client slug to focus when the editor opens (e.g. from the Topology
+  // Optional client slug to focus when the editor opens (e.g. from the Stack
   // inspector's "Edit Scope"). When omitted, the first linked client is shown.
   initialSlug?: string | null;
 }
@@ -21,7 +21,7 @@ interface ClientAccessEditorProps {
 // that client may reach, persisting a server-level profile to the stack
 // `clients:` block. Tool-level allow-lists are enforced (PR3) and editable in
 // stack.yaml directly; this editor manages the coarser server-level access that
-// the topology view reflects.
+// the Stack view reflects.
 export function ClientAccessEditor({ isOpen, onClose, servers, initialSlug }: ClientAccessEditorProps) {
   const clients = useStackStore((s) => s.clients);
   const linked = useMemo(
@@ -30,7 +30,7 @@ export function ClientAccessEditor({ isOpen, onClose, servers, initialSlug }: Cl
   );
 
   // Seeded from `initialSlug` at mount. Callers that open the editor focused on
-  // a specific client (the Topology inspector) pass a `key` keyed to that slug so
+  // a specific client (the Stack inspector) pass a `key` keyed to that slug so
   // a fresh seed remounts here; the Tools entry passes no seed and starts on the
   // first linked client.
   const [activeSlug, setActiveSlug] = useState<string | null>(initialSlug ?? null);

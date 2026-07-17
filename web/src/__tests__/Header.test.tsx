@@ -13,7 +13,7 @@ const SERVERS: MCPServerStatus[] = [
 
 function renderHeader() {
   return render(
-    <MemoryRouter initialEntries={['/topology']}>
+    <MemoryRouter initialEntries={['/stack']}>
       <Header />
     </MemoryRouter>,
   );

@@ -16,7 +16,7 @@ interface SlideOverProps {
 /**
  * SlideOver is a right-anchored panel that sits beside the content rather than
  * over it. Unlike ui/Modal it deliberately has NO full-viewport backdrop and NO
- * focus trap: the Topology canvas behind it must stay pannable, selectable, and
+ * focus trap: the Stack canvas behind it must stay pannable, selectable, and
  * clickable (canvas server clicks edit the same draft the slide-over does), so a
  * trap or backdrop would defeat the entire interaction model. It is keyboard
  * operable on its own (Escape closes, content is tabbable) and labels itself as

@@ -8,12 +8,12 @@ function fireMod(key: string) {
 }
 
 describe('useKeyboardShortcuts — workspace navigation', () => {
-  it('⌘1 calls onSwitchToWorkspace with "topology"', () => {
+  it('⌘1 calls onSwitchToWorkspace with "stack"', () => {
     const onSwitchToWorkspace = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
     fireMod('1');
     expect(onSwitchToWorkspace).toHaveBeenCalledTimes(1);
-    expect(onSwitchToWorkspace).toHaveBeenCalledWith('topology');
+    expect(onSwitchToWorkspace).toHaveBeenCalledWith('stack');
   });
 
   it('⌘2 calls onSwitchToWorkspace with "library"', () => {

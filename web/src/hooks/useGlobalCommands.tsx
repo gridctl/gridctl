@@ -68,13 +68,13 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     const commands: PaletteCommand[] = [
       // Cross-workspace navigation — visible in every workspace.
       {
-        id: 'navigate:workspace-topology',
+        id: 'navigate:workspace-stack',
         label: 'Go to Stack',
         section: 'global',
         icon: <Layers size={14} />,
         shortcut: ['⌘', '1'],
         keywords: ['stack', 'topology', 'workspace', 'operator', 'graph', 'go'],
-        onSelect: () => navigate('/topology'),
+        onSelect: () => navigate('/stack'),
       },
       {
         id: 'navigate:workspace-library',
@@ -89,7 +89,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'navigate:canvas',
         label: 'Go to Canvas',
         section: 'global',
-        workspaces: ['topology'],
+        workspaces: ['stack'],
         icon: <Network size={14} />,
         keywords: ['canvas', 'graph', 'stack', 'nodes', 'home', 'main'],
         onSelect: () => setBottomPanelOpen(false),
@@ -195,7 +195,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:zoom-fit',
         label: 'Zoom to fit',
         section: 'canvas',
-        workspaces: ['topology'],
+        workspaces: ['stack'],
         icon: <Maximize2 size={14} />,
         shortcut: ['⌘', '0'],
         keywords: ['zoom', 'fit', 'view', 'reset', 'all', 'fit view'],
@@ -205,7 +205,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:zoom-in',
         label: 'Zoom in',
         section: 'canvas',
-        workspaces: ['topology'],
+        workspaces: ['stack'],
         icon: <ZoomIn size={14} />,
         shortcut: ['⌘', '+'],
         keywords: ['zoom', 'in', 'magnify', 'larger'],
@@ -215,7 +215,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:zoom-out',
         label: 'Zoom out',
         section: 'canvas',
-        workspaces: ['topology'],
+        workspaces: ['stack'],
         icon: <ZoomOut size={14} />,
         shortcut: ['⌘', '−'],
         keywords: ['zoom', 'out', 'shrink', 'smaller'],
@@ -225,7 +225,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:refresh',
         label: 'Refresh canvas',
         section: 'canvas',
-        workspaces: ['topology'],
+        workspaces: ['stack'],
         icon: <RefreshCw size={14} />,
         shortcut: ['⌘', '⇧', 'R'],
         keywords: ['refresh', 'reload', 'update', 'sync', 'data'],
@@ -244,7 +244,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:toggle-heatmap',
         label: 'Toggle heatmap overlay',
         section: 'canvas',
-        workspaces: ['topology'],
+        workspaces: ['stack'],
         icon: <Flame size={14} />,
         keywords: ['heatmap', 'heat', 'overlay', 'tokens', 'usage', 'toggle'],
         onSelect: () => toggleHeatMap(),
@@ -253,7 +253,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:toggle-compact',
         label: 'Toggle compact cards',
         section: 'canvas',
-        workspaces: ['topology'],
+        workspaces: ['stack'],
         icon: <LayoutGrid size={14} />,
         keywords: ['compact', 'cards', 'nodes', 'size', 'dense', 'toggle'],
         onSelect: () => toggleCompactCards(),
@@ -262,7 +262,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         id: 'canvas:toggle-spec-mode',
         label: 'Toggle spec mode',
         section: 'canvas',
-        workspaces: ['topology'],
+        workspaces: ['stack'],
         icon: <Eye size={14} />,
         keywords: ['spec', 'mode', 'ghost', 'undeployed', 'preview', 'drift', 'diff', 'changes', 'diverged', 'toggle'],
         onSelect: () => toggleSpecMode(),
@@ -282,8 +282,8 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         icon: <DollarSign size={14} />,
         keywords: ['pricing', 'cost', 'model', 'models', 'attribution', 'usd', 'edit'],
         onSelect: () => {
-          // The manager mounts in the Topology workspace's canvas column.
-          navigate('/topology');
+          // The manager mounts in the Stack workspace's canvas column.
+          navigate('/stack');
           setPricingManagerOpen(true);
         },
       },
@@ -311,7 +311,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       id: `node:${server.name}`,
       label: `View node: ${server.name}`,
       section: 'canvas' as const,
-      workspaces: ['topology' as const],
+      workspaces: ['stack' as const],
       icon: <Server size={14} />,
       keywords: [server.name, 'node', 'server', 'mcp'],
       onSelect: () => {

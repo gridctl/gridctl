@@ -63,7 +63,7 @@ export interface UseClientScopeEditor {
  * client's current effective scope, and the save-and-reload flow (mirroring
  * useToolsEditor's structured-error handling). Saving writes a server-level
  * profile (servers allow-list, tools unrestricted) to the stack `clients:`
- * block via updateClientScope, then refreshes the client list so the topology
+ * block via updateClientScope, then refreshes the client list so the Stack view
  * reflects the new scope.
  */
 export function useClientScopeEditor(
@@ -127,7 +127,7 @@ export function useClientScopeEditor(
         showToast('warning', 'Stack updated. Run "gridctl reload" or restart with --watch to apply.');
       }
       // Refresh clients (carries the recomputed effectiveScope) and gateway
-      // status so the topology and editor reflect the new scope.
+      // status so the Stack view and editor reflect the new scope.
       try {
         const [clients, status] = await Promise.all([fetchClients(), fetchStatus()]);
         useStackStore.getState().setClients(clients);
