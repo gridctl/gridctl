@@ -120,6 +120,13 @@ func Targets() []Target {
 			DetectDirs: []string{"~/Documents/Cline", "~/.agents"},
 		},
 		{
+			Slug:       "grok",
+			Name:       "Grok Build",
+			Strategy:   StrategyBlock,
+			Paths:      allOS("~/.grok/AGENTS.md"),
+			DetectDirs: []string{"~/.grok"},
+		},
+		{
 			Slug:     "antigravity",
 			Name:     "Antigravity",
 			Strategy: StrategyBlock,
@@ -168,7 +175,6 @@ func Unsupported() []UnsupportedClient {
 		{Slug: "claude", Name: "Claude Desktop", Reason: "instructions live in the app UI; no global context file"},
 		{Slug: "cursor", Name: "Cursor", Reason: "global User Rules are stored in app-internal storage; no supported file path"},
 		{Slug: "anythingllm", Name: "AnythingLLM", Reason: "workspace system prompt is UI/API only; no context file"},
-		{Slug: "grok", Name: "Grok Build", Reason: "no documented global instruction file"},
 	}
 }
 
