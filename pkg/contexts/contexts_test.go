@@ -886,7 +886,7 @@ func TestStatusesIncludeUnsupportedClients(t *testing.T) {
 	for _, cs := range statuses {
 		bySlug[cs.Slug] = cs
 	}
-	for _, slug := range []string{"claude", "cursor", "anythingllm", "grok"} {
+	for _, slug := range []string{"claude", "cursor", "anythingllm"} {
 		cs, ok := bySlug[slug]
 		if !ok {
 			t.Errorf("%s missing from statuses", slug)
@@ -895,5 +895,33 @@ func TestStatusesIncludeUnsupportedClients(t *testing.T) {
 		if cs.State != StateUnsupported || cs.Detail == "" {
 			t.Errorf("%s: state=%q detail=%q", slug, cs.State, cs.Detail)
 		}
+	}
+}
+
+// TestGrokIsSupportedBlockTarget is a regression test: Grok Build was once
+// listed unsupported ("no documented global instruction file"), but Grok
+// reads global rules from ~/.grok/AGENTS.md (documented in its bundled user
+// guide and verified with `grok inspect`).
+func TestGrokIsSupportedBlockTarget(t *testing.T) {
+	tgt, ok := FindTarget("grok")
+	if !ok {
+		t.Fatal("grok must be a supported target")
+	}
+	if tgt.Strategy != StrategyBlock {
+		t.Errorf("Strategy = %q, want %q", tgt.Strategy, StrategyBlock)
+	}
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		if tgt.Paths[goos] != "~/.grok/AGENTS.md" {
+			t.Errorf("Paths[%s] = %q, want %q", goos, tgt.Paths[goos], "~/.grok/AGENTS.md")
+		}
+	}
+	if tgt.MaxChars != 0 {
+		t.Errorf("MaxChars = %d, want 0 (Grok documents no cap)", tgt.MaxChars)
+	}
+	if tgt.Experimental {
+		t.Error("grok must not be experimental; path comes from first-party docs")
+	}
+	if _, stillUnsupported := findUnsupported("grok"); stillUnsupported {
+		t.Error("grok must no longer be listed unsupported")
 	}
 }
