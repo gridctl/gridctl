@@ -22,6 +22,15 @@ type CloneResult struct {
 	RepoPath  string
 	CommitSHA string
 	Skills    []DiscoveredSkill
+	Malformed []MalformedSkill
+}
+
+// MalformedSkill records a SKILL.md that could not be read or parsed (or a
+// directory that could not be walked), so callers can surface the failure
+// instead of silently dropping it.
+type MalformedSkill struct {
+	Path string `json:"path"` // Relative path from repo root
+	Err  string `json:"error"`
 }
 
 // DiscoveredSkill represents a SKILL.md found in a cloned repo.
@@ -63,15 +72,19 @@ func CloneAndDiscover(repo, ref, subPath string, auth AuthConfig, logger *slog.L
 		}
 	}
 
-	skills, err := discoverSkills(searchDir, repoPath)
+	skills, malformed, err := discoverSkills(searchDir, repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("discovering skills: %w", err)
+	}
+	for _, m := range malformed {
+		logger.Warn("skipping malformed SKILL.md", "path", m.Path, "error", m.Err)
 	}
 
 	return &CloneResult{
 		RepoPath:  repoPath,
 		CommitSHA: commitSHA,
 		Skills:    skills,
+		Malformed: malformed,
 	}, nil
 }
 
@@ -227,11 +240,23 @@ func updateExisting(repoPath, url, ref string, auth AuthConfig, logger *slog.Log
 	return repoPath, nil
 }
 
-func discoverSkills(searchDir, repoRoot string) ([]DiscoveredSkill, error) {
+func discoverSkills(searchDir, repoRoot string) ([]DiscoveredSkill, []MalformedSkill, error) {
 	var skills []DiscoveredSkill
+	var malformed []MalformedSkill
+
+	recordMalformed := func(path string, cause error) {
+		relPath, relErr := filepath.Rel(repoRoot, path)
+		if relErr != nil {
+			relPath = path
+		}
+		malformed = append(malformed, MalformedSkill{Path: relPath, Err: cause.Error()})
+	}
 
 	err := filepath.WalkDir(searchDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			// An unreadable directory hides any SKILL.md beneath it;
+			// record the failure so it isn't silently skipped.
+			recordMalformed(path, err)
 			return nil
 		}
 		if d.IsDir() || d.Name() != "SKILL.md" {
@@ -240,11 +265,13 @@ func discoverSkills(searchDir, repoRoot string) ([]DiscoveredSkill, error) {
 
 		data, err := os.ReadFile(path)
 		if err != nil {
+			recordMalformed(path, err)
 			return nil
 		}
 
 		sk, err := registry.ParseSkillMD(data)
 		if err != nil {
+			recordMalformed(path, err)
 			return nil
 		}
 
@@ -266,7 +293,7 @@ func discoverSkills(searchDir, repoRoot string) ([]DiscoveredSkill, error) {
 		return nil
 	})
 
-	return skills, err
+	return skills, malformed, err
 }
 
 func contentHash(data []byte) string {
