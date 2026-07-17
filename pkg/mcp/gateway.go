@@ -275,7 +275,7 @@ func (g *Gateway) ClientAccessConfigured() bool {
 
 // ClientScope returns the backend-computed effective scope for the given access
 // identifier: the servers and prefixed tools it can reach after intersecting
-// its allow-list with the live tool surface. Used by the topology/clients API
+// its allow-list with the live tool surface. Used by the stack/clients API
 // so the frontend renders the real per-client subgraph.
 func (g *Gateway) ClientScope(accessID string) ClientScopeResult {
 	return g.clientAccessPolicy().scopeResult(NormalizeClientID(accessID), g.router.CatalogTools())
@@ -284,7 +284,7 @@ func (g *Gateway) ClientScope(accessID string) ClientScopeResult {
 // ClientScopePreview computes the effective scope a client WOULD have under a
 // hypothetical server/tool allow-list, intersected with the live tool surface,
 // without mutating any installed policy (read-only). It backs the per-client
-// "what changes" preview the Topology Access Lens shows before a commit.
+// "what changes" preview the Stack Access Lens shows before a commit.
 //
 // servers and tools are tri-state allow-lists matching the PUT /scope contract:
 // a nil tools slice preserves the client's currently-configured tool allow-list

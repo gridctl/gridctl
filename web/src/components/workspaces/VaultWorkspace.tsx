@@ -403,7 +403,7 @@ export function VaultWorkspace() {
             : null;
       if (!nodeId) return;
       selectNode(nodeId);
-      showToast('success', `Selected ${consumer.name} — open Topology to inspect`);
+      showToast('success', `Selected ${consumer.name} — open Stack to inspect`);
     },
     [selectNode],
   );

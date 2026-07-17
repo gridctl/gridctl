@@ -24,7 +24,7 @@ type Stack struct {
 	// for cost attribution: tool calls from a declared client are priced at
 	// that model's rates ahead of any per-server model or gateway
 	// default_model. Keys are stable client identifiers (the same form used
-	// by clients.profiles and shown on the topology — e.g. "claude-code").
+	// by clients.profiles and shown on the Stack canvas — e.g. "claude-code").
 	// The map has zero effect on access policy: declaring a model never
 	// requires a clients: block and never restricts an unlisted client.
 	// Empty (the default) disables the client pricing tier.
@@ -50,7 +50,7 @@ type Stack struct {
 // `gridctl link` time, which is also the identifier shown in the UI and carried
 // on the wire (the `client` query parameter / X-Gridctl-Client-Id header). It is
 // reconciled with the connecting client's normalized identity, so the same
-// string keys configuration, enforcement, and the topology view.
+// string keys configuration, enforcement, and the Stack view.
 //
 // Scope coverage for v1 is tools only: skills (served as MCP prompts) and
 // resources remain globally visible. This is an explicit, documented decision;

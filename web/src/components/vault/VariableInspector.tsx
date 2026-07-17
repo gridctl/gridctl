@@ -501,7 +501,7 @@ export function VariableInspector({
           {navigableConsumer && (
             <PillButton
               icon={ArrowUpRight}
-              label="Jump to Topology"
+              label="Jump to Stack"
               onClick={() => onConsumerClick?.(navigableConsumer)}
             />
           )}

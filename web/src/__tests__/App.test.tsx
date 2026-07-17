@@ -13,7 +13,7 @@ describe('documentTitleForWorkspace', () => {
   })
 
   it('appends the workspace label', () => {
-    expect(documentTitleForWorkspace('topology')).toBe('Gridctl - Topology')
+    expect(documentTitleForWorkspace('topology')).toBe('Gridctl - Stack')
   })
 
   it('uses the display label, not the id, for vault', () => {

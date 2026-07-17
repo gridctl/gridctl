@@ -174,7 +174,7 @@ func TestProbe_CacheHit(t *testing.T) {
 }
 
 // Unsupported-transport coverage: every non-external transport must route to
-// CodeUnsupportedTransport with a hint pointing at the topology editor.
+// CodeUnsupportedTransport with a hint pointing at the Stack sidebar editor.
 
 func TestProbe_UnsupportedTransport_SSH(t *testing.T) {
 	p := NewProber(nil)

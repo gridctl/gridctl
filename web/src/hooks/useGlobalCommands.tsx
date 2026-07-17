@@ -20,7 +20,7 @@ import {
   FileCode,
   Plus,
   PanelBottom,
-  Compass,
+  Network,
   Pin,
   Sun,
   Moon,
@@ -69,11 +69,11 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       // Cross-workspace navigation — visible in every workspace.
       {
         id: 'navigate:workspace-topology',
-        label: 'Go to Topology',
+        label: 'Go to Stack',
         section: 'global',
-        icon: <Compass size={14} />,
+        icon: <Layers size={14} />,
         shortcut: ['⌘', '1'],
-        keywords: ['topology', 'workspace', 'operator', 'graph', 'go'],
+        keywords: ['stack', 'topology', 'workspace', 'operator', 'graph', 'go'],
         onSelect: () => navigate('/topology'),
       },
       {
@@ -90,8 +90,8 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         label: 'Go to Canvas',
         section: 'global',
         workspaces: ['topology'],
-        icon: <Layers size={14} />,
-        keywords: ['canvas', 'graph', 'topology', 'nodes', 'home', 'main'],
+        icon: <Network size={14} />,
+        keywords: ['canvas', 'graph', 'stack', 'nodes', 'home', 'main'],
         onSelect: () => setBottomPanelOpen(false),
       },
       {

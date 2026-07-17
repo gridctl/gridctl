@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, Library, Lock, Network, Pin, Wrench } from 'lucide-react';
+import { BarChart3, Layers, Library, Lock, Pin, Wrench } from 'lucide-react';
 
 // Top-level workspaces in the unified shell. Routed at /topology, /library,
 // /vault, /tools, /metrics, and /pins inside AppShell.
@@ -17,7 +17,7 @@ export interface WorkspaceConfig {
 // here; the switcher, shortcuts, and labels follow automatically. Array order
 // is the rendered top-nav order, so shortcuts read left-to-right as 1-2-3.
 export const WORKSPACE_CONFIG: readonly WorkspaceConfig[] = [
-  { id: 'topology', label: 'Topology',  icon: Network,  shortcutKey: '1' },
+  { id: 'topology', label: 'Stack',     icon: Layers,   shortcutKey: '1' },
   { id: 'library',  label: 'Library',   icon: Library,  shortcutKey: '2' },
   { id: 'vault',    label: 'Variables', icon: Lock,     shortcutKey: '3' },
   { id: 'tools',    label: 'Tools',     icon: Wrench,    shortcutKey: '4' },
