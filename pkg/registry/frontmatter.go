@@ -2,11 +2,61 @@ package registry
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// UnmarshalYAML decodes metadata leniently. Values that are not strings
+// (nested mappings, sequences, booleans, numbers) are coerced to their
+// string form instead of failing the whole SKILL.md parse. Non-mapping
+// metadata (e.g. a bare string) is ignored rather than treated as an error.
+// The mapping node is walked by hand so one bad entry (or a duplicate key,
+// which yaml.v3's map decoding rejects) cannot discard the valid keys.
+func (m *SkillMetadata) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return nil
+	}
+	out := make(SkillMetadata, len(value.Content)/2)
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		keyNode, valNode := value.Content[i], value.Content[i+1]
+		if keyNode.Kind != yaml.ScalarNode {
+			continue
+		}
+		out[keyNode.Value] = metadataNodeString(valNode)
+	}
+	*m = out
+	return nil
+}
+
+// metadataNodeString renders a YAML value node as a string. Scalars keep
+// their literal form as written (so "1.20", dates, and hex stay verbatim);
+// mappings and sequences become compact JSON.
+func metadataNodeString(n *yaml.Node) string {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		if n.Tag == "!!null" {
+			return ""
+		}
+		return n.Value
+	case yaml.AliasNode:
+		if n.Alias != nil {
+			return metadataNodeString(n.Alias)
+		}
+		return ""
+	default:
+		var v any
+		if err := n.Decode(&v); err != nil {
+			return ""
+		}
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+		return fmt.Sprintf("%v", v)
+	}
+}
 
 // ParseSkillMD parses a SKILL.md file into an AgentSkill.
 // The file format is YAML frontmatter between --- delimiters followed by a markdown body.
