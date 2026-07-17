@@ -89,6 +89,10 @@ func (imp *Importer) Diff(ctx context.Context, skillName string) (*DiffResult, e
 		discovered = &result.Skills[0]
 	}
 	if discovered == nil {
+		if len(result.Malformed) > 0 {
+			m := result.Malformed[0]
+			return nil, fmt.Errorf("upstream SKILL.md failed to parse: %s: %s", m.Path, m.Err)
+		}
 		return nil, fmt.Errorf("skill %q not found at upstream path %q", skillName, origin.Path)
 	}
 
