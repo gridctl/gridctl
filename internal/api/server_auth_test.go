@@ -62,7 +62,7 @@ func newAuthTestServer(t *testing.T) (*Server, *mcpauth.Broker, *httptest.Server
 	t.Cleanup(as.Close)
 	base = as.URL
 
-	store, err := mcpauth.NewTokenStore(t.TempDir(), false)
+	store, err := mcpauth.NewTokenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

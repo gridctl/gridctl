@@ -209,7 +209,7 @@ func (s *recordingSink) last(name string) (mcp.ServerAuthState, bool) {
 
 func newTestBroker(t *testing.T) (*Broker, *TokenStore, *recordingSink) {
 	t.Helper()
-	store, err := NewTokenStore(t.TempDir(), false)
+	store, err := NewTokenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestBrokerFullFlow(t *testing.T) {
 	}
 
 	// Persistence: a fresh broker over the same store dir sees the grant.
-	store2, err := NewTokenStore(store.dir, false)
+	store2, err := NewTokenStore(store.dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -626,7 +626,7 @@ func TestCanonicalResource(t *testing.T) {
 
 func TestTokenStoreCorruptFileDegrades(t *testing.T) {
 	dir := t.TempDir()
-	store, err := NewTokenStore(dir, false)
+	store, err := NewTokenStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -651,7 +651,7 @@ func TestTokenStoreCorruptFileDegrades(t *testing.T) {
 
 func TestTokenStoreRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	store, err := NewTokenStore(dir, false)
+	store, err := NewTokenStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,7 +676,7 @@ func TestTokenStoreRoundTrip(t *testing.T) {
 	}
 
 	// A second store instance with the same dir reads it back.
-	store2, err := NewTokenStore(dir, false)
+	store2, err := NewTokenStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

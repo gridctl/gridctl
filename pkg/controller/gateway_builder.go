@@ -282,7 +282,7 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	// Phase 4c: Downstream OAuth broker. A token-store failure degrades to
 	// no brokering (oauth-type servers land in needs-auth with a clear
 	// error) rather than blocking startup.
-	if store, storeErr := mcpauth.NewTokenStore("", true); storeErr != nil {
+	if store, storeErr := mcpauth.NewTokenStore(""); storeErr != nil {
 		slog.New(inst.Handler).Warn("oauth token store unavailable; downstream OAuth brokering disabled",
 			"error", storeErr)
 	} else {

@@ -80,16 +80,15 @@ type TokenStore struct {
 }
 
 // NewTokenStore opens (creating if needed) the token store rooted at dir.
-// When dir is empty, <state base dir>/oauth is used. useKeychain enables
-// the darwin Keychain for the machine key; tests pass false.
-func NewTokenStore(dir string, useKeychain bool) (*TokenStore, error) {
+// When dir is empty, <state base dir>/oauth is used.
+func NewTokenStore(dir string) (*TokenStore, error) {
 	if dir == "" {
 		dir = filepath.Join(state.BaseDir(), "oauth")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating oauth state dir: %w", err)
 	}
-	key, err := loadOrCreateMachineKey(dir, useKeychain)
+	key, err := loadOrCreateMachineKey(dir)
 	if err != nil {
 		return nil, fmt.Errorf("loading machine key: %w", err)
 	}
