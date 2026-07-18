@@ -202,8 +202,16 @@ func Validate(s *Stack) error {
 			errs = append(errs, ValidationError{prefix, "can only have one of 'image', 'source', 'url', 'command', 'ssh', or 'openapi'"})
 		}
 
+		// Downstream auth only applies to external URL servers
+		if server.Auth != nil && !server.IsExternal() {
+			errs = append(errs, ValidationError{prefix + ".auth", "only valid for external URL servers"})
+		}
+
 		// External server validation (URL-only)
 		if server.IsExternal() {
+			if server.Auth != nil {
+				errs = append(errs, validateServerAuth(server.Auth, prefix+".auth")...)
+			}
 			// Transport must be http or sse for external servers
 			if server.Transport == "stdio" {
 				errs = append(errs, ValidationError{prefix + ".transport", "stdio not valid for external URL servers"})
@@ -546,6 +554,47 @@ func splitPrefixedToolName(prefixed string) (server, tool string, ok bool) {
 // validateAutoscale validates the autoscale block on one MCP server. prefix is
 // the YAML path of the server entry (e.g. "mcp-servers[2]") so every error
 // surfaces the full dotted path for CI / --format json consumers.
+// validateServerAuth checks the downstream auth block of an external URL
+// server. Fields that belong to a different auth type are rejected so a typo
+// (e.g. a bearer token on type: oauth) fails loudly instead of being ignored.
+func validateServerAuth(a *ServerAuth, prefix string) ValidationErrors {
+	var errs ValidationErrors
+
+	switch a.Type {
+	case "bearer":
+		if a.Token == "" {
+			errs = append(errs, ValidationError{prefix + ".token", "required when type is 'bearer'"})
+		}
+	case "header":
+		if a.Header == "" {
+			errs = append(errs, ValidationError{prefix + ".header", "required when type is 'header'"})
+		}
+		if a.Value == "" {
+			errs = append(errs, ValidationError{prefix + ".value", "required when type is 'header'"})
+		}
+	case "oauth":
+		if a.ClientSecret != "" && a.ClientID == "" {
+			errs = append(errs, ValidationError{prefix + ".client_id", "required when client_secret is set"})
+		}
+	case "":
+		errs = append(errs, ValidationError{prefix + ".type", "is required"})
+	default:
+		errs = append(errs, ValidationError{prefix + ".type", "must be 'bearer', 'header', or 'oauth'"})
+	}
+
+	if a.Type != "bearer" && a.Token != "" {
+		errs = append(errs, ValidationError{prefix + ".token", "only valid when type is 'bearer'"})
+	}
+	if a.Type != "header" && (a.Header != "" || a.Value != "") {
+		errs = append(errs, ValidationError{prefix + ".header", "header/value only valid when type is 'header'"})
+	}
+	if a.Type != "oauth" && (len(a.Scopes) > 0 || a.ClientID != "" || a.ClientSecret != "") {
+		errs = append(errs, ValidationError{prefix + ".scopes", "scopes/client_id/client_secret only valid when type is 'oauth'"})
+	}
+
+	return errs
+}
+
 func validateAutoscale(server MCPServer, prefix string) ValidationErrors {
 	var errs ValidationErrors
 	a := server.Autoscale

@@ -308,6 +308,34 @@ type MCPServer struct {
 	// zero. Unknown model IDs are best-effort — they log a single WARN and
 	// price as zero rather than failing validation.
 	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+
+	// Auth configures downstream authentication for external URL servers:
+	// a static bearer token, a static custom header, or OAuth 2.1 brokering
+	// handled by the gateway. nil (the default) preserves the existing
+	// unauthenticated behavior. Only valid on external URL servers.
+	Auth *ServerAuth `yaml:"auth,omitempty" json:"auth,omitempty"`
+}
+
+// ServerAuth defines downstream authentication for an external URL MCP server.
+// Type selects the behavior; the other fields belong to exactly one type.
+type ServerAuth struct {
+	Type string `yaml:"type"` // "bearer", "header", or "oauth"
+
+	// Static bearer token (type: bearer). Sent as "Authorization: Bearer <token>".
+	// Use ${VAR} or ${var:KEY} references rather than literal secrets.
+	Token string `yaml:"token,omitempty"`
+
+	// Static header (type: header).
+	Header string `yaml:"header,omitempty"` // header name, e.g. "X-API-Key"
+	Value  string `yaml:"value,omitempty"`  // header value; use ${VAR} references
+
+	// OAuth 2.1 brokering (type: oauth). All fields optional: scopes default
+	// to what the server advertises, and a pre-registered client_id (plus
+	// client_secret when the provider issued one) bypasses dynamic client
+	// registration for authorization servers that do not support it.
+	Scopes       []string `yaml:"scopes,omitempty"`
+	ClientID     string   `yaml:"client_id,omitempty"`
+	ClientSecret string   `yaml:"client_secret,omitempty"`
 }
 
 // ClientModelAttribution returns the client ID -> model mapping used to

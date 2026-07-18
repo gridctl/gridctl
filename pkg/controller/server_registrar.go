@@ -287,6 +287,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			Transport:    transport,
 			Endpoint:     server.URL,
 			External:     true,
+			Auth:         mapServerAuth(serverCfg.Auth),
 			Tools:        serverCfg.Tools,
 			OutputFormat: serverCfg.OutputFormat,
 			PinSchemas:   serverCfg.PinSchemas,
@@ -362,6 +363,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Transport:    transport,
 			Endpoint:     server.URL,
 			External:     true,
+			Auth:         mapServerAuth(server.Auth),
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
 			PinSchemas:   server.PinSchemas,
@@ -504,6 +506,23 @@ func (r *ServerRegistrar) buildOpenAPIConfig(name string, openAPICfg *config.Ope
 }
 
 // resolveTransport converts a string transport name to a typed Transport constant.
+// mapServerAuth translates the stack-level auth block into the mcp-layer
+// mirror. Credential fields arrive already expanded by the config loader.
+func mapServerAuth(a *config.ServerAuth) *mcp.ServerAuthConfig {
+	if a == nil {
+		return nil
+	}
+	return &mcp.ServerAuthConfig{
+		Type:         a.Type,
+		Token:        a.Token,
+		Header:       a.Header,
+		Value:        a.Value,
+		Scopes:       a.Scopes,
+		ClientID:     a.ClientID,
+		ClientSecret: a.ClientSecret,
+	}
+}
+
 func resolveTransport(transport string) mcp.Transport {
 	switch transport {
 	case "sse":

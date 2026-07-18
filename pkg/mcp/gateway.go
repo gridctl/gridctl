@@ -51,6 +51,7 @@ type MCPServerConfig struct {
 	SSHKnownHostsFile string               // SSH known_hosts file path; enables StrictHostKeyChecking=yes
 	SSHJumpHost       string               // SSH jump/bastion host ([user@]host[:port])
 	OpenAPIConfig     *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
+	Auth              *ServerAuthConfig    // Downstream auth for external URL servers (nil = none)
 	Tools             []string             // Tool whitelist (empty = all tools)
 	OutputFormat      string               // Output format: "json", "toon", "csv", "text"
 	PinSchemas        *bool                // Override gateway schema pinning (nil = inherit gateway default)
@@ -1078,6 +1079,9 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
 			httpClient.SetLogger(clientLogger)
 			httpClient.SetPingTimeout(cfg.PingTimeout)
+			if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
+				httpClient.SetHeaderSource(hs)
+			}
 			if len(cfg.Tools) > 0 {
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}
@@ -1091,6 +1095,9 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
 			httpClient.SetLogger(clientLogger)
 			httpClient.SetPingTimeout(cfg.PingTimeout)
+			if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
+				httpClient.SetHeaderSource(hs)
+			}
 			if len(cfg.Tools) > 0 {
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}

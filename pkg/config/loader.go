@@ -237,6 +237,13 @@ func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, empt
 			srv.OpenAPI.Spec = expandField(site("openapi.spec"), srv.OpenAPI.Spec)
 			srv.OpenAPI.BaseURL = expandField(site("openapi.baseUrl"), srv.OpenAPI.BaseURL)
 		}
+
+		if srv.Auth != nil {
+			srv.Auth.Token = expandField(site("auth.token"), srv.Auth.Token)
+			srv.Auth.Value = expandField(site("auth.value"), srv.Auth.Value)
+			srv.Auth.ClientID = expandField(site("auth.client_id"), srv.Auth.ClientID)
+			srv.Auth.ClientSecret = expandField(site("auth.client_secret"), srv.Auth.ClientSecret)
+		}
 	}
 
 	for i := range s.Resources {

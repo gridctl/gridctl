@@ -26,6 +26,30 @@ type Client struct {
 	sessionID       string        // MCP session ID for stateful servers
 	protocolVersion string        // negotiated at initialize; stamped on subsequent requests
 	pingTimeout     time.Duration // 0 = use DefaultPingTimeout
+	headerSource    HeaderSource  // optional downstream auth header (nil = none)
+}
+
+// SetHeaderSource installs the downstream auth header source. Must be called
+// before Connect/Initialize; the client does not synchronize this field.
+func (c *Client) SetHeaderSource(hs HeaderSource) {
+	c.headerSource = hs
+}
+
+// applyAuthHeader attaches the downstream auth header when a source is set.
+// Source errors abort the request and pass through unchanged so typed errors
+// (e.g. authorization-required) reach the caller.
+func (c *Client) applyAuthHeader(ctx context.Context, req *http.Request) error {
+	if c.headerSource == nil {
+		return nil
+	}
+	name, value, err := c.headerSource.AuthHeader(ctx)
+	if err != nil {
+		return err
+	}
+	if name != "" {
+		req.Header.Set(name, value)
+	}
+	return nil
 }
 
 // setProtocolVersion records the version negotiated at initialize so
@@ -131,6 +155,10 @@ func (c *Client) sendHTTP(ctx context.Context, req jsonrpc.Request) (*jsonrpc.Re
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
 
+	if err := c.applyAuthHeader(ctx, httpReq); err != nil {
+		return nil, err
+	}
+
 	// Inject W3C traceparent/tracestate into outgoing request headers.
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(httpReq.Header))
 
@@ -217,6 +245,10 @@ func (c *Client) Ping(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", c.endpoint, nil)
 	if err != nil {
+		return err
+	}
+
+	if err := c.applyAuthHeader(ctx, req); err != nil {
 		return err
 	}
 
