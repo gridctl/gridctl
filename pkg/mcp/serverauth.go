@@ -27,6 +27,26 @@ func (e *AuthRequiredError) Error() string {
 	return fmt.Sprintf("HTTP %d: %s", e.Status, e.Body)
 }
 
+// NeedsAuthError is returned on requests to a server whose authorization is
+// missing or expired. The message is user-facing: it is what an upstream
+// LLM client displays when a tool call fails, so it names the exact fix.
+type NeedsAuthError struct {
+	Server string
+}
+
+func (e *NeedsAuthError) Error() string {
+	return fmt.Sprintf("%s requires authorization: run 'gridctl auth login %s' or open the gridctl UI",
+		e.Server, e.Server)
+}
+
+// TokenInvalidator is implemented by header sources that cache credentials.
+// InvalidateToken drops the cached credential and reports whether a retry
+// is worthwhile (i.e. a refresh path exists). The transport calls it once
+// on a 401 so an expired-but-refreshable token heals silently.
+type TokenInvalidator interface {
+	InvalidateToken() bool
+}
+
 // ServerAuthState is the downstream authorization state recorded for a
 // server. Empty Status means no OAuth state is tracked for the server.
 type ServerAuthState struct {

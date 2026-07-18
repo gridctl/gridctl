@@ -18,6 +18,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/mcpauth"
 	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/provisioner"
@@ -44,6 +45,7 @@ type GatewayInstance struct {
 	LogBuffer      *logging.LogBuffer
 	Handler        slog.Handler
 	RegistryServer *registry.Server // Internal registry MCP server (nil if empty)
+	Broker         *mcpauth.Broker  // Downstream OAuth broker (nil when the token store is unavailable)
 }
 
 // GatewayBuilder constructs and runs the MCP gateway from a stack config.
@@ -277,11 +279,30 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		}
 	}
 
+	// Phase 4c: Downstream OAuth broker. A token-store failure degrades to
+	// no brokering (oauth-type servers land in needs-auth with a clear
+	// error) rather than blocking startup.
+	if store, storeErr := mcpauth.NewTokenStore("", true); storeErr != nil {
+		slog.New(inst.Handler).Warn("oauth token store unavailable; downstream OAuth brokering disabled",
+			"error", storeErr)
+	} else {
+		redirect := fmt.Sprintf("http://localhost:%d%s", b.config.Port, mcpauth.CallbackPath)
+		broker := mcpauth.NewBroker(store, redirect, slog.New(inst.Handler))
+		broker.SetStateSink(inst.Gateway)
+		if rh, ok := inst.Handler.(*logging.RedactingHandler); ok {
+			broker.SetRedactor(rh.RegisterRedactValues)
+		}
+		inst.Broker = broker
+	}
+
 	// Phase 5: Create API server
 	var apiErr error
-	inst.APIServer, apiErr = b.buildAPIServer(inst.Gateway, inst.LogBuffer, webFS, inst.RegistryServer, inst.Handler)
+	inst.APIServer, apiErr = b.buildAPIServer(inst.Gateway, inst.LogBuffer, webFS, inst.RegistryServer, inst.Handler, inst.Broker)
 	if apiErr != nil {
 		return nil, apiErr
+	}
+	if inst.Broker != nil {
+		inst.APIServer.SetOAuthBroker(inst.Broker)
 	}
 
 	// Phase 6: Create HTTP server
@@ -406,6 +427,26 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 		registrar.SetRuntime(b.rt.Runtime())
 	}
 	registrar.SetBasePort(b.config.BasePort)
+	if inst.Broker != nil {
+		registrar.SetAuthBroker(inst.Broker)
+		// After a successful login, re-drive registration for the server so
+		// it comes live without waiting for a restart or reload. Detached
+		// from the login request's context: registration outlives it.
+		inst.Broker.SetOnAuthorized(func(name string) {
+			go func() {
+				for _, srv := range b.stack.MCPServers {
+					if srv.Name != name {
+						continue
+					}
+					if err := registrar.RegisterOne(context.WithoutCancel(ctx), srv, nil, b.stackPath); err != nil {
+						slog.New(bufferHandler).Warn("re-registration after authorization failed",
+							"server", name, "error", err)
+					}
+					return
+				}
+			}()
+		})
+	}
 	registrar.RegisterAll(ctx, b.result, b.stack, b.stackPath)
 
 	// Start periodic health monitoring and autoscaler tick loop.
@@ -509,7 +550,7 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 }
 
 // buildAPIServer creates and configures the API server.
-func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server, handler slog.Handler) (*api.Server, error) {
+func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server, handler slog.Handler, broker *mcpauth.Broker) (*api.Server, error) {
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(b.rt.DockerClient())
 	server.SetStackName(b.stack.Name)
@@ -571,6 +612,9 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	prober := probe.NewProber(probeCache)
 	if handler != nil {
 		prober.SetLogger(slog.New(handler).With("subsystem", "probe"))
+	}
+	if broker != nil {
+		prober.SetOAuthSource(broker.HeaderSourceForResource)
 	}
 	server.SetProber(prober)
 

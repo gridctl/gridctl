@@ -10,6 +10,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/mcpauth"
 	"github.com/gridctl/gridctl/pkg/runtime"
 )
 
@@ -31,6 +32,12 @@ type ServerRegistrar struct {
 	// the caller omits it; collisions with ports assigned during static
 	// bring-up are avoided by the allocator's monotonic counter.
 	basePort int
+
+	// broker, when set, brokers downstream OAuth for external servers with
+	// auth type "oauth": it supplies the live header source and tracks the
+	// per-server authorization state. nil disables brokering (such servers
+	// register with no auth and land in needs-auth on the first 401).
+	broker *mcpauth.Broker
 }
 
 // NewServerRegistrar creates a ServerRegistrar.
@@ -60,6 +67,26 @@ func (r *ServerRegistrar) SetRuntime(rt runtime.WorkloadRuntime) {
 // autoscaler. Picks up where the initial bring-up left off.
 func (r *ServerRegistrar) SetBasePort(p int) {
 	r.basePort = p
+}
+
+// SetAuthBroker wires the downstream OAuth broker used for external servers
+// with auth type "oauth".
+func (r *ServerRegistrar) SetAuthBroker(b *mcpauth.Broker) {
+	r.broker = b
+}
+
+// wireOAuth registers an external oauth-type server with the broker and
+// returns its live header source. Returns nil (no auth attached) for
+// non-oauth configs or when no broker is wired.
+func (r *ServerRegistrar) wireOAuth(name, url string, auth *config.MCPServer) mcp.HeaderSource {
+	if r.broker == nil || auth.Auth == nil || auth.Auth.Type != "oauth" {
+		return nil
+	}
+	if err := r.broker.Configure(name, url, mapServerAuth(auth.Auth)); err != nil {
+		r.logger.Warn("oauth broker configuration failed", "server", name, "error", err)
+		return nil
+	}
+	return r.broker.HeaderSource(name)
 }
 
 // RegisterAll registers all MCP servers from the UpResult with the gateway.
@@ -293,6 +320,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			Endpoint:     server.URL,
 			External:     true,
 			Auth:         mapServerAuth(serverCfg.Auth),
+			HeaderSource: r.wireOAuth(server.Name, server.URL, &serverCfg),
 			Tools:        serverCfg.Tools,
 			OutputFormat: serverCfg.OutputFormat,
 			PinSchemas:   serverCfg.PinSchemas,
@@ -369,6 +397,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			Endpoint:     server.URL,
 			External:     true,
 			Auth:         mapServerAuth(server.Auth),
+			HeaderSource: r.wireOAuth(server.Name, server.URL, &server),
 			Tools:        server.Tools,
 			OutputFormat: server.OutputFormat,
 			PinSchemas:   server.PinSchemas,
@@ -390,20 +419,20 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 	}
 	if server.IsSSH() {
 		return mcp.MCPServerConfig{
-			Name:               server.Name,
-			SSH:                true,
-			Command:            server.Command,
-			SSHHost:            server.SSH.Host,
-			SSHUser:            server.SSH.User,
-			SSHPort:            server.SSH.Port,
-			SSHIdentityFile:    server.SSH.IdentityFile,
-			SSHKnownHostsFile:  server.SSH.KnownHostsFile,
-			SSHJumpHost:        server.SSH.JumpHost,
-			Env:                server.Env,
-			Tools:              server.Tools,
-			OutputFormat:       server.OutputFormat,
-			PinSchemas:         server.PinSchemas,
-			PingTimeout:        server.ResolvedPingTimeout(),
+			Name:              server.Name,
+			SSH:               true,
+			Command:           server.Command,
+			SSHHost:           server.SSH.Host,
+			SSHUser:           server.SSH.User,
+			SSHPort:           server.SSH.Port,
+			SSHIdentityFile:   server.SSH.IdentityFile,
+			SSHKnownHostsFile: server.SSH.KnownHostsFile,
+			SSHJumpHost:       server.SSH.JumpHost,
+			Env:               server.Env,
+			Tools:             server.Tools,
+			OutputFormat:      server.OutputFormat,
+			PinSchemas:        server.PinSchemas,
+			PingTimeout:       server.ResolvedPingTimeout(),
 		}
 	}
 	if server.IsOpenAPI() {

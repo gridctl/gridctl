@@ -16,6 +16,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/mcpauth"
 	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/provisioner"
@@ -85,6 +86,11 @@ type Server struct {
 	prober       *probe.Prober
 	probeLimiter *probeLimiter
 
+	// oauthBroker handles downstream OAuth for external servers. Nil
+	// disables the /api/servers/{name}/auth/* endpoints and the
+	// /oauth/callback route.
+	oauthBroker *mcpauth.Broker
+
 	// Skill source paths. Empty values fall back to the global defaults
 	// (skills.LockFilePath / skills.SkillsConfigPath / skills.UpdateCachePath)
 	// so production code is unchanged; tests inject temp paths to stay
@@ -153,6 +159,13 @@ func (s *Server) SetAuth(authType, token, header string) {
 	s.authType = authType
 	s.authToken = token
 	s.authHeader = header
+}
+
+// SetOAuthBroker wires the downstream OAuth broker: enables the
+// /api/servers/{name}/auth/* endpoints and mounts the /oauth/callback
+// route (outside the inbound auth middleware).
+func (s *Server) SetOAuthBroker(b *mcpauth.Broker) {
+	s.oauthBroker = b
 }
 
 // SetProvisionerRegistry sets the provisioner registry for client detection.
@@ -495,6 +508,18 @@ func (s *Server) Handler() http.Handler {
 	}
 
 	handler := authMiddleware(s.authType, s.authToken, s.authHeader, mux)
+
+	// The OAuth authorization callback mounts OUTSIDE the inbound auth
+	// middleware: the browser performing the redirect carries no gateway
+	// bearer token, and the route authenticates via its single-use state
+	// parameter instead. Nothing else escapes the middleware.
+	if s.oauthBroker != nil {
+		inner := handler
+		outer := http.NewServeMux()
+		outer.Handle("GET "+mcpauth.CallbackPath, s.oauthBroker.CallbackHandler())
+		outer.Handle("/", inner)
+		handler = outer
+	}
 
 	var extraHeaders []string
 	if s.authHeader != "" && s.authHeader != "Authorization" {

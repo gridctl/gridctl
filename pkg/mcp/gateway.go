@@ -52,6 +52,7 @@ type MCPServerConfig struct {
 	SSHJumpHost       string               // SSH jump/bastion host ([user@]host[:port])
 	OpenAPIConfig     *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
 	Auth              *ServerAuthConfig    // Downstream auth for external URL servers (nil = none)
+	HeaderSource      HeaderSource         // Live auth header source (OAuth broker); overrides Auth's static mapping
 	Tools             []string             // Tool whitelist (empty = all tools)
 	OutputFormat      string               // Output format: "json", "toon", "csv", "text"
 	PinSchemas        *bool                // Override gateway schema pinning (nil = inherit gateway default)
@@ -587,6 +588,13 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 		return
 	}
 
+	// An auth failure that survived the transport's silent refresh-retry
+	// means the authorization itself is gone: surface needs-auth (the
+	// actionable state) alongside the unhealthy marker.
+	if isAuthError(err) {
+		g.markNeedsAuthIfNew(serverName, "authorization required")
+	}
+
 	// Unhealthy: exclude from dispatch and try to restart if eligible.
 	replica.SetHealthy(false)
 
@@ -1083,7 +1091,9 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
 			httpClient.SetLogger(clientLogger)
 			httpClient.SetPingTimeout(cfg.PingTimeout)
-			if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
+			if cfg.HeaderSource != nil {
+				httpClient.SetHeaderSource(cfg.HeaderSource)
+			} else if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
 				httpClient.SetHeaderSource(hs)
 			}
 			if len(cfg.Tools) > 0 {
@@ -1099,7 +1109,9 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
 			httpClient.SetLogger(clientLogger)
 			httpClient.SetPingTimeout(cfg.PingTimeout)
-			if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
+			if cfg.HeaderSource != nil {
+				httpClient.SetHeaderSource(cfg.HeaderSource)
+			} else if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
 				httpClient.SetHeaderSource(hs)
 			}
 			if len(cfg.Tools) > 0 {
@@ -1174,18 +1186,33 @@ func (g *Gateway) RecordRegistrationFailure(name string, err error) {
 	if name == "" || err == nil {
 		return
 	}
-	var authErr *AuthRequiredError
-	if errors.As(err, &authErr) {
-		g.SetServerAuthState(name, ServerAuthState{
-			Status: AuthStatusNeedsAuth,
-			Error:  "authorization required",
-		})
+	if isAuthError(err) {
+		g.markNeedsAuthIfNew(name, "authorization required")
 		g.ClearRegistrationFailure(name)
 		return
 	}
 	g.regFailMu.Lock()
 	g.registrationFailures[name] = err.Error()
 	g.regFailMu.Unlock()
+}
+
+// isAuthError reports whether err (anywhere in its chain) is an auth
+// challenge from the transport or a missing-grant error from the broker.
+func isAuthError(err error) bool {
+	var authErr *AuthRequiredError
+	var needsAuth *NeedsAuthError
+	return errors.As(err, &authErr) || errors.As(err, &needsAuth)
+}
+
+// markNeedsAuthIfNew transitions a server to needs-auth unless it is
+// already there; an existing entry usually carries a more specific reason
+// from the broker (e.g. "authorization expired") that must not be
+// overwritten with a generic one.
+func (g *Gateway) markNeedsAuthIfNew(name, reason string) {
+	if st, ok := g.ServerAuthState(name); ok && st.Status == AuthStatusNeedsAuth {
+		return
+	}
+	g.SetServerAuthState(name, ServerAuthState{Status: AuthStatusNeedsAuth, Error: reason})
 }
 
 // SetServerAuthState records downstream authorization state for a server.
@@ -1345,11 +1372,10 @@ func (g *Gateway) waitForHTTPServer(ctx context.Context, client *Client, timeout
 				g.logger.Debug("MCP server ready", "name", client.Name(), "wait", time.Since(start))
 				return nil
 			}
-			// An auth challenge means the server is reachable but wants
-			// authorization; retrying until the ready timeout would only
-			// mask that. Surface it immediately.
-			var authErr *AuthRequiredError
-			if errors.As(err, &authErr) {
+			// An auth challenge (or a broker with no grant yet) means the
+			// server is reachable but wants authorization; retrying until
+			// the ready timeout would only mask that. Surface immediately.
+			if isAuthError(err) {
 				return err
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -141,8 +142,26 @@ func (c *Client) send(ctx context.Context, method string, params any) error {
 	return err
 }
 
-// sendHTTP sends a request to the downstream agent via HTTP.
+// sendHTTP sends a request to the downstream agent via HTTP. On an auth
+// challenge it invalidates a cached credential and retries exactly once, so
+// an access token that expired mid-session heals silently when a refresh
+// path exists.
 func (c *Client) sendHTTP(ctx context.Context, req jsonrpc.Request) (*jsonrpc.Response, error) {
+	resp, err := c.sendHTTPOnce(ctx, req)
+	if err == nil {
+		return resp, nil
+	}
+	var authErr *AuthRequiredError
+	if errors.As(err, &authErr) {
+		if inv, ok := c.headerSource.(TokenInvalidator); ok && inv.InvalidateToken() {
+			return c.sendHTTPOnce(ctx, req)
+		}
+	}
+	return nil, err
+}
+
+// sendHTTPOnce performs a single HTTP round trip for a JSON-RPC request.
+func (c *Client) sendHTTPOnce(ctx context.Context, req jsonrpc.Request) (*jsonrpc.Response, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)

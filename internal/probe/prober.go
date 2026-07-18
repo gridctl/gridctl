@@ -27,6 +27,7 @@ const (
 	CodeInvalidConfig        = "invalid_config"
 	CodeRateLimited          = "rate_limited"
 	CodeInternal             = "internal_error"
+	CodeNeedsAuth            = "needs_auth"
 )
 
 // Error is a structured probe failure. Unlike a plain error, it carries a
@@ -76,6 +77,12 @@ type Prober struct {
 	// clientFactory is overridable in tests so handler tests can inject a
 	// stubbed transport without standing up real HTTP servers.
 	clientFactory ClientFactory
+
+	// oauthSourceFor, when set, returns a live header source for a resource
+	// URL so the probe reuses tokens the OAuth broker already holds (keyed
+	// by canonical resource URL, so a pre-apply probe token carries over to
+	// the applied server).
+	oauthSourceFor func(url string) mcp.HeaderSource
 }
 
 // ClientFactory builds an MCP client for a given transport. The default
@@ -109,6 +116,12 @@ func (p *Prober) SetClientFactory(f ClientFactory) {
 	if f != nil {
 		p.clientFactory = f
 	}
+}
+
+// SetOAuthSource wires the broker's per-resource header source lookup so
+// probes against OAuth-protected servers reuse stored tokens.
+func (p *Prober) SetOAuthSource(fn func(url string) mcp.HeaderSource) {
+	p.oauthSourceFor = fn
 }
 
 // Probe validates the config, short-circuits on cache hits, and otherwise
@@ -181,7 +194,33 @@ func unsupportedReason(cfg config.MCPServer) *Error {
 
 func (p *Prober) probeExternal(ctx context.Context, cfg config.MCPServer) (Result, *Error) {
 	client := p.clientFactory.NewHTTP(probeClientName(cfg), cfg.URL)
+	if hs := p.headerSource(cfg); hs != nil {
+		if setter, ok := client.(interface{ SetHeaderSource(mcp.HeaderSource) }); ok {
+			setter.SetHeaderSource(hs)
+		}
+	}
 	return runClient(ctx, client)
+}
+
+// headerSource resolves the auth header source for a probe: the config's
+// static bearer/header when declared, else the broker's stored token for
+// the resource. Returns nil when neither applies.
+func (p *Prober) headerSource(cfg config.MCPServer) mcp.HeaderSource {
+	if cfg.Auth != nil {
+		switch cfg.Auth.Type {
+		case "bearer", "header":
+			return mcp.StaticHeaderSourceFor(&mcp.ServerAuthConfig{
+				Type:   cfg.Auth.Type,
+				Token:  cfg.Auth.Token,
+				Header: cfg.Auth.Header,
+				Value:  cfg.Auth.Value,
+			})
+		}
+	}
+	if p.oauthSourceFor != nil {
+		return p.oauthSourceFor(cfg.URL)
+	}
+	return nil
 }
 
 // runClient executes the Initialize + RefreshTools handshake and returns the
@@ -192,6 +231,13 @@ func (p *Prober) probeExternal(ctx context.Context, cfg config.MCPServer) (Resul
 func runClient(ctx context.Context, client mcp.AgentClient) (Result, *Error) {
 	if err := client.Initialize(ctx); err != nil {
 		closeClient(client)
+		var authErr *mcp.AuthRequiredError
+		var needsAuth *mcp.NeedsAuthError
+		if errors.As(err, &authErr) || errors.As(err, &needsAuth) {
+			return Result{}, newErr(CodeNeedsAuth,
+				"This server requires authorization.",
+				"Authorize it after deploy with 'gridctl auth login <name>' or from the gridctl UI.")
+		}
 		return Result{}, newErr(CodeInitializeFailed,
 			fmt.Sprintf("Server failed to initialize: %v", err),
 			"")
