@@ -122,6 +122,7 @@ func init() {
 		varCmd:       groupConfig,
 		vaultCmd:     groupConfig, // hidden; grouped for completeness
 		pinsCmd:      groupConfig,
+		authCmd:      groupConfig,
 		tracesCmd:    groupObserve,
 		telemetryCmd: groupObserve,
 		optimizeCmd:  groupObserve,

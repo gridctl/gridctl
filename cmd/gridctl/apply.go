@@ -130,6 +130,13 @@ func runApply(stackPath string) error {
 		return err
 	}
 
+	// Post-apply: point at servers waiting on OAuth authorization. Always a
+	// printed hint (never an auto-opened browser); interactive login stays
+	// an explicit 'gridctl auth login' away.
+	if !applyQuiet && !applyDaemonChild && !applyForeground {
+		printAuthHints(applyPort, os.Stdout)
+	}
+
 	// Post-apply: --flash auto-links all detected clients
 	if applyFlash && !applyDaemonChild {
 		flashLinkClients(applyPort)
