@@ -699,6 +699,12 @@ type MCPServerStatus struct {
 
 	Replicas  []mcp.ReplicaStatus  `json:"replicas,omitempty"`
 	Autoscale *mcp.AutoscaleStatus `json:"autoscale,omitempty"`
+
+	// AuthStatus reports downstream authorization state ("authorized" or
+	// "needs_auth"); empty for servers without tracked auth state.
+	AuthStatus string     `json:"authStatus,omitempty"`
+	AuthIssuer string     `json:"authIssuer,omitempty"`
+	AuthExpiry *time.Time `json:"authExpiry,omitempty"`
 }
 
 func (s *Server) getMCPServerStatuses() []MCPServerStatus {
@@ -729,6 +735,9 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 			Model:              declaredModels[ms.Name],
 			Replicas:           ms.Replicas,
 			Autoscale:          ms.Autoscale,
+			AuthStatus:         ms.AuthStatus,
+			AuthIssuer:         ms.AuthIssuer,
+			AuthExpiry:         ms.AuthExpiry,
 		}
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)

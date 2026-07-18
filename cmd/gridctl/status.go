@@ -285,6 +285,9 @@ type mcpServerAPI struct {
 	Healthy      *bool           `json:"healthy,omitempty"`
 	HealthError  string          `json:"healthError,omitempty"`
 	RegFailed    bool            `json:"registrationFailed,omitempty"`
+	AuthStatus   string          `json:"authStatus,omitempty"`
+	AuthIssuer   string          `json:"authIssuer,omitempty"`
+	AuthExpiry   *time.Time      `json:"authExpiry,omitempty"`
 	Replicas     []mcpReplicaAPI `json:"replicas,omitempty"`
 	Autoscale    *autoscaleAPI   `json:"autoscale,omitempty"`
 }
@@ -351,6 +354,13 @@ func buildMCPRollup(servers []mcpServerAPI) []output.MCPServerRollup {
 			// health interval after the last replica is reaped.
 			if srv.Autoscale != nil {
 				row.State = "idle"
+				rows = append(rows, row)
+				continue
+			}
+			// A server waiting on downstream authorization is actionable,
+			// not failed: point at the fix instead of an error.
+			if srv.AuthStatus == "needs_auth" {
+				row.State = fmt.Sprintf("needs auth (run 'gridctl auth login %s')", srv.Name)
 				rows = append(rows, row)
 				continue
 			}

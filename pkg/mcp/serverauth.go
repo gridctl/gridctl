@@ -2,7 +2,39 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"time"
 )
+
+// Downstream authorization states surfaced per server.
+const (
+	AuthStatusAuthorized = "authorized"
+	AuthStatusNeedsAuth  = "needs_auth"
+)
+
+// AuthRequiredError reports a downstream HTTP 401 (or 403 carrying an OAuth
+// challenge). Transport code returns it so callers can distinguish "needs
+// authorization" from "broken" and start discovery from the challenge.
+type AuthRequiredError struct {
+	Status    int
+	Challenge string // raw WWW-Authenticate header value (may be empty)
+	Body      string
+}
+
+// Error keeps the transport's established "HTTP <code>: <body>" shape so
+// existing callers that match on the message are unaffected.
+func (e *AuthRequiredError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.Status, e.Body)
+}
+
+// ServerAuthState is the downstream authorization state recorded for a
+// server. Empty Status means no OAuth state is tracked for the server.
+type ServerAuthState struct {
+	Status string     `json:"status"`           // AuthStatusAuthorized or AuthStatusNeedsAuth
+	Issuer string     `json:"issuer,omitempty"` // authorization server issuer, when known
+	Expiry *time.Time `json:"expiry,omitempty"` // access token expiry, when known
+	Error  string     `json:"error,omitempty"`  // short reason, e.g. "authorization expired"
+}
 
 // ServerAuthConfig mirrors config.ServerAuth for downstream client wiring.
 // All credential fields arrive already expanded (variables resolved).

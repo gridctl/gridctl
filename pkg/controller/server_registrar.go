@@ -115,13 +115,18 @@ func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpRes
 }
 
 // recordOutcome reflects a registration attempt in gateway status: failures
-// surface the server as failed, successes clear any earlier failure.
+// surface the server as failed (auth challenges become needs-auth state
+// inside RecordRegistrationFailure), successes clear any earlier failure and
+// any stale needs-auth marker.
 func (r *ServerRegistrar) recordOutcome(name string, err error) {
 	if err != nil {
 		r.gateway.RecordRegistrationFailure(name, err)
 		return
 	}
 	r.gateway.ClearRegistrationFailure(name)
+	if st, ok := r.gateway.ServerAuthState(name); ok && st.Status == mcp.AuthStatusNeedsAuth {
+		r.gateway.ClearServerAuthState(name)
+	}
 }
 
 // ReplicaRuntime carries the runtime handles for one replica that the reload

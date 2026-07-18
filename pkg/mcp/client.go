@@ -182,6 +182,9 @@ func (c *Client) sendHTTP(ctx context.Context, req jsonrpc.Request) (*jsonrpc.Re
 
 	if httpResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(httpResp.Body)
+		if authErr := authRequiredFromResponse(httpResp, string(body)); authErr != nil {
+			return nil, authErr
+		}
 		return nil, fmt.Errorf("HTTP %d: %s", httpResp.StatusCode, string(body))
 	}
 
@@ -258,6 +261,25 @@ func (c *Client) Ping(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
+	// Reachability is all Ping asserts, with one exception: an auth challenge
+	// means the server is up but wants authorization, and callers need to
+	// distinguish that from both "ready" and "unreachable".
+	if authErr := authRequiredFromResponse(resp, ""); authErr != nil {
+		return authErr
+	}
+
+	return nil
+}
+
+// authRequiredFromResponse returns an AuthRequiredError for a 401, or for a
+// 403 that carries a WWW-Authenticate challenge (e.g. insufficient_scope).
+// Returns nil for every other response.
+func authRequiredFromResponse(resp *http.Response, body string) *AuthRequiredError {
+	challenge := resp.Header.Get("WWW-Authenticate")
+	if resp.StatusCode == http.StatusUnauthorized ||
+		(resp.StatusCode == http.StatusForbidden && challenge != "") {
+		return &AuthRequiredError{Status: resp.StatusCode, Challenge: challenge, Body: body}
+	}
 	return nil
 }
 
