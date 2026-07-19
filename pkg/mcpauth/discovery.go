@@ -60,7 +60,7 @@ func newDiscoveryClient(timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		host, _, err := net.SplitHostPort(addr)
+		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
 			return nil, err
 		}
@@ -68,12 +68,26 @@ func newDiscoveryClient(timeout time.Duration) *http.Client {
 		if err != nil {
 			return nil, err
 		}
+		// Dial the vetted IP directly rather than re-resolving the
+		// hostname: a check-then-dial sequence is bypassable by a low-TTL
+		// DNS record that rebinds between the two resolutions. TLS is
+		// unaffected (SNI and certificate checks use the URL host).
+		var lastErr error
 		for _, ip := range ips {
 			if ip.IP.IsLinkLocalUnicast() || ip.IP.IsLinkLocalMulticast() {
-				return nil, fmt.Errorf("refusing link-local address %s for %s", ip.IP, host)
+				lastErr = fmt.Errorf("refusing link-local address %s for %s", ip.IP, host)
+				continue
 			}
+			conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
 		}
-		return dialer.DialContext(ctx, network, addr)
+		if lastErr == nil {
+			lastErr = fmt.Errorf("no addresses resolved for %s", host)
+		}
+		return nil, lastErr
 	}
 	return &http.Client{
 		Timeout:   timeout,

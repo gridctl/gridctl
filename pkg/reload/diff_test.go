@@ -531,3 +531,36 @@ func TestComputeDiff_ClientModelValueChange(t *testing.T) {
 		t.Error("expected ModelAttributionChanged when a client's model changes")
 	}
 }
+
+func TestMCPServerEqual_AuthChanges(t *testing.T) {
+	base := func(auth *config.ServerAuth) config.MCPServer {
+		return config.MCPServer{
+			Name: "remote",
+			URL:  "https://mcp.example.com/mcp",
+			Auth: auth,
+		}
+	}
+
+	tests := []struct {
+		name string
+		a, b *config.ServerAuth
+		want bool
+	}{
+		{"both nil", nil, nil, true},
+		{"added", nil, &config.ServerAuth{Type: "bearer", Token: "t"}, false},
+		{"removed", &config.ServerAuth{Type: "bearer", Token: "t"}, nil, false},
+		{"same bearer", &config.ServerAuth{Type: "bearer", Token: "t"}, &config.ServerAuth{Type: "bearer", Token: "t"}, true},
+		{"rotated token", &config.ServerAuth{Type: "bearer", Token: "old"}, &config.ServerAuth{Type: "bearer", Token: "new"}, false},
+		{"type switch", &config.ServerAuth{Type: "bearer", Token: "t"}, &config.ServerAuth{Type: "oauth"}, false},
+		{"scope change", &config.ServerAuth{Type: "oauth", Scopes: []string{"a"}}, &config.ServerAuth{Type: "oauth", Scopes: []string{"b"}}, false},
+		{"client change", &config.ServerAuth{Type: "oauth", ClientID: "x"}, &config.ServerAuth{Type: "oauth", ClientID: "y"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mcpServerEqual(base(tt.a), base(tt.b)); got != tt.want {
+				t.Errorf("mcpServerEqual = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

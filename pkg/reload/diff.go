@@ -311,7 +311,28 @@ func mcpServerEqual(a, b config.MCPServer) bool {
 		return false
 	}
 
+	// Compare downstream auth config so a rotated token or an added/removed
+	// auth block reconnects the server with fresh credentials. Runtime token
+	// state lives outside the config struct, so refreshes never diff.
+	if !serverAuthEqual(a.Auth, b.Auth) {
+		return false
+	}
+
 	return true
+}
+
+// serverAuthEqual checks if two downstream auth configs are equivalent.
+func serverAuthEqual(a, b *config.ServerAuth) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Type == b.Type &&
+		a.Token == b.Token &&
+		a.Header == b.Header &&
+		a.Value == b.Value &&
+		a.ClientID == b.ClientID &&
+		a.ClientSecret == b.ClientSecret &&
+		stringSliceEqual(a.Scopes, b.Scopes)
 }
 
 // resourceEqual checks if two resource configs are equivalent.

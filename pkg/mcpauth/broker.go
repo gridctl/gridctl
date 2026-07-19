@@ -40,14 +40,15 @@ type serverConfig struct {
 
 // pendingAuth is one in-flight authorization-code flow, keyed by state.
 type pendingAuth struct {
-	server    string
-	disc      *discovery
-	client    ClientRegistration // resolved client identity (static or DCR)
-	verifier  string             // PKCE code verifier
-	expiresAt time.Time
-	done      chan struct{}
-	err       error // valid after done is closed
-	completed bool
+	server      string
+	disc        *discovery
+	client      ClientRegistration // resolved client identity (static or DCR)
+	verifier    string             // PKCE code verifier
+	expiresAt   time.Time
+	done        chan struct{}
+	err         error // valid after done is closed
+	completed   bool
+	completedAt time.Time
 }
 
 // ServerAuthInfo is the per-server view returned to the CLI and API.
@@ -286,6 +287,7 @@ func (b *Broker) CompleteAuthorization(ctx context.Context, stateToken, code, is
 	}
 	if ok {
 		p.completed = true
+		p.completedAt = time.Now()
 	}
 	b.mu.Unlock()
 	if !ok {
@@ -308,6 +310,29 @@ func (b *Broker) CompleteAuthorization(ctx context.Context, stateToken, code, is
 	return nil
 }
 
+// FailAuthorization resolves a pending flow with an error (an AS denial
+// such as access_denied), waking any waiter immediately instead of letting
+// it run out the flow timeout. Unknown or already-resolved states are a
+// no-op.
+func (b *Broker) FailAuthorization(stateToken string, cause error) {
+	b.mu.Lock()
+	p, ok := b.pending[stateToken]
+	if ok && (p.completed || time.Now().After(p.expiresAt)) {
+		ok = false
+	}
+	if ok {
+		p.completed = true
+		p.completedAt = time.Now()
+	}
+	b.mu.Unlock()
+	if !ok {
+		return
+	}
+	p.err = cause
+	close(p.done)
+	b.logger.Warn("authorization failed", "server", p.server, "error", cause)
+}
+
 // CompleteManual accepts a full pasted redirect URL (the --manual path for
 // SSH sessions where the loopback callback cannot reach the daemon).
 func (b *Broker) CompleteManual(ctx context.Context, redirectURL string) error {
@@ -317,7 +342,11 @@ func (b *Broker) CompleteManual(ctx context.Context, redirectURL string) error {
 	}
 	q := u.Query()
 	if e := q.Get("error"); e != "" {
-		return fmt.Errorf("authorization server returned error: %s (%s)", e, q.Get("error_description"))
+		cause := fmt.Errorf("authorization server returned error: %s (%s)", e, q.Get("error_description"))
+		if st := q.Get("state"); st != "" {
+			b.FailAuthorization(st, cause)
+		}
+		return cause
 	}
 	code, stateToken := q.Get("code"), q.Get("state")
 	if code == "" || stateToken == "" {
@@ -333,6 +362,13 @@ func (b *Broker) Wait(ctx context.Context, stateToken string) error {
 	b.mu.Unlock()
 	if !ok {
 		return errors.New("unknown authorization state")
+	}
+	select {
+	case <-p.done:
+		// Already resolved (e.g. a re-issued wait after a dropped
+		// connection): report the recorded outcome immediately.
+		return p.err
+	default:
 	}
 	deadline := time.NewTimer(time.Until(p.expiresAt))
 	defer deadline.Stop()
@@ -525,9 +561,17 @@ func (b *Broker) Reset(ctx context.Context, server string) error {
 	if !ok {
 		return fmt.Errorf("no OAuth configuration for server %q", server)
 	}
-	grant, found, err := b.store.Grant(cfg.Resource)
-	if err == nil && found {
-		if regErr := b.store.DeleteRegistration(grant.Issuer); regErr != nil {
+	// Resolve the issuer whose cached registration must go: from the
+	// stored grant when one exists, else via discovery (a stale
+	// registration with no grant is exactly the state reset exists for).
+	issuer := ""
+	if grant, found, err := b.store.Grant(cfg.Resource); err == nil && found {
+		issuer = grant.Issuer
+	} else if disc, discErr := discover(ctx, b.httpClient, cfg.ServerURL, cfg.Scopes); discErr == nil {
+		issuer = disc.Issuer
+	}
+	if issuer != "" {
+		if regErr := b.store.DeleteRegistration(issuer); regErr != nil {
 			return regErr
 		}
 	}
@@ -613,12 +657,22 @@ func (b *Broker) markNeedsAuth(server, reason string) {
 	})
 }
 
-// sweepPendingLocked drops expired or completed pending flows. Caller
-// holds b.mu.
+// completedRetention keeps resolved flows around briefly so a late or
+// re-issued wait call (page reload, dropped connection) still observes the
+// outcome instead of "unknown authorization state".
+const completedRetention = 2 * time.Minute
+
+// sweepPendingLocked drops expired flows, and completed flows once their
+// retention window passes. Caller holds b.mu.
 func (b *Broker) sweepPendingLocked() {
 	now := time.Now()
 	for stateToken, p := range b.pending {
-		if p.completed || now.After(p.expiresAt.Add(time.Minute)) {
+		switch {
+		case p.completed:
+			if now.After(p.completedAt.Add(completedRetention)) {
+				delete(b.pending, stateToken)
+			}
+		case now.After(p.expiresAt.Add(time.Minute)):
 			delete(b.pending, stateToken)
 		}
 	}

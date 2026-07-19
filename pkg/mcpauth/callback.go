@@ -1,6 +1,7 @@
 package mcpauth
 
 import (
+	"fmt"
 	"html"
 	"net/http"
 )
@@ -24,10 +25,12 @@ func (b *Broker) CallbackHandler() http.Handler {
 		q := r.URL.Query()
 
 		if e := q.Get("error"); e != "" {
-			// Deliver the AS error to the waiter, then tell the user to
-			// look back at the CLI/UI.
+			// Deliver the AS error (e.g. access_denied) to the waiter so
+			// the CLI/UI reports it immediately instead of running out the
+			// flow timeout, then tell the user to look back at gridctl.
 			if stateToken := q.Get("state"); stateToken != "" {
-				_ = b.CompleteManual(r.Context(), r.URL.String())
+				b.FailAuthorization(stateToken,
+					fmt.Errorf("authorization server returned error: %s (%s)", e, q.Get("error_description")))
 			}
 			writeCallbackPage(w, http.StatusBadRequest, "Authorization failed",
 				"The authorization server reported: "+e+". You can close this window and retry from gridctl.")

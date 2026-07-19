@@ -280,11 +280,17 @@ func (c *Client) Ping(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Reachability is all Ping asserts, with one exception: an auth challenge
-	// means the server is up but wants authorization, and callers need to
-	// distinguish that from both "ready" and "unreachable".
-	if authErr := authRequiredFromResponse(resp, ""); authErr != nil {
-		return authErr
+	// Reachability is all Ping asserts, with one exception: when this client
+	// has credentials configured, an auth challenge means the server is up
+	// but the credential is missing or rejected, and callers need to
+	// distinguish that from both "ready" and "unreachable". Without
+	// configured credentials the status code stays ignored, preserving the
+	// long-standing behavior for servers that 401 bare GETs (e.g. proxies)
+	// while serving authenticated POST traffic fine.
+	if c.headerSource != nil {
+		if authErr := authRequiredFromResponse(resp, ""); authErr != nil {
+			return authErr
+		}
 	}
 
 	return nil

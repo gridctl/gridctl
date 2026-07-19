@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -62,11 +63,27 @@ func TestPing_AuthChallengeSurfaces(t *testing.T) {
 	ts := newChallengeServer(t, http.StatusUnauthorized, "Bearer")
 	defer ts.Close()
 
+	// With credentials configured, a 401 ping means the credential is
+	// missing or rejected and must surface as a typed auth error.
 	c := NewClient("test", ts.URL)
+	c.SetHeaderSource(NewStaticHeaderSource("Authorization", "Bearer wrong"))
 	err := c.Ping(context.Background())
 	var authErr *AuthRequiredError
 	if !errors.As(err, &authErr) {
 		t.Fatalf("expected AuthRequiredError from ping, got %v", err)
+	}
+}
+
+func TestPing_NoCredentialsIgnoresChallenge(t *testing.T) {
+	ts := newChallengeServer(t, http.StatusUnauthorized, "Bearer")
+	defer ts.Close()
+
+	// Without configured credentials the long-standing behavior holds:
+	// any completed response counts as reachable, even a 401 (some
+	// proxies 401 bare GETs while authenticated POST traffic works).
+	c := NewClient("test", ts.URL)
+	if err := c.Ping(context.Background()); err != nil {
+		t.Fatalf("credential-less ping must ignore auth challenges, got %v", err)
 	}
 }
 
@@ -86,6 +103,7 @@ func TestWaitForHTTPServer_AuthChallengeAbortsEarly(t *testing.T) {
 
 	g := NewGateway()
 	c := NewClient("test", ts.URL)
+	c.SetHeaderSource(NewStaticHeaderSource("Authorization", "Bearer wrong"))
 
 	start := time.Now()
 	err := g.waitForHTTPServer(context.Background(), c, 30*time.Second)
@@ -103,8 +121,9 @@ func TestWaitForHTTPServer_AuthChallengeAbortsEarly(t *testing.T) {
 func TestRecordRegistrationFailure_AuthErrorBecomesNeedsAuth(t *testing.T) {
 	g := NewGateway()
 
-	wrapped := &AuthRequiredError{Status: 401, Challenge: "Bearer"}
-	g.RecordRegistrationFailure("notion", wrapped)
+	// NeedsAuthError comes from the broker: the server has an OAuth auth
+	// block and no grant, so 'gridctl auth login' is the actionable fix.
+	g.RecordRegistrationFailure("notion", &NeedsAuthError{Server: "notion"})
 
 	st, ok := g.ServerAuthState("notion")
 	if !ok || st.Status != AuthStatusNeedsAuth {
@@ -129,6 +148,43 @@ func TestRecordRegistrationFailure_AuthErrorBecomesNeedsAuth(t *testing.T) {
 	}
 	if found.AuthStatus != AuthStatusNeedsAuth {
 		t.Errorf("AuthStatus = %q, want %q", found.AuthStatus, AuthStatusNeedsAuth)
+	}
+}
+
+func TestRecordRegistrationFailure_RawChallengeStaysFailure(t *testing.T) {
+	g := NewGateway()
+
+	// A raw 401 challenge from a server the broker does not manage (wrong
+	// static bearer token, or no auth block) must stay a registration
+	// failure: auth login would dead-end. The message names the config fix.
+	g.RecordRegistrationFailure("github", &AuthRequiredError{Status: 401, Challenge: "Bearer"})
+
+	if _, ok := g.ServerAuthState("github"); ok {
+		t.Fatal("raw challenge must not create broker auth state")
+	}
+	var found bool
+	for _, st := range g.Status() {
+		if st.Name == "github" {
+			found = true
+			if !st.RegistrationFailed {
+				t.Error("raw challenge must report RegistrationFailed")
+			}
+			if !strings.Contains(st.HealthError, "auth: {type: oauth}") {
+				t.Errorf("failure message must name the stack.yaml fix, got %q", st.HealthError)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("failed server missing from Status()")
+	}
+}
+
+func TestUnregisterClearsAuthState(t *testing.T) {
+	g := NewGateway()
+	g.SetServerAuthState("gone", ServerAuthState{Status: AuthStatusNeedsAuth})
+	g.UnregisterMCPServer("gone")
+	if _, ok := g.ServerAuthState("gone"); ok {
+		t.Fatal("unregister must clear auth state (ghost needs-auth row)")
 	}
 }
 

@@ -690,3 +690,90 @@ func TestTokenStoreRoundTrip(t *testing.T) {
 		t.Errorf("round trip mangled token: %+v", got.Token)
 	}
 }
+
+func TestCallbackDenialFailsWaiterImmediately(t *testing.T) {
+	f := newFakeAS(t)
+	b, _, _ := newTestBroker(t)
+	if err := b.Configure("s", f.resource(), nil); err != nil {
+		t.Fatal(err)
+	}
+	_, stateToken, err := b.BeginAuthorization(context.Background(), "s", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- b.Wait(context.Background(), stateToken) }()
+
+	// The user clicks Deny: the AS redirects back with error=access_denied.
+	cb := httptest.NewServer(b.CallbackHandler())
+	defer cb.Close()
+	resp, err := http.Get(cb.URL + "?error=access_denied&state=" + url.QueryEscape(stateToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	select {
+	case waitErr := <-done:
+		if waitErr == nil || !strings.Contains(waitErr.Error(), "access_denied") {
+			t.Fatalf("expected denial to reach the waiter, got %v", waitErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("denial did not wake the waiter; it would have run out the flow timeout")
+	}
+}
+
+func TestWaitAfterCompletionAndLaterBegin(t *testing.T) {
+	f := newFakeAS(t)
+	b, _, _ := newTestBroker(t)
+	if err := b.Configure("a", f.resource(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Configure("b", f.resource(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	authURL, stateA, err := b.BeginAuthorization(context.Background(), "a", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(authURL)
+	f.mu.Lock()
+	f.codeChallenge = u.Query().Get("code_challenge")
+	f.mu.Unlock()
+	if err := b.CompleteAuthorization(context.Background(), stateA, f.issuedCode, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second Begin (for another server) sweeps pending state; the
+	// completed flow must survive so a late or re-issued wait still
+	// observes the outcome.
+	if _, _, err := b.BeginAuthorization(context.Background(), "b", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Wait(context.Background(), stateA); err != nil {
+		t.Fatalf("late Wait after completion must succeed, got %v", err)
+	}
+}
+
+func TestResetWithoutGrantStillClearsRegistration(t *testing.T) {
+	f := newFakeAS(t)
+	b, store, _ := newTestBroker(t)
+	if err := b.Configure("s", f.resource(), nil); err != nil {
+		t.Fatal(err)
+	}
+	// A cached registration with no grant: the state reset exists for.
+	if err := store.PutRegistration(ClientRegistration{
+		Issuer: f.srv.URL, ClientID: "stale-client", RedirectURI: b.redirectURL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.Reset(context.Background(), "s"); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	if _, ok, _ := store.Registration(f.srv.URL); ok {
+		t.Fatal("reset must delete the cached registration even with no grant")
+	}
+}

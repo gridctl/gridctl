@@ -202,23 +202,27 @@ func (p *Prober) probeExternal(ctx context.Context, cfg config.MCPServer) (Resul
 	return runClient(ctx, client)
 }
 
-// headerSource resolves the auth header source for a probe: the config's
-// static bearer/header when declared, else the broker's stored token for
-// the resource. Returns nil when neither applies.
+// headerSource resolves the auth header source for a probe from the
+// config's auth block: static bearer/header values, or the broker's
+// stored token for oauth. Servers without an auth block probe
+// unauthenticated (attaching a broker source would fail them with a
+// missing-grant error before the request is even sent).
 func (p *Prober) headerSource(cfg config.MCPServer) mcp.HeaderSource {
-	if cfg.Auth != nil {
-		switch cfg.Auth.Type {
-		case "bearer", "header":
-			return mcp.StaticHeaderSourceFor(&mcp.ServerAuthConfig{
-				Type:   cfg.Auth.Type,
-				Token:  cfg.Auth.Token,
-				Header: cfg.Auth.Header,
-				Value:  cfg.Auth.Value,
-			})
-		}
+	if cfg.Auth == nil {
+		return nil
 	}
-	if p.oauthSourceFor != nil {
-		return p.oauthSourceFor(cfg.URL)
+	switch cfg.Auth.Type {
+	case "bearer", "header":
+		return mcp.StaticHeaderSourceFor(&mcp.ServerAuthConfig{
+			Type:   cfg.Auth.Type,
+			Token:  cfg.Auth.Token,
+			Header: cfg.Auth.Header,
+			Value:  cfg.Auth.Value,
+		})
+	case "oauth":
+		if p.oauthSourceFor != nil {
+			return p.oauthSourceFor(cfg.URL)
+		}
 	}
 	return nil
 }
@@ -233,10 +237,15 @@ func runClient(ctx context.Context, client mcp.AgentClient) (Result, *Error) {
 		closeClient(client)
 		var authErr *mcp.AuthRequiredError
 		var needsAuth *mcp.NeedsAuthError
-		if errors.As(err, &authErr) || errors.As(err, &needsAuth) {
+		if errors.As(err, &needsAuth) {
 			return Result{}, newErr(CodeNeedsAuth,
 				"This server requires authorization.",
 				"Authorize it after deploy with 'gridctl auth login <name>' or from the gridctl UI.")
+		}
+		if errors.As(err, &authErr) {
+			return Result{}, newErr(CodeNeedsAuth,
+				"The server rejected the request as unauthorized.",
+				"Add an auth: block (bearer, header, or oauth) to this server, or check the configured credential.")
 		}
 		return Result{}, newErr(CodeInitializeFailed,
 			fmt.Sprintf("Server failed to initialize: %v", err),

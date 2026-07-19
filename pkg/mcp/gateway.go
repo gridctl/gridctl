@@ -588,10 +588,12 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 		return
 	}
 
-	// An auth failure that survived the transport's silent refresh-retry
-	// means the authorization itself is gone: surface needs-auth (the
-	// actionable state) alongside the unhealthy marker.
-	if isAuthError(err) {
+	// A broker-managed auth failure that survived the transport's silent
+	// refresh-retry means the authorization itself is gone: surface
+	// needs-auth (the actionable state) alongside the unhealthy marker.
+	// Raw challenges from non-broker servers stay plain unhealthy.
+	var needsAuth *NeedsAuthError
+	if errors.As(err, &needsAuth) {
 		g.markNeedsAuthIfNew(serverName, "authorization required")
 	}
 
@@ -1173,31 +1175,48 @@ func (g *Gateway) UnregisterMCPServer(name string) {
 	delete(g.serverMeta, name)
 	g.mu.Unlock()
 	g.ClearRegistrationFailure(name)
+	// Auth state follows the same lifecycle as registration failures:
+	// without this, a removed server would keep a ghost needs-auth row in
+	// Status() (stored grants are unaffected; they are keyed by resource
+	// URL, not server name).
+	g.ClearServerAuthState(name)
 }
 
 // RecordRegistrationFailure records why a server could not be registered so
 // Status() surfaces it instead of silently omitting the server. A later
 // attempt overwrites the entry; success or unregistration clears it.
 //
-// Auth-challenge failures are routed to the needs-auth state instead: a
-// server waiting on user authorization is actionable, not broken, and must
-// never render as a registration error.
+// Broker-managed auth failures (NeedsAuthError: the server has an OAuth
+// auth block and no usable grant) are routed to the needs-auth state
+// instead: a server waiting on user authorization is actionable, not
+// broken, and 'gridctl auth login' fixes it. A raw challenge from a server
+// the broker does not manage (wrong static bearer token, or a server with
+// no auth block at all) stays a registration failure — pointing such users
+// at auth login would dead-end, since the broker has no configuration for
+// the server — with a hint naming the stack.yaml fix.
 func (g *Gateway) RecordRegistrationFailure(name string, err error) {
 	if name == "" || err == nil {
 		return
 	}
-	if isAuthError(err) {
+	var needsAuth *NeedsAuthError
+	if errors.As(err, &needsAuth) {
 		g.markNeedsAuthIfNew(name, "authorization required")
 		g.ClearRegistrationFailure(name)
 		return
 	}
+	msg := err.Error()
+	var authErr *AuthRequiredError
+	if errors.As(err, &authErr) {
+		msg += "; if this server requires OAuth, add 'auth: {type: oauth}' to it in stack.yaml"
+	}
 	g.regFailMu.Lock()
-	g.registrationFailures[name] = err.Error()
+	g.registrationFailures[name] = msg
 	g.regFailMu.Unlock()
 }
 
 // isAuthError reports whether err (anywhere in its chain) is an auth
 // challenge from the transport or a missing-grant error from the broker.
+// Both mean "reachable but unauthorized", which readiness waits abort on.
 func isAuthError(err error) bool {
 	var authErr *AuthRequiredError
 	var needsAuth *NeedsAuthError
