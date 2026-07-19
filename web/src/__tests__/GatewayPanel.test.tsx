@@ -8,6 +8,7 @@ vi.mock('../stores/useStackStore', () => ({
   useSelectedNodeData: vi.fn(),
   useStackStore: vi.fn((selector) => selector({
     selectNode: vi.fn(),
+    mcpServers: [],
   })),
 }));
 

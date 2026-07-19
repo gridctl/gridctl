@@ -319,6 +319,37 @@ describe('ToolsPicker', () => {
       ).toBeInTheDocument();
     });
 
+    it('renders needs_auth as an actionable authorization notice, not an error', async () => {
+      vi.mocked(apiModule.probeServer).mockRejectedValueOnce(
+        new ProbeError('needs_auth', 'This server requires authorization.', 'Authorize it after deploy.', 401),
+      );
+
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ url: 'https://example.com/mcp' }}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: /discover tools by probing/i }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('status', { name: /server requires authorization/i })).toBeInTheDocument();
+      });
+      // Not an error alert: an authorization-pending server is actionable.
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      const panel = screen.getByRole('status', { name: /server requires authorization/i });
+      expect(panel).toHaveTextContent('This server requires authorization.');
+      expect(panel).toHaveTextContent('Authorize it after deploy.');
+      expect(panel).toHaveTextContent(/gridctl auth login/);
+      expect(
+        screen.getByRole('button', { name: /retry probing the server/i }),
+      ).toBeInTheDocument();
+    });
+
     it('invalid_config errors do NOT show a Retry (the form needs fixing)', async () => {
       vi.mocked(apiModule.probeServer).mockRejectedValueOnce(
         new ProbeError('invalid_config', 'Config incomplete', undefined, 400),

@@ -320,6 +320,22 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             </div>
           )}
 
+          {/* Downstream authorization pending: actionable, amber, never an
+              error. Click-through to the node selection opens the Sidebar's
+              Authorization section with the Authorize button. */}
+          {isServer && (data as MCPServerNodeData).authStatus === 'needs_auth' && (
+            <div
+              className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-pending/5 border border-status-pending/20"
+              role="status"
+              aria-label={`${data.name} needs authorization`}
+            >
+              <KeyRound size={11} className="text-status-pending flex-shrink-0" />
+              <span className="text-xs text-status-pending/90 font-medium truncate" title="Select the server and use Authorize in the sidebar">
+                Needs authorization
+              </span>
+            </div>
+          )}
+
           {/* Pin drift indicator */}
           {isServer && !isCompact && (data as MCPServerNodeData).pinStatus === 'drift' && (
             <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-pending/5 border border-status-pending/15">
@@ -348,7 +364,9 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               </span>
             ) : (
               <Badge status={data.status}>
-                <span className="capitalize">{data.status}</span>
+                <span className="capitalize">
+                  {data.status === 'needs-auth' ? 'needs auth' : data.status}
+                </span>
               </Badge>
             )}
             {isServer && !isExternal && !isLocalProcess && !isSSH && !isOpenAPI && (

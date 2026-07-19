@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -1719,6 +1719,68 @@ export async function probeServer(config: ProbeServerConfig, sessionId?: string)
   }
 
   return data as ProbeSuccess;
+}
+
+// === Downstream Server Authorization (OAuth brokering) ===
+
+/**
+ * Per-server downstream authorization state for every OAuth-configured
+ * server. GET /api/auth/servers
+ */
+export async function fetchAuthServers(): Promise<ServerAuthInfo[]> {
+  return fetchJSON<ServerAuthInfo[]>('/api/auth/servers');
+}
+
+/**
+ * Start the OAuth authorization flow for a server. Returns the URL the
+ * browser must open plus the single-use state token that keys the flow.
+ * POST /api/servers/{name}/auth/login
+ */
+export async function beginServerAuthorization(server: string): Promise<ServerAuthLogin> {
+  const response = await fetch(`${API_BASE}/api/servers/${encodeURIComponent(server)}/auth/login`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: '{}',
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.error ?? `Authorization start failed: ${response.status}`);
+  }
+  return data as ServerAuthLogin;
+}
+
+/**
+ * Block until the authorization flow keyed by state completes, fails, or
+ * times out. The backend long-polls; resolve means authorized.
+ * GET /api/servers/{name}/auth/wait?state=...
+ */
+export async function waitServerAuthorization(server: string, state: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/api/servers/${encodeURIComponent(server)}/auth/wait?state=${encodeURIComponent(state)}`,
+    { headers: buildHeaders() },
+  );
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error ?? `Authorization failed: ${response.status}`);
+  }
+}
+
+/**
+ * Revoke (best effort) and delete a server's stored authorization.
+ * POST /api/servers/{name}/auth/logout
+ */
+export async function logoutServerAuthorization(server: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/servers/${encodeURIComponent(server)}/auth/logout`, {
+    method: 'POST',
+    headers: buildHeaders(),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error ?? `Sign out failed: ${response.status}`);
+  }
 }
 
 let requestId = 0;

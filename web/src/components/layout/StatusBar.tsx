@@ -6,6 +6,7 @@ import { formatRelativeTime } from '../../lib/time';
 import { formatCompactNumber, formatUSD } from '../../lib/format';
 import { SpecHealthBadge } from '../spec/SpecHealthBadge';
 import { PinDriftBadge } from '../pins/PinDriftBadge';
+import { AuthPendingBadge } from '../sidebar/AuthPendingBadge';
 
 export function StatusBar() {
   const navigate = useNavigate();
@@ -159,6 +160,9 @@ export function StatusBar() {
         {/* Divider before pin drift */}
         <div className="w-px h-3 bg-border/50" />
         <PinDriftBadge />
+
+        {/* Pending downstream authorizations (hidden when none) */}
+        <AuthPendingBadge />
       </div>
 
       {/* Last update */}

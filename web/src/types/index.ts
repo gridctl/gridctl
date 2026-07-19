@@ -91,6 +91,29 @@ export interface MCPServerStatus {
   effectiveModel?: EffectiveModel;
   replicas?: ReplicaStatus[]; // Per-replica runtime status
   autoscale?: AutoscaleStatus; // Live autoscale snapshot (absent when not configured)
+  // Downstream OAuth authorization state for external servers with an
+  // auth: {type: oauth} block: "authorized" or "needs_auth". Absent for
+  // servers without tracked auth state. A needs_auth server is actionable
+  // (authorize it), not failed.
+  authStatus?: 'authorized' | 'needs_auth';
+  authIssuer?: string; // Authorization server issuer, when known
+  authExpiry?: string; // RFC3339 access token expiry, when known
+}
+
+// Per-server downstream authorization detail from GET /api/auth/servers.
+export interface ServerAuthInfo {
+  server: string;
+  resource: string;
+  status: 'authorized' | 'needs_auth';
+  issuer?: string;
+  scopes?: string[];
+  expiry?: string; // RFC3339
+}
+
+// Response of POST /api/servers/{name}/auth/login.
+export interface ServerAuthLogin {
+  authorize_url: string;
+  state: string;
 }
 
 // Resource status for non-MCP containers
@@ -360,7 +383,7 @@ export interface SkillUsageResponse {
 }
 
 // Node status for UI display
-export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle';
+export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle' | 'needs-auth';
 
 // Base type for React Flow compatibility (requires index signature)
 interface NodeDataBase {
@@ -413,6 +436,11 @@ export interface MCPServerNodeData extends NodeDataBase {
   // Live autoscale snapshot — drives the ×current/target badge and decision ring
   // on the canvas node, and powers the Sidebar Scaling section.
   autoscale?: AutoscaleStatus;
+  // Downstream OAuth authorization state; drives the needs-auth node state,
+  // the canvas key indicator, and the Sidebar Authorization section.
+  authStatus?: 'authorized' | 'needs_auth';
+  authIssuer?: string;
+  authExpiry?: string;
 }
 
 export interface ResourceNodeData extends NodeDataBase {

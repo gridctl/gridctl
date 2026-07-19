@@ -25,6 +25,7 @@ import { ControlBar } from '../ui/ControlBar';
 import { PopoutButton } from '../ui/PopoutButton';
 import { InspectorHeader, InspectorSection } from '../inspector';
 import { GatewaySidebar } from '../gateway/GatewaySidebar';
+import { ServerAuthSection } from '../sidebar/ServerAuthSection';
 import { TokenUsageSection } from '../sidebar/TokenUsageSection';
 import { ToolsEditor } from '../sidebar/ToolsEditor';
 import { AutoscalePanel } from '../status/AutoscalePanel';
@@ -343,6 +344,25 @@ export function Sidebar() {
             )}
           </div>
         </InspectorSection>
+
+        {/* Downstream Authorization Section (OAuth-brokered servers only).
+            Reads the live store entry so the section tracks poll refreshes
+            after a login completes, not the selection-time node snapshot. */}
+        {isServer && (() => {
+          const liveServer = mcpServers.find((s) => s.name === data.name);
+          const authStatus = liveServer?.authStatus ?? serverData?.authStatus;
+          if (!authStatus) return null;
+          return (
+            <InspectorSection title="Authorization" icon={KeyRound} defaultOpen={authStatus === 'needs_auth'}>
+              <ServerAuthSection
+                serverName={data.name}
+                authStatus={authStatus}
+                authIssuer={liveServer?.authIssuer ?? serverData?.authIssuer}
+                authExpiry={liveServer?.authExpiry ?? serverData?.authExpiry}
+              />
+            </InspectorSection>
+          );
+        })()}
 
         {/* Access Scope Section (clients only) */}
         {isClient && clientData && (() => {
