@@ -50,9 +50,11 @@ mcp-servers:
     env:
       GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
 
-  # External SaaS MCP server (OAuth flow)
+  # External SaaS MCP server (gridctl brokers the OAuth flow natively)
   - name: atlassian
-    command: ["npx", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
+    url: https://mcp.atlassian.com/v1/sse
+    auth:
+      type: oauth
 
   # Any REST API as MCP tools via OpenAPI
   - name: my-api

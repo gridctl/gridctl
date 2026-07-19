@@ -5,21 +5,21 @@
 #
 # Prerequisites:
 #   - A Zapier account (free plan or higher)
-#   - Node.js installed (for npx/mcp-remote)
 #   - A Zapier MCP server configured at https://mcp.zapier.com
 #
 # Setup:
 #   1. Visit https://mcp.zapier.com and create a new MCP server
 #   2. Add the tools/actions you want (e.g., Gmail, Slack, Google Calendar)
-#   3. OAuth authentication is handled automatically via browser flow on first use
+#   3. Authorize once with 'gridctl auth login zapier' after apply
 #
 # Usage:
 #   gridctl apply examples/platforms/zapier-mcp.yaml
+#   gridctl auth login zapier
 #
 # Note:
-#   Uses mcp-remote to bridge Zapier's HTTP endpoint to stdio. On first
-#   connection, a browser window will open for OAuth authentication.
-#   Run with --foreground to see the auth prompt.
+#   gridctl brokers the OAuth flow natively: the server deploys in a
+#   "needs auth" state, one browser authorization activates it, and tokens
+#   are stored encrypted and refreshed automatically.
 #
 # Reference:
 #   https://zapier.com/mcp
@@ -29,4 +29,6 @@ name: zapier-mcp
 
 mcp-servers:
   - name: zapier
-    command: ["npx", "mcp-remote", "https://mcp.zapier.com/api/v1/connect"]
+    url: https://mcp.zapier.com/api/v1/connect
+    auth:
+      type: oauth

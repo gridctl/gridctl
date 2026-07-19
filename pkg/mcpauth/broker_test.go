@@ -99,6 +99,7 @@ func newFakeAS(t *testing.T) *fakeAS {
 	})
 
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		_ = r.ParseForm()
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -156,6 +157,7 @@ func newFakeAS(t *testing.T) *fakeAS {
 	})
 
 	mux.HandleFunc("/revoke", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		_ = r.ParseForm()
 		f.mu.Lock()
 		f.revokedTokens = append(f.revokedTokens, r.PostForm.Get("token"))

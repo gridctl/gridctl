@@ -299,10 +299,18 @@ func main() {
 		sampleTools[0].OutputSchema = schema
 	}
 
+	if oauthBaseURL == "" {
+		oauthBaseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", handleMCP)
+	mux.HandleFunc("/mcp", requireBearer(handleMCP))
 	mux.HandleFunc("/health", handleHealth)
-	mux.HandleFunc("/", handleHealth) // Root returns health for ping
+	mux.HandleFunc("/", requireBearer(handleHealth)) // Root returns health for ping
+	if oauthMode {
+		registerOAuthRoutes(mux)
+	}
+	maybeLogOAuthMode()
 
 	mode := "HTTP"
 	if sseMode {

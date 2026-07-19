@@ -1,0 +1,40 @@
+# External MCP Servers with Authentication
+#
+# External URL servers accept an optional auth: block with three types:
+#
+#   bearer  Static bearer token sent as "Authorization: Bearer <token>"
+#   header  Static custom header (name + value)
+#   oauth   gridctl brokers the OAuth 2.1 browser flow itself: authorize
+#           once with 'gridctl auth login <name>', tokens are stored
+#           encrypted under ~/.gridctl/oauth/ and refreshed automatically,
+#           and every connected LLM client shares the login
+#
+# Usage:
+#   gridctl apply examples/transports/external-auth.yaml
+#   gridctl auth status
+#   gridctl auth login notion
+
+version: "1"
+name: external-auth
+
+mcp-servers:
+  # Static bearer token from the variable store or environment
+  - name: github
+    url: https://api.githubcopilot.com/mcp/
+    auth:
+      type: bearer
+      token: ${var:GITHUB_PAT}
+
+  # Static custom header
+  - name: internal-api
+    url: https://mcp.internal.example.com/mcp
+    auth:
+      type: header
+      header: X-API-Key
+      value: ${var:INTERNAL_API_KEY}
+
+  # OAuth 2.1 brokering; deploys in a "needs auth" state until authorized
+  - name: notion
+    url: https://mcp.notion.com/mcp
+    auth:
+      type: oauth

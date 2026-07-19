@@ -50,6 +50,7 @@ func newAuthTestServer(t *testing.T) (*Server, *mcpauth.Broker, *httptest.Server
 		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "dyn-client"})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		_ = r.ParseForm()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{

@@ -16,6 +16,7 @@ Plain tables: `status`, `skill list`, `pins list`, `optimize`, and `telemetry st
 - [Skills](#skills)
 - [Variables](#variables)
 - [Pins (TOFU schema pinning)](#pins-tofu-schema-pinning)
+- [Server authorization (OAuth)](#server-authorization-oauth)
 - [Traces](#traces)
 - [Optimize](#optimize)
 - [Telemetry](#telemetry)
@@ -104,6 +105,17 @@ All `pins` subcommands accept `--stack <name>` (auto-detected when only one stac
 | `gridctl pins verify [server]` | Verify pins (exit `0` clean, `1` on drift, `2` on infrastructure error); `--format json` or `--json` for machine output with a `has_drift` flag. |
 | `gridctl pins approve <server>` | Re-pin current tool definitions, clearing drift. |
 | `gridctl pins reset <server>` | Delete pins (re-pinned on next apply). |
+
+## Server authorization (OAuth)
+
+Downstream authorization for external servers declared with `auth: {type: oauth}` in stack.yaml. gridctl acts as the OAuth client so one login serves every connected LLM client. Unrelated to the gateway's own inbound API auth (`gateway.auth`). All subcommands accept `--stack <name>` (auto-detected when only one stack is running).
+
+| Command | Purpose |
+|---|---|
+| `gridctl auth login <server>` | Authorize a server in the browser. `--no-browser` prints the URL (forward the gateway port over SSH first); `--manual` accepts a pasted redirect URL when the browser cannot reach the daemon; `--timeout` bounds the wait (default 5m). |
+| `gridctl auth status [server]` | Authorization state per server (exit `0` all authorized, `1` needs auth, `2` infrastructure error); `--format json` or `--json` for machine output. |
+| `gridctl auth logout [server]` | Revoke (best effort) and delete stored tokens; `--all` for every server. |
+| `gridctl auth reset <server>` | Delete tokens and the cached client registration; the next login starts clean. |
 
 ## Traces
 

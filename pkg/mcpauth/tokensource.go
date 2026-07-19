@@ -65,13 +65,10 @@ func (s *grantSource) InvalidateToken() bool {
 	return true
 }
 
-// dropCacheIfResource clears the cached token when it belongs to resource;
-// called by the broker after logins and logouts.
-func (s *grantSource) dropCacheIfResource(resource string) {
-	cfg, ok := s.broker.configFor(s)
-	if !ok || cfg.Resource != resource {
-		return
-	}
+// clearCache drops the cached token so the next AuthHeader call re-reads
+// the store. Called by the broker after logins and logouts (never while
+// the broker holds its own mutex; see Broker.dropSourceCaches).
+func (s *grantSource) clearCache() {
 	s.mu.Lock()
 	s.token = nil
 	s.mu.Unlock()

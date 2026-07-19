@@ -5,6 +5,11 @@ All notable changes to gridctl will be documented in this file.
 ## [Unreleased]
 
 
+### Features
+
+
+- Native authentication for external URL servers via an optional `auth:` block: static `bearer` tokens and custom `header` values, plus full OAuth 2.1 brokering (`type: oauth`) that replaces the `npx mcp-remote` bridge. gridctl discovers the authorization server (RFC 9728/8414), registers a client (RFC 7591 with `application_type: native`, or pre-registered `client_id`/`client_secret` for servers like Slack that refuse dynamic registration), runs the authorization-code + PKCE S256 browser flow through a callback on the gateway's own port, validates `iss` (RFC 9207), sends RFC 8707 resource indicators on both legs, and stores tokens encrypted at rest under `~/.gridctl/oauth/` keyed by server URL so one login serves every connected client and survives daemon restarts. Rotating refresh tokens are persisted before first use; a rejected refresh self-heals into a `needs auth` state instead of retry-looping. New `gridctl auth login|logout|status|reset` command group (`--no-browser` and `--manual` for SSH, `--format json` with 0/1/2 exit codes), `/api/auth/servers` and per-server login/wait/logout/reset endpoints, `authStatus` on server status payloads, and an actionable `needs auth` state (never an error) across `gridctl status`, `apply` hints, and tool-call error messages. The add-server wizard probe reuses stored tokens and reports `needs_auth` distinctly
+
 ### Refactoring
 
 

@@ -186,13 +186,37 @@ func (b *Broker) HeaderSourceForResource(serverURL string) mcp.HeaderSource {
 // configFor resolves the effective config for a grantSource: a registered
 // server by name, or an ad-hoc resource override from the probe path.
 func (b *Broker) configFor(src *grantSource) (serverConfig, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.configForLocked(src)
+}
+
+// configForLocked is configFor for callers already holding b.mu.
+func (b *Broker) configForLocked(src *grantSource) (serverConfig, bool) {
 	if src.resourceOverride != "" {
 		return serverConfig{ServerURL: src.resourceOverride, Resource: src.resourceOverride}, true
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	cfg, ok := b.servers[src.server]
 	return cfg, ok
+}
+
+// dropSourceCaches clears the cached token of every live source bound to
+// resource. The matching sources are snapshotted under b.mu and their
+// caches cleared after it is released: clearing takes each source's own
+// mutex, and a source holding its mutex may itself call back into b.mu
+// (refresh -> clientCredsForGrant), so nesting the locks would deadlock.
+func (b *Broker) dropSourceCaches(resource string) {
+	b.mu.Lock()
+	matches := make([]*grantSource, 0, len(b.sources))
+	for _, src := range b.sources {
+		if cfg, ok := b.configForLocked(src); ok && cfg.Resource == resource {
+			matches = append(matches, src)
+		}
+	}
+	b.mu.Unlock()
+	for _, src := range matches {
+		src.clearCache()
+	}
 }
 
 // BeginAuthorization starts the authorization-code flow for a configured
@@ -355,11 +379,7 @@ func (b *Broker) completePending(ctx context.Context, p *pendingAuth, code, iss 
 
 	// Refresh the live source cache so in-flight clients pick up the new
 	// token without waiting for a store re-read.
-	b.mu.Lock()
-	for _, src := range b.sources {
-		src.dropCacheIfResource(p.disc.Resource)
-	}
-	b.mu.Unlock()
+	b.dropSourceCaches(p.disc.Resource)
 	return nil
 }
 
@@ -449,11 +469,7 @@ func (b *Broker) removeGrant(ctx context.Context, resource, server string) error
 	if err := b.store.DeleteGrant(resource); err != nil {
 		return err
 	}
-	b.mu.Lock()
-	for _, src := range b.sources {
-		src.dropCacheIfResource(resource)
-	}
-	b.mu.Unlock()
+	b.dropSourceCaches(resource)
 	b.publishState(server)
 	return nil
 }

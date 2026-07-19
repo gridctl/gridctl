@@ -389,6 +389,60 @@ mcp-servers:
     url: https://mcp.example.com/sse
 ```
 
+#### External Server Authentication
+
+External URL servers accept an optional `auth:` block. Three types are
+supported: a static bearer token, a static custom header, and OAuth 2.1
+brokering where gridctl runs the browser authorization flow itself and
+manages token refresh for every connected client.
+
+```yaml
+mcp-servers:
+  # Static bearer token (GitHub PATs, Stripe restricted keys, ...)
+  - name: github
+    url: https://api.githubcopilot.com/mcp/
+    auth:
+      type: bearer
+      token: ${GITHUB_PAT}          # env or ${var:KEY} references
+
+  # Static custom header
+  - name: internal
+    url: https://mcp.internal.example.com/mcp
+    auth:
+      type: header
+      header: X-API-Key
+      value: ${var:INTERNAL_API_KEY}
+
+  # OAuth 2.1 brokering (Notion, Sentry, Atlassian, ...)
+  - name: notion
+    url: https://mcp.notion.com/mcp
+    auth:
+      type: oauth
+      # Optional; defaults to the scopes the server advertises.
+      scopes: []
+      # Optional pre-registered client for authorization servers that do
+      # not support dynamic client registration (e.g. Slack).
+      client_id: ${NOTION_CLIENT_ID}
+      client_secret: ${NOTION_CLIENT_SECRET}
+```
+
+| Field | Type | Applies to | Description |
+|-------|------|------------|-------------|
+| `type` | string | required | `bearer`, `header`, or `oauth` |
+| `token` | string | bearer | Token sent as `Authorization: Bearer <token>` |
+| `header` | string | header | Header name, e.g. `X-API-Key` |
+| `value` | string | header | Header value |
+| `scopes` | list | oauth | Scopes to request (default: server-advertised) |
+| `client_id` | string | oauth | Pre-registered OAuth client ID (skips dynamic registration) |
+| `client_secret` | string | oauth | Client secret, when the provider issued one |
+
+With `type: oauth`, an unauthorized server deploys in a `needs auth` state
+instead of failing the stack; run `gridctl auth login <name>` (or use the
+web UI) to authorize once. Tokens are stored encrypted under
+`~/.gridctl/oauth/` keyed by the server URL, refresh automatically, and
+survive daemon restarts. This replaces the `npx mcp-remote` bridge for
+OAuth-protected servers. See `gridctl auth --help`.
+
 ### Local Process Server
 
 Runs an MCP server as a local process on the host (stdio transport).
@@ -396,8 +450,12 @@ Runs an MCP server as a local process on the host (stdio transport).
 ```yaml
 mcp-servers:
   - name: local-server
-    command: ["npx", "mcp-remote", "https://mcp.example.com/sse"]
+    command: ["npx", "some-stdio-mcp-server"]
 ```
+
+For OAuth-protected remote servers, prefer an external URL server with
+`auth: {type: oauth}` over wrapping `npx mcp-remote` in a local process;
+gridctl brokers the flow natively with encrypted token storage.
 
 ### SSH Server
 

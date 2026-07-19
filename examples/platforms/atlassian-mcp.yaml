@@ -5,10 +5,12 @@
 #
 # Prerequisites:
 #   - An Atlassian Cloud account with access to Jira, Confluence, or Compass
-#   - OAuth authentication is handled automatically via browser flow on first use
 #
 # Usage:
 #   gridctl apply examples/platforms/atlassian-mcp.yaml
+#   gridctl auth login atlassian     # one browser authorization, shared by
+#                                    # every connected client; tokens refresh
+#                                    # automatically
 #
 # Reference:
 #   https://github.com/atlassian/atlassian-mcp-server
@@ -18,4 +20,13 @@ name: atlassian-mcp
 
 mcp-servers:
   - name: atlassian
-    command: ["npx", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
+    url: https://mcp.atlassian.com/v1/sse
+    auth:
+      type: oauth
+
+  # Legacy alternative: bridge through the mcp-remote npm package instead of
+  # gridctl's native OAuth brokering (requires Node.js, stores tokens in
+  # plaintext under ~/.mcp-auth):
+  #
+  # - name: atlassian
+  #   command: ["npx", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
