@@ -14,6 +14,7 @@ const statusStyles: Record<NodeStatus, string> = {
   error: 'bg-status-error/10 text-status-error border-status-error/20 shadow-glow-error',
   initializing: 'bg-status-pending/10 text-status-pending border-status-pending/20',
   idle: 'bg-status-idle/10 text-status-idle border-status-idle/20',
+  'needs-auth': 'bg-status-pending/10 text-status-pending border-status-pending/25',
 };
 
 export function Badge({ status, children, className }: BadgeProps) {
@@ -34,7 +35,8 @@ export function Badge({ status, children, className }: BadgeProps) {
         status === 'stopped' && 'bg-status-stopped',
         status === 'error' && 'bg-status-error animate-pulse',
         status === 'initializing' && 'bg-status-pending animate-pulse',
-        status === 'idle' && 'bg-status-idle'
+        status === 'idle' && 'bg-status-idle',
+        status === 'needs-auth' && 'bg-status-pending'
       )} style={{ animationDuration: '2s' }} />
       {children}
     </div>

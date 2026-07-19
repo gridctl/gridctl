@@ -19,6 +19,12 @@ export function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
   if (server.autoscale && (!server.replicas || server.replicas.length === 0)) {
     return 'idle';
   }
+  // Awaiting authorization wins over unhealthy and initializing: a server
+  // pending its OAuth login is actionable (authorize it), not broken, and
+  // must never render as an error.
+  if (server.authStatus === 'needs_auth') {
+    return 'needs-auth';
+  }
   // Unhealthy wins over initializing: registration failures report both
   // healthy=false and initialized=false, and must render as errors.
   if (server.healthy === false) {
@@ -105,6 +111,9 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       replicaCount: server.replicas?.length,
       toolWhitelist: server.toolWhitelist,
       autoscale: server.autoscale,
+      authStatus: server.authStatus,
+      authIssuer: server.authIssuer,
+      authExpiry: server.authExpiry,
     },
     draggable: true,
   }));

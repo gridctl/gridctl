@@ -16,6 +16,7 @@ import type {
   AutoscaleDecisionKind,
 } from '../types';
 import { transformToNodesAndEdges } from '../lib/transform';
+import { showToast } from '../components/ui/Toast';
 import { appendToolFanout } from '../lib/graph/toolFanout';
 import { useRegistryStore } from './useRegistryStore';
 import { useUIStore } from './useUIStore';
@@ -160,6 +161,28 @@ export const useStackStore = create<StackState>()(
     setGatewayStatus: (status) => {
       const mcpServers = status['mcp-servers'] || [];
       const { autoscaleHistory, autoscaleDecisions, autoscaleLastSeen } = get();
+
+      // Toast once per transition INTO needs_auth. First sight establishes a
+      // baseline only (a page load over an already-pending server must not
+      // toast), and a server staying pending must not re-toast every poll.
+      const prevAuth = new Map(get().mcpServers.map((s) => [s.name, s.authStatus]));
+      for (const s of mcpServers) {
+        if (
+          s.authStatus === 'needs_auth' &&
+          prevAuth.has(s.name) &&
+          prevAuth.get(s.name) !== 'needs_auth'
+        ) {
+          showToast('warning', `${s.name} requires authorization`, {
+            action: {
+              label: 'Authorize',
+              onClick: () => {
+                get().selectNode(`mcp-${s.name}`);
+                useUIStore.getState().setSidebarOpen(true);
+              },
+            },
+          });
+        }
+      }
       const folded = updateAutoscaleObservability(
         mcpServers,
         autoscaleHistory,

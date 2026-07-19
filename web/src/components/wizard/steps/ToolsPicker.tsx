@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Command } from 'cmdk';
-import { AlertCircle, ArrowLeft, Check, Edit3, Loader2, Plus, Radar, Search, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Check, Edit3, Loader2, Plus, Radar, Search, X, KeyRound } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { useStackStore } from '../../../stores/useStackStore';
 import { TOOL_NAME_DELIMITER } from '../../../lib/constants';
@@ -344,6 +344,44 @@ function ProbeErrorPanel({
   const isProbeErr = error instanceof ProbeError;
   const code = isProbeErr ? error.code : 'error';
   const showRetry = onRetry && code !== 'invalid_config';
+
+  // Authorization-required is a distinct, actionable state, not a failure:
+  // the server is reachable but wants an OAuth login. Pre-deploy there is
+  // nothing to authorize against yet, so the panel explains the after-deploy
+  // path; a post-login re-probe succeeds because the backend reuses stored
+  // tokens keyed by the server URL.
+  if (code === 'needs_auth') {
+    return (
+      <div
+        role="status"
+        aria-label="Server requires authorization"
+        className="flex items-start gap-2 rounded-md border border-status-pending/40 bg-status-pending/[0.05] px-3 py-2 text-left"
+      >
+        <KeyRound size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0 space-y-1">
+          <p className="text-[11px] text-status-pending font-medium">{error.message}</p>
+          {isProbeErr && error.hint && (
+            <p className="text-[10px] text-text-muted">{error.hint}</p>
+          )}
+          <p className="text-[10px] text-text-muted">
+            After deploy, authorize from the server's sidebar or with
+            'gridctl auth login', then discover tools again.
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              aria-label="Retry probing the server"
+              className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       role="alert"
