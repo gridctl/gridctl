@@ -117,6 +117,59 @@ type ClientObserver interface {
 	ObserveToolCallWithClient(ctx context.Context, obs ToolCallObservation) ToolCallSummary
 }
 
+// GateCall is the identity of one tool call as seen by a CallGate: enough to
+// key policy decisions, nothing more. ServerName is parsed from the prefixed
+// tool name and may be empty when the name is unparseable (gates that key on
+// server scope simply will not match). ClientAccessID is the enforcement
+// identity from the session (see clientAccessIDKey), the same key the
+// per-client access policy and stack.yaml `clients:` block use.
+type GateCall struct {
+	PrefixedTool   string
+	ServerName     string
+	ClientAccessID string
+}
+
+// GateDecision is a CallGate verdict. A denied call short-circuits dispatch
+// with Message as an IsError tool result, so Message must be written for the
+// model that reads it: state the limit, the current consumption, and whether
+// retrying can ever help.
+type GateDecision struct {
+	Allow   bool
+	Message string
+}
+
+// GateAllow is the affirmative decision.
+func GateAllow() GateDecision { return GateDecision{Allow: true} }
+
+// GateDeny denies the call with a model-readable message.
+func GateDeny(message string) GateDecision { return GateDecision{Allow: false, Message: message} }
+
+// CallGate is a veto-capable pre-call policy check on the tools/call dispatch
+// path. Gates run after the per-client access scope check and before routing;
+// the first denial wins. Implementations must be safe for concurrent calls
+// and cheap: no I/O, no network, lock-free or near-lock-free reads.
+//
+// This is deliberately a fixed-order slice of first-party gates, not an
+// ordered interceptor chain (decided 2026-07-20): the stage set is closed,
+// gridctl hosts no third-party plugins on this path, and configurable
+// ordering is a bug class of its own. Future enforcement features (approval
+// gates, trifecta policy, CEL conditions) implement this same interface and
+// take a hard-coded position in the slice.
+type CallGate interface {
+	// Name identifies the gate in logs ("rate-limits", "budgets").
+	Name() string
+	// CheckToolCall returns the gate's verdict for one call.
+	CheckToolCall(ctx context.Context, call GateCall) GateDecision
+}
+
+// CostSettler receives the priced cost of a completed tool call so budget
+// counters can settle synchronously on the dispatch path. Invoked only when
+// the observer resolved a model and produced a non-zero cost; unpriced calls
+// settle nothing by design (the documented attribution gap).
+type CostSettler interface {
+	SettleToolCallCost(ctx context.Context, call GateCall, costUSD float64)
+}
+
 // PromptGetObserver receives notifications after a prompt (a registry skill)
 // is successfully served via prompts/get. Used by the metrics system to record
 // per-skill usage without coupling the gateway to the metrics package
