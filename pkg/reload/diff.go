@@ -24,6 +24,11 @@ type ConfigDiff struct {
 	// onConfigApplied hook — pricing metadata never warrants a container
 	// restart — but it must still mark the diff non-empty.
 	ModelAttributionChanged bool
+	// LimitsChanged indicates the budget/rate-limit (`limits:`) block
+	// changed. Like ClientsChanged it needs only an in-memory policy rebuild
+	// via the onConfigApplied hook (current-window spend carries over for
+	// unchanged entries) but must still mark the diff non-empty.
+	LimitsChanged bool
 }
 
 // MCPServerDiff contains changes to MCP servers.
@@ -69,7 +74,8 @@ func (d *ConfigDiff) IsEmpty() bool {
 		len(d.Resources.Modified) == 0 &&
 		!d.NetworkChanged &&
 		!d.ClientsChanged &&
-		!d.ModelAttributionChanged
+		!d.ModelAttributionChanged &&
+		!d.LimitsChanged
 }
 
 // ComputeDiff computes the differences between two stack configurations.
@@ -91,7 +97,18 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect cost-attribution (`client_models:` / `model:` / `default_model:`) changes
 	diff.ModelAttributionChanged = modelAttributionChanged(old, new)
 
+	// Detect budget/rate-limit (`limits:`) changes
+	diff.LimitsChanged = limitsChanged(old, new)
+
 	return diff
+}
+
+// limitsChanged reports whether the `limits:` block differs between two
+// stacks. A change needs only the gateway's in-memory limits policy rebuilt
+// (via the reload's onConfigApplied hook); no containers are touched.
+// DeepEqual handles the nil-to-set transitions directly.
+func limitsChanged(old, new *config.Stack) bool {
+	return !reflect.DeepEqual(old.Limits, new.Limits)
 }
 
 // modelAttributionChanged reports whether the effective cost-attribution
