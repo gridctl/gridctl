@@ -1,6 +1,9 @@
 package provisioner
 
-import "path/filepath"
+import (
+	"os"
+	"path/filepath"
+)
 
 // ClaudeCode provisions the Claude Code CLI MCP config.
 // Transport: native HTTP (no bridge needed).
@@ -30,8 +33,15 @@ func newClaudeCode() *ClaudeCode {
 
 // Detect overrides mcpServersProvisioner.Detect() because the config file
 // ~/.claude.json has ~ as its parent, which always exists. Instead, check
-// for the ~/.claude/ directory as the installation indicator.
+// for the ~/.claude/ directory as the installation indicator. When
+// CLAUDE_CONFIG_DIR points at an existing config file, that file wins over
+// the home-directory default, matching Claude Code's own resolution order.
 func (c *ClaudeCode) Detect() (string, bool) {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		if p := filepath.Join(dir, ".claude.json"); fileExists(p) {
+			return p, true
+		}
+	}
 	path := configPathForPlatform(c.paths)
 	if path == "" {
 		return "", false

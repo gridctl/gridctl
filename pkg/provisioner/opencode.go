@@ -133,3 +133,8 @@ func (o *OpenCode) Unlink(configPath string, serverName string) error {
 
 	return writeJSONFile(configPath, data)
 }
+
+// ListServers enumerates entries under OpenCode's "mcp" key.
+func (o *OpenCode) ListServers(configPath string) ([]ServerEntry, error) {
+	return listJSONServers(configPath, "mcp")
+}

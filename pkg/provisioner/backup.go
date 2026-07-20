@@ -73,3 +73,11 @@ func pruneBackups(originalPath string) error {
 
 	return nil
 }
+
+// CreateBackup exposes the timestamped-backup helper (".gridctl-backup-<ts>",
+// pruned to the most recent three) for callers outside the package. The
+// import command uses it on stack.yaml before appending, so the one backup
+// convention covers both directions of config mutation.
+func CreateBackup(path string) (string, error) {
+	return createBackup(path)
+}

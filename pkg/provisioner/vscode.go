@@ -132,3 +132,8 @@ func (v *VSCode) Unlink(configPath string, serverName string) error {
 
 	return writeJSONFile(configPath, data)
 }
+
+// ListServers enumerates entries under VS Code's "servers" key.
+func (v *VSCode) ListServers(configPath string) ([]ServerEntry, error) {
+	return listJSONServers(configPath, "servers")
+}

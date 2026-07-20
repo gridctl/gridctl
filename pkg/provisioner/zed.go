@@ -129,3 +129,8 @@ func (z *Zed) Unlink(configPath string, serverName string) error {
 
 	return writeJSONFile(configPath, data)
 }
+
+// ListServers enumerates entries under Zed's "context_servers" key.
+func (z *Zed) ListServers(configPath string) ([]ServerEntry, error) {
+	return listJSONServers(configPath, "context_servers")
+}

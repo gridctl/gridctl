@@ -138,3 +138,15 @@ func (g *GrokBuild) Unlink(configPath string, serverName string) error {
 
 	return writeTOMLFile(configPath, data)
 }
+
+// ListServers enumerates entries under Grok Build's TOML "mcp_servers" table.
+func (g *GrokBuild) ListServers(configPath string) ([]ServerEntry, error) {
+	if !fileExists(configPath) {
+		return nil, nil
+	}
+	data, err := readTOMLFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+	return listMapEntries(getMap(data, "mcp_servers")), nil
+}

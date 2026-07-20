@@ -179,3 +179,30 @@ func normalizeMap(m map[string]any) map[string]any {
 	}
 	return result
 }
+
+// ListServers enumerates entries under Goose's YAML "extensions" key. YAML
+// deserialization can yield map[any]any values, so entries are normalized
+// through toStringMap before being returned.
+func (g *Goose) ListServers(configPath string) ([]ServerEntry, error) {
+	if !fileExists(configPath) {
+		return nil, nil
+	}
+	data, err := readYAMLFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+	extensions := getMap(data, "extensions")
+	if len(extensions) == 0 {
+		return nil, nil
+	}
+	entries := make([]ServerEntry, 0, len(extensions))
+	for name, v := range extensions {
+		entry, ok := toStringMap(v)
+		if !ok {
+			continue
+		}
+		entries = append(entries, ServerEntry{Name: name, Raw: entry})
+	}
+	sortServerEntries(entries)
+	return entries, nil
+}

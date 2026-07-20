@@ -1,10 +1,12 @@
 package provisioner
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -289,6 +291,74 @@ func looksLikeGridctlEntry(entry map[string]any, gatewayURL string, needsBridge 
 		}
 	}
 	return false
+}
+
+// ListServers implements the shared read-only enumeration for standard
+// { "mcpServers": { name: {...} } } clients.
+func (p *mcpServersProvisioner) ListServers(configPath string) ([]ServerEntry, error) {
+	return listJSONServers(configPath, "mcpServers")
+}
+
+// listJSONServers reads a JSON/JSONC config and returns the entries under
+// containerKey.
+func listJSONServers(configPath, containerKey string) ([]ServerEntry, error) {
+	data, err := readJSONConfig(configPath)
+	if err != nil || data == nil {
+		return nil, err
+	}
+	return listMapEntries(getMap(data, containerKey)), nil
+}
+
+// readJSONConfig reads a JSON/JSONC config for enumeration, tolerating a
+// UTF-8 BOM. Missing and empty files yield (nil, nil): Detect reports a
+// client as installed when only its config directory exists, so an absent
+// file is the normal "nothing configured yet" state, not an error. This is
+// the one place that invariant lives.
+func readJSONConfig(configPath string) (map[string]any, error) {
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	raw = stripBOM(raw)
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return nil, nil
+	}
+	data, _, err := parseJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// listMapEntries converts a container map of server entries into a
+// name-sorted ServerEntry slice, skipping values that are not objects.
+func listMapEntries(container map[string]any) []ServerEntry {
+	if len(container) == 0 {
+		return nil
+	}
+	entries := make([]ServerEntry, 0, len(container))
+	for name, v := range container {
+		entry, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		entries = append(entries, ServerEntry{Name: name, Raw: entry})
+	}
+	sortServerEntries(entries)
+	return entries
+}
+
+func sortServerEntries(entries []ServerEntry) {
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+}
+
+// stripBOM removes a UTF-8 byte-order mark; several clients' configs acquire
+// one from Windows editors and strict JSON parsers reject it.
+func stripBOM(raw []byte) []byte {
+	return bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 }
 
 // Helper functions for navigating JSON maps.

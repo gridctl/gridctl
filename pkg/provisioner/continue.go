@@ -31,7 +31,7 @@ func newContinueDev() *ContinueDev {
 
 func (c *ContinueDev) Name() string      { return c.name }
 func (c *ContinueDev) Slug() string      { return c.slug }
-func (c *ContinueDev) NeedsBridge() bool  { return false }
+func (c *ContinueDev) NeedsBridge() bool { return false }
 
 func (c *ContinueDev) Detect() (string, bool) {
 	path := configPathForPlatform(c.paths)
@@ -187,4 +187,33 @@ func (c *ContinueDev) getMCPServersFromMap(experimental map[string]any) []any {
 		return nil
 	}
 	return arr
+}
+
+// ListServers enumerates Continue's experimental.mcpServers ARRAY, the one
+// registered client that stores a list of objects (keyed by a "name" field)
+// rather than a map.
+func (c *ContinueDev) ListServers(configPath string) ([]ServerEntry, error) {
+	data, err := readJSONConfig(configPath)
+	if err != nil || data == nil {
+		return nil, err
+	}
+	experimental := getMap(data, "experimental")
+	if experimental == nil {
+		return nil, nil
+	}
+	list, _ := experimental["mcpServers"].([]any)
+	entries := make([]ServerEntry, 0, len(list))
+	for _, v := range list {
+		entry, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := entry["name"].(string)
+		if name == "" {
+			continue
+		}
+		entries = append(entries, ServerEntry{Name: name, Raw: entry})
+	}
+	sortServerEntries(entries)
+	return entries, nil
 }

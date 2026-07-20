@@ -41,6 +41,22 @@ type ClientProvisioner interface {
 
 	// NeedsBridge returns true if this client requires mcp-remote for SSE.
 	NeedsBridge() bool
+
+	// ListServers returns every MCP server entry present in the client
+	// config at configPath, gridctl-created or not. It is the read-only
+	// inverse of Link: a missing or empty config yields no entries and no
+	// error, while an unparseable one returns an error so callers can warn
+	// and continue scanning other clients. The config file is never written.
+	ListServers(configPath string) ([]ServerEntry, error)
+}
+
+// ServerEntry is one raw MCP server definition found in a client config.
+// Raw holds the entry object exactly as parsed; interpretation (command
+// versus URL shapes, key spelling differences between clients) is the
+// caller's concern.
+type ServerEntry struct {
+	Name string
+	Raw  map[string]any
 }
 
 // LinkOptions configures how a link is created.
