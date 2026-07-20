@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/gridctl/gridctl/internal/api"
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/limits"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/mcpauth"
@@ -78,6 +80,12 @@ type GatewayBuilder struct {
 	// telemetry holds the opt-in disk-persistence writers wired at Build
 	// time. Nil when no server in the stack opts in.
 	telemetry *telemetryWiring
+
+	// limitsPolicy is the compiled budgets/rate-limits policy (nil when no
+	// limits: block is configured). Guarded by limitsMu: it is swapped by
+	// the hot-reload hook and read by the /api/limits status closure.
+	limitsMu     sync.Mutex
+	limitsPolicy *limits.Policy
 
 	// modelAttribution holds the client and server model mappings used to
 	// price tool calls. Stored behind an atomic pointer so the hot-reload
@@ -610,6 +618,19 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		b.telemetry.metricsFlusher.SetLogger(slog.New(handler))
 	}
 
+	// Budget caps and rate limits: compile the limits: block, install the
+	// pre-call gates and cost settlement on the gateway, and expose the
+	// consumption snapshot to GET /api/limits. The status closure re-reads
+	// the live policy so hot-reload swaps are reflected immediately.
+	limitsLogger := slog.Default()
+	if handler != nil {
+		limitsLogger = slog.New(handler)
+	}
+	b.applyLimitsPolicy(gateway, b.stack, limitsLogger)
+	server.SetLimitsStatusFunc(func() limits.StatusReport {
+		return b.currentLimitsPolicy().Status()
+	})
+
 	// Wire the wizard's "Discover tools" probe. Scope: external URL
 	// servers only — container / stdio / local-process / SSH / OpenAPI are
 	// curated post-deploy from the Stack sidebar.
@@ -675,7 +696,6 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	return server, nil
 }
 
-// applyTelemetryConfig walks the stack's MCP servers and registers per-
 // clientAccessSpec translates the stack's optional `clients:` block into the
 // config-agnostic spec the gateway consumes. Returns nil when no block is
 // configured, which the gateway treats as "every client sees every tool".
@@ -697,6 +717,45 @@ func clientAccessSpec(stack *config.Stack) *mcp.ClientAccessSpec {
 	return spec
 }
 
+// applyLimitsPolicy compiles the stack's limits: block and installs it on
+// the gateway, replacing (and cleanly stopping) any previous policy. The
+// retiring policy flushes its ledger first so the new one loads the freshest
+// spend, and CarryOver adopts in-memory counters (and live rate buckets)
+// plus retires the old policy so in-flight settlements forward to the new
+// one; current-window enforcement therefore survives both hot reloads and
+// restarts. A stack without a limits block installs nil gates, which is the
+// zero-cost legacy path.
+func (b *GatewayBuilder) applyLimitsPolicy(gateway *mcp.Gateway, stack *config.Stack, logger *slog.Logger) {
+	b.limitsMu.Lock()
+	old := b.limitsPolicy
+	b.limitsMu.Unlock()
+
+	old.Stop() // final flush; nil-safe
+
+	newPol := limits.NewPolicy(stack.Limits, state.LimitsLedgerPath(stack.Name), logger)
+	newPol.CarryOver(old)
+	if newPol != nil {
+		gateway.SetCallGates(newPol.Gates())
+		gateway.SetCostSettler(newPol)
+	} else {
+		gateway.SetCallGates(nil)
+		gateway.SetCostSettler(nil)
+	}
+	newPol.Start(context.Background())
+
+	b.limitsMu.Lock()
+	b.limitsPolicy = newPol
+	b.limitsMu.Unlock()
+}
+
+// currentLimitsPolicy returns the live policy under the swap lock.
+func (b *GatewayBuilder) currentLimitsPolicy() *limits.Policy {
+	b.limitsMu.Lock()
+	defer b.limitsMu.Unlock()
+	return b.limitsPolicy
+}
+
+// applyTelemetryConfig walks the stack's MCP servers and registers per-
 // server file writers for every signal a server opts into. Idempotent:
 // re-running with a changed stack adds new writers and removes ones that
 // flipped to off. Used both at initial Build time and from the hot-reload
@@ -1036,6 +1095,10 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// Re-resolve cost attribution so `client_models:`, `model:`, and
 		// `default_model:` edits price subsequent calls without a restart.
 		b.refreshModelAttribution(newCfg)
+		// Rebuild the limits policy so `limits:` edits enforce on the next
+		// call. Current-window spend carries over for unchanged entries;
+		// raising a cap mid-window never refills spent budget.
+		b.applyLimitsPolicy(inst.Gateway, newCfg, slog.New(handler))
 		b.applyTelemetryConfig(inst.APIServer, handler)
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
@@ -1176,6 +1239,9 @@ func (b *GatewayBuilder) waitForShutdown(ctx context.Context, inst *GatewayInsta
 		if b.telemetry != nil && b.telemetry.metricsFlusher != nil {
 			b.telemetry.metricsFlusher.Stop()
 		}
+
+		// Final ledger flush so budget spend survives the restart.
+		b.currentLimitsPolicy().Stop()
 
 		if b.tracingProvider != nil {
 			if err := b.tracingProvider.Shutdown(shutdownCtx); err != nil {
