@@ -852,6 +852,74 @@ manager (Metrics toolbar, sidebar inspector, or command palette); see
 
 ---
 
+## Limits (budgets and rate limits)
+
+The optional top-level `limits:` block enforces spending caps and call rates
+at tool-call dispatch. Omitting the block preserves legacy behavior: nothing
+is ever limited. Both entry kinds scope to exactly one of `client`,
+`server`, or `tool`.
+
+```yaml
+limits:
+  budgets:
+    - client: claude-code        # exactly one of client / server / tool
+      max_usd: 5.00
+      period: daily              # daily | weekly | monthly
+      warn_at_percent: 80        # optional soft tier
+    - server: github
+      max_usd: 20
+      period: weekly
+  rate_limits:
+    - server: github
+      calls_per_minute: 30
+      burst: 10                  # optional bucket capacity
+    - tool: github__search_code
+      calls_per_minute: 6
+```
+
+### Budget fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `client` / `server` / `tool` | string | One of | - | Scope key. `client` is the stable client identifier used by `clients.profiles` and `client_models`; `server` is a stack server name; `tool` is a prefixed name (`server__tool`) |
+| `max_usd` | float | Yes | - | Dollar cap for the window; must be positive |
+| `period` | string | Yes | - | `daily`, `weekly`, or `monthly`. Windows are calendar-aligned in the daemon's local timezone: daily resets at midnight, weekly on Monday 00:00, monthly on the 1st |
+| `warn_at_percent` | int | No | - | 1-99. Crossing this percentage of the cap logs one WARN per window and surfaces a `warn` state in `gridctl limits` and `GET /api/limits` |
+
+### Rate limit fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `client` / `server` / `tool` | string | One of | - | Scope key, same vocabulary as budgets |
+| `calls_per_minute` | int | Yes | - | Sustained rate; must be positive |
+| `burst` | int | No | max(5, rate/6) | Token-bucket capacity: how many calls may land at once before the sustained rate applies |
+
+### Enforcement semantics
+
+Enforcement is check-then-settle. A call is admitted against spend already
+recorded; its own cost is settled after it completes, because cost is only
+known once token usage is. Concurrent or in-flight calls can therefore
+overshoot a cap by their own cost; the next matching call after the cap is
+reached is denied. Denials are returned as in-band tool errors with the cap,
+current consumption, reset time, and retry guidance, so agent LLMs stop
+retrying instead of burning tokens.
+
+**The attribution gap.** Budgets govern attributed cost only. A call is
+priced when a model resolves for it (call-level usage metadata,
+`client_models`, the server's `model:`, or `gateway.default_model`); a call
+whose model cannot be priced records tokens but no dollars and therefore
+spends outside every budget's sight. Rate limits need no pricing at all and
+are the recommended backstop on any scope you cap.
+
+Budget spend persists in a ledger under `~/.gridctl/limits/<stack>.json`
+(independent of [Telemetry Persistence](#telemetry-persistence)), so a
+daemon restart mid-window never refills a spent budget. Edits hot-reload:
+current-window spend carries over for entries whose scope and period are
+unchanged, and raising a cap never resets its counter. Consumption surfaces
+in `gridctl limits` and `GET /api/limits`.
+
+---
+
 ## Skill Sources
 
 Skill sources are declared in `~/.gridctl/skills.yaml`. Each source points at a git repository that gridctl clones to discover `SKILL.md` files. Sources may be public or authenticated.
