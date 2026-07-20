@@ -8,6 +8,7 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useListNav } from '../../hooks/useListNav';
 import { useToolUsage } from '../../hooks/useToolUsage';
+import { useLimits } from '../../hooks/useLimits';
 import { useMetricsSeries, type MetricsTimeRange } from '../../hooks/useMetricsSeries';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { PopoutButton } from '../ui/PopoutButton';
@@ -25,6 +26,8 @@ import {
   ModelMixBars,
   ScrollableBreakdown,
 } from '../metrics/metricsShared';
+import { BudgetBar, LimitsPanel } from '../metrics/LimitsShared';
+import { budgetForRow, deriveLimitsSummary, type LimitRowScope } from '../metrics/limitsData';
 import {
   aggregateModelMix,
   buildTokenChartData,
@@ -93,6 +96,20 @@ export function MetricsWorkspace() {
   // poll runs whenever the workspace is mounted — same 15s cadence Audit Mode
   // uses, against the same single per-tool data source.
   const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
+
+  // Limit consumption overlays the breakdown rows and the Limits panel. A
+  // stack without a limits: block reports configured: false and renders
+  // nothing anywhere.
+  const { report: limitsReport } = useLimits(true);
+  const limitsSummary = useMemo(() => deriveLimitsSummary(limitsReport), [limitsReport]);
+  // Renders the consumption bar under a row's name when a budget governs it.
+  const limitBarFor = useCallback(
+    (scope: LimitRowScope) => (row: BreakdownRow) => {
+      const entry = budgetForRow(limitsSummary.entries, scope, row.name);
+      return entry ? <BudgetBar entry={entry} className="mt-1" /> : null;
+    },
+    [limitsSummary.entries],
+  );
 
   // ---- URL state ----------------------------------------------------------
   const scope: Scope = isScope(searchParams.get('scope')) ? (searchParams.get('scope') as Scope) : 'overview';
@@ -315,6 +332,8 @@ export function MetricsWorkspace() {
                   {(kpis.hasCost || costSeriesHasData) && <CostChart data={costChartData} costData={costData} />}
                 </div>
 
+                {scope === 'overview' && <LimitsPanel summary={limitsSummary} />}
+
                 {scope === 'overview' && (
                   <PanelHeader icon={Layers} label="Cost by Model">
                     <ModelMixBars mix={modelMix} />
@@ -340,6 +359,7 @@ export function MetricsWorkspace() {
                           showCost
                           selectedName={selected}
                           onSelectRow={setSelected}
+                          renderNameExtra={limitBarFor('tool')}
                         />
                       </ScrollableBreakdown>
                     ) : toolUsageError ? (
@@ -364,6 +384,7 @@ export function MetricsWorkspace() {
                         showCost
                         selectedName={selected}
                         onSelectRow={setSelected}
+                        renderNameExtra={limitBarFor('client')}
                         renderModel={(row) => (
                           <ClientModelCell
                             client={row.name}
@@ -393,6 +414,7 @@ export function MetricsWorkspace() {
                         showCost
                         selectedName={selected}
                         onSelectRow={setSelected}
+                        renderNameExtra={limitBarFor('server')}
                         renderModel={(row) => (
                           <ServerModelCell
                             server={row.name}
