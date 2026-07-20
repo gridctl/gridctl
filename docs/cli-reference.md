@@ -103,7 +103,8 @@ All `pins` subcommands accept `--stack <name>` (auto-detected when only one stac
 |---|---|
 | `gridctl pins list` | Status of all pinned servers; `--format json` or `--json` for machine output. |
 | `gridctl pins verify [server]` | Verify pins (exit `0` clean, `1` on drift, `2` on infrastructure error); `--format json` or `--json` for machine output with a `has_drift` flag. |
-| `gridctl pins approve <server>` | Re-pin current tool definitions, clearing drift. |
+| `gridctl pins diff [server]` | Per-tool before/after view of drifted definitions with poisoning-scan findings, control characters escaped; `--format json` includes `live_server_hash` for `approve --expect`. Exit `0` clean, `1` drift, `2` infrastructure error. `--fail-on-findings warn\|critical` additionally exits `1` when scan findings at or above that severity exist on pinned tools. |
+| `gridctl pins approve <server>` | Re-pin current tool definitions, clearing drift; `--expect <hash>` binds the approval to a reviewed diff. |
 | `gridctl pins reset <server>` | Delete pins (re-pinned on next apply). |
 
 ## Server authorization (OAuth)
