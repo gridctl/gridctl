@@ -38,11 +38,15 @@ type ServerPins struct {
 
 // PinRecord holds the hash and metadata for a single tool definition.
 // Description is stored to enable human-readable diff output on drift.
+// Findings are the poisoning-scan results captured when the tool was pinned;
+// they are derived, advisory data (an older gridctl rewriting the file simply
+// drops them, so their presence does not require a file-version bump).
 type PinRecord struct {
 	Hash        string    `json:"hash"`
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	PinnedAt    time.Time `json:"pinned_at"`
+	Findings    []Finding `json:"findings,omitempty"`
 }
 
 // VerifyResult contains the result of a VerifyOrPin or Verify call.
@@ -60,10 +64,13 @@ func (r *VerifyResult) HasDrift() bool {
 }
 
 // ToolDiff describes a change in a single tool's definition.
+// Findings are poisoning-scan results for the NEW definition, computed at
+// verify time so the reviewer sees them beside the diff they annotate.
 type ToolDiff struct {
 	Name           string
 	OldHash        string
 	NewHash        string
 	OldDescription string
 	NewDescription string
+	Findings       []Finding
 }

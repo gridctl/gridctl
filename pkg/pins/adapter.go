@@ -41,7 +41,29 @@ func (a *GatewayAdapter) VerifyOrPin(serverName string, tools []mcp.Tool) ([]mcp
 			NewHash:        d.NewHash,
 			OldDescription: d.OldDescription,
 			NewDescription: d.NewDescription,
+			Findings:       toMCPFindings(d.Findings),
 		}
 	}
 	return drifts, nil
+}
+
+// toMCPFindings converts pins findings to the mcp-side mirror type carried on
+// SchemaDrift.
+func toMCPFindings(findings []Finding) []mcp.ToolFinding {
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]mcp.ToolFinding, len(findings))
+	for i, f := range findings {
+		out[i] = mcp.ToolFinding{
+			Code:       f.Code,
+			Severity:   f.Severity,
+			Confidence: f.Confidence,
+			Field:      f.Field,
+			Snippet:    f.Snippet,
+			Message:    f.Message,
+			Decoded:    f.Decoded,
+		}
+	}
+	return out
 }
