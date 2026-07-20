@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { usePinsStore } from '../stores/usePinsStore';
+import { usePinsStore, countFindingServers } from '../stores/usePinsStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 
 let _prevDriftCount = 0;
+let _prevFindingCount = 0;
 
 export function usePolling() {
   const intervalRef = useRef<number | null>(null);
@@ -68,6 +69,17 @@ export function usePolling() {
           });
         }
         _prevDriftCount = driftedCount;
+
+        // Poisoning-scan findings fire their own rising-edge toast, guarded
+        // by the same sentinel pattern as drift so it never repeats per poll.
+        const findingCount = countFindingServers(pins);
+        if (findingCount > 0 && _prevFindingCount === 0) {
+          showToast('warning', `Poisoning-scan findings on ${findingCount} server${findingCount > 1 ? 's' : ''}`, {
+            action: { label: 'View', onClick: () => navigate('/pins') },
+            duration: 6000,
+          });
+        }
+        _prevFindingCount = findingCount;
       } catch {
         // Pins endpoint unavailable (feature not enabled) — suppress silently
       }

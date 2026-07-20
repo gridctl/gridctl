@@ -1,20 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Lightbulb, TrendingDown, ChevronDown, ChevronRight, AlertTriangle, AlertOctagon, Info } from 'lucide-react';
+import { Lightbulb, TrendingDown, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import { fetchOptimizeReport } from '../../lib/api';
 import { POLLING } from '../../lib/constants';
-import type { OptimizeFinding, OptimizeReport, OptimizeSeverity } from '../../types';
-
-const severityIcon: Record<OptimizeSeverity, typeof AlertOctagon> = {
-  critical: AlertOctagon,
-  warn: AlertTriangle,
-  info: Info,
-};
-
-const severityClasses: Record<OptimizeSeverity, string> = {
-  critical: 'text-status-error border-status-error/30 bg-status-error/10',
-  warn: 'text-status-pending border-status-pending/30 bg-status-pending/10',
-  info: 'text-text-muted border-border/40 bg-surface-elevated/40',
-};
+import { severityClasses, severityIcon } from '../../lib/severity';
+import type { OptimizeFinding, OptimizeReport } from '../../types';
 
 function formatImpact(usd: number): string {
   if (!usd || usd <= 0) return '—';

@@ -7,7 +7,11 @@ import { TOOL_NAME_DELIMITER } from '../../../lib/constants';
 import { showToast } from '../../ui/Toast';
 import { useFuzzySearch } from '../../../hooks/useFuzzySearch';
 import { useProbeServer } from '../../../hooks/useProbeServer';
-import { ProbeError, type ProbeServerConfig } from '../../../lib/api';
+import { ProbeError, type ProbedTool, type ProbeServerConfig } from '../../../lib/api';
+import { FindingsList } from '../../pins/PinFindings';
+import { maxFindingSeverity } from '../../../lib/pinFindings';
+import { escapeNonPrintable } from '../../../lib/nonPrintable';
+import { ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 
 const inputClass =
   'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors';
@@ -229,6 +233,8 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
           Enter tool names manually
         </button>
       </div>
+
+      <ProbeFindingsPanel tools={probeState.tools} />
 
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
         {/* Count + quick actions */}
@@ -486,6 +492,62 @@ function ManualEntry({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ProbeFindingsPanel summarizes poisoning-scan findings on probed tools as an
+// advisory amber notice, modeled on the needs_auth panel: role="status", never
+// an alert, and it never blocks the wizard's Next or Add actions. Detail rows
+// expand on demand; snippets render through the shared escaped FindingsList.
+function ProbeFindingsPanel({ tools }: { tools: ProbedTool[] | null }) {
+  const [expanded, setExpanded] = useState(false);
+  const flagged = useMemo(
+    () => (tools ?? []).filter((t) => maxFindingSeverity(t.findings) !== null),
+    [tools],
+  );
+  if (flagged.length === 0) return null;
+  const findingCount = flagged.reduce((n, t) => n + (t.findings?.length ?? 0), 0);
+
+  return (
+    <div
+      role="status"
+      aria-label="Poisoning scan findings on discovered tools"
+      className="mb-2 rounded-md border border-status-pending/40 bg-status-pending/[0.05] px-3 py-2 text-left"
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="flex w-full items-center gap-2 text-status-pending"
+        aria-expanded={expanded}
+      >
+        <ShieldAlert size={12} className="flex-shrink-0" />
+        <span className="text-[11px] font-medium">
+          {findingCount} scan finding{findingCount > 1 ? 's' : ''} on {flagged.length} discovered tool
+          {flagged.length > 1 ? 's' : ''}; review before adding
+        </span>
+        {expanded ? (
+          <ChevronDown size={12} className="ml-auto flex-shrink-0" />
+        ) : (
+          <ChevronRight size={12} className="ml-auto flex-shrink-0" />
+        )}
+      </button>
+      {expanded && (
+        <div className="mt-2 space-y-2">
+          {flagged.map((t) => (
+            <div key={t.name} className="space-y-1">
+              <div className="text-[10px] font-mono text-text-secondary">
+                {escapeNonPrintable(t.name)}
+              </div>
+              <FindingsList findings={t.findings} />
+            </div>
+          ))}
+          <p className="text-[10px] text-text-muted">
+            Findings are advisory heuristics; they inform review and never block. Pinned servers are
+            re-scanned on drift in the Pins workspace.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

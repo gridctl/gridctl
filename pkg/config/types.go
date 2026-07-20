@@ -236,6 +236,13 @@ type SchemaPinningConfig struct {
 	// warn: log a structured diff and continue serving.
 	// block: reject all tool calls from the drifted server until approved.
 	Action string `yaml:"action,omitempty" json:"action,omitempty"`
+	// Scan controls the poisoning heuristics run over tool definitions at
+	// pin and drift time. Default: true. Findings are always advisory; this
+	// toggle never affects hashing, drift detection, or the approve flow.
+	Scan *bool `yaml:"scan,omitempty" json:"scan,omitempty"`
+	// ScanIgnore suppresses scan findings by code (e.g. ["P004"]). Useful
+	// for silencing a heuristic that false-positives on a legitimate stack.
+	ScanIgnore []string `yaml:"scan_ignore,omitempty" json:"scan_ignore,omitempty"`
 }
 
 // AuthConfig configures gateway authentication.

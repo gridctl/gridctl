@@ -546,6 +546,33 @@ Tokens are stored encrypted at rest under `~/.gridctl/oauth/`, keyed by server U
 
 ---
 
+## Pins and Poisoning Scan
+
+### A legitimate tool is flagged with scan findings
+
+The poisoning scan is a set of local heuristics, and some legitimate tools trip them. Common cases: a shell or database tool whose description honestly says it executes commands or drops tables fires `P003` (which is why P003 is info-tier), a security tool that documents attack phrases fires `P001` in downgraded form (quoted matches drop to info severity with low confidence), and a workflow tool that mentions another server's tool by name fires `P006`.
+
+Findings never block anything: drift still requires the same approve decision, exit codes are unchanged unless you pass `--fail-on-findings`, and the Approve button stays enabled. If a specific code keeps firing on a legitimate stack, suppress it:
+
+```yaml
+gateway:
+  security:
+    schema_pinning:
+      scan_ignore: [P004]
+```
+
+Set `scan: false` to disable the scanner: stack-time findings, API decoration, and add-server wizard probe findings all honor it, as does `scan_ignore`. (If schema pinning itself is disabled, the wizard probe still scans candidate servers with default settings, since no pin store exists to carry the configuration.) Both settings are advisory-only knobs; they never affect fingerprinting or drift detection.
+
+### A finding reports "hidden characters" I cannot see
+
+That is the point of the finding: zero-width characters, bidi controls, and Unicode Tags-block sequences render invisibly in most UIs but are read by the model. Every gridctl surface escapes them as visible sequences (`\u200b`, `\u202e`) so they become visible, and when a Tags-block sequence decodes to ASCII the smuggled message is shown as evidence. Treat a decoded hidden message in a tool description as hostile until proven otherwise; reset or remove the server rather than approving.
+
+### What the scan cannot catch
+
+Static heuristics are one layer. Published benchmarks put signature-only detection near two thirds recall, and attacks carried in runtime tool output (a tool that returns a fake error asking the model to read a credential file) are invisible to any pin-time check by construction. The scan makes the approve decision informed; it does not make a malicious server safe.
+
+---
+
 ## General
 
 ### Getting help

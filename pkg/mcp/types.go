@@ -159,6 +159,20 @@ type SchemaDrift struct {
 	NewHash        string
 	OldDescription string
 	NewDescription string
+	Findings       []ToolFinding
+}
+
+// ToolFinding is an advisory poisoning-scan signal attached to a drift.
+// Defined here (mirroring pins.Finding) for the same import-cycle reason as
+// SchemaVerifier: pkg/pins imports pkg/mcp, so pkg/mcp cannot import pkg/pins.
+type ToolFinding struct {
+	Code       string
+	Severity   string
+	Confidence string
+	Field      string
+	Snippet    string
+	Message    string
+	Decoded    string
 }
 
 // SchemaVerifier performs TOFU schema pinning for MCP tool definitions.

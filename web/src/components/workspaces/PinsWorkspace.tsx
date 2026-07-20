@@ -26,6 +26,7 @@ import { useListNav } from '../../hooks/useListNav';
 import { useUIStore } from '../../stores/useUIStore';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { pinStatusMeta } from '../pins/pinStatus';
+import { FindingsList, FindingsSummaryBadge } from '../pins/PinFindings';
 import { showToast } from '../ui/Toast';
 
 // PinsWorkspace is the schema-pinning surface, sibling to Stack, Library,
@@ -270,10 +271,18 @@ function ServerDetail({ name, pins: sp }: { name: string; pins: ServerPins }) {
               {toolRecords.map((rec) => (
                 <tr key={rec.name} className="border-b border-border/20 last:border-b-0">
                   <td className="px-3 py-2 align-top">
-                    <div className="font-mono text-text-primary">{escapeNonPrintable(rec.name)}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-text-primary">{escapeNonPrintable(rec.name)}</span>
+                      <FindingsSummaryBadge findings={rec.findings} />
+                    </div>
                     {rec.description && (
                       <div className="text-[10px] text-text-muted mt-0.5 whitespace-pre-wrap break-words">
                         {escapeNonPrintable(rec.description)}
+                      </div>
+                    )}
+                    {rec.findings && rec.findings.length > 0 && (
+                      <div className="mt-1.5">
+                        <FindingsList findings={rec.findings} />
                       </div>
                     )}
                   </td>
@@ -422,6 +431,7 @@ function DriftSection({ serverName }: { serverName: string }) {
               <div className="text-xs font-mono text-text-primary">{escapeNonPrintable(d.name)}</div>
               <DiffRow kind="old" hash={d.old_hash} description={d.old_description} />
               <DiffRow kind="new" hash={d.new_hash} description={d.new_description} />
+              <FindingsList findings={d.findings} />
             </div>
           ))}
 

@@ -32,7 +32,8 @@ const (
 
 // pinsJSONSchemaVersion identifies the shape of the pins list/verify JSON
 // documents. Evolution within a version is append-only.
-const pinsJSONSchemaVersion = 1
+// Version 2 adds findings arrays (poisoning-scan results) to diff tools.
+const pinsJSONSchemaVersion = 2
 
 var (
 	pinsStack         string
@@ -44,6 +45,7 @@ var (
 	pinsVerifyJSON    *bool
 	pinsDiffFormat    string
 	pinsDiffJSON      *bool
+	pinsDiffFailOn    string
 	pinsApproveExpect string
 )
 
@@ -121,11 +123,14 @@ since the live definitions come from the gateway.
 Default output is a per-tool before/after view with control characters
 escaped (poisoned descriptions hide instructions in invisible characters);
 use '--format json' for a machine-readable document. The JSON includes each
-server's live_server_hash for 'pins approve --expect'.
+server's live_server_hash for 'pins approve --expect'. Poisoning-scan
+findings render beneath each modified tool; they are advisory and never
+affect the exit code unless --fail-on-findings is passed.
 
 Exit codes:
   0  no drift
-  1  drift detected
+  1  drift detected, or scan findings at or above the --fail-on-findings
+     severity ('warn' or 'critical') present on pinned tools
   2  infrastructure error (no running stack, unknown server, API failure,
      or servers skipped with warnings)`,
 	Args: cobra.MaximumNArgs(1),
@@ -144,16 +149,91 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(pinsExitInfrastructure)
 		}
+		if pinsDiffFailOn != "" && pinsDiffFailOn != pins.SeverityWarn && pinsDiffFailOn != pins.SeverityCritical {
+			fmt.Fprintf(os.Stderr, "invalid --fail-on-findings value %q: want 'warn' or 'critical'\n", pinsDiffFailOn)
+			os.Exit(pinsExitInfrastructure)
+		}
 		doc, warnings, err := buildPinsDiffDoc(st, server)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(pinsExitInfrastructure)
 		}
-		if exit := pinsDiffExit(os.Stdout, os.Stderr, doc, warnings, format); exit != pinsExitOK {
+		exit := pinsDiffExit(os.Stdout, os.Stderr, doc, warnings, format)
+		if exit == pinsExitOK && pinsDiffFailOn != "" {
+			hit, err := pinsRecordFindingsAtOrAbove(st, server, pinsDiffFailOn)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(pinsExitInfrastructure)
+			}
+			if hit {
+				fmt.Fprintf(os.Stderr, "scan findings at or above %q present on pinned tools (see 'gridctl pins list' or the Pins workspace)\n", pinsDiffFailOn)
+				exit = pinsExitDrift
+			}
+		}
+		if exit != pinsExitOK {
 			os.Exit(exit)
 		}
 		return nil
 	},
+}
+
+// pinsRecordFindingsAtOrAbove reports whether any pinned tool record carries a
+// scan finding at or above the given severity. Records come from the running
+// daemon (not the on-disk file) so cross-server shadowing decoration (P006)
+// is included. Diff findings need no separate check: they only exist on
+// drifted tools, and drift already exits 1 on its own.
+func pinsRecordFindingsAtOrAbove(st *state.DaemonState, server, threshold string) (bool, error) {
+	records, err := fetchPinsRecords(st, server)
+	if err != nil {
+		return false, err
+	}
+	want := pins.SeverityRank(threshold)
+	for _, sp := range records {
+		if sp == nil {
+			continue
+		}
+		for _, rec := range sp.Tools {
+			for _, f := range rec.Findings {
+				if pins.SeverityRank(f.Severity) >= want {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
+// fetchPinsRecords retrieves pin records from the daemon: all servers, or one.
+func fetchPinsRecords(st *state.DaemonState, server string) (map[string]*pins.ServerPins, error) {
+	url := fmt.Sprintf("http://localhost:%d/api/pins", st.Port)
+	if server != "" {
+		url += "/" + server
+	}
+	client := &http.Client{Timeout: pinsAPITimeout}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("calling pins API: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("pins API failed: %s", apiErrorMessage(body, resp.Status))
+	}
+	if server != "" {
+		var sp pins.ServerPins
+		if err := json.Unmarshal(body, &sp); err != nil {
+			return nil, fmt.Errorf("parsing response: %w", err)
+		}
+		return map[string]*pins.ServerPins{server: &sp}, nil
+	}
+	var out map[string]*pins.ServerPins
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	return out, nil
 }
 
 var pinsApproveCmd = &cobra.Command{
@@ -197,6 +277,8 @@ func init() {
 
 	pinsDiffCmd.Flags().StringVar(&pinsDiffFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
 	pinsDiffJSON = addJSONAlias(pinsDiffCmd)
+	pinsDiffCmd.Flags().StringVar(&pinsDiffFailOn, "fail-on-findings", "",
+		"Exit 1 when scan findings at or above this severity exist: 'warn' or 'critical' (default: findings never affect the exit code)")
 
 	pinsApproveCmd.Flags().StringVar(&pinsApproveExpect, "expect", "", "Reviewed live_server_hash from 'pins diff'; approval is rejected if the live definitions no longer match")
 
@@ -413,11 +495,12 @@ func pinsVerifyExit(stdout, stderr io.Writer, stackName string, servers map[stri
 // pinsToolDiff is one modified tool in the diff document, mirroring the
 // GET /api/pins/{server}/diff wire shape.
 type pinsToolDiff struct {
-	Name           string `json:"name"`
-	OldHash        string `json:"old_hash"`
-	NewHash        string `json:"new_hash"`
-	OldDescription string `json:"old_description"`
-	NewDescription string `json:"new_description"`
+	Name           string         `json:"name"`
+	OldHash        string         `json:"old_hash"`
+	NewHash        string         `json:"new_hash"`
+	OldDescription string         `json:"old_description"`
+	NewDescription string         `json:"new_description"`
+	Findings       []pins.Finding `json:"findings"`
 }
 
 // pinsDiffServer is one server's delta in the diff document. LiveServerHash
@@ -597,6 +680,17 @@ func renderPinsDiffText(w io.Writer, doc pinsDiffDoc) {
 			fmt.Fprintf(w, "  ~ %s\n", escapeNonPrintable(d.Name))
 			fmt.Fprintf(w, "      old %s  %s\n", shortPinHash(d.OldHash), escapeNonPrintable(d.OldDescription))
 			fmt.Fprintf(w, "      new %s  %s\n", shortPinHash(d.NewHash), escapeNonPrintable(d.NewDescription))
+			for _, f := range d.Findings {
+				fmt.Fprintf(w, "      %s %s %s (%s, %s confidence): %s\n",
+					findingGlyph(f.Severity), f.Severity, f.Code, f.Field, f.Confidence,
+					escapeNonPrintable(f.Message))
+				if f.Snippet != "" {
+					fmt.Fprintf(w, "          snippet: %s\n", escapeNonPrintable(f.Snippet))
+				}
+				if f.Decoded != "" {
+					fmt.Fprintf(w, "          decoded: %s\n", escapeNonPrintable(f.Decoded))
+				}
+			}
 		}
 		for _, name := range sv.NewTools {
 			fmt.Fprintf(w, "  + %s (new tool, pinned on approve)\n", escapeNonPrintable(name))
@@ -604,6 +698,18 @@ func renderPinsDiffText(w io.Writer, doc pinsDiffDoc) {
 		for _, name := range sv.RemovedTools {
 			fmt.Fprintf(w, "  - %s (removed from server)\n", escapeNonPrintable(name))
 		}
+	}
+}
+
+// findingGlyph marks a finding line by severity: !! critical, ! warn, - info.
+func findingGlyph(severity string) string {
+	switch severity {
+	case pins.SeverityCritical:
+		return "!!"
+	case pins.SeverityWarn:
+		return "!"
+	default:
+		return "-"
 	}
 }
 

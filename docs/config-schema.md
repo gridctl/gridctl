@@ -104,6 +104,8 @@ gateway:
     schema_pinning:
       enabled: true
       action: warn
+      scan: true
+      scan_ignore: []
 ```
 
 | Field | Type | Required | Default | Description |
@@ -118,6 +120,12 @@ Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definit
 |-------|------|----------|---------|-------------|
 | `enabled` | bool | No | `true` | Enable schema pinning globally for the stack |
 | `action` | string | No | `"warn"` | Drift response: `"warn"` logs the diff and continues; `"block"` rejects tool calls from the drifted server until approved |
+| `scan` | bool | No | `true` | Run poisoning heuristics over tool definitions at pin and drift time; findings are advisory and never block anything |
+| `scan_ignore` | string list | No | `[]` | Finding codes to suppress everywhere (e.g. `["P004"]`) |
+
+**Poisoning scan:**
+
+When `scan` is on, every tool definition is checked at pin and drift time for injection signals: hidden-instruction phrases (`P001`), references to sensitive files (`P002`), sensitive-action language (`P003`), suspicious emphasis words (`P004`), hidden Unicode including decoded Tags-block payloads (`P005`), and cross-server tool shadowing (`P006`). Matching runs on Unicode-normalized text so zero-width, homoglyph, and leetspeak evasion does not defeat it, and quoted matches are downgraded so a tool that documents attack phrases is not flagged as one. Findings render beside the drift diff in `gridctl pins diff`, the diff API, and the Pins workspace; they inform the approve decision and never gate it. Static heuristics are one detection layer, not a complete defense: attacks carried in runtime tool output are invisible to any pin-time check.
 
 Pin files are stored in `~/.gridctl/pins/{stackName}.json`. Use `gridctl pins` subcommands to inspect, approve, or reset pins. Per-server opt-out is available via the `pin_schemas: false` field on any `mcp-servers` entry.
 

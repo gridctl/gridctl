@@ -48,6 +48,12 @@ type PinStore struct {
 	path      string
 	mu        sync.RWMutex
 	data      *PinFile
+
+	// scanEnabled controls the poisoning heuristics run at pin and verify
+	// time (default on); scanIgnore drops findings by code (e.g. "P004").
+	// Both are advisory-only knobs: they never affect hashing or drift.
+	scanEnabled bool
+	scanIgnore  []string
 }
 
 // New creates a PinStore for the given stack name.
@@ -55,8 +61,9 @@ type PinStore struct {
 // Call Load() before performing verification or pinning operations.
 func New(stackName string) *PinStore {
 	ps := &PinStore{
-		stackName: stackName,
-		path:      state.PinsPath(stackName),
+		stackName:   stackName,
+		path:        state.PinsPath(stackName),
+		scanEnabled: true,
 	}
 	ps.data = ps.emptyPinFile()
 	return ps
@@ -66,11 +73,46 @@ func New(stackName string) *PinStore {
 // Intended for testing where the real state directory should not be used.
 func NewWithPath(dir, stackName string) *PinStore {
 	ps := &PinStore{
-		stackName: stackName,
-		path:      filepath.Join(dir, stackName+".json"),
+		stackName:   stackName,
+		path:        filepath.Join(dir, stackName+".json"),
+		scanEnabled: true,
 	}
 	ps.data = ps.emptyPinFile()
 	return ps
+}
+
+// SetScanConfig configures the poisoning scanner: enabled toggles it, ignore
+// suppresses findings by code. Call before the store starts verifying.
+func (ps *PinStore) SetScanConfig(enabled bool, ignore []string) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.scanEnabled = enabled
+	ps.scanIgnore = append([]string(nil), ignore...)
+}
+
+// scanFindings runs the poisoning scan for one tool under the store's scan
+// settings. Caller must hold ps.mu (read or write).
+func (ps *PinStore) scanFindings(t mcp.Tool) []Finding {
+	if !ps.scanEnabled {
+		return nil
+	}
+	return FilterFindings(ScanTool(t), ps.scanIgnore)
+}
+
+// ScanEnabled reports whether the poisoning scanner is on for this store.
+// Callers that compute supplementary findings outside the store (the API
+// layer's cross-server shadowing check) use this to honor the same config.
+func (ps *PinStore) ScanEnabled() bool {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	return ps.scanEnabled
+}
+
+// ScanIgnoreCodes returns a copy of the configured ignore list.
+func (ps *PinStore) ScanIgnoreCodes() []string {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	return append([]string(nil), ps.scanIgnore...)
 }
 
 // Load reads the pin file from disk into memory.
@@ -110,25 +152,47 @@ func (ps *PinStore) Load() error {
 	return nil
 }
 
-// GetAll returns a snapshot of all server pin records.
+// GetAll returns a deep-copied snapshot of all server pin records. Callers
+// iterate and marshal the result outside the store's lock while the gateway's
+// verify path mutates records in place (scheme upgrades, re-pins), so shared
+// pointers would be a data race and shared maps a runtime panic.
 func (ps *PinStore) GetAll() map[string]*ServerPins {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
 	out := make(map[string]*ServerPins, len(ps.data.Servers))
 	for k, v := range ps.data.Servers {
-		out[k] = v
+		out[k] = copyServerPins(v)
 	}
 	return out
 }
 
-// GetServer returns the pin record for a single server.
+// GetServer returns a deep-copied pin record for a single server; see GetAll
+// for why a copy.
 func (ps *PinStore) GetServer(serverName string) (*ServerPins, bool) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
 	sp, ok := ps.data.Servers[serverName]
-	return sp, ok
+	if !ok {
+		return nil, false
+	}
+	return copyServerPins(sp), true
+}
+
+// copyServerPins deep-copies a ServerPins for lock-free consumption.
+func copyServerPins(sp *ServerPins) *ServerPins {
+	if sp == nil {
+		return nil
+	}
+	out := *sp
+	out.Tools = make(map[string]*PinRecord, len(sp.Tools))
+	for name, rec := range sp.Tools {
+		recCopy := *rec
+		recCopy.Findings = append([]Finding(nil), rec.Findings...)
+		out.Tools[name] = &recCopy
+	}
+	return &out
 }
 
 // VerifyOrPin is the primary entry point called on RefreshTools.
@@ -234,18 +298,30 @@ func (ps *PinStore) pinServer(serverName string, tools []mcp.Tool) (*VerifyResul
 	toolRecords := make(map[string]*PinRecord, len(tools))
 	hashes := make([]string, 0, len(tools))
 
+	flagged := 0
 	for _, t := range sortedTools(tools) {
 		h, err := hashTool(t)
 		if err != nil {
 			return nil, fmt.Errorf("pins: hashing tool %q: %w", t.Name, err)
+		}
+		findings := ps.scanFindings(t)
+		if sev := MaxSeverity(findings); sev == SeverityWarn || sev == SeverityCritical {
+			flagged++
 		}
 		toolRecords[t.Name] = &PinRecord{
 			Hash:        h,
 			Name:        t.Name,
 			Description: t.Description,
 			PinnedAt:    now,
+			Findings:    findings,
 		}
 		hashes = append(hashes, h)
+	}
+	if flagged > 0 {
+		slog.Warn("pins: poisoning heuristics flagged tools at pin time",
+			"server", serverName,
+			"flagged", flagged,
+			"hint", "review with 'gridctl pins list' or the Pins workspace")
 	}
 
 	// Preserve original PinnedAt when re-pinning (approve flow).
@@ -305,6 +381,7 @@ func (ps *PinStore) verifyAndUpdate(serverName string, sp *ServerPins, tools []m
 				Name:        t.Name,
 				Description: t.Description,
 				PinnedAt:    now,
+				Findings:    ps.scanFindings(t),
 			}
 		}
 		sp.ToolCount = len(sp.Tools)
@@ -378,6 +455,7 @@ func (ps *PinStore) buildVerifyResult(serverName string, sp *ServerPins, tools [
 				NewHash:        h,
 				OldDescription: pin.Description,
 				NewDescription: t.Description,
+				Findings:       ps.scanFindings(t),
 			})
 		}
 	}

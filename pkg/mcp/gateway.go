@@ -430,6 +430,18 @@ func (g *Gateway) handlePinDrift(serverName string, drifts []SchemaDrift) {
 			"tool", d.Name,
 			"old_description", d.OldDescription,
 			"new_description", d.NewDescription)
+		for _, f := range d.Findings {
+			if f.Severity != "warn" && f.Severity != "critical" {
+				continue
+			}
+			g.logger.Warn("poisoning heuristic flagged drifted tool",
+				"server", serverName,
+				"tool", d.Name,
+				"code", f.Code,
+				"severity", f.Severity,
+				"field", f.Field,
+				"finding", f.Message)
+		}
 	}
 	if g.pinAction == "block" {
 		g.blockedMu.Lock()
