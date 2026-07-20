@@ -8,6 +8,7 @@ import { SpecHealthBadge } from '../spec/SpecHealthBadge';
 import { PinDriftBadge } from '../pins/PinDriftBadge';
 import { PinFindingsBadge } from '../pins/PinFindingsBadge';
 import { AuthPendingBadge } from '../sidebar/AuthPendingBadge';
+import { LimitsBadge } from '../metrics/LimitsBadge';
 
 export function StatusBar() {
   const navigate = useNavigate();
@@ -165,6 +166,9 @@ export function StatusBar() {
 
         {/* Pending downstream authorizations (hidden when none) */}
         <AuthPendingBadge />
+
+        {/* Budget/rate limit pressure (hidden while everything is ok) */}
+        <LimitsBadge />
       </div>
 
       {/* Last update */}
