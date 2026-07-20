@@ -18,8 +18,8 @@ import {
 import { ModelPicker } from '../../pricing/ModelPicker';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
-import type { AutoscaleFormData, MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
-import type { ProbeServerConfig } from '../../../lib/api';
+import type { AutoscaleFormData, ExternalAuthFormData, MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
+import type { ProbeServerAuth, ProbeServerConfig } from '../../../lib/api';
 import { VariablesPopover } from '../VariablesPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
@@ -172,8 +172,30 @@ function buildProbeConfig(data: MCPServerFormData): ProbeServerConfig | null {
     url: data.url,
     transport: data.transport || '',
     env: data.env,
+    auth: buildProbeAuth(data.auth),
   };
 }
+
+// Map the form's auth block to the probe wire shape, dropping empty optional
+// fields so Test Connection sends exactly what the YAML would declare.
+function buildProbeAuth(auth: ExternalAuthFormData | undefined): ProbeServerAuth | undefined {
+  if (!auth) return undefined;
+  return {
+    type: auth.type,
+    token: auth.token || undefined,
+    header: auth.header || undefined,
+    value: auth.value || undefined,
+    scopes: auth.scopes?.length ? auth.scopes : undefined,
+    client_id: auth.clientId || undefined,
+    client_secret: auth.clientSecret || undefined,
+  };
+}
+
+const EXTERNAL_AUTH_LABELS: Record<ExternalAuthFormData['type'], string> = {
+  bearer: 'Bearer token',
+  header: 'Custom header',
+  oauth: 'OAuth 2.1',
+};
 
 // --- Kebab-case validation ---
 
@@ -1325,6 +1347,22 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         </div>
       </Section>
 
+      {/* Authentication (external URL servers only) */}
+      {data.serverType === 'external' && (
+        <Section
+          title="Authentication"
+          icon={ShieldCheck}
+          expanded={expandedSections.has('auth')}
+          onToggle={() => toggleSection('auth')}
+          badge={data.auth ? EXTERNAL_AUTH_LABELS[data.auth.type] : undefined}
+        >
+          <ExternalAuthFields
+            auth={data.auth}
+            onChange={(auth) => onChange({ auth })}
+          />
+        </Section>
+      )}
+
       {/* Section 4: Environment & Secrets */}
       <Section
         title="Environment & Secrets"
@@ -1711,6 +1749,163 @@ function AutoscaleFields({
       <p className="text-[11px] text-text-secondary border-t border-border/20 pt-2 font-mono">
         Autoscale {data.min}–{data.max} replicas · {data.targetInFlight} concurrent/replica
       </p>
+    </div>
+  );
+}
+
+// ExternalAuthFields — downstream auth for external URL servers. Mirrors
+// config.ServerAuth: static bearer/header credentials or OAuth 2.1 brokering.
+// Secret fields nudge toward ${var:KEY} references; the YAML preview emits
+// exactly what the user types, so literals are their explicit choice.
+function ExternalAuthFields({
+  auth,
+  onChange,
+}: {
+  auth: ExternalAuthFormData | undefined;
+  onChange: (auth: ExternalAuthFormData | undefined) => void;
+}) {
+  const update = (patch: Partial<ExternalAuthFormData>) => {
+    onChange({ ...(auth as ExternalAuthFormData), ...patch });
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] text-text-muted">
+        How gridctl authenticates to the remote server: a bearer token, a
+        custom header, or OAuth 2.1 brokered by the gateway.
+      </p>
+      <div>
+        <label className={labelClass}>Type</label>
+        <select
+          aria-label="Authentication type"
+          value={auth?.type ?? ''}
+          onChange={(e) => {
+            const v = e.target.value;
+            onChange(v ? { type: v as ExternalAuthFormData['type'] } : undefined);
+          }}
+          className={inputClass}
+        >
+          <option value="">None</option>
+          <option value="bearer">Bearer token</option>
+          <option value="header">Custom header</option>
+          <option value="oauth">OAuth 2.1</option>
+        </select>
+      </div>
+
+      {auth?.type === 'bearer' && (
+        <div>
+          <label className={labelClass}>
+            Token <span className="text-status-error">*</span>
+          </label>
+          <div className="flex items-center gap-0.5">
+            <input
+              type="text"
+              value={auth.token ?? ''}
+              onChange={(e) => update({ token: e.target.value })}
+              placeholder="${var:MY_TOKEN}"
+              className={cn(inputClass, 'flex-1 font-mono', auth.token?.startsWith('${var:') && 'text-tertiary font-medium')}
+            />
+            <VariablesPopover onSelect={(ref) => update({ token: ref })} />
+          </div>
+          <p className="text-[10px] text-text-muted mt-1">
+            Sent as "Authorization: Bearer". Prefer a {'${var:KEY}'} reference over a literal secret.
+          </p>
+        </div>
+      )}
+
+      {auth?.type === 'header' && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className={labelClass}>
+              Header name <span className="text-status-error">*</span>
+            </label>
+            <input
+              type="text"
+              value={auth.header ?? ''}
+              onChange={(e) => update({ header: e.target.value })}
+              placeholder="X-API-Key"
+              className={cn(inputClass, 'font-mono')}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>
+              Value <span className="text-status-error">*</span>
+            </label>
+            <div className="flex items-center gap-0.5">
+              <input
+                type="text"
+                value={auth.value ?? ''}
+                onChange={(e) => update({ value: e.target.value })}
+                placeholder="${var:MY_API_KEY}"
+                className={cn(inputClass, 'flex-1 font-mono', auth.value?.startsWith('${var:') && 'text-tertiary font-medium')}
+              />
+              <VariablesPopover onSelect={(ref) => update({ value: ref })} />
+            </div>
+            <p className="text-[10px] text-text-muted mt-1">
+              Prefer a {'${var:KEY}'} reference over a literal secret.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {auth?.type === 'oauth' && (
+        <div className="space-y-3">
+          <p className="text-[10px] text-text-muted">
+            gridctl runs the browser login after deploy and refreshes tokens
+            automatically. All fields are optional: dynamic client
+            registration is used when they are left empty.
+          </p>
+          <div>
+            <label className={labelClass}>Scopes</label>
+            <input
+              type="text"
+              aria-label="OAuth scopes"
+              value={(auth.scopes ?? []).join(' ')}
+              onChange={(e) =>
+                update({
+                  scopes: e.target.value ? e.target.value.split(/[\s,]+/).filter(Boolean) : undefined,
+                })
+              }
+              placeholder="read write"
+              className={inputClass}
+            />
+            <p className="text-[10px] text-text-muted mt-1">
+              Space or comma-separated. Empty uses the scopes the server advertises.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelClass}>Client ID</label>
+              <input
+                type="text"
+                aria-label="OAuth client ID"
+                value={auth.clientId ?? ''}
+                onChange={(e) => update({ clientId: e.target.value })}
+                placeholder="pre-registered client ID"
+                className={cn(inputClass, 'font-mono')}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Client Secret</label>
+              <div className="flex items-center gap-0.5">
+                <input
+                  type="text"
+                  aria-label="OAuth client secret"
+                  value={auth.clientSecret ?? ''}
+                  onChange={(e) => update({ clientSecret: e.target.value })}
+                  placeholder="${var:MY_CLIENT_SECRET}"
+                  className={cn(inputClass, 'flex-1 font-mono', auth.clientSecret?.startsWith('${var:') && 'text-tertiary font-medium')}
+                />
+                <VariablesPopover onSelect={(ref) => update({ clientSecret: ref })} />
+              </div>
+            </div>
+          </div>
+          <p className="text-[10px] text-text-muted">
+            Only needed for providers that refuse dynamic registration. Prefer
+            a {'${var:KEY}'} reference for the secret.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
