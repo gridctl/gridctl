@@ -4,13 +4,14 @@ Commands are grouped by domain, matching the groups in `gridctl --help`. Run `gr
 
 Global flags: `--runtime <docker|podman>` overrides runtime auto-detection, `--no-color` disables styled output, and `--log-level <debug|info|warn|error>` sets the minimum log level (logs go to stderr, so JSON stdout stays parseable). Color is also suppressed automatically when output is piped, when `NO_COLOR` is set ([no-color.org](https://no-color.org/)), or when `TERM=dumb`.
 
-Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (`validate`, `plan`, `optimize`, `activate`, `skill list`, `var list`, `pins list`, and `pins verify`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. The `status`, `info`, and `doctor` JSON schemas are experimental until 1.0.
+Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (`validate`, `plan`, `optimize`, `activate`, `search`, `add`, `skill list`, `var list`, `pins list`, and `pins verify`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. The `status`, `info`, and `doctor` JSON schemas are experimental until 1.0.
 
-Plain tables: `status`, `skill list`, `pins list`, `optimize`, and `telemetry status` accept `--plain` to render tables without box-drawing (2+-space column separation, one record per line) for `grep`/`awk` pipelines. Piped table output degrades to plain automatically; the flag forces it on a terminal. `--plain` cannot be combined with `--json`. The `var` family keeps `--plain` as its pre-existing "show unmasked value" flag (`var get`, `var export`); `var list` therefore has no formatting flag, though its piped output still degrades to the plain style.
+Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, and `telemetry status` accept `--plain` to render tables without box-drawing (2+-space column separation, one record per line) for `grep`/`awk` pipelines. Piped table output degrades to plain automatically; the flag forces it on a terminal. `--plain` cannot be combined with `--json`. The `var` family keeps `--plain` as its pre-existing "show unmasked value" flag (`var get`, `var export`); `var list` therefore has no formatting flag, though its piped output still degrades to the plain style.
 
 ## Contents
 
 - [Stack lifecycle](#stack-lifecycle)
+- [Catalog](#catalog)
 - [LLM clients](#llm-clients)
 - [Global context](#global-context)
 - [Skills](#skills)
@@ -37,6 +38,15 @@ Plain tables: `status`, `skill list`, `pins list`, `optimize`, and `telemetry st
 | `gridctl stop` | Stop the stackless gridctl daemon; `--force` kills the process if graceful shutdown fails. |
 | `gridctl status` | Show running stacks; `-s` / `--stack` filters to one stack, `--replicas` expands to one row per replica, `--json` for machine-readable output (experimental schema). |
 | `gridctl logs [stack]` | Tail the gateway daemon log (`~/.gridctl/logs/<stack>.log`). `-f` / `--follow` streams, `-n` / `--tail <N>` picks the line count (default 100), `--server <name>` streams a containerized MCP server's logs instead. Stack auto-detected when exactly one is running. |
+
+## Catalog
+
+Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The catalog merges two sources: a curated set embedded in gridctl (vetted entries with correct inputs and secret flags) and the official [MCP Registry](https://registry.modelcontextprotocol.io) (community publications, not vetted by gridctl). Registry responses are cached for an hour under `~/.gridctl/cache/catalog`; when the registry is unreachable, commands fall back to cached or curated results with a warning. `gridctl search` searches this install catalog; the `search` meta-tool a code-mode gateway exposes to LLM clients searches the running gateway's tools and is unrelated.
+
+| Command | Purpose |
+|---|---|
+| `gridctl search [query]` | Search the catalog. Without a query, lists the curated set (the registry is not contacted). `--source <curated\|registry\|all>` picks sources (default `all`), `--format json` or `--json`, `--plain`. Deprecated registry entries are marked in the SOURCE column; entries whose package type has no stack mapping (mcpb, nuget, cargo) show `unsupported`. Exit `0` success (including no matches), `2` infrastructure error. |
+| `gridctl add <name>` | Resolve a catalog entry (curated name like `github`, or a full registry name like `io.github.user/weather`) and append the matching server block to stack.yaml through the same backed-up, validated write path as `gridctl import`. Required inputs are prompted for; secret values are masked and stored in the variable store so the stack only carries `${var:KEY}` references, and unset required values are written as `${var:KEY}` placeholders with a `gridctl var set` hint. Supported install shapes: OCI images, npm (`npx`), pypi (`uvx`), and remote URLs with bearer/header auth. `-y` / `--yes`, `--dry-run`, `-f` / `--file <stack.yaml>`, `-n` / `--name <name>`, `--no-vault`, `--format json` or `--json`. Exit `0` added, `1` cancelled, unknown name, or skipped collision, `2` infrastructure or validation error. |
 
 ## LLM clients
 
