@@ -51,6 +51,17 @@ func StacksDir() string {
 	return filepath.Join(BaseDir(), "stacks")
 }
 
+// LimitsDir returns the directory for budget spend ledgers (~/.gridctl/limits/).
+func LimitsDir() string {
+	return filepath.Join(BaseDir(), "limits")
+}
+
+// LimitsLedgerPath returns the path to the budget spend ledger for a stack
+// (~/.gridctl/limits/{name}.json).
+func LimitsLedgerPath(name string) string {
+	return filepath.Join(LimitsDir(), name+".json")
+}
+
 // PinsPath returns the path to the pin file for a stack (~/.gridctl/pins/{name}.json).
 func PinsPath(name string) string {
 	return filepath.Join(PinsDir(), name+".json")
