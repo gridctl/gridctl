@@ -4,9 +4,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// scanIgnoreCodeRe matches poisoning-scan finding codes ("P001"), case-insensitive
+// to mirror the tolerant matching in pins.FilterFindings.
+var scanIgnoreCodeRe = regexp.MustCompile(`(?i)^p[0-9]{3}$`)
 
 // maxReplicas is the sanity cap on MCPServer.Replicas. Values above this
 // are almost certainly a config error; the cap also bounds per-server
@@ -91,9 +96,17 @@ func Validate(s *Stack) error {
 	// rejected: the gateway only honors "block", so a typo would silently
 	// downgrade a security policy to warn.
 	if s.Gateway != nil && s.Gateway.Security != nil && s.Gateway.Security.SchemaPinning != nil {
-		action := s.Gateway.Security.SchemaPinning.Action
-		if action != "" && action != "warn" && action != "block" {
+		sp := s.Gateway.Security.SchemaPinning
+		if sp.Action != "" && sp.Action != "warn" && sp.Action != "block" {
 			errs = append(errs, ValidationError{"gateway.security.schema_pinning.action", "must be one of: warn, block"})
+		}
+		// scan_ignore entries must look like finding codes: a typo would
+		// silently suppress nothing while the user believes it suppresses
+		// a heuristic.
+		for _, code := range sp.ScanIgnore {
+			if !scanIgnoreCodeRe.MatchString(code) {
+				errs = append(errs, ValidationError{"gateway.security.schema_pinning.scan_ignore", fmt.Sprintf("invalid finding code %q: want the form P001", code)})
+			}
 		}
 	}
 

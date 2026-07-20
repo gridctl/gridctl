@@ -30,23 +30,28 @@ func TestResolveSchemaPinning(t *testing.T) {
 		stack       *config.Stack
 		wantEnabled bool
 		wantAction  string
+		wantScan    bool
+		wantIgnore  int
 	}{
-		{"nil stack defaults to on/warn", nil, true, "warn"},
-		{"no gateway block", &config.Stack{}, true, "warn"},
-		{"no security block", &config.Stack{Gateway: &config.GatewayConfig{}}, true, "warn"},
-		{"security but no schema_pinning", pinningStack(nil), true, "warn"},
-		{"schema_pinning present, enabled omitted stays on", pinningStack(&config.SchemaPinningConfig{}), true, "warn"},
-		{"explicit enabled false disables", pinningStack(&config.SchemaPinningConfig{Enabled: boolPtr(false)}), false, "warn"},
-		{"action block with enabled omitted stays on", pinningStack(&config.SchemaPinningConfig{Action: "block"}), true, "block"},
-		{"enabled true and action block", pinningStack(&config.SchemaPinningConfig{Enabled: boolPtr(true), Action: "block"}), true, "block"},
-		{"unknown action falls back to warn", pinningStack(&config.SchemaPinningConfig{Action: "shout"}), true, "warn"},
+		{"nil stack defaults to on/warn/scan", nil, true, "warn", true, 0},
+		{"no gateway block", &config.Stack{}, true, "warn", true, 0},
+		{"no security block", &config.Stack{Gateway: &config.GatewayConfig{}}, true, "warn", true, 0},
+		{"security but no schema_pinning", pinningStack(nil), true, "warn", true, 0},
+		{"schema_pinning present, enabled omitted stays on", pinningStack(&config.SchemaPinningConfig{}), true, "warn", true, 0},
+		{"explicit enabled false disables", pinningStack(&config.SchemaPinningConfig{Enabled: boolPtr(false)}), false, "warn", true, 0},
+		{"action block with enabled omitted stays on", pinningStack(&config.SchemaPinningConfig{Action: "block"}), true, "block", true, 0},
+		{"enabled true and action block", pinningStack(&config.SchemaPinningConfig{Enabled: boolPtr(true), Action: "block"}), true, "block", true, 0},
+		{"unknown action falls back to warn", pinningStack(&config.SchemaPinningConfig{Action: "shout"}), true, "warn", true, 0},
+		{"scan omitted stays on", pinningStack(&config.SchemaPinningConfig{Enabled: boolPtr(true)}), true, "warn", true, 0},
+		{"explicit scan false disables scanning only", pinningStack(&config.SchemaPinningConfig{Scan: boolPtr(false)}), true, "warn", false, 0},
+		{"scan_ignore passes through", pinningStack(&config.SchemaPinningConfig{ScanIgnore: []string{"P004", "P003"}}), true, "warn", true, 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			enabled, action := resolveSchemaPinning(tt.stack)
-			if enabled != tt.wantEnabled || action != tt.wantAction {
-				t.Errorf("resolveSchemaPinning() = (%v, %q), want (%v, %q)",
-					enabled, action, tt.wantEnabled, tt.wantAction)
+			enabled, action, scan, ignore := resolveSchemaPinning(tt.stack)
+			if enabled != tt.wantEnabled || action != tt.wantAction || scan != tt.wantScan || len(ignore) != tt.wantIgnore {
+				t.Errorf("resolveSchemaPinning() = (%v, %q, %v, %d codes), want (%v, %q, %v, %d codes)",
+					enabled, action, scan, len(ignore), tt.wantEnabled, tt.wantAction, tt.wantScan, tt.wantIgnore)
 			}
 		})
 	}

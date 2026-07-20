@@ -152,17 +152,18 @@ func (b *GatewayBuilder) SetPinStore(ps *pins.PinStore) {
 }
 
 // resolveSchemaPinning returns the effective gateway schema-pinning settings,
-// applying the documented defaults (enabled, "warn") when the stack omits the
-// security block or individual fields. Enabled is a *bool so an omitted
-// `enabled:` inherits the default-on behavior rather than YAML's zero value.
-func resolveSchemaPinning(stack *config.Stack) (enabled bool, action string) {
-	enabled, action = true, "warn"
+// applying the documented defaults (enabled, "warn", scan on) when the stack
+// omits the security block or individual fields. Enabled and Scan are *bool
+// so omitted fields inherit the default-on behavior rather than YAML's zero
+// value.
+func resolveSchemaPinning(stack *config.Stack) (enabled bool, action string, scan bool, scanIgnore []string) {
+	enabled, action, scan = true, "warn", true
 	if stack == nil || stack.Gateway == nil || stack.Gateway.Security == nil {
-		return enabled, action
+		return enabled, action, scan, nil
 	}
 	sp := stack.Gateway.Security.SchemaPinning
 	if sp == nil {
-		return enabled, action
+		return enabled, action, scan, nil
 	}
 	if sp.Enabled != nil {
 		enabled = *sp.Enabled
@@ -170,7 +171,10 @@ func resolveSchemaPinning(stack *config.Stack) (enabled bool, action string) {
 	if sp.Action == "block" {
 		action = "block"
 	}
-	return enabled, action
+	if sp.Scan != nil {
+		scan = *sp.Scan
+	}
+	return enabled, action, scan, sp.ScanIgnore
 }
 
 // installSchemaPinning shares a single pin store between the API server (for
@@ -182,10 +186,11 @@ func installSchemaPinning(gateway *mcp.Gateway, server *api.Server, stack *confi
 	if ps == nil {
 		return
 	}
-	enabled, action := resolveSchemaPinning(stack)
+	enabled, action, scan, scanIgnore := resolveSchemaPinning(stack)
 	if !enabled {
 		return
 	}
+	ps.SetScanConfig(scan, scanIgnore)
 	server.SetPinStore(ps)
 	gateway.SetSchemaVerifier(pins.NewGatewayAdapter(ps), action)
 }

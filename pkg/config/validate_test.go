@@ -1666,3 +1666,29 @@ func TestValidate_SchemaPinningAction(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_SchemaPinningScanIgnore(t *testing.T) {
+	withIgnore := func(codes ...string) *Stack {
+		return &Stack{
+			Name:       "test",
+			Network:    Network{Name: "test-net"},
+			MCPServers: []MCPServer{{Name: "s1", Image: "alpine", Port: 3000}},
+			Gateway: &GatewayConfig{
+				Security: &GatewaySecurityConfig{
+					SchemaPinning: &SchemaPinningConfig{ScanIgnore: codes},
+				},
+			},
+		}
+	}
+
+	if err := Validate(withIgnore("P001", "p004")); err != nil {
+		t.Errorf("valid codes rejected: %v", err)
+	}
+	err := Validate(withIgnore("P0001"))
+	if err == nil {
+		t.Fatal("malformed code accepted")
+	}
+	if !strings.Contains(err.Error(), "scan_ignore") {
+		t.Errorf("expected scan_ignore in error, got %q", err.Error())
+	}
+}
