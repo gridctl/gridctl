@@ -1,0 +1,280 @@
+[
+  {
+    "name": "github",
+    "title": "GitHub",
+    "description": "Repositories, issues, pull requests, and code search via the GitHub API",
+    "namespace": "io.github.github/github-mcp-server",
+    "homepage": "https://github.com/github/github-mcp-server",
+    "repository": "https://github.com/github/github-mcp-server",
+    "install": {
+      "type": "image",
+      "transport": "stdio",
+      "image": "ghcr.io/github/github-mcp-server"
+    },
+    "inputs": [
+      {
+        "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "description": "GitHub personal access token with the scopes you want exposed",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "permissions": {
+      "read_private_data": true,
+      "write_operation": true
+    }
+  },
+  {
+    "name": "gitlab",
+    "title": "GitLab",
+    "description": "Projects, issues, and merge requests via the GitLab API",
+    "repository": "https://github.com/zereight/gitlab-mcp",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@zereight/mcp-gitlab"]
+    },
+    "inputs": [
+      {
+        "name": "GITLAB_PERSONAL_ACCESS_TOKEN",
+        "description": "GitLab personal access token",
+        "required": true,
+        "secret": true
+      },
+      {
+        "name": "GITLAB_API_URL",
+        "description": "GitLab API base URL (change for self-hosted instances)",
+        "default": "https://gitlab.com/api/v4"
+      }
+    ],
+    "permissions": {
+      "read_private_data": true,
+      "write_operation": true
+    }
+  },
+  {
+    "name": "filesystem",
+    "title": "Filesystem",
+    "description": "Read, write, and search files under an allowed directory",
+    "namespace": "io.github.modelcontextprotocol/filesystem",
+    "repository": "https://github.com/modelcontextprotocol/servers",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+    },
+    "inputs": [
+      {
+        "name": "ALLOWED_DIR",
+        "description": "Directory the server is allowed to access",
+        "required": true,
+        "arg": true,
+        "format": "filepath"
+      }
+    ],
+    "permissions": {
+      "read_private_data": true,
+      "write_operation": true
+    }
+  },
+  {
+    "name": "fetch",
+    "title": "Fetch",
+    "description": "Fetch web pages and convert them to model-friendly markdown",
+    "namespace": "io.github.modelcontextprotocol/fetch",
+    "repository": "https://github.com/modelcontextprotocol/servers",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["uvx", "mcp-server-fetch"]
+    },
+    "permissions": {
+      "read_untrusted_public_data": true
+    }
+  },
+  {
+    "name": "memory",
+    "title": "Memory",
+    "description": "Persistent knowledge-graph memory across sessions",
+    "namespace": "io.github.modelcontextprotocol/memory",
+    "repository": "https://github.com/modelcontextprotocol/servers",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-memory"]
+    }
+  },
+  {
+    "name": "git",
+    "title": "Git",
+    "description": "Read and manipulate local git repositories",
+    "namespace": "io.github.modelcontextprotocol/git",
+    "repository": "https://github.com/modelcontextprotocol/servers",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["uvx", "mcp-server-git"]
+    },
+    "permissions": {
+      "read_private_data": true,
+      "write_operation": true
+    }
+  },
+  {
+    "name": "time",
+    "title": "Time",
+    "description": "Current time and timezone conversions",
+    "namespace": "io.github.modelcontextprotocol/time",
+    "repository": "https://github.com/modelcontextprotocol/servers",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["uvx", "mcp-server-time"]
+    }
+  },
+  {
+    "name": "playwright",
+    "title": "Playwright",
+    "description": "Browser automation: navigate, interact, and capture pages",
+    "namespace": "io.github.microsoft/playwright-mcp",
+    "repository": "https://github.com/microsoft/playwright-mcp",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@playwright/mcp"]
+    },
+    "permissions": {
+      "read_untrusted_public_data": true,
+      "write_operation": true
+    }
+  },
+  {
+    "name": "postgres",
+    "title": "PostgreSQL",
+    "description": "Read-only SQL queries and schema inspection for PostgreSQL",
+    "repository": "https://github.com/modelcontextprotocol/servers-archived",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-postgres"]
+    },
+    "inputs": [
+      {
+        "name": "DATABASE_URL",
+        "description": "PostgreSQL connection string (postgresql://user:pass@host/db)",
+        "required": true,
+        "secret": true,
+        "arg": true
+      }
+    ],
+    "permissions": {
+      "read_private_data": true
+    }
+  },
+  {
+    "name": "slack",
+    "title": "Slack",
+    "description": "Read channels and post messages in a Slack workspace",
+    "repository": "https://github.com/modelcontextprotocol/servers-archived",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-slack"]
+    },
+    "inputs": [
+      {
+        "name": "SLACK_BOT_TOKEN",
+        "description": "Slack bot token (xoxb-...)",
+        "required": true,
+        "secret": true
+      },
+      {
+        "name": "SLACK_TEAM_ID",
+        "description": "Slack workspace/team ID (T...)",
+        "required": true
+      }
+    ],
+    "permissions": {
+      "read_private_data": true,
+      "write_operation": true
+    }
+  },
+  {
+    "name": "brave-search",
+    "title": "Brave Search",
+    "description": "Web and local search via the Brave Search API",
+    "repository": "https://github.com/modelcontextprotocol/servers-archived",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
+    },
+    "inputs": [
+      {
+        "name": "BRAVE_API_KEY",
+        "description": "Brave Search API key",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "permissions": {
+      "read_untrusted_public_data": true
+    }
+  },
+  {
+    "name": "everything",
+    "title": "Everything (demo)",
+    "description": "Reference server exercising every MCP feature; useful for testing",
+    "namespace": "io.github.modelcontextprotocol/everything",
+    "repository": "https://github.com/modelcontextprotocol/servers",
+    "install": {
+      "type": "command",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-everything"]
+    }
+  },
+  {
+    "name": "sentry",
+    "title": "Sentry",
+    "description": "Query issues, events, and projects in Sentry (OAuth)",
+    "homepage": "https://mcp.sentry.dev",
+    "install": {
+      "type": "url",
+      "transport": "http",
+      "url": "https://mcp.sentry.dev/mcp"
+    },
+    "permissions": {
+      "read_private_data": true
+    }
+  },
+  {
+    "name": "linear",
+    "title": "Linear",
+    "description": "Issues, projects, and teams in Linear (OAuth)",
+    "homepage": "https://linear.app/docs/mcp",
+    "install": {
+      "type": "url",
+      "transport": "sse",
+      "url": "https://mcp.linear.app/sse"
+    },
+    "permissions": {
+      "read_private_data": true,
+      "write_operation": true
+    }
+  },
+  {
+    "name": "atlassian",
+    "title": "Atlassian",
+    "description": "Jira issues and Confluence pages via Atlassian's remote MCP server (OAuth)",
+    "homepage": "https://www.atlassian.com/platform/remote-mcp-server",
+    "install": {
+      "type": "url",
+      "transport": "sse",
+      "url": "https://mcp.atlassian.com/v1/sse"
+    },
+    "permissions": {
+      "read_private_data": true,
+      "write_operation": true
+    }
+  }
+]
