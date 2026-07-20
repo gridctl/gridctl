@@ -141,7 +141,7 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 
 	result, probeErr := s.prober.Probe(r.Context(), cfg)
 	if probeErr != nil {
-		scrubSecrets(probeErr, cfg.Env)
+		scrubSecrets(probeErr, cfg)
 		writeProbeError(w, probeFailureStatus(probeErr), probeErr.Code, probeErr.Message, probeErr.Hint)
 		return
 	}
@@ -192,9 +192,34 @@ type probeRequest struct {
 	OutputFormat string            `json:"output_format,omitempty"`
 	ReadyTimeout string            `json:"ready_timeout,omitempty"`
 	Replicas     int               `json:"replicas,omitempty"`
+	Auth         *serverAuthWire   `json:"auth,omitempty"`
+}
+
+// serverAuthWire mirrors config.ServerAuth with snake_case JSON tags so the
+// wizard can send the same field names the stack YAML schema uses.
+type serverAuthWire struct {
+	Type         string   `json:"type"`
+	Token        string   `json:"token,omitempty"`
+	Header       string   `json:"header,omitempty"`
+	Value        string   `json:"value,omitempty"`
+	Scopes       []string `json:"scopes,omitempty"`
+	ClientID     string   `json:"client_id,omitempty"`
+	ClientSecret string   `json:"client_secret,omitempty"`
 }
 
 func (r probeRequest) toMCPServer() config.MCPServer {
+	var auth *config.ServerAuth
+	if r.Auth != nil {
+		auth = &config.ServerAuth{
+			Type:         r.Auth.Type,
+			Token:        r.Auth.Token,
+			Header:       r.Auth.Header,
+			Value:        r.Auth.Value,
+			Scopes:       r.Auth.Scopes,
+			ClientID:     r.Auth.ClientID,
+			ClientSecret: r.Auth.ClientSecret,
+		}
+	}
 	return config.MCPServer{
 		Name:         r.Name,
 		Image:        r.Image,
@@ -212,6 +237,7 @@ func (r probeRequest) toMCPServer() config.MCPServer {
 		OutputFormat: r.OutputFormat,
 		ReadyTimeout: r.ReadyTimeout,
 		Replicas:     r.Replicas,
+		Auth:         auth,
 	}
 }
 
@@ -246,15 +272,23 @@ func writeProbeError(w http.ResponseWriter, status int, code, message, hint stri
 	})
 }
 
-// scrubSecrets replaces occurrences of env-var values inside the probe error's
-// user-facing strings with "***". Keys with empty values are ignored — those
-// can never accidentally leak, and scrubbing them would turn every error into
-// "***".
-func scrubSecrets(e *probe.Error, env map[string]string) {
-	if e == nil || len(env) == 0 {
+// scrubSecrets replaces occurrences of secret-bearing config values inside
+// the probe error's user-facing strings with "***": env-var values plus the
+// auth block's token, header value, and client secret. Empty values are
+// ignored — those can never accidentally leak, and scrubbing them would turn
+// every error into "***".
+func scrubSecrets(e *probe.Error, cfg config.MCPServer) {
+	if e == nil {
 		return
 	}
-	for _, v := range env {
+	secrets := make([]string, 0, len(cfg.Env)+3)
+	for _, v := range cfg.Env {
+		secrets = append(secrets, v)
+	}
+	if cfg.Auth != nil {
+		secrets = append(secrets, cfg.Auth.Token, cfg.Auth.Value, cfg.Auth.ClientSecret)
+	}
+	for _, v := range secrets {
 		if v == "" {
 			continue
 		}
