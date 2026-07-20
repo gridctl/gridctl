@@ -349,7 +349,7 @@ func Validate(s *Stack) error {
 				if server.OpenAPI.TLS.KeyFile != "" && server.OpenAPI.TLS.CertFile == "" {
 					errs = append(errs, ValidationError{tlsPrefix + ".certFile", "required when keyFile is set"})
 				}
-				}
+			}
 			// Operations filter validation
 			if server.OpenAPI.Operations != nil {
 				if len(server.OpenAPI.Operations.Include) > 0 && len(server.OpenAPI.Operations.Exclude) > 0 {
@@ -486,6 +486,9 @@ func Validate(s *Stack) error {
 	// Per-client access scoping validation
 	errs = append(errs, validateClients(s, serverNames)...)
 
+	// Budget and rate limit validation
+	errs = append(errs, validateLimits(s, serverNames)...)
+
 	if len(errs) > 0 {
 		return errs
 	}
@@ -547,6 +550,115 @@ func validateClients(s *Stack, serverNames map[string]bool) ValidationErrors {
 		}
 	}
 	return errs
+}
+
+// validateLimits checks the optional `limits:` block. Each entry must scope
+// to exactly one of client/server/tool; server and tool scopes must reference
+// declared servers (tool existence itself is a runtime property, mirroring
+// validateClients); numeric fields must be in range; and duplicate scope+key
+// pairs within a list are rejected because two entries on the same scope
+// would race for the same counter.
+func validateLimits(s *Stack, serverNames map[string]bool) ValidationErrors {
+	var errs ValidationErrors
+	if s.Limits == nil {
+		return errs
+	}
+
+	// validateScope checks the shared one-of scope contract and returns the
+	// dedupe key ("" when the scope itself is invalid). Client keys are
+	// lower-slugged for deduping because the runtime normalizes them the
+	// same way: "Claude Code" and "claude-code" would share one counter.
+	validateScope := func(prefix, client, server, tool string) string {
+		kind, key, ok := limitScopeKey(client, server, tool)
+		if !ok {
+			errs = append(errs, ValidationError{prefix, "must set exactly one of 'client', 'server', or 'tool'"})
+			return ""
+		}
+		switch kind {
+		case "client":
+			key = slugifyLimitClientKey(key)
+		case "server":
+			if !serverNames[key] {
+				errs = append(errs, ValidationError{prefix + ".server", fmt.Sprintf("references unknown MCP server '%s'", key)})
+			}
+		case "tool":
+			srv, _, wellFormed := splitPrefixedToolName(key)
+			if !wellFormed {
+				errs = append(errs, ValidationError{prefix + ".tool", fmt.Sprintf("tool '%s' must be a prefixed name (server__tool)", key)})
+			} else if !serverNames[srv] {
+				errs = append(errs, ValidationError{prefix + ".tool", fmt.Sprintf("tool '%s' references unknown MCP server '%s'", key, srv)})
+			}
+		}
+		return kind + ":" + key
+	}
+
+	seenBudgets := make(map[string]bool, len(s.Limits.Budgets))
+	for i := range s.Limits.Budgets {
+		b := &s.Limits.Budgets[i]
+		prefix := fmt.Sprintf("limits.budgets[%d]", i)
+		if scope := validateScope(prefix, b.Client, b.Server, b.Tool); scope != "" {
+			if seenBudgets[scope] {
+				errs = append(errs, ValidationError{prefix, fmt.Sprintf("duplicate budget for %s", scope)})
+			}
+			seenBudgets[scope] = true
+		}
+		if b.MaxUSD <= 0 {
+			errs = append(errs, ValidationError{prefix + ".max_usd", "must be positive"})
+		}
+		switch b.Period {
+		case "daily", "weekly", "monthly":
+			// valid
+		default:
+			errs = append(errs, ValidationError{prefix + ".period", "must be 'daily', 'weekly', or 'monthly'"})
+		}
+		if b.WarnAtPercent < 0 || b.WarnAtPercent > 99 {
+			errs = append(errs, ValidationError{prefix + ".warn_at_percent", "must be between 1 and 99 (omit to disable)"})
+		}
+	}
+
+	seenRates := make(map[string]bool, len(s.Limits.RateLimits))
+	for i := range s.Limits.RateLimits {
+		r := &s.Limits.RateLimits[i]
+		prefix := fmt.Sprintf("limits.rate_limits[%d]", i)
+		if scope := validateScope(prefix, r.Client, r.Server, r.Tool); scope != "" {
+			if seenRates[scope] {
+				errs = append(errs, ValidationError{prefix, fmt.Sprintf("duplicate rate limit for %s", scope)})
+			}
+			seenRates[scope] = true
+		}
+		if r.CallsPerMinute <= 0 {
+			errs = append(errs, ValidationError{prefix + ".calls_per_minute", "must be positive"})
+		}
+		if r.Burst < 0 {
+			errs = append(errs, ValidationError{prefix + ".burst", "must not be negative"})
+		}
+	}
+	return errs
+}
+
+// slugifyLimitClientKey lower-slugs a limits client key the way the runtime
+// normalizes client identities (lowercase, separators collapsed to hyphens),
+// without importing pkg/mcp — the same import-cycle rationale as
+// splitPrefixedToolName. Used only for duplicate detection; alias-table
+// variants the runtime also folds (e.g. "claude-ai" vs "claude-desktop")
+// are caught at policy compile time with a WARN instead.
+func slugifyLimitClientKey(key string) string {
+	var b strings.Builder
+	b.Grow(len(key))
+	prevSep := true
+	for _, r := range strings.ToLower(strings.TrimSpace(key)) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.':
+			b.WriteRune(r)
+			prevSep = false
+		default:
+			if !prevSep {
+				b.WriteByte('-')
+				prevSep = true
+			}
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
 }
 
 // splitPrefixedToolName splits a "server__tool" name into its server and tool
