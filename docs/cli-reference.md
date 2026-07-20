@@ -44,6 +44,7 @@ Plain tables: `status`, `skill list`, `pins list`, `optimize`, and `telemetry st
 |---|---|
 | `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--name <name>` to set the server entry name (default `gridctl`), `--client-id <id>` to bind the link to a `clients:` access profile, `--force` to overwrite an existing entry, `-p` / `--port <port>` to target a non-default gateway port (auto-detected from the running daemon, else 8180). |
 | `gridctl unlink [client]` | Remove gridctl from an LLM client's config; `-a` / `--all` for every client, `--name <name>` to target a non-default entry, `--dry-run` to preview. |
+| `gridctl import [client]` | The reverse of link: scan installed clients for existing MCP server definitions and append selected ones to stack.yaml (client configs are read-only; the stack file is backed up first). Dedupes identical servers across clients with provenance, filters the gateway's own entry, skips name collisions in non-interactive runs (interactive runs prompt to skip, rename, or overwrite), and offers plaintext env secrets into the variable store as `${var:KEY}`. `-a` / `--all`, `--dry-run`, `-y` / `--yes`, `-f` / `--file <stack.yaml>`, `--no-vault`, `--format json` or `--json`. Exit `0` imported or nothing to do, `1` cancelled, `2` infrastructure or validation error. |
 
 ## Global context
 

@@ -79,6 +79,18 @@ curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | s
 brew uninstall gridctl/tap/gridctl
 ```
 
+## Migrating an existing MCP setup
+
+If your clients (Claude Desktop, Cursor, VS Code, and others) already carry MCP server definitions, you do not need to re-type them into stack.yaml:
+
+```bash
+gridctl import                # Scan all detected clients, pick servers interactively
+gridctl import cursor         # Import from one client
+gridctl import --all --dry-run  # Preview everything without writing
+```
+
+The scan is read-only on client configs; the only file modified is your stack file, which is backed up first. Identical servers found in several clients are imported once (their provenance is shown), entries pointing at the gridctl gateway itself are filtered out, and plaintext secret-looking env values are offered into the encrypted variable store as `${var:KEY}` references. After importing, run `gridctl apply` to deploy and `gridctl link` to point the clients at the gateway.
+
 ## Container runtime
 
 Gridctl requires a container runtime for workloads that run in containers (MCP servers with `image` and resources). Docker is detected by default; [Podman](https://podman.io) is also fully supported.

@@ -104,6 +104,8 @@ gridctl link claude       # Link a specific client
 gridctl link --all        # Link all detected clients at once
 ```
 
+Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way.
+
 Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, Antigravity, OpenCode, Grok Build, Continue, Cline, AnythingLLM, Roo, Zed, Goose
 
 <details>
