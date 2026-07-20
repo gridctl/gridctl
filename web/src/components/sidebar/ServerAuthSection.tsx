@@ -17,8 +17,11 @@ import type { ServerAuthInfo } from '../../types';
  *
  * Authorize opens the provider's consent page in a popup and long-polls the
  * daemon's wait endpoint; the popup self-closes after the callback and the
- * 3s status poll flips the canvas node live. When the popup is blocked, the
- * authorization URL is rendered with a copy button instead.
+ * 3s status poll flips the canvas node live. The waiting phase is always
+ * escapable: a Cancel button closes the popup and aborts the wait, and
+ * closing the provider window by hand resets to idle within about a second.
+ * When the popup is blocked, the authorization URL is rendered as a plain
+ * anchor (anchor clicks are never popup-blocked) with a copy button.
  */
 
 type FlowPhase =
@@ -40,13 +43,59 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
   const [detail, setDetail] = useState<ServerAuthInfo | null>(null);
   const [copied, setCopied] = useState(false);
   const mounted = useRef(true);
+  const popupRef = useRef<Window | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      // Abort the wait long-poll so an unmounted section never leaves a
+      // request hanging. The popup stays open — the user may still be
+      // mid-consent, and the daemon completes the flow without us.
+      abortRef.current?.abort();
     };
   }, []);
+
+  // The Sidebar reuses one instance across node selections, so a retarget to
+  // another server must not inherit the previous server's flow: abort the
+  // in-flight wait (the popup stays open; the daemon completes the flow and
+  // the status poll reflects it) and start the new server at idle.
+  const prevServerName = useRef(serverName);
+  const prevAuthStatus = useRef(authStatus);
+  useEffect(() => {
+    if (prevServerName.current === serverName) return;
+    prevServerName.current = serverName;
+    prevAuthStatus.current = authStatus;
+    abortRef.current?.abort();
+    popupRef.current = null;
+    setPhase({ kind: 'idle' });
+    setCopied(false);
+  }, [serverName, authStatus]);
+
+  // The parent's authStatus arrives via the 3s status poll; a stale local
+  // done/failed message beside a fresh status badge reads as a contradiction.
+  // Reset terminal phases to idle whenever the status transitions.
+  useEffect(() => {
+    if (prevAuthStatus.current === authStatus) return;
+    prevAuthStatus.current = authStatus;
+    setPhase((p) => (p.kind === 'done' || p.kind === 'failed' ? { kind: 'idle' } : p));
+  }, [authStatus]);
+
+  // While waiting, poll the retained popup handle so closing the provider
+  // window by hand cancels the flow instead of leaving the section stuck.
+  useEffect(() => {
+    if (phase.kind !== 'waiting') return;
+    const popup = popupRef.current;
+    if (!popup) return;
+    const interval = window.setInterval(() => {
+      if (!popup.closed) return;
+      window.clearInterval(interval);
+      popupRef.current = null;
+      abortRef.current?.abort();
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [phase.kind]);
 
   // Scopes are only in the auth detail endpoint, not the status payload.
   // Best effort: a failure leaves the section on status-payload data alone.
@@ -66,21 +115,46 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
   const handleAuthorize = useCallback(async () => {
     setPhase({ kind: 'starting' });
     setCopied(false);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const login = await beginServerAuthorization(serverName);
       if (!mounted.current) return;
 
-      const popup = window.open(login.authorize_url, '_blank', 'noopener,width=560,height=720');
+      // No 'noopener' here: window.open would then return null even on
+      // success, and the retained handle is what powers Cancel and the
+      // closed-popup detection. The blocked-state fallback anchor keeps
+      // rel="noopener" instead.
+      const popup = window.open(login.authorize_url, '_blank', 'width=560,height=720');
+      // Sever the popup's back-reference so the provider page cannot
+      // navigate this tab (reverse tabnabbing); our own handle keeps
+      // working for close() and the closed-poll.
+      if (popup) popup.opener = null;
+      popupRef.current = popup;
       setPhase({ kind: 'waiting', authorizeUrl: login.authorize_url, popupBlocked: popup == null });
 
-      await waitServerAuthorization(serverName, login.state);
+      await waitServerAuthorization(serverName, login.state, controller.signal);
       if (!mounted.current) return;
+      popupRef.current = null;
       setPhase({ kind: 'done' });
     } catch (err) {
       if (!mounted.current) return;
+      // An aborted wait (Cancel, closed popup, unmount) returns silently to
+      // idle — never to the failure box.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setPhase({ kind: 'idle' });
+        return;
+      }
       setPhase({ kind: 'failed', message: err instanceof Error ? err.message : String(err) });
     }
   }, [serverName]);
+
+  const handleCancel = useCallback(() => {
+    popupRef.current?.close();
+    popupRef.current = null;
+    abortRef.current?.abort();
+    setPhase({ kind: 'idle' });
+  }, []);
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -175,6 +249,18 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
           <KeyRound size={11} />
           {busy ? 'Waiting for provider…' : authorized ? 'Re-authorize' : 'Authorize'}
         </button>
+        {phase.kind === 'waiting' && (
+          <button
+            type="button"
+            onClick={handleCancel}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors',
+              'text-text-muted border border-border/50 hover:text-text-primary hover:border-border',
+            )}
+          >
+            Cancel
+          </button>
+        )}
         {authorized && (
           <button
             type="button"
@@ -193,17 +279,23 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
       </div>
 
       {phase.kind === 'waiting' && phase.popupBlocked && (
-        <div className="p-2 rounded-md bg-status-pending/5 border border-status-pending/20 space-y-1.5">
+        <div
+          role="status"
+          className="p-2 rounded-md bg-status-pending/5 border border-status-pending/20 space-y-1.5"
+        >
           <p className="text-[11px] text-status-pending font-medium">
-            Popup blocked. Open this URL to authorize:
+            Popup blocked. Open the authorization page yourself:
           </p>
           <div className="flex items-center gap-1.5">
-            <span
-              className="flex-1 text-[10px] text-text-secondary font-mono truncate bg-background/50 px-2 py-1 rounded-md"
+            <a
+              href={phase.authorizeUrl}
+              target="_blank"
+              rel="noopener"
               title={phase.authorizeUrl}
+              className="flex-1 text-[11px] text-secondary hover:text-secondary-light underline underline-offset-2 truncate transition-colors"
             >
-              {phase.authorizeUrl}
-            </span>
+              Open authorization page
+            </a>
             <button
               type="button"
               onClick={() => handleCopyUrl(phase.authorizeUrl)}
@@ -214,6 +306,13 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
             </button>
           </div>
         </div>
+      )}
+
+      {phase.kind === 'waiting' && (
+        <p className="text-[10px] text-text-muted">
+          Remote daemon? Authorize from the machine running gridctl with
+          'gridctl auth login {serverName}', or use --manual over SSH.
+        </p>
       )}
 
       {phase.kind === 'done' && (
