@@ -18,7 +18,8 @@ type Stack struct {
 	Networks   []Network        `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
 	MCPServers []MCPServer      `yaml:"mcp-servers"`
 	Resources  []Resource       `yaml:"resources,omitempty"`
-	Clients    *ClientsConfig   `yaml:"clients,omitempty"` // Optional per-client access scoping (NetworkPolicy semantics)
+	Clients    *ClientsConfig   `yaml:"clients,omitempty"`                        // Optional per-client access scoping (NetworkPolicy semantics)
+	Limits     *LimitsConfig    `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional budgets and rate limits enforced at dispatch
 
 	// ClientModels declares which model each connecting client runs, purely
 	// for cost attribution: tool calls from a declared client are priced at
@@ -77,6 +78,86 @@ type ClientProfile struct {
 	// Tools is an allow-list of prefixed tool names. Empty means all tools
 	// within the allowed servers.
 	Tools []string `yaml:"tools,omitempty"`
+}
+
+// LimitsConfig is the optional top-level `limits:` block: declarative budget
+// caps and rate limits enforced on the tool-call dispatch path. Omitting the
+// block preserves legacy behavior — nothing is ever limited (Article IX).
+//
+// Both entry kinds scope to exactly one of client, server, or tool. The
+// client key is the stable client identifier used by clients.profiles and
+// client_models; server is the stack server name; tool is the router's
+// prefixed name ("github__search_code").
+//
+// Budgets govern attributed cost only: a call whose model cannot be priced
+// records tokens but no dollars, so it spends outside every budget's sight.
+// Rate limits need no pricing and are the recommended backstop.
+type LimitsConfig struct {
+	Budgets    []BudgetLimit `yaml:"budgets,omitempty" json:"budgets,omitempty"`
+	RateLimits []RateLimit   `yaml:"rate_limits,omitempty" json:"rate_limits,omitempty"`
+}
+
+// BudgetLimit caps attributed dollar spend for one scope over a calendar
+// window. Windows are aligned to the daemon's local timezone: daily resets at
+// midnight, weekly on Monday 00:00, monthly on the 1st. Spend is settled
+// after each call completes (cost is only known post-call), so concurrent or
+// in-flight calls can overshoot the cap by their own cost; the next call
+// after the cap is reached is denied.
+type BudgetLimit struct {
+	Client string `yaml:"client,omitempty" json:"client,omitempty"`
+	Server string `yaml:"server,omitempty" json:"server,omitempty"`
+	Tool   string `yaml:"tool,omitempty" json:"tool,omitempty"`
+	// MaxUSD is the cap for the window, in dollars. Must be positive.
+	MaxUSD float64 `yaml:"max_usd" json:"max_usd"`
+	// Period is "daily", "weekly", or "monthly".
+	Period string `yaml:"period" json:"period"`
+	// WarnAtPercent optionally fires a one-time WARN log and a warn state in
+	// status surfaces when spend crosses this percentage of the cap (1-99).
+	WarnAtPercent int `yaml:"warn_at_percent,omitempty" json:"warn_at_percent,omitempty"`
+}
+
+// RateLimit is a token-bucket call rate for one scope. Burst is the bucket
+// capacity: how many calls may land at once before the sustained rate
+// applies. Zero means a default of max(5, calls_per_minute/6).
+type RateLimit struct {
+	Client string `yaml:"client,omitempty" json:"client,omitempty"`
+	Server string `yaml:"server,omitempty" json:"server,omitempty"`
+	Tool   string `yaml:"tool,omitempty" json:"tool,omitempty"`
+	// CallsPerMinute is the sustained rate. Must be positive.
+	CallsPerMinute int `yaml:"calls_per_minute" json:"calls_per_minute"`
+	// Burst is the bucket capacity; 0 selects the default.
+	Burst int `yaml:"burst,omitempty" json:"burst,omitempty"`
+}
+
+// limitScopeKey returns the entry's scope kind ("client", "server", or
+// "tool") and key, or ok=false when not exactly one scope field is set.
+func limitScopeKey(client, server, tool string) (kind, key string, ok bool) {
+	set := 0
+	if client != "" {
+		set++
+		kind, key = "client", client
+	}
+	if server != "" {
+		set++
+		kind, key = "server", server
+	}
+	if tool != "" {
+		set++
+		kind, key = "tool", tool
+	}
+	return kind, key, set == 1
+}
+
+// ScopeKey returns the budget's scope kind and key; ok=false when the entry
+// does not set exactly one of client/server/tool.
+func (b BudgetLimit) ScopeKey() (kind, key string, ok bool) {
+	return limitScopeKey(b.Client, b.Server, b.Tool)
+}
+
+// ScopeKey returns the rate limit's scope kind and key; ok=false when the
+// entry does not set exactly one of client/server/tool.
+func (r RateLimit) ScopeKey() (kind, key string, ok bool) {
+	return limitScopeKey(r.Client, r.Server, r.Tool)
 }
 
 // LoggingConfig configures log file output with automatic rotation.
