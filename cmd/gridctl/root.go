@@ -131,6 +131,7 @@ func init() {
 		tracesCmd:    groupObserve,
 		telemetryCmd: groupObserve,
 		optimizeCmd:  groupObserve,
+		limitsCmd:    groupObserve,
 		infoCmd:      groupSystem,
 		doctorCmd:    groupSystem,
 		openCmd:      groupSystem,
