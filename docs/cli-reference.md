@@ -20,6 +20,7 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, and `te
 - [Server authorization (OAuth)](#server-authorization-oauth)
 - [Traces](#traces)
 - [Optimize](#optimize)
+- [Limits](#limits)
 - [Telemetry](#telemetry)
 - [System](#system)
 
@@ -151,6 +152,19 @@ Downstream authorization for external servers declared with `auth: {type: oauth}
 | `gridctl optimize --min-impact 0.10` | Filter findings below a weekly USD impact threshold (info findings always shown). |
 | `gridctl optimize --severity warn,critical` | Allowlist by severity. |
 | `gridctl optimize --format json` | Machine-readable `OptimizeReport` (exit `0`/`1`/`2`); `--json` is an alias. |
+
+## Limits
+
+Show consumption against the budgets and rate limits declared under
+`limits:` in stack.yaml (see the [config schema](config-schema.md#limits-budgets-and-rate-limits)).
+Exit codes: `0` all clear or no limits configured, `1` at least one budget
+exceeded, `2` infrastructure error (gateway unreachable).
+
+| Command | Purpose |
+|---|---|
+| `gridctl limits` | Table of every budget (spend, cap, window, state) and rate limit. Prints a sample `limits:` block when none is configured. |
+| `gridctl limits --stack <name>` | Pick a specific stack when more than one is running. |
+| `gridctl limits --format json` | Machine-readable status report; `--json` is an alias, `--plain` for tab-separated rows. |
 
 ## Telemetry
 
