@@ -1218,6 +1218,57 @@ export async function fetchStackRecipes(): Promise<StackRecipe[]> {
   return fetchJSON<StackRecipe[]>('/api/stack/recipes');
 }
 
+// === Limits API ===
+
+/**
+ * One budget's consumption within its current window. Numeric fields are
+ * always present on budget entries: a zero spent_usd is a real zero, not an
+ * unknown. Mirrors pkg/limits BudgetStatus.
+ */
+export interface LimitBudgetStatus {
+  max_usd: number;
+  spent_usd: number;
+  percent: number;
+  period: string;
+  warn_at_percent?: number;
+  window_start: string;
+  window_end: string;
+}
+
+/** One rate limit's configuration snapshot. Mirrors pkg/limits RateStatus. */
+export interface LimitRateStatus {
+  calls_per_minute: number;
+  burst: number;
+}
+
+export type LimitState = 'ok' | 'warn' | 'exceeded';
+
+/**
+ * One limit's snapshot. Exactly one of budget or rate is set, matching kind.
+ * Mirrors pkg/limits EntryStatus.
+ */
+export interface LimitEntry {
+  kind: 'budget' | 'rate';
+  scope: 'client' | 'server' | 'tool';
+  key: string;
+  state: LimitState;
+  budget?: LimitBudgetStatus;
+  rate?: LimitRateStatus;
+}
+
+export interface LimitsReport {
+  configured: boolean;
+  entries: LimitEntry[];
+}
+
+/**
+ * Get consumption against every configured budget and rate limit.
+ * GET /api/limits
+ */
+export async function fetchLimits(): Promise<LimitsReport> {
+  return fetchJSON<LimitsReport>('/api/limits');
+}
+
 // === Server Catalog API ===
 
 /**
