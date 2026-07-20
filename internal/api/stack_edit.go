@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 
+	"github.com/gridctl/gridctl/internal/stackedit"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,10 +21,6 @@ var (
 	errStackFileEmpty = errors.New("no stack file configured")
 )
 
-// stackFileLocks serializes read-verify-write cycles on a per-path basis. The
-// daemon typically operates on one stack file, so contention is low; the map
-// keeps the door open for multi-stack futures without a global chokepoint.
-var stackFileLocks sync.Map // map[string]*sync.Mutex
 
 // stackEditBetweenReadsHook fires after the initial read and before the
 // pre-write re-read on every read-verify-write cycle in this package
@@ -58,12 +54,15 @@ func fireBetweenReadsHook() {
 	}
 }
 
+// stackFileLock and atomicWrite delegate to stackedit so the API server and
+// the import CLI share one write discipline (and, within a process, one lock
+// map per path).
 func stackFileLock(path string) *sync.Mutex {
-	if m, ok := stackFileLocks.Load(path); ok {
-		return m.(*sync.Mutex)
-	}
-	m, _ := stackFileLocks.LoadOrStore(path, &sync.Mutex{})
-	return m.(*sync.Mutex)
+	return stackedit.PathLock(path)
+}
+
+func atomicWrite(path string, data []byte) error {
+	return stackedit.AtomicWrite(path, data)
 }
 
 // setServerTools updates the `tools:` field on the named MCP server in the
@@ -214,16 +213,7 @@ func patchMultipleServerTools(source []byte, updates []serverToolsUpdate) ([]byt
 		}
 	}
 
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(&root); err != nil {
-		return nil, fmt.Errorf("marshal stack yaml: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("marshal stack yaml: %w", err)
-	}
-	return buf.Bytes(), nil
+	return encodeStackYAML(&root)
 }
 
 // patchServerTools rewrites the given YAML source with tools set to the
@@ -267,16 +257,7 @@ func patchServerTools(source []byte, serverName string, tools []string) ([]byte,
 		return nil, err
 	}
 
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(&root); err != nil {
-		return nil, fmt.Errorf("marshal stack yaml: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("marshal stack yaml: %w", err)
-	}
-	return buf.Bytes(), nil
+	return encodeStackYAML(&root)
 }
 
 // findMappingValue returns the value node associated with key in a mapping,
@@ -356,55 +337,4 @@ func encodeStackYAML(root *yaml.Node) ([]byte, error) {
 		return nil, fmt.Errorf("marshal stack yaml: %w", err)
 	}
 	return buf.Bytes(), nil
-}
-
-// atomicWrite writes data to path via a same-directory temp file + fsync +
-// rename. A mid-write crash leaves the original file intact; a mid-rename
-// crash on a POSIX filesystem leaves either the old or the new file at path,
-// never a truncated mix.
-func atomicWrite(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-
-	cleanup := func() { _ = os.Remove(tmpName) }
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("fsync temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return fmt.Errorf("close temp file: %w", err)
-	}
-
-	// Preserve existing file mode when possible. A fresh CreateTemp uses 0600
-	// by default; we want whatever perms the original had so operators who set
-	// group-readable stacks keep that property.
-	if info, err := os.Stat(path); err == nil {
-		_ = os.Chmod(tmpName, info.Mode().Perm())
-	}
-
-	if err := os.Rename(tmpName, path); err != nil {
-		cleanup()
-		return fmt.Errorf("rename temp file: %w", err)
-	}
-
-	// fsync the parent directory so the rename itself is durable. Without
-	// this, a power loss immediately after rename can revert to the original
-	// file on some filesystems. Errors here are non-fatal — the write
-	// succeeded; we only lose the crash-consistency guarantee.
-	if d, err := os.Open(dir); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
-	}
-	return nil
 }
