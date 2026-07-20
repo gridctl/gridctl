@@ -165,6 +165,18 @@ type Gateway struct {
 	// client sees every tool (legacy behavior). Guarded by mu; replaced
 	// wholesale on apply and hot-reload.
 	clientPolicy *ClientAccessPolicy
+
+	// callGates are veto-capable pre-call policy checks run in slice order
+	// on every tools/call, after the client-scope check and before routing.
+	// See the CallGate doc in types.go for the fixed-order-slice design
+	// decision. Canonical order: rate limits before budgets, so a
+	// rate-limited caller gets the cheaper check's message. Guarded by mu;
+	// replaced wholesale on apply and hot-reload.
+	callGates []CallGate
+
+	// costSettler receives each priced call's cost after observation so
+	// budget windows settle synchronously. Guarded by mu.
+	costSettler CostSettler
 }
 
 // NewGateway creates a new MCP gateway.
@@ -244,6 +256,24 @@ func (g *Gateway) SetClientAccessPolicy(policy *ClientAccessPolicy) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.clientPolicy = policy
+}
+
+// SetCallGates installs the pre-call policy gates, replacing any previous
+// set. Passing nil (or an empty slice) removes all gates, restoring
+// unrestricted dispatch. Like SetClientAccessPolicy, the slice is read fresh
+// on every call, so a hot-reload swap takes effect on the next request.
+func (g *Gateway) SetCallGates(gates []CallGate) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.callGates = gates
+}
+
+// SetCostSettler installs the post-call cost settlement hook. Passing nil
+// removes it.
+func (g *Gateway) SetCostSettler(s CostSettler) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.costSettler = s
 }
 
 // clientAccessPolicy returns the current policy under a read lock.
@@ -1569,6 +1599,19 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		}, nil
 	}
 
+	// Run the pre-call policy gates (rate limits, budgets; see callGates).
+	// The first denial short-circuits with the gate's model-readable message.
+	// Code-mode inner calls re-enter this function per callTool, so gates
+	// cover the sandboxed path without extra wiring.
+	if gateCall, gate, decision := g.checkCallGates(ctx, params.Name); gate != "" {
+		g.logger.Debug("tool call denied by gate",
+			"gate", gate, "client", gateCall.ClientAccessID, "tool", params.Name)
+		return &ToolCallResult{
+			Content: []Content{NewTextContent(decision.Message)},
+			IsError: true,
+		}, nil
+	}
+
 	// Child span: routing decision.
 	tracer := otel.Tracer("gridctl.gateway")
 	_, routeSpan := tracer.Start(ctx, "mcp.routing")
@@ -1699,12 +1742,54 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 				Result:     result,
 			})
 			setGenAISpanAttributes(span, client.Name(), toolName, clientID, summary, result)
+			// Settle the priced cost into budget windows synchronously, on
+			// the same path that computed it. Unpriced calls settle nothing
+			// (the attribution gap is documented, never papered over).
+			if summary.HasCost {
+				g.mu.RLock()
+				settler := g.costSettler
+				g.mu.RUnlock()
+				if settler != nil {
+					settler.SettleToolCallCost(ctx, GateCall{
+						PrefixedTool:   params.Name,
+						ServerName:     client.Name(),
+						ClientAccessID: ClientAccessIDFromContext(ctx),
+					}, summary.CostUSD)
+				}
+			}
 		} else {
 			go obs.ObserveToolCall(client.Name(), replicaID, params.Arguments, result)
 		}
 	}
 
 	return result, nil
+}
+
+// checkCallGates runs the installed gates in order against one call. It
+// returns the resolved GateCall, the name of the denying gate, and its
+// decision; gate == "" means every gate allowed (or none are installed).
+func (g *Gateway) checkCallGates(ctx context.Context, prefixedName string) (GateCall, string, GateDecision) {
+	g.mu.RLock()
+	gates := g.callGates
+	g.mu.RUnlock()
+	if len(gates) == 0 {
+		return GateCall{}, "", GateDecision{Allow: true}
+	}
+	serverName, _, err := ParsePrefixedTool(prefixedName)
+	if err != nil {
+		serverName = ""
+	}
+	call := GateCall{
+		PrefixedTool:   prefixedName,
+		ServerName:     serverName,
+		ClientAccessID: ClientAccessIDFromContext(ctx),
+	}
+	for _, gate := range gates {
+		if decision := gate.CheckToolCall(ctx, call); !decision.Allow {
+			return call, gate.Name(), decision
+		}
+	}
+	return call, "", GateDecision{Allow: true}
 }
 
 // setGenAISpanAttributes attaches OpenTelemetry GenAI semantic-convention
