@@ -1218,6 +1218,71 @@ export async function fetchStackRecipes(): Promise<StackRecipe[]> {
   return fetchJSON<StackRecipe[]>('/api/stack/recipes');
 }
 
+// === Server Catalog API ===
+
+/**
+ * One installable server from the catalog: the embedded curated set plus
+ * MCP Registry search results. Mirrors pkg/catalog.Entry.
+ */
+export interface CatalogInput {
+  name: string;
+  description?: string;
+  required?: boolean;
+  secret?: boolean;
+  arg?: boolean;
+  auth?: boolean;
+  default?: string;
+  placeholder?: string;
+  choices?: string[];
+  format?: string;
+}
+
+export interface CatalogInstall {
+  type: 'image' | 'command' | 'url';
+  transport: string;
+  image?: string;
+  port?: number;
+  command?: string[];
+  url?: string;
+  auth_type?: string;
+  auth_header?: string;
+}
+
+export interface CatalogEntry {
+  name: string;
+  title?: string;
+  description: string;
+  tier?: 'curated' | 'registry';
+  namespace?: string;
+  homepage?: string;
+  repository?: string;
+  status?: string;
+  install: CatalogInstall;
+  inputs?: CatalogInput[];
+  unsupported?: string;
+}
+
+export interface CatalogResponse {
+  query: string;
+  source: string;
+  stale?: boolean;
+  registry_error?: string;
+  servers: CatalogEntry[];
+}
+
+/**
+ * Search the server catalog. An empty query lists the curated set only;
+ * with a query the MCP Registry is merged in after curated results.
+ * GET /api/catalog
+ */
+export async function fetchCatalog(query = '', source = 'all'): Promise<CatalogResponse> {
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (source !== 'all') params.set('source', source);
+  const qs = params.toString();
+  return fetchJSON<CatalogResponse>(`/api/catalog${qs ? `?${qs}` : ''}`);
+}
+
 // === Wizard Draft API ===
 
 export interface WizardDraft {
