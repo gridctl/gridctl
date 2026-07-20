@@ -116,6 +116,7 @@ func init() {
 		logsCmd:      groupStack,
 		linkCmd:      groupClients,
 		unlinkCmd:    groupClients,
+		importCmd:    groupClients,
 		ctxCmd:       groupClients,
 		skillCmd:     groupSkills,
 		activateCmd:  groupSkills,

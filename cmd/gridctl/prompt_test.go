@@ -31,6 +31,9 @@ func (f *fakeProvisioner) Unlink(string, string) error {
 	return nil
 }
 func (f *fakeProvisioner) NeedsBridge() bool { return false }
+func (f *fakeProvisioner) ListServers(string) ([]provisioner.ServerEntry, error) {
+	return nil, nil
+}
 
 // swapSelector replaces the interactive client selector for one test.
 func swapSelector(t *testing.T, fn func(string, []provisioner.DetectedClient) ([]provisioner.DetectedClient, error)) {
