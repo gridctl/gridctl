@@ -449,6 +449,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stack/spec", s.handleStackSpec)
 	mux.HandleFunc("GET /api/stack/export", s.handleStackExport)
 	mux.HandleFunc("GET /api/stack/recipes", s.handleStackRecipes)
+	mux.HandleFunc("GET /api/catalog", s.handleCatalog)
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
 	mux.HandleFunc("POST /api/stack/initialize", s.handleStackInitialize)
 	mux.HandleFunc("PATCH /api/stack/telemetry", s.handlePatchStackTelemetry)
