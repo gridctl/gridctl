@@ -6,16 +6,20 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/pins"
 )
 
-// pinsToolDiff is the wire form of pins.ToolDiff.
+// pinsToolDiff is the wire form of pins.ToolDiff. Findings merge the pin-time
+// scan results with the cross-server shadowing check (P006), which runs here
+// because only the API layer has the router's full tool inventory in hand.
 type pinsToolDiff struct {
-	Name           string `json:"name"`
-	OldHash        string `json:"old_hash"`
-	NewHash        string `json:"new_hash"`
-	OldDescription string `json:"old_description"`
-	NewDescription string `json:"new_description"`
+	Name           string         `json:"name"`
+	OldHash        string         `json:"old_hash"`
+	NewHash        string         `json:"new_hash"`
+	OldDescription string         `json:"old_description"`
+	NewDescription string         `json:"new_description"`
+	Findings       []pins.Finding `json:"findings"`
 }
 
 // pinsDiffResponse is the document returned by GET /api/pins/{server}/diff.
@@ -32,7 +36,7 @@ type pinsDiffResponse struct {
 	RemovedTools   []string       `json:"removed_tools"`
 }
 
-func buildPinsDiffResponse(vr *pins.VerifyResult, liveServerHash string) pinsDiffResponse {
+func buildPinsDiffResponse(vr *pins.VerifyResult, liveServerHash string, shadow map[string][]pins.Finding) pinsDiffResponse {
 	resp := pinsDiffResponse{
 		Server:         vr.ServerName,
 		Status:         vr.Status,
@@ -48,15 +52,58 @@ func buildPinsDiffResponse(vr *pins.VerifyResult, liveServerHash string) pinsDif
 		resp.RemovedTools = []string{}
 	}
 	for _, d := range vr.ModifiedTools {
+		findings := append(append([]pins.Finding{}, d.Findings...), shadow[d.Name]...)
 		resp.ModifiedTools = append(resp.ModifiedTools, pinsToolDiff{
 			Name:           d.Name,
 			OldHash:        d.OldHash,
 			NewHash:        d.NewHash,
 			OldDescription: d.OldDescription,
 			NewDescription: d.NewDescription,
+			Findings:       findings,
 		})
 	}
 	return resp
+}
+
+// scanContext bundles the per-request state for the P006 cross-server
+// shadowing check: the live tool inventory (built once per request, not per
+// server) and the store's scan settings. A nil scanContext means scanning is
+// off and every shadow helper becomes a no-op.
+type scanContext struct {
+	inventory map[string][]string
+	ignore    []string
+}
+
+// newScanContext snapshots the router inventory and scan config, or returns
+// nil when the scanner is disabled.
+func (s *Server) newScanContext() *scanContext {
+	if s.pinStore == nil || !s.pinStore.ScanEnabled() {
+		return nil
+	}
+	inventory := make(map[string][]string)
+	for _, client := range s.gateway.Router().Clients() {
+		tools := client.Tools()
+		names := make([]string, 0, len(tools))
+		for _, t := range tools {
+			names = append(names, t.Name)
+		}
+		inventory[client.Name()] = names
+	}
+	return &scanContext{inventory: inventory, ignore: s.pinStore.ScanIgnoreCodes()}
+}
+
+// shadowFindings runs the P006 check for the given tools of serverName.
+func (sc *scanContext) shadowFindings(serverName string, tools []mcp.Tool) map[string][]pins.Finding {
+	if sc == nil {
+		return nil
+	}
+	out := make(map[string][]pins.Finding)
+	for _, t := range tools {
+		if findings := pins.FilterFindings(pins.ScanShadowing(t, serverName, sc.inventory), sc.ignore); len(findings) > 0 {
+			out[t.Name] = findings
+		}
+	}
+	return out
 }
 
 // handleListPins returns all servers' pin records.
@@ -73,7 +120,32 @@ func (s *Server) handleListPins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	servers := s.pinStore.GetAll()
+	sc := s.newScanContext()
+	for name, sp := range servers {
+		decorateServerPins(sc, name, sp)
+	}
 	writeJSON(w, servers)
+}
+
+// decorateServerPins overlays P006 shadowing findings onto a server's pin
+// records. Stored findings cover the pin-time checks (P001-P005); shadowing
+// is relative to the CURRENT set of registered servers, so it is recomputed
+// per read from stored descriptions. sp is the deep copy returned by the
+// store's getters, so appending in place never touches store state.
+func decorateServerPins(sc *scanContext, serverName string, sp *pins.ServerPins) {
+	if sc == nil || sp == nil {
+		return
+	}
+	tools := make([]mcp.Tool, 0, len(sp.Tools))
+	for _, rec := range sp.Tools {
+		tools = append(tools, mcp.Tool{Name: rec.Name, Description: rec.Description})
+	}
+	shadow := sc.shadowFindings(serverName, tools)
+	for name, extra := range shadow {
+		if rec, ok := sp.Tools[name]; ok {
+			rec.Findings = append(rec.Findings, extra...)
+		}
+	}
 }
 
 // handleGetServerPins returns the pin record for a single server.
@@ -89,6 +161,7 @@ func (s *Server) handleGetServerPins(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "No pins found for server: "+serverName, http.StatusNotFound)
 		return
 	}
+	decorateServerPins(s.newScanContext(), serverName, sp)
 	writeJSON(w, sp)
 }
 
@@ -130,7 +203,7 @@ func (s *Server) handlePinsDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, buildPinsDiffResponse(vr, liveHash))
+	writeJSON(w, buildPinsDiffResponse(vr, liveHash, s.newScanContext().shadowFindings(serverName, tools)))
 }
 
 // handleApprovePins re-pins the current tool definitions for a server, clearing drift.

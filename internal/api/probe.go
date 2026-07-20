@@ -12,6 +12,7 @@ import (
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/pins"
 )
 
 // Concurrency caps. Per-session keeps a single misbehaving tab from swamping
@@ -147,7 +148,7 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, probeResponse{
-		Tools:    toToolsWire(result.Tools),
+		Tools:    s.toToolsWire(result.Tools, cfg),
 		ProbedAt: time.Now().UTC().Format(time.RFC3339),
 		Cached:   result.Cached,
 	})
@@ -246,6 +247,9 @@ type probeToolWire struct {
 	Description  string          `json:"description,omitempty"`
 	InputSchema  json.RawMessage `json:"inputSchema"`
 	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+	// Findings are advisory poisoning-scan results (P001-P005) so the wizard
+	// can flag a suspicious server before it joins the stack. Never blocking.
+	Findings []pins.Finding `json:"findings,omitempty"`
 }
 
 type probeResponse struct {
@@ -272,32 +276,55 @@ func writeProbeError(w http.ResponseWriter, status int, code, message, hint stri
 	})
 }
 
+// configSecrets collects the non-empty secret-bearing values of a server
+// config: env-var values plus the auth block's token, header value, and
+// client secret. The set of "what counts as a secret for this server" lives
+// here once; scrubSecrets and scrubFindings both consume it. Empty values are
+// excluded — those can never accidentally leak, and scrubbing them would turn
+// every string into "***".
+func configSecrets(cfg config.MCPServer) []string {
+	secrets := make([]string, 0, len(cfg.Env)+3)
+	for _, v := range cfg.Env {
+		if v != "" {
+			secrets = append(secrets, v)
+		}
+	}
+	if cfg.Auth != nil {
+		for _, v := range []string{cfg.Auth.Token, cfg.Auth.Value, cfg.Auth.ClientSecret} {
+			if v != "" {
+				secrets = append(secrets, v)
+			}
+		}
+	}
+	return secrets
+}
+
 // scrubSecrets replaces occurrences of secret-bearing config values inside
-// the probe error's user-facing strings with "***": env-var values plus the
-// auth block's token, header value, and client secret. Empty values are
-// ignored — those can never accidentally leak, and scrubbing them would turn
-// every error into "***".
+// the probe error's user-facing strings with "***".
 func scrubSecrets(e *probe.Error, cfg config.MCPServer) {
 	if e == nil {
 		return
 	}
-	secrets := make([]string, 0, len(cfg.Env)+3)
-	for _, v := range cfg.Env {
-		secrets = append(secrets, v)
-	}
-	if cfg.Auth != nil {
-		secrets = append(secrets, cfg.Auth.Token, cfg.Auth.Value, cfg.Auth.ClientSecret)
-	}
-	for _, v := range secrets {
-		if v == "" {
-			continue
-		}
+	for _, v := range configSecrets(cfg) {
 		e.Message = strings.ReplaceAll(e.Message, v, "***")
 		e.Hint = strings.ReplaceAll(e.Hint, v, "***")
 	}
 }
 
-func toToolsWire(tools []mcp.Tool) []probeToolWire {
+// toToolsWire converts probed tools to the wire shape, attaching advisory
+// poisoning-scan findings. The probed server predates any stack membership,
+// but the RUNNING stack's scan settings still apply: scan false suppresses
+// probe findings and scan_ignore filters them, so the wizard never shows
+// findings the operator has deliberately turned off. With no pin store (or
+// pinning disabled), scanning defaults on: pre-deploy advice is the wizard's
+// whole point.
+func (s *Server) toToolsWire(tools []mcp.Tool, cfg config.MCPServer) []probeToolWire {
+	scanEnabled := true
+	var ignore []string
+	if s.pinStore != nil {
+		scanEnabled = s.pinStore.ScanEnabled()
+		ignore = s.pinStore.ScanIgnoreCodes()
+	}
 	out := make([]probeToolWire, len(tools))
 	for i, t := range tools {
 		out[i] = probeToolWire{
@@ -306,6 +333,25 @@ func toToolsWire(tools []mcp.Tool) []probeToolWire {
 			InputSchema:  t.InputSchema,
 			OutputSchema: t.OutputSchema,
 		}
+		if scanEnabled {
+			out[i].Findings = scrubFindings(pins.FilterFindings(pins.ScanTool(t), ignore), cfg)
+		}
 	}
 	return out
+}
+
+// scrubFindings applies the same secret scrubbing as probe errors to finding
+// snippets and decoded payloads, which quote text from an untrusted server
+// and could otherwise echo a credential the user typed into the wizard.
+func scrubFindings(findings []pins.Finding, cfg config.MCPServer) []pins.Finding {
+	if len(findings) == 0 {
+		return nil
+	}
+	for i := range findings {
+		for _, v := range configSecrets(cfg) {
+			findings[i].Snippet = strings.ReplaceAll(findings[i].Snippet, v, "***")
+			findings[i].Decoded = strings.ReplaceAll(findings[i].Decoded, v, "***")
+		}
+	}
+	return findings
 }
