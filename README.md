@@ -158,6 +158,8 @@ Antigravity borrows Windsurf's `serverUrl` field but speaks streamable HTTP, so 
 Declarative, version-controlled MCP environments. Validate before you commit, plan before you apply, and detect the moment your environment drifts from what's in version control. Drift detection runs in the background: the canvas flags servers running but absent from your spec, and declarations in your spec that haven't been deployed.
 
 ```bash
+gridctl search postgres        # Find servers in the catalog and the MCP Registry
+gridctl add github             # Append a catalog server to stack.yaml by name
 gridctl validate stack.yaml    # Lint and schema-check the spec (exit 0/1/2)
 gridctl plan stack.yaml        # Diff against running state
 gridctl apply stack.yaml       # Apply the spec
