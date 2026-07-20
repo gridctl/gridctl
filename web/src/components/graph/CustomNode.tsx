@@ -304,8 +304,11 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             </div>
           )}
 
-          {/* Health indicator (MCP servers only) */}
-          {isServer && (data as MCPServerNodeData).healthy === false && (
+          {/* Health indicator (MCP servers only). Suppressed while the
+              server needs authorization: the amber needs-auth indicator below
+              is the actionable state, and red must never co-render with it. */}
+          {isServer && (data as MCPServerNodeData).healthy === false &&
+            (data as MCPServerNodeData).authStatus !== 'needs_auth' && (
             <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-error/5 border border-status-error/15">
               <HeartPulse size={11} className="text-status-error flex-shrink-0" />
               <span className="text-xs text-status-error/80 font-mono truncate" title={(data as MCPServerNodeData).healthError}>

@@ -1657,6 +1657,19 @@ export interface ProbeServerConfig {
   ssh?: { host: string; user: string; port?: number; identity_file?: string };
   openapi?: { spec: string };
   ready_timeout?: string;
+  auth?: ProbeServerAuth;
+}
+
+// Downstream auth block for external URL probes. Snake_case matches the
+// stack YAML schema (config.ServerAuth) like the rest of the probe wire.
+export interface ProbeServerAuth {
+  type: string;
+  token?: string;
+  header?: string;
+  value?: string;
+  scopes?: string[];
+  client_id?: string;
+  client_secret?: string;
 }
 
 export interface ProbedTool {
@@ -1752,13 +1765,19 @@ export async function beginServerAuthorization(server: string): Promise<ServerAu
 
 /**
  * Block until the authorization flow keyed by state completes, fails, or
- * times out. The backend long-polls; resolve means authorized.
+ * times out. The backend long-polls; resolve means authorized. An optional
+ * AbortSignal cancels the long-poll (rejects with an AbortError DOMException)
+ * when the user cancels or the component unmounts.
  * GET /api/servers/{name}/auth/wait?state=...
  */
-export async function waitServerAuthorization(server: string, state: string): Promise<void> {
+export async function waitServerAuthorization(
+  server: string,
+  state: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(
     `${API_BASE}/api/servers/${encodeURIComponent(server)}/auth/wait?state=${encodeURIComponent(state)}`,
-    { headers: buildHeaders() },
+    { headers: buildHeaders(), signal },
   );
   if (response.status === 401) throw new AuthError('Authentication required');
   if (!response.ok) {

@@ -1076,7 +1076,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/servers/probe
 ```
 
-The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`). The body is capped at 64 KiB.
+The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`, `auth`). The `auth` block uses the stack YAML shape (`type`, `token`, `header`, `value`, `scopes`, `client_id`, `client_secret`) so Test Connection can probe protected external servers; a `type: oauth` server with no stored broker tokens returns the `needs_auth` code. The body is capped at 64 KiB.
 
 `X-Session-ID` is optional; when absent, the remote address is used for per-session accounting. Concurrency is capped at **3 in-flight probes per session** and **10 globally** - excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
 
@@ -1107,7 +1107,7 @@ Error codes:
 - `internal` (500) - Unexpected probe failure
 - Other codes (422) - Probe ran but the upstream rejected the handshake
 
-Env-var values present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
+Env-var values and auth secrets (`auth.token`, `auth.value`, `auth.client_secret`) present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
 
 #### `PATCH /api/mcp-servers/{name}/telemetry`
 
@@ -1125,6 +1125,109 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" \
 **Response:** `{success: true, inventory: [...]}` — same inventory shape as `GET /api/telemetry/inventory`.
 
 **Errors:** `404` when the server is not in the stack; `409 stack_modified`; `502 reload_failed`; `503` when no stack file is configured.
+
+---
+
+### Downstream Server Authorization (OAuth)
+
+These endpoints drive OAuth 2.1 brokering for external URL servers declared with `auth: {type: oauth}` in `stack.yaml`. They power the sidebar Authorize flow in the web UI and the `gridctl auth` command group. The `/api/*` endpoints return `501` when OAuth brokering is disabled on the daemon (the encrypted token store failed to initialize); with brokering enabled but no OAuth-configured servers, `GET /api/auth/servers` returns an empty list. `/oauth/callback` is mounted only when brokering is enabled.
+
+#### `GET /api/auth/servers`
+
+Returns per-server downstream authorization state for every OAuth-configured server.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/auth/servers
+```
+
+**Response:**
+```json
+[
+  {
+    "server": "notion",
+    "resource": "https://mcp.notion.com/mcp",
+    "status": "needs_auth",
+    "issuer": "https://auth.notion.com",
+    "scopes": ["read", "write"],
+    "expiry": "2026-07-19T12:00:00Z"
+  }
+]
+```
+
+`status` is `authorized` or `needs_auth`. `issuer`, `scopes`, and `expiry` are present only when a grant is stored.
+
+#### `POST /api/servers/{name}/auth/login`
+
+Starts the authorization-code flow for a server: discovers the authorization server, registers or reuses a client, and returns the URL the browser must open plus the single-use `state` token that keys the flow.
+
+**Auth:** Yes
+
+**Request:** optional JSON body `{"timeoutSeconds": 300}`; an empty body keeps the broker default. The timeout is capped at 15 minutes.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{}' http://localhost:8180/api/servers/notion/auth/login
+```
+
+**Response:**
+```json
+{
+  "authorize_url": "https://auth.notion.com/authorize?client_id=...&state=...",
+  "state": "b64-opaque-state"
+}
+```
+
+**Errors:** `502` when discovery or client registration fails.
+
+#### `GET /api/servers/{name}/auth/wait?state=...`
+
+Long-polls until the flow keyed by `state` completes, fails, or times out. Resolving with `200` means authorized; the UI uses this to flip from "Waiting for provider" to done.
+
+**Auth:** Yes
+
+**Response:** `{"status": "authorized"}`
+
+**Errors:** `400` when `state` is missing; `502` when the flow failed or timed out.
+
+#### `POST /api/servers/{name}/auth/manual`
+
+Completes a flow from a pasted redirect URL - the `--manual` path for sessions where the browser cannot reach the daemon's callback (e.g. over SSH).
+
+**Auth:** Yes
+
+**Request:**
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"redirectUrl": "http://localhost:8180/oauth/callback?code=...&state=..."}' \
+  http://localhost:8180/api/servers/notion/auth/manual
+```
+
+**Response:** `{"status": "authorized"}`
+
+**Errors:** `400` when `redirectUrl` is missing; `502` when the code exchange fails.
+
+#### `POST /api/servers/{name}/auth/logout`
+
+Revokes (best effort) and deletes the stored grant for a server.
+
+**Auth:** Yes
+
+**Response:** `{"status": "logged_out"}`
+
+#### `POST /api/servers/{name}/auth/reset`
+
+Deletes the stored grant **and** the cached dynamic client registration for a server. Use this when logins keep failing after the provider rotated or deleted the OAuth app - the next login re-registers from scratch.
+
+**Auth:** Yes
+
+**Response:** `{"status": "reset"}`
+
+#### `GET /oauth/callback`
+
+The authorization-code redirect target. Mounted **outside** the inbound auth middleware - the provider's browser redirect cannot carry a gateway bearer token - and authenticated by the flow's single-use `state` parameter instead. Serves a small HTML page that closes the popup. Not called directly by API clients.
 
 ---
 

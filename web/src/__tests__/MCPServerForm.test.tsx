@@ -981,3 +981,152 @@ describe('YAML serialization — autoscale', () => {
     expect(rebuilt).toBe(yaml);
   });
 });
+
+describe('MCPServerForm external authentication section', () => {
+  let onChange: OnChange;
+
+  beforeEach(() => {
+    onChange = vi.fn<OnChange>();
+  });
+
+  function renderExternal(overrides?: Partial<MCPServerFormData>) {
+    render(
+      <MCPServerForm
+        data={defaultData({ serverType: 'external', url: 'https://mcp.example.com/mcp', ...overrides })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByText('Authentication'));
+  }
+
+  it('shows the Authentication section for external servers only', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'external' })} onChange={onChange} />);
+    expect(screen.getByText('Authentication')).toBeInTheDocument();
+  });
+
+  it('hides the Authentication section for container servers', () => {
+    render(<MCPServerForm data={defaultData()} onChange={onChange} />);
+    expect(screen.queryByText('Authentication')).not.toBeInTheDocument();
+  });
+
+  it('defaults the type select to None', () => {
+    renderExternal();
+    expect(screen.getByLabelText('Authentication type')).toHaveValue('');
+  });
+
+  it('emits an auth block when a type is selected and clears it on None', () => {
+    renderExternal();
+    fireEvent.change(screen.getByLabelText('Authentication type'), { target: { value: 'bearer' } });
+    expect(onChange).toHaveBeenCalledWith({ auth: { type: 'bearer' } });
+    fireEvent.change(screen.getByLabelText('Authentication type'), { target: { value: '' } });
+    expect(onChange).toHaveBeenCalledWith({ auth: undefined });
+  });
+
+  it('shows a Token field with a variable-reference placeholder for bearer', () => {
+    renderExternal({ auth: { type: 'bearer' } });
+    const token = screen.getByPlaceholderText('${var:MY_TOKEN}');
+    expect(token).toBeInTheDocument();
+    fireEvent.change(token, { target: { value: '${var:GITHUB_PAT}' } });
+    expect(onChange).toHaveBeenCalledWith({ auth: { type: 'bearer', token: '${var:GITHUB_PAT}' } });
+  });
+
+  it('shows Header name and Value fields for header', () => {
+    renderExternal({ auth: { type: 'header' } });
+    expect(screen.getByPlaceholderText('X-API-Key')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('${var:MY_API_KEY}')).toBeInTheDocument();
+  });
+
+  it('shows Scopes, Client ID, and Client Secret fields for oauth with DCR helper copy', () => {
+    renderExternal({ auth: { type: 'oauth' } });
+    expect(screen.getByLabelText('OAuth scopes')).toBeInTheDocument();
+    expect(screen.getByLabelText('OAuth client ID')).toBeInTheDocument();
+    expect(screen.getByLabelText('OAuth client secret')).toBeInTheDocument();
+    expect(screen.getByText(/dynamic client\s+registration is used when they are left empty/i)).toBeInTheDocument();
+  });
+
+  it('parses oauth scopes from space- or comma-separated input', () => {
+    renderExternal({ auth: { type: 'oauth' } });
+    fireEvent.change(screen.getByLabelText('OAuth scopes'), { target: { value: 'read, write repo' } });
+    expect(onChange).toHaveBeenCalledWith({ auth: { type: 'oauth', scopes: ['read', 'write', 'repo'] } });
+  });
+});
+
+describe('YAML serialization — external auth', () => {
+  it('serializes a bearer auth block', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'github',
+        serverType: 'external',
+        url: 'https://api.githubcopilot.com/mcp/',
+        auth: { type: 'bearer', token: '${var:GITHUB_PAT}' },
+      },
+    });
+    expect(yaml).toContain('auth:');
+    expect(yaml).toContain('  type: bearer');
+    expect(yaml).toContain('  token: "${var:GITHUB_PAT}"');
+  });
+
+  it('serializes a header auth block', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'internal-api',
+        serverType: 'external',
+        url: 'https://mcp.internal.example.com/mcp',
+        auth: { type: 'header', header: 'X-API-Key', value: '${var:INTERNAL_API_KEY}' },
+      },
+    });
+    expect(yaml).toContain('  type: header');
+    expect(yaml).toContain('  header: X-API-Key');
+    expect(yaml).toContain('  value: "${var:INTERNAL_API_KEY}"');
+  });
+
+  it('serializes a minimal oauth block with empty optionals omitted', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'notion',
+        serverType: 'external',
+        url: 'https://mcp.notion.com/mcp',
+        auth: { type: 'oauth' },
+      },
+    });
+    expect(yaml).toContain('auth:');
+    expect(yaml).toContain('  type: oauth');
+    expect(yaml).not.toContain('scopes');
+    expect(yaml).not.toContain('client_id');
+    expect(yaml).not.toContain('client_secret');
+    expect(yaml).not.toContain('token');
+  });
+
+  it('serializes oauth scopes and pre-registered client fields', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'slack',
+        serverType: 'external',
+        url: 'https://mcp.slack.com/mcp',
+        auth: {
+          type: 'oauth',
+          scopes: ['read', 'write'],
+          clientId: 'my-client',
+          clientSecret: '${var:SLACK_CLIENT_SECRET}',
+        },
+      },
+    });
+    expect(yaml).toContain('  scopes:');
+    expect(yaml).toContain('- read');
+    expect(yaml).toContain('- write');
+    expect(yaml).toContain('  client_id: my-client');
+    expect(yaml).toContain('  client_secret: "${var:SLACK_CLIENT_SECRET}"');
+  });
+
+  it('emits no auth block when auth is unset', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: { name: 'plain', serverType: 'external', url: 'https://mcp.example.com/mcp' },
+    });
+    expect(yaml).not.toContain('auth:');
+  });
+});

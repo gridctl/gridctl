@@ -122,6 +122,31 @@ describe('CustomNode needs-auth rendering', () => {
     );
     expect(screen.queryByText('Needs authorization')).not.toBeInTheDocument();
   });
+
+  it('suppresses the red health strip while the server needs authorization', () => {
+    render(
+      <CustomNode
+        data={makeServerData({ healthy: false, healthError: 'connection refused' })}
+      />,
+    );
+    expect(screen.getByText('Needs authorization')).toBeInTheDocument();
+    expect(screen.queryByText('connection refused')).not.toBeInTheDocument();
+    expect(screen.queryByText('Health check failed')).not.toBeInTheDocument();
+  });
+
+  it('keeps the red health strip for unhealthy authorized servers', () => {
+    render(
+      <CustomNode
+        data={makeServerData({
+          status: 'error',
+          authStatus: 'authorized',
+          healthy: false,
+          healthError: 'connection refused',
+        })}
+      />,
+    );
+    expect(screen.getByText('connection refused')).toBeInTheDocument();
+  });
 });
 
 describe('ServerAuthSection', () => {
@@ -174,16 +199,18 @@ describe('ServerAuthSection', () => {
     await waitFor(() => {
       expect(screen.getByText(/Authorized\. The server reconnects automatically\./)).toBeInTheDocument();
     });
+    // No 'noopener' in the feature string: it would make window.open return
+    // null even on success, defeating the retained-handle cancel/close logic.
     expect(openSpy).toHaveBeenCalledWith(
       'https://as.example.com/authorize?state=abc',
       '_blank',
-      expect.stringContaining('noopener'),
+      expect.not.stringContaining('noopener'),
     );
-    expect(waitServerAuthorization).toHaveBeenCalledWith('notion', 'abc');
+    expect(waitServerAuthorization).toHaveBeenCalledWith('notion', 'abc', expect.any(AbortSignal));
     openSpy.mockRestore();
   });
 
-  it('falls back to a copyable URL when the popup is blocked', async () => {
+  it('falls back to a clickable anchor plus copy button when the popup is blocked', async () => {
     vi.mocked(beginServerAuthorization).mockResolvedValue({
       authorize_url: 'https://as.example.com/authorize?state=abc',
       state: 'abc',
@@ -196,7 +223,171 @@ describe('ServerAuthSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /Authorize/ }));
 
     expect(await screen.findByText(/Popup blocked/)).toBeInTheDocument();
+    const anchor = screen.getByRole('link', { name: 'Open authorization page' });
+    expect(anchor).toHaveAttribute('href', 'https://as.example.com/authorize?state=abc');
+    expect(anchor).toHaveAttribute('target', '_blank');
+    expect(anchor).toHaveAttribute('rel', 'noopener');
     expect(screen.getByRole('button', { name: 'Copy authorization URL' })).toBeInTheDocument();
+    expect(screen.getByText(/gridctl auth login notion/)).toBeInTheDocument();
+    openSpy.mockRestore();
+  });
+
+  it('shows a Cancel button while waiting that closes the popup and returns to idle', async () => {
+    vi.mocked(beginServerAuthorization).mockResolvedValue({
+      authorize_url: 'https://as.example.com/authorize?state=abc',
+      state: 'abc',
+    });
+    let waitSignal: AbortSignal | undefined;
+    vi.mocked(waitServerAuthorization).mockImplementation(
+      (_server, _state, signal) =>
+        new Promise((_, reject) => {
+          waitSignal = signal;
+          signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        }),
+    );
+    const close = vi.fn();
+    const openSpy = vi
+      .spyOn(window, 'open')
+      .mockReturnValue({ closed: false, close } as unknown as Window);
+
+    render(<ServerAuthSection serverName="notion" authStatus="needs_auth" />);
+    fireEvent.click(screen.getByRole('button', { name: /Authorize/ }));
+
+    const cancel = await screen.findByRole('button', { name: 'Cancel' });
+    expect(screen.getByRole('button', { name: /Waiting for provider/ })).toBeDisabled();
+    expect(screen.getByText(/gridctl auth login notion/)).toBeInTheDocument();
+
+    fireEvent.click(cancel);
+    expect(close).toHaveBeenCalled();
+    expect(waitSignal?.aborted).toBe(true);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    });
+    // Back to idle: Authorize is enabled again and no failure box appeared.
+    expect(screen.getByRole('button', { name: 'Authorize' })).toBeEnabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    openSpy.mockRestore();
+  });
+
+  it('returns to idle when the user closes the popup by hand', async () => {
+    vi.mocked(beginServerAuthorization).mockResolvedValue({
+      authorize_url: 'https://as.example.com/authorize?state=abc',
+      state: 'abc',
+    });
+    vi.mocked(waitServerAuthorization).mockImplementation(
+      (_server, _state, signal) =>
+        new Promise((_, reject) => {
+          signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        }),
+    );
+    const popup = { closed: false, close: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+
+    render(<ServerAuthSection serverName="notion" authStatus="needs_auth" />);
+    fireEvent.click(screen.getByRole('button', { name: /Authorize/ }));
+    await screen.findByRole('button', { name: 'Cancel' });
+
+    vi.useFakeTimers();
+    popup.closed = true;
+    await vi.advanceTimersByTimeAsync(1100);
+    vi.useRealTimers();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Authorize' })).toBeEnabled();
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    openSpy.mockRestore();
+  });
+
+  it('aborts the wait long-poll on unmount without flipping to failed', async () => {
+    vi.mocked(beginServerAuthorization).mockResolvedValue({
+      authorize_url: 'https://as.example.com/authorize?state=abc',
+      state: 'abc',
+    });
+    let waitSignal: AbortSignal | undefined;
+    vi.mocked(waitServerAuthorization).mockImplementation(
+      (_server, _state, signal) =>
+        new Promise((_, reject) => {
+          waitSignal = signal;
+          signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        }),
+    );
+    const openSpy = vi
+      .spyOn(window, 'open')
+      .mockReturnValue({ closed: false, close: vi.fn() } as unknown as Window);
+
+    const { unmount } = render(<ServerAuthSection serverName="notion" authStatus="needs_auth" />);
+    fireEvent.click(screen.getByRole('button', { name: /Authorize/ }));
+    await screen.findByRole('button', { name: 'Cancel' });
+
+    unmount();
+    expect(waitSignal?.aborted).toBe(true);
+    openSpy.mockRestore();
+  });
+
+  it('does not carry an in-flight flow onto another server when retargeted', async () => {
+    vi.mocked(beginServerAuthorization).mockResolvedValue({
+      authorize_url: 'https://as.example.com/authorize?state=abc',
+      state: 'abc',
+    });
+    let waitSignal: AbortSignal | undefined;
+    vi.mocked(waitServerAuthorization).mockImplementation(
+      (_server, _state, signal) =>
+        new Promise((_, reject) => {
+          waitSignal = signal;
+          signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        }),
+    );
+    const openSpy = vi
+      .spyOn(window, 'open')
+      .mockReturnValue({ closed: false, close: vi.fn() } as unknown as Window);
+
+    // The Sidebar reuses one instance across node selections; simulate that
+    // by rerendering the same component with a different serverName mid-wait.
+    const { rerender } = render(<ServerAuthSection serverName="notion" authStatus="needs_auth" />);
+    fireEvent.click(screen.getByRole('button', { name: /Authorize/ }));
+    await screen.findByRole('button', { name: 'Cancel' });
+
+    rerender(<ServerAuthSection serverName="sentry" authStatus="needs_auth" />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Authorize' })).toBeEnabled();
+    });
+    expect(waitSignal?.aborted).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    openSpy.mockRestore();
+  });
+
+  it('resets a stale done message when authStatus transitions', async () => {
+    vi.mocked(beginServerAuthorization).mockResolvedValue({
+      authorize_url: 'https://as.example.com/authorize?state=abc',
+      state: 'abc',
+    });
+    vi.mocked(waitServerAuthorization).mockResolvedValue(undefined);
+    const openSpy = vi
+      .spyOn(window, 'open')
+      .mockReturnValue({ closed: false, close: vi.fn() } as unknown as Window);
+
+    const { rerender } = render(<ServerAuthSection serverName="notion" authStatus="needs_auth" />);
+    fireEvent.click(screen.getByRole('button', { name: /Authorize/ }));
+    await screen.findByText(/Authorized\. The server reconnects automatically\./);
+
+    // The 3s status poll flips the parent prop; the local done message must
+    // clear instead of lingering beside the fresh status badge.
+    rerender(<ServerAuthSection serverName="notion" authStatus="authorized" />);
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/Authorized\. The server reconnects automatically\./),
+      ).not.toBeInTheDocument();
+    });
     openSpy.mockRestore();
   });
 
