@@ -28,6 +28,7 @@ var (
 // Command group IDs for the grouped root help (see help.go).
 const (
 	groupStack   = "stack"
+	groupCatalog = "catalog"
 	groupClients = "clients"
 	groupSkills  = "skills"
 	groupConfig  = "config"
@@ -88,6 +89,7 @@ func init() {
 
 	rootCmd.AddGroup(
 		&cobra.Group{ID: groupStack, Title: "STACK"},
+		&cobra.Group{ID: groupCatalog, Title: "CATALOG"},
 		&cobra.Group{ID: groupClients, Title: "CLIENTS"},
 		&cobra.Group{ID: groupSkills, Title: "SKILLS"},
 		&cobra.Group{ID: groupConfig, Title: "VARIABLES & PINS"},
@@ -114,6 +116,8 @@ func init() {
 		serveCmd:     groupStack,
 		stopCmd:      groupStack,
 		logsCmd:      groupStack,
+		searchCmd:    groupCatalog,
+		addCmd:       groupCatalog,
 		linkCmd:      groupClients,
 		unlinkCmd:    groupClients,
 		importCmd:    groupClients,
