@@ -12,6 +12,8 @@ import {
   RotateCcw,
   X,
   AlertCircle,
+  FileCode2,
+  Package,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
@@ -21,7 +23,10 @@ import { useWizardStore, type WizardStep } from '../../stores/useWizardStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { buildYAML, parseYAMLToForm, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
+import { catalogEntryToFormData } from '../../lib/catalog';
+import type { CatalogEntry } from '../../lib/api';
 import { TemplateGrid } from './TemplateGrid';
+import { CatalogPicker } from './CatalogPicker';
 import { YAMLPreview } from './YAMLPreview';
 import { ExpertModeToggle } from './ExpertModeToggle';
 import { DraftManager } from './DraftManager';
@@ -168,6 +173,14 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onDeploy }: C
     }
     setSelectedTemplate(templateId);
   }, [selectedType, setSelectedTemplate, updateFormData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Catalog entries pre-fill the mcp-server form through the same
+  // updateFormData mechanism templates use, so the form, YAML preview,
+  // and review step work unchanged.
+  const handleCatalogSelect = useCallback((entry: CatalogEntry) => {
+    updateFormData('mcp-server', catalogEntryToFormData(entry) as Record<string, unknown>);
+    setSelectedTemplate(`catalog:${entry.name}`);
+  }, [updateFormData, setSelectedTemplate]);
 
   // Skill skips template step; secret and global-context close the wizard
   // and open their own dedicated surfaces (vault panel, context dialog).
@@ -397,6 +410,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onDeploy }: C
                       generatedYaml,
                       counts,
                       handleDeploy,
+                      handleCatalogSelect,
                     )}
                   </div>
                 </div>
@@ -427,6 +441,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onDeploy }: C
                 generatedYaml,
                 counts,
                 handleDeploy,
+                handleCatalogSelect,
               )}
             </div>
           )}
@@ -479,12 +494,22 @@ function renderStepContent(
   generatedYaml: string,
   counts: Record<ResourceType, number>,
   onDeploy: () => void,
+  onCatalogSelect: (entry: CatalogEntry) => void,
 ) {
   switch (step) {
     case 'type':
       return <TypePicker selected={selectedType} onSelect={setSelectedType} counts={counts} />;
     case 'template':
       if (!selectedType) return null;
+      if (selectedType === 'mcp-server') {
+        return (
+          <MCPTemplateStep
+            selected={selectedTemplate}
+            onTemplateSelect={setSelectedTemplate}
+            onCatalogSelect={onCatalogSelect}
+          />
+        );
+      }
       return (
         <TemplateGrid
           resourceType={selectedType}
@@ -524,6 +549,58 @@ function renderStepContent(
         />
       );
   }
+}
+
+// MCP-server template step: local templates or the server catalog
+// (curated set plus MCP Registry), switched by a segmented toggle.
+function MCPTemplateStep({
+  selected,
+  onTemplateSelect,
+  onCatalogSelect,
+}: {
+  selected: string | null;
+  onTemplateSelect: (id: string | null) => void;
+  onCatalogSelect: (entry: CatalogEntry) => void;
+}) {
+  const [mode, setMode] = useState<'templates' | 'catalog'>('templates');
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="inline-flex items-center self-start bg-surface-elevated/60 border border-border/40 rounded-lg p-0.5 mb-4">
+        <button
+          onClick={() => setMode('templates')}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
+            mode === 'templates'
+              ? 'bg-primary/15 text-primary shadow-sm'
+              : 'text-text-muted hover:text-text-secondary',
+          )}
+        >
+          <FileCode2 size={12} />
+          Templates
+        </button>
+        <button
+          onClick={() => setMode('catalog')}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
+            mode === 'catalog'
+              ? 'bg-primary/15 text-primary shadow-sm'
+              : 'text-text-muted hover:text-text-secondary',
+          )}
+        >
+          <Package size={12} />
+          Catalog
+        </button>
+      </div>
+      {mode === 'templates' ? (
+        <TemplateGrid resourceType="mcp-server" selected={selected} onSelect={onTemplateSelect} />
+      ) : (
+        <div className="flex-1 min-h-0 rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+          <CatalogPicker onSelect={onCatalogSelect} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 const STACK_GATED_TYPES: ResourceType[] = ['mcp-server', 'resource'];

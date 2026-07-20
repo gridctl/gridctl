@@ -814,6 +814,25 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/recipes
 
 **Response:** JSON array of `{id, name, description, category, spec}` objects.
 
+#### `GET /api/catalog`
+
+Searches the server catalog: the curated set embedded in the binary merged with MCP Registry results (curated first, deduped by registry namespace). Backs the wizard's catalog picker; same data as `gridctl search`. The endpoint never fails because the registry is down; degraded results carry `registry_error` or `stale` instead.
+
+**Auth:** Yes
+
+**Query parameters:**
+
+| Parameter | Description |
+|---|---|
+| `q` | Search query. Empty lists the curated catalog only; the registry is not contacted. |
+| `source` | `curated`, `registry`, or `all` (default `all`). |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/catalog?q=postgres"
+```
+
+**Response:** `{query, source, stale?, registry_error?, servers: [...]}` where each server is a full catalog entry (`name`, `title`, `description`, `tier`, `status`, `install`, `inputs`, ...). Secret input defaults are always empty.
+
 #### `POST /api/stack/append`
 
 Appends an `mcp-server` or `resource` snippet to the live `stack.yaml`. The snippet is validated before write; comments and key ordering elsewhere in the file are preserved.
