@@ -596,6 +596,56 @@ Returns `503` when no metrics accumulator is configured; `404` when `stack` does
 
 ---
 
+### Limits
+
+#### `GET /api/limits`
+
+Returns the consumption snapshot for every budget and rate limit declared under `limits:` in stack.yaml. Backs `gridctl limits` and the Metrics workspace. Always `200`: with no limits configured the payload carries `configured: false` and an empty `entries` array.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/limits
+```
+
+**Response:**
+```json
+{
+  "configured": true,
+  "entries": [
+    {
+      "kind": "budget",
+      "scope": "client",
+      "key": "claude-code",
+      "state": "warn",
+      "budget": {
+        "max_usd": 5,
+        "spent_usd": 4.12,
+        "percent": 82.4,
+        "period": "daily",
+        "warn_at_percent": 80,
+        "window_start": "2026-07-20T00:00:00-04:00",
+        "window_end": "2026-07-21T00:00:00-04:00"
+      }
+    },
+    {
+      "kind": "rate",
+      "scope": "server",
+      "key": "github",
+      "state": "ok",
+      "rate": {
+        "calls_per_minute": 30,
+        "burst": 10
+      }
+    }
+  ]
+}
+```
+
+`state` is `ok`, `warn` (budget past its `warn_at_percent`), or `exceeded`. Budget entries carry the active calendar window; rate entries report their configured bucket. Hot-reload edits to the `limits:` block are reflected on the next request.
+
+---
+
 ### Traces
 
 Read the gateway's in-memory distributed-trace buffer. Each trace captures the spans for one upstream operation (tool call, prompt, etc.).
