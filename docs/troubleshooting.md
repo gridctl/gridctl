@@ -517,6 +517,35 @@ The UI keeps showing the authentication prompt after entering a valid token.
 
 ---
 
+## Downstream OAuth
+
+### Login keeps failing after provider-side app rotation
+
+**Symptoms:**
+
+`gridctl auth login <name>` (or the UI's Authorize button) fails repeatedly for a server that used to authorize fine, often with an invalid-client or unauthorized-client error from the provider.
+
+**Causes:**
+
+- The provider rotated, deleted, or re-created the OAuth app that gridctl dynamically registered. gridctl still presents the cached client registration, which the provider no longer recognizes.
+
+**Resolution:**
+
+Reset the server's authorization state, which deletes both the stored grant and the cached client registration, then log in again:
+
+```bash
+gridctl auth reset <name>
+gridctl auth login <name>
+```
+
+The next login re-discovers the authorization server and registers a fresh client. Plain `gridctl auth logout <name>` only removes the grant and keeps the (stale) client, so `reset` is the right tool here.
+
+### Where OAuth tokens live, and what protects them
+
+Tokens are stored encrypted at rest under `~/.gridctl/oauth/`, keyed by server URL so one login serves every connected client. The encryption key is a per-machine key stored adjacent to the ciphertext, not the passphrase-protected variable vault: it protects against casual file exposure (backups, copied home directories) but not against an attacker with code execution as your user, who could read the key just as gridctl does. Treat the directory's contents as credentials: keep it out of shared volumes and dotfile repositories, and use `gridctl auth logout` or `reset` to revoke and remove grants you no longer need.
+
+---
+
 ## General
 
 ### Getting help
