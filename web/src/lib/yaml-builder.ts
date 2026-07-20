@@ -30,6 +30,11 @@ export interface MCPServerFormData {
   };
   // External
   url?: string;
+  // Downstream auth for external URL servers. Mirrors config.ServerAuth:
+  // bearer (token), header (header + value), or oauth (all fields optional;
+  // dynamic client registration when clientId is empty). Secret fields
+  // should hold ${var:KEY} references, not literals.
+  auth?: ExternalAuthFormData;
   // SSH
   ssh?: {
     host: string;
@@ -82,6 +87,16 @@ export interface MCPServerFormData {
   replicaPolicy?: 'round-robin' | 'least-connections';
   // Autoscale (mutually exclusive with replicas)
   autoscale?: AutoscaleFormData;
+}
+
+export interface ExternalAuthFormData {
+  type: 'bearer' | 'header' | 'oauth';
+  token?: string;
+  header?: string;
+  value?: string;
+  scopes?: string[];
+  clientId?: string;
+  clientSecret?: string;
 }
 
 // AutoscaleFormData mirrors pkg/config.AutoscaleConfig. UI labels are
@@ -214,6 +229,20 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
     case 'external':
       if (data.url) lines.push(`${inner}url: ${yamlValue(data.url)}`);
       if (data.transport) lines.push(`${inner}transport: ${data.transport}`);
+      if (data.auth) {
+        const auth = data.auth;
+        lines.push(`${inner}auth:`);
+        lines.push(`${inner}  type: ${auth.type}`);
+        if (auth.token) lines.push(`${inner}  token: ${yamlValue(auth.token)}`);
+        if (auth.header) lines.push(`${inner}  header: ${yamlValue(auth.header)}`);
+        if (auth.value) lines.push(`${inner}  value: ${yamlValue(auth.value)}`);
+        if (auth.scopes?.length) {
+          lines.push(`${inner}  scopes:`);
+          lines.push(serializeArray(auth.scopes, indentLevel + 6));
+        }
+        if (auth.clientId) lines.push(`${inner}  client_id: ${yamlValue(auth.clientId)}`);
+        if (auth.clientSecret) lines.push(`${inner}  client_secret: ${yamlValue(auth.clientSecret)}`);
+      }
       break;
     case 'local':
       if (data.command?.length) {
