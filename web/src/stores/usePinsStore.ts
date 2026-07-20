@@ -28,3 +28,20 @@ export const useDriftedServers = () => {
       .map(([name, sp]) => ({ name, ...sp }));
   }, [pins]);
 };
+
+// countFindingServers counts servers whose pinned tools carry at least one
+// warn-or-critical poisoning-scan finding. Info findings are deliberately
+// excluded: the status bar chip is an attention signal, not an inventory.
+export const countFindingServers = (pins: Record<string, ServerPins> | null): number => {
+  if (!pins) return 0;
+  return Object.values(pins).filter((sp) =>
+    Object.values(sp.tools ?? {}).some((rec) =>
+      (rec.findings ?? []).some((f) => f.severity === 'warn' || f.severity === 'critical'),
+    ),
+  ).length;
+};
+
+export const useFindingServerCount = () => {
+  const pins = usePinsStore((s) => s.pins);
+  return useMemo(() => countFindingServers(pins), [pins]);
+};

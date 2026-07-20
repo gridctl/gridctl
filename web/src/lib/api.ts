@@ -1537,11 +1537,28 @@ export function buildStreamHeaders(): Record<string, string> {
 
 // === Pins API ===
 
+/**
+ * One poisoning-scan signal on a tool definition. Advisory only: findings
+ * inform the approve decision and never block anything. snippet and decoded
+ * quote attacker-controlled text and MUST be rendered through
+ * escapeNonPrintable.
+ */
+export interface PinFinding {
+  code: string;
+  severity: 'info' | 'warn' | 'critical';
+  confidence: 'high' | 'medium' | 'low';
+  field: string;
+  snippet?: string;
+  message: string;
+  decoded?: string;
+}
+
 export interface PinRecord {
   hash: string;
   name: string;
   description?: string;
   pinned_at: string;
+  findings?: PinFinding[];
 }
 
 export interface ServerPins {
@@ -1567,6 +1584,8 @@ export interface PinsToolDiff {
   new_hash: string;
   old_description: string;
   new_description: string;
+  // Optional so the UI tolerates a daemon predating the poisoning scanner.
+  findings?: PinFinding[];
 }
 
 export interface PinsDiff {
@@ -1677,6 +1696,7 @@ export interface ProbedTool {
   description?: string;
   inputSchema: unknown;
   outputSchema?: unknown;
+  findings?: PinFinding[];
 }
 
 export interface ProbeSuccess {
