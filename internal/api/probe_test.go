@@ -248,6 +248,39 @@ func TestProbeHandler_SecretScrubbing(t *testing.T) {
 	}
 }
 
+func TestProbeHandler_AuthSecretScrubbing(t *testing.T) {
+	// Auth-block secrets (token, header value, client secret) must be
+	// scrubbed from probe error messages exactly like env values.
+	cases := []struct {
+		name   string
+		auth   map[string]any
+		secret string
+	}{
+		{"bearer token", map[string]any{"type": "bearer", "token": "tok-abc-999"}, "tok-abc-999"},
+		{"header value", map[string]any{"type": "header", "header": "X-API-Key", "value": "hdr-val-777"}, "hdr-val-777"},
+		{"client secret", map[string]any{"type": "oauth", "client_id": "cid", "client_secret": "cs-555"}, "cs-555"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newProbeServer(t, &recordingClient{
+				initErr: errors.New("upstream rejected credential " + tc.secret),
+			})
+			rec := postProbe(t, srv.Handler(), map[string]any{
+				"url":  "https://example.com/mcp",
+				"auth": tc.auth,
+			}, "")
+			var errBody probeErrorWire
+			_ = json.Unmarshal(rec.Body.Bytes(), &errBody)
+			if strings.Contains(errBody.Error.Message, tc.secret) {
+				t.Fatalf("secret leaked into message: %q", errBody.Error.Message)
+			}
+			if !strings.Contains(errBody.Error.Message, "***") {
+				t.Fatalf("expected *** in scrubbed message, got %q", errBody.Error.Message)
+			}
+		})
+	}
+}
+
 func TestProbeHandler_MethodNotAllowed(t *testing.T) {
 	srv := newProbeServer(t, &recordingClient{})
 	req := httptest.NewRequest(http.MethodGet, "/api/servers/probe", nil)
@@ -354,6 +387,12 @@ func TestProbeHandler_RequestShape(t *testing.T) {
 		"tools":         []string{"a", "b"},
 		"ready_timeout": "2s",
 		"build_args":    map[string]string{"FOO": "1"},
+		"auth": map[string]any{
+			"type":          "oauth",
+			"scopes":        []string{"read", "write"},
+			"client_id":     "cid-1",
+			"client_secret": "cs-1",
+		},
 	}
 	b, _ := json.Marshal(req)
 	var pr probeRequest
@@ -369,5 +408,26 @@ func TestProbeHandler_RequestShape(t *testing.T) {
 	}
 	if cfg.BuildArgs["FOO"] != "1" {
 		t.Fatalf("build_args didn't map: %+v", cfg.BuildArgs)
+	}
+	if cfg.Auth == nil || cfg.Auth.Type != "oauth" {
+		t.Fatalf("auth didn't map: %+v", cfg.Auth)
+	}
+	if len(cfg.Auth.Scopes) != 2 || cfg.Auth.Scopes[0] != "read" {
+		t.Fatalf("auth scopes didn't map: %+v", cfg.Auth.Scopes)
+	}
+	if cfg.Auth.ClientID != "cid-1" || cfg.Auth.ClientSecret != "cs-1" {
+		t.Fatalf("auth client fields didn't map: %+v", cfg.Auth)
+	}
+}
+
+// A request without an auth block must map to a nil config.Auth so probes
+// stay unauthenticated by default.
+func TestProbeHandler_RequestShape_NoAuth(t *testing.T) {
+	var pr probeRequest
+	if err := json.Unmarshal([]byte(`{"url":"https://example.com/mcp"}`), &pr); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if cfg := pr.toMCPServer(); cfg.Auth != nil {
+		t.Fatalf("expected nil Auth, got %+v", cfg.Auth)
 	}
 }
