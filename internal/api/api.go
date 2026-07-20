@@ -14,6 +14,7 @@ import (
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/limits"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/mcpauth"
@@ -76,6 +77,12 @@ type Server struct {
 	// defaultModel returns the gateway-level default_model from stack.yaml,
 	// or "" when none is configured. Must be safe for concurrent calls.
 	defaultModel func() string
+
+	// limitsStatus returns the budgets/rate-limits consumption snapshot for
+	// GET /api/limits. Nil means the builder wired no limits support (the
+	// endpoint then reports configured: false). Must be safe for concurrent
+	// calls and must reflect hot-reload policy swaps.
+	limitsStatus func() limits.StatusReport
 
 	// startWatcher, when set, starts a file watcher on the given stack path.
 	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
@@ -450,6 +457,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stack/export", s.handleStackExport)
 	mux.HandleFunc("GET /api/stack/recipes", s.handleStackRecipes)
 	mux.HandleFunc("GET /api/catalog", s.handleCatalog)
+	mux.HandleFunc("GET /api/limits", s.handleLimits)
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
 	mux.HandleFunc("POST /api/stack/initialize", s.handleStackInitialize)
 	mux.HandleFunc("PATCH /api/stack/telemetry", s.handlePatchStackTelemetry)
