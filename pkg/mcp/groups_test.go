@@ -225,6 +225,22 @@ func TestGroupPolicy_StatusAndCrossRefs(t *testing.T) {
 	if g.Overrides["github__create_issue"] != "create_issue" {
 		t.Errorf("override map = %+v", g.Overrides)
 	}
+	// Members carry the exposed surface with canonical origins and flags.
+	byExposed := map[string]GroupToolStatus{}
+	for _, m := range g.Members {
+		byExposed[m.Name] = m
+	}
+	renamed := byExposed["create_issue"]
+	if renamed.Canonical != "github__create_issue" || !renamed.Renamed || !renamed.Rewritten {
+		t.Errorf("renamed member = %+v", renamed)
+	}
+	if renamed.Description != "File a release-blocking issue." {
+		t.Errorf("member description = %q", renamed.Description)
+	}
+	annotated := byExposed["github__search_code"]
+	if annotated.Renamed || annotated.Rewritten || annotated.Annotations == nil || annotated.Annotations.ReadOnlyHint == nil {
+		t.Errorf("annotation-only member = %+v", annotated)
+	}
 
 	if got := p.GroupsRewritingTool("github__create_issue"); len(got) != 1 || got[0] != "release" {
 		t.Errorf("GroupsRewritingTool(create_issue) = %v", got)
