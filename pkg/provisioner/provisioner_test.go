@@ -270,6 +270,62 @@ func TestLink_MalformedJSON_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestLink_EmptyConfigFile_TreatsAsEmpty(t *testing.T) {
+	p, configPath := testMCPServersProvisioner(t, "config.json", false)
+	opts := defaultLinkOpts()
+
+	// Some clients (Antigravity 2.0) create the config as a zero-byte file.
+	if err := os.WriteFile(configPath, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	entry := servers["gridctl"].(map[string]any)
+	if entry["serverUrl"] != "http://localhost:8180/sse" {
+		t.Errorf("unexpected entry: %v", entry)
+	}
+}
+
+func TestLink_WhitespaceOnlyConfigFile_TreatsAsEmpty(t *testing.T) {
+	p, configPath := testMCPServersProvisioner(t, "config.json", false)
+	opts := defaultLinkOpts()
+
+	if err := os.WriteFile(configPath, []byte("\n  \n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.Link(configPath, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readTestJSON(t, configPath)
+	servers := data["mcpServers"].(map[string]any)
+	if _, ok := servers["gridctl"]; !ok {
+		t.Error("expected gridctl entry after linking whitespace-only config")
+	}
+}
+
+func TestIsLinked_EmptyConfigFile_ReturnsFalse(t *testing.T) {
+	p, configPath := testMCPServersProvisioner(t, "config.json", false)
+
+	if err := os.WriteFile(configPath, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	linked, err := p.IsLinked(configPath, "gridctl")
+	if err != nil {
+		t.Fatalf("IsLinked returned error: %v", err)
+	}
+	if linked {
+		t.Error("expected not linked for empty config file")
+	}
+}
+
 func TestLink_JSONC_WithComments(t *testing.T) {
 	p, configPath := testMCPServersProvisioner(t, "config.json", false)
 	opts := defaultLinkOpts()
