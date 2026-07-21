@@ -291,14 +291,18 @@ describe('ServerAuthSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /Authorize/ }));
     await screen.findByRole('button', { name: 'Cancel' });
 
-    vi.useFakeTimers();
+    // The component polls the popup handle on a real 1000ms interval (armed
+    // when Authorize was clicked, before fake timers could capture it), so
+    // the wait must span at least one real tick. The previous fake-timer
+    // advance here was a no-op against that real interval and the default
+    // 1s waitFor timeout raced the first tick on slow CI runners.
     popup.closed = true;
-    await vi.advanceTimersByTimeAsync(1100);
-    vi.useRealTimers();
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Authorize' })).toBeEnabled();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByRole('button', { name: 'Authorize' })).toBeEnabled();
+      },
+      { timeout: 3000 },
+    );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     openSpy.mockRestore();
   });

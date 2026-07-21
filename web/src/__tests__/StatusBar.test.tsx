@@ -1,10 +1,20 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { StatusBar } from '../components/layout/StatusBar';
 import { useStackStore } from '../stores/useStackStore';
 import type { MCPServerStatus } from '../types';
+
+// StatusBar mounts LimitsBadge, whose hook polls GET /api/limits; keep the
+// test hermetic instead of letting a real fetch fail in jsdom.
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return {
+    ...actual,
+    fetchLimits: vi.fn().mockResolvedValue({ configured: false, entries: [] }),
+  };
+});
 
 function server(name: string, healthy: boolean): MCPServerStatus {
   return { name, transport: 'http', initialized: true, healthy, toolCount: 1, tools: ['t'] };

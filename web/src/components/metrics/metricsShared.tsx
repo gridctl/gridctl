@@ -339,6 +339,8 @@ export function InspectorStat({ label, value, className }: { label: string; valu
 // a Model cell via `renderModel`, shows a Cost column when `showCost`, and may
 // make rows selectable (`onSelectRow` + `selectedName`) to drive a detail
 // inspector. The Model cell stops propagation so editing never selects the row.
+// `renderNameExtra` renders below the name cell's text (the limits overlay
+// mounts its consumption bar there); returning null/undefined adds nothing.
 export function BreakdownTable({
   rows,
   nameLabel,
@@ -346,6 +348,7 @@ export function BreakdownTable({
   sortDirection,
   onSort,
   renderModel,
+  renderNameExtra,
   showCost = false,
   selectedName,
   onSelectRow,
@@ -356,6 +359,7 @@ export function BreakdownTable({
   sortDirection: SortDirection;
   onSort: (column: BreakdownSortColumn) => void;
   renderModel?: (row: BreakdownRow) => ReactNode;
+  renderNameExtra?: (row: BreakdownRow) => ReactNode;
   showCost?: boolean;
   selectedName?: string | null;
   onSelectRow?: (name: string) => void;
@@ -416,6 +420,7 @@ export function BreakdownTable({
                 ) : (
                   row.name
                 )}
+                {renderNameExtra?.(row)}
               </td>
               {renderModel && (
                 <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>

@@ -11,6 +11,9 @@ import { ServerModelCell } from '../components/pricing/ServerModelCell';
 import { PricingManagerSlideOver } from '../components/pricing/PricingManagerSlideOver';
 import { useMetricsSeries, type MetricsTimeRange } from '../hooks/useMetricsSeries';
 import { useToolUsage } from '../hooks/useToolUsage';
+import { useLimits } from '../hooks/useLimits';
+import { BudgetBar, LimitsPanel } from '../components/metrics/LimitsShared';
+import { budgetForRow, deriveLimitsSummary, type LimitRowScope } from '../components/metrics/limitsData';
 import { MetricsControls } from '../components/metrics/MetricsControls';
 import { MetricsKpiRow, TokenChart, CostChart, PanelHeader, BreakdownTable, ScrollableBreakdown } from '../components/metrics/metricsShared';
 import {
@@ -153,6 +156,16 @@ function DetachedMetricsPageContent() {
     clientSortDirection,
   );
   const sortedTools = sortBreakdownRows(derivePerToolRows(toolUsageData), toolSortColumn, toolSortDirection);
+
+  // Limit consumption overlay — same source and presentation as the in-shell
+  // workspace (parity is the point of the shared core).
+  const { report: limitsReport } = useLimits(true);
+  const limitsSummary = deriveLimitsSummary(limitsReport);
+  const limitBarFor = (scope: LimitRowScope) => (row: { name: string }) => {
+    const entry = budgetForRow(limitsSummary.entries, scope, row.name);
+    return entry ? <BudgetBar entry={entry} className="mt-1" /> : null;
+  };
+
   const chartData = buildTokenChartData(metricsData);
   const costChartData = buildCostChartData(costData);
   const costSeriesHasData = costChartData.some((d) => d['Cost (USD)'] > 0);
@@ -258,6 +271,8 @@ function DetachedMetricsPageContent() {
               <CostChart data={costChartData} costData={costData} heightClass="h-40" />
             )}
 
+            <LimitsPanel summary={limitsSummary} />
+
             {sortedClients.length > 0 && (
               <PanelHeader icon={Users} label="Top Clients">
                 <BreakdownTable
@@ -267,6 +282,7 @@ function DetachedMetricsPageContent() {
                   sortDirection={clientSortDirection}
                   onSort={handleClientSort}
                   showCost
+                  renderNameExtra={limitBarFor('client')}
                   renderModel={(row) => (
                     <ClientModelCell
                       client={row.name}
@@ -289,6 +305,7 @@ function DetachedMetricsPageContent() {
                   sortColumn={sortColumn}
                   sortDirection={sortDirection}
                   onSort={handleSort}
+                  renderNameExtra={limitBarFor('server')}
                   renderModel={(row) => (
                     <ServerModelCell
                       server={row.name}
@@ -313,6 +330,7 @@ function DetachedMetricsPageContent() {
                     sortDirection={toolSortDirection}
                     onSort={handleToolSort}
                     showCost
+                    renderNameExtra={limitBarFor('tool')}
                   />
                 </ScrollableBreakdown>
               </PanelHeader>
