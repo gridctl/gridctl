@@ -58,7 +58,7 @@ func TestGateway_HandleInitialize(t *testing.T) {
 		Capabilities:    Capabilities{},
 	}
 
-	result, _, err := g.HandleInitialize(params, "")
+	result, _, err := g.HandleInitialize(params, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestGateway_HandleInitialize_VersionNegotiation(t *testing.T) {
 				ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
 			}
 
-			result, session, err := g.HandleInitialize(params, "")
+			result, session, err := g.HandleInitialize(params, "", "")
 			if err != nil {
 				t.Fatalf("initialize must never fail for version reasons: %v", err)
 			}
@@ -521,7 +521,7 @@ func TestGateway_SessionCount(t *testing.T) {
 	_, _, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo:      ClientInfo{Name: "client1", Version: "1.0"},
-	}, "")
+	}, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1268,7 +1268,7 @@ func TestGateway_HandleInitialize_WithRegistry(t *testing.T) {
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
 	}
 
-	result, _, err := g.HandleInitialize(params, "")
+	result, _, err := g.HandleInitialize(params, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1298,7 +1298,7 @@ func TestGateway_HandleInitialize_WithoutRegistry(t *testing.T) {
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
 	}
 
-	result, _, err := g.HandleInitialize(params, "")
+	result, _, err := g.HandleInitialize(params, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2895,7 +2895,7 @@ func TestGateway_HandleInitialize_Instructions(t *testing.T) {
 	result, _, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
-	}, "")
+	}, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2932,7 +2932,7 @@ func TestGateway_HandleInitialize_InstructionsCodeMode(t *testing.T) {
 	result, _, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
-	}, "")
+	}, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2951,7 +2951,7 @@ func TestGateway_HandleInitialize_InstructionsNoServers(t *testing.T) {
 	result, _, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
-	}, "")
+	}, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2990,7 +2990,7 @@ func TestGateway_HandleInitialize_InstructionsFiltersNonMCP(t *testing.T) {
 	result, _, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: "2024-11-05",
 		ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
-	}, "")
+	}, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3597,7 +3597,7 @@ func TestGateway_HandleInitialize_NormalizesClientID(t *testing.T) {
 	_, sess, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: MCPProtocolVersion,
 		ClientInfo:      ClientInfo{Name: "Claude Code", Version: "1.0"},
-	}, "")
+	}, "", "")
 	if err != nil {
 		t.Fatalf("HandleInitialize: %v", err)
 	}

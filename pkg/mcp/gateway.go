@@ -177,6 +177,12 @@ type Gateway struct {
 	// costSettler receives each priced call's cost after observation so
 	// budget windows settle synchronously. Guarded by mu.
 	costSettler CostSettler
+
+	// groupPolicy is the compiled `groups:` block: the exposure-layer
+	// curation axis. nil means no groups are configured and only the
+	// default /mcp surface exists. Guarded by mu; replaced wholesale on
+	// apply and hot-reload.
+	groupPolicy *GroupPolicy
 }
 
 // NewGateway creates a new MCP gateway.
@@ -274,6 +280,35 @@ func (g *Gateway) SetCostSettler(s CostSettler) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.costSettler = s
+}
+
+// SetGroupPolicy installs the compiled tool-group policy. Passing nil
+// removes all groups (their endpoints 404 and bound sessions are denied).
+// Like the client access policy, the live policy is read fresh on every
+// request, so a hot-reload swap takes effect immediately.
+func (g *Gateway) SetGroupPolicy(policy *GroupPolicy) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.groupPolicy = policy
+}
+
+// CurrentGroupPolicy returns the current group policy under a read lock.
+func (g *Gateway) CurrentGroupPolicy() *GroupPolicy {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.groupPolicy
+}
+
+// HasGroup reports whether a group with the given name is configured. The
+// transport uses it to 404 unknown group endpoints before session creation.
+func (g *Gateway) HasGroup(name string) bool {
+	return g.CurrentGroupPolicy().Has(name)
+}
+
+// GroupsStatus resolves every configured group against the live aggregated
+// tool surface, for GET /api/groups and `gridctl groups`.
+func (g *Gateway) GroupsStatus() []GroupStatus {
+	return g.CurrentGroupPolicy().Status(g.router.AggregatedTools())
 }
 
 // clientAccessPolicy returns the current policy under a read lock.
@@ -1498,12 +1533,16 @@ func (g *Gateway) buildInstructions() string {
 // the connection (the `client` query parameter or X-Gridctl-Client-Id header);
 // pass "" when the client declared none so the gateway falls back to the
 // normalized clientInfo.name for access scoping.
-func (g *Gateway) HandleInitialize(params InitializeParams, accessID string) (*InitializeResult, *Session, error) {
+//
+// group is the tool group of the endpoint the client connected through
+// (/groups/{name}/mcp); "" for the default /mcp endpoint. The transport
+// validates the group exists before calling this.
+func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group string) (*InitializeResult, *Session, error) {
 	// Echo the client's requested protocol version when supported, otherwise
 	// counter-offer the latest supported version (per the MCP lifecycle spec,
 	// the client decides whether to disconnect). Never fail for version reasons.
 	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
-	session := g.sessions.Create(params.ClientInfo, accessID, protocolVersion)
+	session := g.sessions.Create(params.ClientInfo, accessID, group, protocolVersion)
 
 	caps := Capabilities{
 		Tools: &ToolsCapability{
@@ -1543,6 +1582,12 @@ func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error)
 	}
 
 	tools := g.scopeToolsForContext(ctx, g.router.AggregatedTools())
+	// A group session sees its curated, rewritten surface. Client scoping
+	// ran first, on canonical names, so a scoped-out tool never reappears
+	// under a group rename.
+	if group := GroupFromContext(ctx); group != "" {
+		tools = g.CurrentGroupPolicy().FilterAndRewrite(group, tools)
+	}
 	g.logToolCountHint(len(tools))
 	return &ToolsListResult{Tools: tools}, nil
 }
@@ -1579,12 +1624,38 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	cm := g.codeMode
 	g.mu.RUnlock()
 
+	// Group sessions resolve exposure-layer names to canonical ones at the
+	// dispatch boundary, before anything else runs: everything downstream
+	// (scoping, gates, routing, telemetry) sees only canonical names. The
+	// code-mode meta-tools are exempt from membership (they are the group's
+	// window, not members of it); sandboxed inner calls re-enter here with
+	// the group still on ctx and are enforced normally.
+	if group := GroupFromContext(ctx); group != "" && (cm == nil || !cm.IsMetaTool(params.Name)) {
+		canonical, ok := g.CurrentGroupPolicy().ResolveAlias(group, params.Name, g.router.HasTool)
+		if !ok {
+			g.logger.Debug("tool call denied by group membership",
+				"group", group, "tool", params.Name)
+			return &ToolCallResult{
+				Content: []Content{NewTextContent(g.groupDenialMessage(ctx, group, params.Name))},
+				IsError: true,
+			}, nil
+		}
+		params.Name = canonical
+	}
+
 	if cm != nil && cm.IsMetaTool(params.Name) {
 		// Scope the code-mode tool universe to the connecting client. Code mode
 		// sources its search/execute surface from the same aggregated tool set
 		// as the direct path, so without this filter a scoped client could
 		// discover and call denied tools via code mode.
 		allTools := g.scopeToolsForContext(ctx, g.router.AggregatedTools())
+		// A group session's code-mode universe is the curated, rewritten
+		// surface. Renames stay server-prefixed here: the sandbox ACL and
+		// its callTool(server, tool) construction both need names that
+		// split into a server half.
+		if group := GroupFromContext(ctx); group != "" {
+			allTools = g.CurrentGroupPolicy().FilterAndRewritePrefixed(group, allTools)
+		}
 		return cm.HandleCall(ctx, params, g, allTools)
 	}
 
@@ -1763,6 +1834,19 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	}
 
 	return result, nil
+}
+
+// groupDenialMessage builds the model-readable rejection for a call outside
+// a group's surface. It names the group and its current tool count (or the
+// group's removal) so an agent stops retrying instead of burning tokens.
+func (g *Gateway) groupDenialMessage(ctx context.Context, group, toolName string) string {
+	policy := g.CurrentGroupPolicy()
+	if !policy.Has(group) {
+		return fmt.Sprintf("Group %q no longer exists on this gateway. Reconnect or ask the operator which endpoint to use.", group)
+	}
+	exposed := policy.FilterAndRewrite(group, g.scopeToolsForContext(ctx, g.router.AggregatedTools()))
+	return fmt.Sprintf("Tool %q is not in group %q. The group exposes %d tools; list them with tools/list.",
+		toolName, group, len(exposed))
 }
 
 // checkCallGates runs the installed gates in order against one call. It
