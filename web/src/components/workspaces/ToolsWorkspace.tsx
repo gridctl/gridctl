@@ -12,6 +12,7 @@ import {
   Save,
   Search,
   Users,
+  Boxes,
   Wrench,
   X,
 } from 'lucide-react';
@@ -38,6 +39,9 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatusDot } from '../ui/StatusDot';
 import { FleetActions } from './FleetActions';
 import { ClientAccessEditor } from './ClientAccessEditor';
+import { GroupsPanel } from './GroupsPanel';
+import { useGroups } from '../../hooks/useGroups';
+import { groupsForTool } from '../../lib/groups';
 import { ToolDetailPanel } from './ToolDetailPanel';
 import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
 
@@ -140,6 +144,10 @@ export function ToolsWorkspace() {
   const [fleetOpen, setFleetOpen] = useState(false);
   // Per-client access editor (which servers each client may reach).
   const [accessOpen, setAccessOpen] = useState(false);
+  // Tool groups panel (the curation axis: bundles served at /groups/{name}/mcp).
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const { report: groupsReport } = useGroups(true);
+  const groupsConfigured = groupsReport?.configured ?? false;
   // The tool whose detail is shown in the right rail. Distinct from the
   // whitelist selection (the checkboxes) — this is the "active" tool. Picking a
   // global-search result sets it so that tool is revealed on arrival. Declared
@@ -273,6 +281,8 @@ export function ToolsWorkspace() {
             onOpenFleet={() => setFleetOpen(true)}
             fleetDisabled={servers.length === 0}
             onOpenAccess={() => setAccessOpen(true)}
+            groupsConfigured={groupsConfigured}
+            onOpenGroups={() => setGroupsOpen(true)}
           />
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
@@ -296,6 +306,9 @@ export function ToolsWorkspace() {
                 usage={usageByServer?.[activeServer.name]}
                 windowMs={windowMs}
                 now={fetchedAt}
+                groupsFor={(tool) =>
+                  groupsForTool(groupsReport, `${activeServer.name}${TOOL_NAME_DELIMITER}${tool}`)
+                }
               />
             ) : null}
           </div>
@@ -332,6 +345,13 @@ export function ToolsWorkspace() {
         onClose={() => setAccessOpen(false)}
         servers={servers}
       />
+
+      <GroupsPanel
+        isOpen={groupsOpen}
+        onClose={() => setGroupsOpen(false)}
+        report={groupsReport}
+        toolCatalog={toolCatalog}
+      />
     </div>
   );
 }
@@ -353,6 +373,8 @@ interface ToolsHeaderProps {
   onOpenFleet: () => void;
   fleetDisabled: boolean;
   onOpenAccess: () => void;
+  groupsConfigured: boolean;
+  onOpenGroups: () => void;
 }
 
 function ToolsHeader({
@@ -368,6 +390,8 @@ function ToolsHeader({
   onOpenFleet,
   fleetDisabled,
   onOpenAccess,
+  groupsConfigured,
+  onOpenGroups,
 }: ToolsHeaderProps) {
   const searching = query.trim().length > 0;
   const windowLabel = AUDIT_WINDOWS.find((w) => w.id === auditWindow)?.label ?? '7 days';
@@ -387,6 +411,20 @@ function ToolsHeader({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {groupsConfigured && (
+            <button
+              type="button"
+              onClick={onOpenGroups}
+              aria-label="Open tool groups"
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+                'bg-secondary/10 text-secondary border-secondary/30 hover:bg-secondary/20 hover:border-secondary/50',
+              )}
+            >
+              <Boxes size={11} aria-hidden="true" />
+              Groups
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenAccess}
@@ -612,6 +650,9 @@ interface ServerDetailProps {
   windowMs: number;
   // Fetch time used as "now" for audit classification (null until loaded).
   now: number | null;
+  // Names of tool groups whose surface includes this (canonical) tool, for
+  // the curation-axis badges on each row.
+  groupsFor: (tool: string) => string[];
 }
 
 function ServerDetail({
@@ -623,6 +664,7 @@ function ServerDetail({
   usage,
   windowMs,
   now,
+  groupsFor,
 }: ServerDetailProps) {
   const {
     allTools: rows,
@@ -806,13 +848,24 @@ function ServerDetail({
                       {isEnabled && <Check size={10} className="text-primary" aria-hidden="true" />}
                     </button>
                     <div className="flex-1 min-w-0">
-                      <div
-                        className={cn(
-                          'text-xs font-mono truncate',
-                          isEnabled ? 'text-text-primary' : 'text-text-secondary',
-                        )}
-                      >
-                        {opt.name}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className={cn(
+                            'text-xs font-mono truncate',
+                            isEnabled ? 'text-text-primary' : 'text-text-secondary',
+                          )}
+                        >
+                          {opt.name}
+                        </span>
+                        {groupsFor(opt.name).map((g) => (
+                          <span
+                            key={g}
+                            title={`In tool group "${g}"`}
+                            className="flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium bg-secondary/10 text-secondary"
+                          >
+                            {g}
+                          </span>
+                        ))}
                       </div>
                       {opt.description && (
                         <div className="text-[10px] text-text-muted truncate">{opt.description}</div>
