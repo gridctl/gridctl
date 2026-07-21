@@ -207,6 +207,12 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 	if gSession := s.gateway.sessions.Get(sessionID); gSession != nil {
 		ctx = WithClientID(ctx, gSession.ClientID)
 		ctx = WithClientAccessID(ctx, gSession.AccessID)
+		// The session's group is authoritative over the request path, in
+		// BOTH directions: a session created on /groups/x/mcp stays bound
+		// to x wherever it posts, and a default /mcp session posting to a
+		// group path stays full-surface. The value is stored even when
+		// empty so it shadows anything a route wrapper injected.
+		ctx = context.WithValue(ctx, groupKey{}, gSession.Group)
 	}
 
 	resp := s.handleRequest(ctx, session, &req)
@@ -243,7 +249,9 @@ func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	result, gSession, err := s.gateway.HandleInitialize(params, clientAccessIDFromRequest(r))
+	// The group (if any) was injected into the request context by the
+	// /groups/{name}/mcp route wrapper, which already validated it exists.
+	result, gSession, err := s.gateway.HandleInitialize(params, clientAccessIDFromRequest(r), GroupFromContext(r.Context()))
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
