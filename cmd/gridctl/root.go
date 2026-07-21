@@ -119,6 +119,7 @@ func init() {
 		searchCmd:    groupCatalog,
 		addCmd:       groupCatalog,
 		linkCmd:      groupClients,
+		groupsCmd:    groupClients,
 		unlinkCmd:    groupClients,
 		importCmd:    groupClients,
 		ctxCmd:       groupClients,
