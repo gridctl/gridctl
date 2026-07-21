@@ -24,6 +24,10 @@ type Session struct {
 	// X-Gridctl-Client-Id header), otherwise it falls back to ClientID. Both are
 	// normalized so configuration, the wire, and the UI reconcile on one form.
 	AccessID string
+	// Group is the tool group this session is bound to, set when the client
+	// connected through a /groups/{name}/mcp endpoint. Empty for the default
+	// full-surface /mcp endpoint. Frozen at initialize, like AccessID.
+	Group string
 	// ProtocolVersion is the MCP protocol version negotiated at initialize
 	// (echo of the client's requested version when supported, otherwise the
 	// latest supported version).
@@ -54,8 +58,11 @@ func NewSessionManager() *SessionManager {
 // none, in which case the normalized clientInfo.name becomes the access id.
 // Both forms are normalized so enforcement, config, and UI reconcile.
 //
+// group is the tool group of the endpoint the client connected through;
+// pass "" for the default /mcp endpoint.
+//
 // protocolVersion is the MCP protocol version negotiated for this session.
-func (m *SessionManager) Create(clientInfo ClientInfo, accessID, protocolVersion string) *Session {
+func (m *SessionManager) Create(clientInfo ClientInfo, accessID, group, protocolVersion string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -75,6 +82,7 @@ func (m *SessionManager) Create(clientInfo ClientInfo, accessID, protocolVersion
 		ClientInfo:      clientInfo,
 		ClientID:        normalized,
 		AccessID:        resolvedAccess,
+		Group:           group,
 		ProtocolVersion: protocolVersion,
 		Initialized:     true,
 		CreatedAt:       time.Now(),
