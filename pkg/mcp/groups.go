@@ -279,9 +279,31 @@ type GroupStatus struct {
 	MemberCount int    `json:"member_count"`
 	// Tools are the exposed (post-rewrite) tool names, sorted.
 	Tools []string `json:"tools"`
+	// Members carries the full exposed surface per tool: what a client on
+	// the group endpoint actually sees, plus the canonical origin. The web
+	// UI's what-the-model-sees detail reads this; Tools stays for the CLI.
+	Members []GroupToolStatus `json:"members"`
 	// Overrides maps canonical member names to their exposed names for
 	// renamed tools, and to "" for description/annotation-only overrides.
 	Overrides map[string]string `json:"overrides,omitempty"`
+}
+
+// GroupToolStatus is one member tool as exposed by a group: the post-rewrite
+// name, description, and merged annotations, with the canonical origin and
+// flags for which override kinds applied.
+type GroupToolStatus struct {
+	// Name is the exposed (possibly renamed) tool name.
+	Name string `json:"name"`
+	// Canonical is the origin server__tool name enforcement operates on.
+	Canonical string `json:"canonical"`
+	// Description is the exposed description (rewritten when overridden).
+	Description string `json:"description,omitempty"`
+	// Annotations are the exposed hints after merging overrides over the
+	// downstream server's own annotations.
+	Annotations *ToolAnnotations `json:"annotations,omitempty"`
+	// Renamed and Rewritten report which override kinds applied.
+	Renamed   bool `json:"renamed,omitempty"`
+	Rewritten bool `json:"rewritten,omitempty"`
 }
 
 // Status resolves every group against the given live tool surface.
@@ -292,12 +314,32 @@ func (p *GroupPolicy) Status(liveTools []Tool) []GroupStatus {
 	out := make([]GroupStatus, 0, len(p.groups))
 	for _, name := range p.Names() {
 		def := p.groups[name]
-		exposed := p.FilterAndRewrite(name, liveTools)
-		toolNames := make([]string, 0, len(exposed))
-		for _, t := range exposed {
-			toolNames = append(toolNames, t.Name)
+		// Members pair each live member (canonical form) with its exposed
+		// rewrite; iterating the live tools keeps both forms in hand.
+		members := make([]GroupToolStatus, 0)
+		for _, tool := range liveTools {
+			if !def.isMember(tool.Name) {
+				continue
+			}
+			exposed := p.FilterAndRewrite(name, []Tool{tool})
+			if len(exposed) != 1 {
+				continue
+			}
+			ov, hasOverride := def.overrides[tool.Name]
+			members = append(members, GroupToolStatus{
+				Name:        exposed[0].Name,
+				Canonical:   tool.Name,
+				Description: exposed[0].Description,
+				Annotations: exposed[0].Annotations,
+				Renamed:     hasOverride && ov.Name != "",
+				Rewritten:   hasOverride && ov.Description != "",
+			})
 		}
-		sort.Strings(toolNames)
+		sort.Slice(members, func(i, j int) bool { return members[i].Name < members[j].Name })
+		toolNames := make([]string, 0, len(members))
+		for _, m := range members {
+			toolNames = append(toolNames, m.Name)
+		}
 		overrides := make(map[string]string, len(def.overrides))
 		for canonical, ov := range def.overrides {
 			overrides[canonical] = ov.Name
@@ -306,8 +348,9 @@ func (p *GroupPolicy) Status(liveTools []Tool) []GroupStatus {
 			Name:        name,
 			Description: def.description,
 			Endpoint:    fmt.Sprintf("/groups/%s/mcp", name),
-			MemberCount: len(exposed),
+			MemberCount: len(members),
 			Tools:       toolNames,
+			Members:     members,
 			Overrides:   overrides,
 		})
 	}
