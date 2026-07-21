@@ -34,6 +34,9 @@ const GITHUB = 'github';
 const ATLAS = 'atlassian';
 
 beforeEach(() => {
+  // The workspace mounts the groups poll unconditionally; keep the test
+  // hermetic instead of letting a real fetch fail in jsdom.
+  vi.spyOn(api, 'fetchGroups').mockResolvedValue({ configured: false, groups: [] });
   // The workspace sources per-tool detail (descriptions, schemas, global
   // search) from the catalog, so seed it; `tools` is the MCP-facing list.
   const catalog = [
