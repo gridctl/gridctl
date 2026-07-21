@@ -1269,6 +1269,52 @@ export async function fetchLimits(): Promise<LimitsReport> {
   return fetchJSON<LimitsReport>('/api/limits');
 }
 
+// === Tool Groups API ===
+
+/**
+ * One member tool as exposed by a group: post-rewrite name, description,
+ * and merged annotation hints, with the canonical origin. Mirrors
+ * pkg/mcp GroupToolStatus.
+ */
+export interface GroupToolStatus {
+  name: string;
+  canonical: string;
+  description?: string;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
+  renamed?: boolean;
+  rewritten?: boolean;
+}
+
+/** One group's resolved snapshot. Mirrors pkg/mcp GroupStatus. */
+export interface GroupStatus {
+  name: string;
+  description?: string;
+  endpoint: string;
+  member_count: number;
+  tools: string[];
+  members: GroupToolStatus[];
+  overrides?: Record<string, string>;
+}
+
+export interface GroupsReport {
+  configured: boolean;
+  groups: GroupStatus[];
+}
+
+/**
+ * Get every tool group resolved against the live tool surface.
+ * GET /api/groups
+ */
+export async function fetchGroups(): Promise<GroupsReport> {
+  return fetchJSON<GroupsReport>('/api/groups');
+}
+
 // === Server Catalog API ===
 
 /**
