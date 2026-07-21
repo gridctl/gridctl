@@ -596,6 +596,39 @@ Returns `503` when no metrics accumulator is configured; `404` when `stack` does
 
 ---
 
+### Groups
+
+#### `GET /api/groups`
+
+Returns every tool group declared under `groups:` in stack.yaml, resolved against the live tool surface. Backs `gridctl groups`. Always `200`: with no groups configured the payload carries `configured: false` and an empty array. Each group also serves MCP at `GET|POST|DELETE /groups/{name}/mcp` (and a negotiation hint at `GET /groups/{name}/sse`); unknown group names return `404` before any session is created.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/groups
+```
+
+**Response:**
+```json
+{
+  "configured": true,
+  "groups": [
+    {
+      "name": "release",
+      "description": "Release engineering bundle",
+      "endpoint": "/groups/release/mcp",
+      "member_count": 12,
+      "tools": ["create_issue", "github__search_code", "gitlab__create_merge_request"],
+      "overrides": {"github__create_issue": "create_issue"}
+    }
+  ]
+}
+```
+
+`tools` are the exposed (post-rename) names; `overrides` maps canonical member names to their renames (empty string for description- or annotation-only overrides). The pins drift endpoint (`GET /api/pins/{server}/diff`) adds a `groups_rewriting` array to any drifted tool whose description a group rewrites.
+
+---
+
 ### Limits
 
 #### `GET /api/limits`
