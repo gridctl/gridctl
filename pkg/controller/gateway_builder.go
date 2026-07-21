@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -250,6 +252,10 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	// block is configured, preserving legacy "everyone sees everything").
 	inst.Gateway.SetClientAccessPolicy(mcp.NewClientAccessPolicy(clientAccessSpec(b.stack)))
 
+	// Phase 1a5: Install the tool-group policy (nil when no groups: block is
+	// configured; group endpoints then 404).
+	inst.Gateway.SetGroupPolicy(mcp.NewGroupPolicy(groupsSpec(b.stack)))
+
 	// Phase 1b: Create registry server (internal MCP server)
 	regDir := filepath.Join(state.BaseDir(), "registry")
 	if b.registryDir != "" {
@@ -282,6 +288,11 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		inst.Gateway.Router().AddClient(registryServer)
 		inst.Gateway.Router().RefreshTools()
 	}
+
+	// Lint active skills against group renames: a skill instructing the
+	// model to call a tool by its original name will miss the renamed
+	// surface. Best-effort warning, never an error.
+	lintGroupRenamesAgainstSkills(inst.Gateway.CurrentGroupPolicy(), registryStore, slog.New(inst.Handler))
 
 	// Phase 4: Get embedded web files
 	var webFS fs.FS
@@ -718,6 +729,75 @@ func clientAccessSpec(stack *config.Stack) *mcp.ClientAccessSpec {
 	return spec
 }
 
+// groupsSpec translates the stack's optional `groups:` block into the
+// config-agnostic spec the gateway consumes. Returns nil when no block is
+// configured, which compiles to a nil policy (no group endpoints).
+func groupsSpec(stack *config.Stack) mcp.GroupsSpec {
+	if stack == nil || len(stack.Groups) == 0 {
+		return nil
+	}
+	spec := make(mcp.GroupsSpec, len(stack.Groups))
+	for name, g := range stack.Groups {
+		overrides := make(map[string]mcp.GroupOverrideSpec, len(g.Overrides))
+		for canonical, ov := range g.Overrides {
+			overrides[canonical] = mcp.GroupOverrideSpec{
+				Name:            ov.Name,
+				Description:     ov.Description,
+				ReadOnlyHint:    ov.ReadOnlyHint,
+				DestructiveHint: ov.DestructiveHint,
+				IdempotentHint:  ov.IdempotentHint,
+				OpenWorldHint:   ov.OpenWorldHint,
+			}
+		}
+		spec[name] = mcp.GroupSpec{
+			Description: g.Description,
+			Servers:     g.Servers,
+			Tools:       g.Tools,
+			Exclude:     g.Exclude,
+			Overrides:   overrides,
+		}
+	}
+	return spec
+}
+
+// lintGroupRenamesAgainstSkills warns when an active skill's SKILL.md still
+// references the ORIGINAL unprefixed name of a tool a group renames: agents
+// following the skill would call a name the group no longer exposes. A
+// best-effort substring scan; renames stay valid regardless.
+func lintGroupRenamesAgainstSkills(policy *mcp.GroupPolicy, store *registry.Store, logger *slog.Logger) {
+	renames := policy.RenamedOriginals()
+	if len(renames) == 0 || store == nil {
+		return
+	}
+	for _, skill := range store.ActiveSkills() {
+		for group, byCanonical := range renames {
+			for canonical, exposed := range byCanonical {
+				_, original, err := mcp.ParsePrefixedTool(canonical)
+				if err != nil || original == exposed {
+					continue
+				}
+				if skillMentionsTool(skill.Body, original) {
+					logger.Warn("active skill references a tool renamed by a group",
+						"skill", skill.Name, "group", group,
+						"original", original, "renamed_to", exposed,
+						"hint", "clients linked to the group see only the renamed tool")
+				}
+			}
+		}
+	}
+}
+
+// skillMentionsTool reports whether body references toolName as a whole
+// word. Word-boundary matching keeps short tool names ("get", "run") from
+// flagging nearly every skill the way a bare substring scan would.
+func skillMentionsTool(body, toolName string) bool {
+	re, err := regexp.Compile(`(^|[^a-zA-Z0-9_-])` + regexp.QuoteMeta(toolName) + `($|[^a-zA-Z0-9_-])`)
+	if err != nil {
+		return strings.Contains(body, toolName)
+	}
+	return re.MatchString(body)
+}
+
 // applyLimitsPolicy compiles the stack's limits: block and installs it on
 // the gateway, replacing (and cleanly stopping) any previous policy. The
 // retiring policy flushes its ledger first so the new one loads the freshest
@@ -1100,6 +1180,14 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// call. Current-window spend carries over for unchanged entries;
 		// raising a cap mid-window never refills spent budget.
 		b.applyLimitsPolicy(inst.Gateway, newCfg, slog.New(handler))
+		// Rebuild the group policy so `groups:` edits change endpoint
+		// surfaces on the next request. Stateless recompile, no carry-over.
+		// Re-lint skills afterward: a reload can introduce renames whose
+		// originals live skills still reference.
+		inst.Gateway.SetGroupPolicy(mcp.NewGroupPolicy(groupsSpec(newCfg)))
+		if inst.RegistryServer != nil {
+			lintGroupRenamesAgainstSkills(inst.Gateway.CurrentGroupPolicy(), inst.RegistryServer.Store(), slog.New(handler))
+		}
 		b.applyTelemetryConfig(inst.APIServer, handler)
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
