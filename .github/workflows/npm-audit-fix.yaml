@@ -1,0 +1,95 @@
+name: NPM Audit Fix
+
+# Keeps web/package-lock.json ahead of fresh npm advisories without a
+# maintainer pushing lockfile bumps into whatever PR happens to be open.
+# The gatekeeper frontend job fails on `npm audit --audit-level=high`, and
+# advisories land faster than PRs merge, so every new advisory otherwise
+# blocks an unrelated branch. Weekly (plus on-demand via workflow_dispatch
+# when a mid-week advisory bites), this applies semver-compatible fixes and
+# - only when the lockfile actually changed - opens or updates a single
+# reviewable PR. The audit gate itself stays; this keeps main passing it.
+
+on:
+  schedule:
+    # Mondays at 05:30 UTC, just ahead of the pricing refresh so both
+    # auto-PRs are waiting at the start of the week.
+    - cron: "30 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  audit-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      # Snapshot the advisories before fixing so the PR body can name them.
+      # `npm audit` exits 1 when vulnerabilities exist - that is the
+      # expected case here, not a failure. jq is preinstalled.
+      - name: Capture current advisories
+        working-directory: web
+        run: |
+          npm audit --json > /tmp/audit-before.json || true
+          jq -r '
+            [.vulnerabilities[]?.via[]? | objects
+             | {id: (.url // "" | split("/") | last), title, severity}]
+            | unique_by(.id)
+            | map("| \(.id) | \(.severity) | \(.title) |")
+            | join("\n")
+          ' /tmp/audit-before.json > /tmp/advisories.md
+          echo "TOTAL=$(jq '.metadata.vulnerabilities.total // 0' /tmp/audit-before.json)" >> "$GITHUB_ENV"
+
+      # Applies semver-compatible updates only: no --force, so breaking
+      # (major) fixes are left for a human and surface in the PR body as
+      # still-open advisories. A clean audit leaves the tree untouched and
+      # the PR step below no-ops.
+      - name: Apply compatible fixes
+        working-directory: web
+        run: npm audit fix
+
+      - name: Compose pull request body
+        run: |
+          {
+            echo "Automated \`npm audit fix\` for \`web/\`."
+            echo
+            echo "Advisories reported before fixing (${TOTAL} vulnerable paths):"
+            echo
+            echo "| Advisory | Severity | Title |"
+            echo "|---|---|---|"
+            cat /tmp/advisories.md
+            echo
+            echo "Only semver-compatible updates are applied (no \`--force\`);"
+            echo "anything needing a major bump is still listed by the frontend"
+            echo "job's audit gate and needs a manual fix. This PR is opened by"
+            echo "the scheduled \`NPM Audit Fix\` workflow; re-runs update it in"
+            echo "place rather than opening duplicates."
+          } > /tmp/pr-body.md
+
+      # peter-evans/create-pull-request is a no-op when the working tree is
+      # clean (nothing fixable), and reuses the same branch/PR on re-runs.
+      # Same GITHUB_TOKEN caveats as update-pricing.yaml: downstream
+      # workflows do not run on the auto-PR without a PAT/App token, and
+      # "Allow GitHub Actions to create and approve pull requests" must be
+      # enabled in repo settings.
+      - name: Create or update pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          branch: chore/npm-audit-fix
+          delete-branch: true
+          sign-commits: true
+          commit-message: "chore: apply npm audit fix in web"
+          title: "chore: apply npm audit fix in web"
+          labels: chore
+          body-path: /tmp/pr-body.md
