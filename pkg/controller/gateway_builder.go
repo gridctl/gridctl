@@ -28,6 +28,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/telemetry"
 	"github.com/gridctl/gridctl/pkg/token"
@@ -1187,6 +1188,40 @@ func refreshRegistry(ctx context.Context, inst *GatewayInstance, logger *slog.Lo
 		inst.Gateway.Router().RemoveClient("registry")
 	}
 	inst.Gateway.Router().RefreshTools()
+	reconcileSkillProjections(ctx, inst, logger)
+}
+
+// reconcileSkillProjections keeps native-client skill projections in
+// step with the registry after a refresh: deactivated or deleted skills
+// leave client directories, repaired links and refreshed copies follow
+// edits. Failures are logged and never propagate — a projection problem
+// must not break the registry/prompt refresh path. Writes go only to
+// client skill directories, never into the watched registry tree, so
+// the disk watcher cannot feed back on itself.
+func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, logger *slog.Logger) {
+	mgr, err := skillsync.NewManager(inst.RegistryServer.Store())
+	if err != nil {
+		logger.Warn("skill projection reconcile skipped", "error", err)
+		return
+	}
+	results, err := mgr.Reconcile(ctx)
+	if err != nil {
+		logger.Warn("skill projection reconcile failed", "error", err)
+		return
+	}
+	for _, r := range results {
+		switch r.Action {
+		case skillsync.ActionUnchanged:
+		case skillsync.ActionError:
+			logger.Warn("skill projection reconcile error", "skill", r.Skill, "client", r.Client, "error", r.Error)
+		case skillsync.ActionSkippedDrift, skillsync.ActionSkippedUnmanaged:
+			// Unresolved drift the operator must decide on; reconcile
+			// never forces.
+			logger.Warn("skill projection needs attention", "skill", r.Skill, "client", r.Client, "action", r.Action, "target", r.Target)
+		default:
+			logger.Info("skill projection reconciled", "skill", r.Skill, "client", r.Client, "action", r.Action, "target", r.Target)
+		}
+	}
 }
 
 // printEndpoints prints the gateway endpoint information.

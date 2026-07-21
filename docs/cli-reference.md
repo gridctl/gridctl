@@ -73,7 +73,7 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 
 ## Skills
 
-Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients as a prompt. See [`docs/skills.md`](./skills.md) for the authoring guide.
+Skills are prose; the registry surfaces every active `SKILL.md` to prompt-rendering MCP clients as a prompt, and `skill project` places selected skills into native client skill directories for clients that read skills from disk. See [`docs/skills.md`](./skills.md) for the authoring guide and the per-client channel matrix.
 
 | Command | Purpose |
 |---|---|
@@ -85,6 +85,9 @@ Skills are prose; the registry surfaces every active `SKILL.md` to MCP clients a
 | `gridctl skill info <name>` | Show origin and update status. |
 | `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation (`--duration`, default `10m`, before auto-cleanup). Auth flags: `--auth-token <pat>`, `--vault-key <key>`, `--ssh-key <path>`. |
 | `gridctl skill validate <name>` | Validate a skill definition. |
+| `gridctl skill project sync [skill...]` | Project named active skills into native client skill directories (`--clients agents,claude-code,antigravity`; `--copy` for copies instead of symlinks; `--dry-run`, `--force`, `--format json` or `--json`, `--plain`; exit `0`/`1`/`2`). With no names, re-syncs the recorded projection set. |
+| `gridctl skill project status` | Per-projection state table (in-sync / stale / drifted / target-missing; `--format json` or `--json`, `--plain`; exit `0`/`1`/`2`). |
+| `gridctl skill project unsync [skill...]` | Remove projections gridctl created (`--all`, `--clients`, `--dry-run`, `--format json` or `--json`). Copies are backed up before removal; unmanaged files are never touched. |
 | `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `-s` / `--stack` to target a stack (auto-detected when only one runs), `--format json` or `--json` for machine output, `-q` / `--quiet` to suppress the success line. |
 
 ## Variables
