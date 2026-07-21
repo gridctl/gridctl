@@ -11,11 +11,11 @@ import (
 
 // Sentinel errors for link operations.
 var (
-	ErrAlreadyLinked = errors.New("already linked with identical config")
-	ErrConflict      = errors.New("existing entry has unexpected config")
-	ErrNotLinked     = errors.New("no gridctl entry found")
+	ErrAlreadyLinked  = errors.New("already linked with identical config")
+	ErrConflict       = errors.New("existing entry has unexpected config")
+	ErrNotLinked      = errors.New("no gridctl entry found")
 	ErrClientNotFound = errors.New("client not detected on this system")
-	ErrNpxNotFound   = errors.New("npx not found in PATH")
+	ErrNpxNotFound    = errors.New("npx not found in PATH")
 )
 
 // ClientProvisioner handles config for a single LLM client.
@@ -65,6 +65,7 @@ type LinkOptions struct {
 	Port       int    // Gateway port for HTTP URL construction
 	ServerName string // Key name in config (default: "gridctl")
 	ClientID   string // Stable client identifier embedded as the `client` query param (empty = none)
+	Group      string // Tool group whose endpoint to link (empty = the default full surface)
 	Force      bool   // Overwrite existing entry
 	DryRun     bool   // Show what would change without modifying files
 }
@@ -227,12 +228,28 @@ func GatewayHTTPURL(port int) string {
 	return fmt.Sprintf("http://localhost:%d/mcp", port)
 }
 
+// GroupGatewayURL constructs a tool group's SSE gateway URL from a port.
+func GroupGatewayURL(port int, group string) string {
+	return fmt.Sprintf("http://localhost:%d/groups/%s/sse", port, group)
+}
+
+// GroupGatewayHTTPURL constructs a tool group's streamable HTTP gateway URL.
+func GroupGatewayHTTPURL(port int, group string) string {
+	return fmt.Sprintf("http://localhost:%d/groups/%s/mcp", port, group)
+}
+
 // gatewayHTTPURLForOpts returns the streamable HTTP gateway URL with the stable
-// client identifier embedded as the `client` query parameter when one is set.
-// Used by HTTP-native provisioners that rebuild the URL from the port and would
-// otherwise drop the parameter already present on opts.GatewayURL.
+// client identifier embedded as the `client` query parameter when one is set,
+// targeting the group endpoint when the link is group-scoped. Used by
+// HTTP-native provisioners that rebuild the URL from the port and would
+// otherwise drop the parameter (or group path) already present on
+// opts.GatewayURL.
 func gatewayHTTPURLForOpts(opts LinkOptions) string {
-	return AppendClientParam(GatewayHTTPURL(opts.Port), opts.ClientID)
+	base := GatewayHTTPURL(opts.Port)
+	if opts.Group != "" {
+		base = GroupGatewayHTTPURL(opts.Port, opts.Group)
+	}
+	return AppendClientParam(base, opts.ClientID)
 }
 
 // AppendClientParam adds (or replaces) the `client` query parameter on a gateway

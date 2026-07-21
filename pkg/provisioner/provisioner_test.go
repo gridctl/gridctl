@@ -1018,6 +1018,29 @@ func TestGatewayURL(t *testing.T) {
 	}
 }
 
+func TestGroupGatewayURLs(t *testing.T) {
+	if got := GroupGatewayURL(9090, "release"); got != "http://localhost:9090/groups/release/sse" {
+		t.Errorf("GroupGatewayURL = %s", got)
+	}
+	if got := GroupGatewayHTTPURL(9090, "release"); got != "http://localhost:9090/groups/release/mcp" {
+		t.Errorf("GroupGatewayHTTPURL = %s", got)
+	}
+}
+
+// TestGatewayHTTPURLForOpts_Group guards the branch that keeps HTTP-native
+// provisioners (which rebuild the URL from the port) from silently dropping
+// the group path present on opts.GatewayURL.
+func TestGatewayHTTPURLForOpts_Group(t *testing.T) {
+	got := gatewayHTTPURLForOpts(LinkOptions{Port: 9090, Group: "release", ClientID: "claude-code"})
+	if got != "http://localhost:9090/groups/release/mcp?client=claude-code" {
+		t.Errorf("group opts URL = %s", got)
+	}
+	got = gatewayHTTPURLForOpts(LinkOptions{Port: 9090})
+	if got != "http://localhost:9090/mcp" {
+		t.Errorf("default opts URL = %s", got)
+	}
+}
+
 // --- Client Interface Compliance ---
 
 func TestClientProvisioners_ImplementInterface(t *testing.T) {
