@@ -13,6 +13,7 @@ import (
 var (
 	unlinkAll    bool
 	unlinkName   string
+	unlinkGroup  string
 	unlinkDryRun bool
 )
 
@@ -31,6 +32,12 @@ Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigr
 		if len(args) > 0 {
 			client = args[0]
 		}
+		// Mirror link's --group entry-name default so
+		// `gridctl unlink <client> --group x` removes what
+		// `gridctl link <client> --group x` wrote.
+		if unlinkGroup != "" && !cmd.Flags().Changed("name") {
+			unlinkName = "gridctl-" + unlinkGroup
+		}
 		return runUnlink(client)
 	},
 }
@@ -38,6 +45,7 @@ Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigr
 func init() {
 	unlinkCmd.Flags().BoolVarP(&unlinkAll, "all", "a", false, "Unlink from all clients")
 	unlinkCmd.Flags().StringVarP(&unlinkName, "name", "n", "gridctl", "Server name to remove")
+	unlinkCmd.Flags().StringVar(&unlinkGroup, "group", "", "Tool group whose link entry to remove (targets the gridctl-<group> entry)")
 	unlinkCmd.Flags().BoolVar(&unlinkDryRun, "dry-run", false, "Show what would change without modifying files")
 }
 

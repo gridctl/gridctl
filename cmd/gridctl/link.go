@@ -17,6 +17,7 @@ var (
 	linkAll      bool
 	linkName     string
 	linkClientID string
+	linkGroup    string
 	linkDryRun   bool
 	linkForce    bool
 )
@@ -40,6 +41,11 @@ Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigr
 		if len(args) > 0 {
 			client = args[0]
 		}
+		// A group-scoped link defaults its entry name to gridctl-<group> so
+		// several groups can be linked into one client side by side.
+		if linkGroup != "" && !cmd.Flags().Changed("name") {
+			linkName = "gridctl-" + linkGroup
+		}
 		return runLink(client)
 	},
 }
@@ -49,6 +55,7 @@ func init() {
 	linkCmd.Flags().BoolVarP(&linkAll, "all", "a", false, "Link all detected clients at once")
 	linkCmd.Flags().StringVarP(&linkName, "name", "n", "gridctl", "Server name in client config")
 	linkCmd.Flags().StringVar(&linkClientID, "client-id", "", "Stable client identifier for per-client access scoping (matches a stack.yaml clients: profile)")
+	linkCmd.Flags().StringVar(&linkGroup, "group", "", "Tool group whose endpoint to link (matches a stack.yaml groups: entry)")
 	linkCmd.Flags().BoolVar(&linkDryRun, "dry-run", false, "Show what would change without modifying files")
 	linkCmd.Flags().BoolVar(&linkForce, "force", false, "Overwrite existing gridctl entry even if present")
 }
@@ -58,16 +65,24 @@ func runLink(client string) error {
 	registry := provisioner.NewRegistry()
 
 	port := resolveGatewayPort(linkPort)
+	// A group link targets the group's endpoint; the check against the
+	// running daemon is best-effort (the daemon may be down or older).
+	baseURL := provisioner.GatewayURL(port)
+	if linkGroup != "" {
+		baseURL = provisioner.GroupGatewayURL(port, linkGroup)
+		warnUnknownGroup(printer, port, linkGroup)
+	}
 	// Embed the stable client identifier (when set) on the gateway URL so the
 	// gateway resolves the connecting client's access scope from the wire rather
 	// than from the clientInfo.name normalization heuristic alone.
-	gatewayURL := provisioner.AppendClientParam(provisioner.GatewayURL(port), linkClientID)
+	gatewayURL := provisioner.AppendClientParam(baseURL, linkClientID)
 
 	opts := provisioner.LinkOptions{
 		GatewayURL: gatewayURL,
 		Port:       port,
 		ServerName: linkName,
 		ClientID:   linkClientID,
+		Group:      linkGroup,
 		Force:      linkForce,
 		DryRun:     linkDryRun,
 	}
@@ -300,4 +315,3 @@ func portFromURL(url string) string {
 	}
 	return url[start+1 : start+end]
 }
-
