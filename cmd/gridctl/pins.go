@@ -501,6 +501,10 @@ type pinsToolDiff struct {
 	OldDescription string         `json:"old_description"`
 	NewDescription string         `json:"new_description"`
 	Findings       []pins.Finding `json:"findings"`
+	// GroupsRewriting names the tool groups whose overrides rewrite this
+	// tool's description; those rewrites should be reviewed against the
+	// new upstream definition.
+	GroupsRewriting []string `json:"groups_rewriting,omitempty"`
 }
 
 // pinsDiffServer is one server's delta in the diff document. LiveServerHash
@@ -690,6 +694,10 @@ func renderPinsDiffText(w io.Writer, doc pinsDiffDoc) {
 				if f.Decoded != "" {
 					fmt.Fprintf(w, "          decoded: %s\n", escapeNonPrintable(f.Decoded))
 				}
+			}
+			for _, group := range d.GroupsRewriting {
+				fmt.Fprintf(w, "      group %q rewrites this tool's description; review the rewrite against the new upstream definition\n",
+					escapeNonPrintable(group))
 			}
 		}
 		for _, name := range sv.NewTools {
