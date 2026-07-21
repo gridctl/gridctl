@@ -7,19 +7,20 @@ import (
 
 // Stack represents the complete gridctl configuration.
 type Stack struct {
-	Version    string           `yaml:"version"`
-	Name       string           `yaml:"name"`
-	Extends    string           `yaml:"extends,omitempty"` // Path to a parent stack file for composition
-	Gateway    *GatewayConfig   `yaml:"gateway,omitempty"`
-	Logging    *LoggingConfig   `yaml:"logging,omitempty"`
-	Telemetry  *TelemetryConfig `yaml:"telemetry,omitempty"` // Opt-in disk persistence for logs/metrics/traces
-	Secrets    *Secrets         `yaml:"secrets,omitempty"`   // Variable set references
-	Network    Network          `yaml:"network"`             // Single network (simple mode)
-	Networks   []Network        `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
-	MCPServers []MCPServer      `yaml:"mcp-servers"`
-	Resources  []Resource       `yaml:"resources,omitempty"`
-	Clients    *ClientsConfig   `yaml:"clients,omitempty"`                        // Optional per-client access scoping (NetworkPolicy semantics)
-	Limits     *LimitsConfig    `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional budgets and rate limits enforced at dispatch
+	Version    string                 `yaml:"version"`
+	Name       string                 `yaml:"name"`
+	Extends    string                 `yaml:"extends,omitempty"` // Path to a parent stack file for composition
+	Gateway    *GatewayConfig         `yaml:"gateway,omitempty"`
+	Logging    *LoggingConfig         `yaml:"logging,omitempty"`
+	Telemetry  *TelemetryConfig       `yaml:"telemetry,omitempty"` // Opt-in disk persistence for logs/metrics/traces
+	Secrets    *Secrets               `yaml:"secrets,omitempty"`   // Variable set references
+	Network    Network                `yaml:"network"`             // Single network (simple mode)
+	Networks   []Network              `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
+	MCPServers []MCPServer            `yaml:"mcp-servers"`
+	Resources  []Resource             `yaml:"resources,omitempty"`
+	Clients    *ClientsConfig         `yaml:"clients,omitempty"`                        // Optional per-client access scoping (NetworkPolicy semantics)
+	Limits     *LimitsConfig          `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional budgets and rate limits enforced at dispatch
+	Groups     map[string]GroupConfig `yaml:"groups,omitempty" json:"groups,omitempty"` // Optional named tool bundles, each at /groups/{name}/mcp
 
 	// ClientModels declares which model each connecting client runs, purely
 	// for cost attribution: tool calls from a declared client are priced at
@@ -127,6 +128,45 @@ type RateLimit struct {
 	CallsPerMinute int `yaml:"calls_per_minute" json:"calls_per_minute"`
 	// Burst is the bucket capacity; 0 selects the default.
 	Burst int `yaml:"burst,omitempty" json:"burst,omitempty"`
+}
+
+// GroupConfig is one entry of the optional top-level `groups:` block: a
+// named cross-server tool bundle served at its own MCP endpoint
+// (/groups/{name}/mcp). Groups are the curation axis; per-client scoping
+// (`clients:`) remains the access axis and still applies on group sessions.
+// Membership resolves as: all tools of Servers, plus Tools, minus Exclude
+// (exclusion always last). Omitting the whole block preserves legacy
+// behavior (Article IX): no group endpoints exist and /mcp is unchanged.
+type GroupConfig struct {
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	// Servers includes every tool of the named stack servers.
+	Servers []string `yaml:"servers,omitempty" json:"servers,omitempty"`
+	// Tools includes specific prefixed tool names ("github__create_issue").
+	Tools []string `yaml:"tools,omitempty" json:"tools,omitempty"`
+	// Exclude subtracts prefixed tool names, applied after inclusion.
+	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+	// Overrides customizes individual member tools, keyed by canonical
+	// prefixed name. Renames and rewrites exist only at this group's
+	// exposure boundary; dispatch, scoping, limits, pins, and telemetry
+	// always operate on canonical names.
+	Overrides map[string]GroupOverride `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+}
+
+// GroupOverride customizes one member tool of a group. Hint fields are
+// pointers: nil passes the downstream server's own annotation through,
+// a set value overrides it. An operator-set hint is the operator vouching
+// for the tool's behavior to clients that consume annotations.
+type GroupOverride struct {
+	// Name renames the tool at the exposure boundary (a flat alias, no
+	// "__"). The canonical name still routes and is still accepted on call.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+	// Description replaces the tool's description verbatim. Empty keeps
+	// the original.
+	Description     string `yaml:"description,omitempty" json:"description,omitempty"`
+	ReadOnlyHint    *bool  `yaml:"read_only_hint,omitempty" json:"read_only_hint,omitempty"`
+	DestructiveHint *bool  `yaml:"destructive_hint,omitempty" json:"destructive_hint,omitempty"`
+	IdempotentHint  *bool  `yaml:"idempotent_hint,omitempty" json:"idempotent_hint,omitempty"`
+	OpenWorldHint   *bool  `yaml:"open_world_hint,omitempty" json:"open_world_hint,omitempty"`
 }
 
 // limitScopeKey returns the entry's scope kind ("client", "server", or
