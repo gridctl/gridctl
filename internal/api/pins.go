@@ -20,6 +20,10 @@ type pinsToolDiff struct {
 	OldDescription string         `json:"old_description"`
 	NewDescription string         `json:"new_description"`
 	Findings       []pins.Finding `json:"findings"`
+	// GroupsRewriting names the tool groups whose overrides rewrite this
+	// tool's description. Advisory: those rewrites were written against the
+	// old upstream definition and should be reviewed against the drift.
+	GroupsRewriting []string `json:"groups_rewriting,omitempty"`
 }
 
 // pinsDiffResponse is the document returned by GET /api/pins/{server}/diff.
@@ -36,7 +40,9 @@ type pinsDiffResponse struct {
 	RemovedTools   []string       `json:"removed_tools"`
 }
 
-func buildPinsDiffResponse(vr *pins.VerifyResult, liveServerHash string, shadow map[string][]pins.Finding) pinsDiffResponse {
+// rewritingFor maps a drifted tool's raw name to the groups whose overrides
+// rewrite its description; nil disables the cross-reference.
+func buildPinsDiffResponse(vr *pins.VerifyResult, liveServerHash string, shadow map[string][]pins.Finding, rewritingFor func(toolName string) []string) pinsDiffResponse {
 	resp := pinsDiffResponse{
 		Server:         vr.ServerName,
 		Status:         vr.Status,
@@ -53,13 +59,18 @@ func buildPinsDiffResponse(vr *pins.VerifyResult, liveServerHash string, shadow 
 	}
 	for _, d := range vr.ModifiedTools {
 		findings := append(append([]pins.Finding{}, d.Findings...), shadow[d.Name]...)
+		var groupsRewriting []string
+		if rewritingFor != nil {
+			groupsRewriting = rewritingFor(d.Name)
+		}
 		resp.ModifiedTools = append(resp.ModifiedTools, pinsToolDiff{
-			Name:           d.Name,
-			OldHash:        d.OldHash,
-			NewHash:        d.NewHash,
-			OldDescription: d.OldDescription,
-			NewDescription: d.NewDescription,
-			Findings:       findings,
+			Name:            d.Name,
+			OldHash:         d.OldHash,
+			NewHash:         d.NewHash,
+			OldDescription:  d.OldDescription,
+			NewDescription:  d.NewDescription,
+			Findings:        findings,
+			GroupsRewriting: groupsRewriting,
 		})
 	}
 	return resp
@@ -203,7 +214,10 @@ func (s *Server) handlePinsDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, buildPinsDiffResponse(vr, liveHash, s.newScanContext().shadowFindings(serverName, tools)))
+	writeJSON(w, buildPinsDiffResponse(vr, liveHash, s.newScanContext().shadowFindings(serverName, tools),
+		func(toolName string) []string {
+			return s.gateway.CurrentGroupPolicy().GroupsRewritingTool(mcp.PrefixTool(serverName, toolName))
+		}))
 }
 
 // handleApprovePins re-pins the current tool definitions for a server, clearing drift.
