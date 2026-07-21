@@ -14,6 +14,7 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, and `te
 - [Catalog](#catalog)
 - [LLM clients](#llm-clients)
 - [Global context](#global-context)
+- [Groups](#groups)
 - [Skills](#skills)
 - [Variables](#variables)
 - [Pins (TOFU schema pinning)](#pins-tofu-schema-pinning)
@@ -53,7 +54,7 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 
 | Command | Purpose |
 |---|---|
-| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--name <name>` to set the server entry name (default `gridctl`), `--client-id <id>` to bind the link to a `clients:` access profile, `--force` to overwrite an existing entry, `-p` / `--port <port>` to target a non-default gateway port (auto-detected from the running daemon, else 8180). |
+| `gridctl link [client]` | Connect an LLM client to the gateway; `--all` for every detected client, `--dry-run` to preview, `--name <name>` to set the server entry name (default `gridctl`), `--client-id <id>` to bind the link to a `clients:` access profile, `--group <name>` to link a tool group's endpoint (entry name defaults to `gridctl-<name>`), `--force` to overwrite an existing entry, `-p` / `--port <port>` to target a non-default gateway port (auto-detected from the running daemon, else 8180). |
 | `gridctl unlink [client]` | Remove gridctl from an LLM client's config; `-a` / `--all` for every client, `--name <name>` to target a non-default entry, `--dry-run` to preview. |
 | `gridctl import [client]` | The reverse of link: scan installed clients for existing MCP server definitions and append selected ones to stack.yaml (client configs are read-only; the stack file is backed up first). Dedupes identical servers across clients with provenance, filters the gateway's own entry, skips name collisions in non-interactive runs (interactive runs prompt to skip, rename, or overwrite), and offers plaintext env secrets into the variable store as `${var:KEY}`. `-a` / `--all`, `--dry-run`, `-y` / `--yes`, `-f` / `--file <stack.yaml>`, `--no-vault`, `--format json` or `--json`. Exit `0` imported or nothing to do, `1` cancelled, `2` infrastructure or validation error. |
 
@@ -70,6 +71,16 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 | `gridctl ctx adopt <client>` | Pull a client's hand edit back into the canonical file, then re-sync that client (other clients become stale). |
 | `gridctl ctx unsync [client...]` | Remove managed artifacts (`--all` for every synced client). Dedicated files are deleted; shim lines and managed blocks are stripped; user-owned content is preserved. |
 | `gridctl ctx edit` | Open the canonical file in `$VISUAL`/`$EDITOR`, then print sync state. |
+
+## Groups
+
+Named cross-server tool bundles declared under `groups:` in stack.yaml (see the [config schema](config-schema.md#groups-tool-bundles)), each served at `/groups/{name}/mcp`. Exit codes: `0` success (including no groups configured), `2` infrastructure error.
+
+| Command | Purpose |
+|---|---|
+| `gridctl groups` | Table of groups with member counts (resolved against the live tool surface), override counts, and endpoints. Prints a sample `groups:` block when none is configured. |
+| `gridctl groups --verbose` | Include each group's exposed (post-rename) tool names. |
+| `gridctl groups --format json` | Machine-readable report; `--json` is an alias, `--plain` for tab-separated rows. |
 
 ## Skills
 
