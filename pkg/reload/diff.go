@@ -29,6 +29,10 @@ type ConfigDiff struct {
 	// via the onConfigApplied hook (current-window spend carries over for
 	// unchanged entries) but must still mark the diff non-empty.
 	LimitsChanged bool
+	// GroupsChanged indicates the tool-group (`groups:`) block changed.
+	// Like ClientsChanged it needs only an in-memory policy rebuild via the
+	// onConfigApplied hook but must still mark the diff non-empty.
+	GroupsChanged bool
 }
 
 // MCPServerDiff contains changes to MCP servers.
@@ -75,7 +79,8 @@ func (d *ConfigDiff) IsEmpty() bool {
 		!d.NetworkChanged &&
 		!d.ClientsChanged &&
 		!d.ModelAttributionChanged &&
-		!d.LimitsChanged
+		!d.LimitsChanged &&
+		!d.GroupsChanged
 }
 
 // ComputeDiff computes the differences between two stack configurations.
@@ -100,7 +105,17 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect budget/rate-limit (`limits:`) changes
 	diff.LimitsChanged = limitsChanged(old, new)
 
+	// Detect tool-group (`groups:`) changes
+	diff.GroupsChanged = groupsChanged(old, new)
+
 	return diff
+}
+
+// groupsChanged reports whether the `groups:` block differs between two
+// stacks. A change needs only the gateway's in-memory group policy rebuilt
+// (via the reload's onConfigApplied hook); no containers are touched.
+func groupsChanged(old, new *config.Stack) bool {
+	return !reflect.DeepEqual(old.Groups, new.Groups)
 }
 
 // limitsChanged reports whether the `limits:` block differs between two
