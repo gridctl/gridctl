@@ -52,6 +52,29 @@ func ClientAccessIDFromContext(ctx context.Context) string {
 	return v
 }
 
+// groupKey is the context key under which the gateway propagates the tool
+// group a session is bound to (from the /groups/{name}/mcp endpoint the
+// client connected through). Empty means the default full-surface /mcp
+// endpoint. Like AccessID, the group is frozen on the session at initialize
+// and threaded into ctx on every request.
+type groupKey struct{}
+
+// WithGroup returns a child context carrying the session's tool group.
+// An empty name leaves the context unchanged.
+func WithGroup(ctx context.Context, group string) context.Context {
+	if group == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, groupKey{}, group)
+}
+
+// GroupFromContext returns the tool group previously stored on ctx via
+// WithGroup, or "" for a default-endpoint session.
+func GroupFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(groupKey{}).(string)
+	return v
+}
+
 // ClientAccessIDHeader is the HTTP header an upstream client may set to declare
 // its stable access identifier explicitly, bypassing the clientInfo.name
 // normalization heuristic. `gridctl link --client-id` embeds the same value as
