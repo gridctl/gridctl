@@ -920,6 +920,78 @@ in `gridctl limits` and `GET /api/limits`.
 
 ---
 
+## Groups (tool bundles)
+
+The optional top-level `groups:` block defines named cross-server tool
+bundles, each served at its own MCP endpoint `/groups/{name}/mcp`. Groups
+are the curation axis. The three axes compose in one sentence: the
+per-server `tools:` whitelist narrows what exists, groups curate what an
+endpoint shows, client scoping restricts what a client may touch, and all
+three intersect. Omitting the block changes nothing; the default `/mcp`
+endpoint always serves the full surface.
+
+```yaml
+groups:
+  release:
+    description: Release engineering bundle
+    servers: [github]                      # include every tool of these servers
+    tools: [gitlab__create_merge_request]  # include specific prefixed tools
+    exclude: [github__delete_repo]         # subtract, applied last
+    overrides:
+      github__create_issue:
+        name: create_issue                 # exposure-layer rename
+        description: "File a release-blocking issue in the release repo."
+        read_only_hint: false
+        destructive_hint: true
+```
+
+### Group fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `description` | string | No | - | Shown in `gridctl groups` and the API |
+| `servers` | []string | No | - | Include every tool of these stack servers |
+| `tools` | []string | No | - | Include specific prefixed tool names |
+| `exclude` | []string | No | - | Subtract prefixed tool names, applied after inclusion |
+| `overrides` | map | No | - | Per-tool customization, keyed by canonical prefixed name; keys must be members |
+
+Group names must match `^[a-z0-9][a-z0-9_-]{0,31}$`. A group must include at
+least one server or tool.
+
+### Override fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | No | - | Rename at the exposure boundary (flat, no `__`). Validated against the client-side 64-character `mcp__<group>__<name>` budget and for collisions within the group |
+| `description` | string | No | - | Replace the tool's description verbatim |
+| `read_only_hint` / `destructive_hint` / `idempotent_hint` / `open_world_hint` | bool | No | - | Inject or override MCP tool annotations. Unset hints pass the downstream server's own annotation through. A set hint is the operator vouching for the tool's behavior |
+
+### Semantics
+
+Renames exist only at the exposure boundary: dispatch, client scoping,
+limits, schema pins, and telemetry always operate on canonical
+`server__tool` names (an inbound renamed call is translated at the dispatch
+entry, and the canonical name stays callable). Calls to tools outside a
+group's surface are rejected with a model-readable error naming the group.
+Client scoping applies on group sessions exactly as on `/mcp`: a tool the
+caller's `clients:` profile excludes stays invisible and denied even under a
+rename. Code mode on a group session searches and executes only the group's
+surface, with renames shown server-prefixed so sandbox calls round-trip.
+
+Schema-pin fingerprints hash the downstream definitions, so group rewrites
+never cause drift; when an upstream tool does drift, `gridctl pins diff`
+flags any group whose description override touches it, since the rewrite was
+written against the old definition. A rename whose original tool name still
+appears in an active skill logs a warning at startup.
+
+Edits hot-reload: surfaces change on the next request, and connected clients
+pick up membership changes on reconnect. Groups serve tools only; prompts
+and resources remain globally visible (matching client scoping's v1
+decision). Link a client to a group with `gridctl link <client> --group
+<name>`; consumption appears in `gridctl groups` and `GET /api/groups`.
+
+---
+
 ## Skill Sources
 
 Skill sources are declared in `~/.gridctl/skills.yaml`. Each source points at a git repository that gridctl clones to discover `SKILL.md` files. Sources may be public or authenticated.
