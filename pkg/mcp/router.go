@@ -149,6 +149,16 @@ func (r *Router) RefreshTools() {
 	}
 }
 
+// HasTool reports whether a prefixed name routes to a live aggregated tool.
+// Group alias resolution uses it to arbitrate between a real tool and an
+// alias-built form sharing the same name.
+func (r *Router) HasTool(prefixedName string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.tools[prefixedName]
+	return ok
+}
+
 // AggregatedTools returns all tools from all servers with prefixed names.
 func (r *Router) AggregatedTools() []Tool {
 	r.mu.RLock()
@@ -170,6 +180,7 @@ func (r *Router) AggregatedTools() []Tool {
 				Description:  fmt.Sprintf("MCP server: %s. Call using the exact tool name %q. %s", name, prefixedName, tool.Description),
 				InputSchema:  tool.InputSchema,
 				OutputSchema: tool.OutputSchema,
+				Annotations:  tool.Annotations,
 			}
 			tools = append(tools, prefixedTool)
 		}
@@ -201,6 +212,7 @@ func (r *Router) CatalogTools() []Tool {
 				Description:  tool.Description,
 				InputSchema:  tool.InputSchema,
 				OutputSchema: tool.OutputSchema,
+				Annotations:  tool.Annotations,
 			})
 		}
 	}
