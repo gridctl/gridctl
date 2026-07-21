@@ -24,6 +24,12 @@ func readJSONFile(path string) (map[string]any, bool, error) {
 
 // parseJSON parses JSON or JSONC bytes into a map.
 func parseJSON(raw []byte) (map[string]any, bool, error) {
+	// Some clients (Antigravity 2.0) pre-create their config as an empty file;
+	// treat it the same as a missing one.
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return map[string]any{}, false, nil
+	}
+
 	// Try hujson to detect and handle comments/trailing commas
 	ast, err := hujson.Parse(raw)
 	if err != nil {

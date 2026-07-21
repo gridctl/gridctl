@@ -35,6 +35,8 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- `gridctl link`, `gridctl unlink`, and link status no longer fail with a JSON parse error when a client's config file exists but is empty or whitespace-only (Antigravity 2.0 creates its `mcp_config.json` as a zero-byte file on install); an empty file is now treated the same as a missing one
+
 - Grok Build is now a supported global context sync target writing a managed block to `~/.grok/AGENTS.md`; it was previously misreported as having no documented global instruction file
 
 - Import skills whose SKILL.md `metadata` contains nested values (the openclaw/ClawHub publishing convention): non-string metadata values are now coerced to strings instead of failing the parse. SKILL.md files that genuinely cannot be parsed are surfaced by path and error across the CLI, import warnings, and the UI wizard instead of the misleading "no SKILL.md files found in repository"
