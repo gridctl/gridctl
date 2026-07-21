@@ -12,7 +12,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/spf13/cobra"
 )
@@ -65,21 +64,10 @@ func init() {
 	tracesCmd.Flags().BoolVar(&tracesFollow, "follow", false, "Stream new traces as they arrive")
 }
 
-// resolveTracesPort finds the port of a running gateway, optionally filtered by stack name.
+// resolveTracesPort delegates to the shared running-port resolver with this
+// command's error vocabulary.
 func resolveTracesPort(stackName string) (int, error) {
-	states, err := state.List()
-	if err != nil {
-		return 0, fmt.Errorf("traces: could not read state: %w", err)
-	}
-	for _, s := range states {
-		if (stackName == "" || s.StackName == stackName) && state.IsRunning(&s) {
-			return s.Port, nil
-		}
-	}
-	if stackName != "" {
-		return 0, fmt.Errorf("traces: stack %q not found or not running", stackName)
-	}
-	return 0, fmt.Errorf("traces: no running gateway — start one with 'gridctl apply'")
+	return resolveRunningPort("traces", stackName)
 }
 
 // buildTracesURL constructs the /api/traces URL with the current filter flags.

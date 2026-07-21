@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/registry"
-	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
 )
@@ -77,39 +76,10 @@ func init() {
 	activateJSON = addJSONAlias(activateCmd)
 }
 
-// resolveActivatePort mirrors resolveTestPort. Kept separate so error
-// messages name the right command.
+// resolveActivatePort delegates to the shared running-port resolver with this
+// command's error vocabulary.
 func resolveActivatePort(stackName string) (int, error) {
-	states, err := state.List()
-	if err != nil {
-		return 0, fmt.Errorf("activate: could not read state: %w", err)
-	}
-	running := make([]state.DaemonState, 0, len(states))
-	for _, s := range states {
-		if state.IsRunning(&s) {
-			running = append(running, s)
-		}
-	}
-	if stackName != "" {
-		for _, s := range running {
-			if s.StackName == stackName {
-				return s.Port, nil
-			}
-		}
-		return 0, fmt.Errorf("activate: stack %q is not running", stackName)
-	}
-	switch len(running) {
-	case 0:
-		return 0, fmt.Errorf("activate: gateway not running; try `gridctl status` or `gridctl serve`")
-	case 1:
-		return running[0].Port, nil
-	default:
-		names := make([]string, len(running))
-		for i, s := range running {
-			names[i] = s.StackName
-		}
-		return 0, fmt.Errorf("activate: multiple stacks running (%s); use --stack to pick one", strings.Join(names, ", "))
-	}
+	return resolveRunningPort("activate", stackName)
 }
 
 // runActivate posts to the activate endpoint and writes the appropriate

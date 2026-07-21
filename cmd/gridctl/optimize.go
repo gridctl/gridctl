@@ -13,7 +13,6 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/optimize"
 	"github.com/gridctl/gridctl/pkg/output"
-	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
@@ -100,40 +99,10 @@ var (
 	optimizePlain *bool
 )
 
-// resolveOptimizePort finds the port of a running gateway, optionally
-// filtered by stack name. Mirrors resolveTracesPort, but emits errors
-// matching the optimize command's vocabulary.
+// resolveOptimizePort delegates to the shared running-port resolver with this
+// command's error vocabulary.
 func resolveOptimizePort(stackName string) (int, error) {
-	states, err := state.List()
-	if err != nil {
-		return 0, fmt.Errorf("optimize: could not read state: %w", err)
-	}
-	running := make([]state.DaemonState, 0, len(states))
-	for _, s := range states {
-		if state.IsRunning(&s) {
-			running = append(running, s)
-		}
-	}
-	if stackName != "" {
-		for _, s := range running {
-			if s.StackName == stackName {
-				return s.Port, nil
-			}
-		}
-		return 0, fmt.Errorf("optimize: stack %q is not running", stackName)
-	}
-	switch len(running) {
-	case 0:
-		return 0, fmt.Errorf("optimize: gateway not running; try `gridctl status`")
-	case 1:
-		return running[0].Port, nil
-	default:
-		names := make([]string, len(running))
-		for i, s := range running {
-			names[i] = s.StackName
-		}
-		return 0, fmt.Errorf("optimize: multiple stacks running (%s); use --stack to pick one", strings.Join(names, ", "))
-	}
+	return resolveRunningPort("optimize", stackName)
 }
 
 // fetchOptimizeReport calls GET /api/optimize on the local gateway and
