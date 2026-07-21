@@ -382,6 +382,35 @@ type Tool struct {
 	// the gateway must forward it without loss for clients that validate
 	// structured results against it.
 	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+
+	// Annotations are the MCP tool behavior hints (spec 2025-03-26).
+	// Passed through from downstream servers so clients that consume them
+	// (confirmation gating, parallel dispatch of read-only tools) see the
+	// server's declared behavior; group overrides may inject or replace
+	// individual hints. Not part of the pins fingerprint.
+	Annotations *ToolAnnotations `json:"annotations,omitempty"`
+}
+
+// ToolAnnotations are the spec's tool behavior hints. All hint fields are
+// pointers: nil means "not declared", which clients must treat as the
+// worst-case default per the spec (writable, destructive, non-idempotent,
+// open-world). Hints are advisory, never guarantees.
+type ToolAnnotations struct {
+	Title           string `json:"title,omitempty"`
+	ReadOnlyHint    *bool  `json:"readOnlyHint,omitempty"`
+	DestructiveHint *bool  `json:"destructiveHint,omitempty"`
+	IdempotentHint  *bool  `json:"idempotentHint,omitempty"`
+	OpenWorldHint   *bool  `json:"openWorldHint,omitempty"`
+}
+
+// Clone returns a copy so override merging never mutates a downstream
+// server's cached tool definition. Nil-safe.
+func (a *ToolAnnotations) Clone() *ToolAnnotations {
+	if a == nil {
+		return nil
+	}
+	c := *a
+	return &c
 }
 
 // InputSchemaObject is a helper for building simple input schemas.
