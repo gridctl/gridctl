@@ -489,6 +489,9 @@ func Validate(s *Stack) error {
 	// Budget and rate limit validation
 	errs = append(errs, validateLimits(s, serverNames)...)
 
+	// Tool group validation
+	errs = append(errs, validateGroups(s, serverNames)...)
+
 	if len(errs) > 0 {
 		return errs
 	}
@@ -631,6 +634,164 @@ func validateLimits(s *Stack, serverNames map[string]bool) ValidationErrors {
 		}
 		if r.Burst < 0 {
 			errs = append(errs, ValidationError{prefix + ".burst", "must not be negative"})
+		}
+	}
+	return errs
+}
+
+// groupNameRe is the allowed shape for group names: URL-path-safe, short
+// enough to leave room in the client-side mcp__<group>__<tool> budget.
+var groupNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+
+// groupOverrideNameRe is the allowed shape for a renamed tool: a flat name
+// with no "__" (the prefix delimiter must stay unambiguous).
+var groupOverrideNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// clientToolNameBudget is the hard tool-name limit clients hit after
+// wrapping an entry's tools as mcp__<entry>__<tool> (the Claude API caps
+// tool names at 64 characters). gridctl controls both halves of that
+// string for groups, so it validates the whole budget at load time.
+const clientToolNameBudget = 64
+
+// validateGroups checks the optional `groups:` block: name shape,
+// membership references, override integrity (keys must be members, renames
+// flat and collision-free within the group), and the client-side tool-name
+// budget. Tool existence stays a runtime property (mirroring
+// validateClients); references are validated structurally against declared
+// servers.
+func validateGroups(s *Stack, serverNames map[string]bool) ValidationErrors {
+	var errs ValidationErrors
+	if len(s.Groups) == 0 {
+		return errs
+	}
+
+	for name, group := range s.Groups {
+		prefix := fmt.Sprintf("groups[%s]", name)
+		if !groupNameRe.MatchString(name) {
+			errs = append(errs, ValidationError{prefix, "group name must match ^[a-z0-9][a-z0-9_-]{0,31}$"})
+		}
+
+		if len(group.Servers) == 0 && len(group.Tools) == 0 {
+			errs = append(errs, ValidationError{prefix, "must include at least one server or tool"})
+		}
+
+		memberServers := make(map[string]bool, len(group.Servers))
+		for i, server := range group.Servers {
+			if !serverNames[server] {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s.servers[%d]", prefix, i),
+					fmt.Sprintf("references unknown MCP server '%s'", server),
+				})
+			}
+			memberServers[server] = true
+		}
+
+		memberTools := make(map[string]bool, len(group.Tools))
+		checkPrefixed := func(field, tool string) (server string, ok bool) {
+			server, _, wellFormed := splitPrefixedToolName(tool)
+			if !wellFormed {
+				errs = append(errs, ValidationError{field, fmt.Sprintf("tool '%s' must be a prefixed name (server__tool)", tool)})
+				return "", false
+			}
+			if !serverNames[server] {
+				errs = append(errs, ValidationError{field, fmt.Sprintf("tool '%s' references unknown MCP server '%s'", tool, server)})
+				return "", false
+			}
+			return server, true
+		}
+		for i, tool := range group.Tools {
+			if _, ok := checkPrefixed(fmt.Sprintf("%s.tools[%d]", prefix, i), tool); ok {
+				memberTools[tool] = true
+			}
+		}
+		excluded := make(map[string]bool, len(group.Exclude))
+		for i, tool := range group.Exclude {
+			if _, ok := checkPrefixed(fmt.Sprintf("%s.exclude[%d]", prefix, i), tool); ok {
+				excluded[tool] = true
+			}
+		}
+
+		// Structural emptiness: every explicit tool excluded and no server
+		// inclusion left means the group can never expose anything.
+		if len(memberServers) == 0 && len(memberTools) > 0 {
+			remaining := 0
+			for tool := range memberTools {
+				if !excluded[tool] {
+					remaining++
+				}
+			}
+			if remaining == 0 {
+				errs = append(errs, ValidationError{prefix, "exclude removes every included tool; the group would be empty"})
+			}
+		}
+
+		// The client-side name budget is fully checkable for explicit tools:
+		// entries (exposed as server__tool unless renamed). Server-wildcard
+		// members stay a runtime property.
+		for tool := range memberTools {
+			if _, renamed := group.Overrides[tool]; renamed {
+				continue // the rename's budget is checked below
+			}
+			if budget := len("mcp__") + len(name) + len("__") + len(tool); budget > clientToolNameBudget {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s.tools", prefix),
+					fmt.Sprintf("exposed name 'mcp__%s__%s' is %d characters; clients cap tool names at %d (rename it via overrides)", name, tool, budget, clientToolNameBudget),
+				})
+			}
+		}
+
+		// Overrides: keys are members, renames are flat and reserved-word
+		// free, exposed names are unique within the group and fit the
+		// client-side budget.
+		exposedNames := make(map[string]string, len(group.Overrides)) // exposed -> override key
+		for key, ov := range group.Overrides {
+			field := fmt.Sprintf("%s.overrides[%s]", prefix, key)
+			server, _, wellFormed := splitPrefixedToolName(key)
+			if !wellFormed {
+				errs = append(errs, ValidationError{field, "override key must be a prefixed name (server__tool)"})
+				continue
+			}
+			if !serverNames[server] {
+				errs = append(errs, ValidationError{field, fmt.Sprintf("references unknown MCP server '%s'", server)})
+				continue
+			}
+			isMember := (memberTools[key] || memberServers[server]) && !excluded[key]
+			if !isMember {
+				errs = append(errs, ValidationError{field, "override key is not a member of the group"})
+			}
+			if ov.Name != "" {
+				if !groupOverrideNameRe.MatchString(ov.Name) || strings.Contains(ov.Name, "__") {
+					errs = append(errs, ValidationError{field + ".name", "rename must match ^[a-zA-Z0-9_-]+$ and contain no '__'"})
+				}
+				if ov.Name == "search" || ov.Name == "execute" {
+					errs = append(errs, ValidationError{field + ".name", fmt.Sprintf("'%s' is reserved for the code-mode meta-tools", ov.Name)})
+				}
+				if prev, dup := exposedNames[ov.Name]; dup {
+					errs = append(errs, ValidationError{field + ".name", fmt.Sprintf("exposed name '%s' collides with override for '%s'", ov.Name, prev)})
+				}
+				exposedNames[ov.Name] = key
+				if budget := len("mcp__") + len(name) + len("__") + len(ov.Name); budget > clientToolNameBudget {
+					errs = append(errs, ValidationError{field + ".name", fmt.Sprintf("exposed name 'mcp__%s__%s' is %d characters; clients cap tool names at %d", name, ov.Name, budget, clientToolNameBudget)})
+				}
+			}
+		}
+		// A rename must not equal the unprefixed tail of another explicit
+		// member tool on the same server: the sandbox builds server__<name>
+		// forms, and a live sibling of that literal name would be shadowed.
+		for exposed, key := range exposedNames {
+			renameServer, _, _ := splitPrefixedToolName(key)
+			for tool := range memberTools {
+				if tool == key {
+					continue
+				}
+				srv, tail, ok := splitPrefixedToolName(tool)
+				if ok && srv == renameServer && tail == exposed {
+					errs = append(errs, ValidationError{
+						fmt.Sprintf("%s.overrides[%s].name", prefix, key),
+						fmt.Sprintf("exposed name '%s' collides with member tool '%s' on the same server", exposed, tool),
+					})
+				}
+			}
 		}
 	}
 	return errs
