@@ -363,9 +363,15 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// MCP endpoints - Streamable HTTP (POST/GET/DELETE) and legacy SSE negotiation
-	mux.Handle("/mcp", s.streamableServer)                // Streamable HTTP transport
-	mux.Handle("/sse", s.sseServer)                       // Legacy negotiation redirect
-	mux.HandleFunc("/message", s.sseServer.HandleMessage) // Legacy endpoint (410 Gone)
+	mux.Handle("/mcp", s.streamableServer)
+	// Group endpoints: the same streamable transport serving a curated
+	// surface. The wrapper 404s unknown groups BEFORE any MCP handling so a
+	// typo'd link URL never creates a session, and injects the group into
+	// the request context for initialize to bind onto the session.
+	mux.HandleFunc("/groups/{name}/mcp", s.handleGroupMCP)
+	mux.HandleFunc("GET /groups/{name}/sse", s.handleGroupSSE) // Streamable HTTP transport
+	mux.Handle("/sse", s.sseServer)                            // Legacy negotiation redirect
+	mux.HandleFunc("/message", s.sseServer.HandleMessage)      // Legacy endpoint (410 Gone)
 
 	// API endpoints
 	mux.HandleFunc("/api/status", s.handleStatus)
@@ -458,6 +464,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stack/recipes", s.handleStackRecipes)
 	mux.HandleFunc("GET /api/catalog", s.handleCatalog)
 	mux.HandleFunc("GET /api/limits", s.handleLimits)
+	mux.HandleFunc("GET /api/groups", s.handleGroups)
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
 	mux.HandleFunc("POST /api/stack/initialize", s.handleStackInitialize)
 	mux.HandleFunc("PATCH /api/stack/telemetry", s.handlePatchStackTelemetry)
