@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
 // The setViewport spy must be hoisted so the module mock below can close
 // over it; the popover pans the viewport when it would overrun the canvas.
-const { setViewport } = vi.hoisted(() => ({ setViewport: vi.fn() }));
+// viewportSettle captures the popover's viewport-settle handler so tests can
+// simulate a fit animation coming to rest.
+const { setViewport, viewportSettle } = vi.hoisted(() => ({
+  setViewport: vi.fn(),
+  viewportSettle: { current: undefined as (() => void) | undefined },
+}));
 
 // React Flow primitives are mocked the same way the other node-component tests
 // do, so the pill can render outside a real <ReactFlow> provider.
@@ -14,6 +19,9 @@ vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right' },
   MarkerType: { ArrowClosed: 'arrowclosed' },
   useReactFlow: () => ({ getViewport: () => ({ x: 0, y: 0, zoom: 1 }), setViewport }),
+  useOnViewportChange: ({ onEnd }: { onEnd?: () => void }) => {
+    viewportSettle.current = onEnd;
+  },
 }));
 
 // Usage is fetched best-effort when the popover opens; mock the one-shot.
@@ -171,6 +179,34 @@ describe('ToolNode', () => {
       renderNode();
       fireEvent.click(trigger());
       await screen.findByText('github__search-repos');
+      expect(setViewport).toHaveBeenCalledWith({ x: -172, y: 0, zoom: 1 }, { duration: 200 });
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+    }
+  });
+
+  it('re-pans when the viewport settles with the card still overrunning', async () => {
+    const original = Element.prototype.getBoundingClientRect;
+    // A refit can still be animating when the card opens, so the settle
+    // handler must re-measure; with these static rects the card overruns
+    // both at mount and at settle.
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const base = { top: 0, bottom: 100, height: 100, y: 0, toJSON: () => ({}) };
+      if (this.classList.contains('w-72')) {
+        return { ...base, left: 900, right: 1188, width: 288, x: 900 } as DOMRect;
+      }
+      return { ...base, left: 0, right: 1024, width: 1024, x: 0 } as DOMRect;
+    };
+    try {
+      renderNode();
+      fireEvent.click(trigger());
+      await screen.findByText('github__search-repos');
+      setViewport.mockClear();
+
+      act(() => {
+        viewportSettle.current?.();
+      });
+
       expect(setViewport).toHaveBeenCalledWith({ x: -172, y: 0, zoom: 1 }, { duration: 200 });
     } finally {
       Element.prototype.getBoundingClientRect = original;
