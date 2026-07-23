@@ -1,5 +1,5 @@
 // Suspense fallback rendered inside <AppShell> while a workspace chunk is
-// being fetched. The chrome (Header/BottomPanel/StatusBar) is already
+// being fetched. The chrome (Header/StatusBar) is already
 // painted, so this only fills the main content area.
 export function WorkspaceLoadingShell({ label = 'loading workspace…' }: { label?: string }) {
   return (
