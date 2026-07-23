@@ -576,6 +576,32 @@ gateway:
 	}
 }
 
+func TestLoadStack_GatewayName(t *testing.T) {
+	content := `
+version: "1"
+name: name-test
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+gateway:
+  name: acme-stack
+`
+	path := writeTempFile(t, content)
+
+	stack, err := LoadStack(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stack.Gateway == nil {
+		t.Fatal("expected gateway config")
+	}
+	if stack.Gateway.Name != "acme-stack" {
+		t.Errorf("expected gateway name 'acme-stack', got '%s'", stack.Gateway.Name)
+	}
+}
+
 func TestLoadStack_AuthConfigEnvExpansion(t *testing.T) {
 	t.Setenv("TEST_AUTH_TOKEN", "expanded-token")
 
