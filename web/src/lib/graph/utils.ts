@@ -21,7 +21,7 @@ export function getNodeDimensions(node: Node, compact = false): { width: number;
       };
     case 'client':
       return {
-        width: LAYOUT.CLIENT_WIDTH,
+        width: compact ? LAYOUT.CLIENT_WIDTH : LAYOUT.CLIENT_WIDTH_FULL,
         height: compact ? LAYOUT.CLIENT_HEIGHT_COMPACT : LAYOUT.CLIENT_HEIGHT,
       };
     case 'skill':
