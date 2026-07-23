@@ -5,7 +5,6 @@ import { WORKSPACES, type Workspace } from '../types/workspace';
 import { DEFAULT_THEME_MODE, isThemeMode, type ThemeMode } from '../themes/types';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
-type BottomPanelTab = 'logs' | 'metrics' | 'spec' | 'traces' | 'pins';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
 
 // Cross-workspace shell state. Lives on useUIStore via the Zustand slices
@@ -114,10 +113,6 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // drift indicators for items that diverge from the running stack
   showSpecMode: boolean;
 
-  // Bottom panel state
-  bottomPanelOpen: boolean;
-  bottomPanelTab: BottomPanelTab;
-
   // Detached window state
   logsDetached: boolean;
   sidebarDetached: boolean;
@@ -135,11 +130,6 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   toggleCompactCards: () => void;
   toggleHeatMap: () => void;
   toggleSpecMode: () => void;
-
-  // Bottom panel actions
-  setBottomPanelOpen: (open: boolean) => void;
-  toggleBottomPanel: () => void;
-  setBottomPanelTab: (tab: BottomPanelTab) => void;
 
   // Detached window actions
   setLogsDetached: (detached: boolean) => void;
@@ -193,18 +183,15 @@ export const useUIStore = create<UIState>()(
       setEditorPrefs: (prefs) =>
         set((s) => ({ editorPrefs: { ...s.editorPrefs, ...prefs } })),
 
-      // Compact cards default
-      compactCards: false,
+      // Compact cards default — the consolidated node view is the default;
+      // full cards are the opt-in.
+      compactCards: true,
 
       // Token heat overlay default
       showHeatMap: false,
 
       // Spec mode default
       showSpecMode: false,
-
-      // Bottom panel defaults
-      bottomPanelOpen: false,
-      bottomPanelTab: 'logs',
 
       // Detached window defaults
       logsDetached: false,
@@ -236,11 +223,6 @@ export const useUIStore = create<UIState>()(
       toggleSpecMode: () =>
         set((s) => ({ showSpecMode: !s.showSpecMode })),
 
-      // Bottom panel actions
-      setBottomPanelOpen: (bottomPanelOpen) => set({ bottomPanelOpen }),
-      toggleBottomPanel: () => set((s) => ({ bottomPanelOpen: !s.bottomPanelOpen })),
-      setBottomPanelTab: (bottomPanelTab) => set({ bottomPanelTab, bottomPanelOpen: true }),
-
       setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
       toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
 
@@ -265,6 +247,17 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'gridctl-ui-storage',
+      // v1 flips the compactCards default to true. v0 payloads persisted the
+      // field for every user regardless of an explicit choice, so honoring
+      // them would pin every existing install to the old expanded default —
+      // drop the stale value once; toggles after the upgrade persist again.
+      version: 1,
+      migrate: (persisted, version) => {
+        if (version === 0 && persisted && typeof persisted === 'object') {
+          delete (persisted as Record<string, unknown>).compactCards;
+        }
+        return persisted;
+      },
       partialize: (state) => ({
         edgeStyle: state.edgeStyle,
         compactCards: state.compactCards,
