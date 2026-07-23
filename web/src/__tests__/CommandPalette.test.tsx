@@ -20,7 +20,7 @@ vi.mock('../hooks/useCommandRegistry', () => ({
 
 vi.mock('../stores/useUIStore', () => ({
   useUIStore: vi.fn((selector: (s: object) => unknown) =>
-    selector({ bottomPanelOpen: false, bottomPanelTab: 'logs' }),
+    selector({ activeWorkspace: 'stack' }),
   ),
 }));
 
