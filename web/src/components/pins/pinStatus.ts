@@ -1,7 +1,7 @@
 import type { ServerPins } from '../../lib/api';
 
-// Shared status display metadata for pin surfaces (bottom-panel tab,
-// workspace rail, and detail header), keyed to the status color tokens.
+// Shared status display metadata for pin surfaces (workspace rail and
+// detail header), keyed to the status color tokens.
 export function pinStatusMeta(status: ServerPins['status']): {
   label: string;
   colorClass: string;
