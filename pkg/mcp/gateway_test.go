@@ -50,6 +50,56 @@ func TestGateway_SetVersion(t *testing.T) {
 	}
 }
 
+func TestGateway_SetName(t *testing.T) {
+	g := NewGateway()
+	g.SetName("acme-stack")
+
+	if got := g.ServerInfo().Name; got != "acme-stack" {
+		t.Errorf("expected server name 'acme-stack', got '%s'", got)
+	}
+
+	// Empty input must not blank the identity.
+	g.SetName("")
+	if got := g.ServerInfo().Name; got != "acme-stack" {
+		t.Errorf("expected empty SetName to be a no-op, got '%s'", got)
+	}
+}
+
+func TestGateway_HandleInitialize_ServerIdentity(t *testing.T) {
+	tests := []struct {
+		name     string
+		setName  string
+		group    string
+		wantName string
+	}{
+		{"default", "", "", "gridctl-gateway"},
+		{"configured name", "acme-stack", "", "acme-stack"},
+		{"group suffixes default", "", "local", "gridctl-gateway/local"},
+		{"group suffixes configured name", "acme-stack", "remote", "acme-stack/remote"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGateway()
+			g.SetName(tt.setName)
+			params := InitializeParams{
+				ProtocolVersion: MCPProtocolVersion,
+				ClientInfo:      ClientInfo{Name: "test-client", Version: "1.0"},
+			}
+
+			result, _, err := g.HandleInitialize(params, "", tt.group)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.ServerInfo.Name != tt.wantName {
+				t.Errorf("expected server name '%s', got '%s'", tt.wantName, result.ServerInfo.Name)
+			}
+			if result.ServerInfo.Title != tt.wantName {
+				t.Errorf("expected title '%s', got '%s'", tt.wantName, result.ServerInfo.Title)
+			}
+		})
+	}
+}
+
 func TestGateway_HandleInitialize(t *testing.T) {
 	g := NewGateway()
 	params := InitializeParams{
