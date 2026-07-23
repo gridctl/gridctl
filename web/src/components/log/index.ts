@@ -1,5 +1,4 @@
 export { LogLine } from './LogLine';
-export { LogsTab } from './LogsTab';
 export { LevelFilter } from './LevelFilter';
 export { LogFilterBar } from './LogFilterBar';
 export { LogStream } from './LogStream';

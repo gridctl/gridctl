@@ -164,7 +164,18 @@ vi.mock('../lib/api', () => ({
   triggerReload: vi.fn().mockResolvedValue({ success: true, message: 'Reloaded' }),
 }));
 
+import { MemoryRouter } from 'react-router-dom';
 import { SpecHealthBadge } from '../components/spec/SpecHealthBadge';
+
+// SpecHealthBadge calls useNavigate (it deep-links /stack?spec=1), so it
+// needs a router context.
+function renderBadge() {
+  return render(
+    <MemoryRouter>
+      <SpecHealthBadge />
+    </MemoryRouter>,
+  );
+}
 
 describe('SpecHealthBadge', () => {
   beforeEach(() => {
@@ -184,7 +195,7 @@ describe('SpecHealthBadge', () => {
   });
 
   it('renders nothing when health is null', () => {
-    const { container } = render(<SpecHealthBadge />);
+    const { container } = renderBadge();
     expect(container.firstChild).toBeNull();
   });
 
@@ -196,7 +207,7 @@ describe('SpecHealthBadge', () => {
         dependencies: { status: 'resolved' },
       },
     });
-    render(<SpecHealthBadge />);
+    renderBadge();
     expect(screen.getByText('Spec: Valid')).toBeInTheDocument();
   });
 
@@ -208,7 +219,7 @@ describe('SpecHealthBadge', () => {
         dependencies: { status: 'resolved' },
       },
     });
-    render(<SpecHealthBadge />);
+    renderBadge();
     expect(screen.getByText('Spec: 3 warnings')).toBeInTheDocument();
   });
 
@@ -220,7 +231,7 @@ describe('SpecHealthBadge', () => {
         dependencies: { status: 'resolved' },
       },
     });
-    render(<SpecHealthBadge />);
+    renderBadge();
     expect(screen.getByText('Spec: 2 errors')).toBeInTheDocument();
   });
 
@@ -232,7 +243,7 @@ describe('SpecHealthBadge', () => {
         dependencies: { status: 'resolved' },
       },
     });
-    render(<SpecHealthBadge />);
+    renderBadge();
     expect(screen.getByText('Spec: 1 warning')).toBeInTheDocument();
   });
 });
@@ -445,5 +456,48 @@ describe('SpecTab', () => {
     fireEvent.click(screen.getByText('Compare to running'));
     expect(useSpecStore.getState().diffModalOpen).toBe(true);
     expect(useSpecStore.getState().diffModalMode).toBe('compare');
+  });
+});
+
+// --- SpecPane tests ---
+
+import { SpecPane } from '../components/spec/SpecPane';
+
+describe('SpecPane', () => {
+  beforeEach(() => {
+    useSpecStore.setState({
+      spec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+      appliedSpec: { path: '/tmp/stack.yaml', content: 'name: test\nversion: "1"' },
+      diffModalOpen: false,
+      diffModalMode: 'apply',
+      pendingSpec: null,
+      health: null,
+      specLoading: false,
+      specError: null,
+      validation: { valid: true, errorCount: 0, warningCount: 0, issues: [] },
+      plan: null,
+      compareActive: false,
+    });
+  });
+
+  it('renders the spec content inside the pane', () => {
+    render(<SpecPane onClose={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: 'Spec' })).toBeInTheDocument();
+    expect(screen.getByText('/tmp/stack.yaml')).toBeInTheDocument();
+    expect(screen.getByText('Compare to running')).toBeInTheDocument();
+  });
+
+  it('invokes onClose from the close button', () => {
+    const onClose = vi.fn();
+    render(<SpecPane onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Close spec pane' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes on Escape', () => {
+    const onClose = vi.fn();
+    render(<SpecPane onClose={onClose} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

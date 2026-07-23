@@ -19,8 +19,6 @@ import {
   Server,
   FileCode,
   Plus,
-  PanelBottom,
-  Network,
   Pin,
   Sun,
   Moon,
@@ -45,14 +43,10 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const { registerCommands, unregisterCommands } = useCommandRegistry();
   const navigate = useNavigate();
 
-  const setBottomPanelTab = useUIStore((s) => s.setBottomPanelTab);
-  const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
-  const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
   const toggleHeatMap = useUIStore((s) => s.toggleHeatMap);
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
   const toggleSpecMode = useUIStore((s) => s.toggleSpecMode);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
-  const setShowVault = useUIStore((s) => s.setShowVault);
   const setPricingManagerOpen = useUIStore((s) => s.setPricingManagerOpen);
   const setThemeMode = useUIStore((s) => s.setThemeMode);
 
@@ -86,29 +80,22 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         onSelect: () => navigate('/library'),
       },
       {
-        id: 'navigate:canvas',
-        label: 'Go to Canvas',
-        section: 'global',
-        workspaces: ['stack'],
-        icon: <Network size={14} />,
-        keywords: ['canvas', 'graph', 'stack', 'nodes', 'home', 'main'],
-        onSelect: () => setBottomPanelOpen(false),
-      },
-      {
         id: 'navigate:traces',
         label: 'Open Traces',
         section: 'global',
         icon: <Activity size={14} />,
-        keywords: ['traces', 'activity', 'spans', 'calls', 'open'],
-        onSelect: () => setBottomPanelTab('traces'),
+        shortcut: ['⌘', '8'],
+        keywords: ['traces', 'activity', 'spans', 'calls', 'workspace', 'open'],
+        onSelect: () => navigate('/traces'),
       },
       {
         id: 'navigate:logs',
         label: 'Open Logs',
         section: 'global',
         icon: <Terminal size={14} />,
-        keywords: ['logs', 'output', 'console', 'stream', 'open'],
-        onSelect: () => setBottomPanelTab('logs'),
+        shortcut: ['⌘', '7'],
+        keywords: ['logs', 'output', 'console', 'stream', 'workspace', 'open'],
+        onSelect: () => navigate('/logs'),
       },
       {
         id: 'navigate:metrics',
@@ -133,27 +120,21 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         section: 'global',
         icon: <FileCode size={14} />,
         keywords: ['spec', 'yaml', 'editor', 'config', 'open'],
-        onSelect: () => setBottomPanelTab('spec'),
+        onSelect: () => navigate('/stack?spec=1'),
       },
       {
         id: 'navigate:vault',
         label: 'Open Variables',
         section: 'global',
         icon: <Key size={14} />,
-        keywords: ['variables', 'vault', 'secrets', 'keys', 'env', 'open'],
-        onSelect: () => setShowVault(true),
+        shortcut: ['⌘', '3'],
+        keywords: ['variables', 'vault', 'secrets', 'keys', 'env', 'workspace', 'open'],
+        onSelect: () => navigate('/vault'),
       },
     ];
     registerCommands('navigation', commands);
     return () => unregisterCommands('navigation');
-  }, [
-    registerCommands,
-    unregisterCommands,
-    setBottomPanelTab,
-    setBottomPanelOpen,
-    setShowVault,
-    navigate,
-  ]);
+  }, [registerCommands, unregisterCommands, navigate]);
 
   // Appearance — theme switching, mirrors the StatusBar ThemePicker.
   useEffect(() => {
@@ -232,15 +213,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         onSelect: () => onRefresh?.(),
       },
       {
-        id: 'canvas:toggle-panel',
-        label: 'Toggle bottom panel',
-        section: 'canvas',
-        icon: <PanelBottom size={14} />,
-        shortcut: ['⌘', 'J'],
-        keywords: ['panel', 'bottom', 'toggle', 'hide', 'show', 'collapse'],
-        onSelect: () => toggleBottomPanel(),
-      },
-      {
         id: 'canvas:toggle-heatmap',
         label: 'Toggle heatmap overlay',
         section: 'canvas',
@@ -296,7 +268,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     fitView,
     zoomIn,
     zoomOut,
-    toggleBottomPanel,
     toggleHeatMap,
     toggleCompactCards,
     toggleSpecMode,
@@ -331,11 +302,11 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       section: 'traces' as const,
       icon: <Activity size={14} />,
       keywords: [trace.traceId, trace.server, trace.operation, 'trace'],
-      onSelect: () => setBottomPanelTab('traces'),
+      onSelect: () => navigate(`/traces?trace=${encodeURIComponent(trace.traceId)}`),
     }));
     registerCommands('dynamic-traces', commands);
     return () => unregisterCommands('dynamic-traces');
-  }, [traces, registerCommands, unregisterCommands, setBottomPanelTab]);
+  }, [traces, registerCommands, unregisterCommands, navigate]);
 
   // Dynamic variable store commands — both secrets and plaintext entries
   // surface here. The label distinguishes the two so the user knows what
@@ -354,11 +325,11 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         'env',
         variable.set ?? '',
       ],
-      onSelect: () => setShowVault(true),
+      onSelect: () => navigate(`/vault?q=${encodeURIComponent(variable.key)}`),
     }));
     registerCommands('dynamic-vault', commands);
     return () => unregisterCommands('dynamic-vault');
-  }, [secrets, registerCommands, unregisterCommands, setShowVault]);
+  }, [secrets, registerCommands, unregisterCommands, navigate]);
 
   // Dynamic registry skill commands — open the Library workspace at the
   // skill's deep-link so the SkillEditor mounts.

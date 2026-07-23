@@ -11,6 +11,8 @@ interface SlideOverProps {
   widthClass?: string;
   /** Accessible description id wiring, if the body provides one. */
   describedById?: string;
+  /** Accessible name of the close button. */
+  closeLabel?: string;
 }
 
 /**
@@ -24,7 +26,15 @@ interface SlideOverProps {
  *
  * Built on the existing slide-in-right keyframe — no motion library.
  */
-export function SlideOver({ isOpen, onClose, title, children, widthClass, describedById }: SlideOverProps) {
+export function SlideOver({
+  isOpen,
+  onClose,
+  title,
+  children,
+  widthClass,
+  describedById,
+  closeLabel = 'Close access editor',
+}: SlideOverProps) {
   const titleId = useId();
 
   const handleKeyDown = useCallback(
@@ -67,7 +77,7 @@ export function SlideOver({ isOpen, onClose, title, children, widthClass, descri
         </h2>
         <button
           onClick={onClose}
-          aria-label="Close access editor"
+          aria-label={closeLabel}
           className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors"
         >
           <X size={14} className="text-text-muted" />

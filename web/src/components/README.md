@@ -1,6 +1,6 @@
 # Web Components
 
-gridctl's SPA is structured around a single application shell that hosts two
+gridctl's SPA is structured around a single application shell that hosts the
 URL-routable workspaces. This file documents the shell architecture, the
 Zustand store layout, and the do-and-don't conventions every new component
 should follow.
@@ -12,9 +12,14 @@ should follow.
 ├── <Header>           web/src/components/layout/Header.tsx
 │   └── <WorkspaceSwitcher>   pills bound to React Router NavLinks
 ├── <Outlet />         renders the active workspace body
-│   ├── <StackWorkspace>      /stack
-│   └── <LibraryWorkspace>    /library  (also /library/:skillName)
-├── <BottomPanel>      Logs / Metrics / Spec / Traces / Pins
+│   ├── <StackWorkspace>      /stack  (hosts the ?spec=1 slide-over)
+│   ├── <LibraryWorkspace>    /library  (also /library/:skillName)
+│   ├── <VaultWorkspace>      /vault
+│   ├── <ToolsWorkspace>      /tools
+│   ├── <MetricsWorkspace>    /metrics
+│   ├── <PinsWorkspace>       /pins
+│   ├── <LogsWorkspace>       /logs
+│   └── <TracesWorkspace>     /traces
 ├── <StatusBar>        connection · servers · sessions · tokens · spec
 ├── <CommandPalette>   workspace-scoped via the command registry
 └── <ToastContainer>
@@ -22,11 +27,12 @@ should follow.
 
 The shell is constant across workspaces; only the `<Outlet />` body and the
 right rail change. Workspace switching is done via React Router `NavLink`s
-in the header, the `⌘1` / `⌘2` shortcuts, or the command palette.
+in the header, the `⌘1`-`⌘8` shortcuts, or the command palette. `⌘J` jumps
+to the Logs workspace.
 
-Detached windows (`/sidebar`, `/logs`, `/editor`, `/metrics`, `/vault`,
-`/traces`, `/registry` → `/library-window`) render *outside* AppShell - they're
-popout-friendly single-purpose pages.
+Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
+`/traces-window`, `/registry` → `/library-window`) render *outside*
+AppShell - they're popout-friendly single-purpose pages.
 
 ## Store layout (Zustand slices pattern)
 
@@ -36,7 +42,7 @@ Cross-workspace shell state lives on `useUIStore` via composed slices:
 useUIStore
 ├── WorkspaceSlice       activeWorkspace, setActiveWorkspace
 ├── CompactModeSlice     compactMode (per workspace), set/toggle helpers
-└── (UIState extras)     sidebarOpen, bottomPanelOpen, command palette, …
+└── (UIState extras)     sidebarOpen, command palette, detached flags, …
 ```
 
 Each workspace owns its own data store and never imports another workspace's
@@ -100,8 +106,8 @@ workspace-specific props.
 ```
 web/src/components/
 ├── shell/            AppShell, WorkspaceSwitcher, RootRedirect
-├── workspaces/       StackWorkspace, LibraryWorkspace
-├── layout/           Header, BottomPanel, StatusBar, Sidebar (Stack inspector)
+├── workspaces/       StackWorkspace, LibraryWorkspace, … (one per top-level workspace)
+├── layout/           Header, StatusBar, Sidebar (Stack inspector), WorkspaceShell
 ├── inspector/        InspectorHeader, InspectorSection, InspectorTabList    ← shared primitives
 ├── canvas/           CanvasBase                                              ← shared React Flow scaffolding
 ├── graph/            Stack Canvas + custom node types

@@ -45,7 +45,6 @@ import type { MCPServerNodeData, ResourceNodeData, ClientNodeData } from '../../
 export function Sidebar() {
   const selectedData = useSelectedNodeData();
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
-  const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const sidebarDetached = useUIStore((s) => s.sidebarDetached);
   const selectNode = useStackStore((s) => s.selectNode);
   const autoscaleHistory = useStackStore((s) => s.autoscaleHistory);
@@ -110,8 +109,10 @@ export function Sidebar() {
   // Color logic: neutral monochrome for clients (matches their canvas nodes), violet for MCP servers, teal for resources
   const colorClass = isClient ? 'neutral' : isServer ? 'violet' : 'secondary';
 
+  // Deep-link the Logs workspace filtered to this node, mirroring the
+  // handleViewSecrets pattern below.
   const handleShowLogs = () => {
-    setBottomPanelOpen(true);
+    navigate(`/logs?agent=${encodeURIComponent(data.name)}`);
   };
 
   const handlePopout = () => {
@@ -532,7 +533,7 @@ export function Sidebar() {
               )}
             >
               <FileText size={14} />
-              Show Logs Panel
+              View Logs
             </button>
             {isServer && (
               <button

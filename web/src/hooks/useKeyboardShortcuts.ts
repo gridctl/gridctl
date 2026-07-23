@@ -8,7 +8,8 @@ interface ShortcutOptions {
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onRefresh?: () => void;
-  onToggleBottomPanel?: () => void;
+  // Cmd/Ctrl+J opens the Logs workspace (was the bottom-panel toggle).
+  onOpenLogs?: () => void;
   onOpenPalette?: () => void;
   // Workspace navigation — Cmd/Ctrl + <shortcutKey> switches top-level
   // workspaces. The key→id mapping comes from WORKSPACE_CONFIG, so adding a
@@ -68,10 +69,10 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
         options.onRefresh?.();
       }
 
-      // Toggle bottom panel: Cmd/Ctrl+J
+      // Open Logs workspace: Cmd/Ctrl+J
       if (isMod && e.key === 'j') {
         e.preventDefault();
-        options.onToggleBottomPanel?.();
+        options.onOpenLogs?.();
       }
 
       // Workspace switching: Cmd/Ctrl + <shortcutKey from WORKSPACE_CONFIG>
