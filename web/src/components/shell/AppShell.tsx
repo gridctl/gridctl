@@ -3,9 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';
-import { BottomPanel } from '../layout/BottomPanel';
 import { AuthPrompt } from '../auth/AuthPrompt';
-import { ResizeHandle } from '../ui/ResizeHandle';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ToastContainer } from '../ui/Toast';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
@@ -24,11 +22,6 @@ import {
 
 const HEADER_HEIGHT = 56;
 const STATUSBAR_HEIGHT = 32;
-
-const BOTTOM_PANEL_COLLAPSED = 40;
-const BOTTOM_PANEL_DEFAULT = 250;
-const BOTTOM_PANEL_MIN = 100;
-const BOTTOM_PANEL_MAX = 800;
 
 function workspaceFromPath(pathname: string): Workspace | null {
   // First segment after the leading slash, e.g. /stack/foo → "stack"
@@ -49,15 +42,12 @@ function persistLastWorkspace(ws: Workspace, stackId: string | null) {
 
 function AppShellInner() {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [bottomPanelHeight, setBottomPanelHeight] = useState(BOTTOM_PANEL_DEFAULT);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
 
   const selectNode = useStackStore((s) => s.selectNode);
   const stackId = useStackStore((s) => s.gatewayInfo?.name ?? null);
 
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
-  const toggleBottomPanel = useUIStore((s) => s.toggleBottomPanel);
-  const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
   const commandPaletteOpen = useUIStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen);
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
@@ -97,16 +87,8 @@ function AppShellInner() {
     document.title = documentTitleForWorkspace(workspaceFromPath(pathname));
   }, [pathname]);
 
-  const handleBottomPanelResize = useCallback((delta: number) => {
-    setBottomPanelHeight((prev) => {
-      const newHeight = prev + delta;
-      return Math.min(BOTTOM_PANEL_MAX, Math.max(BOTTOM_PANEL_MIN, newHeight));
-    });
-  }, []);
-
-  // Keyboard shortcuts. ⌘1/2 switch workspaces (Stack / Library);
-  // bottom-panel tab shortcuts were retired (tabs are still clickable in
-  // the panel).
+  // Keyboard shortcuts. ⌘1-8 switch workspaces; ⌘J opens Logs (the old
+  // bottom-panel toggle's muscle memory lands on the panel's main content).
   useKeyboardShortcuts({
     onFitView: () => fitView({ padding: 0.2, duration: 300 }),
     onEscape: () => {
@@ -116,7 +98,7 @@ function AppShellInner() {
     onZoomIn: () => zoomIn({ duration: 200 }),
     onZoomOut: () => zoomOut({ duration: 200 }),
     onRefresh: handleRefresh,
-    onToggleBottomPanel: toggleBottomPanel,
+    onOpenLogs: () => navigate('/logs'),
     onOpenPalette: toggleCommandPalette,
     onSwitchToWorkspace: (id) => navigate(`/${id}`),
     onToggleCompactMode: () => toggleCompactMode(activeWorkspace),
@@ -124,14 +106,12 @@ function AppShellInner() {
 
   useGlobalCommands({ onRefresh: handleRefresh });
 
-  const bottomRowHeight = bottomPanelOpen ? bottomPanelHeight : BOTTOM_PANEL_COLLAPSED;
-
   return (
     <div
       className="h-screen w-screen overflow-hidden bg-background"
       style={{
         display: 'grid',
-        gridTemplateRows: `${HEADER_HEIGHT}px 1fr ${bottomRowHeight}px ${STATUSBAR_HEIGHT}px`,
+        gridTemplateRows: `${HEADER_HEIGHT}px 1fr ${STATUSBAR_HEIGHT}px`,
         gridTemplateColumns: '1fr',
       }}
     >
@@ -155,19 +135,6 @@ function AppShellInner() {
         </ErrorBoundary>
       </main>
 
-      <div className="flex flex-col h-full overflow-hidden">
-        {bottomPanelOpen && (
-          <ResizeHandle
-            direction="horizontal"
-            onResize={handleBottomPanelResize}
-            className="flex-shrink-0"
-          />
-        )}
-        <div className="flex-1 min-h-0">
-          <BottomPanel />
-        </div>
-      </div>
-
       <StatusBar />
 
       <ToastContainer />
@@ -180,7 +147,7 @@ function AppShellInner() {
   );
 }
 
-// AppShell is the parent route for the two workspaces. It owns the
+// AppShell is the parent route for every workspace. It owns the
 // ReactFlowProvider so workspace canvases (and shell-level hooks like
 // useGlobalCommands, which calls useReactFlow) share a single instance.
 export function AppShell() {
