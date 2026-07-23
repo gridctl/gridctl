@@ -89,6 +89,10 @@ interface StackState {
   // canvas. Independent per server and preserved across polling refreshes so
   // an expanded server stays expanded when the graph data refetches.
   expandedServers: Set<string>;
+  // Bumped whenever resetLayout recomputes positions from scratch (reset
+  // button, compact-cards toggle) so the canvas can refit even though the
+  // node id set is unchanged.
+  layoutEpoch: number;
   connectionStatus: ConnectionStatus;
   lastUpdated: Date | null;
   isLoading: boolean;
@@ -152,6 +156,7 @@ export const useStackStore = create<StackState>()(
     autoscaleLastSeen: {},
     selectedNodeId: null,
     expandedServers: new Set<string>(),
+    layoutEpoch: 0,
     connectionStatus: 'disconnected',
     lastUpdated: null,
     isLoading: true,
@@ -367,7 +372,12 @@ export const useStackStore = create<StackState>()(
       const fanned = appendToolFanout(nodes, edges, get().expandedServers, {
         compact: isCompact,
       });
-      set({ nodes: fanned.nodes, edges: fanned.edges, draggedPositions: new Map() });
+      set({
+        nodes: fanned.nodes,
+        edges: fanned.edges,
+        draggedPositions: new Map(),
+        layoutEpoch: get().layoutEpoch + 1,
+      });
     },
 
     onNodesChange: (changes) => {

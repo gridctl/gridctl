@@ -43,6 +43,8 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 
+- The Stack canvas now refits the viewport after expanding or collapsing a server's tool fan-out with no client selected, so the revealed tool nodes stay in view at the maximum zoom that fits instead of clipping past the right edge at higher zoom levels. Layout recomputes refit too: the reset-layout button and the compact/full card toggle re-frame the graph instead of leaving the resized layout spilling out of view. Status polls and node drags still never move the viewport. Access Lens now frames the whole graph (every server is grantable, so all must be visible) and refits when tools are expanded or collapsed mid-edit, while grant/revoke toggles still hold the canvas still
+
 - `gridctl link`, `gridctl unlink`, and link status no longer fail with a JSON parse error when a client's config file exists but is empty or whitespace-only (Antigravity 2.0 creates its `mcp_config.json` as a zero-byte file on install); an empty file is now treated the same as a missing one
 
 - Grok Build is now a supported global context sync target writing a managed block to `~/.grok/AGENTS.md`; it was previously misreported as having no documented global instruction file
