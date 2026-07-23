@@ -37,7 +37,6 @@ export function useWindowManager() {
   const setRegistryDetached = useUIStore((s) => s.setRegistryDetached);
   const setMetricsDetached = useUIStore((s) => s.setMetricsDetached);
   const setTracesDetached = useUIStore((s) => s.setTracesDetached);
-  const setBottomPanelOpen = useUIStore((s) => s.setBottomPanelOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
   // Handle messages from detached windows
@@ -48,7 +47,6 @@ export function useWindowManager() {
       if (message.type === 'WINDOW_OPENED') {
         if (payload?.windowType === 'logs') {
           setLogsDetached(true);
-          setBottomPanelOpen(false);
         } else if (payload?.windowType === 'sidebar') {
           setSidebarDetached(true);
           setSidebarOpen(false);
@@ -79,7 +77,7 @@ export function useWindowManager() {
         windowRefs.delete(payload?.windowType ?? '');
       }
     }
-  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setMetricsDetached, setTracesDetached, setBottomPanelOpen, setSidebarOpen]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setMetricsDetached, setTracesDetached, setSidebarOpen]);
 
   const { postMessage } = useBroadcastChannel({
     onMessage: handleMessage,
@@ -97,7 +95,6 @@ export function useWindowManager() {
     // so the main window updates in the same frame (no transition flicker)
     if (type === 'logs') {
       setLogsDetached(true);
-      setBottomPanelOpen(false);
     } else if (type === 'sidebar') {
       setSidebarDetached(true);
       setSidebarOpen(false);
@@ -121,7 +118,6 @@ export function useWindowManager() {
       // the user still sees the source panel.
       if (type === 'logs') {
         setLogsDetached(false);
-        setBottomPanelOpen(true);
       } else if (type === 'sidebar') {
         setSidebarDetached(false);
         setSidebarOpen(true);
@@ -165,7 +161,7 @@ export function useWindowManager() {
         }
       }
     }, 500);
-  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setMetricsDetached, setTracesDetached, setBottomPanelOpen, setSidebarOpen]);
+  }, [setLogsDetached, setSidebarDetached, setEditorDetached, setRegistryDetached, setMetricsDetached, setTracesDetached, setSidebarOpen]);
 
   // Close a detached window
   const closeDetachedWindow = useCallback((type: DetachableWindow) => {
