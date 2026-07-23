@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Terminal,
@@ -10,48 +10,50 @@ import {
   RefreshCw,
   Maximize2,
   Minimize2,
-  Search,
   Radio,
+  Layers,
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
-import { LogLine, LevelFilter, parseLogEntry, type LogLevel, type ParsedLog } from '../components/log';
-import { ZoomControls } from '../components/ui/ZoomControls';
-import { fetchServerLogs, fetchGatewayLogs, fetchStatus } from '../lib/api';
+import {
+  LogFilterBar,
+  LogStream,
+  GATEWAY_LOG_SOURCE,
+  LOG_LEVELS,
+  filterParsedLogs,
+  normalizeLogSourceParam,
+  type LogLevel,
+} from '../components/log';
+import { copyTextToClipboard } from '../lib/clipboard';
+import { fetchStatus } from '../lib/api';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useLogFontSize } from '../hooks/useLogFontSize';
+import { useLogStream } from '../hooks/useLogStream';
 import { POLLING } from '../lib/constants';
 import type { GatewayStatus } from '../types';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 
 interface NodeOption {
   name: string;
-  type: 'gateway' | 'mcp-server' | 'resource';
+  type: 'mcp-server' | 'resource';
 }
 
 function DetachedLogsPageContent() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialAgent = searchParams.get('agent');
+  const source = normalizeLogSourceParam(searchParams.get('agent'));
 
-  const [logs, setLogs] = useState<ParsedLog[]>([]);
   const [isPaused, setIsPaused] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [isLoading, setIsLoading] = useState(initialAgent !== null);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(initialAgent);
+  const { logs, isLoading, error, refresh, clear } = useLogStream({ active: true, paused: isPaused });
+
   const [nodes, setNodes] = useState<NodeOption[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
-  const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(
-    new Set(['ERROR', 'WARN', 'INFO', 'DEBUG'])
-  );
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(new Set(LOG_LEVELS));
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const intervalRef = useRef<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Log font size with Ctrl+Scroll zoom
@@ -61,14 +63,12 @@ function DetachedLogsPageContent() {
   // Register with main window
   useDetachedWindowSync('logs');
 
-  // Fetch available nodes
+  // Fetch available nodes for the source picker
   useEffect(() => {
     const fetchNodes = async () => {
       try {
         const status: GatewayStatus = await fetchStatus();
         const nodeList: NodeOption[] = [
-          // Gateway option at the top
-          { name: 'Gateway', type: 'gateway' as const },
           ...(status['mcp-servers'] ?? []).map((s) => ({ name: s.name, type: 'mcp-server' as const })),
           ...(status.resources ?? []).map((r) => ({ name: r.name, type: 'resource' as const })),
         ];
@@ -96,104 +96,18 @@ function DetachedLogsPageContent() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Determine if selected is gateway
-  const isGateway = selectedAgent === 'Gateway';
+  const isGateway = source === GATEWAY_LOG_SOURCE;
+  const sourceLabel = source == null ? 'All sources' : isGateway ? 'Gateway' : source;
 
-  // Reset log state when the selected agent changes (state adjustment during
-  // render, so the reset commits together with the switch).
-  const [prevAgent, setPrevAgent] = useState(selectedAgent);
-  if (prevAgent !== selectedAgent) {
-    setPrevAgent(selectedAgent);
-    setLogs([]);
-    setError(null);
-    setExpandedIndex(null);
-    setSearchQuery('');
-    setIsLoading(selectedAgent !== null);
-  }
-
-  const fetchLogs = useCallback(async () => {
-    if (!selectedAgent) return;
-
-    try {
-      if (isGateway) {
-        const entries = await fetchGatewayLogs(500);
-        setLogs((entries ?? []).map(parseLogEntry));
-      } else {
-        const lines = await fetchServerLogs(selectedAgent, 500);
-        setLogs((lines ?? []).map(parseLogEntry));
-      }
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch logs');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedAgent, isGateway]);
-
-  // Fetch and mirror the selection into the URL on mount and agent change
-  useEffect(() => {
-    if (selectedAgent) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
-      fetchLogs();
-      setSearchParams({ agent: selectedAgent });
-    } else {
-      setSearchParams({});
-    }
-  }, [selectedAgent, fetchLogs, setSearchParams]);
-
-  // Polling for logs
-  useEffect(() => {
-    if (!selectedAgent || isPaused) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      return;
-    }
-
-    intervalRef.current = window.setInterval(fetchLogs, POLLING.LOGS);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [selectedAgent, isPaused, fetchLogs]);
-
-  // Filter logs
-  const filteredLogs = useMemo(() => {
-    return (logs ?? []).filter((log) => {
-      // Level filter
-      if (!enabledLevels.has(log.level)) return false;
-
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return (
-          log.message.toLowerCase().includes(query) ||
-          log.component?.toLowerCase().includes(query) ||
-          log.traceId?.toLowerCase().includes(query)
-        );
-      }
-
-      return true;
-    });
-  }, [logs, enabledLevels, searchQuery]);
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (autoScroll && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [filteredLogs, autoScroll]);
-
-  // Detect manual scroll
-  const handleScroll = () => {
-    if (!containerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    setAutoScroll(scrollHeight - scrollTop - clientHeight < 50);
+  const handleSelectSource = (next: string | null) => {
+    setSearchParams(next ? { agent: next } : {});
+    setDropdownOpen(false);
   };
+
+  const filteredLogs = useMemo(
+    () => filterParsedLogs(logs, { source, levels: enabledLevels, query: searchQuery }),
+    [logs, source, enabledLevels, searchQuery],
+  );
 
   const toggleLevel = (level: LogLevel) => {
     setEnabledLevels((prev) => {
@@ -207,24 +121,7 @@ function DetachedLogsPageContent() {
     });
   };
 
-  const handleClearLogs = () => {
-    setLogs([]);
-    setExpandedIndex(null);
-  };
-
-  const handleCopyLogs = async () => {
-    const text = filteredLogs.map((log) => log.raw).join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-    }
-  };
+  const handleCopyLogs = () => copyTextToClipboard(filteredLogs.map((log) => log.raw).join('\n'));
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
@@ -246,10 +143,7 @@ function DetachedLogsPageContent() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  const handleSelectAgent = (name: string) => {
-    setSelectedAgent(name);
-    setDropdownOpen(false);
-  };
+  const hasActiveFilter = searchQuery !== '' || enabledLevels.size !== LOG_LEVELS.length;
 
   return (
     <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
@@ -269,16 +163,22 @@ function DetachedLogsPageContent() {
         <div className="flex items-center gap-3">
           <div className={cn(
             'p-1.5 rounded-lg border',
-            isGateway ? 'bg-primary/10 border-primary/20' : 'bg-tertiary/10 border-tertiary/20'
+            source == null
+              ? 'bg-surface-elevated/60 border-border/50'
+              : isGateway
+                ? 'bg-primary/10 border-primary/20'
+                : 'bg-tertiary/10 border-tertiary/20'
           )}>
-            {isGateway ? (
+            {source == null ? (
+              <Layers size={14} className="text-text-secondary" />
+            ) : isGateway ? (
               <Radio size={14} className="text-primary" />
             ) : (
               <Terminal size={14} className="text-tertiary" />
             )}
           </div>
 
-          {/* Agent selector dropdown */}
+          {/* Source selector dropdown */}
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -289,9 +189,7 @@ function DetachedLogsPageContent() {
                 dropdownOpen && 'bg-surface-highlight border-text-muted/30'
               )}
             >
-              <span className={cn(selectedAgent ? 'text-text-primary' : 'text-text-muted')}>
-                {selectedAgent ?? 'Select node...'}
-              </span>
+              <span className="text-text-primary">{sourceLabel}</span>
               <ChevronDown
                 size={14}
                 className={cn(
@@ -303,39 +201,35 @@ function DetachedLogsPageContent() {
 
             {dropdownOpen && (
               <div className="absolute top-full left-0 mt-1 w-64 py-1 bg-surface-elevated/95 backdrop-blur-xl border border-border/50 rounded-lg shadow-lg z-50 animate-fade-in-scale">
-                {(nodes ?? []).length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-text-muted">No nodes available</div>
-                ) : (
-                  (nodes ?? []).map((node) => (
-                    <button
-                      key={node.name}
-                      onClick={() => handleSelectAgent(node.name)}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
-                        'hover:bg-surface-highlight',
-                        selectedAgent === node.name && 'bg-primary/10 text-primary'
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'w-1.5 h-1.5 rounded-full',
-                          node.type === 'gateway' && 'bg-primary',
-                          node.type === 'mcp-server' && 'bg-violet-400',
-                          node.type === 'resource' && 'bg-secondary'
-                        )}
-                      />
-                      <span className="truncate">{node.name}</span>
-                      <span className="ml-auto text-[10px] text-text-muted uppercase">
-                        {node.type === 'mcp-server' ? 'server' : node.type}
-                      </span>
-                    </button>
-                  ))
-                )}
+                <SourceOption
+                  label="All sources"
+                  dotClass="bg-text-muted"
+                  tag="all"
+                  selected={source == null}
+                  onSelect={() => handleSelectSource(null)}
+                />
+                <SourceOption
+                  label="Gateway"
+                  dotClass="bg-primary"
+                  tag="gateway"
+                  selected={isGateway}
+                  onSelect={() => handleSelectSource(GATEWAY_LOG_SOURCE)}
+                />
+                {(nodes ?? []).map((node) => (
+                  <SourceOption
+                    key={node.name}
+                    label={node.name}
+                    dotClass={node.type === 'mcp-server' ? 'bg-violet-400' : 'bg-secondary'}
+                    tag={node.type === 'mcp-server' ? 'server' : node.type}
+                    selected={source === node.name}
+                    onSelect={() => handleSelectSource(node.name)}
+                  />
+                ))}
               </div>
             )}
           </div>
 
-          {isGateway && selectedAgent && (
+          {isGateway && (
             <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-medium border border-primary/20">
               Structured
             </span>
@@ -350,11 +244,10 @@ function DetachedLogsPageContent() {
         <div className="flex items-center gap-1">
           <IconButton
             icon={RefreshCw}
-            onClick={fetchLogs}
+            onClick={refresh}
             tooltip="Refresh"
             size="sm"
             variant="ghost"
-            disabled={!selectedAgent}
           />
           <IconButton
             icon={isPaused ? Play : Pause}
@@ -363,7 +256,6 @@ function DetachedLogsPageContent() {
             size="sm"
             variant="ghost"
             className={isPaused ? 'text-status-running hover:text-status-running' : ''}
-            disabled={!selectedAgent}
           />
           <IconButton
             icon={Copy}
@@ -371,16 +263,15 @@ function DetachedLogsPageContent() {
             tooltip="Copy Logs"
             size="sm"
             variant="ghost"
-            disabled={!selectedAgent || (logs ?? []).length === 0}
+            disabled={filteredLogs.length === 0}
           />
           <IconButton
             icon={Trash2}
-            onClick={handleClearLogs}
+            onClick={clear}
             tooltip="Clear Logs"
             size="sm"
             variant="ghost"
             className="hover:text-status-error"
-            disabled={!selectedAgent}
           />
           <div className="w-px h-4 bg-border/50 mx-1" />
           <IconButton
@@ -394,108 +285,37 @@ function DetachedLogsPageContent() {
       </header>
 
       {/* Filter bar */}
-      {selectedAgent && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-surface-elevated/30 flex-shrink-0">
-          {/* Search input */}
-          <div className="relative flex-1 max-w-xs">
-            <Search
-              size={12}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted"
-            />
-            <input
-              type="text"
-              placeholder="Filter logs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={cn(
-                'w-full pl-7 pr-3 py-1.5 text-xs font-mono',
-                'bg-background/60 border border-border/50 rounded-md',
-                'text-text-primary placeholder:text-text-muted',
-                'focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20',
-                'transition-all duration-200'
-              )}
-            />
-          </div>
-
-          {/* Level filter */}
-          <LevelFilter enabledLevels={enabledLevels} onToggle={toggleLevel} />
-
-          {/* Zoom controls */}
-          <ZoomControls
-            fontSize={fontSize}
-            onZoomIn={zoomIn}
-            onZoomOut={zoomOut}
-            onReset={resetZoom}
-            isMin={isMin}
-            isMax={isMax}
-            isDefault={isDefault}
-          />
-
-          {/* Log count */}
-          <span className="text-[10px] text-text-muted font-mono ml-auto">
-            {filteredLogs.length} / {(logs ?? []).length} entries
-          </span>
-        </div>
-      )}
+      <LogFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        enabledLevels={enabledLevels}
+        onToggleLevel={toggleLevel}
+        fontSize={fontSize}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onResetZoom={resetZoom}
+        isMin={isMin}
+        isMax={isMax}
+        isDefault={isDefault}
+        filteredCount={filteredLogs.length}
+        totalCount={logs.length}
+      />
 
       {/* Log content */}
-      <main
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-auto bg-background scrollbar-dark min-h-0"
-        style={{ '--log-font-size': `${fontSize}px` } as React.CSSProperties}
-      >
-        {!selectedAgent && (
-          <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale">
-            <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
-              <Terminal size={32} className="text-text-muted/50" />
-            </div>
-            <span className="text-sm">Select a node to view logs</span>
-          </div>
-        )}
-
-        {selectedAgent && isLoading && (
-          <div className="flex items-center gap-2 p-4 text-text-muted text-xs animate-fade-in-up">
-            <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            Loading logs...
-          </div>
-        )}
-
-        {selectedAgent && error && (
-          <div className="flex items-center gap-2 p-4 text-status-error text-xs animate-fade-in-up">
-            <span className="w-2 h-2 rounded-full bg-status-error animate-pulse" />
-            Error: {error}
-          </div>
-        )}
-
-        {selectedAgent && !isLoading && !error && (filteredLogs?.length ?? 0) === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-text-muted text-xs gap-2 animate-fade-in-up">
-            <Terminal size={20} className="text-text-muted/30" />
-            <span>No logs available</span>
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-primary hover:underline"
-              >
-                Clear filter
-              </button>
-            )}
-          </div>
-        )}
-
-        {selectedAgent && !isLoading && !error && (filteredLogs?.length ?? 0) > 0 && (
-          <div className="divide-y divide-border/20">
-            {(filteredLogs ?? []).map((log, i) => (
-              <LogLine
-                key={i}
-                log={log}
-                isExpanded={expandedIndex === i}
-                onToggle={() => setExpandedIndex(expandedIndex === i ? null : i)}
-              />
-            ))}
-          </div>
-        )}
-      </main>
+      <LogStream
+        logs={filteredLogs}
+        isLoading={isLoading}
+        error={error}
+        hasActiveFilter={hasActiveFilter}
+        onClearFilter={() => {
+          setSearchQuery('');
+          setEnabledLevels(new Set(LOG_LEVELS));
+        }}
+        showSource={source == null}
+        fontSize={fontSize}
+        containerRef={containerRef}
+        emptyText="No logs available"
+      />
 
       {/* Footer status bar */}
       <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
@@ -508,6 +328,35 @@ function DetachedLogsPageContent() {
         </span>
       </footer>
     </div>
+  );
+}
+
+function SourceOption({
+  label,
+  dotClass,
+  tag,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  dotClass: string;
+  tag: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
+        'hover:bg-surface-highlight',
+        selected && 'bg-primary/10 text-primary'
+      )}
+    >
+      <span className={cn('w-1.5 h-1.5 rounded-full', dotClass)} />
+      <span className="truncate">{label}</span>
+      <span className="ml-auto text-[10px] text-text-muted uppercase">{tag}</span>
+    </button>
   );
 }
 

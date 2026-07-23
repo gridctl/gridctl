@@ -146,6 +146,53 @@ export function parseLogEntry(input: string | LogEntry): ParsedLog {
   };
 }
 
+// Canonical source token for gateway-origin entries. Server-origin entries in
+// the aggregate /api/logs buffer carry attrs.server; gateway components do
+// not. URL state uses this token (`?agent=gateway`), never the display string.
+export const GATEWAY_LOG_SOURCE = 'gateway';
+
+export function logSourceOf(log: ParsedLog): string {
+  const server = log.attrs?.server;
+  return typeof server === 'string' && server !== '' ? server : GATEWAY_LOG_SOURCE;
+}
+
+// Normalizes the ?agent= URL param to a source token: absent/empty = all
+// sources (null). Legacy handles from the pre-workspace detached page carry
+// the display string "Gateway" — fold it into the canonical token instead of
+// filtering to nothing.
+export function normalizeLogSourceParam(param: string | null): string | null {
+  if (param === null || param === '') return null;
+  return param === 'Gateway' ? GATEWAY_LOG_SOURCE : param;
+}
+
+export interface LogFilter {
+  // null = all sources; GATEWAY_LOG_SOURCE = gateway-origin only; else server name.
+  source?: string | null;
+  levels?: Set<LogLevel>;
+  query?: string;
+  traceId?: string | null;
+}
+
+// Single shared predicate so the workspace and the detached window filter the
+// aggregate stream identically.
+export function filterParsedLogs(logs: ParsedLog[], filter: LogFilter): ParsedLog[] {
+  const query = filter.query?.toLowerCase() ?? '';
+  return logs.filter((log) => {
+    if (filter.source != null && logSourceOf(log) !== filter.source) return false;
+    if (filter.levels && !filter.levels.has(log.level)) return false;
+    if (filter.traceId && log.traceId !== filter.traceId) return false;
+    if (query) {
+      return (
+        log.message.toLowerCase().includes(query) ||
+        log.component?.toLowerCase().includes(query) ||
+        logSourceOf(log).toLowerCase().includes(query) ||
+        log.traceId?.toLowerCase().includes(query)
+      );
+    }
+    return true;
+  });
+}
+
 export function formatTimestamp(ts: string): string {
   if (!ts) return '';
   try {

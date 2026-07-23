@@ -33,10 +33,15 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
       to={`/${workspace.id}`}
       role="tab"
       aria-selected={isActive}
+      aria-label={workspace.label}
+      title={workspace.label}
       data-workspace={workspace.id}
       onClick={handleClick}
       className={cn(
-        'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors',
+        // Icon-only below 1360px: eight text pills plus the right-side action
+        // cluster collide on narrower windows, so labels collapse to icons
+        // (title + aria-label keep the pills identifiable).
+        'inline-flex items-center gap-1.5 px-2 min-[1360px]:px-3 py-1 rounded-full text-xs font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
         isActive
           ? 'bg-primary/15 text-primary border border-primary/30'
@@ -44,7 +49,7 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
       )}
     >
       <Icon size={12} aria-hidden="true" />
-      {workspace.label}
+      <span className="hidden min-[1360px]:inline">{workspace.label}</span>
     </NavLink>
   );
 }

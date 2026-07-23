@@ -7,6 +7,8 @@ import type { TraceDetail, Span } from '../../lib/api';
 interface TraceWaterfallProps {
   trace: TraceDetail;
   onClose?: () => void;
+  /** Extra header actions (e.g. the trace-to-logs pivot), left of close. */
+  actions?: React.ReactNode;
 }
 
 // Distinct colors for server-keyed spans (in order of preference)
@@ -85,7 +87,7 @@ function formatTotalDuration(ms: number): string {
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
-export function TraceWaterfall({ trace, onClose }: TraceWaterfallProps) {
+export function TraceWaterfall({ trace, onClose, actions }: TraceWaterfallProps) {
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
 
   const { sorted, depthMap, traceStart, totalDuration, p95 } = useMemo(() => {
@@ -126,15 +128,18 @@ export function TraceWaterfall({ trace, onClose }: TraceWaterfallProps) {
             <AlertCircle size={11} className="text-status-error flex-shrink-0" />
           )}
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1 rounded-md hover:bg-surface-highlight transition-colors flex-shrink-0 ml-2"
-            aria-label="Close waterfall"
-          >
-            <X size={12} className="text-text-muted" />
-          </button>
-        )}
+        <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+          {actions}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded-md hover:bg-surface-highlight transition-colors flex-shrink-0"
+              aria-label="Close waterfall"
+            >
+              <X size={12} className="text-text-muted" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Body: waterfall + optional span detail */}

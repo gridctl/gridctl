@@ -18,6 +18,8 @@ const VaultWorkspace = lazy(() => import('./components/workspaces/VaultWorkspace
 const ToolsWorkspace = lazy(() => import('./components/workspaces/ToolsWorkspace'));
 const MetricsWorkspace = lazy(() => import('./components/workspaces/MetricsWorkspace'));
 const PinsWorkspace = lazy(() => import('./components/workspaces/PinsWorkspace'));
+const LogsWorkspace = lazy(() => import('./components/workspaces/LogsWorkspace'));
+const TracesWorkspace = lazy(() => import('./components/workspaces/TracesWorkspace'));
 
 export function AppRoutes() {
   // Single mount point for theme application + cross-window sync; covers the
@@ -88,6 +90,22 @@ export function AppRoutes() {
             </Suspense>
           }
         />
+        <Route
+          path="/logs"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <LogsWorkspace />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/traces"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <TracesWorkspace />
+            </Suspense>
+          }
+        />
       </Route>
 
       {/* Root redirect — chooses a workspace based on stack + storage. */}
@@ -104,17 +122,17 @@ export function AppRoutes() {
       <Route path="/agent" element={<Navigate to="/library" replace />} />
 
       {/* Detached windows stay frameless — outside AppShell on purpose. */}
-      <Route path="/logs" element={<DetachedLogsPage />} />
       <Route path="/sidebar" element={<DetachedSidebarPage />} />
       <Route path="/editor" element={<DetachedEditorPage />} />
       <Route path="/library-window" element={<DetachedRegistryPage />} />
       {/* /registry → /library-window: silent redirect for bookmarks and
           existing detached window handles. */}
       <Route path="/registry" element={<Navigate to="/library-window" replace />} />
-      {/* /metrics is now the in-shell Metrics workspace; the detached popout
-          renders at /metrics-window (window type key stays `metrics`). */}
+      {/* /metrics, /logs, and /traces are in-shell workspaces; each detached
+          popout renders at /<type>-window (window type keys stay put). */}
       <Route path="/metrics-window" element={<DetachedMetricsPage />} />
-      <Route path="/traces" element={<DetachedTracesPage />} />
+      <Route path="/logs-window" element={<DetachedLogsPage />} />
+      <Route path="/traces-window" element={<DetachedTracesPage />} />
 
       {/* Catch-all: any unmatched URL (typo, stale bookmark, removed route)
           redirects to the root, where RootRedirect resolves the landing
