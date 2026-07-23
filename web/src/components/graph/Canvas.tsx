@@ -98,30 +98,36 @@ export function Canvas() {
   // override re-lights the canvas live against unsaved edits.
   const highlightState = usePathHighlight(nodes, edges, selectedNodeId, scopeOverride);
 
-  // Auto-fit the view to a focused client's reachable subgraph. The fit key
-  // captures the highlighted node set, so the view re-fits whenever that set
-  // changes - including expanding a reachable server while the client stays
-  // focused, which brings the newly-fanned-out tools into frame.
+  // Auto-fit the view whenever the visible layout changes. With a client
+  // focused the fit key is its highlighted reachable subgraph; otherwise it is
+  // every node id, so expanding or collapsing a server's tool fan-out (or
+  // servers appearing on hot reload) re-frames the whole graph at max zoom.
+  // The layout epoch folds in resetLayout (reset button, compact-cards
+  // toggle), which recomputes every position without changing the id set.
+  // Keying on epoch plus sorted ids keeps the canvas still during status
+  // polls and node drags, which change neither.
   //
-  // Suppressed while actively editing in Access Lens: the draft scope narrows
-  // the reachable set on every tool/server toggle, and auto-refitting then would
-  // yank the canvas out from under the operator (and recenter the servers behind
-  // the slide-over panel). Selecting the client already framed it; hold still.
+  // Access Lens uses the whole-graph key even though a client is selected:
+  // the operator can grant servers outside the current reach, so every server
+  // must be in frame, and scope toggles only change highlighting, never node
+  // ids, so draft edits still hold the canvas still while expand/collapse
+  // re-frames. The sidebar is a grid column, so fitView fits the narrowed
+  // canvas area on its own.
+  const layoutEpoch = useStackStore((s) => s.layoutEpoch);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const isClientSelected =
     (selectedNode?.data as { type?: string } | undefined)?.type === 'client';
-  const fitKey =
+  const fitIds =
     isClientSelected && !lensActive
       ? [...highlightState.highlightedNodeIds].sort().join(',')
-      : '';
+      : (nodes ?? []).map((n) => n.id).sort().join(',');
+  const fitKey = fitIds ? `${layoutEpoch}:${fitIds}` : '';
   useEffect(() => {
     if (!fitKey) return;
-    const ids = fitKey.split(',').map((id) => ({ id }));
-    // Defer one frame so React Flow has mounted/measured any new tool nodes.
-    const raf = requestAnimationFrame(() => {
-      fitView({ nodes: ids, padding: 0.25, duration: 400, maxZoom: 1.5 });
-    });
-    return () => cancelAnimationFrame(raf);
+    const ids = fitKey.slice(fitKey.indexOf(':') + 1).split(',').map((id) => ({ id }));
+    // fitView queues internally until new nodes are measured (React Flow 12.5+),
+    // so no frame deferral is needed before fitting freshly-mounted tool nodes.
+    fitView({ nodes: ids, padding: 0.25, duration: 400, maxZoom: 1.5 });
   }, [fitKey, fitView]);
 
   // Evolvable grid - main lines at 100px, sub-grid dots at 20px fade in at >0.8x

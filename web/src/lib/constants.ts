@@ -7,8 +7,9 @@ export const LAYOUT = {
   NODE_WIDTH: 256,
   NODE_HEIGHT: 140,
   NODE_HEIGHT_COMPACT: 48,    // Compact mode: header only
-  CLIENT_WIDTH: 160,   // Linked client node width
-  CLIENT_HEIGHT: 120,  // Linked client node height
+  CLIENT_WIDTH: 160,   // Linked client node width (compact mode)
+  CLIENT_WIDTH_FULL: 208,  // Full-card client width (horizontal icon + text)
+  CLIENT_HEIGHT: 84,   // Full-card client height
   CLIENT_HEIGHT_COMPACT: 48,  // Client compact mode height
   TOOL_WIDTH: 200,     // Tool fan-out pill width
   TOOL_HEIGHT: 34,     // Tool fan-out pill height

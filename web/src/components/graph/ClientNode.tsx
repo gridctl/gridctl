@@ -57,39 +57,37 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
   return (
     <div
       className={cn(
-        'w-40 rounded-xl relative',
+        'w-52 rounded-xl relative',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
         'shadow-bevel',
-        'flex flex-col items-center justify-center text-center p-3 gap-1',
+        'flex items-center gap-3 px-3',
         selected && 'border-text-secondary ring-2 ring-white/15',
         !selected && 'border-border hover:shadow-node-hover hover:border-text-secondary/40'
       )}
-      style={{ height: 120 }}
+      style={{ height: LAYOUT.CLIENT_HEIGHT }}
     >
       {/* Top accent */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
       {/* Icon */}
-      <div className="p-2 rounded-lg border bg-white/[0.04] border-white/10">
+      <div className="p-2 rounded-lg border bg-white/[0.04] border-white/10 flex-shrink-0">
         <Icon size={20} className="text-text-primary" />
       </div>
 
-      {/* Name */}
-      <span className="font-semibold text-xs text-text-primary truncate max-w-[130px] px-1">
-        {data.name}
-      </span>
-
-      {/* Transport badge */}
-      <span className="text-[9px] text-text-muted font-mono uppercase tracking-wider">
-        {data.transport}
-      </span>
-
-      {/* Status */}
-      <span className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running">
-        <StatusDot status={data.status} />
-        Linked
-      </span>
+      {/* Name, transport, and status stack beside the icon */}
+      <div className="flex flex-col items-start gap-0.5 min-w-0">
+        <span className="font-semibold text-xs text-text-primary truncate max-w-full">
+          {data.name}
+        </span>
+        <span className="text-[9px] text-text-muted font-mono uppercase tracking-wider">
+          {data.transport}
+        </span>
+        <span className="mt-0.5 inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running">
+          <StatusDot status={data.status} />
+          Linked
+        </span>
+      </div>
 
       {/* Source handle (connects to gateway on the right) */}
       <Handle
