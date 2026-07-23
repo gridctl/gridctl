@@ -1,7 +1,9 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useReactFlow } from '@xyflow/react';
 import { Wrench, X, ArrowUpRight, Copy } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { horizontalOverflow } from '../../lib/graph/popoverPlacement';
 import { TOOL_NAME_DELIMITER } from '../../lib/constants';
 import { formatLastUsed } from '../../lib/toolAudit';
 import { fetchToolUsage } from '../../lib/api';
@@ -35,6 +37,30 @@ interface ToolDetailPopoverProps {
 const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }: ToolDetailPopoverProps) => {
   const navigate = useNavigate();
   const prefixedName = `${serverName}${TOOL_NAME_DELIMITER}${toolName}`;
+
+  // Tool pills are the rightmost nodes in the graph and the auto-refit frames
+  // them flush against the canvas edge, so the right-opening card routinely
+  // lands past it. Mirroring the card to the anchor's left would cover the
+  // graph instead, so pan the viewport left by the overrun once per open (the
+  // card unmounts on close, so mount is open), before paint: the card is
+  // glued to its anchor, so the pan carries it fully into view. Rects and the
+  // viewport translation are both screen-space, so the canvas zoom is already
+  // applied; a missing container falls back to the document and an
+  // unmeasurable rect (jsdom) pans nothing.
+  const { getViewport, setViewport } = useReactFlow();
+  const cardRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const container = el.closest('.react-flow') ?? document.documentElement;
+    const overflow = horizontalOverflow(
+      el.getBoundingClientRect(),
+      container.getBoundingClientRect(),
+    );
+    if (overflow === 0) return;
+    const viewport = getViewport();
+    void setViewport({ ...viewport, x: viewport.x - overflow }, { duration: 200 });
+  }, [getViewport, setViewport]);
 
   // The catalog is keyed by the prefixed name and is populated app-wide by the
   // poll cycle, so it is already present on the Stack page. A missing entry
@@ -81,6 +107,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
 
   return (
     <div
+      ref={cardRef}
       // stopPropagation so a click inside the card never reaches the canvas
       // pane/node handlers; dismissal is the parent's job via useDismiss.
       onClick={(e) => e.stopPropagation()}

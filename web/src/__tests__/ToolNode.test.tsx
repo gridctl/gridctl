@@ -3,12 +3,17 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
+// The setViewport spy must be hoisted so the module mock below can close
+// over it; the popover pans the viewport when it would overrun the canvas.
+const { setViewport } = vi.hoisted(() => ({ setViewport: vi.fn() }));
+
 // React Flow primitives are mocked the same way the other node-component tests
 // do, so the pill can render outside a real <ReactFlow> provider.
 vi.mock('@xyflow/react', () => ({
   Handle: ({ id }: { id: string }) => <div data-testid={`handle-${id}`} />,
   Position: { Left: 'left', Right: 'right' },
   MarkerType: { ArrowClosed: 'arrowclosed' },
+  useReactFlow: () => ({ getViewport: () => ({ x: 0, y: 0, zoom: 1 }), setViewport }),
 }));
 
 // Usage is fetched best-effort when the popover opens; mock the one-shot.
@@ -46,6 +51,7 @@ function renderNode(nodeData: ToolNodeData = data) {
 const trigger = () => screen.getByRole('button', { name: /show details for github tool search-repos/i });
 
 beforeEach(() => {
+  setViewport.mockClear();
   useStackStore.setState({
     toolCatalog: [
       {
@@ -137,6 +143,38 @@ describe('ToolNode', () => {
     // Wait for the popover (and its usage fetch) to settle, then assert absence.
     await screen.findByText('github__search-repos');
     expect(screen.queryByText(/Last used/i)).not.toBeInTheDocument();
+  });
+
+  it('leaves the viewport alone when the card cannot be measured', async () => {
+    // jsdom rects are all zero, which the placement helper treats as
+    // unmeasurable, so the card keeps its right anchor and nothing pans.
+    renderNode();
+    fireEvent.click(trigger());
+    const card = (await screen.findByText('github__search-repos')).closest('.w-72');
+    expect(card).toHaveClass('left-full');
+    expect(setViewport).not.toHaveBeenCalled();
+  });
+
+  it('pans the canvas left when the card would overrun the right edge', async () => {
+    const original = Element.prototype.getBoundingClientRect;
+    // jsdom has no layout engine, so hand the popover a card rect that
+    // overruns the container rect and assert the pan decision, not pixels:
+    // card right 1188 against container right 1024, plus the 8px margin.
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const base = { top: 0, bottom: 100, height: 100, y: 0, toJSON: () => ({}) };
+      if (this.classList.contains('w-72')) {
+        return { ...base, left: 900, right: 1188, width: 288, x: 900 } as DOMRect;
+      }
+      return { ...base, left: 0, right: 1024, width: 1024, x: 0 } as DOMRect;
+    };
+    try {
+      renderNode();
+      fireEvent.click(trigger());
+      await screen.findByText('github__search-repos');
+      expect(setViewport).toHaveBeenCalledWith({ x: -172, y: 0, zoom: 1 }, { duration: 200 });
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+    }
   });
 });
 
