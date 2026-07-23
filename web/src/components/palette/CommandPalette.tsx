@@ -128,8 +128,6 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const { getSortedCommands, getRecentCommands, recordUsage } = useCommandRegistry();
-  const bottomPanelOpen = useUIStore((s) => s.bottomPanelOpen);
-  const bottomPanelTab = useUIStore((s) => s.bottomPanelTab);
   const activeWorkspace = useUIStore((s) => s.activeWorkspace);
 
   // Clear the query when the palette closes (state adjustment during render,
@@ -172,14 +170,19 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const { scope, prefix, query } = parsePrefixScope(inputValue);
   const isActiveSearch = query.trim().length > 0 || scope !== null;
 
-  // Determine current section context from panel state
-  const currentSection: PaletteSection = bottomPanelOpen
-    ? bottomPanelTab === 'traces'
+  // Determine current section context from the active workspace.
+  const currentSection: PaletteSection =
+    activeWorkspace === 'traces'
       ? 'traces'
-      : bottomPanelTab === 'metrics'
+      : activeWorkspace === 'metrics'
         ? 'metrics'
-        : 'logs'
-    : 'canvas';
+        : activeWorkspace === 'logs'
+          ? 'logs'
+          : activeWorkspace === 'vault'
+            ? 'vault'
+            : activeWorkspace === 'library'
+              ? 'registry'
+              : 'canvas';
 
   const recentCommands = getRecentCommands(5, activeWorkspace);
   const contextCommands = getSortedCommands(undefined, currentSection, activeWorkspace).slice(0, 6);
