@@ -224,6 +224,9 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	inst.Gateway = mcp.NewGateway()
 	inst.Gateway.SetDockerClient(b.rt.DockerClient())
 	inst.Gateway.SetVersion(b.version)
+	if b.stack.Gateway != nil {
+		inst.Gateway.SetName(b.stack.Gateway.Name)
+	}
 
 	// Phase 1a: Enable code mode if configured
 	codeModeEnabled := b.config.CodeMode
