@@ -293,6 +293,13 @@ type TracingConfig struct {
 
 // GatewayConfig holds optional gateway-level configuration.
 type GatewayConfig struct {
+	// Name overrides the identity the gateway announces to MCP clients in the
+	// initialize response (serverInfo.name). Some clients (VS Code / GitHub
+	// Copilot) display this value rather than the entry key from their own
+	// config file, so distinct gateways need distinct names to be told apart.
+	// Empty keeps the default "gridctl-gateway".
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
 	// AllowedOrigins lists origins for CORS.
 	// When not set, defaults to ["*"] (allow all) for backward compatibility.
 	// Set explicit origins to restrict cross-origin access.
