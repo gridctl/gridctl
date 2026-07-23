@@ -275,6 +275,28 @@ Tool calls fail with `connection lost` after working initially.
    gridctl reload
    ```
 
+### Client shows "gridctl-gateway" instead of my config entry name
+
+**Symptoms:**
+
+The tool list in VS Code / GitHub Copilot labels a gridctl connection `gridctl-gateway` even though the entry in the client's config file has a different name (for example `gridctl-local`). With several gridctl entries linked, all of them show the same label.
+
+**Causes:**
+
+The entry key written by `gridctl link --name` / `--group` is a client-local alias and never reaches the gateway. Some clients instead display the identity the gateway reports in its MCP `initialize` response (`serverInfo.name`), which defaults to `gridctl-gateway` for every gridctl endpoint.
+
+**Resolution:**
+
+1. Set a distinct announced name per gateway in `stack.yaml`:
+   ```yaml
+   gateway:
+     name: acme-stack
+   ```
+
+2. Group endpoints (`/groups/<name>/mcp`) automatically announce a suffixed identity such as `acme-stack/<group>`, so linked groups are distinguishable without configuration.
+
+3. Restart the stack (`gridctl apply`); connected clients pick up the new name on their next initialize.
+
 ---
 
 ## Hot Reload
