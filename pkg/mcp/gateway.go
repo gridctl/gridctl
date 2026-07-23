@@ -242,6 +242,17 @@ func (g *Gateway) SetVersion(version string) {
 	g.serverInfo.Version = version
 }
 
+// SetName overrides the announced serverInfo name. Empty input is a no-op so
+// an unset stack field can never blank the identity.
+func (g *Gateway) SetName(name string) {
+	if name == "" {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.serverInfo.Name = name
+}
+
 // SetCodeMode enables code mode with the given timeout.
 // When code mode is active, tools/list returns meta-tools instead of individual tools.
 func (g *Gateway) SetCodeMode(timeout time.Duration) {
@@ -1560,9 +1571,18 @@ func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group stri
 		}
 	}
 
+	// Group endpoints announce a group-suffixed identity so several linked
+	// endpoints of the same gateway are distinguishable in clients that
+	// display the server-reported name instead of their own config key.
+	info := g.ServerInfo()
+	if group != "" {
+		info.Name = info.Name + "/" + group
+	}
+	info.Title = info.Name
+
 	return &InitializeResult{
 		ProtocolVersion: protocolVersion,
-		ServerInfo:      g.ServerInfo(),
+		ServerInfo:      info,
 		Capabilities:    caps,
 		Instructions:    g.buildInstructions(),
 	}, session, nil
