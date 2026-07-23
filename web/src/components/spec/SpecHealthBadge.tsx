@@ -1,14 +1,15 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FileCheck } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useSpecStore } from '../../stores/useSpecStore';
-import { useUIStore } from '../../stores/useUIStore';
 import { fetchStackHealth } from '../../lib/api';
 
 export function SpecHealthBadge() {
   const health = useSpecStore((s) => s.health);
   const setHealth = useSpecStore((s) => s.setHealth);
   const pollRef = useRef<ReturnType<typeof setInterval>>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const load = () => {
@@ -22,7 +23,7 @@ export function SpecHealthBadge() {
   }, [setHealth]);
 
   const handleClick = () => {
-    useUIStore.getState().setBottomPanelTab('spec');
+    navigate('/stack?spec=1');
   };
 
   if (!health) return null;
