@@ -1,1 +1,0 @@
-export { MetricsTab } from './MetricsTab';
