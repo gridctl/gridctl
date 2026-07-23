@@ -322,7 +322,10 @@ const MaxRequestBodySize = 1 * 1024 * 1024
 
 // ServerInfo contains information about the MCP server.
 type ServerInfo struct {
-	Name    string `json:"name"`
+	Name string `json:"name"`
+	// Title is the human-friendly display name from the 2025-06-18 MCP
+	// revision; clients that understand it prefer it over Name.
+	Title   string `json:"title,omitempty"`
 	Version string `json:"version"`
 }
 
