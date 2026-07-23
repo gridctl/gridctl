@@ -7,6 +7,10 @@ vi.mock('@xyflow/react', () => ({
   Handle: ({ id }: { id: string }) => <div data-testid={`handle-${id}`} />,
   Position: { Left: 'left', Right: 'right' },
   MarkerType: { ArrowClosed: 'arrowclosed' },
+  // The detail popover pans the viewport when it would overrun the canvas
+  // and re-checks when the viewport settles.
+  useReactFlow: () => ({ getViewport: () => ({ x: 0, y: 0, zoom: 1 }), setViewport: vi.fn() }),
+  useOnViewportChange: () => {},
 }));
 
 vi.mock('../lib/api', () => ({

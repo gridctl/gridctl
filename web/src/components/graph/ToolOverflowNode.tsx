@@ -164,7 +164,9 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
           serverName={data.serverName}
           toolName={selectedTool}
           // Top-aligned with the panel (top-full + its mt-1.5), just past its
-          // right edge, so the card never covers the list being browsed.
+          // right edge, so the card never covers the list being browsed. Near
+          // the canvas's right edge the popover pans the viewport to bring
+          // itself into view.
           positionStyle={{ left: cols * LAYOUT.TOOL_WIDTH + 8, top: '100%', marginTop: 6 }}
           onClose={() => setSelectedTool(null)}
         />
