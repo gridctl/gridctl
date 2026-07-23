@@ -7,6 +7,8 @@ All notable changes to gridctl will be documented in this file.
 
 ### Features
 
+- Logs and Traces are now top-level workspaces (Cmd+7 / Cmd+8) alongside Stack, Library, Variables, Tools, Metrics, and Pins. The Logs workspace shows the aggregate stream from the gateway and every server with no node selection required: a source rail (all sources / gateway / per server) filters the same stream client-side, each line in the all-sources view is badged with its origin, and severity, search, and source state live in the URL (`?agent=`, `?level=`, `?q=`) so views are shareable. The Traces workspace carries the full trace list, waterfall, and span detail with URL-synced selection (`?trace=`). The two correlate: a log line with a trace ID pivots to its trace, and a trace's waterfall pivots to the logs for that trace. Detached popouts move to `/logs-window` and `/traces-window` (existing window handles keep working), workspace nav pills collapse to icons below 1360px so all eight fit, and the bottom-panel tabs are unchanged
+
 - Full-view client cards on the Stack canvas are now horizontal: the client icon sits on the left with the name, transport, and linked status stacked beside it in a wider, shorter card, replacing the centered column layout and its dead space above the icon. Compact cards are unchanged
 
 - Automated npm advisory fixes: a scheduled `NPM Audit Fix` workflow runs `npm audit fix` against `web/` weekly (and on demand via `workflow_dispatch`) and opens or updates a single reviewable PR when the lockfile changes, listing the advisories it addresses. Only semver-compatible updates are applied; the frontend CI job's `npm audit --audit-level=high` gate is unchanged, this keeps main passing it so fresh advisories stop failing unrelated PRs
