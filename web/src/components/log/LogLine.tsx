@@ -1,17 +1,24 @@
-import { ChevronRight } from 'lucide-react';
+import { Activity, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { LEVEL_STYLES, formatTimestamp, type ParsedLog } from './logTypes';
+import { GATEWAY_LOG_SOURCE, LEVEL_STYLES, formatTimestamp, type ParsedLog } from './logTypes';
 
 export function LogLine({
   log,
   isExpanded,
   onToggle,
+  source,
+  onTraceClick,
 }: {
   log: ParsedLog;
   isExpanded: boolean;
   onToggle: () => void;
+  /** When set, renders a source column (aggregate all-sources view). */
+  source?: string;
+  /** When set, trace IDs render as pivots into the trace view. */
+  onTraceClick?: (traceId: string) => void;
 }) {
   const styles = LEVEL_STYLES[log.level] || LEVEL_STYLES.DEBUG;
+  const showSource = source !== undefined;
 
   return (
     <div
@@ -25,7 +32,9 @@ export function LogLine({
       <div
         className={cn(
           'grid gap-2 px-3 py-1 log-text cursor-pointer',
-          'grid-cols-[8.5em_5.5em_7.5em_1fr_2em]',
+          showSource
+            ? 'grid-cols-[8.5em_5.5em_7em_7.5em_1fr_2em]'
+            : 'grid-cols-[8.5em_5.5em_7.5em_1fr_2em]',
         )}
         onClick={onToggle}
       >
@@ -46,6 +55,25 @@ export function LogLine({
           {log.level.slice(0, 4)}
         </span>
 
+        {/* Source (aggregate view only) */}
+        {showSource && (
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 min-w-0 font-mono log-text',
+              source === GATEWAY_LOG_SOURCE ? 'text-primary/80' : 'text-violet-400/90'
+            )}
+            title={source}
+          >
+            <span
+              className={cn(
+                'w-1 h-1 rounded-full flex-shrink-0',
+                source === GATEWAY_LOG_SOURCE ? 'bg-primary' : 'bg-violet-400'
+              )}
+            />
+            <span className="truncate">{source}</span>
+          </span>
+        )}
+
         {/* Component */}
         <span className="text-secondary font-mono log-text truncate" title={log.component}>
           {log.component || '\u2014'}
@@ -62,8 +90,21 @@ export function LogLine({
           {log.message}
         </span>
 
-        {/* Expand indicator */}
-        <span className="flex items-center justify-center">
+        {/* Trace pivot + expand indicator */}
+        <span className="flex items-center justify-center gap-0.5">
+          {onTraceClick && log.traceId && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTraceClick(log.traceId!);
+              }}
+              title={`View trace ${log.traceId}`}
+              aria-label={`View trace ${log.traceId}`}
+              className="p-0.5 rounded text-text-muted opacity-0 group-hover:opacity-100 hover:text-primary transition-all"
+            >
+              <Activity size={11} />
+            </button>
+          )}
           <ChevronRight
             size={12}
             className={cn(
@@ -88,7 +129,16 @@ export function LogLine({
             {log.traceId && (
               <div className="flex gap-2 mt-1 pt-1 border-t border-border/20">
                 <span className="text-text-muted">trace_id:</span>
-                <span className="text-secondary">{log.traceId}</span>
+                {onTraceClick ? (
+                  <button
+                    onClick={() => onTraceClick(log.traceId!)}
+                    className="text-secondary hover:text-primary hover:underline text-left"
+                  >
+                    {log.traceId}
+                  </button>
+                ) : (
+                  <span className="text-secondary">{log.traceId}</span>
+                )}
               </div>
             )}
             {log.attrs && (
