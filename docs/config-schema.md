@@ -68,6 +68,7 @@ gateway:
 | `default_model` | string | No | - | Model ID used to price tool calls for servers without their own `model` field (e.g. `"claude-opus-4-7"`). Enables cost observability; figures are estimates from the embedded LiteLLM rates, not billing truth. Empty disables cost attribution for servers without a per-server `model` |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
 | `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Results over the limit are truncated with a suffix noting the original size. `0` uses the default (64 KB) |
+| `name` | string | No | `"gridctl-gateway"` | Identity announced to MCP clients in the initialize response (`serverInfo.name`). Some clients (VS Code / GitHub Copilot) display this instead of the entry key in their own config, so give distinct gateways distinct names. Group endpoints announce `<name>/<group>`. Requires a restart to propagate |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
 | `tokenizer_api_key` | string | No | - | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${var:KEY}` references |
