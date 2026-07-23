@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
@@ -29,6 +29,41 @@ import { Canvas } from '../components/graph/Canvas';
 import { useStackStore } from '../stores/useStackStore';
 import { useAccessLensStore } from '../stores/useAccessLensStore';
 import type { GatewayStatus, MCPServerStatus } from '../types';
+
+// The refit defers one frame before fitting; run frames synchronously so
+// every fit lands inside act(), including the unmount cleanups React runs
+// after each test, which is why this cannot be a per-test stub.
+globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+  cb(0);
+  return 0;
+}) as typeof requestAnimationFrame;
+globalThis.cancelAnimationFrame = () => {};
+
+// The setup-file ResizeObserver polyfill, restored after tests that install a
+// callback-capturing stand-in.
+const SetupResizeObserver = globalThis.ResizeObserver;
+
+// Installs a ResizeObserver stand-in whose callback is fired by hand with a
+// given content width, and fakes only the debounce timer: faking rAF too
+// would defer the fit-key refits into runAllTimers and pollute the resize
+// assertions. The afterEach below restores both.
+function installCapturingResizeObserver() {
+  let cb: ResizeObserverCallback | undefined;
+  class CapturingResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      cb = callback;
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = CapturingResizeObserver as unknown as typeof ResizeObserver;
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  return {
+    fire: (width: number) =>
+      cb?.([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver),
+  };
+}
 
 function makeServer(name: string, toolCount: number): MCPServerStatus {
   return {
@@ -63,6 +98,11 @@ describe('Canvas auto-refit on tool fan-out', () => {
       draggedPositions: new Map(),
     });
     useStackStore.getState().setGatewayStatus(status([makeServer('github', 3)]));
+  });
+
+  afterEach(() => {
+    globalThis.ResizeObserver = SetupResizeObserver;
+    vi.useRealTimers();
   });
 
   it('refits with the fan-out node ids when a server expands with nothing selected', () => {
@@ -133,6 +173,58 @@ describe('Canvas auto-refit on tool fan-out', () => {
     } finally {
       useAccessLensStore.setState({ enabled: false, clientSlug: null });
     }
+  });
+
+  it('refits with the current fit set when the canvas width changes', () => {
+    // The detail sidebar is a grid column: opening it narrows the canvas
+    // without changing node ids, so the resize observer is the only trigger.
+    const { fire } = installCapturingResizeObserver();
+
+    render(<Canvas />);
+    act(() => {
+      useStackStore.getState().toggleServerExpanded('mcp-github');
+    });
+    fitView.mockClear();
+
+    // The first callback after observe() reports the mount-time size; it must
+    // not re-frame a canvas nobody resized.
+    act(() => {
+      fire(1200);
+      vi.runAllTimers();
+    });
+    expect(fitView).not.toHaveBeenCalled();
+
+    act(() => {
+      fire(880);
+      vi.runAllTimers();
+    });
+    expect(fitView).toHaveBeenCalledTimes(1);
+    // The re-frame targets the current fit set, fan-out nodes included.
+    expect(fittedIds().some((id) => id.includes('tool'))).toBe(true);
+  });
+
+  it('ignores height-only resizes and debounces width bursts into one refit', () => {
+    const { fire } = installCapturingResizeObserver();
+
+    render(<Canvas />);
+    fitView.mockClear();
+
+    // A repeat of the same width is a height-only change (window snapping,
+    // devtools); the viewport must hold still.
+    act(() => {
+      fire(1200);
+      fire(1200);
+      vi.runAllTimers();
+    });
+    expect(fitView).not.toHaveBeenCalled();
+
+    // Dragging the sidebar resize handle streams widths; only the settled
+    // size re-frames.
+    act(() => {
+      for (const width of [1100, 1000, 940, 880]) fire(width);
+      vi.runAllTimers();
+    });
+    expect(fitView).toHaveBeenCalledTimes(1);
   });
 
   it('refits without the tool ids after collapsing', () => {

@@ -111,8 +111,7 @@ export function Canvas() {
   // the operator can grant servers outside the current reach, so every server
   // must be in frame, and scope toggles only change highlighting, never node
   // ids, so draft edits still hold the canvas still while expand/collapse
-  // re-frames. The sidebar is a grid column, so fitView fits the narrowed
-  // canvas area on its own.
+  // re-frames.
   const layoutEpoch = useStackStore((s) => s.layoutEpoch);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const isClientSelected =
@@ -122,13 +121,56 @@ export function Canvas() {
       ? [...highlightState.highlightedNodeIds].sort().join(',')
       : (nodes ?? []).map((n) => n.id).sort().join(',');
   const fitKey = fitIds ? `${layoutEpoch}:${fitIds}` : '';
+  const fitSetRef = useRef<{ id: string }[]>([]);
   useEffect(() => {
     if (!fitKey) return;
     const ids = fitKey.slice(fitKey.indexOf(':') + 1).split(',').map((id) => ({ id }));
-    // fitView queues internally until new nodes are measured (React Flow 12.5+),
-    // so no frame deferral is needed before fitting freshly-mounted tool nodes.
-    fitView({ nodes: ids, padding: 0.25, duration: 400, maxZoom: 1.5 });
+    fitSetRef.current = ids;
+    // fitView queues internally until new nodes are measured (React Flow
+    // 12.5+), but it never re-reads a container resized in the same commit:
+    // selecting a client opens the sidebar grid column synchronously with
+    // this effect, so defer one frame to let React Flow's ResizeObserver
+    // record the narrowed width before framing.
+    const raf = requestAnimationFrame(() => {
+      fitView({ nodes: ids, padding: 0.25, duration: 400, maxZoom: 1.5 });
+    });
+    return () => cancelAnimationFrame(raf);
   }, [fitKey, fitView]);
+
+  // Re-frame the current fit set when the canvas container's width changes.
+  // The detail sidebar is a grid column, so opening, closing, or dragging it
+  // resizes the canvas without touching the fit key (node ids and epoch;
+  // under Access Lens the key is even byte-identical across client
+  // selection), and React Flow never auto-fits on container resize. Gated on
+  // width so height-only changes hold the viewport still, and debounced so
+  // the sidebar resize handle re-frames once per gesture. The first
+  // observation reports the mount-time size and must not re-frame a canvas
+  // nobody resized.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    let lastWidth = -1;
+    let timer: number | undefined;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? el.clientWidth;
+      if (width === lastWidth) return;
+      const isInitial = lastWidth === -1;
+      lastWidth = width;
+      if (isInitial) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const ids = fitSetRef.current;
+        if (ids.length === 0) return;
+        fitView({ nodes: ids, padding: 0.25, duration: 400, maxZoom: 1.5 });
+      }, 150);
+    });
+    observer.observe(el);
+    return () => {
+      window.clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [fitView]);
 
   // Evolvable grid - main lines at 100px, sub-grid dots at 20px fade in at >0.8x
   const showSubGrid = zoom > 0.8;
@@ -211,7 +253,7 @@ export function Canvas() {
   const hasActiveStack = connectionStatus === 'connected' && gatewayInfo !== null;
 
   return (
-    <div className="absolute inset-0 canvas-wrapper">
+    <div ref={wrapperRef} className="absolute inset-0 canvas-wrapper">
       {/* Film grain overlay */}
       <div className="film-grain" />
       {/* Empty state CTA */}
