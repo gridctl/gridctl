@@ -237,13 +237,18 @@ export function Canvas() {
     setSidebarOpen(true);
   }, [selectNode, setSidebarOpen, lensActive, toggleDraftServer]);
 
-  // Handle pane click (deselect). Reset focus and zoom back out to frame the
-  // whole graph, complementing the zoom-to-fit on client selection.
+  // Handle pane click: return to the default view. Deselect, close the
+  // sidebar, and collapse every tool fan-out (which also unmounts any open
+  // tool detail popover), then zoom back out to frame the whole graph. When
+  // fan-outs were open the collapse changes the node-id set and the auto-fit
+  // above re-frames; the explicit fitView covers the nothing-was-open case.
+  const collapseAllServers = useStackStore((s) => s.collapseAllServers);
   const onPaneClick = useCallback(() => {
     selectNode(null);
     setSidebarOpen(false);
+    collapseAllServers();
     fitView({ padding: 0.2, duration: 400 });
-  }, [selectNode, setSidebarOpen, fitView]);
+  }, [selectNode, setSidebarOpen, collapseAllServers, fitView]);
 
   // No-op connect handler. The canvas does not support drawing connections;
   // per-client access is edited through Access Lens, not by dragging edges.

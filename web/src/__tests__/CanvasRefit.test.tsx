@@ -2,17 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
-// The fitView spy must be hoisted so the module mock below can close over it.
-const { fitView } = vi.hoisted(() => ({ fitView: vi.fn() }));
+// The fitView spy must be hoisted so the module mock below can close over it,
+// and paneClick captures the onPaneClick prop so tests can click blank canvas.
+const { fitView, paneClick } = vi.hoisted(() => ({
+  fitView: vi.fn(),
+  paneClick: { current: undefined as (() => void) | undefined },
+}));
 
 // Mock React Flow for every consumer in Canvas's module graph: CanvasBase
 // (ReactFlow, Background, BackgroundVariant), Canvas (useReactFlow,
 // useViewport, Panel), the node components (Handle, Position), the store
 // (applyNodeChanges, applyEdgeChanges), and edge building (MarkerType).
 vi.mock('@xyflow/react', () => ({
-  ReactFlow: ({ children }: { children?: ReactNode }) => (
-    <div data-testid="react-flow">{children}</div>
-  ),
+  ReactFlow: ({ children, onPaneClick }: { children?: ReactNode; onPaneClick?: () => void }) => {
+    paneClick.current = onPaneClick;
+    return <div data-testid="react-flow">{children}</div>;
+  },
   Background: () => null,
   BackgroundVariant: { Dots: 'dots', Lines: 'lines', Cross: 'cross' },
   Panel: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -225,6 +230,28 @@ describe('Canvas auto-refit on tool fan-out', () => {
       vi.runAllTimers();
     });
     expect(fitView).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses every fan-out back to the default view on a pane click', () => {
+    render(<Canvas />);
+    act(() => {
+      useStackStore.getState().toggleServerExpanded('mcp-github');
+    });
+    expect(useStackStore.getState().expandedServers.size).toBe(1);
+    fitView.mockClear();
+
+    act(() => {
+      paneClick.current?.();
+    });
+
+    expect(useStackStore.getState().expandedServers.size).toBe(0);
+    expect(
+      useStackStore.getState().nodes.some((n) => (n.data as { type?: string }).type === 'tool'),
+    ).toBe(false);
+    // The collapse changes the node-id set, so the auto-fit re-frames the
+    // whole graph without the tool nodes.
+    expect(fitView).toHaveBeenCalled();
+    expect(fittedIds().some((id) => id.includes('tool'))).toBe(false);
   });
 
   it('refits without the tool ids after collapsing', () => {

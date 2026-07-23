@@ -120,6 +120,7 @@ interface StackState {
   toggleServerExpanded: (serverId: string) => void;
   expandServer: (serverId: string) => void;
   collapseServer: (serverId: string) => void;
+  collapseAllServers: () => void;
   refreshNodesAndEdges: () => void;
   resetLayout: () => void;
 
@@ -299,6 +300,15 @@ export const useStackStore = create<StackState>()(
       const next = new Set(get().expandedServers);
       next.delete(serverId);
       set({ expandedServers: next });
+      get().refreshNodesAndEdges();
+    },
+
+    // A blank-pane click resets the canvas to its default view; collapsing
+    // every fan-out also unmounts any open tool detail popover, whose state
+    // lives in the tool nodes themselves.
+    collapseAllServers: () => {
+      if (get().expandedServers.size === 0) return;
+      set({ expandedServers: new Set<string>() });
       get().refreshNodesAndEdges();
     },
 
