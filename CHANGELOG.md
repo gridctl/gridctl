@@ -7,6 +7,8 @@ All notable changes to gridctl will be documented in this file.
 
 ### Features
 
+- Full-view client cards on the Stack canvas are now horizontal: the client icon sits on the left with the name, transport, and linked status stacked beside it in a wider, shorter card, replacing the centered column layout and its dead space above the icon. Compact cards are unchanged
+
 - Automated npm advisory fixes: a scheduled `NPM Audit Fix` workflow runs `npm audit fix` against `web/` weekly (and on demand via `workflow_dispatch`) and opens or updates a single reviewable PR when the lockfile changes, listing the advisories it addresses. Only semver-compatible updates are applied; the frontend CI job's `npm audit --audit-level=high` gate is unchanged, this keeps main passing it so fresh advisories stop failing unrelated PRs
 
 - Tool groups in the web UI: the Tools workspace gains a Groups panel (header button, shown only when a `groups:` block exists) listing each group with its member count, description, copyable endpoint URL, and a link-command hint; selecting a group shows the exposed surface per member tool — the renamed name with its canonical origin, the rewritten description beside the downstream original so operators see exactly what a group client's model sees, and annotation chips for declared hints. Tool rows in the workspace carry compact group badges for members. `GET /api/groups` additionally returns a `members` array with each exposed tool's post-rewrite name, description, merged annotations, and origin. Stacks without groups are visually unchanged
