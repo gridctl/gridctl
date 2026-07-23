@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
 import { Canvas } from '../graph/Canvas';
 import { AccessLens } from '../stack/AccessLens';
 import { PricingManagerHost } from '../pricing/PricingManagerHost';
+import { SpecPane } from '../spec/SpecPane';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -19,6 +21,21 @@ const SIDEBAR_MAX = 600;
 // workspaces doesn't shift the canvas.
 export function StackWorkspace() {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // ?spec=1 opens the spec slide-over; the status-bar chip and the palette's
+  // "Open Spec Editor" deep-link it. Closing clears the flag.
+  const specOpen = searchParams.get('spec') === '1';
+  const closeSpec = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.delete('spec');
+        return params;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   const isLoading = useStackStore((s) => s.isLoading);
   const error = useStackStore((s) => s.error);
@@ -119,6 +136,8 @@ export function StackWorkspace() {
               editor. Same canvas-column anchoring as the Access Lens
               slide-over; opened from Metrics, the inspector, or the palette. */}
           <PricingManagerHost />
+
+          {specOpen && <SpecPane onClose={closeSpec} />}
         </div>
 
         {sidebarOpen && (
