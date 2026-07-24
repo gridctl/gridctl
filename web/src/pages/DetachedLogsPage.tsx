@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
 import {
   Terminal,
   Copy,
@@ -15,20 +14,9 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
-import {
-  LogFilterBar,
-  LogStream,
-  GATEWAY_LOG_SOURCE,
-  LOG_LEVELS,
-  filterParsedLogs,
-  normalizeLogSourceParam,
-  type LogLevel,
-} from '../components/log';
-import { copyTextToClipboard } from '../lib/clipboard';
+import { GATEWAY_LOG_SOURCE, LogsView, useLogsView } from '../components/log';
 import { fetchStatus } from '../lib/api';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
-import { useLogFontSize } from '../hooks/useLogFontSize';
-import { useLogStream } from '../hooks/useLogStream';
 import { POLLING } from '../lib/constants';
 import type { GatewayStatus } from '../types';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
@@ -38,27 +26,20 @@ interface NodeOption {
   type: 'mcp-server' | 'resource';
 }
 
+// Frameless logs popout. The log surface itself is the shared LogsView (same
+// URL-synced ?agent=/?q=/?level=/?trace= semantics as the workspace, in this
+// window's own URL); this page adds the window chrome: source dropdown,
+// pause/copy/clear actions, fullscreen, and the footer. Trace pivots open the
+// Traces workspace in a full app tab since the popout has no other workspaces.
 function DetachedLogsPageContent() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const source = normalizeLogSourceParam(searchParams.get('agent'));
-
-  const [isPaused, setIsPaused] = useState(false);
-  const { logs, isLoading, error, refresh, clear } = useLogStream({ active: true, paused: isPaused });
+  const view = useLogsView();
+  const { source } = view;
 
   const [nodes, setNodes] = useState<NodeOption[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
-  // Filter state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(new Set(LOG_LEVELS));
-
-  const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Log font size with Ctrl+Scroll zoom
-  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } =
-    useLogFontSize(containerRef);
 
   // Register with main window
   useDetachedWindowSync('logs');
@@ -100,28 +81,9 @@ function DetachedLogsPageContent() {
   const sourceLabel = source == null ? 'All sources' : isGateway ? 'Gateway' : source;
 
   const handleSelectSource = (next: string | null) => {
-    setSearchParams(next ? { agent: next } : {});
+    view.setSource(next);
     setDropdownOpen(false);
   };
-
-  const filteredLogs = useMemo(
-    () => filterParsedLogs(logs, { source, levels: enabledLevels, query: searchQuery }),
-    [logs, source, enabledLevels, searchQuery],
-  );
-
-  const toggleLevel = (level: LogLevel) => {
-    setEnabledLevels((prev) => {
-      const next = new Set(prev);
-      if (next.has(level)) {
-        next.delete(level);
-      } else {
-        next.add(level);
-      }
-      return next;
-    });
-  };
-
-  const handleCopyLogs = () => copyTextToClipboard(filteredLogs.map((log) => log.raw).join('\n'));
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
@@ -142,8 +104,6 @@ function DetachedLogsPageContent() {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
-
-  const hasActiveFilter = searchQuery !== '' || enabledLevels.size !== LOG_LEVELS.length;
 
   return (
     <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
@@ -234,7 +194,7 @@ function DetachedLogsPageContent() {
               Structured
             </span>
           )}
-          {isPaused && (
+          {view.isPaused && (
             <span className="text-[10px] px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
               Paused
             </span>
@@ -244,30 +204,30 @@ function DetachedLogsPageContent() {
         <div className="flex items-center gap-1">
           <IconButton
             icon={RefreshCw}
-            onClick={refresh}
+            onClick={view.refresh}
             tooltip="Refresh"
             size="sm"
             variant="ghost"
           />
           <IconButton
-            icon={isPaused ? Play : Pause}
-            onClick={() => setIsPaused(!isPaused)}
-            tooltip={isPaused ? 'Resume' : 'Pause'}
+            icon={view.isPaused ? Play : Pause}
+            onClick={view.togglePause}
+            tooltip={view.isPaused ? 'Resume' : 'Pause'}
             size="sm"
             variant="ghost"
-            className={isPaused ? 'text-status-running hover:text-status-running' : ''}
+            className={view.isPaused ? 'text-status-running hover:text-status-running' : ''}
           />
           <IconButton
             icon={Copy}
-            onClick={handleCopyLogs}
+            onClick={view.copyFiltered}
             tooltip="Copy Logs"
             size="sm"
             variant="ghost"
-            disabled={filteredLogs.length === 0}
+            disabled={view.filteredLogs.length === 0}
           />
           <IconButton
             icon={Trash2}
-            onClick={clear}
+            onClick={view.clear}
             tooltip="Clear Logs"
             size="sm"
             variant="ghost"
@@ -284,43 +244,19 @@ function DetachedLogsPageContent() {
         </div>
       </header>
 
-      {/* Filter bar */}
-      <LogFilterBar
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        enabledLevels={enabledLevels}
-        onToggleLevel={toggleLevel}
-        fontSize={fontSize}
-        onZoomIn={zoomIn}
-        onZoomOut={zoomOut}
-        onResetZoom={resetZoom}
-        isMin={isMin}
-        isMax={isMax}
-        isDefault={isDefault}
-        filteredCount={filteredLogs.length}
-        totalCount={logs.length}
-      />
-
-      {/* Log content */}
-      <LogStream
-        logs={filteredLogs}
-        isLoading={isLoading}
-        error={error}
-        hasActiveFilter={hasActiveFilter}
-        onClearFilter={() => {
-          setSearchQuery('');
-          setEnabledLevels(new Set(LOG_LEVELS));
-        }}
-        showSource={source == null}
-        fontSize={fontSize}
-        containerRef={containerRef}
+      {/* Log surface — shared with the workspace */}
+      <LogsView
+        view={view}
+        onTraceClick={(traceId) =>
+          window.open(`/traces?trace=${encodeURIComponent(traceId)}`, '_blank', 'noopener')
+        }
         emptyText="No logs available"
       />
 
       {/* Footer status bar */}
       <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
         <span>
-          {filteredLogs.length} / {(logs ?? []).length} entries {isPaused ? '(paused)' : ''}
+          {view.filteredLogs.length} / {view.logs.length} entries {view.isPaused ? '(paused)' : ''}
         </span>
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
