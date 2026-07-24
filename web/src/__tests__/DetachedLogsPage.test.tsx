@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { DetachedLogsPage } from '../pages/DetachedLogsPage';
+import { useUIStore } from '../stores/useUIStore';
 import type { LogEntry } from '../lib/api';
 
 vi.mock('../hooks/useBroadcastChannel', () => ({
@@ -47,11 +48,18 @@ function renderAt(initialEntry: string) {
 }
 
 beforeEach(() => {
-  vi.mocked(fetchGatewayLogs).mockResolvedValue([gatewayEntry, tracedEntry]);
+  vi.mocked(fetchGatewayLogs).mockResolvedValue({
+    logs: [gatewayEntry, tracedEntry],
+    total: 2,
+    bufferCapacity: 1000,
+  });
   vi.mocked(fetchStatus).mockResolvedValue({
     'mcp-servers': [],
     resources: [],
   } as unknown as Awaited<ReturnType<typeof fetchStatus>>);
+  useUIStore.setState({
+    logsPrefs: { levelParam: '', source: '', wrap: false, relativeTime: false, windowSize: 500 },
+  });
 });
 
 afterEach(() => {
