@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
 	"github.com/gridctl/gridctl/pkg/state"
@@ -16,19 +18,30 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var destroyUnlink bool
+
 var destroyCmd = &cobra.Command{
 	Use:   "destroy <stack.yaml|stack-name>",
 	Short: "Stop gateway daemon and remove containers",
 	Long: `Stops the MCP gateway daemon and removes all containers for a stack.
 
 Accepts either the stack YAML file or the stack name shown by
-'gridctl status', so a moved or renamed file never blocks a teardown.`,
-	Example: `  gridctl destroy stack.yaml   Destroy by file
-  gridctl destroy mystack      Destroy by stack name (see 'gridctl status')`,
+'gridctl status', so a moved or renamed file never blocks a teardown.
+
+By default client configs are left untouched (linked clients simply point
+at a stopped gateway). With --unlink, the entries declared in the stack's
+link: block are also removed from their client configs.`,
+	Example: `  gridctl destroy stack.yaml            Destroy by file
+  gridctl destroy mystack               Destroy by stack name (see 'gridctl status')
+  gridctl destroy stack.yaml --unlink   Also unlink clients declared in link:`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDestroy(args[0])
 	},
+}
+
+func init() {
+	destroyCmd.Flags().BoolVar(&destroyUnlink, "unlink", false, "Also remove the stack's declared link: entries from client configs")
 }
 
 // resolveDestroyTarget resolves the destroy argument to a stack name and,
@@ -126,7 +139,50 @@ func runDestroy(target string) error {
 		}
 	}
 
+	if destroyUnlink {
+		unlinkDeclaredClients(printer, provisioner.NewRegistry(), stack)
+	}
+
 	printer.Info("Stack stopped", "name", name)
 	printer.Hint("Verify with 'gridctl status'")
 	return nil
+}
+
+// unlinkDeclaredClients removes the destroyed stack's declared link:
+// entries from their client configs. Unlink resolves the same entry names
+// reconcile writes (explicit name, gridctl-<group>, or gridctl); entries
+// that are not linked are silent no-ops. Without a loadable spec (destroy
+// by name after the stack file moved) the declared set is unknown, so we
+// warn and skip rather than guess.
+func unlinkDeclaredClients(printer *output.Printer, registry slugResolver, stack *config.Stack) {
+	if stack == nil {
+		printer.Warn("--unlink skipped: stack file not loadable, declared clients unknown (use 'gridctl unlink')")
+		return
+	}
+	if len(stack.Link) == 0 {
+		printer.Info("--unlink: stack declares no link: entries, nothing to remove")
+		return
+	}
+
+	for _, entry := range stack.Link {
+		prov, ok := registry.FindBySlug(entry.Client)
+		if !ok {
+			printer.Warn(fmt.Sprintf("Skipped %s: unknown client", entry.Client))
+			continue
+		}
+		configPath, found := prov.Detect()
+		if !found {
+			continue // Nothing on this machine to unlink
+		}
+		serverName := entry.EffectiveName()
+		err := prov.Unlink(configPath, serverName)
+		switch {
+		case errors.Is(err, provisioner.ErrNotLinked):
+			// Declared but never linked here; nothing to do.
+		case err != nil:
+			printer.Warn(fmt.Sprintf("Failed to unlink %s: %s", prov.Name(), err))
+		default:
+			printer.Info(fmt.Sprintf("Unlinked %s (%s)", prov.Name(), serverName))
+		}
+	}
 }
