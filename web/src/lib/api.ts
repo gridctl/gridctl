@@ -748,7 +748,15 @@ export async function updateDefaultModel(
   return data as UpdateDefaultModelResponse;
 }
 
-export async function fetchGatewayLogs(lines = 100, level?: string): Promise<LogEntry[]> {
+// Envelope served by GET /api/logs: the windowed entries plus ring occupancy
+// (total) and capacity, so the UI can label the window against retention.
+export interface GatewayLogsResponse {
+  logs: LogEntry[];
+  total: number;
+  bufferCapacity: number;
+}
+
+export async function fetchGatewayLogs(lines = 100, level?: string): Promise<GatewayLogsResponse> {
   let url = `${API_BASE}/api/logs?lines=${lines}`;
   if (level) {
     url += `&level=${encodeURIComponent(level)}`;
