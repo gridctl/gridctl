@@ -1,7 +1,7 @@
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { Terminal } from 'lucide-react';
 import { LogLine } from './LogLine';
-import { logSourceOf, type ParsedLog } from './logTypes';
+import { logEntryKeys, logSourceOf, type ParsedLog } from './logTypes';
 
 interface LogStreamProps {
   /** Already-filtered entries to render. */
@@ -38,7 +38,10 @@ export function LogStream({
   emptyText = 'No logs yet',
 }: LogStreamProps) {
   const [autoScroll, setAutoScroll] = useState(true);
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  // Expansion tracks entry identity, not array position: the poll replaces
+  // the array every tick, so an index would drift to a different line.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const keys = useMemo(() => logEntryKeys(logs), [logs]);
 
   // Follow: keep pinned to the newest entry until the user scrolls up.
   useEffect(() => {
@@ -95,10 +98,10 @@ export function LogStream({
           {header}
           {logs.map((log, i) => (
             <LogLine
-              key={i}
+              key={keys[i]}
               log={log}
-              isExpanded={expandedIndex === i}
-              onToggle={() => setExpandedIndex(expandedIndex === i ? null : i)}
+              isExpanded={expandedKey === keys[i]}
+              onToggle={() => setExpandedKey(expandedKey === keys[i] ? null : keys[i])}
               source={showSource ? logSourceOf(log) : undefined}
               onTraceClick={onTraceClick}
             />
