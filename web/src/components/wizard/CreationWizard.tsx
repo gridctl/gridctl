@@ -7,6 +7,7 @@ import {
   Puzzle,
   KeyRound,
   Globe,
+  Plug,
   ArrowLeft,
   ArrowRight,
   RotateCcw,
@@ -94,6 +95,14 @@ const resourceTypes: ResourceTypeCard[] = [
     color: 'text-secondary',
     glowColor: 'rgba(13, 148, 136, 0.1)',
   },
+  {
+    type: 'client-link',
+    icon: Plug,
+    label: 'Client Link',
+    description: 'Connect LLM clients to the gateway',
+    color: 'text-primary',
+    glowColor: 'rgba(245, 158, 11, 0.1)',
+  },
 ];
 
 const stepLabels: Record<WizardStep, string> = {
@@ -109,6 +118,7 @@ function getResourceCounts(
   mcpServers: { name: string }[],
   resources: { name: string }[],
   skills: { name: string }[] | null,
+  linkedClients: number,
 ): Record<ResourceType, number> {
   return {
     stack: 0, // Not a countable entity
@@ -117,16 +127,18 @@ function getResourceCounts(
     skill: (skills ?? []).length,
     secret: 0, // Vault count not easily available
     'global-context': 0, // Singleton; the dialog shows per-client state
+    'client-link': linkedClients,
   };
 }
 
 interface CreationWizardProps {
   onOpenVault?: () => void;
   onOpenGlobalContext?: () => void;
+  onOpenConnections?: () => void;
   onDeploy?: () => void;
 }
 
-export function CreationWizard({ onOpenVault, onOpenGlobalContext, onDeploy }: CreationWizardProps) {
+export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnections, onDeploy }: CreationWizardProps) {
   const {
     isOpen,
     close,
@@ -152,9 +164,11 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onDeploy }: C
   const mcpServers = useMemo(() => mcpServersRaw ?? [], [mcpServersRaw]);
   const resources = useMemo(() => resourcesRaw ?? [], [resourcesRaw]);
   const skills = useRegistryStore((s) => s.skills);
+  const clients = useStackStore((s) => s.clients);
+  const linkedClients = useMemo(() => clients.filter((c) => c.linked).length, [clients]);
   const counts = useMemo(
-    () => getResourceCounts(mcpServers, resources, skills),
-    [mcpServers, resources, skills],
+    () => getResourceCounts(mcpServers, resources, skills, linkedClients),
+    [mcpServers, resources, skills, linkedClients],
   );
 
   // Map template ID to mcp-server form data so the Configure screen reflects the chosen template
@@ -182,8 +196,11 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onDeploy }: C
     setSelectedTemplate(`catalog:${entry.name}`);
   }, [updateFormData, setSelectedTemplate]);
 
-  // Skill skips template step; secret and global-context close the wizard
-  // and open their own dedicated surfaces (vault panel, context dialog).
+  // Skill skips template step; secret, global-context, and client-link
+  // close the wizard and open their own dedicated surfaces (vault panel,
+  // context dialog, Connections workspace). Linking is stateful and
+  // reversible per machine, so it lives in a workspace rather than a
+  // one-shot creation flow.
   const handleTypeSelect = useCallback((type: ResourceType) => {
     if (type === 'secret') {
       close();
@@ -195,11 +212,16 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onDeploy }: C
       onOpenGlobalContext?.();
       return;
     }
+    if (type === 'client-link') {
+      close();
+      onOpenConnections?.();
+      return;
+    }
     setSelectedType(type);
     if (type === 'skill') {
       setStep('form');
     }
-  }, [setSelectedType, setStep, close, onOpenVault, onOpenGlobalContext]);
+  }, [setSelectedType, setStep, close, onOpenVault, onOpenGlobalContext, onOpenConnections]);
 
   const yamlDebounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const [generatedYaml, setGeneratedYaml] = useState('');
