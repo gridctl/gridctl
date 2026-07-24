@@ -22,6 +22,13 @@ type Stack struct {
 	Limits     *LimitsConfig          `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional budgets and rate limits enforced at dispatch
 	Groups     map[string]GroupConfig `yaml:"groups,omitempty" json:"groups,omitempty"` // Optional named tool bundles, each at /groups/{name}/mcp
 
+	// Link declares LLM clients that `gridctl apply` connects to this
+	// stack's gateway once it is healthy. See LinkEntry for entry forms and
+	// reconcile semantics. Empty (the default) preserves legacy behavior:
+	// linking stays a manual `gridctl link` step. Not inherited across
+	// `extends` (matching clients/groups/limits).
+	Link []LinkEntry `yaml:"link,omitempty" json:"link,omitempty"`
+
 	// ClientModels declares which model each connecting client runs, purely
 	// for cost attribution: tool calls from a declared client are priced at
 	// that model's rates ahead of any per-server model or gateway
