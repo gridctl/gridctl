@@ -930,16 +930,14 @@ func (s *Server) handleMCPServerLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Over-fetch to account for filtering — most entries may belong to other servers
-	all := s.logBuffer.GetRecent(lines * 10)
-	filtered := make([]logging.BufferedEntry, 0)
-	for _, entry := range all {
-		if entry.Attrs["server"] == name {
-			filtered = append(filtered, entry)
-		}
-	}
-	if len(filtered) > lines {
-		filtered = filtered[len(filtered)-lines:]
+	// Scan the ring for up to `lines` entries of this server: a fixed
+	// over-fetch would still miss servers with a small share of the buffer.
+	filtered := s.logBuffer.GetRecentMatching(lines, func(entry logging.BufferedEntry) bool {
+		server, _ := entry.Attrs["server"].(string)
+		return server == name
+	})
+	if filtered == nil {
+		filtered = []logging.BufferedEntry{}
 	}
 	writeJSON(w, filtered)
 }
@@ -981,22 +979,20 @@ func (s *Server) handleGatewayLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries := s.logBuffer.GetRecent(lines)
-
-	// Filter by level if specified
+	var entries []logging.BufferedEntry
 	if levelParam := r.URL.Query().Get("level"); levelParam != "" {
 		levels := make(map[string]bool)
 		for _, l := range strings.Split(levelParam, ",") {
 			levels[strings.ToUpper(strings.TrimSpace(l))] = true
 		}
-
-		filtered := make([]logging.BufferedEntry, 0, len(entries))
-		for _, entry := range entries {
-			if levels[entry.Level] {
-				filtered = append(filtered, entry)
-			}
-		}
-		entries = filtered
+		// Scan the ring for up to `lines` entries of the requested levels:
+		// slicing the last `lines` first would drop sparse severities that
+		// only exist earlier in the buffer.
+		entries = s.logBuffer.GetRecentMatching(lines, func(entry logging.BufferedEntry) bool {
+			return levels[strings.ToUpper(entry.Level)]
+		})
+	} else {
+		entries = s.logBuffer.GetRecent(lines)
 	}
 
 	if entries == nil {
