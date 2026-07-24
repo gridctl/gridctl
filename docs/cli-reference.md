@@ -155,7 +155,7 @@ Downstream authorization for external servers declared with `auth: {type: oauth}
 | `gridctl traces --server <name>` | Filter by MCP server name. |
 | `gridctl traces --errors` | Show only error traces. |
 | `gridctl traces --min-duration 100ms` | Filter by minimum duration. |
-| `gridctl traces --json` | Output as JSON. |
+| `gridctl traces --json` | Output as JSON. The list form emits the API envelope (`{traces, total, tracingEnabled, bufferSize, bufferCapacity}` with camelCase trace fields), not a bare array. |
 
 ## Optimize
 
