@@ -13,6 +13,8 @@ type traceSummaryDTO struct {
 	TraceID    string `json:"traceId"`
 	RootSpanID string `json:"rootSpanId"`
 	Operation  string `json:"operation"`
+	Tool       string `json:"tool"`
+	Client     string `json:"client"`
 	Server     string `json:"server"`
 	StartTime  string `json:"startTime"`
 	Duration   int64  `json:"duration"`
@@ -21,10 +23,15 @@ type traceSummaryDTO struct {
 	Status     string `json:"status"`
 }
 
-// traceListDTO is the envelope returned by GET /api/traces.
+// traceListDTO is the envelope returned by GET /api/traces. tracingEnabled
+// distinguishes a disabled tracer from a quiet one so the UI can render the
+// right empty state; bufferSize/bufferCapacity feed the ring-pressure hint.
 type traceListDTO struct {
-	Traces []traceSummaryDTO `json:"traces"`
-	Total  int               `json:"total"`
+	Traces         []traceSummaryDTO `json:"traces"`
+	Total          int               `json:"total"`
+	TracingEnabled bool              `json:"tracingEnabled"`
+	BufferSize     int               `json:"bufferSize"`
+	BufferCapacity int               `json:"bufferCapacity"`
 }
 
 // spanEventDTO maps span events to the shape expected by the frontend.
@@ -56,7 +63,7 @@ type traceDetailDTO struct {
 // handleTraces handles GET /api/traces and GET /api/traces/{traceId}.
 func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	if s.traceBuffer == nil {
-		writeJSON(w, traceListDTO{Traces: []traceSummaryDTO{}, Total: 0})
+		writeJSON(w, traceListDTO{Traces: []traceSummaryDTO{}})
 		return
 	}
 
@@ -118,6 +125,8 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 			TraceID:    tr.TraceID,
 			RootSpanID: rootSpanID,
 			Operation:  tr.Operation,
+			Tool:       tr.Tool,
+			Client:     tr.ClientName,
 			Server:     tr.ServerName,
 			StartTime:  tr.StartTime.Format(time.RFC3339Nano),
 			Duration:   tr.DurationMs,
@@ -126,7 +135,13 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 			Status:     status,
 		}
 	}
-	writeJSON(w, traceListDTO{Traces: summaries, Total: len(summaries)})
+	writeJSON(w, traceListDTO{
+		Traces:         summaries,
+		Total:          len(summaries),
+		TracingEnabled: true,
+		BufferSize:     s.traceBuffer.Count(),
+		BufferCapacity: s.traceBuffer.MaxSize(),
+	})
 }
 
 // handleTraceDetail returns a single trace by ID.
