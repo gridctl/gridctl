@@ -523,6 +523,31 @@ func TestHandleTools_MethodNotAllowed(t *testing.T) {
 
 // --- Gateway logs endpoint tests ---
 
+// decodeGatewayLogs decodes the GET /api/logs envelope map-style (not a
+// struct round-trip) so a renamed or dropped envelope key fails loudly.
+func decodeGatewayLogs(t *testing.T, rec *httptest.ResponseRecorder) (logs []logging.BufferedEntry, total, capacity int) {
+	t.Helper()
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(rec.Body).Decode(&raw); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	for _, key := range []string{"logs", "total", "bufferCapacity"} {
+		if _, ok := raw[key]; !ok {
+			t.Fatalf("envelope missing %q key: %v", key, raw)
+		}
+	}
+	if err := json.Unmarshal(raw["logs"], &logs); err != nil {
+		t.Fatalf("invalid logs array: %v", err)
+	}
+	if err := json.Unmarshal(raw["total"], &total); err != nil {
+		t.Fatalf("invalid total: %v", err)
+	}
+	if err := json.Unmarshal(raw["bufferCapacity"], &capacity); err != nil {
+		t.Fatalf("invalid bufferCapacity: %v", err)
+	}
+	return logs, total, capacity
+}
+
 func TestHandleGatewayLogs_NoBuffer(t *testing.T) {
 	srv := newTestServer(t)
 	// logBuffer is nil by default
@@ -536,12 +561,36 @@ func TestHandleGatewayLogs_NoBuffer(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 
-	var result []any
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
+	logs, total, capacity := decodeGatewayLogs(t, rec)
+	if len(logs) != 0 {
+		t.Errorf("expected empty logs array, got %d entries", len(logs))
 	}
-	if len(result) != 0 {
-		t.Errorf("expected empty array, got %d entries", len(result))
+	if total != 0 || capacity != 0 {
+		t.Errorf("expected zero total/capacity without a buffer, got %d/%d", total, capacity)
+	}
+}
+
+func TestHandleGatewayLogs_Envelope(t *testing.T) {
+	srv := newTestServerWithLogBuffer(t, 100)
+
+	for i := 0; i < 7; i++ {
+		srv.logBuffer.Add(logging.BufferedEntry{Level: "INFO", Message: "tick"})
+	}
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=3", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	logs, total, capacity := decodeGatewayLogs(t, rec)
+	if len(logs) != 3 {
+		t.Errorf("expected 3 windowed entries, got %d", len(logs))
+	}
+	if total != 7 {
+		t.Errorf("expected total 7 (whole ring, not the window), got %d", total)
+	}
+	if capacity != 100 {
+		t.Errorf("expected bufferCapacity 100, got %d", capacity)
 	}
 }
 
@@ -566,12 +615,12 @@ func TestHandleGatewayLogs_WithEntries(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 
-	var result []logging.BufferedEntry
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	result, total, _ := decodeGatewayLogs(t, rec)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(result))
+	}
+	if total != 2 {
+		t.Errorf("expected total 2, got %d", total)
 	}
 	if result[0].Message != "gateway started" {
 		t.Errorf("expected first message %q, got %q", "gateway started", result[0].Message)
@@ -600,10 +649,7 @@ func TestHandleGatewayLogs_LevelFilter(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 
-	var result []logging.BufferedEntry
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	result, _, _ := decodeGatewayLogs(t, rec)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(result))
 	}
@@ -625,10 +671,7 @@ func TestHandleGatewayLogs_MultiLevelFilter(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	var result []logging.BufferedEntry
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	result, _, _ := decodeGatewayLogs(t, rec)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(result))
 	}
@@ -654,10 +697,7 @@ func TestHandleGatewayLogs_LinesParam(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	var result []logging.BufferedEntry
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	result, _, _ := decodeGatewayLogs(t, rec)
 	if len(result) != 5 {
 		t.Errorf("expected 5 entries, got %d", len(result))
 	}
@@ -678,10 +718,7 @@ func TestHandleGatewayLogs_InvalidLinesParam(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 
-	var result []logging.BufferedEntry
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	result, _, _ := decodeGatewayLogs(t, rec)
 	if len(result) != 1 {
 		t.Errorf("expected 1 entry (default 100, but only 1 in buffer), got %d", len(result))
 	}
@@ -699,10 +736,7 @@ func TestHandleGatewayLogs_CaseInsensitiveLevelFilter(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	var result []logging.BufferedEntry
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	result, _, _ := decodeGatewayLogs(t, rec)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 entry for case-insensitive filter, got %d", len(result))
 	}
@@ -731,10 +765,7 @@ func TestHandleGatewayLogs_SparseLevelFilter(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
-	var result []logging.BufferedEntry
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	result, _, _ := decodeGatewayLogs(t, rec)
 	if len(result) != 5 {
 		t.Fatalf("expected 5 sparse errors, got %d", len(result))
 	}
@@ -795,12 +826,15 @@ func TestHandleGatewayLogs_EmptyBuffer(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 
-	var result []any
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
+	logs, total, capacity := decodeGatewayLogs(t, rec)
+	if len(logs) != 0 {
+		t.Errorf("expected empty logs array, got %d entries", len(logs))
 	}
-	if len(result) != 0 {
-		t.Errorf("expected empty array, got %d entries", len(result))
+	if total != 0 {
+		t.Errorf("expected total 0, got %d", total)
+	}
+	if capacity != 100 {
+		t.Errorf("expected bufferCapacity 100, got %d", capacity)
 	}
 }
 
