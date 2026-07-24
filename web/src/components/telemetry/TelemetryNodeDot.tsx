@@ -1,15 +1,18 @@
 // 12px dot anchored to the bottom-right of an MCP server graph node,
 // indicating telemetry persistence state. Surfaces only when something
-// needs attention; the healthy steady state renders nothing so it does
-// not compete visually with the running-status indicator.
+// needs attention; every steady state renders nothing so it does not
+// compete visually with the running-status indicator.
 //
-//   off       — gray solid: no signal effectively persisted for this server.
+//   off       — hidden: persistence disabled is the default for most
+//               stacks, and marking it put a permanent gray circle on
+//               every server card, which read as noise rather than
+//               signal. Details remain reachable via the telemetry
+//               sidebar.
 //   pending   — outlined emerald: at least one signal is on but no files
 //               yet exist on disk. Useful for spotting silent failures
 //               (e.g., persistence enabled but the writer can't write).
 //   active    — hidden: signals on AND inventory has files. Healthy steady
-//               state needs no marker; details remain reachable via the
-//               telemetry sidebar.
+//               state needs no marker.
 //
 // Tooltip (when rendered) enumerates the per-signal status and total disk footprint.
 import { useMemo } from 'react';
@@ -53,20 +56,10 @@ export function TelemetryNodeDot({ serverName }: Props) {
     return { state, tooltip };
   }, [config, inventory, serverName]);
 
-  // Hidden when active so a healthy steady state stays visually quiet;
-  // the dot only surfaces when something needs attention (pending/off).
-  if (view.state === 'active') {
+  // Only the pending state renders: active is healthy and off is the
+  // default, and neither warrants a permanent marker on every card.
+  if (view.state !== 'pending') {
     return null;
-  }
-
-  if (view.state === 'off') {
-    return (
-      <span
-        aria-label={view.tooltip}
-        title={view.tooltip}
-        className="absolute bottom-1.5 right-1.5 w-3 h-3 rounded-full border border-text-muted/50 bg-text-muted/20"
-      />
-    );
   }
 
   return (
