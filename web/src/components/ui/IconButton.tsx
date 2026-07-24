@@ -9,6 +9,8 @@ interface IconButtonProps {
   className?: string;
   size?: 'sm' | 'md';
   variant?: 'default' | 'ghost';
+  /** For stateful toggles: rendered as aria-pressed. */
+  pressed?: boolean;
 }
 
 export function IconButton({
@@ -19,6 +21,7 @@ export function IconButton({
   className,
   size = 'md',
   variant = 'default',
+  pressed,
 }: IconButtonProps) {
   const sizeClasses = {
     sm: 'p-2',
@@ -43,6 +46,7 @@ export function IconButton({
       onClick={onClick}
       disabled={disabled}
       title={tooltip}
+      aria-pressed={pressed}
       className={cn(
         'rounded-lg transition-all duration-200 ease-out',
         'disabled:opacity-40 disabled:cursor-not-allowed',
