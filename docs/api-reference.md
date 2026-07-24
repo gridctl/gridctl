@@ -786,7 +786,9 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/traces?errors=
     {
       "traceId": "a1b2c3",
       "rootSpanId": "root-1",
-      "operation": "tools/call",
+      "operation": "github › create_issue",
+      "tool": "create_issue",
+      "client": "claude-code",
       "server": "github",
       "startTime": "2026-05-29T17:00:00.123456789Z",
       "duration": 142,
@@ -795,11 +797,14 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/traces?errors=
       "status": "ok"
     }
   ],
-  "total": 1
+  "total": 1,
+  "tracingEnabled": true,
+  "bufferSize": 42,
+  "bufferCapacity": 1000
 }
 ```
 
-`duration` is in milliseconds. `status` is `"ok"` or `"error"`. Returns `{"traces": [], "total": 0}` when no trace buffer is configured.
+`duration` is in milliseconds. `status` is `"ok"` or `"error"`. `tool` is the resolved tool name (empty when the call failed before routing); `client` is the connecting client's name (empty when the client did not identify itself). `bufferSize` and `bufferCapacity` describe ring-buffer occupancy against `gateway.tracing.max_traces`. When no trace buffer is configured the envelope is empty with `"tracingEnabled": false`, which distinguishes disabled tracing from an enabled but quiet buffer.
 
 #### `GET /api/traces/{traceId}`
 
@@ -845,6 +850,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/traces/a1b2c3
 ```
 
 `parentSpanId` is empty for root spans. `endTime` is RFC3339Nano and may be absent for traces persisted before it was serialized; clients should derive `startTime + duration` in that case. Returns `404` when the trace ID is not in the buffer.
+
+#### `GET /api/traces/{traceId}/otlp`
+
+Returns a single trace as an OTLP/JSON `TracesData` document, suitable for an OTel Collector `file` receiver or any OTLP JSON decoder. Follows the OTLP/JSON encoding rules: lowerCamelCase keys, `traceId`/`spanId` as hex strings, and nanosecond timestamps as JSON strings. Served with a `Content-Disposition: attachment` header.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/traces/a1b2c3/otlp -o trace.json
+```
+
+Returns `404` when the trace ID is not in the buffer or tracing is disabled.
 
 ---
 
