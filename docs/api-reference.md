@@ -326,7 +326,22 @@ Returns structured log entries from the gateway log buffer.
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/logs?lines=50&level=ERROR,WARN"
 ```
 
-When `level` is set, the whole buffer is scanned newest-first for up to `lines` entries of the requested levels, so sparse severities are returned even when the most recent entries are all other levels. The web UI's Logs workspace polls this endpoint with `lines=500` (labeled "last 500" in its filter bar) and filters client-side.
+**Response:**
+```json
+{
+  "logs": [
+    { "level": "INFO", "ts": "2026-07-24T10:00:00.000Z", "msg": "tool call finished", "trace_id": "abc123", "attrs": { "server": "github", "tool": "create_issue", "client": "claude-code", "replica_id": 0 } }
+  ],
+  "total": 812,
+  "bufferCapacity": 1000
+}
+```
+
+`logs` is the requested window of buffered entries in chronological order. `total` is the number of entries currently in the ring buffer and `bufferCapacity` its maximum, so callers can label the window honestly against retention. When no log buffer is configured, `logs` is `[]` and both counters are `0`.
+
+When `level` is set, the whole buffer is scanned newest-first for up to `lines` entries of the requested levels, so sparse severities are returned even when the most recent entries are all other levels. The web UI's Logs workspace polls this endpoint (window size selectable as 200, 500, or 1000 entries, 500 by default) and filters client-side.
+
+Tool-call log lines carry `server`, `tool`, `replica_id`, and (when the caller is identified) `client` in `attrs`, plus a top-level `trace_id` when tracing is enabled, for correlation with `/api/traces`.
 
 #### `GET /api/clients`
 
