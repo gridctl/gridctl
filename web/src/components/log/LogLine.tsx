@@ -100,7 +100,7 @@ export function LogLine({
               }}
               title={`View trace ${log.traceId}`}
               aria-label={`View trace ${log.traceId}`}
-              className="p-0.5 rounded text-text-muted opacity-0 group-hover:opacity-100 hover:text-primary transition-all"
+              className="p-0.5 rounded text-text-muted opacity-60 group-hover:opacity-100 focus-visible:opacity-100 hover:text-primary transition-all"
             >
               <Activity size={11} />
             </button>
