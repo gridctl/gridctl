@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Clock, Tag, Activity, Copy, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { copyWithToast } from '../ui/Toast';
+import { KVTable } from '../ui/KVTable';
 import { formatUSD, formatCompactNumber } from '../../lib/format';
 import { formatDuration } from '../../lib/duration';
 import type { Span } from '../../lib/api';
@@ -218,25 +219,6 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
           </section>
         )}
       </div>
-    </div>
-  );
-}
-
-function KVTable({ rows, monoKeys }: { rows: [string, string][]; monoKeys?: boolean }) {
-  return (
-    <div className="rounded-lg bg-surface-elevated/60 border border-border/30 overflow-hidden">
-      <table className="w-full text-xs">
-        <tbody>
-          {rows.map(([key, value]) => (
-            <tr key={key} className="border-b border-border/20 last:border-0 hover:bg-surface-highlight/20 transition-colors">
-              <td className={cn('px-3 py-1.5 text-text-muted align-top w-[45%]', monoKeys && 'font-mono break-all')}>
-                {key}
-              </td>
-              <td className="px-3 py-1.5 text-text-primary font-mono align-top break-all">{value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
