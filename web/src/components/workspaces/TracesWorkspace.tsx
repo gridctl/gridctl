@@ -10,9 +10,10 @@ import { TracesView } from '../traces/TracesView';
 
 // TracesWorkspace is the first-class trace surface: the global trace list,
 // waterfall, and span detail from TracesView, with the selection and filters
-// URL-synced (?trace=, ?server=, ?errors=, ?q=) so deep links — including the
-// log-line trace pivot — restore the exact view. The trace detail pivots back
-// to /logs?trace=<id> for the reverse correlation.
+// URL-synced (?trace=, ?server=, ?errors=, ?q=, ?seg=) so deep links —
+// including the log-line trace pivot — restore the exact view. The trace
+// detail pivots back to /logs?trace=<id> for the reverse correlation and to
+// /metrics?scope=servers&selected=<server> for the same server's metrics.
 export function TracesWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -37,11 +38,13 @@ export function TracesWorkspace() {
     const server = p.get('server');
     const errors = p.get('errors');
     const q = p.get('q');
-    if (server != null || errors != null || q != null) {
+    const seg = p.get('seg');
+    if (server != null || errors != null || q != null || seg != null) {
       setFilters({
         ...(server != null ? { server } : {}),
         ...(errors != null ? { errorsOnly: errors === '1' } : {}),
         ...(q != null ? { search: q } : {}),
+        ...(seg != null ? { segment: seg === 'all' ? 'all' : 'tool-calls' } : {}),
       });
     }
     if (trace && trace !== useTracesStore.getState().selectedTraceId) {
@@ -64,6 +67,8 @@ export function TracesWorkspace() {
         else params.delete('errors');
         if (s.filters.search) params.set('q', s.filters.search);
         else params.delete('q');
+        if (s.filters.segment === 'all') params.set('seg', 'all');
+        else params.delete('seg');
         return params;
       },
       { replace: true },
@@ -80,7 +85,11 @@ export function TracesWorkspace() {
       >
         <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">traces</div>
         <div className="font-mono text-[10px] text-text-muted truncate">
-          {selectedTraceId ? selectedTraceId.slice(0, 16) : 'all tool calls'}
+          {selectedTraceId
+            ? selectedTraceId.slice(0, 16)
+            : filters.segment === 'all'
+              ? 'all traces'
+              : 'tool calls'}
         </div>
       </header>
       <div className="flex-1 min-h-0">
@@ -88,6 +97,7 @@ export function TracesWorkspace() {
           active
           servers={servers}
           onViewLogs={(traceId) => navigate(`/logs?trace=${encodeURIComponent(traceId)}`)}
+          onViewMetrics={(server) => navigate(`/metrics?scope=servers&selected=${encodeURIComponent(server)}`)}
           toolbarExtra={
             <PopoutButton
               onClick={() => openDetachedWindow('traces')}
