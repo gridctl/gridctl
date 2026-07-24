@@ -326,6 +326,8 @@ Returns structured log entries from the gateway log buffer.
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/logs?lines=50&level=ERROR,WARN"
 ```
 
+When `level` is set, the whole buffer is scanned newest-first for up to `lines` entries of the requested levels, so sparse severities are returned even when the most recent entries are all other levels. The web UI's Logs workspace polls this endpoint with `lines=500` (labeled "last 500" in its filter bar) and filters client-side.
+
 #### `GET /api/clients`
 
 Returns detected LLM clients and their link status.
@@ -1192,7 +1194,7 @@ Returns structured log entries from the gateway log buffer filtered to the named
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/mcp-servers/github/logs?lines=50"
 ```
 
-The response is the same JSON array of buffered entries as [`/api/logs`](#get-apilogs), limited to entries tagged with the requested server. Returns an empty array (`[]`) when no log buffer is configured.
+The response is the same JSON array of buffered entries as [`/api/logs`](#get-apilogs), limited to entries tagged with the requested server. The buffer is scanned newest-first for up to `lines` matching entries, so servers with a small share of the buffer still get their full history within the ring. Returns an empty array (`[]`) when no log buffer is configured.
 
 #### `PUT /api/mcp-servers/{name}/tools`
 
