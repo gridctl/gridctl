@@ -37,6 +37,9 @@ client_models: ...
 | `resources` | []object | No | - | Supporting container definitions (databases, caches, etc.) |
 | `clients` | object | No | - | Per-client access scoping (see [Clients](#clients-per-client-access-scoping)) |
 | `client_models` | map | No | - | Per-client model pricing attribution (see [Client Models](#client-models-pricing-attribution)) |
+| `limits` | object | No | - | Budgets and rate limits enforced at dispatch (see [Limits](#limits-budgets-and-rate-limits)) |
+| `groups` | map | No | - | Named tool bundles, each at its own endpoint (see [Groups](#groups-tool-bundles)) |
+| `link` | []string\|object | No | - | LLM clients `gridctl apply` links to this gateway (see [Link](#link-declared-clients)) |
 
 ---
 
@@ -992,6 +995,52 @@ decision). Link a client to a group with `gridctl link <client> --group
 <name>`; consumption appears in `gridctl groups` and `GET /api/groups`.
 
 ---
+
+## Link (declared clients)
+
+The optional top-level `link:` block declares which LLM clients should be
+connected to this stack's gateway. `gridctl apply` reconciles it once the
+gateway is healthy: each declared client is linked exactly as `gridctl link`
+would, idempotently. Omitting the block preserves legacy behavior — linking
+stays a manual step.
+
+```yaml
+link:
+  - claude                # shorthand: client slug only
+  - claude-code
+  - client: cursor        # object form for options
+    group: dev            # link the group endpoint; entry name defaults to gridctl-dev
+    client_id: cursor     # stable identifier for a clients: access profile
+    name: gridctl         # server entry name override in the client config
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `client` | string | **Yes** | - | Client slug (same set as `gridctl link`: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, roo, zed, goose) |
+| `group` | string | No | - | Tool group whose endpoint to link; must exist in `groups:`. The entry name defaults to `gridctl-<group>` |
+| `client_id` | string | No | - | Stable client identifier embedded on the gateway URL for per-client access scoping. Not defaulted: existing imperative links carry no identifier, and defaulting one would conflict with them on first reconcile |
+| `name` | string | No | `gridctl` | Server entry name in the client config |
+
+Reconcile semantics:
+
+- **Additive and idempotent.** Declared clients are linked if installed;
+  already-linked clients are silent no-ops. Removing an entry never unlinks
+  anything — removal stays explicit via `gridctl unlink`, `gridctl destroy
+  --unlink`, or the Connections workspace.
+- **Link if present.** A declared client that is not installed on this
+  machine warns and skips; stack files travel between machines with
+  different clients installed, so this is never an error.
+- **Conflicts are never overwritten.** An existing foreign entry under the
+  target name warns with a `gridctl link <client> --force` hint.
+- **Apply-time only.** `link:` edits take effect on the next `gridctl
+  apply`; the file watcher never writes client configs. `gridctl plan` shows
+  pending link actions in a separate section (JSON: `clientLinks`).
+- **One entry per client.** Linking two groups into the same client is not
+  supported in v1.
+- **Not inherited across `extends`** (matching `clients:`, `groups:`, and
+  `limits:`).
+- With a `link:` block present, `apply --flash` is ignored with a notice
+  (the block owns the linking decision).
 
 ## Skill Sources
 
