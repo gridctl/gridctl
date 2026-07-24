@@ -1,0 +1,29 @@
+# Declarative client linking: the link: block lists the LLM clients this
+# stack's gateway should be connected to. `gridctl apply` reconciles it once
+# the gateway is healthy — clone the repo, apply, and every installed client
+# is wired. Clients not installed on this machine warn and skip, so the same
+# file works across machines.
+version: "1"
+name: declarative-link
+network:
+  name: declarative-link-net
+
+mcp-servers:
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    transport: stdio
+
+groups:
+  dev:
+    servers: [github]
+
+link:
+  # Shorthand: just the client slug (same set as `gridctl link`).
+  - claude
+  - claude-code
+  # Object form for options: this links Cursor to the dev group's endpoint
+  # (entry name defaults to gridctl-dev) and binds it to a clients: access
+  # profile via client_id.
+  - client: cursor
+    group: dev
+    client_id: cursor
