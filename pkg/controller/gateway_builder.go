@@ -499,6 +499,12 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 		b.printEndpoints(inst)
 	}
 
+	// Foreground readiness callback: listener serving + servers registered,
+	// mirroring what /ready reports to the daemon parent's health-wait.
+	if b.config.OnReady != nil {
+		b.config.OnReady(b.config.Port)
+	}
+
 	// Wait for shutdown signal or server error
 	return b.waitForShutdown(ctx, inst, bufferHandler, serverErr, verbose)
 }
