@@ -1784,10 +1784,15 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		)
 	}
 
-	// Populate trace ID and replica id on the logger so structured logs are correlated.
+	// Populate trace ID, replica id, and client on the logger so structured
+	// logs are correlated. Client is omitted (not logged empty) when the
+	// context carries no client identity.
 	logger := logging.WithReplicaID(g.logger, replicaID)
 	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
 		logger = logging.WithTraceID(logger, sc.TraceID().String())
+	}
+	if clientID := ClientIDFromContext(ctx); clientID != "" {
+		logger = logger.With("client", clientID)
 	}
 
 	// Resolve actual transport type from server metadata.
