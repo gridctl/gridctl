@@ -76,13 +76,26 @@ function computeP95(spans: Span[]): number {
   return durations[idx];
 }
 
+/** End of a span in epoch ms; falls back to startTime + duration when endTime
+ *  is absent or unparseable. NaN only when startTime itself is unparseable. */
+function spanEndMs(span: Span): number {
+  if (span.endTime) {
+    const end = new Date(span.endTime).getTime();
+    if (Number.isFinite(end)) return end;
+  }
+  const start = new Date(span.startTime).getTime();
+  return Number.isFinite(start) ? start + span.duration : NaN;
+}
+
 function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms)) return '–';
   if (ms < 1) return `${(ms * 1000).toFixed(0)}µs`;
   if (ms < 1000) return `${ms.toFixed(1)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
 function formatTotalDuration(ms: number): string {
+  if (!Number.isFinite(ms)) return '–';
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
@@ -95,10 +108,12 @@ export function TraceWaterfall({ trace, onClose, actions }: TraceWaterfallProps)
     const depthMap = buildDepthMap(trace.spans);
     const p95 = computeP95(trace.spans);
 
-    const starts = trace.spans.map((s) => new Date(s.startTime).getTime());
-    const ends = trace.spans.map((s) => new Date(s.endTime).getTime());
-    const traceStart = Math.min(...starts);
-    const traceEnd = Math.max(...ends);
+    // Only finite timestamps participate; a single bad span must not poison
+    // the whole timeline with NaN.
+    const starts = trace.spans.map((s) => new Date(s.startTime).getTime()).filter(Number.isFinite);
+    const ends = trace.spans.map(spanEndMs).filter(Number.isFinite);
+    const traceStart = starts.length > 0 ? Math.min(...starts) : 0;
+    const traceEnd = ends.length > 0 ? Math.max(...ends) : traceStart;
     const totalDuration = Math.max(traceEnd - traceStart, 1);
 
     return { sorted, depthMap, traceStart, totalDuration, p95 };
@@ -158,7 +173,9 @@ export function TraceWaterfall({ trace, onClose, actions }: TraceWaterfallProps)
             {sorted.map((span) => {
               const depth = depthMap.get(span.spanId) ?? 0;
               const spanStart = new Date(span.startTime).getTime();
-              const leftPct = ((spanStart - traceStart) / totalDuration) * 100;
+              const leftPct = Number.isFinite(spanStart)
+                ? ((spanStart - traceStart) / totalDuration) * 100
+                : 0;
               const widthPct = Math.max((span.duration / totalDuration) * 100, 0.5);
               const server = getSpanServer(span);
               const isError = span.status === 'error';
