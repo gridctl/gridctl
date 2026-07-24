@@ -112,6 +112,78 @@ func TestLogBuffer_ZeroOrNegativeN(t *testing.T) {
 	}
 }
 
+func TestLogBuffer_GetRecentMatching_SparseMatches(t *testing.T) {
+	buffer := NewLogBuffer(300)
+
+	// Sparse matches followed by many non-matches: a slice-then-filter over
+	// the last n raw entries would return nothing.
+	for i := 0; i < 5; i++ {
+		buffer.Add(BufferedEntry{Level: "ERROR", Message: "boom", Attrs: map[string]any{"index": i}})
+	}
+	for i := 0; i < 200; i++ {
+		buffer.Add(BufferedEntry{Level: "INFO", Message: "tick"})
+	}
+
+	matches := buffer.GetRecentMatching(50, func(e BufferedEntry) bool { return e.Level == "ERROR" })
+	if len(matches) != 5 {
+		t.Fatalf("expected 5 sparse matches, got %d", len(matches))
+	}
+	// Chronological order preserved.
+	for i, entry := range matches {
+		if idx, ok := entry.Attrs["index"].(int); !ok || idx != i {
+			t.Errorf("entry %d: expected index %d, got %v", i, i, entry.Attrs["index"])
+		}
+	}
+}
+
+func TestLogBuffer_GetRecentMatching_AcrossWrap(t *testing.T) {
+	buffer := NewLogBuffer(10)
+
+	// 15 adds into a 10-slot ring: entries 5..14 survive, wrap engaged.
+	for i := 0; i < 15; i++ {
+		level := "INFO"
+		if i%2 == 0 {
+			level = "ERROR"
+		}
+		buffer.Add(BufferedEntry{Level: level, Attrs: map[string]any{"index": i}})
+	}
+
+	matches := buffer.GetRecentMatching(3, func(e BufferedEntry) bool { return e.Level == "ERROR" })
+	if len(matches) != 3 {
+		t.Fatalf("expected 3 matches, got %d", len(matches))
+	}
+	// The three most recent even indices among 5..14 are 10, 12, 14.
+	want := []int{10, 12, 14}
+	for i, entry := range matches {
+		if idx, ok := entry.Attrs["index"].(int); !ok || idx != want[i] {
+			t.Errorf("entry %d: expected index %d, got %v", i, want[i], entry.Attrs["index"])
+		}
+	}
+}
+
+func TestLogBuffer_GetRecentMatching_Limits(t *testing.T) {
+	buffer := NewLogBuffer(10)
+
+	if got := buffer.GetRecentMatching(5, func(BufferedEntry) bool { return true }); got != nil {
+		t.Errorf("expected nil on empty buffer, got %d entries", len(got))
+	}
+
+	buffer.Add(BufferedEntry{Level: "ERROR"})
+	buffer.Add(BufferedEntry{Level: "INFO"})
+	buffer.Add(BufferedEntry{Level: "ERROR"})
+
+	if got := buffer.GetRecentMatching(10, func(e BufferedEntry) bool { return e.Level == "WARN" }); len(got) != 0 {
+		t.Errorf("expected no matches, got %d", len(got))
+	}
+	// n <= 0 returns every match, mirroring GetRecent.
+	if got := buffer.GetRecentMatching(0, func(e BufferedEntry) bool { return e.Level == "ERROR" }); len(got) != 2 {
+		t.Errorf("expected 2 matches for n=0, got %d", len(got))
+	}
+	if got := buffer.GetRecentMatching(1, func(e BufferedEntry) bool { return e.Level == "ERROR" }); len(got) != 1 {
+		t.Errorf("expected 1 match for n=1, got %d", len(got))
+	}
+}
+
 func TestBufferHandler_BasicLogging(t *testing.T) {
 	buffer := NewLogBuffer(10)
 	handler := NewBufferHandler(buffer, nil)
