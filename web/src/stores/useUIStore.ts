@@ -37,6 +37,7 @@ export const COMPACT_MODE_DEFAULTS: CompactModeMap = {
   pins: false,
   logs: false,
   traces: false,
+  connections: false,
 };
 
 export interface CompactModeSlice {
