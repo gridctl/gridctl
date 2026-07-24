@@ -1,15 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gridctl/gridctl/pkg/tracing"
 )
 
 func TestFormatTraceDuration(t *testing.T) {
@@ -59,16 +56,20 @@ func TestBuildTracesURL_allFilters(t *testing.T) {
 	if !strings.HasPrefix(got, "http://localhost:9090/api/traces?") {
 		t.Errorf("URL missing base: %q", got)
 	}
-	for _, param := range []string{"server=github", "errors=true", "min_duration=100ms"} {
+	// The API reads minDuration (camelCase); min_duration is silently ignored.
+	for _, param := range []string{"server=github", "errors=true", "minDuration=100ms"} {
 		if !strings.Contains(got, param) {
 			t.Errorf("URL missing param %q: %s", param, got)
 		}
+	}
+	if strings.Contains(got, "min_duration") {
+		t.Errorf("URL uses min_duration, which the API does not read: %s", got)
 	}
 }
 
 func TestPrintTracesTable_empty(t *testing.T) {
 	var sb strings.Builder
-	printTracesTable(&sb, []tracing.TraceRecord{})
+	printTracesTable(&sb, []apiTraceSummary{})
 	// Should only have the header line.
 	lines := strings.Split(strings.TrimSpace(sb.String()), "\n")
 	if len(lines) != 1 {
@@ -81,24 +82,23 @@ func TestPrintTracesTable_empty(t *testing.T) {
 
 func TestPrintTracesTable_rows(t *testing.T) {
 	now := time.Now()
-	records := []tracing.TraceRecord{
+	records := []apiTraceSummary{
 		{
-			TraceID:    "aabbccddeeff0011",
-			Operation:  "tools/call",
-			DurationMs: 234,
-			SpanCount:  5,
-			IsError:    false,
-			StartTime:  now,
-			EndTime:    now.Add(234 * time.Millisecond),
+			TraceID:   "aabbccddeeff0011",
+			Operation: "github › search_code",
+			Duration:  234,
+			SpanCount: 5,
+			Status:    "ok",
+			StartTime: now,
 		},
 		{
-			TraceID:    "112233445566778899",
-			Operation:  "tools/call chrome",
-			DurationMs: 1200,
-			SpanCount:  8,
-			IsError:    true,
-			StartTime:  now,
-			EndTime:    now.Add(1200 * time.Millisecond),
+			TraceID:   "112233445566778899",
+			Operation: "chrome › navigate",
+			Duration:  1200,
+			SpanCount: 8,
+			HasError:  true,
+			Status:    "error",
+			StartTime: now,
 		},
 	}
 
@@ -129,37 +129,30 @@ func TestPrintTracesTable_rows(t *testing.T) {
 
 func TestPrintWaterfall_header(t *testing.T) {
 	now := time.Now()
-	tr := tracing.TraceRecord{
-		TraceID:    "abcdef123456",
-		Operation:  "tools/call",
-		DurationMs: 100,
-		SpanCount:  2,
-		StartTime:  now,
-		EndTime:    now.Add(100 * time.Millisecond),
-		Spans: []tracing.SpanRecord{
+	detail := apiTraceDetail{
+		TraceID: "abcdef123456",
+		Spans: []apiSpan{
 			{
-				TraceID:    "abcdef123456",
-				SpanID:     "span1",
-				Name:       "gateway.receive",
-				StartTime:  now,
-				EndTime:    now.Add(10 * time.Millisecond),
-				DurationMs: 10,
-				Status:     "Ok",
+				SpanID:    "span1",
+				Name:      "gateway.receive",
+				StartTime: now,
+				EndTime:   now.Add(10 * time.Millisecond),
+				Duration:  10,
+				Status:    "ok",
 			},
 			{
-				TraceID:    "abcdef123456",
-				SpanID:     "span2",
-				Name:       "mcp.client.call_tool",
-				StartTime:  now.Add(10 * time.Millisecond),
-				EndTime:    now.Add(100 * time.Millisecond),
-				DurationMs: 90,
-				Status:     "Ok",
+				SpanID:    "span2",
+				Name:      "mcp.client.call_tool",
+				StartTime: now.Add(10 * time.Millisecond),
+				EndTime:   now.Add(100 * time.Millisecond),
+				Duration:  90,
+				Status:    "ok",
 			},
 		},
 	}
 
 	var sb strings.Builder
-	printWaterfall(&sb, tr)
+	printWaterfall(&sb, detail)
 	out := sb.String()
 
 	if !strings.HasPrefix(out, "Trace abcdef123456") {
@@ -187,24 +180,42 @@ func TestPrintWaterfall_header(t *testing.T) {
 	}
 }
 
+func TestPrintWaterfall_derivedEndTime(t *testing.T) {
+	// endTime is omitted by the API when zero; the waterfall must derive it
+	// from startTime + duration rather than rendering a zero-length trace.
+	now := time.Now()
+	detail := apiTraceDetail{
+		TraceID: "trace002",
+		Spans: []apiSpan{
+			{SpanID: "s1", Name: "mcp.tools.call", StartTime: now, Duration: 80, Status: "ok"},
+		},
+	}
+
+	var sb strings.Builder
+	printWaterfall(&sb, detail)
+	out := sb.String()
+
+	if !strings.Contains(out, "80ms") {
+		t.Errorf("expected derived 80ms duration, got: %s", out)
+	}
+	if strings.Contains(out, "(0ms") {
+		t.Errorf("trace duration should not be 0ms: %s", out)
+	}
+}
+
 func TestPrintWaterfall_spanAttrs(t *testing.T) {
 	now := time.Now()
-	tr := tracing.TraceRecord{
-		TraceID:    "trace001",
-		DurationMs: 50,
-		SpanCount:  1,
-		StartTime:  now,
-		EndTime:    now.Add(50 * time.Millisecond),
-		Spans: []tracing.SpanRecord{
+	detail := apiTraceDetail{
+		TraceID: "trace001",
+		Spans: []apiSpan{
 			{
-				TraceID:    "trace001",
-				SpanID:     "s1",
-				Name:       "mcp.client.call_tool",
-				StartTime:  now,
-				EndTime:    now.Add(50 * time.Millisecond),
-				DurationMs: 50,
-				Status:     "Ok",
-				Attrs: map[string]string{
+				SpanID:    "s1",
+				Name:      "mcp.client.call_tool",
+				StartTime: now,
+				EndTime:   now.Add(50 * time.Millisecond),
+				Duration:  50,
+				Status:    "ok",
+				Attributes: map[string]string{
 					"network.transport": "http",
 					"server.name":       "github",
 				},
@@ -213,7 +224,7 @@ func TestPrintWaterfall_spanAttrs(t *testing.T) {
 	}
 
 	var sb strings.Builder
-	printWaterfall(&sb, tr)
+	printWaterfall(&sb, detail)
 	out := sb.String()
 
 	if !strings.Contains(out, "transport: http") {
@@ -224,18 +235,37 @@ func TestPrintWaterfall_spanAttrs(t *testing.T) {
 	}
 }
 
+// TestFetchTraces_success mocks the ACTUAL JSON served by the API (camelCase
+// envelope), not a round-trip of internal structs, so wire drift cannot hide.
 func TestFetchTraces_success(t *testing.T) {
-	now := time.Now()
-	records := []tracing.TraceRecord{
-		{TraceID: "trace1", Operation: "tools/call", DurationMs: 100, StartTime: now, EndTime: now.Add(100 * time.Millisecond)},
-	}
+	const body = `{
+		"traces": [
+			{
+				"traceId": "trace1",
+				"rootSpanId": "root1",
+				"operation": "github › search_code",
+				"tool": "search_code",
+				"client": "claude-code",
+				"server": "github",
+				"startTime": "2026-07-24T10:00:00.123456789Z",
+				"duration": 100,
+				"spanCount": 3,
+				"hasError": false,
+				"status": "ok"
+			}
+		],
+		"total": 1,
+		"tracingEnabled": true,
+		"bufferSize": 42,
+		"bufferCapacity": 1000
+	}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/traces" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(records)
+		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()
 
@@ -252,8 +282,43 @@ func TestFetchTraces_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetchTraces error: %v", err)
 	}
-	if len(got) != 1 || got[0].TraceID != "trace1" {
-		t.Errorf("unexpected result: %+v", got)
+	if len(got.Traces) != 1 {
+		t.Fatalf("expected 1 trace, got %d", len(got.Traces))
+	}
+	tr := got.Traces[0]
+	if tr.TraceID != "trace1" || tr.Tool != "search_code" || tr.Client != "claude-code" || tr.Server != "github" {
+		t.Errorf("unexpected summary fields: %+v", tr)
+	}
+	if tr.Duration != 100 || tr.SpanCount != 3 || tr.Status != "ok" {
+		t.Errorf("unexpected numeric/status fields: %+v", tr)
+	}
+	if tr.StartTime.IsZero() {
+		t.Error("startTime failed to parse")
+	}
+	if got.Total != 1 || !got.TracingEnabled || got.BufferSize != 42 || got.BufferCapacity != 1000 {
+		t.Errorf("unexpected envelope fields: %+v", got)
+	}
+}
+
+func TestFetchTraces_badRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `invalid minDuration: use a Go duration (e.g. "500ms") or bare milliseconds`, http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	var port int
+	_, _ = fmt.Sscanf(srv.URL, "http://127.0.0.1:%d", &port)
+
+	tracesServer = ""
+	tracesErrorsOnly = false
+	tracesMinDuration = ""
+
+	_, err := fetchTraces(port)
+	if err == nil {
+		t.Fatal("expected error from 400 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid minDuration") {
+		t.Errorf("error should surface the API message, got: %v", err)
 	}
 }
 
@@ -271,7 +336,6 @@ func TestFetchTraces_serverError(t *testing.T) {
 	tracesMinDuration = ""
 
 	_, err := fetchTraces(port)
-	// Should error because response body isn't valid JSON for []TraceRecord.
 	if err == nil {
 		t.Error("expected error from server error response, got nil")
 	}
