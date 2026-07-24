@@ -1147,6 +1147,7 @@ func buildTracingConfig(gw *config.GatewayConfig) *tracing.Config {
 	if t.MaxTraces > 0 {
 		cfg.MaxTraces = t.MaxTraces
 	}
+	cfg.IncludeInfra = t.IncludeInfra
 	return cfg
 }
 
