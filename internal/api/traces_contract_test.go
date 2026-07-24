@@ -116,6 +116,98 @@ func TestHandleTraceDetail_contract(t *testing.T) {
 	}
 }
 
+// TestHandleTraces_summaryContract asserts the raw JSON keys of the list
+// envelope, including the MCP-native tool/client fields and the
+// tracing-status/pressure fields. Map-decoded for the same reason as the
+// detail contract test.
+func TestHandleTraces_summaryContract(t *testing.T) {
+	srv, tracer := newTracedServer(t)
+
+	start := time.Now().Add(-time.Minute)
+	ctx, root := tracer.Start(context.Background(), "github › create_issue", trace.WithTimestamp(start))
+	root.SetAttributes(
+		attribute.String("server.name", "github"),
+		attribute.String("mcp.method.name", "tools/call"),
+		attribute.String("mcp.tool.name", "create_issue"),
+	)
+	_, child := tracer.Start(ctx, "mcp.client.call_tool", trace.WithTimestamp(start.Add(time.Millisecond)))
+	child.SetAttributes(attribute.String("mcp.client.name", "claude-code"))
+	child.End(trace.WithTimestamp(start.Add(40 * time.Millisecond)))
+	root.End(trace.WithTimestamp(start.Add(42 * time.Millisecond)))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/traces", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, key := range []string{"traces", "total", "tracingEnabled", "bufferSize", "bufferCapacity"} {
+		if _, ok := payload[key]; !ok {
+			t.Errorf("envelope missing key %q", key)
+		}
+	}
+	if payload["tracingEnabled"] != true {
+		t.Errorf("tracingEnabled = %v, want true", payload["tracingEnabled"])
+	}
+	if payload["bufferSize"].(float64) != 1 {
+		t.Errorf("bufferSize = %v, want 1", payload["bufferSize"])
+	}
+	if payload["bufferCapacity"].(float64) != 100 {
+		t.Errorf("bufferCapacity = %v, want 100", payload["bufferCapacity"])
+	}
+
+	traces := payload["traces"].([]any)
+	if len(traces) != 1 {
+		t.Fatalf("traces = %d, want 1", len(traces))
+	}
+	summary := traces[0].(map[string]any)
+	if got := summary["tool"]; got != "create_issue" {
+		t.Errorf("tool = %v, want create_issue (promoted from root span attrs)", got)
+	}
+	if got := summary["client"]; got != "claude-code" {
+		t.Errorf("client = %v, want claude-code (promoted from child span attrs)", got)
+	}
+	if got := summary["server"]; got != "github" {
+		t.Errorf("server = %v, want github", got)
+	}
+}
+
+// TestHandleTraces_disabledVsEmpty asserts that a server without a trace
+// buffer reports tracingEnabled=false, distinguishable from an enabled but
+// quiet buffer. Regression test for the two states serving identical JSON.
+func TestHandleTraces_disabledVsEmpty(t *testing.T) {
+	disabled := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/traces", nil)
+	rec := httptest.NewRecorder()
+	disabled.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["tracingEnabled"] != false {
+		t.Errorf("disabled server: tracingEnabled = %v, want false", payload["tracingEnabled"])
+	}
+
+	enabled, _ := newTracedServer(t)
+	rec = httptest.NewRecorder()
+	enabled.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/traces", nil))
+	payload = map[string]any{}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["tracingEnabled"] != true {
+		t.Errorf("enabled quiet server: tracingEnabled = %v, want true", payload["tracingEnabled"])
+	}
+}
+
 // TestHandleTraces_minDurationForms asserts filtering behavior for both
 // accepted forms and rejection of garbage. Regression test for bare-integer
 // input being silently ignored.
