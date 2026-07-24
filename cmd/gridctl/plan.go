@@ -12,6 +12,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/controller"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
@@ -70,11 +71,22 @@ func runPlan(stackPath string) error {
 	// Compute the diff
 	diff := config.ComputePlan(proposed, current)
 
+	// Declared client links are host-only work, kept out of PlanDiff.Items
+	// so the container/gateway summary never claims link changes.
+	var links []linkAction
+	if len(proposed.Link) > 0 {
+		links = computeLinkActions(provisioner.NewRegistry(), proposed.Link)
+	}
+
 	if planFormat == "json" {
-		return output.EncodeJSON(os.Stdout, diff)
+		return output.EncodeJSON(os.Stdout, struct {
+			*config.PlanDiff
+			ClientLinks []linkAction `json:"clientLinks,omitempty"`
+		}{diff, links})
 	}
 
 	printPlanDiff(os.Stdout, diff)
+	printLinkActions(os.Stdout, links)
 
 	if !diff.HasChanges {
 		return nil
@@ -132,6 +144,28 @@ func loadCurrentStack(stackName string) (*config.Stack, error) {
 	}
 
 	return current, nil
+}
+
+// printLinkActions renders the declared client link section after the stack
+// diff. These reconcile on `gridctl apply` (not on plan -y, which deploys
+// directly), so the section is informational.
+func printLinkActions(w io.Writer, links []linkAction) {
+	if len(links) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nDeclared client links (reconciled on apply):\n")
+	for _, l := range links {
+		var line string
+		switch l.Action {
+		case "link":
+			line = fmt.Sprintf("+ %s -> %s (link)", l.Slug, l.Name)
+		case "already-linked":
+			line = fmt.Sprintf("= %s -> %s (already linked)", l.Slug, l.Name)
+		default:
+			line = fmt.Sprintf("! %s (skipped: not detected)", l.Slug)
+		}
+		fmt.Fprintf(w, "  %s\n", line)
+	}
 }
 
 // printPlanDiff renders the human plan view. Symbols mirror the Terraform
