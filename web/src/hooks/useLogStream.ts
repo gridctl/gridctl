@@ -3,6 +3,11 @@ import { parseLogEntry, type ParsedLog } from '../components/log/logTypes';
 import { fetchGatewayLogs } from '../lib/api';
 import { POLLING } from '../lib/constants';
 
+// How many recent buffer entries the UI polls. Deliberately above the API's
+// 100-line default; surfaced in the filter bar so operators know the view is
+// a window, not full history.
+export const LOG_STREAM_WINDOW = 500;
+
 interface UseLogStreamOptions {
   /** Fetch + poll only while true (workspace mounted, tab visible, ...). */
   active: boolean;
@@ -30,7 +35,7 @@ interface UseLogStreamResult {
  * buffer is server-side, so a bare reset would repopulate on the next poll.
  * Entries at or before the newest cleared timestamp stay hidden.
  */
-export function useLogStream({ active, paused = false, lines = 500 }: UseLogStreamOptions): UseLogStreamResult {
+export function useLogStream({ active, paused = false, lines = LOG_STREAM_WINDOW }: UseLogStreamOptions): UseLogStreamResult {
   const [logs, setLogs] = useState<ParsedLog[]>([]);
   const [isLoading, setIsLoading] = useState(active);
   const [error, setError] = useState<string | null>(null);
