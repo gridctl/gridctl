@@ -16,6 +16,20 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+// gridctlScopePrefix identifies gridctl's own instrumentation scopes (the
+// names passed to otel.Tracer, e.g. "gridctl.gateway"). Spans from other
+// scopes are third-party self-instrumentation (the Docker SDK wraps its HTTP
+// transport in otelhttp against the global provider) and are excluded from
+// the UI buffer unless includeInfra is set.
+const gridctlScopePrefix = "gridctl."
+
+// SpanEvent is a timestamped event recorded on a span.
+type SpanEvent struct {
+	Name      string            `json:"name"`
+	Timestamp time.Time         `json:"timestamp"`
+	Attrs     map[string]string `json:"attrs,omitempty"`
+}
+
 // SpanRecord is a completed OTel span stored in the trace buffer.
 type SpanRecord struct {
 	TraceID    string            `json:"trace_id"`
@@ -28,6 +42,7 @@ type SpanRecord struct {
 	Status     string            `json:"status"`
 	IsError    bool              `json:"is_error"`
 	Attrs      map[string]string `json:"attrs,omitempty"`
+	Events     []SpanEvent       `json:"events,omitempty"`
 }
 
 // TraceRecord groups all spans belonging to a single trace.
@@ -57,6 +72,17 @@ type Buffer struct {
 	wrapped  bool
 
 	retention time.Duration
+
+	// includeInfra admits spans from non-gridctl instrumentation scopes
+	// (e.g. the Docker SDK's otelhttp self-instrumentation). Default false.
+	// Set once at construction time, before the buffer receives spans.
+	includeInfra bool
+}
+
+// SetIncludeInfra controls whether spans from non-gridctl instrumentation
+// scopes are stored. Call before the buffer is registered as an exporter.
+func (b *Buffer) SetIncludeInfra(v bool) {
+	b.includeInfra = v
 }
 
 // NewBuffer creates a trace ring buffer with the given capacity and retention.
@@ -83,6 +109,9 @@ func (b *Buffer) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) e
 	defer b.mu.Unlock()
 
 	for _, s := range spans {
+		if !b.includeInfra && !strings.HasPrefix(s.InstrumentationScope().Name, gridctlScopePrefix) {
+			continue
+		}
 		rec := spanToRecord(s)
 		traceID := rec.TraceID
 
@@ -273,6 +302,11 @@ func (b *Buffer) SeedFromFile(path string, n int) error {
 		}
 		for _, rs := range td.ResourceSpans {
 			for _, ss := range rs.ScopeSpans {
+				// Apply the same scope filter as ExportSpans so persisted infra
+				// spans don't reappear in the UI after a restart.
+				if !b.includeInfra && !strings.HasPrefix(ss.GetScope().GetName(), gridctlScopePrefix) {
+					continue
+				}
 				for _, sp := range ss.Spans {
 					rec := protoSpanToRecord(sp)
 					byTrace[rec.TraceID] = append(byTrace[rec.TraceID], rec)
@@ -398,6 +432,20 @@ func spanToRecord(s sdktrace.ReadOnlySpan) SpanRecord {
 		rec.Attrs = make(map[string]string, len(s.Attributes()))
 		for _, kv := range s.Attributes() {
 			rec.Attrs[string(kv.Key)] = kv.Value.AsString()
+		}
+	}
+
+	if events := s.Events(); len(events) > 0 {
+		rec.Events = make([]SpanEvent, 0, len(events))
+		for _, ev := range events {
+			se := SpanEvent{Name: ev.Name, Timestamp: ev.Time}
+			if len(ev.Attributes) > 0 {
+				se.Attrs = make(map[string]string, len(ev.Attributes))
+				for _, kv := range ev.Attributes {
+					se.Attrs[string(kv.Key)] = kv.Value.AsString()
+				}
+			}
+			rec.Events = append(rec.Events, se)
 		}
 	}
 
