@@ -30,17 +30,32 @@ const summary: TraceSummary = {
   status: 'ok',
 };
 
+// Mirrors the real /api/traces/{id} payload: parentSpanId ('' for roots),
+// endTime optional. Hand-built fixtures drifting from the served shape is
+// exactly the bug class this file guards against.
 const detail: TraceDetail = {
   traceId: 'abc123def4567890',
   spans: [
     {
       spanId: 's1',
-      name: 'github.create_issue',
+      parentSpanId: '',
+      name: 'github › create_issue',
       startTime: '2026-07-23T10:00:00.000Z',
       endTime: '2026-07-23T10:00:00.042Z',
       duration: 42,
       status: 'ok',
-      attributes: {},
+      attributes: { 'server.name': 'github', 'gen_ai.usage.input_tokens': '' },
+      events: [],
+    },
+    {
+      spanId: 's2',
+      parentSpanId: 's1',
+      name: 'mcp.client.call_tool',
+      startTime: '2026-07-23T10:00:00.005Z',
+      // endTime intentionally absent: the UI must derive it from duration.
+      duration: 35,
+      status: 'ok',
+      attributes: { 'server.name': 'github', 'tool.name': 'create_issue' },
       events: [],
     },
   ],
@@ -105,8 +120,47 @@ describe('TracesWorkspace', () => {
       expect(vi.mocked(fetchTraceDetail)).toHaveBeenCalledWith('abc123def4567890');
     });
     await waitFor(() => {
-      expect(screen.getByText('github.create_issue')).toBeInTheDocument();
+      expect(screen.getByText('github › create_issue')).toBeInTheDocument();
     });
+  });
+
+  it('renders a finite waterfall duration and indents child spans', async () => {
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/2 spans · 42ms/)).toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).toBeNull();
+    // Child span (parentSpanId: s1) indents one level; the root does not.
+    expect(screen.getByText('mcp.client.call_tool').parentElement).toHaveStyle({ paddingLeft: '12px' });
+    expect(screen.getByText('github › create_issue').parentElement).toHaveStyle({ paddingLeft: '0px' });
+  });
+
+  it('derives span End when endTime is absent and never shows Invalid Date', async () => {
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
+    });
+    // s2 has no endTime; its detail must derive End from startTime + duration.
+    fireEvent.click(screen.getByText('mcp.client.call_tool'));
+    await waitFor(() => {
+      expect(screen.getByText('End')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
+    expect(screen.queryByText(/NaN/)).toBeNull();
+  });
+
+  it('drops empty-string attributes from the span detail', async () => {
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('github › create_issue')).toBeInTheDocument();
+    });
+    // Root span carries one real attribute and one empty gen_ai counter.
+    fireEvent.click(screen.getByText('github › create_issue'));
+    await waitFor(() => {
+      expect(screen.getByText('Attributes (1)')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('gen_ai.usage.input_tokens')).toBeNull();
   });
 
   it('mirrors a row selection into the URL', async () => {
@@ -123,7 +177,7 @@ describe('TracesWorkspace', () => {
   it('pivots from the trace detail to logs filtered by the trace id', async () => {
     renderAt('/traces?trace=abc123def4567890');
     await waitFor(() => {
-      expect(screen.getByText('github.create_issue')).toBeInTheDocument();
+      expect(screen.getByText('github › create_issue')).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /View logs/ }));
     expect(screen.getByTestId('logs-probe')).toBeInTheDocument();
