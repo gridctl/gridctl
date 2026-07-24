@@ -60,6 +60,10 @@ func TestHandleToolsCall_singleTraceTree(t *testing.T) {
 		t.Errorf("Operation = %q, want %q", tr.Operation, "github › create_issue")
 	}
 
+	if tr.Tool != "create_issue" {
+		t.Errorf("Tool = %q, want bare %q", tr.Tool, "create_issue")
+	}
+
 	rootID := ""
 	for _, sp := range tr.Spans {
 		if sp.ParentID == "" {
@@ -83,5 +87,37 @@ func TestHandleToolsCall_singleTraceTree(t *testing.T) {
 		if !seen[want] {
 			t.Errorf("trace is missing child span %q", want)
 		}
+	}
+}
+
+// TestHandleToolsCall_bareToolOnRoutingFailure pins the tool attribute for
+// calls that never route: the trace record must carry the bare tool name, not
+// the client-supplied server-prefixed form. Regression test for error traces
+// displaying "github__create_issue" in the Tool column.
+func TestHandleToolsCall_bareToolOnRoutingFailure(t *testing.T) {
+	buf := tracing.NewBuffer(10, time.Hour)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(sdktrace.NewSimpleSpanProcessor(buf)),
+	)
+	old := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { otel.SetTracerProvider(old) })
+
+	g := NewGateway()
+
+	res, err := g.HandleToolsCall(context.Background(), ToolCallParams{Name: "github__create_issue"})
+	if err != nil {
+		t.Fatalf("HandleToolsCall: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected error result for unroutable tool")
+	}
+
+	if got := buf.Count(); got != 1 {
+		t.Fatalf("trace count = %d, want 1", got)
+	}
+	tr := buf.GetRecent(1)[0]
+	if tr.Tool != "create_issue" {
+		t.Errorf("Tool = %q, want bare %q on the pre-routing failure path", tr.Tool, "create_issue")
 	}
 }
