@@ -110,9 +110,10 @@ export function Sidebar() {
   const colorClass = isClient ? 'neutral' : isServer ? 'violet' : 'secondary';
 
   // Deep-link the Logs workspace filtered to this node, mirroring the
-  // handleViewSecrets pattern below.
+  // handleViewSecrets pattern below. Writes the canonical ?source= param;
+  // legacy ?agent= links keep working via the read-side alias.
   const handleShowLogs = () => {
-    navigate(`/logs?agent=${encodeURIComponent(data.name)}`);
+    navigate(`/logs?source=${encodeURIComponent(data.name)}`);
   };
 
   const handlePopout = () => {
