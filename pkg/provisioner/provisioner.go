@@ -116,6 +116,13 @@ func NewRegistry() *Registry {
 	}
 }
 
+// NewRegistryWith creates a Registry with an explicit provisioner list.
+// Production code uses NewRegistry; this exists so tests can drive
+// registry consumers with fakes.
+func NewRegistryWith(clients ...ClientProvisioner) *Registry {
+	return &Registry{clients: clients}
+}
+
 // DetectAll returns all clients found on this system.
 func (r *Registry) DetectAll() []DetectedClient {
 	var detected []DetectedClient
