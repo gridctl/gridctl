@@ -147,6 +147,10 @@ export interface ClientStatus {
   // Read-only; absent when the client has no observed traffic.
   effectiveModel?: EffectiveModel;
   effectiveScope?: ClientScopeResult; // Per-client access scope (when scoping is configured)
+  // Desired state from the stack's link: block, distinct from linked
+  // (actual config-file state). linkEntry carries the declared options.
+  declared?: boolean;
+  linkEntry?: { group?: string; clientId?: string; name?: string };
 }
 
 // Token counts for a session or server
