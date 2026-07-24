@@ -1,9 +1,10 @@
 import type { LucideIcon } from 'lucide-react';
-import { Activity, BarChart3, Layers, Library, Lock, Pin, ScrollText, Wrench } from 'lucide-react';
+import { Activity, BarChart3, Layers, Library, Lock, Pin, Plug, ScrollText, Wrench } from 'lucide-react';
 
 // Top-level workspaces in the unified shell. Routed at /stack, /library,
-// /vault, /tools, /metrics, /pins, /logs, and /traces inside AppShell.
-export type Workspace = 'stack' | 'library' | 'vault' | 'tools' | 'metrics' | 'pins' | 'logs' | 'traces';
+// /vault, /tools, /metrics, /pins, /logs, /traces, and /connections inside
+// AppShell.
+export type Workspace = 'stack' | 'library' | 'vault' | 'tools' | 'metrics' | 'pins' | 'logs' | 'traces' | 'connections';
 
 export interface WorkspaceConfig {
   id: Workspace;
@@ -25,6 +26,7 @@ export const WORKSPACE_CONFIG: readonly WorkspaceConfig[] = [
   { id: 'pins',     label: 'Pins',      icon: Pin,       shortcutKey: '6' },
   { id: 'logs',     label: 'Logs',      icon: ScrollText, shortcutKey: '7' },
   { id: 'traces',   label: 'Traces',    icon: Activity,   shortcutKey: '8' },
+  { id: 'connections', label: 'Connections', icon: Plug,  shortcutKey: '9' },
 ] as const;
 
 // Derived for back-compat with existing call-sites in useUIStore, AppShell,
