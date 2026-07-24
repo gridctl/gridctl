@@ -51,6 +51,8 @@ type TraceRecord struct {
 	Operation  string       `json:"operation"` // root span name
 	ServerName string       `json:"server_name,omitempty"`
 	MethodName string       `json:"method_name,omitempty"`
+	Tool       string       `json:"tool,omitempty"`
+	ClientName string       `json:"client_name,omitempty"`
 	StartTime  time.Time    `json:"start_time"`
 	EndTime    time.Time    `json:"end_time"`
 	DurationMs int64        `json:"duration_ms"`
@@ -250,6 +252,13 @@ func (b *Buffer) Count() int {
 	b.bufMu.RLock()
 	defer b.bufMu.RUnlock()
 	return b.count()
+}
+
+// MaxSize returns the ring buffer capacity.
+func (b *Buffer) MaxSize() int {
+	b.bufMu.RLock()
+	defer b.bufMu.RUnlock()
+	return b.maxSize
 }
 
 // SeedFromFile reads up to the last n OTLP-JSON envelope lines from path and
@@ -481,6 +490,9 @@ func buildTraceRecord(root SpanRecord, allSpans []SpanRecord) TraceRecord {
 		if v, ok := root.Attrs["mcp.method.name"]; ok {
 			tr.MethodName = v
 		}
+		if v, ok := root.Attrs["mcp.tool.name"]; ok {
+			tr.Tool = v
+		}
 	}
 
 	// Fallback: scan child spans for a non-empty server.name in case the root
@@ -491,6 +503,24 @@ func buildTraceRecord(root SpanRecord, allSpans []SpanRecord) TraceRecord {
 				tr.ServerName = v
 				break
 			}
+		}
+	}
+
+	if tr.Tool == "" {
+		for _, sp := range allSpans {
+			if v, ok := sp.Attrs["mcp.tool.name"]; ok && v != "" {
+				tr.Tool = v
+				break
+			}
+		}
+	}
+
+	// The client name is only stamped on the downstream call span (the
+	// observer runs there, not on the root), so it always needs a child scan.
+	for _, sp := range allSpans {
+		if v, ok := sp.Attrs["mcp.client.name"]; ok && v != "" {
+			tr.ClientName = v
+			break
 		}
 	}
 
