@@ -7,17 +7,22 @@ interface SpanDetailProps {
   onClose: () => void;
 }
 
-function formatTimestamp(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      fractionalSecondDigits: 3,
-    });
-  } catch {
-    return iso;
-  }
+function formatTimestamp(iso: string | undefined): string {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  if (!Number.isFinite(t)) return '–';
+  return new Date(t).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  });
+}
+
+/** ISO end of a span; derives startTime + duration when endTime is absent. */
+function spanEndIso(span: Span): string | undefined {
+  if (span.endTime) return span.endTime;
+  const start = new Date(span.startTime).getTime();
+  return Number.isFinite(start) ? new Date(start + span.duration).toISOString() : undefined;
 }
 
 function formatDuration(ms: number): string {
@@ -27,7 +32,8 @@ function formatDuration(ms: number): string {
 }
 
 export function SpanDetail({ span, onClose }: SpanDetailProps) {
-  const attrEntries = Object.entries(span.attributes);
+  // Empty-string values (e.g. unset gen_ai token counters) are noise, not data.
+  const attrEntries = Object.entries(span.attributes).filter(([, value]) => value !== '');
 
   return (
     <div className="flex flex-col h-full bg-surface border-l border-border/50 min-w-0">
@@ -71,7 +77,7 @@ export function SpanDetail({ span, onClose }: SpanDetailProps) {
             <table className="w-full text-xs">
               <tbody>
                 <TimingRow label="Start" value={formatTimestamp(span.startTime)} />
-                <TimingRow label="End" value={formatTimestamp(span.endTime)} />
+                <TimingRow label="End" value={formatTimestamp(spanEndIso(span))} />
                 <TimingRow label="Duration" value={formatDuration(span.duration)} highlight />
               </tbody>
             </table>
