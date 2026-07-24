@@ -3,6 +3,7 @@ import type { StateCreator } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { WORKSPACES, type Workspace } from '../types/workspace';
 import { DEFAULT_THEME_MODE, isThemeMode, type ThemeMode } from '../themes/types';
+import { DEFAULT_LOG_WINDOW, LOG_WINDOW_SIZES } from '../components/log/logTypes';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
@@ -167,6 +168,11 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // Persisted; URL params still win on the in-shell workspace.
   tracesPrefs: TracesPrefs;
   setTracesPrefs: (prefs: Partial<TracesPrefs>) => void;
+
+  // Logs view preferences shared by the workspace and the detached window.
+  // Persisted; URL params always win when present.
+  logsPrefs: LogsPrefs;
+  setLogsPrefs: (prefs: Partial<LogsPrefs>) => void;
 }
 
 interface TracesPrefs {
@@ -181,6 +187,40 @@ function normalizeTracesPrefs(value: unknown): TracesPrefs {
   return {
     segment: v.segment === 'all' ? 'all' : 'tool-calls',
     server: typeof v.server === 'string' ? v.server : '',
+  };
+}
+
+export interface LogsPrefs {
+  /** Serialized ?level= param value ('' = all levels; round-trips `none`). */
+  levelParam: string;
+  /** Preferred source token ('' = all sources). */
+  source: string;
+  /** Soft-wrap long messages in collapsed rows. */
+  wrap: boolean;
+  /** Show relative timestamps instead of absolute HH:MM:SS.mmm. */
+  relativeTime: boolean;
+  /** Poll window size (one of LOG_WINDOW_SIZES). */
+  windowSize: number;
+}
+
+const LOGS_PREFS_DEFAULTS: LogsPrefs = {
+  levelParam: '',
+  source: '',
+  wrap: false,
+  relativeTime: false,
+  windowSize: DEFAULT_LOG_WINDOW,
+};
+
+function normalizeLogsPrefs(value: unknown): LogsPrefs {
+  const v = (value ?? {}) as Partial<LogsPrefs>;
+  return {
+    levelParam: typeof v.levelParam === 'string' ? v.levelParam : '',
+    source: typeof v.source === 'string' ? v.source : '',
+    wrap: typeof v.wrap === 'boolean' ? v.wrap : false,
+    relativeTime: typeof v.relativeTime === 'boolean' ? v.relativeTime : false,
+    windowSize: (LOG_WINDOW_SIZES as readonly number[]).includes(v.windowSize as number)
+      ? (v.windowSize as number)
+      : DEFAULT_LOG_WINDOW,
   };
 }
 
@@ -262,6 +302,10 @@ export const useUIStore = create<UIState>()(
       setTracesPrefs: (prefs) =>
         set((s) => ({ tracesPrefs: { ...s.tracesPrefs, ...prefs } })),
 
+      logsPrefs: { ...LOGS_PREFS_DEFAULTS },
+      setLogsPrefs: (prefs) =>
+        set((s) => ({ logsPrefs: { ...s.logsPrefs, ...prefs } })),
+
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
       setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
@@ -290,6 +334,7 @@ export const useUIStore = create<UIState>()(
         editorPrefs: state.editorPrefs,
         themeMode: state.themeMode,
         tracesPrefs: state.tracesPrefs,
+        logsPrefs: state.logsPrefs,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<UIState> | undefined;
@@ -303,6 +348,7 @@ export const useUIStore = create<UIState>()(
           // build without this field) so boot never lands on undefined.
           themeMode: isThemeMode(p?.themeMode) ? p.themeMode : current.themeMode,
           tracesPrefs: normalizeTracesPrefs((p as { tracesPrefs?: unknown })?.tracesPrefs),
+          logsPrefs: normalizeLogsPrefs((p as { logsPrefs?: unknown })?.logsPrefs),
         };
       },
     }
