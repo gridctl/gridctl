@@ -250,6 +250,13 @@ func (b *LogBuffer) Count() int {
 	return b.count()
 }
 
+// Capacity returns the maximum number of entries the ring can hold.
+func (b *LogBuffer) Capacity() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.maxSize
+}
+
 // BufferHandler is a slog.Handler that writes to both a LogBuffer and an underlying handler.
 type BufferHandler struct {
 	buffer    *LogBuffer
