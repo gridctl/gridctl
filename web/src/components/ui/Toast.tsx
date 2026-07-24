@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { copyTextToClipboard } from '../../lib/clipboard';
 
 interface ToastAction {
   label: string;
@@ -23,6 +24,17 @@ interface ToastOptions {
 let toasts: Toast[] = [];
 let listeners: (() => void)[] = [];
 let nextId = 0;
+
+/** Copy text to the clipboard and toast the outcome. */
+// eslint-disable-next-line react-refresh/only-export-components -- imperative toast API lives with its container by design; HMR falls back to a full reload for this module
+export async function copyWithToast(text: string, label: string): Promise<void> {
+  try {
+    await copyTextToClipboard(text);
+    showToast('success', `${label} copied`);
+  } catch {
+    showToast('error', 'Copy failed');
+  }
+}
 
 // eslint-disable-next-line react-refresh/only-export-components -- imperative toast API lives with its container by design; HMR falls back to a full reload for this module
 export function showToast(type: 'success' | 'error' | 'warning', message: string, options?: ToastOptions) {
