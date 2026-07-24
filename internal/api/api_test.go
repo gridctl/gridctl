@@ -711,6 +711,78 @@ func TestHandleGatewayLogs_CaseInsensitiveLevelFilter(t *testing.T) {
 	}
 }
 
+func TestHandleGatewayLogs_SparseLevelFilter(t *testing.T) {
+	srv := newTestServerWithLogBuffer(t, 1000)
+
+	// Errors buried behind a DEBUG/INFO-heavy tail: filtering after slicing
+	// the last `lines` entries would return none of them.
+	for i := 0; i < 5; i++ {
+		srv.logBuffer.Add(logging.BufferedEntry{Level: "ERROR", Message: "boom"})
+	}
+	for i := 0; i < 200; i++ {
+		srv.logBuffer.Add(logging.BufferedEntry{Level: "INFO", Message: "tick"})
+	}
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=50&level=error", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	var result []logging.BufferedEntry
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result) != 5 {
+		t.Fatalf("expected 5 sparse errors, got %d", len(result))
+	}
+	for i, entry := range result {
+		if entry.Level != "ERROR" {
+			t.Errorf("entry %d: expected level ERROR, got %q", i, entry.Level)
+		}
+	}
+}
+
+func TestHandleMCPServerLogs_DeepHistory(t *testing.T) {
+	srv := newTestServerWithLogBuffer(t, 1000)
+
+	// Server entries older than a lines*10 over-fetch window would be lost
+	// with a fixed over-fetch heuristic.
+	for i := 0; i < 3; i++ {
+		srv.logBuffer.Add(logging.BufferedEntry{
+			Level:   "INFO",
+			Message: "server msg",
+			Attrs:   map[string]any{"server": "github"},
+		})
+	}
+	for i := 0; i < 500; i++ {
+		srv.logBuffer.Add(logging.BufferedEntry{Level: "INFO", Message: "gateway tick"})
+	}
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/github/logs?lines=10", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	var result []logging.BufferedEntry
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected 3 deep-history entries, got %d", len(result))
+	}
+	for i, entry := range result {
+		if entry.Message != "server msg" {
+			t.Errorf("entry %d: expected server msg, got %q", i, entry.Message)
+		}
+	}
+}
+
 func TestHandleGatewayLogs_EmptyBuffer(t *testing.T) {
 	srv := newTestServerWithLogBuffer(t, 100)
 	handler := srv.Handler()
