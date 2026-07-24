@@ -124,6 +124,7 @@ export function parseLogEntry(input: string | LogEntry): ParsedLog {
       timestamp: slogMatch[1] || dockerTs,
       message: msg,
       component: attrs?.component,
+      traceId: attrs?.trace_id ?? attrs?.traceId,
       attrs,
       raw: input,
     };
@@ -193,17 +194,32 @@ export function filterParsedLogs(logs: ParsedLog[], filter: LogFilter): ParsedLo
   });
 }
 
+// Stable per-entry identity for list rendering and expand state. Keys derive
+// from entry fields, not array position, so the 2s poll that replaces the
+// whole array keeps React reconciliation and the expanded row anchored to the
+// same logical entry. Duplicate lines get an occurrence suffix to stay unique.
+export function logEntryKeys(logs: ParsedLog[]): string[] {
+  const seen = new Map<string, number>();
+  return logs.map((log) => {
+    const base = `${log.timestamp}|${logSourceOf(log)}|${log.traceId ?? ''}|${log.message}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}|#${n}`;
+  });
+}
+
 export function formatTimestamp(ts: string): string {
   if (!ts) return '';
-  try {
-    const date = new Date(ts);
-    return date.toLocaleTimeString('en-US', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
-  } catch {
-    return ts.slice(11, 23);
+  const date = new Date(ts);
+  // An unparseable timestamp yields an invalid Date, not an exception —
+  // unguarded formatting would render "Invalid Date.NaN".
+  if (!Number.isFinite(date.getTime())) {
+    return ts.slice(11, 23) || '\u2014';
   }
+  return date.toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
 }
