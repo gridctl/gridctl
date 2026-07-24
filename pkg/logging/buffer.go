@@ -94,6 +94,45 @@ func (b *LogBuffer) GetRecent(n int) []BufferedEntry {
 	return result
 }
 
+// GetRecentMatching returns the most recent n entries satisfying match, in
+// chronological order. Unlike filtering the result of GetRecent, this scans
+// the whole ring newest-first, so sparse matches older than the last n raw
+// entries are still found. n <= 0 returns every match, like GetRecent.
+func (b *LogBuffer) GetRecentMatching(n int, match func(BufferedEntry) bool) []BufferedEntry {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	count := b.count()
+	if n <= 0 || n > count {
+		n = count
+	}
+	if count == 0 {
+		return nil
+	}
+
+	newest := b.position - 1
+	if newest < 0 {
+		newest = b.maxSize - 1
+	}
+
+	var result []BufferedEntry
+	for i := 0; i < count && len(result) < n; i++ {
+		idx := newest - i
+		if idx < 0 {
+			idx += b.maxSize
+		}
+		if match(b.entries[idx]) {
+			result = append(result, b.entries[idx])
+		}
+	}
+
+	// Collected newest-first; reverse to chronological order.
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+	return result
+}
+
 // SeedFromFile reads up to the last n NDJSON entries from path and inserts
 // them into the buffer in chronological order. Used on daemon startup to
 // preload the in-memory ring with pre-restart entries from a persisted
