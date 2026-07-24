@@ -61,6 +61,14 @@ type Config struct {
 	Replace     bool       // Stop a running stack before deploying (used by plan apply)
 	LogFile     string     // Path to log file (overrides stack.yaml logging.file)
 	LogLevel    slog.Level // Minimum slog level (global --log-level; zero value is info)
+
+	// OnReady fires once the gateway HTTP listener is serving and MCP server
+	// registration has run — the same readiness the daemon parent polls via
+	// /ready. Only the foreground path invokes it (the daemon parent
+	// health-waits and acts after Deploy returns instead); the daemon child
+	// never sets it. Used by `gridctl apply` for post-ready client linking
+	// (declared link: reconcile and --flash).
+	OnReady func(port int)
 }
 
 // effectiveLogLevel resolves the slog level for handlers built from cfg.
