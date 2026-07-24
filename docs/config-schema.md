@@ -154,6 +154,7 @@ gateway:
 | `export` | string | No | `""` | Exporter type: `"otlp"` to enable OTLP HTTP export, or `""` to disable |
 | `endpoint` | string | No | `""` | OTLP HTTP endpoint URL. Required when `export` is `"otlp"`. `http://` uses plain HTTP; `https://` uses TLS |
 | `max_traces` | int | No | `1000` | Ring buffer capacity in number of traces |
+| `include_infra` | bool | No | `false` | Admit spans from non-gridctl instrumentation scopes (e.g. Docker SDK HTTP self-instrumentation) into the UI trace buffer. OTLP export is unaffected |
 
 **Example - local Jaeger:**
 
