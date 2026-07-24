@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Terminal,
-  Copy,
-  Trash2,
-  Pause,
-  Play,
   ChevronDown,
-  RefreshCw,
   Maximize2,
   Minimize2,
   Radio,
@@ -27,9 +22,10 @@ interface NodeOption {
 }
 
 // Frameless logs popout. The log surface itself is the shared LogsView (same
-// URL-synced ?agent=/?q=/?level=/?trace= semantics as the workspace, in this
-// window's own URL); this page adds the window chrome: source dropdown,
-// pause/copy/clear actions, fullscreen, and the footer. Trace pivots open the
+// URL-synced ?source=/?q=/?level=/?trace= semantics as the workspace, in this
+// window's own URL) including the full control bar, so every stream action
+// stays in lockstep with the workspace; this page adds only the window
+// chrome: source dropdown, fullscreen, and the footer. Trace pivots open the
 // Traces workspace in a full app tab since the popout has no other workspaces.
 function DetachedLogsPageContent() {
   const view = useLogsView();
@@ -115,7 +111,7 @@ function DetachedLogsPageContent() {
         }}
       />
 
-      {/* Header */}
+      {/* Header — identity chrome only; stream actions live in the shared bar */}
       <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-10 relative">
         {/* Top accent line */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
@@ -194,46 +190,17 @@ function DetachedLogsPageContent() {
               Structured
             </span>
           )}
-          {view.isPaused && (
-            <span className="text-[10px] px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
-              Paused
-            </span>
-          )}
         </div>
+      </header>
 
-        <div className="flex items-center gap-1">
-          <IconButton
-            icon={RefreshCw}
-            onClick={view.refresh}
-            tooltip="Refresh"
-            size="sm"
-            variant="ghost"
-          />
-          <IconButton
-            icon={view.isPaused ? Play : Pause}
-            onClick={view.togglePause}
-            tooltip={view.isPaused ? 'Resume' : 'Pause'}
-            size="sm"
-            variant="ghost"
-            className={view.isPaused ? 'text-status-running hover:text-status-running' : ''}
-          />
-          <IconButton
-            icon={Copy}
-            onClick={view.copyFiltered}
-            tooltip="Copy Logs"
-            size="sm"
-            variant="ghost"
-            disabled={view.filteredLogs.length === 0}
-          />
-          <IconButton
-            icon={Trash2}
-            onClick={view.clear}
-            tooltip="Clear Logs"
-            size="sm"
-            variant="ghost"
-            className="hover:text-status-error"
-          />
-          <div className="w-px h-4 bg-border/50 mx-1" />
+      {/* Log surface — shared with the workspace, incl. the full control bar */}
+      <LogsView
+        view={view}
+        onTraceClick={(traceId) =>
+          window.open(`/traces?trace=${encodeURIComponent(traceId)}`, '_blank', 'noopener')
+        }
+        emptyText="No logs available"
+        toolbarExtra={
           <IconButton
             icon={isFullscreen ? Minimize2 : Maximize2}
             onClick={toggleFullscreen}
@@ -241,25 +208,14 @@ function DetachedLogsPageContent() {
             size="sm"
             variant="ghost"
           />
-        </div>
-      </header>
-
-      {/* Log surface — shared with the workspace */}
-      <LogsView
-        view={view}
-        onTraceClick={(traceId) =>
-          window.open(`/traces?trace=${encodeURIComponent(traceId)}`, '_blank', 'noopener')
         }
-        emptyText="No logs available"
       />
 
-      {/* Footer status bar */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
-        <span>
-          {view.filteredLogs.length} / {view.logs.length} entries {view.isPaused ? '(paused)' : ''}
-        </span>
+      {/* Footer status bar. Entry counts live in the shared filter bar now —
+          repeating them here showed the same numbers twice. */}
+      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-end px-4 text-[10px] text-text-muted">
         <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse motion-reduce:animate-none" />
           Detached Window
         </span>
       </footer>
