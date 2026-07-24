@@ -114,7 +114,7 @@ func TestTracingBuffer_SeedFromFileEndToEnd(t *testing.T) {
 	rs := &tracepb.ResourceSpans{
 		Resource: &resourcepb.Resource{},
 		ScopeSpans: []*tracepb.ScopeSpans{{
-			Scope: &commonpb.InstrumentationScope{Name: "gridctl/test"},
+			Scope: &commonpb.InstrumentationScope{Name: "gridctl.test"},
 			Spans: []*tracepb.Span{
 				makeSpan("github", "list_repos", 1),
 				makeSpan("github", "create_issue", 2),
@@ -644,7 +644,7 @@ func TestEndToEnd_PersistAndReseed(t *testing.T) {
 	rs := &tracepb.ResourceSpans{
 		Resource: &resourcepb.Resource{},
 		ScopeSpans: []*tracepb.ScopeSpans{{
-			Scope: &commonpb.InstrumentationScope{Name: "gridctl/test"},
+			Scope: &commonpb.InstrumentationScope{Name: "gridctl.test"},
 			Spans: []*tracepb.Span{makeSpan("github", "pre-restart-trace", 1)},
 		}},
 	}
