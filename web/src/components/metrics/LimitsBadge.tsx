@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useLimits } from '../../hooks/useLimits';

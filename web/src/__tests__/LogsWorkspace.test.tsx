@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { LogsWorkspace } from '../components/workspaces/LogsWorkspace';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';

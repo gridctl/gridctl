@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { resolveLandingWorkspace } from '../../lib/landing-workspace';

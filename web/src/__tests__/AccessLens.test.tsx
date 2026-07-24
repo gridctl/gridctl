@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { AccessLens } from '../components/stack/AccessLens';
 import { useStackStore } from '../stores/useStackStore';
 import { useAccessLensStore } from '../stores/useAccessLensStore';

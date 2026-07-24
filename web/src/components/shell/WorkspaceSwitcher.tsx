@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router';
 import { cn } from '../../lib/cn';
 import { WORKSPACE_CONFIG, type WorkspaceConfig } from '../../types/workspace';
 import { useAccessLensStore, isDirty } from '../../stores/useAccessLensStore';

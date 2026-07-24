@@ -466,7 +466,7 @@ describe('setGatewayStatus needs-auth transition toast', () => {
 
 describe('GatewaySidebar pending authorization row', () => {
   it('shows the pending count and selects the first pending server', async () => {
-    const { MemoryRouter } = await import('react-router-dom');
+    const { MemoryRouter } = await import('react-router');
     const { GatewaySidebar } = await import('../components/gateway/GatewaySidebar');
     useStackStore.setState({
       mcpServers: [
@@ -489,7 +489,7 @@ describe('GatewaySidebar pending authorization row', () => {
   });
 
   it('hides the row when nothing is pending', async () => {
-    const { MemoryRouter } = await import('react-router-dom');
+    const { MemoryRouter } = await import('react-router');
     const { GatewaySidebar } = await import('../components/gateway/GatewaySidebar');
     useStackStore.setState({
       mcpServers: [makeServerStatus({ name: 'github', authStatus: 'authorized' })],

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { PinsWorkspace } from '../components/workspaces/PinsWorkspace';
 import { usePinsStore } from '../stores/usePinsStore';
 import * as api from '../lib/api';

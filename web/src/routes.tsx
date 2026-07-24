@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router';
 import { AppShell } from './components/shell/AppShell';
 import { RootRedirect } from './components/shell/RootRedirect';
 import { WorkspaceLoadingShell } from './components/shell/WorkspaceLoadingShell';

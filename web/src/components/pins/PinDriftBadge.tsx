@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Lock, LockOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { usePinsStore, useDriftedServers } from '../../stores/usePinsStore';
