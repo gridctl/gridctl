@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/internal/probe"
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/limits"
@@ -403,6 +404,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/clients/{slug}/scope/preview", s.handleClientScopePreview)
 	mux.HandleFunc("PUT /api/clients/{slug}/scope", s.handleSetClientScope)
 	mux.HandleFunc("PUT /api/clients/{slug}/model", s.handleSetClientModel)
+	mux.HandleFunc("POST /api/clients/{slug}/link", s.handleLinkClient)
+	mux.HandleFunc("DELETE /api/clients/{slug}/link", s.handleUnlinkClient)
+	mux.HandleFunc("POST /api/clients/{slug}/link/preview", s.handleLinkPreview)
 	mux.HandleFunc("/api/clients", s.handleClients)
 	mux.HandleFunc("GET /api/pricing/models", s.handlePricingModels)
 	mux.HandleFunc("/api/reload", s.handleReload)
@@ -1276,6 +1280,18 @@ type ClientStatus struct {
 	// can reach. nil when no access scoping is in effect, so the frontend can
 	// distinguish "unscoped (legacy)" from "scoped to nothing".
 	EffectiveScope *mcp.ClientScopeResult `json:"effectiveScope,omitempty"`
+	// Declared reports whether the stack's link: block lists this client;
+	// LinkEntry carries the declared options when it does. Desired state,
+	// distinct from Linked (actual config-file state).
+	Declared  bool           `json:"declared,omitempty"`
+	LinkEntry *LinkEntryInfo `json:"linkEntry,omitempty"`
+}
+
+// LinkEntryInfo is the wire shape of a declared link: entry's options.
+type LinkEntryInfo struct {
+	Group    string `json:"group,omitempty"`
+	ClientID string `json:"clientId,omitempty"`
+	Name     string `json:"name,omitempty"`
 }
 
 // handleClients returns detected LLM clients and their link status.
@@ -1300,6 +1316,11 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 	clientModels := s.clientModelAttributionMap()
 	effective := s.effectiveClientModels()
 
+	declared := make(map[string]LinkEntryInfo)
+	for _, e := range s.declaredLinks() {
+		declared[e.Client] = LinkEntryInfo{Group: e.Group, ClientID: e.ClientID, Name: e.Name}
+	}
+
 	infos := s.provisioners.AllClientInfo(serverName)
 	statuses := make([]ClientStatus, 0, len(infos))
 	for _, info := range infos {
@@ -1311,6 +1332,23 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 			Transport:  info.Transport,
 			ConfigPath: info.ConfigPath,
 			Model:      clientModels[info.Slug],
+		}
+		if entry, ok := declared[info.Slug]; ok {
+			status.Declared = true
+			e := entry
+			status.LinkEntry = &e
+			// A declared group or name override writes a different entry name
+			// than the default this handler polls, so additionally check the
+			// resolved name. OR, not replace: an entry under either name means
+			// the client reaches this gateway, and flipping Linked to false
+			// while a default-name entry exists would lie to every consumer.
+			if resolved := (config.LinkEntry{Client: info.Slug, Group: entry.Group, Name: entry.Name}).EffectiveName(); resolved != serverName && info.Detected && !status.Linked {
+				if prov, ok := s.provisioners.FindBySlug(info.Slug); ok {
+					if linked, err := prov.IsLinked(info.ConfigPath, resolved); err == nil && linked {
+						status.Linked = true
+					}
+				}
+			}
 		}
 		if em, ok := effective[info.Slug]; ok {
 			status.EffectiveModel = &em
