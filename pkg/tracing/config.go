@@ -26,6 +26,11 @@ type Config struct {
 
 	// MaxTraces is the ring buffer capacity. Default: 1000.
 	MaxTraces int `yaml:"max_traces,omitempty"`
+
+	// IncludeInfra admits spans from non-gridctl instrumentation scopes
+	// (e.g. Docker SDK HTTP self-instrumentation) into the in-memory buffer.
+	// The OTLP export path is unaffected. Default: false.
+	IncludeInfra bool `yaml:"include_infra,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
