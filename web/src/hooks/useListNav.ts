@@ -10,6 +10,8 @@ interface UseListNavOptions {
   onEdit?: () => void;
   /** Called when the user presses 'd' — typically toggle active state. */
   onToggle?: () => void;
+  /** Called when the user presses '/' — typically focus the search input. */
+  onSlash?: () => void;
   /** Called when the user presses Escape — typically close a detail pane. */
   onEscape?: () => void;
   /** Disable handling (e.g. while a modal is open). Defaults to true. */
@@ -39,6 +41,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
  *   Escape — call onEscape
  *   e — call onEdit
  *   d — call onToggle
+ *   / — call onSlash
  */
 export function useListNav({
   itemCount,
@@ -47,6 +50,7 @@ export function useListNav({
   onEnter,
   onEdit,
   onToggle,
+  onSlash,
   onEscape,
   enabled = true,
 }: UseListNavOptions): void {
@@ -55,9 +59,9 @@ export function useListNav({
   // so an abandoned concurrent render can't leak values; not a passive effect,
   // because the document-level listener can fire between commit and passive
   // flush and must never read a stale selectedIndex).
-  const state = useRef({ itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onEscape });
+  const state = useRef({ itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape });
   useLayoutEffect(() => {
-    state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onEscape };
+    state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape };
   });
 
   useEffect(() => {
@@ -67,13 +71,21 @@ export function useListNav({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isEditableTarget(e.target)) return;
 
-      const { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onEscape } = state.current;
+      const { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape } = state.current;
 
       // Escape works even on an empty list (a detail pane may still be open).
       if (e.key === 'Escape') {
         if (onEscape) {
           e.preventDefault();
           onEscape();
+        }
+        return;
+      }
+      // '/' focuses search regardless of list size.
+      if (e.key === '/') {
+        if (onSlash) {
+          e.preventDefault();
+          onSlash();
         }
         return;
       }
