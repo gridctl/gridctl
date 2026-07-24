@@ -1,6 +1,7 @@
 import { RefreshCw, Settings, RotateCcw, Plus, Command } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
@@ -23,6 +24,7 @@ interface HeaderProps {
 }
 
 export function Header({ onRefresh, isRefreshing }: HeaderProps) {
+  const navigate = useNavigate();
   const gatewayInfo = useStackStore((s) => s.gatewayInfo);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
@@ -196,6 +198,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       <CreationWizard
         onOpenVault={() => setShowVault(true)}
         onOpenGlobalContext={() => setShowGlobalContext(true)}
+        onOpenConnections={() => navigate('/connections')}
         onDeploy={onRefresh}
       />
       {/* Portaled: the header's backdrop-blur creates a containing block
