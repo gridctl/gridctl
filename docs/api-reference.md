@@ -772,7 +772,7 @@ Returns recent trace summaries, newest first.
 |-------------|------|---------|-------------|
 | `server` | string | - | Filter to traces for this server |
 | `errors` | bool | `false` | When `true`, return only traces that contain an error |
-| `minDuration` | string | - | Go duration (e.g. `"250ms"`, `"2s"`); drop traces shorter than this |
+| `minDuration` | string | - | Minimum duration: a Go duration (e.g. `"250ms"`, `"2s"`) or a bare integer in milliseconds (e.g. `500`). Unparseable values return `400` |
 | `limit` | int | `100` | Maximum number of traces to return |
 
 ```bash
@@ -818,19 +818,33 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/traces/a1b2c3
   "spans": [
     {
       "spanId": "root-1",
-      "parentId": "",
-      "name": "tools/call github__create_issue",
+      "parentSpanId": "",
+      "name": "github › create_issue",
       "startTime": "2026-05-29T17:00:00.123456789Z",
+      "endTime": "2026-05-29T17:00:00.265456789Z",
       "duration": 142,
       "status": "ok",
-      "attributes": { "server": "github" },
+      "attributes": { "server.name": "github", "mcp.tool.name": "create_issue" },
       "events": []
+    },
+    {
+      "spanId": "span-2",
+      "parentSpanId": "root-1",
+      "name": "mcp.client.call_tool",
+      "startTime": "2026-05-29T17:00:00.128456789Z",
+      "endTime": "2026-05-29T17:00:00.260456789Z",
+      "duration": 132,
+      "status": "ok",
+      "attributes": { "server.name": "github", "tool.name": "create_issue" },
+      "events": [
+        { "name": "retry", "timestamp": "2026-05-29T17:00:00.150456789Z", "attributes": { "reason": "backoff" } }
+      ]
     }
   ]
 }
 ```
 
-Returns `404` when the trace ID is not in the buffer.
+`parentSpanId` is empty for root spans. `endTime` is RFC3339Nano and may be absent for traces persisted before it was serialized; clients should derive `startTime + duration` in that case. Returns `404` when the trace ID is not in the buffer.
 
 ---
 
