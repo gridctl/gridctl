@@ -434,6 +434,120 @@ export async function updateClientScope(
   return data as UpdateClientScopeResponse;
 }
 
+// ClientLinkError mirrors ClientScopeError for the link endpoints:
+//   - "unknown_client" (404): the slug matches no registered provisioner.
+//   - "client_not_detected" (422): the client is not installed here.
+//   - "link_conflict" (409): a foreign entry occupies the target name;
+//     nothing was written.
+//   - "stack_not_updated" (500): the client config WAS written but the stack
+//     file was not — surface both facts; nothing is rolled back.
+export class ClientLinkError extends Error {
+  code: string;
+  hint?: string;
+  httpStatus: number;
+
+  constructor(code: string, message: string, hint: string | undefined, httpStatus: number) {
+    super(message);
+    this.name = 'ClientLinkError';
+    this.code = code;
+    this.hint = hint;
+    this.httpStatus = httpStatus;
+  }
+}
+
+// LinkClientOptions carries the optional declared-entry fields (mirrors the
+// stack.yaml link: object form).
+export interface LinkClientOptions {
+  group?: string;
+  clientId?: string;
+  name?: string;
+}
+
+// LinkClientResponse echoes the applied state from POST/DELETE.
+export interface LinkClientResponse {
+  client: string;
+  serverName: string;
+  linked: boolean;
+  declared: boolean;
+  alreadyLinked?: boolean;
+  configPath?: string;
+}
+
+// ClientLinkPreview is the dry-run payload: client config before/after plus
+// the unified diff of the stack.yaml change. Nothing is written.
+export interface ClientLinkPreview {
+  client: string;
+  serverName: string;
+  configPath: string;
+  before: string;
+  after: string;
+  stackDiff: string;
+}
+
+async function clientLinkFetch<T>(
+  slug: string,
+  sub: '' | '/preview',
+  method: 'POST' | 'DELETE',
+  body?: unknown,
+): Promise<T> {
+  const response = await fetch(
+    `${API_BASE}/api/clients/${encodeURIComponent(slug)}/link${sub}`,
+    {
+      method,
+      headers: buildHeaders(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    },
+  );
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err === 'object' && typeof err.code === 'string') {
+      throw new ClientLinkError(
+        err.code,
+        err.message ?? 'Client link request failed',
+        err.hint,
+        response.status,
+      );
+    }
+    const msg = typeof err === 'string' ? err : `Client link request failed: ${response.status}`;
+    throw new Error(msg);
+  }
+  return data as T;
+}
+
+/**
+ * Link a client to the gateway AND declare it in the stack's link: block.
+ * POST /api/clients/{slug}/link
+ */
+export async function linkClient(
+  slug: string,
+  opts: LinkClientOptions = {},
+): Promise<LinkClientResponse> {
+  return clientLinkFetch<LinkClientResponse>(slug, '', 'POST', opts);
+}
+
+/**
+ * Unlink a client and remove its link: declaration.
+ * DELETE /api/clients/{slug}/link
+ */
+export async function unlinkClient(slug: string): Promise<LinkClientResponse> {
+  return clientLinkFetch<LinkClientResponse>(slug, '', 'DELETE');
+}
+
+/**
+ * Preview a link: client config before/after plus the stack.yaml diff.
+ * Nothing is written. POST /api/clients/{slug}/link/preview
+ */
+export async function previewClientLink(
+  slug: string,
+  opts: LinkClientOptions = {},
+): Promise<ClientLinkPreview> {
+  return clientLinkFetch<ClientLinkPreview>(slug, '/preview', 'POST', opts);
+}
+
 // ClientScopeImpact is one client's before/after access delta in a scope
 // preview. Mirrors api.clientScopeImpact.
 export interface ClientScopeImpact {
