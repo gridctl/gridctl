@@ -5,7 +5,11 @@ import {
   formatTimestamp,
   logEntryKeys,
   logSourceOf,
+  normalizeLogTimeRangeParam,
+  normalizeLogWindowParam,
   parseLogEntry,
+  serializeLogsJSONL,
+  serializeLogsText,
   type ParsedLog,
 } from '../components/log/logTypes';
 
@@ -83,6 +87,82 @@ describe('filterParsedLogs', () => {
     expect(
       filterParsedLogs(logs, { source: 'zapier', levels: new Set(['ERROR']) }),
     ).toHaveLength(0);
+  });
+
+  it('matches search queries against stringified attr values', () => {
+    const attred = [
+      entry({ message: 'tool done', attrs: { server: 'github', tool: 'create_issue', replica_id: 3, is_error: false } }),
+      entry({ message: 'other line' }),
+    ];
+    expect(filterParsedLogs(attred, { query: 'create_issue' }).map((l) => l.message)).toEqual(['tool done']);
+    // Non-string values stringify defensively.
+    expect(filterParsedLogs(attred, { query: '3' }).map((l) => l.message)).toEqual(['tool done']);
+    expect(filterParsedLogs(attred, { query: 'false' }).map((l) => l.message)).toEqual(['tool done']);
+    // Nested (dotted-flattened miss) values do not crash the predicate.
+    const nested = entry({ message: 'nested', attrs: { group: { inner: 'deep-value' } } });
+    expect(filterParsedLogs([nested], { query: 'deep-value' })).toHaveLength(1);
+  });
+
+  it('drops entries older than the since cutoff but keeps unparseable timestamps', () => {
+    const old = entry({ message: 'old', timestamp: '2026-07-23T09:00:00Z' });
+    const fresh = entry({ message: 'fresh', timestamp: '2026-07-23T10:00:00Z' });
+    const weird = entry({ message: 'weird', timestamp: 'not-a-timestamp' });
+    const cutoff = Date.parse('2026-07-23T09:30:00Z');
+    expect(filterParsedLogs([old, fresh, weird], { since: cutoff }).map((l) => l.message)).toEqual([
+      'fresh',
+      'weird',
+    ]);
+  });
+});
+
+describe('export serialization', () => {
+  const logs = [
+    entry({
+      message: 'tool call finished',
+      timestamp: '2026-07-23T10:00:01Z',
+      traceId: 'abc123',
+      attrs: { server: 'github', tool: 'create_issue' },
+      raw: JSON.stringify({ msg: 'tool call finished' }, null, 2),
+    }),
+    entry({ message: 'plain line', timestamp: '2026-07-23T10:00:02Z' }),
+  ];
+
+  it('emits one parseable JSON object per JSONL line', () => {
+    const lines = serializeLogsJSONL(logs).split('\n');
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(() => JSON.parse(line)).not.toThrow();
+    }
+    const first = JSON.parse(lines[0]);
+    expect(first.msg).toBe('tool call finished');
+    expect(first.trace_id).toBe('abc123');
+    expect(first.attrs.tool).toBe('create_issue');
+    const second = JSON.parse(lines[1]);
+    expect(second.trace_id).toBeUndefined();
+    expect(second.attrs).toBeUndefined();
+  });
+
+  it('emits readable single-line text entries', () => {
+    const lines = serializeLogsText(logs).split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('tool call finished');
+    expect(lines[0]).toContain('github');
+    expect(lines[1]).toContain('plain line');
+  });
+});
+
+describe('URL param normalizers', () => {
+  it('accepts only known window sizes', () => {
+    expect(normalizeLogWindowParam('200', 500)).toBe(200);
+    expect(normalizeLogWindowParam('1000', 500)).toBe(1000);
+    expect(normalizeLogWindowParam('999', 500)).toBe(500);
+    expect(normalizeLogWindowParam(null, 500)).toBe(500);
+  });
+
+  it('accepts only known time ranges', () => {
+    expect(normalizeLogTimeRangeParam('5m')).toBe('5m');
+    expect(normalizeLogTimeRangeParam('2h')).toBe('all');
+    expect(normalizeLogTimeRangeParam(null)).toBe('all');
   });
 });
 
