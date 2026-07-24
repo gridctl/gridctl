@@ -3591,6 +3591,76 @@ func TestGateway_ClientObserver_PropagatesClientID(t *testing.T) {
 	}
 }
 
+func TestGateway_ToolCallLogs_CarryClientAttr(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	logBuf := logging.NewLogBuffer(100)
+	g.SetLogger(slog.New(logging.NewBufferHandler(logBuf, nil)))
+
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{{Name: "echo"}})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	ctx := WithClientID(context.Background(), "claude-code")
+	if _, err := g.HandleToolsCall(ctx, ToolCallParams{
+		Name: "agent1__echo", Arguments: map[string]any{"k": "v"},
+	}); err != nil {
+		t.Fatalf("HandleToolsCall: %v", err)
+	}
+
+	var seen int
+	for _, entry := range logBuf.GetRecent(100) {
+		if entry.Message != "tool call started" && entry.Message != "tool call finished" {
+			continue
+		}
+		seen++
+		if entry.Attrs["client"] != "claude-code" {
+			t.Errorf("%s: client attr = %v, want claude-code", entry.Message, entry.Attrs["client"])
+		}
+		if entry.Attrs["server"] != "agent1" {
+			t.Errorf("%s: server attr = %v, want agent1", entry.Message, entry.Attrs["server"])
+		}
+		if entry.Attrs["tool"] != "echo" {
+			t.Errorf("%s: tool attr = %v, want echo", entry.Message, entry.Attrs["tool"])
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("expected started+finished log lines, saw %d", seen)
+	}
+}
+
+func TestGateway_ToolCallLogs_OmitClientWhenAbsent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	logBuf := logging.NewLogBuffer(100)
+	g.SetLogger(slog.New(logging.NewBufferHandler(logBuf, nil)))
+
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{{Name: "echo"}})
+	client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil,
+	).AnyTimes()
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	if _, err := g.HandleToolsCall(context.Background(), ToolCallParams{
+		Name: "agent1__echo", Arguments: map[string]any{"k": "v"},
+	}); err != nil {
+		t.Fatalf("HandleToolsCall: %v", err)
+	}
+
+	for _, entry := range logBuf.GetRecent(100) {
+		if entry.Message != "tool call started" && entry.Message != "tool call finished" {
+			continue
+		}
+		if _, ok := entry.Attrs["client"]; ok {
+			t.Errorf("%s: client attr should be omitted without client identity, got %v", entry.Message, entry.Attrs["client"])
+		}
+	}
+}
+
 func TestGateway_LegacyObserver_FallsBackAsync(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()
