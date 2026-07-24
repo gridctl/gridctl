@@ -75,6 +75,16 @@ describe('ConnectionsWorkspace', () => {
     expect(screen.getByRole('switch', { name: 'Link Grok Build' })).toBeEnabled();
   });
 
+  it('reflects connected state: linked clients on, others off', () => {
+    renderWorkspace();
+    // Linked (and declared) clients start on; toggle = connected, so an
+    // imperatively linked client without a link: entry also reads on.
+    expect(screen.getByRole('switch', { name: 'Link Claude Desktop' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Link Cursor' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Link Grok Build' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Link Zed' })).not.toBeChecked();
+  });
+
   it('stages a link, previews the diff, and applies it', async () => {
     const preview = vi.spyOn(api, 'previewClientLink').mockResolvedValue({
       client: 'grok',
