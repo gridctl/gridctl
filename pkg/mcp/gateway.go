@@ -1640,6 +1640,18 @@ func (g *Gateway) HandleToolsCatalog() (*ToolsListResult, error) {
 // HandleToolsCall routes a tool call to the appropriate MCP server.
 // When code mode is active and the tool is a meta-tool, delegates to code mode.
 func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*ToolCallResult, error) {
+	// Root span for the whole tool-call handle. Routing, cold start, the
+	// downstream client call, and format conversion all nest under it so the
+	// buffer finalises one multi-span trace per call. Code-mode inner calls
+	// re-enter this function and nest their own root under the outer context.
+	tracer := otel.Tracer("gridctl.gateway")
+	ctx, rootSpan := tracer.Start(ctx, "mcp.tools.call")
+	defer rootSpan.End()
+	rootSpan.SetAttributes(
+		attribute.String("mcp.method.name", "tools/call"),
+		attribute.String("mcp.tool.name", params.Name),
+	)
+
 	g.mu.RLock()
 	cm := g.codeMode
 	g.mu.RUnlock()
@@ -1704,7 +1716,6 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	}
 
 	// Child span: routing decision.
-	tracer := otel.Tracer("gridctl.gateway")
 	_, routeSpan := tracer.Start(ctx, "mcp.routing")
 	routeSpan.SetAttributes(attribute.String("tool.name", params.Name))
 	replica, toolName, err := g.router.RouteToolCallReplica(params.Name)
@@ -1753,9 +1764,11 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		}, nil
 	}
 
-	// Propagate the resolved server name to the root span so the trace-level
-	// record (built from root span attrs) carries it for UI filtering.
-	if rootSpan := trace.SpanFromContext(ctx); rootSpan.IsRecording() {
+	// Propagate the resolved server and tool to the root span so the
+	// trace-level record (built from root span attrs) carries them for UI
+	// filtering, and rename the root to the human-readable operation.
+	if rootSpan.IsRecording() {
+		rootSpan.SetName(fmt.Sprintf("%s › %s", client.Name(), toolName))
 		rootSpan.SetAttributes(
 			attribute.String("server.name", client.Name()),
 			attribute.Int("mcp.replica.id", replicaID),
