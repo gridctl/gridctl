@@ -1703,10 +1703,13 @@ export interface SpanEvent {
 
 export interface Span {
   spanId: string;
-  parentSpanId?: string;
+  /** Empty string for root spans. */
+  parentSpanId: string;
   name: string;
   startTime: string;
-  endTime: string;
+  /** Absent for spans persisted before endTime was serialized; derive from startTime + duration. */
+  endTime?: string;
+  /** Milliseconds. */
   duration: number;
   status: 'ok' | 'error';
   attributes: Record<string, string>;
@@ -1731,7 +1734,8 @@ export async function fetchTraces(params?: {
   const query = new URLSearchParams();
   if (params?.server) query.set('server', params.server);
   if (params?.errors) query.set('errors', 'true');
-  if (params?.minDuration != null) query.set('minDuration', String(params.minDuration));
+  // The API expects a unit; the store keeps a bare millisecond number.
+  if (params?.minDuration != null) query.set('minDuration', `${params.minDuration}ms`);
   if (params?.limit != null) query.set('limit', String(params.limit));
   const qs = query.toString();
   return fetchJSON<TraceListResponse>(`/api/traces${qs ? `?${qs}` : ''}`);
