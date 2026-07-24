@@ -6,6 +6,7 @@ export { LogsView } from './LogsView';
 export { useLogsView, type LogsViewState } from './useLogsView';
 export {
   type LogLevel,
+  type LogTimeRange,
   type ParsedLog,
   type LogFilter,
   LOG_LEVELS,
