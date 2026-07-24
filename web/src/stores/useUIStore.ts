@@ -162,6 +162,26 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // Transient (not persisted).
   pricingManagerOpen: boolean;
   setPricingManagerOpen: (open: boolean) => void;
+
+  // Traces list preferences shared by the workspace and the detached window.
+  // Persisted; URL params still win on the in-shell workspace.
+  tracesPrefs: TracesPrefs;
+  setTracesPrefs: (prefs: Partial<TracesPrefs>) => void;
+}
+
+interface TracesPrefs {
+  segment: 'tool-calls' | 'all';
+  server: string;
+}
+
+const TRACES_PREFS_DEFAULTS: TracesPrefs = { segment: 'tool-calls', server: '' };
+
+function normalizeTracesPrefs(value: unknown): TracesPrefs {
+  const v = (value ?? {}) as Partial<TracesPrefs>;
+  return {
+    segment: v.segment === 'all' ? 'all' : 'tool-calls',
+    server: typeof v.server === 'string' ? v.server : '',
+  };
 }
 
 export const useUIStore = create<UIState>()(
@@ -238,6 +258,10 @@ export const useUIStore = create<UIState>()(
       pricingManagerOpen: false,
       setPricingManagerOpen: (pricingManagerOpen) => set({ pricingManagerOpen }),
 
+      tracesPrefs: { ...TRACES_PREFS_DEFAULTS },
+      setTracesPrefs: (prefs) =>
+        set((s) => ({ tracesPrefs: { ...s.tracesPrefs, ...prefs } })),
+
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
       setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
@@ -265,6 +289,7 @@ export const useUIStore = create<UIState>()(
         compactMode: state.compactMode,
         editorPrefs: state.editorPrefs,
         themeMode: state.themeMode,
+        tracesPrefs: state.tracesPrefs,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<UIState> | undefined;
@@ -277,6 +302,7 @@ export const useUIStore = create<UIState>()(
           // Guard against a stale/invalid persisted theme (e.g. upgrade from a
           // build without this field) so boot never lands on undefined.
           themeMode: isThemeMode(p?.themeMode) ? p.themeMode : current.themeMode,
+          tracesPrefs: normalizeTracesPrefs((p as { tracesPrefs?: unknown })?.tracesPrefs),
         };
       },
     }
