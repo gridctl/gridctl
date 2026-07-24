@@ -18,6 +18,8 @@ interface LogFilterBarProps {
   isDefault: boolean;
   filteredCount: number;
   totalCount: number;
+  /** Poll window size; when set, the count labels the view as "last N". */
+  windowSize?: number;
   /** Extra chips (e.g. an active trace filter) rendered after the level filter. */
   children?: React.ReactNode;
 }
@@ -38,6 +40,7 @@ export function LogFilterBar({
   isDefault,
   filteredCount,
   totalCount,
+  windowSize,
   children,
 }: LogFilterBarProps) {
   return (
@@ -80,8 +83,12 @@ export function LogFilterBar({
       />
 
       {/* Log count */}
-      <span className="text-[10px] text-text-muted font-mono ml-auto">
+      <span
+        className="text-[10px] text-text-muted font-mono ml-auto"
+        title={windowSize ? `Showing the most recent ${windowSize} buffer entries` : undefined}
+      >
         {filteredCount} / {totalCount} entries
+        {windowSize ? ` · last ${windowSize}` : ''}
       </span>
     </div>
   );
