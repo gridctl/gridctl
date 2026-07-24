@@ -8,9 +8,11 @@ import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
 import type { LogEntry } from '../lib/api';
 import type { MCPServerStatus } from '../types';
 
+const { openDetachedWindowMock } = vi.hoisted(() => ({ openDetachedWindowMock: vi.fn() }));
+
 vi.mock('../hooks/useWindowManager', () => ({
   useWindowManager: () => ({
-    openDetachedWindow: vi.fn(),
+    openDetachedWindow: openDetachedWindowMock,
     closeDetachedWindow: vi.fn(),
     broadcastStateUpdate: vi.fn(),
     broadcastSelectionChange: vi.fn(),
@@ -67,6 +69,7 @@ function renderAt(initialEntry: string) {
 }
 
 beforeEach(() => {
+  openDetachedWindowMock.mockClear();
   vi.mocked(fetchGatewayLogs).mockResolvedValue([gatewayEntry, githubEntry, zapierEntry]);
   useStackStore.setState({ mcpServers: [server('github'), server('zapier')] });
   useUIStore.setState({ compactMode: { ...COMPACT_MODE_DEFAULTS }, logsDetached: false });
@@ -139,6 +142,44 @@ describe('LogsWorkspace', () => {
     expect(screen.queryByText('gateway listening')).not.toBeInTheDocument();
     expect(screen.queryByText('tool call failed')).not.toBeInTheDocument();
     expect(screen.getByText('No entries match your filters')).toBeInTheDocument();
+  });
+
+  it('treats a source-only selection as an active filter with a working clear', async () => {
+    renderAt('/logs?agent=ghost');
+    await waitFor(() => {
+      expect(screen.getByText('No entries match your filters')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('No logs yet')).not.toBeInTheDocument();
+    // Clear must also drop the source so the empty state is recoverable.
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => {
+      expect(screen.getByText('gateway listening')).toBeInTheDocument();
+    });
+  });
+
+  it('recomputes rail counts under the active level filter', async () => {
+    renderAt('/logs?level=error');
+    await waitFor(() => {
+      expect(screen.getByText('tool call failed')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /All sources/ })).toHaveTextContent('1');
+    expect(screen.getByRole('button', { name: /github/ })).toHaveTextContent('1');
+    expect(screen.getByRole('button', { name: /zapier/ })).toHaveTextContent('0');
+    expect(screen.getByRole('button', { name: /Gateway/ })).toHaveTextContent('0');
+  });
+
+  it('hands the full filter state to the detached window', async () => {
+    renderAt('/logs?agent=github&level=error&q=fail&trace=abc123def456');
+    await waitFor(() => {
+      expect(screen.getByText(/entries/)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /separate window/i }));
+    expect(openDetachedWindowMock).toHaveBeenCalledTimes(1);
+    const params = new URLSearchParams(openDetachedWindowMock.mock.calls[0][1] as string);
+    expect(params.get('agent')).toBe('github');
+    expect(params.get('q')).toBe('fail');
+    expect(params.get('level')).toBe('error');
+    expect(params.get('trace')).toBe('abc123def456');
   });
 
   it('pivots a log line with a trace id to the Traces workspace', async () => {
