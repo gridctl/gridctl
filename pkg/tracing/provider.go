@@ -29,10 +29,12 @@ func NewProvider(cfg *Config) *Provider {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
+	buf := NewBuffer(bufferSize(cfg), cfg.RetentionDuration())
+	buf.SetIncludeInfra(cfg.IncludeInfra)
 	return &Provider{
 		cfg:    cfg,
 		logger: logging.NewDiscardLogger(),
-		Buffer: NewBuffer(bufferSize(cfg), cfg.RetentionDuration()),
+		Buffer: buf,
 	}
 }
 
