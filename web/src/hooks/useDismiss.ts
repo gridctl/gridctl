@@ -17,17 +17,24 @@ export function useDismiss<T extends HTMLElement = HTMLDivElement>(
   useEffect(() => {
     if (!open) return;
 
+    // Escape is consumed in the capture phase and stopped: with an overlay
+    // open, one keystroke closes the overlay only — it must never also reach
+    // document-level list navigation (useListNav) and collapse a row or
+    // clear a cursor in the same press.
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
     };
     const onPointerDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
 
-    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('mousedown', onPointerDown);
     return () => {
-      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', onKeyDown, true);
       document.removeEventListener('mousedown', onPointerDown);
     };
   }, [open, onClose]);
