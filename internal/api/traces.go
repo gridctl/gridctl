@@ -36,14 +36,15 @@ type spanEventDTO struct {
 
 // spanDTO maps a SpanRecord to the camelCase shape expected by the frontend.
 type spanDTO struct {
-	SpanID     string            `json:"spanId"`
-	ParentID   string            `json:"parentId"`
-	Name       string            `json:"name"`
-	StartTime  string            `json:"startTime"`
-	Duration   int64             `json:"duration"`
-	Status     string            `json:"status"`
-	Attributes map[string]string `json:"attributes"`
-	Events     []spanEventDTO    `json:"events"`
+	SpanID       string            `json:"spanId"`
+	ParentSpanID string            `json:"parentSpanId"`
+	Name         string            `json:"name"`
+	StartTime    string            `json:"startTime"`
+	EndTime      string            `json:"endTime,omitempty"`
+	Duration     int64             `json:"duration"`
+	Status       string            `json:"status"`
+	Attributes   map[string]string `json:"attributes"`
+	Events       []spanEventDTO    `json:"events"`
 }
 
 // traceDetailDTO is the envelope returned by GET /api/traces/{traceId}.
@@ -70,10 +71,24 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		ErrorsOnly: r.URL.Query().Get("errors") == "true",
 	}
 
+	// minDuration accepts a Go duration ("500ms", "2s") or a bare integer
+	// interpreted as milliseconds. Unparseable input is a 400, not a silent
+	// no-op: this is an operator-facing filter.
 	if minDur := r.URL.Query().Get("minDuration"); minDur != "" {
-		if d, err := time.ParseDuration(minDur); err == nil {
-			opts.MinDuration = d
+		d, err := time.ParseDuration(minDur)
+		if err != nil {
+			if ms, aerr := strconv.Atoi(minDur); aerr == nil {
+				d = time.Duration(ms) * time.Millisecond
+			} else {
+				http.Error(w, `invalid minDuration: use a Go duration (e.g. "500ms") or bare milliseconds`, http.StatusBadRequest)
+				return
+			}
 		}
+		if d < 0 {
+			http.Error(w, "invalid minDuration: must not be negative", http.StatusBadRequest)
+			return
+		}
+		opts.MinDuration = d
 	}
 
 	if limit := r.URL.Query().Get("limit"); limit != "" {
@@ -131,15 +146,32 @@ func (s *Server) handleTraceDetail(w http.ResponseWriter, _ *http.Request, trace
 		if attrs == nil {
 			attrs = map[string]string{}
 		}
+		events := make([]spanEventDTO, len(sp.Events))
+		for j, ev := range sp.Events {
+			evAttrs := ev.Attrs
+			if evAttrs == nil {
+				evAttrs = map[string]string{}
+			}
+			events[j] = spanEventDTO{
+				Name:       ev.Name,
+				Timestamp:  ev.Timestamp.Format(time.RFC3339Nano),
+				Attributes: evAttrs,
+			}
+		}
+		endTime := ""
+		if !sp.EndTime.IsZero() {
+			endTime = sp.EndTime.Format(time.RFC3339Nano)
+		}
 		spans[i] = spanDTO{
-			SpanID:     sp.SpanID,
-			ParentID:   sp.ParentID,
-			Name:       sp.Name,
-			StartTime:  sp.StartTime.Format(time.RFC3339Nano),
-			Duration:   sp.DurationMs,
-			Status:     status,
-			Attributes: attrs,
-			Events:     []spanEventDTO{},
+			SpanID:       sp.SpanID,
+			ParentSpanID: sp.ParentID,
+			Name:         sp.Name,
+			StartTime:    sp.StartTime.Format(time.RFC3339Nano),
+			EndTime:      endTime,
+			Duration:     sp.DurationMs,
+			Status:       status,
+			Attributes:   attrs,
+			Events:       events,
 		}
 	}
 	writeJSON(w, traceDetailDTO{TraceID: tr.TraceID, Spans: spans})
