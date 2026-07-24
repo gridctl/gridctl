@@ -149,7 +149,7 @@ export function parseLogEntry(input: string | LogEntry): ParsedLog {
 
 // Canonical source token for gateway-origin entries. Server-origin entries in
 // the aggregate /api/logs buffer carry attrs.server; gateway components do
-// not. URL state uses this token (`?agent=gateway`), never the display string.
+// not. URL state uses this token (`?source=gateway`), never the display string.
 export const GATEWAY_LOG_SOURCE = 'gateway';
 
 export function logSourceOf(log: ParsedLog): string {
@@ -157,10 +157,10 @@ export function logSourceOf(log: ParsedLog): string {
   return typeof server === 'string' && server !== '' ? server : GATEWAY_LOG_SOURCE;
 }
 
-// Normalizes the ?agent= URL param to a source token: absent/empty = all
-// sources (null). Legacy handles from the pre-workspace detached page carry
-// the display string "Gateway" — fold it into the canonical token instead of
-// filtering to nothing.
+// Normalizes the ?source= URL param (or its permanent legacy alias ?agent=)
+// to a source token: absent/empty = all sources (null). Legacy handles from
+// the pre-workspace detached page carry the display string "Gateway" — fold
+// it into the canonical token instead of filtering to nothing.
 export function normalizeLogSourceParam(param: string | null): string | null {
   if (param === null || param === '') return null;
   return param === 'Gateway' ? GATEWAY_LOG_SOURCE : param;
@@ -172,6 +172,30 @@ export interface LogFilter {
   levels?: Set<LogLevel>;
   query?: string;
   traceId?: string | null;
+  /** Epoch ms cutoff: entries older than this are dropped. Entries with an
+   * unparseable timestamp are kept (same policy as the clear watermark). */
+  since?: number | null;
+}
+
+// Defensive stringification for attr values on the wire: slog delivers
+// strings, numbers, bools, and dotted-flattened nested maps.
+export function stringifyAttrValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function attrsMatchQuery(attrs: Record<string, unknown> | undefined, query: string): boolean {
+  if (!attrs) return false;
+  for (const value of Object.values(attrs)) {
+    if (stringifyAttrValue(value).toLowerCase().includes(query)) return true;
+  }
+  return false;
 }
 
 // Single shared predicate so the workspace and the detached window filter the
@@ -182,12 +206,17 @@ export function filterParsedLogs(logs: ParsedLog[], filter: LogFilter): ParsedLo
     if (filter.source != null && logSourceOf(log) !== filter.source) return false;
     if (filter.levels && !filter.levels.has(log.level)) return false;
     if (filter.traceId && log.traceId !== filter.traceId) return false;
+    if (filter.since != null) {
+      const ts = Date.parse(log.timestamp);
+      if (Number.isFinite(ts) && ts < filter.since) return false;
+    }
     if (query) {
       return (
         log.message.toLowerCase().includes(query) ||
         log.component?.toLowerCase().includes(query) ||
         logSourceOf(log).toLowerCase().includes(query) ||
-        log.traceId?.toLowerCase().includes(query)
+        log.traceId?.toLowerCase().includes(query) ||
+        attrsMatchQuery(log.attrs, query)
       );
     }
     return true;
@@ -222,4 +251,79 @@ export function formatTimestamp(ts: string): string {
     minute: '2-digit',
     second: '2-digit',
   }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
+}
+
+// Selectable poll window sizes. 1000 equals the server ring capacity, so the
+// UI cannot offer a larger window than the buffer can hold. The default is
+// omitted from URLs and prefs comparisons everywhere it appears.
+export const LOG_WINDOW_SIZES = [200, 500, 1000] as const;
+export const DEFAULT_LOG_WINDOW = 500;
+
+export function normalizeLogWindowParam(param: string | null, fallback: number): number {
+  const n = param ? Number(param) : NaN;
+  return (LOG_WINDOW_SIZES as readonly number[]).includes(n) ? n : fallback;
+}
+
+/** Client-side time window over the buffered timestamps. */
+export type LogTimeRange = '1m' | '5m' | '15m' | 'all';
+
+export const LOG_TIME_RANGES: { value: LogTimeRange; label: string }[] = [
+  { value: '1m', label: '1m' },
+  { value: '5m', label: '5m' },
+  { value: '15m', label: '15m' },
+  { value: 'all', label: 'Window' },
+];
+
+export const LOG_TIME_RANGE_MS: Record<LogTimeRange, number | null> = {
+  '1m': 60 * 1000,
+  '5m': 5 * 60 * 1000,
+  '15m': 15 * 60 * 1000,
+  all: null,
+};
+
+export function normalizeLogTimeRangeParam(param: string | null): LogTimeRange {
+  return param === '1m' || param === '5m' || param === '15m' ? param : 'all';
+}
+
+// MCP-first promotion for the expand panel: these attr keys render as named
+// fields at the top; anything else collapses under "Other attributes". Keys
+// are slog-flat names as emitted by the gateway, not OTel dotted keys.
+export const PROMOTED_LOG_FIELDS: { label: string; key: string }[] = [
+  { label: 'Tool', key: 'tool' },
+  { label: 'Server', key: 'server' },
+  { label: 'Client', key: 'client' },
+  { label: 'Replica', key: 'replica_id' },
+  { label: 'Duration', key: 'duration' },
+  { label: 'Error', key: 'error' },
+  { label: 'Is error', key: 'is_error' },
+];
+
+export const PROMOTED_LOG_KEYS = new Set(PROMOTED_LOG_FIELDS.map((f) => f.key));
+
+// Export serialization. JSONL rebuilds the wire-shaped entry object per line —
+// `raw` is pretty-printed multi-line JSON and would not be valid JSONL.
+export function serializeLogsJSONL(logs: ParsedLog[]): string {
+  return logs
+    .map((log) =>
+      JSON.stringify({
+        level: log.level,
+        ts: log.timestamp,
+        msg: log.message,
+        ...(log.component ? { component: log.component } : {}),
+        ...(log.traceId ? { trace_id: log.traceId } : {}),
+        ...(log.attrs && Object.keys(log.attrs).length > 0 ? { attrs: log.attrs } : {}),
+      }),
+    )
+    .join('\n');
+}
+
+export function serializeLogsText(logs: ParsedLog[]): string {
+  return logs
+    .map((log) => {
+      const parts = [log.timestamp, log.level, logSourceOf(log)];
+      if (log.component) parts.push(log.component);
+      parts.push(log.message);
+      return parts.join('  ');
+    })
+    .join('\n');
 }
