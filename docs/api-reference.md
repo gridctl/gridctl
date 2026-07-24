@@ -362,6 +362,13 @@ reach). It is absent when no scoping is in effect.
 
 Each client entry also carries `model` (string, omitted when empty) for the declared per-client pricing model and `effectiveModel` (object, omitted until traffic is observed) reporting which model actually priced the client's cost, with `provenance` (`declared`, `mixed`, or `none`).
 
+When the stack has a `link:` block, declared clients additionally carry
+`declared: true` and a `linkEntry` object with the declared options (`group`,
+`clientId`, `name`), so the UI can render desired state (declared) next to
+actual state (linked). For a declared entry whose resolved server name differs
+from the default (a `group` or `name` override), `linked` reflects that
+resolved entry name.
+
 #### `POST /api/clients/{slug}/scope/preview`
 
 Computes what committing a per-client access-scope draft would do, without touching the stack file. Returns the exact YAML patch the matching `PUT .../scope` would write plus a per-client impact summary, so the UI's commit gate can render the consequences (and block a lockout) before saving.
@@ -443,6 +450,78 @@ write succeeded but the hot reload failed.
 ---
 
 ### Token Metrics
+
+#### `POST /api/clients/{slug}/link`
+
+Links a client to the gateway (writing its own config file, exactly as
+`gridctl link` would) and declares it in the stack's `link:` block, so the UI
+and stack.yaml stay in lockstep. The dual write is ordered: the stack patch is
+precomputed first (a malformed stack rejects the request with no host write),
+then the client config is written, then the stack file. These endpoints write
+files in the operator's home directory — the same local-operator capability
+the vault and stack-editing endpoints already assume.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"group": "dev", "clientId": "cursor"}' \
+  http://localhost:8180/api/clients/cursor/link
+```
+
+**Request body (all optional):** `group` links the tool group's endpoint (the
+entry name defaults to `gridctl-<group>`), `clientId` binds the link to a
+`clients:` access profile, `name` overrides the server entry name.
+
+**Response (200):**
+```json
+{
+  "client": "cursor",
+  "serverName": "gridctl-dev",
+  "linked": true,
+  "declared": true,
+  "configPath": "/home/user/.cursor/mcp.json"
+}
+```
+
+`alreadyLinked: true` is added when the client config already carried the
+identical entry (declaring adopts it).
+
+**Errors:** `404 unknown_client`; `422 client_not_detected`; `409
+link_conflict` when a foreign entry occupies the target name (nothing is
+written); `500 stack_not_updated` when the client config was written but the
+stack file was not (external edit or write failure — both facts are in the
+message; nothing is rolled back); `503` when no stack file is configured.
+
+#### `DELETE /api/clients/{slug}/link`
+
+Removes the client's gateway entry and its `link:` declaration, unlink-first.
+The declared entry fixes the server name to remove; an undeclared client falls
+back to the default. Returns `404` when the client is neither linked nor
+declared, and `500 stack_not_updated` when the unlink succeeded but the stack
+write did not.
+
+**Auth:** Yes
+
+#### `POST /api/clients/{slug}/link/preview`
+
+Computes what linking would change without writing anything: the client config
+before and after, plus the unified diff of the stack.yaml `link:` patch.
+
+**Auth:** Yes
+
+**Response (200):**
+```json
+{
+  "client": "cursor",
+  "serverName": "gridctl",
+  "configPath": "/home/user/.cursor/mcp.json",
+  "before": "{ ... current config ... }",
+  "after": "{ ... config with gridctl entry ... }",
+  "stackDiff": "--- stack.yaml\n+++ stack.yaml\n@@ ..."
+}
+```
 
 #### `GET /api/metrics/tokens`
 
