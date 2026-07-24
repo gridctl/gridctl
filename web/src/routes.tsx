@@ -20,6 +20,7 @@ const MetricsWorkspace = lazy(() => import('./components/workspaces/MetricsWorks
 const PinsWorkspace = lazy(() => import('./components/workspaces/PinsWorkspace'));
 const LogsWorkspace = lazy(() => import('./components/workspaces/LogsWorkspace'));
 const TracesWorkspace = lazy(() => import('./components/workspaces/TracesWorkspace'));
+const ConnectionsWorkspace = lazy(() => import('./components/workspaces/ConnectionsWorkspace'));
 
 export function AppRoutes() {
   // Single mount point for theme application + cross-window sync; covers the
@@ -103,6 +104,14 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<WorkspaceLoadingShell />}>
               <TracesWorkspace />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/connections"
+          element={
+            <Suspense fallback={<WorkspaceLoadingShell />}>
+              <ConnectionsWorkspace />
             </Suspense>
           }
         />
