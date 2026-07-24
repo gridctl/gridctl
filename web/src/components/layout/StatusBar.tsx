@@ -1,5 +1,5 @@
 import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, Gauge, ArrowDown, DollarSign } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';

@@ -10,7 +10,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (['react', 'react-dom', 'react-router-dom'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {
+          if (['react', 'react-dom', 'react-router'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {
             return 'vendor-react'
           }
           if (['@xyflow/react', '@dagrejs/dagre'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {

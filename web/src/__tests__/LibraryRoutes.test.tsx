@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 
 function LocationProbe() {
   const loc = useLocation();

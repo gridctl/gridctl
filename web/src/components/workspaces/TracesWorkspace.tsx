@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router';
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';

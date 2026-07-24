@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
 import { Canvas } from '../graph/Canvas';

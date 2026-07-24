@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { useLogStream } from '../../hooks/useLogStream';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import {

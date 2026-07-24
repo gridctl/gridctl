@@ -164,7 +164,7 @@ vi.mock('../lib/api', () => ({
   triggerReload: vi.fn().mockResolvedValue({ success: true, message: 'Reloaded' }),
 }));
 
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { SpecHealthBadge } from '../components/spec/SpecHealthBadge';
 
 // SpecHealthBadge calls useNavigate (it deep-links /stack?spec=1), so it

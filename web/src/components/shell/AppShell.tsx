@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';

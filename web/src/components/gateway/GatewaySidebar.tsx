@@ -1,5 +1,5 @@
 import { memo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { ArrowRight, ChevronDown, ChevronRight, KeyRound, Library, Lightbulb, X } from 'lucide-react';
 import { MCP } from '@lobehub/icons';
 import { OptimizeSection } from '../sidebar/OptimizeSection';

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useReactFlow } from '@xyflow/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import {
   Activity,
   DollarSign,

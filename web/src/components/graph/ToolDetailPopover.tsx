@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useOnViewportChange, useReactFlow } from '@xyflow/react';
 import { Wrench, X, ArrowUpRight, Copy } from 'lucide-react';
 import { cn } from '../../lib/cn';

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import '@testing-library/jest-dom';
 import { VaultWorkspace } from '../components/workspaces/VaultWorkspace';
 import { ToastContainer } from '../components/ui/Toast';

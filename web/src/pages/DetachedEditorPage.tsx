@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { AlertCircle, Wrench } from 'lucide-react';
 import { SkillEditor } from '../components/registry/SkillEditor';
 import { ToastContainer } from '../components/ui/Toast';

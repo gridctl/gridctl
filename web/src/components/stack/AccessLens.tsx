@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { ScanEye, PanelRightOpen, Save, Undo2, AlertTriangle } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';

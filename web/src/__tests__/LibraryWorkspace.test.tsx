@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { LibraryWorkspace } from '../components/workspaces/LibraryWorkspace';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { setRegistrySkillsBatch, fetchSkillUsage, syncAllSources } from '../lib/api';

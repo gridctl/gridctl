@@ -1,7 +1,7 @@
 import { RefreshCw, Settings, RotateCcw, Plus, Command } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
