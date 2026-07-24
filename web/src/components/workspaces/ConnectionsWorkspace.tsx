@@ -16,10 +16,17 @@ import type { ClientStatus } from '../../types';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 
-// Desired declared state per slug, staged locally until Apply. Only slugs
-// whose desired state differs from the server's current declared state are
-// present.
+// Desired connection state per slug, staged locally until Apply. Only
+// slugs whose desired state differs from the current state are present.
 type StagedChanges = Record<string, boolean>;
+
+// The toggle reflects "connected in any sense": linked (an entry exists in
+// the client config, however it got there) or declared in the stack's
+// link: block. Toggling ON an already-linked client adopts it into link:;
+// the Declared badge still distinguishes declared from merely linked.
+function isConnected(c: ClientStatus): boolean {
+  return c.linked || Boolean(c.declared);
+}
 
 /**
  * Connections workspace: link LLM clients to the gateway from the UI, kept
@@ -40,14 +47,14 @@ export default function ConnectionsWorkspace() {
   const changes = useMemo(
     () =>
       clients
-        .filter((c) => c.slug in staged && staged[c.slug] !== Boolean(c.declared))
+        .filter((c) => c.slug in staged && staged[c.slug] !== isConnected(c))
         .map((c) => ({ client: c, enable: staged[c.slug] })),
     [clients, staged],
   );
 
   const toggle = useCallback((c: ClientStatus) => {
     setStaged((prev) => {
-      const current = Boolean(c.declared);
+      const current = isConnected(c);
       const desired = !(c.slug in prev ? prev[c.slug] : current);
       const next = { ...prev };
       if (desired === current) {
@@ -125,7 +132,7 @@ export default function ConnectionsWorkspace() {
             <ClientRow
               key={c.slug}
               client={c}
-              desired={c.slug in staged ? staged[c.slug] : Boolean(c.declared)}
+              desired={c.slug in staged ? staged[c.slug] : isConnected(c)}
               onToggle={() => toggle(c)}
             />
           ))}
@@ -191,7 +198,7 @@ function ClientRow({
   onToggle: () => void;
 }) {
   const canLink = client.detected;
-  const staged = desired !== Boolean(client.declared);
+  const staged = desired !== isConnected(client);
 
   return (
     <div
@@ -220,15 +227,19 @@ function ClientRow({
         onClick={onToggle}
         title={!canLink && !desired ? 'Client not detected on this machine' : undefined}
         className={cn(
-          'relative w-9 h-5 rounded-full transition-colors flex-shrink-0',
-          desired ? 'bg-primary/80' : 'bg-surface-highlight',
-          !canLink && !desired && 'opacity-40 cursor-not-allowed',
+          'relative w-9 h-5 rounded-full transition-colors flex-shrink-0 border',
+          // On: solid accent track. Off: grayed track with a visible border
+          // so the two states cannot be confused in either theme.
+          desired
+            ? 'bg-primary border-primary'
+            : 'bg-text-muted/20 border-text-muted/30 opacity-70',
+          !canLink && !desired && !staged && 'opacity-40 cursor-not-allowed',
         )}
       >
         <span
           className={cn(
-            'absolute top-0.5 w-4 h-4 rounded-full bg-background transition-transform',
-            desired ? 'translate-x-4' : 'translate-x-0.5',
+            'absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow-sm transition-transform',
+            desired ? 'translate-x-[18px]' : 'translate-x-0.5',
           )}
         />
       </button>
