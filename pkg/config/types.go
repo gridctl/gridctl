@@ -296,6 +296,9 @@ type TracingConfig struct {
 	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
 	// MaxTraces is the in-memory ring buffer capacity (number of traces). Default: 1000.
 	MaxTraces int `yaml:"max_traces,omitempty" json:"max_traces,omitempty"`
+	// IncludeInfra admits spans from non-gridctl instrumentation scopes (e.g.
+	// Docker SDK HTTP self-instrumentation) into the UI trace buffer. Default: false.
+	IncludeInfra bool `yaml:"include_infra,omitempty" json:"include_infra,omitempty"`
 }
 
 // GatewayConfig holds optional gateway-level configuration.
