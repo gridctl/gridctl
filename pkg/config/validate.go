@@ -492,6 +492,9 @@ func Validate(s *Stack) error {
 	// Tool group validation
 	errs = append(errs, validateGroups(s, serverNames)...)
 
+	// Declared client link validation
+	errs = append(errs, validateLinks(s)...)
+
 	if len(errs) > 0 {
 		return errs
 	}
