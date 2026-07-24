@@ -10,6 +10,8 @@ interface UseListNavOptions {
   onEdit?: () => void;
   /** Called when the user presses 'd' — typically toggle active state. */
   onToggle?: () => void;
+  /** Called when the user presses Escape — typically close a detail pane. */
+  onEscape?: () => void;
   /** Disable handling (e.g. while a modal is open). Defaults to true. */
   enabled?: boolean;
 }
@@ -31,9 +33,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
  * inside an open dialog.
  *
  * Bindings:
- *   ArrowDown / ArrowUp — move selection, wraps at ends
+ *   ArrowDown / ArrowUp (aliases j / k) — move selection, wraps at ends
  *   Home / End — jump to first / last
  *   Enter — call onEnter
+ *   Escape — call onEscape
  *   e — call onEdit
  *   d — call onToggle
  */
@@ -44,6 +47,7 @@ export function useListNav({
   onEnter,
   onEdit,
   onToggle,
+  onEscape,
   enabled = true,
 }: UseListNavOptions): void {
   // Keep latest values in a ref so the listener doesn't need to re-bind every
@@ -51,9 +55,9 @@ export function useListNav({
   // so an abandoned concurrent render can't leak values; not a passive effect,
   // because the document-level listener can fire between commit and passive
   // flush and must never read a stale selectedIndex).
-  const state = useRef({ itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle });
+  const state = useRef({ itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onEscape });
   useLayoutEffect(() => {
-    state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle };
+    state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onEscape };
   });
 
   useEffect(() => {
@@ -63,17 +67,28 @@ export function useListNav({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isEditableTarget(e.target)) return;
 
-      const { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle } = state.current;
+      const { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onEscape } = state.current;
+
+      // Escape works even on an empty list (a detail pane may still be open).
+      if (e.key === 'Escape') {
+        if (onEscape) {
+          e.preventDefault();
+          onEscape();
+        }
+        return;
+      }
       if (itemCount <= 0) return;
 
       const clamp = (n: number) => ((n % itemCount) + itemCount) % itemCount;
 
       switch (e.key) {
         case 'ArrowDown':
+        case 'j':
           e.preventDefault();
           setSelectedIndex(clamp(selectedIndex + 1));
           return;
         case 'ArrowUp':
+        case 'k':
           e.preventDefault();
           setSelectedIndex(clamp(selectedIndex - 1));
           return;
