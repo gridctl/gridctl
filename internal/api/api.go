@@ -958,6 +958,15 @@ func (s *Server) handleMCPServerRestart(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]string{"status": "restarted", "server": serverName})
 }
 
+// gatewayLogsResponse is the envelope served by GET /api/logs. Total is the
+// number of entries currently in the ring; BufferCapacity is its maximum, so
+// the UI can label the visible window honestly against retention.
+type gatewayLogsResponse struct {
+	Logs           []logging.BufferedEntry `json:"logs"`
+	Total          int                     `json:"total"`
+	BufferCapacity int                     `json:"bufferCapacity"`
+}
+
 // handleGatewayLogs returns structured logs from the gateway log buffer.
 // GET /api/logs?lines=100&level=error,warn,info
 func (s *Server) handleGatewayLogs(w http.ResponseWriter, r *http.Request) {
@@ -967,7 +976,7 @@ func (s *Server) handleGatewayLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.logBuffer == nil {
-		writeJSON(w, []logging.BufferedEntry{})
+		writeJSON(w, gatewayLogsResponse{Logs: []logging.BufferedEntry{}})
 		return
 	}
 
@@ -998,7 +1007,11 @@ func (s *Server) handleGatewayLogs(w http.ResponseWriter, r *http.Request) {
 	if entries == nil {
 		entries = []logging.BufferedEntry{}
 	}
-	writeJSON(w, entries)
+	writeJSON(w, gatewayLogsResponse{
+		Logs:           entries,
+		Total:          s.logBuffer.Count(),
+		BufferCapacity: s.logBuffer.Capacity(),
+	})
 }
 
 // handleMetricsTokens handles token metrics requests.
