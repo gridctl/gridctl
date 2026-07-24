@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { parseLogEntry, type ParsedLog } from '../components/log/logTypes';
+import { DEFAULT_LOG_WINDOW, parseLogEntry, type ParsedLog } from '../components/log/logTypes';
 import { fetchGatewayLogs } from '../lib/api';
 import { POLLING } from '../lib/constants';
-
-// How many recent buffer entries the UI polls. Deliberately above the API's
-// 100-line default; surfaced in the filter bar so operators know the view is
-// a window, not full history.
-export const LOG_STREAM_WINDOW = 500;
 
 interface UseLogStreamOptions {
   /** Fetch + poll only while true (workspace mounted, tab visible, ...). */
@@ -20,6 +15,12 @@ interface UseLogStreamResult {
   logs: ParsedLog[];
   isLoading: boolean;
   error: string | null;
+  /** Entries currently in the server ring (not just the fetched window). */
+  bufferTotal: number;
+  /** Maximum entries the server ring can hold; 0 when unknown. */
+  bufferCapacity: number;
+  /** Epoch ms of the last completed load; anchors client-side time windows. */
+  lastLoadedAt: number;
   refresh: () => void;
   clear: () => void;
 }
@@ -35,16 +36,19 @@ interface UseLogStreamResult {
  * buffer is server-side, so a bare reset would repopulate on the next poll.
  * Entries at or before the newest cleared timestamp stay hidden.
  */
-export function useLogStream({ active, paused = false, lines = LOG_STREAM_WINDOW }: UseLogStreamOptions): UseLogStreamResult {
+export function useLogStream({ active, paused = false, lines = DEFAULT_LOG_WINDOW }: UseLogStreamOptions): UseLogStreamResult {
   const [logs, setLogs] = useState<ParsedLog[]>([]);
   const [isLoading, setIsLoading] = useState(active);
   const [error, setError] = useState<string | null>(null);
+  const [bufferTotal, setBufferTotal] = useState(0);
+  const [bufferCapacity, setBufferCapacity] = useState(0);
+  const [lastLoadedAt, setLastLoadedAt] = useState(0);
   const clearedBeforeRef = useRef<number | null>(null);
 
   const fetchLogs = useCallback(async () => {
     try {
-      const entries = await fetchGatewayLogs(lines);
-      let parsed = (entries ?? []).map(parseLogEntry);
+      const envelope = await fetchGatewayLogs(lines);
+      let parsed = (envelope.logs ?? []).map(parseLogEntry);
       const clearedBefore = clearedBeforeRef.current;
       if (clearedBefore != null) {
         parsed = parsed.filter((log) => {
@@ -53,6 +57,9 @@ export function useLogStream({ active, paused = false, lines = LOG_STREAM_WINDOW
         });
       }
       setLogs(parsed);
+      setBufferTotal(envelope.total ?? 0);
+      setBufferCapacity(envelope.bufferCapacity ?? 0);
+      setLastLoadedAt(Date.now());
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch logs');
@@ -81,5 +88,5 @@ export function useLogStream({ active, paused = false, lines = LOG_STREAM_WINDOW
     });
   }, []);
 
-  return { logs, isLoading, error, refresh: fetchLogs, clear };
+  return { logs, isLoading, error, bufferTotal, bufferCapacity, lastLoadedAt, refresh: fetchLogs, clear };
 }
