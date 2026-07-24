@@ -1682,6 +1682,11 @@ export interface TraceSummary {
   traceId: string;
   rootSpanId: string;
   operation: string;
+  /** Bare tool name (client-requested until routing resolves it); empty for
+   *  non-tool-call traces. */
+  tool: string;
+  /** Connecting client name; empty when the client did not identify itself. */
+  client: string;
   server: string;
   startTime: string;
   duration: number;
@@ -1693,6 +1698,12 @@ export interface TraceSummary {
 export interface TraceListResponse {
   traces: TraceSummary[];
   total: number;
+  /** False when the gateway has no trace buffer (gateway.tracing disabled). */
+  tracingEnabled: boolean;
+  /** Traces currently in the ring buffer. */
+  bufferSize: number;
+  /** Ring buffer capacity (gateway.tracing.max_traces). */
+  bufferCapacity: number;
 }
 
 export interface SpanEvent {
@@ -1747,6 +1758,14 @@ export async function fetchTraces(params?: {
  */
 export async function fetchTraceDetail(traceId: string): Promise<TraceDetail> {
   return fetchJSON<TraceDetail>(`/api/traces/${encodeURIComponent(traceId)}`);
+}
+
+/**
+ * Fetch a single trace as an OTLP/JSON TracesData document
+ * GET /api/traces/{traceId}/otlp
+ */
+export async function fetchTraceOTLP(traceId: string): Promise<unknown> {
+  return fetchJSON<unknown>(`/api/traces/${encodeURIComponent(traceId)}/otlp`);
 }
 
 // === Playground API ===
