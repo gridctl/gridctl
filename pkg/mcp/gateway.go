@@ -1647,9 +1647,16 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	tracer := otel.Tracer("gridctl.gateway")
 	ctx, rootSpan := tracer.Start(ctx, "mcp.tools.call")
 	defer rootSpan.End()
+	// Strip the server prefix for the tool attribute so early-exit paths
+	// (denials, routing failures) still surface the bare tool name; the
+	// post-routing re-stamp below uses the resolved name.
+	bareTool := params.Name
+	if _, tool, err := ParsePrefixedTool(params.Name); err == nil {
+		bareTool = tool
+	}
 	rootSpan.SetAttributes(
 		attribute.String("mcp.method.name", "tools/call"),
-		attribute.String("mcp.tool.name", params.Name),
+		attribute.String("mcp.tool.name", bareTool),
 	)
 
 	g.mu.RLock()
@@ -1771,6 +1778,8 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		rootSpan.SetName(fmt.Sprintf("%s › %s", client.Name(), toolName))
 		rootSpan.SetAttributes(
 			attribute.String("server.name", client.Name()),
+			// Overwrite the pre-routing prefixed name with the resolved tool.
+			attribute.String("mcp.tool.name", toolName),
 			attribute.Int("mcp.replica.id", replicaID),
 		)
 	}
@@ -1924,6 +1933,9 @@ func setGenAISpanAttributes(span trace.Span, serverName, toolName, clientID stri
 	attrs := []attribute.KeyValue{
 		attribute.String("mcp.server.name", serverName),
 		attribute.String("mcp.tool.name", toolName),
+		// Draft GenAI semconv name for the same value; kept alongside the
+		// gridctl-native key until the convention stabilizes.
+		attribute.String("gen_ai.tool.name", toolName),
 	}
 	if clientID != "" {
 		attrs = append(attrs, attribute.String("mcp.client.name", clientID))
