@@ -47,7 +47,10 @@ In stackless mode, vault and wizard endpoints are fully functional;
 stack-dependent endpoints return 503 until a stack is loaded.
 
 Use --foreground (-f) to run in foreground with verbose output.
-Use --flash to auto-link detected LLM clients after apply.`,
+Use --flash to auto-link detected LLM clients after apply.
+
+A link: block in the stack file declares clients to connect; apply
+reconciles it once the gateway is healthy (--flash is then ignored).`,
 	Example: `  gridctl apply stack.yaml             Deploy a stack as a background daemon
   gridctl apply stack.yaml -f          Run in foreground (ctrl-C to stop)
   gridctl apply stack.yaml --watch     Hot reload on stack file changes
@@ -103,7 +106,7 @@ func runServeStackless() error {
 }
 
 func runApply(stackPath string) error {
-	ctrl := controller.New(controller.Config{
+	cfg := controller.Config{
 		StackPath:   stackPath,
 		Port:        applyPort,
 		BasePort:    applyBasePort,
@@ -118,7 +121,28 @@ func runApply(stackPath string) error {
 		Runtime:     runtimeFlag,
 		LogFile:     applyLogFile,
 		LogLevel:    logLevel,
-	})
+	}
+
+	// Foreground blocks inside Deploy until shutdown, so post-Deploy code
+	// never runs; client linking (declared link: entries and --flash) fires
+	// via the gateway's post-ready callback instead. The daemon child never
+	// links: its parent does, after the health-wait.
+	declared := loadDeclaredLinks(stackPath)
+	if applyForeground && !applyDaemonChild && (len(declared) > 0 || applyFlash) {
+		cfg.OnReady = func(port int) {
+			printer := output.New()
+			if len(declared) > 0 {
+				if applyFlash && !applyQuiet {
+					printer.Info("Stack declares link:, --flash ignored")
+				}
+				reconcileDeclaredLinks(printer, provisioner.NewRegistry(), declared, port, applyQuiet)
+				return
+			}
+			flashLinkClients(port)
+		}
+	}
+
+	ctrl := controller.New(cfg)
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
 
@@ -137,15 +161,27 @@ func runApply(stackPath string) error {
 		printAuthHints(applyPort, os.Stdout)
 	}
 
-	// Post-apply: --flash auto-links all detected clients
-	if applyFlash && !applyDaemonChild {
-		flashLinkClients(applyPort)
-		return nil
-	}
-
-	// Post-apply hint: suggest `gridctl link` if no clients are linked
-	if !applyQuiet && !applyFlash && !applyDaemonChild && !applyForeground {
-		showLinkHint()
+	// Post-apply client linking (daemon parent only; foreground handled the
+	// same work in the OnReady callback above). A stack with a link: block
+	// owns the linking decision, so --flash is ignored with a notice rather
+	// than double-writing under a different entry name.
+	if !applyDaemonChild && !applyForeground {
+		switch {
+		case len(declared) > 0:
+			printer := output.New()
+			if applyFlash && !applyQuiet {
+				printer.Info("Stack declares link:, --flash ignored")
+			}
+			reconcileDeclaredLinks(printer, provisioner.NewRegistry(), declared, applyPort, applyQuiet)
+		case applyFlash:
+			flashLinkClients(applyPort)
+			return nil
+		default:
+			// Post-apply hint: suggest `gridctl link` if no clients are linked
+			if !applyQuiet {
+				showLinkHint()
+			}
+		}
 	}
 
 	// Show pending skill update notice (non-blocking read from cache)
