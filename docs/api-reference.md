@@ -1912,6 +1912,53 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/github
 
 Returns `404` if no pins exist for that server.
 
+#### `GET /api/pins/{server}/diff`
+
+Recomputes the per-tool delta between a server's pinned definitions and its live tools. Read-only: viewing a diff never mutates pin state. `live_server_hash` fingerprints the live definitions; pass it back as `expected_server_hash` on approve to bind the approval to this reviewed snapshot.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/github/diff
+```
+
+**Response:**
+```json
+{
+  "server": "github",
+  "status": "drift",
+  "live_server_hash": "9f2c41...",
+  "modified_tools": [
+    {
+      "name": "create_pull_request",
+      "old_hash": "h2:def456...",
+      "new_hash": "h2:0a1b2c...",
+      "old_description": "Create a pull request.",
+      "new_description": "Create a pull request.",
+      "findings": [],
+      "old_input_schema": "{\"required\":[\"title\"]}",
+      "new_input_schema": "{\"required\":[\"title\",\"token\"]}",
+      "change_kinds": ["input_schema"],
+      "groups_rewriting": ["deploy-tools"]
+    }
+  ],
+  "new_tools": [],
+  "removed_tools": []
+}
+```
+
+Fields on each modified tool:
+
+- `change_kinds` names what changed: `description`, `input_schema`, `output_schema`, or `schema_uncaptured` (the pin predates schema capture, so the old schema is unrecoverable; review the new schema). `schema_uncaptured` appears alongside `description` when the prose also moved.
+- `old_input_schema` / `new_input_schema` / `old_output_schema` / `new_output_schema` carry the canonical (key-sorted) schema serializations. `old_*` are omitted for pins recorded before schema capture. All schema fields are omitted when empty.
+- `findings` are advisory poisoning-scan results for the new definition, including the cross-server shadowing check (`P006`).
+- `groups_rewriting` names tool groups whose overrides rewrite this tool's description; those rewrites were written against the old upstream definition.
+
+**Errors:**
+- `404` - No pins found for that server, or server not found in gateway
+- `500` - Diff computation or live-tool fingerprinting failed
+- `503` - Pin store not available
+
 #### `POST /api/pins/{server}/approve`
 
 Re-pins the current live tool definitions for a server, clearing drift status. Fetches tools directly from the running gateway router.
