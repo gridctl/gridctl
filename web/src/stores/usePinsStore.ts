@@ -29,19 +29,61 @@ export const useDriftedServers = () => {
   }, [pins]);
 };
 
-// countFindingServers counts servers whose pinned tools carry at least one
-// warn-or-critical poisoning-scan finding. Info findings are deliberately
-// excluded: the status bar chip is an attention signal, not an inventory.
+// serverHasAlertFindings reports whether a server's pinned tools carry at
+// least one warn-or-critical poisoning-scan finding. Info findings are
+// deliberately excluded everywhere this is used: chips, toasts, rail marks,
+// and deep-link targets are attention signals, not inventories.
+export const serverHasAlertFindings = (sp: ServerPins): boolean =>
+  Object.values(sp.tools ?? {}).some((rec) =>
+    (rec.findings ?? []).some((f) => f.severity === 'warn' || f.severity === 'critical'),
+  );
+
+// countServerAlertFindings counts a single server's warn-or-critical
+// findings, for the rail's compact per-server indicator.
+export const countServerAlertFindings = (sp: ServerPins): number =>
+  Object.values(sp.tools ?? {}).reduce(
+    (acc, rec) =>
+      acc + (rec.findings ?? []).filter((f) => f.severity === 'warn' || f.severity === 'critical').length,
+    0,
+  );
+
+// countFindingServers counts servers with at least one warn-or-critical
+// finding; the status bar chip counts servers, not findings.
 export const countFindingServers = (pins: Record<string, ServerPins> | null): number => {
   if (!pins) return 0;
-  return Object.values(pins).filter((sp) =>
-    Object.values(sp.tools ?? {}).some((rec) =>
-      (rec.findings ?? []).some((f) => f.severity === 'warn' || f.severity === 'critical'),
-    ),
-  ).length;
+  return Object.values(pins).filter(serverHasAlertFindings).length;
 };
 
 export const useFindingServerCount = () => {
   const pins = usePinsStore((s) => s.pins);
   return useMemo(() => countFindingServers(pins), [pins]);
+};
+
+// firstDriftedServer / firstFindingsServer pick the deep-link target for the
+// drift and findings chips and toasts: the alphabetically first affected
+// server, matching the rail's drifted-first-then-alphabetical order.
+export const firstDriftedServer = (pins: Record<string, ServerPins> | null): string | null => {
+  if (!pins) return null;
+  const names = Object.keys(pins)
+    .filter((name) => pins[name].status === 'drift')
+    .sort((a, b) => a.localeCompare(b));
+  return names[0] ?? null;
+};
+
+export const firstFindingsServer = (pins: Record<string, ServerPins> | null): string | null => {
+  if (!pins) return null;
+  const names = Object.keys(pins)
+    .filter((name) => serverHasAlertFindings(pins[name]))
+    .sort((a, b) => a.localeCompare(b));
+  return names[0] ?? null;
+};
+
+export const useFirstDriftedServer = () => {
+  const pins = usePinsStore((s) => s.pins);
+  return useMemo(() => firstDriftedServer(pins), [pins]);
+};
+
+export const useFirstFindingsServer = () => {
+  const pins = usePinsStore((s) => s.pins);
+  return useMemo(() => firstFindingsServer(pins), [pins]);
 };
