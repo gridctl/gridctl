@@ -182,3 +182,38 @@ describe('CustomNode', () => {
     expect(screen.queryByText(/^×/)).not.toBeInTheDocument();
   });
 });
+
+// The drift annotation is a deep link into the Pins workspace; it needs a
+// router only when a drift is rendered, so bare renders above stay
+// router-free.
+import { fireEvent } from '@testing-library/react';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router';
+import { useUIStore } from '../stores/useUIStore';
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
+describe('CustomNode pin drift link', () => {
+  it('navigates to the server drift view in the Pins workspace', () => {
+    // Full-card mode: the annotation renders only on expanded cards.
+    useUIStore.setState({ compactCards: false });
+    try {
+      render(
+        <MemoryRouter initialEntries={['/']}>
+          <CustomNode data={makeServerData({ name: 'zapier', pinStatus: 'drift' })} />
+          <Routes>
+            <Route path="*" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /schema drift detected/i }));
+
+      expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=zapier&view=drift');
+    } finally {
+      useUIStore.setState({ compactCards: true });
+    }
+  });
+});
