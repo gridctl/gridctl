@@ -1885,6 +1885,19 @@ export async function fetchServerPins(): Promise<Record<string, ServerPins>> {
   return fetchJSON<Record<string, ServerPins>>('/api/pins');
 }
 
+/**
+ * Parts of a tool definition that changed, as named in change_kinds.
+ * schema_uncaptured marks pins recorded before schema capture: the old
+ * schemas are unrecoverable, so the hash move may include a schema change
+ * that cannot be shown. It appears alongside 'description' when the prose
+ * also moved.
+ */
+export type PinsChangeKind =
+  | 'description'
+  | 'input_schema'
+  | 'output_schema'
+  | 'schema_uncaptured';
+
 export interface PinsToolDiff {
   name: string;
   old_hash: string;
@@ -1893,6 +1906,18 @@ export interface PinsToolDiff {
   new_description: string;
   // Optional so the UI tolerates a daemon predating the poisoning scanner.
   findings?: PinFinding[];
+  // Canonical schema serializations and change kinds. All optional (matching
+  // the findings precedent) so the UI tolerates an older daemon, which
+  // degrades to the description-only view. old_* are absent for pins
+  // recorded before schema capture.
+  old_input_schema?: string;
+  new_input_schema?: string;
+  old_output_schema?: string;
+  new_output_schema?: string;
+  change_kinds?: PinsChangeKind[];
+  // Tool groups whose overrides rewrite this tool's description; those
+  // rewrites were written against the old upstream definition.
+  groups_rewriting?: string[];
 }
 
 export interface PinsDiff {
