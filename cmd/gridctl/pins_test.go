@@ -228,6 +228,7 @@ func testDiffDoc(hasDrift bool) pinsDiffDoc {
 			NewHash:        "h2:267032e068c7ee40310b8cea8e12f1248a974166",
 			OldDescription: "original description",
 			NewDescription: "new\u202edescription\nwith hidden characters",
+			ChangeKinds:    []string{pins.ChangeKindDescription},
 		}}
 		sv.NewTools = []string{"added"}
 		sv.RemovedTools = []string{"retired"}
@@ -301,6 +302,118 @@ func TestRenderPinsDiffText_EscapesAndShortensHashes(t *testing.T) {
 	}
 	if !strings.Contains(out, "+ added") || !strings.Contains(out, "- retired") {
 		t.Errorf("expected new/removed tool lines, got:\n%s", out)
+	}
+	if !strings.Contains(out, "~ poisoned  [description]") {
+		t.Errorf("expected change kinds on the ~ line, got:\n%s", out)
+	}
+}
+
+func TestRenderPinsDiffText_SchemaOnlyDrift(t *testing.T) {
+	doc := pinsDiffDoc{
+		SchemaVersion: pinsJSONSchemaVersion,
+		Stack:         "mystack",
+		HasDrift:      true,
+		Servers: []pinsDiffServer{{
+			Name:   "myserver",
+			Status: pins.VerifyStatusDrift,
+			ModifiedTools: []pinsToolDiff{{
+				Name:           "searcher",
+				OldHash:        "h2:947cd68fbf83c18ca75435e6730174418b91fd0e",
+				NewHash:        "h2:267032e068c7ee40310b8cea8e12f1248a974166",
+				OldDescription: "same prose",
+				NewDescription: "same prose",
+				OldInputSchema: `{"required":["query"]}`,
+				NewInputSchema: "{\"required\":[\"query\",\"tok\u202een\"]}",
+				ChangeKinds:    []string{pins.ChangeKindInputSchema},
+			}},
+			NewTools:     []string{},
+			RemovedTools: []string{},
+		}},
+	}
+	var buf bytes.Buffer
+	renderPinsDiffText(&buf, doc)
+	out := buf.String()
+
+	if !strings.Contains(out, "~ searcher  [input_schema]") {
+		t.Errorf("expected input_schema change kind on the ~ line, got:\n%s", out)
+	}
+	if !strings.Contains(out, `input_schema old: {"required":["query"]}`) {
+		t.Errorf("expected old schema line, got:\n%s", out)
+	}
+	if !strings.Contains(out, `input_schema new: {"required":["query","tok\u202een"]}`) {
+		t.Errorf("expected escaped new schema line, got:\n%s", out)
+	}
+	if strings.ContainsAny(out, "\u202e") {
+		t.Error("raw U+202E leaked into schema output")
+	}
+}
+
+func TestRenderPinsDiffText_OutputSchemaDrift(t *testing.T) {
+	doc := pinsDiffDoc{
+		SchemaVersion: pinsJSONSchemaVersion,
+		Stack:         "mystack",
+		HasDrift:      true,
+		Servers: []pinsDiffServer{{
+			Name:   "myserver",
+			Status: pins.VerifyStatusDrift,
+			ModifiedTools: []pinsToolDiff{{
+				Name:            "reporter",
+				OldHash:         "h2:947cd68fbf83c18ca75435e6730174418b91fd0e",
+				NewHash:         "h2:267032e068c7ee40310b8cea8e12f1248a974166",
+				OldDescription:  "same prose",
+				NewDescription:  "same prose",
+				OldOutputSchema: `{"properties":{"ok":{"type":"boolean"}}}`,
+				NewOutputSchema: `{"properties":{"ok":{"type":"string"}}}`,
+				ChangeKinds:     []string{pins.ChangeKindOutputSchema},
+			}},
+			NewTools:     []string{},
+			RemovedTools: []string{},
+		}},
+	}
+	var buf bytes.Buffer
+	renderPinsDiffText(&buf, doc)
+	out := buf.String()
+
+	if !strings.Contains(out, "~ reporter  [output_schema]") {
+		t.Errorf("expected output_schema change kind on the ~ line, got:\n%s", out)
+	}
+	if !strings.Contains(out, `output_schema old: {"properties":{"ok":{"type":"boolean"}}}`) ||
+		!strings.Contains(out, `output_schema new: {"properties":{"ok":{"type":"string"}}}`) {
+		t.Errorf("expected old/new output schema lines, got:\n%s", out)
+	}
+}
+
+func TestRenderPinsDiffText_SchemaUncaptured(t *testing.T) {
+	doc := pinsDiffDoc{
+		SchemaVersion: pinsJSONSchemaVersion,
+		Stack:         "mystack",
+		HasDrift:      true,
+		Servers: []pinsDiffServer{{
+			Name:   "myserver",
+			Status: pins.VerifyStatusDrift,
+			ModifiedTools: []pinsToolDiff{{
+				Name:            "searcher",
+				OldHash:         "947cd68fbf83c18ca75435e6730174418b91fd0e",
+				NewHash:         "h2:267032e068c7ee40310b8cea8e12f1248a974166",
+				OldDescription:  "same prose",
+				NewDescription:  "same prose",
+				NewInputSchema:  `{"required":["query"]}`,
+				NewOutputSchema: "{}",
+				ChangeKinds:     []string{pins.ChangeKindSchemaUncaptured},
+			}},
+			NewTools:     []string{},
+			RemovedTools: []string{},
+		}},
+	}
+	var buf bytes.Buffer
+	renderPinsDiffText(&buf, doc)
+	out := buf.String()
+
+	if !strings.Contains(out, "pinned before schema capture") {
+		t.Errorf("expected uncaptured note, got:\n%s", out)
+	}
+	if !strings.Contains(out, `input_schema new: {"required":["query"]}`) {
+		t.Errorf("expected new schema line, got:\n%s", out)
 	}
 }
 
