@@ -20,7 +20,11 @@ export function PinFindingsBadge() {
   return (
     <button
       onClick={() =>
-        navigate(firstFindings ? `/pins?server=${encodeURIComponent(firstFindings)}` : '/pins')
+        navigate(
+          firstFindings
+            ? `/pins?server=${encodeURIComponent(firstFindings)}&view=findings`
+            : '/pins',
+        )
       }
       className={cn('flex items-center gap-2 transition-colors hover:opacity-80 text-status-pending')}
       title="Poisoning-scan findings on pinned tools; review in the Pins workspace"
