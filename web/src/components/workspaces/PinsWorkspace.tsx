@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Loader2,
   Lock,
@@ -10,14 +12,17 @@ import {
   Pin,
   Plus,
   RefreshCw,
+  ShieldAlert,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { usePinsStore } from '../../stores/usePinsStore';
+import { countServerAlertFindings, usePinsStore } from '../../stores/usePinsStore';
 import {
   approveServerPins,
   fetchPinsDiff,
   fetchServerPins,
+  type PinsChangeKind,
   type PinsDiff,
+  type PinsToolDiff,
   type ServerPins,
 } from '../../lib/api';
 import { escapeNonPrintable, shortPinHash } from '../../lib/nonPrintable';
@@ -136,7 +141,7 @@ export function PinsWorkspace() {
               pins
             </div>
             <div className="font-mono text-[10px] text-text-muted">
-              {entries.length} {entries.length === 1 ? 'server' : 'servers'} pinned
+              {headerTally(entries)}
             </div>
           </header>
 
@@ -149,6 +154,17 @@ export function PinsWorkspace() {
       </WorkspaceShell>
     </div>
   );
+}
+
+// headerTally summarizes the rail: "N servers pinned · X drifted · Y with
+// findings", omitting zero segments so a quiet stack reads as before.
+function headerTally(entries: Array<[string, ServerPins]>): string {
+  const drifted = entries.filter(([, sp]) => sp.status === 'drift').length;
+  const withFindings = entries.filter(([, sp]) => countServerAlertFindings(sp) > 0).length;
+  const parts = [`${entries.length} ${entries.length === 1 ? 'server' : 'servers'} pinned`];
+  if (drifted > 0) parts.push(`${drifted} drifted`);
+  if (withFindings > 0) parts.push(`${withFindings} with findings`);
+  return parts.join(' · ');
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +196,7 @@ function ServerRail({ compact, entries, activeServerName, onSelect }: ServerRail
         {entries.map(([name, sp]) => {
           const active = name === activeServerName;
           const { label, colorClass } = pinStatusMeta(sp.status);
+          const findingCount = countServerAlertFindings(sp);
           return (
             <button
               key={name}
@@ -200,6 +217,16 @@ function ServerRail({ compact, entries, activeServerName, onSelect }: ServerRail
               >
                 {name}
               </span>
+              {findingCount > 0 && (
+                <span
+                  className="flex-shrink-0 inline-flex items-center gap-0.5 text-[10px] text-status-pending"
+                  title={`${findingCount} warn-or-critical finding${findingCount > 1 ? 's' : ''}`}
+                  aria-label={`${findingCount} finding${findingCount > 1 ? 's' : ''} on ${name}`}
+                >
+                  <ShieldAlert size={9} />
+                  {findingCount}
+                </span>
+              )}
               <span
                 className={cn(
                   'flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded',
@@ -237,7 +264,10 @@ function ServerDetail({ name, pins: sp }: { name: string; pins: ServerPins }) {
           {sp.status === 'drift' ? <LockOpen size={11} /> : <Lock size={11} />}
           {label}
         </span>
-        <span className="flex items-center gap-1 text-[11px] text-text-muted ml-auto">
+        <span
+          className="flex items-center gap-1 text-[11px] text-text-muted ml-auto"
+          title={sp.last_verified_at || undefined}
+        >
           <Clock size={10} className="text-text-muted/60" />
           {sp.last_verified_at
             ? `verified ${formatRelativeTime(new Date(sp.last_verified_at))}`
@@ -249,7 +279,9 @@ function ServerDetail({ name, pins: sp }: { name: string; pins: ServerPins }) {
         <span>
           <span className="text-text-secondary font-medium">{sp.tool_count}</span> tools pinned
         </span>
-        {sp.pinned_at && <span>first pinned {formatRelativeTime(new Date(sp.pinned_at))}</span>}
+        {sp.pinned_at && (
+          <span title={sp.pinned_at}>first pinned {formatRelativeTime(new Date(sp.pinned_at))}</span>
+        )}
       </div>
 
       {sp.status === 'drift' && <DriftSection serverName={name} />}
@@ -289,7 +321,10 @@ function ServerDetail({ name, pins: sp }: { name: string; pins: ServerPins }) {
                   <td className="px-3 py-2 align-top font-mono text-text-muted whitespace-nowrap">
                     {shortPinHash(rec.hash)}
                   </td>
-                  <td className="px-3 py-2 align-top text-text-muted whitespace-nowrap">
+                  <td
+                    className="px-3 py-2 align-top text-text-muted whitespace-nowrap"
+                    title={rec.pinned_at || undefined}
+                  >
                     {rec.pinned_at ? formatRelativeTime(new Date(rec.pinned_at)) : '—'}
                   </td>
                 </tr>
@@ -424,15 +459,7 @@ function DriftSection({ serverName }: { serverName: string }) {
       {diff && (
         <div className="space-y-3">
           {diff.modified_tools.map((d) => (
-            <div
-              key={d.name}
-              className="rounded-md border border-border/40 bg-background/60 px-3 py-2 space-y-1.5"
-            >
-              <div className="text-xs font-mono text-text-primary">{escapeNonPrintable(d.name)}</div>
-              <DiffRow kind="old" hash={d.old_hash} description={d.old_description} />
-              <DiffRow kind="new" hash={d.new_hash} description={d.new_description} />
-              <FindingsList findings={d.findings} />
-            </div>
+            <ModifiedToolCard key={d.name} diff={d} />
           ))}
 
           {diff.new_tools.length > 0 && (
@@ -467,6 +494,237 @@ function DriftSection({ serverName }: { serverName: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+// Human labels for the wire change kinds.
+const CHANGE_KIND_LABELS: Record<PinsChangeKind, string> = {
+  description: 'description',
+  input_schema: 'input schema',
+  output_schema: 'output schema',
+  schema_uncaptured: 'schema (old uncaptured)',
+};
+
+// ModifiedToolCard renders one drifted tool: change-kind chips, the
+// description delta (or an explicit "description unchanged" line so a
+// schema-only drift never shows two identical prose rows), per-kind schema
+// diffs, the group-override advisory, and scan findings. A diff from an
+// older daemon carries no change_kinds and degrades to the description-only
+// view.
+function ModifiedToolCard({ diff: d }: { diff: PinsToolDiff }) {
+  const kinds = d.change_kinds ?? [];
+  const descriptionUnchanged = kinds.length > 0 && !kinds.includes('description');
+
+  return (
+    <div className="rounded-md border border-border/40 bg-background/60 px-3 py-2 space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="text-xs font-mono text-text-primary">{escapeNonPrintable(d.name)}</div>
+        {kinds.map((k) => (
+          <span
+            key={k}
+            className="text-[10px] px-1.5 py-0.5 rounded bg-status-pending/10 text-status-pending border border-status-pending/20"
+          >
+            {CHANGE_KIND_LABELS[k] ?? k}
+          </span>
+        ))}
+      </div>
+
+      {descriptionUnchanged ? (
+        <div className="flex items-start gap-2 text-[11px]">
+          <span className="flex-shrink-0 font-mono text-text-muted">
+            {shortPinHash(d.old_hash)} → {shortPinHash(d.new_hash)}
+          </span>
+          <span className="text-text-muted italic">description unchanged</span>
+        </div>
+      ) : (
+        <>
+          <DiffRow kind="old" hash={d.old_hash} description={d.old_description} />
+          <DiffRow kind="new" hash={d.new_hash} description={d.new_description} />
+        </>
+      )}
+
+      {kinds.includes('input_schema') && (
+        <SchemaDiffBlock
+          label="Input schema changed"
+          oldSchema={d.old_input_schema ?? ''}
+          newSchema={d.new_input_schema ?? ''}
+        />
+      )}
+      {kinds.includes('output_schema') && (
+        <SchemaDiffBlock
+          label="Output schema changed"
+          oldSchema={d.old_output_schema ?? ''}
+          newSchema={d.new_output_schema ?? ''}
+        />
+      )}
+      {kinds.includes('schema_uncaptured') && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] text-status-pending">
+            Pinned before schema capture; the old schema is unavailable. Review the new schema
+            below before approving.
+          </p>
+          <SchemaBlock label="New input schema" schema={d.new_input_schema ?? ''} />
+          <SchemaBlock label="New output schema" schema={d.new_output_schema ?? ''} />
+        </div>
+      )}
+
+      {(d.groups_rewriting?.length ?? 0) > 0 && (
+        <p className="text-[11px] text-text-muted">
+          Also rewritten by groups:{' '}
+          {d.groups_rewriting!.map((g, i) => (
+            <span key={g}>
+              {i > 0 && ', '}
+              <span className="font-mono text-text-secondary">{escapeNonPrintable(g)}</span>
+            </span>
+          ))}{' '}
+          – review group overrides against the new definition.
+        </p>
+      )}
+
+      <FindingsList findings={d.findings} />
+    </div>
+  );
+}
+
+// prettySchema pretty-prints a canonical schema string for review; a value
+// that fails to parse renders raw (still escaped downstream).
+function prettySchema(canonical: string): string {
+  if (!canonical) return '';
+  try {
+    return JSON.stringify(JSON.parse(canonical), null, 2);
+  } catch {
+    return canonical;
+  }
+}
+
+type SchemaDiffLine = { kind: 'same' | 'removed' | 'added'; text: string };
+
+// diffSchemaLines is a minimal hand-rolled line diff (LCS) over the
+// pretty-printed schemas - enough to highlight what moved without a diff
+// dependency. Oversized inputs fall back to plain removed/added blocks to
+// keep the quadratic table bounded.
+function diffSchemaLines(oldText: string, newText: string): SchemaDiffLine[] {
+  const a = oldText.split('\n');
+  const b = newText.split('\n');
+  if (a.length * b.length > 250_000) {
+    return [
+      ...a.map((text) => ({ kind: 'removed' as const, text })),
+      ...b.map((text) => ({ kind: 'added' as const, text })),
+    ];
+  }
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: SchemaDiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      out.push({ kind: 'same', text: a[i] });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      out.push({ kind: 'removed', text: a[i] });
+      i++;
+    } else {
+      out.push({ kind: 'added', text: b[j] });
+      j++;
+    }
+  }
+  for (; i < m; i++) out.push({ kind: 'removed', text: a[i] });
+  for (; j < n; j++) out.push({ kind: 'added', text: b[j] });
+  return out;
+}
+
+// A pathological upstream schema can pretty-print to tens of thousands of
+// lines; rendering one node per line would hang the tab during the very
+// review this panel enables, so the diff view is capped.
+const MAX_SCHEMA_DIFF_LINES = 2000;
+
+// SchemaDiffBlock renders the old/new canonical schemas as a collapsible
+// line diff. Open by default: a schema-only drift's delta must be visible
+// without a click, or the approve is blind again. Schema text is
+// attacker-controlled and every line passes through escapeNonPrintable.
+function SchemaDiffBlock({
+  label,
+  oldSchema,
+  newSchema,
+}: {
+  label: string;
+  oldSchema: string;
+  newSchema: string;
+}) {
+  const [open, setOpen] = useState(true);
+  const lines = useMemo(
+    () => diffSchemaLines(prettySchema(oldSchema), prettySchema(newSchema)),
+    [oldSchema, newSchema],
+  );
+  const truncated = lines.length > MAX_SCHEMA_DIFF_LINES;
+  const visible = truncated ? lines.slice(0, MAX_SCHEMA_DIFF_LINES) : lines;
+
+  return (
+    <div className="rounded-md border border-border/30 bg-surface/40">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+      >
+        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        {label}
+      </button>
+      {open && (
+        <pre className="px-2 pb-2 text-[10px] font-mono leading-relaxed overflow-x-auto scrollbar-dark">
+          {visible.map((line, idx) => (
+            <div
+              key={idx}
+              className={cn(
+                'whitespace-pre',
+                line.kind === 'removed' && 'bg-status-error/10 text-status-error',
+                line.kind === 'added' && 'bg-status-running/10 text-status-running',
+                line.kind === 'same' && 'text-text-muted',
+              )}
+            >
+              {line.kind === 'removed' ? '- ' : line.kind === 'added' ? '+ ' : '  '}
+              {escapeNonPrintable(line.text)}
+            </div>
+          ))}
+          {truncated && (
+            <div className="text-text-muted italic">
+              … {lines.length - MAX_SCHEMA_DIFF_LINES} more lines; run `gridctl pins diff` for the
+              full schemas
+            </div>
+          )}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// SchemaBlock renders a single schema (the uncaptured-old case, where there
+// is nothing to diff against).
+function SchemaBlock({ label, schema }: { label: string; schema: string }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-md border border-border/30 bg-surface/40">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+      >
+        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        {label}
+      </button>
+      {open && (
+        <pre className="px-2 pb-2 text-[10px] font-mono leading-relaxed text-text-muted overflow-x-auto scrollbar-dark whitespace-pre">
+          {escapeNonPrintable(prettySchema(schema))}
+        </pre>
+      )}
+    </div>
   );
 }
 
