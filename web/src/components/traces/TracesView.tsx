@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels';
 import {
   Activity,
   AlertCircle,
@@ -11,6 +12,8 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { isTextInputTarget } from '../../lib/dom';
+import { SeparatorBody } from '../ui/SeparatorBody';
 import { IconButton } from '../ui/IconButton';
 import { ZoomControls } from '../ui/ZoomControls';
 import { EmptyState } from '../ui/EmptyState';
@@ -27,6 +30,8 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import { useListNav } from '../../hooks/useListNav';
 import { useDismiss } from '../../hooks/useDismiss';
+import { useContainerWidth } from '../../hooks/useContainerWidth';
+import { useWorkspaceLayout } from '../../hooks/useWorkspaceLayout';
 import { TraceWaterfall } from './TraceWaterfall';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { POLLING } from '../../lib/constants';
@@ -91,6 +96,33 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   const filtersRef = useDismiss<HTMLDivElement>(filtersOpen, () => setFiltersOpen(false));
   // Keyboard highlight, tracked by trace ID so Live refreshes keep it sticky.
   const [navId, setNavId] = useState<string | null>(null);
+  // Span selection lives here (not in TraceWaterfall) so Escape can close the
+  // detail drawer before the waterfall. Stored with its owning trace and
+  // derived against the rendered detail, so it is non-null exactly when the
+  // drawer is visible: a stale selection can never eat an Escape press.
+  const [spanSel, setSpanSel] = useState<{ traceId: string; spanId: string } | null>(null);
+  const selectedSpanId =
+    spanSel &&
+    spanSel.traceId === selectedTraceId &&
+    traceDetail?.traceId === spanSel.traceId &&
+    traceDetail.spans.some((s) => s.spanId === spanSel.spanId)
+      ? spanSel.spanId
+      : null;
+
+  // List | waterfall split. Persisted per panel combination, so the stage A
+  // single-panel layout never pollutes the stage B split.
+  const listPanelRef = usePanelRef();
+  const { defaultLayout, onLayoutChanged } = useWorkspaceLayout({
+    workspace: 'traces',
+    key: 'split',
+    panelIds: selectedTraceId ? ['trace-list', 'trace-waterfall'] : ['trace-list'],
+  });
+
+  // Column density derives from the list pane's real width, not from selection
+  // state; a zero/unknown width (first paint, jsdom) keeps the full column set.
+  const listPaneRef = useRef<HTMLDivElement>(null);
+  const { width: listWidth } = useContainerWidth(listPaneRef);
+  const compact = listWidth > 0 && listWidth < 480;
 
   const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
     storageKey: 'gridctl-traces-font-size',
@@ -223,14 +255,44 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
       if (activeNavId) selectTrace(activeNavId);
     },
     onEscape: () => {
-      // Close the waterfall first; an Escape with nothing selected is left
-      // to the browser (e.g. exiting fullscreen in the detached window).
-      if (selectedTraceId) selectTrace(null);
+      // Ladder: span detail closes first, then the waterfall. An Escape with
+      // nothing selected is left to the browser (e.g. exiting fullscreen in
+      // the detached window).
+      if (selectedSpanId) setSpanSel(null);
+      else if (selectedTraceId) selectTrace(null);
     },
     enabled: active,
   });
 
-  const compact = Boolean(selectedTraceId && traceDetail);
+  // Bind the span to the trace whose waterfall was actually clicked (the
+  // rendered detail), not selectedTraceId: an out-of-order detail fetch can
+  // briefly render trace A's waterfall while B is selected.
+  const selectSpan = useCallback(
+    (spanId: string | null) => {
+      const traceId = useTracesStore.getState().traceDetail?.traceId;
+      setSpanSel(spanId && traceId ? { traceId, spanId } : null);
+    },
+    []
+  );
+
+  // '[' toggles list collapse while a waterfall is open. Same contract
+  // as WorkspaceShell: plain keypress only, suppressed while typing.
+  useEffect(() => {
+    if (!active || !selectedTraceId) return;
+    function handler(e: KeyboardEvent) {
+      if (e.key !== '[') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTextInputTarget(e.target)) return;
+      const panel = listPanelRef.current;
+      if (!panel) return;
+      e.preventDefault();
+      if (panel.isCollapsed()) panel.expand();
+      else panel.collapse();
+    }
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [active, selectedTraceId, listPanelRef]);
+
   const bufferPressure = bufferCapacity > 0 ? bufferSize / bufferCapacity : 0;
 
   const selectedSummary = displayTraces.find((t) => t.traceId === selectedTraceId)
@@ -441,272 +503,301 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
       </div>
 
       {/* Body */}
-      <div className="flex flex-1 min-h-0">
+      <Group
+        orientation="horizontal"
+        className="flex-1 min-h-0"
+        defaultLayout={defaultLayout}
+        onLayoutChanged={onLayoutChanged}
+      >
         {/* Trace list */}
-        <div className={cn('flex flex-col min-h-0', compact ? 'w-[40%] border-r border-border/30' : 'w-full')}>
-          {/* Loading skeleton */}
-          {isLoading && displayTraces.length === 0 && (
-            <div className="p-3 space-y-2 animate-pulse">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-7 rounded bg-surface-elevated/60 border border-border/20" />
-              ))}
-            </div>
-          )}
-
-          {/* Error */}
-          {error && !isLoading && (
-            <div className="flex flex-col items-center justify-center flex-1 gap-2 text-xs">
-              <AlertCircle size={20} className="text-status-error" />
-              <span className="text-status-error">{error}</span>
-              <button onClick={load} className="text-primary hover:underline text-xs">Retry</button>
-            </div>
-          )}
-
-          {/* Empty states */}
-          {!isLoading && !error && displayTraces.length === 0 && (
-            !tracingEnabled ? (
-              <EmptyState
-                icon={Activity}
-                title="Tracing is disabled"
-                description={
-                  <>Enable <code className="font-mono text-[10px]">gateway.tracing</code> in stack.yaml to record tool-call traces.</>
-                }
-              />
-            ) : infraHidden > 0 ? (
-              <EmptyState
-                icon={Activity}
-                title="No tool-call traces yet"
-                description={`${infraHidden} infrastructure ${infraHidden === 1 ? 'trace is' : 'traces are'} hidden.`}
-                action={
-                  <button
-                    onClick={() => setSegment('all')}
-                    className="text-[10px] text-primary hover:underline"
-                  >
-                    Show all
-                  </button>
-                }
-              />
-            ) : hasFilters ? (
-              <EmptyState
-                icon={Activity}
-                title="No traces match your filters"
-                action={
-                  <button onClick={clearFilters} className="text-[10px] text-primary hover:underline">
-                    Clear filters
-                  </button>
-                }
-              />
-            ) : (
-              <EmptyState
-                icon={Activity}
-                title="No traces yet"
-                description="Traces appear after tool calls"
-              />
-            )
-          )}
-
-          {/* Table */}
-          {displayTraces.length > 0 && (
-            <>
-              <div
-                ref={containerRef}
-                className="flex-1 overflow-y-auto scrollbar-dark min-h-0"
-                style={{ '--text-zoom-size': `${fontSize}px` } as React.CSSProperties}
-              >
-                {/* Provenance boundary — top-of-list marker when any server
-                    has traces persistence enabled with files on disk. */}
-                <PersistedFromMarker serverName={null} signal="traces" />
-                <table
-                  role="grid"
-                  aria-label="Traces"
-                  tabIndex={0}
-                  aria-activedescendant={activeNavId ? `trace-row-${activeNavId}` : undefined}
-                  className="w-full focus:outline-none"
-                >
-                  <thead className="sticky top-0 z-10 bg-surface-elevated/95 backdrop-blur-sm">
-                    <tr className="border-b border-border/30">
-                      <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Time</th>
-                      <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Tool</th>
-                      {!compact && (
-                        <>
-                          <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Client</th>
-                          <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Server</th>
-                        </>
-                      )}
-                      <th className="px-3 py-1.5 text-right text-[9px] font-medium text-text-muted uppercase tracking-wider">Duration</th>
-                      {!compact && (
-                        <th className="px-3 py-1.5 text-right text-[9px] font-medium text-text-muted uppercase tracking-wider">Spans</th>
-                      )}
-                      <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Status</th>
-                      {!compact && <th className="w-8" aria-label="Row actions" />}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayTraces.map((trace) => {
-                      const isSelected = selectedTraceId === trace.traceId;
-                      const isHighlighted = activeNavId === trace.traceId;
-                      const heat = maxDuration > 0 ? trace.duration / maxDuration : 0;
-                      return (
-                        <tr
-                          key={trace.traceId}
-                          id={`trace-row-${trace.traceId}`}
-                          aria-selected={isSelected}
-                          onClick={() => {
-                            setNavId(trace.traceId);
-                            selectTrace(isSelected ? null : trace.traceId);
-                          }}
-                          className={cn(
-                            'group border-b border-border/15 cursor-pointer transition-colors',
-                            isSelected
-                              ? 'bg-primary/5 border-l-2 border-l-primary'
-                              : isHighlighted
-                                ? 'bg-surface-highlight/30'
-                                : 'hover:bg-surface-highlight/20'
-                          )}
-                        >
-                          <td
-                            className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap text-zoom"
-                            title={formatAbsoluteTime(trace.startTime)}
-                          >
-                            {formatRelativeTime(new Date(trace.startTime))}
-                          </td>
-                          <td
-                            className="px-3 py-1.5 text-text-primary truncate max-w-[200px] text-zoom"
-                            title={`${trace.operation} · ${trace.traceId}`}
-                          >
-                            {trace.tool || trace.operation}
-                          </td>
-                          {!compact && (
-                            <>
-                              <td className="px-3 py-1.5 text-text-secondary font-mono truncate max-w-[120px] text-zoom" title={trace.client || undefined}>
-                                {trace.client || '–'}
-                              </td>
-                              <td className="px-3 py-1.5 text-text-secondary font-mono text-zoom">{trace.server}</td>
-                            </>
-                          )}
-                          <td className="px-3 py-1.5 text-right whitespace-nowrap text-zoom">
-                            <span className="inline-flex items-center gap-1.5 justify-end">
-                              <span
-                                aria-hidden="true"
-                                className={cn(
-                                  'inline-block h-1.5 rounded-full',
-                                  trace.status === 'error' ? 'bg-status-error/50' : 'bg-primary/40'
-                                )}
-                                style={{ width: `${Math.max(2, Math.round(heat * 40))}px` }}
-                              />
-                              <span className="text-text-secondary tabular-nums font-mono">
-                                {formatTotalDuration(trace.duration)}
-                              </span>
-                            </span>
-                          </td>
-                          {!compact && (
-                            <td className="px-3 py-1.5 text-right text-text-muted tabular-nums text-zoom">{trace.spanCount}</td>
-                          )}
-                          <td className="px-3 py-1.5">
-                            <span
-                              className={cn(
-                                'px-1.5 py-0.5 text-[9px] font-medium rounded-full border',
-                                trace.status === 'error'
-                                  ? 'bg-status-error/10 text-status-error border-status-error/20'
-                                  : 'bg-status-running/10 text-status-running border-status-running/20'
-                              )}
-                            >
-                              {trace.status}
-                            </span>
-                          </td>
-                          {!compact && (
-                            <td className="px-1 py-1.5">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  copyWithToast(trace.traceId, 'Trace ID');
-                                }}
-                                title={`Copy trace ID ${trace.traceId.slice(0, 8)}…`}
-                                className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-all"
-                              >
-                                <Copy size={11} />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {/* Keyboard hint strip */}
-              <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-[9px] text-text-muted/60 select-none">
-                <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
-                <span><kbd className="font-mono">↵</kbd> open</span>
-                <span><kbd className="font-mono">esc</kbd> close</span>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Waterfall panel */}
-        {selectedTraceId && (
-          <div className="flex-1 min-h-0 min-w-0">
-            {isLoadingDetail && !traceDetail && (
-              <div className="flex items-center justify-center h-full">
-                <div className="w-6 h-6 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+        <Panel
+          id="trace-list"
+          defaultSize={selectedTraceId ? '34' : '100'}
+          minSize={240}
+          collapsible
+          collapsedSize={0}
+          panelRef={listPanelRef}
+        >
+          <div ref={listPaneRef} className="flex flex-col h-full min-h-0 overflow-hidden">
+            {/* Loading skeleton */}
+            {isLoading && displayTraces.length === 0 && (
+              <div className="p-3 space-y-2 animate-pulse">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-7 rounded bg-surface-elevated/60 border border-border/20" />
+                ))}
               </div>
             )}
-            {detailError && (
-              /not found/i.test(detailError) ? (
+
+            {/* Error */}
+            {error && !isLoading && (
+              <div className="flex flex-col items-center justify-center flex-1 gap-2 text-xs">
+                <AlertCircle size={20} className="text-status-error" />
+                <span className="text-status-error">{error}</span>
+                <button onClick={load} className="text-primary hover:underline text-xs">Retry</button>
+              </div>
+            )}
+
+            {/* Empty states */}
+            {!isLoading && !error && displayTraces.length === 0 && (
+              !tracingEnabled ? (
                 <EmptyState
                   icon={Activity}
-                  title="Trace no longer in buffer"
-                  description="The ring buffer evicted this trace."
+                  title="Tracing is disabled"
+                  description={
+                    <>Enable <code className="font-mono text-[10px]">gateway.tracing</code> in stack.yaml to record tool-call traces.</>
+                  }
+                />
+              ) : infraHidden > 0 ? (
+                <EmptyState
+                  icon={Activity}
+                  title="No tool-call traces yet"
+                  description={`${infraHidden} infrastructure ${infraHidden === 1 ? 'trace is' : 'traces are'} hidden.`}
                   action={
                     <button
-                      onClick={() => selectTrace(null)}
+                      onClick={() => setSegment('all')}
                       className="text-[10px] text-primary hover:underline"
                     >
-                      Clear selection
+                      Show all
+                    </button>
+                  }
+                />
+              ) : hasFilters ? (
+                <EmptyState
+                  icon={Activity}
+                  title="No traces match your filters"
+                  action={
+                    <button onClick={clearFilters} className="text-[10px] text-primary hover:underline">
+                      Clear filters
                     </button>
                   }
                 />
               ) : (
-                <div className="flex flex-col items-center justify-center h-full gap-2 text-xs">
-                  <AlertCircle size={16} className="text-status-error" />
-                  <span className="text-status-error">{detailError}</span>
-                </div>
+                <EmptyState
+                  icon={Activity}
+                  title="No traces yet"
+                  description="Traces appear after tool calls"
+                />
               )
             )}
-            {traceDetail && (
-              <TraceWaterfall
-                trace={traceDetail}
-                onClose={() => selectTrace(null)}
-                actions={
-                  <>
-                    {onViewLogs && (
-                      <button
-                        onClick={() => onViewLogs(traceDetail.traceId)}
-                        title="View logs for this trace"
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
-                      >
-                        <ScrollText size={11} />
-                        View logs
-                      </button>
-                    )}
-                    {onViewMetrics && selectedSummary?.server && (
-                      <button
-                        onClick={() => onViewMetrics(selectedSummary.server)}
-                        title={`View metrics for ${selectedSummary.server}`}
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
-                      >
-                        <Activity size={11} />
-                        View metrics
-                      </button>
-                    )}
-                  </>
-                }
-              />
+
+            {/* Table */}
+            {displayTraces.length > 0 && (
+              <>
+                <div
+                  ref={containerRef}
+                  className="flex-1 overflow-y-auto scrollbar-dark min-h-0"
+                  style={{ '--text-zoom-size': `${fontSize}px` } as React.CSSProperties}
+                >
+                  {/* Provenance boundary — top-of-list marker when any server
+                      has traces persistence enabled with files on disk. */}
+                  <PersistedFromMarker serverName={null} signal="traces" />
+                  <table
+                    role="grid"
+                    aria-label="Traces"
+                    tabIndex={0}
+                    aria-activedescendant={activeNavId ? `trace-row-${activeNavId}` : undefined}
+                    className="w-full focus:outline-none"
+                  >
+                    <thead className="sticky top-0 z-10 bg-surface-elevated/95 backdrop-blur-sm">
+                      <tr className="border-b border-border/30">
+                        <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Time</th>
+                        <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Tool</th>
+                        {!compact && (
+                          <>
+                            <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Client</th>
+                            <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Server</th>
+                          </>
+                        )}
+                        <th className="px-3 py-1.5 text-right text-[9px] font-medium text-text-muted uppercase tracking-wider">Duration</th>
+                        {!compact && (
+                          <th className="px-3 py-1.5 text-right text-[9px] font-medium text-text-muted uppercase tracking-wider">Spans</th>
+                        )}
+                        <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Status</th>
+                        {!compact && <th className="w-8" aria-label="Row actions" />}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayTraces.map((trace) => {
+                        const isSelected = selectedTraceId === trace.traceId;
+                        const isHighlighted = activeNavId === trace.traceId;
+                        const heat = maxDuration > 0 ? trace.duration / maxDuration : 0;
+                        return (
+                          <tr
+                            key={trace.traceId}
+                            id={`trace-row-${trace.traceId}`}
+                            aria-selected={isSelected}
+                            onClick={() => {
+                              setNavId(trace.traceId);
+                              selectTrace(isSelected ? null : trace.traceId);
+                            }}
+                            className={cn(
+                              'group border-b border-border/15 cursor-pointer transition-colors',
+                              isSelected
+                                ? 'bg-primary/5 border-l-2 border-l-primary'
+                                : isHighlighted
+                                  ? 'bg-surface-highlight/30'
+                                  : 'hover:bg-surface-highlight/20'
+                            )}
+                          >
+                            <td
+                              className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap text-zoom"
+                              title={formatAbsoluteTime(trace.startTime)}
+                            >
+                              {formatRelativeTime(new Date(trace.startTime))}
+                            </td>
+                            <td
+                              className="px-3 py-1.5 text-text-primary truncate max-w-[200px] text-zoom"
+                              title={`${trace.operation} · ${trace.traceId}`}
+                            >
+                              {trace.tool || trace.operation}
+                            </td>
+                            {!compact && (
+                              <>
+                                <td className="px-3 py-1.5 text-text-secondary font-mono truncate max-w-[120px] text-zoom" title={trace.client || undefined}>
+                                  {trace.client || '–'}
+                                </td>
+                                <td className="px-3 py-1.5 text-text-secondary font-mono text-zoom">{trace.server}</td>
+                              </>
+                            )}
+                            <td className="px-3 py-1.5 text-right whitespace-nowrap text-zoom">
+                              <span className="inline-flex items-center gap-1.5 justify-end">
+                                <span
+                                  aria-hidden="true"
+                                  className={cn(
+                                    'inline-block h-1.5 rounded-full',
+                                    trace.status === 'error' ? 'bg-status-error/50' : 'bg-primary/40'
+                                  )}
+                                  style={{ width: `${Math.max(2, Math.round(heat * 40))}px` }}
+                                />
+                                <span className="text-text-secondary tabular-nums font-mono">
+                                  {formatTotalDuration(trace.duration)}
+                                </span>
+                              </span>
+                            </td>
+                            {!compact && (
+                              <td className="px-3 py-1.5 text-right text-text-muted tabular-nums text-zoom">{trace.spanCount}</td>
+                            )}
+                            <td className="px-3 py-1.5">
+                              <span
+                                className={cn(
+                                  'px-1.5 py-0.5 text-[9px] font-medium rounded-full border',
+                                  trace.status === 'error'
+                                    ? 'bg-status-error/10 text-status-error border-status-error/20'
+                                    : 'bg-status-running/10 text-status-running border-status-running/20'
+                                )}
+                              >
+                                {trace.status}
+                              </span>
+                            </td>
+                            {!compact && (
+                              <td className="px-1 py-1.5">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    copyWithToast(trace.traceId, 'Trace ID');
+                                  }}
+                                  title={`Copy trace ID ${trace.traceId.slice(0, 8)}…`}
+                                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-all"
+                                >
+                                  <Copy size={11} />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Keyboard hint strip */}
+                <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-[9px] text-text-muted/60 select-none">
+                  <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
+                  <span><kbd className="font-mono">↵</kbd> open</span>
+                  <span><kbd className="font-mono">esc</kbd> close</span>
+                  {selectedTraceId && <span><kbd className="font-mono">[</kbd> list</span>}
+                </div>
+              </>
             )}
           </div>
+        </Panel>
+
+        {/* Waterfall panel */}
+        {selectedTraceId && (
+          <>
+            <Separator id="sep-trace-list" className="group/separator relative w-1.5 select-none">
+              <SeparatorBody orientation="vertical" />
+            </Separator>
+            <Panel id="trace-waterfall" defaultSize="66" minSize={280}>
+              <div className="h-full min-h-0 min-w-0">
+                {isLoadingDetail && !traceDetail && (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="w-6 h-6 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                  </div>
+                )}
+                {detailError && (
+                  /not found/i.test(detailError) ? (
+                    <EmptyState
+                      icon={Activity}
+                      title="Trace no longer in buffer"
+                      description="The ring buffer evicted this trace."
+                      action={
+                        <button
+                          onClick={() => selectTrace(null)}
+                          className="text-[10px] text-primary hover:underline"
+                        >
+                          Clear selection
+                        </button>
+                      }
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full gap-2 text-xs">
+                      <AlertCircle size={16} className="text-status-error" />
+                      <span className="text-status-error">{detailError}</span>
+                    </div>
+                  )
+                )}
+                {traceDetail && (
+                  <TraceWaterfall
+                    trace={traceDetail}
+                    selectedSpanId={selectedSpanId}
+                    onSelectSpan={selectSpan}
+                    onClose={() => {
+                      // The header X means "close everything": drop the span too so
+                      // re-selecting this trace does not resurrect the drawer.
+                      setSpanSel(null);
+                      selectTrace(null);
+                    }}
+                    actions={
+                      <>
+                        {onViewLogs && (
+                          <button
+                            onClick={() => onViewLogs(traceDetail.traceId)}
+                            title="View logs for this trace"
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+                          >
+                            <ScrollText size={11} />
+                            View logs
+                          </button>
+                        )}
+                        {onViewMetrics && selectedSummary?.server && (
+                          <button
+                            onClick={() => onViewMetrics(selectedSummary.server)}
+                            title={`View metrics for ${selectedSummary.server}`}
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+                          >
+                            <Activity size={11} />
+                            View metrics
+                          </button>
+                        )}
+                      </>
+                    }
+                  />
+                )}
+              </div>
+            </Panel>
+          </>
         )}
-      </div>
+      </Group>
     </div>
   );
 }

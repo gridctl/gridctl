@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
+import { isTextInputTarget } from '../lib/dom';
 
 interface UseListNavOptions {
   itemCount: number;
@@ -19,13 +20,12 @@ interface UseListNavOptions {
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  if (target.isContentEditable) return true;
+  if (isTextInputTarget(target)) return true;
   // Inside any open dialog/alertdialog — defer to the dialog's own handling.
-  if (target.closest('[role="dialog"], [role="alertdialog"]')) return true;
-  return false;
+  return (
+    target instanceof HTMLElement &&
+    target.closest('[role="dialog"], [role="alertdialog"]') !== null
+  );
 }
 
 /**

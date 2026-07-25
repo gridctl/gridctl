@@ -87,7 +87,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
   const errMsg = span.status === 'error' ? errorMessage(span) : null;
 
   return (
-    <div className="flex flex-col h-full bg-surface border-l border-border/50 min-w-0">
+    <div data-testid="span-detail" className="flex flex-col h-full bg-surface min-w-0">
       {/* Header */}
       <div className="h-9 flex items-center justify-between px-3 flex-shrink-0 border-b border-border/30 bg-surface-elevated/20">
         <span className="text-xs font-medium text-text-primary truncate font-mono" title={span.name}>{span.name}</span>
@@ -100,8 +100,10 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0 p-3 space-y-4">
+      {/* Content. As a bottom drawer the panel is wide and short, so the
+          sections reflow into columns via container queries instead of
+          stacking into a narrow ribbon with a long scroll. */}
+      <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0 p-3 space-y-4 @container">
 
         {/* Status badge + cost pill + span ID */}
         <div className="flex items-center gap-2 min-w-0">
@@ -139,85 +141,88 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
           </div>
         )}
 
-        {/* Timing */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-2">
-            <Clock size={10} className="text-text-muted" />
-            <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Timing</span>
-          </div>
-          <div className="rounded-lg bg-surface-elevated/60 border border-border/30 overflow-hidden">
-            <table className="w-full text-xs">
-              <tbody>
-                <TimingRow label="Start" value={formatTimestamp(span.startTime)} />
-                <TimingRow label="End" value={formatTimestamp(spanEndIso(span))} />
-                <TimingRow label="Duration" value={formatDuration(span.duration)} highlight />
-                {selfTimeMs != null && (
-                  <TimingRow label="Self time" value={formatDuration(selfTimeMs)} />
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-3 gap-4 items-start">
 
-        {/* Promoted MCP fields */}
-        {promoted.length > 0 && (
+          {/* Timing */}
           <section>
             <div className="flex items-center gap-1.5 mb-2">
-              <Tag size={10} className="text-text-muted" />
-              <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">MCP</span>
+              <Clock size={10} className="text-text-muted" />
+              <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Timing</span>
             </div>
-            <KVTable rows={promoted.map(({ label, value }) => [label, value] as [string, string])} />
-          </section>
-        )}
-
-        {/* Other attributes, collapsed by default */}
-        {otherEntries.length > 0 && (
-          <section>
-            <button
-              onClick={() => setShowOther((v) => !v)}
-              aria-expanded={showOther}
-              className="flex items-center gap-1.5 mb-2 text-text-muted hover:text-text-secondary transition-colors"
-            >
-              {showOther ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              <span className="text-[10px] font-medium uppercase tracking-wider">
-                Other attributes ({otherEntries.length})
-              </span>
-            </button>
-            {showOther && <KVTable rows={otherEntries} monoKeys />}
-          </section>
-        )}
-
-        {/* Events */}
-        {span.events.length > 0 && (
-          <section>
-            <div className="flex items-center gap-1.5 mb-2">
-              <Activity size={10} className="text-text-muted" />
-              <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
-                Events ({span.events.length})
-              </span>
-            </div>
-            <div className="space-y-1.5">
-              {span.events.map((event, idx) => (
-                <div key={idx} className="rounded-lg bg-surface-elevated/60 border border-border/30 p-2.5">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium text-text-primary">{event.name}</span>
-                    <span className="text-[10px] text-text-muted font-mono">{formatTimestamp(event.timestamp)}</span>
-                  </div>
-                  {Object.keys(event.attributes).length > 0 && (
-                    <div className="space-y-0.5">
-                      {Object.entries(event.attributes).map(([k, v]) => (
-                        <div key={k} className="flex gap-2 text-[10px]">
-                          <span className="text-text-muted font-mono">{k}:</span>
-                          <span className="text-text-secondary font-mono break-all">{v}</span>
-                        </div>
-                      ))}
-                    </div>
+            <div className="rounded-lg bg-surface-elevated/60 border border-border/30 overflow-hidden">
+              <table className="w-full text-xs">
+                <tbody>
+                  <TimingRow label="Start" value={formatTimestamp(span.startTime)} />
+                  <TimingRow label="End" value={formatTimestamp(spanEndIso(span))} />
+                  <TimingRow label="Duration" value={formatDuration(span.duration)} highlight />
+                  {selfTimeMs != null && (
+                    <TimingRow label="Self time" value={formatDuration(selfTimeMs)} />
                   )}
-                </div>
-              ))}
+                </tbody>
+              </table>
             </div>
           </section>
-        )}
+
+          {/* Promoted MCP fields */}
+          {promoted.length > 0 && (
+            <section>
+              <div className="flex items-center gap-1.5 mb-2">
+                <Tag size={10} className="text-text-muted" />
+                <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">MCP</span>
+              </div>
+              <KVTable rows={promoted.map(({ label, value }) => [label, value] as [string, string])} />
+            </section>
+          )}
+
+          {/* Other attributes, collapsed by default */}
+          {otherEntries.length > 0 && (
+            <section>
+              <button
+                onClick={() => setShowOther((v) => !v)}
+                aria-expanded={showOther}
+                className="flex items-center gap-1.5 mb-2 text-text-muted hover:text-text-secondary transition-colors"
+              >
+                {showOther ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                <span className="text-[10px] font-medium uppercase tracking-wider">
+                  Other attributes ({otherEntries.length})
+                </span>
+              </button>
+              {showOther && <KVTable rows={otherEntries} monoKeys />}
+            </section>
+          )}
+
+          {/* Events */}
+          {span.events.length > 0 && (
+            <section>
+              <div className="flex items-center gap-1.5 mb-2">
+                <Activity size={10} className="text-text-muted" />
+                <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
+                  Events ({span.events.length})
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {span.events.map((event, idx) => (
+                  <div key={idx} className="rounded-lg bg-surface-elevated/60 border border-border/30 p-2.5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-medium text-text-primary">{event.name}</span>
+                      <span className="text-[10px] text-text-muted font-mono">{formatTimestamp(event.timestamp)}</span>
+                    </div>
+                    {Object.keys(event.attributes).length > 0 && (
+                      <div className="space-y-0.5">
+                        {Object.entries(event.attributes).map(([k, v]) => (
+                          <div key={k} className="flex gap-2 text-[10px]">
+                            <span className="text-text-muted font-mono">{k}:</span>
+                            <span className="text-text-secondary font-mono break-all">{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
       </div>
     </div>
   );

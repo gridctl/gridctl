@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { TracesWorkspace } from '../components/workspaces/TracesWorkspace';
 import { useStackStore } from '../stores/useStackStore';
 import { useTracesStore } from '../stores/useTracesStore';
 import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
+import { workspaceLayoutStorageKey } from '../hooks/useWorkspaceLayout';
 import type { TraceDetail, TraceSummary } from '../lib/api';
 import type { MCPServerStatus } from '../types';
 
@@ -129,6 +130,9 @@ function listEnvelope(traces: TraceSummary[], overrides?: Partial<Awaited<Return
 }
 
 beforeEach(() => {
+  // react-resizable-panels persists layouts per panel combination; clear so a
+  // collapsed or resized layout never bleeds into the next test.
+  localStorage.clear();
   vi.mocked(fetchTraces).mockResolvedValue(listEnvelope([summary]));
   vi.mocked(fetchTraceDetail).mockResolvedValue(detail);
   vi.mocked(copyTextToClipboard).mockClear();
@@ -136,7 +140,7 @@ beforeEach(() => {
   useUIStore.setState({
     compactMode: { ...COMPACT_MODE_DEFAULTS },
     tracesDetached: false,
-    tracesPrefs: { segment: 'tool-calls', server: '' },
+    tracesPrefs: { segment: 'tool-calls', server: '', nameColPct: 30 },
   });
   useTracesStore.setState({
     traces: [],
@@ -317,10 +321,11 @@ describe('TracesWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByText('MCP')).toBeInTheDocument();
     });
-    // Promoted fields render as labels, cost as a formatted pill. ('Client'
-    // and 'Server' are unique here: the split-view table drops both columns.)
-    expect(screen.getByText('Client')).toBeInTheDocument();
-    expect(screen.getByText('Server')).toBeInTheDocument();
+    // Promoted fields render as labels inside the drawer, cost as a formatted
+    // pill. Scoped to the drawer: the list headers also say Client/Server.
+    const drawer = within(screen.getByTestId('span-detail'));
+    expect(drawer.getByText('Client')).toBeInTheDocument();
+    expect(drawer.getByText('Server')).toBeInTheDocument();
     expect(screen.getAllByText('$0.012').length).toBeGreaterThan(0);
     // Promoted keys don't repeat under Other attributes.
     expect(screen.queryByText('mcp.client.name')).toBeNull();
@@ -392,5 +397,93 @@ describe('TracesWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByText(/950\/1000/)).toBeInTheDocument();
     });
+  });
+
+  it('adds one resize separator per stage: none, list|waterfall, +detail drawer', async () => {
+    renderAt('/traces');
+    await waitFor(() => {
+      expect(screen.getByText('create_issue')).toBeInTheDocument();
+    });
+    // Stage A: list only, no separators.
+    expect(screen.queryAllByRole('separator')).toHaveLength(0);
+
+    // Stage B: list | waterfall.
+    fireEvent.click(screen.getByText('create_issue'));
+    await waitFor(() => {
+      expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
+    });
+    expect(screen.getAllByRole('separator')).toHaveLength(1);
+
+    // Stage C: waterfall over the span-detail bottom drawer.
+    fireEvent.click(screen.getByText('mcp.client.call_tool'));
+    await waitFor(() => {
+      expect(screen.getByTestId('span-detail')).toBeInTheDocument();
+    });
+    expect(screen.getAllByRole('separator')).toHaveLength(2);
+  });
+
+  it('closes span detail on the first Escape and the waterfall on the second', async () => {
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('mcp.client.call_tool'));
+    await waitFor(() => {
+      expect(screen.getByTestId('span-detail')).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('span-detail')).toBeNull();
+    });
+    // The waterfall survives the first Escape.
+    expect(useTracesStore.getState().selectedTraceId).toBe('abc123def4567890');
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => {
+      expect(useTracesStore.getState().selectedTraceId).toBeNull();
+    });
+  });
+
+  it('toggles list collapse with [ without losing the selected trace', async () => {
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
+    });
+    const listPanel = screen.getByTestId('trace-list');
+    expect(listPanel.style.flexGrow).not.toBe('0');
+
+    fireEvent.keyDown(window, { key: '[' });
+    expect(listPanel.style.flexGrow).toBe('0');
+    expect(useTracesStore.getState().selectedTraceId).toBe('abc123def4567890');
+
+    fireEvent.keyDown(window, { key: '[' });
+    expect(listPanel.style.flexGrow).not.toBe('0');
+  });
+
+  it('ignores [ while typing in the search input', async () => {
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
+    });
+    const listPanel = screen.getByTestId('trace-list');
+    fireEvent.keyDown(screen.getByPlaceholderText('Search traces…'), { key: '[' });
+    expect(listPanel.style.flexGrow).not.toBe('0');
+  });
+
+  it('restores a persisted list|waterfall layout from the traces split key', async () => {
+    // Drags cannot be simulated in jsdom (no pointer capture or geometry), so
+    // assert the restore path instead: a saved layout under the workspace key
+    // must drive the mounted panel sizes.
+    localStorage.setItem(
+      `react-resizable-panels:${workspaceLayoutStorageKey('traces', 'split')}:trace-list:trace-waterfall`,
+      JSON.stringify({ 'trace-list': 20, 'trace-waterfall': 80 }),
+    );
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('trace-list').style.flexGrow).toBe('20');
+    expect(screen.getByTestId('trace-waterfall').style.flexGrow).toBe('80');
   });
 });

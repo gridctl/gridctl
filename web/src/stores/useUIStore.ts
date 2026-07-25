@@ -178,15 +178,31 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
 interface TracesPrefs {
   segment: 'tool-calls' | 'all';
   server: string;
+  /** Waterfall span-name column width as a percentage of the waterfall pane. */
+  nameColPct: number;
 }
 
-const TRACES_PREFS_DEFAULTS: TracesPrefs = { segment: 'tool-calls', server: '' };
+export const TRACES_NAME_COL_MIN_PCT = 18;
+export const TRACES_NAME_COL_MAX_PCT = 45;
+const TRACES_NAME_COL_DEFAULT_PCT = 30;
+
+function clampNameColPct(pct: number): number {
+  if (!Number.isFinite(pct)) return TRACES_NAME_COL_DEFAULT_PCT;
+  return Math.min(TRACES_NAME_COL_MAX_PCT, Math.max(TRACES_NAME_COL_MIN_PCT, pct));
+}
+
+const TRACES_PREFS_DEFAULTS: TracesPrefs = {
+  segment: 'tool-calls',
+  server: '',
+  nameColPct: TRACES_NAME_COL_DEFAULT_PCT,
+};
 
 function normalizeTracesPrefs(value: unknown): TracesPrefs {
   const v = (value ?? {}) as Partial<TracesPrefs>;
   return {
     segment: v.segment === 'all' ? 'all' : 'tool-calls',
     server: typeof v.server === 'string' ? v.server : '',
+    nameColPct: typeof v.nameColPct === 'number' ? clampNameColPct(v.nameColPct) : TRACES_NAME_COL_DEFAULT_PCT,
   };
 }
 
