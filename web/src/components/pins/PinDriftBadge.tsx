@@ -1,11 +1,12 @@
 import { useNavigate } from 'react-router';
 import { Lock, LockOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { usePinsStore, useDriftedServers } from '../../stores/usePinsStore';
+import { usePinsStore, useDriftedServers, useFirstDriftedServer } from '../../stores/usePinsStore';
 
 export function PinDriftBadge() {
   const pins = usePinsStore((s) => s.pins);
   const driftedServers = useDriftedServers();
+  const firstDrifted = useFirstDriftedServer();
   const navigate = useNavigate();
 
   if (pins === null) return null;
@@ -23,9 +24,10 @@ export function PinDriftBadge() {
     ? 'bg-status-pending shadow-[0_0_6px_var(--color-status-pending-glow)]'
     : 'bg-status-running shadow-[0_0_6px_var(--color-status-running-glow)]';
 
-  // The Pins workspace shows the drift diff; drifted servers sort first there.
+  // Land directly on a drifted server's diff; PinsWorkspace validates the
+  // ?server= param and falls back to the first rail entry when it is stale.
   const handleClick = () => {
-    navigate('/pins');
+    navigate(firstDrifted ? `/pins?server=${encodeURIComponent(firstDrifted)}` : '/pins');
   };
 
   return (
