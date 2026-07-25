@@ -24,10 +24,13 @@ export function PinDriftBadge() {
     ? 'bg-status-pending shadow-[0_0_6px_var(--color-status-pending-glow)]'
     : 'bg-status-running shadow-[0_0_6px_var(--color-status-running-glow)]';
 
-  // Land directly on a drifted server's diff; PinsWorkspace validates the
-  // ?server= param and falls back to the first rail entry when it is stale.
+  // Land directly on a drifted server's diff section; PinsWorkspace validates
+  // the ?server= param and falls back to the first rail entry when it is
+  // stale, and ?view=drift scrolls the drift panel into view.
   const handleClick = () => {
-    navigate(firstDrifted ? `/pins?server=${encodeURIComponent(firstDrifted)}` : '/pins');
+    navigate(
+      firstDrifted ? `/pins?server=${encodeURIComponent(firstDrifted)}&view=drift` : '/pins',
+    );
   };
 
   return (
