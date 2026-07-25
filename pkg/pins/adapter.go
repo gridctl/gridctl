@@ -36,12 +36,17 @@ func (a *GatewayAdapter) VerifyOrPin(serverName string, tools []mcp.Tool) ([]mcp
 	drifts := make([]mcp.SchemaDrift, len(result.ModifiedTools))
 	for i, d := range result.ModifiedTools {
 		drifts[i] = mcp.SchemaDrift{
-			Name:           d.Name,
-			OldHash:        d.OldHash,
-			NewHash:        d.NewHash,
-			OldDescription: d.OldDescription,
-			NewDescription: d.NewDescription,
-			Findings:       toMCPFindings(d.Findings),
+			Name:            d.Name,
+			OldHash:         d.OldHash,
+			NewHash:         d.NewHash,
+			OldDescription:  d.OldDescription,
+			NewDescription:  d.NewDescription,
+			OldInputSchema:  d.OldInputSchema,
+			NewInputSchema:  d.NewInputSchema,
+			OldOutputSchema: d.OldOutputSchema,
+			NewOutputSchema: d.NewOutputSchema,
+			ChangeKinds:     append([]string(nil), d.ChangeKinds...),
+			Findings:        toMCPFindings(d.Findings),
 		}
 	}
 	return drifts, nil
