@@ -572,7 +572,7 @@ Tokens are stored encrypted at rest under `~/.gridctl/oauth/`, keyed by server U
 
 ### A legitimate tool is flagged with scan findings
 
-The poisoning scan is a set of local heuristics, and some legitimate tools trip them. Common cases: a shell or database tool whose description honestly says it executes commands or drops tables fires `P003` (which is why P003 is info-tier), a security tool that documents attack phrases fires `P001` in downgraded form (quoted matches drop to info severity with low confidence), and a workflow tool that mentions another server's tool by name fires `P006`.
+The poisoning scan is a set of local heuristics, and some legitimate tools trip them. Common cases: a shell or database tool whose description honestly says it executes commands or drops tables fires `P003` (which is why P003 is info-tier), a security tool that documents attack phrases fires `P001` in downgraded form (quoted matches drop to info severity with low confidence), and a workflow tool that names another server's distinctively named tool fires `P006`. Generic tool names (`search`, `fetch`, `query`, and similar) in ordinary prose do not fire `P006` unless the description also names the owning server, and a bare mention of another server's name is reported at info severity only, so it never lights the findings chip or toast.
 
 Findings never block anything: drift still requires the same approve decision, exit codes are unchanged unless you pass `--fail-on-findings`, and the Approve button stays enabled. If a specific code keeps firing on a legitimate stack, suppress it:
 
