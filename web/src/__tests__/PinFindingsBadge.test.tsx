@@ -69,7 +69,7 @@ describe('PinFindingsBadge', () => {
     renderBadge();
     fireEvent.click(screen.getByRole('button', { name: /findings: 2 servers/i }));
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=beta');
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=beta&view=findings');
   });
 
   it('renders nothing when only info findings exist', () => {
