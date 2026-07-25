@@ -41,12 +41,18 @@ type ServerPins struct {
 // Findings are the poisoning-scan results captured when the tool was pinned;
 // they are derived, advisory data (an older gridctl rewriting the file simply
 // drops them, so their presence does not require a file-version bump).
+// InputSchema and OutputSchema hold the canonical serialization of the pinned
+// schemas so a schema-only drift can show what changed; like Findings they are
+// derived data (an older gridctl rewriting the file drops them, and pins
+// recorded before schema capture simply lack them), so no file-version bump.
 type PinRecord struct {
-	Hash        string    `json:"hash"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	PinnedAt    time.Time `json:"pinned_at"`
-	Findings    []Finding `json:"findings,omitempty"`
+	Hash         string    `json:"hash"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description,omitempty"`
+	PinnedAt     time.Time `json:"pinned_at"`
+	Findings     []Finding `json:"findings,omitempty"`
+	InputSchema  string    `json:"input_schema,omitempty"`
+	OutputSchema string    `json:"output_schema,omitempty"`
 }
 
 // VerifyResult contains the result of a VerifyOrPin or Verify call.
@@ -63,14 +69,33 @@ func (r *VerifyResult) HasDrift() bool {
 	return len(r.ModifiedTools) > 0
 }
 
+// Change kinds carried on ToolDiff.ChangeKinds, describing which parts of a
+// tool's definition moved. ChangeKindSchemaUncaptured marks the legacy state
+// where the pin predates schema capture: the old schemas are unrecoverable,
+// so the hash move may include a schema change that cannot be shown. It is
+// reported alongside description when the prose also moved.
+const (
+	ChangeKindDescription      = "description"
+	ChangeKindInputSchema      = "input_schema"
+	ChangeKindOutputSchema     = "output_schema"
+	ChangeKindSchemaUncaptured = "schema_uncaptured"
+)
+
 // ToolDiff describes a change in a single tool's definition.
 // Findings are poisoning-scan results for the NEW definition, computed at
 // verify time so the reviewer sees them beside the diff they annotate.
+// Schema fields carry canonical serializations; Old* are empty for pins
+// recorded before schema capture (see ChangeKindSchemaUncaptured).
 type ToolDiff struct {
-	Name           string
-	OldHash        string
-	NewHash        string
-	OldDescription string
-	NewDescription string
-	Findings       []Finding
+	Name            string
+	OldHash         string
+	NewHash         string
+	OldDescription  string
+	NewDescription  string
+	OldInputSchema  string
+	NewInputSchema  string
+	OldOutputSchema string
+	NewOutputSchema string
+	ChangeKinds     []string
+	Findings        []Finding
 }

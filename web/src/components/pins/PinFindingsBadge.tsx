@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router';
 import { ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { usePinsStore, useFindingServerCount } from '../../stores/usePinsStore';
+import { usePinsStore, useFindingServerCount, useFirstFindingsServer } from '../../stores/usePinsStore';
 
 // PinFindingsBadge is the status-bar chip for poisoning-scan findings,
 // sibling to PinDriftBadge and AuthPendingBadge. It renders only when at
@@ -10,6 +10,7 @@ import { usePinsStore, useFindingServerCount } from '../../stores/usePinsStore';
 export function PinFindingsBadge() {
   const pins = usePinsStore((s) => s.pins);
   const findingCount = useFindingServerCount();
+  const firstFindings = useFirstFindingsServer();
   const navigate = useNavigate();
 
   if (pins === null || findingCount === 0) return null;
@@ -18,7 +19,9 @@ export function PinFindingsBadge() {
 
   return (
     <button
-      onClick={() => navigate('/pins')}
+      onClick={() =>
+        navigate(firstFindings ? `/pins?server=${encodeURIComponent(firstFindings)}` : '/pins')
+      }
       className={cn('flex items-center gap-2 transition-colors hover:opacity-80 text-status-pending')}
       title="Poisoning-scan findings on pinned tools; review in the Pins workspace"
     >

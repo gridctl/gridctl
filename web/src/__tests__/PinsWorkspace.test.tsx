@@ -134,4 +134,124 @@ describe('PinsWorkspace', () => {
 
     expect(await screen.findByText(/visible\\u202ehidden payload/)).toBeInTheDocument();
   });
+
+  it('renders a schema panel for a schema-only drift instead of identical prose rows', async () => {
+    vi.spyOn(api, 'fetchPinsDiff').mockResolvedValue({
+      ...zapierDiff,
+      modified_tools: [
+        {
+          name: 'searcher',
+          old_hash: 'h2:947cd68fbf83c18ca75435e6730174418b91fd0e',
+          new_hash: 'h2:267032e068c7ee40310b8cea8e12f1248a974166',
+          old_description: 'same prose',
+          new_description: 'same prose',
+          old_input_schema: '{"required":["query"]}',
+          new_input_schema: '{"required":["query","token"]}',
+          old_output_schema: '{"properties":{"ok":{"type":"boolean"}}}',
+          new_output_schema: '{"properties":{"ok":{"type":"string"}}}',
+          change_kinds: ['input_schema', 'output_schema'],
+        },
+      ],
+      new_tools: [],
+      removed_tools: [],
+    });
+
+    renderWorkspace();
+
+    expect(await screen.findByText('input schema')).toBeInTheDocument();
+    expect(screen.getByText('output schema')).toBeInTheDocument();
+    expect(screen.getByText('Input schema changed')).toBeInTheDocument();
+    expect(screen.getByText('Output schema changed')).toBeInTheDocument();
+    expect(screen.getByText(/description unchanged/)).toBeInTheDocument();
+    // The identical prose must not render as an old/new pair.
+    expect(screen.queryAllByText('same prose')).toHaveLength(0);
+    // The schema deltas themselves are visible without any click.
+    expect(screen.getByText(/"token"/)).toBeInTheDocument();
+    expect(screen.getByText(/"string"/)).toBeInTheDocument();
+  });
+
+  it('explains an uncaptured old schema and shows the new one', async () => {
+    vi.spyOn(api, 'fetchPinsDiff').mockResolvedValue({
+      ...zapierDiff,
+      modified_tools: [
+        {
+          name: 'searcher',
+          old_hash: '947cd68fbf83c18ca75435e6730174418b91fd0e',
+          new_hash: 'h2:267032e068c7ee40310b8cea8e12f1248a974166',
+          old_description: 'same prose',
+          new_description: 'same prose',
+          new_input_schema: '{"required":["query"]}',
+          new_output_schema: '{}',
+          change_kinds: ['schema_uncaptured'],
+        },
+      ],
+      new_tools: [],
+      removed_tools: [],
+    });
+
+    renderWorkspace();
+
+    expect(await screen.findByText(/pinned before schema capture/i)).toBeInTheDocument();
+    expect(screen.getByText('New input schema')).toBeInTheDocument();
+    expect(screen.getByText(/"query"/)).toBeInTheDocument();
+  });
+
+  it('renders the groups-rewriting advisory on modified tool cards', async () => {
+    vi.spyOn(api, 'fetchPinsDiff').mockResolvedValue({
+      ...zapierDiff,
+      modified_tools: [
+        {
+          ...zapierDiff.modified_tools[0],
+          groups_rewriting: ['deploy-tools', 'ops'],
+        },
+      ],
+      new_tools: [],
+      removed_tools: [],
+    });
+
+    renderWorkspace();
+
+    expect(await screen.findByText(/also rewritten by groups/i)).toBeInTheDocument();
+    expect(screen.getByText('deploy-tools')).toBeInTheDocument();
+    expect(screen.getByText('ops')).toBeInTheDocument();
+  });
+
+  it('marks servers with findings in the rail and header tally', async () => {
+    usePinsStore.setState({
+      pins: {
+        github: serverPins('pinned', {
+          create_issue: {
+            hash: 'h2:aaaa11112222333344445555',
+            name: 'create_issue',
+            description: 'Create an issue',
+            pinned_at: '2026-07-01T00:00:00Z',
+            findings: [
+              {
+                code: 'P001',
+                severity: 'warn',
+                confidence: 'high',
+                field: 'description',
+                message: 'hidden-instruction phrasing',
+              },
+              {
+                code: 'P004',
+                severity: 'info',
+                confidence: 'low',
+                field: 'description',
+                message: 'emphasis words',
+              },
+            ],
+          },
+        }),
+        zapier: serverPins('drift'),
+      },
+    });
+
+    renderWorkspace();
+
+    // Header tally: 2 pinned, 1 drifted, 1 with findings.
+    expect(await screen.findByText('2 servers pinned · 1 drifted · 1 with findings')).toBeInTheDocument();
+    // Rail mark counts warn+critical only (the info finding is excluded).
+    expect(screen.getByLabelText('1 finding on github')).toBeInTheDocument();
+  });
 });

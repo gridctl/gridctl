@@ -20,6 +20,14 @@ type pinsToolDiff struct {
 	OldDescription string         `json:"old_description"`
 	NewDescription string         `json:"new_description"`
 	Findings       []pins.Finding `json:"findings"`
+	// Canonical schema serializations; Old* are empty for pins recorded
+	// before schema capture. ChangeKinds names the changed parts
+	// (description, input_schema, output_schema, schema_uncaptured).
+	OldInputSchema  string   `json:"old_input_schema,omitempty"`
+	NewInputSchema  string   `json:"new_input_schema,omitempty"`
+	OldOutputSchema string   `json:"old_output_schema,omitempty"`
+	NewOutputSchema string   `json:"new_output_schema,omitempty"`
+	ChangeKinds     []string `json:"change_kinds,omitempty"`
 	// GroupsRewriting names the tool groups whose overrides rewrite this
 	// tool's description. Advisory: those rewrites were written against the
 	// old upstream definition and should be reviewed against the drift.
@@ -70,6 +78,11 @@ func buildPinsDiffResponse(vr *pins.VerifyResult, liveServerHash string, shadow 
 			OldDescription:  d.OldDescription,
 			NewDescription:  d.NewDescription,
 			Findings:        findings,
+			OldInputSchema:  d.OldInputSchema,
+			NewInputSchema:  d.NewInputSchema,
+			OldOutputSchema: d.OldOutputSchema,
+			NewOutputSchema: d.NewOutputSchema,
+			ChangeKinds:     d.ChangeKinds,
 			GroupsRewriting: groupsRewriting,
 		})
 	}
@@ -134,8 +147,24 @@ func (s *Server) handleListPins(w http.ResponseWriter, r *http.Request) {
 	sc := s.newScanContext()
 	for name, sp := range servers {
 		decorateServerPins(sc, name, sp)
+		stripPinSchemas(sp)
 	}
 	writeJSON(w, servers)
+}
+
+// stripPinSchemas clears the persisted canonical schemas from a server's pin
+// records before serialization. The list and get endpoints feed the UI's 3s
+// poll, nothing on those surfaces reads schemas, and a large stack's schemas
+// add hundreds of KB per cycle; the diff endpoint is the schema surface.
+// sp is the deep copy returned by the store's getters.
+func stripPinSchemas(sp *pins.ServerPins) {
+	if sp == nil {
+		return
+	}
+	for _, rec := range sp.Tools {
+		rec.InputSchema = ""
+		rec.OutputSchema = ""
+	}
 }
 
 // decorateServerPins overlays P006 shadowing findings onto a server's pin
@@ -173,6 +202,7 @@ func (s *Server) handleGetServerPins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	decorateServerPins(s.newScanContext(), serverName, sp)
+	stripPinSchemas(sp)
 	writeJSON(w, sp)
 }
 

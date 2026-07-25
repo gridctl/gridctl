@@ -32,7 +32,9 @@ const (
 
 // pinsJSONSchemaVersion identifies the shape of the pins list/verify JSON
 // documents. Evolution within a version is append-only.
-// Version 2 adds findings arrays (poisoning-scan results) to diff tools.
+// Version 2 adds findings arrays (poisoning-scan results) to diff tools;
+// later appends within version 2: groups_rewriting, then old/new canonical
+// schema fields and change_kinds on diff tools.
 const pinsJSONSchemaVersion = 2
 
 var (
@@ -501,6 +503,14 @@ type pinsToolDiff struct {
 	OldDescription string         `json:"old_description"`
 	NewDescription string         `json:"new_description"`
 	Findings       []pins.Finding `json:"findings"`
+	// Canonical schema serializations; Old* are empty for pins recorded
+	// before schema capture. ChangeKinds names the changed parts
+	// (description, input_schema, output_schema, schema_uncaptured).
+	OldInputSchema  string   `json:"old_input_schema,omitempty"`
+	NewInputSchema  string   `json:"new_input_schema,omitempty"`
+	OldOutputSchema string   `json:"old_output_schema,omitempty"`
+	NewOutputSchema string   `json:"new_output_schema,omitempty"`
+	ChangeKinds     []string `json:"change_kinds,omitempty"`
 	// GroupsRewriting names the tool groups whose overrides rewrite this
 	// tool's description; those rewrites should be reviewed against the
 	// new upstream definition.
@@ -681,9 +691,14 @@ func renderPinsDiffText(w io.Writer, doc pinsDiffDoc) {
 			continue
 		}
 		for _, d := range sv.ModifiedTools {
-			fmt.Fprintf(w, "  ~ %s\n", escapeNonPrintable(d.Name))
+			if len(d.ChangeKinds) > 0 {
+				fmt.Fprintf(w, "  ~ %s  [%s]\n", escapeNonPrintable(d.Name), strings.Join(d.ChangeKinds, ", "))
+			} else {
+				fmt.Fprintf(w, "  ~ %s\n", escapeNonPrintable(d.Name))
+			}
 			fmt.Fprintf(w, "      old %s  %s\n", shortPinHash(d.OldHash), escapeNonPrintable(d.OldDescription))
 			fmt.Fprintf(w, "      new %s  %s\n", shortPinHash(d.NewHash), escapeNonPrintable(d.NewDescription))
+			renderPinsSchemaDelta(w, d)
 			for _, f := range d.Findings {
 				fmt.Fprintf(w, "      %s %s %s (%s, %s confidence): %s\n",
 					findingGlyph(f.Severity), f.Severity, f.Code, f.Field, f.Confidence,
@@ -705,6 +720,27 @@ func renderPinsDiffText(w io.Writer, doc pinsDiffDoc) {
 		}
 		for _, name := range sv.RemovedTools {
 			fmt.Fprintf(w, "  - %s (removed from server)\n", escapeNonPrintable(name))
+		}
+	}
+}
+
+// renderPinsSchemaDelta prints the schema half of a modified-tool entry:
+// old/new canonical schemas per changed schema kind, or the explicit
+// pinned-before-capture note when the old schema was never recorded. Schema
+// text is attacker-controlled and always escaped.
+func renderPinsSchemaDelta(w io.Writer, d pinsToolDiff) {
+	for _, kind := range d.ChangeKinds {
+		switch kind {
+		case pins.ChangeKindInputSchema:
+			fmt.Fprintf(w, "      input_schema old: %s\n", escapeNonPrintable(d.OldInputSchema))
+			fmt.Fprintf(w, "      input_schema new: %s\n", escapeNonPrintable(d.NewInputSchema))
+		case pins.ChangeKindOutputSchema:
+			fmt.Fprintf(w, "      output_schema old: %s\n", escapeNonPrintable(d.OldOutputSchema))
+			fmt.Fprintf(w, "      output_schema new: %s\n", escapeNonPrintable(d.NewOutputSchema))
+		case pins.ChangeKindSchemaUncaptured:
+			fmt.Fprintln(w, "      pinned before schema capture; old schema unavailable, review the new schema")
+			fmt.Fprintf(w, "      input_schema new: %s\n", escapeNonPrintable(d.NewInputSchema))
+			fmt.Fprintf(w, "      output_schema new: %s\n", escapeNonPrintable(d.NewOutputSchema))
 		}
 	}
 }

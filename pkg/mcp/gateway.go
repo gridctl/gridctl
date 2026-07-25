@@ -501,9 +501,12 @@ func (g *Gateway) handlePinDrift(serverName string, drifts []SchemaDrift) {
 		"server", serverName,
 		"modified", len(drifts))
 	for _, d := range drifts {
+		// change_kinds names what moved; without it a schema-only drift
+		// logs two identical description strings.
 		g.logger.Warn("tool modified",
 			"server", serverName,
 			"tool", d.Name,
+			"change_kinds", strings.Join(d.ChangeKinds, ","),
 			"old_description", d.OldDescription,
 			"new_description", d.NewDescription)
 		for _, f := range d.Findings {

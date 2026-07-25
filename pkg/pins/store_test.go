@@ -713,3 +713,247 @@ func TestLoad_CorruptReturnsError(t *testing.T) {
 		t.Errorf("expected empty store after corrupt load, got %d servers", got)
 	}
 }
+
+// --- canonical schema capture on pin records ---
+
+func TestPinStore_PinRecordsCanonicalSchemas(t *testing.T) {
+	dir := t.TempDir()
+	ps1 := newTestStoreAt(t, "schemas", dir)
+	tools := []mcp.Tool{{
+		Name:        "tool_a",
+		Description: "desc",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`),
+	}}
+	if _, err := ps1.VerifyOrPin("srv", tools); err != nil {
+		t.Fatal(err)
+	}
+
+	wantInput, err := canonicalSchema(tools[0].InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Captured in memory and after a disk round-trip.
+	for _, load := range []bool{false, true} {
+		ps := ps1
+		if load {
+			ps = newTestStoreAt(t, "schemas", dir)
+			if err := ps.Load(); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+		}
+		sp, ok := ps.GetServer("srv")
+		if !ok {
+			t.Fatal("expected server pins")
+		}
+		rec := sp.Tools["tool_a"]
+		if rec.InputSchema != wantInput {
+			t.Errorf("load=%v: InputSchema = %q, want %q", load, rec.InputSchema, wantInput)
+		}
+		if rec.OutputSchema != "{}" {
+			t.Errorf("load=%v: OutputSchema = %q, want {} for an absent schema", load, rec.OutputSchema)
+		}
+	}
+}
+
+func TestVerify_SchemaOnlyDriftPopulatesChangeKinds(t *testing.T) {
+	dir := t.TempDir()
+	ps := newTestStoreAt(t, "schemadrift", dir)
+	pinned := []mcp.Tool{{Name: "tool_a", Description: "same", InputSchema: json.RawMessage(`{"required":["a"]}`)}}
+	if _, err := ps.VerifyOrPin("srv", pinned); err != nil {
+		t.Fatal(err)
+	}
+
+	live := []mcp.Tool{{Name: "tool_a", Description: "same", InputSchema: json.RawMessage(`{"required":["a","b"]}`)}}
+	result, err := ps.Verify("srv", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ModifiedTools) != 1 {
+		t.Fatalf("expected one modified tool, got %+v", result.ModifiedTools)
+	}
+	d := result.ModifiedTools[0]
+	if len(d.ChangeKinds) != 1 || d.ChangeKinds[0] != ChangeKindInputSchema {
+		t.Errorf("ChangeKinds = %v, want [%s]", d.ChangeKinds, ChangeKindInputSchema)
+	}
+	if d.OldInputSchema == "" || d.NewInputSchema == "" || d.OldInputSchema == d.NewInputSchema {
+		t.Errorf("expected distinct populated schemas, old=%q new=%q", d.OldInputSchema, d.NewInputSchema)
+	}
+	if d.OldDescription != d.NewDescription {
+		t.Errorf("descriptions must be equal in this fixture")
+	}
+}
+
+func TestVerify_DescriptionAndSchemaDriftBothReported(t *testing.T) {
+	dir := t.TempDir()
+	ps := newTestStoreAt(t, "bothdrift", dir)
+	pinned := []mcp.Tool{{Name: "tool_a", Description: "old", InputSchema: json.RawMessage(`{"required":["a"]}`)}}
+	if _, err := ps.VerifyOrPin("srv", pinned); err != nil {
+		t.Fatal(err)
+	}
+
+	live := []mcp.Tool{{Name: "tool_a", Description: "new", InputSchema: json.RawMessage(`{"required":["b"]}`)}}
+	result, err := ps.Verify("srv", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ModifiedTools) != 1 {
+		t.Fatalf("expected one modified tool, got %+v", result.ModifiedTools)
+	}
+	got := result.ModifiedTools[0].ChangeKinds
+	want := []string{ChangeKindDescription, ChangeKindInputSchema}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("ChangeKinds = %v, want %v", got, want)
+	}
+}
+
+func TestVerify_LegacyRecordWithoutSchemasReportsUncaptured(t *testing.T) {
+	dir := t.TempDir()
+	original := []mcp.Tool{{Name: "tool_a", Description: "same", InputSchema: json.RawMessage(`{"required":["a"]}`)}}
+	writeLegacyPinFile(t, dir, "legacy", "srv", original)
+
+	ps := newTestStoreAt(t, "legacy", dir)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Schema-only change against a record that never captured schemas.
+	live := []mcp.Tool{{Name: "tool_a", Description: "same", InputSchema: json.RawMessage(`{"required":["a","b"]}`)}}
+	result, err := ps.Verify("srv", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ModifiedTools) != 1 {
+		t.Fatalf("expected one modified tool, got %+v", result.ModifiedTools)
+	}
+	d := result.ModifiedTools[0]
+	if len(d.ChangeKinds) != 1 || d.ChangeKinds[0] != ChangeKindSchemaUncaptured {
+		t.Errorf("ChangeKinds = %v, want [%s]", d.ChangeKinds, ChangeKindSchemaUncaptured)
+	}
+	if d.OldInputSchema != "" {
+		t.Errorf("old schema must be empty for an uncaptured pin, got %q", d.OldInputSchema)
+	}
+	if d.NewInputSchema == "" {
+		t.Error("new schema must be populated from the live tool")
+	}
+}
+
+func TestVerifyOrPin_CleanVerifyBackfillsSchemas(t *testing.T) {
+	dir := t.TempDir()
+	ps := newTestStoreAt(t, "backfill", dir)
+	tools := []mcp.Tool{{Name: "tool_a", Description: "d", InputSchema: json.RawMessage(`{"type":"object"}`)}}
+	if _, err := ps.VerifyOrPin("srv", tools); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate an h2: pin recorded before schema capture.
+	ps.mu.Lock()
+	rec := ps.data.Servers["srv"].Tools["tool_a"]
+	if !strings.HasPrefix(rec.Hash, schemeV2Prefix) {
+		ps.mu.Unlock()
+		t.Fatalf("fixture expects an h2: pin, got %s", rec.Hash)
+	}
+	rec.InputSchema = ""
+	rec.OutputSchema = ""
+	ps.mu.Unlock()
+
+	result, err := ps.VerifyOrPin("srv", tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VerifyStatusVerified {
+		t.Fatalf("expected clean verify, got %q", result.Status)
+	}
+
+	sp, _ := ps.GetServer("srv")
+	got := sp.Tools["tool_a"]
+	if got.InputSchema != `{"type":"object"}` || got.OutputSchema != "{}" {
+		t.Errorf("clean verify must backfill schemas, got input=%q output=%q", got.InputSchema, got.OutputSchema)
+	}
+}
+
+func TestVerifyOrPin_LegacyUpgradeCapturesSchemas(t *testing.T) {
+	dir := t.TempDir()
+	tools := []mcp.Tool{{Name: "tool_a", Description: "A", InputSchema: json.RawMessage(`{"a":1}`)}}
+	writeLegacyPinFile(t, dir, "legacycap", "srv", tools)
+
+	ps := newTestStoreAt(t, "legacycap", dir)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ps.VerifyOrPin("srv", tools); err != nil {
+		t.Fatal(err)
+	}
+
+	sp, _ := ps.GetServer("srv")
+	rec := sp.Tools["tool_a"]
+	if !strings.HasPrefix(rec.Hash, schemeV2Prefix) {
+		t.Fatalf("expected scheme upgrade, got %s", rec.Hash)
+	}
+	if rec.InputSchema != `{"a":1}` || rec.OutputSchema != "{}" {
+		t.Errorf("upgrade must capture schemas, got input=%q output=%q", rec.InputSchema, rec.OutputSchema)
+	}
+}
+
+func TestVerify_LegacyDescriptionAndSchemaDriftKeepsUncaptured(t *testing.T) {
+	dir := t.TempDir()
+	original := []mcp.Tool{{Name: "tool_a", Description: "old", InputSchema: json.RawMessage(`{"required":["a"]}`)}}
+	writeLegacyPinFile(t, dir, "legacyboth", "srv", original)
+
+	ps := newTestStoreAt(t, "legacyboth", dir)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Description AND schema changed on a pre-capture pin: the reviewer must
+	// not be told "only the description changed" when the old schema is
+	// unrecoverable.
+	live := []mcp.Tool{{Name: "tool_a", Description: "new", InputSchema: json.RawMessage(`{"required":["a","b"]}`)}}
+	result, err := ps.Verify("srv", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ModifiedTools) != 1 {
+		t.Fatalf("expected one modified tool, got %+v", result.ModifiedTools)
+	}
+	got := result.ModifiedTools[0].ChangeKinds
+	want := []string{ChangeKindDescription, ChangeKindSchemaUncaptured}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("ChangeKinds = %v, want %v", got, want)
+	}
+}
+
+func TestVerify_OutputSchemaOnlyDriftPopulatesChangeKinds(t *testing.T) {
+	dir := t.TempDir()
+	ps := newTestStoreAt(t, "outdrift", dir)
+	pinned := []mcp.Tool{{
+		Name:         "tool_a",
+		Description:  "same",
+		InputSchema:  json.RawMessage(`{}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`),
+	}}
+	if _, err := ps.VerifyOrPin("srv", pinned); err != nil {
+		t.Fatal(err)
+	}
+
+	live := []mcp.Tool{{
+		Name:         "tool_a",
+		Description:  "same",
+		InputSchema:  json.RawMessage(`{}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"string"}}}`),
+	}}
+	result, err := ps.Verify("srv", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ModifiedTools) != 1 {
+		t.Fatalf("expected one modified tool, got %+v", result.ModifiedTools)
+	}
+	d := result.ModifiedTools[0]
+	if len(d.ChangeKinds) != 1 || d.ChangeKinds[0] != ChangeKindOutputSchema {
+		t.Errorf("ChangeKinds = %v, want [%s]", d.ChangeKinds, ChangeKindOutputSchema)
+	}
+	if d.OldOutputSchema == "" || d.NewOutputSchema == "" || d.OldOutputSchema == d.NewOutputSchema {
+		t.Errorf("expected distinct populated output schemas, old=%q new=%q", d.OldOutputSchema, d.NewOutputSchema)
+	}
+}

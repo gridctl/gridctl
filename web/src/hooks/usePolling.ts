@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { usePinsStore, countFindingServers } from '../stores/usePinsStore';
+import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer } from '../stores/usePinsStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
@@ -61,10 +61,12 @@ export function usePolling() {
 
         const driftedCount = Object.values(pins).filter((sp) => sp.status === 'drift').length;
         if (driftedCount > 0 && _prevDriftCount === 0) {
+          // Land directly on a drifted server's diff, where the Approve
+          // action lives; the workspace validates the ?server= param.
+          const drifted = firstDriftedServer(pins);
+          const target = drifted ? `/pins?server=${encodeURIComponent(drifted)}` : '/pins';
           showToast('warning', `Schema drift detected on ${driftedCount} server${driftedCount > 1 ? 's' : ''}`, {
-            // Land on the Pins workspace, where the per-tool diff and the
-            // Approve action live; drifted servers sort first there.
-            action: { label: 'View', onClick: () => navigate('/pins') },
+            action: { label: 'View', onClick: () => navigate(target) },
             duration: 6000,
           });
         }
@@ -74,8 +76,10 @@ export function usePolling() {
         // by the same sentinel pattern as drift so it never repeats per poll.
         const findingCount = countFindingServers(pins);
         if (findingCount > 0 && _prevFindingCount === 0) {
+          const flagged = firstFindingsServer(pins);
+          const target = flagged ? `/pins?server=${encodeURIComponent(flagged)}` : '/pins';
           showToast('warning', `Poisoning-scan findings on ${findingCount} server${findingCount > 1 ? 's' : ''}`, {
-            action: { label: 'View', onClick: () => navigate('/pins') },
+            action: { label: 'View', onClick: () => navigate(target) },
             duration: 6000,
           });
         }

@@ -304,16 +304,22 @@ func (ps *PinStore) pinServer(serverName string, tools []mcp.Tool) (*VerifyResul
 		if err != nil {
 			return nil, fmt.Errorf("pins: hashing tool %q: %w", t.Name, err)
 		}
+		input, output, err := canonicalSchemas(t)
+		if err != nil {
+			return nil, err
+		}
 		findings := ps.scanFindings(t)
 		if sev := MaxSeverity(findings); sev == SeverityWarn || sev == SeverityCritical {
 			flagged++
 		}
 		toolRecords[t.Name] = &PinRecord{
-			Hash:        h,
-			Name:        t.Name,
-			Description: t.Description,
-			PinnedAt:    now,
-			Findings:    findings,
+			Hash:         h,
+			Name:         t.Name,
+			Description:  t.Description,
+			PinnedAt:     now,
+			Findings:     findings,
+			InputSchema:  input,
+			OutputSchema: output,
 		}
 		hashes = append(hashes, h)
 	}
@@ -376,12 +382,18 @@ func (ps *PinStore) verifyAndUpdate(serverName string, sp *ServerPins, tools []m
 			if err != nil {
 				return nil, fmt.Errorf("pins: hashing new tool %q: %w", t.Name, err)
 			}
+			input, output, err := canonicalSchemas(t)
+			if err != nil {
+				return nil, err
+			}
 			sp.Tools[t.Name] = &PinRecord{
-				Hash:        h,
-				Name:        t.Name,
-				Description: t.Description,
-				PinnedAt:    now,
-				Findings:    ps.scanFindings(t),
+				Hash:         h,
+				Name:         t.Name,
+				Description:  t.Description,
+				PinnedAt:     now,
+				Findings:     ps.scanFindings(t),
+				InputSchema:  input,
+				OutputSchema: output,
 			}
 		}
 		sp.ToolCount = len(sp.Tools)
@@ -403,15 +415,30 @@ func (ps *PinStore) verifyAndUpdate(serverName string, sp *ServerPins, tools []m
 	upgraded := 0
 	for _, t := range tools {
 		pin := sp.Tools[t.Name]
-		if pin == nil || modified[t.Name] || strings.HasPrefix(pin.Hash, schemeV2Prefix) {
+		if pin == nil || modified[t.Name] {
 			continue
 		}
-		h, err := hashTool(t)
-		if err != nil {
-			return nil, fmt.Errorf("pins: rehashing tool %q: %w", t.Name, err)
+		if !strings.HasPrefix(pin.Hash, schemeV2Prefix) {
+			h, err := hashTool(t)
+			if err != nil {
+				return nil, fmt.Errorf("pins: rehashing tool %q: %w", t.Name, err)
+			}
+			pin.Hash = h
+			upgraded++
 		}
-		pin.Hash = h
-		upgraded++
+		// Backfill canonical schemas onto clean pins recorded before schema
+		// capture. Safe under h2 (including the upgrade above, which re-hashed
+		// from these live tools): a clean verify proves the live schemas match
+		// the pinned definition. Canonical form is never empty ("{}" minimum),
+		// so empty means unrecorded.
+		if pin.InputSchema == "" && pin.OutputSchema == "" {
+			input, output, err := canonicalSchemas(t)
+			if err != nil {
+				return nil, err
+			}
+			pin.InputSchema = input
+			pin.OutputSchema = output
+		}
 	}
 	if upgraded > 0 {
 		slog.Info("pins: upgraded pin scheme", "server", serverName, "tools", upgraded)
@@ -449,13 +476,22 @@ func (ps *PinStore) buildVerifyResult(serverName string, sp *ServerPins, tools [
 			return nil, fmt.Errorf("pins: hashing tool %q during verify: %w", name, err)
 		}
 		if h != pin.Hash {
+			input, output, err := canonicalSchemas(t)
+			if err != nil {
+				return nil, err
+			}
 			result.ModifiedTools = append(result.ModifiedTools, ToolDiff{
-				Name:           name,
-				OldHash:        pin.Hash,
-				NewHash:        h,
-				OldDescription: pin.Description,
-				NewDescription: t.Description,
-				Findings:       ps.scanFindings(t),
+				Name:            name,
+				OldHash:         pin.Hash,
+				NewHash:         h,
+				OldDescription:  pin.Description,
+				NewDescription:  t.Description,
+				OldInputSchema:  pin.InputSchema,
+				NewInputSchema:  input,
+				OldOutputSchema: pin.OutputSchema,
+				NewOutputSchema: output,
+				ChangeKinds:     changeKinds(pin, t.Description, input, output),
+				Findings:        ps.scanFindings(t),
 			})
 		}
 	}
@@ -568,6 +604,43 @@ func hashToolForPin(pinnedHash string, t mcp.Tool) (string, error) {
 		return hashTool(t)
 	}
 	return hashToolLegacy(t)
+}
+
+// canonicalSchemas returns the canonical serialization of a tool's input and
+// output schemas, the same values hashTool digests.
+func canonicalSchemas(t mcp.Tool) (input, output string, err error) {
+	input, err = canonicalSchema(t.InputSchema)
+	if err != nil {
+		return "", "", fmt.Errorf("pins: canonicalizing inputSchema for %q: %w", t.Name, err)
+	}
+	output, err = canonicalSchema(t.OutputSchema)
+	if err != nil {
+		return "", "", fmt.Errorf("pins: canonicalizing outputSchema for %q: %w", t.Name, err)
+	}
+	return input, output, nil
+}
+
+// changeKinds names the parts of a tool definition that moved between the pin
+// record and the live values. For pins recorded before schema capture the old
+// schemas are unrecoverable, so any hash move may include a schema change we
+// cannot show: schema_uncaptured is always reported for such pins, alongside
+// description when the prose also moved, so the reviewer is never told "only
+// the description changed" on evidence that cannot support it.
+func changeKinds(pin *PinRecord, newDescription, newInput, newOutput string) []string {
+	var kinds []string
+	if pin.Description != newDescription {
+		kinds = append(kinds, ChangeKindDescription)
+	}
+	if pin.InputSchema == "" && pin.OutputSchema == "" {
+		return append(kinds, ChangeKindSchemaUncaptured)
+	}
+	if pin.InputSchema != newInput {
+		kinds = append(kinds, ChangeKindInputSchema)
+	}
+	if pin.OutputSchema != newOutput {
+		kinds = append(kinds, ChangeKindOutputSchema)
+	}
+	return kinds
 }
 
 // canonicalSchema produces a deterministic JSON string from a json.RawMessage

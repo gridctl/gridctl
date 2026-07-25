@@ -82,6 +82,42 @@ func TestHandlePinsDiff_MergesShadowFindings(t *testing.T) {
 	}
 }
 
+func TestHandleListPins_GenericToolNamesStayQuiet(t *testing.T) {
+	server, ps := setupPinsServer(t)
+
+	// A healthy stack: "search" and "fetch" exist on a sibling server and the
+	// pinned description uses both words as ordinary prose, without naming
+	// the sibling. No warn-level P006 may surface through the listing.
+	if _, err := ps.VerifyOrPin("myserver", []mcp.Tool{
+		{Name: "helper", Description: "Search the repository and fetch results."},
+	}); err != nil {
+		t.Fatalf("VerifyOrPin: %v", err)
+	}
+	server.gateway.Router().AddClient(newMockAgentClient("atlassian", []mcp.Tool{
+		{Name: "search", Description: "Searches issues."},
+		{Name: "fetch", Description: "Fetches an issue."},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/pins", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var result map[string]*pins.ServerPins
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	rec := result["myserver"].Tools["helper"]
+	if rec == nil {
+		t.Fatal("expected helper pin record")
+	}
+	if f := diffFindingByCode(rec.Findings, pins.CodeToolShadowing); f != nil {
+		t.Errorf("unqualified generic tool names must not flag P006, got %+v", f)
+	}
+}
+
 func TestHandleListPins_DecoratesShadowFindings(t *testing.T) {
 	server, ps := setupPinsServer(t)
 

@@ -305,6 +305,77 @@ func TestHandlePinsDiff_Drift(t *testing.T) {
 	}
 }
 
+func TestHandleListPins_OmitsPersistedSchemas(t *testing.T) {
+	server, ps := setupPinsServer(t)
+
+	tools := []mcp.Tool{{
+		Name:        "tool1",
+		Description: "does something",
+		InputSchema: json.RawMessage(`{"required":["q"]}`),
+	}}
+	if _, err := ps.VerifyOrPin("myserver", tools); err != nil {
+		t.Fatalf("VerifyOrPin: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/pins", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	// Schemas are persisted on the pin file but stripped from the polled
+	// list endpoint; the diff endpoint is the schema surface.
+	if body := w.Body.String(); strings.Contains(body, "input_schema") || strings.Contains(body, "output_schema") {
+		t.Errorf("list endpoint must not carry schemas, got: %s", body)
+	}
+}
+
+func TestHandlePinsDiff_SchemaOnlyDrift(t *testing.T) {
+	server, ps := setupPinsServer(t)
+
+	pinned := []mcp.Tool{{
+		Name:        "searcher",
+		Description: "Searches things.",
+		InputSchema: json.RawMessage(`{"required":["query"]}`),
+	}}
+	if _, err := ps.VerifyOrPin("myserver", pinned); err != nil {
+		t.Fatalf("VerifyOrPin: %v", err)
+	}
+
+	live := []mcp.Tool{{
+		Name:        "searcher",
+		Description: "Searches things.",
+		InputSchema: json.RawMessage(`{"required":["query","token"]}`),
+	}}
+	server.gateway.Router().AddClient(newMockAgentClient("myserver", live))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var result pinsDiffResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result.ModifiedTools) != 1 {
+		t.Fatalf("modified_tools = %d, want 1", len(result.ModifiedTools))
+	}
+	mod := result.ModifiedTools[0]
+	if len(mod.ChangeKinds) != 1 || mod.ChangeKinds[0] != pins.ChangeKindInputSchema {
+		t.Errorf("change_kinds = %v, want [%s]", mod.ChangeKinds, pins.ChangeKindInputSchema)
+	}
+	if mod.OldInputSchema == "" || mod.NewInputSchema == "" || mod.OldInputSchema == mod.NewInputSchema {
+		t.Errorf("schema fields = %q -> %q, want distinct non-empty", mod.OldInputSchema, mod.NewInputSchema)
+	}
+	if mod.OldDescription != mod.NewDescription {
+		t.Error("fixture is schema-only; descriptions must match")
+	}
+}
+
 func TestHandlePins_Approve_ExpectedHash(t *testing.T) {
 	server, ps := setupPinsServer(t)
 

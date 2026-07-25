@@ -134,6 +134,22 @@ var sensitiveActionPatterns = compileBank([]string{
 // suspiciousWords is the emphasis vocabulary that steers model attention.
 var suspiciousWords = regexp.MustCompile(`(?i)\b(important|crucial|critical|vital|urgent|ignore|disregard|override|bypass)\b`)
 
+// genericToolNames are tool names so common in ordinary prose ("search the
+// repository", "fetch results") that a bare whole-word hit says nothing about
+// cross-server steering. A P006 finding for one of these requires the owning
+// server's name in the same description (see ScanShadowing); distinctive names
+// like "create_issue" still flag on their own. Entries under five characters
+// are already excluded by the length gate; they are kept so the list stays a
+// complete statement of intent if that gate ever changes.
+var genericToolNames = map[string]bool{
+	"search": true, "fetch": true, "query": true, "list": true,
+	"create": true, "update": true, "delete": true, "read": true,
+	"write": true, "execute": true, "browse": true, "browser": true,
+	"find": true, "open": true, "close": true, "send": true,
+	"call": true, "login": true, "logout": true, "upload": true,
+	"download": true, "help": true,
+}
+
 // quotedSpans locates single- or double-quoted runs for position discounting.
 var quotedSpans = regexp.MustCompile(`"[^"\n]{1,200}"|'[^'\n]{1,200}'`)
 
@@ -171,12 +187,25 @@ func ScanTool(t mcp.Tool) []Finding {
 // ScanShadowing implements P006: a tool description that names another
 // server's tools (or the server itself) can steer the model's use of that
 // trusted server. inventory maps server name to tool names; self is excluded.
-// Only names of five or more characters are matched, on word boundaries, to
-// keep generic tool names ("search", "run") from flagging everything.
-// Matching is plain case-insensitive substring search with boundary checks
-// (no per-name regexp compilation: this runs per tool on the pins read path),
-// against the base normalization so literal digit-bearing names ("route53")
-// are not corrupted by the leetspeak fold.
+// The rules, in match order per sibling server:
+//   - Candidate names shorter than five characters are never matched; longer
+//     ones match case-insensitively on word boundaries (no per-name regexp
+//     compilation: this runs per tool on the pins read path), against the
+//     base normalization so literal digit-bearing names ("route53") are not
+//     corrupted by the leetspeak fold.
+//   - A distinctive tool name ("create_issue") flags warn/medium on its own.
+//   - A tool name in genericToolNames ("search", "fetch") flags warn/medium
+//     only when the owning server's name also appears as a whole word (a
+//     qualified reference like "route atlassian search through this");
+//     unqualified generic verbs are ordinary prose and emit nothing. The
+//     qualifier is subject to the same length gate: a short server alias
+//     ("web", "api") is itself ordinary prose and must not turn "search the
+//     web" back into a finding.
+//   - The server name alone, with no tool-name hit, is a cross-server mention
+//     rather than steering: info/low, visible on tool cards but excluded from
+//     the findings chip and toast (countFindingServers filters to warn+).
+//
+// At most one finding is emitted per referenced server.
 func ScanShadowing(t mcp.Tool, self string, inventory map[string][]string) []Finding {
 	text := strings.ToLower(normalizeBase(t.Description))
 	if text == "" {
@@ -192,12 +221,20 @@ func ScanShadowing(t mcp.Tool, self string, inventory map[string][]string) []Fin
 		if server == self {
 			continue
 		}
-		for _, name := range append([]string{server}, inventory[server]...) {
+		var serverLoc []int
+		if len(server) >= 5 {
+			serverLoc = findWord(text, strings.ToLower(server))
+		}
+		toolHit := false
+		for _, name := range inventory[server] {
 			if len(name) < 5 {
 				continue
 			}
 			loc := findWord(text, strings.ToLower(name))
 			if loc == nil {
+				continue
+			}
+			if genericToolNames[strings.ToLower(name)] && serverLoc == nil {
 				continue
 			}
 			findings = append(findings, Finding{
@@ -208,7 +245,18 @@ func ScanShadowing(t mcp.Tool, self string, inventory map[string][]string) []Fin
 				Snippet:    snippetAround(text, loc),
 				Message:    fmt.Sprintf("description references %q from server %q; cross-server references can steer a trusted server's tools", name, server),
 			})
+			toolHit = true
 			break // one finding per referenced server
+		}
+		if !toolHit && serverLoc != nil {
+			findings = append(findings, Finding{
+				Code:       CodeToolShadowing,
+				Severity:   SeverityInfo,
+				Confidence: ConfidenceLow,
+				Field:      fieldDescription,
+				Snippet:    snippetAround(text, serverLoc),
+				Message:    fmt.Sprintf("description mentions server %q; a cross-server mention alone is usually descriptive, but review it beside the tool it names", server),
+			})
 		}
 	}
 	return findings
