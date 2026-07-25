@@ -1,7 +1,8 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, LockOpen, Lock, ChevronRight, ChevronDown } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, Lock, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { PinDriftLink } from './PinDriftLink';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
@@ -341,12 +342,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
 
           {/* Pin drift indicator */}
           {isServer && !isCompact && (data as MCPServerNodeData).pinStatus === 'drift' && (
-            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-pending/5 border border-status-pending/15">
-              <LockOpen size={11} className="text-status-pending flex-shrink-0" />
-              <span className="text-xs text-status-pending/80 font-mono truncate">
-                Schema drift detected
-              </span>
-            </div>
+            <PinDriftLink serverName={data.name} />
           )}
           {/* Pin blocked indicator */}
           {isServer && !isCompact && (data as MCPServerNodeData).pinStatus === 'blocked' && (
