@@ -206,13 +206,22 @@ type FormatSavingsRecorder interface {
 }
 
 // SchemaDrift describes a single tool whose definition changed since it was pinned.
+// Schema fields carry canonical serializations; Old* are empty for pins
+// recorded before schema capture. ChangeKinds names the changed parts
+// (description, input_schema, output_schema, or schema_uncaptured when the
+// old schema was never recorded).
 type SchemaDrift struct {
-	Name           string
-	OldHash        string
-	NewHash        string
-	OldDescription string
-	NewDescription string
-	Findings       []ToolFinding
+	Name            string
+	OldHash         string
+	NewHash         string
+	OldDescription  string
+	NewDescription  string
+	OldInputSchema  string
+	NewInputSchema  string
+	OldOutputSchema string
+	NewOutputSchema string
+	ChangeKinds     []string
+	Findings        []ToolFinding
 }
 
 // ToolFinding is an advisory poisoning-scan signal attached to a drift.
