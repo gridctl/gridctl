@@ -55,7 +55,7 @@ describe('PinDriftBadge', () => {
     renderBadge();
     fireEvent.click(screen.getByRole('button', { name: /pins: 2 drifted/i }));
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=alpha');
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=alpha&view=drift');
   });
 
   it('falls back to bare /pins when nothing is drifted', () => {

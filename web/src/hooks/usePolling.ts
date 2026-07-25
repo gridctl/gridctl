@@ -64,7 +64,9 @@ export function usePolling() {
           // Land directly on a drifted server's diff, where the Approve
           // action lives; the workspace validates the ?server= param.
           const drifted = firstDriftedServer(pins);
-          const target = drifted ? `/pins?server=${encodeURIComponent(drifted)}` : '/pins';
+          const target = drifted
+            ? `/pins?server=${encodeURIComponent(drifted)}&view=drift`
+            : '/pins';
           showToast('warning', `Schema drift detected on ${driftedCount} server${driftedCount > 1 ? 's' : ''}`, {
             action: { label: 'View', onClick: () => navigate(target) },
             duration: 6000,
@@ -77,7 +79,9 @@ export function usePolling() {
         const findingCount = countFindingServers(pins);
         if (findingCount > 0 && _prevFindingCount === 0) {
           const flagged = firstFindingsServer(pins);
-          const target = flagged ? `/pins?server=${encodeURIComponent(flagged)}` : '/pins';
+          const target = flagged
+            ? `/pins?server=${encodeURIComponent(flagged)}&view=findings`
+            : '/pins';
           showToast('warning', `Poisoning-scan findings on ${findingCount} server${findingCount > 1 ? 's' : ''}`, {
             action: { label: 'View', onClick: () => navigate(target) },
             duration: 6000,

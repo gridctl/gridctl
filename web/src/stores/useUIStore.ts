@@ -173,6 +173,10 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // Persisted; URL params always win when present.
   logsPrefs: LogsPrefs;
   setLogsPrefs: (prefs: Partial<LogsPrefs>) => void;
+
+  // Pins workspace view preferences. Persisted; URL params always win.
+  pinsPrefs: PinsPrefs;
+  setPinsPrefs: (prefs: Partial<PinsPrefs>) => void;
 }
 
 interface TracesPrefs {
@@ -237,6 +241,29 @@ function normalizeLogsPrefs(value: unknown): LogsPrefs {
     windowSize: (LOG_WINDOW_SIZES as readonly number[]).includes(v.windowSize as number)
       ? (v.windowSize as number)
       : DEFAULT_LOG_WINDOW,
+  };
+}
+
+export interface PinsPrefs {
+  /**
+   * Rail attention filter: true/false is an explicit user choice; null means
+   * automatic (on exactly when any server has drift or warn+ findings).
+   */
+  attentionOnly: boolean | null;
+  /** Pinned-records table filtered to tools with findings. */
+  findingsOnly: boolean;
+}
+
+const PINS_PREFS_DEFAULTS: PinsPrefs = {
+  attentionOnly: null,
+  findingsOnly: false,
+};
+
+function normalizePinsPrefs(value: unknown): PinsPrefs {
+  const v = (value ?? {}) as Partial<PinsPrefs>;
+  return {
+    attentionOnly: typeof v.attentionOnly === 'boolean' ? v.attentionOnly : null,
+    findingsOnly: typeof v.findingsOnly === 'boolean' ? v.findingsOnly : false,
   };
 }
 
@@ -322,6 +349,10 @@ export const useUIStore = create<UIState>()(
       setLogsPrefs: (prefs) =>
         set((s) => ({ logsPrefs: { ...s.logsPrefs, ...prefs } })),
 
+      pinsPrefs: { ...PINS_PREFS_DEFAULTS },
+      setPinsPrefs: (prefs) =>
+        set((s) => ({ pinsPrefs: { ...s.pinsPrefs, ...prefs } })),
+
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
       setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
@@ -351,6 +382,7 @@ export const useUIStore = create<UIState>()(
         themeMode: state.themeMode,
         tracesPrefs: state.tracesPrefs,
         logsPrefs: state.logsPrefs,
+        pinsPrefs: state.pinsPrefs,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<UIState> | undefined;
@@ -365,6 +397,7 @@ export const useUIStore = create<UIState>()(
           themeMode: isThemeMode(p?.themeMode) ? p.themeMode : current.themeMode,
           tracesPrefs: normalizeTracesPrefs((p as { tracesPrefs?: unknown })?.tracesPrefs),
           logsPrefs: normalizeLogsPrefs((p as { logsPrefs?: unknown })?.logsPrefs),
+          pinsPrefs: normalizePinsPrefs((p as { pinsPrefs?: unknown })?.pinsPrefs),
         };
       },
     }
