@@ -18,7 +18,7 @@ require (
 	github.com/getkin/kin-openapi v0.145.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/jedib0t/go-pretty/v6 v6.8.3
-	github.com/mattn/go-isatty v0.0.23
+	github.com/mattn/go-isatty v0.0.24
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml/v2 v2.4.3
