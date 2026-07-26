@@ -12,6 +12,7 @@ import type {
   BreakdownSortColumn,
   SessionKpis,
   SortDirection,
+  WindowTotals,
 } from './metricsData';
 
 // Presentational atoms shared by every metrics surface (bottom glance tab,
@@ -31,10 +32,12 @@ export function KPICard({ label, value, colorClass }: { label: string; value: nu
   );
 }
 
-// CostKPICard — session USD spend. Renders an em-dash when nothing has been
-// priced yet (never a fabricated number). Cost is conveyed by the "$" icon and
-// the "Cost" label, not color alone. The honesty subline points at the config
-// requirement (showHint) or the mixed-provenance caveat.
+// CostKPICard — USD spend for the active window. Renders an em-dash when
+// nothing has been priced (hasCost) OR when the window cost is simply unknown
+// (usd undefined, cost series not loaded) — never a fabricated number. Cost is
+// conveyed by the "$" icon and the "Cost" label, not color alone. The honesty
+// subline points at the config requirement (showHint) or the mixed-provenance
+// caveat.
 export function CostKPICard({
   usd,
   hasCost,
@@ -46,14 +49,15 @@ export function CostKPICard({
   showHint?: boolean;
   showMixedNote?: boolean;
 }) {
+  const known = hasCost && usd !== undefined;
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
       <span className="text-[10px] text-text-muted uppercase tracking-wider flex items-center gap-1 mb-1">
         <DollarSign size={10} className="text-text-muted/70" />
         Cost <span className="text-text-muted/50 normal-case tracking-normal">· est.</span>
       </span>
-      <span className={cn('text-lg font-bold tabular-nums', hasCost ? 'text-emerald-400' : 'text-text-muted')}>
-        {hasCost ? formatUSD(usd ?? 0) : '—'}
+      <span className={cn('text-lg font-bold tabular-nums', known ? 'text-emerald-400' : 'text-text-muted')}>
+        {usd !== undefined && hasCost ? formatUSD(usd) : '—'}
       </span>
       {showHint && (
         <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">{ATTRIBUTION_HINT}</span>
@@ -65,39 +69,66 @@ export function CostKPICard({
   );
 }
 
-export function FormatSavingsCard({ savingsPercent, savedTokens }: { savingsPercent: number; savedTokens: number }) {
+// The full KPI grid, identical across surfaces. The cards are window-scoped —
+// summed from the same ranged series the charts draw, labeled by
+// `windowLabel` — so the range control owns every headline number. The
+// cumulative session totals render once, on their own explicitly labeled
+// line, and never inside the window chrome. Format savings is
+// session-cumulative (no windowed series exists), so it lives on the session
+// line too. Cost pricing state (hasCost / hints) stays session-derived: a
+// priced stack with an idle window honestly shows $0.00 for the window.
+export function MetricsKpiRow({
+  kpis,
+  windowTotals,
+  windowLabel,
+}: {
+  kpis: SessionKpis;
+  windowTotals: WindowTotals;
+  windowLabel: string;
+}) {
+  const sessionParts = [
+    `Session total: ${kpis.total.toLocaleString()} tokens`,
+    ...(kpis.hasCost ? [`${formatUSD(kpis.costUSD ?? 0)} est.`] : []),
+    ...(kpis.savingsPercent > 0
+      ? [`${Math.round(kpis.savingsPercent)}% format savings (${formatCompactNumber(kpis.savedTokens)} saved)`]
+      : []),
+  ];
   return (
-    <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
-      <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Format Savings</span>
-      <div className="flex items-baseline gap-2">
-        <span className="text-lg font-bold text-status-running tabular-nums">{Math.round(savingsPercent)}%</span>
-        <span className="text-[10px] text-text-muted">{formatCompactNumber(savedTokens)} saved</span>
+    <div className="space-y-1.5">
+      <span className="block text-[10px] uppercase tracking-[0.18em] text-text-muted/70">{windowLabel}</span>
+      <div className="grid gap-3 grid-cols-4">
+        <KPICard label="Input Tokens" value={windowTotals.input} colorClass="text-secondary" />
+        <KPICard label="Output Tokens" value={windowTotals.output} colorClass="text-primary" />
+        <KPICard label="Total Tokens" value={windowTotals.total} colorClass="text-text-primary" />
+        <CostKPICard
+          usd={windowTotals.costUSD}
+          hasCost={kpis.hasCost}
+          showHint={kpis.showAttributionHint}
+          showMixedNote={kpis.hasMixedProvenance}
+        />
       </div>
-      <div className="mt-2 h-1.5 rounded-full bg-surface-highlight overflow-hidden flex">
-        <div className="h-full bg-primary rounded-full" style={{ width: `${100 - savingsPercent}%` }} />
-        <div className="h-full bg-primary/20" style={{ width: `${savingsPercent}%` }} />
-      </div>
+      <p className="text-[10px] font-mono text-text-muted">{sessionParts.join(' · ')}</p>
     </div>
   );
 }
 
-// The full session KPI grid, identical across surfaces.
-export function MetricsKpiRow({ kpis }: { kpis: SessionKpis }) {
+// The honest idle-window note, shared by the workspace and the detached
+// window. Rendered only once the ranged series has actually loaded — an
+// unresolved fetch must never be presented as "no activity".
+export function WindowEmptyNote({
+  windowTotals,
+  sessionTotal,
+  loaded,
+}: {
+  windowTotals: WindowTotals;
+  sessionTotal: number;
+  loaded: boolean;
+}) {
+  if (!loaded || !windowTotals.isEmpty || sessionTotal === 0) return null;
   return (
-    <div className={cn('grid gap-3', kpis.savingsPercent > 0 ? 'grid-cols-5' : 'grid-cols-4')}>
-      <KPICard label="Input Tokens" value={kpis.input} colorClass="text-secondary" />
-      <KPICard label="Output Tokens" value={kpis.output} colorClass="text-primary" />
-      <KPICard label="Total Tokens" value={kpis.total} colorClass="text-text-primary" />
-      <CostKPICard
-        usd={kpis.costUSD}
-        hasCost={kpis.hasCost}
-        showHint={kpis.showAttributionHint}
-        showMixedNote={kpis.hasMixedProvenance}
-      />
-      {kpis.savingsPercent > 0 && (
-        <FormatSavingsCard savingsPercent={kpis.savingsPercent} savedTokens={kpis.savedTokens} />
-      )}
-    </div>
+    <p className="text-[11px] text-text-muted/70">
+      No activity in this window. The session line above covers the full recorded history.
+    </p>
   );
 }
 
