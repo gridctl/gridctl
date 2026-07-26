@@ -5,6 +5,7 @@ import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import type { Tool } from '../types';
 import * as apiModule from '../lib/api';
 import { SetServerToolsError } from '../lib/api';
+import { showToast } from '../components/ui/Toast';
 
 vi.mock('../components/ui/Toast', () => ({
   showToast: vi.fn(),
@@ -183,6 +184,50 @@ describe('useToolsEditor', () => {
     expect(setSpy).toHaveBeenCalledWith(SERVER, ['query']);
     expect(result.current.selected.has('insert')).toBe(false);
     expect(result.current.selected.has('query')).toBe(true);
+  });
+
+  it('refuses to save an empty selection (Clear then Save would re-expose all)', async () => {
+    const setSpy = vi.spyOn(apiModule, 'setServerTools');
+
+    // Curated whitelist; clearing it and saving would send [], which the
+    // backend reads as "expose all" — the inverse of the user's intent.
+    const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+
+    act(() => result.current.clearAll());
+    expect(result.current.saveBlocked).toBe(true);
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith('error', expect.stringContaining('empty selection'));
+  });
+
+  it('permits saving an empty selection when the server advertises no tools', async () => {
+    mockStoreState.tools = [];
+    mockStoreState.toolCatalog = [];
+    const setSpy = vi
+      .spyOn(apiModule, 'setServerTools')
+      .mockResolvedValue({ server: SERVER, tools: [], reloaded: true, reloadedAt: 'now' });
+    vi.spyOn(apiModule, 'fetchStatus').mockResolvedValue({
+      gateway: { name: 'x', version: '1' },
+      'mcp-servers': [],
+    });
+    vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
+
+    // No discovered tools: [] is the only expressible save, so the guard must
+    // not block it. Defensive — the UI keeps Save disabled while clean, so
+    // this pins the guard's exemption rather than a reachable user flow.
+    const { result } = renderHook(() => useToolsEditor(SERVER, []));
+    expect(result.current.saveBlocked).toBe(false);
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(setSpy).toHaveBeenCalledWith(SERVER, []);
   });
 
   it('disableTools refuses to disable every exposed tool (would re-expose all)', async () => {
