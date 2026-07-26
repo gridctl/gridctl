@@ -9,7 +9,12 @@ import { useWindowManager } from '../../hooks/useWindowManager';
 import { useListNav } from '../../hooks/useListNav';
 import { useToolUsage } from '../../hooks/useToolUsage';
 import { useLimits } from '../../hooks/useLimits';
-import { useMetricsSeries, type MetricsTimeRange } from '../../hooks/useMetricsSeries';
+import {
+  useMetricsSeries,
+  normalizeMetricsTimeRangeParam,
+  windowLabelFor,
+  type MetricsTimeRange,
+} from '../../hooks/useMetricsSeries';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { PopoutButton } from '../ui/PopoutButton';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
@@ -25,6 +30,7 @@ import {
   BreakdownTable,
   ModelMixBars,
   ScrollableBreakdown,
+  WindowEmptyNote,
 } from '../metrics/metricsShared';
 import { BudgetBar, LimitsPanel } from '../metrics/LimitsShared';
 import { budgetForRow, deriveLimitsSummary, type LimitRowScope } from '../metrics/limitsData';
@@ -36,6 +42,7 @@ import {
   derivePerClientRows,
   derivePerToolRows,
   deriveSessionKpis,
+  deriveWindowTotals,
   hasMetricsData,
   sortBreakdownRows,
   type BreakdownRow,
@@ -77,43 +84,13 @@ export function MetricsWorkspace() {
 
   const { openDetachedWindow } = useWindowManager();
 
-  const [timeRange, setTimeRange] = useState<MetricsTimeRange>('live');
-  const [isPaused, setIsPaused] = useState(false);
-  const [serverSort, setServerSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
-  const [clientSort, setClientSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
-  // Cost-descending default so the most expensive tools surface first.
-  const [toolSort, setToolSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
-  // Polite announcement for range/refresh, read by screen readers.
-  const [liveMsg, setLiveMsg] = useState('');
-
-  const { metricsData, costData, isLoading, error, reload, clear } = useMetricsSeries({
-    timeRange,
-    paused: isPaused,
-    perClient: true,
-  });
-
-  // Per-tool usage powers the Tools scope (and its rail count badge), so the
-  // poll runs whenever the workspace is mounted — same 15s cadence Audit Mode
-  // uses, against the same single per-tool data source.
-  const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
-
-  // Limit consumption overlays the breakdown rows and the Limits panel. A
-  // stack without a limits: block reports configured: false and renders
-  // nothing anywhere.
-  const { report: limitsReport } = useLimits(true);
-  const limitsSummary = useMemo(() => deriveLimitsSummary(limitsReport), [limitsReport]);
-  // Renders the consumption bar under a row's name when a budget governs it.
-  const limitBarFor = useCallback(
-    (scope: LimitRowScope) => (row: BreakdownRow) => {
-      const entry = budgetForRow(limitsSummary.entries, scope, row.name);
-      return entry ? <BudgetBar entry={entry} className="mt-1" /> : null;
-    },
-    [limitsSummary.entries],
-  );
-
   // ---- URL state ----------------------------------------------------------
   const scope: Scope = isScope(searchParams.get('scope')) ? (searchParams.get('scope') as Scope) : 'overview';
   const selected = searchParams.get('selected');
+  // Range mirrors ?range= (absent = live) so reload, share, and deep links
+  // restore the window like scope/selection. Pause stays local on purpose (a
+  // shared link must not arrive frozen), matching the Logs workspace.
+  const timeRange = normalizeMetricsTimeRangeParam(searchParams.get('range'));
 
   const setScope = useCallback(
     (next: Scope) => {
@@ -147,8 +124,59 @@ export function MetricsWorkspace() {
     [setSearchParams],
   );
 
+  const setTimeRange = useCallback(
+    (next: MetricsTimeRange) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          // Live is the default — drop the param so bare links stay canonical.
+          if (next === 'live') params.delete('range');
+          else params.set('range', next);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const [isPaused, setIsPaused] = useState(false);
+  const [serverSort, setServerSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
+  const [clientSort, setClientSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
+  // Cost-descending default so the most expensive tools surface first.
+  const [toolSort, setToolSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
+  // Polite announcement for range/refresh, read by screen readers.
+  const [liveMsg, setLiveMsg] = useState('');
+
+  const { metricsData, costData, isLoading, error, reload, clear } = useMetricsSeries({
+    timeRange,
+    paused: isPaused,
+    perClient: true,
+  });
+
+  // Per-tool usage powers the Tools scope (and its rail count badge), so the
+  // poll runs whenever the workspace is mounted — same 15s cadence Audit Mode
+  // uses, against the same single per-tool data source.
+  const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
+
+  // Limit consumption overlays the breakdown rows and the Limits panel. A
+  // stack without a limits: block reports configured: false and renders
+  // nothing anywhere.
+  const { report: limitsReport } = useLimits(true);
+  const limitsSummary = useMemo(() => deriveLimitsSummary(limitsReport), [limitsReport]);
+  // Renders the consumption bar under a row's name when a budget governs it.
+  const limitBarFor = useCallback(
+    (scope: LimitRowScope) => (row: BreakdownRow) => {
+      const entry = budgetForRow(limitsSummary.entries, scope, row.name);
+      return entry ? <BudgetBar entry={entry} className="mt-1" /> : null;
+    },
+    [limitsSummary.entries],
+  );
+
   // ---- Derived data -------------------------------------------------------
   const kpis = deriveSessionKpis(tokenUsage, costUsage, costAttribution, effectiveClientModels, effectiveServerModels);
+  const windowTotals = useMemo(() => deriveWindowTotals(metricsData, costData), [metricsData, costData]);
+  const windowLabel = windowLabelFor(timeRange);
   const chartData = useMemo(() => buildTokenChartData(metricsData), [metricsData]);
   const costChartData = useMemo(() => buildCostChartData(costData), [costData]);
   const costSeriesHasData = costChartData.some((d) => d['Cost (USD)'] > 0);
@@ -241,6 +269,7 @@ export function MetricsWorkspace() {
       declaredModel={inspectorDeclared}
       defaultModel={defaultModel}
       costAttribution={costAttribution}
+      showAttributionHint={kpis.showAttributionHint}
       onClientSaved={setClientModelLocal}
       onServerSaved={setServerModelLocal}
       onOpenManager={() => setPricingManagerOpen(true)}
@@ -290,7 +319,9 @@ export function MetricsWorkspace() {
             <div className="flex items-center gap-3 min-w-0">
               <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">metrics</div>
               <div className="font-mono text-[10px] text-text-muted truncate">
-                {kpis.total > 0 ? `${kpis.total.toLocaleString()} tokens` : 'no traffic yet'}
+                {kpis.total > 0 || windowTotals.total > 0
+                  ? `${windowLabel} · ${windowTotals.total.toLocaleString()} tokens`
+                  : 'no traffic yet'}
               </div>
             </div>
             <MetricsControls
@@ -309,28 +340,31 @@ export function MetricsWorkspace() {
           </header>
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-6 py-4">
-            {/* Mutually exclusive states: error → first-load skeleton (only when
-                nothing is showable yet) → empty → data. Store totals make
-                hasData true even before the series lands, so the data view wins
-                over the skeleton once any traffic exists. */}
+            {/* Mutually exclusive states: error → skeleton → empty → data.
+                The headline numbers are window-scoped, so the skeleton holds
+                until the ranged series lands (or a range switch resolves) —
+                rendering zeros from an unresolved fetch would present
+                "loading" as "no activity". */}
             {error && !isLoading && (
               <ErrorState message={error} onRetry={reload} />
             )}
 
-            {!error && !hasData && isLoading && !metricsData && <LoadingState />}
+            {!error && isLoading && !metricsData && <LoadingState />}
 
             {!error && !hasData && !(isLoading && !metricsData) && (
               <MetricsEmptyState onOpenPricing={() => setPricingManagerOpen(true)} />
             )}
 
-            {!error && hasData && (
+            {!error && hasData && !(isLoading && !metricsData) && (
               <div className="space-y-4 max-w-5xl">
                 <PersistedFromMarker serverName={null} signal="metrics" />
-                <MetricsKpiRow kpis={kpis} />
+                <MetricsKpiRow kpis={kpis} windowTotals={windowTotals} windowLabel={windowLabel} />
                 <div className="grid gap-4 xl:grid-cols-2">
                   <TokenChart data={chartData} metricsData={metricsData} />
                   {(kpis.hasCost || costSeriesHasData) && <CostChart data={costChartData} costData={costData} />}
                 </div>
+                <WindowEmptyNote windowTotals={windowTotals} sessionTotal={kpis.total} loaded={metricsData !== null} />
+
 
                 {scope === 'overview' && <LimitsPanel summary={limitsSummary} />}
 
@@ -346,8 +380,10 @@ export function MetricsWorkspace() {
                   </PanelHeader>
                 )}
 
+                {/* Breakdown tables stay snapshot-fed (no ranged per-entity
+                    aggregates exist yet), so their chrome says "session totals". */}
                 {scope === 'tools' && (
-                  <PanelHeader icon={Wrench} label="Per-Tool">
+                  <PanelHeader icon={Wrench} label="Per-Tool · session totals">
                     {toolRows.length > 0 ? (
                       <ScrollableBreakdown>
                         <BreakdownTable
@@ -373,7 +409,7 @@ export function MetricsWorkspace() {
                 )}
 
                 {scope === 'clients' && (
-                  <PanelHeader icon={Users} label="Top Clients">
+                  <PanelHeader icon={Users} label="Top Clients · session totals">
                     {clientRows.length > 0 ? (
                       <BreakdownTable
                         rows={clientRows}
@@ -403,7 +439,7 @@ export function MetricsWorkspace() {
                 )}
 
                 {scope === 'servers' && (
-                  <PanelHeader icon={Server} label="Per-Server">
+                  <PanelHeader icon={Server} label="Per-Server · session totals">
                     {serverRows.length > 0 ? (
                       <BreakdownTable
                         rows={serverRows}

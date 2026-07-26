@@ -785,7 +785,8 @@ export async function fetchTokenMetrics(range: string = '1h'): Promise<TokenMetr
 }
 
 /**
- * Clear all token metrics
+ * Clear all recorded metrics. The endpoint is a total wipe (Accumulator.Clear):
+ * tokens, cost, tool usage, and model history all reset together.
  * DELETE /api/metrics/tokens
  */
 export async function clearTokenMetrics(): Promise<void> {
@@ -834,25 +835,6 @@ export async function fetchOptimizeReport(opts?: {
   if (opts?.severity && opts.severity.length > 0) params.set('severity', opts.severity.join(','));
   const query = params.toString();
   return fetchJSON<OptimizeReport>(`/api/optimize${query ? `?${query}` : ''}`);
-}
-
-/**
- * Clear recorded USD-cost metrics. Leaves token counters intact.
- * DELETE /api/metrics/cost
- */
-export async function clearCostMetrics(): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/metrics/cost`, {
-    method: 'DELETE',
-    headers: buildHeaders(),
-  });
-
-  if (response.status === 401) {
-    throw new AuthError('Authentication required');
-  }
-
-  if (!response.ok) {
-    throw new Error(`Clear cost metrics failed: ${response.status} ${response.statusText}`);
-  }
 }
 
 // === Reload API ===

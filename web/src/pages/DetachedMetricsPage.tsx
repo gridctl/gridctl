@@ -9,13 +9,13 @@ import { POLLING } from '../lib/constants';
 import { ClientModelCell } from '../components/pricing/ClientModelCell';
 import { ServerModelCell } from '../components/pricing/ServerModelCell';
 import { PricingManagerSlideOver } from '../components/pricing/PricingManagerSlideOver';
-import { useMetricsSeries, type MetricsTimeRange } from '../hooks/useMetricsSeries';
+import { useMetricsSeries, windowLabelFor, type MetricsTimeRange } from '../hooks/useMetricsSeries';
 import { useToolUsage } from '../hooks/useToolUsage';
 import { useLimits } from '../hooks/useLimits';
 import { BudgetBar, LimitsPanel } from '../components/metrics/LimitsShared';
 import { budgetForRow, deriveLimitsSummary, type LimitRowScope } from '../components/metrics/limitsData';
 import { MetricsControls } from '../components/metrics/MetricsControls';
-import { MetricsKpiRow, TokenChart, CostChart, PanelHeader, BreakdownTable, ScrollableBreakdown } from '../components/metrics/metricsShared';
+import { MetricsKpiRow, TokenChart, CostChart, PanelHeader, BreakdownTable, ScrollableBreakdown, WindowEmptyNote } from '../components/metrics/metricsShared';
 import {
   buildTokenChartData,
   buildCostChartData,
@@ -23,6 +23,7 @@ import {
   derivePerClientRows,
   derivePerToolRows,
   deriveSessionKpis,
+  deriveWindowTotals,
   hasMetricsData,
   sortBreakdownRows,
   type BreakdownSortColumn,
@@ -149,7 +150,7 @@ function DetachedMetricsPageContent() {
     effectiveClientModels,
     effectiveServerModels,
   );
-  const sortedServers = sortBreakdownRows(derivePerServerRows(tokenUsage), sortColumn, sortDirection);
+  const sortedServers = sortBreakdownRows(derivePerServerRows(tokenUsage, costUsage), sortColumn, sortDirection);
   const sortedClients = sortBreakdownRows(
     derivePerClientRows(tokenUsage, costUsage),
     clientSortColumn,
@@ -170,6 +171,10 @@ function DetachedMetricsPageContent() {
   const costChartData = buildCostChartData(costData);
   const costSeriesHasData = costChartData.some((d) => d['Cost (USD)'] > 0);
   const hasData = hasMetricsData(kpis, metricsData, costData);
+  // Same windowed-KPI presentation as the in-shell workspace; the detached
+  // window keeps its range local (solo window, nothing to deep-link).
+  const windowTotals = deriveWindowTotals(metricsData, costData);
+  const windowLabel = windowLabelFor(timeRange);
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
@@ -263,18 +268,22 @@ function DetachedMetricsPageContent() {
           </div>
         )}
 
-        {!error && hasData && (
+        {!error && hasData && !(isLoading && !metricsData) && (
           <div className="space-y-4">
-            <MetricsKpiRow kpis={kpis} />
+            <MetricsKpiRow kpis={kpis} windowTotals={windowTotals} windowLabel={windowLabel} />
             <TokenChart data={chartData} metricsData={metricsData} heightClass="h-48" />
             {(kpis.hasCost || costSeriesHasData) && (
               <CostChart data={costChartData} costData={costData} heightClass="h-40" />
             )}
+            <WindowEmptyNote windowTotals={windowTotals} sessionTotal={kpis.total} loaded={metricsData !== null} />
+
 
             <LimitsPanel summary={limitsSummary} />
 
+            {/* Tables are snapshot-fed, hence "session totals" (same labeling
+                as the in-shell workspace). */}
             {sortedClients.length > 0 && (
-              <PanelHeader icon={Users} label="Top Clients">
+              <PanelHeader icon={Users} label="Top Clients · session totals">
                 <BreakdownTable
                   rows={sortedClients}
                   nameLabel="Client"
@@ -298,13 +307,14 @@ function DetachedMetricsPageContent() {
             )}
 
             {sortedServers.length > 0 && (
-              <PanelHeader icon={Server} label="Per-Server">
+              <PanelHeader icon={Server} label="Per-Server · session totals">
                 <BreakdownTable
                   rows={sortedServers}
                   nameLabel="Server"
                   sortColumn={sortColumn}
                   sortDirection={sortDirection}
                   onSort={handleSort}
+                  showCost
                   renderNameExtra={limitBarFor('server')}
                   renderModel={(row) => (
                     <ServerModelCell
@@ -321,7 +331,7 @@ function DetachedMetricsPageContent() {
             )}
 
             {sortedTools.length > 0 && (
-              <PanelHeader icon={Wrench} label="Per-Tool">
+              <PanelHeader icon={Wrench} label="Per-Tool · session totals">
                 <ScrollableBreakdown>
                   <BreakdownTable
                     rows={sortedTools}
@@ -342,7 +352,7 @@ function DetachedMetricsPageContent() {
       {/* Footer */}
       <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
         <span className="flex items-center gap-2">
-          {kpis.total > 0 ? `${formatCompactNumber(kpis.total)} total tokens` : 'No data'}
+          {kpis.total > 0 ? `Session total: ${formatCompactNumber(kpis.total)} tokens` : 'No data'}
           {kpis.hasCost && (
             <>
               <span className="text-text-muted/50">·</span>

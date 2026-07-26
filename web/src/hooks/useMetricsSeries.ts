@@ -19,6 +19,20 @@ export function apiRangeFor(range: MetricsTimeRange): string {
   return range === 'live' ? '30m' : range;
 }
 
+// Parse a ?range= URL param; anything unknown (or absent) falls back to live,
+// so deep links without a range keep today's meaning. Mirrors
+// normalizeLogTimeRangeParam in the Logs workspace.
+export function normalizeMetricsTimeRangeParam(param: string | null): MetricsTimeRange {
+  return param === '1h' || param === '6h' || param === '24h' || param === '7d' ? param : 'live';
+}
+
+// Human label for the active window, shown beside window-scoped numbers.
+// Live reads the last 30 minutes (see apiRangeFor), so it is labeled by that
+// window rather than as a total.
+export function windowLabelFor(range: MetricsTimeRange): string {
+  return range === 'live' ? 'Last 30m' : `Last ${range}`;
+}
+
 interface UseMetricsSeriesArgs {
   timeRange: MetricsTimeRange;
   // Gates fetching entirely (e.g. the bottom tab only loads while visible).
@@ -125,5 +139,21 @@ export function useMetricsSeries({
     void loadMetrics();
   }, [loadMetrics]);
 
-  return { metricsData, costData, isLoading, error, reload, clear };
+  // The API echoes the requested range, so a response held over from a
+  // previous range is never handed to consumers under the new label — the
+  // hook reports "loading" until the in-flight fetch overwrites it. A failed
+  // fetch keeps `error` set instead, so the mismatch cannot wedge the
+  // loading state.
+  const currentMetrics = metricsData && metricsData.range === apiRange ? metricsData : null;
+  const currentCost = costData && costData.range === apiRange ? costData : null;
+  const rangeSwitching = !error && metricsData !== null && currentMetrics === null;
+
+  return {
+    metricsData: currentMetrics,
+    costData: currentCost,
+    isLoading: isLoading || rangeSwitching,
+    error,
+    reload,
+    clear,
+  };
 }

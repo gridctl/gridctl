@@ -7,11 +7,12 @@ export const MODEL_PRECEDENCE_HINT =
   'Pricing precedence: client model (client_models) > server model > gateway default_model. ' +
   'A declared client model is a session-level default — it cannot track mid-session model switches.';
 
-// Rendered under the Cost KPI when no attribution is configured anywhere.
-// Points at the in-UI edit path first; stack.yaml stays the fallback for
-// operators who prefer the file.
+// Rendered under the Cost KPI and in the inspector legend when no attribution
+// is configured anywhere. Points at the pricing manager first (reachable from
+// every scope, unlike any single breakdown table); stack.yaml stays the
+// fallback for operators who prefer the file.
 export const ATTRIBUTION_HINT =
-  'Set a pricing model in the Top Clients table below, or in stack.yaml, to enable estimates';
+  'Set a pricing model in the pricing manager, or in stack.yaml, to enable estimates';
 
 // Footer copy for pickers and the pricing manager.
 export const SNAPSHOT_NOTE =
