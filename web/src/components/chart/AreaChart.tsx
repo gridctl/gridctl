@@ -242,6 +242,9 @@ interface AreaChartProps extends React.HTMLAttributes<HTMLDivElement> {
   fill?: "gradient" | "solid" | "none"
   tooltipCallback?: (tooltipCallbackContent: TooltipProps) => void
   customTooltip?: React.ComponentType<TooltipProps>
+  // Categories rendered with a dashed stroke — context/reference series that
+  // should read as background against the solid primary series.
+  dashedCategories?: string[]
 }
 
 const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) => {
@@ -274,6 +277,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
     fill = "gradient",
     tooltipCallback,
     customTooltip,
+    dashedCategories,
     ...other
   } = props
   const CustomTooltip = customTooltip
@@ -554,6 +558,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
                   dataKey={category}
                   stroke=""
                   strokeWidth={2}
+                  strokeDasharray={dashedCategories?.includes(category) ? "4 3" : undefined}
                   strokeLinejoin="round"
                   strokeLinecap="round"
                   isAnimationActive={false}
