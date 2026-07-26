@@ -1249,7 +1249,7 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 
 #### `PUT /api/mcp-servers/tools`
 
-Applies tool-whitelist changes to **multiple** servers in one atomic `stack.yaml` write and triggers a **single** hot reload, the fleet-bulk counterpart to the per-server endpoint above. Powers the Tools workspace bulk actions (fleet-wide expose-all / clear / pattern filtering), where applying N servers via N single-server calls would cost N reloads.
+Applies tool-whitelist changes to **multiple** servers in one atomic `stack.yaml` write and triggers a **single** hot reload, the fleet-bulk counterpart to the per-server endpoint above. Powers the Tools workspace Fleet actions (fleet-wide expose-all and hide-by-pattern), where applying N servers via N single-server calls would cost N reloads.
 
 **Transaction semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. This prevents a half-applied fleet edit. The reload runs once after the single write.
 
