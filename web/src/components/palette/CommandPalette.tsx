@@ -28,6 +28,7 @@ const SECTION_DISPLAY: Record<PaletteSection, { label: string; className: string
   canvas: { label: 'CANVAS', className: 'text-text-muted bg-surface-highlight border-border/30' },
   logs: { label: 'LOGS', className: 'text-text-muted bg-surface-highlight border-border/30' },
   metrics: { label: 'METRICS', className: 'text-secondary bg-secondary/5 border-secondary/20' },
+  pins: { label: 'PINS', className: 'text-status-pending bg-status-pending/5 border-status-pending/20' },
   global: { label: 'GLOBAL', className: 'text-primary bg-primary/5 border-primary/20' },
 };
 
@@ -182,7 +183,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             ? 'vault'
             : activeWorkspace === 'library'
               ? 'registry'
-              : 'canvas';
+              : activeWorkspace === 'pins'
+                ? 'pins'
+                : 'canvas';
 
   const recentCommands = getRecentCommands(5, activeWorkspace);
   const contextCommands = getSortedCommands(undefined, currentSection, activeWorkspace).slice(0, 6);

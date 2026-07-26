@@ -3,6 +3,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Copy,
+  Download,
   Loader2,
   LockOpen,
   Maximize2,
@@ -31,12 +33,22 @@ import {
 } from '../../lib/diff';
 import { FindingsList } from './PinFindings';
 import { SchemaDiffModal } from './SchemaDiffModal';
-import { showToast } from '../ui/Toast';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { copyWithToast, showToast } from '../ui/Toast';
+import { downloadTextFile, pinsDiffExportFilename } from '../../lib/download';
 
-// Stable DOM ids: the workspace scrolls to the section for ?view=drift and
-// focuses the Approve button from the rail's Enter binding.
+// Stable DOM ids: the workspace scrolls to the section for ?view=drift, the
+// rail's Enter binding focuses Approve, and the palette commands dispatch by
+// clicking these buttons so every entry point runs the same gated handler.
 export const DRIFT_SECTION_ID = 'pins-drift-section';
 export const APPROVE_BUTTON_ID = 'pins-approve-button';
+export const REVERIFY_BUTTON_ID = 'pins-reverify-button';
+export const EXPORT_BUTTON_ID = 'pins-export-button';
+export const COPY_HASH_BUTTON_ID = 'pins-copy-hash-button';
+
+// Approve interposes a confirmation past either threshold: a large change
+// set, or any warn-or-critical finding on the new definitions.
+const APPROVE_CONFIRM_CHANGES = 5;
 
 // Human labels for the wire change kinds.
 const CHANGE_KIND_LABELS: Record<PinsChangeKind, string> = {
@@ -54,6 +66,8 @@ export function DriftSection({ serverName }: { serverName: string }) {
   const [diff, setDiff] = useState<PinsDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
+  const [isReverifying, setIsReverifying] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   // Bumped by Retry and by a failed approve so the effect refetches.
   const [attempt, setAttempt] = useState(0);
 
@@ -80,7 +94,47 @@ export function DriftSection({ serverName }: { serverName: string }) {
     setAttempt((n) => n + 1);
   };
 
-  const handleApprove = async () => {
+  const handleReverify = async () => {
+    setIsReverifying(true);
+    try {
+      const updated = await fetchServerPins();
+      usePinsStore.getState().setPins(updated);
+    } catch {
+      showToast('error', 'Failed to refresh pins');
+    } finally {
+      setIsReverifying(false);
+    }
+    // The diff endpoint recomputes against live tools on every GET, so a
+    // re-verify is just a refetch; nothing mutates.
+    reloadDiff();
+  };
+
+  const handleExport = () => {
+    if (!diff) {
+      showToast('warning', 'Nothing to export; the diff has not loaded');
+      return;
+    }
+    try {
+      downloadTextFile(
+        JSON.stringify({ ...diff, server: serverName, exported_at: new Date().toISOString() }, null, 2),
+        pinsDiffExportFilename(serverName),
+        'application/json',
+      );
+      showToast('success', 'Diff exported');
+    } catch {
+      showToast('error', 'Export failed');
+    }
+  };
+
+  const handleCopyLiveHash = () => {
+    if (!diff) {
+      showToast('warning', 'The diff has not loaded yet');
+      return;
+    }
+    void copyWithToast(diff.live_server_hash, 'Live server hash');
+  };
+
+  const doApprove = async () => {
     if (!diff) return;
     setIsApproving(true);
     try {
@@ -105,7 +159,24 @@ export function DriftSection({ serverName }: { serverName: string }) {
     (diff?.new_tools.length ?? 0) +
     (diff?.removed_tools.length ?? 0);
 
+  const alertFindingCount =
+    diff?.modified_tools.reduce(
+      (acc, t) => acc + (t.findings ?? []).filter((f) => f.severity !== 'info').length,
+      0,
+    ) ?? 0;
+  const needsConfirm = changeCount >= APPROVE_CONFIRM_CHANGES || alertFindingCount > 0;
+
+  const handleApproveClick = () => {
+    if (!diff || isApproving) return;
+    if (needsConfirm) {
+      setConfirmOpen(true);
+    } else {
+      void doApprove();
+    }
+  };
+
   return (
+    <>
     <section
       id={DRIFT_SECTION_ID}
       className="rounded-lg border border-status-pending/30 bg-status-pending/[0.04] px-4 py-3 space-y-3"
@@ -117,17 +188,52 @@ export function DriftSection({ serverName }: { serverName: string }) {
         <span className="text-[10px] text-text-muted">
           {diff ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` : ''}
         </span>
+        <div className="ml-auto flex items-center gap-0.5">
+          <button
+            id={COPY_HASH_BUTTON_ID}
+            onClick={handleCopyLiveHash}
+            title="Copy hash for approve --expect"
+            aria-label="Copy live server hash"
+            className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+          >
+            <Copy size={11} />
+          </button>
+          <button
+            id={EXPORT_BUTTON_ID}
+            onClick={handleExport}
+            title="Export this diff as JSON"
+            aria-label="Export diff"
+            className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+          >
+            <Download size={11} />
+          </button>
+          <button
+            id={REVERIFY_BUTTON_ID}
+            onClick={handleReverify}
+            disabled={isReverifying}
+            title="Recompute the diff against live tools (read-only)"
+            aria-label="Re-verify"
+            className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={11} className={cn(isReverifying && 'animate-spin')} />
+          </button>
+        </div>
         <button
           id={APPROVE_BUTTON_ID}
-          onClick={handleApprove}
-          disabled={isApproving || diff === null}
+          onClick={handleApproveClick}
+          // Disabled only pre-diff (no blind approval); the in-flight state
+          // is guarded in the handler instead, because the confirm dialog
+          // restores focus here on close and a disabled button cannot take
+          // it, stranding keyboard users at the document root.
+          disabled={diff === null}
+          aria-busy={isApproving}
           title={
             diff === null
               ? 'Review the changes below before approving'
               : 'Re-pin the live definitions shown below'
           }
           className={cn(
-            'ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200',
+            'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200',
             isApproving || diff === null
               ? 'text-text-muted bg-surface-highlight/30 cursor-not-allowed'
               : 'text-status-running bg-status-running/10 border border-status-running/20 hover:bg-status-running/20',
@@ -213,6 +319,53 @@ export function DriftSection({ serverName }: { serverName: string }) {
         </div>
       )}
     </section>
+
+    {/* Sibling of the drift section: the Approve button itself stays inside
+        the aria-labeled region (co-location invariant), the confirmation
+        restates what is being trusted before the large or flagged re-pin.
+        display:contents so an ancestor's space-y margin cannot offset the
+        fixed-position backdrop. */}
+    <div className="contents">
+    <ConfirmDialog
+      isOpen={confirmOpen}
+      onClose={() => setConfirmOpen(false)}
+      onConfirm={() => {
+        setConfirmOpen(false);
+        void doApprove();
+      }}
+      title={`Approve ${changeCount} ${changeCount === 1 ? 'change' : 'changes'} on ${serverName}`}
+      autoFocus="cancel"
+      confirmLabel={`Approve ${changeCount} ${changeCount === 1 ? 'change' : 'changes'}`}
+      message={
+        <div className="space-y-2">
+          <p>
+            This re-pins the live definitions shown in the diff:{' '}
+            {[
+              diff && diff.modified_tools.length > 0
+                ? `${diff.modified_tools.length} modified`
+                : null,
+              diff && diff.new_tools.length > 0 ? `${diff.new_tools.length} new` : null,
+              diff && diff.removed_tools.length > 0
+                ? `${diff.removed_tools.length} removed`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(', ')}{' '}
+            {changeCount === 1 ? 'tool' : 'tools'} on{' '}
+            <span className="font-mono text-text-secondary">{serverName}</span>.
+          </p>
+          {alertFindingCount > 0 && (
+            <p className="text-status-pending">
+              The new definitions carry {alertFindingCount} warn-or-critical scan{' '}
+              {alertFindingCount === 1 ? 'finding' : 'findings'}. Review them in the diff before
+              approving.
+            </p>
+          )}
+        </div>
+      }
+    />
+    </div>
+    </>
   );
 }
 
@@ -276,7 +429,8 @@ function ModifiedToolCard({
           {descriptionUnchanged ? (
             <div className="flex items-start gap-2 text-[11px]">
               <span className="flex-shrink-0 font-mono text-text-muted">
-                {shortPinHash(d.old_hash)} → {shortPinHash(d.new_hash)}
+                <span title={d.old_hash}>{shortPinHash(d.old_hash)}</span> →{' '}
+                <span title={d.new_hash}>{shortPinHash(d.new_hash)}</span>
               </span>
               <span className="text-text-muted italic">description unchanged</span>
             </div>
@@ -385,7 +539,9 @@ function DiffRow({
       >
         {kind}
       </span>
-      <span className="flex-shrink-0 font-mono text-text-muted">{shortPinHash(hash)}</span>
+      <span className="flex-shrink-0 font-mono text-text-muted" title={hash}>
+        {shortPinHash(hash)}
+      </span>
       <span className="min-w-0 text-text-secondary whitespace-pre-wrap break-words">
         {tokens ? (
           tokens.map((t, idx) =>
