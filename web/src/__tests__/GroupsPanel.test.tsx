@@ -132,12 +132,15 @@ describe('ToolsWorkspace groups integration', () => {
     });
   }
 
-  it('hides the Groups button when unconfigured', async () => {
+  it('shows the Groups button when unconfigured and opens the empty state', async () => {
     vi.spyOn(api, 'fetchGroups').mockResolvedValue({ configured: false, groups: [] });
     seedStore();
     render(<ToolsWorkspace />, { wrapper: MemoryRouter });
-    await waitFor(() => expect(api.fetchGroups).toHaveBeenCalled());
-    expect(screen.queryByRole('button', { name: 'Open tool groups' })).not.toBeInTheDocument();
+
+    // Always visible so operators discover the feature; the empty state
+    // teaches the stack.yaml groups: block.
+    fireEvent.click(screen.getByRole('button', { name: 'Open tool groups' }));
+    expect(await screen.findByText('No tool groups configured.')).toBeInTheDocument();
   });
 
   it('shows the Groups button and membership badges when configured', async () => {
