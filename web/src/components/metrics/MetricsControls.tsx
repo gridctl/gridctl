@@ -92,8 +92,12 @@ export function MetricsControls({
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowClearConfirm(false)} />
               <div className="absolute right-0 top-full mt-1 z-50 p-3 rounded-lg bg-surface-elevated border border-border/50 shadow-xl min-w-[220px]">
-                <p className="text-xs text-text-primary font-medium mb-2">Clear all token metrics?</p>
-                <p className="text-[10px] text-text-muted mb-3">This cannot be undone.</p>
+                {/* The endpoint is a total wipe (Accumulator.Clear), so the
+                    copy names the whole blast radius — never just tokens. */}
+                <p className="text-xs text-text-primary font-medium mb-2">Clear all metrics?</p>
+                <p className="text-[10px] text-text-muted mb-3">
+                  This wipes token, cost, tool usage, and model history. It cannot be undone.
+                </p>
                 <div className="flex items-center gap-2 justify-end">
                   <button
                     onClick={() => setShowClearConfirm(false)}
