@@ -190,6 +190,44 @@ export function deriveSessionKpis(
   };
 }
 
+// Totals for the active time window, summed from the same ranged series the
+// charts draw. The counterpart to SessionKpis (cumulative since gateway
+// start/restore): the KPI cards bind here so the range control owns every
+// headline number, while the session totals render on their own labeled line.
+export interface WindowTotals {
+  input: number;
+  output: number;
+  total: number;
+  // Sum of the cost series. undefined means the cost series has not loaded,
+  // so the window cost is unknown (rendered as an em-dash, never $0.00); a
+  // loaded-but-empty window legitimately sums to 0.
+  costUSD: number | undefined;
+  // True when neither series has a bucket in the window — the "no activity
+  // in this window" state, distinct from a stack with no traffic ever.
+  isEmpty: boolean;
+}
+
+export function deriveWindowTotals(
+  metricsData: TokenMetricsResponse | null,
+  costData: CostMetricsResponse | null,
+): WindowTotals {
+  // data_points is nullable in practice: the backend marshals an empty
+  // downsampled range as null, which still means "loaded, nothing in it".
+  const input = (metricsData?.data_points ?? []).reduce((sum, dp) => sum + dp.input_tokens, 0);
+  const output = (metricsData?.data_points ?? []).reduce((sum, dp) => sum + dp.output_tokens, 0);
+  const costUSD = costData
+    ? (costData.data_points ?? []).reduce((sum, dp) => sum + dp.usd, 0)
+    : undefined;
+  return {
+    input,
+    output,
+    total: input + output,
+    costUSD,
+    isEmpty:
+      (metricsData?.data_points?.length ?? 0) === 0 && (costData?.data_points?.length ?? 0) === 0,
+  };
+}
+
 export function hasMetricsData(
   kpis: SessionKpis,
   metricsData: TokenMetricsResponse | null,
