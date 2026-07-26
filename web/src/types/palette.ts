@@ -8,6 +8,7 @@ export type PaletteSection =
   | 'canvas'
   | 'logs'
   | 'metrics'
+  | 'pins'
   | 'global';
 
 export interface PaletteCommand {
