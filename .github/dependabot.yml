@@ -23,3 +23,12 @@ updates:
       rjsf:
         patterns:
           - "@rjsf/*"
+      # react-dom pins its peer react to the exact same version, so a solo
+      # bump of either one fails npm ci with an unresolvable peer conflict
+      # (see the react-dom 19.2.8 bump). Group them so they move in lockstep.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
