@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { WorkspaceSwitcher } from '../components/shell/WorkspaceSwitcher';
 import { WORKSPACE_CONFIG } from '../types/workspace';
+import { useToolsDirtyStore } from '../stores/useToolsDirtyStore';
 
 function renderAt(path: string) {
   return render(
@@ -60,5 +61,37 @@ describe('WorkspaceSwitcher', () => {
         `/${ws.id}`,
       );
     }
+  });
+});
+
+describe('WorkspaceSwitcher — Tools dirty guard', () => {
+  afterEach(() => {
+    useToolsDirtyStore.setState({ dirty: false, exitNavTarget: null });
+  });
+
+  it('cancels leaving /tools with a dirty editor and stashes the target', () => {
+    useToolsDirtyStore.setState({ dirty: true, exitNavTarget: null });
+    renderAt('/tools');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Metrics' }));
+
+    expect(useToolsDirtyStore.getState().exitNavTarget).toBe('/metrics');
+    // The NavLink was cancelled — Tools stays the active pill.
+    expect(screen.getByRole('tab', { name: 'Tools' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('does not intercept when the Tools editor is clean', () => {
+    renderAt('/tools');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Metrics' }));
+
+    expect(useToolsDirtyStore.getState().exitNavTarget).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Metrics' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 });
