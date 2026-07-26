@@ -14,3 +14,7 @@ export function downloadTextFile(content: string, filename: string, mime: string
 export function logExportFilename(format: 'jsonl' | 'txt'): string {
   return `gridctl-logs-${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}.${format}`;
 }
+
+export function pinsDiffExportFilename(server: string): string {
+  return `gridctl-pins-diff-${server}-${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}.json`;
+}
