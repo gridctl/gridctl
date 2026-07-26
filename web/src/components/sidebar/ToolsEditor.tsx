@@ -1,5 +1,5 @@
 import { Command } from 'cmdk';
-import { AlertCircle, Check, Loader2, RefreshCw, Save, Search } from 'lucide-react';
+import { AlertCircle, Check, Loader2, RefreshCw, Save, Search, Undo2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
 
@@ -35,6 +35,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
     selectAll,
     clearAll,
     dirty,
+    saveBlocked,
     diffCount,
     isSaving,
     conflict,
@@ -81,11 +82,19 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
 
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 text-[10px] text-text-muted border-b border-border/30">
-          <span>
-            <span className="text-text-secondary font-medium">{selected.size}</span> of{' '}
-            <span className="text-text-secondary font-medium">{allTools.length}</span>{' '}
-            enabled — empty means all tools exposed
-          </span>
+          {saveBlocked ? (
+            <span role="alert" className="text-status-error">
+              <span className="font-medium">0</span> of{' '}
+              <span className="font-medium">{allTools.length}</span> selected — cannot save
+              an empty selection (an empty whitelist would expose all tools)
+            </span>
+          ) : (
+            <span>
+              <span className="text-text-secondary font-medium">{selected.size}</span> of{' '}
+              <span className="text-text-secondary font-medium">{allTools.length}</span>{' '}
+              enabled — empty means all tools exposed
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
@@ -200,30 +209,44 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={!dirty || isSaving}
-        aria-label={saveLabel}
-        className={cn(
-          'w-full inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium transition-colors',
-          dirty && !isSaving
-            ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
-            : 'bg-surface-highlight/50 text-text-muted border border-border/30 cursor-not-allowed',
+      <div className="flex items-center gap-2">
+        {dirty && (
+          <button
+            type="button"
+            onClick={handleDiscard}
+            disabled={isSaving}
+            aria-label="Discard unsaved tool changes"
+            className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium border border-border/40 text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors disabled:opacity-50"
+          >
+            <Undo2 size={11} />
+            Discard
+          </button>
         )}
-      >
-        {isSaving ? (
-          <>
-            <Loader2 size={11} className="animate-spin" />
-            Saving…
-          </>
-        ) : (
-          <>
-            <Save size={11} />
-            {saveLabel}
-          </>
-        )}
-      </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!dirty || isSaving || saveBlocked}
+          aria-label={saveLabel}
+          className={cn(
+            'flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium transition-colors',
+            dirty && !isSaving && !saveBlocked
+              ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
+              : 'bg-surface-highlight/50 text-text-muted border border-border/30 cursor-not-allowed',
+          )}
+        >
+          {isSaving ? (
+            <>
+              <Loader2 size={11} className="animate-spin" />
+              Saving…
+            </>
+          ) : (
+            <>
+              <Save size={11} />
+              {saveLabel}
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
