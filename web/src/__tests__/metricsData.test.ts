@@ -6,6 +6,7 @@ import {
   sortBreakdownRows,
   aggregateModelMix,
   deriveSessionKpis,
+  deriveWindowTotals,
   hasMetricsData,
   buildTokenChartData,
   buildCostChartData,
@@ -224,6 +225,54 @@ describe('hasMetricsData', () => {
   it('is true when a token series has points', () => {
     const series = { range: '1h', interval: '1m', data_points: [{ timestamp: 't', input_tokens: 1, output_tokens: 1, total_tokens: 2 }], per_server: {} } as TokenMetricsResponse;
     expect(hasMetricsData(emptyKpis, series, null)).toBe(true);
+  });
+});
+
+describe('deriveWindowTotals', () => {
+  const tokenSeries = {
+    range: '1h', interval: '1m',
+    data_points: [
+      { timestamp: 't1', input_tokens: 7, output_tokens: 3, total_tokens: 10 },
+      { timestamp: 't2', input_tokens: 5, output_tokens: 5, total_tokens: 10 },
+    ],
+    per_server: {},
+  } as TokenMetricsResponse;
+  const costSeries = {
+    range: '1h', interval: '1m',
+    data_points: [{ timestamp: 't1', usd: 0.02 }, { timestamp: 't2', usd: 0.03 }],
+    per_server: {},
+  } as CostMetricsResponse;
+
+  it('sums token and cost buckets across the window', () => {
+    const w = deriveWindowTotals(tokenSeries, costSeries);
+    expect(w.input).toBe(12);
+    expect(w.output).toBe(8);
+    expect(w.total).toBe(20);
+    expect(w.costUSD).toBeCloseTo(0.05);
+    expect(w.isEmpty).toBe(false);
+  });
+
+  it('returns zeros and isEmpty for series with no buckets', () => {
+    const emptyTokens: TokenMetricsResponse = { range: '1h', interval: '1m', data_points: [], per_server: {} };
+    const emptyCost: CostMetricsResponse = { range: '1h', interval: '1m', data_points: [], per_server: {} };
+    const w = deriveWindowTotals(emptyTokens, emptyCost);
+    expect(w.total).toBe(0);
+    expect(w.costUSD).toBe(0);
+    expect(w.isEmpty).toBe(true);
+  });
+
+  it('leaves costUSD undefined when no cost series has loaded', () => {
+    const w = deriveWindowTotals(tokenSeries, null);
+    expect(w.costUSD).toBeUndefined();
+    expect(w.isEmpty).toBe(false);
+  });
+
+  it('treats a loaded series with null points as an empty window, not unknown', () => {
+    // The backend marshals an empty downsampled range as null data_points.
+    const nullCost = { range: '24h', interval: '1h', data_points: null, per_server: {} } as unknown as CostMetricsResponse;
+    const w = deriveWindowTotals(null, nullCost);
+    expect(w.costUSD).toBe(0);
+    expect(w.isEmpty).toBe(true);
   });
 });
 
