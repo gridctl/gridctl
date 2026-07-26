@@ -4,12 +4,14 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { formatCompactNumber, formatUSD } from '../../lib/format';
 import { AreaChart } from '../chart/AreaChart';
+import type { AvailableChartColorsKeys } from '../chart/chartColors';
 import { ATTRIBUTION_HINT, MIXED_PROVENANCE_NOTE } from '../pricing/constants';
 import { sharePct } from '../pricing/effectiveModel';
-import type { ModelShare, TokenMetricsResponse, CostMetricsResponse } from '../../types';
+import type { ModelProvenance, ModelShare, TokenMetricsResponse, CostMetricsResponse } from '../../types';
 import type {
   BreakdownRow,
   BreakdownSortColumn,
+  ModelRow,
   SessionKpis,
   SortDirection,
   WindowTotals,
@@ -81,10 +83,15 @@ export function MetricsKpiRow({
   kpis,
   windowTotals,
   windowLabel,
+  focusLine,
 }: {
   kpis: SessionKpis;
   windowTotals: WindowTotals;
   windowLabel: string;
+  // Rendered between the window cards and the session line while an entity is
+  // focused, so the focused charts below never contradict an unqualified
+  // fleet number above them.
+  focusLine?: string;
 }) {
   const sessionParts = [
     `Session total: ${kpis.total.toLocaleString()} tokens`,
@@ -107,6 +114,7 @@ export function MetricsKpiRow({
           showMixedNote={kpis.hasMixedProvenance}
         />
       </div>
+      {focusLine && <p className="text-[10px] font-mono text-text-secondary">{focusLine}</p>}
       <p className="text-[10px] font-mono text-text-muted">{sessionParts.join(' · ')}</p>
     </div>
   );
@@ -136,8 +144,9 @@ export function WindowEmptyNote({
 // Charts (with screen-reader text alternatives)
 // ---------------------------------------------------------------------------
 
-type TokenPoint = { time: string; 'Input Tokens': number; 'Output Tokens': number };
-type CostPoint = { time: string; 'Cost (USD)': number };
+// Chart rows are open records: the fleet charts carry the fixed token/cost
+// keys, and the focused variants add a fleet-context category.
+type ChartRow = { time: string } & Record<string, number | string>;
 
 // Exposes a role="img" + aria-label summary, since the underlying Recharts SVG
 // has no accessible description. The breakdown tables remain the full data
@@ -150,21 +159,53 @@ function ChartFrame({ label, children }: { label: string; children: ReactNode })
   );
 }
 
+// Peak per interval for the aria summary: stacked charts peak on the category
+// sum, overlapping (focused) charts on the largest single category. Dashed
+// context categories are excluded — the summary describes the subject, and
+// the fleet total would otherwise be announced as the entity's peak.
+function peakFor(
+  data: ChartRow[],
+  categories: string[],
+  stacked: boolean,
+  dashedCategories?: string[],
+): number {
+  const primary = categories.filter((c) => !dashedCategories?.includes(c));
+  return data.reduce((m, d) => {
+    const values = primary.map((c) => Number(d[c]) || 0);
+    return Math.max(m, stacked ? values.reduce((s, v) => s + v, 0) : Math.max(...values, 0));
+  }, 0);
+}
+
 export function TokenChart({
   data,
   metricsData,
   heightClass = 'h-36',
+  subject,
+  categories = ['Input Tokens', 'Output Tokens'],
+  colors = ['teal', 'amber'],
+  chartType = 'stacked',
+  dashedCategories,
 }: {
-  data: TokenPoint[];
+  data: ChartRow[];
   metricsData: TokenMetricsResponse | null;
   heightClass?: string;
+  // Focused-entity variant: `subject` names the entity (deriving both the
+  // visible title and the aria summary so they cannot drift), categories add
+  // the fleet-context series (dashed), and the chart drops stacking so the
+  // context line overlaps instead of stacking on top.
+  subject?: string;
+  categories?: string[];
+  colors?: AvailableChartColorsKeys[];
+  chartType?: 'stacked' | 'default';
+  dashedCategories?: string[];
 }) {
-  const peak = data.reduce((m, d) => Math.max(m, d['Input Tokens'] + d['Output Tokens']), 0);
-  const summary = `Token usage over time: ${data.length} points, peak ${formatCompactNumber(peak)} tokens per interval.`;
+  const title = subject ? `${subject} · Token Usage` : 'Token Usage Over Time';
+  const peak = peakFor(data, categories, chartType === 'stacked', dashedCategories);
+  const summary = `Token usage over time${subject ? ` for ${subject}` : ''}: ${data.length} points, peak ${formatCompactNumber(peak)} tokens per interval.`;
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] font-medium text-text-secondary">Token Usage Over Time</span>
+        <span className="text-[11px] font-medium text-text-secondary">{title}</span>
         {metricsData && (
           <span className="text-[9px] text-text-muted font-mono">
             {metricsData.data_points?.length ?? 0} points &middot; {metricsData.interval} interval
@@ -175,9 +216,10 @@ export function TokenChart({
         <AreaChart
           data={data}
           index="time"
-          categories={['Input Tokens', 'Output Tokens']}
-          colors={['teal', 'amber']}
-          type="stacked"
+          categories={categories}
+          colors={colors}
+          type={chartType}
+          dashedCategories={dashedCategories}
           fill="gradient"
           showLegend
           showGridLines
@@ -195,19 +237,30 @@ export function CostChart({
   data,
   costData,
   heightClass = 'h-32',
+  subject,
+  categories = ['Cost (USD)'],
+  colors = ['emerald'],
+  dashedCategories,
 }: {
-  data: CostPoint[];
+  data: ChartRow[];
   costData: CostMetricsResponse | null;
   heightClass?: string;
+  // Focused-entity variant, mirroring TokenChart's props (cost is never
+  // stacked, so there is no chartType here).
+  subject?: string;
+  categories?: string[];
+  colors?: AvailableChartColorsKeys[];
+  dashedCategories?: string[];
 }) {
-  const peak = data.reduce((m, d) => Math.max(m, d['Cost (USD)']), 0);
-  const summary = `Estimated cost over time: ${data.length} points, peak ${formatUSD(peak)} per interval.`;
+  const title = subject ? `${subject} · Cost` : 'Cost Over Time';
+  const peak = peakFor(data, categories, false, dashedCategories);
+  const summary = `Estimated cost over time${subject ? ` for ${subject}` : ''}: ${data.length} points, peak ${formatUSD(peak)} per interval.`;
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
       <div className="flex items-center justify-between mb-1">
         <span className="text-[11px] font-medium text-text-secondary inline-flex items-center gap-1.5">
           <DollarSign size={11} className="text-emerald-400" />
-          Cost Over Time
+          {title}
         </span>
         {costData && (
           <span className="text-[9px] text-text-muted font-mono">
@@ -219,9 +272,10 @@ export function CostChart({
         <AreaChart
           data={data}
           index="time"
-          categories={['Cost (USD)']}
-          colors={['emerald']}
+          categories={categories}
+          colors={colors}
           type="default"
+          dashedCategories={dashedCategories}
           fill="gradient"
           // Legend on so cost is labeled by text, not color alone.
           showLegend
@@ -300,6 +354,68 @@ export function PanelHeader({
   );
 }
 
+// Small header-slot link for preview panels ("Top Servers" and friends):
+// jumps to the full scope view via the host's setScope.
+export function ViewAllButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[10px] font-medium text-primary hover:underline"
+    >
+      View all
+    </button>
+  );
+}
+
+function entityCellLabel(entities: string[]): string {
+  if (entities.length <= 2) return entities.join(', ');
+  return `${entities.slice(0, 2).join(', ')} +${entities.length - 2}`;
+}
+
+function provenanceCellLabel(provenance: Record<ModelProvenance, number>): string {
+  const parts = (Object.entries(provenance) as Array<[ModelProvenance, number]>)
+    .filter(([, count]) => count > 0)
+    .map(([kind, count]) => `${count} ${kind}`);
+  return parts.join(' · ') || '—';
+}
+
+// The Models scope breakdown: one row per model with its cost share, the
+// entities it priced, and their provenance mix. Static cost-descending
+// (aggregateModelRows sorts) — a model has nothing to inspect in the right
+// rail yet, so rows are not selectable in v1. Distinct from BreakdownTable,
+// whose columns are hardwired to token counts.
+export function ModelBreakdownTable({ rows }: { rows: ModelRow[] }) {
+  return (
+    <table className="w-full text-xs">
+      <thead>
+        <tr className="border-b border-border/30">
+          <th className="px-3 py-2 text-left font-medium text-text-muted">Model</th>
+          <th className="px-3 py-2 text-right font-medium text-text-muted">Share</th>
+          <th className="px-3 py-2 text-right font-medium text-text-muted">Cost</th>
+          <th className="px-3 py-2 text-left font-medium text-text-muted">Entities</th>
+          <th className="px-3 py-2 text-left font-medium text-text-muted">Provenance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.model} className="border-b border-border/20 last:border-0">
+            <td className="px-3 py-2 font-mono text-text-primary" title={row.model}>
+              {row.model}
+            </td>
+            <td className="px-3 py-2 text-right tabular-nums text-text-secondary">{sharePct(row.share)}</td>
+            <td className="px-3 py-2 text-right tabular-nums text-emerald-400">{formatUSD(row.cost_usd)}</td>
+            <td className="px-3 py-2 font-mono text-[10px] text-text-secondary" title={row.entities.join(', ')}>
+              {entityCellLabel(row.entities)}
+            </td>
+            <td className="px-3 py-2 text-[10px] text-text-muted">{provenanceCellLabel(row.provenance)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export function SortableHeader({
   label,
   column,
@@ -312,9 +428,18 @@ export function SortableHeader({
   column: BreakdownSortColumn;
   sortColumn: BreakdownSortColumn;
   sortDirection: SortDirection;
-  onSort: (column: BreakdownSortColumn) => void;
+  // Absent for fixed-order tables (the Overview previews): the header renders
+  // as plain text instead of a dead, focusable, sort-announcing control.
+  onSort?: (column: BreakdownSortColumn) => void;
   align?: 'left' | 'right';
 }) {
+  if (!onSort) {
+    return (
+      <th className={cn('px-3 py-2 font-medium text-text-muted select-none', align === 'right' && 'text-right')}>
+        {label}
+      </th>
+    );
+  }
   const isActive = sortColumn === column;
   const SortIcon = isActive ? (sortDirection === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
   return (
@@ -388,7 +513,7 @@ export function BreakdownTable({
   nameLabel: string;
   sortColumn: BreakdownSortColumn;
   sortDirection: SortDirection;
-  onSort: (column: BreakdownSortColumn) => void;
+  onSort?: (column: BreakdownSortColumn) => void;
   renderModel?: (row: BreakdownRow) => ReactNode;
   renderNameExtra?: (row: BreakdownRow) => ReactNode;
   showCost?: boolean;
