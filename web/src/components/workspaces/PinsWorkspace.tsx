@@ -3,13 +3,15 @@ import { useSearchParams } from 'react-router';
 import { Loader2, Pin } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { serverHasAlertFindings, countServerAlertFindings, usePinsStore } from '../../stores/usePinsStore';
-import type { ServerPins } from '../../lib/api';
+import { fetchServerPins, resetServerPins, type ServerPins } from '../../lib/api';
 import { useListNav } from '../../hooks/useListNav';
 import { useUIStore } from '../../stores/useUIStore';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { PinsRail } from '../pins/PinsRail';
 import { PinsServerDetail, TOOLS_SECTION_ID } from '../pins/PinsServerDetail';
 import { APPROVE_BUTTON_ID, DRIFT_SECTION_ID } from '../pins/PinsDriftSection';
+import { usePinsCommands } from '../pins/usePinsCommands';
+import { showToast } from '../ui/Toast';
 
 // Valid ?view= targets: drift scrolls to the drift panel, findings and tools
 // both land on the pinned-records table (findings live inside it).
@@ -122,6 +124,36 @@ export function PinsWorkspace() {
     }
   }, [serverParam, activeServerName, updateParams]);
 
+  // Findings-only table filter: ?view=findings is the landing intent, the
+  // persisted pref carries the explicit choice between visits.
+  const findingsOnly = view === 'findings' || pinsPrefs.findingsOnly;
+  const toggleFindingsOnly = useCallback(() => {
+    const next = !(useUIStore.getState().pinsPrefs.findingsOnly || view === 'findings');
+    useUIStore.getState().setPinsPrefs({ findingsOnly: next });
+    if (!next && view === 'findings') {
+      updateParams((p) => {
+        p.delete('view');
+      });
+    }
+  }, [view, updateParams]);
+
+  const handleReset = useCallback(
+    async (name: string) => {
+      try {
+        await resetServerPins(name);
+        const updated = await fetchServerPins();
+        usePinsStore.getState().setPins(updated);
+        showToast('success', `Pins reset for ${name}; it re-pins on the next verify`);
+        updateParams((p) => {
+          if (p.get('server') === name) p.delete('server');
+        });
+      } catch (err) {
+        showToast('error', `Failed to reset: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    },
+    [updateParams],
+  );
+
   const toggleAttention = useCallback(() => {
     const next = !attentionOnly;
     // Persist the explicit choice; the URL carries it only when it differs
@@ -169,6 +201,12 @@ export function PinsWorkspace() {
         approve.focus();
       }
     },
+  });
+
+  usePinsCommands({
+    activeServerName,
+    toggleAttention,
+    toggleFindingsOnly,
   });
 
   // null means the first /api/pins poll has not landed yet; the endpoint
@@ -230,7 +268,15 @@ export function PinsWorkspace() {
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
             {activePins && (
-              <PinsServerDetail key={activeServerName} name={activeServerName} pins={activePins} />
+              <PinsServerDetail
+                key={activeServerName}
+                name={activeServerName}
+                pins={activePins}
+                findingsOnly={findingsOnly}
+                onToggleFindingsOnly={toggleFindingsOnly}
+                onReset={handleReset}
+                expandFindingsOnMount={view === 'findings'}
+              />
             )}
           </div>
         </main>
