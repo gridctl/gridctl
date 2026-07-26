@@ -1,14 +1,16 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { BarChart3, Boxes, Layers, Server, Users, Wrench } from 'lucide-react';
+import { BarChart3, Boxes, Layers, Server, Users, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { formatUSD } from '../../lib/format';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useListNav } from '../../hooks/useListNav';
 import { useToolUsage } from '../../hooks/useToolUsage';
 import { useLimits } from '../../hooks/useLimits';
+import { useOptimize } from '../../hooks/useOptimize';
 import {
   useMetricsSeries,
   normalizeMetricsTimeRangeParam,
@@ -22,33 +24,45 @@ import { ClientModelCell } from '../pricing/ClientModelCell';
 import { ServerModelCell } from '../pricing/ServerModelCell';
 import { MetricsControls } from '../metrics/MetricsControls';
 import { MetricsInspector } from '../metrics/MetricsInspector';
+import { SavingsCard } from '../metrics/SavingsCard';
+import { ToolsFilterBar } from '../metrics/ToolsFilterBar';
+import { sharePct } from '../pricing/effectiveModel';
 import {
   MetricsKpiRow,
   TokenChart,
   CostChart,
   PanelHeader,
   BreakdownTable,
+  ModelBreakdownTable,
   ModelMixBars,
   ScrollableBreakdown,
+  ViewAllButton,
   WindowEmptyNote,
 } from '../metrics/metricsShared';
 import { BudgetBar, LimitsPanel } from '../metrics/LimitsShared';
 import { budgetForRow, deriveLimitsSummary, type LimitRowScope } from '../metrics/limitsData';
 import {
-  aggregateModelMix,
+  aggregateModelRows,
   buildTokenChartData,
   buildCostChartData,
+  buildFocusedTokenChartData,
+  buildFocusedCostChartData,
+  deriveFocusedTotals,
   derivePerServerRows,
   derivePerClientRows,
   derivePerToolRows,
   deriveSessionKpis,
   deriveWindowTotals,
+  findingTarget,
   hasMetricsData,
   sortBreakdownRows,
+  FLEET_COST_CATEGORY,
+  FLEET_TOKEN_CATEGORY,
   type BreakdownRow,
   type BreakdownSortColumn,
   type SortDirection,
 } from '../metrics/metricsData';
+import type { OptimizeFinding } from '../../types';
 
 type Scope = 'overview' | 'clients' | 'servers' | 'tools' | 'models';
 const SCOPES: Scope[] = ['overview', 'clients', 'servers', 'tools', 'models'];
@@ -57,14 +71,27 @@ function isScope(v: string | null): v is Scope {
   return v != null && (SCOPES as string[]).includes(v);
 }
 
-// MetricsWorkspace is the first-class cost/token observability surface, sibling
-// to Stack, Library, Variables, and Tools. The left rail is a scope
-// navigator (overview / clients / servers / tools / models); the center carries the
-// session KPI row, the trend charts, and the active scope's breakdown; the
-// right rail inspects the selected client or server (and hosts its inline
-// pricing-model editor). Scope and selection are URL-synced so reload and
-// deep-links survive. The full dashboard body is shared with the bottom
-// glance tab and the detached window via metricsShared.
+// The tools filters are one concept spread over three params; every writer
+// that clears them goes through here so a future facet is added once.
+function clearToolParams(params: URLSearchParams): void {
+  params.delete('q');
+  params.delete('server');
+  params.delete('priced');
+}
+
+// MetricsWorkspace is the first-class cost/token observability surface,
+// sibling to Stack, Library, Variables, and Tools. The left rail is a scope
+// navigator (overview / clients / servers / tools / models); the center
+// carries the window-scoped KPI row, the trend charts, and the active scope's
+// breakdown; the right rail inspects the selected client, server, or tool
+// (and hosts its inline pricing-model editor). Overview doubles as a home:
+// savings opportunities from the optimize report plus top-5 server/tool
+// previews that jump into their scopes. Selecting a server or client
+// refocuses the center charts on that entity with the fleet as dashed
+// context. Scope, selection, time range (?range=), and the tools filters
+// (?q= / ?server= / ?priced=) are URL-synced so reload and deep links
+// survive. The dashboard body is shared with the detached window via
+// metricsShared.
 export function MetricsWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
   const compact = useUIStore((s) => s.compactMode.metrics);
@@ -91,6 +118,12 @@ export function MetricsWorkspace() {
   // restore the window like scope/selection. Pause stays local on purpose (a
   // shared link must not arrive frozen), matching the Logs workspace.
   const timeRange = normalizeMetricsTimeRangeParam(searchParams.get('range'));
+  // Tools-scope filters, Library idiom: omitted at their defaults so bare
+  // links stay canonical.
+  const toolQuery = searchParams.get('q') ?? '';
+  const toolServerFacet = searchParams.get('server');
+  const pricedParam = searchParams.get('priced');
+  const toolPricedFacet: 'yes' | 'no' | null = pricedParam === 'yes' || pricedParam === 'no' ? pricedParam : null;
 
   const setScope = useCallback(
     (next: Scope) => {
@@ -99,8 +132,10 @@ export function MetricsWorkspace() {
           const params = new URLSearchParams(prev);
           if (next === 'overview') params.delete('scope');
           else params.set('scope', next);
-          // Selection is scope-local — drop it when the axis changes.
+          // Selection and the tools filters are scope-local — drop them when
+          // the axis changes.
           params.delete('selected');
+          clearToolParams(params);
           return params;
         },
         { replace: true },
@@ -140,6 +175,96 @@ export function MetricsWorkspace() {
     [setSearchParams],
   );
 
+  // Tools-filter writers. Each is one composed setSearchParams call —
+  // sequential calls would read the same stale snapshot and clobber each
+  // other (see the ToolsWorkspace note on composed updates).
+  const setToolQuery = useCallback(
+    (q: string) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (q) params.set('q', q);
+          else params.delete('q');
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const setToolServerFacet = useCallback(
+    (server: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (server) params.set('server', server);
+          else params.delete('server');
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const setToolPricedFacet = useCallback(
+    (priced: 'yes' | 'no' | null) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (priced) params.set('priced', priced);
+          else params.delete('priced');
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const clearToolFilters = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        clearToolParams(params);
+        return params;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  // Jump from an Overview preview row (or an optimize finding) into a scope
+  // with the row selected — one composed update so scope, selection, and the
+  // cleared tools filters land atomically.
+  const openInScope = useCallback(
+    (next: Scope, name: string) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          params.set('scope', next);
+          params.set('selected', name);
+          clearToolParams(params);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  // Optimize deep links resolve through findingTarget — the same predicate
+  // SavingsCard uses to decide whether a row is a button — so a clickable
+  // finding always has somewhere to land. Filters are cleared so the target
+  // row is never hidden by an active facet.
+  const openFinding = useCallback(
+    (finding: OptimizeFinding) => {
+      const target = findingTarget(finding);
+      if (target) openInScope(target.scope, target.selected);
+    },
+    [openInScope],
+  );
+
   const [isPaused, setIsPaused] = useState(false);
   const [serverSort, setServerSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
   const [clientSort, setClientSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
@@ -164,6 +289,10 @@ export function MetricsWorkspace() {
   // nothing anywhere.
   const { report: limitsReport } = useLimits(true);
   const limitsSummary = useMemo(() => deriveLimitsSummary(limitsReport), [limitsReport]);
+
+  // Optimize findings feed the Overview savings card (same hook and cadence
+  // as the gateway sidebar section).
+  const { report: optimizeReport } = useOptimize(true);
   // Renders the consumption bar under a row's name when a budget governs it.
   const limitBarFor = useCallback(
     (scope: LimitRowScope) => (row: BreakdownRow) => {
@@ -188,9 +317,13 @@ export function MetricsWorkspace() {
     return out;
   }, [mcpServers]);
 
+  // Server rows union in stack servers with no recorded traffic (zero rows)
+  // so an unused server — the optimize report's headline finding — is
+  // selectable in the breakdown rather than absent from it.
+  const serverNames = useMemo(() => mcpServers.map((s) => s.name), [mcpServers]);
   const serverRows = useMemo(
-    () => sortBreakdownRows(derivePerServerRows(tokenUsage, costUsage), serverSort.col, serverSort.dir),
-    [tokenUsage, costUsage, serverSort],
+    () => sortBreakdownRows(derivePerServerRows(tokenUsage, costUsage, serverNames), serverSort.col, serverSort.dir),
+    [tokenUsage, costUsage, serverNames, serverSort],
   );
   const clientRows = useMemo(
     () => sortBreakdownRows(derivePerClientRows(tokenUsage, costUsage), clientSort.col, clientSort.dir),
@@ -200,17 +333,59 @@ export function MetricsWorkspace() {
     () => sortBreakdownRows(derivePerToolRows(toolUsageData), toolSort.col, toolSort.dir),
     [toolUsageData, toolSort],
   );
-  const modelMix = useMemo(
-    () => aggregateModelMix(effectiveServerModels, effectiveClientModels),
+  // Model rows drive both the mix bars and the Models table; a ModelRow is a
+  // ModelShare superset, so one aggregation serves both and they can never
+  // disagree.
+  const modelRows = useMemo(
+    () => aggregateModelRows(effectiveServerModels, effectiveClientModels),
     [effectiveServerModels, effectiveClientModels],
   );
 
+  // Overview previews: top spenders by cost, hard-capped at five rows.
+  // Re-sorts of the scope rows (sortBreakdownRows copies) — one base
+  // derivation per axis.
+  const topServerRows = useMemo(
+    () => sortBreakdownRows(serverRows, 'cost', 'desc').slice(0, 5),
+    [serverRows],
+  );
+  const topToolRows = useMemo(
+    () => sortBreakdownRows(toolRows, 'cost', 'desc').slice(0, 5),
+    [toolRows],
+  );
+
+  // Tools-scope filtering: search over tool and server names plus the server
+  // and priced facets. The filtered array is what renders AND what drives
+  // keyboard nav, so the two can never disagree.
+  const toolServers = useMemo(
+    () => Array.from(new Set(toolRows.map((r) => r.server).filter((s): s is string => Boolean(s)))).sort(),
+    [toolRows],
+  );
+  const filteredToolRows = useMemo(() => {
+    const q = toolQuery.trim().toLowerCase();
+    return toolRows.filter((r) => {
+      if (toolServerFacet && r.server !== toolServerFacet) return false;
+      if (toolPricedFacet === 'yes' && r.cost === undefined) return false;
+      if (toolPricedFacet === 'no' && r.cost !== undefined) return false;
+      if (q) {
+        // r.name is the composite server__tool key — matching it too means a
+        // pasted deep-link value finds its row.
+        const tool = (r.tool ?? r.name).toLowerCase();
+        const server = (r.server ?? '').toLowerCase();
+        if (!tool.includes(q) && !server.includes(q) && !r.name.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [toolRows, toolQuery, toolServerFacet, toolPricedFacet]);
+
   // Rows for the active selectable scope (clients/servers/tools), used by the
-  // inspector lookup and keyboard navigation.
+  // inspector lookup and keyboard navigation. Tools uses the FILTERED rows so
+  // arrows never step through hidden entries; a ?selected row excluded by a
+  // filter yields findIndex -1, and useListNav's clamp lands the next
+  // ArrowDown on row 0 (the LogStream precedent — deliberate).
   const activeRows: BreakdownRow[] = useMemo(
     () =>
-      scope === 'servers' ? serverRows : scope === 'clients' ? clientRows : scope === 'tools' ? toolRows : [],
-    [scope, serverRows, clientRows, toolRows],
+      scope === 'servers' ? serverRows : scope === 'clients' ? clientRows : scope === 'tools' ? filteredToolRows : [],
+    [scope, serverRows, clientRows, filteredToolRows],
   );
   const selectedRow = useMemo(
     () => activeRows.find((r) => r.name === selected) ?? null,
@@ -222,6 +397,7 @@ export function MetricsWorkspace() {
     () => activeRows.findIndex((r) => r.name === selected),
     [activeRows, selected],
   );
+  const toolSearchRef = useRef<HTMLInputElement | null>(null);
   useListNav({
     itemCount: activeRows.length,
     selectedIndex,
@@ -229,6 +405,9 @@ export function MetricsWorkspace() {
       const next = activeRows[i];
       if (next) setSelected(next.name);
     },
+    // '/' focuses the tools filter (the Logs precedent); typing in the input
+    // is already exempt from j/k via isEditableTarget.
+    onSlash: scope === 'tools' ? () => toolSearchRef.current?.focus() : undefined,
     enabled: scope === 'clients' || scope === 'servers' || scope === 'tools',
   });
 
@@ -261,6 +440,63 @@ export function MetricsWorkspace() {
         ? undefined
         : effectiveClientModels[selectedRow?.name ?? ''];
 
+  // ---- Focused center charts ----------------------------------------------
+  // Selecting a server (tokens + cost) or client (cost only — no per-client
+  // token series exists) refocuses the main charts on that entity, with the
+  // fleet series as dashed context. The entity data is the same per-entity
+  // ranged series the inspector sparklines consume. An entirely empty entity
+  // series keeps the fleet charts + an honest note instead of a flat zero
+  // line (see the zero-fill note in metricsData: zeros are only real when the
+  // entity has at least one bucket in the window).
+  const focusedName = selectedRow && (scope === 'servers' || scope === 'clients') ? selectedRow.name : null;
+  const focusHasTokens = focusedName !== null && (inspectorTokenPoints?.length ?? 0) > 0;
+  const focusHasCost = focusedName !== null && (inspectorCostPoints?.length ?? 0) > 0;
+  const focusedTokenChartData = useMemo(
+    () => (focusHasTokens && inspectorTokenPoints ? buildFocusedTokenChartData(metricsData, inspectorTokenPoints) : []),
+    [focusHasTokens, inspectorTokenPoints, metricsData],
+  );
+  const focusedCostChartData = useMemo(
+    () => (focusHasCost && inspectorCostPoints ? buildFocusedCostChartData(costData, inspectorCostPoints) : []),
+    [focusHasCost, inspectorCostPoints, costData],
+  );
+  const focusedTotals = useMemo(
+    () => (focusedName ? deriveFocusedTotals(inspectorTokenPoints, inspectorCostPoints, windowTotals) : null),
+    [focusedName, inspectorTokenPoints, inspectorCostPoints, windowTotals],
+  );
+  // Each term renders only when measurable — "0 tokens" for a client (no
+  // per-client token series exists) or "$0.00" for an idle-window server
+  // would contradict the honesty notes beside the charts. With nothing
+  // measurable the line is suppressed entirely.
+  const focusLineParts =
+    focusedName && focusedTotals
+      ? [
+          ...(focusedTotals.tokens !== undefined ? [`${focusedTotals.tokens.toLocaleString()} tokens`] : []),
+          ...(focusedTotals.costUSD !== undefined ? [`${formatUSD(focusedTotals.costUSD)} est.`] : []),
+          ...(focusedTotals.share !== undefined ? [`${sharePct(focusedTotals.share)} of window`] : []),
+        ]
+      : [];
+  const focusLine = focusLineParts.length > 0 ? `${focusedName}: ${focusLineParts.join(' · ')}` : undefined;
+
+  const costChartVisible = kpis.hasCost || costSeriesHasData;
+  // Honest note whenever a selection cannot (fully) focus the charts, so
+  // fleet data is never silently presented as the entity's.
+  let focusNote: string | null = null;
+  if (selectedRow && scope === 'tools') {
+    focusNote = 'Charts show the whole stack; per-tool time series is not recorded yet.';
+  } else if (focusedName && scope === 'servers') {
+    if (!focusHasTokens && !focusHasCost) {
+      focusNote = `No samples for ${focusedName} in this window. Charts show the whole stack as context.`;
+    } else if (!focusHasTokens) {
+      focusNote = `No token samples for ${focusedName} in this window; the token chart shows the whole stack.`;
+    } else if (!focusHasCost && costChartVisible) {
+      focusNote = `No cost samples for ${focusedName} in this window; the cost chart shows the whole stack.`;
+    }
+  } else if (focusedName && scope === 'clients') {
+    focusNote = focusHasCost
+      ? 'The token chart shows the whole stack; per-client token series is not recorded.'
+      : `No cost samples for ${focusedName} in this window, and per-client token series is not recorded. ${costChartVisible ? 'Charts show' : 'The token chart shows'} the whole stack as context.`;
+  }
+
   const inspector = (
     <MetricsInspector
       scope={inspectorScope}
@@ -287,7 +523,7 @@ export function MetricsWorkspace() {
       clientCount={clientRows.length}
       serverCount={serverRows.length}
       toolCount={toolRows.length}
-      modelCount={modelMix.length}
+      modelCount={modelRows.length}
     />
   );
 
@@ -356,27 +592,109 @@ export function MetricsWorkspace() {
             )}
 
             {!error && hasData && !(isLoading && !metricsData) && (
-              <div className="space-y-4 max-w-5xl">
+              <div className="space-y-4 max-w-7xl">
                 <PersistedFromMarker serverName={null} signal="metrics" />
-                <MetricsKpiRow kpis={kpis} windowTotals={windowTotals} windowLabel={windowLabel} />
+                <MetricsKpiRow kpis={kpis} windowTotals={windowTotals} windowLabel={windowLabel} focusLine={focusLine} />
+                {focusedName && (
+                  <button
+                    type="button"
+                    onClick={() => setSelected(null)}
+                    aria-label={`Clear focus on ${focusedName}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+                  >
+                    Focused: {focusedName} <X size={10} aria-hidden="true" />
+                  </button>
+                )}
                 <div className="grid gap-4 xl:grid-cols-2">
-                  <TokenChart data={chartData} metricsData={metricsData} />
-                  {(kpis.hasCost || costSeriesHasData) && <CostChart data={costChartData} costData={costData} />}
+                  {focusedName && focusHasTokens ? (
+                    <TokenChart
+                      data={focusedTokenChartData}
+                      metricsData={metricsData}
+                      subject={focusedName}
+                      categories={['Input Tokens', 'Output Tokens', FLEET_TOKEN_CATEGORY]}
+                      colors={['teal', 'amber', 'gray']}
+                      chartType="default"
+                      dashedCategories={[FLEET_TOKEN_CATEGORY]}
+                    />
+                  ) : (
+                    <TokenChart data={chartData} metricsData={metricsData} />
+                  )}
+                  {costChartVisible &&
+                    (focusedName && focusHasCost ? (
+                      <CostChart
+                        data={focusedCostChartData}
+                        costData={costData}
+                        subject={focusedName}
+                        categories={['Cost (USD)', FLEET_COST_CATEGORY]}
+                        colors={['emerald', 'gray']}
+                        dashedCategories={[FLEET_COST_CATEGORY]}
+                      />
+                    ) : (
+                      <CostChart data={costChartData} costData={costData} />
+                    ))}
                 </div>
+                {focusNote && <p className="text-[11px] text-text-muted/70">{focusNote}</p>}
                 <WindowEmptyNote windowTotals={windowTotals} sessionTotal={kpis.total} loaded={metricsData !== null} />
 
 
                 {scope === 'overview' && <LimitsPanel summary={limitsSummary} />}
 
+                {scope === 'overview' && <SavingsCard report={optimizeReport} onOpenFinding={openFinding} />}
+
+                {/* Top-5 previews jump into the full scope on row click or
+                    View all. Hard-capped at five rows and session-scoped like
+                    every breakdown table. */}
+                {scope === 'overview' && topServerRows.length > 0 && (
+                  <PanelHeader
+                    icon={Server}
+                    label="Top Servers · session totals"
+                    right={<ViewAllButton onClick={() => setScope('servers')} />}
+                  >
+                    <BreakdownTable
+                      rows={topServerRows}
+                      nameLabel="Server"
+                      sortColumn="cost"
+                      sortDirection="desc"
+                      showCost
+                      onSelectRow={(name) => openInScope('servers', name)}
+                    />
+                  </PanelHeader>
+                )}
+
+                {scope === 'overview' && topToolRows.length > 0 && (
+                  <PanelHeader
+                    icon={Wrench}
+                    label="Top Tools · session totals"
+                    right={<ViewAllButton onClick={() => setScope('tools')} />}
+                  >
+                    <BreakdownTable
+                      rows={topToolRows}
+                      nameLabel="Tool"
+                      sortColumn="cost"
+                      sortDirection="desc"
+                      showCost
+                      onSelectRow={(name) => openInScope('tools', name)}
+                    />
+                  </PanelHeader>
+                )}
+
                 {scope === 'overview' && (
                   <PanelHeader icon={Layers} label="Cost by Model">
-                    <ModelMixBars mix={modelMix} />
+                    <ModelMixBars mix={modelRows} />
                   </PanelHeader>
                 )}
 
                 {scope === 'models' && (
                   <PanelHeader icon={Layers} label="Cost by Model">
-                    <ModelMixBars mix={modelMix} />
+                    <ModelMixBars mix={modelRows} />
+                  </PanelHeader>
+                )}
+
+                {/* The Models breakdown: rows are not selectable in v1 (a
+                    model has nothing to show in the right rail yet). */}
+                {scope === 'models' && modelRows.length > 0 && (
+                  <PanelHeader icon={Boxes} label="Model Breakdown">
+                    <ModelBreakdownTable rows={modelRows} />
                   </PanelHeader>
                 )}
 
@@ -385,19 +703,45 @@ export function MetricsWorkspace() {
                 {scope === 'tools' && (
                   <PanelHeader icon={Wrench} label="Per-Tool · session totals">
                     {toolRows.length > 0 ? (
-                      <ScrollableBreakdown>
-                        <BreakdownTable
-                          rows={toolRows}
-                          nameLabel="Tool"
-                          sortColumn={toolSort.col}
-                          sortDirection={toolSort.dir}
-                          onSort={sortTools}
-                          showCost
-                          selectedName={selected}
-                          onSelectRow={setSelected}
-                          renderNameExtra={limitBarFor('tool')}
+                      <>
+                        <ToolsFilterBar
+                          query={toolQuery}
+                          onQuery={setToolQuery}
+                          servers={toolServers}
+                          activeServer={toolServerFacet}
+                          onServer={setToolServerFacet}
+                          priced={toolPricedFacet}
+                          onPriced={setToolPricedFacet}
+                          onClearAll={clearToolFilters}
+                          matchCount={filteredToolRows.length}
+                          totalCount={toolRows.length}
+                          searchInputRef={toolSearchRef}
                         />
-                      </ScrollableBreakdown>
+                        {filteredToolRows.length > 0 ? (
+                          <ScrollableBreakdown>
+                            <BreakdownTable
+                              rows={filteredToolRows}
+                              nameLabel="Tool"
+                              sortColumn={toolSort.col}
+                              sortDirection={toolSort.dir}
+                              onSort={sortTools}
+                              showCost
+                              selectedName={selected}
+                              onSelectRow={setSelected}
+                              renderNameExtra={limitBarFor('tool')}
+                            />
+                          </ScrollableBreakdown>
+                        ) : (
+                          // Filtered-empty is not "no usage" — the stack has
+                          // tool rows, the filters just exclude them all.
+                          <div className="px-3 py-3 flex items-center gap-2 text-[11px] text-text-muted/70">
+                            No tools match the current filters.
+                            <button type="button" onClick={clearToolFilters} className="text-primary hover:underline">
+                              Clear filters
+                            </button>
+                          </div>
+                        )}
+                      </>
                     ) : toolUsageError ? (
                       // A failed fetch is not "no usage" — say the data source
                       // is unavailable instead of implying calls went unrecorded.
@@ -555,7 +899,7 @@ function EmptyScopeNote({ text }: { text: string }) {
 
 function LoadingState() {
   return (
-    <div className="space-y-4 max-w-5xl animate-pulse">
+    <div className="space-y-4 max-w-7xl animate-pulse">
       <div className="grid grid-cols-4 gap-3">
         {[1, 2, 3, 4].map((i) => (
           <div key={i} className="h-16 rounded-lg bg-surface-elevated/60 border border-border/30" />
