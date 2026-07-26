@@ -59,7 +59,7 @@ function DetachedMetricsPageContent() {
 
   // Per-tool usage for the Per-Tool panel — the same GET /api/tools/usage
   // pipeline the Tools workspace and Metrics Tools scope consume.
-  const { usage: toolUsageData } = useToolUsage(true);
+  const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
 
   const { metricsData, costData, isLoading, error, reload, clear } = useMetricsSeries({
     timeRange,
@@ -334,19 +334,36 @@ function DetachedMetricsPageContent() {
               </PanelHeader>
             )}
 
-            {sortedTools.length > 0 && (
+            {(sortedTools.length > 0 || toolUsageError) && (
               <PanelHeader icon={Wrench} label="Per-Tool · session totals">
-                <ScrollableBreakdown>
-                  <BreakdownTable
-                    rows={sortedTools}
-                    nameLabel="Tool"
-                    sortColumn={toolSortColumn}
-                    sortDirection={toolSortDirection}
-                    onSort={handleToolSort}
-                    showCost
-                    renderNameExtra={limitBarFor('tool')}
-                  />
-                </ScrollableBreakdown>
+                {/* A failed fetch is not "no usage" — say the source is
+                    unavailable instead of silently dropping the panel. A
+                    retained snapshot keeps rendering (stale beats blank). */}
+                {toolUsageError && sortedTools.length === 0 ? (
+                  <p role="alert" className="text-[11px] text-status-error px-1 py-2">
+                    Tool usage unavailable: {toolUsageError}
+                  </p>
+                ) : (
+                  <>
+                    {toolUsageError && (
+                      <p role="alert" className="text-[11px] text-status-error px-1 pb-2">
+                        Usage refresh failed: {toolUsageError} — showing the last loaded
+                        snapshot
+                      </p>
+                    )}
+                    <ScrollableBreakdown>
+                      <BreakdownTable
+                        rows={sortedTools}
+                        nameLabel="Tool"
+                        sortColumn={toolSortColumn}
+                        sortDirection={toolSortDirection}
+                        onSort={handleToolSort}
+                        showCost
+                        renderNameExtra={limitBarFor('tool')}
+                      />
+                    </ScrollableBreakdown>
+                  </>
+                )}
               </PanelHeader>
             )}
           </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { Command } from 'cmdk';
 import {
   Activity,
@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Undo2,
   Users,
   Boxes,
   Wrench,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
+import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
 import { useToolUsage } from '../../hooks/useToolUsage';
@@ -29,6 +31,7 @@ import {
   DEFAULT_AUDIT_WINDOW,
   auditWindowMs,
   classifyTool,
+  effectiveEnabledTools,
   formatLastUsed,
   unusedEnabledTools,
   type AuditState,
@@ -80,8 +83,20 @@ export function ToolsWorkspace() {
   );
 
   // ---- URL state ----------------------------------------------------------
+  // Everything an operator would share in a support link lives in the URL:
+  // server, global query, selected tool, audit mode, and lookback window.
+  // Defaults are omitted so bare links stay canonical (Metrics idiom).
   const serverParam = searchParams.get('server') ?? '';
   const globalQuery = searchParams.get('q') ?? '';
+  // The tool whose detail is shown in the right rail. Distinct from the
+  // whitelist selection (the checkboxes) — this is the "active" tool. Picking
+  // a global-search result sets it so that tool is revealed on arrival.
+  const selectedTool = searchParams.get('tool');
+  const auditMode = searchParams.get('audit') === '1';
+  const windowParam = searchParams.get('window');
+  const auditWindow: AuditWindow = AUDIT_WINDOWS.some((w) => w.id === windowParam)
+    ? (windowParam as AuditWindow)
+    : DEFAULT_AUDIT_WINDOW;
 
   // The active server is the URL's ?server= when it names a real server,
   // otherwise the first server in the list.
@@ -95,16 +110,66 @@ export function ToolsWorkspace() {
     [servers, activeServerName],
   );
 
-  // Selecting a server also exits any active global search — done in one
-  // params update so the two changes compose (two separate setSearchParams
-  // calls in a handler both observe the same stale snapshot and the last wins).
+  // Selecting a server also exits any active global search and re-targets the
+  // detail tool — done in one params update so the changes compose (two
+  // separate setSearchParams calls in a handler both observe the same stale
+  // snapshot and the last wins).
   const applyServer = useCallback(
-    (name: string) => {
+    (name: string, tool: string | null = null) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
           next.set('server', name);
           next.delete('q');
+          if (tool) next.set('tool', tool);
+          else next.delete('tool');
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const applyTool = useCallback(
+    (tool: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (tool) next.set('tool', tool);
+          else next.delete('tool');
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const toggleAudit = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (next.get('audit') === '1') {
+          // The window is audit-local; a bare link must not carry it alone.
+          next.delete('audit');
+          next.delete('window');
+        } else {
+          next.set('audit', '1');
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  const applyAuditWindow = useCallback(
+    (w: AuditWindow) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (w === DEFAULT_AUDIT_WINDOW) next.delete('window');
+          else next.set('window', w);
           return next;
         },
         { replace: true },
@@ -135,11 +200,6 @@ export function ToolsWorkspace() {
     activeServer?.tools ?? [],
   );
 
-  // ---- Audit Mode ---------------------------------------------------------
-  // An overlay that classifies each tool as used / configured-but-unused /
-  // disabled against a lookback window.
-  const [auditMode, setAuditMode] = useState(false);
-  const [auditWindow, setAuditWindow] = useState<AuditWindow>(DEFAULT_AUDIT_WINDOW);
   // Fleet bulk-action panel (expose-all / hide-pattern across servers).
   const [fleetOpen, setFleetOpen] = useState(false);
   // Per-client access editor (which servers each client may reach).
@@ -147,16 +207,28 @@ export function ToolsWorkspace() {
   // Tool groups panel (the curation axis: bundles served at /groups/{name}/mcp).
   const [groupsOpen, setGroupsOpen] = useState(false);
   const { report: groupsReport } = useGroups(true);
-  const groupsConfigured = groupsReport?.configured ?? false;
-  // The tool whose detail is shown in the right rail. Distinct from the
-  // whitelist selection (the checkboxes) — this is the "active" tool. Picking a
-  // global-search result sets it so that tool is revealed on arrival. Declared
-  // here (above the usage hook) because usage polling is gated on it.
-  const [selectedTool, setSelectedTool] = useState<string | null>(null);
+
+  // ---- Audit Mode ---------------------------------------------------------
+  // An overlay that classifies each tool as used / configured-but-unused /
+  // disabled against a lookback window (mode and window are URL state above).
   // Usage polls while something consumes it: Audit Mode's classification, or
   // the detail panel's Usage section for the selected tool (shown outside
   // Audit Mode too). Otherwise the hook idles so the editor pays nothing.
-  const { usage, fetchedAt } = useToolUsage(auditMode || selectedTool != null);
+  const { usage, error: usageError, fetchedAt } = useToolUsage(
+    auditMode || selectedTool != null,
+  );
+  // Usage is loading (not failed) until the first snapshot lands — without
+  // this, Audit Mode renders no dots and no badges, indistinguishable from
+  // "everything is clean".
+  const auditLoading = auditMode && fetchedAt == null && usageError == null;
+  // A failed fetch over a retained snapshot is "stale", not "unavailable" —
+  // the dots keep rendering from the last snapshot, so the copy must not
+  // contradict them.
+  const usageNotice = usageError
+    ? fetchedAt == null
+      ? `Tool usage unavailable: ${usageError}`
+      : `Usage refresh failed: ${usageError} — showing the last loaded snapshot`
+    : null;
   const windowMs = auditWindowMs(auditWindow);
   const usageByServer = usage?.servers;
 
@@ -174,8 +246,10 @@ export function ToolsWorkspace() {
 
   // ---- Server-switch guard ------------------------------------------------
   // A pending target set while the active editor has unsaved edits. The switch
-  // commits (URL change) only after the user discards.
+  // (and any tool reveal that rides along) commits only after the user
+  // discards.
   const [pendingServer, setPendingServer] = useState<string | null>(null);
+  const [pendingTool, setPendingTool] = useState<string | null>(null);
 
   // Switch to a server (or reveal a tool on the active one). Unsaved edits on
   // the current server route through a confirm dialog before the switch
@@ -183,13 +257,12 @@ export function ToolsWorkspace() {
   function requestServer(name: string, tool?: string) {
     if (name !== activeServerName && editor.dirty) {
       setPendingServer(name);
-      setSelectedTool(tool ?? null);
+      setPendingTool(tool ?? null);
       return;
     }
-    if (name !== activeServerName) applyServer(name);
     // Clear any active filter so a revealed tool is visible, then select it.
     editor.setQuery('');
-    setSelectedTool(tool ?? null);
+    applyServer(name, tool ?? null);
   }
 
   function confirmSwitch() {
@@ -197,10 +270,42 @@ export function ToolsWorkspace() {
     // Reset the editor to the current server's saved state first so the
     // upcoming serverName change is a clean transition (no spurious prompt).
     editor.handleDiscard();
-    applyServer(pendingServer);
     editor.setQuery('');
+    applyServer(pendingServer, pendingTool);
     setPendingServer(null);
+    setPendingTool(null);
   }
+
+  // ---- Leave-workspace guard ----------------------------------------------
+  // Mirror the editor's dirty flag into the shared guard store so the
+  // WorkspaceSwitcher (outside this tree) can read it synchronously and
+  // intercept the NavLink; the intercepted target lands in exitNavTarget and
+  // the confirm renders below. Cleared on unmount so a stale flag can never
+  // block navigation after the workspace is gone.
+  const navigate = useNavigate();
+  const exitNavTarget = useToolsDirtyStore((s) => s.exitNavTarget);
+  useEffect(() => {
+    useToolsDirtyStore.getState().setDirty(editor.dirty);
+  }, [editor.dirty]);
+  useEffect(
+    () => () => {
+      const s = useToolsDirtyStore.getState();
+      s.setDirty(false);
+      s.clearExitNav();
+    },
+    [],
+  );
+
+  // Hard page unload (reload/close): warn while the editor is dirty.
+  useEffect(() => {
+    if (!editor.dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [editor.dirty]);
 
   // ---- Global search ------------------------------------------------------
   const searchActive = globalQuery.trim().length > 0;
@@ -208,6 +313,28 @@ export function ToolsWorkspace() {
   const globalResults = useMemo(
     () => globalMatches.map(splitTool).filter((r): r is GlobalResult => r !== null),
     [globalMatches],
+  );
+
+  // Audit classification for search results, which span every server. The
+  // active server classifies against the draft selection so search rows agree
+  // with the editor rows; other servers use their live whitelist.
+  const auditForResult = useCallback(
+    (serverName: string, toolName: string): AuditState | null => {
+      if (!auditMode || fetchedAt == null) return null;
+      const srv = servers.find((s) => s.name === serverName);
+      if (!srv) return null;
+      const enabled =
+        serverName === activeServerName
+          ? editor.selected.has(toolName)
+          : effectiveEnabledTools(srv).has(toolName);
+      return classifyTool(
+        enabled,
+        usageByServer?.[serverName]?.[toolName]?.lastCalledAt,
+        windowMs,
+        fetchedAt,
+      );
+    },
+    [auditMode, fetchedAt, servers, activeServerName, editor.selected, usageByServer, windowMs],
   );
 
   // ---- Selected-tool detail (right rail) ----------------------------------
@@ -223,6 +350,15 @@ export function ToolsWorkspace() {
     const prefixed = `${activeServerName}${TOOL_NAME_DELIMITER}${selectedTool}`;
     return toolCatalog.find((t) => t.name === prefixed)?.inputSchema;
   }, [selectedTool, activeServerName, toolCatalog]);
+  // Self-heal a ?tool= that doesn't resolve on the active server (typo or a
+  // cross-server link): drop it so the detail rail isn't stuck on its empty
+  // prompt and usage polling doesn't run for a phantom selection. Skipped
+  // while the server has no discovered tools yet — the name may resolve once
+  // discovery lands.
+  useEffect(() => {
+    if (selectedTool && !selectedRow && editor.allTools.length > 0) applyTool(null);
+  }, [selectedTool, selectedRow, editor.allTools.length, applyTool]);
+
   const selectedEnabled = selectedTool ? editor.selected.has(selectedTool) : false;
   const selectedUsage = selectedTool ? usageByServer?.[activeServerName]?.[selectedTool] : undefined;
   const selectedLastCalled = selectedUsage?.lastCalledAt;
@@ -239,6 +375,7 @@ export function ToolsWorkspace() {
       onSelectServer={(name) => requestServer(name)}
       auditMode={auditMode}
       unusedByServer={unusedByServer}
+      dirtyServer={editor.dirty ? activeServerName : null}
     />
   );
 
@@ -252,7 +389,7 @@ export function ToolsWorkspace() {
       auditState={selectedAuditState}
       usage={selectedUsage}
       lastCalledAt={selectedLastCalled}
-      onClose={() => setSelectedTool(null)}
+      onClose={() => applyTool(null)}
     />
   );
 
@@ -274,14 +411,15 @@ export function ToolsWorkspace() {
             query={globalQuery}
             onQueryChange={setGlobalQuery}
             auditMode={auditMode}
-            onToggleAudit={() => setAuditMode((v) => !v)}
+            onToggleAudit={toggleAudit}
             auditWindow={auditWindow}
-            onWindowChange={setAuditWindow}
+            onWindowChange={applyAuditWindow}
             observedSince={usage?.observedSince}
+            usageNotice={usageNotice}
+            usageLoading={auditLoading}
             onOpenFleet={() => setFleetOpen(true)}
             fleetDisabled={servers.length === 0}
             onOpenAccess={() => setAccessOpen(true)}
-            groupsConfigured={groupsConfigured}
             onOpenGroups={() => setGroupsOpen(true)}
           />
 
@@ -294,6 +432,7 @@ export function ToolsWorkspace() {
                 query={globalQuery}
                 serverCount={servers.length}
                 onPick={(server, tool) => requestServer(server, tool)}
+                auditFor={auditForResult}
               />
             ) : activeServer ? (
               <ServerDetail
@@ -301,7 +440,7 @@ export function ToolsWorkspace() {
                 server={activeServer}
                 editor={editor}
                 selectedTool={selectedTool}
-                onSelect={setSelectedTool}
+                onSelect={applyTool}
                 auditMode={auditMode}
                 usage={usageByServer?.[activeServer.name]}
                 windowMs={windowMs}
@@ -317,7 +456,10 @@ export function ToolsWorkspace() {
 
       <ConfirmDialog
         isOpen={pendingServer !== null}
-        onClose={() => setPendingServer(null)}
+        onClose={() => {
+          setPendingServer(null);
+          setPendingTool(null);
+        }}
         onConfirm={confirmSwitch}
         title="Discard unsaved changes"
         message={
@@ -330,6 +472,23 @@ export function ToolsWorkspace() {
           </p>
         }
         confirmLabel="Discard & switch"
+        variant="danger"
+      />
+
+      {/* Gated on the server-switch dialog being closed so two focus traps
+          never stack. */}
+      <ConfirmDialog
+        isOpen={exitNavTarget !== null && pendingServer === null}
+        onClose={() => useToolsDirtyStore.getState().clearExitNav()}
+        onConfirm={() => {
+          const target = exitNavTarget;
+          editor.handleDiscard();
+          useToolsDirtyStore.getState().clearExitNav();
+          if (target) navigate(target);
+        }}
+        title="Discard unsaved changes"
+        message={<p>Leave Tools and discard unsaved tool changes?</p>}
+        confirmLabel="Discard & leave"
         variant="danger"
       />
 
@@ -370,10 +529,14 @@ interface ToolsHeaderProps {
   auditWindow: AuditWindow;
   onWindowChange: (w: AuditWindow) => void;
   observedSince?: string;
+  // Non-null when the usage fetch is failing — Audit Mode must say so instead
+  // of rendering an empty overlay (preformatted: unavailable vs stale).
+  usageNotice: string | null;
+  // True while the first usage snapshot is still in flight.
+  usageLoading: boolean;
   onOpenFleet: () => void;
   fleetDisabled: boolean;
   onOpenAccess: () => void;
-  groupsConfigured: boolean;
   onOpenGroups: () => void;
 }
 
@@ -387,10 +550,11 @@ function ToolsHeader({
   auditWindow,
   onWindowChange,
   observedSince,
+  usageNotice,
+  usageLoading,
   onOpenFleet,
   fleetDisabled,
   onOpenAccess,
-  groupsConfigured,
   onOpenGroups,
 }: ToolsHeaderProps) {
   const searching = query.trim().length > 0;
@@ -411,20 +575,21 @@ function ToolsHeader({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          {groupsConfigured && (
-            <button
-              type="button"
-              onClick={onOpenGroups}
-              aria-label="Open tool groups"
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
-                'bg-secondary/10 text-secondary border-secondary/30 hover:bg-secondary/20 hover:border-secondary/50',
-              )}
-            >
-              <Boxes size={11} aria-hidden="true" />
-              Groups
-            </button>
-          )}
+          {/* Always visible — the unconfigured case opens the panel's empty
+              state, which teaches the stack.yaml `groups:` block (same
+              discovery pattern as Access with zero linked clients). */}
+          <button
+            type="button"
+            onClick={onOpenGroups}
+            aria-label="Open tool groups"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+              'bg-secondary/10 text-secondary border-secondary/30 hover:bg-secondary/20 hover:border-secondary/50',
+            )}
+          >
+            <Boxes size={11} aria-hidden="true" />
+            Groups
+          </button>
           <button
             type="button"
             onClick={onOpenAccess}
@@ -495,6 +660,17 @@ function ToolsHeader({
           {observedSince
             ? ` Tracking since ${formatRelativeTime(new Date(observedSince))}; tools with no recorded calls may predate it.`
             : ' Counts cover activity since the last gateway restart.'}
+          {usageLoading && (
+            <span className="inline-flex items-center gap-1 ml-2 text-text-secondary">
+              <Loader2 size={10} className="animate-spin" aria-hidden="true" />
+              Loading usage…
+            </span>
+          )}
+        </p>
+      )}
+      {auditMode && usageNotice && (
+        <p role="alert" className="text-[10px] text-status-error leading-relaxed">
+          {usageNotice}
         </p>
       )}
 
@@ -539,6 +715,9 @@ interface ServerRailProps {
   onSelectServer: (name: string) => void;
   auditMode: boolean;
   unusedByServer: Record<string, number>;
+  // The server whose editor holds unsaved edits (only ever the active one).
+  // The rail badges show live counts, so the chip is what marks the draft.
+  dirtyServer: string | null;
 }
 
 function ServerRail({
@@ -548,6 +727,7 @@ function ServerRail({
   onSelectServer,
   auditMode,
   unusedByServer,
+  dirtyServer,
 }: ServerRailProps) {
   return (
     <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
@@ -571,6 +751,7 @@ function ServerRail({
             onClick={() => onSelectServer(server.name)}
             auditMode={auditMode}
             unusedCount={unusedByServer[server.name] ?? 0}
+            dirty={server.name === dirtyServer}
           />
         ))}
         {servers.length === 0 && (
@@ -589,9 +770,10 @@ interface ServerPillProps {
   onClick: () => void;
   auditMode: boolean;
   unusedCount: number;
+  dirty: boolean;
 }
 
-function ServerPill({ server, active, onClick, auditMode, unusedCount }: ServerPillProps) {
+function ServerPill({ server, active, onClick, auditMode, unusedCount, dirty }: ServerPillProps) {
   const { enabled, total } = toolCounts(server);
   const status = serverStatus(server);
   const showUnused = auditMode && unusedCount > 0;
@@ -610,6 +792,14 @@ function ServerPill({ server, active, onClick, auditMode, unusedCount }: ServerP
       <span className={cn('flex-1 min-w-0 text-xs font-mono truncate', active && 'text-primary')}>
         {server.name}
       </span>
+      {dirty && (
+        <span
+          className="flex-shrink-0 text-[9px] font-medium px-1.5 py-0.5 rounded bg-status-pending/15 text-status-pending"
+          title="This server has unsaved tool changes; the count badge shows the live (saved) state"
+        >
+          unsaved
+        </span>
+      )}
       {showUnused && (
         <span
           className="flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded tabular-nums bg-status-pending/15 text-status-pending"
@@ -676,12 +866,14 @@ function ServerDetail({
     selectAll,
     clearAll,
     dirty,
+    saveBlocked,
     diffCount,
     isSaving,
     conflict,
     handleSave,
     disableTools,
     handleReloadFromDisk,
+    handleDiscard,
   } = editor;
 
   // Audit state per tool row, computed once per usage/selection/window change.
@@ -727,13 +919,23 @@ function ServerDetail({
 
   return (
     <div className="px-6 py-4 max-w-3xl space-y-3" aria-busy={isSaving}>
-      {/* Count + quick actions */}
+      {/* Count + quick actions. The neutral "empty means all" help text must
+          never sit next to a zero draft count — there it would describe the
+          re-expose-all footgun as expected behavior. */}
       <div className="flex items-center gap-2 text-[11px] text-text-muted">
-        <span>
-          <span className="text-text-secondary font-medium">{selected.size}</span> of{' '}
-          <span className="text-text-secondary font-medium">{rows.length}</span> enabled —
-          empty means all tools exposed
-        </span>
+        {saveBlocked ? (
+          <span role="alert" className="text-status-error">
+            <span className="font-medium">0</span> of{' '}
+            <span className="font-medium">{rows.length}</span> selected — cannot save an
+            empty selection (an empty whitelist would expose all tools)
+          </span>
+        ) : (
+          <span>
+            <span className="text-text-secondary font-medium">{selected.size}</span> of{' '}
+            <span className="text-text-secondary font-medium">{rows.length}</span> enabled —
+            empty means all tools exposed
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
@@ -933,30 +1135,44 @@ function ServerDetail({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={!dirty || isSaving}
-        aria-label={saveLabel}
-        className={cn(
-          'w-full inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium transition-colors',
-          dirty && !isSaving
-            ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
-            : 'bg-surface-highlight/50 text-text-muted border border-border/30 cursor-not-allowed',
+      <div className="flex items-center gap-2">
+        {dirty && (
+          <button
+            type="button"
+            onClick={handleDiscard}
+            disabled={isSaving}
+            aria-label="Discard unsaved tool changes"
+            className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium border border-border/40 text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors disabled:opacity-50"
+          >
+            <Undo2 size={11} />
+            Discard
+          </button>
         )}
-      >
-        {isSaving ? (
-          <>
-            <Loader2 size={11} className="animate-spin" />
-            Saving…
-          </>
-        ) : (
-          <>
-            <Save size={11} />
-            {saveLabel}
-          </>
-        )}
-      </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!dirty || isSaving || saveBlocked}
+          aria-label={saveLabel}
+          className={cn(
+            'flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium transition-colors',
+            dirty && !isSaving && !saveBlocked
+              ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
+              : 'bg-surface-highlight/50 text-text-muted border border-border/30 cursor-not-allowed',
+          )}
+        >
+          {isSaving ? (
+            <>
+              <Loader2 size={11} className="animate-spin" />
+              Saving…
+            </>
+          ) : (
+            <>
+              <Save size={11} />
+              {saveLabel}
+            </>
+          )}
+        </button>
+      </div>
 
       <ConfirmDialog
         isOpen={remediateOpen}
@@ -996,9 +1212,12 @@ interface GlobalResultsProps {
   query: string;
   serverCount: number;
   onPick: (server: string, tool: string) => void;
+  // Audit classification for a result row (null when Audit Mode is off or
+  // usage hasn't loaded), so cross-server unused hunting works from search.
+  auditFor: (server: string, tool: string) => AuditState | null;
 }
 
-function GlobalResults({ results, query, serverCount, onPick }: GlobalResultsProps) {
+function GlobalResults({ results, query, serverCount, onPick, auditFor }: GlobalResultsProps) {
   return (
     <div className="px-6 py-4 max-w-3xl space-y-2">
       <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
@@ -1011,25 +1230,45 @@ function GlobalResults({ results, query, serverCount, onPick }: GlobalResultsPro
         </div>
       ) : (
         <div className="space-y-1">
-          {results.map((r) => (
-            <button
-              key={`${r.server}${TOOL_NAME_DELIMITER}${r.tool}`}
-              onClick={() => onPick(r.server, r.tool)}
-              className="w-full flex items-start gap-2 px-3 py-2 rounded-md text-left bg-background/40 border border-border/30 hover:border-primary/40 hover:bg-surface-highlight/40 transition-colors"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-mono truncate">
-                  <span className="text-primary/80">{r.server}</span>
-                  <span className="text-text-muted/60 mx-1">›</span>
-                  <span className="text-text-primary">{r.tool}</span>
+          {results.map((r) => {
+            const auditState = auditFor(r.server, r.tool);
+            return (
+              <button
+                key={`${r.server}${TOOL_NAME_DELIMITER}${r.tool}`}
+                onClick={() => onPick(r.server, r.tool)}
+                className="w-full flex items-start gap-2 px-3 py-2 rounded-md text-left bg-background/40 border border-border/30 hover:border-primary/40 hover:bg-surface-highlight/40 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-mono truncate">
+                    <span className="text-primary/80">{r.server}</span>
+                    <span className="text-text-muted/60 mx-1">›</span>
+                    <span className="text-text-primary">{r.tool}</span>
+                  </div>
+                  {r.description && (
+                    <div className="text-[10px] text-text-muted truncate mt-0.5">{r.description}</div>
+                  )}
+                  {auditState && (
+                    <div
+                      className={cn(
+                        'flex items-center gap-1 text-[10px] mt-0.5',
+                        AUDIT_STYLES[auditState].text,
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'inline-block w-1.5 h-1.5 rounded-full flex-shrink-0',
+                          AUDIT_STYLES[auditState].dot,
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span>{AUDIT_STYLES[auditState].label}</span>
+                    </div>
+                  )}
                 </div>
-                {r.description && (
-                  <div className="text-[10px] text-text-muted truncate mt-0.5">{r.description}</div>
-                )}
-              </div>
-              <ChevronRight size={13} className="text-text-muted/50 flex-shrink-0 mt-0.5" />
-            </button>
-          ))}
+                <ChevronRight size={13} className="text-text-muted/50 flex-shrink-0 mt-0.5" />
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

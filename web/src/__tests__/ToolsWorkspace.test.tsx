@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router';
 import '@testing-library/jest-dom';
 import { ToolsWorkspace } from '../components/workspaces/ToolsWorkspace';
 import { useStackStore } from '../stores/useStackStore';
+import { useToolsDirtyStore } from '../stores/useToolsDirtyStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import * as api from '../lib/api';
 import type { MCPServerStatus, Tool } from '../types';
@@ -64,6 +65,21 @@ function renderAt(path = '/tools') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <ToolsWorkspace />
+    </MemoryRouter>,
+  );
+}
+
+// Exposes the live location so tests can assert what the URL writers produce.
+function LocationProbe() {
+  const loc = useLocation();
+  return <div data-testid="loc">{loc.pathname + loc.search}</div>;
+}
+
+function renderWithProbe(path = '/tools') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <ToolsWorkspace />
+      <LocationProbe />
     </MemoryRouter>,
   );
 }
@@ -153,6 +169,159 @@ describe('ToolsWorkspace', () => {
   });
 });
 
+describe('ToolsWorkspace — empty-save guard and discard', () => {
+  it('Clear disables Save and switches the count line to danger copy', () => {
+    renderAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('button', { name: /clear all tools/i }));
+
+    // The neutral "empty means all tools exposed" help text is replaced by a
+    // blocking warning, and Save cannot fire.
+    expect(screen.getByText(/cannot save an empty selection/i)).toBeInTheDocument();
+    expect(screen.queryByText(/empty means all tools exposed/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save 1 change & reload/i })).toBeDisabled();
+  });
+
+  it('Discard next to Save restores the saved selection in place', () => {
+    renderAt('/tools?server=github');
+    // Dirty the editor: enable the non-whitelisted tool.
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /discard unsaved tool changes/i }));
+
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    // Clean again: the Discard affordance retracts.
+    expect(
+      screen.queryByRole('button', { name: /discard unsaved tool changes/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('marks the dirty server with an unsaved chip in the rail', () => {
+    renderAt('/tools?server=github');
+    expect(screen.queryByText('unsaved')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    expect(screen.getByText('unsaved')).toBeInTheDocument();
+  });
+});
+
+describe('ToolsWorkspace — leave-workspace guard', () => {
+  beforeEach(() => {
+    useToolsDirtyStore.setState({ dirty: false, exitNavTarget: null });
+  });
+
+  it('mirrors the dirty flag and confirms an intercepted navigation', () => {
+    renderAt('/tools?server=github');
+    expect(useToolsDirtyStore.getState().dirty).toBe(false);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    expect(useToolsDirtyStore.getState().dirty).toBe(true);
+
+    // The WorkspaceSwitcher stashes the intercepted target here; the
+    // workspace renders the confirm for it.
+    act(() => useToolsDirtyStore.getState().requestExitNav('/metrics'));
+    expect(
+      screen.getByText(/leave tools and discard unsaved tool changes/i),
+    ).toBeInTheDocument();
+
+    // Cancel keeps the draft.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(
+      screen.queryByText(/leave tools and discard unsaved tool changes/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    // Confirm discards the draft and clears the intercepted target.
+    act(() => useToolsDirtyStore.getState().requestExitNav('/metrics'));
+    fireEvent.click(screen.getByRole('button', { name: /discard & leave/i }));
+    expect(useToolsDirtyStore.getState().exitNavTarget).toBeNull();
+    expect(useToolsDirtyStore.getState().dirty).toBe(false);
+  });
+});
+
+describe('ToolsWorkspace — deep links', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('restores tool, audit mode, and window from the URL', async () => {
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      servers: {},
+    });
+
+    renderAt('/tools?server=github&tool=create_issue&audit=1&window=30d');
+
+    // Tool selection restored: the detail panel renders the schema.
+    expect(screen.getByLabelText('create_issue input schema')).toBeInTheDocument();
+    // Audit mode restored: rows classify once usage lands (create_issue has
+    // no recorded calls → unused, in both its row and the open detail panel;
+    // list_repos is not whitelisted → disabled).
+    expect((await screen.findAllByText('unused')).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('combobox', { name: /audit lookback window/i })).toHaveValue('30d');
+  });
+});
+
+describe('ToolsWorkspace — URL writers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('writes tool, audit, and window params, omitting defaults', () => {
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: new Date().toISOString(),
+      servers: {},
+    });
+    renderWithProbe('/tools?server=github');
+    const loc = () => screen.getByTestId('loc').textContent ?? '';
+
+    // Selecting a row writes ?tool=.
+    fireEvent.click(screen.getByRole('option', { name: /create_issue details/i }));
+    expect(loc()).toContain('tool=create_issue');
+
+    // Toggling Audit writes ?audit=1; the default 7d window stays omitted.
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+    expect(loc()).toContain('audit=1');
+    expect(loc()).not.toContain('window=');
+
+    // A non-default window is written; returning to the default drops it.
+    const windowSelect = () =>
+      screen.getByRole('combobox', { name: /audit lookback window/i });
+    fireEvent.change(windowSelect(), { target: { value: '30d' } });
+    expect(loc()).toContain('window=30d');
+    fireEvent.change(windowSelect(), { target: { value: '7d' } });
+    expect(loc()).not.toContain('window=');
+
+    // Toggling Audit off drops audit (and any window) from the URL.
+    fireEvent.change(windowSelect(), { target: { value: '24h' } });
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+    expect(loc()).not.toContain('audit=');
+    expect(loc()).not.toContain('window=');
+
+    // Switching servers clears the tool selection from the URL.
+    fireEvent.click(screen.getByRole('option', { name: /create_issue details/i }));
+    expect(loc()).toContain('tool=create_issue');
+    fireEvent.click(screen.getByRole('button', { name: /atlassian/i }));
+    expect(loc()).toContain('server=atlassian');
+    expect(loc()).not.toContain('tool=');
+  });
+
+  it('self-heals a ?tool= that does not resolve on the active server', async () => {
+    renderWithProbe('/tools?server=github&tool=no_such_tool');
+    await waitFor(() =>
+      expect(screen.getByTestId('loc').textContent).not.toContain('tool='),
+    );
+  });
+});
+
 describe('ToolsWorkspace — empty stack', () => {
   it('renders the empty state without crashing when there are no servers and the catalog is null', () => {
     // Regression: in stackless mode the catalog API returns {"tools": null}.
@@ -205,6 +374,44 @@ describe('ToolsWorkspace — Audit Mode', () => {
     fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
 
     expect(await screen.findByText('1 unused')).toBeInTheDocument();
+  });
+
+  it('shows a visible error when the usage fetch fails', async () => {
+    vi.spyOn(api, 'fetchToolUsage').mockRejectedValue(new Error('accumulator not configured'));
+
+    renderAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+
+    expect(
+      await screen.findByText(/tool usage unavailable: accumulator not configured/i),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a loading indicator until the first usage snapshot lands', () => {
+    // A never-settling fetch pins the pre-snapshot state.
+    vi.spyOn(api, 'fetchToolUsage').mockReturnValue(new Promise(() => {}));
+
+    renderAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+
+    expect(screen.getByText(/loading usage/i)).toBeInTheDocument();
+  });
+
+  it('annotates global search results with audit state', async () => {
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: observedSince(),
+      servers: { github: { create_issue: { calls: 5, lastCalledAt: recent() } } },
+    });
+
+    renderAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+    await screen.findByText('used');
+
+    const input = screen.getByPlaceholderText(/search tools across all/i);
+    fireEvent.change(input, { target: { value: 'create_issue' } });
+
+    const result = screen.getByText('create_issue').closest('button')!;
+    expect(within(result).getByText('used')).toBeInTheDocument();
   });
 
   it('remediation disables idle exposed tools through a single-server save', async () => {

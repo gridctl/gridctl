@@ -94,6 +94,19 @@ describe('ToolsEditor', () => {
     expect(dirtySave).toBeEnabled();
   });
 
+  it('blocks saving an empty selection and offers an in-place Discard', () => {
+    render(<ToolsEditor serverName={SERVER} savedTools={['query']} />);
+    fireEvent.click(screen.getByRole('button', { name: /clear all tools/i }));
+
+    // Danger copy replaces the neutral expose-all help text; Save is gated.
+    expect(screen.getByText(/cannot save an empty selection/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Save 1 change & Reload/ })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /discard unsaved tool changes/i }));
+    expect(screen.queryByText(/cannot save an empty selection/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Saved$/ })).toBeDisabled();
+  });
+
   it('saves with the current selection and refreshes store caches', async () => {
     const setSpy = vi
       .spyOn(apiModule, 'setServerTools')

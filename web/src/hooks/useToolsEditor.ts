@@ -44,6 +44,11 @@ export interface UseToolsEditor {
   clearAll: () => void;
   // True when the selection differs from what's persisted in the stack YAML.
   dirty: boolean;
+  // True when the draft selection is empty while the server advertises tools.
+  // Saving that state is refused: an empty whitelist means "expose all", so
+  // persisting it would invert "disable everything" into "expose everything".
+  // Consumers should disable Save and switch the count line to danger copy.
+  saveBlocked: boolean;
   // Count of added + removed tools relative to the saved whitelist.
   diffCount: number;
   isSaving: boolean;
@@ -176,6 +181,7 @@ export function useToolsEditor(
   const selected = useMemo(() => new Set(selection), [selection]);
   const canonicalSelection = useMemo(() => canonicalWhitelist(selection), [selection]);
   const dirty = !arraysEqual(canonicalSelection, savedSelection);
+  const saveBlocked = canonicalSelection.length === 0 && allTools.length > 0;
   const diffCount = useMemo(() => {
     const saved = new Set(savedSelection);
     let count = 0;
@@ -199,6 +205,20 @@ export function useToolsEditor(
   // (current selection) and disableTools (selection minus the unused tools)
   // so both honor the same expose-all semantics and structured-error handling.
   const saveSelection = async (targetSelection: string[]) => {
+    // Refuse an empty selection outright: the wire form can't express "expose
+    // nothing" (an empty whitelist means "expose all"), so saving it would
+    // silently re-expose every tool — the inverse of the user's intent. A
+    // server with no discovered tools is exempt; its only valid save is [].
+    // Guarded here (the shared choke point) so every save path is covered.
+    // disableTools keeps its own earlier check: it must refuse before
+    // setSelection blanks the draft, and its copy names the remediation flow.
+    if (targetSelection.length === 0 && allTools.length > 0) {
+      showToast(
+        'error',
+        `Can't save an empty selection for ${serverName} — an empty whitelist would re-expose every tool. Keep at least one tool enabled or discard.`,
+      );
+      return;
+    }
     setIsSaving(true);
     setConflict(null);
     // Empty whitelist means "expose all tools" in stack YAML semantics. We
@@ -321,8 +341,9 @@ export function useToolsEditor(
   };
 
   const handleDiscard = () => {
-    // User accepted the server switch. Adopt the incoming shape by
-    // re-initialising selection to the new savedSelection.
+    // Drop the in-flight edit and re-seed from savedSelection. Serves three
+    // paths: the server-switch confirm (adopting the incoming server's
+    // shape), the in-place Discard button, and the leave-workspace confirm.
     committedServer.current = serverName;
     savedRef.current = savedSelection;
     setSelection(savedSelection);
@@ -348,6 +369,7 @@ export function useToolsEditor(
     selectAll,
     clearAll,
     dirty,
+    saveBlocked,
     diffCount,
     isSaving,
     conflict,
