@@ -8,6 +8,7 @@ import { CommandPalette } from '../palette/CommandPalette';
 import { ToastContainer } from '../ui/Toast';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useStackStore } from '../../stores/useStackStore';
+import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { usePolling } from '../../hooks/usePolling';
@@ -100,7 +101,16 @@ function AppShellInner() {
     onRefresh: handleRefresh,
     onOpenLogs: () => navigate('/logs'),
     onOpenPalette: toggleCommandPalette,
-    onSwitchToWorkspace: (id) => navigate(`/${id}`),
+    onSwitchToWorkspace: (id) => {
+      // The ⌘1-9 shortcuts are the same action as the workspace pills, so
+      // they route through the same Tools dirty guard (see WorkspaceSwitcher).
+      const tools = useToolsDirtyStore.getState();
+      if (tools.dirty && pathname.startsWith('/tools') && id !== 'tools') {
+        tools.requestExitNav(`/${id}`);
+        return;
+      }
+      navigate(`/${id}`);
+    },
     onToggleCompactMode: () => toggleCompactMode(activeWorkspace),
   });
 
