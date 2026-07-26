@@ -4,7 +4,10 @@ import {
   derivePerClientRows,
   derivePerToolRows,
   sortBreakdownRows,
-  aggregateModelMix,
+  aggregateModelRows,
+  buildFocusedCostChartData,
+  buildFocusedTokenChartData,
+  deriveFocusedTotals,
   deriveSessionKpis,
   deriveWindowTotals,
   hasMetricsData,
@@ -56,6 +59,14 @@ describe('derivePerServerRows', () => {
 
   it('returns [] when there is no token usage', () => {
     expect(derivePerServerRows(null)).toEqual([]);
+  });
+
+  it('unions zero-traffic stack servers as selectable zero rows', () => {
+    const rows = derivePerServerRows(tokenUsage(), costUsage(), ['github', 'atlassian', 'zapier']);
+    const zapier = rows.find((r) => r.name === 'zapier')!;
+    expect(zapier.total).toBe(0);
+    expect(zapier.cost).toBeUndefined(); // unknown, never $0
+    expect(rows.find((r) => r.name === 'github')!.total).toBe(80);
   });
 });
 
@@ -151,40 +162,143 @@ describe('sortBreakdownRows', () => {
   });
 });
 
-describe('aggregateModelMix', () => {
-  it('sums cost per model across servers, descending, with recomputed shares', () => {
-    const servers: Record<string, EffectiveModel> = {
-      github: {
-        provenance: 'mixed',
-        models: [
-          { model: 'gpt-4o', cost_usd: 0.6, share: 0.75 },
-          { model: 'gpt-4o-mini', cost_usd: 0.2, share: 0.25 },
-        ],
-      },
-      atlassian: {
-        provenance: 'declared',
-        model: 'gpt-4o',
-        models: [{ model: 'gpt-4o', cost_usd: 0.2, share: 1 }],
-      },
-    };
-    const mix = aggregateModelMix(servers, {});
-    expect(mix.map((m) => m.model)).toEqual(['gpt-4o', 'gpt-4o-mini']);
-    expect(mix[0].cost_usd).toBeCloseTo(0.8);
-    expect(mix[0].share).toBeCloseTo(0.8); // 0.8 / 1.0 total
-    expect(mix.reduce((s, m) => s + m.share, 0)).toBeCloseTo(1);
-  });
+describe('aggregateModelRows', () => {
+  const servers: Record<string, EffectiveModel> = {
+    github: {
+      provenance: 'mixed',
+      models: [
+        { model: 'gpt-4o', cost_usd: 0.6, share: 0.75 },
+        { model: 'gpt-4o-mini', cost_usd: 0.2, share: 0.25 },
+      ],
+    },
+    atlassian: {
+      provenance: 'declared',
+      model: 'gpt-4o',
+      models: [{ model: 'gpt-4o', cost_usd: 0.2, share: 1 }],
+    },
+  };
 
-  it('falls back to client breakdowns when no server priced', () => {
-    const clients: Record<string, EffectiveModel> = {
-      claude: { provenance: 'declared', model: 'claude-opus', models: [{ model: 'claude-opus', cost_usd: 0.5, share: 1 }] },
-    };
-    const mix = aggregateModelMix({}, clients);
-    expect(mix).toHaveLength(1);
-    expect(mix[0].model).toBe('claude-opus');
+  it('sums cost per model across servers, descending, with recomputed shares', () => {
+    const rows = aggregateModelRows(servers, {});
+    expect(rows.map((m) => m.model)).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect(rows[0].cost_usd).toBeCloseTo(0.8);
+    expect(rows[0].share).toBeCloseTo(0.8); // 0.8 / 1.0 total
+    expect(rows.reduce((s, m) => s + m.share, 0)).toBeCloseTo(1);
   });
 
   it('returns [] when nothing is priced', () => {
-    expect(aggregateModelMix({}, {})).toEqual([]);
+    expect(aggregateModelRows({}, {})).toEqual([]);
+  });
+
+  it('collects entities and provenance counts per model', () => {
+    const rows = aggregateModelRows(servers, {});
+    const gpt4o = rows.find((r) => r.model === 'gpt-4o')!;
+    expect(gpt4o.entities).toEqual(['atlassian', 'github']);
+    expect(gpt4o.provenance).toEqual({ declared: 1, mixed: 1, none: 0 });
+    expect(gpt4o.cost_usd).toBeCloseTo(0.8);
+  });
+
+  it('never double-counts: clients are ignored when any server priced', () => {
+    const clients: Record<string, EffectiveModel> = {
+      claude: { provenance: 'declared', model: 'gpt-4o', models: [{ model: 'gpt-4o', cost_usd: 1.0, share: 1 }] },
+    };
+    const rows = aggregateModelRows(servers, clients);
+    const gpt4o = rows.find((r) => r.model === 'gpt-4o')!;
+    // Server tier only: the client's 1.0 must not fold in.
+    expect(gpt4o.cost_usd).toBeCloseTo(0.8);
+    expect(gpt4o.entities).not.toContain('claude');
+  });
+
+  it('falls back to clients when no server priced', () => {
+    const clients: Record<string, EffectiveModel> = {
+      claude: { provenance: 'declared', model: 'claude-opus', models: [{ model: 'claude-opus', cost_usd: 0.5, share: 1 }] },
+    };
+    const rows = aggregateModelRows({}, clients);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].entities).toEqual(['claude']);
+  });
+});
+
+describe('focused chart builders', () => {
+  const fleet: TokenMetricsResponse = {
+    range: '30m', interval: '1m',
+    data_points: [
+      { timestamp: '2026-01-01T00:00:00Z', input_tokens: 10, output_tokens: 10, total_tokens: 20 },
+      { timestamp: '2026-01-01T00:01:00Z', input_tokens: 5, output_tokens: 5, total_tokens: 10 },
+    ],
+    per_server: {},
+  };
+
+  it('zero-fills entity minutes missing from the fleet spine', () => {
+    // Entity has a bucket only for the first fleet minute; the second is a
+    // true zero (the fleet moved, this entity did not), never a gap.
+    const rows = buildFocusedTokenChartData(fleet, [
+      { timestamp: '2026-01-01T00:00:00Z', input_tokens: 3, output_tokens: 2, total_tokens: 5 },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]['Input Tokens']).toBe(3);
+    expect(rows[1]['Input Tokens']).toBe(0);
+    expect(rows[1]['Output Tokens']).toBe(0);
+    expect(rows[0]['Fleet Total']).toBe(20);
+    expect(rows[1]['Fleet Total']).toBe(10);
+  });
+
+  it('merges cost on the fleet spine with zero-fill', () => {
+    const fleetCost: CostMetricsResponse = {
+      range: '30m', interval: '1m',
+      data_points: [
+        { timestamp: '2026-01-01T00:00:00Z', usd: 0.05 },
+        { timestamp: '2026-01-01T00:01:00Z', usd: 0.02 },
+      ],
+      per_server: {},
+    };
+    const rows = buildFocusedCostChartData(fleetCost, [{ timestamp: '2026-01-01T00:01:00Z', usd: 0.01 }]);
+    expect(rows[0]['Cost (USD)']).toBe(0);
+    expect(rows[1]['Cost (USD)']).toBe(0.01);
+    expect(rows[0]['Fleet']).toBe(0.05);
+  });
+});
+
+describe('deriveFocusedTotals', () => {
+  const windowTotals = { input: 60, output: 40, total: 100, costUSD: 0.5, isEmpty: false };
+
+  it('sums the entity window and shares against fleet cost when priced', () => {
+    const t = deriveFocusedTotals(
+      [{ timestamp: 't', input_tokens: 6, output_tokens: 4, total_tokens: 10 }],
+      [{ timestamp: 't', usd: 0.1 }],
+      windowTotals,
+    );
+    expect(t.tokens).toBe(10);
+    expect(t.costUSD).toBeCloseTo(0.1);
+    expect(t.share).toBeCloseTo(0.2);
+  });
+
+  it('falls back to token share when no cost series exists', () => {
+    const t = deriveFocusedTotals(
+      [{ timestamp: 't', input_tokens: 6, output_tokens: 4, total_tokens: 10 }],
+      undefined,
+      { ...windowTotals, costUSD: undefined },
+    );
+    expect(t.costUSD).toBeUndefined();
+    expect(t.share).toBeCloseTo(0.1);
+  });
+
+  it('omits terms for absent or empty series instead of reporting zeros', () => {
+    // A focused client has no token series; a server can have an empty cost
+    // ring in the window. Both must read as "not measurable", never 0.
+    const t = deriveFocusedTotals(undefined, [], windowTotals);
+    expect(t.tokens).toBeUndefined();
+    expect(t.costUSD).toBeUndefined();
+    expect(t.share).toBeUndefined();
+  });
+
+  it('reports no share when the fleet denominator is zero', () => {
+    const t = deriveFocusedTotals(
+      [{ timestamp: 't', input_tokens: 1, output_tokens: 1, total_tokens: 2 }],
+      undefined,
+      { input: 0, output: 0, total: 0, costUSD: undefined, isEmpty: true },
+    );
+    expect(t.share).toBeUndefined();
   });
 });
 
