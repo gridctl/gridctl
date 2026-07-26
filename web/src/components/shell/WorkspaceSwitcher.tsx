@@ -2,6 +2,7 @@ import { NavLink, useLocation } from 'react-router';
 import { cn } from '../../lib/cn';
 import { WORKSPACE_CONFIG, type WorkspaceConfig } from '../../types/workspace';
 import { useAccessLensStore, isDirty } from '../../stores/useAccessLensStore';
+import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
 
 interface WorkspacePillProps {
   workspace: WorkspaceConfig;
@@ -25,6 +26,17 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
     if (leavingStack && draftDirty) {
       e.preventDefault();
       s.requestExitNav(`/${workspace.id}`);
+      return;
+    }
+    // Same guard for the Tools workspace's whitelist editor: its dirty flag
+    // is mirrored into useToolsDirtyStore, and ToolsWorkspace renders the
+    // confirm for the stashed target.
+    const t = useToolsDirtyStore.getState();
+    const leavingTools =
+      (pathname === '/tools' || pathname.startsWith('/tools/')) && workspace.id !== 'tools';
+    if (leavingTools && t.dirty) {
+      e.preventDefault();
+      t.requestExitNav(`/${workspace.id}`);
     }
   };
 
