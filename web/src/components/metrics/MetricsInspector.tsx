@@ -11,7 +11,7 @@ import {
   UNPRICED_NOTE,
   MODEL_PRECEDENCE_HINT,
 } from '../pricing/constants';
-import type { BreakdownRow } from './metricsData';
+import { toCostPoints, toTokenPoints, type BreakdownRow } from './metricsData';
 import type { CostDataPoint, EffectiveModel, TokenDataPoint } from '../../types';
 
 export type MetricsInspectorScope = 'clients' | 'servers' | 'tools';
@@ -62,15 +62,8 @@ export function MetricsInspector({
 }: MetricsInspectorProps) {
   if (!row) return <InspectorOverview onOpenManager={onOpenManager} showHint={showAttributionHint} />;
 
-  const tokenSeries = (tokenPoints ?? []).map((dp) => ({
-    time: new Date(dp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    'Input Tokens': dp.input_tokens,
-    'Output Tokens': dp.output_tokens,
-  }));
-  const costSeries = (costPoints ?? []).map((dp) => ({
-    time: new Date(dp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    'Cost (USD)': dp.usd,
-  }));
+  const tokenSeries = toTokenPoints(tokenPoints ?? []);
+  const costSeries = toCostPoints(costPoints ?? []);
   const costSeriesHasData = costSeries.some((d) => d['Cost (USD)'] > 0);
 
   return (
