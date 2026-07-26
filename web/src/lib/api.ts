@@ -1971,6 +1971,29 @@ export async function approveServerPins(
   }
 }
 
+/**
+ * Delete all pins for a server; it re-pins from scratch on the next verify.
+ * Returns 204 with no body, so this cannot use fetchJSON.
+ * DELETE /api/pins/{server}
+ */
+export async function resetServerPins(serverName: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/pins/${encodeURIComponent(serverName)}`, {
+    method: 'DELETE',
+    headers: buildHeaders(),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    let message = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body; keep the status-line message.
+    }
+    throw new Error(message);
+  }
+}
+
 // === JSON-RPC Helper (for MCP protocol calls) ===
 
 interface JSONRPCRequest {
