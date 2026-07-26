@@ -24,6 +24,10 @@ interface MetricsInspectorProps {
   declaredModel?: string;
   defaultModel: string;
   costAttribution: boolean;
+  // Whether the attribution setup hint applies (nothing priced anywhere).
+  // Computed by the host from SessionKpis so the overview legend and the
+  // Cost KPI card agree on when to nudge.
+  showAttributionHint: boolean;
   onClientSaved: (client: string, model: string) => void;
   onServerSaved: (server: string, model: string) => void;
   onOpenManager: () => void;
@@ -48,6 +52,7 @@ export function MetricsInspector({
   declaredModel,
   defaultModel,
   costAttribution,
+  showAttributionHint,
   onClientSaved,
   onServerSaved,
   onOpenManager,
@@ -55,7 +60,7 @@ export function MetricsInspector({
   tokenPoints,
   costPoints,
 }: MetricsInspectorProps) {
-  if (!row) return <InspectorOverview onOpenManager={onOpenManager} />;
+  if (!row) return <InspectorOverview onOpenManager={onOpenManager} showHint={showAttributionHint} />;
 
   const tokenSeries = (tokenPoints ?? []).map((dp) => ({
     time: new Date(dp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -147,8 +152,9 @@ export function MetricsInspector({
           />
         </section>
         {scope === 'tools' && row.cost === undefined && (
-          // Not ATTRIBUTION_HINT: its copy points at the Top Clients table,
-          // which the Tools scope does not render.
+          // Not ATTRIBUTION_HINT: a tool has no model of its own, so this
+          // names the Clients/Servers scopes and the gateway default instead
+          // of the generic pricing-manager nudge.
           <p className="text-[10px] leading-snug text-text-muted/70">
             No priced calls yet. Set a pricing model on a client or server (Clients/Servers scope), or a
             gateway default, to enable estimates.
@@ -200,14 +206,33 @@ export function MetricsInspector({
             </div>
           </section>
         )}
+
+        {/* When no time series can render, say why instead of silently
+            omitting the sections — the KPI numbers above are session
+            totals, so a bare inspector otherwise implies the entity has no
+            history at all. Clients get structural wording: no per-client
+            token series exists, and cost buckets only record once a pricing
+            model applies, so "no samples in this window" would be false for
+            an unpriced client that is actively pushing tokens. */}
+        {tokenSeries.length === 0 && !costSeriesHasData && (
+          <p className="text-[10px] leading-snug text-text-muted/70">
+            {scope === 'tools'
+              ? 'Per-tool time series is not recorded yet; the numbers above are session totals.'
+              : scope === 'clients'
+                ? `No cost samples for ${row.name} in this window, and per-client token series is not recorded. The numbers above are session totals.`
+                : `No samples for ${row.name} in this window. The numbers above are session totals.`}
+          </p>
+        )}
       </div>
     </aside>
   );
 }
 
 // Shown when nothing is selected — a cost-provenance legend rather than an
-// empty rail, carrying the same honesty copy the cards use.
-function InspectorOverview({ onOpenManager }: { onOpenManager: () => void }) {
+// empty rail, carrying the same honesty copy the cards use. The setup hint
+// only renders while nothing is priced; once attribution or cost exists the
+// legend and the pricing-manager button are the whole story.
+function InspectorOverview({ onOpenManager, showHint }: { onOpenManager: () => void; showHint: boolean }) {
   return (
     <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       <div className="flex-shrink-0 px-4 py-3 border-b border-border-subtle">
@@ -217,7 +242,7 @@ function InspectorOverview({ onOpenManager }: { onOpenManager: () => void }) {
         <p>
           Select a client, server, or tool to inspect its tokens, estimated cost, and pricing model.
         </p>
-        <p className="text-text-secondary">{ATTRIBUTION_HINT}.</p>
+        {showHint && <p className="text-text-secondary">{ATTRIBUTION_HINT}.</p>}
         <div className="space-y-1.5 pt-1">
           <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">provenance</p>
           <p><span className="font-mono text-text-secondary">declared</span> — one model priced all recorded cost.</p>
