@@ -150,7 +150,7 @@ function DetachedMetricsPageContent() {
     effectiveClientModels,
     effectiveServerModels,
   );
-  const sortedServers = sortBreakdownRows(derivePerServerRows(tokenUsage, costUsage), sortColumn, sortDirection);
+  const sortedServers = sortBreakdownRows(derivePerServerRows(tokenUsage, costUsage, serverNames), sortColumn, sortDirection);
   const sortedClients = sortBreakdownRows(
     derivePerClientRows(tokenUsage, costUsage),
     clientSortColumn,
@@ -281,7 +281,11 @@ function DetachedMetricsPageContent() {
             <LimitsPanel summary={limitsSummary} />
 
             {/* Tables are snapshot-fed, hence "session totals" (same labeling
-                as the in-shell workspace). */}
+                as the in-shell workspace). Parity decision: the workspace's
+                savings card and top-5 previews are deliberately absent here —
+                the previews would duplicate the full tables below, and the
+                savings card's finding links navigate the /metrics URL scheme,
+                which this solo window does not host. */}
             {sortedClients.length > 0 && (
               <PanelHeader icon={Users} label="Top Clients · session totals">
                 <BreakdownTable
