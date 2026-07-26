@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState } from 'react';
 import { Lightbulb, TrendingDown, ChevronDown, ChevronRight, Info } from 'lucide-react';
-import { fetchOptimizeReport } from '../../lib/api';
-import { POLLING } from '../../lib/constants';
+import { useOptimize } from '../../hooks/useOptimize';
 import { severityClasses, severityIcon } from '../../lib/severity';
-import type { OptimizeFinding, OptimizeReport } from '../../types';
+import type { OptimizeFinding } from '../../types';
 
 function formatImpact(usd: number): string {
   if (!usd || usd <= 0) return '—';
@@ -57,31 +56,9 @@ function FindingRow({ finding }: { finding: OptimizeFinding }) {
 }
 
 export function OptimizeSection() {
-  const [report, setReport] = useState<OptimizeReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const intervalRef = useRef<number | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const data = await fetchOptimizeReport();
-      setReport(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load optimize report');
-    }
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
-    load();
-    intervalRef.current = window.setInterval(load, POLLING.METRICS);
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [load]);
+  // Same hook contract as the Metrics savings card, so the two surfaces share
+  // one implementation and one cadence.
+  const { report, error } = useOptimize(true);
 
   if (error) {
     return (
