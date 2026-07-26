@@ -1586,6 +1586,8 @@ func TestHandleGetMetricsTokens_DefaultRange(t *testing.T) {
 func TestHandleDeleteMetricsTokens(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	srv.metricsAccumulator.Record("server-a", 100, 50)
+	srv.metricsAccumulator.RecordCostWithClient("server-a", -1, "claude-code",
+		metrics.CostBreakdown{Input: 0.10, Output: 0.20})
 
 	handler := srv.Handler()
 	req := httptest.NewRequest(http.MethodDelete, "/api/metrics/tokens", nil)
@@ -1596,10 +1598,17 @@ func TestHandleDeleteMetricsTokens(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	// Verify metrics were cleared
+	// The endpoint is a total wipe (Accumulator.Clear), and the web UI's
+	// confirm copy promises tokens, cost, tool usage, and model history all
+	// reset together — pin the cost half of that contract here alongside
+	// the token half.
 	snap := srv.metricsAccumulator.Snapshot()
 	if snap.Session.TotalTokens != 0 {
 		t.Errorf("expected 0 tokens after clear, got %d", snap.Session.TotalTokens)
+	}
+	costSnap := srv.metricsAccumulator.CostSnapshot()
+	if costSnap.Session.TotalUSD != 0 {
+		t.Errorf("expected $0 session cost after clear, got %f", costSnap.Session.TotalUSD)
 	}
 }
 
