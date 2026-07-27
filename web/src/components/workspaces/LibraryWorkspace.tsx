@@ -4,6 +4,7 @@ import {
   AlignJustify,
   BookOpen,
   CloudDownload,
+  Download,
   Globe,
   LayoutGrid,
   List,
@@ -12,6 +13,7 @@ import {
   PowerOff,
   RefreshCw,
   Search,
+  SquareCheck,
   Trash2,
   X,
   type LucideIcon,
@@ -35,9 +37,21 @@ import { useSkillUsage } from '../../hooks/useSkillUsage';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useUIStore } from '../../stores/useUIStore';
+import { useWizardStore } from '../../stores/useWizardStore';
 import { useLibraryCommands, type LibraryFilter } from '../library/useLibraryCommands';
 import { hasAnyCategory, skillCategory } from '../../lib/skillMeta';
-import { coldWindowCaveat, isUsageWindowCold } from '../../lib/skillUsage';
+import {
+  coldWindowCaveat,
+  isStaleUsage,
+  isUsageWindowCold,
+  staleUnknownReason,
+} from '../../lib/skillUsage';
+import {
+  AUDIT_WINDOWS,
+  DEFAULT_AUDIT_WINDOW,
+  auditWindowMs,
+  type AuditWindow,
+} from '../../lib/toolAudit';
 import {
   activateRegistrySkill,
   deleteRegistrySkill,
@@ -54,6 +68,19 @@ import type { AgentSkill, ItemState, SkillSourceStatus, SkillUsageStat, SourceSy
 
 type FilterTab = 'all' | ItemState;
 type SortMode = 'name' | 'state' | 'files' | 'usage';
+
+// The usage axis. `unused` is "no recorded calls ever"; `stale` is "called at
+// some point, but not inside the selected window". They are separate questions,
+// so the facet is single-select rather than two combinable toggles.
+type UsageFilter = 'unused' | 'stale';
+
+function isUsageFilter(value: string | null): value is UsageFilter {
+  return value === 'unused' || value === 'stale';
+}
+
+function isAuditWindow(value: string | null): value is AuditWindow {
+  return AUDIT_WINDOWS.some((w) => w.id === value);
+}
 
 function isGroupMode(value: string | null): value is GroupMode {
   return value === 'source' || value === 'category' || value === 'none';
@@ -102,6 +129,34 @@ export function LibraryWorkspace() {
   // non-null whenever `usage` is, so the fallback only ever sees a null usage.
   const usageCold = useMemo(() => isUsageWindowCold(usage, fetchedAt ?? 0), [usage, fetchedAt]);
   const coldCaveat = useMemo(() => coldWindowCaveat(usage, fetchedAt ?? 0), [usage, fetchedAt]);
+
+  // Stale lookback window, sharing Tools Audit's vocabulary so "7 days" means
+  // the same thing in both workspaces. URL-synced with the default omitted.
+  const windowParam = searchParams.get('window');
+  const auditWindow: AuditWindow = isAuditWindow(windowParam) ? windowParam : DEFAULT_AUDIT_WINDOW;
+  const windowMs = auditWindowMs(auditWindow);
+  const windowLabel = AUDIT_WINDOWS.find((w) => w.id === auditWindow)?.label ?? '7 days';
+  const setAuditWindow = useCallback((w: AuditWindow) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (w === DEFAULT_AUDIT_WINDOW) next.delete('window');
+        else next.set('window', w);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  // Why a stale count cannot be given, or null when it can. Covers both the
+  // cold window and the window-longer-than-tracking case; see lib/skillUsage.ts.
+  // Non-null means "cannot answer", so the KPI and the facet both key off it
+  // directly. An unavailable endpoint also lands here, though the card is not
+  // rendered at all in that case.
+  const staleUnknown = useMemo(
+    () => staleUnknownReason(usage, windowMs, windowLabel, fetchedAt ?? 0),
+    [usage, windowMs, windowLabel, fetchedAt],
+  );
   const usageMap = useMemo(() => {
     if (!usage) return null;
     const map = new Map<string, SkillUsageStat>();
@@ -119,6 +174,13 @@ export function LibraryWorkspace() {
     [usageMap],
   );
 
+  // A skill is stale when it has been called before but not inside the window.
+  // Never-used skills are excluded: that is the other facet.
+  const isStale = useCallback(
+    (name: string) => isStaleUsage(usageMap?.get(name), windowMs, fetchedAt ?? 0),
+    [usageMap, windowMs, fetchedAt],
+  );
+
   // null means "not loaded yet"; the deep-link error toast must wait for a
   // resolved fetch so a transient mid-fetch render doesn't false-positive.
   const isLoading = skills === null;
@@ -127,6 +189,12 @@ export function LibraryWorkspace() {
   const { openDetachedWindow } = useWindowManager();
   const compact = useUIStore((s) => s.compactMode.library);
   const toggleCompact = useUIStore((s) => s.toggleCompactMode);
+  // Select mode pins the multi-select checkboxes visible. Any live selection
+  // implies it, so the toggle is a discoverability aid rather than a gate.
+  const selectMode = useUIStore((s) => s.libraryPrefs.selectMode);
+  const setLibraryPrefs = useUIStore((s) => s.setLibraryPrefs);
+  const openWizard = useWizardStore((s) => s.open);
+  const handleImportSkill = useCallback(() => openWizard('skill'), [openWizard]);
 
   // URL → local state for the search input. We round-trip through state so the
   // input keeps caret behavior; the URL is the source of truth on reload.
@@ -260,16 +328,20 @@ export function LibraryWorkspace() {
   // ?usage=unused (the only value today) and omitted otherwise. Threaded like
   // the source isolate. Effective only when usage data is available.
   const usageParam = searchParams.get('usage');
-  const usageFilter: 'unused' | null = usageParam === 'unused' ? 'unused' : null;
+  const usageFilter: UsageFilter | null = isUsageFilter(usageParam) ? usageParam : null;
   // Inert when usage is unavailable *or* the window is too young to support the
   // claim, so a stale or hand-typed ?usage=unused cannot select the whole
   // active catalog on a freshly started gateway.
   const usageFilterActive = usageFilter === 'unused' && usageAvailable && !usageCold;
-  const setUsageFilter = useCallback((filter: 'unused' | null) => {
+  // The stale facet carries a second condition: the tracking window must also
+  // be at least as long as the lookback the user picked.
+  const staleAnswerable = usageAvailable && staleUnknown === null;
+  const staleFilterActive = usageFilter === 'stale' && staleAnswerable;
+  const setUsageFilter = useCallback((filter: UsageFilter | null) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (filter === 'unused') next.set('usage', 'unused');
+        if (filter) next.set('usage', filter);
         else next.delete('usage');
         return next;
       },
@@ -279,14 +351,14 @@ export function LibraryWorkspace() {
   // Enabling "Never used" also clears any state tab: the facet is active-only,
   // so a draft/disabled tab would contradict it and yield an empty list while
   // the (search-aware, tab-independent) KPI count still reads non-zero.
-  const toggleNeverUsed = useCallback(() => {
+  const toggleUsageFacet = useCallback((facet: UsageFilter) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (usageFilter === 'unused') {
+        if (usageFilter === facet) {
           next.delete('usage');
         } else {
-          next.set('usage', 'unused');
+          next.set('usage', facet);
           next.delete('filter');
         }
         return next;
@@ -294,6 +366,8 @@ export function LibraryWorkspace() {
       { replace: true },
     );
   }, [usageFilter, setSearchParams]);
+  const toggleNeverUsed = useCallback(() => toggleUsageFacet('unused'), [toggleUsageFacet]);
+  const toggleStale = useCallback(() => toggleUsageFacet('stale'), [toggleUsageFacet]);
 
   // Clear every removable facet in one update. Grouping (?group) is a view axis,
   // not a facet, so it is intentionally left untouched.
@@ -306,6 +380,7 @@ export function LibraryWorkspace() {
         next.delete('source');
         next.delete('sort');
         next.delete('usage');
+        next.delete('window');
         return next;
       },
       { replace: true },
@@ -583,8 +658,11 @@ export function LibraryWorkspace() {
     if (usageFilterActive) {
       result = result.filter((s) => s.state === 'active' && isUnused(s.name));
     }
+    if (staleFilterActive) {
+      result = result.filter((s) => s.state === 'active' && isStale(s.name));
+    }
     return result;
-  }, [displayedSkills, groupMode, activeSource, sourceMap, usageFilterActive, isUnused]);
+  }, [displayedSkills, groupMode, activeSource, sourceMap, usageFilterActive, isUnused, staleFilterActive, isStale]);
 
   // Sort a copy of the visible set (never mutate the source). LibraryGrid
   // buckets in array order, so sorting here also orders within each group;
@@ -624,6 +702,13 @@ export function LibraryWorkspace() {
     if (!usageAvailable || usageCold) return null;
     return searchResults.filter((s) => s.state === 'active' && isUnused(s.name)).length;
   }, [usageAvailable, usageCold, searchResults, isUnused]);
+
+  // "Stale" count, under the same nullable contract. null whenever the window
+  // is cold or longer than the tracking period, both captured by staleUnknown.
+  const staleCount = useMemo(() => {
+    if (!usageAvailable || staleUnknown !== null) return null;
+    return searchResults.filter((s) => s.state === 'active' && isStale(s.name)).length;
+  }, [usageAvailable, staleUnknown, searchResults, isStale]);
 
   // Reconcile the selection against the live skill set so a skill deleted out
   // from under the selection never lands in a bulk request (which would reject
@@ -704,6 +789,7 @@ export function LibraryWorkspace() {
       onToggle={(s) => (s.state === 'active' ? handleDisable(s) : handleEnable(s))}
       onDelete={(s) => setConfirmDelete(s.name)}
       onSelectRelated={(name) => setSelectedName(name)}
+      onRefresh={refreshAll}
     />
   );
 
@@ -718,6 +804,7 @@ export function LibraryWorkspace() {
         <main className="flex flex-col h-full overflow-hidden">
           <LibraryHeader
             onNewSkill={handleNewSkill}
+            onImportSkill={handleImportSkill}
             onGlobalContext={() => setShowGlobalContext(true)}
             onRefresh={refreshRegistry}
             onSync={handleSyncAll}
@@ -732,6 +819,10 @@ export function LibraryWorkspace() {
             coldCaveat={coldCaveat}
             usageFilterActive={usageFilterActive}
             onToggleNeverUsed={toggleNeverUsed}
+            staleCount={staleCount}
+            staleUnknownReason={staleUnknown}
+            staleFilterActive={staleFilterActive}
+            onToggleStale={toggleStale}
             compact={compact}
           />
 
@@ -760,12 +851,24 @@ export function LibraryWorkspace() {
             {/* Controls row: sort axis (always), then view controls, plus the
                 grouping axis in cards view when sources exist. */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <SortControl mode={sortMode} onChange={setSortMode} usageAvailable={usageAvailable} />
+              <div className="flex items-center gap-3 flex-wrap">
+                <SortControl mode={sortMode} onChange={setSortMode} usageAvailable={usageAvailable} />
+                {/* Only meaningful while a stale question is on screen. */}
+                {usageAvailable && <WindowControl window={auditWindow} onChange={setAuditWindow} />}
+              </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {hasSources && viewMode === 'cards' && (
                   <GroupByControl mode={groupMode} onChange={setGroupMode} hasCategories={hasCategories} />
                 )}
                 <ViewToggle mode={viewMode} onChange={setViewMode} />
+                <IconButton
+                  icon={SquareCheck}
+                  onClick={() => setLibraryPrefs({ selectMode: !selectMode })}
+                  tooltip={selectMode ? 'Hide selection checkboxes' : 'Show selection checkboxes'}
+                  pressed={selectMode}
+                  size="sm"
+                  variant={selectMode ? 'default' : 'ghost'}
+                />
                 <IconButton
                   icon={AlignJustify}
                   onClick={() => toggleCompact('library')}
@@ -782,6 +885,7 @@ export function LibraryWorkspace() {
               sortMode={sortMode}
               sourceLabel={groupMode === 'source' ? activeSourceLabel : null}
               usageUnused={usageFilterActive}
+              usageStale={staleFilterActive ? windowLabel : null}
               onClearSearch={() => setSearchQuery('')}
               onClearState={() => setActiveTab('all')}
               onClearSource={() => setActiveSource(null)}
@@ -866,6 +970,7 @@ export function LibraryWorkspace() {
                 activeSkillName={selectedName}
                 selectedNames={selectedNames}
                 onToggleSelect={toggleSelect}
+                selectMode={selectMode}
               />
             )}
 
@@ -1072,12 +1177,42 @@ function SortControl({ mode, onChange, usageAvailable }: { mode: SortMode; onCha
   );
 }
 
+/**
+ * Lookback window for the Stale facet. Uses Tools Audit's window vocabulary
+ * verbatim so "7 days" means the same thing in both workspaces, rather than
+ * defining a second, silently-divergent set of windows.
+ */
+function WindowControl({ window, onChange }: { window: AuditWindow; onChange: (w: AuditWindow) => void }) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Stale lookback window">
+      <span className="text-[10px] uppercase tracking-wider text-text-muted/60 mr-0.5">Window</span>
+      {AUDIT_WINDOWS.map((opt) => (
+        <button
+          key={opt.id}
+          onClick={() => onChange(opt.id)}
+          aria-pressed={window === opt.id}
+          className={cn(
+            'px-2 py-1 rounded-md text-[11px] font-medium transition-colors',
+            window === opt.id
+              ? 'bg-primary/10 text-primary border border-primary/25'
+              : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 interface FacetChipsProps {
   searchQuery: string;
   activeTab: FilterTab;
   sortMode: SortMode;
   sourceLabel: string | null;
   usageUnused: boolean;
+  /** Window label when the stale facet is active, else null. */
+  usageStale: string | null;
   onClearSearch: () => void;
   onClearState: () => void;
   onClearSource: () => void;
@@ -1098,6 +1233,7 @@ function FacetChips({
   sortMode,
   sourceLabel,
   usageUnused,
+  usageStale,
   onClearSearch,
   onClearState,
   onClearSource,
@@ -1110,6 +1246,7 @@ function FacetChips({
   if (activeTab !== 'all') chips.push({ key: 'state', label: 'State', value: activeTab, onClear: onClearState });
   if (sourceLabel) chips.push({ key: 'source', label: 'Source', value: sourceLabel, onClear: onClearSource });
   if (usageUnused) chips.push({ key: 'usage', label: 'Usage', value: 'Never used', onClear: onClearUsage });
+  if (usageStale) chips.push({ key: 'usage', label: 'Usage', value: `Stale over ${usageStale}`, onClear: onClearUsage });
   if (sortMode !== 'name') chips.push({ key: 'sort', label: 'Sort', value: SORT_LABEL[sortMode], onClear: onClearSort });
 
   if (chips.length === 0) return null;
@@ -1265,6 +1402,7 @@ const KPI_METRICS: { key: FilterTab; label: string; dot: ItemState | null }[] = 
 
 interface LibraryHeaderProps {
   onNewSkill: () => void;
+  onImportSkill: () => void;
   onGlobalContext: () => void;
   onRefresh: () => void;
   onSync: () => void;
@@ -1285,10 +1423,16 @@ interface LibraryHeaderProps {
   coldCaveat: string | null;
   usageFilterActive: boolean;
   onToggleNeverUsed: () => void;
+  // "Stale" is the second usage axis: used once, but not inside the selected
+  // window. null under the same nullable-count contract as never-used.
+  staleCount: number | null;
+  staleUnknownReason: string | null;
+  staleFilterActive: boolean;
+  onToggleStale: () => void;
   compact: boolean;
 }
 
-function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, compact }: LibraryHeaderProps) {
+function LibraryHeader({ onNewSkill, onImportSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, staleCount, staleUnknownReason, staleFilterActive, onToggleStale, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
   const hasSources = sources.length > 0;
   const updateCount = sources.filter((s) => s.updateAvailable).length;
@@ -1307,6 +1451,16 @@ function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
           >
             <Plus size={12} /> New Skill
+          </button>
+          {/* Adding a git source belongs where sources are managed. Opens the
+              same import wizard the registry sidebar does, skipping the
+              generic resource-type step. */}
+          <button
+            onClick={onImportSkill}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
+            title="Import skills from a git repository"
+          >
+            <Download size={12} /> Import
           </button>
           <button
             onClick={onGlobalContext}
@@ -1345,15 +1499,26 @@ function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources
             exists. It toggles the ?usage=unused facet rather than ?filter.
             A null count keeps the slot but withholds the number. */}
         {usageTracked && (
-          <KpiCard
-            label="Never used"
-            count={neverUsedCount}
-            dot={null}
-            active={usageFilterActive}
-            compact={compact}
-            onClick={onToggleNeverUsed}
-            unknownReason={coldCaveat}
-          />
+          <>
+            <KpiCard
+              label="Never used"
+              count={neverUsedCount}
+              dot={null}
+              active={usageFilterActive}
+              compact={compact}
+              onClick={onToggleNeverUsed}
+              unknownReason={coldCaveat}
+            />
+            <KpiCard
+              label="Stale"
+              count={staleCount}
+              dot={null}
+              active={staleFilterActive}
+              compact={compact}
+              onClick={onToggleStale}
+              unknownReason={staleUnknownReason}
+            />
+          </>
         )}
       </div>
     </header>
