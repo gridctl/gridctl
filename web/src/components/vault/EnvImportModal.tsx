@@ -118,12 +118,22 @@ export function EnvImportModal({
 
   const parsed = useMemo(() => parseImport(text), [text]);
 
+  const setNames = useMemo(() => sets.map((s) => s.name), [sets]);
+
+  // A stale ?set=<deleted-name> deep link would seed rows with a set that has
+  // no matching <option>, which React renders as a blank select. Fall back to
+  // unassigned rather than showing an empty control.
+  const effectiveDefaultSet = useMemo(
+    () => (defaultSet && setNames.includes(defaultSet) ? defaultSet : ''),
+    [defaultSet, setNames],
+  );
+
   const rows = useMemo<RowState[]>(
     () =>
       parsed.entries.map((entry, idx) =>
-        rowFromParsed(entry, defaultSet, idx, overrides[entry.key]),
+        rowFromParsed(entry, effectiveDefaultSet, idx, overrides[entry.key]),
       ),
-    [parsed.entries, defaultSet, overrides],
+    [parsed.entries, effectiveDefaultSet, overrides],
   );
 
   // Escape closes; click on backdrop closes; both common in this codebase.
@@ -142,8 +152,6 @@ export function EnvImportModal({
     () => new Set(existingVariables.map((v) => v.key)),
     [existingVariables],
   );
-  const setNames = useMemo(() => sets.map((s) => s.name), [sets]);
-
   const counts = useMemo(() => {
     let newCount = 0;
     let conflicts = 0;
@@ -214,6 +222,30 @@ export function EnvImportModal({
     },
     [],
   );
+
+  // Bulk skip for every row that would overwrite an existing variable. There
+  // is no server-side history to undo an overwrite, so the cheap safety is
+  // preventing it in one click rather than recovering afterward. Toggling off
+  // only un-skips the conflicting rows, leaving individually skipped new rows
+  // alone.
+  const conflictKeys = useMemo(
+    () => rows.filter((r) => existingKeys.has(r.key)).map((r) => r.key),
+    [rows, existingKeys],
+  );
+  const allConflictsSkipped =
+    conflictKeys.length > 0 &&
+    conflictKeys.every((k) => rows.find((r) => r.key === k)?.skipped);
+
+  const toggleSkipAllConflicts = useCallback(() => {
+    const skipped = !allConflictsSkipped;
+    setOverrides((prev) => {
+      const next = { ...prev };
+      for (const key of conflictKeys) {
+        next[key] = { ...(next[key] ?? {}), skipped };
+      }
+      return next;
+    });
+  }, [allConflictsSkipped, conflictKeys]);
 
   const handleImport = useCallback(async () => {
     const active = rows.filter((r) => !r.skipped);
@@ -540,6 +572,17 @@ export function EnvImportModal({
               <span className="text-status-error font-semibold">{counts.skipped}</span>{' '}
               skipped
             </span>
+            {conflictKeys.length > 0 && (
+              <label className="flex items-center gap-1.5 cursor-pointer text-text-muted hover:text-text-secondary transition-colors normal-case">
+                <input
+                  type="checkbox"
+                  checked={allConflictsSkipped}
+                  onChange={toggleSkipAllConflicts}
+                  className="accent-primary"
+                />
+                Skip all conflicts
+              </label>
+            )}
             {invalidCount > 0 && (
               <>
                 <span className="text-text-muted/40">·</span>
