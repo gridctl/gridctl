@@ -295,19 +295,6 @@ type Secrets struct {
 	Sets []SecretSetRef `yaml:"sets,omitempty" json:"sets,omitempty"`
 }
 
-// SetNames returns the referenced set names in declaration order, for callers
-// that need membership without caring about scoping.
-func (s *Secrets) SetNames() []string {
-	if s == nil {
-		return nil
-	}
-	names := make([]string, 0, len(s.Sets))
-	for _, ref := range s.Sets {
-		names = append(names, ref.Name)
-	}
-	return names
-}
-
 // TracingConfig configures distributed tracing for the gateway.
 type TracingConfig struct {
 	// Enabled controls whether tracing is active. Default: true.
