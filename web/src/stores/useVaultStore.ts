@@ -12,6 +12,10 @@ interface VaultState {
   // active stack (the "used by" index). Best-effort: stays {} when no stack is
   // loaded or the usage fetch fails, so the variable list never depends on it.
   usage: Record<string, Consumer[]>;
+  // usageLoaded distinguishes "usage fetched (possibly empty)" from "usage
+  // unknown" (fetch failed or not attempted). An unknown index must not be
+  // presented as "nothing is referenced".
+  usageLoaded: boolean;
   // recentlyEdited maps a variable key to the epoch-ms it was last mutated in
   // this session (create/update/import/reassign). It powers the per-set
   // "recently edited" dot and is in-memory only — never persisted and cleared
@@ -24,7 +28,7 @@ interface VaultState {
 
   setVariables: (variables: Variable[]) => void;
   setSets: (sets: VariableSet[]) => void;
-  setUsage: (usage: Record<string, Consumer[]>) => void;
+  setUsage: (usage: Record<string, Consumer[]>, loaded?: boolean) => void;
   markRecentlyEdited: (keys: string[]) => void;
   clearRecentlyEdited: () => void;
   setLoading: (loading: boolean) => void;
@@ -37,6 +41,7 @@ export const useVaultStore = create<VaultState>()((set) => ({
   variables: null,
   sets: null,
   usage: {},
+  usageLoaded: false,
   recentlyEdited: {},
   loading: false,
   error: null,
@@ -45,7 +50,8 @@ export const useVaultStore = create<VaultState>()((set) => ({
 
   setVariables: (variables) => set({ variables: variables ?? [] }),
   setSets: (sets) => set({ sets: sets ?? [] }),
-  setUsage: (usage) => set({ usage: usage ?? {} }),
+  setUsage: (usage, loaded = true) =>
+    set({ usage: usage ?? {}, usageLoaded: loaded }),
   markRecentlyEdited: (keys) =>
     set((state) => {
       if (keys.length === 0) return state;
@@ -60,7 +66,14 @@ export const useVaultStore = create<VaultState>()((set) => ({
   setLocked: (locked) =>
     set(
       locked
-        ? { locked, variables: null, sets: null, usage: {}, recentlyEdited: {} }
+        ? {
+            locked,
+            variables: null,
+            sets: null,
+            usage: {},
+            usageLoaded: false,
+            recentlyEdited: {},
+          }
         : { locked },
     ),
   setEncrypted: (encrypted) => set({ encrypted }),

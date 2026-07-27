@@ -1,5 +1,5 @@
 import { ArrowUpRight } from 'lucide-react';
-import { isNavigable } from './consumerHelpers';
+import { consumerLabel, describeConsumer, isNavigable } from './consumerHelpers';
 import type { Consumer } from '../../lib/api';
 
 // How many consumers to show before collapsing behind a "see all" toggle.
@@ -48,7 +48,8 @@ export function ConsumerList({
       }
     >
       {visible.map((c, i) => {
-        const label = `${c.name || c.kind} · ${c.field}`;
+        const label = consumerLabel(c);
+        const tooltip = describeConsumer(c);
         if (isNavigable(c) && onConsumerClick) {
           return (
             <button
@@ -58,6 +59,7 @@ export function ConsumerList({
                 onConsumerClick(c);
               }}
               aria-label={`Go to ${c.name} (${c.field})`}
+              title={tooltip}
               className="w-full flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-mono text-text-secondary hover:text-primary hover:bg-surface-highlight/50 transition-colors text-left"
             >
               <ArrowUpRight
@@ -71,6 +73,7 @@ export function ConsumerList({
         return (
           <div
             key={`${c.kind}-${c.name}-${c.field}-${i}`}
+            title={tooltip}
             className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono text-text-muted"
           >
             <span className="w-2.5 flex-shrink-0 text-center">·</span>

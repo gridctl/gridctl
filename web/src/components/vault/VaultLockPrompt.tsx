@@ -2,9 +2,10 @@ import { useState, useCallback } from 'react';
 import { Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
+import type { UnlockResult } from '../../hooks/useVaultManager';
 
 interface VaultLockPromptProps {
-  onUnlock: (passphrase: string) => Promise<boolean>;
+  onUnlock: (passphrase: string) => Promise<UnlockResult>;
 }
 
 export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
@@ -21,14 +22,20 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
     setError(null);
 
     try {
-      const success = await onUnlock(passphrase.trim());
-      if (success) {
+      const result = await onUnlock(passphrase.trim());
+      if (result.ok) {
         setPassphrase('');
       } else {
-        setError('Wrong passphrase — unable to decrypt vault');
+        // Surface the specific failure (wrong passphrase vs. transport error)
+        // rather than blaming every failure on the passphrase.
+        setError(result.error ?? 'Wrong passphrase — unable to decrypt vault');
       }
-    } catch {
-      setError('Wrong passphrase — unable to decrypt vault');
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? `Unlock failed: ${err.message}`
+          : 'Unlock failed: could not reach the gateway',
+      );
     } finally {
       setIsUnlocking(false);
     }

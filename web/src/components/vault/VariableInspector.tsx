@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -27,7 +28,9 @@ import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { ConsumerList } from './ConsumerList';
 import { isNavigable } from './consumerHelpers';
 import { SecretGenerator } from './SecretGenerator';
+import { VariableSecretToggle } from './VariableSecretToggle';
 import { VariableTypeBadge } from './VariableTypeBadge';
+import { VariableTypeSelector } from './VariableTypeSelector';
 import { VariableValueInput } from './VariableValueInput';
 import { parseBool, validateVariableInput } from './variableTypeHelpers';
 import type {
@@ -40,6 +43,10 @@ import type {
 // Fixed-length mask for unrevealed secrets — deliberately independent of the
 // real value's length so the mask leaks nothing.
 const SECRET_MASK = '••••••••••';
+
+// Sentinel option value for "remove from set" in the move select. Not a real
+// set name (mirrors the workspace's __all__/__none__ URL sentinels).
+const UNASSIGN_OPTION = '__unassign__';
 
 // Rotated secrets use the generator's defaults: 24 chars, all classes.
 const ROTATE_OPTIONS = {
@@ -94,6 +101,10 @@ export interface VariableInspectorProps {
   // All set names, regardless of the active list filter.
   setNames: string[];
   locked: boolean;
+  // False when the usage index could not be fetched this session — the
+  // overview then shows "unknown" instead of counting everything as
+  // unreferenced, and the orphan callout is suppressed.
+  usageLoaded?: boolean;
   compact?: boolean;
   // Increment to request edit mode for the selected variable (keyboard 'e' /
   // Enter from the list). Ignored when nothing is selected.
@@ -120,6 +131,7 @@ export function VariableInspector({
   usage,
   setNames,
   locked,
+  usageLoaded = true,
   compact,
   editSignal = 0,
   getValue,
@@ -132,23 +144,63 @@ export function VariableInspector({
   const { revealed, reveal, hide } = useRevealedValues();
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [editType, setEditType] = useState<VariableType>('string');
+  const [editIsSecret, setEditIsSecret] = useState(true);
   const [editValid, setEditValid] = useState(true);
   const [showEditValue, setShowEditValue] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
+  const [confirmUnassign, setConfirmUnassign] = useState(false);
 
   const key = variable?.key;
   const value = key !== undefined ? revealed[key] : undefined;
   const isRevealed = value !== undefined;
 
-  const startEdit = useCallback(() => {
+  // Tracks the currently inspected key so async work started for one variable
+  // can detect that the selection moved on and drop its result.
+  const currentKeyRef = useRef(key);
+  useEffect(() => {
+    currentKeyRef.current = key;
+  }, [key]);
+
+  // The original seeded input, so a type round-trip (string → bool → string)
+  // can restore it instead of leaving a silently-blanked value that a Save
+  // would persist.
+  const seededInputRef = useRef<{ type: VariableType; value: string } | null>(
+    null,
+  );
+
+  // Entering edit mode always seeds the form with the actual stored value —
+  // fetched when not already revealed — so saving without touching the input
+  // is a no-op, never a silent wipe. The fetch stays off-screen: secrets keep
+  // showEditValue=false, so the input masks while editing.
+  const startEdit = useCallback(async () => {
     if (!variable) return;
-    const current = revealed[variable.key];
-    setEditValue(
-      current !== undefined ? toInputForm(variable.type, current) : '',
-    );
+    const forKey = variable.key;
+    setEditType(variable.type);
+    setEditIsSecret(variable.is_secret);
     setShowEditValue(!variable.is_secret);
-    setEditing(true);
-  }, [variable, revealed]);
+    const current = revealed[forKey];
+    if (current !== undefined) {
+      const seeded = toInputForm(variable.type, current);
+      seededInputRef.current = { type: variable.type, value: seeded };
+      setEditValue(seeded);
+      setEditing(true);
+      return;
+    }
+    try {
+      const detail = await getValue(forKey);
+      // The selection may have moved while the value was in flight — opening
+      // the form now would seed another variable's edit with this value.
+      if (currentKeyRef.current !== forKey) return;
+      const seeded = toInputForm(variable.type, detail.value);
+      seededInputRef.current = { type: variable.type, value: seeded };
+      setEditValue(seeded);
+      setEditing(true);
+    } catch {
+      if (currentKeyRef.current !== forKey) return;
+      showToast('error', `Failed to load ${forKey} for editing`);
+    }
+  }, [variable, revealed, getValue]);
 
   // Reset transient state when the selection changes, so switching variables
   // never strands an edit form or a confirm dialog on the previous key.
@@ -161,14 +213,22 @@ export function VariableInspector({
     setEditValue('');
     setShowEditValue(false);
     setConfirmRotate(false);
+    setConfirmUnassign(false);
   }
 
   // Keyboard 'e' / Enter from the list requests edit mode via a counter prop.
-  const [prevEditSignal, setPrevEditSignal] = useState(editSignal);
-  if (editSignal !== prevEditSignal) {
-    setPrevEditSignal(editSignal);
-    if (variable && !editing) startEdit();
-  }
+  // Handled in an effect (not during render) because startEdit may fetch the
+  // current value before the form opens; the last-handled signal lives in a
+  // ref since it drives no rendering.
+  const lastEditSignal = useRef(editSignal);
+  useEffect(() => {
+    if (editSignal === lastEditSignal.current) return;
+    lastEditSignal.current = editSignal;
+    if (!variable || editing) return;
+    // Deferred a microtask so the effect body itself schedules no state
+    // updates; startEdit seeds the form (and may fetch) on its own turn.
+    void Promise.resolve().then(startEdit);
+  }, [editSignal, variable, editing, startEdit]);
 
   // Re-mask when selection moves away: drop the previous key's revealed value
   // so coming back always starts masked (plaintext is simply refetched).
@@ -220,8 +280,10 @@ export function VariableInspector({
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!variable || !editValue) return;
-    const validation = validateVariableInput(variable.type, editValue);
+    if (!variable) return;
+    // Validate against the selected (possibly changed) type. Empty values are
+    // allowed where the validator allows them (string only).
+    const validation = validateVariableInput(editType, editValue);
     if (!validation.ok) {
       showToast('error', validation.error);
       return;
@@ -229,8 +291,8 @@ export function VariableInspector({
     try {
       await onUpdate(variable.key, {
         value: validation.normalized,
-        type: variable.type,
-        isSecret: variable.is_secret,
+        type: editType,
+        isSecret: editIsSecret,
       });
       setEditing(false);
       setEditValue('');
@@ -241,7 +303,23 @@ export function VariableInspector({
     } catch {
       showToast('error', 'Failed to update variable');
     }
-  }, [variable, editValue, onUpdate, hide]);
+  }, [variable, editValue, editType, editIsSecret, onUpdate, hide]);
+
+  // Switching into/out of bool clears the value (the toggle auto-seeds); other
+  // type switches keep the text for reinterpreting — same policy as the
+  // quick-add form. Returning to the originally seeded type restores the
+  // seeded value, so a bool round-trip can't leave a blank that Save would
+  // persist as an empty value.
+  const handleEditTypeChange = useCallback(
+    (next: VariableType) => {
+      if (editType === 'bool' || next === 'bool') {
+        const seeded = seededInputRef.current;
+        setEditValue(seeded && seeded.type === next ? seeded.value : '');
+      }
+      setEditType(next);
+    },
+    [editType],
+  );
 
   const handleRotate = useCallback(async () => {
     if (!variable) return;
@@ -269,6 +347,7 @@ export function VariableInspector({
         <InspectorOverview
           variables={allVariables}
           usage={usage}
+          usageLoaded={usageLoaded}
           locked={locked}
           compact={compact}
         />
@@ -278,6 +357,11 @@ export function VariableInspector({
 
   const canRotate = variable.type === 'string' && variable.is_secret;
   const navigableConsumer = consumers.find(isNavigable);
+  // True when the variable's own set is actively injected by the stack's
+  // secrets.sets block — leaving that set stops the bulk injection.
+  const injectedViaSet =
+    variable.set !== undefined &&
+    consumers.some((c) => c.kind === 'secrets-set' && c.name === variable.set);
 
   return (
     <aside
@@ -315,7 +399,7 @@ export function VariableInspector({
               icon={Pencil}
               size="sm"
               variant="ghost"
-              onClick={startEdit}
+              onClick={() => void startEdit()}
               tooltip="Edit variable"
             />
             <IconButton
@@ -352,18 +436,19 @@ export function VariableInspector({
                 className="-mx-2 space-y-0.5"
               />
             </div>
-          ) : (
+          ) : usageLoaded ? (
             <div className="rounded-lg border border-border/30 bg-background/40 p-2.5 space-y-1.5">
               <p className="text-[11px] text-text-secondary leading-relaxed">
                 Not referenced by{' '}
                 <code className="font-mono text-text-primary">
                   {'${var:…}'}
                 </code>{' '}
-                in the current stack.yaml.
+                in the current stack.yaml, and not injected via{' '}
+                <code>secrets.sets</code>.
               </p>
               <p className="text-[10px] text-text-muted/80 leading-relaxed">
-                Variables injected through <code>secrets.sets</code> may not
-                appear here.
+                Only <code>{'${var:…}'}</code> / <code>{'${vault:…}'}</code>{' '}
+                references are indexed; plain env strings are not.
               </p>
               <button
                 type="button"
@@ -373,6 +458,11 @@ export function VariableInspector({
                 Delete this variable
               </button>
             </div>
+          ) : (
+            <p className="text-[11px] text-text-muted leading-relaxed">
+              Usage unknown — the reference index could not be loaded, so this
+              variable may still be in use.
+            </p>
           )}
         </Section>
 
@@ -380,10 +470,10 @@ export function VariableInspector({
           {editing ? (
             <div className="space-y-2">
               <VariableValueInput
-                type={variable.type}
+                type={editType}
                 value={editValue}
                 onChange={setEditValue}
-                isSecret={variable.is_secret}
+                isSecret={editIsSecret}
                 revealed={showEditValue}
                 onToggleReveal={() => setShowEditValue((v) => !v)}
                 onValidityChange={setEditValid}
@@ -392,11 +482,27 @@ export function VariableInspector({
                 compact={compact}
                 autoFocus
               />
-              {variable.type === 'string' && (
-                <SecretGenerator
-                  onGenerate={setEditValue}
-                  onReveal={() => setShowEditValue(true)}
+              <div className="flex flex-wrap items-center gap-2">
+                <VariableTypeSelector
+                  value={editType}
+                  onChange={handleEditTypeChange}
                 />
+                <VariableSecretToggle
+                  isSecret={editIsSecret}
+                  onChange={setEditIsSecret}
+                />
+                {editType === 'string' && (
+                  <SecretGenerator
+                    onGenerate={setEditValue}
+                    onReveal={() => setShowEditValue(true)}
+                  />
+                )}
+              </div>
+              {variable.is_secret && !editIsSecret && (
+                <p className="text-[10px] text-amber-300/90 leading-relaxed">
+                  Switching to plaintext displays this value in the variable
+                  list and makes it visible in logs.
+                </p>
               )}
               <div className="flex justify-end gap-1.5">
                 <button
@@ -410,7 +516,7 @@ export function VariableInspector({
                   variant="primary"
                   size="sm"
                   onClick={handleSave}
-                  disabled={!editValue || !editValid}
+                  disabled={!editValid}
                 >
                   Save
                 </Button>
@@ -443,7 +549,11 @@ export function VariableInspector({
                     onClick={handleReveal}
                   />
                 )}
-                <PillButton icon={Pencil} label="Edit value" onClick={startEdit} />
+                <PillButton
+                  icon={Pencil}
+                  label="Edit value"
+                  onClick={() => void startEdit()}
+                />
               </div>
             </div>
           )}
@@ -462,11 +572,21 @@ export function VariableInspector({
               mono={Boolean(variable.set)}
             />
           </dl>
-          {setNames.filter((n) => n !== variable.set).length > 0 && (
+          {(variable.set !== undefined ||
+            setNames.filter((n) => n !== variable.set).length > 0) && (
             <select
               value=""
               onChange={(e) => {
-                if (e.target.value) onAssignSet(variable.key, e.target.value);
+                const next = e.target.value;
+                if (!next) return;
+                if (next === UNASSIGN_OPTION) {
+                  // Removing a variable from a set the stack injects via
+                  // secrets.sets is a behavior change — confirm it.
+                  if (injectedViaSet) setConfirmUnassign(true);
+                  else onAssignSet(variable.key, '');
+                  return;
+                }
+                onAssignSet(variable.key, next);
               }}
               aria-label="Move to set"
               className="mt-2 w-full bg-surface border border-border rounded-lg px-2 py-1 text-[10px] text-text-muted focus:outline-none focus:border-primary/40 transition-colors"
@@ -479,6 +599,11 @@ export function VariableInspector({
                     {name}
                   </option>
                 ))}
+              {variable.set !== undefined && (
+                <option value={UNASSIGN_OPTION}>
+                  Unassigned (remove from set)
+                </option>
+              )}
             </select>
           )}
         </Section>
@@ -507,6 +632,32 @@ export function VariableInspector({
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmUnassign}
+        onClose={() => setConfirmUnassign(false)}
+        onConfirm={() => {
+          onAssignSet(variable.key, '');
+          setConfirmUnassign(false);
+        }}
+        title="Remove from set"
+        message={
+          <>
+            <p>
+              Remove <span className="font-mono text-primary">{variable.key}</span>{' '}
+              from set{' '}
+              <span className="font-mono text-primary">{variable.set}</span>?
+            </p>
+            <p>
+              The active stack injects this set into every server env via{' '}
+              <code className="font-mono">secrets.sets</code>. Removing the
+              variable stops that injection on the next apply or reload.
+            </p>
+          </>
+        }
+        confirmLabel="Remove from set"
+        variant="danger"
+      />
 
       <ConfirmDialog
         isOpen={confirmRotate}
@@ -619,11 +770,13 @@ function ValueReadView({ type, value }: { type: VariableType; value: string }) {
 function InspectorOverview({
   variables,
   usage,
+  usageLoaded,
   locked,
   compact,
 }: {
   variables: Variable[] | null;
   usage: Record<string, Consumer[]>;
+  usageLoaded: boolean;
   locked: boolean;
   compact?: boolean;
 }) {
@@ -668,9 +821,11 @@ function InspectorOverview({
                 value={String(list.length - secretCount)}
                 mono
               />
+              {/* An unloaded usage index would count everything as
+                  unreferenced — show "unknown" instead of a wrong number. */}
               <MetaRow
                 label="Unreferenced"
-                value={String(unreferencedCount)}
+                value={usageLoaded ? String(unreferencedCount) : '—'}
                 mono
               />
               {[...typeCounts.entries()].map(([type, count]) => (

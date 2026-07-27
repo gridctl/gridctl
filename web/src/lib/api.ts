@@ -1052,13 +1052,16 @@ export async function fetchVariables(): Promise<Variable[]> {
 
 // ConsumerKind mirrors the backend config.ReferenceKind: where in the active
 // stack a ${var:KEY} reference appears. Only 'mcp-server' and 'resource' map to
-// canvas nodes; the rest are stack/gateway/network-level sites.
+// canvas nodes; the rest are stack/gateway/network-level sites. 'secrets-set'
+// is a synthetic consumer for variables bulk-injected via secrets.sets — no
+// single YAML site, so it is never navigable.
 export type ConsumerKind =
   | 'mcp-server'
   | 'resource'
   | 'gateway'
   | 'network'
-  | 'stack';
+  | 'stack'
+  | 'secrets-set';
 
 // Consumer is a single site that references a variable. `field` is the YAML key
 // path the user wrote (e.g. "env.GITHUB_TOKEN", "image", "openapi.baseUrl").

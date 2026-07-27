@@ -4,7 +4,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import {
   AlertCircle,
   FileUp,
@@ -15,6 +15,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ShieldAlert,
   Trash2,
   Upload,
   X,
@@ -41,6 +42,30 @@ import { isImportableFile } from '../../lib/parseFile';
 import type { Consumer, Variable } from '../../lib/api';
 
 const ALL_SETS_KEY = '__all__';
+// URL sentinel for the "Unassigned" rail filter (?set=__none__). Like
+// __all__, it is reserved: a real set with this name would shadow the filter.
+const UNASSIGNED_SET_KEY = '__none__';
+
+// Dismissal of the unencrypted-secrets banner is session-scoped
+// (sessionStorage survives route changes and reloads within the tab, but not
+// a new session) — deliberately not persisted, so the nudge returns.
+const UNENCRYPTED_BANNER_DISMISSED_KEY = 'gridctl-vault-unencrypted-dismissed';
+
+function isUnencryptedBannerDismissed(): boolean {
+  try {
+    return sessionStorage.getItem(UNENCRYPTED_BANNER_DISMISSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markUnencryptedBannerDismissed(): void {
+  try {
+    sessionStorage.setItem(UNENCRYPTED_BANNER_DISMISSED_KEY, '1');
+  } catch {
+    // sessionStorage may be unavailable; the banner just returns next mount.
+  }
+}
 
 // VaultWorkspace is the top-level Variables surface, sibling to Stack
 // and Library. It owns the set-navigator, the variable table, the
@@ -48,7 +73,9 @@ const ALL_SETS_KEY = '__all__';
 // deliberately doesn't host.
 export function VaultWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const compact = useUIStore((s) => s.compactMode.vault);
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
   const selectNode = useStackStore((s) => s.selectNode);
   const revealedState = useRevealedValues();
@@ -57,6 +84,7 @@ export function VaultWorkspace() {
     variables: vaultVariables,
     sets: vaultSets,
     usage,
+    usageLoaded,
     recentlyEdited,
     loading,
     error,
@@ -155,6 +183,9 @@ export function VaultWorkspace() {
   const [confirmDeleteSet, setConfirmDeleteSet] = useState<string | null>(null);
 
   const [encryptOpen, setEncryptOpen] = useState(false);
+  const [showUnencryptedBanner, setShowUnencryptedBanner] = useState(
+    () => !isUnencryptedBannerDismissed(),
+  );
   const [importOpen, setImportOpen] = useState(false);
   // Content seeded into the import modal when it's opened by a file drop.
   const [droppedText, setDroppedText] = useState('');
@@ -196,18 +227,29 @@ export function VaultWorkspace() {
 
   const filteredBySet = useMemo(() => {
     if (activeSet === ALL_SETS_KEY) return filteredByServer;
+    if (activeSet === UNASSIGNED_SET_KEY) {
+      return filteredByServer.filter((v) => !v.set);
+    }
     return filteredByServer.filter((v) => v.set === activeSet);
   }, [filteredByServer, activeSet]);
 
+  // Search matches keys and set names, plus consumer server names and field
+  // paths from the usage index — so "zapier" finds ZAPIER_MCP_TOKEN even when
+  // the key alone wouldn't match.
   const filteredBySearch = useMemo(() => {
     if (!searchQuery) return filteredBySet;
     const lower = searchQuery.toLowerCase();
     return filteredBySet.filter(
       (v) =>
         v.key.toLowerCase().includes(lower) ||
-        (v.set ?? '').toLowerCase().includes(lower),
+        (v.set ?? '').toLowerCase().includes(lower) ||
+        (usage[v.key] ?? []).some(
+          (c) =>
+            (c.name ?? '').toLowerCase().includes(lower) ||
+            c.field.toLowerCase().includes(lower),
+        ),
     );
-  }, [filteredBySet, searchQuery]);
+  }, [filteredBySet, searchQuery, usage]);
 
   // The inspector shows the selection only while it survives the active
   // filters; a filtered-out key keeps its URL param (the pane falls back to
@@ -233,9 +275,9 @@ export function VaultWorkspace() {
   // ---- Handlers -----------------------------------------------------------
   const handleUnlock = useCallback(
     async (passphrase: string) => {
-      const ok = await unlock(passphrase);
-      if (ok) showToast('success', 'Vault unlocked');
-      return ok;
+      const result = await unlock(passphrase);
+      if (result.ok) showToast('success', 'Vault unlocked');
+      return result;
     },
     [unlock],
   );
@@ -390,9 +432,9 @@ export function VaultWorkspace() {
     setDroppedText('');
   }, []);
 
-  // Selecting a consumer highlights its canvas node (ids are mcp-<name> /
-  // resource-<name>). We stay on the Variables route — a toast points the user
-  // to Stack rather than yanking them out of their current view.
+  // Selecting a consumer jumps to Stack with its canvas node selected and the
+  // sidebar open (ids are mcp-<name> / resource-<name>) — same idiom as the
+  // global command palette's navigate-then-set-store actions.
   const handleConsumerClick = useCallback(
     (consumer: Consumer) => {
       const nodeId =
@@ -403,9 +445,10 @@ export function VaultWorkspace() {
             : null;
       if (!nodeId) return;
       selectNode(nodeId);
-      showToast('success', `Selected ${consumer.name} — open Stack to inspect`);
+      setSidebarOpen(true);
+      navigate('/stack');
     },
-    [selectNode],
+    [selectNode, setSidebarOpen, navigate],
   );
 
   // ---- Rendering ----------------------------------------------------------
@@ -434,6 +477,7 @@ export function VaultWorkspace() {
       consumers={selectedVariable ? (usage[selectedVariable.key] ?? []) : []}
       allVariables={vaultVariables}
       usage={usage}
+      usageLoaded={usageLoaded}
       setNames={setNames}
       locked={locked}
       compact={compact}
@@ -478,6 +522,7 @@ export function VaultWorkspace() {
                   {encrypted ? 're-enter passphrase to lock' : 'set a passphrase to encrypt'}
                 </p>
                 <VaultEncryptForm
+                  mode={encrypted ? 'lock' : 'encrypt'}
                   onLock={handleEncrypt}
                   onCancel={() => setEncryptOpen(false)}
                 />
@@ -491,6 +536,17 @@ export function VaultWorkspace() {
             </div>
           ) : (
             <>
+              {!encrypted &&
+                showUnencryptedBanner &&
+                allVariables.some((v) => v.is_secret) && (
+                  <UnencryptedSecretsBanner
+                    onEncrypt={() => setEncryptOpen(true)}
+                    onDismiss={() => {
+                      markUnencryptedBannerDismissed();
+                      setShowUnencryptedBanner(false);
+                    }}
+                  />
+                )}
               {serverFilter && (
                 <ServerFilterBanner
                   serverName={serverFilter}
@@ -513,7 +569,9 @@ export function VaultWorkspace() {
                       placeholder={
                         activeSet === ALL_SETS_KEY
                           ? 'Search all variables…'
-                          : `Search ${activeSet}…`
+                          : activeSet === UNASSIGNED_SET_KEY
+                            ? 'Search unassigned…'
+                            : `Search ${activeSet}…`
                       }
                       aria-label="Filter variables"
                       className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
@@ -619,6 +677,13 @@ export function VaultWorkspace() {
                 {usage[confirmDelete].length === 1 ? 'consumer' : 'consumers'} in
                 the active stack. Deleting it may break{' '}
                 {usage[confirmDelete].length === 1 ? 'it' : 'them'}.
+                {usage[confirmDelete].some((c) => c.kind === 'secrets-set') && (
+                  <>
+                    {' '}
+                    This variable is injected into every server env via{' '}
+                    <code className="font-mono">secrets.sets</code>.
+                  </>
+                )}
               </p>
             )}
             <p>This action cannot be undone.</p>
@@ -662,7 +727,11 @@ export function VaultWorkspace() {
           onImport={handleImport}
           existingVariables={allVariables}
           sets={allSets}
-          defaultSet={activeSet === ALL_SETS_KEY ? '' : activeSet}
+          defaultSet={
+            activeSet === ALL_SETS_KEY || activeSet === UNASSIGNED_SET_KEY
+              ? ''
+              : activeSet
+          }
           initialText={droppedText}
         />
       )}
@@ -850,6 +919,14 @@ function VaultLeftRail({
           active={activeSet === ALL_SETS_KEY}
           onClick={() => onSelectSet(ALL_SETS_KEY)}
         />
+        {(unassignedCount > 0 || activeSet === UNASSIGNED_SET_KEY) && (
+          <SetPill
+            label="Unassigned"
+            count={unassignedCount}
+            active={activeSet === UNASSIGNED_SET_KEY}
+            onClick={() => onSelectSet(UNASSIGNED_SET_KEY)}
+          />
+        )}
         {unassignedCount > 0 && (
           <p className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-[0.24em] text-text-muted/50">
             grouped
@@ -1078,6 +1155,41 @@ function ServerFilterBanner({
   );
 }
 
+interface UnencryptedSecretsBannerProps {
+  onEncrypt: () => void;
+  onDismiss: () => void;
+}
+
+// Security-hygiene nudge shown while secrets sit unencrypted on disk. A
+// banner, not a gate — dismissable for the session, back next session.
+function UnencryptedSecretsBanner({
+  onEncrypt,
+  onDismiss,
+}: UnencryptedSecretsBannerProps) {
+  return (
+    <div className="flex-shrink-0 px-6 py-2 border-b border-amber-500/20 bg-amber-500/[0.06] flex items-center gap-2">
+      <ShieldAlert size={12} className="text-amber-300/80 flex-shrink-0" />
+      <div className="flex-1 min-w-0 text-[11px] text-text-secondary">
+        Secrets are stored unencrypted on disk. Encrypt the vault with a
+        passphrase.
+      </div>
+      <button
+        onClick={onEncrypt}
+        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-amber-300 hover:text-amber-200 border border-amber-500/30 hover:border-amber-500/50 rounded transition-colors"
+      >
+        <Lock size={10} /> Encrypt
+      </button>
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss unencrypted secrets warning"
+        className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-highlight transition-colors"
+      >
+        <X size={11} />
+      </button>
+    </div>
+  );
+}
+
 interface VaultEmptyStateProps {
   onImport: () => void;
   onAddOne: () => void;
@@ -1142,7 +1254,11 @@ interface NoMatchesProps {
 
 function NoMatchesState({ activeSet, searchQuery, onClear }: NoMatchesProps) {
   const scopeLabel =
-    activeSet === ALL_SETS_KEY ? 'this view' : `the ${activeSet} set`;
+    activeSet === ALL_SETS_KEY
+      ? 'this view'
+      : activeSet === UNASSIGNED_SET_KEY
+        ? 'the unassigned group'
+        : `the ${activeSet} set`;
   return (
     <div className="h-full flex items-center justify-center px-6 py-10">
       <div className="text-center space-y-2 max-w-sm">

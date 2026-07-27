@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import '@testing-library/jest-dom';
 import { VaultWorkspace } from '../components/workspaces/VaultWorkspace';
 import { ToastContainer } from '../components/ui/Toast';
@@ -214,6 +214,91 @@ describe('VaultWorkspace — server filter', () => {
     expect(await screen.findByText(/used by 1 consumer/i)).toBeInTheDocument();
     expect(screen.getByText(/may break it/i)).toBeInTheDocument();
   });
+
+  it('warns about set injection when deleting a set-injected variable', async () => {
+    const injectedUsage = {
+      POSTGRES_URL: [
+        {
+          kind: 'secrets-set' as const,
+          name: 'dev',
+          field: 'secrets.sets',
+        },
+      ],
+    };
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue(injectedUsage);
+    useVaultStore.setState({ usage: injectedUsage, usageLoaded: true });
+
+    render(
+      <MemoryRouter initialEntries={['/vault']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    const row = await screen.findByRole('option', { name: /POSTGRES_URL/i });
+    fireEvent.click(row);
+    fireEvent.click(
+      await screen.findByRole('button', { name: /delete variable/i }),
+    );
+
+    // The generic consumer warning fires (count > 0) plus the injection note.
+    expect(await screen.findByText(/used by 1 consumer/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/injected into every server env/i),
+    ).toBeInTheDocument();
+  });
+
+  it('finds variables by consumer server name in search', async () => {
+    // "postgres" appears in POSTGRES_URL's consumers, not only its key; the
+    // decisive case is REDIS_URL staying hidden while a usage-only match
+    // (consumer name) keeps a variable visible.
+    render(
+      <MemoryRouter initialEntries={['/vault?q=postgres']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('POSTGRES_URL')).toBeInTheDocument();
+    expect(screen.getByText('POSTGRES_PASSWORD')).toBeInTheDocument();
+    expect(screen.queryByText('REDIS_URL')).not.toBeInTheDocument();
+  });
+
+  it('matches a variable whose key shares nothing with the query via usage', async () => {
+    const vars = [
+      { key: 'DB_TOKEN', type: 'string' as const, is_secret: true },
+      { key: 'OTHER', type: 'string' as const, is_secret: true },
+    ];
+    const usageByName = {
+      DB_TOKEN: [
+        { kind: 'mcp-server' as const, name: 'zapier', field: 'command[4]' },
+      ],
+    };
+    vi.mocked(api.fetchVariables).mockResolvedValue(vars);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue(usageByName);
+    useVaultStore.setState({ variables: vars, usage: usageByName });
+
+    render(
+      <MemoryRouter initialEntries={['/vault?q=zapier']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('DB_TOKEN')).toBeInTheDocument();
+    expect(screen.queryByText('OTHER')).not.toBeInTheDocument();
+  });
+
+  it('jumps to Stack when a consumer is clicked', async () => {
+    render(
+      <MemoryRouter initialEntries={['/vault']}>
+        <Routes>
+          <Route path="/vault" element={<VaultWorkspace />} />
+          <Route path="/stack" element={<div>STACK PAGE</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const row = await screen.findByRole('option', { name: /POSTGRES_URL/i });
+    fireEvent.click(row);
+    fireEvent.click(
+      await screen.findByRole('button', { name: /go to postgres/i }),
+    );
+    expect(await screen.findByText('STACK PAGE')).toBeInTheDocument();
+  });
 });
 
 describe('VaultWorkspace — inspector selection', () => {
@@ -349,6 +434,114 @@ describe('VaultWorkspace — inspector selection', () => {
     expect(
       await screen.findByRole('option', { name: /REDIS_URL/i, selected: true }),
     ).toBeInTheDocument();
+  });
+});
+
+describe('VaultWorkspace — unassigned filter', () => {
+  const variables = [
+    { key: 'API_KEY', type: 'string' as const, is_secret: true, set: 'dev' },
+    { key: 'LOOSE_VAR', type: 'string' as const, is_secret: false },
+  ];
+  const sets = [{ name: 'dev', count: 1 }];
+
+  beforeEach(() => {
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: true,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(variables);
+    vi.mocked(api.fetchVariableSets).mockResolvedValue(sets);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue({});
+    useVaultStore.setState({
+      variables,
+      sets,
+      usage: {},
+      usageLoaded: true,
+      recentlyEdited: {},
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: true,
+    });
+  });
+
+  it('renders an Unassigned pill and filters to variables without a set', async () => {
+    renderWorkspace();
+    const pill = await screen.findByRole('button', { name: /unassigned/i });
+    fireEvent.click(pill);
+
+    expect(await screen.findByText('LOOSE_VAR')).toBeInTheDocument();
+    expect(screen.queryByText('API_KEY')).not.toBeInTheDocument();
+  });
+
+  it('restores the unassigned filter from ?set=__none__', async () => {
+    render(
+      <MemoryRouter initialEntries={['/vault?set=__none__']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('LOOSE_VAR')).toBeInTheDocument();
+    expect(screen.queryByText('API_KEY')).not.toBeInTheDocument();
+  });
+});
+
+describe('VaultWorkspace — unencrypted secrets banner', () => {
+  const variables = [
+    { key: 'API_KEY', type: 'string' as const, is_secret: true },
+  ];
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: false,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(variables);
+    vi.mocked(api.fetchVariableSets).mockResolvedValue([]);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue({});
+    useVaultStore.setState({
+      variables,
+      sets: [],
+      usage: {},
+      usageLoaded: true,
+      recentlyEdited: {},
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+  });
+
+  it('nudges to encrypt and opens the encrypt drawer', async () => {
+    renderWorkspace();
+    expect(
+      await screen.findByText(/secrets are stored unencrypted/i),
+    ).toBeInTheDocument();
+
+    // The banner's Encrypt action opens the passphrase drawer in encrypt mode.
+    const banner = screen
+      .getByText(/secrets are stored unencrypted/i)
+      .closest('div')?.parentElement;
+    const encryptBtn = Array.from(
+      banner?.querySelectorAll('button') ?? [],
+    ).find((b) => b.textContent?.match(/encrypt/i));
+    expect(encryptBtn).toBeTruthy();
+    fireEvent.click(encryptBtn!);
+    expect(
+      await screen.findByPlaceholderText('New passphrase'),
+    ).toBeInTheDocument();
+  });
+
+  it('dismisses for the session', async () => {
+    renderWorkspace();
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: /dismiss unencrypted secrets warning/i,
+      }),
+    );
+    expect(
+      screen.queryByText(/secrets are stored unencrypted/i),
+    ).not.toBeInTheDocument();
   });
 });
 
