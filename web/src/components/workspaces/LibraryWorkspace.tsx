@@ -36,6 +36,8 @@ import { useWindowManager } from '../../hooks/useWindowManager';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useLibraryCommands, type LibraryFilter } from '../library/useLibraryCommands';
+import { hasAnyCategory, skillCategory } from '../../lib/skillMeta';
+import { coldWindowCaveat, isUsageWindowCold } from '../../lib/skillUsage';
 import {
   activateRegistrySkill,
   deleteRegistrySkill,
@@ -86,9 +88,20 @@ export function LibraryWorkspace() {
   // provenance source join) so the registry list payload stays untouched. When
   // the endpoint is unavailable (no metrics accumulator wired) usage stays null
   // and every usage surface (column, KPI, inspector line) is omitted.
-  const { usage } = useSkillUsage();
+  const { usage, fetchedAt } = useSkillUsage();
   const usageAvailable = usage !== null;
   const observedSince = usage?.observedSince ?? null;
+  // A tracking window younger than a day cannot support "never used": every
+  // skill would qualify simply because nothing has been observed yet. While
+  // cold, the KPI withholds its count, the ?usage facet is inert, and the bulk
+  // bar carries the caveat. See lib/skillUsage.ts for the full rationale.
+  //
+  // The clock is the snapshot's own fetch time, not Date.now() at render:
+  // reading a clock during render is impure, and "how old was the window when
+  // this data was taken" is the question actually being asked. `fetchedAt` is
+  // non-null whenever `usage` is, so the fallback only ever sees a null usage.
+  const usageCold = useMemo(() => isUsageWindowCold(usage, fetchedAt ?? 0), [usage, fetchedAt]);
+  const coldCaveat = useMemo(() => coldWindowCaveat(usage, fetchedAt ?? 0), [usage, fetchedAt]);
   const usageMap = useMemo(() => {
     if (!usage) return null;
     const map = new Map<string, SkillUsageStat>();
@@ -149,6 +162,9 @@ export function LibraryWorkspace() {
   // exists, else Category (today's behavior) — so the default value is omitted
   // from the URL and a no-source registry is untouched.
   const hasSources = (sources ?? []).length > 0;
+  // Category grouping is only offered when some skill actually has a category;
+  // a flat registry would otherwise get one section per skill.
+  const hasCategories = useMemo(() => hasAnyCategory(skills ?? []), [skills]);
   const defaultGroup: GroupMode = hasSources ? 'source' : 'category';
   const groupParam = searchParams.get('group');
   const groupMode: GroupMode = isGroupMode(groupParam) ? groupParam : defaultGroup;
@@ -245,7 +261,10 @@ export function LibraryWorkspace() {
   // the source isolate. Effective only when usage data is available.
   const usageParam = searchParams.get('usage');
   const usageFilter: 'unused' | null = usageParam === 'unused' ? 'unused' : null;
-  const usageFilterActive = usageFilter === 'unused' && usageAvailable;
+  // Inert when usage is unavailable *or* the window is too young to support the
+  // claim, so a stale or hand-typed ?usage=unused cannot select the whole
+  // active catalog on a freshly started gateway.
+  const usageFilterActive = usageFilter === 'unused' && usageAvailable && !usageCold;
   const setUsageFilter = useCallback((filter: 'unused' | null) => {
     setSearchParams(
       (prev) => {
@@ -300,6 +319,10 @@ export function LibraryWorkspace() {
   const [editingSkill, setEditingSkill] = useState<AgentSkill | undefined>();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  // Bulk disable is reversible but wide: from the "Never used" facet a single
+  // Select all can take out the whole active catalog, so it confirms like
+  // delete does rather than firing on one click.
+  const [confirmBulkDisable, setConfirmBulkDisable] = useState(false);
 
   // Sync sources state. `syncing` disables the workspace-level button; the
   // failure list is captured for the Details overlay opened from the toast.
@@ -593,12 +616,14 @@ export function LibraryWorkspace() {
   }, [visibleSkills, sortMode, usageMap]);
 
   // "Never used" KPI count: active skills with zero recorded calls, computed
-  // within the search results (search-aware, like the state KPIs) and only
-  // when usage data exists. null hides the KPI entirely (no zero-state noise).
+  // within the search results (search-aware, like the state KPIs). null means
+  // "not knowable" — either usage is unavailable (the KPI is omitted entirely)
+  // or the window is cold (the KPI renders disabled, without a number, rather
+  // than asserting a count it cannot stand behind).
   const neverUsedCount = useMemo(() => {
-    if (!usageAvailable) return null;
+    if (!usageAvailable || usageCold) return null;
     return searchResults.filter((s) => s.state === 'active' && isUnused(s.name)).length;
-  }, [usageAvailable, searchResults, isUnused]);
+  }, [usageAvailable, usageCold, searchResults, isUnused]);
 
   // Reconcile the selection against the live skill set so a skill deleted out
   // from under the selection never lands in a bulk request (which would reject
@@ -616,6 +641,7 @@ export function LibraryWorkspace() {
   );
 
   const handleBulkState = useCallback(async (state: 'active' | 'disabled') => {
+    if (state === 'disabled') setConfirmBulkDisable(false);
     if (liveSelected.length === 0) return;
     try {
       await setRegistrySkillsBatch(liveSelected.map((name) => ({ name, state })));
@@ -654,13 +680,14 @@ export function LibraryWorkspace() {
     [selectedName, skills],
   );
 
-  // Other skills sharing the selected skill's top-level category, for the
-  // inspector's "Related skills" list.
+  // Other skills sharing the selected skill's category, for the inspector's
+  // "Related skills" list. A skill with no category has no siblings to show.
   const relatedSkills = useMemo(() => {
-    if (!selectedSkillObj?.dir) return [];
-    const key = selectedSkillObj.dir.split('/')[0];
+    if (!selectedSkillObj) return [];
+    const key = skillCategory(selectedSkillObj.dir, selectedSkillObj.metadata);
+    if (!key) return [];
     return (skills ?? []).filter(
-      (s) => s.name !== selectedSkillObj.name && s.dir?.split('/')[0] === key,
+      (s) => s.name !== selectedSkillObj.name && skillCategory(s.dir, s.metadata) === key,
     );
   }, [selectedSkillObj, skills]);
 
@@ -700,7 +727,9 @@ export function LibraryWorkspace() {
             counts={tabCounts}
             activeTab={activeTab}
             onSelectFilter={setActiveTab}
+            usageTracked={usageAvailable}
             neverUsedCount={neverUsedCount}
+            coldCaveat={coldCaveat}
             usageFilterActive={usageFilterActive}
             onToggleNeverUsed={toggleNeverUsed}
             compact={compact}
@@ -734,7 +763,7 @@ export function LibraryWorkspace() {
               <SortControl mode={sortMode} onChange={setSortMode} usageAvailable={usageAvailable} />
               <div className="flex items-center gap-2 flex-wrap">
                 {hasSources && viewMode === 'cards' && (
-                  <GroupByControl mode={groupMode} onChange={setGroupMode} />
+                  <GroupByControl mode={groupMode} onChange={setGroupMode} hasCategories={hasCategories} />
                 )}
                 <ViewToggle mode={viewMode} onChange={setViewMode} />
                 <IconButton
@@ -768,9 +797,10 @@ export function LibraryWorkspace() {
               allSelected={allSelected}
               onSelectAll={selectAllVisible}
               onEnable={() => handleBulkState('active')}
-              onDisable={() => handleBulkState('disabled')}
+              onDisable={() => setConfirmBulkDisable(true)}
               onDelete={() => setConfirmBulkDelete(true)}
               onClear={clearSelection}
+              caveat={coldCaveat}
             />
           )}
 
@@ -887,6 +917,28 @@ export function LibraryWorkspace() {
       />
 
       <ConfirmDialog
+        isOpen={confirmBulkDisable}
+        onClose={() => setConfirmBulkDisable(false)}
+        onConfirm={() => void handleBulkState('disabled')}
+        title="Disable skills"
+        message={
+          <>
+            <p>
+              Disable <span className="font-mono text-primary">{liveSelected.length}</span> selected{' '}
+              {liveSelected.length === 1 ? 'skill' : 'skills'}? Disabled skills stop being served to
+              clients until you enable them again.
+            </p>
+            {coldCaveat && <p className="text-amber-300">{coldCaveat}</p>}
+          </>
+        }
+        confirmLabel={
+          <span>
+            Disable {liveSelected.length} {liveSelected.length === 1 ? 'skill' : 'skills'}
+          </span>
+        }
+      />
+
+      <ConfirmDialog
         isOpen={confirmBulkDelete}
         onClose={() => setConfirmBulkDelete(false)}
         onConfirm={handleBulkDelete}
@@ -947,12 +999,25 @@ const GROUP_OPTIONS: { key: GroupMode; label: string }[] = [
   { key: 'none', label: 'None' },
 ];
 
-/** Segmented control to switch the Library's grouping axis. */
-function GroupByControl({ mode, onChange }: { mode: GroupMode; onChange: (m: GroupMode) => void }) {
+/**
+ * Segmented control to switch the Library's grouping axis. Category is offered
+ * only when at least one skill has one; on a flat registry it would group every
+ * skill into its own section, which reads as broken rather than as "no data".
+ */
+function GroupByControl({
+  mode,
+  onChange,
+  hasCategories,
+}: {
+  mode: GroupMode;
+  onChange: (m: GroupMode) => void;
+  hasCategories: boolean;
+}) {
+  const options = hasCategories ? GROUP_OPTIONS : GROUP_OPTIONS.filter((o) => o.key !== 'category');
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Group skills by">
       <span className="text-[10px] uppercase tracking-wider text-text-muted/60 mr-0.5">Group</span>
-      {GROUP_OPTIONS.map((opt) => (
+      {options.map((opt) => (
         <button
           key={opt.key}
           onClick={() => onChange(opt.key)}
@@ -1113,14 +1178,18 @@ interface BulkActionBarProps {
   onDisable: () => void;
   onDelete: () => void;
   onClear: () => void;
+  /** Tracking-window caveat shown before the state actions, or null when warm. */
+  caveat?: string | null;
 }
 
 /**
  * Contextual bar shown while a multi-selection is active. The count is an
- * aria-live region so bulk results are announced. Destructive deletes are
- * confirmed upstream via ConfirmDialog.
+ * aria-live region so bulk results are announced. Disable and delete are both
+ * confirmed upstream via ConfirmDialog. While the usage window is cold the bar
+ * carries the caveat inline, so a selection made from "Never used" says why the
+ * set may be wrong before the user acts on it (mirrors FleetActions).
  */
-function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, onDelete, onClear }: BulkActionBarProps) {
+function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, onDelete, onClear, caveat }: BulkActionBarProps) {
   return (
     <div
       role="region"
@@ -1134,6 +1203,13 @@ function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, o
         <button onClick={onSelectAll} className="text-[11px] text-text-muted hover:text-text-secondary transition-colors">
           Select all
         </button>
+      )}
+      {/* Full-width row so a long sentence never squeezes the actions, and
+          placed ahead of them in DOM order so it is read before the buttons. */}
+      {caveat && (
+        <span role="status" className="basis-full text-[11px] text-amber-300">
+          {caveat}
+        </span>
       )}
       <div className="ml-auto flex items-center gap-1.5">
         <button
@@ -1199,14 +1275,20 @@ interface LibraryHeaderProps {
   activeTab: FilterTab;
   onSelectFilter: (tab: FilterTab) => void;
   // "Never used" is a usage-data KPI on a separate axis from the state filter.
-  // null hides it (usage unavailable), so the row carries no zero-state noise.
+  // It renders only when the usage endpoint is available (`usageTracked`), so
+  // the row carries no zero-state noise on a gateway without an accumulator.
+  usageTracked: boolean;
+  // null while the tracking window is too young to support the claim; the card
+  // then shows a dash and goes inert rather than counting the whole catalog.
   neverUsedCount: number | null;
+  // Why the count is withheld, shown on hover of the inert card.
+  coldCaveat: string | null;
   usageFilterActive: boolean;
   onToggleNeverUsed: () => void;
   compact: boolean;
 }
 
-function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, neverUsedCount, usageFilterActive, onToggleNeverUsed, compact }: LibraryHeaderProps) {
+function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
   const hasSources = sources.length > 0;
   const updateCount = sources.filter((s) => s.updateAvailable).length;
@@ -1260,8 +1342,9 @@ function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources
           />
         ))}
         {/* "Never used" is a reserved slot that renders only when usage data
-            exists. It toggles the ?usage=unused facet rather than ?filter. */}
-        {neverUsedCount !== null && (
+            exists. It toggles the ?usage=unused facet rather than ?filter.
+            A null count keeps the slot but withholds the number. */}
+        {usageTracked && (
           <KpiCard
             label="Never used"
             count={neverUsedCount}
@@ -1269,6 +1352,7 @@ function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources
             active={usageFilterActive}
             compact={compact}
             onClick={onToggleNeverUsed}
+            unknownReason={coldCaveat}
           />
         )}
       </div>
@@ -1278,26 +1362,37 @@ function LibraryHeader({ onNewSkill, onGlobalContext, onRefresh, onSync, sources
 
 interface KpiCardProps {
   label: string;
-  count: number;
+  /** null means "not knowable yet"; the card shows a dash and goes inert. */
+  count: number | null;
   dot: ItemState | null;
   active: boolean;
   compact: boolean;
   onClick: () => void;
+  /** Explanation for a null count, surfaced on hover and to assistive tech. */
+  unknownReason?: string | null;
 }
 
-function KpiCard({ label, count, dot, active, compact, onClick }: KpiCardProps) {
+function KpiCard({ label, count, dot, active, compact, onClick, unknownReason }: KpiCardProps) {
+  // A null count is a claim the card cannot make, so it renders no number and
+  // stops being a filter. The label alone carries the accessible name; folding
+  // a placeholder into it would announce "Never used (dash)".
+  const unknown = count === null;
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={active}
-      aria-label={`${label} (${count})`}
+      disabled={unknown}
+      aria-pressed={unknown ? undefined : active}
+      aria-label={unknown ? label : `${label} (${count})`}
+      title={unknown ? unknownReason ?? undefined : undefined}
       className={cn(
         'flex flex-col items-start rounded-lg border transition-colors text-left min-w-[60px]',
         compact ? 'px-2.5 py-1' : 'px-3 py-1.5',
-        active
-          ? 'bg-primary/10 border-primary/30'
-          : 'bg-background/40 border-border/40 hover:border-border hover:bg-surface-highlight',
+        unknown
+          ? 'bg-background/20 border-border/30 opacity-60 cursor-not-allowed'
+          : active
+            ? 'bg-primary/10 border-primary/30'
+            : 'bg-background/40 border-border/40 hover:border-border hover:bg-surface-highlight',
       )}
     >
       <span className="flex items-center gap-1.5">
@@ -1306,17 +1401,20 @@ function KpiCard({ label, count, dot, active, compact, onClick }: KpiCardProps) 
         )}
         <span className={cn(
           'text-[10px] uppercase tracking-wider font-medium',
-          active ? 'text-primary' : 'text-text-muted',
+          active && !unknown ? 'text-primary' : 'text-text-muted',
         )}>
           {label}
         </span>
       </span>
-      <span className={cn(
-        'font-mono leading-none mt-0.5',
-        compact ? 'text-xs' : 'text-sm',
-        active ? 'text-primary' : 'text-text-secondary',
-      )}>
-        {count}
+      <span
+        aria-hidden={unknown ? 'true' : undefined}
+        className={cn(
+          'font-mono leading-none mt-0.5',
+          compact ? 'text-xs' : 'text-sm',
+          active && !unknown ? 'text-primary' : 'text-text-secondary',
+        )}
+      >
+        {unknown ? '–' : count}
       </span>
     </button>
   );
