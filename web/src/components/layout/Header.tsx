@@ -1,4 +1,4 @@
-import { RefreshCw, Settings, RotateCcw, Plus, Command } from 'lucide-react';
+import { RefreshCw, RotateCcw, Plus, Command } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
@@ -7,7 +7,6 @@ import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api';
-import { VaultPanel } from '../vault/VaultPanel';
 import { SpecDiffModal } from '../spec/SpecDiffModal';
 import { CreationWizard } from '../wizard/CreationWizard';
 import { GlobalContextDialog } from '../context/GlobalContextDialog';
@@ -28,8 +27,6 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const gatewayInfo = useStackStore((s) => s.gatewayInfo);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
-  const showVault = useUIStore((s) => s.showVault);
-  const setShowVault = useUIStore((s) => s.setShowVault);
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
   const [isReloading, setIsReloading] = useState(false);
   // Global Context dialog, reachable from the creation wizard's tile.
@@ -180,23 +177,13 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
           )}
           tooltip="Reload Config"
         />
-        <IconButton
-          icon={Settings}
-          onClick={() => setShowVault(!showVault)}
-          tooltip="Variables"
-          className={cn(
-            'hover:text-primary hover:border-primary/30',
-            showVault && 'text-primary border-primary/30'
-          )}
-        />
       </div>
-      {showVault && <VaultPanel onClose={() => setShowVault(false)} />}
       <SpecDiffModal
         onApply={executeReload}
         validationErrors={validationErrors}
       />
       <CreationWizard
-        onOpenVault={() => setShowVault(true)}
+        onOpenVault={() => navigate('/vault')}
         onOpenGlobalContext={() => setShowGlobalContext(true)}
         onOpenConnections={() => navigate('/connections')}
         onDeploy={onRefresh}
