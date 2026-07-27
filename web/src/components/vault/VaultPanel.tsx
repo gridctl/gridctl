@@ -103,10 +103,10 @@ export function VaultPanel({ onClose }: VaultPanelProps) {
   }, [onClose]);
 
   const handleUnlock = useCallback(
-    async (passphrase: string): Promise<boolean> => {
-      const ok = await unlock(passphrase);
-      if (ok) showToast('success', 'Vault unlocked');
-      return ok;
+    async (passphrase: string) => {
+      const result = await unlock(passphrase);
+      if (result.ok) showToast('success', 'Vault unlocked');
+      return result;
     },
     [unlock],
   );
