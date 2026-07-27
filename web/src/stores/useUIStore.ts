@@ -183,6 +183,10 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // Persisted; URL params always win.
   toolsPrefs: ToolsPrefs;
   setToolsPrefs: (prefs: Partial<ToolsPrefs>) => void;
+
+  // Library workspace view preferences (select mode).
+  libraryPrefs: LibraryPrefs;
+  setLibraryPrefs: (prefs: Partial<LibraryPrefs>) => void;
 }
 
 interface TracesPrefs {
@@ -297,6 +301,27 @@ function normalizeToolsPrefs(value: unknown): ToolsPrefs {
   };
 }
 
+export interface LibraryPrefs {
+  /**
+   * Pin the multi-select checkboxes visible. Off by default, matching the
+   * hover-reveal the cards shipped with; on, the checkboxes stay put so bulk
+   * actions are discoverable without a pointer. A display preference, not a
+   * view facet, so it lives here rather than in the URL.
+   */
+  selectMode: boolean;
+}
+
+const LIBRARY_PREFS_DEFAULTS: LibraryPrefs = {
+  selectMode: false,
+};
+
+function normalizeLibraryPrefs(value: unknown): LibraryPrefs {
+  const v = (value ?? {}) as Partial<LibraryPrefs>;
+  return {
+    selectMode: typeof v.selectMode === 'boolean' ? v.selectMode : false,
+  };
+}
+
 export const useUIStore = create<UIState>()(
   persist(
     (set, get, store) => ({
@@ -383,6 +408,10 @@ export const useUIStore = create<UIState>()(
       setToolsPrefs: (prefs) =>
         set((s) => ({ toolsPrefs: { ...s.toolsPrefs, ...prefs } })),
 
+      libraryPrefs: { ...LIBRARY_PREFS_DEFAULTS },
+      setLibraryPrefs: (prefs) =>
+        set((s) => ({ libraryPrefs: { ...s.libraryPrefs, ...prefs } })),
+
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
       setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
@@ -414,6 +443,7 @@ export const useUIStore = create<UIState>()(
         logsPrefs: state.logsPrefs,
         pinsPrefs: state.pinsPrefs,
         toolsPrefs: state.toolsPrefs,
+        libraryPrefs: state.libraryPrefs,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<UIState> | undefined;
@@ -430,6 +460,7 @@ export const useUIStore = create<UIState>()(
           logsPrefs: normalizeLogsPrefs((p as { logsPrefs?: unknown })?.logsPrefs),
           pinsPrefs: normalizePinsPrefs((p as { pinsPrefs?: unknown })?.pinsPrefs),
           toolsPrefs: normalizeToolsPrefs((p as { toolsPrefs?: unknown })?.toolsPrefs),
+          libraryPrefs: normalizeLibraryPrefs((p as { libraryPrefs?: unknown })?.libraryPrefs),
         };
       },
     }
