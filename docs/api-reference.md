@@ -1835,6 +1835,59 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/usage
 
 Returns `{}` when no stack is deployed.
 
+Variables injected in bulk through `secrets.sets` also appear, as a synthetic
+consumer of kind `secrets-set` whose `name` is the set. When that set is scoped
+to named workloads, one such consumer is returned per receiving workload, with
+`target` naming it and `targetKind` saying whether it is an `mcp-server` or a
+`resource`. An unscoped set fans out to everything and returns a single
+consumer with neither field set. `name` always holds the set name.
+
+```json
+{
+  "GITHUB_TOKEN": [
+    {
+      "kind": "secrets-set",
+      "name": "github-creds",
+      "field": "secrets.sets",
+      "target": "github",
+      "targetKind": "mcp-server"
+    }
+  ]
+}
+```
+
+#### `GET /api/var/drift`
+
+Lists the `${var:KEY}` references in the active stack that no stored variable
+satisfies. These are exactly the references that would fail a deploy, so the
+workspace can warn while authoring rather than at apply time. Keys and
+reference sites only, never values.
+
+A reference carrying a default (`${var:KEY:-fallback}`) is valid config and is
+never reported. A locked or absent store returns `[]`, since membership cannot
+be checked while locked.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/drift
+```
+
+**Response:**
+```json
+[
+  {
+    "key": "GITLAB_API_TOKEN",
+    "consumers": [
+      { "kind": "mcp-server", "name": "gitlab", "field": "auth.token" }
+    ]
+  }
+]
+```
+
+Returns `[]` when no stack is deployed. Canonical path only: this endpoint is
+not mirrored onto the deprecated `/api/vault` surface.
+
 #### `POST /api/var/import`
 
 Bulk imports secrets.
