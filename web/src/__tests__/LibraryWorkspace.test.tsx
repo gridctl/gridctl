@@ -4,6 +4,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { LibraryWorkspace } from '../components/workspaces/LibraryWorkspace';
 import { useRegistryStore } from '../stores/useRegistryStore';
+import { useUIStore } from '../stores/useUIStore';
+import { useWizardStore } from '../stores/useWizardStore';
 import { setRegistrySkillsBatch, fetchSkillUsage, syncAllSources } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
@@ -33,8 +35,12 @@ vi.mock('../lib/api', () => ({
   // Usage overlay (joined by name). Defaults to "available, no calls yet";
   // tests that exercise usage UI override it with mockResolvedValueOnce.
   fetchSkillUsage: vi.fn().mockResolvedValue({ observedSince: null, skills: {} }),
-  // Used by SkillFileTree (mounted only on the inspector's Files tab).
+  // Used by SkillFileTree and by the inspector's package check.
   fetchSkillFiles: vi.fn().mockResolvedValue([]),
+  // The inspector loads the selected skill's body (package check + Instructions).
+  fetchRegistrySkill: vi.fn().mockResolvedValue({
+    name: 'incident-triage', description: '', state: 'active', fileCount: 0, body: '',
+  }),
 }));
 
 // SkillEditor is heavy and unrelated to the workspace's URL-state behavior.
@@ -104,6 +110,9 @@ describe('LibraryWorkspace', () => {
     // Reset sources to null so provenance grouping is off by default; tests that
     // exercise grouping opt in explicitly.
     useRegistryStore.setState({ skills: SAMPLE_SKILLS, status: { totalSkills: 3, activeSkills: 1 }, sources: null });
+    // Both are persisted global stores; reset so test order cannot leak state.
+    useUIStore.setState({ libraryPrefs: { selectMode: false } });
+    useWizardStore.setState({ isOpen: false });
   });
 
   // Icon-only row actions used to expose no accessible name at all, so they
@@ -606,6 +615,138 @@ describe('LibraryWorkspace', () => {
         const kpi = await screen.findByRole('button', { name: 'Never used (1)' });
         expect(kpi).toBeEnabled();
       });
+    });
+  });
+
+  describe('import from Library', () => {
+    it('opens the skill import wizard directly from the header', () => {
+      renderAt('/library');
+      fireEvent.click(screen.getByRole('button', { name: /import/i }));
+      // Presets the resource type, so the generic type-picker step is skipped.
+      expect(useWizardStore.getState().isOpen).toBe(true);
+      expect(useWizardStore.getState().selectedType).toBe('skill');
+    });
+  });
+
+  describe('select mode', () => {
+    it('pins the checkboxes visible without any selection', async () => {
+      renderAt('/library?group=none');
+      const box = screen.getByRole('checkbox', { name: 'Select incident-triage' });
+      // Hover-reveal by default.
+      expect(box.className).toContain('opacity-0');
+
+      fireEvent.click(screen.getByRole('button', { name: /show selection checkboxes/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('checkbox', { name: 'Select incident-triage' }).className)
+          .not.toContain('opacity-0'),
+      );
+      expect(useUIStore.getState().libraryPrefs.selectMode).toBe(true);
+    });
+
+    it('leaves checkboxes reachable with the toggle off', () => {
+      renderAt('/library?group=none');
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select incident-triage' }));
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+    });
+  });
+
+  describe('stale usage facet', () => {
+    const STALE_SKILLS: AgentSkill[] = [
+      { name: 'fresh-skill', description: 'used today', state: 'active', dir: 'ops', fileCount: 1 },
+      { name: 'idle-skill', description: 'used long ago', state: 'active', dir: 'ops', fileCount: 1 },
+      { name: 'virgin-skill', description: 'never run', state: 'active', dir: 'ops', fileCount: 1 },
+    ] as AgentSkill[];
+
+    const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+
+    // Tracking for 90 days, so a 7d or 30d question is answerable.
+    const seedMatureUsage = () => {
+      useRegistryStore.setState({ skills: STALE_SKILLS });
+      vi.mocked(fetchSkillUsage).mockResolvedValue({
+        observedSince: daysAgo(90),
+        skills: {
+          'fresh-skill': { calls: 5, lastCalledAt: daysAgo(1) },
+          'idle-skill': { calls: 2, lastCalledAt: daysAgo(45) },
+        },
+      });
+    };
+
+    it('counts active skills idle beyond the window', async () => {
+      seedMatureUsage();
+      renderAt('/library');
+      // idle-skill only: fresh-skill is recent, virgin-skill never ran (that is
+      // the never-used axis, not this one).
+      expect(await screen.findByRole('button', { name: 'Stale (1)' })).toBeInTheDocument();
+    });
+
+    it('filters to the idle skill on ?usage=stale', async () => {
+      seedMatureUsage();
+      renderAt('/library?usage=stale');
+      expect(await screen.findByText('idle-skill')).toBeInTheDocument();
+      expect(screen.queryByText('fresh-skill')).not.toBeInTheDocument();
+      expect(screen.queryByText('virgin-skill')).not.toBeInTheDocument();
+    });
+
+    it('re-counts when the window changes', async () => {
+      seedMatureUsage();
+      renderAt('/library');
+      await screen.findByRole('button', { name: 'Stale (1)' });
+
+      // At 30 days the 45-day-idle skill still qualifies; drop to 24 hours and
+      // the 1-day-old call qualifies too.
+      fireEvent.click(screen.getByRole('button', { name: '24 hours' }));
+      expect(await screen.findByRole('button', { name: 'Stale (2)' })).toBeInTheDocument();
+    });
+
+    it('round-trips the window through ?window= with the default omitted', async () => {
+      seedMatureUsage();
+      let currentSearch = '';
+      renderAt('/library', (s) => { currentSearch = s; });
+      await screen.findByRole('button', { name: /^stale/i });
+
+      fireEvent.click(screen.getByRole('button', { name: '30 days' }));
+      await waitFor(() => expect(currentSearch).toContain('window=30d'));
+      fireEvent.click(screen.getByRole('button', { name: '7 days' }));
+      await waitFor(() => expect(currentSearch).not.toContain('window='));
+    });
+
+    // The second unknowability condition, independent of the cold-window gate:
+    // a 30-day question cannot be answered by three days of tracking.
+    it('withholds the count when the window exceeds the tracking period', async () => {
+      useRegistryStore.setState({ skills: STALE_SKILLS });
+      vi.mocked(fetchSkillUsage).mockResolvedValue({
+        observedSince: daysAgo(3),
+        skills: { 'idle-skill': { calls: 2, lastCalledAt: daysAgo(2) } },
+      });
+      renderAt('/library?window=30d');
+
+      const kpi = await screen.findByRole('button', { name: 'Stale' });
+      expect(kpi).toBeDisabled();
+      expect(kpi.getAttribute('title') ?? '').toMatch(/less than 30 days/i);
+    });
+
+    it('leaves ?usage=stale inert when the window exceeds the tracking period', async () => {
+      useRegistryStore.setState({ skills: STALE_SKILLS });
+      vi.mocked(fetchSkillUsage).mockResolvedValue({
+        observedSince: daysAgo(3),
+        skills: { 'idle-skill': { calls: 2, lastCalledAt: daysAgo(2) } },
+      });
+      renderAt('/library?usage=stale&window=30d');
+
+      // Nothing is filtered out: the facet cannot make a claim.
+      expect(await screen.findByText('fresh-skill')).toBeInTheDocument();
+      expect(screen.getByText('idle-skill')).toBeInTheDocument();
+      expect(screen.getByText('virgin-skill')).toBeInTheDocument();
+    });
+
+    it('withholds the count on a cold gateway', async () => {
+      useRegistryStore.setState({ skills: STALE_SKILLS });
+      vi.mocked(fetchSkillUsage).mockResolvedValue({
+        observedSince: new Date().toISOString(),
+        skills: {},
+      });
+      renderAt('/library');
+      expect(await screen.findByRole('button', { name: 'Stale' })).toBeDisabled();
     });
   });
 
