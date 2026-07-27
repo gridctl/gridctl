@@ -28,6 +28,16 @@ export interface AnnotationChip {
   tone: 'safe' | 'danger' | 'neutral';
 }
 
+// Tone-to-class map shared by every annotation-chip render site (GroupsPanel,
+// the Tools workspace rows, and the detail panel's Hints block), so a status
+// token change lands in one place. Kept as a string map: this module stays
+// JSX-free for Fast Refresh.
+export const CHIP_TONE_CLASS: Record<AnnotationChip['tone'], string> = {
+  safe: 'bg-status-running/10 text-status-running',
+  danger: 'bg-status-error/10 text-status-error',
+  neutral: 'bg-surface-highlight text-text-muted',
+};
+
 export function annotationChips(annotations?: {
   readOnlyHint?: boolean;
   destructiveHint?: boolean;
