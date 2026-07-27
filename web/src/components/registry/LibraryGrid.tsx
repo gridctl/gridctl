@@ -11,7 +11,7 @@ export type GroupMode = 'source' | 'category' | 'none';
 function groupSkills(skills: AgentSkill[]): Map<string, AgentSkill[]> {
   const groups = new Map<string, AgentSkill[]>();
   for (const skill of skills) {
-    const key = skillCategory(skill.dir);
+    const key = skillCategory(skill.dir, skill.metadata);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(skill);
   }
