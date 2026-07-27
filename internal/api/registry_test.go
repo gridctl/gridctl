@@ -114,6 +114,74 @@ func TestHandleRegistry_ListSkills_Empty(t *testing.T) {
 	}
 }
 
+// The list is polled by the web UI on a few-second cycle, so shipping every
+// skill's full Markdown body on it cost roughly a gigabyte an hour on a
+// real-sized registry. The body must stay out of the default response.
+func TestHandleRegistry_ListSkills_OmitsBody(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "s1", registry.StateActive)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	// Assert on the raw payload, not a decoded struct: decoding into a type
+	// without a Body field would pass no matter what the server sent.
+	raw := rec.Body.String()
+	if strings.Contains(raw, `"body"`) {
+		t.Errorf("list response must not carry a body field, got: %s", raw)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(result))
+	}
+	// Every field the catalog view needs survives the projection.
+	for _, field := range []string{"name", "description", "state", "fileCount"} {
+		if _, ok := result[0][field]; !ok {
+			t.Errorf("list item is missing %q: %v", field, result[0])
+		}
+	}
+	// And nothing stands in for the body: the surfaces that need instructions
+	// fetch the single skill.
+	if _, ok := result[0]["excerpt"]; ok {
+		t.Errorf("list item should not carry an excerpt: %v", result[0])
+	}
+}
+
+func TestHandleRegistry_ListSkills_FullIncludesBody(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "s1", registry.StateActive)
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills?full=1", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result []registry.AgentSkill
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(result))
+	}
+	if result[0].Body != "# s1\n\nSkill instructions." {
+		t.Errorf("?full=1 must return the verbatim body, got %q", result[0].Body)
+	}
+}
+
 // --- Skills: create ---
 
 func TestHandleRegistry_CreateSkill(t *testing.T) {
