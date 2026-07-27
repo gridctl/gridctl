@@ -477,3 +477,46 @@ func TestBuildVariableDrift_LockedOrAbsentStore(t *testing.T) {
 		t.Errorf("locked store drift = %+v, want empty rather than everything", got)
 	}
 }
+
+// TestHandleVariableDrift_SatisfiedByEnvironment pins the subtlest case: the
+// deploy-time resolver reads the store first and the process environment
+// second, so a key the environment supplies is not a deploy failure and must
+// not be reported as drift even though no stored variable holds it.
+func TestHandleVariableDrift_SatisfiedByEnvironment(t *testing.T) {
+	t.Setenv("ENV_ONLY_KEY", "from-environment")
+	writeStackWithState(t, "test", `name: test
+mcp-servers:
+  - name: github
+    url: https://api.example.com
+    env:
+      A: "${var:ENV_ONLY_KEY}"
+      B: "${var:NEITHER_KEY}"
+`)
+	store := newSetVault(t) // empty store
+	server := &Server{stackName: "test", vaultStore: store}
+
+	_, body := getDrift(t, server)
+	keys := make([]string, 0, len(body))
+	for _, e := range body {
+		keys = append(keys, e.Key)
+	}
+	if len(keys) != 1 || keys[0] != "NEITHER_KEY" {
+		t.Fatalf("drift = %v, want only NEITHER_KEY (ENV_ONLY_KEY resolves from the environment)", keys)
+	}
+}
+
+// TestVariableDriftRoute_NotMirroredOnDeprecatedPath pins the canonical-only
+// decision: the deprecated /api/vault surface is frozen, so "drift" must fall
+// through to the {key} lookup there rather than serving the new endpoint.
+func TestVariableDriftRoute_NotMirroredOnDeprecatedPath(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	server := &Server{stackName: "ghost"}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/vault/drift", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK && strings.HasPrefix(w.Body.String(), "[") {
+		t.Error("/api/vault/drift served the drift list; new endpoints are canonical-only")
+	}
+}
