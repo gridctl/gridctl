@@ -169,13 +169,46 @@ func validateSecrets(s *Stack) ValidationErrors {
 		resourceNames[res.Name] = true
 	}
 
+	// A set name may repeat only while every occurrence is bare. Repeated bare
+	// names predate scoping and stay valid (Article IX): injection is
+	// idempotent, so listing a set twice is a harmless no-op. Once any
+	// occurrence is scoped the repetition stops being harmless, because the
+	// entries' reaches union: a bare `- dev` alongside `- name: dev, servers:
+	// [a]` fans the set out to every workload while reading as if it were
+	// confined to one, which defeats the point of scoping it.
+	firstScoped := make(map[string]int, len(s.Secrets.Sets))
+	firstAny := make(map[string]int, len(s.Secrets.Sets))
+	for i, ref := range s.Secrets.Sets {
+		if ref.Name == "" {
+			continue
+		}
+		if prev, seen := firstAny[ref.Name]; seen {
+			if ref.Scoped() || s.Secrets.Sets[prev].Scoped() {
+				at := prev
+				if _, ok := firstScoped[ref.Name]; ok {
+					at = firstScoped[ref.Name]
+				}
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("secrets.sets[%d]", i),
+					fmt.Sprintf("set %q is already listed at secrets.sets[%d]; a scoped set may be listed once, since repeated entries inject the union of their scopes", ref.Name, at),
+				})
+			}
+		} else {
+			firstAny[ref.Name] = i
+		}
+		if ref.Scoped() {
+			if _, ok := firstScoped[ref.Name]; !ok {
+				firstScoped[ref.Name] = i
+			}
+		}
+	}
+
 	for i, ref := range s.Secrets.Sets {
 		prefix := fmt.Sprintf("secrets.sets[%d]", i)
 
 		// Only the scoped form is validated for shape. A bare name that is
-		// empty or repeated was accepted before scoping existed and stays
-		// accepted (Article IX): both are harmless no-ops, since an unknown
-		// set resolves to no members and injection is idempotent.
+		// empty was accepted before scoping existed and stays accepted
+		// (Article IX): an unknown set resolves to no members.
 		if !ref.Scoped() {
 			continue
 		}
