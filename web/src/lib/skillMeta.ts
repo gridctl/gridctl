@@ -1,19 +1,32 @@
-// Derivations shared by the Library card grid and (later) the table view: the
-// top-level category from a skill's `dir`, and a compact "weight" summary
+// Derivations shared by the Library card grid and the table view: a skill's
+// category (frontmatter first, then a nested `dir`), and a compact "weight" summary
 // (files / criteria / license / compatibility) built only from fields the
 // registry list payload already carries — no extra fetch.
 
 import type { AgentSkill } from '../types';
 
 /**
- * Top-level category for a skill, taken from the first segment of its `dir`
- * (e.g. "git-workflow/branch-fork" → "git-workflow"). Returns "" when `dir` is
- * absent or empty. Single source of truth for "category from dir", shared by
- * the card and by LibraryGrid's category grouping.
+ * Top-level category for a skill. An explicit `category` in the skill's
+ * frontmatter metadata wins; otherwise the category is the first segment of a
+ * *nested* `dir` (e.g. "git-workflow/branch-fork" → "git-workflow").
+ *
+ * A flat dir carries no category. "docx" is the skill's own directory name, not
+ * a group it belongs to, so returning it would make every skill in a flat
+ * registry its own one-member category and turn Group-by-Category into a list.
+ * Returns "" for that case, and for an absent or empty dir. Single source of
+ * truth for "category", shared by the card grid, the table, and the inspector.
  */
-export function skillCategory(dir?: string): string {
+export function skillCategory(dir?: string, metadata?: Record<string, string>): string {
+  const declared = metadata?.category?.trim();
+  if (declared) return declared;
   if (!dir) return '';
-  return dir.split('/')[0];
+  const slash = dir.indexOf('/');
+  return slash === -1 ? '' : dir.slice(0, slash);
+}
+
+/** Whether any skill in the set carries a category, gating category surfaces. */
+export function hasAnyCategory(skills: Pick<AgentSkill, 'dir' | 'metadata'>[]): boolean {
+  return skills.some((s) => skillCategory(s.dir, s.metadata) !== '');
 }
 
 /**

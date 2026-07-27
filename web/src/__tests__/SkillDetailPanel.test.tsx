@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SkillDetailPanel } from '../components/registry/SkillDetailPanel';
+import { fetchRegistrySkill } from '../lib/api';
 import type { AgentSkill } from '../types';
+
+vi.mock('../lib/api', () => ({
+  fetchRegistrySkill: vi.fn(),
+}));
 
 // SkillFileTree fetches its own file list; stub it so the Files tab is inert.
 vi.mock('../components/registry/SkillFileTree', () => ({
@@ -41,6 +46,10 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof SkillDetailP
 }
 
 describe('SkillDetailPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('renders an empty state when no skill is selected', () => {
     render(
       <SkillDetailPanel skill={null} onClose={noop} onEdit={noop} onToggle={noop} onDelete={noop} />,
@@ -132,5 +141,52 @@ describe('SkillDetailPanel', () => {
     // Hidden when viewing raw source (where it would do nothing).
     fireEvent.click(screen.getByRole('button', { name: /view source/i }));
     expect(screen.queryByTitle(/increase font size/i)).not.toBeInTheDocument();
+  });
+
+  // The registry list no longer carries Markdown bodies, so a skill selected
+  // from the catalog arrives with `body` undefined and the panel must fetch it.
+  describe('lazy instructions', () => {
+    // A list-sourced skill: everything the catalog needs, no body.
+    const LIST_SKILL: AgentSkill = { ...SKILL, body: undefined };
+
+    it('fetches nothing until the Instructions tab is opened', () => {
+      renderPanel({ skill: LIST_SKILL });
+      expect(fetchRegistrySkill).not.toHaveBeenCalled();
+    });
+
+    it('issues exactly one single-skill fetch on tab open and renders the body', async () => {
+      vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...SKILL, body: '# Triage\n\nFetched runbook.' });
+      renderPanel({ skill: LIST_SKILL });
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Instructions' }));
+      expect(await screen.findByText('Fetched runbook.')).toBeInTheDocument();
+      expect(fetchRegistrySkill).toHaveBeenCalledTimes(1);
+      expect(fetchRegistrySkill).toHaveBeenCalledWith('incident-triage');
+    });
+
+    it('does not fetch when the skill already carries a body', async () => {
+      renderPanel();
+      fireEvent.click(screen.getByRole('tab', { name: 'Instructions' }));
+      expect(await screen.findByText('Follow the runbook.')).toBeInTheDocument();
+      expect(fetchRegistrySkill).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a load failure instead of rendering an empty instructions pane', async () => {
+      vi.mocked(fetchRegistrySkill).mockRejectedValue(new Error('registry offline'));
+      renderPanel({ skill: LIST_SKILL });
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Instructions' }));
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/registry offline/i));
+      // The "no instructions" hint would be a lie here, so it must not appear.
+      expect(screen.queryByText(/this skill has no instructions/i)).not.toBeInTheDocument();
+    });
+
+    it('renders the honest empty hint when the fetched body really is empty', async () => {
+      vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...SKILL, body: '' });
+      renderPanel({ skill: LIST_SKILL });
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Instructions' }));
+      expect(await screen.findByText(/this skill has no instructions/i)).toBeInTheDocument();
+    });
   });
 });

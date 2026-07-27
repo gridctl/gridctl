@@ -40,6 +40,7 @@ import { extractRepoInfo } from '../../lib/repo';
 import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit';
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
+import { useSkillBody } from '../../hooks/useSkillBody';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
 import type { AgentSkill, ItemState, SkillSourceStatus, SkillValidationResult } from '../../types';
@@ -321,7 +322,10 @@ export function SkillEditor({
   const idCounter = useRef(0);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  const originalBodyRef = useRef('');
+  // The body as it was when the editor opened, for the "saved as a local
+  // customization" note. State rather than a ref because the hydration path
+  // below adopts it during render, where refs must not be written.
+  const [originalBody, setOriginalBody] = useState('');
 
   // Persisted editor view preferences (frontmatter/preview/split).
   const editorPrefs = useUIStore((s) => s.editorPrefs);
@@ -348,6 +352,9 @@ export function SkillEditor({
   const [criteria, setCriteria] = useState<CriterionEntry[]>([]);
   const [state, setState] = useState<ItemState>('draft');
   const [body, setBody] = useState('');
+  // Name of the skill whose fetched body has been adopted into `body`; see
+  // the hydration block further down.
+  const [hydratedFor, setHydratedFor] = useState<string | null>(null);
 
   // UI state. Existing skills open with frontmatter collapsed (body-first); a
   // new skill always opens it so its required fields are reachable. Preview and
@@ -429,8 +436,12 @@ export function SkillEditor({
         }),
       );
       setState(skill.state);
+      // The body may not be loaded yet (the registry list omits it). Seed with
+      // whatever is in hand; the hydration block below fills it in. The editor
+      // blocks saving until it lands, so an unloaded body is never written back
+      // over real instructions.
       setBody(skill.body ?? '');
-      originalBodyRef.current = skill.body ?? '';
+      setOriginalBody(skill.body ?? '');
     } else {
       setName('');
       setDescription('');
@@ -441,8 +452,13 @@ export function SkillEditor({
       setCriteria([{ id: ++idCounter.current, given: '', when: 'the skill is called', then: '' }]);
       setState('draft');
       setBody('');
-      originalBodyRef.current = '';
+      setOriginalBody('');
     }
+    // This effect just cleared `body`, so any previous hydration no longer
+    // holds. Without this reset, reopening the editor on the same skill would
+    // skip re-adoption (the name is unchanged) and leave an empty body that
+    // save would happily write back.
+    setHydratedFor(null);
     setError(null);
     setValidation(null);
     // A new skill always opens with frontmatter expanded (its required fields
@@ -456,6 +472,36 @@ export function SkillEditor({
     setShowFiles(false);
   }, [skill, isOpen]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // --- Body hydration ---
+  //
+  // GET /api/registry/skills omits Markdown bodies, so an existing skill opened
+  // from the catalog arrives without one. Fetch it while the editor is open and
+  // adopt it as both the current and the pre-edit body, so the drift check
+  // still compares against what was on disk rather than against an empty
+  // string. Saving is blocked until this resolves.
+  const needsBodyHydration = isOpen && !!skill && skill.body === undefined;
+  const { body: fetchedBody, loading: bodyLoading, error: bodyError } = useSkillBody(
+    skill?.name ?? null,
+    needsBodyHydration,
+    needsBodyHydration ? undefined : (skill?.body ?? ''),
+  );
+
+  // Save stays blocked until the body is genuinely known. A failed load is not
+  // "no instructions", so it must not become an empty save either.
+  const bodySettling = bodyLoading || !!bodyError;
+
+  // Adopt the fetched body during render, not in an effect. An effect commits a
+  // frame later, and in that frame `bodyLoading` is already false while `body`
+  // is still '' — a click landing there would save an empty body over the
+  // skill's real instructions. Adjusting state during render re-renders before
+  // anything commits, so that window never exists. Keyed by skill name, so it
+  // runs once per opened skill and never clobbers subsequent user edits.
+  if (needsBodyHydration && fetchedBody !== null && hydratedFor !== skill.name) {
+    setHydratedFor(skill.name);
+    setBody(fetchedBody);
+    setOriginalBody(fetchedBody);
+  }
 
   // --- Metadata management ---
 
@@ -502,7 +548,10 @@ export function SkillEditor({
   // --- Save handler ---
 
   const handleSave = useCallback(async () => {
-    if (saving || !name || !description) return;
+    // Refuse to write unless the body is known: it is '' until the fetch
+    // lands, and until it fails, so saving either state would silently erase
+    // the skill's instructions.
+    if (saving || bodySettling || !name || !description) return;
     setSaving(true);
     setError(null);
     try {
@@ -536,7 +585,7 @@ export function SkillEditor({
         showToast('success', `Skill "${name}" updated`);
         // First time a tracked skill is edited, explain that the change becomes
         // a local customization that future syncs will preserve.
-        if (isRemote && body !== originalBodyRef.current) {
+        if (isRemote && body !== originalBody) {
           try {
             if (!localStorage.getItem(LOCAL_EDIT_NOTE_KEY)) {
               localStorage.setItem(LOCAL_EDIT_NOTE_KEY, '1');
@@ -560,7 +609,7 @@ export function SkillEditor({
     } finally {
       setSaving(false);
     }
-  }, [saving, name, description, metadata, criteria, body, state, skill, license, compatibility, allowedTools, isNew, isRemote, onSaved, onClose]);
+  }, [saving, bodySettling, name, description, metadata, criteria, body, originalBody, state, skill, license, compatibility, allowedTools, isNew, isRemote, onSaved, onClose]);
 
   // --- Markdown toolbar ---
 
@@ -729,11 +778,11 @@ export function SkillEditor({
             {/* Save button */}
             <button
               onClick={handleSave}
-              disabled={saving || !name || !description}
+              disabled={saving || bodySettling || !name || !description}
               className={cn(
                 'px-4 py-2 text-xs font-medium rounded-lg transition-all',
                 'bg-primary text-background hover:bg-primary/90',
-                (saving || !name || !description) && 'opacity-50 cursor-not-allowed',
+                (saving || bodySettling || !name || !description) && 'opacity-50 cursor-not-allowed',
               )}
             >
               {saving ? 'Saving...' : 'Save'}
@@ -972,18 +1021,31 @@ export function SkillEditor({
               <span className="text-xs text-text-muted uppercase tracking-wider">Markdown</span>
               {/* Minimal formatting toolbar: inserts at the textarea cursor */}
               <div className="flex items-center gap-0.5">
-                <ToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
-                <ToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
-                <ToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} />
-                <ToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} />
+                {/* Editing before the body lands would be typing into a value
+                    about to be replaced, so the toolbar waits with the field. */}
+                <ToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} disabled={bodyLoading} />
+                <ToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} disabled={bodyLoading} />
+                <ToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} disabled={bodyLoading} />
+                <ToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} disabled={bodyLoading} />
               </div>
             </div>
+            {bodyError && (
+              <p role="alert" className="px-5 py-2 text-xs text-status-error border-b border-status-error/30 bg-status-error/10">
+                Could not load this skill's instructions: {bodyError}. Saving now would replace them,
+                so save is disabled. Close and reopen the editor to retry.
+              </p>
+            )}
             <textarea
               ref={bodyRef}
               value={body}
               onChange={(e) => setBody(e.target.value)}
               onScroll={handleEditorScroll}
-              placeholder={'# Skill Instructions\n\nWrite markdown instructions that the agent will follow...\n\n## Steps\n\n1. First step\n2. Second step'}
+              readOnly={bodyLoading || !!bodyError}
+              aria-busy={bodyLoading}
+              aria-label="Skill instructions"
+              placeholder={bodyLoading
+                ? 'Loading instructions…'
+                : '# Skill Instructions\n\nWrite markdown instructions that the agent will follow...\n\n## Steps\n\n1. First step\n2. Second step'}
               className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none focus:outline-none leading-relaxed"
               spellCheck={false}
             />
@@ -1100,18 +1162,21 @@ function ToolbarButton({
   icon: Icon,
   label,
   onClick,
+  disabled,
 }: {
   icon: typeof Bold;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       title={label}
       aria-label={label}
-      className="p-1.5 rounded-md text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+      className="p-1.5 rounded-md text-text-muted hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-muted disabled:hover:bg-transparent"
     >
       <Icon size={13} />
     </button>

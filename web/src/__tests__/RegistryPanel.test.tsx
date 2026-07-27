@@ -44,6 +44,8 @@ vi.mock('../components/ui/Toast', () => ({
 vi.mock('../lib/api', () => ({
   fetchRegistryStatus: vi.fn(),
   fetchRegistrySkills: vi.fn(),
+  // The registry list omits bodies, so the expanded-row preview fetches one.
+  fetchRegistrySkill: vi.fn(),
   deleteRegistrySkill: vi.fn(),
   activateRegistrySkill: vi.fn(),
   disableRegistrySkill: vi.fn(),
@@ -52,6 +54,7 @@ vi.mock('../lib/api', () => ({
 }));
 
 import { RegistrySidebar } from '../components/registry/RegistrySidebar';
+import { fetchRegistrySkill } from '../lib/api';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import type { AgentSkill, RegistryStatus } from '../types';
 
@@ -210,5 +213,37 @@ describe('RegistrySidebar', () => {
   it('hides header when embedded', () => {
     render(<RegistrySidebar embedded />);
     expect(screen.queryByText('Registry')).not.toBeInTheDocument();
+  });
+
+  // The registry list no longer carries Markdown bodies, so the collapsed-row
+  // preview loads on demand: one request per expanded row, rather than 89
+  // previews riding along on a list polled every few seconds.
+  describe('expanded body preview', () => {
+    it('fetches nothing until a row is expanded', () => {
+      useRegistryStore.setState({ skills: [makeSkill({ name: 'my-skill', body: undefined })] });
+      render(<RegistrySidebar />);
+      expect(fetchRegistrySkill).not.toHaveBeenCalled();
+    });
+
+    it('fetches the body on expand and previews its first lines', async () => {
+      vi.mocked(fetchRegistrySkill).mockResolvedValue(
+        makeSkill({ name: 'my-skill', body: '# Preview\nline two' }),
+      );
+      useRegistryStore.setState({ skills: [makeSkill({ name: 'my-skill', body: undefined })] });
+      render(<RegistrySidebar />);
+
+      fireEvent.click(screen.getByText('my-skill'));
+      expect(await screen.findByText(/line two/)).toBeInTheDocument();
+      expect(fetchRegistrySkill).toHaveBeenCalledExactlyOnceWith('my-skill');
+    });
+
+    it('does not fetch when the skill already carries a body', () => {
+      useRegistryStore.setState({ skills: [makeSkill({ name: 'my-skill' })] });
+      render(<RegistrySidebar />);
+
+      fireEvent.click(screen.getByText('my-skill'));
+      expect(screen.getByText(/Some content/)).toBeInTheDocument();
+      expect(fetchRegistrySkill).not.toHaveBeenCalled();
+    });
   });
 });

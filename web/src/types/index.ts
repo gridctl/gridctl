@@ -493,7 +493,12 @@ export interface AgentSkill {
   allowedTools?: string;
   acceptanceCriteria?: string[]; // Given/When/Then scenarios (gridctl extension)
   state: ItemState;
-  body: string;          // Markdown content (after frontmatter)
+  // Markdown content after the frontmatter. Optional because the list endpoint
+  // (GET /api/registry/skills) omits it — the bodies dominated a payload that
+  // is polled every few seconds. `undefined` means "not loaded", which is
+  // distinct from `''` ("this skill has no instructions"); fetch the single
+  // skill (or use useSkillBody) before rendering or saving it.
+  body?: string;
   fileCount: number;     // Supporting files count
   dir?: string;          // Relative path from skills/ root (e.g., "git-workflow/branch-fork")
 }

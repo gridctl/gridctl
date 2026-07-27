@@ -8,7 +8,9 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
+import { cn } from '../../lib/cn';
 import { fetchSkillFiles, writeSkillFile, deleteSkillFile } from '../../lib/api';
+import { FILE_SORTS, groupFilesByDir, type FileSort } from '../../lib/skillFiles';
 import { showToast } from '../ui/Toast';
 import type { SkillFile } from '../../types';
 
@@ -22,6 +24,7 @@ interface SkillFileTreeProps {
 
 export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: SkillFileTreeProps) {
   const [files, setFiles] = useState<SkillFile[]>([]);
+  const [sort, setSort] = useState<FileSort>('name');
   const [loading, setLoading] = useState(!!skillName);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(['scripts', 'references', 'assets']));
   const [showNewFile, setShowNewFile] = useState(false);
@@ -78,7 +81,7 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
     }
   };
 
-  const grouped = groupFilesByDir(files);
+  const grouped = groupFilesByDir(files, sort);
 
   if (loading) {
     return <p className="text-[10px] text-text-muted p-2">Loading files...</p>;
@@ -87,16 +90,19 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
   return (
     <div className="border-t border-border/30">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-1.5">
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5">
         <span className="text-[10px] text-text-muted uppercase tracking-wider">Files</span>
-        {!readOnly && (
-          <button
-            onClick={() => setShowNewFile(!showNewFile)}
-            className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
-          >
-            <Plus size={10} /> Add
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {files.length > 1 && <FileSortControl sort={sort} onChange={setSort} />}
+          {!readOnly && (
+            <button
+              onClick={() => setShowNewFile(!showNewFile)}
+              className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
+            >
+              <Plus size={10} /> Add
+            </button>
+          )}
+        </div>
       </div>
 
       {/* New file input */}
@@ -173,17 +179,33 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
   );
 }
 
-// Group files by their top-level directory
-function groupFilesByDir(files: SkillFile[]): Record<string, SkillFile[]> {
-  const grouped: Record<string, SkillFile[]> = {};
-  for (const file of files ?? []) {
-    if (file.isDir) continue;
-    const parts = file.path.split('/');
-    const dir = parts.length > 1 ? parts[0] : '_root';
-    if (!grouped[dir]) grouped[dir] = [];
-    grouped[dir].push(file);
-  }
-  return grouped;
+/**
+ * Compact segmented control for the file ordering, matching the Library's Sort
+ * and Group controls. Rendered only when there is more than one file, so a
+ * single-file skill gets no control that cannot change anything.
+ */
+function FileSortControl({ sort, onChange }: { sort: FileSort; onChange: (s: FileSort) => void }) {
+  return (
+    <div className="flex items-center gap-0.5" role="group" aria-label="Sort files by">
+      <span className="text-[9px] uppercase tracking-wider text-text-muted/60">Sort</span>
+      {FILE_SORTS.map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          onClick={() => onChange(opt.key)}
+          aria-pressed={sort === opt.key}
+          className={cn(
+            'px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors',
+            sort === opt.key
+              ? 'bg-primary/10 text-primary'
+              : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function formatFileSize(bytes: number): string {

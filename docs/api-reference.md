@@ -2423,9 +2423,51 @@ Lists all skills.
 
 **Auth:** Yes
 
+**Query parameters:**
+
+| Parameter | Description |
+|---|---|
+| `full` | `1` returns the unprojected skills, Markdown bodies included. Omit for the list shape below. |
+
+The default response omits each skill's `body`. Bodies dominate the payload (on a
+registry of 89 skills they were about 860 KB of a 970 KB response) and nothing in
+a catalog view reads them. Fetch `GET /api/registry/skills/{name}` for a skill's
+full instructions, or pass `?full=1` for the original shape.
+
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/skills
 ```
+
+**Response:**
+```json
+[
+  {
+    "name": "incident-triage",
+    "description": "Triage incidents quickly",
+    "license": "Apache-2.0",
+    "compatibility": "Requires git",
+    "metadata": {"author": "ops"},
+    "allowedTools": "Bash(git:*) Read Write",
+    "acceptanceCriteria": ["GIVEN an alert WHEN it is triaged THEN severity is set"],
+    "state": "active",
+    "fileCount": 2,
+    "dir": "ops/incident-triage"
+  }
+]
+```
+
+| Field | Description |
+|---|---|
+| `name` | Skill name, unique within the registry |
+| `description` | One-line summary from the frontmatter |
+| `license` | Frontmatter `license`, omitted when unset |
+| `compatibility` | Frontmatter `compatibility`, omitted when unset |
+| `metadata` | Frontmatter `metadata` map, omitted when empty |
+| `allowedTools` | Frontmatter `allowed-tools`, omitted when unset |
+| `acceptanceCriteria` | Given/When/Then scenarios, omitted when empty |
+| `state` | `draft`, `active`, or `disabled` |
+| `fileCount` | Number of supporting files (`scripts/`, `references/`, `assets/`) |
+| `dir` | Path relative to the skills root, omitted for a root-level skill |
 
 #### `POST /api/registry/skills`
 

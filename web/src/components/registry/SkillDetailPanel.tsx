@@ -4,6 +4,7 @@ import { cn } from '../../lib/cn';
 import { extractRepoInfo } from '../../lib/repo';
 import { toTitleCase } from '../../lib/text';
 import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
+import { skillCategory } from '../../lib/skillMeta';
 import { formatLastUsed } from '../../lib/toolAudit';
 import { InspectorHeader, InspectorTabList, InspectorTabButton, PaneAnchor } from '../inspector';
 import { IconButton } from '../ui/IconButton';
@@ -11,6 +12,7 @@ import { ZoomControls } from '../ui/ZoomControls';
 import { StateBadge } from './StateBadge';
 import { MarkdownPreview } from './MarkdownPreview';
 import { SkillFileTree } from './SkillFileTree';
+import { useSkillBody } from '../../hooks/useSkillBody';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import type { AgentSkill, SkillSourceStatus, SkillUsageStat } from '../../types';
 
@@ -232,47 +234,24 @@ export function SkillDetailPanel({
           ref={instructionsRef}
           style={{ '--text-zoom-size': `${instrFontSize}px` } as React.CSSProperties}
         >
+          {/* Mounted only while the tab is active, so the body fetch fires on
+              tab open rather than on every selection. */}
           {activeTab === 'instructions' && (
-            <>
-              {skill.body && (
-                <div className="flex items-center justify-between gap-2">
-                  {/* Text-size control acts on the rendered markdown only, so
-                      hide it in raw-source view where it would do nothing. */}
-                  {viewSource ? (
-                    <span />
-                  ) : (
-                    <ZoomControls
-                      fontSize={instrFontSize}
-                      onZoomIn={instrZoomIn}
-                      onZoomOut={instrZoomOut}
-                      onReset={instrResetZoom}
-                      isMin={instrIsMin}
-                      isMax={instrIsMax}
-                      isDefault={instrIsDefault}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setViewSource((v) => !v)}
-                    aria-pressed={viewSource}
-                    className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-text-muted hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight border border-border/40 rounded-md transition-colors"
-                  >
-                    {viewSource ? <Eye size={11} /> : <Code2 size={11} />}
-                    {viewSource ? 'Rendered' : 'View source'}
-                  </button>
-                </div>
-              )}
-              {viewSource ? (
-                <pre className="text-xs font-mono text-text-secondary whitespace-pre-wrap break-words bg-background/40 border border-border/30 rounded-lg p-3 overflow-x-auto">
-                  {skill.body}
-                </pre>
-              ) : (
-                <MarkdownPreview
-                  content={skill.body}
-                  emptyHint="This skill has no instructions."
-                />
-              )}
-            </>
+            <SkillInstructions
+              skillName={skill.name}
+              seed={skill.body}
+              viewSource={viewSource}
+              onToggleSource={() => setViewSource((v) => !v)}
+              zoom={{
+                fontSize: instrFontSize,
+                zoomIn: instrZoomIn,
+                zoomOut: instrZoomOut,
+                resetZoom: instrResetZoom,
+                isMin: instrIsMin,
+                isMax: instrIsMax,
+                isDefault: instrIsDefault,
+              }}
+            />
           )}
         </div>
 
@@ -292,6 +271,86 @@ export function SkillDetailPanel({
   );
 }
 
+interface SkillInstructionsProps {
+  skillName: string;
+  /** Body already in hand (a hydrated skill), or undefined to fetch it. */
+  seed?: string;
+  viewSource: boolean;
+  onToggleSource: () => void;
+  zoom: {
+    fontSize: number;
+    zoomIn: () => void;
+    zoomOut: () => void;
+    resetZoom: () => void;
+    isMin: boolean;
+    isMax: boolean;
+    isDefault: boolean;
+  };
+}
+
+/**
+ * Instructions tab body. The registry list no longer carries Markdown bodies,
+ * so this fetches the single skill when it mounts and holds the read controls
+ * (text size, rendered/source) that only make sense once there is content.
+ */
+function SkillInstructions({ skillName, seed, viewSource, onToggleSource, zoom }: SkillInstructionsProps) {
+  const { body, loading, error } = useSkillBody(skillName, true, seed);
+
+  if (loading) {
+    return <p className="text-[11px] text-text-muted">Loading instructions…</p>;
+  }
+  if (error) {
+    return (
+      <p className="text-[11px] text-status-error" role="alert">
+        Could not load instructions: {error}
+      </p>
+    );
+  }
+
+  return (
+    <>
+      {body && (
+        <div className="flex items-center justify-between gap-2">
+          {/* Text-size control acts on the rendered markdown only, so hide it
+              in raw-source view where it would do nothing. */}
+          {viewSource ? (
+            <span />
+          ) : (
+            <ZoomControls
+              fontSize={zoom.fontSize}
+              onZoomIn={zoom.zoomIn}
+              onZoomOut={zoom.zoomOut}
+              onReset={zoom.resetZoom}
+              isMin={zoom.isMin}
+              isMax={zoom.isMax}
+              isDefault={zoom.isDefault}
+            />
+          )}
+          <button
+            type="button"
+            onClick={onToggleSource}
+            aria-pressed={viewSource}
+            className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-text-muted hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight border border-border/40 rounded-md transition-colors"
+          >
+            {viewSource ? <Eye size={11} /> : <Code2 size={11} />}
+            {viewSource ? 'Rendered' : 'View source'}
+          </button>
+        </div>
+      )}
+      {viewSource ? (
+        <pre className="text-xs font-mono text-text-secondary whitespace-pre-wrap break-words bg-background/40 border border-border/30 rounded-lg p-3 overflow-x-auto">
+          {body}
+        </pre>
+      ) : (
+        <MarkdownPreview
+          content={body ?? ''}
+          emptyHint="This skill has no instructions."
+        />
+      )}
+    </>
+  );
+}
+
 function SkillOverview({
   skill,
   relatedSkills,
@@ -307,7 +366,8 @@ function SkillOverview({
   observedSince?: string | null;
   onSelectRelated?: (name: string) => void;
 }) {
-  const category = skill.dir ? toTitleCase(skill.dir.split('/')[0]) : null;
+  const categoryKey = skillCategory(skill.dir, skill.metadata);
+  const category = categoryKey ? toTitleCase(categoryKey) : null;
   const tools = (skill.allowedTools ?? '').split(/\s+/).filter(Boolean);
   const metadataEntries = Object.entries(skill.metadata ?? {});
   const criteria = skill.acceptanceCriteria ?? [];

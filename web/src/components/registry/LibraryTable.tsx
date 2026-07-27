@@ -2,7 +2,7 @@ import { Check, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
-import { skillCategory } from '../../lib/skillMeta';
+import { hasAnyCategory, skillCategory } from '../../lib/skillMeta';
 import { formatLastUsed } from '../../lib/toolAudit';
 import { toTitleCase } from '../../lib/text';
 import type { AgentSkill, SkillSourceStatus, SkillUsageStat } from '../../types';
@@ -77,6 +77,9 @@ export function LibraryTable({
   const selectAllChecked = allSelected ? 'true' : someSelected ? 'mixed' : 'false';
   const showUsage = usageMap !== undefined;
   const sortColumns = showUsage ? [...BASE_SORT_COLUMNS, USAGE_SORT_COLUMN] : BASE_SORT_COLUMNS;
+  // A flat registry has no categories, so the column would be a full row of
+  // dashes. Drop it entirely rather than render a column that says nothing.
+  const showCategory = hasAnyCategory(skills);
 
   return (
     <div className="p-4">
@@ -120,9 +123,11 @@ export function LibraryTable({
                 </button>
               </th>
             ))}
-            <th scope="col" className="px-2 py-2 text-left text-[10px] uppercase tracking-wider font-medium text-text-muted">
-              Category
-            </th>
+            {showCategory && (
+              <th scope="col" className="px-2 py-2 text-left text-[10px] uppercase tracking-wider font-medium text-text-muted">
+                Category
+              </th>
+            )}
             <th scope="col" className="px-2 py-2 text-right text-[10px] uppercase tracking-wider font-medium text-text-muted">
               Actions
             </th>
@@ -132,7 +137,7 @@ export function LibraryTable({
           {skills.map((skill) => {
             const isSel = selectedNames.has(skill.name);
             const src = sourceMap?.get(skill.name);
-            const category = skillCategory(skill.dir);
+            const category = skillCategory(skill.dir, skill.metadata);
             const usage = usageMap?.get(skill.name);
             const lastUsed = usage?.lastCalledAt ? formatLastUsed(usage.lastCalledAt) : '–';
             return (
@@ -184,9 +189,11 @@ export function LibraryTable({
                 {showUsage && (
                   <td className={cn('px-2 text-xs text-text-muted whitespace-nowrap', cellPad)}>{lastUsed}</td>
                 )}
-                <td className={cn('px-2 text-xs text-text-muted', cellPad)}>
-                  {category ? toTitleCase(category) : '–'}
-                </td>
+                {showCategory && (
+                  <td className={cn('px-2 text-xs text-text-muted', cellPad)}>
+                    {category ? toTitleCase(category) : '–'}
+                  </td>
+                )}
                 <td className={cn('px-2 text-right', cellPad)}>
                   <div className="inline-flex justify-end">
                     <SkillActions skill={skill} onToggle={handleToggle} onEdit={onEdit} onDelete={onDelete} />

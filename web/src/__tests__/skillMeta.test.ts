@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { skillCategory, skillMetaSummary } from '../lib/skillMeta';
+import { hasAnyCategory, skillCategory, skillMetaSummary } from '../lib/skillMeta';
 import type { AgentSkill } from '../types';
 
 function skill(overrides: Partial<AgentSkill> = {}): AgentSkill {
@@ -19,13 +19,39 @@ describe('skillCategory', () => {
     expect(skillCategory('git-workflow/branch-fork')).toBe('git-workflow');
   });
 
-  it('returns the whole value when there is no nesting', () => {
-    expect(skillCategory('ops')).toBe('ops');
+  // Contract change: a flat dir used to be returned verbatim, which made the
+  // skill's own directory name ("docx") read as a category and gave every
+  // skill in a flat registry a one-member group. A flat dir now carries no
+  // category at all.
+  it('returns "" when the dir is flat, since that is the skill, not a group', () => {
+    expect(skillCategory('ops')).toBe('');
+    expect(skillCategory('docx')).toBe('');
   });
 
   it('returns "" for an absent or empty dir (matching the old getGroupKey)', () => {
     expect(skillCategory(undefined)).toBe('');
     expect(skillCategory('')).toBe('');
+  });
+
+  it('prefers an explicit category in frontmatter metadata over the dir', () => {
+    expect(skillCategory('git-workflow/branch-fork', { category: 'vcs' })).toBe('vcs');
+    expect(skillCategory('docx', { category: 'documents' })).toBe('documents');
+  });
+
+  it('ignores a blank metadata category and falls back to the dir', () => {
+    expect(skillCategory('git-workflow/branch-fork', { category: '  ' })).toBe('git-workflow');
+    expect(skillCategory('docx', { category: '' })).toBe('');
+  });
+});
+
+describe('hasAnyCategory', () => {
+  it('is false for a wholly flat registry', () => {
+    expect(hasAnyCategory([{ dir: 'ops' }, { dir: 'docx' }, {}])).toBe(false);
+  });
+
+  it('is true as soon as one skill is nested or declares a category', () => {
+    expect(hasAnyCategory([{ dir: 'ops' }, { dir: 'git-workflow/branch-fork' }])).toBe(true);
+    expect(hasAnyCategory([{ dir: 'ops', metadata: { category: 'ops-tools' } }])).toBe(true);
   });
 });
 
