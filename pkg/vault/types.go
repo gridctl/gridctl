@@ -22,6 +22,16 @@ type Variable struct {
 	Type     VariableType `json:"type"`
 	IsSecret bool         `json:"is_secret"`
 	Set      string       `json:"set,omitempty"`
+
+	// LastRotated is an RFC3339 UTC timestamp of the last time this variable's
+	// value changed, whether by rotation or a manual edit. Metadata changes
+	// (type, visibility, set membership) leave it alone, so it answers "when
+	// did this credential last change" rather than "when was this row touched".
+	//
+	// Empty means unknown, not never: variables written before this field
+	// existed carry no stamp until their next value change. Callers must render
+	// the absence as unknown rather than inventing a date.
+	LastRotated string `json:"last_rotated,omitempty"`
 }
 
 // Set represents a named group of variables.
