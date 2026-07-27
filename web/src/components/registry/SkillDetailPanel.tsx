@@ -1,6 +1,9 @@
-import { useRef, useState, type ReactNode } from 'react';
-import { BookOpen, Code2, Eye, GitBranch, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { AlertTriangle, BookOpen, Code2, Eye, GitBranch, GitCompareArrows, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { updateSkillSource } from '../../lib/api';
+import { summarizeSkillResults, syncCountsMessage } from '../../lib/skillSync';
+import { showToast } from '../ui/Toast';
 import { extractRepoInfo } from '../../lib/repo';
 import { toTitleCase } from '../../lib/text';
 import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
@@ -12,7 +15,10 @@ import { ZoomControls } from '../ui/ZoomControls';
 import { StateBadge } from './StateBadge';
 import { MarkdownPreview } from './MarkdownPreview';
 import { SkillFileTree } from './SkillFileTree';
+import { SkillCompareDialog } from './SkillCompareDialog';
 import { useSkillBody } from '../../hooks/useSkillBody';
+import { useSkillFiles } from '../../hooks/useSkillFiles';
+import { formatManagedDirs, missingManagedDirs } from '../../lib/skillPackage';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import type { AgentSkill, SkillSourceStatus, SkillUsageStat } from '../../types';
 
@@ -49,6 +55,8 @@ export interface SkillDetailPanelProps {
   onToggle: (skill: AgentSkill) => void;
   onDelete: (skill: AgentSkill) => void;
   onSelectRelated?: (name: string) => void;
+  /** Refresh the registry after a reconciliation (take upstream, or a sync). */
+  onRefresh?: () => void;
 }
 
 /**
@@ -69,9 +77,11 @@ export function SkillDetailPanel({
   onToggle,
   onDelete,
   onSelectRelated,
+  onRefresh,
 }: SkillDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<SkillTab>('overview');
   const [viewSource, setViewSource] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
   const [prevName, setPrevName] = useState(skill?.name);
   const tablistRef = useRef<HTMLDivElement>(null);
 
@@ -101,7 +111,36 @@ export function SkillDetailPanel({
     setPrevName(skill?.name);
     setActiveTab('overview');
     setViewSource(false);
+    setShowCompare(false);
   }
+
+  // One body fetch per selected skill, shared by the Overview package check and
+  // the Instructions tab. Hoisted rather than fetched per tab so opening
+  // Instructions is instant and the package check does not need a second copy.
+  // Declared above the empty-state return: hooks cannot run conditionally.
+  const { body, loading: bodyLoading, error: bodyError } = useSkillBody(
+    skill?.name ?? null,
+    true,
+    skill?.body,
+  );
+
+  // Re-run the owning source's update so a package missing its supporting files
+  // gets them. Same endpoint the per-source header sync uses.
+  const [syncing, setSyncing] = useState(false);
+  const handleSyncSource = useCallback(async () => {
+    if (!source || syncing) return;
+    setSyncing(true);
+    try {
+      const { results } = await updateSkillSource(source.name);
+      const detail = syncCountsMessage(summarizeSkillResults(results));
+      showToast('success', detail ? `Synced "${source.name}": ${detail}` : `"${source.name}" is up to date`);
+      onRefresh?.();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  }, [source, syncing, onRefresh]);
 
   if (!skill) {
     return (
@@ -129,6 +168,7 @@ export function SkillDetailPanel({
   const repoInfo = source ? extractRepoInfo(source.repo) : null;
   const hasLocalEdits = source?.driftedSkills?.includes(skill.name) ?? false;
 
+
   return (
     <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       <PaneAnchor />
@@ -149,13 +189,19 @@ export function SkillDetailPanel({
                 {repoInfo ? `${repoInfo.owner}/${repoInfo.repo}` : source.name}
               </span>
             )}
-            {hasLocalEdits && (
-              <span
-                title="Edited locally; a sync will skip this unless you overwrite"
-                className="inline-flex items-center text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300"
+            {/* The chip is the natural place to ask "modified how?", so it
+                opens the same diff the editor's Compare action does. */}
+            {hasLocalEdits && source && (
+              <button
+                type="button"
+                onClick={() => setShowCompare(true)}
+                aria-label={`Compare ${skill.name} with upstream`}
+                title="Edited locally; a sync will skip this unless you overwrite. Click to compare with upstream."
+                className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-colors"
               >
+                <GitCompareArrows size={9} aria-hidden="true" />
                 Modified
-              </span>
+              </button>
             )}
           </div>
         }
@@ -215,6 +261,10 @@ export function SkillDetailPanel({
           {activeTab === 'overview' && (
             <SkillOverview
               skill={skill}
+              body={body}
+              source={source}
+              onSyncSource={handleSyncSource}
+              syncing={syncing}
               relatedSkills={relatedSkills}
               usageTracked={usageTracked}
               usage={usage}
@@ -238,8 +288,9 @@ export function SkillDetailPanel({
               tab open rather than on every selection. */}
           {activeTab === 'instructions' && (
             <SkillInstructions
-              skillName={skill.name}
-              seed={skill.body}
+              body={body}
+              loading={bodyLoading}
+              error={bodyError}
               viewSource={viewSource}
               onToggleSource={() => setViewSource((v) => !v)}
               zoom={{
@@ -267,14 +318,82 @@ export function SkillDetailPanel({
           {activeTab === 'files' && <SkillFileTree skillName={skill.name} readOnly />}
         </div>
       </div>
+
+      {source && (
+        <SkillCompareDialog
+          isOpen={showCompare}
+          sourceName={source.name}
+          skillName={skill.name}
+          onClose={() => setShowCompare(false)}
+          onTookUpstream={() => { setShowCompare(false); onRefresh?.(); }}
+        />
+      )}
     </aside>
   );
 }
 
+/**
+ * Warns that a skill's instructions expect supporting files that are not
+ * installed. This is a safety net, not the fix: import copies `scripts/`,
+ * `references/`, and `assets/` as of the supporting-file installer, so a skill
+ * that trips this was installed before that and needs a re-sync. Without the
+ * warning the failure is silent, surfacing only as an agent that follows an
+ * instruction to run a file that is not on disk.
+ */
+function IncompletePackageNotice({
+  skill,
+  body,
+  source,
+  onSync,
+  syncing,
+}: {
+  skill: AgentSkill;
+  body: string | null;
+  source?: SkillSourceStatus;
+  onSync?: () => void;
+  syncing?: boolean;
+}) {
+  // A skill reporting zero files needs no request to answer "what is
+  // installed"; only a skill that has files pays for the lookup.
+  const { files } = useSkillFiles(skill.name, skill.fileCount === 0);
+  const missing = missingManagedDirs(body, files);
+  if (missing.length === 0) return null;
+
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2.5"
+    >
+      <AlertTriangle size={14} className="text-amber-300 flex-shrink-0 mt-0.5" aria-hidden="true" />
+      <div className="space-y-1.5 min-w-0">
+        <p className="text-[11px] text-amber-200 leading-relaxed">
+          These instructions reference {formatManagedDirs(missing)}, but no such files are
+          installed. Steps that invoke them will fail at run time.
+        </p>
+        {source ? (
+          <button
+            type="button"
+            onClick={onSync}
+            disabled={syncing}
+            className="text-[11px] font-medium text-amber-200 underline underline-offset-2 hover:text-amber-100 disabled:opacity-60 disabled:no-underline transition-colors"
+          >
+            {syncing ? 'Syncing…' : `Sync from ${source.name}`}
+          </button>
+        ) : (
+          <p className="text-[10px] text-amber-200/70 leading-relaxed">
+            This is a local skill, so add the files directly or re-import it from its source.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface SkillInstructionsProps {
-  skillName: string;
-  /** Body already in hand (a hydrated skill), or undefined to fetch it. */
-  seed?: string;
+  /** The loaded body, or null while unknown. */
+  body: string | null;
+  loading: boolean;
+  error: string | null;
   viewSource: boolean;
   onToggleSource: () => void;
   zoom: {
@@ -289,13 +408,11 @@ interface SkillInstructionsProps {
 }
 
 /**
- * Instructions tab body. The registry list no longer carries Markdown bodies,
- * so this fetches the single skill when it mounts and holds the read controls
- * (text size, rendered/source) that only make sense once there is content.
+ * Instructions tab body. The registry list no longer carries Markdown bodies;
+ * the panel loads one and passes it here, along with the read controls (text
+ * size, rendered/source) that only make sense once there is content.
  */
-function SkillInstructions({ skillName, seed, viewSource, onToggleSource, zoom }: SkillInstructionsProps) {
-  const { body, loading, error } = useSkillBody(skillName, true, seed);
-
+function SkillInstructions({ body, loading, error, viewSource, onToggleSource, zoom }: SkillInstructionsProps) {
   if (loading) {
     return <p className="text-[11px] text-text-muted">Loading instructions…</p>;
   }
@@ -353,6 +470,10 @@ function SkillInstructions({ skillName, seed, viewSource, onToggleSource, zoom }
 
 function SkillOverview({
   skill,
+  body,
+  source,
+  onSyncSource,
+  syncing,
   relatedSkills,
   usageTracked,
   usage,
@@ -360,6 +481,10 @@ function SkillOverview({
   onSelectRelated,
 }: {
   skill: AgentSkill;
+  body: string | null;
+  source?: SkillSourceStatus;
+  onSyncSource?: () => void;
+  syncing?: boolean;
   relatedSkills: AgentSkill[];
   usageTracked: boolean;
   usage?: SkillUsageStat;
@@ -375,6 +500,14 @@ function SkillOverview({
 
   return (
     <>
+      <IncompletePackageNotice
+        skill={skill}
+        body={body}
+        source={source}
+        onSync={onSyncSource}
+        syncing={syncing}
+      />
+
       <Section title="Description">
         {skill.description ? (
           <p className="text-xs text-text-secondary leading-relaxed whitespace-pre-wrap break-words">
