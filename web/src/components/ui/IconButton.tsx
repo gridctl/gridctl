@@ -5,7 +5,17 @@ interface IconButtonProps {
   icon: LucideIcon;
   onClick?: () => void;
   disabled?: boolean;
+  /**
+   * Hover text and, because the button renders no visible text, its accessible
+   * name. `title` alone is not reliably exposed as an accessible name across
+   * assistive technology, so it is mirrored into aria-label.
+   */
   tooltip?: string;
+  /**
+   * Accessible name when it must differ from the hover text, or when a caller
+   * deliberately renders no tooltip. Wins over `tooltip`.
+   */
+  ariaLabel?: string;
   className?: string;
   size?: 'sm' | 'md';
   variant?: 'default' | 'ghost';
@@ -18,11 +28,17 @@ export function IconButton({
   onClick,
   disabled,
   tooltip,
+  ariaLabel,
   className,
   size = 'md',
   variant = 'default',
   pressed,
 }: IconButtonProps) {
+  // The icon is the only child, so without a name the button is announced as
+  // just "button". Falling back to the tooltip covers every call site that
+  // passes one; a button with neither is left nameless on purpose so the gap
+  // is visible in an audit rather than papered over with the icon's name.
+  const accessibleName = ariaLabel ?? tooltip;
   const sizeClasses = {
     sm: 'p-2',
     md: 'p-2',
@@ -46,6 +62,7 @@ export function IconButton({
       onClick={onClick}
       disabled={disabled}
       title={tooltip}
+      aria-label={accessibleName}
       aria-pressed={pressed}
       className={cn(
         'rounded-lg transition-all duration-200 ease-out',
@@ -56,7 +73,7 @@ export function IconButton({
         className
       )}
     >
-      <Icon size={iconSize} />
+      <Icon size={iconSize} aria-hidden="true" />
     </button>
   );
 }
