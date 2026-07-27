@@ -31,6 +31,14 @@ function renderNode(data: GatewayNodeData = baseData) {
 }
 
 describe('GatewayNode', () => {
+  // The node is the primary surface for the gateway's identity now that the
+  // header no longer carries the version.
+  it('renders the gateway name and version', () => {
+    renderNode();
+    expect(screen.getByText('acme-stack')).toBeInTheDocument();
+    expect(screen.getByText('v9.9.9')).toBeInTheDocument();
+  });
+
   it('renders Code Mode as read-only status, not an action', () => {
     renderNode();
     const codeMode = screen.getByText('Code Mode').closest('[role="status"]');
