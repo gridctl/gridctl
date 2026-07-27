@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useVaultStore } from '../stores/useVaultStore';
 import {
+  AuthError,
   fetchVariables,
   fetchVariableSets,
   fetchVariableUsage,
@@ -32,11 +33,22 @@ export interface UseVaultManagerOptions {
   onPlaintextLoaded?: (map: Record<string, string>) => void;
 }
 
+// UnlockResult reports whether unlocking succeeded and, when it did not, a
+// human-readable reason that distinguishes a wrong passphrase from transport
+// or server failures.
+export interface UnlockResult {
+  ok: boolean;
+  error?: string;
+}
+
 export interface UseVaultManagerResult {
   // Store state — re-rendered when useVaultStore changes
   variables: Variable[] | null;
   sets: VariableSet[] | null;
   usage: Record<string, Consumer[]>;
+  // False until the usage index fetch has succeeded this session; consumers
+  // must not present an unknown index as "nothing is referenced".
+  usageLoaded: boolean;
   // recentlyEdited maps variable key → epoch-ms of its last session mutation;
   // consumers derive the per-set "recently edited" dot from it.
   recentlyEdited: Record<string, number>;
@@ -47,7 +59,7 @@ export interface UseVaultManagerResult {
 
   // Actions
   refresh: () => Promise<void>;
-  unlock: (passphrase: string) => Promise<boolean>;
+  unlock: (passphrase: string) => Promise<UnlockResult>;
   lock: (passphrase: string) => Promise<void>;
   createVar: (input: CreateVariableInput) => Promise<void>;
   updateVar: (key: string, input: UpdateVariableInput) => Promise<void>;
@@ -71,6 +83,7 @@ export function useVaultManager(
   const variables = useVaultStore((s) => s.variables);
   const sets = useVaultStore((s) => s.sets);
   const usage = useVaultStore((s) => s.usage);
+  const usageLoaded = useVaultStore((s) => s.usageLoaded);
   const recentlyEdited = useVaultStore((s) => s.recentlyEdited);
   const markRecentlyEdited = useVaultStore((s) => s.markRecentlyEdited);
   const loading = useVaultStore((s) => s.loading);
@@ -90,15 +103,19 @@ export function useVaultManager(
 
       if (!status.locked) {
         // Usage is best-effort and parallel: a failure must not break the
-        // variable list, so it resolves to {} rather than rejecting.
-        const [variablesData, setsData, usageData] = await Promise.all([
+        // variable list, so it resolves to {} — flagged as not-loaded so the
+        // UI can render "unknown" rather than "unreferenced".
+        const [variablesData, setsData, usageResult] = await Promise.all([
           fetchVariables(),
           fetchVariableSets(),
-          fetchVariableUsage().catch(() => ({}) as Record<string, Consumer[]>),
+          fetchVariableUsage().then(
+            (data) => ({ data, loaded: true }),
+            () => ({ data: {} as Record<string, Consumer[]>, loaded: false }),
+          ),
         ]);
         useVaultStore.getState().setVariables(variablesData);
         useVaultStore.getState().setSets(setsData);
-        useVaultStore.getState().setUsage(usageData);
+        useVaultStore.getState().setUsage(usageResult.data, usageResult.loaded);
 
         // Plaintext variables display their value inline by default
         // (no Reveal click needed). Eager-fetch them so the rows render
@@ -128,14 +145,29 @@ export function useVaultManager(
   }, [onPlaintextLoaded]);
 
   const unlock = useCallback(
-    async (passphrase: string): Promise<boolean> => {
+    async (passphrase: string): Promise<UnlockResult> => {
       try {
         await unlockVariableStore(passphrase);
         useVaultStore.getState().setLocked(false);
         await refresh();
-        return true;
-      } catch {
-        return false;
+        return { ok: true };
+      } catch (err) {
+        // The unlock endpoint answers a wrong passphrase with 401, which the
+        // fetch layer surfaces as AuthError. Anything else is a transport or
+        // server failure, not a credentials problem.
+        if (err instanceof AuthError) {
+          return {
+            ok: false,
+            error: 'Wrong passphrase — unable to decrypt vault',
+          };
+        }
+        return {
+          ok: false,
+          error:
+            err instanceof Error && err.message
+              ? `Unlock failed: ${err.message}`
+              : 'Unlock failed: could not reach the gateway',
+        };
       }
     },
     [refresh],
@@ -220,6 +252,7 @@ export function useVaultManager(
     variables,
     sets,
     usage,
+    usageLoaded,
     recentlyEdited,
     loading,
     error,
