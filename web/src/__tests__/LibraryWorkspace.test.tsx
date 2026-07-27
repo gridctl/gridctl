@@ -50,11 +50,8 @@ vi.mock('../components/registry/SkillEditor', () => ({
 }));
 
 const SAMPLE_SKILLS: AgentSkill[] = [
-  // @ts-expect-error partial AgentSkill is fine for the test
   { name: 'incident-triage', description: 'triage incidents', state: 'active', dir: 'ops', fileCount: 1 },
-  // @ts-expect-error partial AgentSkill is fine for the test
   { name: 'draft-summarizer', description: 'summarize drafts', state: 'draft', dir: 'tools', fileCount: 1 },
-  // @ts-expect-error partial AgentSkill is fine for the test
   { name: 'disabled-skill', description: 'paused', state: 'disabled', dir: 'archive', fileCount: 1 },
 ];
 
@@ -107,6 +104,38 @@ describe('LibraryWorkspace', () => {
     // Reset sources to null so provenance grouping is off by default; tests that
     // exercise grouping opt in explicitly.
     useRegistryStore.setState({ skills: SAMPLE_SKILLS, status: { totalSkills: 3, activeSkills: 1 }, sources: null });
+  });
+
+  // Icon-only row actions used to expose no accessible name at all, so they
+  // were unreachable by role and invisible to assistive tech.
+  it('exposes icon-only skill actions by their accessible name', () => {
+    renderAt('/library?view=table');
+    expect(screen.getAllByRole('button', { name: 'Disable skill' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Delete skill' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Edit skill' }).length).toBeGreaterThan(0);
+  });
+
+  // The table's Files header drives the shared ?sort axis. It reads as inert
+  // whenever every skill reports the same file count, so pin the wiring.
+  it('orders the table by file count under ?sort=files', () => {
+    useRegistryStore.setState({
+      skills: [
+        { name: 'few-files', description: '', state: 'active', dir: 'ops', fileCount: 1 },
+        { name: 'many-files', description: '', state: 'active', dir: 'ops', fileCount: 9 },
+        { name: 'some-files', description: '', state: 'active', dir: 'ops', fileCount: 4 },
+      ] as AgentSkill[],
+    });
+    renderAt('/library?view=table&sort=files');
+
+    const names = screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => row.querySelector('td:nth-child(3) button')?.textContent);
+    expect(names).toEqual(['many-files', 'some-files', 'few-files']);
+    // Scope to the column header: a "Files" sort button also lives in the
+    // SortControl, so an unscoped button query matches two elements.
+    const filesHeader = screen.getByRole('columnheader', { name: /files/i });
+    expect(filesHeader.querySelector('button')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('renders the skill grid with all skills when filter is all', () => {
@@ -439,12 +468,9 @@ describe('LibraryWorkspace', () => {
     // Two active skills (one used, one never used), plus a draft. The "Never
     // used" KPI counts active + zero-call skills, so it should report 1.
     const USAGE_SKILLS: AgentSkill[] = [
-      // @ts-expect-error partial AgentSkill is fine for the test
-      { name: 'used-skill', description: 'used', state: 'active', dir: 'ops', fileCount: 1 },
-      // @ts-expect-error partial AgentSkill is fine for the test
-      { name: 'unused-skill', description: 'never run', state: 'active', dir: 'ops', fileCount: 1 },
-      // @ts-expect-error partial AgentSkill is fine for the test
-      { name: 'draft-one', description: 'draft', state: 'draft', dir: 'tools', fileCount: 1 },
+          { name: 'used-skill', description: 'used', state: 'active', dir: 'ops', fileCount: 1 },
+          { name: 'unused-skill', description: 'never run', state: 'active', dir: 'ops', fileCount: 1 },
+          { name: 'draft-one', description: 'draft', state: 'draft', dir: 'tools', fileCount: 1 },
     ];
 
     const seedUsage = () => {
@@ -502,6 +528,84 @@ describe('LibraryWorkspace', () => {
       expect(await screen.findByRole('button', { name: 'Active (2)' })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /never used/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /last used/i })).not.toBeInTheDocument();
+    });
+
+    // A freshly started gateway reports an empty map over a window minutes old.
+    // Read literally that says "nothing has ever been called", which would make
+    // "Never used" equal the whole active catalog and let one Select all plus
+    // Disable take the library down. The KPI must withhold the count instead.
+    describe('cold tracking window', () => {
+      const seedColdUsage = (observedSince: string | null = new Date().toISOString()) => {
+        useRegistryStore.setState({ skills: USAGE_SKILLS });
+        vi.mocked(fetchSkillUsage).mockResolvedValue({ observedSince, skills: {} });
+      };
+
+      it('renders the Never used KPI without a count and inert', async () => {
+        seedColdUsage();
+        renderAt('/library');
+
+        // Present (usage is available) but nameless of any number, and disabled.
+        const kpi = await screen.findByRole('button', { name: 'Never used' });
+        expect(kpi).toBeDisabled();
+        expect(screen.queryByRole('button', { name: /never used \(\d+\)/i })).not.toBeInTheDocument();
+      });
+
+      it('explains the withheld count in the KPI tooltip', async () => {
+        seedColdUsage();
+        renderAt('/library');
+        const kpi = await screen.findByRole('button', { name: 'Never used' });
+        expect(kpi.getAttribute('title') ?? '').toMatch(/tracking started/i);
+      });
+
+      it('treats a null observedSince as cold rather than as epoch zero', async () => {
+        seedColdUsage(null);
+        renderAt('/library');
+        expect(await screen.findByRole('button', { name: 'Never used' })).toBeDisabled();
+      });
+
+      it('leaves a stale ?usage=unused inert instead of selecting the whole catalog', async () => {
+        seedColdUsage();
+        renderAt('/library?usage=unused');
+
+        // Every active skill stays visible: the facet did not narrow anything.
+        expect(await screen.findByText('used-skill')).toBeInTheDocument();
+        expect(screen.getByText('unused-skill')).toBeInTheDocument();
+        expect(screen.getByText('draft-one')).toBeInTheDocument();
+      });
+
+      it('shows the tracking-window caveat in the bulk action bar', async () => {
+        seedColdUsage();
+        renderAt('/library?group=none');
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Select used-skill' }));
+        const bar = await screen.findByRole('region', { name: 'Bulk actions' });
+        expect(bar).toHaveTextContent(/have not been observed yet/i);
+      });
+
+      it('confirms before a bulk disable instead of firing on one click', async () => {
+        seedColdUsage();
+        renderAt('/library?group=none');
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Select used-skill' }));
+        fireEvent.click(await screen.findByRole('button', { name: /^disable$/i }));
+
+        // Nothing is written until the dialog is confirmed.
+        expect(setRegistrySkillsBatch).not.toHaveBeenCalled();
+        fireEvent.click(await screen.findByRole('button', { name: /disable 1 skill/i }));
+        await waitFor(() => expect(setRegistrySkillsBatch).toHaveBeenCalledWith([
+          { name: 'used-skill', state: 'disabled' },
+        ]));
+      });
+
+      it('renders the count normally once the window is older than a day', async () => {
+        useRegistryStore.setState({ skills: USAGE_SKILLS });
+        vi.mocked(fetchSkillUsage).mockResolvedValue({
+          observedSince: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+          skills: { 'used-skill': { calls: 5, lastCalledAt: '2026-05-26T00:00:00Z' } },
+        });
+        renderAt('/library');
+
+        const kpi = await screen.findByRole('button', { name: 'Never used (1)' });
+        expect(kpi).toBeEnabled();
+      });
     });
   });
 
