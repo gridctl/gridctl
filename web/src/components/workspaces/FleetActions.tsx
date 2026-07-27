@@ -10,12 +10,13 @@ import {
   setServerToolsBatch,
   SetServerToolsError,
 } from '../../lib/api';
-import { planBulkAction, type BulkAction } from '../../lib/toolBulk';
+import { planBulkAction, type BulkAction, type BulkUsageContext } from '../../lib/toolBulk';
+import { formatRelativeTime } from '../../lib/time';
 import { showToast } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
-import type { MCPServerStatus } from '../../types';
+import type { MCPServerStatus, ToolUsageResponse } from '../../types';
 
-type Scope = 'fleet' | 'server';
+type Scope = 'fleet' | 'server' | 'custom';
 type Phase = 'configure' | 'confirm';
 type ApplyStatus = 'idle' | 'applying' | 'done' | 'error';
 
@@ -26,6 +27,14 @@ interface FleetActionsProps {
   // The currently-selected server, so the action can be scoped to one server
   // (the per-server counterpart to the fleet-wide default).
   activeServerName: string;
+  // Usage snapshot backing the disable-unused action (null until the first
+  // fetch lands; the workspace's usage hook polls while this panel is open).
+  usage: ToolUsageResponse | null;
+  // Audit lookback window the plan classifies against, plus its human label.
+  windowMs: number;
+  windowLabel: string;
+  // Fetch time of the usage snapshot (the injected "now" for classification).
+  fetchedAt: number | null;
 }
 
 // FleetActions is the bulk-action surface for the Tools workspace. It resolves
@@ -37,23 +46,45 @@ interface FleetActionsProps {
 // The confirm step is an inline phase of this one focus-trapped Modal rather
 // than a nested dialog — two stacked focus traps (Modal + ConfirmDialog) fight
 // over Tab, so a single trap keeps the whole flow keyboard-operable.
-export function FleetActions({ isOpen, onClose, servers, activeServerName }: FleetActionsProps) {
+export function FleetActions({
+  isOpen,
+  onClose,
+  servers,
+  activeServerName,
+  usage,
+  windowMs,
+  windowLabel,
+  fetchedAt,
+}: FleetActionsProps) {
   const [scope, setScope] = useState<Scope>('fleet');
   const [action, setAction] = useState<BulkAction>('expose-all');
   const [pattern, setPattern] = useState('');
+  // Custom scope: an explicit subset of servers (empty = nothing targeted).
+  const [customSel, setCustomSel] = useState<Set<string>>(new Set());
   const [phase, setPhase] = useState<Phase>('configure');
   const [status, setStatus] = useState<ApplyStatus>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [summary, setSummary] = useState<{ reloaded: boolean; servers: string[] } | null>(null);
 
-  const scopedServers = useMemo(
-    () => (scope === 'server' ? servers.filter((s) => s.name === activeServerName) : servers),
-    [scope, servers, activeServerName],
+  const scopedServers = useMemo(() => {
+    if (scope === 'server') return servers.filter((s) => s.name === activeServerName);
+    if (scope === 'custom') return servers.filter((s) => customSel.has(s.name));
+    return servers;
+  }, [scope, servers, activeServerName, customSel]);
+
+  // The usage context exists only once a snapshot has loaded; without it the
+  // disable-unused plan stays empty rather than treating "no data" as unused.
+  const usageCtx: BulkUsageContext | undefined = useMemo(
+    () =>
+      fetchedAt != null
+        ? { usage: usage?.servers, windowMs, now: fetchedAt }
+        : undefined,
+    [usage, windowMs, fetchedAt],
   );
 
   const plan = useMemo(
-    () => planBulkAction(scopedServers, action, pattern),
-    [scopedServers, action, pattern],
+    () => planBulkAction(scopedServers, action, pattern, usageCtx),
+    [scopedServers, action, pattern, usageCtx],
   );
 
   const canApply = plan.entries.length > 0 && status !== 'applying';
@@ -65,7 +96,17 @@ export function FleetActions({ isOpen, onClose, servers, activeServerName }: Fle
     setErrorMsg(null);
     setSummary(null);
     setPattern('');
+    setCustomSel(new Set());
     onClose();
+  }
+
+  function toggleCustom(name: string) {
+    setCustomSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   }
 
   async function apply() {
@@ -115,6 +156,7 @@ export function FleetActions({ isOpen, onClose, servers, activeServerName }: Fle
           <ConfirmView
             action={action}
             plan={plan}
+            windowLabel={windowLabel}
             applying={status === 'applying'}
             onBack={() => setPhase('configure')}
             onConfirm={() => void apply()}
@@ -126,11 +168,16 @@ export function FleetActions({ isOpen, onClose, servers, activeServerName }: Fle
             activeServerName={activeServerName}
             scope={scope}
             onScope={setScope}
+            customSel={customSel}
+            onToggleCustom={toggleCustom}
             action={action}
             onAction={setAction}
             pattern={pattern}
             onPattern={setPattern}
             plan={plan}
+            usageReady={fetchedAt != null}
+            observedSince={usage?.observedSince}
+            windowLabel={windowLabel}
             canApply={canApply}
             onReview={() => setPhase('confirm')}
             onCancel={handleClose}
@@ -149,11 +196,18 @@ interface ConfigureViewProps {
   activeServerName: string;
   scope: Scope;
   onScope: (s: Scope) => void;
+  customSel: Set<string>;
+  onToggleCustom: (name: string) => void;
   action: BulkAction;
   onAction: (a: BulkAction) => void;
   pattern: string;
   onPattern: (p: string) => void;
   plan: Plan;
+  // False until the first usage snapshot lands; disable-unused can't plan
+  // without it, so the action card is disabled with an explanatory caption.
+  usageReady: boolean;
+  observedSince?: string;
+  windowLabel: string;
   canApply: boolean;
   onReview: () => void;
   onCancel: () => void;
@@ -165,17 +219,26 @@ function ConfigureView({
   activeServerName,
   scope,
   onScope,
+  customSel,
+  onToggleCustom,
   action,
   onAction,
   pattern,
   onPattern,
   plan,
+  usageReady,
+  observedSince,
+  windowLabel,
   canApply,
   onReview,
   onCancel,
 }: ConfigureViewProps) {
   const scopeLabel =
-    scope === 'server' ? activeServerName || 'the selected server' : `all ${servers.length} servers`;
+    scope === 'server'
+      ? activeServerName || 'the selected server'
+      : scope === 'custom'
+        ? `${customSel.size} selected server${customSel.size === 1 ? '' : 's'}`
+        : `all ${servers.length} servers`;
   return (
     <>
       <fieldset className="space-y-1.5">
@@ -187,7 +250,32 @@ function ConfigureView({
           <SegButton active={scope === 'server'} disabled={!activeServerName} onClick={() => onScope('server')}>
             {activeServerName || 'Selected server'} only
           </SegButton>
+          <SegButton active={scope === 'custom'} onClick={() => onScope('custom')}>
+            Selected servers…
+          </SegButton>
         </div>
+        {scope === 'custom' && (
+          <div
+            className="max-h-32 overflow-y-auto scrollbar-dark rounded-md border border-border/30 bg-background/40 px-2 py-1.5 space-y-0.5"
+            role="group"
+            aria-label="Servers to target"
+          >
+            {servers.map((s) => (
+              <label
+                key={s.name}
+                className="flex items-center gap-2 px-1 py-0.5 rounded text-[11px] text-text-secondary hover:bg-surface-highlight/40 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={customSel.has(s.name)}
+                  onChange={() => onToggleCustom(s.name)}
+                  className="accent-[var(--color-primary)]"
+                />
+                <span className="font-mono truncate">{s.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </fieldset>
 
       <fieldset className="space-y-1.5">
@@ -199,7 +287,20 @@ function ConfigureView({
           <SegButton active={action === 'hide-pattern'} onClick={() => onAction('hide-pattern')}>
             Hide matching pattern
           </SegButton>
+          <SegButton
+            active={action === 'disable-unused'}
+            disabled={!usageReady}
+            onClick={() => onAction('disable-unused')}
+          >
+            Disable unused
+          </SegButton>
         </div>
+        {!usageReady && (
+          <p className="text-[10px] text-text-muted/70">
+            Disable unused needs the usage snapshot; loading it now (or usage is unavailable on
+            this gateway).
+          </p>
+        )}
       </fieldset>
 
       {action === 'hide-pattern' && (
@@ -229,6 +330,17 @@ function ConfigureView({
           ) : (
             <span>Every targeted server already exposes all of its tools — nothing to change.</span>
           )
+        ) : action === 'disable-unused' ? (
+          plan.entries.length > 0 ? (
+            <span>
+              Disables <span className="font-medium text-text-primary">{plan.matchedTools}</span> tool
+              {plan.matchedTools === 1 ? '' : 's'} with no recorded calls in the last {windowLabel} across{' '}
+              <span className="font-medium text-text-primary">{plan.entries.length}</span> server
+              {plan.entries.length === 1 ? '' : 's'}.
+            </span>
+          ) : (
+            <span>No exposed tools are unused in the last {windowLabel} across {scopeLabel}.</span>
+          )
         ) : !pattern.trim() ? (
           <span>Enter a pattern to preview the matched tools.</span>
         ) : plan.entries.length > 0 ? (
@@ -241,10 +353,18 @@ function ConfigureView({
         ) : (
           <span>No exposed tools match across {scopeLabel}.</span>
         )}
+        {action === 'disable-unused' && observedSince && (
+          <span className="block mt-1 text-text-muted">
+            Tracking since {formatRelativeTime(new Date(observedSince))}; tools with no recorded
+            calls may predate it.
+          </span>
+        )}
         {plan.blocked.length > 0 && (
           <span className="block mt-1 text-status-pending">
-            {plan.blocked.length} server{plan.blocked.length === 1 ? '' : 's'} skipped — every exposed tool
-            matches, and at least one must stay exposed.
+            {plan.blocked.length} server{plan.blocked.length === 1 ? '' : 's'} skipped:{' '}
+            {action === 'disable-unused'
+              ? 'every exposed tool is unused, and at least one must stay exposed.'
+              : 'every exposed tool matches, and at least one must stay exposed.'}
           </span>
         )}
       </div>
@@ -278,12 +398,13 @@ function ConfigureView({
 interface ConfirmViewProps {
   action: BulkAction;
   plan: Plan;
+  windowLabel: string;
   applying: boolean;
   onBack: () => void;
   onConfirm: () => void;
 }
 
-function ConfirmView({ action, plan, applying, onBack, onConfirm }: ConfirmViewProps) {
+function ConfirmView({ action, plan, windowLabel, applying, onBack, onConfirm }: ConfirmViewProps) {
   const n = plan.entries.length;
   return (
     <>
@@ -299,10 +420,31 @@ function ConfirmView({ action, plan, applying, onBack, onConfirm }: ConfirmViewP
               {plan.matchedTools === 1 ? '' : 's'})
             </>
           )}
+          {action === 'disable-unused' && (
+            <>
+              {' '}
+              (disabling <span className="font-mono text-text-primary">{plan.matchedTools}</span> tool
+              {plan.matchedTools === 1 ? '' : 's'} with no recorded calls in the last {windowLabel})
+            </>
+          )}
           ? This writes the stack file once and triggers a <span className="font-medium">single reload</span>{' '}
           of {n === 1 ? 'that server' : `${n} servers`}.
         </p>
       </div>
+
+      {action === 'disable-unused' && (
+        <div className="max-h-40 overflow-y-auto scrollbar-dark rounded-md border border-border/30 bg-background/40 px-3 py-2 space-y-1.5">
+          {plan.entries.map((e) => (
+            <div key={e.name} className="text-[10px] leading-relaxed">
+              <span className="font-mono text-text-primary">{e.name}</span>{' '}
+              <span className="text-text-muted">
+                ({e.hidden.length} tool{e.hidden.length === 1 ? '' : 's'}):
+              </span>{' '}
+              <span className="font-mono text-text-muted break-words">{e.hidden.join(', ')}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center justify-end gap-2 pt-1">
         <button
