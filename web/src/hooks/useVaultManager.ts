@@ -5,6 +5,7 @@ import {
   fetchVariables,
   fetchVariableSets,
   fetchVariableUsage,
+  fetchVariableDrift,
   createVariable,
   getVariable,
   updateVariable,
@@ -19,6 +20,7 @@ import {
 } from '../lib/api';
 import type {
   Consumer,
+  DriftEntry,
   CreateVariableInput,
   ImportVariableInput,
   UpdateVariableInput,
@@ -49,6 +51,9 @@ export interface UseVaultManagerResult {
   // False until the usage index fetch has succeeded this session; consumers
   // must not present an unknown index as "nothing is referenced".
   usageLoaded: boolean;
+  // drift lists stack references to variables that do not exist, so the
+  // workspace can warn before a deploy fails. Empty when unknown.
+  drift: DriftEntry[];
   // recentlyEdited maps variable key → epoch-ms of its last session mutation;
   // consumers derive the per-set "recently edited" dot from it.
   recentlyEdited: Record<string, number>;
@@ -84,6 +89,7 @@ export function useVaultManager(
   const sets = useVaultStore((s) => s.sets);
   const usage = useVaultStore((s) => s.usage);
   const usageLoaded = useVaultStore((s) => s.usageLoaded);
+  const drift = useVaultStore((s) => s.drift);
   const recentlyEdited = useVaultStore((s) => s.recentlyEdited);
   const markRecentlyEdited = useVaultStore((s) => s.markRecentlyEdited);
   const loading = useVaultStore((s) => s.loading);
@@ -105,17 +111,22 @@ export function useVaultManager(
         // Usage is best-effort and parallel: a failure must not break the
         // variable list, so it resolves to {} — flagged as not-loaded so the
         // UI can render "unknown" rather than "unreferenced".
-        const [variablesData, setsData, usageResult] = await Promise.all([
-          fetchVariables(),
-          fetchVariableSets(),
-          fetchVariableUsage().then(
-            (data) => ({ data, loaded: true }),
-            () => ({ data: {} as Record<string, Consumer[]>, loaded: false }),
-          ),
-        ]);
+        const [variablesData, setsData, usageResult, driftData] =
+          await Promise.all([
+            fetchVariables(),
+            fetchVariableSets(),
+            fetchVariableUsage().then(
+              (data) => ({ data, loaded: true }),
+              () => ({ data: {} as Record<string, Consumer[]>, loaded: false }),
+            ),
+            // Drift is advisory: a failure must never break the list, and an
+            // unknown result shows no warning rather than a false one.
+            fetchVariableDrift().catch(() => [] as DriftEntry[]),
+          ]);
         useVaultStore.getState().setVariables(variablesData);
         useVaultStore.getState().setSets(setsData);
         useVaultStore.getState().setUsage(usageResult.data, usageResult.loaded);
+        useVaultStore.getState().setDrift(driftData);
 
         // Plaintext variables display their value inline by default
         // (no Reveal click needed). Eager-fetch them so the rows render
@@ -253,6 +264,7 @@ export function useVaultManager(
     sets,
     usage,
     usageLoaded,
+    drift,
     recentlyEdited,
     loading,
     error,
