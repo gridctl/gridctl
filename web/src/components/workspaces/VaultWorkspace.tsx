@@ -39,6 +39,14 @@ import { useListNav } from '../../hooks/useListNav';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { usePageFileDrop } from '../../hooks/usePageFileDrop';
 import { isImportableFile } from '../../lib/parseFile';
+import { navigationTarget } from '../vault/consumerHelpers';
+import {
+  countByRefFilter,
+  filterVariablesByRef,
+  isRefFilter,
+  REF_FILTERS,
+  type RefFilter,
+} from '../../lib/varFilter';
 import type { Consumer, Variable } from '../../lib/api';
 
 const ALL_SETS_KEY = '__all__';
@@ -50,18 +58,19 @@ const UNASSIGNED_SET_KEY = '__none__';
 // (sessionStorage survives route changes and reloads within the tab, but not
 // a new session) — deliberately not persisted, so the nudge returns.
 const UNENCRYPTED_BANNER_DISMISSED_KEY = 'gridctl-vault-unencrypted-dismissed';
+const DRIFT_BANNER_DISMISSED_KEY = 'gridctl-vault-drift-dismissed';
 
-function isUnencryptedBannerDismissed(): boolean {
+function isBannerDismissed(storageKey: string): boolean {
   try {
-    return sessionStorage.getItem(UNENCRYPTED_BANNER_DISMISSED_KEY) === '1';
+    return sessionStorage.getItem(storageKey) === '1';
   } catch {
     return false;
   }
 }
 
-function markUnencryptedBannerDismissed(): void {
+function markBannerDismissed(storageKey: string): void {
   try {
-    sessionStorage.setItem(UNENCRYPTED_BANNER_DISMISSED_KEY, '1');
+    sessionStorage.setItem(storageKey, '1');
   } catch {
     // sessionStorage may be unavailable; the banner just returns next mount.
   }
@@ -85,6 +94,7 @@ export function VaultWorkspace() {
     sets: vaultSets,
     usage,
     usageLoaded,
+    drift,
     recentlyEdited,
     loading,
     error,
@@ -148,6 +158,25 @@ export function VaultWorkspace() {
     [setSearchParams],
   );
 
+  // Consumption filter chips (?ref=). Validated through a type guard so a
+  // hand-edited URL falls back to "all" rather than filtering everything out.
+  const refParam = searchParams.get('ref');
+  const refFilter: RefFilter = isRefFilter(refParam) ? refParam : 'all';
+  const setRefFilter = useCallback(
+    (next: RefFilter) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (next === 'all') params.delete('ref');
+          else params.set('ref', next);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
   const clearServerFilter = useCallback(() => {
     setSearchParams(
       (prev) => {
@@ -184,7 +213,10 @@ export function VaultWorkspace() {
 
   const [encryptOpen, setEncryptOpen] = useState(false);
   const [showUnencryptedBanner, setShowUnencryptedBanner] = useState(
-    () => !isUnencryptedBannerDismissed(),
+    () => !isBannerDismissed(UNENCRYPTED_BANNER_DISMISSED_KEY),
+  );
+  const [showDriftBanner, setShowDriftBanner] = useState(
+    () => !isBannerDismissed(DRIFT_BANNER_DISMISSED_KEY),
   );
   const [importOpen, setImportOpen] = useState(false);
   // Content seeded into the import modal when it's opened by a file drop.
@@ -233,13 +265,28 @@ export function VaultWorkspace() {
     return filteredByServer.filter((v) => v.set === activeSet);
   }, [filteredByServer, activeSet]);
 
+  // Consumption class (explicit / set-injected / unreferenced). Inert while
+  // the usage index is unknown, so a failed fetch never reads as "nothing is
+  // referenced". The chips disable in the same condition.
+  const filteredByRef = useMemo(
+    () => filterVariablesByRef(filteredBySet, refFilter, usage, usageLoaded),
+    [filteredBySet, refFilter, usage, usageLoaded],
+  );
+
+  // Counts span every variable, not the narrowed list, so the chips summarize
+  // the vault rather than the current query.
+  const refCounts = useMemo(
+    () => countByRefFilter(allVariables, usage, usageLoaded),
+    [allVariables, usage, usageLoaded],
+  );
+
   // Search matches keys and set names, plus consumer server names and field
   // paths from the usage index — so "zapier" finds ZAPIER_MCP_TOKEN even when
   // the key alone wouldn't match.
   const filteredBySearch = useMemo(() => {
-    if (!searchQuery) return filteredBySet;
+    if (!searchQuery) return filteredByRef;
     const lower = searchQuery.toLowerCase();
-    return filteredBySet.filter(
+    return filteredByRef.filter(
       (v) =>
         v.key.toLowerCase().includes(lower) ||
         (v.set ?? '').toLowerCase().includes(lower) ||
@@ -249,7 +296,7 @@ export function VaultWorkspace() {
             c.field.toLowerCase().includes(lower),
         ),
     );
-  }, [filteredBySet, searchQuery, usage]);
+  }, [filteredByRef, searchQuery, usage]);
 
   // The inspector shows the selection only while it survives the active
   // filters; a filtered-out key keeps its URL param (the pane falls back to
@@ -437,19 +484,28 @@ export function VaultWorkspace() {
   // global command palette's navigate-then-set-store actions.
   const handleConsumerClick = useCallback(
     (consumer: Consumer) => {
+      // navigationTarget resolves both explicit sites and the per-workload
+      // targets of a scoped secrets.sets entry.
+      const target = navigationTarget(consumer);
+      if (!target) return;
       const nodeId =
-        consumer.kind === 'mcp-server'
-          ? `mcp-${consumer.name}`
-          : consumer.kind === 'resource'
-            ? `resource-${consumer.name}`
-            : null;
-      if (!nodeId) return;
+        target.kind === 'mcp-server'
+          ? `mcp-${target.name}`
+          : `resource-${target.name}`;
       selectNode(nodeId);
       setSidebarOpen(true);
       navigate('/stack');
     },
     [selectNode, setSidebarOpen, navigate],
   );
+
+  // Opening the import modal seeded with the drift keys reuses the bulk path
+  // (preview, per-row type/set/secret, per-row skip) instead of adding a
+  // second create-many flow. Values are left blank for the operator to fill.
+  const handleCreateMissing = useCallback(() => {
+    setDroppedText(drift.map((d) => `${d.key}=`).join('\n'));
+    setImportOpen(true);
+  }, [drift]);
 
   // ---- Rendering ----------------------------------------------------------
   const leftRail = (
@@ -542,11 +598,24 @@ export function VaultWorkspace() {
                   <UnencryptedSecretsBanner
                     onEncrypt={() => setEncryptOpen(true)}
                     onDismiss={() => {
-                      markUnencryptedBannerDismissed();
+                      markBannerDismissed(UNENCRYPTED_BANNER_DISMISSED_KEY);
                       setShowUnencryptedBanner(false);
                     }}
                   />
                 )}
+              {/* Drift: the stack references keys the store has no entry for.
+                  Gated on a loaded usage index because a locked or unknown
+                  vault cannot answer membership. */}
+              {showDriftBanner && usageLoaded && drift.length > 0 && (
+                <MissingVariablesBanner
+                  keys={drift.map((d) => d.key)}
+                  onCreate={handleCreateMissing}
+                  onDismiss={() => {
+                    markBannerDismissed(DRIFT_BANNER_DISMISSED_KEY);
+                    setShowDriftBanner(false);
+                  }}
+                />
+              )}
               {serverFilter && (
                 <ServerFilterBanner
                   serverName={serverFilter}
@@ -598,6 +667,13 @@ export function VaultWorkspace() {
                     <Plus size={12} /> Add one
                   </button>
                 </div>
+                {/* Consumption chips live inside this strip rather than as
+                    their own band (the header already carries up to five). */}
+                <RefFilterChips
+                  active={refFilter}
+                  counts={refCounts}
+                  onSelect={setRefFilter}
+                />
                 {addOneOpen && (
                   <div className="pt-2 border-t border-border-subtle/40">
                     <VariableQuickAddForm
@@ -641,7 +717,10 @@ export function VaultWorkspace() {
                   <NoMatchesState
                     activeSet={activeSet}
                     searchQuery={searchQuery}
+                    refFilter={refFilter}
                     onClear={() => setSearchQuery('')}
+                    onClearRefFilter={() => setRefFilter('all')}
+                    onImport={() => setImportOpen(true)}
                   />
                 )}
 
@@ -1155,6 +1234,110 @@ function ServerFilterBanner({
   );
 }
 
+interface RefFilterChipsProps {
+  active: RefFilter;
+  // null when the usage index is unknown: the chips go inert rather than
+  // asserting counts they cannot know.
+  counts: Record<RefFilter, number> | null;
+  onSelect: (filter: RefFilter) => void;
+}
+
+// Single-select consumption chips. Single-select because the classes overlap
+// (a key can be both explicitly referenced and set-injected), so AND-combining
+// them would silently yield empty results.
+function RefFilterChips({ active, counts, onSelect }: RefFilterChipsProps) {
+  const disabled = counts === null;
+  return (
+    <div
+      role="group"
+      aria-label="Filter by consumption"
+      className="flex items-center gap-1.5 flex-wrap"
+    >
+      {REF_FILTERS.map((f) => {
+        const isActive = active === f.id;
+        return (
+          <button
+            key={f.id}
+            onClick={() => onSelect(f.id)}
+            disabled={disabled}
+            aria-pressed={isActive}
+            className={cn(
+              'flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors',
+              'disabled:opacity-40 disabled:cursor-not-allowed',
+              isActive
+                ? 'text-primary bg-primary/15 border-primary/30'
+                : 'text-text-muted hover:text-text-primary bg-surface-elevated border-border/40 hover:border-border',
+            )}
+          >
+            {f.label}
+            {counts && (
+              <span
+                className={cn(
+                  'font-mono',
+                  isActive ? 'text-primary/80' : 'text-text-muted/60',
+                )}
+              >
+                {counts[f.id]}
+              </span>
+            )}
+          </button>
+        );
+      })}
+      {disabled && (
+        <span className="text-[10px] text-text-muted/60">
+          usage unavailable
+        </span>
+      )}
+    </div>
+  );
+}
+
+interface MissingVariablesBannerProps {
+  keys: string[];
+  onCreate: () => void;
+  onDismiss: () => void;
+}
+
+// Drift nudge: the stack references variables the store does not hold, which
+// today only surfaces when a deploy fails. Naming the first couple of keys
+// makes it actionable without turning the banner into a list.
+function MissingVariablesBanner({
+  keys,
+  onCreate,
+  onDismiss,
+}: MissingVariablesBannerProps) {
+  const preview = keys.slice(0, 2).join(', ');
+  const rest = keys.length - Math.min(keys.length, 2);
+  return (
+    <div className="flex-shrink-0 px-6 py-2 border-b border-status-error/20 bg-status-error/[0.06] flex items-center gap-2">
+      <AlertCircle size={12} className="text-status-error/80 flex-shrink-0" />
+      <div className="flex-1 min-w-0 text-[11px] text-text-secondary">
+        The stack references{' '}
+        {keys.length === 1 ? 'a variable' : `${keys.length} variables`} with no
+        value here: <span className="font-mono text-status-error">{preview}</span>
+        {rest > 0 && (
+          <span className="text-text-muted/70"> and {rest} more</span>
+        )}
+        . Applying will fail until{' '}
+        {keys.length === 1 ? 'it exists' : 'they exist'}.
+      </div>
+      <button
+        onClick={onCreate}
+        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-status-error hover:text-status-error/80 border border-status-error/30 hover:border-status-error/50 rounded transition-colors"
+      >
+        <Plus size={10} /> Create
+      </button>
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss missing variables warning"
+        className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-highlight transition-colors"
+      >
+        <X size={11} />
+      </button>
+    </div>
+  );
+}
+
 interface UnencryptedSecretsBannerProps {
   onEncrypt: () => void;
   onDismiss: () => void;
@@ -1249,16 +1432,29 @@ function VaultEmptyState({ onImport, onAddOne }: VaultEmptyStateProps) {
 interface NoMatchesProps {
   activeSet: string;
   searchQuery: string;
+  refFilter: RefFilter;
   onClear: () => void;
+  onClearRefFilter: () => void;
+  onImport: () => void;
 }
 
-function NoMatchesState({ activeSet, searchQuery, onClear }: NoMatchesProps) {
-  const scopeLabel =
-    activeSet === ALL_SETS_KEY
-      ? 'this view'
-      : activeSet === UNASSIGNED_SET_KEY
-        ? 'the unassigned group'
-        : `the ${activeSet} set`;
+function NoMatchesState({
+  activeSet,
+  searchQuery,
+  refFilter,
+  onClear,
+  onClearRefFilter,
+  onImport,
+}: NoMatchesProps) {
+  const isRealSet =
+    activeSet !== ALL_SETS_KEY && activeSet !== UNASSIGNED_SET_KEY;
+  const scopeLabel = isRealSet
+    ? `the ${activeSet} set`
+    : activeSet === UNASSIGNED_SET_KEY
+      ? 'the unassigned group'
+      : 'this view';
+  const refLabel = REF_FILTERS.find((f) => f.id === refFilter)?.label;
+
   return (
     <div className="h-full flex items-center justify-center px-6 py-10">
       <div className="text-center space-y-2 max-w-sm">
@@ -1268,14 +1464,40 @@ function NoMatchesState({ activeSet, searchQuery, onClear }: NoMatchesProps) {
         <p className="text-xs text-text-secondary">
           {searchQuery
             ? `No variables match "${searchQuery}" in ${scopeLabel}.`
-            : `No variables in ${scopeLabel} yet.`}
+            : refFilter !== 'all'
+              ? `No ${refLabel?.toLowerCase()} variables in ${scopeLabel}.`
+              : `No variables in ${scopeLabel} yet.`}
         </p>
+        {/* An empty, selected set is exactly where the import default is worth
+            teaching: this is the only state where a real set is active and
+            there is room to say where imports land. */}
+        {isRealSet && !searchQuery && refFilter === 'all' && (
+          <p className="text-[10px] text-text-muted/70 leading-relaxed">
+            Importing from here lands keys in{' '}
+            <span className="font-mono text-text-secondary">{activeSet}</span> by
+            default.{' '}
+            <button
+              onClick={onImport}
+              className="text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+            >
+              Import .env
+            </button>
+          </p>
+        )}
         {searchQuery && (
           <button
             onClick={onClear}
             className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
           >
             Clear search
+          </button>
+        )}
+        {!searchQuery && refFilter !== 'all' && (
+          <button
+            onClick={onClearRefFilter}
+            className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+          >
+            Show all variables
           </button>
         )}
       </div>
