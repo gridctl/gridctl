@@ -278,10 +278,38 @@ func TestValidateSecrets(t *testing.T) {
 			wantErr: "set name is required",
 		},
 		{
-			// Both shapes were accepted before scoping existed, so rejecting
-			// them now would break stacks that never opted in (Article IX).
+			// Accepted before scoping existed, so rejecting it now would break
+			// stacks that never opted in (Article IX). Repeating a bare name is
+			// idempotent: same members, same fan-out.
 			name: "duplicate bare names stay valid",
 			sets: []SecretSetRef{{Name: "dev"}, {Name: "dev"}},
+		},
+		{
+			// Two scopes for one set inject the union, which reads as if each
+			// entry confined the set while together they widen it.
+			name: "duplicate scoped names are rejected",
+			sets: []SecretSetRef{
+				{Name: "dev", Servers: []string{"github"}},
+				{Name: "dev", Resources: []string{"postgres"}},
+			},
+			wantErr: "already listed",
+		},
+		{
+			// The worst shape: the bare entry silently fans out a set the
+			// scoped entry declares as confined.
+			name: "a bare entry beside a scoped one is rejected",
+			sets: []SecretSetRef{
+				{Name: "dev"},
+				{Name: "dev", Servers: []string{"github"}},
+			},
+			wantErr: "already listed",
+		},
+		{
+			name: "distinct scoped sets are fine",
+			sets: []SecretSetRef{
+				{Name: "dev", Servers: []string{"github"}},
+				{Name: "db", Resources: []string{"postgres"}},
+			},
 		},
 		{
 			name: "empty bare name stays valid",
