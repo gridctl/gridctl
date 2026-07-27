@@ -317,7 +317,56 @@ secrets:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `sets` | []string | No | - | Variable set names to inject. Explicit `env` values take precedence |
+| `sets` | []entry | No | - | Variable sets to inject. Explicit `env` values take precedence |
+
+### Scoping a set to named workloads
+
+An entry written as a bare name injects every member of that set into every MCP
+server and every resource. To narrow it, write the entry as a mapping and name
+the workloads that should receive it:
+
+```yaml
+secrets:
+  sets:
+    - shared                  # every server and resource
+    - name: github-creds      # only the github server
+      servers:
+        - github
+    - name: db-creds          # only the postgres resource
+      resources:
+        - postgres
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | Yes | - | Variable set name |
+| `servers` | []string | No | - | MCP servers that receive this set |
+| `resources` | []string | No | - | Resources that receive this set |
+
+A scoped entry reaches exactly what it names and nothing else, so
+`servers: [github]` injects into the `github` server and into no resources at
+all. Naming a server or resource the stack does not declare is a validation
+error, because a typo would otherwise withhold credentials silently and surface
+later as an opaque runtime auth failure.
+
+Scoping is per entry and opt-in. An entry with neither `servers` nor
+`resources` keeps the original fan-out, so stacks written before scoping
+existed behave identically.
+
+Scoping mistakes fail closed rather than granting more access than intended.
+A misspelled key (`server:` instead of `servers:`) is rejected outright rather
+than silently ignored, since a dropped key would leave the entry unscoped. An
+explicitly empty scope (`servers: []`) means "no workloads", not "all
+workloads", and is reported as an error because a set that injects nowhere is
+almost always an unfinished edit.
+
+Two entries may not name the same set. Where a scoped and an unscoped entry
+both reach a workload, the earlier entry wins a key collision, matching the
+rule that explicit `env` values in the stack file beat injected ones.
+
+The Variables workspace reflects scoping: a scoped set's variables list the
+workloads they actually reach, and each one links to that node on the Stack
+canvas.
 
 ---
 
