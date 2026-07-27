@@ -276,3 +276,247 @@ func TestHandleVariableUsage_SafeWhenVaultLocked(t *testing.T) {
 		t.Fatal("response leaked a secret value")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Scoped secrets.sets
+// ---------------------------------------------------------------------------
+
+const scopedSetStackYAML = `name: test
+secrets:
+  sets:
+    - name: dev
+      servers:
+        - github
+mcp-servers:
+  - name: github
+    url: https://api.example.com
+  - name: playwright
+    url: https://pw.example.com
+`
+
+func TestHandleVariableUsage_ScopedSetNamesItsTargets(t *testing.T) {
+	writeStackWithState(t, "test", scopedSetStackYAML)
+	store := newSetVault(t, "API_KEY")
+	server := &Server{stackName: "test", vaultStore: store}
+
+	code, body := getUsage(t, server)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	consumers := body["API_KEY"]
+	if len(consumers) != 1 {
+		t.Fatalf("API_KEY consumers = %v, want exactly the one scoped target", consumers)
+	}
+	c := consumers[0]
+	if c.Kind != config.RefKindSecretsSet {
+		t.Errorf("kind = %q, want secrets-set", c.Kind)
+	}
+	// Name must stay the set name: the inspector's unassign confirmation
+	// compares it against the variable's own set.
+	if c.Name != "dev" {
+		t.Errorf("name = %q, want the set name 'dev'", c.Name)
+	}
+	if c.Target != "github" || c.TargetKind != config.RefKindMCPServer {
+		t.Errorf("target = %q/%q, want github/mcp-server", c.Target, c.TargetKind)
+	}
+}
+
+func TestHandleVariableUsage_UnscopedSetHasNoTarget(t *testing.T) {
+	writeStackWithState(t, "test", setInjectionStackYAML)
+	store := newSetVault(t, "API_KEY")
+	server := &Server{stackName: "test", vaultStore: store}
+
+	_, body := getUsage(t, server)
+	consumers := body["API_KEY"]
+	if len(consumers) != 1 {
+		t.Fatalf("API_KEY consumers = %v, want 1", consumers)
+	}
+	if consumers[0].Target != "" || consumers[0].TargetKind != "" {
+		t.Errorf("unscoped consumer carries a target: %+v", consumers[0])
+	}
+}
+
+func TestSetConsumersFor(t *testing.T) {
+	spec := &config.Stack{
+		MCPServers: []config.MCPServer{{Name: "a"}, {Name: "b"}},
+		Resources:  []config.Resource{{Name: "r"}},
+	}
+
+	t.Run("unscoped yields one untargeted consumer", func(t *testing.T) {
+		got := setConsumersFor(config.SecretSetRef{Name: "dev"}, spec)
+		if len(got) != 1 || got[0].Target != "" {
+			t.Fatalf("got %+v, want a single untargeted consumer", got)
+		}
+	})
+
+	t.Run("scoped yields one consumer per named workload", func(t *testing.T) {
+		got := setConsumersFor(config.SecretSetRef{
+			Name: "dev", Servers: []string{"a", "b"}, Resources: []string{"r"},
+		}, spec)
+		if len(got) != 3 {
+			t.Fatalf("got %d consumers, want 3", len(got))
+		}
+		targets := map[string]config.ReferenceKind{}
+		for _, c := range got {
+			targets[c.Target] = c.TargetKind
+		}
+		if targets["a"] != config.RefKindMCPServer || targets["r"] != config.RefKindResource {
+			t.Errorf("targets = %v", targets)
+		}
+	})
+
+	t.Run("scope naming nothing real yields nothing", func(t *testing.T) {
+		got := setConsumersFor(config.SecretSetRef{
+			Name: "dev", Servers: []string{"ghost"},
+		}, spec)
+		if len(got) != 0 {
+			t.Fatalf("got %+v, want no consumers for a scope that matches no workload", got)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Drift
+// ---------------------------------------------------------------------------
+
+const driftStackYAML = `name: test
+mcp-servers:
+  - name: github
+    url: https://api.example.com
+    auth:
+      type: bearer
+      token: "${var:MISSING_KEY}"
+    env:
+      PRESENT: "${var:PRESENT_KEY}"
+      DEFAULTED: "${var:OPTIONAL_KEY:-fallback}"
+`
+
+func getDrift(t *testing.T, server *Server) (int, []driftEntry) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/var/drift", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	var body []driftEntry
+	if w.Body.Len() > 0 {
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode body %q: %v", w.Body.String(), err)
+		}
+	}
+	return w.Code, body
+}
+
+func TestHandleVariableDrift(t *testing.T) {
+	t.Run("reports only keys the store cannot satisfy", func(t *testing.T) {
+		writeStackWithState(t, "test", driftStackYAML)
+		store := newSetVault(t, "PRESENT_KEY")
+		server := &Server{stackName: "test", vaultStore: store}
+
+		code, body := getDrift(t, server)
+		if code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", code)
+		}
+		if len(body) != 1 {
+			t.Fatalf("drift = %+v, want exactly MISSING_KEY", body)
+		}
+		if body[0].Key != "MISSING_KEY" {
+			t.Fatalf("drift key = %q, want MISSING_KEY", body[0].Key)
+		}
+		if len(body[0].Consumers) != 1 || body[0].Consumers[0].Field != "auth.token" {
+			t.Errorf("consumers = %+v, want the auth.token site", body[0].Consumers)
+		}
+	})
+
+	t.Run("a defaulted reference is never drift", func(t *testing.T) {
+		writeStackWithState(t, "test", driftStackYAML)
+		store := newSetVault(t, "PRESENT_KEY", "MISSING_KEY")
+		server := &Server{stackName: "test", vaultStore: store}
+
+		_, body := getDrift(t, server)
+		for _, e := range body {
+			if e.Key == "OPTIONAL_KEY" {
+				t.Error("${var:KEY:-default} reported as drift; it resolves to its default")
+			}
+		}
+		if len(body) != 0 {
+			t.Errorf("drift = %+v, want none once every hard reference is stored", body)
+		}
+	})
+
+	t.Run("no stack yields an empty list", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		server := &Server{stackName: "ghost"}
+		code, body := getDrift(t, server)
+		if code != http.StatusOK || len(body) != 0 {
+			t.Fatalf("status = %d, drift = %+v", code, body)
+		}
+	})
+}
+
+func TestBuildVariableDrift_LockedOrAbsentStore(t *testing.T) {
+	spec := &config.Stack{
+		UnresolvedRefs: []string{"ANY"},
+		References:     config.ReferenceIndex{"ANY": {{Kind: config.RefKindStack, Field: "name"}}},
+	}
+
+	if got := buildVariableDrift(spec, nil); len(got) != 0 {
+		t.Errorf("nil store drift = %+v, want empty (membership is uncheckable)", got)
+	}
+
+	store := vault.NewStore(t.TempDir())
+	if err := store.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := store.Set("ANY", "v"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := store.Lock("passphrase-long-enough"); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	if got := buildVariableDrift(spec, store); len(got) != 0 {
+		t.Errorf("locked store drift = %+v, want empty rather than everything", got)
+	}
+}
+
+// TestHandleVariableDrift_SatisfiedByEnvironment pins the subtlest case: the
+// deploy-time resolver reads the store first and the process environment
+// second, so a key the environment supplies is not a deploy failure and must
+// not be reported as drift even though no stored variable holds it.
+func TestHandleVariableDrift_SatisfiedByEnvironment(t *testing.T) {
+	t.Setenv("ENV_ONLY_KEY", "from-environment")
+	writeStackWithState(t, "test", `name: test
+mcp-servers:
+  - name: github
+    url: https://api.example.com
+    env:
+      A: "${var:ENV_ONLY_KEY}"
+      B: "${var:NEITHER_KEY}"
+`)
+	store := newSetVault(t) // empty store
+	server := &Server{stackName: "test", vaultStore: store}
+
+	_, body := getDrift(t, server)
+	keys := make([]string, 0, len(body))
+	for _, e := range body {
+		keys = append(keys, e.Key)
+	}
+	if len(keys) != 1 || keys[0] != "NEITHER_KEY" {
+		t.Fatalf("drift = %v, want only NEITHER_KEY (ENV_ONLY_KEY resolves from the environment)", keys)
+	}
+}
+
+// TestVariableDriftRoute_NotMirroredOnDeprecatedPath pins the canonical-only
+// decision: the deprecated /api/vault surface is frozen, so "drift" must fall
+// through to the {key} lookup there rather than serving the new endpoint.
+func TestVariableDriftRoute_NotMirroredOnDeprecatedPath(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	server := &Server{stackName: "ghost"}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/vault/drift", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK && strings.HasPrefix(w.Body.String(), "[") {
+		t.Error("/api/vault/drift served the drift list; new endpoints are canonical-only")
+	}
+}

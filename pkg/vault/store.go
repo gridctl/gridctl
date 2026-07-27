@@ -39,6 +39,35 @@ func NewStore(baseDir string) *Store {
 	}
 }
 
+// nowStamp returns the current time in the format Variable.LastRotated uses.
+func nowStamp() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
+// withRotationStamp returns existing with value applied, refreshing
+// LastRotated only when the value actually changes. Re-saving an unchanged
+// value is not a rotation, so the original stamp survives.
+func withRotationStamp(existing Variable, value string) Variable {
+	if existing.Value != value {
+		existing.LastRotated = nowStamp()
+	}
+	existing.Value = value
+	return existing
+}
+
+// stampAgainstStored decides the rotation stamp for a whole-struct write.
+// Callers hand over complete Variables, so an inbound LastRotated is never
+// trusted: it is re-derived from whether the value differs from what is
+// stored. Metadata-only edits (type, visibility, set) keep the old stamp.
+func stampAgainstStored(v Variable, stored map[string]Variable) Variable {
+	if existing, ok := stored[v.Key]; ok && existing.Value == v.Value {
+		v.LastRotated = existing.LastRotated
+		return v
+	}
+	v.LastRotated = nowStamp()
+	return v
+}
+
 // Load reads variables into memory. Checks for secrets.enc first (encrypted),
 // then falls back to secrets.json (plaintext). If the file doesn't exist, starts empty.
 func (s *Store) Load() error {
@@ -233,11 +262,11 @@ func (s *Store) Set(key, value string) error {
 		}
 
 		if existing, ok := s.variables[key]; ok {
-			existing.Value = value
-			s.variables[key] = existing
+			s.variables[key] = withRotationStamp(existing, value)
 		} else {
 			s.variables[key] = Variable{
 				Key: key, Value: value, Type: TypeString, IsSecret: true,
+				LastRotated: nowStamp(),
 			}
 		}
 		return s.saveLocked()
@@ -257,13 +286,14 @@ func (s *Store) SetWithSet(key, value, setName string) error {
 		}
 
 		if existing, ok := s.variables[key]; ok {
-			existing.Value = value
+			existing = withRotationStamp(existing, value)
 			existing.Set = setName
 			s.variables[key] = existing
 		} else {
 			s.variables[key] = Variable{
 				Key: key, Value: value, Set: setName,
 				Type: TypeString, IsSecret: true,
+				LastRotated: nowStamp(),
 			}
 		}
 		if setName != "" {
@@ -298,7 +328,7 @@ func (s *Store) SetVariable(v Variable) error {
 			return err
 		}
 
-		s.variables[v.Key] = v
+		s.variables[v.Key] = stampAgainstStored(v, s.variables)
 		if v.Set != "" {
 			if _, exists := s.sets[v.Set]; !exists {
 				s.sets[v.Set] = Set{Name: v.Set}
@@ -374,7 +404,7 @@ func (s *Store) ImportVariables(vars []Variable) (int, error) {
 			if !IsValidType(v.Type) {
 				return fmt.Errorf("invalid variable type %q for key %q", v.Type, v.Key)
 			}
-			s.variables[v.Key] = v
+			s.variables[v.Key] = stampAgainstStored(v, s.variables)
 			if v.Set != "" {
 				if _, exists := s.sets[v.Set]; !exists {
 					s.sets[v.Set] = Set{Name: v.Set}

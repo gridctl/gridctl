@@ -20,7 +20,7 @@ const REVEAL_TIMEOUT_MS = 10_000;
 
 // Local UI state for "which variable values are currently visible." Per-row
 // timers live here, not in Zustand — they're presentational and would cause
-// unnecessary re-renders if shared globally. Both VaultPanel and the detached
+// unnecessary re-renders if shared globally. Both the Variables workspace and the detached
 // page consume this; each component instance gets its own reveal map.
 export function useRevealedValues(): UseRevealedValuesResult {
   const [revealed, setRevealed] = useState<Record<string, string>>({});

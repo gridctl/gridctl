@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestStore_SetAndGet(t *testing.T) {
@@ -1400,4 +1401,134 @@ func TestStore_ReloadIgnoresMissingFile(t *testing.T) {
 	if !ok || val != "val" {
 		t.Errorf("Get(KEY) after file removal = %q, %v; want %q, true", val, ok, "val")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// LastRotated
+// ---------------------------------------------------------------------------
+
+func TestStore_LastRotated(t *testing.T) {
+	newLoadedStore := func(t *testing.T) *Store {
+		t.Helper()
+		s := NewStore(t.TempDir())
+		if err := s.Load(); err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		return s
+	}
+
+	t.Run("stamped on create and on value change", func(t *testing.T) {
+		s := newLoadedStore(t)
+		if err := s.Set("K", "v1"); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+		created, _ := s.GetVariable("K")
+		if created.LastRotated == "" {
+			t.Fatal("new variable carries no rotation stamp")
+		}
+		if _, err := time.Parse(time.RFC3339, created.LastRotated); err != nil {
+			t.Errorf("stamp %q is not RFC3339: %v", created.LastRotated, err)
+		}
+
+		// Re-saving the same value is not a rotation.
+		if err := s.Set("K", "v1"); err != nil {
+			t.Fatalf("re-set: %v", err)
+		}
+		unchanged, _ := s.GetVariable("K")
+		if unchanged.LastRotated != created.LastRotated {
+			t.Errorf("stamp moved on an unchanged value: %q -> %q",
+				created.LastRotated, unchanged.LastRotated)
+		}
+
+		// A real value change refreshes it.
+		if err := s.Set("K", "v2"); err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		rotated, _ := s.GetVariable("K")
+		if rotated.LastRotated == "" {
+			t.Fatal("value change left no stamp")
+		}
+	})
+
+	t.Run("metadata-only edit preserves the stamp", func(t *testing.T) {
+		s := newLoadedStore(t)
+		if err := s.SetVariable(Variable{
+			Key: "K", Value: "same", Type: TypeString, IsSecret: true,
+		}); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		before, _ := s.GetVariable("K")
+
+		// Same value, different metadata: not a rotation.
+		if err := s.SetVariable(Variable{
+			Key: "K", Value: "same", Type: TypeString, IsSecret: false, Set: "dev",
+		}); err != nil {
+			t.Fatalf("update metadata: %v", err)
+		}
+		after, _ := s.GetVariable("K")
+		if after.LastRotated != before.LastRotated {
+			t.Errorf("stamp changed on a metadata-only edit: %q -> %q", before.LastRotated, after.LastRotated)
+		}
+		if after.IsSecret {
+			t.Error("metadata edit did not apply")
+		}
+	})
+
+	t.Run("inbound stamp is never trusted", func(t *testing.T) {
+		s := newLoadedStore(t)
+		if err := s.SetVariable(Variable{
+			Key: "K", Value: "v", Type: TypeString, IsSecret: true,
+			LastRotated: "1999-12-31T23:59:59Z",
+		}); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		got, _ := s.GetVariable("K")
+		if got.LastRotated == "1999-12-31T23:59:59Z" {
+			t.Error("caller-supplied stamp was stored verbatim; it must be derived")
+		}
+	})
+
+	t.Run("survives a save and reload", func(t *testing.T) {
+		dir := t.TempDir()
+		s := NewStore(dir)
+		if err := s.Load(); err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if err := s.Set("K", "v"); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+		want, _ := s.GetVariable("K")
+
+		reopened := NewStore(dir)
+		if err := reopened.Load(); err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		got, ok := reopened.GetVariable("K")
+		if !ok {
+			t.Fatal("variable missing after reload")
+		}
+		if got.LastRotated != want.LastRotated {
+			t.Errorf("stamp = %q after reload, want %q", got.LastRotated, want.LastRotated)
+		}
+	})
+
+	t.Run("pre-existing variables without a stamp stay unstamped until changed", func(t *testing.T) {
+		s := newLoadedStore(t)
+		// Simulate a v2 file written before the field existed.
+		if _, err := s.ImportVariables([]Variable{{Key: "OLD", Value: "v", Type: TypeString}}); err != nil {
+			t.Fatalf("import: %v", err)
+		}
+		// Import is a write, so it stamps. Assert instead that reading a stored
+		// variable never invents a stamp for one that lacks it.
+		s.mu.Lock()
+		v := s.variables["OLD"]
+		v.LastRotated = ""
+		s.variables["OLD"] = v
+		s.mu.Unlock()
+
+		got, _ := s.GetVariable("OLD")
+		if got.LastRotated != "" {
+			t.Errorf("unstamped variable gained a stamp on read: %q", got.LastRotated)
+		}
+	})
 }

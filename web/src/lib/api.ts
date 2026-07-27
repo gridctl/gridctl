@@ -1038,6 +1038,10 @@ export interface Variable {
   type: VariableType;
   is_secret: boolean;
   set?: string;
+  // RFC3339 stamp of the last value change (rotation or manual edit). Absent
+  // means unknown, not never: variables untouched since the field shipped
+  // carry no stamp, so render the absence as unknown rather than a date.
+  last_rotated?: string;
 }
 
 export interface VariableSet {
@@ -1051,10 +1055,16 @@ export async function fetchVariables(): Promise<Variable[]> {
 }
 
 // ConsumerKind mirrors the backend config.ReferenceKind: where in the active
-// stack a ${var:KEY} reference appears. Only 'mcp-server' and 'resource' map to
-// canvas nodes; the rest are stack/gateway/network-level sites. 'secrets-set'
-// is a synthetic consumer for variables bulk-injected via secrets.sets — no
-// single YAML site, so it is never navigable.
+// stack a ${var:KEY} reference appears. 'mcp-server' and 'resource' map to
+// canvas nodes by `name`; 'gateway', 'network', and 'stack' are stack-level
+// sites that belong to no node.
+//
+// 'secrets-set' is a synthetic consumer for variables bulk-injected via
+// secrets.sets. It has no YAML site of its own, so `name` is the set rather
+// than a workload. When that set is scoped, `target`/`targetKind` name the one
+// workload the entry injects into, which does map to a node: use
+// navigationTarget and consumerReachesWorkload rather than reading `kind` or
+// `name` directly, or scoped injections silently drop out of workload queries.
 export type ConsumerKind =
   | 'mcp-server'
   | 'resource'
@@ -1069,6 +1079,31 @@ export interface Consumer {
   kind: ConsumerKind;
   name?: string;
   field: string;
+  // Set only on 'secrets-set' consumers built from a *scoped* set: the
+  // workload that entry injects into, and whether it is a server or a
+  // resource. One such consumer exists per receiving workload. An unscoped
+  // set fans out and leaves both empty.
+  //
+  // `name` keeps holding the set name in every case, so callers asking "is
+  // this variable's own set injected" still compare against `name`.
+  target?: string;
+  targetKind?: ConsumerKind;
+}
+
+// DriftEntry is a ${var:KEY} reference in the stack that no stored variable
+// satisfies. References carrying a default (${var:KEY:-fallback}) are valid
+// config and never appear here. The backend decides, so the UI cannot invent
+// a second, looser definition of "missing".
+export interface DriftEntry {
+  key: string;
+  consumers: Consumer[];
+}
+
+// fetchVariableDrift lists stack references to variables that do not exist.
+// Keys and reference sites only, never values. A locked vault returns an empty
+// list (membership is uncheckable while locked) rather than flagging everything.
+export async function fetchVariableDrift(): Promise<DriftEntry[]> {
+  return fetchJSON<DriftEntry[]>('/api/var/drift');
 }
 
 // fetchVariableUsage returns the usage index for the active stack: each variable

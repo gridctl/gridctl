@@ -21,7 +21,7 @@ export interface VariableRowProps {
   compact?: boolean;
 }
 
-// VariableRow is the workspace's table-like list row. Unlike SecretItem (the
+// VariableRow is the workspace's table-like list row. Unlike the former sidebar row (the
 // sidebar's expandable card) it carries no inline expand/edit — clicking
 // selects the variable and all depth lives in the right-rail inspector.
 export function VariableRow({

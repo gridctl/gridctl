@@ -495,6 +495,9 @@ func Validate(s *Stack) error {
 	// Declared client link validation
 	errs = append(errs, validateLinks(s)...)
 
+	// Secret set injection validation
+	errs = append(errs, validateSecrets(s)...)
+
 	if len(errs) > 0 {
 		return errs
 	}

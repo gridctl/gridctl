@@ -29,6 +29,19 @@ type Consumer struct {
 	Kind  ReferenceKind `json:"kind"`
 	Name  string        `json:"name,omitempty"`
 	Field string        `json:"field"`
+
+	// Target names the workload a scoped secrets.sets entry injects into, and
+	// TargetKind says whether that is a server or a resource. Both are set only
+	// on RefKindSecretsSet consumers built from a scoped set: one such consumer
+	// is synthesized per receiving workload, so the UI can name and navigate to
+	// each one. An unscoped set fans out to everything and produces a single
+	// consumer with both fields empty.
+	//
+	// Name keeps holding the set name in every case. Callers that ask "is this
+	// variable's own set actively injected" compare against Name, so widening
+	// that field to mean the workload would silently break them.
+	Target     string        `json:"target,omitempty"`
+	TargetKind ReferenceKind `json:"targetKind,omitempty"`
 }
 
 // ReferenceIndex maps a variable-store key to the consumers that reference it.

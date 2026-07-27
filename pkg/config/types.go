@@ -44,6 +44,20 @@ type Stack struct {
 	// from the stack, not persisted with it — the yaml/json "-" tags keep it out
 	// of every existing serialization path. Nil until a stack is loaded/expanded.
 	References ReferenceIndex `yaml:"-" json:"-"`
+
+	// UnresolvedRefs lists the ${var:KEY}/${vault:KEY} keys that the resolver
+	// used at expansion time could not satisfy and that carry no default
+	// operator, in first-seen order. It is the loader's own definition of
+	// "missing": a reference written as ${var:KEY:-fallback} resolves to its
+	// default and is deliberately absent here even though it still appears in
+	// References.
+	//
+	// The meaning depends on the resolver. LoadStack with a vault yields keys
+	// missing from vault and environment both, which is exactly what it refuses
+	// to deploy. ValidateStackFile expands with the environment alone, so its
+	// list is a superset that callers narrow by checking the vault themselves
+	// (see the drift endpoint). Computed, never persisted.
+	UnresolvedRefs []string `yaml:"-" json:"-"`
 }
 
 // ClientsConfig is the optional top-level per-client access scoping block.
@@ -275,8 +289,10 @@ type MCPServerPersistence struct {
 }
 
 // Secrets configures automatic secret injection from variable sets.
+// Each entry is a set name (fan-out to every workload) or a mapping that
+// scopes the set to named servers and resources. See SecretSetRef.
 type Secrets struct {
-	Sets []string `yaml:"sets,omitempty" json:"sets,omitempty"`
+	Sets []SecretSetRef `yaml:"sets,omitempty" json:"sets,omitempty"`
 }
 
 // TracingConfig configures distributed tracing for the gateway.

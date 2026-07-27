@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { formatRelativeTime, formatRelativeTimeFine } from '../lib/time';
+import { formatRelativeTime, formatRelativeTimeFine, formatStampOrUnknown } from '../lib/time';
 
 const NOW = new Date('2026-07-25T12:00:00Z').getTime();
 
@@ -47,5 +47,20 @@ describe('formatRelativeTimeFine', () => {
     expect(formatRelativeTimeFine(ago(47 * HOUR), NOW)).toBe('47h ago');
     expect(formatRelativeTimeFine(ago(3 * DAY), NOW)).toBe('3d ago');
     expect(formatRelativeTimeFine(ago(20 * DAY), NOW)).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/);
+  });
+});
+
+describe('formatStampOrUnknown', () => {
+  it('renders an absent or unparseable stamp as unknown', () => {
+    // Absence means "never recorded", not "changed at the epoch", so this must
+    // never render a date.
+    expect(formatStampOrUnknown(undefined)).toBe('—');
+    expect(formatStampOrUnknown('')).toBe('—');
+    expect(formatStampOrUnknown('not-a-date')).toBe('—');
+  });
+
+  it('renders a recent stamp as a relative age', () => {
+    const justNow = new Date(Date.now() - 30_000).toISOString();
+    expect(formatStampOrUnknown(justNow)).toMatch(/ago|just now/);
   });
 });

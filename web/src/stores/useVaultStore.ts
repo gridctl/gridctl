@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Consumer, Variable, VariableSet } from '../lib/api';
+import type { Consumer, DriftEntry, Variable, VariableSet } from '../lib/api';
 
 // useVaultStore is kept as the in-memory cache for the unified variable
 // store (secrets + plaintext config). The hook name retains "Vault" for
@@ -16,6 +16,10 @@ interface VaultState {
   // unknown" (fetch failed or not attempted). An unknown index must not be
   // presented as "nothing is referenced".
   usageLoaded: boolean;
+  // drift lists stack references to variables that do not exist. Like usage
+  // it is best-effort and stays empty when unknown, so a failed fetch shows
+  // no warning rather than a false one.
+  drift: DriftEntry[];
   // recentlyEdited maps a variable key to the epoch-ms it was last mutated in
   // this session (create/update/import/reassign). It powers the per-set
   // "recently edited" dot and is in-memory only — never persisted and cleared
@@ -29,6 +33,7 @@ interface VaultState {
   setVariables: (variables: Variable[]) => void;
   setSets: (sets: VariableSet[]) => void;
   setUsage: (usage: Record<string, Consumer[]>, loaded?: boolean) => void;
+  setDrift: (drift: DriftEntry[]) => void;
   markRecentlyEdited: (keys: string[]) => void;
   clearRecentlyEdited: () => void;
   setLoading: (loading: boolean) => void;
@@ -42,6 +47,7 @@ export const useVaultStore = create<VaultState>()((set) => ({
   sets: null,
   usage: {},
   usageLoaded: false,
+  drift: [],
   recentlyEdited: {},
   loading: false,
   error: null,
@@ -52,6 +58,7 @@ export const useVaultStore = create<VaultState>()((set) => ({
   setSets: (sets) => set({ sets: sets ?? [] }),
   setUsage: (usage, loaded = true) =>
     set({ usage: usage ?? {}, usageLoaded: loaded }),
+  setDrift: (drift) => set({ drift: drift ?? [] }),
   markRecentlyEdited: (keys) =>
     set((state) => {
       if (keys.length === 0) return state;
@@ -72,6 +79,7 @@ export const useVaultStore = create<VaultState>()((set) => ({
             sets: null,
             usage: {},
             usageLoaded: false,
+            drift: [],
             recentlyEdited: {},
           }
         : { locked },

@@ -11,6 +11,7 @@ Manage secrets and configuration with `gridctl var` instead of exporting environ
 |------|-------------|
 | `var-basic.yaml` | Reference individual variables with `${var:KEY}` syntax |
 | `var-sets.yaml` | Auto-inject grouped variables via variable sets |
+| `var-sets-scoped.yaml` | Scope a set to named servers and resources (least privilege) |
 | `vault-basic.yaml` | Deprecated `${vault:KEY}` syntax (kept as a regression example) |
 | `vault-sets.yaml` | Deprecated variable-set example using the `vault` aliases |
 
@@ -109,6 +110,42 @@ mcp-servers:
 ```
 
 > The stack field is named `secrets.sets` for backward compatibility; set membership is type-agnostic and works for both secrets and plaintext variables.
+
+#### Scoping a set to named workloads
+
+A bare set name injects every member into every server and every resource. To
+give a workload only what it needs, write the entry as a mapping instead:
+
+```yaml
+secrets:
+  sets:
+    - shared                  # every server and resource
+
+    - name: github-creds      # only the github server
+      servers:
+        - github
+
+    - name: db-creds          # only the postgres resource
+      resources:
+        - postgres
+```
+
+A scoped entry reaches exactly what it names and nothing else, so
+`servers: [github]` injects into the `github` server and into no resources at
+all. Naming a server or resource the stack does not declare is a validation
+error, so a typo fails the apply instead of quietly withholding a credential.
+
+Scoping is opt-in per entry. An entry left as a bare name keeps the original
+fan-out, so existing stacks behave exactly as before. See
+`var-sets-scoped.yaml` for a complete stack.
+
+Mistakes fail closed. Writing `server:` instead of `servers:` is rejected
+rather than quietly ignored, and `servers: []` means "no workloads" rather
+than "all workloads", so a half-finished scope never widens access.
+
+The Variables workspace shows the result: a scoped set's variables list the
+workloads they actually reach, and each one links to that node on the Stack
+canvas.
 
 ### Encryption
 
