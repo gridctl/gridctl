@@ -133,6 +133,9 @@ type variableEntry struct {
 	Type     vault.VariableType `json:"type"`
 	IsSecret bool               `json:"is_secret"`
 	Set      string             `json:"set,omitempty"`
+	// LastRotated is the RFC3339 stamp of the last value change, omitted when
+	// unknown. Metadata only: it carries no part of the value.
+	LastRotated string `json:"last_rotated,omitempty"`
 }
 
 // handleVaultList returns all variables with type and visibility (no values).
@@ -151,10 +154,11 @@ func (s *Server) handleVaultList(w http.ResponseWriter, _ *http.Request) {
 	entries := make([]variableEntry, len(vars))
 	for i, v := range vars {
 		entries[i] = variableEntry{
-			Key:      v.Key,
-			Type:     v.Type,
-			IsSecret: v.IsSecret,
-			Set:      v.Set,
+			Key:         v.Key,
+			Type:        v.Type,
+			IsSecret:    v.IsSecret,
+			Set:         v.Set,
+			LastRotated: v.LastRotated,
 		}
 	}
 
