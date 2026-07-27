@@ -19,6 +19,7 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
+import { useSkillBody } from '../../hooks/useSkillBody';
 import { PopoutButton } from '../ui/PopoutButton';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { SkillEditor } from './SkillEditor';
@@ -465,6 +466,14 @@ function SkillItem({
 
   const isActive = skill.state === 'active';
 
+  // The preview only exists while the row is expanded, so fetch the body on
+  // expand rather than carrying 89 of them on a list polled every few seconds.
+  // A hydrated skill (detail response, or ?full=1) seeds it and skips the call.
+  const { body, loading: bodyLoading } = useSkillBody(skill.name, expanded, skill.body);
+  const previewLines = body?.split('\n');
+  const preview = previewLines?.slice(0, 6).join('\n');
+  const previewTruncated = (previewLines?.length ?? 0) > 6;
+
   return (
     <div
       ref={rowRef}
@@ -531,11 +540,14 @@ function SkillItem({
             </p>
           )}
 
-          {/* Body preview (first 6 lines of markdown) */}
-          {skill.body && (
+          {/* Body preview: the first six lines of the instructions. */}
+          {bodyLoading && (
+            <p className="text-[10px] text-text-muted mt-2 italic">Loading preview…</p>
+          )}
+          {preview && (
             <pre className="text-[10px] text-text-muted font-mono bg-background/60 p-2 rounded overflow-x-auto max-h-32 scrollbar-dark leading-relaxed whitespace-pre-wrap">
-              {skill.body.split('\n').slice(0, 6).join('\n')}
-              {skill.body.split('\n').length > 6 && '\n...'}
+              {preview}
+              {previewTruncated && '\n...'}
             </pre>
           )}
 
