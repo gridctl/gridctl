@@ -23,6 +23,7 @@ import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
 import { useToolUsage } from '../../hooks/useToolUsage';
+import { useOptimize } from '../../hooks/useOptimize';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { TOOL_NAME_DELIMITER } from '../../lib/constants';
 import { formatRelativeTime } from '../../lib/time';
@@ -37,6 +38,17 @@ import {
   type AuditState,
   type AuditWindow,
 } from '../../lib/toolAudit';
+import {
+  AUDIT_FILTERS,
+  TOOL_SORT_MODES,
+  filterToolRows,
+  isAuditFilter,
+  isToolSortMode,
+  sortNeedsUsage,
+  sortToolRows,
+  type AuditFilter,
+  type ToolSortMode,
+} from '../../lib/toolSort';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatusDot } from '../ui/StatusDot';
@@ -44,7 +56,7 @@ import { FleetActions } from './FleetActions';
 import { ClientAccessEditor } from './ClientAccessEditor';
 import { GroupsPanel } from './GroupsPanel';
 import { useGroups } from '../../hooks/useGroups';
-import { groupsForTool } from '../../lib/groups';
+import { CHIP_TONE_CLASS, annotationChips, groupsForTool } from '../../lib/groups';
 import { ToolDetailPanel } from './ToolDetailPanel';
 import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
 
@@ -97,6 +109,18 @@ export function ToolsWorkspace() {
   const auditWindow: AuditWindow = AUDIT_WINDOWS.some((w) => w.id === windowParam)
     ? (windowParam as AuditWindow)
     : DEFAULT_AUDIT_WINDOW;
+
+  // List facets: URL param wins, then the persisted preference, then the
+  // default (the Pins idiom): a shared ?filter= link restores the exact view
+  // while a returning operator keeps their last-used facets.
+  const toolsPrefs = useUIStore((s) => s.toolsPrefs);
+  const filterParam = searchParams.get('filter');
+  const auditFilter: AuditFilter = isAuditFilter(filterParam) ? filterParam : toolsPrefs.filter;
+  const sortParam = searchParams.get('sort');
+  const sortMode: ToolSortMode = isToolSortMode(sortParam) ? sortParam : toolsPrefs.sort;
+  const destructiveOnly = searchParams.has('risk')
+    ? searchParams.get('risk') === 'destructive'
+    : toolsPrefs.destructiveOnly;
 
   // The active server is the URL's ?server= when it names a real server,
   // otherwise the first server in the list.
@@ -178,6 +202,73 @@ export function ToolsWorkspace() {
     [setSearchParams],
   );
 
+  // Facet writers persist the preference and mirror it into the URL in one
+  // gesture; default values are deleted so bare links stay canonical.
+  const applyFilter = useCallback(
+    (f: AuditFilter) => {
+      useUIStore.getState().setToolsPrefs({ filter: f });
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (f === 'all') next.delete('filter');
+          else next.set('filter', f);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const applySort = useCallback(
+    (m: ToolSortMode) => {
+      useUIStore.getState().setToolsPrefs({ sort: m });
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (m === 'default') next.delete('sort');
+          else next.set('sort', m);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const applyRisk = useCallback(
+    (on: boolean) => {
+      useUIStore.getState().setToolsPrefs({ destructiveOnly: on });
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (on) next.set('risk', 'destructive');
+          else next.delete('risk');
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  // Clearing both facets must be one setSearchParams call: two functional
+  // setters in one handler both close over the same render's snapshot, so
+  // the second navigation would resurrect the param the first deleted (the
+  // applyServer comment documents the same footgun).
+  const clearFacets = useCallback(() => {
+    useUIStore.getState().setToolsPrefs({ filter: 'all', destructiveOnly: false });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('filter');
+        next.delete('risk');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   const setGlobalQuery = useCallback(
     (q: string) => {
       setSearchParams(
@@ -211,11 +302,12 @@ export function ToolsWorkspace() {
   // ---- Audit Mode ---------------------------------------------------------
   // An overlay that classifies each tool as used / configured-but-unused /
   // disabled against a lookback window (mode and window are URL state above).
-  // Usage polls while something consumes it: Audit Mode's classification, or
-  // the detail panel's Usage section for the selected tool (shown outside
-  // Audit Mode too). Otherwise the hook idles so the editor pays nothing.
+  // Usage polls while something consumes it: Audit Mode's classification, the
+  // detail panel's Usage section for the selected tool (shown outside Audit
+  // Mode too), a usage-keyed sort, or the Fleet panel's disable-unused plan.
+  // Otherwise the hook idles so the editor pays nothing.
   const { usage, error: usageError, fetchedAt } = useToolUsage(
-    auditMode || selectedTool != null,
+    auditMode || selectedTool != null || sortNeedsUsage(sortMode) || fleetOpen,
   );
   // Usage is loading (not failed) until the first snapshot lands — without
   // this, Audit Mode renders no dots and no badges, indistinguishable from
@@ -230,7 +322,35 @@ export function ToolsWorkspace() {
       : `Usage refresh failed: ${usageError} — showing the last loaded snapshot`
     : null;
   const windowMs = auditWindowMs(auditWindow);
+  const windowLabel = AUDIT_WINDOWS.find((w) => w.id === auditWindow)?.label ?? '7 days';
   const usageByServer = usage?.servers;
+
+  // ---- Optimize convergence ------------------------------------------------
+  // The optimize `unused_tool` heuristic shares Audit's 7d idea of "unused"
+  // (fixed server-side; the audit window picker doesn't move it). Surface its
+  // count as one line with a jump into Audit so the two tell one story.
+  // Honesty rules: a young gateway returns only a need_more_data info finding
+  // and a missing accumulator 503s; both render as nothing, never "0 unused".
+  const { report: optimizeReport } = useOptimize(servers.length > 0);
+  const optimizeUnusedCount = useMemo(() => {
+    if (!optimizeReport) return null;
+    const n = optimizeReport.findings.filter((f) => f.heuristic === 'unused_tool').length;
+    return n > 0 ? n : null;
+  }, [optimizeReport]);
+
+  // Jump target for the optimize line: Audit Mode at the 7d window (the
+  // window optimize classified against; 7d is the default so ?window= drops).
+  const openAudit7d = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('audit', '1');
+        next.delete('window');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   // Per-server count of exposed-but-unused tools, for the rail badge. "now" is
   // the fetch time from the hook (not a render-time clock read) so the memo
@@ -376,6 +496,7 @@ export function ToolsWorkspace() {
       auditMode={auditMode}
       unusedByServer={unusedByServer}
       dirtyServer={editor.dirty ? activeServerName : null}
+      draftEnabledCount={editor.dirty ? editor.selected.size : null}
     />
   );
 
@@ -413,6 +534,7 @@ export function ToolsWorkspace() {
             auditMode={auditMode}
             onToggleAudit={toggleAudit}
             auditWindow={auditWindow}
+            windowLabel={windowLabel}
             onWindowChange={applyAuditWindow}
             observedSince={usage?.observedSince}
             usageNotice={usageNotice}
@@ -421,6 +543,8 @@ export function ToolsWorkspace() {
             fleetDisabled={servers.length === 0}
             onOpenAccess={() => setAccessOpen(true)}
             onOpenGroups={() => setGroupsOpen(true)}
+            optimizeUnusedCount={optimizeUnusedCount}
+            onReviewAudit={openAudit7d}
           />
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
@@ -445,6 +569,13 @@ export function ToolsWorkspace() {
                 usage={usageByServer?.[activeServer.name]}
                 windowMs={windowMs}
                 now={fetchedAt}
+                auditFilter={auditFilter}
+                onFilter={applyFilter}
+                sortMode={sortMode}
+                onSort={applySort}
+                destructiveOnly={destructiveOnly}
+                onRisk={applyRisk}
+                onClearFacets={clearFacets}
                 groupsFor={(tool) =>
                   groupsForTool(groupsReport, `${activeServer.name}${TOOL_NAME_DELIMITER}${tool}`)
                 }
@@ -497,6 +628,10 @@ export function ToolsWorkspace() {
         onClose={() => setFleetOpen(false)}
         servers={servers}
         activeServerName={activeServerName}
+        usage={usage}
+        windowMs={windowMs}
+        windowLabel={windowLabel}
+        fetchedAt={fetchedAt}
       />
 
       <ClientAccessEditor
@@ -527,6 +662,7 @@ interface ToolsHeaderProps {
   auditMode: boolean;
   onToggleAudit: () => void;
   auditWindow: AuditWindow;
+  windowLabel: string;
   onWindowChange: (w: AuditWindow) => void;
   observedSince?: string;
   // Non-null when the usage fetch is failing — Audit Mode must say so instead
@@ -538,6 +674,11 @@ interface ToolsHeaderProps {
   fleetDisabled: boolean;
   onOpenAccess: () => void;
   onOpenGroups: () => void;
+  // Count of optimize `unused_tool` findings; null when there are none, the
+  // gateway is too young (need_more_data), or the report is unavailable;
+  // the line renders only for a real, positive count.
+  optimizeUnusedCount: number | null;
+  onReviewAudit: () => void;
 }
 
 function ToolsHeader({
@@ -548,6 +689,7 @@ function ToolsHeader({
   auditMode,
   onToggleAudit,
   auditWindow,
+  windowLabel,
   onWindowChange,
   observedSince,
   usageNotice,
@@ -556,9 +698,10 @@ function ToolsHeader({
   fleetDisabled,
   onOpenAccess,
   onOpenGroups,
+  optimizeUnusedCount,
+  onReviewAudit,
 }: ToolsHeaderProps) {
   const searching = query.trim().length > 0;
-  const windowLabel = AUDIT_WINDOWS.find((w) => w.id === auditWindow)?.label ?? '7 days';
   return (
     <header
       className={cn(
@@ -651,6 +794,26 @@ function ToolsHeader({
         </div>
       </div>
 
+      {optimizeUnusedCount !== null && (
+        <p className="text-[10px] text-text-muted/80 leading-relaxed" role="status">
+          <span className="text-status-pending font-medium">Optimize</span> suggests{' '}
+          <span className="text-text-secondary font-medium">{optimizeUnusedCount}</span> unused{' '}
+          {optimizeUnusedCount === 1 ? 'tool' : 'tools'} (7d)
+          {!auditMode && (
+            <>
+              {' · '}
+              <button
+                type="button"
+                onClick={onReviewAudit}
+                className="text-secondary hover:text-secondary-light transition-colors"
+              >
+                Review in Audit
+              </button>
+            </>
+          )}
+        </p>
+      )}
+
       {auditMode && (
         <p className="text-[10px] text-text-muted/80 leading-relaxed" role="status">
           <span className="text-status-running">●</span> used ·{' '}
@@ -716,8 +879,11 @@ interface ServerRailProps {
   auditMode: boolean;
   unusedByServer: Record<string, number>;
   // The server whose editor holds unsaved edits (only ever the active one).
-  // The rail badges show live counts, so the chip is what marks the draft.
   dirtyServer: string | null;
+  // The dirty editor's draft selection size; the dirty server's badge shows
+  // this (draft) count instead of the live one so the rail and the center
+  // editor agree while an edit is in flight.
+  draftEnabledCount: number | null;
 }
 
 function ServerRail({
@@ -728,6 +894,7 @@ function ServerRail({
   auditMode,
   unusedByServer,
   dirtyServer,
+  draftEnabledCount,
 }: ServerRailProps) {
   return (
     <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
@@ -752,6 +919,7 @@ function ServerRail({
             auditMode={auditMode}
             unusedCount={unusedByServer[server.name] ?? 0}
             dirty={server.name === dirtyServer}
+            draftEnabled={server.name === dirtyServer ? draftEnabledCount : null}
           />
         ))}
         {servers.length === 0 && (
@@ -771,10 +939,21 @@ interface ServerPillProps {
   auditMode: boolean;
   unusedCount: number;
   dirty: boolean;
+  // Draft selection size while this server's editor is dirty (null otherwise).
+  draftEnabled: number | null;
 }
 
-function ServerPill({ server, active, onClick, auditMode, unusedCount, dirty }: ServerPillProps) {
+function ServerPill({
+  server,
+  active,
+  onClick,
+  auditMode,
+  unusedCount,
+  dirty,
+  draftEnabled,
+}: ServerPillProps) {
   const { enabled, total } = toolCounts(server);
+  const showDraft = dirty && draftEnabled !== null;
   const status = serverStatus(server);
   const showUnused = auditMode && unusedCount > 0;
   return (
@@ -795,7 +974,7 @@ function ServerPill({ server, active, onClick, auditMode, unusedCount, dirty }: 
       {dirty && (
         <span
           className="flex-shrink-0 text-[9px] font-medium px-1.5 py-0.5 rounded bg-status-pending/15 text-status-pending"
-          title="This server has unsaved tool changes; the count badge shows the live (saved) state"
+          title="This server has unsaved tool changes; the count badge shows the draft selection"
         >
           unsaved
         </span>
@@ -811,11 +990,19 @@ function ServerPill({ server, active, onClick, auditMode, unusedCount, dirty }: 
       <span
         className={cn(
           'flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded tabular-nums',
-          active ? 'bg-primary/15 text-primary' : 'bg-surface-elevated text-text-muted',
+          showDraft
+            ? 'bg-status-pending/15 text-status-pending'
+            : active
+              ? 'bg-primary/15 text-primary'
+              : 'bg-surface-elevated text-text-muted',
         )}
-        title={`${enabled} of ${total} tools enabled`}
+        title={
+          showDraft
+            ? `Unsaved draft: ${draftEnabled} of ${total} tools selected (saved: ${enabled}/${total})`
+            : `${enabled} of ${total} tools enabled`
+        }
       >
-        {enabled}/{total}
+        {showDraft ? draftEnabled : enabled}/{total}
       </span>
     </button>
   );
@@ -840,6 +1027,15 @@ interface ServerDetailProps {
   windowMs: number;
   // Fetch time used as "now" for audit classification (null until loaded).
   now: number | null;
+  // List facets (URL/pref state owned by the workspace).
+  auditFilter: AuditFilter;
+  onFilter: (f: AuditFilter) => void;
+  sortMode: ToolSortMode;
+  onSort: (m: ToolSortMode) => void;
+  destructiveOnly: boolean;
+  onRisk: (on: boolean) => void;
+  // Atomic both-facets reset (one URL write; see clearFacets).
+  onClearFacets: () => void;
   // Names of tool groups whose surface includes this (canonical) tool, for
   // the curation-axis badges on each row.
   groupsFor: (tool: string) => string[];
@@ -854,6 +1050,13 @@ function ServerDetail({
   usage,
   windowMs,
   now,
+  auditFilter,
+  onFilter,
+  sortMode,
+  onSort,
+  destructiveOnly,
+  onRisk,
+  onClearFacets,
   groupsFor,
 }: ServerDetailProps) {
   const {
@@ -899,6 +1102,41 @@ function ServerDetail({
     return out;
   }, [auditByTool]);
 
+  // Audit filters only bite while classification data exists; the risk facet
+  // is annotation-driven and applies regardless. Sort applies after facets,
+  // except during a text query, where Fuse relevance order wins so the best
+  // match stays on top.
+  const auditActive = auditMode && now != null;
+  const shown = useMemo(() => {
+    const filtered = filterToolRows(
+      visible,
+      auditActive ? auditFilter : 'all',
+      destructiveOnly,
+      (name) => auditByTool.get(name) ?? null,
+    );
+    if (query.trim()) return filtered;
+    return sortToolRows(filtered, sortMode, usage);
+  }, [visible, auditActive, auditFilter, destructiveOnly, auditByTool, query, sortMode, usage]);
+
+  // Chip counts cover the whole server (not the query-narrowed list) so the
+  // chips read as a per-server summary, mirroring the rail badge math.
+  const filterCounts = useMemo(() => {
+    const counts: Record<AuditFilter, number> = {
+      all: rows.length,
+      used: 0,
+      unused: 0,
+      disabled: 0,
+    };
+    for (const state of auditByTool.values()) counts[state]++;
+    return counts;
+  }, [rows, auditByTool]);
+  const destructiveCount = useMemo(
+    () => rows.filter((r) => r.annotations?.destructiveHint === true).length,
+    [rows],
+  );
+  const facetsActive =
+    (auditActive && auditFilter !== 'all' ? 1 : 0) + (destructiveOnly ? 1 : 0);
+
   // Confirm gate for the remediation bulk action (consequence-stating).
   const [remediateOpen, setRemediateOpen] = useState(false);
 
@@ -918,7 +1156,7 @@ function ServerDetail({
     : 'Saved';
 
   return (
-    <div className="px-6 py-4 max-w-3xl space-y-3" aria-busy={isSaving}>
+    <div className="px-6 py-4 max-w-4xl space-y-3" aria-busy={isSaving}>
       {/* Count + quick actions. The neutral "empty means all" help text must
           never sit next to a zero draft count — there it would describe the
           re-expose-all footgun as expected behavior. */}
@@ -979,6 +1217,65 @@ function ServerDetail({
         </div>
       )}
 
+      <div
+        className="flex items-center gap-1.5 flex-wrap text-[10px]"
+        role="group"
+        aria-label="Tool list filters and sort"
+      >
+        {auditMode &&
+          AUDIT_FILTERS.map((f) => (
+            <FacetChip
+              key={f.id}
+              active={auditFilter === f.id}
+              onClick={() => onFilter(f.id)}
+              disabled={!auditActive}
+            >
+              {f.label}{' '}
+              <span className="ml-1 tabular-nums opacity-70">{filterCounts[f.id]}</span>
+            </FacetChip>
+          ))}
+        <FacetChip
+          active={destructiveOnly}
+          onClick={() => onRisk(!destructiveOnly)}
+          tone="danger"
+          title="Only tools whose server reports destructiveHint: true (a claim, not verified)"
+        >
+          Destructive{' '}
+          <span className="ml-1 tabular-nums opacity-70">{destructiveCount}</span>
+        </FacetChip>
+        {facetsActive >= 2 && (
+          <button
+            type="button"
+            onClick={onClearFacets}
+            className="text-secondary hover:text-secondary-light transition-colors"
+          >
+            Clear all
+          </button>
+        )}
+        <span className="ml-auto inline-flex items-center gap-1.5">
+          {facetsActive > 0 && (
+            <span role="status" className="text-text-muted">
+              {shown.length} of {rows.length} shown
+            </span>
+          )}
+          <label className="inline-flex items-center gap-1 text-text-muted">
+            <span className="sr-only">Sort tools</span>
+            <select
+              value={sortMode}
+              onChange={(e) => onSort(e.target.value as ToolSortMode)}
+              aria-label="Sort tools"
+              className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-[10px] text-text-secondary focus:outline-none focus:border-primary/50"
+            >
+              {TOOL_SORT_MODES.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </span>
+      </div>
+
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
         <Command shouldFilter={false} label={`Tools for ${server.name}`} className="flex flex-col">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
@@ -997,10 +1294,12 @@ function ServerDetail({
               <p className="text-[11px] text-text-muted/60 italic py-4 px-3 text-center">
                 {rows.length === 0
                   ? 'No tools discovered for this server yet.'
-                  : `No tools match "${query}"`}
+                  : visible.length === 0
+                    ? `No tools match "${query}"`
+                    : 'No tools match the active filters.'}
               </p>
             </Command.Empty>
-            {visible.map((opt) => {
+            {shown.map((opt) => {
               const isEnabled = selected.has(opt.name);
               const isActive = selectedTool === opt.name;
               const auditState = auditByTool.get(opt.name) ?? null;
@@ -1066,6 +1365,21 @@ function ServerDetail({
                             className="flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium bg-secondary/10 text-secondary"
                           >
                             {g}
+                          </span>
+                        ))}
+                        {/* Server-reported annotation chips. Undeclared hints
+                            render nothing (spec: absent = worst-case, which
+                            the detail panel's Hints section spells out). */}
+                        {annotationChips(opt.annotations).map((chip) => (
+                          <span
+                            key={chip.label}
+                            title={`${chip.title} (reported by the server, not verified)`}
+                            className={cn(
+                              'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium',
+                              CHIP_TONE_CLASS[chip.tone],
+                            )}
+                          >
+                            {chip.label}
                           </span>
                         ))}
                       </div>
@@ -1197,6 +1511,44 @@ function ServerDetail({
   );
 }
 
+// FacetChip is an aria-pressed filter pill (the Metrics ToolsFilterBar idiom).
+function FacetChip({
+  active,
+  onClick,
+  disabled,
+  tone = 'default',
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: 'default' | 'danger';
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      title={title}
+      className={cn(
+        'inline-flex items-center rounded-full border px-2 py-0.5 font-medium transition-colors',
+        disabled && 'opacity-40 cursor-not-allowed',
+        active
+          ? tone === 'danger'
+            ? 'bg-status-error/10 text-status-error border-status-error/40'
+            : 'bg-primary/15 text-primary border-primary/40'
+          : 'bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Global search results
 // ---------------------------------------------------------------------------
@@ -1219,7 +1571,7 @@ interface GlobalResultsProps {
 
 function GlobalResults({ results, query, serverCount, onPick, auditFor }: GlobalResultsProps) {
   return (
-    <div className="px-6 py-4 max-w-3xl space-y-2">
+    <div className="px-6 py-4 max-w-4xl space-y-2">
       <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
         Searching all {serverCount} {serverCount === 1 ? 'server' : 'servers'} ·{' '}
         {results.length} {results.length === 1 ? 'match' : 'matches'}
