@@ -459,6 +459,10 @@ func (s *Server) Handler() http.Handler {
 	}
 	registerVarRoutes("/api/var", false)
 	registerVarRoutes("/api/vault", true)
+	// Canonical-only: new endpoints are not mirrored onto the deprecated
+	// /api/vault surface, which is frozen until its v1.0 removal. The literal
+	// pattern outranks GET /api/var/{key}, so "drift" is never read as a key.
+	mux.HandleFunc("GET /api/var/drift", s.handleVariableDrift)
 
 	// Stack spec endpoints
 	mux.HandleFunc("POST /api/stack/validate", s.handleStackValidate)
