@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  consumerCount,
   consumerLabel,
+  describeSetInjection,
   describeConsumer,
   groupConsumers,
   isNavigable,
@@ -149,5 +151,61 @@ describe('groupConsumers', () => {
     expect(entries).toHaveLength(2);
     expect(entries[0]).toEqual({ kind: 'one', consumer: explicit });
     expect(entries[1].kind).toBe('setGroup');
+  });
+});
+
+describe('consumerCount', () => {
+  it('counts a scoped set once, not once per workload it reaches', () => {
+    // Tightening a set's scope must never make a variable look more heavily
+    // used than leaving it to fan out.
+    const scopedToFive = ['a', 'b', 'c', 'd', 'e'].map((n) => scoped(n));
+    expect(consumerCount(scopedToFive)).toBe(1);
+    expect(consumerCount([unscoped])).toBe(1);
+  });
+
+  it('still counts explicit sites individually', () => {
+    expect(
+      consumerCount([
+        { kind: 'mcp-server', name: 'a', field: 'env.X' },
+        { kind: 'resource', name: 'r', field: 'env.X' },
+      ]),
+    ).toBe(2);
+  });
+
+  it('is zero for no consumers and tolerates undefined', () => {
+    expect(consumerCount([])).toBe(0);
+    expect(consumerCount(undefined)).toBe(0);
+  });
+});
+
+describe('describeSetInjection', () => {
+  it('is null when no set injects the variable', () => {
+    expect(describeSetInjection([])).toBeNull();
+    expect(
+      describeSetInjection([{ kind: 'mcp-server', name: 'a', field: 'env.X' }]),
+    ).toBeNull();
+  });
+
+  it('claims fan-out only for an unscoped set', () => {
+    expect(describeSetInjection([unscoped])).toContain('every server env');
+  });
+
+  it('names the single workload a scoped set reaches', () => {
+    const phrase = describeSetInjection([scoped('github')]);
+    expect(phrase).toContain('github');
+    expect(phrase).not.toContain('every');
+  });
+
+  it('counts workloads when a scoped set reaches several', () => {
+    const phrase = describeSetInjection([scoped('a'), scoped('b')]);
+    expect(phrase).toContain('2 workloads');
+    expect(phrase).not.toContain('every');
+  });
+
+  it('carries no preposition, since the caller appends one', () => {
+    // The delete dialog renders "<phrase> via secrets.sets."
+    for (const c of [[unscoped], [scoped('a')], [scoped('a'), scoped('b')]]) {
+      expect(describeSetInjection(c)?.endsWith('via')).toBe(false);
+    }
   });
 });
