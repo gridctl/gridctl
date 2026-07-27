@@ -67,6 +67,8 @@ All notable changes to gridctl will be documented in this file.
 
 ### Refactoring
 
+- Removed the gateway version string from the header, where it sat beside the wordmark competing with the brand mark and the workspace switcher for the app's most valuable real estate. It already appeared on the gateway node in the Stack canvas and in the gateway inspector sidebar, and those are the accurate homes for it: the version is a property of the gateway reported over `/api/status`, so beside the wordmark it read as the version of the web UI itself. This is the third header removal in the same direction, after the gateway-name chip, connection state, and server counts moved to the status bar. Nothing changes when the gateway is unreachable, since the header string was already conditional on gateway info being present; while connected, the version is now reached by way of the Stack workspace or `gridctl version`
+
 - Removed the header Variables panel, a second, weaker rendering of the same vault that could be opened while already standing on the Variables workspace. It never received the usage index, so it showed no consumer counts anywhere, and its delete confirmation omitted the consumer count and bulk-injection warning the workspace shows, making it the less safe of two delete paths for identical data. The header gear that opened it is gone entirely, since the workspace switcher sits in the same header and Variables has been a first-class tab since the bottom-panel removal; the creation wizard's Secret tile now navigates to the workspace instead of opening the panel
 
 
