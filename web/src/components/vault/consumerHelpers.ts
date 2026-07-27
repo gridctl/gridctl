@@ -73,6 +73,35 @@ function describeField(field: string): string {
   return `field ${field}`;
 }
 
+// consumerCount is the "used by N" figure. It counts a scoped set once rather
+// than once per workload it reaches, so tightening a set's scope never makes a
+// variable look more heavily used than leaving it to fan out.
+export function consumerCount(consumers: Consumer[] | undefined): number {
+  return groupConsumers(consumers ?? []).length;
+}
+
+// describeSetInjection returns the delete-confirmation phrase for bulk
+// injection, or null when no set injects this variable. The caller appends
+// "via secrets.sets", so the phrase must not carry its own preposition.
+//
+// A scoped set states the reach it actually has. Claiming "every server" for a
+// set scoped to one would overstate the blast radius of a delete, which is the
+// same class of dishonesty the scoping feature exists to remove.
+export function describeSetInjection(
+  consumers: Consumer[] | undefined,
+): string | null {
+  const sets = (consumers ?? []).filter((c) => c.kind === 'secrets-set');
+  if (sets.length === 0) return null;
+  if (sets.some((c) => !c.target)) {
+    return 'This variable is injected into every server env';
+  }
+  const targets = new Set(sets.map((c) => c.target));
+  if (targets.size === 1) {
+    return `This variable is injected into ${[...targets][0]}`;
+  }
+  return `This variable is injected into ${targets.size} workloads`;
+}
+
 // A rendered entry: either one consumer, or a scoped secrets.sets entry that
 // reaches several workloads and folds into a single expandable row.
 export type Entry =
