@@ -79,3 +79,75 @@ describe('planBulkAction — hide-pattern', () => {
     expect(plan.matchedTools).toBe(0);
   });
 });
+
+describe('planBulkAction — disable-unused', () => {
+  const WINDOW = 7 * 24 * 60 * 60 * 1000;
+  const NOW = Date.parse('2026-07-26T12:00:00Z');
+  const ctx = (usage: Record<string, Record<string, { calls: number; lastCalledAt?: string }>>) => ({
+    usage,
+    windowMs: WINDOW,
+    now: NOW,
+  });
+
+  it('keeps used tools as an explicit whitelist and hides the unused rest', () => {
+    const servers = [srv('github', ['used_a', 'stale_b', 'never_c'])];
+    const plan = planBulkAction(
+      servers,
+      'disable-unused',
+      '',
+      ctx({
+        github: {
+          used_a: { calls: 2, lastCalledAt: '2026-07-26T00:00:00Z' },
+          stale_b: { calls: 9, lastCalledAt: '2026-06-01T00:00:00Z' },
+        },
+      }),
+    );
+    expect(plan.entries).toEqual([
+      { name: 'github', tools: ['used_a'], hidden: ['never_c', 'stale_b'] },
+    ]);
+    expect(plan.matchedTools).toBe(2);
+    expect(plan.blocked).toEqual([]);
+  });
+
+  it('operates on the currently-exposed set when a whitelist exists', () => {
+    // disabled_d is already whitelisted out; it must not count as unused.
+    const servers = [srv('s', ['used_a', 'stale_b', 'disabled_d'], ['used_a', 'stale_b'])];
+    const plan = planBulkAction(
+      servers,
+      'disable-unused',
+      '',
+      ctx({ s: { used_a: { calls: 1, lastCalledAt: '2026-07-26T00:00:00Z' } } }),
+    );
+    expect(plan.entries).toEqual([{ name: 's', tools: ['used_a'], hidden: ['stale_b'] }]);
+    expect(plan.matchedTools).toBe(1);
+  });
+
+  it('blocks a server whose every exposed tool is unused', () => {
+    const servers = [srv('cold', ['a', 'b'])];
+    const plan = planBulkAction(servers, 'disable-unused', '', ctx({}));
+    expect(plan.entries).toEqual([]);
+    expect(plan.blocked).toEqual(['cold']);
+    // Blocked servers contribute nothing to the count: the preview pairs it
+    // with entries.length, so it must reflect only what the apply will do.
+    expect(plan.matchedTools).toBe(0);
+  });
+
+  it('returns an empty plan without a usage snapshot (never guesses)', () => {
+    const plan = planBulkAction([srv('s', ['a'])], 'disable-unused', '');
+    expect(plan.entries).toEqual([]);
+    expect(plan.blocked).toEqual([]);
+    expect(plan.matchedTools).toBe(0);
+  });
+
+  it('skips servers with nothing unused', () => {
+    const servers = [srv('busy', ['a'])];
+    const plan = planBulkAction(
+      servers,
+      'disable-unused',
+      '',
+      ctx({ busy: { a: { calls: 4, lastCalledAt: '2026-07-26T00:00:00Z' } } }),
+    );
+    expect(plan.entries).toEqual([]);
+    expect(plan.blocked).toEqual([]);
+  });
+});
