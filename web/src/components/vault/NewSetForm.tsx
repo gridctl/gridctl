@@ -9,7 +9,7 @@ export interface NewSetFormProps {
   onCancel: () => void;
   className?: string;
   // Apply `.log-text` so the input scales with the parent's zoom controls
-  // (detached page); VaultPanel leaves this off.
+  // (detached page); the Variables workspace leaves this off.
   enableZoom?: boolean;
 }
 
