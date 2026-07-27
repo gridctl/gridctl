@@ -77,8 +77,8 @@ export interface UseVaultManagerResult {
   importVars: (vars: ImportVariableInput[]) => Promise<{ imported: number }>;
 }
 
-// Single source of truth for vault data + IO actions, consumed by both the
-// sidebar (VaultPanel) and the detached `/var` page. Reads from useVaultStore;
+// Single source of truth for vault data and IO actions, consumed by the
+// Variables workspace and the detached page. Reads from useVaultStore;
 // every action that mutates server state calls refresh() to re-sync the
 // store. Per-row reveal state and form state stay local to consumers — this
 // hook deliberately owns no UI state.
