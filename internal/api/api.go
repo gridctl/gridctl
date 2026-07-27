@@ -693,14 +693,21 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 // handleToolsCatalog returns the full downstream tool inventory (each tool's
 // raw description + input schema) for the web console, regardless of code
 // mode. Read-only and informational: it does not change what MCP clients see
-// from tools/list.
+// from tools/list. `?include=all` bypasses the whitelist filter so the UI can
+// show detail (and annotations) for tools an operator has disabled; the
+// parameterless response is unchanged.
 func (s *Server) handleToolsCatalog(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	result, _ := s.gateway.HandleToolsCatalog()
+	var result *mcp.ToolsListResult
+	if r.URL.Query().Get("include") == "all" {
+		result, _ = s.gateway.HandleToolsCatalogAll()
+	} else {
+		result, _ = s.gateway.HandleToolsCatalog()
+	}
 	// Always serialize an empty catalog as [], never null (see handleTools).
 	if result != nil && result.Tools == nil {
 		result.Tools = []mcp.Tool{}
