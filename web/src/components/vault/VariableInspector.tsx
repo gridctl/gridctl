@@ -26,6 +26,7 @@ import { InspectorHeader, PaneAnchor } from '../inspector';
 import { generateSecret } from '../../lib/generateSecret';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { ConsumerList } from './ConsumerList';
+import { formatStampOrUnknown } from '../../lib/time';
 import { isNavigable } from './consumerHelpers';
 import { SecretGenerator } from './SecretGenerator';
 import { VariableSecretToggle } from './VariableSecretToggle';
@@ -570,6 +571,12 @@ export function VariableInspector({
               label="Set"
               value={variable.set ?? 'Unassigned'}
               mono={Boolean(variable.set)}
+            />
+            {/* Absence means unknown, not never: variables untouched since
+                this field shipped carry no stamp. */}
+            <MetaRow
+              label="Last changed"
+              value={formatStampOrUnknown(variable.last_rotated)}
             />
           </dl>
           {(variable.set !== undefined ||
