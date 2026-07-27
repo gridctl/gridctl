@@ -2,11 +2,20 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SkillDetailPanel } from '../components/registry/SkillDetailPanel';
-import { fetchRegistrySkill } from '../lib/api';
+import { fetchRegistrySkill, fetchSkillFiles, updateSkillSource } from '../lib/api';
+import type { SkillSourceStatus } from '../types';
 import type { AgentSkill } from '../types';
 
 vi.mock('../lib/api', () => ({
   fetchRegistrySkill: vi.fn(),
+  // The Overview package check reads the installed file list.
+  fetchSkillFiles: vi.fn().mockResolvedValue([]),
+  updateSkillSource: vi.fn().mockResolvedValue({ source: 'acme', results: [] }),
+}));
+
+vi.mock('../components/ui/Toast', () => ({
+  showToast: vi.fn(),
+  ToastContainer: () => null,
 }));
 
 // SkillFileTree fetches its own file list; stub it so the Files tab is inert.
@@ -143,25 +152,105 @@ describe('SkillDetailPanel', () => {
     expect(screen.queryByTitle(/increase font size/i)).not.toBeInTheDocument();
   });
 
+  // A skill whose instructions invoke a bundled script that is not installed
+  // fails silently at run time; the banner is the only place that says so.
+  describe('incomplete package notice', () => {
+    const SOURCE: SkillSourceStatus = {
+      name: 'acme-skills',
+      repo: 'https://github.com/acme/skills',
+      commitSha: 'abc1234',
+      autoUpdate: false,
+      updateInterval: '',
+      updateAvailable: false,
+      skills: [],
+    };
+    const needsScripts = { ...SKILL, body: 'Run `scripts/build.sh` to begin.', fileCount: 0 };
+
+    it('warns when instructions reference a directory that ships no files', async () => {
+      renderPanel({ skill: needsScripts });
+      expect(await screen.findByRole('status')).toHaveTextContent(/scripts\//);
+    });
+
+    it('stays silent when the referenced files are installed', async () => {
+      vi.mocked(fetchSkillFiles).mockResolvedValue([{ path: 'scripts/build.sh', size: 10, isDir: false }]);
+      renderPanel({ skill: { ...needsScripts, fileCount: 1 } });
+      await waitFor(() => expect(fetchSkillFiles).toHaveBeenCalled());
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('stays silent for prose that merely mentions the word', () => {
+      renderPanel({ skill: { ...SKILL, body: 'You should run the build scripts first.', fileCount: 0 } });
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('offers a source sync for a git-owned skill', async () => {
+      renderPanel({ skill: needsScripts, source: SOURCE });
+      fireEvent.click(await screen.findByRole('button', { name: /sync from acme-skills/i }));
+      await waitFor(() => expect(updateSkillSource).toHaveBeenCalledWith('acme-skills'));
+    });
+
+    it('offers no action for a local skill, only the explanation', async () => {
+      renderPanel({ skill: needsScripts });
+      expect(await screen.findByRole('status')).toHaveTextContent(/local skill/i);
+      expect(screen.queryByRole('button', { name: /sync from/i })).not.toBeInTheDocument();
+    });
+
+    // Absence of data is not evidence of a broken package.
+    it('stays silent while the file list is still unknown', () => {
+      vi.mocked(fetchSkillFiles).mockReturnValue(new Promise(() => {}));
+      renderPanel({ skill: { ...needsScripts, fileCount: 3 } });
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('compare with upstream', () => {
+    const DRIFTED: SkillSourceStatus = {
+      name: 'acme-skills',
+      repo: 'https://github.com/acme/skills',
+      commitSha: 'abc1234',
+      autoUpdate: false,
+      updateInterval: '',
+      updateAvailable: false,
+      driftedSkills: ['incident-triage'],
+      skills: [],
+    };
+
+    it('exposes the Modified chip as a named compare action', () => {
+      renderPanel({ source: DRIFTED });
+      expect(
+        screen.getByRole('button', { name: 'Compare incident-triage with upstream' }),
+      ).toBeInTheDocument();
+    });
+
+    it('renders no chip for a skill without local edits', () => {
+      renderPanel({ source: { ...DRIFTED, driftedSkills: [] } });
+      expect(screen.queryByRole('button', { name: /compare .* with upstream/i })).not.toBeInTheDocument();
+    });
+
+    it('renders no chip for a local skill', () => {
+      renderPanel();
+      expect(screen.queryByRole('button', { name: /compare .* with upstream/i })).not.toBeInTheDocument();
+    });
+  });
+
   // The registry list no longer carries Markdown bodies, so a skill selected
-  // from the catalog arrives with `body` undefined and the panel must fetch it.
-  describe('lazy instructions', () => {
+  // from the catalog arrives with `body` undefined and the panel fetches it.
+  // The fetch is per selection rather than per tab: the Overview package check
+  // needs the body too, so one request serves both and Instructions opens
+  // without a spinner.
+  describe('body loading', () => {
     // A list-sourced skill: everything the catalog needs, no body.
     const LIST_SKILL: AgentSkill = { ...SKILL, body: undefined };
 
-    it('fetches nothing until the Instructions tab is opened', () => {
-      renderPanel({ skill: LIST_SKILL });
-      expect(fetchRegistrySkill).not.toHaveBeenCalled();
-    });
-
-    it('issues exactly one single-skill fetch on tab open and renders the body', async () => {
+    it('issues exactly one single-skill fetch for the selected skill', async () => {
       vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...SKILL, body: '# Triage\n\nFetched runbook.' });
       renderPanel({ skill: LIST_SKILL });
 
+      await waitFor(() => expect(fetchRegistrySkill).toHaveBeenCalledWith('incident-triage'));
       fireEvent.click(screen.getByRole('tab', { name: 'Instructions' }));
       expect(await screen.findByText('Fetched runbook.')).toBeInTheDocument();
+      // One request serves both the package check and the tab.
       expect(fetchRegistrySkill).toHaveBeenCalledTimes(1);
-      expect(fetchRegistrySkill).toHaveBeenCalledWith('incident-triage');
     });
 
     it('does not fetch when the skill already carries a body', async () => {
