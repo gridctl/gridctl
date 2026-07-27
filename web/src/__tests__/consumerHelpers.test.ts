@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   consumerCount,
+  consumerReachesWorkload,
+  consumerSearchText,
   consumerLabel,
   describeSetInjection,
   describeConsumer,
@@ -22,6 +24,12 @@ const unscoped: Consumer = {
   kind: 'secrets-set',
   name: 'dev',
   field: 'secrets.sets',
+};
+
+const explicit: Consumer = {
+  kind: 'mcp-server',
+  name: 'github',
+  field: 'env.TOKEN',
 };
 
 describe('isNavigable', () => {
@@ -207,5 +215,51 @@ describe('describeSetInjection', () => {
     for (const c of [[unscoped], [scoped('a')], [scoped('a'), scoped('b')]]) {
       expect(describeSetInjection(c)?.endsWith('via')).toBe(false);
     }
+  });
+});
+
+describe('consumerReachesWorkload', () => {
+  it('matches an explicit site on that workload', () => {
+    expect(consumerReachesWorkload(explicit, 'github')).toBe(true);
+    expect(consumerReachesWorkload(explicit, 'other')).toBe(false);
+  });
+
+  it('matches a scoped set only on the workload it targets', () => {
+    expect(consumerReachesWorkload(scoped('github'), 'github')).toBe(true);
+    expect(consumerReachesWorkload(scoped('github'), 'other')).toBe(false);
+  });
+
+  it('matches an unscoped set on every workload, because it reaches them all', () => {
+    expect(consumerReachesWorkload(unscoped, 'github')).toBe(true);
+    expect(consumerReachesWorkload(unscoped, 'anything')).toBe(true);
+  });
+
+  it('never matches a stack-level site', () => {
+    expect(
+      consumerReachesWorkload({ kind: 'gateway', field: 'auth.token' }, 'github'),
+    ).toBe(false);
+    expect(
+      consumerReachesWorkload({ kind: 'stack', field: 'name' }, 'github'),
+    ).toBe(false);
+  });
+});
+
+describe('consumerSearchText', () => {
+  it('includes the workload a scoped set targets', () => {
+    // Searching a server name must find variables that reach it only through
+    // a scoped set.
+    expect(consumerSearchText(scoped('github'))).toContain('github');
+  });
+
+  it('includes the set name and field path', () => {
+    const text = consumerSearchText(unscoped);
+    expect(text).toContain('dev');
+    expect(text).toContain('secrets.sets');
+  });
+
+  it('tolerates a consumer with no name', () => {
+    expect(consumerSearchText({ kind: 'gateway', field: 'auth.token' })).toBe(
+      'auth.token',
+    );
   });
 });
