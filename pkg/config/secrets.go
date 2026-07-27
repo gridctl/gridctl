@@ -169,27 +169,27 @@ func validateSecrets(s *Stack) ValidationErrors {
 		resourceNames[res.Name] = true
 	}
 
-	seen := make(map[string]int, len(s.Secrets.Sets))
 	for i, ref := range s.Secrets.Sets {
 		prefix := fmt.Sprintf("secrets.sets[%d]", i)
+
+		// Only the scoped form is validated for shape. A bare name that is
+		// empty or repeated was accepted before scoping existed and stays
+		// accepted (Article IX): both are harmless no-ops, since an unknown
+		// set resolves to no members and injection is idempotent.
+		if !ref.Scoped() {
+			continue
+		}
+
 		if ref.Name == "" {
 			errs = append(errs, ValidationError{prefix, "set name is required"})
 			continue
 		}
-		if first, dup := seen[ref.Name]; dup {
-			errs = append(errs, ValidationError{
-				prefix,
-				fmt.Sprintf("set %q already listed at secrets.sets[%d]", ref.Name, first),
-			})
-			continue
-		}
-		seen[ref.Name] = i
 
 		for j, name := range ref.Servers {
 			if !serverNames[name] {
 				errs = append(errs, ValidationError{
 					fmt.Sprintf("%s.servers[%d]", prefix, j),
-					fmt.Sprintf("references unknown mcp-server '%s'", name),
+					fmt.Sprintf("references unknown MCP server '%s'", name),
 				})
 			}
 		}
