@@ -37,10 +37,14 @@ describe('Header', () => {
     expect(screen.queryByText(/active/i)).not.toBeInTheDocument();
   });
 
-  it('drops the gateway-name chip but keeps the version beside the logo', () => {
+  // The gateway name and version are both properties of the gateway, surfaced
+  // on the canvas node and inspector sidebar. Neither belongs in the header.
+  // gatewayInfo is populated in beforeEach, so these assertions prove the
+  // header omits values that are available to it rather than an empty store.
+  it('drops the gateway-name chip and the version beside the logo', () => {
     renderHeader();
     expect(screen.queryByText('acme-stack')).not.toBeInTheDocument();
-    expect(screen.getByText('v9.9.9')).toBeInTheDocument();
+    expect(screen.queryByText('v9.9.9')).not.toBeInTheDocument();
   });
 
   it('keeps the persistence quick-toggle while connected', () => {
