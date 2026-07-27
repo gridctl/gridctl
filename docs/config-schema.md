@@ -362,8 +362,15 @@ almost always an unfinished edit.
 
 Sets are applied in the order they are listed, and the first entry to supply a
 key wins, matching the rule that explicit `env` values in the stack file beat
-injected ones. In practice a key belongs to at most one set, so entries cannot
-collide; the order only matters if the same set is listed twice.
+injected ones. In practice a key belongs to at most one set, so entries rarely
+collide.
+
+A scoped set may be listed only once. Repeated entries inject the union of
+their scopes, so a bare `- dev` sitting above `- name: dev` with `servers:
+[github]` would fan the set out to every workload while reading as though it
+were confined to one. Repeating a bare name is still allowed, since that was
+valid before scoping existed and injecting the same set twice changes
+nothing.
 
 The Variables workspace reflects scoping: a scoped set's variables list the
 workloads they actually reach, and each one links to that node on the Stack
