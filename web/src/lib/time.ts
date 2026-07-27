@@ -22,6 +22,16 @@ export function formatRelativeTime(date: Date): string {
   return coarseAge(hours, date);
 }
 
+// formatStampOrUnknown renders an optional RFC3339 stamp as a relative age.
+// An absent or unparseable stamp is *unknown*, not zero: it renders as an
+// em-dash so callers never imply a date they don't have.
+export function formatStampOrUnknown(stamp: string | undefined): string {
+  if (!stamp) return '—';
+  const ms = Date.parse(stamp);
+  if (Number.isNaN(ms)) return '—';
+  return formatRelativeTime(new Date(ms));
+}
+
 // Finer-grained variant for log tails: sub-minute ages read as seconds
 // ("3s ago") instead of collapsing to "just now", which is too coarse when
 // entries arrive every few seconds. `now` is injectable for pure rendering
