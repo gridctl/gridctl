@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
@@ -83,6 +84,55 @@ func ScanSkill(sk *registry.AgentSkill) *ScanResult {
 
 	result.Safe = len(result.Findings) == 0
 	return result
+}
+
+// isScannable reports whether a supporting file should be scanned.
+//
+// Every text file counts, not just recognized script extensions. Two reasons:
+// an extension allowlist is trivially sidestepped (a git clone only carries
+// 644/755, so an unlisted, non-executable payload would never be looked at),
+// and reference documents are prose an agent reads and acts on once the skill
+// is projected — the same reason the SKILL.md body is scanned at all. Moving
+// instructions from SKILL.md into references/setup.md must not be a way
+// around the gate.
+//
+// Binary content (archives, images, compiled schemas) is skipped by content
+// sniff rather than by extension, since running shell-shaped patterns over
+// bytes is pure false-positive surface.
+func isScannable(content []byte) bool {
+	head := content
+	if len(head) > 8000 {
+		head = head[:8000]
+	}
+	return !bytes.ContainsRune(head, 0)
+}
+
+// scanSupportingFiles scans installed-candidate files for dangerous patterns.
+//
+// Severity policy: only "danger" findings block an import. The pattern set in
+// dangerousPatterns is tuned for prose and shell snippets in a SKILL.md body,
+// where any hit is worth a human look. Run unchanged over real Python those
+// same patterns produce routine false positives, so gating on every severity
+// would make ordinary skill packages un-importable without --trust and train
+// users to pass it reflexively. Lower-severity hits are surfaced as warnings
+// instead, which keeps them visible without blocking.
+//
+// Body scanning is unchanged: ScanSkill still treats any finding as blocking.
+func scanSupportingFiles(files []supportingFile) (findings []SecurityFinding, blocking bool) {
+	for _, f := range files {
+		if !isScannable(f.content) {
+			continue
+		}
+		sub := &ScanResult{}
+		scanText(f.rel, string(f.content), sub)
+		for _, finding := range sub.Findings {
+			if finding.Severity == "danger" {
+				blocking = true
+			}
+			findings = append(findings, finding)
+		}
+	}
+	return findings, blocking
 }
 
 func scanText(context, text string, result *ScanResult) {

@@ -43,7 +43,7 @@ func TestImporter_Update_ForceColdCacheNoPanic(t *testing.T) {
 	require.NoError(t, os.RemoveAll(cacheDir))
 
 	require.NotPanics(t, func() {
-		_, _ = imp.Update("test-skill", false, true)
+		_, _ = imp.Update("test-skill", false, true, false)
 	})
 }
 

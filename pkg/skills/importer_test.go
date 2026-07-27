@@ -262,7 +262,7 @@ func TestImporter_Update_PreservesState(t *testing.T) {
 	commitChange(t, repo, repoDir, "# Test\n\nSecond version.\n")
 
 	// Sync. The bug under test would reset State to active here.
-	updateResult, err := imp.Update("test-skill", false, false)
+	updateResult, err := imp.Update("test-skill", false, false, false)
 	require.NoError(t, err)
 	require.Len(t, updateResult.Imported, 1, "expected a re-import after upstream change")
 
@@ -359,11 +359,11 @@ func TestImporter_Update_ConcurrentSourcesPreserveLockfile(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = imp.Update("skill-a", false, false)
+		_, _ = imp.Update("skill-a", false, false, false)
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = imp.Update("skill-b", false, false)
+		_, _ = imp.Update("skill-b", false, false, false)
 	}()
 	wg.Wait()
 
