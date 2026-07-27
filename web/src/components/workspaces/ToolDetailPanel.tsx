@@ -7,6 +7,7 @@ import { ZoomControls } from '../ui/ZoomControls';
 import { InspectorHeader, PaneAnchor } from '../inspector';
 import { InspectorStat } from '../metrics/metricsShared';
 import { formatLastUsed, type AuditState } from '../../lib/toolAudit';
+import { CHIP_TONE_CLASS, annotationChips } from '../../lib/groups';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import type { ToolRow } from '../../hooks/useToolsEditor';
 import type { ToolUsageStat } from '../../types';
@@ -128,6 +129,10 @@ export function ToolDetailPanel({
               )}
             </Section>
 
+            <Section title="Hints">
+              <HintsBlock annotations={tool.annotations} />
+            </Section>
+
             {(usage || (auditMode && auditState)) && (
               <Section title="Usage">
                 <div className="space-y-2">
@@ -172,6 +177,44 @@ export function ToolDetailPanel({
         <ToolDetailEmpty />
       )}
     </aside>
+  );
+}
+
+// HintsBlock lists the tool's declared MCP annotations with plain-language
+// descriptions. Annotations are server-reported claims the spec says to treat
+// as untrusted, so the block always carries that caveat; an unannotated tool
+// gets the spec's pessimistic default spelled out instead of a blank section.
+function HintsBlock({ annotations }: { annotations?: ToolRow['annotations'] }) {
+  const chips = annotationChips(annotations);
+  if (chips.length === 0) {
+    return (
+      <p className="text-[11px] text-text-muted/70 leading-relaxed">
+        No annotations declared. Per the MCP spec, undeclared tools are treated as
+        potentially destructive and open-world.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <ul className="space-y-1.5">
+        {chips.map((chip) => (
+          <li key={chip.label} className="flex items-start gap-2">
+            <span
+              className={cn(
+                'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium mt-px',
+                CHIP_TONE_CLASS[chip.tone],
+              )}
+            >
+              {chip.label}
+            </span>
+            <span className="text-[11px] text-text-secondary leading-relaxed">{chip.title}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[10px] text-text-muted/70 italic">
+        Reported by the server, not verified by gridctl.
+      </p>
+    </div>
   );
 }
 
