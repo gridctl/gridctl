@@ -991,3 +991,96 @@ describe('VaultWorkspace — drift create requires real values', () => {
     expect(api.importVariables).not.toHaveBeenCalled();
   });
 });
+
+describe('VaultWorkspace — server deep link with scoped sets', () => {
+  const vars: api.Variable[] = [
+    { key: 'SCOPED_TO_GITHUB', type: 'string', is_secret: true },
+    { key: 'SCOPED_ELSEWHERE', type: 'string', is_secret: true },
+    { key: 'FANNED_OUT', type: 'string', is_secret: true },
+    { key: 'UNRELATED', type: 'string', is_secret: true },
+  ];
+  const usage: Record<string, api.Consumer[]> = {
+    SCOPED_TO_GITHUB: [
+      {
+        kind: 'secrets-set',
+        name: 'dev',
+        field: 'secrets.sets',
+        target: 'github',
+        targetKind: 'mcp-server',
+      },
+    ],
+    SCOPED_ELSEWHERE: [
+      {
+        kind: 'secrets-set',
+        name: 'dev',
+        field: 'secrets.sets',
+        target: 'playwright',
+        targetKind: 'mcp-server',
+      },
+    ],
+    // An unscoped set genuinely reaches every workload, github included.
+    FANNED_OUT: [{ kind: 'secrets-set', name: 'shared', field: 'secrets.sets' }],
+  };
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: true,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(vars);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue(usage);
+    vi.mocked(api.fetchVariableDrift).mockResolvedValue([]);
+    useVaultStore.setState({
+      variables: vars,
+      sets: [],
+      usage,
+      usageLoaded: true,
+      drift: [],
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: true,
+    });
+  });
+
+  function renderFiltered() {
+    return render(
+      <MemoryRouter initialEntries={['/vault?filter=server:github']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+  }
+
+  it('includes a variable a scoped set injects into that server', async () => {
+    renderFiltered();
+    expect(await screen.findByText('SCOPED_TO_GITHUB')).toBeInTheDocument();
+  });
+
+  it('includes a variable an unscoped set fans out to every server', async () => {
+    renderFiltered();
+    expect(await screen.findByText('FANNED_OUT')).toBeInTheDocument();
+  });
+
+  it('excludes a set scoped to a different workload', async () => {
+    renderFiltered();
+    await screen.findByText('SCOPED_TO_GITHUB');
+    expect(screen.queryByText('SCOPED_ELSEWHERE')).not.toBeInTheDocument();
+  });
+
+  it('excludes a variable nothing consumes', async () => {
+    renderFiltered();
+    await screen.findByText('SCOPED_TO_GITHUB');
+    expect(screen.queryByText('UNRELATED')).not.toBeInTheDocument();
+  });
+
+  it('finds a scoped variable by searching the workload it reaches', async () => {
+    render(
+      <MemoryRouter initialEntries={['/vault?q=playwright']}>
+        <VaultWorkspace />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('SCOPED_ELSEWHERE')).toBeInTheDocument();
+    expect(screen.queryByText('SCOPED_TO_GITHUB')).not.toBeInTheDocument();
+  });
+});
