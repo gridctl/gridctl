@@ -143,6 +143,22 @@ func (s *Store) SaveSkill(sk *AgentSkill) error {
 	return nil
 }
 
+// RefreshFileCount recomputes a skill's supporting-file count from disk.
+// Callers that write files into a skill directory after SaveSkill (the git
+// importer installs scripts/ and references/ once the skill validates) use
+// this so the cached count matches what actually landed.
+func (s *Store) RefreshFileCount(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sk, ok := s.skills[name]
+	if !ok {
+		return fmt.Errorf("skill %q: %w", name, ErrNotFound)
+	}
+	sk.FileCount = countSupportingFiles(filepath.Join(s.baseDir, "skills", sk.Dir))
+	return nil
+}
+
 // DeleteSkill removes a skill directory and cache entry.
 func (s *Store) DeleteSkill(name string) error {
 	s.mu.Lock()
@@ -474,21 +490,27 @@ func (s *Store) checkLegacyFiles() {
 	}
 }
 
-// countSupportingFiles counts files in the scripts/, references/, and assets/
-// subdirectories of a skill directory.
+// countSupportingFiles counts files anywhere beneath the scripts/,
+// references/, and assets/ subdirectories of a skill directory.
+//
+// The walk is recursive: real skill packages nest (scripts/office/pack.py),
+// and counting only direct children reported 3 files for a package holding
+// 59. Directory entries themselves are not counted. Top-level metadata files
+// such as LICENSE.txt sit outside these three trees and are deliberately not
+// counted; FileCount measures supporting content, not packaging.
 func countSupportingFiles(skillDir string) int {
 	count := 0
 	for _, subdir := range []string{"scripts", "references", "assets"} {
 		dir := filepath.Join(skillDir, subdir)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if !e.IsDir() {
+		_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil //nolint:nilerr // an unreadable subtree contributes zero, not an error
+			}
+			if !d.IsDir() {
 				count++
 			}
-		}
+			return nil
+		})
 	}
 	return count
 }

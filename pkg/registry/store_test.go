@@ -1206,7 +1206,7 @@ func TestCountSupportingFiles_Nonexistent(t *testing.T) {
 	}
 }
 
-func TestCountSupportingFiles_IgnoresSubdirectories(t *testing.T) {
+func TestCountSupportingFiles_CountsFilesNotDirectories(t *testing.T) {
 	dir := t.TempDir()
 	scriptsDir := filepath.Join(dir, "scripts")
 	if err := os.MkdirAll(filepath.Join(scriptsDir, "nested"), 0755); err != nil {
@@ -1215,8 +1215,42 @@ func TestCountSupportingFiles_IgnoresSubdirectories(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scriptsDir, "a.sh"), []byte("a"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	// nested/ directory should not be counted (only files)
+	// Directory entries are not counted; the empty nested/ contributes nothing.
 	if count := countSupportingFiles(dir); count != 1 {
 		t.Errorf("expected 1, got %d", count)
+	}
+}
+
+// TestCountSupportingFiles_Recursive covers the shape real skill packages
+// use: Anthropic's docx ships scripts/office/*.py and scripts/office/schemas/,
+// so counting only direct children reported 3 files for a package holding 59.
+func TestCountSupportingFiles_Recursive(t *testing.T) {
+	dir := t.TempDir()
+	files := []string{
+		"scripts/pack.py",
+		"scripts/office/soffice.py",
+		"scripts/office/schemas/dml-main.xsd",
+		"references/api/spec.json",
+		"assets/img/logo.png",
+	}
+	for _, rel := range files {
+		full := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Files outside the three managed trees are not counted.
+	if err := os.WriteFile(filepath.Join(dir, "LICENSE.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if count := countSupportingFiles(dir); count != len(files) {
+		t.Errorf("expected %d, got %d", len(files), count)
 	}
 }

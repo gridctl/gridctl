@@ -6,7 +6,7 @@ Skills are prose. Author them as markdown with agentskills.io-compliant frontmat
 
 ## What a skill looks like
 
-A skill is one directory under `~/.gridctl/registry/skills/<name>/` containing a single `SKILL.md` file. Frontmatter on top, markdown body below.
+A skill is one directory under `~/.gridctl/registry/skills/<name>/`. `SKILL.md` is the only required file (frontmatter on top, markdown body below), and a prose skill needs nothing else. A skill may also ship supporting content the body refers to, in `scripts/`, `references/`, and `assets/`, which gridctl installs alongside it.
 
 ```markdown
 ---
@@ -82,6 +82,10 @@ See [`docs/cli-reference.md`](./cli-reference.md) for the full flag set.
 
 Skills don't have to be authored locally. `gridctl skill add <repo-url>` clones a remote repository, walks it for `SKILL.md` files, and pulls each one into the local registry. Pin to a ref with `gridctl skill pin`; refresh with `gridctl skill update` (also available as `gridctl skill sync` for parity with the Library page's "Sync sources" action). With no name argument, every imported skill is checked; pinned sources (tags like `v1.0.0` or full commit SHAs) are skipped unless updated explicitly. Sync preserves each skill's enable/disable state and refuses to overwrite locally-edited SKILL.md files unless `--force` is passed.
 
+Import copies each skill's `scripts/`, `references/`, and `assets/` directories along with its `SKILL.md`, plus top-level `LICENSE`, `NOTICE`, and `COPYING` files, so a package whose instructions invoke a bundled script arrives able to run. Nothing else from the repository is copied: the copy is an allowlist, not an exclusion list, so a repository-root skill never drags in `.git` and a skill directory never absorbs a nested skill beside it. Symlinks are skipped, per-file size and per-skill file count are capped, and anything left out is reported as an import warning.
+
+Re-importing replaces those three directories wholesale, so content deleted upstream does not linger. That means files you add by hand under `scripts/`, `references/`, or `assets/` are replaced on the next sync, since the registry has no way to tell a hand-added helper from an imported one. Everything outside them, including `SKILL.md` and its timestamped backups, is left alone.
+
 Supported auth flows for private repos:
 
 - `--auth-token <pat>`: an ephemeral HTTPS personal access token, suitable for CI.
@@ -141,7 +145,7 @@ Skills are projected by symlink where possible: the link points into the registr
 
 Ownership is tracked in `~/.gridctl/skillsync.lock.yaml`. A destination gridctl did not create (a skill installed by `npx skills`, or by hand) is never clobbered silently: sync skips it with guidance, `--force` backs it up first, and `unsync` refuses to touch it at all. Backups land under `~/.gridctl/skillsync-backups/<client>/<skill>/`, never inside the client's skills directory, so a backup can never surface in a client as a phantom skill. While the daemon runs, the projection set reconciles automatically after registry changes: deactivating, deleting, or updating a projected skill removes or refreshes its projections without a manual re-sync.
 
-Two caveats. Projecting the same skill to both `claude-code` and `agents` makes clients that scan both roots (Goose, OpenCode, VS Code) discover it twice; sync warns when you do this. And projection places the whole skill directory, including `scripts/`, on paths agents actively load, so only project skills whose supporting files you trust (the import-time security scan runs at `skill add` time, not at projection time).
+Two caveats. Projecting the same skill to both `claude-code` and `agents` makes clients that scan both roots (Goose, OpenCode, VS Code) discover it twice; sync warns when you do this. And projection places the whole skill directory, including `scripts/`, on paths agents actively load, so only project skills whose supporting files you trust. The security scan runs at `skill add` and `skill update` time, not at projection time, and it is a pattern scan rather than a sandbox: it reads the `SKILL.md` body and any executable or script-extension file being installed, blocking on high-severity matches and reporting the rest as warnings. Treat installing a skill the way you would treat installing software: review what a package ships before projecting it.
 
 ## What gridctl deliberately does not do
 

@@ -481,7 +481,7 @@ func (s *Server) syncSkill(ctx context.Context, imp *skills.Importer, authCfg sk
 	entry := SkillSyncResult{Skill: skillName}
 
 	if !drifted {
-		result, err := imp.Update(skillName, false, false)
+		result, err := imp.Update(skillName, false, false, false)
 		if err != nil {
 			entry.Error = gitpkg.RedactError(err).Error()
 			return entry
@@ -511,7 +511,7 @@ func (s *Server) syncSkill(ctx context.Context, imp *skills.Importer, authCfg sk
 		entry.Backup = backup
 	}
 
-	result, err := imp.Update(skillName, false, true)
+	result, err := imp.Update(skillName, false, true, false)
 	if err != nil {
 		entry.Error = gitpkg.RedactError(err).Error()
 		return entry

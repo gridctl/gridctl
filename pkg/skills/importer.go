@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -100,10 +101,13 @@ type ImportResult struct {
 
 // ImportedSkill records a successfully imported skill.
 type ImportedSkill struct {
-	Name     string            `json:"name"`
-	Path     string            `json:"path"`
-	Origin   *Origin           `json:"origin,omitempty"`
-	Findings []SecurityFinding `json:"findings,omitempty"`
+	Name   string  `json:"name"`
+	Path   string  `json:"path"`
+	Origin *Origin `json:"origin,omitempty"`
+	// FilesCopied counts supporting files installed alongside SKILL.md
+	// (scripts/, references/, assets/, and package metadata).
+	FilesCopied int               `json:"filesCopied"`
+	Findings    []SecurityFinding `json:"findings,omitempty"`
 }
 
 // SkippedSkill records a skill that was skipped during import.
@@ -150,6 +154,14 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	if opts.Path != "" {
 		if err := SafeRepoPath(opts.Path); err != nil {
 			return nil, err
+		}
+	}
+	// Reject a malformed rename before any work: it becomes both the skill
+	// name and the destination directory, so an unvalidated value ("../x")
+	// would escape the registry root.
+	if opts.Rename != "" {
+		if err := registry.ValidateSkillName(opts.Rename); err != nil {
+			return nil, fmt.Errorf("invalid --rename value %q: %w", opts.Rename, err)
 		}
 	}
 
@@ -225,9 +237,64 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			}
 		}
 
-		// Security scan
+		// Resolve the destination directory up front. SaveSkill defaults Dir
+		// (to an existing skill's Dir, else the name), but the supporting-file
+		// copy has to know where it is writing before SaveSkill runs, so set
+		// Dir explicitly here and let SaveSkill's defaulting become a no-op.
+		// Keeping one resolution point stops the two from drifting.
+		if discovered.Skill.Dir == "" {
+			if existing, err := imp.store.GetSkill(skillName); err == nil && existing.Dir != "" {
+				discovered.Skill.Dir = existing.Dir
+			} else {
+				discovered.Skill.Dir = skillName
+			}
+		}
+		skillsRoot := filepath.Join(imp.registryDir, "skills")
+		skillDir := filepath.Join(skillsRoot, discovered.Skill.Dir)
+		// Defense in depth behind SaveSkill's name validation: never let a
+		// resolved destination land outside the skills root.
+		if !withinDir(skillsRoot, skillDir) {
+			importResult.Skipped = append(importResult.Skipped, SkippedSkill{
+				Name:   skillName,
+				Reason: fmt.Sprintf("resolved directory %q escapes the registry", discovered.Skill.Dir),
+			})
+			continue
+		}
+
+		// Gather supporting files from the clone. Nothing is written yet: the
+		// scan below has to run against the source so a rejected skill never
+		// leaves a partial install behind.
+		srcDir := filepath.Join(result.RepoPath, discovered.Path)
+		supporting, copyWarnings, err := collectSupportingFiles(srcDir)
+		// Surface what was excluded even when collection then failed, so the
+		// skip reason is not the only thing the user sees.
+		for _, w := range copyWarnings {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: %s", skillName, w))
+		}
+		if err != nil {
+			var le *limitError
+			if errors.As(err, &le) {
+				importResult.Skipped = append(importResult.Skipped, SkippedSkill{
+					Name:   skillName,
+					Reason: fmt.Sprintf("supporting files exceed limits: %s", le.reason),
+				})
+				continue
+			}
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: collecting supporting files: %v", skillName, err))
+			continue
+		}
+
+		// Security scan: body first (any finding blocks, unchanged), then the
+		// supporting files (only danger-severity findings block; see
+		// scanSupportingFiles for why).
 		scanResult := ScanSkill(discovered.Skill)
-		if !scanResult.Safe && !opts.Trust {
+		treeFindings, treeBlocking := scanSupportingFiles(supporting)
+		scanResult.Findings = append(scanResult.Findings, treeFindings...)
+		blocked := !scanResult.Safe || treeBlocking
+		// Keep Safe consistent with Findings so a later reader of the struct
+		// cannot conclude "safe" while findings are attached.
+		scanResult.Safe = len(scanResult.Findings) == 0
+		if blocked && !opts.Trust {
 			importResult.Skipped = append(importResult.Skipped, SkippedSkill{
 				Name:   skillName,
 				Reason: fmt.Sprintf("security findings detected (use --trust to proceed):\n%s", FormatFindings(scanResult.Findings)),
@@ -250,10 +317,24 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		}
 		discovered.Skill.State = state
 
-		// Save to registry
+		// Save to registry first. SaveSkill validates the skill (including its
+		// name) before creating any directory, and that validation is the only
+		// thing standing between a malformed name and a destructive write, so
+		// nothing may touch the filesystem ahead of it.
 		if err := imp.store.SaveSkill(discovered.Skill); err != nil {
 			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to save %s: %v", skillName, err))
 			continue
+		}
+
+		// Then install supporting files beside the rendered SKILL.md, and
+		// refresh the cached count so it reflects what actually landed.
+		filesCopied, err := installSupportingFiles(skillDir, supporting)
+		if err != nil {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to install supporting files for %s: %v", skillName, err))
+			continue
+		}
+		if err := imp.store.RefreshFileCount(skillName); err != nil {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to refresh file count for %s: %v", skillName, err))
 		}
 
 		// Compute fingerprint
@@ -262,7 +343,8 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		// Snapshot the just-written SKILL.md hash so DetectDrift can later
 		// distinguish user edits from upstream changes. ContentHash records
 		// the upstream file as fetched; InstalledHash records what we wrote.
-		skillDir := imp.skillDir(skillName)
+		// Note: this covers SKILL.md only; edits to installed supporting
+		// files are not yet drift-tracked (see CHANGELOG).
 		installedHash, _ := ContentHashFile(filepath.Join(skillDir, "SKILL.md"))
 
 		// Write origin sidecar. CredentialRef (if any) is persisted as an
@@ -290,16 +372,17 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		}
 
 		imported := ImportedSkill{
-			Name:   skillName,
-			Path:   discovered.Path,
-			Origin: origin,
+			Name:        skillName,
+			Path:        discovered.Path,
+			Origin:      origin,
+			FilesCopied: filesCopied,
 		}
-		if !scanResult.Safe {
+		if len(scanResult.Findings) > 0 {
 			imported.Findings = scanResult.Findings
 		}
 		importResult.Imported = append(importResult.Imported, imported)
 
-		imp.logger.Info("imported skill", "name", skillName)
+		imp.logger.Info("imported skill", "name", skillName, "supportingFiles", filesCopied)
 	}
 
 	// Update lock file. Re-read inside the critical section so concurrent
@@ -376,7 +459,14 @@ func (imp *Importer) Remove(skillName string) error {
 }
 
 // Update fetches latest for a skill and applies changes.
-func (imp *Importer) Update(skillName string, dryRun, force bool) (*ImportResult, error) {
+//
+// trust forwards to ImportOptions.Trust. It defaults to false at every caller:
+// a sync that surfaces new security findings is skipped with the finding text
+// rather than applied silently. Previously this was hardcoded true, which meant
+// every sync refreshed upstream content with the scan gate disabled, harmless
+// while only the SKILL.md body was scanned, but not once supporting files are
+// installed too.
+func (imp *Importer) Update(skillName string, dryRun, force, trust bool) (*ImportResult, error) {
 	skillDir := imp.skillDir(skillName)
 	origin, err := ReadOrigin(skillDir)
 	if err != nil {
@@ -420,7 +510,7 @@ func (imp *Importer) Update(skillName string, dryRun, force bool) (*ImportResult
 		Repo:          origin.Repo,
 		Ref:           origin.Ref,
 		Path:          origin.Path,
-		Trust:         true,
+		Trust:         trust,
 		Force:         true,
 		Auth:          auth,
 		PreserveState: true,
