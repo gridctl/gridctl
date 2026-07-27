@@ -5,6 +5,9 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useClientScopeEditor } from '../../hooks/useClientScopeEditor';
 import { fetchClients, fetchStatus } from '../../lib/api';
 import { Modal } from '../ui/Modal';
+import { ServerToolScopeGroup, type ScopeTool } from '../stack/ServerToolScopeGroup';
+import { TOOL_NAME_DELIMITER } from '../../lib/constants';
+import { effectiveEnabledTools } from '../../lib/toolAudit';
 import type { ClientStatus, MCPServerStatus } from '../../types';
 
 interface ClientAccessEditorProps {
@@ -112,14 +115,55 @@ function ClientScopePane({
   servers: MCPServerStatus[];
 }) {
   const serverNames = useMemo(() => servers.map((s) => s.name), [servers]);
-  const { selected, toggle, selectAll, clearAll, canSave, isSaving, conflict, createsBlock, save } =
-    useClientScopeEditor(client, serverNames);
+  const toolCatalog = useStackStore((s) => s.toolCatalog);
+  // Live tool universe (server -> unprefixed names) for the tool axis. Uses
+  // the whitelist-FILTERED set: scope validation checks submitted names
+  // against the filtered catalog, so enumerating whitelist-disabled tools
+  // would make every save fail, and effectiveScope.tools (the seed) is
+  // filtered too.
+  const serverToolsMap = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const s of servers) out[s.name] = [...effectiveEnabledTools(s)].sort();
+    return out;
+  }, [servers]);
+  // Servers that have not reported tools yet; a tool-axis save while one is
+  // granted would silently hide it, so the hook blocks that case.
+  const pendingInitServers = useMemo(
+    () => servers.filter((s) => !s.initialized).map((s) => s.name),
+    [servers],
+  );
+  // Descriptions from the catalog (keyed by prefixed name), best-effort.
+  const scopeToolsFor = useMemo(() => {
+    const descriptions = new Map<string, string | undefined>();
+    for (const t of toolCatalog ?? []) descriptions.set(t.name, t.description);
+    return (server: string): ScopeTool[] =>
+      (serverToolsMap[server] ?? []).map((name) => ({
+        name,
+        description: descriptions.get(`${server}${TOOL_NAME_DELIMITER}${name}`),
+      }));
+  }, [toolCatalog, serverToolsMap]);
+
+  const {
+    selected,
+    toggle,
+    selectAll,
+    clearAll,
+    canSave,
+    isSaving,
+    conflict,
+    createsBlock,
+    save,
+    toolMode,
+    customSel,
+    emptyCustomGrant,
+    toolAxisBlocked,
+    setServerToolMode,
+    toggleTool,
+    selectAllTools,
+    clearTools,
+  } = useClientScopeEditor(client, serverNames, serverToolsMap, pendingInitServers);
 
   const noneSelected = selected.size === 0;
-  // This client has an operator-authored tool-level allow-list. The server-level
-  // editor preserves it (it omits the tools axis on save); surface that so the
-  // operator knows tool restrictions are managed in stack.yaml, not here.
-  const hasToolScope = (client.effectiveScope?.tools.length ?? 0) > 0;
 
   async function handleReloadFromDisk() {
     try {
@@ -140,16 +184,9 @@ function ClientScopePane({
       </div>
       <p className="text-[11px] text-text-muted leading-relaxed">
         Choose which MCP servers <span className="text-text-secondary">{client.name}</span> can
-        reach. To deny a client entirely, leave it unlisted under a deny default
-        rather than clearing every server here.
+        reach, and optionally narrow a granted server to specific tools. To deny a client
+        entirely, leave it unlisted under a deny default rather than clearing every server here.
       </p>
-
-      {hasToolScope && (
-        <p className="text-[10px] text-text-muted/80 leading-relaxed">
-          This client has a tool-level allow-list set in stack.yaml; it is preserved when you save
-          server changes here.
-        </p>
-      )}
 
       {createsBlock && (
         <div className="flex items-start gap-2 rounded-md border border-status-pending/30 bg-status-pending/[0.06] px-3 py-2">
@@ -197,32 +234,49 @@ function ClientScopePane({
         {serverNames.map((name) => {
           const isOn = selected.has(name);
           return (
-            <button
-              key={name}
-              type="button"
-              role="checkbox"
-              aria-checked={isOn}
-              onClick={() => toggle(name)}
-              disabled={isSaving}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-highlight/40 transition-colors disabled:opacity-60"
-            >
-              <span
-                className={cn(
-                  'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
-                  isOn ? 'bg-primary/20 border-primary/60' : 'border-border/60 bg-background/50',
-                )}
+            <div key={name}>
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={isOn}
+                onClick={() => toggle(name)}
+                disabled={isSaving}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-highlight/40 transition-colors disabled:opacity-60"
               >
-                {isOn && <Check size={10} className="text-primary" aria-hidden="true" />}
-              </span>
-              <span
-                className={cn(
-                  'text-xs font-mono truncate',
-                  isOn ? 'text-text-primary' : 'text-text-secondary',
-                )}
-              >
-                {name}
-              </span>
-            </button>
+                <span
+                  className={cn(
+                    'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
+                    isOn ? 'bg-primary/20 border-primary/60' : 'border-border/60 bg-background/50',
+                  )}
+                >
+                  {isOn && <Check size={10} className="text-primary" aria-hidden="true" />}
+                </span>
+                <span
+                  className={cn(
+                    'text-xs font-mono truncate',
+                    isOn ? 'text-text-primary' : 'text-text-secondary',
+                  )}
+                >
+                  {name}
+                </span>
+              </button>
+              {/* Tool axis for a granted server: the store-agnostic All/Custom
+                  checklist the Access Lens uses, wired to this editor's
+                  controller so both surfaces share one state model. */}
+              {isOn && (
+                <ServerToolScopeGroup
+                  serverName={name}
+                  availableTools={scopeToolsFor(name)}
+                  mode={toolMode[name] ?? 'all'}
+                  selected={new Set(customSel[name] ?? [])}
+                  onModeChange={(mode) => setServerToolMode(name, mode)}
+                  onToggleTool={(tool) => toggleTool(name, tool)}
+                  onSelectAll={(visible) => selectAllTools(name, visible)}
+                  onClear={(visible) => clearTools(name, visible)}
+                  disabled={isSaving}
+                />
+              )}
+            </div>
           );
         })}
       </div>
@@ -230,6 +284,20 @@ function ClientScopePane({
       {noneSelected && (
         <p className="text-[10px] text-status-pending" role="status">
           Select at least one server to save.
+        </p>
+      )}
+
+      {emptyCustomGrant && (
+        <p className="text-[10px] text-status-pending" role="status">
+          A granted server has a Custom tool selection with nothing picked. Select at least one
+          tool, or switch it back to All.
+        </p>
+      )}
+
+      {toolAxisBlocked && (
+        <p className="text-[10px] text-status-pending" role="status">
+          A granted server has not reported its tools yet. Saving tool changes now would hide
+          that server for this client; wait for it to initialize or discard the tool edits.
         </p>
       )}
 
