@@ -101,42 +101,63 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 	return &stack, nil
 }
 
-// injectSetSecrets resolves secrets from variable sets and injects them into container env.
-// Explicit env values in YAML take precedence over set-injected values.
+// injectSetSecrets resolves secrets from variable sets and injects them into
+// container env. Explicit env values in YAML take precedence over set-injected
+// values.
+//
+// Each set entry decides its own reach: an unscoped entry fans out to every
+// server and resource (historic behavior), while a scoped entry reaches only
+// the workloads it names. Sets are applied in declaration order and an earlier
+// set wins a key collision, matching the "first writer wins" rule that already
+// gives explicit YAML env precedence.
 func injectSetSecrets(s *Stack, vault VaultSetLookup) {
-	// Collect all secrets from referenced sets
-	setSecrets := make(map[string]string)
-	for _, setName := range s.Secrets.Sets {
-		for _, sec := range vault.GetSetSecrets(setName) {
-			setSecrets[sec.Key] = sec.Value
+	// Resolve each set once; a set may be referenced by several entries only
+	// through duplicate names, which validation rejects.
+	secretsFor := make(map[string]map[string]string, len(s.Secrets.Sets))
+	for _, ref := range s.Secrets.Sets {
+		if _, done := secretsFor[ref.Name]; done {
+			continue
+		}
+		members := make(map[string]string)
+		for _, sec := range vault.GetSetSecrets(ref.Name) {
+			members[sec.Key] = sec.Value
+		}
+		secretsFor[ref.Name] = members
+	}
+
+	inject := func(env map[string]string, values map[string]string) {
+		for k, v := range values {
+			if _, exists := env[k]; !exists {
+				env[k] = v
+			}
 		}
 	}
 
-	if len(setSecrets) == 0 {
-		return
-	}
-
-	// Inject into MCP servers
 	for i := range s.MCPServers {
-		if s.MCPServers[i].Env == nil {
-			s.MCPServers[i].Env = make(map[string]string)
-		}
-		for k, v := range setSecrets {
-			if _, exists := s.MCPServers[i].Env[k]; !exists {
-				s.MCPServers[i].Env[k] = v
+		srv := &s.MCPServers[i]
+		for _, ref := range s.Secrets.Sets {
+			values := secretsFor[ref.Name]
+			if len(values) == 0 || !ref.InjectsIntoServer(srv.Name) {
+				continue
 			}
+			if srv.Env == nil {
+				srv.Env = make(map[string]string)
+			}
+			inject(srv.Env, values)
 		}
 	}
 
-	// Inject into resources
 	for i := range s.Resources {
-		if s.Resources[i].Env == nil {
-			s.Resources[i].Env = make(map[string]string)
-		}
-		for k, v := range setSecrets {
-			if _, exists := s.Resources[i].Env[k]; !exists {
-				s.Resources[i].Env[k] = v
+		res := &s.Resources[i]
+		for _, ref := range s.Secrets.Sets {
+			values := secretsFor[ref.Name]
+			if len(values) == 0 || !ref.InjectsIntoResource(res.Name) {
+				continue
 			}
+			if res.Env == nil {
+				res.Env = make(map[string]string)
+			}
+			inject(res.Env, values)
 		}
 	}
 }
@@ -262,7 +283,26 @@ func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, empt
 	}
 
 	s.References = index
+	s.UnresolvedRefs = dedupeStrings(unresolvedVault)
 	return unresolvedVault, emptyEnvVars
+}
+
+// dedupeStrings returns the input with duplicates removed, preserving first-seen
+// order so callers get a stable list.
+func dedupeStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // resolveRelativePaths resolves local source paths relative to the stack file.
