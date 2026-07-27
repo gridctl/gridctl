@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -85,6 +86,61 @@ func TestRouter_AnnotationsSurviveAggregation(t *testing.T) {
 	// and whoever adds it must extend both copy sites plus this test.
 	if got := reflect.TypeOf(Tool{}).NumField(); got != 6 {
 		t.Errorf("Tool has %d fields; update AggregatedTools, CatalogTools, and this test when adding fields", got)
+	}
+}
+
+// fakeWhitelistedClient embeds ClientBase so Tools()/AllTools() behave like a
+// real transport client: the whitelist filter applies on read and the full
+// set is retained underneath.
+type fakeWhitelistedClient struct {
+	ClientBase
+	name string
+}
+
+func (f *fakeWhitelistedClient) Name() string                       { return f.name }
+func (f *fakeWhitelistedClient) Initialize(context.Context) error   { return nil }
+func (f *fakeWhitelistedClient) RefreshTools(context.Context) error { return nil }
+func (f *fakeWhitelistedClient) CallTool(context.Context, string, map[string]any) (*ToolCallResult, error) {
+	return nil, nil
+}
+
+// TestRouter_AllCatalogToolsIncludesWhitelistedOut proves the ?include=all
+// catalog variant surfaces whitelist-disabled tools with their annotations
+// while the default catalog stays filtered.
+func TestRouter_AllCatalogToolsIncludesWhitelistedOut(t *testing.T) {
+	ann := &ToolAnnotations{DestructiveHint: boolPtr(true)}
+	c := &fakeWhitelistedClient{name: "alpha"}
+	c.SetTools([]Tool{
+		{Name: "keep", InputSchema: json.RawMessage(`{}`)},
+		{Name: "hidden", InputSchema: json.RawMessage(`{}`), Annotations: ann},
+	})
+	c.SetToolWhitelist([]string{"keep"})
+	c.SetInitialized(ServerInfo{Name: "alpha", Version: "1.0.0"})
+
+	r := NewRouter()
+	r.AddClient(c)
+	r.RefreshTools()
+
+	cat := r.CatalogTools()
+	if len(cat) != 1 || cat[0].Name != PrefixTool("alpha", "keep") {
+		t.Fatalf("CatalogTools must stay whitelist-filtered: %+v", cat)
+	}
+
+	all := r.AllCatalogTools()
+	if len(all) != 2 {
+		t.Fatalf("AllCatalogTools returned %d tools, want 2: %+v", len(all), all)
+	}
+	var hidden *Tool
+	for i := range all {
+		if all[i].Name == PrefixTool("alpha", "hidden") {
+			hidden = &all[i]
+		}
+	}
+	if hidden == nil {
+		t.Fatalf("AllCatalogTools missing the whitelist-disabled tool: %+v", all)
+	}
+	if hidden.Annotations == nil || hidden.Annotations.DestructiveHint == nil || !*hidden.Annotations.DestructiveHint {
+		t.Fatalf("AllCatalogTools dropped the disabled tool's annotations: %+v", hidden)
 	}
 }
 
