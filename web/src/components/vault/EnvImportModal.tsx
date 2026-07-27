@@ -41,6 +41,12 @@ export interface EnvImportModalProps {
   // opened by dropping a file onto the workspace. `.env` or JSON is auto-
   // detected by parseImport, so this is just the raw file text.
   initialText?: string;
+  // Rejects blank values on submit. Set when the modal is opened to fix
+  // missing variables: storing an empty value there would clear the drift
+  // warning while leaving the deploy just as broken, so the one path whose
+  // whole purpose is supplying values refuses to accept none. Ordinary
+  // imports leave this off, since an intentionally empty value is valid.
+  requireValues?: boolean;
 }
 
 interface RowOverride {
@@ -94,6 +100,7 @@ export function EnvImportModal({
   sets,
   defaultSet = '',
   initialText = '',
+  requireValues = false,
 }: EnvImportModalProps) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -253,6 +260,15 @@ export function EnvImportModal({
       setSubmitError('Nothing to import — every row is skipped.');
       return;
     }
+    if (requireValues) {
+      const blank = active.filter((r) => r.value.trim() === '');
+      if (blank.length > 0) {
+        setSubmitError(
+          `Give ${blank.length === 1 ? 'the variable' : `all ${blank.length} variables`} a value, or skip ${blank.length === 1 ? 'it' : 'them'}. An empty value would hide the warning without fixing the stack.`,
+        );
+        return;
+      }
+    }
     const invalid = active.filter((r) => !validations[r.id]?.ok);
     if (invalid.length > 0) {
       setSubmitError(
@@ -283,7 +299,7 @@ export function EnvImportModal({
     } finally {
       setSubmitting(false);
     }
-  }, [rows, validations, onImport, onClose]);
+  }, [rows, validations, requireValues, onImport, onClose]);
 
   return (
     <div
