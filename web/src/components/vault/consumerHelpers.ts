@@ -73,6 +73,33 @@ function describeField(field: string): string {
   return `field ${field}`;
 }
 
+// consumerReachesWorkload reports whether a consumer means "this variable
+// reaches the named server or resource". It backs the Stack deep-link
+// (?filter=server:<name>), which asks what a workload actually consumes.
+//
+// Three ways that is true, and missing any of them under-reports:
+//   - an explicit ${var:KEY} written on that workload
+//   - a scoped secrets.sets entry naming it as a target
+//   - an unscoped secrets.sets entry, which reaches every workload
+//
+// Stack-level sites (gateway, network, stack) belong to no workload.
+export function consumerReachesWorkload(c: Consumer, workload: string): boolean {
+  if (c.kind === 'secrets-set') {
+    return c.target ? c.target === workload : true;
+  }
+  return (
+    (c.kind === 'mcp-server' || c.kind === 'resource') && c.name === workload
+  );
+}
+
+// consumerSearchText is the text a consumer contributes to list search: the
+// site or set name, the workload a scoped entry targets, and the YAML field
+// path. Without the target, searching a server name would miss variables that
+// only reach it through a scoped set.
+export function consumerSearchText(c: Consumer): string {
+  return [c.name, c.target, c.field].filter(Boolean).join(' ').toLowerCase();
+}
+
 // consumerCount is the "used by N" figure. It counts a scoped set once rather
 // than once per workload it reaches, so tightening a set's scope never makes a
 // variable look more heavily used than leaving it to fan out.
