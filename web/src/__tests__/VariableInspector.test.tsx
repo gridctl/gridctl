@@ -69,6 +69,12 @@ describe('VariableInspector — overview state', () => {
     expect(screen.getByText(/drop a \.env or \.json file/i)).toBeInTheDocument();
   });
 
+  it('shows the Unreferenced stat as unknown when usage failed to load', () => {
+    render(<VariableInspector {...makeProps({ usageLoaded: false })} />);
+    const row = screen.getByText('Unreferenced').closest('div');
+    expect(row).toHaveTextContent('—');
+  });
+
   it('notes the locked vault instead of stats', () => {
     render(
       <VariableInspector {...makeProps({ allVariables: null, locked: true })} />,
@@ -102,11 +108,45 @@ describe('VariableInspector — usage section', () => {
     const props = makeProps({ variable: SECRET_VAR, consumers: [] });
     render(<VariableInspector {...props} />);
     expect(screen.getByText(/not referenced by/i)).toBeInTheDocument();
-    expect(screen.getByText(/secrets\.sets/)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: /delete this variable/i }),
     );
     expect(props.onDelete).toHaveBeenCalledWith('API_KEY');
+  });
+
+  it('shows a set-injection consumer instead of the orphan callout', () => {
+    const setConsumer: Consumer = {
+      kind: 'secrets-set',
+      name: 'dev',
+      field: 'secrets.sets',
+    };
+    render(
+      <VariableInspector
+        {...makeProps({ variable: SECRET_VAR, consumers: [setConsumer] })}
+      />,
+    );
+    expect(screen.getByText(/set: dev · injected into server env/)).toBeInTheDocument();
+    expect(screen.queryByText(/not referenced by/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /delete this variable/i }),
+    ).not.toBeInTheDocument();
+    // Set injection has no canvas node, so it must not offer Jump to Stack.
+    expect(
+      screen.queryByRole('button', { name: /jump to stack/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('suppresses the orphan callout when usage is unknown', () => {
+    const props = makeProps({
+      variable: SECRET_VAR,
+      consumers: [],
+      usageLoaded: false,
+    });
+    render(<VariableInspector {...props} />);
+    expect(screen.getByText(/usage unknown/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /delete this variable/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -191,6 +231,7 @@ describe('VariableInspector — edit mode', () => {
     const props = makeProps({ variable: SECRET_VAR });
     render(<VariableInspector {...props} />);
     fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
 
     const input = screen.getByPlaceholderText('secret value');
     fireEvent.change(input, { target: { value: 'next-value' } });
@@ -207,10 +248,123 @@ describe('VariableInspector — edit mode', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('cancels editing without saving', () => {
+  it('seeds the edit form with the fetched value for an unrevealed secret', async () => {
     const props = makeProps({ variable: SECRET_VAR });
     render(<VariableInspector {...props} />);
     fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
+
+    // The stored value is fetched (never an empty seed) so an untouched save
+    // can't silently wipe the secret. The input stays masked (type=password).
+    expect(props.getValue).toHaveBeenCalledWith('API_KEY');
+    const input = screen.getByPlaceholderText<HTMLInputElement>('secret value');
+    expect(input.value).toBe('s3cret-value');
+    expect(input.type).toBe('password');
+  });
+
+  it('saves an explicit empty string value', async () => {
+    const props = makeProps({ variable: SECRET_VAR });
+    render(<VariableInspector {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
+
+    const input = screen.getByPlaceholderText('secret value');
+    fireEvent.change(input, { target: { value: '' } });
+    const save = screen.getByRole('button', { name: /^save$/i });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    await flush();
+
+    expect(props.onUpdate).toHaveBeenCalledWith('API_KEY', {
+      value: '',
+      type: 'string',
+      isSecret: true,
+    });
+  });
+
+  it('saves a changed type and secret flag', async () => {
+    const props = makeProps({ variable: SECRET_VAR });
+    render(<VariableInspector {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
+
+    fireEvent.click(screen.getByRole('button', { name: /plaintext/i }));
+    // Secret → plaintext warns that the value becomes visible.
+    expect(
+      screen.getByText(/switching to plaintext displays this value/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    await flush();
+
+    expect(props.onUpdate).toHaveBeenCalledWith('API_KEY', {
+      value: 's3cret-value',
+      type: 'string',
+      isSecret: false,
+    });
+  });
+
+  it('validates against the newly selected type', async () => {
+    const props = makeProps({ variable: SECRET_VAR });
+    render(<VariableInspector {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
+
+    // "s3cret-value" is not a number, so switching the type disables Save.
+    fireEvent.click(screen.getByRole('button', { name: /^number$/i }));
+    await flush();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
+  });
+
+  it('drops an in-flight edit seed when the selection moves away', async () => {
+    let resolveValue: (v: { value: string }) => void = () => {};
+    const getValue = vi.fn().mockImplementation(
+      () =>
+        new Promise<{ value: string }>((res) => {
+          resolveValue = res;
+        }),
+    );
+    const props = makeProps({ variable: SECRET_VAR, getValue });
+    const { rerender } = render(<VariableInspector {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+
+    // Switch to another variable while the seed fetch is in flight, then let
+    // it resolve. The form must not open under the new variable carrying the
+    // old variable's value.
+    rerender(<VariableInspector {...props} variable={PLAIN_VAR} />);
+    await act(async () => {
+      resolveValue({ value: 'crossed-secret' });
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.queryByRole('button', { name: /^save$/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('crossed-secret')).not.toBeInTheDocument();
+  });
+
+  it('restores the seeded value after a bool type round-trip', async () => {
+    const props = makeProps({ variable: SECRET_VAR });
+    render(<VariableInspector {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
+
+    fireEvent.click(screen.getByRole('button', { name: /^bool$/i }));
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /^string$/i }));
+    await flush();
+
+    // Round-tripping through bool must not leave a blank the next Save would
+    // persist as an empty value.
+    const input = screen.getByPlaceholderText<HTMLInputElement>('secret value');
+    expect(input.value).toBe('s3cret-value');
+  });
+
+  it('cancels editing without saving', async () => {
+    const props = makeProps({ variable: SECRET_VAR });
+    render(<VariableInspector {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
     fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
     expect(props.onUpdate).not.toHaveBeenCalled();
     expect(
@@ -218,10 +372,11 @@ describe('VariableInspector — edit mode', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('cancels editing on Escape without clearing the selection', () => {
+  it('cancels editing on Escape without clearing the selection', async () => {
     const props = makeProps({ variable: SECRET_VAR });
     render(<VariableInspector {...props} />);
     fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
     fireEvent.keyDown(screen.getByPlaceholderText('secret value'), {
       key: 'Escape',
     });
@@ -242,6 +397,46 @@ describe('VariableInspector — properties and actions', () => {
       target: { value: 'prod' },
     });
     expect(props.onAssignSet).toHaveBeenCalledWith('IMAGE_TAG', 'prod');
+  });
+
+  it('unassigns from the current set via the Unassigned option', () => {
+    const props = makeProps({ variable: PLAIN_VAR });
+    render(<VariableInspector {...props} />);
+    fireEvent.change(screen.getByLabelText('Move to set'), {
+      target: { value: '__unassign__' },
+    });
+    expect(props.onAssignSet).toHaveBeenCalledWith('IMAGE_TAG', '');
+  });
+
+  it('confirms before unassigning from a set injected via secrets.sets', async () => {
+    const setConsumer: Consumer = {
+      kind: 'secrets-set',
+      name: 'dev',
+      field: 'secrets.sets',
+    };
+    const props = makeProps({
+      variable: PLAIN_VAR,
+      consumers: [setConsumer],
+      usage: { IMAGE_TAG: [setConsumer] },
+    });
+    render(<VariableInspector {...props} />);
+    fireEvent.change(screen.getByLabelText('Move to set'), {
+      target: { value: '__unassign__' },
+    });
+    // Nothing happens until the dialog is confirmed.
+    expect(props.onAssignSet).not.toHaveBeenCalled();
+    fireEvent.click(
+      await screen.findByRole('button', { name: /remove from set/i }),
+    );
+    expect(props.onAssignSet).toHaveBeenCalledWith('IMAGE_TAG', '');
+  });
+
+  it('offers the move select even when no other sets exist', () => {
+    const props = makeProps({ variable: PLAIN_VAR, setNames: ['dev'] });
+    render(<VariableInspector {...props} />);
+    // PLAIN_VAR is in "dev", the only set — the select still renders so the
+    // variable can be unassigned.
+    expect(screen.getByLabelText('Move to set')).toBeInTheDocument();
   });
 
   it('rotates a string secret behind a confirmation', async () => {
