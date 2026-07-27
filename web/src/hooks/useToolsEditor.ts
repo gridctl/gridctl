@@ -11,10 +11,14 @@ import {
   SetServerToolsError,
 } from '../lib/api';
 import { useFuzzySearch } from './useFuzzySearch';
+import type { ToolAnnotations } from '../types';
 
 export interface ToolRow {
   name: string;
   description?: string;
+  // Server-reported MCP annotations from the catalog (undefined when the
+  // tool declares none or the catalog has no entry for it).
+  annotations?: ToolAnnotations;
 }
 
 // canonicalWhitelist normalizes a selection into the wire form: a sorted,
@@ -94,18 +98,27 @@ export function useToolsEditor(
   // persisted in the YAML.
   const allTools: ToolRow[] = useMemo(() => {
     const prefix = `${serverName}${TOOL_NAME_DELIMITER}`;
-    const descriptions = new Map<string, string | undefined>();
+    const catalogInfo = new Map<
+      string,
+      { description?: string; annotations?: ToolAnnotations }
+    >();
     for (const t of catalog ?? []) {
       if (t.name.startsWith(prefix)) {
-        descriptions.set(t.name.slice(prefix.length), t.description);
+        catalogInfo.set(t.name.slice(prefix.length), {
+          description: t.description,
+          annotations: t.annotations,
+        });
       }
     }
     const rows = new Map<string, ToolRow>();
     for (const name of serverTools ?? []) {
-      rows.set(name, { name, description: descriptions.get(name) });
+      const info = catalogInfo.get(name);
+      rows.set(name, { name, description: info?.description, annotations: info?.annotations });
     }
-    for (const [name, description] of descriptions) {
-      if (!rows.has(name)) rows.set(name, { name, description });
+    for (const [name, info] of catalogInfo) {
+      if (!rows.has(name)) {
+        rows.set(name, { name, description: info.description, annotations: info.annotations });
+      }
     }
     for (const name of savedTools) {
       if (!rows.has(name)) rows.set(name, { name });
