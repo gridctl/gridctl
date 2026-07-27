@@ -39,7 +39,11 @@ import { useListNav } from '../../hooks/useListNav';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { usePageFileDrop } from '../../hooks/usePageFileDrop';
 import { isImportableFile } from '../../lib/parseFile';
-import { navigationTarget } from '../vault/consumerHelpers';
+import {
+  consumerCount,
+  describeSetInjection,
+  navigationTarget,
+} from '../vault/consumerHelpers';
 import {
   countByRefFilter,
   filterVariablesByRef,
@@ -58,6 +62,10 @@ const UNASSIGNED_SET_KEY = '__none__';
 // (sessionStorage survives route changes and reloads within the tab, but not
 // a new session) — deliberately not persisted, so the nudge returns.
 const UNENCRYPTED_BANNER_DISMISSED_KEY = 'gridctl-vault-unencrypted-dismissed';
+// The drift banner's dismissal is keyed to the exact set of missing keys, not
+// to the banner itself: a later, different missing key is new information and
+// has to surface again. The unencrypted banner it borrows from is a binary
+// condition, so one flag is enough there.
 const DRIFT_BANNER_DISMISSED_KEY = 'gridctl-vault-drift-dismissed';
 
 function isBannerDismissed(storageKey: string): boolean {
@@ -215,10 +223,16 @@ export function VaultWorkspace() {
   const [showUnencryptedBanner, setShowUnencryptedBanner] = useState(
     () => !isBannerDismissed(UNENCRYPTED_BANNER_DISMISSED_KEY),
   );
-  const [showDriftBanner, setShowDriftBanner] = useState(
-    () => !isBannerDismissed(DRIFT_BANNER_DISMISSED_KEY),
-  );
+  const [dismissedDriftKeys, setDismissedDriftKeys] = useState(() => {
+    try {
+      return sessionStorage.getItem(DRIFT_BANNER_DISMISSED_KEY) ?? '';
+    } catch {
+      return '';
+    }
+  });
   const [importOpen, setImportOpen] = useState(false);
+  // Set only for the drift "Create" path, which must not accept blank values.
+  const [requireImportValues, setRequireImportValues] = useState(false);
   // Content seeded into the import modal when it's opened by a file drop.
   const [droppedText, setDroppedText] = useState('');
   const [addOneOpen, setAddOneOpen] = useState(false);
@@ -264,6 +278,13 @@ export function VaultWorkspace() {
     }
     return filteredByServer.filter((v) => v.set === activeSet);
   }, [filteredByServer, activeSet]);
+
+  // Stable signature of the current missing-key set, compared against what the
+  // operator already dismissed this session.
+  const driftSignature = useMemo(
+    () => drift.map((d) => d.key).sort().join(','),
+    [drift],
+  );
 
   // Consumption class (explicit / set-injected / unreferenced). Inert while
   // the usage index is unknown, so a failed fetch never reads as "nothing is
@@ -477,6 +498,7 @@ export function VaultWorkspace() {
   const closeImport = useCallback(() => {
     setImportOpen(false);
     setDroppedText('');
+    setRequireImportValues(false);
   }, []);
 
   // Selecting a consumer jumps to Stack with its canvas node selected and the
@@ -504,6 +526,7 @@ export function VaultWorkspace() {
   // second create-many flow. Values are left blank for the operator to fill.
   const handleCreateMissing = useCallback(() => {
     setDroppedText(drift.map((d) => `${d.key}=`).join('\n'));
+    setRequireImportValues(true);
     setImportOpen(true);
   }, [drift]);
 
@@ -606,16 +629,25 @@ export function VaultWorkspace() {
               {/* Drift: the stack references keys the store has no entry for.
                   Gated on a loaded usage index because a locked or unknown
                   vault cannot answer membership. */}
-              {showDriftBanner && usageLoaded && drift.length > 0 && (
+              {usageLoaded &&
+                drift.length > 0 &&
+                dismissedDriftKeys !== driftSignature && (
                 <MissingVariablesBanner
                   keys={drift.map((d) => d.key)}
                   onCreate={handleCreateMissing}
                   onDismiss={() => {
-                    markBannerDismissed(DRIFT_BANNER_DISMISSED_KEY);
-                    setShowDriftBanner(false);
+                    try {
+                      sessionStorage.setItem(
+                        DRIFT_BANNER_DISMISSED_KEY,
+                        driftSignature,
+                      );
+                    } catch {
+                      // sessionStorage may be unavailable; the banner returns.
+                    }
+                    setDismissedDriftKeys(driftSignature);
                   }}
                 />
-              )}
+                )}
               {serverFilter && (
                 <ServerFilterBanner
                   serverName={serverFilter}
@@ -750,16 +782,18 @@ export function VaultWorkspace() {
             <p>
               Delete <span className="font-mono text-primary">{confirmDelete}</span>?
             </p>
-            {confirmDelete && (usage[confirmDelete]?.length ?? 0) > 0 && (
+            {confirmDelete && consumerCount(usage[confirmDelete]) > 0 && (
               <p className="mt-2 px-2.5 py-2 rounded-md bg-status-error/10 border border-status-error/20 text-[11px] text-status-error">
-                Used by {usage[confirmDelete].length}{' '}
-                {usage[confirmDelete].length === 1 ? 'consumer' : 'consumers'} in
-                the active stack. Deleting it may break{' '}
-                {usage[confirmDelete].length === 1 ? 'it' : 'them'}.
-                {usage[confirmDelete].some((c) => c.kind === 'secrets-set') && (
+                Used by {consumerCount(usage[confirmDelete])}{' '}
+                {consumerCount(usage[confirmDelete]) === 1
+                  ? 'consumer'
+                  : 'consumers'}{' '}
+                in the active stack. Deleting it may break{' '}
+                {consumerCount(usage[confirmDelete]) === 1 ? 'it' : 'them'}.
+                {describeSetInjection(usage[confirmDelete]) && (
                   <>
                     {' '}
-                    This variable is injected into every server env via{' '}
+                    {describeSetInjection(usage[confirmDelete])} via{' '}
                     <code className="font-mono">secrets.sets</code>.
                   </>
                 )}
@@ -812,6 +846,7 @@ export function VaultWorkspace() {
               : activeSet
           }
           initialText={droppedText}
+          requireValues={requireImportValues}
         />
       )}
 
@@ -1191,7 +1226,7 @@ function VariableList({
               ? SECRET_PREVIEW
               : (revealed[variable.key] ?? '•••')
           }
-          consumerCount={(usage[variable.key] ?? []).length}
+          consumerCount={consumerCount(usage[variable.key])}
           compact={compact}
         />
       ))}
