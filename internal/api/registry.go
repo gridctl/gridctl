@@ -23,18 +23,75 @@ func (s *Server) handleRegistryStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.registryServer.Store().Status())
 }
 
+// registrySkillListItem is the list projection of a skill: every field the
+// catalog UI filters, sorts, groups, or badges on, and nothing else.
+//
+// The Markdown body is the entire reason this type exists. It is by far the
+// largest field on a skill (on an 89-skill registry, ~860 KB of a ~970 KB
+// response) and nothing in a list view reads it: search matches name and
+// description. Serving it on a list the web UI polls every few seconds cost
+// about a gigabyte an hour and a full Markdown-sized JSON parse per cycle. The
+// surfaces that do render instructions fetch the single skill on demand; a
+// caller that wants the original shape passes ?full=1.
+type registrySkillListItem struct {
+	Name               string                 `json:"name"`
+	Description        string                 `json:"description"`
+	License            string                 `json:"license,omitempty"`
+	Compatibility      string                 `json:"compatibility,omitempty"`
+	Metadata           registry.SkillMetadata `json:"metadata,omitempty"`
+	AllowedTools       string                 `json:"allowedTools,omitempty"`
+	AcceptanceCriteria []string               `json:"acceptanceCriteria,omitempty"`
+	State              registry.ItemState     `json:"state"`
+	FileCount          int                    `json:"fileCount"`
+	Dir                string                 `json:"dir,omitempty"`
+}
+
+// newRegistrySkillListItem projects one skill into its list shape.
+func newRegistrySkillListItem(sk *registry.AgentSkill) registrySkillListItem {
+	return registrySkillListItem{
+		Name:               sk.Name,
+		Description:        sk.Description,
+		License:            sk.License,
+		Compatibility:      sk.Compatibility,
+		Metadata:           sk.Metadata,
+		AllowedTools:       sk.AllowedTools,
+		AcceptanceCriteria: sk.AcceptanceCriteria,
+		State:              sk.State,
+		FileCount:          sk.FileCount,
+		Dir:                sk.Dir,
+	}
+}
+
 // handleRegistrySkillsList returns all skills.
+//
+// The default response omits each skill's Markdown body (see
+// registrySkillListItem). Pass ?full=1 to get the unprojected skills, bodies
+// included, for callers that were built against the original shape.
+//
 // GET /api/registry/skills
-func (s *Server) handleRegistrySkillsList(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleRegistrySkillsList(w http.ResponseWriter, r *http.Request) {
 	if s.registryServer == nil {
 		writeJSONError(w, "Registry not available", http.StatusServiceUnavailable)
 		return
 	}
 	skills := s.registryServer.Store().ListSkills()
-	if skills == nil {
-		skills = []*registry.AgentSkill{}
+
+	if r.URL.Query().Get("full") == "1" {
+		if skills == nil {
+			skills = []*registry.AgentSkill{}
+		}
+		writeJSON(w, skills)
+		return
 	}
-	writeJSON(w, skills)
+
+	items := make([]registrySkillListItem, 0, len(skills))
+	for _, sk := range skills {
+		if sk == nil {
+			continue
+		}
+		items = append(items, newRegistrySkillListItem(sk))
+	}
+	writeJSON(w, items)
 }
 
 // handleRegistrySkillCreate creates a new skill.
