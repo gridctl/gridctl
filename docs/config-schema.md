@@ -360,9 +360,10 @@ explicitly empty scope (`servers: []`) means "no workloads", not "all
 workloads", and is reported as an error because a set that injects nowhere is
 almost always an unfinished edit.
 
-Two entries may not name the same set. Where a scoped and an unscoped entry
-both reach a workload, the earlier entry wins a key collision, matching the
-rule that explicit `env` values in the stack file beat injected ones.
+Sets are applied in the order they are listed, and the first entry to supply a
+key wins, matching the rule that explicit `env` values in the stack file beat
+injected ones. In practice a key belongs to at most one set, so entries cannot
+collide; the order only matters if the same set is listed twice.
 
 The Variables workspace reflects scoping: a scoped set's variables list the
 workloads they actually reach, and each one links to that node on the Stack
