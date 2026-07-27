@@ -152,11 +152,6 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   setCommandPaletteOpen: (open: boolean) => void;
   toggleCommandPalette: () => void;
 
-  // Vault panel visibility (lifted from Header local state for command palette access)
-  showVault: boolean;
-  setShowVault: (show: boolean) => void;
-  toggleVault: () => void;
-
   // Per-client access editor: opened from the Stack inspector ("Edit Scope")
   // seeded to a specific client. Transient (not persisted).
   accessEditorOpen: boolean;
@@ -364,10 +359,6 @@ export const useUIStore = create<UIState>()(
 
       setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
       toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
-
-      showVault: false,
-      setShowVault: (showVault) => set({ showVault }),
-      toggleVault: () => set((s) => ({ showVault: !s.showVault })),
 
       openAccessEditor: (slug) =>
         set({ accessEditorOpen: true, accessEditorSeedSlug: slug ?? null }),
