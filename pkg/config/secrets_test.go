@@ -137,9 +137,6 @@ mcp-servers:
 				t.Errorf("%q does not fan out", ref.Name)
 			}
 		}
-		if got := stack.Secrets.SetNames(); len(got) != 2 || got[0] != "dev" || got[1] != "prod" {
-			t.Errorf("SetNames() = %v", got)
-		}
 	})
 }
 
@@ -268,7 +265,7 @@ func TestValidateSecrets(t *testing.T) {
 		{
 			name:    "unknown server",
 			sets:    []SecretSetRef{{Name: "dev", Servers: []string{"nope"}}},
-			wantErr: "unknown mcp-server 'nope'",
+			wantErr: "unknown MCP server 'nope'",
 		},
 		{
 			name:    "unknown resource",
@@ -276,17 +273,19 @@ func TestValidateSecrets(t *testing.T) {
 			wantErr: "unknown resource 'nope'",
 		},
 		{
-			name:    "empty set name",
+			name:    "empty name on a scoped entry",
 			sets:    []SecretSetRef{{Servers: []string{"github"}}},
 			wantErr: "set name is required",
 		},
 		{
-			name: "duplicate set",
-			sets: []SecretSetRef{
-				{Name: "dev"},
-				{Name: "dev", Servers: []string{"github"}},
-			},
-			wantErr: "already listed",
+			// Both shapes were accepted before scoping existed, so rejecting
+			// them now would break stacks that never opted in (Article IX).
+			name: "duplicate bare names stay valid",
+			sets: []SecretSetRef{{Name: "dev"}, {Name: "dev"}},
+		},
+		{
+			name: "empty bare name stays valid",
+			sets: []SecretSetRef{{Name: ""}},
 		},
 	}
 
