@@ -24,7 +24,6 @@ interface HeaderProps {
 
 export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const navigate = useNavigate();
-  const gatewayInfo = useStackStore((s) => s.gatewayInfo);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
@@ -107,18 +106,14 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       {/* Subtle gradient line at top */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
-      {/* Left: Logo & Version + Workspace Switcher */}
+      {/* Left: Logo + Workspace Switcher. The gateway version is deliberately
+          absent here. It is a property of the gateway reported over
+          /api/status, not of the UI shell, so it belongs with the gateway's
+          other properties on the canvas node and inspector sidebar rather than
+          beside the wordmark. */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-3">
-          {/* Brand Logo — inline so "ctl" follows the theme (readable on light) */}
-          <LogoWordmark className="h-10 w-auto block" />
-          {/* Version */}
-          {gatewayInfo?.version && (
-            <span className="text-xs font-mono text-text-muted tracking-wide">
-              {gatewayInfo.version}
-            </span>
-          )}
-        </div>
+        {/* Brand Logo — inline so "ctl" follows the theme (readable on light) */}
+        <LogoWordmark className="h-10 w-auto block" />
         <WorkspaceSwitcher />
       </div>
 
