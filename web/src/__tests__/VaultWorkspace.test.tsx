@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import '@testing-library/jest-dom';
 import { VaultWorkspace } from '../components/workspaces/VaultWorkspace';
@@ -944,5 +944,50 @@ describe('VaultWorkspace — consumption chips', () => {
     // Every variable stays visible rather than reading as unreferenced.
     expect(screen.getByText('EXPLICIT')).toBeInTheDocument();
     expect(screen.getByText('INJECTED')).toBeInTheDocument();
+  });
+});
+
+describe('VaultWorkspace — drift create requires real values', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: true,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue([]);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue({});
+    vi.mocked(api.fetchVariableDrift).mockResolvedValue([
+      { key: 'MISSING_KEY', consumers: [] },
+    ]);
+    useVaultStore.setState({
+      variables: [],
+      sets: [],
+      usage: {},
+      usageLoaded: true,
+      drift: [{ key: 'MISSING_KEY', consumers: [] }],
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: true,
+    });
+  });
+
+  it('refuses to import a blank value from the drift path', async () => {
+    // Storing an empty value would clear the warning while leaving the deploy
+    // just as broken, so the path whose purpose is supplying values must not
+    // accept none.
+    renderVault();
+    fireEvent.click(await screen.findByRole('button', { name: /create/i }));
+    await screen.findByDisplayValue(/MISSING_KEY=/);
+
+    const dialog = screen.getByRole('dialog');
+    const submit = within(dialog)
+      .getAllByRole('button')
+      .find((b) => /^import\b/i.test(b.textContent ?? ''));
+    fireEvent.click(submit!);
+
+    expect(await screen.findByText(/an empty value would hide the warning/i))
+      .toBeInTheDocument();
+    expect(api.importVariables).not.toHaveBeenCalled();
   });
 });
