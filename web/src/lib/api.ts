@@ -1038,6 +1038,10 @@ export interface Variable {
   type: VariableType;
   is_secret: boolean;
   set?: string;
+  // RFC3339 stamp of the last value change (rotation or manual edit). Absent
+  // means unknown, not never: variables untouched since the field shipped
+  // carry no stamp, so render the absence as unknown rather than a date.
+  last_rotated?: string;
 }
 
 export interface VariableSet {
@@ -1069,6 +1073,31 @@ export interface Consumer {
   kind: ConsumerKind;
   name?: string;
   field: string;
+  // Set only on 'secrets-set' consumers built from a *scoped* set: the
+  // workload that entry injects into, and whether it is a server or a
+  // resource. One such consumer exists per receiving workload. An unscoped
+  // set fans out and leaves both empty.
+  //
+  // `name` keeps holding the set name in every case, so callers asking "is
+  // this variable's own set injected" still compare against `name`.
+  target?: string;
+  targetKind?: ConsumerKind;
+}
+
+// DriftEntry is a ${var:KEY} reference in the stack that no stored variable
+// satisfies. References carrying a default (${var:KEY:-fallback}) are valid
+// config and never appear here. The backend decides, so the UI cannot invent
+// a second, looser definition of "missing".
+export interface DriftEntry {
+  key: string;
+  consumers: Consumer[];
+}
+
+// fetchVariableDrift lists stack references to variables that do not exist.
+// Keys and reference sites only, never values. A locked vault returns an empty
+// list (membership is uncheckable while locked) rather than flagging everything.
+export async function fetchVariableDrift(): Promise<DriftEntry[]> {
+  return fetchJSON<DriftEntry[]>('/api/var/drift');
 }
 
 // fetchVariableUsage returns the usage index for the active stack: each variable
