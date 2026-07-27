@@ -1,0 +1,59 @@
+# Scoped Variable Sets Example
+#
+# Narrows a variable set to the workloads that actually need it, instead of
+# injecting every member into every container. A set listed as a bare name
+# still fans out to everything, so scoping is opt-in per entry.
+#
+# A scoped entry reaches exactly what it names and nothing else: listing
+# `servers:` alone injects into those servers and into no resources at all.
+#
+# Prerequisites:
+#   gridctl var sets create github-creds
+#   gridctl var sets create db-creds
+#   gridctl var sets create shared
+#   gridctl var set GITHUB_PERSONAL_ACCESS_TOKEN --set github-creds
+#   gridctl var set POSTGRES_PASSWORD            --set db-creds
+#   gridctl var set LOG_LEVEL --value info --set shared --plaintext
+#
+# Usage:
+#   gridctl apply examples/secrets-vault/var-sets-scoped.yaml
+#
+# Verify which workloads receive each variable in the Variables workspace:
+# a scoped set lists the servers and resources it reaches, and each one links
+# to that node on the Stack canvas.
+
+version: "1"
+name: var-sets-scoped
+
+secrets:
+  sets:
+    # Unscoped: every server and every resource receives these.
+    - shared
+
+    # Scoped: only the github server sees the token. The browser automation
+    # server below never has it in its environment.
+    - name: github-creds
+      servers:
+        - github
+
+    # Scoped to a resource. The MCP servers never see the database password.
+    - name: db-creds
+      resources:
+        - postgres
+
+mcp-servers:
+  - name: github
+    image: ghcr.io/github/github-mcp-server:latest
+    transport: stdio
+
+  # Needs no credentials at all, and with scoping it receives none beyond the
+  # shared set.
+  - name: playwright
+    command:
+      - npx
+      - "@playwright/mcp@latest"
+
+resources:
+  - name: postgres
+    image: postgres:16
+    port: 5432
