@@ -111,8 +111,9 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 // set wins a key collision, matching the "first writer wins" rule that already
 // gives explicit YAML env precedence.
 func injectSetSecrets(s *Stack, vault VaultSetLookup) {
-	// Resolve each set once; a set may be referenced by several entries only
-	// through duplicate names, which validation rejects.
+	// Resolve each set once. A name can still repeat here when every
+	// occurrence is bare (validation allows that for back-compat), which is
+	// idempotent: the same members, the same fan-out.
 	secretsFor := make(map[string]map[string]string, len(s.Secrets.Sets))
 	for _, ref := range s.Secrets.Sets {
 		if _, done := secretsFor[ref.Name]; done {
