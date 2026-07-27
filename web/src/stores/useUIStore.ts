@@ -4,6 +4,12 @@ import { persist } from 'zustand/middleware';
 import { WORKSPACES, type Workspace } from '../types/workspace';
 import { DEFAULT_THEME_MODE, isThemeMode, type ThemeMode } from '../themes/types';
 import { DEFAULT_LOG_WINDOW, LOG_WINDOW_SIZES } from '../components/log/logTypes';
+import {
+  isAuditFilter,
+  isToolSortMode,
+  type AuditFilter,
+  type ToolSortMode,
+} from '../lib/toolSort';
 
 type SidebarTab = 'details' | 'tools' | 'logs';
 type EdgeStyle = 'default' | 'straight'; // 'default' = Bezier curves
@@ -177,6 +183,11 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // Pins workspace view preferences. Persisted; URL params always win.
   pinsPrefs: PinsPrefs;
   setPinsPrefs: (prefs: Partial<PinsPrefs>) => void;
+
+  // Tools workspace list preferences (audit filter, sort, risk facet).
+  // Persisted; URL params always win.
+  toolsPrefs: ToolsPrefs;
+  setToolsPrefs: (prefs: Partial<ToolsPrefs>) => void;
 }
 
 interface TracesPrefs {
@@ -267,6 +278,30 @@ function normalizePinsPrefs(value: unknown): PinsPrefs {
   };
 }
 
+export interface ToolsPrefs {
+  /** Audit-state filter chip (only bites while Audit Mode is on). */
+  filter: AuditFilter;
+  /** List sort mode ('default' = server-advertised order). */
+  sort: ToolSortMode;
+  /** Risk facet: only tools reported destructive by their server. */
+  destructiveOnly: boolean;
+}
+
+const TOOLS_PREFS_DEFAULTS: ToolsPrefs = {
+  filter: 'all',
+  sort: 'default',
+  destructiveOnly: false,
+};
+
+function normalizeToolsPrefs(value: unknown): ToolsPrefs {
+  const v = (value ?? {}) as Partial<ToolsPrefs>;
+  return {
+    filter: isAuditFilter(v.filter) ? v.filter : 'all',
+    sort: isToolSortMode(v.sort) ? v.sort : 'default',
+    destructiveOnly: typeof v.destructiveOnly === 'boolean' ? v.destructiveOnly : false,
+  };
+}
+
 export const useUIStore = create<UIState>()(
   persist(
     (set, get, store) => ({
@@ -353,6 +388,10 @@ export const useUIStore = create<UIState>()(
       setPinsPrefs: (prefs) =>
         set((s) => ({ pinsPrefs: { ...s.pinsPrefs, ...prefs } })),
 
+      toolsPrefs: { ...TOOLS_PREFS_DEFAULTS },
+      setToolsPrefs: (prefs) =>
+        set((s) => ({ toolsPrefs: { ...s.toolsPrefs, ...prefs } })),
+
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
       setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
@@ -383,6 +422,7 @@ export const useUIStore = create<UIState>()(
         tracesPrefs: state.tracesPrefs,
         logsPrefs: state.logsPrefs,
         pinsPrefs: state.pinsPrefs,
+        toolsPrefs: state.toolsPrefs,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<UIState> | undefined;
@@ -398,6 +438,7 @@ export const useUIStore = create<UIState>()(
           tracesPrefs: normalizeTracesPrefs((p as { tracesPrefs?: unknown })?.tracesPrefs),
           logsPrefs: normalizeLogsPrefs((p as { logsPrefs?: unknown })?.logsPrefs),
           pinsPrefs: normalizePinsPrefs((p as { pinsPrefs?: unknown })?.pinsPrefs),
+          toolsPrefs: normalizeToolsPrefs((p as { toolsPrefs?: unknown })?.toolsPrefs),
         };
       },
     }
