@@ -1640,6 +1640,13 @@ func (g *Gateway) HandleToolsCatalog() (*ToolsListResult, error) {
 	return &ToolsListResult{Tools: g.router.CatalogTools()}, nil
 }
 
+// HandleToolsCatalogAll is HandleToolsCatalog over the pre-whitelist tool
+// set, so the management UI keeps descriptions, schemas, and annotations for
+// whitelist-disabled tools. Informational only, same as the filtered catalog.
+func (g *Gateway) HandleToolsCatalogAll() (*ToolsListResult, error) {
+	return &ToolsListResult{Tools: g.router.AllCatalogTools()}, nil
+}
+
 // HandleToolsCall routes a tool call to the appropriate MCP server.
 // When code mode is active and the tool is a meta-tool, delegates to code mode.
 func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*ToolCallResult, error) {
