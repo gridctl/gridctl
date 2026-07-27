@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { coldWindowCaveat, isUsageWindowCold, MIN_OBSERVATION_MS } from '../lib/skillUsage';
+import {
+  coldWindowCaveat,
+  isStaleUsage,
+  isUsageWindowCold,
+  isWindowLongerThanTracking,
+  staleUnknownReason,
+  MIN_OBSERVATION_MS,
+} from '../lib/skillUsage';
 import type { SkillUsageResponse } from '../types';
 
 const NOW = Date.parse('2026-07-27T12:00:00Z');
@@ -58,5 +65,72 @@ describe('coldWindowCaveat', () => {
 
   it('falls back to a no-start-recorded explanation when observedSince is absent', () => {
     expect(coldWindowCaveat(usage(null), NOW)).toContain('no recorded start');
+  });
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+
+describe('isWindowLongerThanTracking', () => {
+  it('is true when nothing was returned', () => {
+    expect(isWindowLongerThanTracking(null, 7 * DAY, NOW)).toBe(true);
+  });
+
+  it('is true when observedSince is missing or unparseable', () => {
+    expect(isWindowLongerThanTracking(usage(null), 7 * DAY, NOW)).toBe(true);
+    expect(isWindowLongerThanTracking(usage('nope'), 7 * DAY, NOW)).toBe(true);
+  });
+
+  // The whole point: three days of tracking cannot answer a 30-day question.
+  it('is true when the window outruns the tracking period', () => {
+    const since = new Date(NOW - 3 * DAY).toISOString();
+    expect(isWindowLongerThanTracking(usage(since), 30 * DAY, NOW)).toBe(true);
+  });
+
+  it('is false once tracking covers the window', () => {
+    const since = new Date(NOW - 40 * DAY).toISOString();
+    expect(isWindowLongerThanTracking(usage(since), 30 * DAY, NOW)).toBe(false);
+  });
+});
+
+describe('isStaleUsage', () => {
+  const stat = (calls: number, lastCalledAt: string | null) => ({ calls, lastCalledAt });
+
+  it('is true for a call older than the window', () => {
+    expect(isStaleUsage(stat(3, new Date(NOW - 10 * DAY).toISOString()), 7 * DAY, NOW)).toBe(true);
+  });
+
+  it('is false for a call inside the window', () => {
+    expect(isStaleUsage(stat(3, new Date(NOW - 2 * DAY).toISOString()), 7 * DAY, NOW)).toBe(false);
+  });
+
+  // Never-used is the other facet; folding it in here would double-count.
+  it('is false for a skill with no recorded calls', () => {
+    expect(isStaleUsage(undefined, 7 * DAY, NOW)).toBe(false);
+    expect(isStaleUsage(stat(0, null), 7 * DAY, NOW)).toBe(false);
+  });
+
+  // "Used, when is unknown" must not be guessed as old.
+  it('is false when the call has no usable timestamp', () => {
+    expect(isStaleUsage(stat(3, null), 7 * DAY, NOW)).toBe(false);
+    expect(isStaleUsage(stat(3, 'not-a-date'), 7 * DAY, NOW)).toBe(false);
+  });
+});
+
+describe('staleUnknownReason', () => {
+  it('is null when the question is answerable', () => {
+    const since = new Date(NOW - 40 * DAY).toISOString();
+    expect(staleUnknownReason(usage(since), 30 * DAY, '30 days', NOW)).toBeNull();
+  });
+
+  it('reports the cold window first, since that is the more basic problem', () => {
+    const since = new Date(NOW - 60 * 1000).toISOString();
+    expect(staleUnknownReason(usage(since), 30 * DAY, '30 days', NOW)).toMatch(/less than a day/i);
+  });
+
+  it('names the window when tracking is warm but too short for it', () => {
+    const since = new Date(NOW - 3 * DAY).toISOString();
+    const reason = staleUnknownReason(usage(since), 30 * DAY, '30 days', NOW);
+    expect(reason).toMatch(/less than 30 days/i);
+    expect(reason).toMatch(/shorter window/i);
   });
 });

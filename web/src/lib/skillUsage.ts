@@ -1,4 +1,4 @@
-import type { SkillUsageResponse } from '../types';
+import type { SkillUsageResponse, SkillUsageStat } from '../types';
 
 // Honesty gate for the Library's usage surfaces. Pure (no React, no ambient
 // clock — `now` is always passed in) so it is unit-testable and the workspace
@@ -53,6 +53,68 @@ export function coldWindowCaveat(usage: SkillUsageResponse | null, now: number):
     : 'Usage tracking has no recorded start, so a skill with no calls may simply predate tracking.';
 }
 
+/**
+ * Whether the tracking window is too short to support a claim about `windowMs`.
+ *
+ * This is a *second*, independent unknowability condition, and the easy mistake
+ * is to implement only `isUsageWindowCold`. A gateway tracking for three days
+ * cannot answer "which skills have gone unused for 30 days" — every skill would
+ * qualify by construction, which is exactly the artifact the cold-window gate
+ * was added to stop. Returns true when the window has not been observed long
+ * enough, including when `observedSince` is missing or unparseable.
+ */
+export function isWindowLongerThanTracking(
+  usage: SkillUsageResponse | null,
+  windowMs: number,
+  now: number,
+): boolean {
+  if (!usage) return true;
+  const since = usage.observedSince;
+  if (!since) return true;
+  const startedAt = Date.parse(since);
+  if (Number.isNaN(startedAt)) return true;
+  return now - startedAt < windowMs;
+}
+
+/**
+ * Whether a skill counts as stale: it has been called at least once, but not
+ * inside the window. A skill with no recorded calls is "never used", a separate
+ * axis, so it is deliberately excluded here rather than folded in.
+ *
+ * A recorded call with no timestamp is *not* stale. `calls > 0` with a missing
+ * `lastCalledAt` means "used, when is unknown", and treating unknown as old is
+ * the same guess this module exists to refuse.
+ */
+export function isStaleUsage(
+  stat: SkillUsageStat | undefined,
+  windowMs: number,
+  now: number,
+): boolean {
+  if (!stat || stat.calls <= 0) return false;
+  if (!stat.lastCalledAt) return false;
+  const lastMs = Date.parse(stat.lastCalledAt);
+  if (Number.isNaN(lastMs)) return false;
+  return now - lastMs > windowMs;
+}
+
+/**
+ * The sentence explaining why a stale count is being withheld, or null when the
+ * question is answerable. Distinguishes the two reasons, since "tracking just
+ * started" and "tracking is younger than the window you picked" call for
+ * different user actions (wait, versus pick a shorter window).
+ */
+export function staleUnknownReason(
+  usage: SkillUsageResponse | null,
+  windowMs: number,
+  windowLabel: string,
+  now: number,
+): string | null {
+  if (isUsageWindowCold(usage, now)) return coldWindowCaveat(usage, now);
+  if (!isWindowLongerThanTracking(usage, windowMs, now)) return null;
+  const observed = observedSinceLabel(usage, now);
+  return `Usage has only been tracked${observed ? ` since ${observed}` : ''}, which is less than ${windowLabel}. Pick a shorter window to see which skills have gone idle.`;
+}
+
 // observedSinceLabel renders the tracking start as a short relative phrase
 // ("2 hours ago"), or null when there is no usable timestamp.
 function observedSinceLabel(usage: SkillUsageResponse | null, now: number): string | null {
@@ -64,5 +126,9 @@ function observedSinceLabel(usage: SkillUsageResponse | null, now: number): stri
   if (elapsedMin < 1) return 'just now';
   if (elapsedMin < 60) return `${elapsedMin} ${elapsedMin === 1 ? 'minute' : 'minutes'} ago`;
   const hours = Math.round(elapsedMin / 60);
-  return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  // Days matter once the stale facet is in play: its windows run to 30 days,
+  // so "720 hours ago" would be a useless way to say "a month".
+  const days = Math.round(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
 }

@@ -55,6 +55,8 @@ export interface LibraryGridProps {
   selectedNames?: Set<string>;
   /** Toggle a card's membership in the multi-select set. */
   onToggleSelect?: (skill: AgentSkill) => void;
+  /** Pin the checkboxes visible even with nothing selected (Select mode). */
+  selectMode?: boolean;
 }
 
 /**
@@ -82,9 +84,12 @@ export function LibraryGrid({
   activeSkillName = null,
   selectedNames,
   onToggleSelect,
+  selectMode = false,
 }: LibraryGridProps) {
   const cardHandlers = { onEnable, onDisable, onEdit, onDelete };
-  const selectionActive = (selectedNames?.size ?? 0) > 0;
+  // An existing selection already pins the checkboxes; Select mode pins them
+  // up front so the affordance is findable before the first click.
+  const selectionActive = selectMode || (selectedNames?.size ?? 0) > 0;
 
   const renderCard = (skill: AgentSkill, i: number) => (
     <SkillCard
