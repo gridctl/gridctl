@@ -87,3 +87,30 @@ describe('ToolDetailPanel', () => {
     expect(screen.queryByText('Usage')).not.toBeInTheDocument();
   });
 });
+
+describe('ToolDetailPanel — Hints', () => {
+  it('lists declared annotations with the unverified-claim caption', () => {
+    renderPanel({
+      tool: {
+        name: 'getThing',
+        description: 'Fetch a thing by id',
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      } as ToolRow,
+    });
+
+    expect(screen.getByText('Hints')).toBeInTheDocument();
+    expect(screen.getByText('RO')).toBeInTheDocument();
+    expect(screen.getByText(/does not modify state/i)).toBeInTheDocument();
+    expect(screen.getByText('CLOSED')).toBeInTheDocument();
+    expect(screen.getByText(/reported by the server, not verified by gridctl/i)).toBeInTheDocument();
+  });
+
+  it('states the pessimistic spec default for unannotated tools', () => {
+    renderPanel();
+    expect(screen.getByText(/no annotations declared/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/treated as potentially destructive and open-world/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/reported by the server/i)).not.toBeInTheDocument();
+  });
+});
