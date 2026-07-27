@@ -65,7 +65,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Refactoring
 
-- Removed the header Variables panel, a second, weaker rendering of the same vault that could be opened while already standing on the Variables workspace. It never received the usage index, so it showed no consumer counts anywhere, and its delete confirmation omitted the consumer count and bulk-injection warning the workspace shows, making it the less safe of two delete paths for identical data. The header control and the creation wizard's Secret tile now open the Variables workspace, which has been a first-class workspace tab since the bottom-panel removal
+- Removed the header Variables panel, a second, weaker rendering of the same vault that could be opened while already standing on the Variables workspace. It never received the usage index, so it showed no consumer counts anywhere, and its delete confirmation omitted the consumer count and bulk-injection warning the workspace shows, making it the less safe of two delete paths for identical data. The header gear that opened it is gone entirely, since the workspace switcher sits in the same header and Variables has been a first-class tab since the bottom-panel removal; the creation wizard's Secret tile now navigates to the workspace instead of opening the panel
 
 
 - Rename the Topology workspace to Stack in the web UI: tab label, command palette ("Go to Stack"), document title, and cross-references now match the `stack.yaml` / `gridctl` vocabulary the backend adopted when `--topology` became `--stack`. The tab icon changes from a network glyph to a layers glyph to match the label. The route moves from `/topology` to `/stack`; old `/topology` bookmarks redirect
