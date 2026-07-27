@@ -33,6 +33,7 @@ New to gridctl? Read in this order:
 | Document | Description |
 |----------|-------------|
 | [Skills](skills.md) | Author `SKILL.md` files and serve them as MCP prompts to upstream clients via the Library workspace or `gridctl skill *` |
+| [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Global Context Sync](global-context.md) | Manage one canonical global AGENTS.md and project it into each linked client's global context file via `gridctl ctx`, the web UI, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
 | [Cost Observability](cost-observability.md) | LLM pricing, per-client attribution, and the `gridctl optimize` heuristics |

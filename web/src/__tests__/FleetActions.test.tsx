@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { FleetActions } from '../components/workspaces/FleetActions';
 import * as api from '../lib/api';
-import type { MCPServerStatus } from '../types';
+import type { MCPServerStatus, ToolUsageResponse } from '../types';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 
@@ -28,9 +28,32 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderPanel() {
+const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const NOW = Date.parse('2026-07-26T12:00:00Z');
+
+// github: create_issue used recently, delete_issue/delete_repo unused;
+// atlassian: get_page unused (its only exposed tool → blocked for
+// disable-unused).
+const usage: ToolUsageResponse = {
+  observedSince: '2026-07-01T00:00:00Z',
+  servers: {
+    github: { create_issue: { calls: 5, lastCalledAt: '2026-07-26T10:00:00Z' } },
+  },
+};
+
+function renderPanel(overrides: Partial<React.ComponentProps<typeof FleetActions>> = {}) {
   return render(
-    <FleetActions isOpen onClose={vi.fn()} servers={servers} activeServerName="github" />,
+    <FleetActions
+      isOpen
+      onClose={vi.fn()}
+      servers={servers}
+      activeServerName="github"
+      usage={usage}
+      windowMs={WINDOW_MS}
+      windowLabel="7 days"
+      fetchedAt={NOW}
+      {...overrides}
+    />,
   );
 }
 
@@ -73,6 +96,58 @@ describe('FleetActions', () => {
     renderPanel(); // default action is expose-all
     expect(screen.getByText(/already exposes all/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /review & apply \(0\)/i })).toBeDisabled();
+  });
+
+  it('plans disable-unused with a blocked server and the observedSince caveat', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /disable unused/i }));
+
+    // github keeps create_issue (used) and drops the two unused; atlassian's
+    // only exposed tool is unused → blocked, never emptied to expose-all.
+    // The count covers only servers that actually change (blocked servers'
+    // tools are excluded so the copy never overstates the apply).
+    expect(screen.getByText(/Disables/)).toHaveTextContent(
+      'Disables 2 tools with no recorded calls in the last 7 days across 1 server',
+    );
+    expect(screen.getByText(/1 server skipped/)).toHaveTextContent(/every exposed tool is unused/);
+    expect(screen.getByText(/Tracking since/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /review & apply \(1\)/i })).toBeEnabled();
+  });
+
+  it('applies disable-unused through the batch endpoint with the kept whitelist', async () => {
+    const batchSpy = vi
+      .spyOn(api, 'setServerToolsBatch')
+      .mockResolvedValue({ servers: [{ server: 'github', tools: ['create_issue'] }], reloaded: true });
+
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /disable unused/i }));
+    fireEvent.click(screen.getByRole('button', { name: /review & apply/i }));
+
+    // The confirm phase lists the affected tools per server.
+    expect(screen.getByText(/delete_issue, delete_repo/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /apply & reload/i }));
+
+    await waitFor(() =>
+      expect(batchSpy).toHaveBeenCalledWith([{ name: 'github', tools: ['create_issue'] }]),
+    );
+  });
+
+  it('disables the disable-unused action until a usage snapshot has loaded', () => {
+    renderPanel({ usage: null, fetchedAt: null });
+    expect(screen.getByRole('button', { name: /disable unused/i })).toBeDisabled();
+    expect(screen.getByText(/needs the usage snapshot/i)).toBeInTheDocument();
+  });
+
+  it('scopes an action to a hand-picked subset of servers', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /selected servers…/i }));
+    fireEvent.click(screen.getByRole('button', { name: /disable unused/i }));
+
+    // Nothing picked yet → empty plan.
+    expect(screen.getByText(/No exposed tools are unused/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'github' }));
+    expect(screen.getByText(/Disables/)).toHaveTextContent('across 1 server');
   });
 
   it('surfaces a batch error in the summary', async () => {

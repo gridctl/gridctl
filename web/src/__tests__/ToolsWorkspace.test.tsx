@@ -5,6 +5,7 @@ import '@testing-library/jest-dom';
 import { ToolsWorkspace } from '../components/workspaces/ToolsWorkspace';
 import { useStackStore } from '../stores/useStackStore';
 import { useToolsDirtyStore } from '../stores/useToolsDirtyStore';
+import { useUIStore } from '../stores/useUIStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import * as api from '../lib/api';
 import type { MCPServerStatus, Tool } from '../types';
@@ -38,6 +39,14 @@ beforeEach(() => {
   // The workspace mounts the groups poll unconditionally; keep the test
   // hermetic instead of letting a real fetch fail in jsdom.
   vi.spyOn(api, 'fetchGroups').mockResolvedValue({ configured: false, groups: [] });
+  // Same for the optimize poll behind the header's convergence line.
+  vi.spyOn(api, 'fetchOptimizeReport').mockResolvedValue({
+    findings: [],
+    health_score: 100,
+    generated_at: '2026-07-26T00:00:00Z',
+  });
+  // List facets persist in the UI store; reset so tests stay independent.
+  useUIStore.setState({ toolsPrefs: { filter: 'all', sort: 'default', destructiveOnly: false } });
   // The workspace sources per-tool detail (descriptions, schemas, global
   // search) from the catalog, so seed it; `tools` is the MCP-facing list.
   const catalog = [
@@ -455,5 +464,266 @@ describe('ToolsWorkspace — Audit Mode', () => {
 
     // The idle tool (b) is dropped; the used tool (a) persists as the whitelist.
     await waitFor(() => expect(saveSpy).toHaveBeenCalledWith('gitlab', ['a']));
+  });
+});
+
+describe('ToolsWorkspace — annotation chips', () => {
+  it('renders chips for declared hints and nothing for undeclared tools', () => {
+    const catalog = [
+      {
+        ...tool(`${GITHUB}${TOOL_NAME_DELIMITER}create_issue`, 'Create a GitHub issue'),
+        annotations: { readOnlyHint: false, destructiveHint: true },
+      },
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}list_repos`, 'List repositories'),
+    ];
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, ['create_issue', 'list_repos'], [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+
+    renderAt('/tools?server=github');
+    // Declared hints render as compact chips on the row.
+    expect(screen.getByText('RW')).toBeInTheDocument();
+    expect(screen.getByText('DESTR')).toBeInTheDocument();
+    // The unannotated tool renders no chip vocabulary.
+    const listRepos = screen.getByRole('option', { name: /list_repos details/i });
+    expect(within(listRepos).queryByText('RO')).not.toBeInTheDocument();
+    expect(within(listRepos).queryByText('DESTR')).not.toBeInTheDocument();
+  });
+
+  it('the Destructive facet narrows the list without Audit and writes ?risk=', () => {
+    const catalog = [
+      {
+        ...tool(`${GITHUB}${TOOL_NAME_DELIMITER}create_issue`, 'Create a GitHub issue'),
+        annotations: { destructiveHint: true },
+      },
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}list_repos`, 'List repositories'),
+    ];
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, ['create_issue', 'list_repos'], [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+
+    renderWithProbe('/tools?server=github');
+    const loc = () => screen.getByTestId('loc').textContent ?? '';
+
+    fireEvent.click(screen.getByRole('button', { name: 'Destructive 1' }));
+    expect(loc()).toContain('risk=destructive');
+    expect(screen.getByRole('option', { name: /create_issue details/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /list_repos details/i })).not.toBeInTheDocument();
+    expect(screen.getByText('1 of 2 shown')).toBeInTheDocument();
+
+    // Toggling it off restores the list and drops the param.
+    fireEvent.click(screen.getByRole('button', { name: 'Destructive 1' }));
+    expect(loc()).not.toContain('risk=');
+    expect(screen.getByRole('option', { name: /list_repos details/i })).toBeInTheDocument();
+  });
+});
+
+describe('ToolsWorkspace — audit filters and sort', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const recent = () => new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+  function seedTwoExposed() {
+    const catalog = [
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}create_issue`, 'Create a GitHub issue'),
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}list_repos`, 'List repositories'),
+    ];
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, ['create_issue', 'list_repos'], [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+  }
+
+  it('filter chips narrow rows by audit state and write ?filter=', async () => {
+    seedTwoExposed();
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: new Date().toISOString(),
+      servers: { github: { create_issue: { calls: 5, lastCalledAt: recent() } } },
+    });
+
+    renderWithProbe('/tools?server=github&audit=1');
+    const loc = () => screen.getByTestId('loc').textContent ?? '';
+
+    // Chips carry per-state counts once classification lands.
+    const unusedChip = await screen.findByRole('button', { name: 'Unused 1' });
+    fireEvent.click(unusedChip);
+    expect(loc()).toContain('filter=unused');
+    expect(screen.getByRole('option', { name: /list_repos details/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /create_issue details/i })).not.toBeInTheDocument();
+
+    // Back to All drops the param.
+    fireEvent.click(screen.getByRole('button', { name: 'All 2' }));
+    expect(loc()).not.toContain('filter=');
+    expect(screen.getByRole('option', { name: /create_issue details/i })).toBeInTheDocument();
+  });
+
+  it('name sort orders rows alphabetically and writes ?sort=; default restores server order', () => {
+    const catalog = [
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}zeta_tool`),
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}alpha_tool`),
+    ];
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, ['zeta_tool', 'alpha_tool'], [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+
+    renderWithProbe('/tools?server=github');
+    const loc = () => screen.getByTestId('loc').textContent ?? '';
+    const list = () => screen.getByRole('listbox');
+    const names = () =>
+      within(list()).getAllByRole('option').map((el) => el.textContent?.match(/\w+_tool/)?.[0]);
+
+    // Server-advertised order by default.
+    expect(names()).toEqual(['zeta_tool', 'alpha_tool']);
+
+    fireEvent.change(screen.getByRole('combobox', { name: /sort tools/i }), {
+      target: { value: 'name' },
+    });
+    expect(loc()).toContain('sort=name');
+    expect(names()).toEqual(['alpha_tool', 'zeta_tool']);
+
+    fireEvent.change(screen.getByRole('combobox', { name: /sort tools/i }), {
+      target: { value: 'default' },
+    });
+    expect(loc()).not.toContain('sort=');
+    expect(names()).toEqual(['zeta_tool', 'alpha_tool']);
+  });
+
+  it('a usage sort fetches usage even with Audit off', async () => {
+    seedTwoExposed();
+    const usageSpy = vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: new Date().toISOString(),
+      servers: { github: { list_repos: { calls: 12, lastCalledAt: recent() } } },
+    });
+
+    renderAt('/tools?server=github');
+    expect(usageSpy).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /sort tools/i }), {
+      target: { value: 'calls' },
+    });
+    await waitFor(() => expect(usageSpy).toHaveBeenCalled());
+
+    // Once the snapshot lands, the most-called tool floats to the top.
+    await waitFor(() => {
+      const list = screen.getByRole('listbox');
+      const names = within(list)
+        .getAllByRole('option')
+        .map((el) => el.textContent?.match(/create_issue|list_repos/)?.[0]);
+      expect(names).toEqual(['list_repos', 'create_issue']);
+    });
+  });
+
+  it('applies a persisted sort preference when the URL carries no params', () => {
+    const catalog = [
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}zeta_tool`),
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}alpha_tool`),
+    ];
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, ['zeta_tool', 'alpha_tool'], [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    useUIStore.setState({ toolsPrefs: { filter: 'all', sort: 'name', destructiveOnly: false } });
+
+    renderAt('/tools?server=github');
+    const list = screen.getByRole('listbox');
+    const names = within(list)
+      .getAllByRole('option')
+      .map((el) => el.textContent?.match(/\w+_tool/)?.[0]);
+    expect(names).toEqual(['alpha_tool', 'zeta_tool']);
+  });
+});
+
+describe('ToolsWorkspace — optimize convergence line', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const finding = (id: string) => ({
+    id,
+    heuristic: 'unused_tool',
+    severity: 'info' as const,
+    title: 'Unused tool',
+    summary: 's',
+    server: 'github',
+    tool: id,
+    impact_usd_per_week: 0,
+    remediation: '',
+    detected_at: '2026-07-26T00:00:00Z',
+  });
+
+  it('shows the unused-tool count with a jump into Audit at 7d', async () => {
+    vi.spyOn(api, 'fetchOptimizeReport').mockResolvedValue({
+      findings: [finding('a'), finding('b')],
+      health_score: 90,
+      generated_at: '2026-07-26T00:00:00Z',
+    });
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: new Date().toISOString(),
+      servers: {},
+    });
+
+    renderWithProbe('/tools?server=github');
+    expect(await screen.findByText(/unused tools \(7d\)/i)).toHaveTextContent(
+      'Optimize suggests 2 unused tools (7d)',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /review in audit/i }));
+    const loc = screen.getByTestId('loc').textContent ?? '';
+    expect(loc).toContain('audit=1');
+    expect(loc).not.toContain('window=');
+  });
+
+  it('renders nothing (never "0 unused") for a need_more_data report', async () => {
+    vi.spyOn(api, 'fetchOptimizeReport').mockResolvedValue({
+      findings: [
+        {
+          id: 'info-need-more-data',
+          heuristic: 'need_more_data',
+          severity: 'info' as const,
+          title: 'Need more data',
+          summary: 'young gateway',
+          impact_usd_per_week: 0,
+          remediation: '',
+          detected_at: '2026-07-26T00:00:00Z',
+        },
+      ],
+      health_score: 100,
+      generated_at: '2026-07-26T00:00:00Z',
+    });
+
+    renderAt('/tools?server=github');
+    await waitFor(() => expect(api.fetchOptimizeReport).toHaveBeenCalled());
+    expect(screen.queryByText(/optimize suggests/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('ToolsWorkspace — draft rail counts', () => {
+  it('the dirty server badge shows the draft selection instead of the live count', () => {
+    renderAt('/tools?server=github');
+    // Live: 1 of 2 whitelisted.
+    expect(screen.getByText('1/2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    // Draft: both selected; the badge follows the draft while dirty.
+    expect(screen.getByText('2/2')).toBeInTheDocument();
+    expect(screen.queryByText('1/2')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /discard unsaved tool changes/i }));
+    expect(screen.getByText('1/2')).toBeInTheDocument();
   });
 });

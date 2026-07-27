@@ -1,12 +1,21 @@
-import type { MCPServerStatus } from '../types';
-import { effectiveEnabledTools } from './toolAudit';
+import type { MCPServerStatus, ToolUsageStat } from '../types';
+import { effectiveEnabledTools, unusedEnabledTools } from './toolAudit';
 
 // Fleet bulk-action planning. Pure functions (no React, no clock) so they're
 // unit-testable and memoizable in the workspace. A plan resolves an action +
 // pattern over a set of servers into the concrete batch payload, the resolved
 // match count to echo before acting, and the servers that can't be changed.
 
-export type BulkAction = 'expose-all' | 'hide-pattern';
+export type BulkAction = 'expose-all' | 'hide-pattern' | 'disable-unused';
+
+// Usage snapshot context for the disable-unused action: the per-server maps
+// from GET /api/tools/usage plus the audit window and the snapshot's fetch
+// time as "now" (an injected clock, matching the toolAudit conventions).
+export interface BulkUsageContext {
+  usage: Record<string, Record<string, ToolUsageStat>> | undefined;
+  windowMs: number;
+  now: number;
+}
 
 // globToRegExp converts a shell-style glob (`*` = any run, `?` = one char) into
 // an anchored RegExp. All other regex metacharacters are escaped so a pattern
@@ -55,10 +64,16 @@ function sortedUnique(names: Iterable<string>): string[] {
 // hide-pattern: removes currently-exposed tools matching `pattern` from each
 // server, persisting the kept set as an explicit whitelist. A server whose
 // every exposed tool matches is blocked (see BulkPlan.blocked).
+//
+// disable-unused: removes exposed tools with no recorded calls inside
+// `usageCtx`'s window. Without a usage snapshot the plan is empty (never
+// guess unused from missing data). A server whose every exposed tool is
+// unused is blocked: the same [] = expose-all refusal as hide-pattern.
 export function planBulkAction(
   servers: MCPServerStatus[],
   action: BulkAction,
   pattern: string,
+  usageCtx?: BulkUsageContext,
 ): BulkPlan {
   const entries: BulkPlanEntry[] = [];
   const blocked: string[] = [];
@@ -69,6 +84,31 @@ export function planBulkAction(
       const restricts = (server.toolWhitelist?.length ?? 0) > 0;
       if (!restricts) continue; // already exposing all
       entries.push({ name: server.name, tools: [], hidden: [] });
+    }
+    return { entries, matchedTools, blocked };
+  }
+
+  if (action === 'disable-unused') {
+    if (!usageCtx) return { entries, matchedTools, blocked };
+    for (const server of servers) {
+      const unused = unusedEnabledTools(
+        server,
+        usageCtx.usage?.[server.name],
+        usageCtx.windowMs,
+        usageCtx.now,
+      );
+      if (unused.length === 0) continue;
+      const drop = new Set(unused);
+      const kept = [...effectiveEnabledTools(server)].filter((t) => !drop.has(t));
+      if (kept.length === 0) {
+        blocked.push(server.name);
+        continue;
+      }
+      // Counted only for servers that actually change: the copy pairs this
+      // number with entries.length ("Disables N tools across M servers"), so
+      // including blocked servers would overstate what the apply will do.
+      matchedTools += unused.length;
+      entries.push({ name: server.name, tools: sortedUnique(kept), hidden: sortedUnique(unused) });
     }
     return { entries, matchedTools, blocked };
   }

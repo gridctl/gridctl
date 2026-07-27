@@ -194,6 +194,20 @@ func (r *Router) AggregatedTools() []Tool {
 // call-routing instructions, so consumers get the tool's documentation
 // verbatim. Callers use this to surface tool detail regardless of code mode.
 func (r *Router) CatalogTools() []Tool {
+	return r.catalogTools(toolsOf)
+}
+
+// AllCatalogTools is CatalogTools over the pre-whitelist tool set, so the
+// management UI can show descriptions, schemas, and annotations for tools an
+// operator has disabled (the rows they are deciding whether to re-enable).
+// Informational only; never served to MCP clients.
+func (r *Router) AllCatalogTools() []Tool {
+	return r.catalogTools(allDownstreamToolsOf)
+}
+
+// catalogTools is the single copy site both catalog variants share (the
+// annotations field-completeness test counts on copies staying centralized).
+func (r *Router) catalogTools(source func(*ReplicaSet) []Tool) []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -205,7 +219,7 @@ func (r *Router) CatalogTools() []Tool {
 
 	var tools []Tool
 	for _, name := range names {
-		for _, tool := range toolsOf(r.sets[name]) {
+		for _, tool := range source(r.sets[name]) {
 			tools = append(tools, Tool{
 				Name:         PrefixTool(name, tool.Name),
 				Title:        tool.Title,
@@ -217,6 +231,18 @@ func (r *Router) CatalogTools() []Tool {
 		}
 	}
 	return tools
+}
+
+// allDownstreamToolsOf mirrors toolsOf but ignores any configured whitelist.
+// When every replica has been reaped the cache is the only source, and it
+// holds the filtered surface, an acceptable degradation for an informational
+// read (the full set returns with the next replica start).
+func allDownstreamToolsOf(set *ReplicaSet) []Tool {
+	reps := set.Replicas()
+	if len(reps) == 0 {
+		return set.CachedTools()
+	}
+	return allToolsOf(reps[0].Client())
 }
 
 // RouteToolCall routes a tool call to the appropriate server. The concrete

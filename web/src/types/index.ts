@@ -326,6 +326,18 @@ export interface UpdateDefaultModelResponse {
   reloadedAt?: string;
 }
 
+// MCP tool annotations, matching mcp.ToolAnnotations. All fields are
+// optional hints; absent means "undeclared", which the spec treats as
+// worst-case (potentially destructive, open-world). Server-reported and
+// unverified; UI surfaces must present them as claims, not guarantees.
+export interface ToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 // Tool definition matching mcp.Tool
 export interface Tool {
   name: string;
@@ -334,6 +346,7 @@ export interface Tool {
   // InputSchema is now a raw JSON object to preserve full JSON Schema
   // from MCP servers without loss (supports JSON Schema draft 2020-12)
   inputSchema: Record<string, unknown>;
+  annotations?: ToolAnnotations;
 }
 
 // Tools list response from GET /api/tools

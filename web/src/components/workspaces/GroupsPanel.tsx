@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Boxes, Check, Copy, CornerDownRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Modal } from '../ui/Modal';
-import { annotationChips, groupEndpointURL } from '../../lib/groups';
+import { CHIP_TONE_CLASS, annotationChips, groupEndpointURL } from '../../lib/groups';
 import type { GroupsReport, GroupStatus, GroupToolStatus } from '../../lib/api';
 import type { Tool } from '../../types';
 
@@ -140,9 +140,7 @@ function MemberRow({ member, toolCatalog }: { member: GroupToolStatus; toolCatal
               title={chip.title}
               className={cn(
                 'px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider',
-                chip.tone === 'safe' && 'bg-status-running/10 text-status-running',
-                chip.tone === 'danger' && 'bg-status-error/10 text-status-error',
-                chip.tone === 'neutral' && 'bg-surface-highlight text-text-muted',
+                CHIP_TONE_CLASS[chip.tone],
               )}
             >
               {chip.label}

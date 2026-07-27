@@ -1840,6 +1840,48 @@ func TestGateway_HandleToolsCatalog_CodeMode(t *testing.T) {
 	}
 }
 
+// TestGateway_HandleToolsCatalogAll proves the ?include=all seam: the default
+// catalog stays whitelist-filtered while the all-variant keeps disabled tools,
+// independent of code mode (same contract as HandleToolsCatalog).
+func TestGateway_HandleToolsCatalogAll(t *testing.T) {
+	g := NewGateway()
+	client := &fakeWhitelistedClient{name: "server1"}
+	client.SetTools([]Tool{
+		{Name: "kept", InputSchema: json.RawMessage(`{}`)},
+		{Name: "hidden", Description: "disabled but documented", InputSchema: json.RawMessage(`{}`)},
+	})
+	client.SetToolWhitelist([]string{"kept"})
+	client.SetInitialized(ServerInfo{Name: "server1", Version: "1.0.0"})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+	g.SetCodeMode(30 * time.Second)
+
+	cat, err := g.HandleToolsCatalog()
+	if err != nil {
+		t.Fatalf("HandleToolsCatalog: %v", err)
+	}
+	if len(cat.Tools) != 1 || cat.Tools[0].Name != "server1__kept" {
+		t.Fatalf("default catalog must stay whitelist-filtered, got %v", cat.Tools)
+	}
+
+	all, err := g.HandleToolsCatalogAll()
+	if err != nil {
+		t.Fatalf("HandleToolsCatalogAll: %v", err)
+	}
+	if len(all.Tools) != 2 {
+		t.Fatalf("expected 2 tools in the all-catalog, got %v", all.Tools)
+	}
+	var hidden *Tool
+	for i := range all.Tools {
+		if all.Tools[i].Name == "server1__hidden" {
+			hidden = &all.Tools[i]
+		}
+	}
+	if hidden == nil || hidden.Description != "disabled but documented" {
+		t.Fatalf("all-catalog dropped the whitelist-disabled tool's detail: %v", all.Tools)
+	}
+}
+
 func TestGateway_RefreshAllTools(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()

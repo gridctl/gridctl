@@ -126,10 +126,15 @@ export async function fetchTools(): Promise<ToolsListResult> {
  * input schema, regardless of code mode. Unlike /api/tools (which returns only
  * the meta-tools when code mode is on), this informational endpoint always
  * carries the real per-tool detail the Tools workspace renders.
- * GET /api/tools/catalog
+ *
+ * `include=all` bypasses the whitelist filter so whitelist-disabled tools keep
+ * their descriptions, schemas, and annotations in the UI (the operator is
+ * deciding whether to re-enable exactly those rows). Informational only; the
+ * MCP-facing tool surface is unaffected.
+ * GET /api/tools/catalog?include=all
  */
 export async function fetchToolCatalog(): Promise<ToolsListResult> {
-  return fetchJSON<ToolsListResult>('/api/tools/catalog');
+  return fetchJSON<ToolsListResult>('/api/tools/catalog?include=all');
 }
 
 /**
