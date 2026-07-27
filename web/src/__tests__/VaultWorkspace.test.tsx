@@ -16,6 +16,7 @@ vi.mock('../lib/api', async () => {
     fetchVariables: vi.fn().mockResolvedValue([]),
     fetchVariableSets: vi.fn().mockResolvedValue([]),
     fetchVariableUsage: vi.fn().mockResolvedValue({}),
+    fetchVariableDrift: vi.fn().mockResolvedValue([]),
     createVariable: vi.fn().mockResolvedValue(undefined),
     getVariable: vi.fn().mockResolvedValue({ value: '' }),
     updateVariable: vi.fn().mockResolvedValue(undefined),
@@ -757,5 +758,191 @@ describe('VaultWorkspace — drag-and-drop while locked', () => {
     expect(
       screen.queryByRole('dialog', { name: /import variables/i }),
     ).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drift banner + consumption chips
+// ---------------------------------------------------------------------------
+
+const driftVariables: api.Variable[] = [
+  { key: 'PRESENT', type: 'string', is_secret: true },
+];
+
+function renderVault() {
+  return render(
+    <MemoryRouter initialEntries={['/vault']}>
+      <VaultWorkspace />
+    </MemoryRouter>,
+  );
+}
+
+describe('VaultWorkspace — missing variable drift', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: true,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(driftVariables);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue({});
+    vi.mocked(api.fetchVariableDrift).mockResolvedValue([]);
+    useVaultStore.setState({
+      variables: driftVariables,
+      sets: [],
+      usage: {},
+      usageLoaded: true,
+      drift: [],
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: true,
+    });
+  });
+
+  it('warns when the stack references a key with no stored value', async () => {
+    const drift = [
+      {
+        key: 'MISSING_KEY',
+        consumers: [
+          { kind: 'mcp-server' as const, name: 'github', field: 'auth.token' },
+        ],
+      },
+    ];
+    vi.mocked(api.fetchVariableDrift).mockResolvedValue(drift);
+    useVaultStore.setState({ drift });
+
+    renderVault();
+
+    expect(await screen.findByText(/MISSING_KEY/)).toBeInTheDocument();
+    expect(screen.getByText(/Applying will fail/i)).toBeInTheDocument();
+  });
+
+  it('stays silent when nothing is missing', async () => {
+    renderVault();
+    await screen.findByPlaceholderText(/search all variables/i);
+    expect(screen.queryByText(/Applying will fail/i)).not.toBeInTheDocument();
+  });
+
+  it('stays silent while the usage index is unknown', async () => {
+    // A failed usage fetch leaves membership unknowable, so the banner must
+    // not assert drift it cannot confirm.
+    vi.mocked(api.fetchVariableUsage).mockRejectedValue(new Error('boom'));
+    vi.mocked(api.fetchVariableDrift).mockResolvedValue([
+      { key: 'MISSING_KEY', consumers: [] },
+    ]);
+    useVaultStore.setState({
+      usageLoaded: false,
+      drift: [{ key: 'MISSING_KEY', consumers: [] }],
+    });
+
+    renderVault();
+    await screen.findByPlaceholderText(/search all variables/i);
+    // A locked or unknown index cannot answer membership, so asserting drift
+    // would be a guess.
+    expect(screen.queryByText(/Applying will fail/i)).not.toBeInTheDocument();
+  });
+
+  it('dismisses for the session', async () => {
+    vi.mocked(api.fetchVariableDrift).mockResolvedValue([
+      { key: 'MISSING_KEY', consumers: [] },
+    ]);
+    useVaultStore.setState({
+      drift: [{ key: 'MISSING_KEY', consumers: [] }],
+    });
+
+    renderVault();
+    const dismiss = await screen.findByLabelText(
+      /dismiss missing variables warning/i,
+    );
+    fireEvent.click(dismiss);
+
+    expect(screen.queryByText(/Applying will fail/i)).not.toBeInTheDocument();
+  });
+
+  it('seeds the import modal with the missing keys', async () => {
+    const drift = [
+      { key: 'MISSING_ONE', consumers: [] },
+      { key: 'MISSING_TWO', consumers: [] },
+    ];
+    vi.mocked(api.fetchVariableDrift).mockResolvedValue(drift);
+    useVaultStore.setState({ drift });
+
+    renderVault();
+    fireEvent.click(await screen.findByRole('button', { name: /create/i }));
+
+    const textarea = await screen.findByDisplayValue(/MISSING_ONE=/);
+    expect((textarea as HTMLTextAreaElement).value).toContain('MISSING_TWO=');
+  });
+});
+
+describe('VaultWorkspace — consumption chips', () => {
+  const chipVariables: api.Variable[] = [
+    { key: 'EXPLICIT', type: 'string', is_secret: true },
+    { key: 'INJECTED', type: 'string', is_secret: true },
+    { key: 'UNUSED', type: 'string', is_secret: true },
+  ];
+  const chipUsage: Record<string, api.Consumer[]> = {
+    EXPLICIT: [{ kind: 'mcp-server', name: 'github', field: 'env.EXPLICIT' }],
+    INJECTED: [{ kind: 'secrets-set', name: 'dev', field: 'secrets.sets' }],
+  };
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: true,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(chipVariables);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue(chipUsage);
+    vi.mocked(api.fetchVariableDrift).mockResolvedValue([]);
+    useVaultStore.setState({
+      variables: chipVariables,
+      sets: [],
+      usage: chipUsage,
+      usageLoaded: true,
+      drift: [],
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: true,
+    });
+  });
+
+  it('narrows the list to explicitly referenced variables', async () => {
+    renderVault();
+    fireEvent.click(await screen.findByRole('button', { name: /explicit refs/i }));
+
+    expect(screen.getByText('EXPLICIT')).toBeInTheDocument();
+    expect(screen.queryByText('INJECTED')).not.toBeInTheDocument();
+    expect(screen.queryByText('UNUSED')).not.toBeInTheDocument();
+  });
+
+  it('narrows the list to set-injected variables', async () => {
+    renderVault();
+    fireEvent.click(await screen.findByRole('button', { name: /set-injected/i }));
+
+    expect(screen.getByText('INJECTED')).toBeInTheDocument();
+    expect(screen.queryByText('EXPLICIT')).not.toBeInTheDocument();
+  });
+
+  it('narrows the list to unreferenced variables', async () => {
+    renderVault();
+    fireEvent.click(await screen.findByRole('button', { name: /not referenced/i }));
+
+    expect(screen.getByText('UNUSED')).toBeInTheDocument();
+    expect(screen.queryByText('EXPLICIT')).not.toBeInTheDocument();
+  });
+
+  it('disables the chips when the usage index is unknown', async () => {
+    vi.mocked(api.fetchVariableUsage).mockRejectedValue(new Error('boom'));
+    useVaultStore.setState({ usage: {}, usageLoaded: false });
+    renderVault();
+
+    const chip = await screen.findByRole('button', { name: /not referenced/i });
+    expect(chip).toBeDisabled();
+    // Every variable stays visible rather than reading as unreferenced.
+    expect(screen.getByText('EXPLICIT')).toBeInTheDocument();
+    expect(screen.getByText('INJECTED')).toBeInTheDocument();
   });
 });
