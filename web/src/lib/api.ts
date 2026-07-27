@@ -1055,10 +1055,16 @@ export async function fetchVariables(): Promise<Variable[]> {
 }
 
 // ConsumerKind mirrors the backend config.ReferenceKind: where in the active
-// stack a ${var:KEY} reference appears. Only 'mcp-server' and 'resource' map to
-// canvas nodes; the rest are stack/gateway/network-level sites. 'secrets-set'
-// is a synthetic consumer for variables bulk-injected via secrets.sets — no
-// single YAML site, so it is never navigable.
+// stack a ${var:KEY} reference appears. 'mcp-server' and 'resource' map to
+// canvas nodes by `name`; 'gateway', 'network', and 'stack' are stack-level
+// sites that belong to no node.
+//
+// 'secrets-set' is a synthetic consumer for variables bulk-injected via
+// secrets.sets. It has no YAML site of its own, so `name` is the set rather
+// than a workload. When that set is scoped, `target`/`targetKind` name the one
+// workload the entry injects into, which does map to a node: use
+// navigationTarget and consumerReachesWorkload rather than reading `kind` or
+// `name` directly, or scoped injections silently drop out of workload queries.
 export type ConsumerKind =
   | 'mcp-server'
   | 'resource'
