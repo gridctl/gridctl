@@ -41,6 +41,8 @@ import { usePageFileDrop } from '../../hooks/usePageFileDrop';
 import { isImportableFile } from '../../lib/parseFile';
 import {
   consumerCount,
+  consumerReachesWorkload,
+  consumerSearchText,
   describeSetInjection,
   navigationTarget,
 } from '../vault/consumerHelpers';
@@ -257,16 +259,16 @@ export function VaultWorkspace() {
   }, [allVariables, recentlyEdited]);
   const isEmpty = allVariables.length === 0 && allSets.length === 0;
 
-  // Exact consumption filter: keep variables actually referenced by the named
-  // server/resource, using the backend usage index (GET /api/var/usage). This
-  // replaces the former approximate key-substring heuristic.
+  // Exact consumption filter: keep variables the named workload actually
+  // receives, using the backend usage index (GET /api/var/usage). Set
+  // injection counts, whether scoped to this workload or fanned out to every
+  // one, so the answer to "what does this server use" is not silently
+  // restricted to explicitly written references.
   const filteredByServer = useMemo(() => {
     if (!serverFilter) return allVariables;
     return allVariables.filter((v) =>
-      (usage[v.key] ?? []).some(
-        (c) =>
-          (c.kind === 'mcp-server' || c.kind === 'resource') &&
-          c.name === serverFilter,
+      (usage[v.key] ?? []).some((c) =>
+        consumerReachesWorkload(c, serverFilter),
       ),
     );
   }, [allVariables, serverFilter, usage]);
@@ -311,10 +313,8 @@ export function VaultWorkspace() {
       (v) =>
         v.key.toLowerCase().includes(lower) ||
         (v.set ?? '').toLowerCase().includes(lower) ||
-        (usage[v.key] ?? []).some(
-          (c) =>
-            (c.name ?? '').toLowerCase().includes(lower) ||
-            c.field.toLowerCase().includes(lower),
+        (usage[v.key] ?? []).some((c) =>
+          consumerSearchText(c).includes(lower),
         ),
     );
   }, [filteredByRef, searchQuery, usage]);
