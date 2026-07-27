@@ -9,6 +9,11 @@ const (
 	RefKindGateway   ReferenceKind = "gateway"
 	RefKindNetwork   ReferenceKind = "network"
 	RefKindStack     ReferenceKind = "stack"
+	// RefKindSecretsSet marks a synthetic consumer for a variable injected in
+	// bulk through the stack's secrets.sets block (see injectSetSecrets). These
+	// never appear in Stack.References — the API layer synthesizes them from
+	// vault set membership so usage reporting covers injected keys too.
+	RefKindSecretsSet ReferenceKind = "secrets-set"
 )
 
 // Consumer is a single site that references a variable: the kind of stack
@@ -41,7 +46,9 @@ type Consumer struct {
 //     secrets at index time. v1 indexes only references written in the stack.
 //   - Known gap: secrets injected via secrets.sets (see injectSetSecrets) are
 //     added to server env *after* expansion without ${var:KEY} syntax, so they
-//     are not recorded here. v1 indexes explicit references only.
+//     are not recorded here. The usage API compensates by synthesizing
+//     RefKindSecretsSet consumers from vault set membership; the index itself
+//     stays explicit-references-only.
 type ReferenceIndex map[string][]Consumer
 
 // add records that the consumer c references key, de-duplicating exact
