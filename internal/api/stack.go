@@ -407,7 +407,10 @@ func (s *Server) handleStackExport(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// sanitizeStackSecrets replaces sensitive env values with vault placeholders.
+// sanitizeStackSecrets replaces sensitive env values with variable-store
+// placeholders. Values that are already store references are left untouched in
+// either form: ${vault:KEY} is the deprecated alias of ${var:KEY}, so both are
+// recognized on input, but only the canonical form is generated.
 func sanitizeStackSecrets(stack *config.Stack) {
 	sensitiveKeys := []string{"PASSWORD", "SECRET", "TOKEN", "API_KEY", "APIKEY", "PRIVATE_KEY", "ACCESS_KEY", "AUTH", "CREDENTIAL"}
 
@@ -416,13 +419,13 @@ func sanitizeStackSecrets(stack *config.Stack) {
 			return
 		}
 		for key, val := range env {
-			if strings.HasPrefix(val, "${vault:") {
+			if strings.HasPrefix(val, "${var:") || strings.HasPrefix(val, "${vault:") {
 				continue
 			}
 			upper := strings.ToUpper(key)
 			for _, s := range sensitiveKeys {
 				if strings.Contains(upper, s) {
-					env[key] = "${vault:" + prefix + "_" + key + "}"
+					env[key] = "${var:" + prefix + "_" + key + "}"
 					break
 				}
 			}
