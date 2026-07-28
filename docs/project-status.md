@@ -7,7 +7,7 @@ Gridctl is pre-1.0 software. This page tracks the stability tier of each feature
 - **Stable** - production-ready. Backward-compatible changes only within the `0.x` line; breaking changes ride a clearly-labeled release.
 - **Experimental** - usable but the API, CLI surface, or output shape may change without notice. Pin a version if you build automation on top of it.
 
-Current as of **v0.1.0-beta.14** plus unreleased work on `main` (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Current as of **v0.1.0-beta.15** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
