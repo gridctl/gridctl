@@ -51,14 +51,21 @@ cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serv
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, …).
                     The Server struct in api.go wires together every pkg/* subsystem the UI needs to talk to.
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
+pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: curated embedded entries plus the
+                    official MCP Registry, with install-shape mapping into stack.yaml server blocks.
 pkg/config/         stack.yaml schema, loader, variable/env expansion, plan diffing, health-check parsing.
 pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; pkg/runtime/docker is the
                     Docker implementation. Runtime auto-detected (docker → podman) unless --runtime is set.
 pkg/builder/        Image building from git or local Dockerfiles, with a content-addressed cache.
 pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks.
+pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
+                    token store, callback listener). Backed by `gridctl auth`.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
 pkg/skills/         Remote skill management (git import, lockfile, fingerprinting, updater).
+pkg/skillsync/      Projects active registry skills into native client skill directories (`gridctl skill project`).
+pkg/contexts/       One canonical global agent-context file projected into each linked client (`gridctl ctx`).
+pkg/limits/         Enforces the `limits:` block: dollar budget caps and rate limits, with a windowed spend ledger.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`.
@@ -73,15 +80,17 @@ pkg/controller/     Application composition root: builds the gateway, mounts the
 pkg/metrics/, pkg/token/, pkg/format/, pkg/pricing/, pkg/output/, pkg/logging/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
-                    src/routes.tsx, feature components grouped under src/components/<workspace>/. The Detached*Page files
-                    are popout windows that mirror specific panels.
+                    src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
+                    Stack, Library, Vault (Variables), Tools, Metrics, Pins, Logs, Traces, Connections. The Detached*Page
+                    files are popout windows that mirror specific panels.
 
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
                     replicas, transports (incl. Podman), code-mode cost, private git auth, optimize heuristics.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
-                    code-mode, platforms, tracing). examples/_mock-servers/ is the source for `make mock-servers`.
-docs/               User-facing documentation (cli-reference, config-schema, skills, scaling, cost-observability,
-                    api-reference, installation, project-status, troubleshooting).
+                    code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack).
+                    examples/_mock-servers/ is the source for `make mock-servers`.
+docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, tools-workspace,
+                    global-context, scaling, cost-observability, installation, project-status, troubleshooting).
 ```
 
 End-to-end request flow for an upstream MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `pkg/mcp` transport (SSE/streamable/stdio) → `mcp.Gateway` router → per-server `mcp.Client` (process/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back.

@@ -20,7 +20,7 @@
 
 ---
 
-![Gridctl](assets/gridctl.gif)
+![Gridctl](assets/dashboard.png)
 
 Gridctl aggregates tools from [MCP](https://modelcontextprotocol.io/) servers into a single gateway and serves [Agent Skills](https://agentskills.io) as MCP prompts to upstream clients. Define your stack in YAML, apply with one command, and connect Claude Desktop (or any MCP client) through one endpoint.
 
@@ -38,34 +38,62 @@ Gridctl gives you one declarative file for everything you want connected, one lo
 
 ```yaml
 version: "1"
-name: stack
+name: daily
 
+#  Secret set passed in at runtime
+secrets:
+  sets:
+    - dev
+
+network:
+  name: daily-net
+  driver: bridge
+
+# Global gateway configuration
+gateway:
+  name: dev
+  code_mode: on
+
+# LLM clients auto-linked to this gateway on apply
+link:
+  - claude
+  - claude-code
+  - cursor
+  - antigravity
+  - grok
+
+# Downstream MCP servers behind the gateway
 mcp-servers:
 
-  # Containerized stdio MCP server
+  # Jira and Confluence via Atlassian's hosted remote MCP
+  - name: atlassian
+    command:
+      - npx
+      - mcp-remote
+      - https://mcp.atlassian.com/v1/mcp
+
+  # GitHub repos, issues, and PRs (containerized stdio server)
   - name: github
     image: ghcr.io/github/github-mcp-server:latest
     transport: stdio
-    tools: ["get_file_contents", "search_code", "list_commits", "get_pull_request"]
     env:
-      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${var:GITHUB_PERSONAL_ACCESS_TOKEN}
 
-  # External SaaS MCP server (gridctl brokers the OAuth flow natively)
-  - name: atlassian
-    url: https://mcp.atlassian.com/v1/sse
-    auth:
-      type: oauth
+  # Browser automation and page inspection
+  - name: playwright
+    command:
+      - npx
+      - '@playwright/mcp@latest'
 
-  # Any REST API as MCP tools via OpenAPI
-  - name: my-api
-    openapi:
-      spec: https://api.example.com/openapi.json
-      baseUrl: https://api.example.com
+  # SaaS app actions through Zapier's hosted MCP endpoint
+  - name: zapier
+    command:
+      - npx
+      - mcp-remote
+      - https://mcp.zapier.com/api/v1/connect
+      - --header
+      - 'Authorization: Bearer ${var:ZAPIER_MCP_TOKEN}'
 ```
-
-Three servers, three transports, one endpoint. Navigate to [localhost:8180](http://localhost:8180) to visualize the stack 👉
-
-![Gridctl Interface](assets/gridctl-ui.gif)
 
 ## 🪛 Install
 
@@ -103,6 +131,8 @@ gridctl link              # Interactive: detect and select clients
 gridctl link claude       # Link a specific client
 gridctl link --all        # Link all detected clients at once
 ```
+
+Declaring a `link:` block in stack.yaml (as above) does the same thing on every `gridctl apply`: each listed client is linked idempotently once the gateway is healthy, and clients that aren't installed warn and skip. `gridctl destroy --unlink` removes those entries again.
 
 Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way.
 
@@ -195,6 +225,79 @@ mcp-servers:
 
 Learn more → [Configuration Reference](docs/config-schema.md)
 
+### Tool Surface Control
+
+A large stack floods the client's context with tools it will never call. Three axes compose: the per-server `tools:` whitelist narrows what exists, `groups:` bundle tools across servers behind their own endpoint at `/groups/{name}/mcp`, and `clients:` restricts what each linked client may touch.
+
+```yaml
+groups:
+  release:
+    servers: [github]                      # every tool of these servers
+    tools: [gitlab__create_merge_request]  # plus specific prefixed tools
+    exclude: [github__delete_repo]         # subtract, applied last
+```
+
+```bash
+gridctl groups                     # Groups, member counts, and endpoints
+gridctl link cursor --group release
+```
+
+Learn more → [Tools Workspace](docs/tools-workspace.md)
+
+### Budgets and Rate Limits
+
+Cap spend and call rates per client, server, or tool. Both are enforced at tool-call dispatch, so a runaway agent stops at the cap instead of at the invoice. Omitting the block limits nothing.
+
+```yaml
+limits:
+  budgets:
+    - client: claude-code
+      max_usd: 5.00
+      period: daily          # daily | weekly | monthly
+      warn_at_percent: 80
+  rate_limits:
+    - server: github
+      calls_per_minute: 30
+      burst: 10
+```
+
+```bash
+gridctl limits                     # Spend against caps, windows, and state
+```
+
+Learn more → [Configuration Reference](docs/config-schema.md)
+
+### Schema Pinning
+
+Gridctl pins every tool definition the first time it sees it and flags drift on later applies, so a server that quietly rewrites a tool's description or schema surfaces as a reviewable diff instead of reaching your agent unnoticed. Pinned definitions are also scanned for injection signals: hidden instructions, sensitive-file references, hidden Unicode, and cross-server tool shadowing.
+
+```bash
+gridctl pins verify                # Exit 1 on drift
+gridctl pins diff github           # Per-tool before/after plus scan findings
+gridctl pins approve github        # Re-pin after review
+```
+
+Learn more → [Configuration Reference](docs/config-schema.md)
+
+### Downstream Authorization
+
+For OAuth-protected remote servers, gridctl is the OAuth client: one browser login serves every connected LLM client, with tokens encrypted on disk and refreshed automatically. An unauthorized server deploys in a `needs auth` state rather than failing the stack.
+
+```yaml
+mcp-servers:
+  - name: notion
+    url: https://mcp.notion.com/mcp
+    auth:
+      type: oauth
+```
+
+```bash
+gridctl auth login notion
+gridctl auth status
+```
+
+Learn more → [Configuration Reference](docs/config-schema.md)
+
 ### Skill Library
 
 Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author in the Library workspace in the web UI (or via `gridctl skill *` on the CLI), activate, and the prompt becomes available to Claude Desktop, Claude Code, Cursor, Codex, or anything that speaks MCP.
@@ -220,13 +323,16 @@ Learn more → [Skills guide](docs/skills.md)
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
 | [`var-basic.yaml`](examples/secrets-vault/var-basic.yaml) | Reference variable-store secrets with `${var:KEY}` syntax |
+| [`per-client-scoping.yaml`](examples/access-control/per-client-scoping.yaml) | Restrict which servers and tools each linked client may touch |
+| [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |
+| [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 
 ## 📖 Documentation
 
 - **Getting started**: [Installation](docs/installation.md)
 - **Reference**: [CLI](docs/cli-reference.md) · [Configuration](docs/config-schema.md) · [REST API](docs/api-reference.md)
-- **Guides**: [Skills](docs/skills.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
+- **Guides**: [Skills](docs/skills.md) · [Tools Workspace](docs/tools-workspace.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
 - **Operations**: [Project Status](docs/project-status.md) · [Troubleshooting](docs/troubleshooting.md)
 
 Full index at [`docs/`](docs/README.md).

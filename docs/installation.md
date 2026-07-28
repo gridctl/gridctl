@@ -61,7 +61,7 @@ cd gridctl && make build
 gridctl upgrade            # check + prompt + upgrade (standalone install)
 gridctl upgrade --check    # only check; do not install
 gridctl upgrade --yes      # non-interactive (CI)
-gridctl upgrade --version v0.1.0-beta.10   # install a specific version
+gridctl upgrade --version v0.1.0-beta.14   # install a specific version
 ```
 
 If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recommends `brew upgrade gridctl/tap/gridctl` instead.
@@ -100,9 +100,12 @@ Gridctl requires a container runtime for workloads that run in containers (MCP s
 Gridctl auto-detects your runtime by probing sockets in this order:
 
 1. `$DOCKER_HOST` (if set)
-2. `/var/run/docker.sock` (Docker)
-3. `/run/podman/podman.sock` (Podman rootful)
-4. `$XDG_RUNTIME_DIR/podman/podman.sock` (Podman rootless)
+2. The active Docker CLI context (unix endpoints only)
+3. `/var/run/docker.sock` (Docker)
+4. `/run/podman/podman.sock` (Podman rootful)
+5. `$XDG_RUNTIME_DIR/podman/podman.sock` (Podman rootless)
+
+Step two mirrors the Docker CLI's own resolution, so context-based setups like OrbStack, Colima, and Rancher Desktop work without exporting `DOCKER_HOST`.
 
 Override detection with the `--runtime` flag or `GRIDCTL_RUNTIME` environment variable:
 

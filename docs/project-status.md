@@ -7,7 +7,7 @@ Gridctl is pre-1.0 software. This page tracks the stability tier of each feature
 - **Stable** - production-ready. Backward-compatible changes only within the `0.x` line; breaking changes ride a clearly-labeled release.
 - **Experimental** - usable but the API, CLI surface, or output shape may change without notice. Pin a version if you build automation on top of it.
 
-Last updated: **v0.1.0-beta.10** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Current as of **v0.1.0-beta.14** plus unreleased work on `main` (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
@@ -34,9 +34,20 @@ Last updated: **v0.1.0-beta.10** (see [CHANGELOG.md](../CHANGELOG.md) for releas
 | Spec drift detection | Experimental | May change without notice |
 | Visual spec builder | Experimental | May change without notice |
 | Skills import (skill add) | Experimental | May change without notice |
+| Skill projection (skill project) | Experimental | May change without notice |
 | Global context sync (ctx) | Experimental | May change without notice |
 | Distributed tracing | Experimental | May change without notice |
 | Cost observability | Experimental | May change without notice |
+| Telemetry persistence | Experimental | May change without notice |
+| Server catalog (search, add) | Experimental | May change without notice |
+| Client config import (import) | Experimental | May change without notice |
+| Declarative client linking (`link:`) | Experimental | May change without notice |
+| Downstream OAuth brokering (auth) | Experimental | May change without notice |
+| TOFU schema pinning (pins) | Experimental | May change without notice |
+| Tool-poisoning scan | Experimental | May change without notice |
+| Tool groups | Experimental | May change without notice |
+| Per-client access scoping | Experimental | May change without notice |
+| Budget caps and rate limits | Experimental | May change without notice |
 | Typed skill SDK (Go, TS) | Removed in v0.1.x | Replaced by prompt-only skills |
 | Go plugin skill loader | Removed in v0.1.x | Replaced by prompt-only skills |
 | Agent IDE (`gridctl agent dev`) | Removed in v0.1.x | Use the Library workspace instead |
@@ -49,7 +60,7 @@ Last updated: **v0.1.0-beta.10** (see [CHANGELOG.md](../CHANGELOG.md) for releas
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Code mode sandbox has no filesystem access (by design).
 - Skills registry is local-only with no remote discovery.
-- Global context sync covers 11 of 15 linkable clients; Claude Desktop, Cursor, AnythingLLM, and Grok Build expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
+- Global context sync covers 12 of 15 linkable clients; Claude Desktop, Cursor, and AnythingLLM expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
 - Web UI requires a modern browser (no IE11 support).
 
 ---
