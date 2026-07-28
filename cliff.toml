@@ -24,9 +24,13 @@ body = """
 
 {% endfor %}\
 {% endfor %}
+
 """
 footer = ""
-trim = true
+# Must stay false: trimming strips the newline that terminates each release
+# block, which concatenates the next "## [version]" heading onto the previous
+# bullet and stops it rendering as a heading.
+trim = false
 
 [git]
 conventional_commits = true
