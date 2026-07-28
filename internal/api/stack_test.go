@@ -162,8 +162,9 @@ func TestSanitizeStackSecrets(t *testing.T) {
 		expected string
 	}{
 		{"already vault ref", "API_KEY", "${vault:MY_KEY}", "${vault:MY_KEY}"},
-		{"sensitive password", "DB_PASSWORD", "secret123", "${vault:test_DB_PASSWORD}"},
-		{"sensitive token", "AUTH_TOKEN", "tok_abc", "${vault:test_AUTH_TOKEN}"},
+		{"already var ref", "API_KEY", "${var:MY_KEY}", "${var:MY_KEY}"},
+		{"sensitive password", "DB_PASSWORD", "secret123", "${var:test_DB_PASSWORD}"},
+		{"sensitive token", "AUTH_TOKEN", "tok_abc", "${var:test_AUTH_TOKEN}"},
 		{"non-sensitive", "HOST", "localhost", "localhost"},
 	}
 
@@ -263,8 +264,37 @@ func TestSanitizeStackSecrets_AllTypes(t *testing.T) {
 		Resources:  []config.Resource{{Name: "res", Env: map[string]string{"AUTH_TOKEN": "tok"}}},
 	}
 	sanitizeStackSecrets(stack)
-	assert.Equal(t, "${vault:srv_DB_PASSWORD}", stack.MCPServers[0].Env["DB_PASSWORD"])
-	assert.Equal(t, "${vault:res_AUTH_TOKEN}", stack.Resources[0].Env["AUTH_TOKEN"])
+	assert.Equal(t, "${var:srv_DB_PASSWORD}", stack.MCPServers[0].Env["DB_PASSWORD"])
+	assert.Equal(t, "${var:res_AUTH_TOKEN}", stack.Resources[0].Env["AUTH_TOKEN"])
+}
+
+// Regression: a canonical ${var:KEY} reference was treated as a raw secret and
+// rewritten to ${vault:<server>_KEY}, inventing a key absent from the store and
+// breaking export/re-apply round trips. Store references must survive export in
+// whichever form they were written, on both servers and resources.
+func TestSanitizeStackSecrets_PreservesVarRefs(t *testing.T) {
+	stack := &config.Stack{
+		MCPServers: []config.MCPServer{{Name: "github", Env: map[string]string{
+			"GITHUB_PERSONAL_ACCESS_TOKEN": "${var:GITHUB_PERSONAL_ACCESS_TOKEN}",
+			"LEGACY_TOKEN":                 "${vault:LEGACY_TOKEN}",
+			"RAW_TOKEN":                    "ghp_rawsecret",
+		}}},
+		Resources: []config.Resource{{Name: "db", Env: map[string]string{
+			"DB_PASSWORD": "${var:DB_PASSWORD}",
+		}}},
+	}
+
+	sanitizeStackSecrets(stack)
+
+	srv := stack.MCPServers[0].Env
+	assert.Equal(t, "${var:GITHUB_PERSONAL_ACCESS_TOKEN}", srv["GITHUB_PERSONAL_ACCESS_TOKEN"],
+		"canonical var reference must not be rewritten")
+	assert.Equal(t, "${vault:LEGACY_TOKEN}", srv["LEGACY_TOKEN"],
+		"deprecated vault reference must not be rewritten")
+	assert.Equal(t, "${var:github_RAW_TOKEN}", srv["RAW_TOKEN"],
+		"a genuine raw secret is sanitized in canonical form")
+	assert.Equal(t, "${var:DB_PASSWORD}", stack.Resources[0].Env["DB_PASSWORD"],
+		"resource env follows the same rule")
 }
 
 
