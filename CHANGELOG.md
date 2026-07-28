@@ -153,7 +153,9 @@ All notable changes to gridctl will be documented in this file.
 ### Refactoring
 
 
-- Remove dead internal/server and legacy handler ([#862](https://github.com/gridctl/gridctl/pull/862))## [0.1.0-beta.13] - 2026-06-30
+- Remove dead internal/server and legacy handler ([#862](https://github.com/gridctl/gridctl/pull/862))
+
+## [0.1.0-beta.13] - 2026-06-30
 
 
 ### Bug Fixes
@@ -164,7 +166,9 @@ All notable changes to gridctl will be documented in this file.
 ### Features
 
 
-- Text-size control for reading-heavy detail panes ([#841](https://github.com/gridctl/gridctl/pull/841))## [0.1.0-beta.12] - 2026-06-25
+- Text-size control for reading-heavy detail panes ([#841](https://github.com/gridctl/gridctl/pull/841))
+
+## [0.1.0-beta.12] - 2026-06-25
 
 
 ### Bug Fixes
@@ -185,7 +189,9 @@ All notable changes to gridctl will be documented in this file.
 
 
 - Clean up topology canvas overlays ([#826](https://github.com/gridctl/gridctl/pull/826))
-- Group canvas overlays and drop dead latency-heat code ([#827](https://github.com/gridctl/gridctl/pull/827))## [0.1.0-beta.11] - 2026-06-23
+- Group canvas overlays and drop dead latency-heat code ([#827](https://github.com/gridctl/gridctl/pull/827))
+
+## [0.1.0-beta.11] - 2026-06-23
 
 
 ### Bug Fixes
@@ -256,7 +262,9 @@ All notable changes to gridctl will be documented in this file.
 - Extract shared vault hooks and atoms ([#689](https://github.com/gridctl/gridctl/pull/689))
 - Scope Vault sidebar to quick-lookup ([#690](https://github.com/gridctl/gridctl/pull/690))
 - Extract useToolsEditor hook for reuse ([#713](https://github.com/gridctl/gridctl/pull/713))
-- Declutter header status cluster and fix Code Mode affordance ([#803](https://github.com/gridctl/gridctl/pull/803))## [0.1.0-beta.10] - 2026-05-18
+- Declutter header status cluster and fix Code Mode affordance ([#803](https://github.com/gridctl/gridctl/pull/803))
+
+## [0.1.0-beta.10] - 2026-05-18
 
 
 ### Bug Fixes
@@ -309,7 +317,9 @@ All notable changes to gridctl will be documented in this file.
 - Extract shared inspector and canvas primitives ([#639](https://github.com/gridctl/gridctl/pull/639))
 - Use grid layout for topology inspector ([#641](https://github.com/gridctl/gridctl/pull/641))
 - Registry-driven workspace metadata ([#642](https://github.com/gridctl/gridctl/pull/642))
-- Polish skills canvas and sidebar header ([#645](https://github.com/gridctl/gridctl/pull/645))## [0.1.0-beta.9] - 2026-05-09
+- Polish skills canvas and sidebar header ([#645](https://github.com/gridctl/gridctl/pull/645))
+
+## [0.1.0-beta.9] - 2026-05-09
 
 
 ### Bug Fixes
@@ -336,7 +346,9 @@ All notable changes to gridctl will be documented in this file.
 
 - Muted-by-default color hierarchy for Skills Registry ([#559](https://github.com/gridctl/gridctl/pull/559))
 - Focus-First styling pass for Topology view ([#561](https://github.com/gridctl/gridctl/pull/561))
-- Remove yaml workflow engine ([#581](https://github.com/gridctl/gridctl/pull/581))## [0.1.0-beta.8] - 2026-05-05
+- Remove yaml workflow engine ([#581](https://github.com/gridctl/gridctl/pull/581))
+
+## [0.1.0-beta.8] - 2026-05-05
 
 
 ### Bug Fixes
@@ -352,7 +364,9 @@ All notable changes to gridctl will be documented in this file.
 - Add telemetry persistence backends ([#552](https://github.com/gridctl/gridctl/pull/552))
 - Add telemetry persistence API endpoints ([#553](https://github.com/gridctl/gridctl/pull/553))
 - Add telemetry persistence frontend ([#554](https://github.com/gridctl/gridctl/pull/554))
-- Add telemetry persistence CLI ([#555](https://github.com/gridctl/gridctl/pull/555))## [0.1.0-beta.7] - 2026-04-28
+- Add telemetry persistence CLI ([#555](https://github.com/gridctl/gridctl/pull/555))
+
+## [0.1.0-beta.7] - 2026-04-28
 
 
 ### Bug Fixes
@@ -384,7 +398,9 @@ All notable changes to gridctl will be documented in this file.
 
 - Extract shared pkg/git clone helpers ([#501](https://github.com/gridctl/gridctl/pull/501))
 - Polish registry dialogs, typography, and layout ([#509](https://github.com/gridctl/gridctl/pull/509))
-- Unify registry primitives and add keyboard nav ([#511](https://github.com/gridctl/gridctl/pull/511))## [0.1.0-beta.6] - 2026-04-19
+- Unify registry primitives and add keyboard nav ([#511](https://github.com/gridctl/gridctl/pull/511))
+
+## [0.1.0-beta.6] - 2026-04-19
 
 
 ### Bug Fixes
@@ -418,7 +434,9 @@ All notable changes to gridctl will be documented in this file.
 - Add MCP replicas schema and router (phase 1 of #470) ([#477](https://github.com/gridctl/gridctl/pull/477))
 - Wire MCP replicas runtime and health (phase 2 of #470) ([#478](https://github.com/gridctl/gridctl/pull/478))
 - Replicas observability, status, and API (phase 3 of #470) ([#479](https://github.com/gridctl/gridctl/pull/479))
-- Replicas wizard input and canvas badge (phase 4 of #470) ([#480](https://github.com/gridctl/gridctl/pull/480))## [0.1.0-beta.5] - 2026-04-08
+- Replicas wizard input and canvas badge (phase 4 of #470) ([#480](https://github.com/gridctl/gridctl/pull/480))
+
+## [0.1.0-beta.5] - 2026-04-08
 
 
 ### Bug Fixes
@@ -653,7 +671,9 @@ All notable changes to gridctl will be documented in this file.
 - Register vault routes with Go 1.22 method+path patterns
 - Remove handleVault dispatcher, use PathValue for key and name
 - Register registry routes with Go 1.22 method+path patterns
-- Remove handleRegistry dispatcher, use PathValue for skill routes## [0.1.0-beta.4] - 2026-03-26
+- Remove handleRegistry dispatcher, use PathValue for skill routes
+
+## [0.1.0-beta.4] - 2026-03-26
 
 
 ### Bug Fixes
@@ -759,7 +779,9 @@ All notable changes to gridctl will be documented in this file.
 ### Revert
 
 
-- Restore synchronous window.open for trusted gesture context## [0.1.0-beta.3] - 2026-03-18
+- Restore synchronous window.open for trusted gesture context
+
+## [0.1.0-beta.3] - 2026-03-18
 
 
 ### Bug Fixes
@@ -938,7 +960,9 @@ All notable changes to gridctl will be documented in this file.
 
 
 - Convert BottomPanel to tabbed container for logs and metrics
-- Fix staticcheck QF1003, QF1012, ST1005, ST1023 issues## [0.1.0-beta.2] - 2026-03-11
+- Fix staticcheck QF1003, QF1012, ST1005, ST1023 issues
+
+## [0.1.0-beta.2] - 2026-03-11
 
 
 ### Bug Fixes
@@ -947,7 +971,9 @@ All notable changes to gridctl will be documented in this file.
 - Skip vault ref validation when no vault provided
 - Auto-unlock vault with env passphrase on deploy
 - Pass vault context through reload handler
-- Wire vault store into hot reload handler## [0.1.0-beta.1] - 2026-03-09
+- Wire vault store into hot reload handler
+
+## [0.1.0-beta.1] - 2026-03-09
 
 
 ### Bug Fixes
@@ -1107,7 +1133,9 @@ All notable changes to gridctl will be documented in this file.
 - Rename NeedsDocker to NeedsContainerRuntime
 - Replace Docker-specific strings with runtime-agnostic text
 - Use runtime-agnostic error messages in destroy
-- Use runtime-agnostic error message in status## [0.1.0-alpha.11] - 2026-02-27
+- Use runtime-agnostic error message in status
+
+## [0.1.0-alpha.11] - 2026-02-27
 
 
 ### Bug Fixes
@@ -1142,14 +1170,18 @@ All notable changes to gridctl will be documented in this file.
 - Pass codeMode through graph transform
 - Pass codeMode to gateway node data
 - Add Code Mode badge to gateway node
-- Add Code Mode indicator to status bar## [0.1.0-alpha.10] - 2026-02-23
+- Add Code Mode indicator to status bar
+
+## [0.1.0-alpha.10] - 2026-02-23
 
 
 ### Bug Fixes
 
 
 - Use streamable HTTP endpoint for Claude Desktop bridge
-- Use streamable HTTP endpoint for Cline bridge## [0.1.0-alpha.9] - 2026-02-19
+- Use streamable HTTP endpoint for Cline bridge
+
+## [0.1.0-alpha.9] - 2026-02-19
 
 
 ### Bug Fixes
@@ -1214,7 +1246,9 @@ All notable changes to gridctl will be documented in this file.
 - Replace sidebar tabs with single skills list view
 - Add agent skills sublabel to registry node
 - Replace chunk size suppression with vendor splitting
-- Lazy-load detached page routes## [0.1.0-alpha.8] - 2026-02-16
+- Lazy-load detached page routes
+
+## [0.1.0-alpha.8] - 2026-02-16
 
 
 ### Bug Fixes
@@ -1281,7 +1315,9 @@ All notable changes to gridctl will be documented in this file.
 - Add popout and expand props to skill editor
 - Add detached editor page for popout window
 - Register /editor route for detached editor
-- Wire popout handlers for prompt and skill editors## [0.1.0-alpha.7] - 2026-02-12
+- Wire popout handlers for prompt and skill editors
+
+## [0.1.0-alpha.7] - 2026-02-12
 
 
 ### Bug Fixes
@@ -1496,7 +1532,9 @@ All notable changes to gridctl will be documented in this file.
 - Add ServerRegistrar for MCP server registration
 - Add GatewayBuilder for gateway lifecycle
 - Slim deploy.go to thin CLI layer over controller
-- Remove AnythingLLM special case from simulateLink## [0.1.0-alpha.6] - 2026-02-04
+- Remove AnythingLLM special case from simulateLink
+
+## [0.1.0-alpha.6] - 2026-02-04
 
 
 ### Bug Fixes
@@ -1571,7 +1609,9 @@ All notable changes to gridctl will be documented in this file.
 - Simplify Sidebar to fill parent container
 - Simplify BottomPanel to fill grid cell
 - Use shared log components and add zoom controls
-- Use shared log components and add zoom controls## [0.1.0-alpha.5] - 2026-01-29
+- Use shared log components and add zoom controls
+
+## [0.1.0-alpha.5] - 2026-01-29
 
 
 ### Bug Fixes
@@ -1598,7 +1638,9 @@ All notable changes to gridctl will be documented in this file.
 - Add graph module public exports
 - Extract tool parsing utilities
 - Simplify transform.ts to re-export graph module
-- Remove legacy layout module## [0.1.0-alpha.4] - 2026-01-28
+- Remove legacy layout module
+
+## [0.1.0-alpha.4] - 2026-01-28
 
 
 ### Refactoring
@@ -1630,7 +1672,9 @@ All notable changes to gridctl will be documented in this file.
 - Update StatusBar for useStackStore
 - Update BottomPanel for useStackStore
 - Update ToolList for useStackStore
-- Update usePolling for useStackStore## [0.1.0-alpha.3] - 2026-01-27
+- Update usePolling for useStackStore
+
+## [0.1.0-alpha.3] - 2026-01-27
 
 
 ### Bug Fixes
@@ -1676,7 +1720,9 @@ All notable changes to gridctl will be documented in this file.
 - Update graph transform for ToolSelector
 - Use output package in version command
 - Use output package in status command
-- Use output package in destroy command## [0.1.0-alpha.2] - 2026-01-23
+- Use output package in destroy command
+
+## [0.1.0-alpha.2] - 2026-01-23
 
 
 ### Refactoring
@@ -1685,7 +1731,9 @@ All notable changes to gridctl will be documented in this file.
 - Update module path to github.com/gridctl/gridctl
 - Rename cmd/agentlab to cmd/gridctl
 - Update import paths and branding in Go packages
-- Update web UI branding to Gridctl## [0.1.0-alpha.1] - 2026-01-21
+- Update web UI branding to Gridctl
+
+## [0.1.0-alpha.1] - 2026-01-21
 
 
 ### Bug Fixes
