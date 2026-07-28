@@ -10,7 +10,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We expect all 
 
 ### Prerequisites
 
-- **Go** 1.24 or later
+- **Go** 1.26 or later (the version in `go.mod`)
 - **Node.js** 20 or later
 - **Docker** (for running containers and integration tests)
 - **Git** with commit signing configured
@@ -58,8 +58,12 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We expect all 
 | `make dev` | Run Vite dev server for frontend development |
 | `make test` | Run unit tests |
 | `make test-coverage` | Run tests with coverage report |
+| `make test-frontend` | Run frontend tests (Vitest) |
 | `make test-integration` | Run integration tests (requires Docker) |
+| `make generate` | Regenerate mocks under `pkg/mcp/` and `pkg/runtime/` |
 | `make clean` | Remove build artifacts |
+
+> The `gridctl` binary on your `$PATH` is typically a released build. Test local changes with `make build` followed by `./gridctl …`.
 
 ## 🔧 Making Changes
 
@@ -154,21 +158,27 @@ Your pull request should:
 - Have a clear description of the changes
 - Reference any related issues
 - Pass all CI checks (linting, tests, build)
+- Add an entry under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for any user-visible change
 - Follow the [PR template](.github/pull_request_template.md) checklist
+
+[CONSTITUTION.md](CONSTITUTION.md) is binding for every change and covers the rules that most often catch a refactor by surprise: test-first development, real dependencies in integration tests, no panics in `pkg/` or `internal/`, context propagation, stack YAML back-compat, and changelog discipline.
 
 ### CI Checks
 
 Pull requests are automatically checked for:
 - Go linting (`golangci-lint` with `gosec`)
 - Vulnerability scanning (`govulncheck`, `npm audit`)
-- Unit tests with race detection
+- Unit tests with race detection, plus overall and per-package coverage thresholds
+- Integration tests against both Docker and Podman
+- Frontend type check, lint, tests, and build
+- Example stack validation
 - Successful binary build
 
 ## 🚧 Issue Guidelines
 
 ### Bug Reports
 
-Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
+Use the [bug report template](.github/ISSUE_TEMPLATE/1-bug-report.yml) and include:
 - Clear description of the issue
 - Steps to reproduce
 - Expected vs actual behavior
@@ -176,7 +186,7 @@ Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
 ### Feature Requests
 
-Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) and include:
+Use the [feature request template](.github/ISSUE_TEMPLATE/2-feature-request.yml) and include:
 - Problem statement
 - Proposed solution
 - Alternatives considered
@@ -199,6 +209,8 @@ gridctl/
 ├── examples/              # Example stacks
 └── tests/integration/     # Integration tests
 ```
+
+[AGENTS.md](AGENTS.md) carries the full package-by-package map and the end-to-end request flow.
 
 ## 🪪 License
 
