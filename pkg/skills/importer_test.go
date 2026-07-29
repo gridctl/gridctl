@@ -733,3 +733,71 @@ Body.
 	assert.Equal(t, "1.2.2", sk.Metadata["version"])
 	assert.NotEmpty(t, sk.Metadata["openclaw"])
 }
+
+// TestImporter_Import_UnknownFrontmatterPreserved is the end-to-end
+// regression test for import stripping unmodeled frontmatter keys: the raw
+// bytes written to the registry must still carry the key.
+func TestImporter_Import_UnknownFrontmatterPreserved(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+
+	repoDir := initRepoWithSkillContent(t, map[string]string{
+		"skills/hinted/SKILL.md": "---\nname: hinted-skill\ndescription: has a hint\nargument-hint: <task description>\n---\n\nBody.\n",
+	})
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	data, err := os.ReadFile(filepath.Join(regDir, "skills", "hinted-skill", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "argument-hint: <task description>",
+		"imported copy must preserve unmodeled frontmatter keys")
+}
+
+// TestImporter_Update_RestoresStrippedKeys validates the recovery story for
+// registries written before the fix: a re-sync restores keys the old import
+// dropped, without manual cache surgery.
+func TestImporter_Update_RestoresStrippedKeys(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+
+	repoDir := initRepoWithSkillContent(t, map[string]string{
+		"skills/hinted/SKILL.md": "---\nname: hinted-skill\ndescription: has a hint\nargument-hint: <task description>\n---\n\nBody.\n",
+	})
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	_, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	require.NoError(t, err)
+
+	// Simulate a pre-fix install: strip the key from the installed copy and
+	// make the origin metadata consistent with that state (matching
+	// InstalledHash so it does not read as user drift, stale CommitSHA so an
+	// update is detected).
+	skillDir := filepath.Join(regDir, "skills", "hinted-skill")
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	stripped := "---\nname: hinted-skill\ndescription: has a hint\nstate: active\n---\n\nBody.\n"
+	require.NoError(t, os.WriteFile(skillFile, []byte(stripped), 0644))
+
+	origin, err := ReadOrigin(skillDir)
+	require.NoError(t, err)
+	strippedHash, err := ContentHashFile(skillFile)
+	require.NoError(t, err)
+	origin.InstalledHash = strippedHash
+	origin.CommitSHA = "0123456789abcdef0123456789abcdef01234567"
+	require.NoError(t, WriteOrigin(skillDir, origin))
+
+	updateResult, err := imp.Update("hinted-skill", false, false, false)
+	require.NoError(t, err)
+	require.Len(t, updateResult.Imported, 1, "warnings: %v", updateResult.Warnings)
+
+	data, err := os.ReadFile(skillFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "argument-hint: <task description>",
+		"update must restore keys a pre-fix import dropped")
+}
