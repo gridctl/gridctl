@@ -38,6 +38,14 @@ type AgentSkill struct {
 	// --- Gridctl extensions (not in agentskills.io spec) ---
 	State ItemState `yaml:"state,omitempty" json:"state"`
 
+	// Extra holds frontmatter keys this struct does not model, preserved
+	// through parse, render, and the JSON API so imports and edits never
+	// strip them (clients read keys like argument-hint and
+	// disable-model-invocation from projected skills). Values are the
+	// decoded YAML; gridctl never interprets them. The yaml tag is unused:
+	// UnmarshalYAML populates it and RenderSkillMD emits it explicitly.
+	Extra map[string]any `yaml:"-" json:"extra,omitempty"`
+
 	// --- Parsed from file content (not in frontmatter YAML) ---
 	Body string `yaml:"-" json:"body"` // Markdown content after frontmatter
 
