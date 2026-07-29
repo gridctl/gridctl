@@ -575,6 +575,9 @@ export function SkillEditor({
         ...(Object.keys(metadataRecord).length > 0 && { metadata: metadataRecord }),
         ...(allowedTools && { allowedTools }),
         ...(criteriaStrings.length > 0 && { acceptanceCriteria: criteriaStrings }),
+        // Unmodeled frontmatter keys pass through untouched; dropping them
+        // here would undo the backend's preservation on the first save.
+        ...(skill?.extra && Object.keys(skill.extra).length > 0 && { extra: skill.extra }),
       };
 
       if (isNew) {
@@ -699,6 +702,7 @@ export function SkillEditor({
         ...(Object.keys(metadataRecord).length > 0 && { metadata: metadataRecord }),
         ...(allowedTools && { allowedTools }),
         ...(criteriaStrings.length > 0 && { acceptanceCriteria: criteriaStrings }),
+        ...(skill?.extra && Object.keys(skill.extra).length > 0 && { extra: skill.extra }),
       };
       await createRegistrySkill(copy);
       showToast('success', `Forked as "${newName}"`);
@@ -710,7 +714,7 @@ export function SkillEditor({
       setReconciling(false);
       setForking(false);
     }
-  }, [forkName, description, body, state, license, compatibility, metadata, allowedTools, criteria, onSaved, onClose]);
+  }, [forkName, description, body, state, license, compatibility, metadata, allowedTools, criteria, skill, onSaved, onClose]);
 
   // --- Keyboard shortcut: Cmd/Ctrl+S to save ---
 

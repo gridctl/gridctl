@@ -133,3 +133,36 @@ describe('SkillEditor body hydration', () => {
     expect(saveButton()).toBeEnabled();
   });
 });
+
+describe('SkillEditor extra frontmatter pass-through', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('carries unmodeled frontmatter keys through a save untouched', async () => {
+    const withExtra: AgentSkill = {
+      ...LIST_SKILL,
+      extra: { 'argument-hint': '<task description>', 'disable-model-invocation': true },
+    };
+    vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...withExtra, body: '# Triage\n' });
+    renderEditor(withExtra);
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(updateRegistrySkill).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updateRegistrySkill).mock.calls[0][1].extra).toEqual({
+      'argument-hint': '<task description>',
+      'disable-model-invocation': true,
+    });
+  });
+
+  it('omits the extra field entirely when the skill has none', async () => {
+    vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...LIST_SKILL, body: '# Triage\n' });
+    renderEditor();
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(updateRegistrySkill).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updateRegistrySkill).mock.calls[0][1]).not.toHaveProperty('extra');
+  });
+});
