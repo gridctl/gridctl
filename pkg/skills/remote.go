@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
@@ -16,6 +17,20 @@ import (
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/registry"
 )
+
+// repoLocks serializes fetch/checkout mutations per cached clone. The
+// daemon's background update checker, the web UI's sync fan-out, and CLI
+// commands can all touch the same cache directory, and go-git makes no
+// concurrency guarantees for a shared on-disk repository.
+var repoLocks sync.Map // map[string]*sync.Mutex
+
+// lockRepoPath locks the mutex for repoPath and returns its unlock func.
+func lockRepoPath(repoPath string) func() {
+	m, _ := repoLocks.LoadOrStore(repoPath, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
 
 // CloneResult contains the result of a clone + discovery operation.
 type CloneResult struct {
@@ -100,12 +115,15 @@ func FetchAndCompare(repo, ref, currentSHA string, auth AuthConfig, logger *slog
 		return "", true, nil
 	}
 
+	unlock := lockRepoPath(repoPath)
+	defer unlock()
+
 	authMethod, err := authMethodFor(auth, repo)
 	if err != nil {
 		return currentSHA, false, gitpkg.RedactError(err)
 	}
 
-	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{Auth: authMethod}, logger); err != nil {
+	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{AllTags: true, AllBranches: true, Auth: authMethod}, logger); err != nil {
 		logger.Warn("fetch failed", "error", gitpkg.RedactError(err))
 		return currentSHA, false, nil
 	}
@@ -115,20 +133,31 @@ func FetchAndCompare(repo, ref, currentSHA string, auth AuthConfig, logger *slog
 		return currentSHA, false, nil
 	}
 
-	if ref != "" {
-		newSHA, err := gitpkg.ResolveRef(r, ref)
-		if err != nil {
-			return currentSHA, false, nil
-		}
-		return newSHA, newSHA != currentSHA, nil
-	}
-
-	head, err := r.Head()
+	// Resolve against remote-tracking state, never the local HEAD: a fetch
+	// updates only refs/remotes/origin/*, so local refs (and the worktree)
+	// still describe the previous sync and would mask upstream changes.
+	target, err := semverTarget(repoPath, ref)
 	if err != nil {
 		return currentSHA, false, nil
 	}
-	newSHA := head.Hash().String()
+	newSHA, err := gitpkg.ResolveRemoteRef(r, target)
+	if err != nil {
+		return currentSHA, false, nil
+	}
 	return newSHA, newSHA != currentSHA, nil
+}
+
+// semverTarget resolves a semver-constraint ref to its best matching tag in
+// the cached repo; any other ref passes through unchanged.
+func semverTarget(repoPath, ref string) (string, error) {
+	if !IsSemVerConstraint(ref) {
+		return ref, nil
+	}
+	tags, err := gitpkg.ListTags(repoPath)
+	if err != nil {
+		return "", fmt.Errorf("listing tags: %w", err)
+	}
+	return ResolveSemVerConstraint(ref, tags)
 }
 
 // ListRemoteTags returns all tags from a cached repository.
@@ -146,11 +175,20 @@ func cloneShallow(url, ref string, auth AuthConfig, logger *slog.Logger) (string
 		return "", fmt.Errorf("getting cache path: %w", err)
 	}
 
+	unlock := lockRepoPath(repoPath)
+	defer unlock()
+
 	// If repo exists, fetch updates instead
 	if _, err := os.Stat(repoPath); err == nil {
 		return updateExisting(repoPath, url, ref, auth, logger)
 	}
 
+	return cloneFresh(repoPath, url, ref, auth, logger)
+}
+
+// cloneFresh clones url into repoPath and lands the worktree on ref.
+// Callers must hold the repoPath lock.
+func cloneFresh(repoPath, url, ref string, auth AuthConfig, logger *slog.Logger) (string, error) {
 	authMethod, err := authMethodFor(auth, url)
 	if err != nil {
 		return "", err
@@ -210,31 +248,33 @@ func updateExisting(repoPath, url, ref string, auth AuthConfig, logger *slog.Log
 		return "", err
 	}
 
-	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{AllTags: true, Auth: authMethod}, logger); err != nil {
+	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{AllTags: true, AllBranches: true, Auth: authMethod}, logger); err != nil {
+		// Offline or unreachable remote: serve the cached content rather
+		// than failing. The worktree cannot have anything newer to land.
 		logger.Warn("fetch failed, using cached", "error", gitpkg.RedactError(err))
+		return repoPath, nil
 	}
 
-	if ref != "" {
-		if IsSemVerConstraint(ref) {
-			tags, err := gitpkg.ListTags(repoPath)
-			if err != nil {
-				logger.Warn("failed to list tags, using cached", "error", err)
-				return repoPath, nil
-			}
-			resolvedTag, err := ResolveSemVerConstraint(ref, tags)
-			if err != nil {
-				logger.Warn("failed to resolve constraint, using cached", "constraint", ref, "error", err)
-				return repoPath, nil
-			}
-			if err := gitpkg.Checkout(r, resolvedTag); err != nil {
-				logger.Warn("failed to checkout tag, using cached", "tag", resolvedTag, "error", err)
-				return repoPath, nil
-			}
-		} else {
-			if err := gitpkg.Checkout(r, ref); err != nil {
-				logger.Warn("failed to checkout ref, using cached", "ref", ref, "error", err)
-			}
+	// Land the worktree on what the fetch brought in. A fetch updates only
+	// remote-tracking refs; without this step the worktree (and therefore
+	// discovery) stays frozen at the first-import commit forever, for every
+	// ref shape including the unpinned default branch.
+	target, err := semverTarget(repoPath, ref)
+	if err != nil {
+		logger.Warn("failed to resolve constraint, using cached", "constraint", ref, "error", err)
+		return repoPath, nil
+	}
+	if _, err := gitpkg.SyncWorktree(r, target); err != nil {
+		// go-git can advance remote-tracking refs without transferring the
+		// backing objects (observed with local-path remotes), leaving the
+		// resolved commit un-checkoutable. The fetch above succeeded, so the
+		// remote is reachable: a fresh clone is the reliable recovery and
+		// costs one shallow clone only when upstream actually changed.
+		logger.Warn("worktree sync failed, re-cloning", "ref", target, "error", gitpkg.RedactError(err))
+		if rmErr := os.RemoveAll(repoPath); rmErr != nil {
+			return "", fmt.Errorf("removing stale cache for re-clone: %w", rmErr)
 		}
+		return cloneFresh(repoPath, url, ref, auth, logger)
 	}
 
 	return repoPath, nil
