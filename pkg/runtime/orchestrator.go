@@ -142,7 +142,6 @@ func (o *Orchestrator) SetCredentialResolver(r CredentialResolver) {
 	o.credentialResolver = r
 }
 
-
 // RuntimeInfo returns the detected runtime info, or nil if not set.
 func (o *Orchestrator) RuntimeInfo() *RuntimeInfo {
 	return o.runtimeInfo
@@ -350,6 +349,13 @@ func nReplicaPlaceholders(n int) []MCPServerReplica {
 func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, server *config.MCPServer, opts UpOptions, hostPort, replicaID, totalReplicas int) (*MCPServerResult, error) {
 	runtimeName := ReplicaContainerName(stack.Name, server.Name, replicaID, totalReplicas)
 
+	// Name drives both container name and DNS alias; for multi-replica
+	// servers we suffix it so replicas don't collide.
+	workloadName := server.Name
+	if totalReplicas > 1 {
+		workloadName = fmt.Sprintf("%s-replica-%d", server.Name, replicaID)
+	}
+
 	// Check if container already exists
 	exists, workloadID, err := o.runtime.Exists(ctx, runtimeName)
 	if err != nil {
@@ -358,6 +364,19 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 
 	if exists {
 		o.logger.Info("MCP server already exists, starting", "name", server.Name, "replica", replicaID)
+
+		status, err := o.runtime.Status(ctx, workloadID)
+		if err != nil {
+			return nil, err
+		}
+		if status.State != WorkloadStateRunning {
+			// A previous shutdown left this container stopped; restart it
+			// rather than handing a dead container to the MCP client.
+			if _, err := o.runtime.Start(ctx, WorkloadConfig{Name: workloadName, Stack: stack.Name}); err != nil {
+				return nil, err
+			}
+		}
+
 		// Get actual host port
 		actualHostPort, _ := o.runtime.GetHostPort(ctx, workloadID, server.Port)
 		return &MCPServerResult{
@@ -415,13 +434,8 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		networkName = server.Network
 	}
 
-	// Create workload config. Name drives both container name and DNS alias;
-	// for multi-replica servers we suffix it so replicas don't collide. Labels
-	// still carry the logical server name so Down/List filters by stack work.
-	workloadName := server.Name
-	if totalReplicas > 1 {
-		workloadName = fmt.Sprintf("%s-replica-%d", server.Name, replicaID)
-	}
+	// Create workload config. Labels still carry the logical server name so
+	// Down/List filters by stack work.
 	cfg := WorkloadConfig{
 		Name:        workloadName,
 		Stack:       stack.Name,
