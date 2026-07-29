@@ -1011,3 +1011,62 @@ func TestHandleRegistry_SkillsBatch_EmptyArray(t *testing.T) {
 	}
 }
 
+
+// TestHandleRegistry_SkillPut_PreservesExtra locks in parity between the JSON
+// and YAML entry points: unmodeled frontmatter keys round-trip through the
+// API the same way they round-trip through import.
+func TestHandleRegistry_SkillPut_PreservesExtra(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "hinted", registry.StateActive)
+	handler := srv.Handler()
+
+	payload := `{
+		"name": "hinted",
+		"description": "Test skill: hinted",
+		"state": "active",
+		"body": "# hinted\n\nSkill instructions.",
+		"extra": {"argument-hint": "<task description>", "disable-model-invocation": true}
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/hinted", strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// The stored skill (re-parsed from disk on GET) must carry the extras.
+	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/hinted", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET: expected 200, got %d", rec.Code)
+	}
+	var got registry.AgentSkill
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got.Extra["argument-hint"] != "<task description>" {
+		t.Errorf("Extra[argument-hint] = %v, want <task description>", got.Extra["argument-hint"])
+	}
+	if got.Extra["disable-model-invocation"] != true {
+		t.Errorf("Extra[disable-model-invocation] = %v, want true", got.Extra["disable-model-invocation"])
+	}
+
+	// The list projection must carry extras too: the editor round-trips a
+	// list-sourced skill, so a list that dropped them would undo the fix on
+	// the next save.
+	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var items []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&items); err != nil {
+		t.Fatalf("invalid list JSON: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(items))
+	}
+	extra, _ := items[0]["extra"].(map[string]any)
+	if extra["argument-hint"] != "<task description>" {
+		t.Errorf("list extra[argument-hint] = %v, want <task description>", extra["argument-hint"])
+	}
+}
