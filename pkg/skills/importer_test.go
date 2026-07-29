@@ -270,6 +270,188 @@ func TestImporter_Update_PreservesState(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, registry.StateDisabled, sk.State,
 		"disabled skill should remain disabled after sync")
+	assert.Contains(t, sk.Body, "Second version.",
+		"update must install the new upstream content, not re-render the cached worktree")
+}
+
+// TestImporter_Update_UnpinnedInstallsFresh is the regression test for the
+// stale clone cache bug: an unpinned source (Ref == "", the default `gridctl
+// skill add <repo>` shape) must detect an upstream commit and install its
+// content, not report "already up to date" against the frozen first-import
+// worktree.
+func TestImporter_Update_UnpinnedInstallsFresh(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+	repoDir, repo := initSkillRepo(t, "# Test\n\nFirst version.\n")
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	commitChange(t, repo, repoDir, "# Test\n\nSecond version.\n")
+	head, err := repo.Head()
+	require.NoError(t, err)
+
+	updateResult, err := imp.Update("test-skill", false, false, false)
+	require.NoError(t, err)
+	require.Len(t, updateResult.Imported, 1, "expected a re-import after upstream change, got warnings: %v", updateResult.Warnings)
+
+	data, err := os.ReadFile(filepath.Join(regDir, "skills", "test-skill", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "Second version.", "on-disk registry copy must carry the new upstream content")
+
+	origin, err := ReadOrigin(filepath.Join(regDir, "skills", "test-skill"))
+	require.NoError(t, err)
+	assert.Equal(t, head.Hash().String(), origin.CommitSHA, "origin must record the new upstream commit")
+
+	// A repeat update is a clean no-op, not a perpetual "update available".
+	repeat, err := imp.Update("test-skill", false, false, false)
+	require.NoError(t, err)
+	assert.Empty(t, repeat.Imported)
+	require.NotEmpty(t, repeat.Warnings)
+	assert.Contains(t, repeat.Warnings[0], "already up to date")
+}
+
+// TestImporter_Update_PinnedBranchInstallsFresh covers the branch-pinned
+// profile of the same bug: update detected the change but re-installed the
+// stale worktree, looping on "update available" forever.
+func TestImporter_Update_PinnedBranchInstallsFresh(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+	repoDir, repo := initSkillRepo(t, "# Test\n\nFirst version.\n")
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	commitChange(t, repo, repoDir, "# Test\n\nSecond version.\n")
+
+	updateResult, err := imp.Update("test-skill", false, false, false)
+	require.NoError(t, err)
+	require.Len(t, updateResult.Imported, 1)
+
+	data, err := os.ReadFile(filepath.Join(regDir, "skills", "test-skill", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "Second version.")
+
+	repeat, err := imp.Update("test-skill", false, false, false)
+	require.NoError(t, err)
+	assert.Empty(t, repeat.Imported, "second update must not loop on a phantom change")
+	require.NotEmpty(t, repeat.Warnings)
+	assert.Contains(t, repeat.Warnings[0], "already up to date")
+}
+
+// TestImporter_Import_DiscoversNewUpstreamSkill verifies that re-running an
+// import against an already-cached repo sees skills added upstream after the
+// first import.
+func TestImporter_Import_DiscoversNewUpstreamSkill(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+
+	repoDir := initRepoWithSkillContent(t, map[string]string{
+		"skills/one/SKILL.md": "---\nname: one-skill\ndescription: first\n---\n\nBody.\n",
+	})
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	// A second skill lands upstream after the first import.
+	srcRepo, err := git.PlainOpen(repoDir)
+	require.NoError(t, err)
+	newFile := filepath.Join(repoDir, "skills", "two", "SKILL.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(newFile), 0755))
+	require.NoError(t, os.WriteFile(newFile, []byte("---\nname: two-skill\ndescription: second\n---\n\nBody.\n"), 0644))
+	wt, err := srcRepo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Add("skills/two/SKILL.md")
+	require.NoError(t, err)
+	_, err = wt.Commit("add second skill", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@test.com"},
+	})
+	require.NoError(t, err)
+
+	result, err = imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(result.Imported))
+	for _, s := range result.Imported {
+		names = append(names, s.Name)
+	}
+	assert.Contains(t, names, "two-skill", "re-import must discover skills added upstream, got %v (warnings: %v)", names, result.Warnings)
+}
+
+// TestFetchAndCompare_SemverConstraintDetectsNewTag covers the detection gap
+// for semver-constraint refs: a new matching tag upstream must report as a
+// change even though the constraint itself is not a resolvable git ref.
+func TestFetchAndCompare_SemverConstraintDetectsNewTag(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+	repoDir, repo := initSkillRepo(t, "# Test\n\nFirst version.\n")
+
+	head, err := repo.Head()
+	require.NoError(t, err)
+	_, err = repo.CreateTag("v1.0.0", head.Hash(), nil)
+	require.NoError(t, err)
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "^1.0.0", Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	origin, err := ReadOrigin(filepath.Join(regDir, "skills", "test-skill"))
+	require.NoError(t, err)
+
+	commitChange(t, repo, repoDir, "# Test\n\nSecond version.\n")
+	head2, err := repo.Head()
+	require.NoError(t, err)
+	_, err = repo.CreateTag("v1.1.0", head2.Hash(), nil)
+	require.NoError(t, err)
+
+	newSHA, changed, err := FetchAndCompare(repoDir, "^1.0.0", origin.CommitSHA, AuthConfig{}, slog.Default())
+	require.NoError(t, err)
+	assert.True(t, changed, "new matching tag must be detected as a change")
+	assert.Equal(t, head2.Hash().String(), newSHA)
+}
+
+// TestCloneAndDiscover_ConcurrentSameRepo exercises the per-repo lock: two
+// concurrent operations against one cached clone must serialize rather than
+// race on the shared worktree. Run with -race to make this meaningful.
+func TestCloneAndDiscover_ConcurrentSameRepo(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	repoDir, repo := initSkillRepo(t, "# Test\n\nFirst version.\n")
+
+	// Seed the cache, then push an upstream change so concurrent calls
+	// exercise the mutation path, not just reads.
+	_, err := CloneAndDiscover(repoDir, "", "", AuthConfig{}, slog.Default())
+	require.NoError(t, err)
+	commitChange(t, repo, repoDir, "# Test\n\nSecond version.\n")
+
+	var wg sync.WaitGroup
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = CloneAndDiscover(repoDir, "", "", AuthConfig{}, slog.Default())
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		assert.NoError(t, err, "concurrent CloneAndDiscover #%d", i)
+	}
 }
 
 // TestImporter_Import_NoPreserveStateResetsState confirms that the default

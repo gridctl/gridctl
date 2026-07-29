@@ -219,7 +219,7 @@ func TestCheckout_InvalidRef(t *testing.T) {
 	}
 }
 
-func TestResolveRef_Tag(t *testing.T) {
+func TestResolveRemoteRef_Tag(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping git test in short mode")
 	}
@@ -233,16 +233,16 @@ func TestResolveRef_Tag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	sha, err := ResolveRef(repo, "v1.0.0")
+	sha, err := ResolveRemoteRef(repo, "v1.0.0")
 	if err != nil {
-		t.Fatalf("ResolveRef: %v", err)
+		t.Fatalf("ResolveRemoteRef: %v", err)
 	}
 	if sha == "" {
 		t.Fatal("empty sha")
 	}
 }
 
-func TestResolveRef_Unknown(t *testing.T) {
+func TestResolveRemoteRef_Unknown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping git test in short mode")
 	}
@@ -256,7 +256,7 @@ func TestResolveRef_Unknown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if _, err := ResolveRef(repo, "does-not-exist"); err == nil {
+	if _, err := ResolveRemoteRef(repo, "does-not-exist"); err == nil {
 		t.Fatal("expected error for unknown ref")
 	}
 }
