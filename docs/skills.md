@@ -26,6 +26,8 @@ When an alert fires, work through this checklist in order. Don't skip steps even
 
 The frontmatter follows the [agentskills.io spec](https://agentskills.io/specification). gridctl adds one optional extension: `state:` (`draft` / `active` / `disabled`), which controls whether the registry serves the skill. Only `active` skills surface to MCP clients.
 
+Frontmatter keys gridctl does not model (client extensions like `argument-hint` or `disable-model-invocation`) are preserved through import, sync, and editor saves. Gridctl never interprets them; they ride along so projected skills keep working in the clients that read them. Values and types are preserved; key ordering, comments, and scalar formatting (quoting, numeric representation) may normalize when gridctl rewrites the file.
+
 ## How skills reach the model
 
 Two channels, complementary and per-client.
@@ -115,8 +117,10 @@ applies (`gridctl skill update` refuses to overwrite a drifted skill unless
 - `POST /api/skills/sources/{name}/skills/{skill}/reset` backs up and
   force-restores a single skill to its upstream content.
 
-The bytes served to agents are never changed by any of this beyond the explicit
-overwrite a `reset` or `force` sync performs.
+Skill content is never changed by any of this beyond the explicit overwrite a
+`reset` or `force` sync performs. Note that import and save do normalize
+frontmatter formatting (field order, quoting) while preserving every key and
+value, so the registry copy is not byte-identical to the upstream file.
 
 ## Projecting skills into clients
 

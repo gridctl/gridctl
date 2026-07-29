@@ -41,9 +41,12 @@ type registrySkillListItem struct {
 	Metadata           registry.SkillMetadata `json:"metadata,omitempty"`
 	AllowedTools       string                 `json:"allowedTools,omitempty"`
 	AcceptanceCriteria []string               `json:"acceptanceCriteria,omitempty"`
-	State              registry.ItemState     `json:"state"`
-	FileCount          int                    `json:"fileCount"`
-	Dir                string                 `json:"dir,omitempty"`
+	// Extra rides along so the editor can round-trip unmodeled frontmatter
+	// keys from a list-sourced skill; only bodies are too heavy for the list.
+	Extra     map[string]any     `json:"extra,omitempty"`
+	State     registry.ItemState `json:"state"`
+	FileCount int                `json:"fileCount"`
+	Dir       string             `json:"dir,omitempty"`
 }
 
 // newRegistrySkillListItem projects one skill into its list shape.
@@ -56,6 +59,7 @@ func newRegistrySkillListItem(sk *registry.AgentSkill) registrySkillListItem {
 		Metadata:           sk.Metadata,
 		AllowedTools:       sk.AllowedTools,
 		AcceptanceCriteria: sk.AcceptanceCriteria,
+		Extra:              sk.Extra,
 		State:              sk.State,
 		FileCount:          sk.FileCount,
 		Dir:                sk.Dir,

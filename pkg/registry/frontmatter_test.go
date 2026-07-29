@@ -149,12 +149,22 @@ End of file.
 	}
 }
 
-func TestParseSkillMD_UnknownYAMLFields(t *testing.T) {
+// TestParseSkillMD_UnknownFieldsPreserved is the regression test for the
+// import path silently dropping frontmatter keys the struct does not model
+// (argument-hint was the reported case). Unknown keys must land in Extra and
+// survive a full render/parse round trip.
+func TestParseSkillMD_UnknownFieldsPreserved(t *testing.T) {
 	input := `---
 name: test-skill
 description: A test
-unknown_field: should be ignored
-another_custom: also ignored
+argument-hint: <task description>
+disable-model-invocation: true
+hooks:
+  PostToolUse:
+    - matcher: Write
+tags:
+  - one
+  - two
 ---
 
 Body text.
@@ -168,8 +178,104 @@ Body text.
 	if skill.Name != "test-skill" {
 		t.Errorf("Name = %q, want %q", skill.Name, "test-skill")
 	}
-	if !strings.Contains(skill.Body, "Body text.") {
-		t.Errorf("Body = %q", skill.Body)
+	if got := skill.Extra["argument-hint"]; got != "<task description>" {
+		t.Errorf("Extra[argument-hint] = %v, want <task description>", got)
+	}
+	if got := skill.Extra["disable-model-invocation"]; got != true {
+		t.Errorf("Extra[disable-model-invocation] = %v, want true", got)
+	}
+	if _, ok := skill.Extra["hooks"]; !ok {
+		t.Error("Extra[hooks] missing: structured unknown values must be preserved")
+	}
+
+	rendered, err := RenderSkillMD(skill)
+	if err != nil {
+		t.Fatalf("RenderSkillMD() error = %v", err)
+	}
+	reparsed, err := ParseSkillMD(rendered)
+	if err != nil {
+		t.Fatalf("ParseSkillMD(rendered) error = %v", err)
+	}
+	if got := reparsed.Extra["argument-hint"]; got != "<task description>" {
+		t.Errorf("round-tripped Extra[argument-hint] = %v, want <task description>", got)
+	}
+	if len(reparsed.Extra) != len(skill.Extra) {
+		t.Errorf("round trip changed Extra key count: %d != %d", len(reparsed.Extra), len(skill.Extra))
+	}
+
+	// Rendering must be idempotent: a second render of the reparsed skill
+	// produces identical bytes, so repeated saves never churn the file.
+	rendered2, err := RenderSkillMD(reparsed)
+	if err != nil {
+		t.Fatalf("RenderSkillMD(reparsed) error = %v", err)
+	}
+	if string(rendered) != string(rendered2) {
+		t.Errorf("render not idempotent:\nfirst:\n%s\nsecond:\n%s", rendered, rendered2)
+	}
+}
+
+// TestParseSkillMD_UnknownFieldEdgeCases covers keys that could confuse the
+// known-field dispatch: names prefixing or suffixing known keys, a duplicate
+// unknown key (last wins, no error), and state never leaking into Extra.
+func TestParseSkillMD_UnknownFieldEdgeCases(t *testing.T) {
+	input := `---
+name: test-skill
+description: A test
+states: plural-not-state
+metadata-extra: not-metadata
+dup: first
+dup: second
+state: disabled
+---
+
+Body.
+`
+
+	skill, err := ParseSkillMD([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseSkillMD() error = %v", err)
+	}
+	if got := skill.Extra["states"]; got != "plural-not-state" {
+		t.Errorf("Extra[states] = %v, want plural-not-state", got)
+	}
+	if got := skill.Extra["metadata-extra"]; got != "not-metadata" {
+		t.Errorf("Extra[metadata-extra] = %v, want not-metadata", got)
+	}
+	if got := skill.Extra["dup"]; got != "second" {
+		t.Errorf("Extra[dup] = %v, want second (last wins)", got)
+	}
+	if skill.State != StateDisabled {
+		t.Errorf("State = %q, want disabled", skill.State)
+	}
+	if _, ok := skill.Extra["state"]; ok {
+		t.Error("known key state must not appear in Extra")
+	}
+}
+
+// TestRenderSkillMD_ExtraSkipsKnownKeys guards the JSON API path: a caller
+// can place arbitrary keys in Extra, and rendering must never emit a
+// duplicate of a known field.
+func TestRenderSkillMD_ExtraSkipsKnownKeys(t *testing.T) {
+	skill := &AgentSkill{
+		Name:        "dup-guard",
+		Description: "desc",
+		State:       StateActive,
+		Extra: map[string]any{
+			"name":          "spoofed",
+			"argument-hint": "<x>",
+		},
+		Body: "Body.\n",
+	}
+
+	rendered, err := RenderSkillMD(skill)
+	if err != nil {
+		t.Fatalf("RenderSkillMD() error = %v", err)
+	}
+	if got := strings.Count(string(rendered), "name:"); got != 1 {
+		t.Errorf("rendered %d name: lines, want 1:\n%s", got, rendered)
+	}
+	if !strings.Contains(string(rendered), "argument-hint: <x>") {
+		t.Errorf("rendered output missing argument-hint:\n%s", rendered)
 	}
 }
 

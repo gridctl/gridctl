@@ -58,6 +58,70 @@ func metadataNodeString(n *yaml.Node) string {
 	}
 }
 
+// knownFrontmatterKey reports whether k is a frontmatter key AgentSkill
+// models with a typed field. Keep in sync with the switch in
+// AgentSkill.UnmarshalYAML and the fm struct in RenderSkillMD.
+func knownFrontmatterKey(k string) bool {
+	switch k {
+	case "name", "description", "license", "compatibility", "metadata",
+		"allowed-tools", "acceptance_criteria", "state":
+		return true
+	}
+	return false
+}
+
+// UnmarshalYAML decodes frontmatter into the typed fields and captures every
+// unmodeled top-level key into Extra, so unknown keys survive the registry's
+// parse/render round trip instead of being silently dropped. The mapping node
+// is walked by hand for the same reason SkillMetadata's unmarshaler does it:
+// yaml.v3's map decoding would reject a duplicate key outright, and a plain
+// struct decode has no way to see unmatched keys at all. Known fields keep
+// struct-decode strictness (a type mismatch fails the parse, as before);
+// unknown values that fail to decode are skipped rather than fatal.
+func (s *AgentSkill) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		keyNode, valNode := value.Content[i], value.Content[i+1]
+		if keyNode.Kind != yaml.ScalarNode {
+			continue
+		}
+		var err error
+		switch keyNode.Value {
+		case "name":
+			err = valNode.Decode(&s.Name)
+		case "description":
+			err = valNode.Decode(&s.Description)
+		case "license":
+			err = valNode.Decode(&s.License)
+		case "compatibility":
+			err = valNode.Decode(&s.Compatibility)
+		case "metadata":
+			err = valNode.Decode(&s.Metadata)
+		case "allowed-tools":
+			err = valNode.Decode(&s.AllowedTools)
+		case "acceptance_criteria":
+			err = valNode.Decode(&s.AcceptanceCriteria)
+		case "state":
+			err = valNode.Decode(&s.State)
+		default:
+			var v any
+			if decErr := valNode.Decode(&v); decErr != nil {
+				continue
+			}
+			if s.Extra == nil {
+				s.Extra = make(map[string]any)
+			}
+			s.Extra[keyNode.Value] = v
+		}
+		if err != nil {
+			return fmt.Errorf("parsing frontmatter key %q: %w", keyNode.Value, err)
+		}
+	}
+	return nil
+}
+
 // ParseSkillMD parses a SKILL.md file into an AgentSkill.
 // The file format is YAML frontmatter between --- delimiters followed by a markdown body.
 func ParseSkillMD(data []byte) (*AgentSkill, error) {
@@ -156,6 +220,27 @@ func RenderSkillMD(skill *AgentSkill) ([]byte, error) {
 	yamlBytes, err := yaml.Marshal(fm)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling frontmatter: %w", err)
+	}
+
+	// Emit unmodeled frontmatter keys after the known fields. Marshaling the
+	// map separately keeps known-field output byte-identical for skills
+	// without extras, and yaml.Marshal sorts map keys, so output stays
+	// deterministic. Known keys are filtered so a hand-constructed Extra
+	// (e.g. via the JSON API) can never emit a duplicate key.
+	if len(skill.Extra) > 0 {
+		extra := make(map[string]any, len(skill.Extra))
+		for k, v := range skill.Extra {
+			if !knownFrontmatterKey(k) {
+				extra[k] = v
+			}
+		}
+		if len(extra) > 0 {
+			extraBytes, err := yaml.Marshal(extra)
+			if err != nil {
+				return nil, fmt.Errorf("marshaling extra frontmatter: %w", err)
+			}
+			yamlBytes = append(yamlBytes, extraBytes...)
+		}
 	}
 
 	var buf bytes.Buffer

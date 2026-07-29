@@ -492,6 +492,9 @@ export interface AgentSkill {
   metadata?: Record<string, string>;
   allowedTools?: string;
   acceptanceCriteria?: string[]; // Given/When/Then scenarios (gridctl extension)
+  // Frontmatter keys gridctl does not model (e.g. argument-hint), preserved
+  // verbatim by the backend. The editor carries them through saves untouched.
+  extra?: Record<string, unknown>;
   state: ItemState;
   // Markdown content after the frontmatter. Optional because the list endpoint
   // (GET /api/registry/skills) omits it — the bodies dominated a payload that
