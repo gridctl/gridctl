@@ -11,7 +11,7 @@
 #   - Lightweight deployments without container overhead
 #
 # Prerequisites:
-#   Run `make mock-servers` from the project root to build all mock servers.
+#   Run `task mock:servers` from the project root to build all mock servers.
 #   Or build manually:
 #     cd examples/_mock-servers/local-stdio-server
 #     go build -o mock-stdio-server .

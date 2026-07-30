@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Validate a candidate LiteLLM pricing snapshot before it replaces the committed
-# one. Guards `make update-pricing` (and the scheduled refresh workflow) against a
+# one. Guards `task pricing:update` (and the scheduled refresh workflow) against a
 # poisoned, empty, or truncated upstream response landing silently — the failure
 # mode behind LiteLLM's 2026-01-27 model-cost-map incident, where a malformed but
 # HTTP-200 `main` shipped invalid JSON.

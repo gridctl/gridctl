@@ -7,7 +7,7 @@ import (
 	"io/fs"
 )
 
-// The web/dist directory is copied here during build (see Makefile).
+// The web/dist directory is copied here during build (see Taskfile.yml).
 // This file is only included when building with -tags embed_web.
 //
 //go:embed all:web/dist

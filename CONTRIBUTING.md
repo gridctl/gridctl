@@ -14,6 +14,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We expect all 
 - **Node.js** 20 or later
 - **Docker** (for running containers and integration tests)
 - **Git** with commit signing configured
+- **Task** (`brew install go-task/tap/go-task`, `npm install -g @go-task/cli`, or another [install method](https://taskfile.dev/docs/installation))
 
 ### Development Setup
 
@@ -27,13 +28,13 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We expect all 
 2. **Install dependencies:**
 
    ```bash
-   make deps
+   task deps
    ```
 
 3. **Build the project:**
 
    ```bash
-   make build
+   task build
    ```
 
 4. **Verify the build:**
@@ -45,25 +46,30 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We expect all 
 5. **Run tests:**
 
    ```bash
-   make test
+   task test
    ```
 
 ### Build Commands
 
+Tasks live in `Taskfile.yml`; `task --list` shows the full catalog. The most common:
+
 | Command | Description |
 |---------|-------------|
-| `make build` | Build frontend and backend |
-| `make build-web` | Build React frontend only |
-| `make build-go` | Build Go binary only |
-| `make dev` | Run Vite dev server for frontend development |
-| `make test` | Run unit tests |
-| `make test-coverage` | Run tests with coverage report |
-| `make test-frontend` | Run frontend tests (Vitest) |
-| `make test-integration` | Run integration tests (requires Docker) |
-| `make generate` | Regenerate mocks under `pkg/mcp/` and `pkg/runtime/` |
-| `make clean` | Remove build artifacts |
+| `task build` | Build frontend and backend |
+| `task build:web` | Build React frontend only |
+| `task build:go` | Build Go binary only |
+| `task dev` | Run Vite dev server for frontend development |
+| `task test` | Run unit tests (race detector on, matching CI) |
+| `task test:coverage` | Run tests with coverage report |
+| `task test:frontend` | Run frontend tests (Vitest) |
+| `task test:integration` | Run integration tests (requires Docker) |
+| `task lint` | Lint backend (golangci-lint) and frontend (ESLint) |
+| `task generate` | Regenerate mocks under `pkg/mcp/` and `pkg/runtime/` |
+| `task clean` | Remove build artifacts |
 
-> The `gridctl` binary on your `$PATH` is typically a released build. Test local changes with `make build` followed by `./gridctl …`.
+> The `gridctl` binary on your `$PATH` is typically a released build. Test local changes with `task build` followed by `./gridctl …`.
+>
+> A transitional Makefile shim forwards the old `make <target>` names to their `task` equivalents.
 
 ## 🔧 Making Changes
 
@@ -106,8 +112,8 @@ Example: `feature/add-ssh-transport` or `fix/container-timeout`
 Run tests before submitting:
 
 ```bash
-make test                  # Unit tests
-make test-integration      # Integration tests (requires Docker)
+task test                  # Unit tests
+task test:integration      # Integration tests (requires Docker)
 ```
 
 ## 📋 Commit Guidelines

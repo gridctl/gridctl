@@ -8,22 +8,23 @@ Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills regist
 
 ## Build and run
 
-The Makefile is the entry point for everything. Common targets:
+Task (https://taskfile.dev) is the entry point for everything; tasks live in `Taskfile.yml`. Run `task --list` for the full catalog and `task --summary <name>` for per-task notes. Install with `brew install go-task/tap/go-task` (or `npm install -g @go-task/cli`, or `go install github.com/go-task/task/v3/cmd/task@latest`). A transitional Makefile shim forwards the old `make <target>` names. Common tasks:
 
-| Target | Notes |
+| Task | Notes |
 |---|---|
-| `make build` | Builds the web frontend (`web/dist` → `cmd/gridctl/web/dist`), then builds the Go binary with `-tags embed_web` so the UI is embedded. Produces `./gridctl` in the repo root. |
-| `make build-go` | Backend only. Skips the embed tag if `cmd/gridctl/web/dist` is absent (UI 404s in that case). |
-| `make build-web` | Frontend only (`cd web && npm run build`). |
-| `make dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
-| `make test` | `go test -v ./...` (unit tests only). |
-| `make test-integration` | `go test -v -tags=integration ./tests/integration/...`. Requires Docker (or Podman). These tests hit real container runtimes per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
-| `make test-frontend` | `cd web && npm test` (Vitest). |
-| `make generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
-| `make update-pricing` | Refreshes the embedded LiteLLM pricing snapshot at `pkg/pricing/data/model_prices.json` (weekly cadence). |
-| `make mock-servers [PORT=9001]` | Builds and runs the example mock MCP servers in `examples/_mock-servers/` (HTTP on PORT, SSE on PORT+1). Pair with `make clean-mock-servers`. |
+| `task build` | Builds the web frontend (`web/dist` → `cmd/gridctl/web/dist`), then builds the Go binary with `-tags embed_web` so the UI is embedded. Produces `./gridctl` in the repo root. |
+| `task build:go` | Backend only. Skips the embed tag if `cmd/gridctl/web/dist` is absent (UI 404s in that case). |
+| `task build:web` | Frontend only (`cd web && npm run build`). |
+| `task dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
+| `task test` | `go test -race ./...` (unit tests only, same race detector CI runs). |
+| `task test:integration` | `go test -tags=integration -race -timeout 5m ./tests/integration/...`. Requires Docker (or Podman). These tests hit real container runtimes per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
+| `task test:frontend` | `cd web && npm test` (Vitest). |
+| `task lint` | `golangci-lint run` plus `npm run lint` in `web/` (both CI-gated). |
+| `task generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
+| `task pricing:update` | Refreshes the embedded LiteLLM pricing snapshot at `pkg/pricing/data/model_prices.json` (weekly cadence). |
+| `task mock:servers` | Builds and runs the example mock MCP servers in `examples/_mock-servers/` (HTTP on PORT, SSE on PORT+1; `PORT=9001` default). Pair with `task mock:clean`. |
 
-Always test local changes with `make build` followed by `./gridctl …`. The `gridctl` binary on `$PATH` is typically a brew-installed release and will not reflect your changes.
+Always test local changes with `task build` followed by `./gridctl …`. The `gridctl` binary on `$PATH` is typically a brew-installed release and will not reflect your changes.
 
 `gridctl serve` and `gridctl apply` daemonize by default. If you need a process you can ctrl-C (or that a test script can kill), pass `-f` / `--foreground`.
 
@@ -88,7 +89,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     replicas, transports (incl. Podman), code-mode cost, private git auth, optimize heuristics.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack).
-                    examples/_mock-servers/ is the source for `make mock-servers`.
+                    examples/_mock-servers/ is the source for `task mock:servers`.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, tools-workspace,
                     global-context, scaling, cost-observability, installation, project-status, troubleshooting).
 ```

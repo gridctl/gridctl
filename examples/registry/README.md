@@ -59,7 +59,7 @@ See [`docs/config-schema.md`](../../docs/config-schema.md#skill-sources) for the
 Build the mock MCP servers:
 
 ```bash
-make mock-servers
+task mock:servers
 ```
 
 ## Quick Start

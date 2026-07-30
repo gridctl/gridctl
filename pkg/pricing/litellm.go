@@ -10,7 +10,7 @@ import (
 )
 
 // rawModelPrices is the embedded LiteLLM pricing snapshot. Refresh via
-// `make update-pricing` (see Makefile).
+// `task pricing:update` (see Taskfile.yml).
 //
 //go:embed data/model_prices.json
 var rawModelPrices []byte

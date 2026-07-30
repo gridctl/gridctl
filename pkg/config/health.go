@@ -187,7 +187,7 @@ func (r *ValidationResult) addModelWarnings(s *Stack) {
 		if _, ok := pricing.Lookup(model); !ok {
 			r.Issues = append(r.Issues, ValidationIssue{
 				Field:    field,
-				Message:  fmt.Sprintf("model %q is unknown to the pricing snapshot; calls will record tokens but cost as zero (refresh with `make update-pricing` or check the ID)", model),
+				Message:  fmt.Sprintf("model %q is unknown to the pricing snapshot; calls will record tokens but cost as zero (refresh with `task pricing:update` or check the ID)", model),
 				Severity: SeverityWarning,
 			})
 			r.WarningCount++

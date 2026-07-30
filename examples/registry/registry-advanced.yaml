@@ -5,7 +5,7 @@
 # convention, enabling workflows that span server boundaries.
 #
 # Prerequisites:
-#   Run `make mock-servers` from the project root to build the mock server.
+#   Run `task mock:servers` from the project root to build the mock server.
 #
 # Usage:
 #   gridctl apply examples/registry/registry-advanced.yaml

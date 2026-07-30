@@ -45,11 +45,11 @@ Download the tarball for your platform from the [releases page](https://github.c
 <details>
 <summary><strong>Build from source</strong></summary>
 
-Requires Go 1.26+ and Node 20+.
+Requires Go 1.26+, Node 20+, and [Task](https://taskfile.dev/docs/installation).
 
 ```bash
 git clone https://github.com/gridctl/gridctl
-cd gridctl && make build
+cd gridctl && task build
 ./gridctl --help
 ```
 
