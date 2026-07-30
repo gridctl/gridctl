@@ -3,6 +3,7 @@
 
 # Build artifacts
 cmd/gridctl/web/
+.task/
 
 # Web dependencies and build
 node_modules/
@@ -57,7 +58,7 @@ web/coverage/
 tmp/
 temp/
 
-# Pricing refresh temp file (make update-pricing writes here before atomic mv)
+# Pricing refresh temp file (task pricing:update writes here before atomic mv)
 pkg/pricing/data/.model_prices.*
 
 # Mock server binaries and PID files

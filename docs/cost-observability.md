@@ -79,10 +79,10 @@ Per-tool cost inherits every honesty rule of the wider cost system: it is an est
 The pricing snapshot is embedded at build time via `//go:embed pkg/pricing/data/model_prices.json`. Refresh it when providers adjust rates or add new models:
 
 ```bash
-make update-pricing
+task pricing:update
 ```
 
-The target downloads the latest LiteLLM file. If the download fails, the existing snapshot is preserved (non-fatal). A weekly cadence is recommended; faster than that is rarely necessary because LiteLLM batches rate updates.
+The task downloads the latest LiteLLM file. If the download fails, the existing snapshot is preserved (non-fatal). A weekly cadence is recommended; faster than that is rarely necessary because LiteLLM batches rate updates.
 
 ## Model-ID normalization
 

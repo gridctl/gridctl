@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- The project task runner is now Task (https://taskfile.dev): `task build`, `task test`, `task lint`, and friends replace the Makefile targets, with namespaced names for grouped work (`build:web`, `test:integration`, `pricing:update`, `mock:servers`). Run `task --list` for the catalog. A transitional Makefile shim keeps every old `make <target>` name working while muscle memory catches up. `task test` and `task test:integration` now run with the race detector to match CI, `task lint` covers both golangci-lint and the frontend lint, a failed frontend build now fails `task build:web` instead of silently staging stale assets, and the `gridctl validate` hint for unknown pricing models points at `task pricing:update` (#1014)
+
 ### Bug Fixes
 
 - Skill import no longer strips frontmatter keys it does not model. The registry parser decoded SKILL.md frontmatter into a fixed set of fields and re-emitted only those, so client extensions like `argument-hint`, `disable-model-invocation`, `hooks`, and `model` silently vanished from every imported copy, from re-syncs, from renames, and from web editor saves. Unknown keys are now captured into an `extra` field, preserved verbatim through parse, render, the JSON API, and the editor's save path (values exact; ordering may normalize), and never interpreted by gridctl. Registries written before the fix heal on their next `gridctl skill update`, which re-imports the upstream file with the keys intact (#1009)

@@ -68,6 +68,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
       - name: Build PR binary and smoke `gridctl upgrade --check`
         # The released binary referenced by install.sh predates this PR and
         # does not contain the `upgrade` subcommand, so we exercise the
@@ -78,7 +83,7 @@ jobs:
         env:
           TAG: ${{ steps.latest.outputs.tag }}
         run: |
-          make build-go
+          task build:go
           ./gridctl upgrade --check --version "$TAG"
 
       - name: Uninstall removes the binary

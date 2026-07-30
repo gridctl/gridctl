@@ -11,7 +11,7 @@
 #   - Connecting to MCP servers managed by other orchestration systems
 #
 # Prerequisites:
-#   Run `make mock-servers` from the project root to build and start mock servers.
+#   Run `task mock:servers` from the project root to build and start mock servers.
 #   This starts mock-mcp-server on ports 9001 (HTTP) and 9002 (SSE).
 #   Or start manually:
 #     cd examples/_mock-servers/mock-mcp-server

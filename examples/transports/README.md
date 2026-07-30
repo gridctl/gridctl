@@ -17,7 +17,7 @@ Examples demonstrating different MCP transport types.
 Build and start all mock servers with one command:
 
 ```bash
-make mock-servers
+task mock:servers
 ```
 
 This builds `mock-stdio-server` and starts `mock-mcp-server` on ports 9001 (HTTP) and 9002 (SSE).

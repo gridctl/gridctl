@@ -1,178 +1,83 @@
-.PHONY: all build build-web build-go dev clean help test test-coverage test-integration test-frontend mock-servers clean-mock-servers generate update-pricing validate-pricing
+# Transitional shim: gridctl now uses Task (https://taskfile.dev) as its task
+# runner. Tasks live in Taskfile.yml; run `task --list` for the catalog. This
+# shim forwards the old make targets to their task equivalents so existing
+# muscle memory and older instructions keep working. It will be removed after
+# a two-release sunset.
+#
+# Install task:
+#   brew install go-task/tap/go-task
+#   npm install -g @go-task/cli
+#   go install github.com/go-task/task/v3/cmd/task@latest
 
-# Version from git tags (fallback to dev)
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
-DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
+.PHONY: all build build-web build-go dev clean deps run test test-coverage test-frontend test-integration lint mock-servers clean-mock-servers generate update-pricing validate-pricing help
 
-# Default target
-all: build
+# $(1) is the task name; command-line variable overrides (PORT=, FILE=) pass
+# through via MAKEOVERRIDES, both as Task variables and as environment (make
+# exported overrides into recipe environments, so e.g. `make build-go
+# GOOS=linux` keeps working). Values containing spaces are not supported by
+# the shim; call task directly for those.
+define forward
+	@command -v task >/dev/null 2>&1 || { \
+		echo "This project now uses Task (https://taskfile.dev)."; \
+		echo "Install it with: brew install go-task/tap/go-task"; \
+		exit 1; }
+	@echo "make is deprecated here; forwarding to: task $(1)"
+	@env $(MAKEOVERRIDES) task $(1) $(MAKEOVERRIDES)
+endef
 
-# Build everything
-build: build-web build-go
+all:
+	$(call forward,build)
 
-# Build the React frontend
+build:
+	$(call forward,build)
+
 build-web:
-	@if [ -f web/tsconfig.json ]; then \
-		echo "Building web frontend..."; \
-		(cd web && npm run build); \
-		echo "Copying dist to cmd/gridctl/web/dist..."; \
-		rm -rf cmd/gridctl/web; \
-		mkdir -p cmd/gridctl/web; \
-		cp -r web/dist cmd/gridctl/web/; \
-	else \
-		echo "Skipping web build (source files not present)"; \
-	fi
+	$(call forward,build:web)
 
-# Build the Go binary
 build-go:
-	@echo "Building Go binary ($(VERSION))..."
-	@if [ -d cmd/gridctl/web/dist ]; then \
-		echo "Including embedded web assets..."; \
-		go build -tags embed_web -ldflags "$(LDFLAGS)" -o gridctl ./cmd/gridctl; \
-	else \
-		echo "Building without web assets (run make build-web first to include UI)..."; \
-		go build -ldflags "$(LDFLAGS)" -o gridctl ./cmd/gridctl; \
-	fi
+	$(call forward,build:go)
 
-# Development mode - run Vite dev server
 dev:
-	cd web && npm run dev
+	$(call forward,dev)
 
-# Clean build artifacts
 clean:
-	@echo "Cleaning build artifacts..."
-	rm -rf gridctl
-	rm -rf cmd/gridctl/web
-	rm -rf web/dist
-	rm -rf web/node_modules
+	$(call forward,clean)
 
-# Install dependencies
 deps:
-	@echo "Installing dependencies..."
-	cd web && npm install
-	go mod tidy
+	$(call forward,deps)
 
-# Run the built binary
-run: build
-	./gridctl
+run:
+	$(call forward,run)
 
-# Run tests
 test:
-	@echo "Running tests..."
-	go test -v ./...
+	$(call forward,test)
 
-# Run tests with coverage
 test-coverage:
-	@echo "Running tests with coverage..."
-	go test -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
+	$(call forward,test:coverage)
 
-# Run frontend tests
 test-frontend:
-	@echo "Running frontend tests..."
-	cd web && npm test
+	$(call forward,test:frontend)
 
-# Run integration tests (requires Docker)
 test-integration:
-	@echo "Running integration tests..."
-	go test -v -tags=integration ./tests/integration/...
+	$(call forward,test:integration)
 
-# Build and run mock MCP servers for examples
-# Usage: make mock-servers [PORT=9001]
-PORT ?= 9001
+lint:
+	$(call forward,lint)
+
 mock-servers:
-	@echo "Building and starting mock MCP servers..."
-	@command -v go >/dev/null 2>&1 || { echo "Error: Go is not installed. Please install Go first: https://go.dev/dl/"; exit 1; }
-	@echo "Building mock-stdio-server..."
-	@(cd examples/_mock-servers/local-stdio-server && go build -o mock-stdio-server .)
-	@echo "Building mock-mcp-server..."
-	@(cd examples/_mock-servers/mock-mcp-server && go build -o mock-mcp-server .)
-	@echo "Starting mock-mcp-server on port $(PORT) (HTTP mode)..."
-	@examples/_mock-servers/mock-mcp-server/mock-mcp-server -port $(PORT) > /dev/null 2>&1 & echo $$! > examples/_mock-servers/mock-mcp-server/.pid-http
-	@echo "Starting mock-mcp-server on port $$(( $(PORT) + 1 )) (SSE mode)..."
-	@examples/_mock-servers/mock-mcp-server/mock-mcp-server -port $$(( $(PORT) + 1 )) -sse > /dev/null 2>&1 & echo $$! > examples/_mock-servers/mock-mcp-server/.pid-sse
-	@echo ""
-	@echo "Mock servers running:"
-	@echo "  mock-stdio-server: built at examples/_mock-servers/local-stdio-server/mock-stdio-server"
-	@echo "  mock-mcp-server:   HTTP on localhost:$(PORT), SSE on localhost:$$(( $(PORT) + 1 ))"
-	@echo ""
-	@echo "Run 'make clean-mock-servers' to stop and remove them."
+	$(call forward,mock:servers)
 
-# Stop and remove mock MCP servers
 clean-mock-servers:
-	@echo "Stopping mock MCP servers..."
-	@if [ -f examples/_mock-servers/mock-mcp-server/.pid-http ]; then \
-		kill $$(cat examples/_mock-servers/mock-mcp-server/.pid-http) 2>/dev/null || true; \
-		rm -f examples/_mock-servers/mock-mcp-server/.pid-http; \
-	fi
-	@if [ -f examples/_mock-servers/mock-mcp-server/.pid-sse ]; then \
-		kill $$(cat examples/_mock-servers/mock-mcp-server/.pid-sse) 2>/dev/null || true; \
-		rm -f examples/_mock-servers/mock-mcp-server/.pid-sse; \
-	fi
-	@echo "Removing mock server binaries..."
-	@rm -f examples/_mock-servers/local-stdio-server/mock-stdio-server
-	@rm -f examples/_mock-servers/mock-mcp-server/mock-mcp-server
-	@echo "Mock servers cleaned up."
+	$(call forward,mock:clean)
 
-# Refresh embedded LiteLLM pricing data. Recommended weekly cadence — the
-# upstream file changes whenever providers adjust per-token rates or add
-# new models. The download is non-fatal: if the fetch fails the existing
-# embedded snapshot is preserved.
-PRICING_URL := https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
-PRICING_DEST := pkg/pricing/data/model_prices.json
-update-pricing:
-	@echo "Refreshing pricing data from $(PRICING_URL)..."
-	@tmp=$$(mktemp $(dir $(PRICING_DEST)).model_prices.XXXXXX); \
-	if curl -sSL --fail --max-time 30 -o $$tmp $(PRICING_URL); then \
-		if scripts/validate-pricing.sh $$tmp $(PRICING_DEST); then \
-			mv $$tmp $(PRICING_DEST); \
-			echo "Updated $(PRICING_DEST) ($$(wc -c < $(PRICING_DEST)) bytes)."; \
-		else \
-			rm -f $$tmp; \
-			echo "ERROR: pricing validation failed; keeping existing $(PRICING_DEST)." >&2; \
-			exit 1; \
-		fi; \
-	else \
-		rm -f $$tmp; \
-		echo "WARN: pricing refresh failed; keeping existing $(PRICING_DEST)."; \
-	fi
-
-# Validate a pricing snapshot without fetching. Defaults to the committed file;
-# point it at any candidate with FILE=/path/to/table.json to test the gate (it is
-# always compared against the committed snapshot's entry count). Exits non-zero on
-# malformed, empty, or substantially-shrunken input. Shared by update-pricing and
-# the scheduled refresh workflow.
-validate-pricing:
-	@scripts/validate-pricing.sh "$${FILE:-$(PRICING_DEST)}" "$(PRICING_DEST)"
-
-# Generate mocks (requires mockgen: go install go.uber.org/mock/mockgen@latest)
 generate:
-	@echo "Generating mocks..."
-	go generate ./pkg/mcp/... ./pkg/runtime/...
-	@echo "Done."
+	$(call forward,generate)
 
-# Help
+update-pricing:
+	$(call forward,pricing:update)
+
+validate-pricing:
+	$(call forward,pricing:validate)
+
 help:
-	@echo "Gridctl Makefile"
-	@echo ""
-	@echo "Usage:"
-	@echo "  make build      - Build frontend and backend"
-	@echo "  make build-web  - Build React frontend only"
-	@echo "  make build-go   - Build Go binary only"
-	@echo "  make dev        - Run Vite dev server"
-	@echo "  make clean      - Remove build artifacts"
-	@echo "  make deps       - Install all dependencies"
-	@echo "  make run        - Build and run the binary"
-	@echo "  make test       - Run all tests"
-	@echo "  make test-coverage - Run tests with coverage report"
-	@echo "  make test-frontend - Run frontend tests"
-	@echo "  make test-integration - Run integration tests (requires Docker)"
-	@echo "  make generate   - Regenerate mock files (requires mockgen)"
-	@echo "  make update-pricing - Refresh embedded LiteLLM pricing data (weekly)"
-	@echo "  make validate-pricing [FILE=...] - Validate a pricing snapshot (gate for update-pricing)"
-	@echo "  make mock-servers [PORT=9001] - Build and run mock MCP servers for examples"
-	@echo "  make clean-mock-servers - Stop and remove mock MCP servers"
-	@echo "  make help       - Show this help message"
+	$(call forward,--list)

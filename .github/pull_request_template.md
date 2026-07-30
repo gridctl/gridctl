@@ -12,6 +12,6 @@
 
 ## Checklist
 
-- [ ] Tests pass (`make test`)
+- [ ] Tests pass (`task test`)
 - [ ] Commits follow conventional format (`type: subject`)
 - [ ] No secrets or credentials committed

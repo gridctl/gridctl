@@ -16,7 +16,7 @@ export const ATTRIBUTION_HINT =
 
 // Footer copy for pickers and the pricing manager.
 export const SNAPSHOT_NOTE =
-  'Models come from the embedded LiteLLM snapshot (refreshed via make update-pricing at gateway rebuild).';
+  'Models come from the embedded LiteLLM snapshot (refreshed via task pricing:update at gateway rebuild).';
 export const UNKNOWN_MODEL_NOTE = 'Unknown model · records tokens but prices as $0';
 
 // Shown on the Cost KPI when any client/server has `mixed` provenance. The

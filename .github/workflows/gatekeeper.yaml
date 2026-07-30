@@ -51,8 +51,13 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           bash scripts/govulncheck.sh
 
+      - name: Set up Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
       - name: Build Go binary
-        run: make build-go
+        run: task build:go
 
       - name: Validate example stacks
         run: |

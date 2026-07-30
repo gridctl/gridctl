@@ -2,7 +2,7 @@ name: Update Pricing Snapshot
 
 # Keeps the embedded LiteLLM pricing snapshot
 # (pkg/pricing/data/model_prices.json) current without a maintainer remembering
-# to run `make update-pricing`. Weekly, this fetches the upstream table, runs it
+# to run `task pricing:update`. Weekly, this fetches the upstream table, runs it
 # through the validation gate (scripts/validate-pricing.sh), and — only when the
 # table actually changed — opens or updates a single reviewable PR. The binary
 # still embeds only the committed file; nothing here touches the build.
@@ -26,13 +26,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Set up Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
       # Fetches upstream, validates the candidate (JSON / non-empty / model
       # floor / shrink guard), and replaces the committed file only on success.
       # A malformed or truncated upstream response fails the job loudly rather
       # than committing bad data; a network failure leaves the file untouched.
-      # jq, curl, and make are preinstalled on ubuntu-latest.
+      # jq and curl are preinstalled on ubuntu-latest; task is installed above.
       - name: Refresh pricing snapshot (validated)
-        run: make update-pricing
+        run: task pricing:update
 
       # peter-evans/create-pull-request is a no-op when the working tree is
       # clean (table unchanged), and reuses the same branch/PR on re-runs so the
@@ -59,7 +64,7 @@ jobs:
             (`pkg/pricing/data/model_prices.json`).
 
             The upstream table was fetched and passed the validation gate
-            (`make update-pricing` → `scripts/validate-pricing.sh`: valid JSON,
+            (`task pricing:update` → `scripts/validate-pricing.sh`: valid JSON,
             non-empty, model-count floor, and shrink guard). The diff below is
             the price-table delta.
 
