@@ -34,7 +34,7 @@ API keys, passwords, tokens, private keys, and any credential MUST NOT be commit
 
 ## Article VIII - Semantic Versioning
 
-The public CLI interface and stack YAML schema are versioned artifacts. Breaking changes MUST NOT be introduced in patch or minor releases. A breaking change requires a major version increment and MUST be announced in CHANGELOG.md before release. "Breaking" means any change that causes a previously valid invocation or stack file to fail or produce different output.
+The public CLI interface and stack YAML schema are versioned artifacts. Breaking changes MUST NOT be introduced in patch or minor releases. A breaking change requires a major version increment and MUST be announced in CHANGELOG.md before release. "Breaking" means any change that causes a previously valid invocation or stack file to fail or produce different output. The MCP wire protocol is part of this surface: dropping support for a protocol generation the gateway previously accepted is a breaking change under this article. Which generations are supported at a given time is defined by the project's protocol support policy, not this document.
 
 ## Article IX - Stack YAML Backward Compatibility
 
@@ -63,3 +63,11 @@ All log output MUST use `log/slog` with structured fields. `fmt.Println` and `lo
 ## Article XV - Changelog Discipline
 
 Every user-visible change - new feature, behavior change, deprecation, or bug fix - MUST be recorded in CHANGELOG.md before the PR is merged. Changelog entries belong in the `[Unreleased]` section and MUST follow the Keep a Changelog format. A PR that omits its changelog entry is not complete.
+
+## Article XVI - Ownership Before Mutation
+
+Gridctl writes into files and directories owned by the user's clients: skill directories, agent context files, and client configuration. Every such destination MUST be claimed before it is changed. Gridctl MUST NOT create, modify, or delete a destination unless a lockfile records gridctl's ownership of that file, directory, region, or key, or the user explicitly forces the operation. A forced write to an unmanaged destination MUST take a backup first. Ownership MUST be recorded, never inferred; heuristic recognition of gridctl-shaped entries may assist one-time migration of pre-lockfile state only. Automatic reconciliation MUST NOT force-overwrite drift: a destination the user has hand-edited is changed only by an explicit, user-invoked operation. Removal MUST delete only artifacts gridctl created; in shared files, removal touches only the gridctl-owned region or key and MUST NOT rewrite sibling content. Credential material MUST NOT be written to any destination gridctl manages on the user's behalf, extending Article VII from the repository to every projected path.
+
+## Article XVII - Versioned State Files
+
+Every persistent state file gridctl owns - lockfiles, the pin store, manifests, and state snapshots - MUST carry an explicit schema version. Readers MUST refuse a file with a newer schema version with a clear error rather than guess at its meaning. Writers MUST migrate older versions forward explicitly; migration MUST be idempotent and MUST NOT discard data it does not understand.
