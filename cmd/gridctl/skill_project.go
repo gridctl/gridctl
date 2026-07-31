@@ -37,6 +37,10 @@ var (
 	skillProjectUnsyncDryRun  bool
 	skillProjectUnsyncFormat  string
 	skillProjectUnsyncJSON    *bool
+
+	skillProjectAdoptClient string
+	skillProjectAdoptFormat string
+	skillProjectAdoptJSON   *bool
 )
 
 var skillProjectCmd = &cobra.Command{
@@ -62,6 +66,7 @@ The MCP prompt channel is unchanged: clients that render prompts
   gridctl skill project sync my-skill --clients claude-code
   gridctl skill project sync                        Re-sync the projected set
   gridctl skill project status                      Per-projection state
+  gridctl skill project adopt my-skill --client antigravity   Pull a hand edit back
   gridctl skill project unsync --all                Remove every projection`,
 }
 
@@ -173,6 +178,47 @@ create are never touched. Removed skills leave the projection set.`,
 	},
 }
 
+var skillProjectAdoptCmd = &cobra.Command{
+	Use:   "adopt <skill>",
+	Short: "Pull a hand-edited projected copy back into the registry skill",
+	Long: `Adopts the files of one projected copy back into the registry skill,
+then re-syncs that (skill, client) pair so it returns to in-sync. Other
+clients projecting the skill become stale until the next
+'gridctl skill project sync'.
+
+Only copy projections can be adopted: a symlinked projection references
+the registry directly, so edits made through it already live in the
+registry. The prior registry SKILL.md is backed up as SKILL.md.pre-<sha>
+and the adopted files count as local edits, so 'gridctl skill update'
+will not overwrite them without --force.
+
+The flag is singular --client: adopt operates on exactly one
+(skill, client) pair, unlike sync/unsync's --clients.
+
+Exit codes:
+  0  adopted
+  1  nothing to adopt (not projected, symlinked, or empty/invalid content)
+  2  infrastructure error (unknown skill or client, lockfile conflict)`,
+	Example: `  gridctl skill project adopt my-skill --client antigravity`,
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		format, err := resolveFormat(skillProjectAdoptFormat, cmd.Flags().Changed("format"), *skillProjectAdoptJSON)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		mgr, err := newSkillProjectManager()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		if exit := runSkillProjectAdopt(cmd.Context(), os.Stdout, os.Stderr, mgr, args[0], skillProjectAdoptClient, format); exit != ctxExitOK {
+			os.Exit(exit)
+		}
+		return nil
+	},
+}
+
 func init() {
 	skillProjectSyncCmd.Flags().StringSliceVar(&skillProjectSyncClients, "clients", nil, "Target client slugs (default: every available target)")
 	skillProjectSyncCmd.Flags().BoolVar(&skillProjectSyncCopy, "copy", false, "Copy skill directories instead of symlinking (copy-forced targets copy regardless)")
@@ -192,9 +238,15 @@ func init() {
 	skillProjectUnsyncCmd.Flags().StringVar(&skillProjectUnsyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
 	skillProjectUnsyncJSON = addJSONAlias(skillProjectUnsyncCmd)
 
+	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptClient, "client", "", "Client slug whose projected copy to adopt (required)")
+	_ = skillProjectAdoptCmd.MarkFlagRequired("client")
+	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
+	skillProjectAdoptJSON = addJSONAlias(skillProjectAdoptCmd)
+
 	skillProjectCmd.AddCommand(skillProjectSyncCmd)
 	skillProjectCmd.AddCommand(skillProjectStatusCmd)
 	skillProjectCmd.AddCommand(skillProjectUnsyncCmd)
+	skillProjectCmd.AddCommand(skillProjectAdoptCmd)
 	skillCmd.AddCommand(skillProjectCmd)
 }
 
@@ -362,6 +414,56 @@ func runSkillProjectUnsync(ctx context.Context, w io.Writer, mgr *skillsync.Mana
 		fmt.Fprintf(w, "✓ %-24s %-12s %s (%s)\n", r.Skill, r.Client, r.Target, r.Action)
 	}
 	return nil
+}
+
+// skillProjectAdoptDoc is the machine-readable adopt document.
+type skillProjectAdoptDoc struct {
+	SchemaVersion int                    `json:"schema_version"`
+	Result        *skillsync.AdoptResult `json:"result"`
+}
+
+// runSkillProjectAdopt implements `skill project adopt` and returns the
+// exit code: 0 adopted, 1 nothing to adopt, 2 infrastructure.
+func runSkillProjectAdopt(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, skill, client, format string) int {
+	res, err := mgr.Adopt(ctx, skill, client)
+	if err != nil {
+		var refusal *skillsync.AdoptRefusal
+		switch {
+		case errors.As(err, &refusal):
+			fmt.Fprintln(stderr, err)
+			return ctxExitAttention
+		case errors.Is(err, skillsync.ErrNotProjected):
+			fmt.Fprintf(stderr, "%v (check 'gridctl skill project status')\n", err)
+			return ctxExitAttention
+		default:
+			fmt.Fprintln(stderr, err)
+			return ctxExitInfrastructure
+		}
+	}
+	if strings.EqualFold(format, "json") {
+		if err := output.EncodeJSON(stdout, skillProjectAdoptDoc{
+			SchemaVersion: skillProjectJSONSchemaVersion,
+			Result:        res,
+		}); err != nil {
+			fmt.Fprintln(stderr, err)
+			return ctxExitInfrastructure
+		}
+		return ctxExitOK
+	}
+	if len(res.ChangedFiles) == 0 {
+		fmt.Fprintf(stdout, "✓ %s's copy of %s already matches the registry; hashes refreshed\n", client, skill)
+		return ctxExitOK
+	}
+	fmt.Fprintf(stdout, "✓ Adopted %s's copy of %s into %s\n", client, skill, res.RegistryDir)
+	for _, f := range res.ChangedFiles {
+		fmt.Fprintf(stdout, "  updated: %s\n", f)
+	}
+	if res.BackupFile != "" {
+		fmt.Fprintf(stdout, "  previous SKILL.md kept as %s\n", res.BackupFile)
+	}
+	fmt.Fprintln(stdout, "Other clients projecting this skill are now stale; run 'gridctl skill project sync' to propagate.")
+	fmt.Fprintln(stdout, "'gridctl skill update' now treats these files as local edits and will not overwrite them without --force.")
+	return ctxExitOK
 }
 
 // skillProjectActionLabel decorates sync actions with glyphs.
