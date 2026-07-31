@@ -1000,8 +1000,7 @@ func TestOpenAPIClient_EnvVarExpansion(t *testing.T) {
 
 	t.Run("expansion with env var set", func(t *testing.T) {
 		// Set env var to the mock server URL
-		os.Setenv("TEST_OPENAPI_BASE_URL", server.URL)
-		defer os.Unsetenv("TEST_OPENAPI_BASE_URL")
+		t.Setenv("TEST_OPENAPI_BASE_URL", server.URL)
 
 		cfg := &mcp.OpenAPIClientConfig{
 			Spec: specPath,
@@ -1034,8 +1033,7 @@ func TestOpenAPIClient_EnvVarExpansion(t *testing.T) {
 
 	t.Run("no expansion with NoExpand flag", func(t *testing.T) {
 		// Set env var but disable expansion
-		os.Setenv("TEST_OPENAPI_BASE_URL", server.URL)
-		defer os.Unsetenv("TEST_OPENAPI_BASE_URL")
+		t.Setenv("TEST_OPENAPI_BASE_URL", server.URL)
 
 		cfg := &mcp.OpenAPIClientConfig{
 			Spec:     specPath,
