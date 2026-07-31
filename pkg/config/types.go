@@ -450,6 +450,14 @@ type MCPServer struct {
 	// 5s default can flake under autoscale spawn load.
 	PingTimeout string `yaml:"ping_timeout,omitempty"`
 
+	// ProtocolGeneration overrides MCP protocol-generation resolution for
+	// this server: "auto" (default, same as empty) probes server/discover
+	// and falls back to the initialize handshake; "handshake" and
+	// "stateless" skip the probe and force one generation. An escape
+	// hatch for peers the probe misclassifies; absent means today's
+	// auto-negotiation exactly.
+	ProtocolGeneration string `yaml:"protocol_generation,omitempty"`
+
 	// Replicas is the number of independent processes to spawn for this server.
 	// Defaults to 1. Values >1 load-balance JSON-RPC tool calls across replicas
 	// using ReplicaPolicy. Not supported for external URL or OpenAPI transports.
