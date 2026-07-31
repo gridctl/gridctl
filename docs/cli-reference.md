@@ -86,20 +86,22 @@ Named cross-server tool bundles declared under `groups:` in stack.yaml (see the 
 
 Skills are prose; the registry surfaces every active `SKILL.md` to prompt-rendering MCP clients as a prompt, and `skill project` places selected skills into native client skill directories for clients that read skills from disk. See [`docs/skills.md`](./skills.md) for the authoring guide and the per-client channel matrix.
 
+The same import pipeline also handles agent definitions (experimental): `skill add` discovers `agents/*.md` files alongside `SKILL.md`, and the `--kind agent` flag on `skill list`, `skill remove`, `skill info`, and every `skill project` verb operates on them. `--kind` defaults to `skill` everywhere, so existing command lines behave exactly as before. In `skill project` JSON output every row carries a `kind` field (`"skill"` or `"agent"`); agent rows name their subject in an `agent` field where skill rows use `skill`.
+
 | Command | Purpose |
 |---|---|
-| `gridctl skill list` | List skills in the registry (`--remote` for imported skills only, `--format json` or `--json` for machine output). |
-| `gridctl skill add <repo-url>` | Import skills from a git repository. `--ref` / `--path` pin branch or subdirectory; `--no-activate` imports as draft; `--trust` skips the security-scan confirmation; `--force` overwrites existing skills; `--rename <name>` renames on import (single skill only). Auth flags: `--auth-token <pat>` (ephemeral HTTPS PAT, CI), `--vault-key <key>` (resolves from `${var:KEY}`), `--ssh-key <path>` (SSH). |
-| `gridctl skill update [name]` | Update imported skills (all when name omitted); alias `gridctl skill sync`. `--dry-run` previews, `--force` updates even when no change is detected. |
-| `gridctl skill remove <name>` | Remove an imported skill. |
+| `gridctl skill list` | List skills in the registry (`--remote` for imported skills only, `--format json` or `--json` for machine output). `--kind agent` lists imported agent definitions instead. |
+| `gridctl skill add <repo-url>` | Import skills and agents from a git repository. `--ref` / `--path` pin branch or subdirectory; `--no-activate` imports as draft; `--trust` skips the security-scan confirmation (covers agent bodies and frontmatter too); `--force` overwrites existing skills and agents; `--rename <name>` renames on import (single skill only). Auth flags: `--auth-token <pat>` (ephemeral HTTPS PAT, CI), `--vault-key <key>` (resolves from `${var:KEY}`), `--ssh-key <path>` (SSH). |
+| `gridctl skill update [name]` | Update imported skills and agents (all when name omitted; name may be a skill or an agent); alias `gridctl skill sync`. `--dry-run` previews, `--force` updates even when no change is detected. Locally edited files (including hand-edited `AGENT.md`) are refused without `--force`. |
+| `gridctl skill remove <name>` | Remove an imported skill (`--kind agent` for an agent). |
 | `gridctl skill pin <name> <ref>` | Pin a skill to a specific git ref. |
-| `gridctl skill info <name>` | Show origin and update status. |
+| `gridctl skill info <name>` | Show origin and update status (`--kind agent` for an agent). |
 | `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation (`--duration`, default `10m`, before auto-cleanup). Auth flags: `--auth-token <pat>`, `--vault-key <key>`, `--ssh-key <path>`. |
 | `gridctl skill validate <name>` | Validate a skill definition. |
-| `gridctl skill project sync [skill...]` | Project named active skills into native client skill directories (`--clients agents,claude-code,antigravity`; `--copy` for copies instead of symlinks; `--dry-run`, `--force`, `--format json` or `--json`, `--plain`; exit `0`/`1`/`2`). With no names, re-syncs the recorded projection set. |
-| `gridctl skill project status` | Per-projection state table (in-sync / stale / drifted / target-missing; `--format json` or `--json`, `--plain`; exit `0`/`1`/`2`). |
-| `gridctl skill project unsync [skill...]` | Remove projections gridctl created (`--all`, `--clients`, `--dry-run`, `--format json` or `--json`). Copies are backed up before removal; unmanaged files are never touched. |
-| `gridctl skill project adopt <skill>` | Pull a hand-edited copy projection back into the registry skill (`--client <slug>`, singular: adopt operates on one pair; `--format json` or `--json`; exit `0`/`1`/`2`). Backs up the registry `SKILL.md` as `.pre-<sha>`, re-syncs the pair to in-sync, and marks the skill locally edited for `skill update`. Symlinked projections are refused: the registry copy is already the source of truth. |
+| `gridctl skill project sync [skill...]` | Project named active skills into native client skill directories (`--clients agents,claude-code,antigravity`; `--copy` for copies instead of symlinks; `--dry-run`, `--force`, `--format json` or `--json`, `--plain`; exit `0`/`1`/`2`). With no names, re-syncs the recorded projection set. `--kind agent` projects imported agents to `~/.claude/agents/<name>.md` instead (all of them when no names are given; always copied). |
+| `gridctl skill project status` | Per-projection state table for skills and agents (in-sync / stale / drifted / target-missing; agent rows are marked experimental; `--format json` or `--json`, `--plain`; exit `0`/`1`/`2`). |
+| `gridctl skill project unsync [skill...]` | Remove projections gridctl created (`--all`, `--clients`, `--dry-run`, `--format json` or `--json`; `--kind agent` for agent projections). Copies are backed up before removal; unmanaged files are never touched. |
+| `gridctl skill project adopt <skill>` | Pull a hand-edited copy projection back into the registry skill (`--client <slug>`, singular: adopt operates on one pair; `--format json` or `--json`; exit `0`/`1`/`2`). Backs up the registry `SKILL.md` as `.pre-<sha>`, re-syncs the pair to in-sync, and marks the skill locally edited for `skill update`. Symlinked projections are refused: the registry copy is already the source of truth. `--kind agent` adopts a hand-edited `~/.claude/agents/<name>.md` back into the canonical `AGENT.md` the same way. |
 | `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `-s` / `--stack` to target a stack (auto-detected when only one runs), `--format json` or `--json` for machine output, `-q` / `--quiet` to suppress the success line. |
 
 ## Variables
