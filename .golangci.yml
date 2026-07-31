@@ -8,11 +8,22 @@ linters:
     - staticcheck
     - unused
     - gosec
+    - usetesting
   disable:
     - depguard
   settings:
     errcheck:
       check-blank: false
+    usetesting:
+      # HOME hygiene: tests must go through t.Setenv/t.TempDir so
+      # isolation is cleanup-managed (TestMain bodies are exempt; no
+      # *testing.T there).
+      os-setenv: true
+      os-temp-dir: true
+      # Go 1.24+ defaults would flag every context.Background() in
+      # tests; t.Context() migration is not this linter's job here.
+      context-background: false
+      context-todo: false
   exclusions:
     rules:
       # Close/Flush in cleanup paths — errors are not actionable
