@@ -41,9 +41,13 @@ func TestConformance(t *testing.T) {
 	if major := nodeMajorVersion(t); major > 0 && major < 22 {
 		t.Skipf("conformance suite requires Node 22+, found major version %d", major)
 	}
-	isolateGridctlHome(t)
 
+	// Build before redirecting HOME so `go build` resolves its real
+	// module cache rather than poisoning the test's tempdir with
+	// read-only mod-cache files that t.TempDir cleanup can't remove
+	// (the serve_integration_test.go precedent).
 	bin := buildGridctlBinary(t)
+	isolateGridctlHome(t)
 	port := freePort(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
