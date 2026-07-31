@@ -13,9 +13,7 @@ import (
 
 func setTempHomeStop(t *testing.T) {
 	t.Helper()
-	orig := os.Getenv("HOME")
-	t.Cleanup(func() { os.Setenv("HOME", orig) })
-	os.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 }
 
 func TestRunStop_NoDaemonRunning(t *testing.T) {
