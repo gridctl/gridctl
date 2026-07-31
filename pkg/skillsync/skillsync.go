@@ -53,7 +53,11 @@ type Manager struct {
 	mu    sync.Mutex
 }
 
-// NewManager builds a Manager rooted at the user's home directory.
+// NewManager builds a Manager rooted at the user's home directory. It
+// is for end-of-the-line CLI call sites only: any caller in pkg/ or
+// internal/ that tests can reach must use NewManagerWithHome so an
+// injected home keeps the suite away from real client skill
+// directories.
 func NewManager(store SkillSource) (*Manager, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
