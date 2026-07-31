@@ -6,9 +6,17 @@ func TestSupportedProtocolVersions_NewestFirst(t *testing.T) {
 	if len(SupportedProtocolVersions) == 0 {
 		t.Fatal("SupportedProtocolVersions must not be empty")
 	}
-	if SupportedProtocolVersions[0] != MCPProtocolVersion {
-		t.Errorf("expected first entry %q to be MCPProtocolVersion %q",
-			SupportedProtocolVersions[0], MCPProtocolVersion)
+	if SupportedProtocolVersions[0] != StatelessProtocolVersion {
+		t.Errorf("expected first entry %q to be the newest revision %q",
+			SupportedProtocolVersions[0], StatelessProtocolVersion)
+	}
+	// MCPProtocolVersion is the handshake-era default and must stay a
+	// supported handshake-era member, never a stateless revision.
+	if !IsSupportedProtocolVersion(MCPProtocolVersion) {
+		t.Errorf("MCPProtocolVersion %q must be supported", MCPProtocolVersion)
+	}
+	if EraOfVersion(MCPProtocolVersion) != EraHandshake {
+		t.Errorf("MCPProtocolVersion %q must be handshake-era", MCPProtocolVersion)
 	}
 }
 
@@ -21,7 +29,7 @@ func TestIsSupportedProtocolVersion(t *testing.T) {
 		{"2025-06-18", true},
 		{"2025-03-26", true},
 		{"2024-11-05", true},
-		{"2026-07-28", false},
+		{"2026-07-28", true},
 		{"1999-01-01", false},
 		{"", false},
 		{"not-a-version", false},
@@ -43,7 +51,9 @@ func TestNegotiateProtocolVersion(t *testing.T) {
 		{"echo older supported", "2025-06-18", "2025-06-18"},
 		{"echo oldest supported", "2024-11-05", "2024-11-05"},
 		{"counter-offer on unknown", "1999-01-01", MCPProtocolVersion},
-		{"counter-offer on future", "2026-07-28", MCPProtocolVersion},
+		// A stateless revision has no initialize; a handshake client
+		// requesting it gets the latest handshake-era version back.
+		{"counter-offer on stateless revision", "2026-07-28", MCPProtocolVersion},
 		{"counter-offer on empty", "", MCPProtocolVersion},
 	}
 	for _, tt := range tests {
