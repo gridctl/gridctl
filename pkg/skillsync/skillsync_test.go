@@ -469,6 +469,51 @@ func TestReconcileRemovesDeactivatedSkill(t *testing.T) {
 	}
 }
 
+// TestReconcileRefusesEmptyStore guards the mass-removal footgun: the
+// registry treats a missing or unreadable directory as an empty store,
+// so a background reconcile seeing zero active skills while projections
+// are recorded must refuse rather than remove everything. Explicit sync
+// keeps full authority.
+func TestReconcileRefusesEmptyStore(t *testing.T) {
+	f := newFixture(t)
+	f.mustSync(t, []string{"alpha"}, SyncOptions{Clients: []string{"claude-code"}})
+	lockBefore, err := os.ReadFile(f.mgr.LockPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a vanished registry: remove the skills tree and reload.
+	if err := os.RemoveAll(filepath.Join(f.regDir, "skills")); err != nil {
+		t.Fatal(err)
+	}
+	f.reload(t)
+
+	results, err := f.mgr.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != ActionSkippedEmptyStore {
+		t.Fatalf("reconcile against an empty store must refuse with a single %s result, got %+v", ActionSkippedEmptyStore, results)
+	}
+	if _, err := os.Lstat(f.dest(t, "claude-code", "alpha")); err != nil {
+		t.Errorf("projection must survive an empty-store reconcile: %v", err)
+	}
+	lockAfter, err := os.ReadFile(f.mgr.LockPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(lockBefore) != string(lockAfter) {
+		t.Errorf("lockfile must be untouched by a refused reconcile:\nbefore: %s\nafter: %s", lockBefore, lockAfter)
+	}
+
+	// The explicit sync path still removes: the user asked, so an empty
+	// store means everything projected goes.
+	results = f.mustSync(t, nil, SyncOptions{})
+	if got := actionOf(t, results, "alpha", "claude-code"); got != ActionRemoved {
+		t.Fatalf("explicit sync action = %s, want removed", got)
+	}
+}
+
 func TestReconcileRepairsMissingSymlink(t *testing.T) {
 	f := newFixture(t)
 	f.mustSync(t, []string{"alpha"}, SyncOptions{Clients: []string{"claude-code"}})
