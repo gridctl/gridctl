@@ -19,6 +19,7 @@ import (
 
 	"github.com/gridctl/gridctl/internal/api"
 	"github.com/gridctl/gridctl/internal/probe"
+	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/flags"
 	"github.com/gridctl/gridctl/pkg/limits"
@@ -1392,28 +1393,47 @@ func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, home 
 		logger.Warn("skill projection reconcile skipped: home directory unavailable")
 		return
 	}
+	// A skill reconcile failure deliberately does not abort the agent
+	// pass below: the two kinds are independent tenants of the engine.
 	mgr := skillsync.NewManagerWithHome(home, inst.RegistryServer.Store())
 	results, err := mgr.Reconcile(ctx)
 	if err != nil {
 		logger.Warn("skill projection reconcile failed", "error", err)
-		return
 	}
 	for _, r := range results {
-		switch r.Action {
-		case skillsync.ActionUnchanged:
-		case skillsync.ActionError:
-			logger.Warn("skill projection reconcile error", "skill", r.Skill, "client", r.Client, "error", r.Error)
-		case skillsync.ActionSkippedDrift, skillsync.ActionSkippedUnmanaged:
-			// Unresolved drift the operator must decide on; reconcile
-			// never forces.
-			logger.Warn("skill projection needs attention", "skill", r.Skill, "client", r.Client, "action", r.Action, "target", r.Target)
-		case skillsync.ActionSkippedEmptyStore:
-			// The guard against mass-removal: an empty store with
-			// recorded projections is refused, not reconciled.
-			logger.Warn("skill projection reconcile refused", "reason", r.Error)
-		default:
-			logger.Info("skill projection reconciled", "skill", r.Skill, "client", r.Client, "action", r.Action, "target", r.Target)
-		}
+		logReconcileAction(logger, "skill", r.Skill, r.Client, r.Action, r.Target, r.Error)
+	}
+
+	// Agent projections reconcile with the same posture: recorded set
+	// only, drift never forced, failures logged and tolerated.
+	agentMgr := agentsync.NewManagerWithHome(home, inst.RegistryServer.Store().Dir())
+	agentResults, err := agentMgr.Reconcile(ctx)
+	if err != nil {
+		logger.Warn("agent projection reconcile failed", "error", err)
+	}
+	for _, r := range agentResults {
+		logReconcileAction(logger, "agent", r.Agent, r.Client, r.Action, r.Target, r.Error)
+	}
+}
+
+// logReconcileAction logs one projection reconcile result at the level
+// its action deserves. The action vocabulary is shared across the skill
+// and agent kinds, so one mapping serves both.
+func logReconcileAction(logger *slog.Logger, kind, name, client, action, target, errMsg string) {
+	switch action {
+	case skillsync.ActionUnchanged:
+	case skillsync.ActionError:
+		logger.Warn(kind+" projection reconcile error", kind, name, "client", client, "error", errMsg)
+	case skillsync.ActionSkippedDrift, skillsync.ActionSkippedUnmanaged:
+		// Unresolved drift the operator must decide on; reconcile never
+		// forces.
+		logger.Warn(kind+" projection needs attention", kind, name, "client", client, "action", action, "target", target)
+	case skillsync.ActionSkippedEmptyStore:
+		// The guard against mass-removal: an empty store with recorded
+		// projections is refused, not reconciled.
+		logger.Warn(kind+" projection reconcile refused", "reason", errMsg)
+	default:
+		logger.Info(kind+" projection reconciled", kind, name, "client", client, "action", action, "target", target)
 	}
 }
 
