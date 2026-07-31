@@ -525,7 +525,9 @@ func (ps *PinStore) buildVerifyResult(serverName string, sp *ServerPins, tools [
 // saveLocked writes the pin file atomically. Creates the directory on first write.
 // Caller must hold ps.mu.Lock().
 func (ps *PinStore) saveLocked() error {
-	if err := os.MkdirAll(state.PinsDir(), 0755); err != nil {
+	// The directory derives from ps.path, not state.PinsDir(): a store
+	// built via NewWithPath must never create the real pins directory.
+	if err := os.MkdirAll(filepath.Dir(ps.path), 0755); err != nil {
 		return fmt.Errorf("pins: creating pins directory: %w", err)
 	}
 
