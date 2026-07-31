@@ -281,20 +281,23 @@ func queryTraceCount(port int) int {
 // to render rolled-up and per-replica views. Defined locally so the CLI does
 // not pull in the internal/api package.
 type mcpServerAPI struct {
-	Name         string          `json:"name"`
-	Transport    string          `json:"transport"`
-	External     bool            `json:"external"`
-	LocalProcess bool            `json:"localProcess"`
-	SSH          bool            `json:"ssh"`
-	OpenAPI      bool            `json:"openapi"`
-	Healthy      *bool           `json:"healthy,omitempty"`
-	HealthError  string          `json:"healthError,omitempty"`
-	RegFailed    bool            `json:"registrationFailed,omitempty"`
-	AuthStatus   string          `json:"authStatus,omitempty"`
-	AuthIssuer   string          `json:"authIssuer,omitempty"`
-	AuthExpiry   *time.Time      `json:"authExpiry,omitempty"`
-	Replicas     []mcpReplicaAPI `json:"replicas,omitempty"`
-	Autoscale    *autoscaleAPI   `json:"autoscale,omitempty"`
+	Name         string `json:"name"`
+	Transport    string `json:"transport"`
+	External     bool   `json:"external"`
+	LocalProcess bool   `json:"localProcess"`
+	SSH          bool   `json:"ssh"`
+	OpenAPI      bool   `json:"openapi"`
+	Healthy      *bool  `json:"healthy,omitempty"`
+	HealthError  string `json:"healthError,omitempty"`
+	RegFailed    bool   `json:"registrationFailed,omitempty"`
+	// ProtocolGeneration is the resolved MCP protocol era ("handshake"
+	// or "stateless"); empty for OpenAPI adapters.
+	ProtocolGeneration string          `json:"protocolGeneration,omitempty"`
+	AuthStatus         string          `json:"authStatus,omitempty"`
+	AuthIssuer         string          `json:"authIssuer,omitempty"`
+	AuthExpiry         *time.Time      `json:"authExpiry,omitempty"`
+	Replicas           []mcpReplicaAPI `json:"replicas,omitempty"`
+	Autoscale          *autoscaleAPI   `json:"autoscale,omitempty"`
 }
 
 // autoscaleAPI mirrors the subset of mcp.AutoscaleStatus the CLI renders in

@@ -175,6 +175,17 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Era classification: modern per-request _meta selects the stateless
+	// path, as does server/discover in any shape (it doubles as the
+	// backward-compatibility probe and must never 404 into a legacy
+	// verdict). initialize selects the handshake path. Everything else
+	// is session traffic.
+	meta, hasMeta := parseRequestMeta(req.Params)
+	if hasMeta || req.Method == "server/discover" {
+		s.handleStateless(w, r, &req, meta, hasMeta)
+		return
+	}
+
 	if req.Method == "initialize" {
 		s.handleInitialize(w, r, &req)
 		return
@@ -271,7 +282,13 @@ func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.R
 
 // handleGet handles GET /mcp — opens a server→client SSE stream.
 // Clients can provide Last-Event-ID to resume after a disconnection.
+// The stateless era removed the GET stream; a request declaring a
+// stateless version gets the spec's 405.
 func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request) {
+	if EraOfVersion(r.Header.Get("MCP-Protocol-Version")) == EraStateless {
+		http.Error(w, "Method not allowed for this protocol version", http.StatusMethodNotAllowed)
+		return
+	}
 	if !s.checkProtocolVersionHeader(w, r) {
 		return
 	}
@@ -340,8 +357,14 @@ func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// handleDelete handles DELETE /mcp — terminates a session.
+// handleDelete handles DELETE /mcp — terminates a session. The
+// stateless era has no sessions; a request declaring a stateless
+// version gets the spec's 405.
 func (s *StreamableHTTPServer) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if EraOfVersion(r.Header.Get("MCP-Protocol-Version")) == EraStateless {
+		http.Error(w, "Method not allowed for this protocol version", http.StatusMethodNotAllowed)
+		return
+	}
 	if !s.checkProtocolVersionHeader(w, r) {
 		return
 	}
@@ -426,6 +449,18 @@ func (s *StreamableHTTPServer) handleToolsCall(ctx context.Context, _ *Streamabl
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
+	// Cross-era MRTR is out of scope by design: a handshake-era client
+	// cannot relay a stateless server's input_required round trip, so
+	// it gets a clear error instead of an interim result it cannot act
+	// on.
+	if result.ResultType == ResultTypeInputRequired {
+		result = &ToolCallResult{
+			Content: []Content{NewTextContent(
+				"tool requires additional input via MRTR (2026-07-28), which this session's protocol generation cannot relay; use a client that speaks the stateless generation",
+			)},
+			IsError: true,
+		}
+	}
 	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
@@ -491,6 +526,33 @@ func (s *StreamableHTTPServer) SessionIDs() []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// SessionEntry describes one active session for status surfaces.
+// Sessions exist only on the handshake era (the stateless era has
+// none), so Generation is currently always "handshake"; it is derived
+// from the negotiated version rather than hardcoded so the field stays
+// honest if a future revision reintroduces session semantics.
+type SessionEntry struct {
+	ID              string `json:"id"`
+	Generation      string `json:"generation"`
+	ProtocolVersion string `json:"protocolVersion,omitempty"`
+}
+
+// SessionEntries returns the active sessions with their negotiated
+// protocol version and generation.
+func (s *StreamableHTTPServer) SessionEntries() []SessionEntry {
+	ids := s.SessionIDs()
+	entries := make([]SessionEntry, 0, len(ids))
+	for _, id := range ids {
+		e := SessionEntry{ID: id, Generation: string(EraHandshake)}
+		if gs := s.gateway.sessions.Get(id); gs != nil {
+			e.ProtocolVersion = gs.ProtocolVersion
+			e.Generation = string(EraOfVersion(gs.ProtocolVersion))
+		}
+		entries = append(entries, e)
+	}
+	return entries
 }
 
 // Close tears down all active sessions and cancels their SSE streams.

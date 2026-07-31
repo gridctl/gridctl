@@ -24,13 +24,19 @@ import (
 )
 
 var (
-	port    int
-	sseMode bool
+	port     int
+	sseMode  bool
+	protocol string
 )
+
+// modernMode reports whether the mock speaks the stateless 2026-07-28
+// generation instead of the legacy handshake generation.
+func modernMode() bool { return protocol == "2026-07-28" }
 
 func init() {
 	flag.IntVar(&port, "port", 8080, "Port to listen on")
 	flag.BoolVar(&sseMode, "sse", false, "Enable SSE response format")
+	flag.StringVar(&protocol, "protocol", "", "Protocol generation: empty for legacy handshake, 2026-07-28 for stateless")
 }
 
 // JSON-RPC types
@@ -85,13 +91,37 @@ type ToolsListResult struct {
 }
 
 type ToolCallParams struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments,omitempty"`
+	Name           string          `json:"name"`
+	Arguments      map[string]any  `json:"arguments,omitempty"`
+	RequestState   string          `json:"requestState,omitempty"`
+	InputResponses json.RawMessage `json:"inputResponses,omitempty"`
 }
 
 type ToolCallResult struct {
-	Content []Content `json:"content"`
-	IsError bool      `json:"isError,omitempty"`
+	Content       []Content       `json:"content"`
+	IsError       bool            `json:"isError,omitempty"`
+	ResultType    string          `json:"resultType,omitempty"`
+	InputRequests json.RawMessage `json:"inputRequests,omitempty"`
+	RequestState  string          `json:"requestState,omitempty"`
+}
+
+// DiscoverResult is the 2026-07-28 server/discover response.
+type DiscoverResult struct {
+	ResultType        string         `json:"resultType"`
+	SupportedVersions []string       `json:"supportedVersions"`
+	Capabilities      Capabilities   `json:"capabilities"`
+	TTLMs             int64          `json:"ttlMs"`
+	CacheScope        string         `json:"cacheScope"`
+	Meta              map[string]any `json:"_meta,omitempty"`
+}
+
+// cacheableToolsListResult is ToolsListResult plus the CacheableResult
+// fields the stateless generation requires on list results.
+type cacheableToolsListResult struct {
+	ResultType string `json:"resultType"`
+	TTLMs      int64  `json:"ttlMs"`
+	CacheScope string `json:"cacheScope"`
+	Tools      []Tool `json:"tools"`
 }
 
 type Content struct {
@@ -157,6 +187,11 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Received request: method=%s", req.Method)
 
+	if modernMode() {
+		handleModernMCP(w, req)
+		return
+	}
+
 	var result any
 	var rpcErr *Error
 
@@ -202,6 +237,110 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sendResult(w, req.ID, result)
+}
+
+// handleModernMCP serves the stateless 2026-07-28 generation: no
+// handshake, server/discover, resultType on every result, cache
+// metadata on list results, and an MRTR tool that verifies the
+// requestState round trip byte-exact.
+func handleModernMCP(w http.ResponseWriter, req Request) {
+	// Notifications are acknowledged with 202 and no body.
+	if len(req.ID) == 0 {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	switch req.Method {
+	case "server/discover":
+		sendResult(w, req.ID, DiscoverResult{
+			ResultType:        "complete",
+			SupportedVersions: []string{"2026-07-28"},
+			Capabilities:      Capabilities{Tools: &ToolsCapability{}},
+			TTLMs:             60000,
+			CacheScope:        "public",
+			Meta: map[string]any{
+				"io.modelcontextprotocol/serverInfo": ServerInfo{Name: "mock-mcp-server", Version: "2.0.0"},
+			},
+		})
+
+	case "tools/list":
+		sendResult(w, req.ID, cacheableToolsListResult{
+			ResultType: "complete",
+			TTLMs:      60000,
+			CacheScope: "public",
+			Tools:      sampleTools,
+		})
+
+	case "tools/call":
+		var params ToolCallParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			sendError(w, req.ID, -32602, "Invalid params")
+			return
+		}
+		if params.Name == "ask_secret" {
+			sendResult(w, req.ID, handleAskSecret(params))
+			return
+		}
+		result := handleToolCall(params)
+		result.ResultType = "complete"
+		sendResult(w, req.ID, result)
+
+	case "initialize":
+		// A modern-only server SHOULD name its supported versions in
+		// any error it returns to initialize; this may be the only
+		// diagnostic a legacy client can surface.
+		sendError(w, req.ID, -32601, "initialize is not supported; this server speaks protocol versions: 2026-07-28")
+
+	default:
+		// The modern generation removed ping and logging/setLevel;
+		// unknown methods get 404 with -32601.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(Response{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Error:   &Error{Code: -32601, Message: "Method not found"},
+		})
+	}
+}
+
+// askSecretState is the exact requestState the ask_secret tool issues;
+// the retry must echo it byte-for-byte or the tool reports tampering.
+// The value deliberately looks sentinel-shaped to catch double-encoding.
+const askSecretState = "mock-ask-secret-state:=?base64?not-actually?=:é世"
+
+// handleAskSecret implements the MRTR round trip: the first call
+// returns input_required with an elicitation request and opaque state;
+// the retry is verified byte-exact.
+func handleAskSecret(params ToolCallParams) ToolCallResult {
+	if params.RequestState == "" {
+		return ToolCallResult{
+			ResultType: "input_required",
+			InputRequests: json.RawMessage(`{
+				"secret_word": {"method": "elicitation/create", "params": {"mode": "form", "message": "What is the secret word?",
+					"requestedSchema": {"type": "object", "properties": {"word": {"type": "string"}}, "required": ["word"]}}}
+			}`),
+			RequestState: askSecretState,
+		}
+	}
+	if params.RequestState != askSecretState {
+		return ToolCallResult{
+			ResultType: "complete",
+			Content:    []Content{{Type: "text", Text: fmt.Sprintf("requestState corrupted in transit: got %q", params.RequestState)}},
+			IsError:    true,
+		}
+	}
+	if len(params.InputResponses) == 0 {
+		return ToolCallResult{
+			ResultType: "complete",
+			Content:    []Content{{Type: "text", Text: "retry carried no inputResponses"}},
+			IsError:    true,
+		}
+	}
+	return ToolCallResult{
+		ResultType: "complete",
+		Content:    []Content{{Type: "text", Text: "secret accepted"}},
+	}
 }
 
 func handleToolCall(params ToolCallParams) ToolCallResult {
@@ -297,6 +436,16 @@ func main() {
 			log.Fatalf("invalid MOCK_ECHO_OUTPUT_SCHEMA: %v", err)
 		}
 		sampleTools[0].OutputSchema = schema
+	}
+
+	// The modern generation carries an MRTR-exercising tool so tests
+	// can verify the requestState round trip through the gateway.
+	if modernMode() {
+		sampleTools = append(sampleTools, Tool{
+			Name:        "ask_secret",
+			Description: "Requires additional input via MRTR before answering",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		})
 	}
 
 	if oauthBaseURL == "" {

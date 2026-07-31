@@ -315,45 +315,48 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 
 	if server.External {
 		return mcp.MCPServerConfig{
-			Name:         server.Name,
-			Transport:    transport,
-			Endpoint:     server.URL,
-			External:     true,
-			Auth:         mapServerAuth(serverCfg.Auth),
-			HeaderSource: r.wireOAuth(server.Name, server.URL, &serverCfg),
-			Tools:        serverCfg.Tools,
-			OutputFormat: serverCfg.OutputFormat,
-			PinSchemas:   serverCfg.PinSchemas,
-			PingTimeout:  serverCfg.ResolvedPingTimeout(),
+			Name:               server.Name,
+			Transport:          transport,
+			Endpoint:           server.URL,
+			External:           true,
+			Auth:               mapServerAuth(serverCfg.Auth),
+			HeaderSource:       r.wireOAuth(server.Name, server.URL, &serverCfg),
+			Tools:              serverCfg.Tools,
+			OutputFormat:       serverCfg.OutputFormat,
+			PinSchemas:         serverCfg.PinSchemas,
+			PingTimeout:        serverCfg.ResolvedPingTimeout(),
+			ProtocolGeneration: serverCfg.ProtocolGeneration,
 		}
 	}
 	if server.LocalProcess {
 		return mcp.MCPServerConfig{
-			Name:         server.Name,
-			LocalProcess: true,
-			Command:      server.Command,
-			WorkDir:      filepath.Dir(stackPath),
-			Env:          serverCfg.Env,
-			Tools:        serverCfg.Tools,
-			OutputFormat: serverCfg.OutputFormat,
-			PinSchemas:   serverCfg.PinSchemas,
-			PingTimeout:  serverCfg.ResolvedPingTimeout(),
+			Name:               server.Name,
+			LocalProcess:       true,
+			Command:            server.Command,
+			WorkDir:            filepath.Dir(stackPath),
+			Env:                serverCfg.Env,
+			Tools:              serverCfg.Tools,
+			OutputFormat:       serverCfg.OutputFormat,
+			PinSchemas:         serverCfg.PinSchemas,
+			PingTimeout:        serverCfg.ResolvedPingTimeout(),
+			ProtocolGeneration: serverCfg.ProtocolGeneration,
 		}
 	}
 	if server.SSH {
 		cfg := mcp.MCPServerConfig{
-			Name:            server.Name,
-			SSH:             true,
-			Command:         server.Command,
-			SSHHost:         server.SSHHost,
-			SSHUser:         server.SSHUser,
-			SSHPort:         server.SSHPort,
-			SSHIdentityFile: server.SSHIdentityFile,
-			Env:             serverCfg.Env,
-			Tools:           serverCfg.Tools,
-			OutputFormat:    serverCfg.OutputFormat,
-			PinSchemas:      serverCfg.PinSchemas,
-			PingTimeout:     serverCfg.ResolvedPingTimeout(),
+			Name:               server.Name,
+			SSH:                true,
+			Command:            server.Command,
+			SSHHost:            server.SSHHost,
+			SSHUser:            server.SSHUser,
+			SSHPort:            server.SSHPort,
+			SSHIdentityFile:    server.SSHIdentityFile,
+			Env:                serverCfg.Env,
+			Tools:              serverCfg.Tools,
+			OutputFormat:       serverCfg.OutputFormat,
+			PinSchemas:         serverCfg.PinSchemas,
+			PingTimeout:        serverCfg.ResolvedPingTimeout(),
+			ProtocolGeneration: serverCfg.ProtocolGeneration,
 		}
 		if serverCfg.SSH != nil {
 			cfg.SSHKnownHostsFile = serverCfg.SSH.KnownHostsFile
@@ -370,13 +373,14 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 	}
 	if transport == mcp.TransportStdio {
 		return mcp.MCPServerConfig{
-			Name:         server.Name,
-			Transport:    transport,
-			ContainerID:  string(server.WorkloadID),
-			Tools:        serverCfg.Tools,
-			OutputFormat: serverCfg.OutputFormat,
-			PinSchemas:   serverCfg.PinSchemas,
-			PingTimeout:  serverCfg.ResolvedPingTimeout(),
+			Name:               server.Name,
+			Transport:          transport,
+			ContainerID:        string(server.WorkloadID),
+			Tools:              serverCfg.Tools,
+			OutputFormat:       serverCfg.OutputFormat,
+			PinSchemas:         serverCfg.PinSchemas,
+			PingTimeout:        serverCfg.ResolvedPingTimeout(),
+			ProtocolGeneration: serverCfg.ProtocolGeneration,
 		}
 	}
 	// Container HTTP/SSE
@@ -392,47 +396,50 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 
 	if server.IsExternal() {
 		return mcp.MCPServerConfig{
-			Name:         server.Name,
-			Transport:    transport,
-			Endpoint:     server.URL,
-			External:     true,
-			Auth:         mapServerAuth(server.Auth),
-			HeaderSource: r.wireOAuth(server.Name, server.URL, &server),
-			Tools:        server.Tools,
-			OutputFormat: server.OutputFormat,
-			PinSchemas:   server.PinSchemas,
-			PingTimeout:  server.ResolvedPingTimeout(),
+			Name:               server.Name,
+			Transport:          transport,
+			Endpoint:           server.URL,
+			External:           true,
+			Auth:               mapServerAuth(server.Auth),
+			HeaderSource:       r.wireOAuth(server.Name, server.URL, &server),
+			Tools:              server.Tools,
+			OutputFormat:       server.OutputFormat,
+			PinSchemas:         server.PinSchemas,
+			PingTimeout:        server.ResolvedPingTimeout(),
+			ProtocolGeneration: server.ProtocolGeneration,
 		}
 	}
 	if server.IsLocalProcess() {
 		return mcp.MCPServerConfig{
-			Name:         server.Name,
-			LocalProcess: true,
-			Command:      server.Command,
-			WorkDir:      filepath.Dir(stackPath),
-			Env:          server.Env,
-			Tools:        server.Tools,
-			OutputFormat: server.OutputFormat,
-			PinSchemas:   server.PinSchemas,
-			PingTimeout:  server.ResolvedPingTimeout(),
+			Name:               server.Name,
+			LocalProcess:       true,
+			Command:            server.Command,
+			WorkDir:            filepath.Dir(stackPath),
+			Env:                server.Env,
+			Tools:              server.Tools,
+			OutputFormat:       server.OutputFormat,
+			PinSchemas:         server.PinSchemas,
+			PingTimeout:        server.ResolvedPingTimeout(),
+			ProtocolGeneration: server.ProtocolGeneration,
 		}
 	}
 	if server.IsSSH() {
 		return mcp.MCPServerConfig{
-			Name:              server.Name,
-			SSH:               true,
-			Command:           server.Command,
-			SSHHost:           server.SSH.Host,
-			SSHUser:           server.SSH.User,
-			SSHPort:           server.SSH.Port,
-			SSHIdentityFile:   server.SSH.IdentityFile,
-			SSHKnownHostsFile: server.SSH.KnownHostsFile,
-			SSHJumpHost:       server.SSH.JumpHost,
-			Env:               server.Env,
-			Tools:             server.Tools,
-			OutputFormat:      server.OutputFormat,
-			PinSchemas:        server.PinSchemas,
-			PingTimeout:       server.ResolvedPingTimeout(),
+			Name:               server.Name,
+			SSH:                true,
+			Command:            server.Command,
+			SSHHost:            server.SSH.Host,
+			SSHUser:            server.SSH.User,
+			SSHPort:            server.SSH.Port,
+			SSHIdentityFile:    server.SSH.IdentityFile,
+			SSHKnownHostsFile:  server.SSH.KnownHostsFile,
+			SSHJumpHost:        server.SSH.JumpHost,
+			Env:                server.Env,
+			Tools:              server.Tools,
+			OutputFormat:       server.OutputFormat,
+			PinSchemas:         server.PinSchemas,
+			PingTimeout:        server.ResolvedPingTimeout(),
+			ProtocolGeneration: server.ProtocolGeneration,
 		}
 	}
 	if server.IsOpenAPI() {
@@ -444,13 +451,14 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 	}
 	if transport == mcp.TransportStdio {
 		return mcp.MCPServerConfig{
-			Name:         server.Name,
-			Transport:    transport,
-			ContainerID:  containerID,
-			Tools:        server.Tools,
-			OutputFormat: server.OutputFormat,
-			PinSchemas:   server.PinSchemas,
-			PingTimeout:  server.ResolvedPingTimeout(),
+			Name:               server.Name,
+			Transport:          transport,
+			ContainerID:        containerID,
+			Tools:              server.Tools,
+			OutputFormat:       server.OutputFormat,
+			PinSchemas:         server.PinSchemas,
+			PingTimeout:        server.ResolvedPingTimeout(),
+			ProtocolGeneration: server.ProtocolGeneration,
 		}
 	}
 	// Container HTTP/SSE
@@ -471,6 +479,7 @@ func (r *ServerRegistrar) buildContainerHTTPConfig(name string, transport mcp.Tr
 		PinSchemas:            serverCfg.PinSchemas,
 		ReadyTimeout:          serverCfg.ResolvedReadyTimeout(),
 		PingTimeout:           serverCfg.ResolvedPingTimeout(),
+		ProtocolGeneration:    serverCfg.ProtocolGeneration,
 		CleanupOnReadyFailure: r.cleanupClosure(name, id),
 	}
 }

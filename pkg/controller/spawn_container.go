@@ -210,12 +210,13 @@ func (c *ContainerSpawner) Reap(ctx context.Context, r *mcp.Replica) error {
 // stdio containers consume containerID; http/sse consume the endpoint URL.
 func (c *ContainerSpawner) buildClientConfig(hostPort int, id runtime.WorkloadID) mcp.MCPServerConfig {
 	cfg := mcp.MCPServerConfig{
-		Name:         c.server.Name,
-		Transport:    mcp.Transport(c.transport),
-		Tools:        c.server.Tools,
-		OutputFormat: c.server.OutputFormat,
-		PinSchemas:   c.server.PinSchemas,
-		ReadyTimeout: c.server.ResolvedReadyTimeout(),
+		Name:               c.server.Name,
+		Transport:          mcp.Transport(c.transport),
+		Tools:              c.server.Tools,
+		OutputFormat:       c.server.OutputFormat,
+		PinSchemas:         c.server.PinSchemas,
+		ReadyTimeout:       c.server.ResolvedReadyTimeout(),
+		ProtocolGeneration: c.server.ProtocolGeneration,
 	}
 	if cfg.Transport == "" {
 		cfg.Transport = mcp.TransportHTTP

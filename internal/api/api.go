@@ -708,12 +708,21 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	entries := s.streamableServer.SessionEntries()
+	ids := make([]string, len(entries))
+	for i, e := range entries {
+		ids[i] = e.ID
+	}
 	response := struct {
-		Count    int      `json:"count"`
-		Sessions []string `json:"sessions"`
+		Count int `json:"count"`
+		// Sessions is the legacy bare ID list, kept for existing
+		// consumers; Entries carries the per-session generation tag.
+		Sessions []string           `json:"sessions"`
+		Entries  []mcp.SessionEntry `json:"entries"`
 	}{
-		Count:    s.streamableServer.SessionCount(),
-		Sessions: s.streamableServer.SessionIDs(),
+		Count:    len(entries),
+		Sessions: ids,
+		Entries:  entries,
 	}
 	writeJSON(w, response)
 }
@@ -798,6 +807,9 @@ type MCPServerStatus struct {
 	// ProtocolVersion is the MCP protocol version the downstream server
 	// reported at initialize; empty for lax servers and OpenAPI adapters.
 	ProtocolVersion string `json:"protocolVersion,omitempty"`
+	// ProtocolGeneration is the resolved protocol era ("handshake" or
+	// "stateless"); empty for OpenAPI adapters and unresolved servers.
+	ProtocolGeneration string `json:"protocolGeneration,omitempty"`
 	// RegistrationFailed marks a server that never registered with the
 	// gateway; the UI shows it as failed instead of omitting the node.
 	RegistrationFailed bool `json:"registrationFailed,omitempty"`
@@ -844,6 +856,7 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 			HealthError:        ms.HealthError,
 			ToolWhitelist:      ms.ToolWhitelist,
 			ProtocolVersion:    ms.ProtocolVersion,
+			ProtocolGeneration: ms.ProtocolGeneration,
 			RegistrationFailed: ms.RegistrationFailed,
 			Model:              declaredModels[ms.Name],
 			Replicas:           ms.Replicas,

@@ -100,6 +100,12 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 		}
 	}
 
+	// Stateless-era servers require version, capabilities, and identity
+	// in _meta on every request.
+	if c.Era() == EraStateless {
+		paramsBytes = stampStatelessMeta(ctx, paramsBytes, c.ProtocolVersion())
+	}
+
 	req := jsonrpc.Request{
 		JSONRPC: "2.0",
 		ID:      &rawID,
@@ -117,7 +123,7 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 
 	if resp.Error != nil {
 		c.logger.Debug("received error response", "method", method, "id", id, "code", resp.Error.Code, "message", resp.Error.Message)
-		return fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
+		return &RPCError{Code: resp.Error.Code, Message: resp.Error.Message, Data: marshalErrorData(resp.Error.Data)}
 	}
 
 	c.logger.Debug("received response", "method", method, "id", id)
@@ -183,15 +189,34 @@ func (c *Client) sendHTTPOnce(ctx context.Context, req jsonrpc.Request) (*jsonrp
 
 	// Include session ID if we have one (for stateful MCP servers) and the
 	// protocol version negotiated at initialize (required by the spec on all
-	// post-initialize requests).
+	// post-initialize requests). The stateless era has no sessions:
+	// Mcp-Session-Id is never sent, and the required Mcp-Method/Mcp-Name
+	// request-metadata headers are stamped instead. The probe stamps
+	// them too; a modern server validates them on every request it
+	// accepts.
 	c.mu.RLock()
-	if c.sessionID != "" {
+	era, protocolVersion := c.era, c.protocolVersion
+	if era != EraStateless && c.sessionID != "" {
 		httpReq.Header.Set("Mcp-Session-Id", c.sessionID)
 	}
-	if c.protocolVersion != "" {
-		httpReq.Header.Set("MCP-Protocol-Version", c.protocolVersion)
-	}
 	c.mu.RUnlock()
+	if protocolVersion != "" {
+		httpReq.Header.Set("MCP-Protocol-Version", protocolVersion)
+	}
+	if era == EraStateless || req.Method == "server/discover" {
+		if req.Method == "server/discover" && protocolVersion == "" {
+			httpReq.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
+		}
+		httpReq.Header.Set(headerMcpMethod, req.Method)
+		if name := mcpNameForRequest(req.Method, req.Params); name != "" {
+			httpReq.Header.Set(headerMcpName, encodeHeaderValue(name))
+		}
+		// Forward unrecognized Mcp-Param-* headers from the upstream
+		// request untouched, per the intermediary rules.
+		for name, value := range mcpParamHeadersFromContext(ctx) {
+			httpReq.Header.Set(name, value)
+		}
+	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -199,16 +224,32 @@ func (c *Client) sendHTTPOnce(ctx context.Context, req jsonrpc.Request) (*jsonrp
 	}
 	defer httpResp.Body.Close()
 
+	// Stateless-era servers acknowledge notifications with 202 and no
+	// body. Only notifications: a 202 to a request keeps its original
+	// loud failure (a handshake-era server answering initialize with
+	// 202 must not silently register empty).
+	if httpResp.StatusCode == http.StatusAccepted && req.ID == nil {
+		return &jsonrpc.Response{JSONRPC: "2.0"}, nil
+	}
+
 	if httpResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(httpResp.Body)
 		if authErr := authRequiredFromResponse(httpResp, string(body)); authErr != nil {
 			return nil, authErr
 		}
-		return nil, fmt.Errorf("HTTP %d: %s", httpResp.StatusCode, string(body))
+		statusErr := &HTTPStatusError{Status: httpResp.StatusCode, Body: string(body)}
+		// Modern servers put JSON-RPC errors inside 400/404 bodies;
+		// surface them so the era probe can recognize a modern peer.
+		var errResp jsonrpc.Response
+		if json.Unmarshal([]byte(body), &errResp) == nil && errResp.Error != nil {
+			statusErr.RPCErr = &RPCError{Code: errResp.Error.Code, Message: errResp.Error.Message, Data: marshalErrorData(errResp.Error.Data)}
+		}
+		return nil, statusErr
 	}
 
-	// Capture session ID if provided (for stateful MCP servers)
-	if sid := httpResp.Header.Get("Mcp-Session-Id"); sid != "" {
+	// Capture session ID if provided (for stateful MCP servers). A
+	// stateless-era server never mints sessions; ignore any echo.
+	if sid := httpResp.Header.Get("Mcp-Session-Id"); sid != "" && era != EraStateless {
 		c.mu.Lock()
 		c.sessionID = sid
 		c.mu.Unlock()
@@ -307,4 +348,3 @@ func authRequiredFromResponse(resp *http.Response, body string) *AuthRequiredErr
 	}
 	return nil
 }
-

@@ -220,6 +220,11 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 
 	// Inject _meta.traceparent for downstream MCP servers that support it.
 	paramsBytes = injectMetaTraceparent(ctx, paramsBytes)
+	// Stateless-era servers require version, capabilities, and identity
+	// in _meta on every request.
+	if c.Era() == EraStateless {
+		paramsBytes = stampStatelessMeta(ctx, paramsBytes, c.ProtocolVersion())
+	}
 
 	req := jsonrpc.Request{
 		JSONRPC: "2.0",
@@ -264,7 +269,7 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 	case resp := <-respCh:
 		if resp.Error != nil {
 			c.logger.Debug("received error response", "method", method, "id", id, "code", resp.Error.Code, "message", resp.Error.Message)
-			return fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
+			return &RPCError{Code: resp.Error.Code, Message: resp.Error.Message, Data: marshalErrorData(resp.Error.Data)}
 		}
 		c.logger.Debug("received response", "method", method, "id", id)
 		if result != nil && len(resp.Result) > 0 {
@@ -380,7 +385,13 @@ func (c *ProcessClient) Ping(ctx context.Context) error {
 		return fmt.Errorf("process exited: %w", err)
 	}
 
-	// Send a ping request and wait for response
+	// Send a liveness request and wait for a response. The stateless
+	// generation removed ping; server/discover is its spec-sanctioned
+	// always-available method, so health checks use it there instead of
+	// tripping -32601 into a permanent unhealthy loop.
+	if c.Era() == EraStateless {
+		return c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion())}, nil)
+	}
 	return c.call(ctx, "ping", nil, nil)
 }
 

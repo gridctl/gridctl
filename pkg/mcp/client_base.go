@@ -25,8 +25,31 @@ type ClientBase struct {
 	serverInfo    ServerInfo
 	toolWhitelist []string
 	// protocolVersion is the MCP protocol version the downstream server
-	// reported at initialize; empty for lax servers that omit it.
+	// reported at initialize (handshake era) or the mutually selected
+	// stateless version (stateless era); empty for lax servers that
+	// omit it.
 	protocolVersion string
+
+	// era is the resolved protocol generation of the downstream server.
+	// Empty means unresolved (pre-Initialize) or not applicable
+	// (OpenAPIClient, which speaks no MCP wire protocol at all).
+	era ProtocolEra
+
+	// generationPin is the operator's protocol_generation override from
+	// stack.yaml: "" or "auto" probes, "handshake" and "stateless" skip
+	// the probe and force one era.
+	generationPin string
+
+	// capabilities is what the downstream server declared (initialize
+	// result or discover result). Read by the tasks-extension proxy.
+	capabilities Capabilities
+
+	// listTTLMs/listCacheScope capture the CacheableResult fields a
+	// stateless-era server reported on its last tools/list; nil TTL
+	// means unknowable (legacy server, or no list yet). Feeds the
+	// gateway's min/intersect cache-metadata aggregation.
+	listTTLMs      *int64
+	listCacheScope string
 }
 
 // Tools returns the cached tool list filtered by the whitelist, if any.
@@ -105,6 +128,68 @@ func (b *ClientBase) ProtocolVersion() string {
 	return b.protocolVersion
 }
 
+// Era returns the resolved protocol generation of the downstream
+// server; empty when unresolved or not applicable (OpenAPI adapters).
+func (b *ClientBase) Era() ProtocolEra {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.era
+}
+
+// SetEra records the resolved protocol generation.
+func (b *ClientBase) SetEra(e ProtocolEra) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.era = e
+}
+
+// SetGenerationPin installs the operator's protocol_generation override
+// ("", "auto", "handshake", or "stateless"). Must be set before
+// Initialize.
+func (b *ClientBase) SetGenerationPin(pin string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.generationPin = pin
+}
+
+func (b *ClientBase) generationPinValue() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.generationPin
+}
+
+// SetDownstreamCapabilities records what the server declared at
+// initialize or discover.
+func (b *ClientBase) SetDownstreamCapabilities(c Capabilities) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.capabilities = c
+}
+
+// DownstreamCapabilities returns the server's declared capabilities.
+func (b *ClientBase) DownstreamCapabilities() Capabilities {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.capabilities
+}
+
+// SetListCacheMeta records the CacheableResult fields from the server's
+// latest tools/list response.
+func (b *ClientBase) SetListCacheMeta(ttlMs int64, scope string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.listTTLMs = &ttlMs
+	b.listCacheScope = scope
+}
+
+// ListCacheMeta returns the last-seen tools/list cache metadata; a nil
+// TTL means unknowable (legacy server or no modern list observed).
+func (b *ClientBase) ListCacheMeta() (ttlMs *int64, scope string) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.listTTLMs, b.listCacheScope
+}
+
 // filterTools returns only tools whose names are in the whitelist.
 func filterTools(tools []Tool, whitelist []string) []Tool {
 	allowed := make(map[string]bool, len(whitelist))
@@ -180,15 +265,50 @@ func (r *RPCClient) SetLogger(logger *slog.Logger) {
 	}
 }
 
-// Initialize performs the MCP initialize handshake.
-// If the transport implements connector, Connect() is called first.
+// Initialize resolves the downstream server's protocol generation and
+// completes era-appropriate setup. If the transport implements
+// connector, Connect() is called first. Under the default "auto" pin it
+// probes server/discover and falls back to the legacy initialize
+// handshake on any response not positively recognized as modern; the
+// operator's protocol_generation pin can skip the probe in either
+// direction. Restart paths construct fresh clients, and stdio/process
+// Reconnect re-enters here, so the era verdict is re-derived whenever a
+// server could have changed underneath us.
 func (r *RPCClient) Initialize(ctx context.Context) error {
 	if c, ok := r.transport.(connector); ok {
 		if err := c.Connect(ctx); err != nil {
 			return err
 		}
 	}
+	r.SetEra("") // re-resolve on every Initialize (Reconnect reuses the client)
 
+	switch r.generationPinValue() {
+	case GenerationHandshake:
+		return r.initializeHandshake(ctx)
+	case GenerationStateless:
+		modern, err := r.probeDiscover(ctx)
+		if err != nil {
+			return err
+		}
+		if !modern {
+			return fmt.Errorf("protocol_generation is pinned to stateless but the server did not answer server/discover as a stateless-era (%s) peer; remove the pin to auto-negotiate or run 'gridctl doctor' for per-server generation details", StatelessProtocolVersion)
+		}
+		return nil
+	default: // "" or "auto": probe, then conservative fallback
+		modern, err := r.probeDiscover(ctx)
+		if err != nil {
+			return err
+		}
+		if modern {
+			return nil
+		}
+		return r.initializeHandshake(ctx)
+	}
+}
+
+// initializeHandshake performs the legacy (2025-11-25 and earlier)
+// initialize handshake.
+func (r *RPCClient) initializeHandshake(ctx context.Context) error {
 	params := InitializeParams{
 		ProtocolVersion: MCPProtocolVersion,
 		ClientInfo: ClientInfo{
@@ -208,8 +328,13 @@ func (r *RPCClient) Initialize(ctx context.Context) error {
 	// Reject servers negotiating a version we do not support; proceeding
 	// silently risks tool calls failing in undebuggable ways later. An empty
 	// version is tolerated for back-compat with lax servers that omit it.
-	if result.ProtocolVersion != "" && !IsSupportedProtocolVersion(result.ProtocolVersion) {
-		return fmt.Errorf("unsupported protocol version from server: %q (supported: %s)",
+	// A stateless-era version is equally rejected here: initialize does
+	// not exist in that era, so a server negotiating one through a
+	// handshake is confused, and adopting it would stamp stateless
+	// version headers on session-bearing legacy requests.
+	if result.ProtocolVersion != "" &&
+		(!IsSupportedProtocolVersion(result.ProtocolVersion) || EraOfVersion(result.ProtocolVersion) != EraHandshake) {
+		return fmt.Errorf("server negotiated protocol version %q, which this gridctl does not support for the initialize handshake (supported: %s); run 'gridctl doctor' for per-server generation details",
 			result.ProtocolVersion, supportedProtocolVersionList())
 	}
 
@@ -223,7 +348,10 @@ func (r *RPCClient) Initialize(ctx context.Context) error {
 	}
 
 	r.SetProtocolVersion(result.ProtocolVersion)
+	r.SetEra(EraHandshake)
+	r.SetDownstreamCapabilities(result.Capabilities)
 	r.SetInitialized(result.ServerInfo)
+	r.logger.Info("protocol generation negotiated", "server", r.name, "generation", EraHandshake)
 
 	// Send initialized notification (non-fatal)
 	_ = r.transport.send(ctx, "notifications/initialized", nil)
@@ -240,6 +368,12 @@ func (r *RPCClient) RefreshTools(ctx context.Context) error {
 	}
 
 	r.SetTools(result.Tools)
+	// Stateless-era servers report cache metadata on list results; feed
+	// it into the gateway's aggregation. Legacy servers leave it nil
+	// (unknowable), which pins the aggregate TTL to zero.
+	if result.TTLMs != nil {
+		r.SetListCacheMeta(*result.TTLMs, result.CacheScope)
+	}
 	return nil
 }
 
@@ -258,12 +392,33 @@ func (r *RPCClient) CallTool(ctx context.Context, name string, arguments map[str
 		Arguments: arguments,
 	}
 
+	// An MRTR retry carries the origin server's exact requestState and
+	// the client's inputResponses through to the downstream leg. Only
+	// meaningful on the stateless era; the fields marshal away
+	// otherwise.
+	if relay := mrtrRelayFromContext(ctx); relay != nil && r.Era() == EraStateless {
+		params.RequestState = relay.RequestState
+		params.InputResponses = relay.InputResponses
+	}
+
 	var result ToolCallResult
 	if err := r.transport.call(ctx, "tools/call", params, &result); err != nil {
 		return nil, fmt.Errorf("tools/call: %w", err)
 	}
 
 	return &result, nil
+}
+
+// RelayRaw sends a JSON-RPC request with verbatim params and returns
+// the raw result bytes. The tasks-extension proxy uses it so extension
+// payloads cross the gateway without gridctl committing to their shape.
+// Transport-level _meta stamping still applies on the stateless era.
+func (r *RPCClient) RelayRaw(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	var result json.RawMessage
+	if err := r.transport.call(ctx, method, params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // buildNotification constructs a JSON-RPC notification request.

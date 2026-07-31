@@ -1,0 +1,50 @@
+# Expected-failures baseline for the @modelcontextprotocol/conformance
+# suite (pinned at 0.1.16) run against a stackless gridctl daemon.
+#
+# Almost every entry here fails by design, not by defect: the suite
+# tests a reference MCP server that implements its own test tools,
+# resources, prompts, and completion endpoints, while gridctl is an
+# aggregating gateway whose surface is whatever the downstream fleet
+# provides. A stackless daemon has no fleet, so scenarios that call
+# suite-defined tools (image/audio/logging/progress variants), read
+# suite-defined resources, or exercise completion cannot pass.
+# Sampling, elicitation, and subscription scenarios additionally rely on
+# server-initiated requests, which gridctl deliberately does not relay
+# (deprecated in 2026-07-28; MRTR is the replacement on the stateless
+# path).
+#
+# logging-set-level fails because gridctl has never implemented
+# logging/setLevel on any generation (2026-07-28 removes it outright).
+#
+# dns-rebinding-protection fails one of its two checks
+# (localhost-host-rebinding-rejected): gridctl validates the Origin
+# header but does not reject non-localhost bare Host headers.
+# Pre-existing behavior, tracked separately from the dual-stack work.
+#
+# Baseline semantics: a failure listed here is expected (exit 0); a
+# failure not listed is a regression (exit 1); a PASS for a listed entry
+# is a stale baseline (exit 1), so this file cannot rot silently.
+server:
+  - completion-complete
+  - tools-list
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-with-logging
+  - tools-call-with-progress
+  - tools-call-sampling
+  - tools-call-elicitation
+  - elicitation-sep1034-defaults
+  - elicitation-sep1330-enums
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+  - resources-subscribe
+  - resources-unsubscribe
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  - logging-set-level
+  - dns-rebinding-protection

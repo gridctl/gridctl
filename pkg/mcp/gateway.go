@@ -66,6 +66,11 @@ type MCPServerConfig struct {
 	// with many tools) where the 5s default can flake under autoscale spawn load.
 	PingTimeout time.Duration
 
+	// ProtocolGeneration is the operator's protocol_generation pin
+	// ("", "auto", "handshake", "stateless"). Empty and "auto" probe;
+	// the others skip the probe and force one generation.
+	ProtocolGeneration string
+
 	// CleanupOnReadyFailure runs when waitForHTTPServer returns ErrReadyTimeout.
 	// Callers that manage the underlying container populate this with a closure
 	// that stops and removes it, so a retry starts from a clean slate. nil means
@@ -1184,6 +1189,13 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
 			httpClient.SetLogger(clientLogger)
 			httpClient.SetPingTimeout(cfg.PingTimeout)
+			// The stateless generation removed the SSE shape entirely, so
+			// an SSE endpoint can never answer the discover probe; skip
+			// straight to the handshake unless the operator pinned
+			// otherwise.
+			if cfg.ProtocolGeneration == "" || cfg.ProtocolGeneration == GenerationAuto {
+				httpClient.SetGenerationPin(GenerationHandshake)
+			}
 			if cfg.HeaderSource != nil {
 				httpClient.SetHeaderSource(cfg.HeaderSource)
 			} else if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
@@ -1218,6 +1230,15 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			agentClient = httpClient
 		default:
 			return nil, fmt.Errorf("unknown transport: %s", cfg.Transport)
+		}
+	}
+
+	// Apply the operator's protocol_generation pin before era
+	// resolution. The OpenAPI adapter speaks no MCP wire protocol and
+	// has no pin to honor.
+	if cfg.ProtocolGeneration != "" {
+		if pinner, ok := agentClient.(interface{ SetGenerationPin(string) }); ok {
+			pinner.SetGenerationPin(cfg.ProtocolGeneration)
 		}
 	}
 
@@ -1558,21 +1579,7 @@ func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group stri
 	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
 	session := g.sessions.Create(params.ClientInfo, accessID, group, protocolVersion)
 
-	caps := Capabilities{
-		Tools: &ToolsCapability{
-			ListChanged: true,
-		},
-	}
-
-	// Advertise Prompts and Resources if registry is available
-	if g.promptProvider() != nil {
-		caps.Prompts = &PromptsCapability{
-			ListChanged: true,
-		}
-		caps.Resources = &ResourcesCapability{
-			ListChanged: true,
-		}
-	}
+	caps := g.advertisedCapabilities()
 
 	// Group endpoints announce a group-suffixed identity so several linked
 	// endpoints of the same gateway are distinguishable in clients that
@@ -1693,6 +1700,10 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	}
 
 	if cm != nil && cm.IsMetaTool(params.Name) {
+		// Never let an MRTR retry relay leak into sandbox inner calls: the
+		// envelope was minted for one specific origin call, not for
+		// whatever tools the sandboxed code happens to invoke.
+		ctx = stripMRTRRelay(ctx)
 		// Scope the code-mode tool universe to the connecting client. Code mode
 		// sources its search/execute surface from the same aggregated tool set
 		// as the direct path, so without this filter a scoped client could
@@ -1781,6 +1792,21 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		}, nil
 	}
 
+	// MRTR retry cross-check: the requestState envelope recorded which
+	// server minted the state. If group or alias changes re-routed the
+	// tool name elsewhere between round trips, forwarding the state
+	// would hand one server another server's opaque blob; fail loudly
+	// instead.
+	if relay := mrtrRelayFromContext(ctx); relay != nil && relay.ExpectedServer != "" && relay.ExpectedServer != client.Name() {
+		return &ToolCallResult{
+			Content: []Content{NewTextContent(fmt.Sprintf(
+				"MRTR retry routed to server %q but its requestState originates from %q; re-issue the original call",
+				client.Name(), relay.ExpectedServer,
+			))},
+			IsError: true,
+		}, nil
+	}
+
 	// Propagate the resolved server and tool to the root span so the
 	// trace-level record (built from root span attrs) carries them for UI
 	// filtering, and rename the root to the human-readable operation.
@@ -1821,6 +1847,9 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		attribute.String("tool.name", toolName),
 		attribute.String("network.transport", networkTransport),
 	)
+	if generation := protocolGenerationOf(client); generation != "" {
+		span.SetAttributes(attribute.String("mcp.protocol.generation", generation))
+	}
 
 	logger.Info("tool call started", "server", client.Name(), "tool", toolName)
 	start := time.Now()
@@ -1844,6 +1873,15 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		span.SetStatus(codes.Error, "tool returned error result")
 	}
 	logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
+
+	// Wrap an MRTR interim result's requestState in the routing
+	// envelope so the client's retry can be routed back to this exact
+	// server with the origin bytes intact. The state itself is never
+	// inspected. MRTR interim results are not cacheable and carry no
+	// cache metadata.
+	if result.RequestState != "" {
+		result.RequestState = wrapRequestState(client.Name(), result.RequestState)
+	}
 
 	// Truncation: clamp oversized results before logging or format conversion
 	g.applyTruncation(client.Name(), toolName, result)
@@ -2294,6 +2332,11 @@ type MCPServerStatus struct {
 	// have not completed a handshake.
 	ProtocolVersion string `json:"protocolVersion,omitempty"`
 
+	// ProtocolGeneration is the resolved protocol era ("handshake" or
+	// "stateless"). Empty for OpenAPI adapters (no MCP wire protocol)
+	// and servers that have not completed era resolution.
+	ProtocolGeneration string `json:"protocolGeneration,omitempty"`
+
 	// RegistrationFailed marks a server that never registered with the
 	// gateway (initialize failure, unsupported protocol version, unreachable
 	// endpoint). Such entries carry only Name, Healthy=false, and HealthError;
@@ -2430,6 +2473,18 @@ func protocolVersionOf(client AgentClient) string {
 	return ""
 }
 
+// protocolGenerationOf returns the resolved era of a client's
+// downstream server, or "" for clients that do not resolve one. The
+// OpenAPI adapter satisfies the interface but reports an empty era,
+// which is correct: it speaks no MCP wire protocol, so a bare
+// era == "" must never be read as "legacy".
+func protocolGenerationOf(client AgentClient) string {
+	if e, ok := client.(interface{ Era() ProtocolEra }); ok {
+		return string(e.Era())
+	}
+	return ""
+}
+
 // Status returns status of all registered MCP servers.
 // Note: This only returns actual MCP servers, not A2A adapters or other
 // clients added directly to the router.
@@ -2515,6 +2570,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 		}
 		if client != nil {
 			status.ProtocolVersion = protocolVersionOf(client)
+			status.ProtocolGeneration = protocolGenerationOf(client)
 		}
 		if meta.OpenAPIConfig != nil {
 			status.OpenAPISpec = meta.OpenAPIConfig.Spec

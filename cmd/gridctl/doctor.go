@@ -107,6 +107,7 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkNpx(&checks)
 	checkStateDir(ctx, &checks)
 	checkStaleState(ctx, &checks)
+	checkProtocolGenerations(ctx, &checks)
 	checkVault(ctx, &checks)
 
 	return summarizeDoctor(checks)
@@ -291,6 +292,56 @@ func checkStaleState(ctx context.Context, checks *[]doctorCheck) {
 		return
 	}
 	*checks = append(*checks, doctorCheck{ID: "state.stale", Status: doctorStatusOK, Message: "no stale state files"})
+}
+
+// checkProtocolGenerations reports each running stack's per-server
+// negotiated MCP protocol generation and flags mixed-generation
+// bridging. Purely informational when nothing is running.
+func checkProtocolGenerations(ctx context.Context, checks *[]doctorCheck) {
+	if err := ctx.Err(); err != nil {
+		*checks = append(*checks, doctorCheck{ID: "mcp.generation", Status: doctorStatusInfo, Message: "skipped (cancelled)"})
+		return
+	}
+	states, err := state.List()
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "mcp.generation", Status: doctorStatusWarn, Message: fmt.Sprintf("could not read state files: %v", err)})
+		return
+	}
+	running := false
+	for _, s := range states {
+		if !state.IsRunning(&s) {
+			continue
+		}
+		running = true
+		servers := queryMCPServers(s.Port)
+		if len(servers) == 0 {
+			*checks = append(*checks, doctorCheck{
+				ID:      "mcp.generation",
+				Status:  doctorStatusInfo,
+				Message: fmt.Sprintf("%s: no MCP servers reported (daemon unreachable or empty stack)", s.StackName),
+			})
+			continue
+		}
+		var parts []string
+		generations := map[string]bool{}
+		for _, srv := range servers {
+			generation := srv.ProtocolGeneration
+			if generation == "" {
+				generation = "n/a"
+			} else {
+				generations[generation] = true
+			}
+			parts = append(parts, fmt.Sprintf("%s=%s", srv.Name, generation))
+		}
+		msg := fmt.Sprintf("%s: %s", s.StackName, strings.Join(parts, ", "))
+		if len(generations) > 1 {
+			msg += " (mixed generations; the gateway bridges between them)"
+		}
+		*checks = append(*checks, doctorCheck{ID: "mcp.generation", Status: doctorStatusOK, Message: msg})
+	}
+	if !running {
+		*checks = append(*checks, doctorCheck{ID: "mcp.generation", Status: doctorStatusInfo, Message: "no running stacks to inspect"})
+	}
 }
 
 func checkVault(ctx context.Context, checks *[]doctorCheck) {

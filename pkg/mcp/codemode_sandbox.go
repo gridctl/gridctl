@@ -139,6 +139,13 @@ func (s *Sandbox) Execute(ctx context.Context, code string, caller ToolCaller, a
 				panic(vm.NewGoError(fmt.Errorf("tool call failed: %w", err)))
 			}
 
+			// The sandbox cannot relay an MRTR round trip (there is no
+			// client on the other side to gather input); surface it as
+			// an error instead of fabricating an empty complete result.
+			if result.ResultType == ResultTypeInputRequired {
+				panic(vm.NewGoError(fmt.Errorf("tool '%s' requires additional input via MRTR, which code mode cannot relay; call it directly instead", toolName)))
+			}
+
 			if result.IsError {
 				text := ""
 				for _, c := range result.Content {
