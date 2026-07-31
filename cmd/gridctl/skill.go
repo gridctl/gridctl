@@ -45,6 +45,9 @@ var (
 	skillAddSSHKey     string
 	skillListRemote    bool
 	skillListFormat    string
+	skillListKind      string
+	skillRemoveKind    string
+	skillInfoKind      string
 	skillUpdateDryRun  bool
 	skillUpdateForce   bool
 	skillUpdateTrust   bool
@@ -56,8 +59,10 @@ var (
 
 var skillAddCmd = &cobra.Command{
 	Use:   "add <repo-url>",
-	Short: "Import skills from a git repository",
-	Long:  "Clone a repository, discover SKILL.md files, and import them into the local registry.",
+	Short: "Import skills and agents from a git repository",
+	Long: "Clone a repository, discover SKILL.md files and agent definitions " +
+		"(agents/*.md, experimental), and import them into the local registry. " +
+		"A repo shipping skills/ plus agents/ imports as a unit.",
 	Example: `  gridctl skill add https://github.com/acme/skills
   gridctl skill add git@github.com:acme/private-skills.git --vault-key GH_TOKEN`,
 	Args:    cobra.ExactArgs(1),
@@ -70,7 +75,8 @@ var skillAddCmd = &cobra.Command{
 var skillListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all skills with origin info",
-	Long:  "List all skills showing source origin (local/remote) and update status.",
+	Long: "List all skills showing source origin (local/remote) and update status. " +
+		"Pass --kind agent to list imported agent definitions instead.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var err error
 		if skillListFormat, err = resolveFormat(skillListFormat, cmd.Flags().Changed("format"), *skillListJSON); err != nil {
@@ -78,6 +84,12 @@ var skillListCmd = &cobra.Command{
 		}
 		if err := resolvePlain(*skillListPlain, skillListFormat); err != nil {
 			return err
+		}
+		if err := validProjectKind(skillListKind); err != nil {
+			return err
+		}
+		if skillListKind == skillProjectKindAgent {
+			return runSkillListAgents()
 		}
 		return runSkillList()
 	},
@@ -112,11 +124,14 @@ This command is also available as 'gridctl skill sync' for parity with the
 
 var skillRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
-	Short: "Remove an imported skill",
-	Long:  "Remove a skill and clean up its origin file and lock entry.",
+	Short: "Remove an imported skill or agent",
+	Long:  "Remove a skill (or, with --kind agent, an agent) and clean up its origin file and lock entry.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSkillRemove(args[0])
+		if err := validProjectKind(skillRemoveKind); err != nil {
+			return err
+		}
+		return runSkillRemove(args[0], skillRemoveKind)
 	},
 }
 
@@ -133,10 +148,13 @@ var skillPinCmd = &cobra.Command{
 var skillInfoCmd = &cobra.Command{
 	Use:   "info <name>",
 	Short: "Show skill origin and update status",
-	Long:  "Display detailed information about a skill's remote origin and update status.",
+	Long:  "Display detailed information about a skill's (or, with --kind agent, an agent's) remote origin and update status.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSkillInfo(args[0])
+		if err := validProjectKind(skillInfoKind); err != nil {
+			return err
+		}
+		return runSkillInfo(args[0], skillInfoKind)
 	},
 }
 
@@ -174,8 +192,12 @@ func init() {
 
 	skillListCmd.Flags().BoolVar(&skillListRemote, "remote", false, "Show only remote (imported) skills")
 	skillListCmd.Flags().StringVar(&skillListFormat, "format", "", "Output format (json)")
+	skillListCmd.Flags().StringVar(&skillListKind, "kind", "skill", "Resource kind to list: skill or agent")
 	skillListJSON = addJSONAlias(skillListCmd)
 	skillListPlain = addPlainFlag(skillListCmd)
+
+	skillRemoveCmd.Flags().StringVar(&skillRemoveKind, "kind", "skill", "Resource kind to remove: skill or agent")
+	skillInfoCmd.Flags().StringVar(&skillInfoKind, "kind", "skill", "Resource kind to inspect: skill or agent")
 
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateDryRun, "dry-run", false, "Show changes without applying")
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateForce, "force", false, "Force update even if no changes detected")
@@ -336,18 +358,81 @@ func runSkillAdd(repoURL string) error {
 		}
 	}
 
+	for _, imported := range result.ImportedAgents {
+		printer.Info("Imported agent", "name", imported.Name)
+		if len(imported.Findings) > 0 {
+			fmt.Print(skills.FormatFindings(imported.Findings))
+		}
+	}
+
 	for _, skipped := range result.Skipped {
 		printer.Warn("Skipped skill", "name", skipped.Name, "reason", skipped.Reason)
+	}
+
+	for _, skipped := range result.SkippedAgents {
+		printer.Warn("Skipped agent", "name", skipped.Name, "reason", skipped.Reason)
 	}
 
 	for _, warning := range result.Warnings {
 		printer.Warn(warning)
 	}
 
-	if len(result.Imported) == 0 {
-		return fmt.Errorf("no skills were imported")
+	if len(result.Imported) == 0 && len(result.ImportedAgents) == 0 {
+		return fmt.Errorf("nothing was imported")
 	}
 
+	fmt.Printf("Imported %d skill(s), %d agent(s) from %s\n", len(result.Imported), len(result.ImportedAgents), repoURL)
+	if len(result.ImportedAgents) > 0 {
+		fmt.Println("Agents are experimental: list them with 'gridctl skill list --kind agent', project them with 'gridctl skill project sync --kind agent'.")
+	}
+
+	return nil
+}
+
+// runSkillListAgents implements `skill list --kind agent`.
+func runSkillListAgents() error {
+	agents, err := skills.ListAgents(registryDir())
+	if err != nil {
+		return err
+	}
+	if len(agents) == 0 {
+		fmt.Println("No agents in registry. Import some with 'gridctl skill add <repo-url>'.")
+		return nil
+	}
+
+	type agentEntry struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Repo        string `json:"repo,omitempty"`
+		Ref         string `json:"ref,omitempty"`
+	}
+
+	var entries []agentEntry
+	for _, a := range agents {
+		entry := agentEntry{Name: a.Name, Description: a.Definition.Description}
+		if origin, err := skills.ReadOrigin(a.Dir); err == nil {
+			entry.Repo = origin.Repo
+			entry.Ref = origin.Ref
+		}
+		entries = append(entries, entry)
+	}
+
+	if skillListFormat == "json" {
+		data, _ := json.MarshalIndent(entries, "", "  ")
+		fmt.Println(string(data))
+		return nil
+	}
+
+	t := output.NewTableWriter(os.Stdout, *skillListPlain)
+	t.AppendHeader(table.Row{"Name", "Description", "Repo"})
+	for _, e := range entries {
+		repo := e.Repo
+		if repo != "" && e.Ref != "" {
+			repo = fmt.Sprintf("%s@%s", repo, e.Ref)
+		}
+		t.AppendRow(table.Row{e.Name, e.Description, repo})
+	}
+	t.Render()
 	return nil
 }
 
@@ -420,14 +505,17 @@ func runSkillList() error {
 	return nil
 }
 
-// driftedSkills returns the names of skills with local edits to their on-disk
-// SKILL.md. When skillName is non-empty, only that skill is inspected (so
-// `gridctl skill update foo` doesn't pay to hash every installed skill).
-func driftedSkills(store *registry.Store, skillName string) ([]string, error) {
-	if skillName != "" {
-		sk, err := store.GetSkill(skillName)
+// driftedImports returns the names of skills or agents with local edits
+// to their on-disk SKILL.md/AGENT.md. When name is non-empty, only that
+// resource is inspected (so `gridctl skill update foo` doesn't pay to
+// hash every installed skill).
+func driftedImports(store *registry.Store, name string) ([]string, error) {
+	if name != "" {
+		sk, err := store.GetSkill(name)
 		if err != nil {
-			return nil, nil // skill not found — let imp.Update produce the real error
+			// The name may be an imported agent; agents share the
+			// drift-safe update gate.
+			return driftedAgent(name)
 		}
 		dir := sk.Dir
 		if dir == "" {
@@ -443,11 +531,36 @@ func driftedSkills(store *registry.Store, skillName string) ([]string, error) {
 			return nil, nil
 		}
 		if current != origin.InstalledHash {
-			return []string{skillName}, nil
+			return []string{name}, nil
 		}
 		return nil, nil
 	}
-	return skills.DetectDrift(context.Background(), store, skills.LockFilePath(), "")
+	drifted, err := skills.DetectDrift(context.Background(), store, skills.LockFilePath(), "")
+	if err != nil {
+		return nil, err
+	}
+	driftedAgents, err := skills.DetectAgentDrift(context.Background(), registryDir())
+	if err != nil {
+		return nil, err
+	}
+	return append(drifted, driftedAgents...), nil
+}
+
+// driftedAgent inspects one imported agent for local edits.
+func driftedAgent(name string) ([]string, error) {
+	agentDir := skills.AgentDir(registryDir(), name)
+	origin, err := skills.ReadOrigin(agentDir)
+	if err != nil || origin.InstalledHash == "" {
+		return nil, nil // not an agent, or pre-hash import — let imp.Update decide
+	}
+	current, err := skills.ContentHashFile(filepath.Join(agentDir, "AGENT.md"))
+	if err != nil {
+		return nil, nil
+	}
+	if current != origin.InstalledHash {
+		return []string{name}, nil
+	}
+	return nil, nil
 }
 
 func runSkillUpdate(name string) error {
@@ -462,7 +575,7 @@ func runSkillUpdate(name string) error {
 	// Drift check (unless --force or --dry-run). Refuse rather than silently
 	// overwrite local edits to imported SKILL.md files.
 	if !skillUpdateForce && !skillUpdateDryRun {
-		drifted, err := driftedSkills(store, name)
+		drifted, err := driftedImports(store, name)
 		if err != nil {
 			return fmt.Errorf("checking drift: %w", err)
 		}
@@ -487,6 +600,9 @@ func runSkillUpdate(name string) error {
 		for _, imported := range result.Imported {
 			printer.Info("Updated skill", "name", imported.Name)
 		}
+		for _, imported := range result.ImportedAgents {
+			printer.Info("Updated agent", "name", imported.Name)
+		}
 		return nil
 	}
 
@@ -494,7 +610,7 @@ func runSkillUpdate(name string) error {
 	// print an aggregate summary at the end.
 	allSkills := store.ListSkills()
 	type skillRef struct {
-		sk     *registry.AgentSkill
+		name   string
 		ref    string
 		source string
 	}
@@ -511,7 +627,26 @@ func runSkillUpdate(name string) error {
 		}
 		sourceName := skills.RepoToName(origin.Repo)
 		sourcesSeen[sourceName] = origin.Ref
-		remoteSkills = append(remoteSkills, skillRef{sk: sk, ref: origin.Ref, source: sourceName})
+		remoteSkills = append(remoteSkills, skillRef{name: sk.Name, ref: origin.Ref, source: sourceName})
+	}
+
+	// Sources that ship only agents have no skill to carry them into the
+	// loop; one agent per such source stands in. Sources already covered
+	// by a skill are skipped: updating any resource re-imports the whole
+	// source, agents included.
+	if agents, err := skills.ListAgents(registryDir()); err == nil {
+		for _, a := range agents {
+			origin, oerr := skills.ReadOrigin(a.Dir)
+			if oerr != nil {
+				continue
+			}
+			sourceName := skills.RepoToName(origin.Repo)
+			if _, ok := sourcesSeen[sourceName]; ok {
+				continue
+			}
+			sourcesSeen[sourceName] = origin.Ref
+			remoteSkills = append(remoteSkills, skillRef{name: a.Name, ref: origin.Ref, source: sourceName})
+		}
 	}
 
 	var (
@@ -527,9 +662,9 @@ func runSkillUpdate(name string) error {
 			continue
 		}
 
-		result, err := imp.Update(sr.sk.Name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust)
+		result, err := imp.Update(sr.name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust)
 		if err != nil {
-			printer.Warn("Failed to update", "skill", sr.sk.Name, "error", err)
+			printer.Warn("Failed to update", "skill", sr.name, "error", err)
 			failedSources[sr.source] = true
 			continue
 		}
@@ -538,6 +673,10 @@ func runSkillUpdate(name string) error {
 		}
 		for _, imported := range result.Imported {
 			printer.Info("Updated skill", "name", imported.Name)
+			updatedSkills++
+		}
+		for _, imported := range result.ImportedAgents {
+			printer.Info("Updated agent", "name", imported.Name)
 			updatedSkills++
 		}
 		if !failedSources[sr.source] {
@@ -571,18 +710,25 @@ func runSkillUpdate(name string) error {
 	return nil
 }
 
-func runSkillRemove(name string) error {
+func runSkillRemove(name, kind string) error {
 	store, err := loadRegistry()
 	if err != nil {
 		return err
 	}
 
 	imp := newImporter(store)
+	printer := output.New()
+	if kind == skillProjectKindAgent {
+		if err := imp.RemoveAgent(name); err != nil {
+			return err
+		}
+		printer.Info("Removed agent", "name", name)
+		return nil
+	}
 	if err := imp.Remove(name); err != nil {
 		return err
 	}
 
-	printer := output.New()
 	printer.Info("Removed skill", "name", name)
 	return nil
 }
@@ -603,24 +749,33 @@ func runSkillPin(name, ref string) error {
 	return nil
 }
 
-func runSkillInfo(name string) error {
+func runSkillInfo(name, kind string) error {
 	store, err := loadRegistry()
 	if err != nil {
 		return err
 	}
 
 	imp := newImporter(store)
-	info, err := imp.Info(name)
+	var info *skills.SkillInfo
+	if kind == skillProjectKindAgent {
+		info, err = imp.AgentInfo(name)
+	} else {
+		info, err = imp.Info(name)
+	}
 	if err != nil {
 		return err
 	}
 
 	printer := output.New()
 
+	label := "skill"
+	if kind == skillProjectKindAgent {
+		label = "agent"
+	}
 	if !info.IsRemote {
-		printer.Info("Local skill", "name", info.Name)
+		printer.Info("Local "+label, "name", info.Name)
 	} else {
-		printer.Info("Remote skill",
+		printer.Info("Remote "+label,
 			"name", info.Name,
 			"repo", info.Origin.Repo,
 			"ref", info.Origin.Ref,
