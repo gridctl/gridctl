@@ -1,0 +1,25 @@
+CLIENT  STRATEGY  ACTION  TARGET
+claude-code  dedicated-file  — would-update  $HOME/.claude/rules/gridctl.md
+gemini  import-shim  ✓ unchanged  $HOME/.gemini/GEMINI.md
+goose  import-shim  — skipped-unavailable  $HOME/.config/goose/.goosehints
+opencode  block  ✗ skipped-drift  $HOME/.config/opencode/AGENTS.md
+zed  block  — skipped-unavailable  $HOME/.config/zed/AGENTS.md
+cline  block  — skipped-unavailable  $HOME/.agents/AGENTS.md
+grok  block  — skipped-unavailable  $HOME/.grok/AGENTS.md
+antigravity  block  — skipped-unavailable  $HOME/.gemini/AGENTS.md
+windsurf  block  — skipped-unavailable  $HOME/.codeium/windsurf/memories/global_rules.md
+roo  dedicated-file  — skipped-unavailable  $HOME/.roo/rules/gridctl.md
+continue  dedicated-file  — skipped-unavailable  $HOME/.continue/rules/gridctl.md
+vscode  dedicated-file  — skipped-unavailable  $HOME/.copilot/instructions/gridctl.instructions.md
+
+--- claude-code ---
+--- $HOME/.claude/rules/gridctl.md (current)
++++ $HOME/.claude/rules/gridctl.md (after sync)
+@@ -3,4 +3,5 @@
+ # Rules
+
+ - One.
++- Two.
+
+
+opencode: target was hand-edited. Inspect with 'gridctl ctx diff opencode', keep the edit with 'gridctl ctx adopt opencode', or overwrite with 'gridctl ctx sync --force opencode'

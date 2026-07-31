@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "needs_attention": true,
+  "projections": [
+  {
+  "skill": "alpha",
+  "client": "antigravity",
+  "channel": "copy",
+  "target": "$HOME/.gemini/config/skills/alpha",
+  "state": "drifted",
+  "experimental": true,
+  "synced_at": "<TS>"
+  },
+  {
+  "skill": "alpha",
+  "client": "claude-code",
+  "channel": "symlink",
+  "target": "$HOME/.claude/skills/alpha",
+  "state": "in-sync",
+  "synced_at": "<TS>"
+  },
+  {
+  "skill": "beta",
+  "client": "antigravity",
+  "channel": "copy",
+  "target": "$HOME/.gemini/config/skills/beta",
+  "state": "stale",
+  "experimental": true,
+  "synced_at": "<TS>"
+  }
+  ]
+}
