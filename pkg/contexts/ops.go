@@ -9,30 +9,35 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gridctl/gridctl/pkg/project"
+
 	"github.com/pmezard/go-difflib/difflib"
 )
 
 // Client sync states. "stale" means the target still matches what gridctl
 // wrote but the canonical file has changed since (a sync is pending).
+// The shared vocabulary comes from the engine; "unsupported" and
+// "never-synced" are context-kind extensions.
 const (
 	StateUnsupported   = "unsupported"
 	StateNeverSynced   = "never-synced"
-	StateInSync        = "in-sync"
-	StateStale         = "stale"
-	StateDrifted       = "drifted"
-	StateTargetMissing = "target-missing"
+	StateInSync        = project.StateInSync
+	StateStale         = project.StateStale
+	StateDrifted       = project.StateDrifted
+	StateTargetMissing = project.StateTargetMissing
 )
 
-// Sync result actions.
+// Sync result actions. Shared ones come from the engine; "created" and
+// "would-create" are context-kind extensions.
 const (
 	ActionCreated            = "created"
-	ActionUpdated            = "updated"
-	ActionUnchanged          = "unchanged"
-	ActionSkippedDrift       = "skipped-drift"
-	ActionSkippedUnavailable = "skipped-unavailable"
+	ActionUpdated            = project.ActionUpdated
+	ActionUnchanged          = project.ActionUnchanged
+	ActionSkippedDrift       = project.ActionSkippedDrift
+	ActionSkippedUnavailable = project.ActionSkippedUnavailable
 	ActionWouldCreate        = "would-create"
-	ActionWouldUpdate        = "would-update"
-	ActionError              = "error"
+	ActionWouldUpdate        = project.ActionWouldUpdate
+	ActionError              = project.ActionError
 )
 
 // ClientStatus is one client's row in `ctx status` and GET /api/context.
@@ -80,7 +85,7 @@ type UnsyncResult struct {
 // Statuses computes the per-client sync state for every known client,
 // supported and unsupported, in display order.
 func (m *Manager) Statuses(ctx context.Context) ([]ClientStatus, error) {
-	lf, err := readLockFile(m.lockPath())
+	lf, err := m.loadView(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -224,35 +229,35 @@ func (m *Manager) SyncAll(ctx context.Context, opts SyncOptions) ([]SyncResult, 
 	if err != nil {
 		return nil, err
 	}
-	lf, err := readLockFile(m.lockPath())
-	if err != nil {
-		return nil, err
-	}
-	results := make([]SyncResult, 0, len(Targets()))
-	lockDirty := false
-	for _, t := range Targets() {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	var results []SyncResult
+	err = m.store.Mutate(ctx, opts.DryRun, func(pl *project.Lock) error {
+		lf := viewFromLock(pl)
+		results = make([]SyncResult, 0, len(Targets()))
+		lockDirty := false
+		for _, t := range Targets() {
+			if err := ctx.Err(); err != nil {
+				results = nil
+				return err
+			}
+			if t.targetPath(m.home) == "" || !t.available(m.home) {
+				results = append(results, SyncResult{
+					Slug: t.Slug, Name: t.Name, Strategy: string(t.Strategy),
+					TargetPath: t.targetPath(m.home), Action: ActionSkippedUnavailable,
+				})
+				continue
+			}
+			res := m.syncOne(t, lf, canonical, opts)
+			if res.recorded() {
+				lockDirty = true
+			}
+			results = append(results, res)
 		}
-		if t.targetPath(m.home) == "" || !t.available(m.home) {
-			results = append(results, SyncResult{
-				Slug: t.Slug, Name: t.Name, Strategy: string(t.Strategy),
-				TargetPath: t.targetPath(m.home), Action: ActionSkippedUnavailable,
-			})
-			continue
+		if lockDirty && !opts.DryRun {
+			return saveView(pl, lf)
 		}
-		res := m.syncOne(t, lf, canonical, opts)
-		if res.recorded() {
-			lockDirty = true
-		}
-		results = append(results, res)
-	}
-	if lockDirty && !opts.DryRun {
-		if err := writeLockFile(m.lockPath(), lf); err != nil {
-			return results, err
-		}
-	}
-	return results, nil
+		return nil
+	})
+	return results, err
 }
 
 // SyncClient projects the canonical context to one explicitly named
@@ -283,17 +288,16 @@ func (m *Manager) syncClientLocked(ctx context.Context, slug string, opts SyncOp
 	if err != nil {
 		return SyncResult{}, err
 	}
-	lf, err := readLockFile(m.lockPath())
-	if err != nil {
-		return SyncResult{}, err
-	}
-	res := m.syncOne(t, lf, canonical, opts)
-	if !opts.DryRun && res.recorded() {
-		if err := writeLockFile(m.lockPath(), lf); err != nil {
-			return res, err
+	var res SyncResult
+	err = m.store.Mutate(ctx, opts.DryRun, func(pl *project.Lock) error {
+		lf := viewFromLock(pl)
+		res = m.syncOne(t, lf, canonical, opts)
+		if !opts.DryRun && res.recorded() {
+			return saveView(pl, lf)
 		}
-	}
-	return res, nil
+		return nil
+	})
+	return res, err
 }
 
 // syncOne renders and writes one client's target, updating its lock entry
@@ -448,7 +452,7 @@ func (m *Manager) Adopt(ctx context.Context, slug string) error {
 	if t.Strategy == StrategyImportShim {
 		return fmt.Errorf("%s uses an import shim that references the canonical file directly; there is no copied content to adopt", t.Name)
 	}
-	lf, err := readLockFile(m.lockPath())
+	lf, err := m.loadView(ctx)
 	if err != nil {
 		return err
 	}
@@ -500,52 +504,51 @@ func (m *Manager) Unsync(ctx context.Context, slug string) (UnsyncResult, error)
 	if err != nil {
 		return UnsyncResult{}, err
 	}
-	lf, err := readLockFile(m.lockPath())
-	if err != nil {
-		return UnsyncResult{}, err
-	}
-	entry := lf.Clients[t.Slug]
-	if entry == nil {
-		return UnsyncResult{}, fmt.Errorf("%w: %s", ErrNotSynced, t.Name)
-	}
-	res, err := m.removeArtifact(t, entry)
-	if err != nil {
-		return res, err
-	}
-	delete(lf.Clients, t.Slug)
-	if err := writeLockFile(m.lockPath(), lf); err != nil {
-		return res, err
-	}
-	return res, nil
+	var res UnsyncResult
+	err = m.store.Mutate(ctx, false, func(pl *project.Lock) error {
+		lf := viewFromLock(pl)
+		entry := lf.Clients[t.Slug]
+		if entry == nil {
+			return fmt.Errorf("%w: %s", ErrNotSynced, t.Name)
+		}
+		r, rerr := m.removeArtifact(t, entry)
+		res = r
+		if rerr != nil {
+			return rerr
+		}
+		delete(lf.Clients, t.Slug)
+		return saveView(pl, lf)
+	})
+	return res, err
 }
 
-// UnsyncAll removes every synced client's managed artifact.
+// UnsyncAll removes every synced client's managed artifact. The loop
+// keeps its historical fail-fast semantics: the first removal error
+// aborts the pass without persisting the deletes made so far.
 func (m *Manager) UnsyncAll(ctx context.Context) ([]UnsyncResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	lf, err := readLockFile(m.lockPath())
-	if err != nil {
-		return nil, err
-	}
-	results := make([]UnsyncResult, 0, len(lf.Clients))
-	for _, t := range Targets() {
-		if err := ctx.Err(); err != nil {
-			return results, err
+	var results []UnsyncResult
+	err := m.store.Mutate(ctx, false, func(pl *project.Lock) error {
+		lf := viewFromLock(pl)
+		results = make([]UnsyncResult, 0, len(lf.Clients))
+		for _, t := range Targets() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if lf.Clients[t.Slug] == nil {
+				continue
+			}
+			res, rerr := m.removeArtifact(t, lf.Clients[t.Slug])
+			if rerr != nil {
+				return rerr
+			}
+			delete(lf.Clients, t.Slug)
+			results = append(results, res)
 		}
-		if lf.Clients[t.Slug] == nil {
-			continue
-		}
-		res, rerr := m.removeArtifact(t, lf.Clients[t.Slug])
-		if rerr != nil {
-			return results, rerr
-		}
-		delete(lf.Clients, t.Slug)
-		results = append(results, res)
-	}
-	if err := writeLockFile(m.lockPath(), lf); err != nil {
-		return results, err
-	}
-	return results, nil
+		return saveView(pl, lf)
+	})
+	return results, err
 }
 
 // removeArtifact deletes the managed artifact per strategy.
