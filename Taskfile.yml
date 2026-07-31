@@ -113,6 +113,17 @@ tasks:
     cmds:
       - go test -tags=integration -race -timeout 5m ./tests/integration/...
 
+  test:conformance:
+    desc: Run the MCP conformance suite against a live gateway (requires Node 22+)
+    summary: |
+      Builds gridctl, starts a stackless daemon, and drives the official
+      @modelcontextprotocol/conformance suite against it, once per spec
+      generation. Deliberate deviations live in
+      tests/integration/conformance-baseline.yml; the suite fails on both
+      unexpected failures and stale baseline entries.
+    cmds:
+      - go test -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
+
   lint:
     desc: Lint backend and frontend
     cmds:
