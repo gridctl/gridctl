@@ -79,11 +79,15 @@ func TestRegistryDiskWatch_PicksUpOutOfBandSkill(t *testing.T) {
 	// Write a skill directly to disk, out-of-band — the reported scenario.
 	writeSkill(t, registryDir, "node-state-snapshot", "active")
 
-	// The watcher should reconcile it within the debounce window.
+	// The watcher should reconcile it within the debounce window. The
+	// refresh callback reloads the store before registering the router
+	// client, so the skill becomes visible mid-refresh; wait for both
+	// conditions rather than asserting router state off a store-only
+	// poll, which can observe the window between the two steps.
 	deadline := time.Now().Add(5 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		if _, lastErr = srv.Store().GetSkill("node-state-snapshot"); lastErr == nil {
+		if _, lastErr = srv.Store().GetSkill("node-state-snapshot"); lastErr == nil && gw.Router().GetClient("registry") != nil {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -93,7 +97,7 @@ func TestRegistryDiskWatch_PicksUpOutOfBandSkill(t *testing.T) {
 	}
 
 	if gw.Router().GetClient("registry") == nil {
-		t.Error("expected registry client registered with the router after the skill appeared")
+		t.Error("registry client not registered with the router within deadline")
 	}
 }
 
