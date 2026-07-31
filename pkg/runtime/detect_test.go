@@ -193,9 +193,9 @@ func shortTempDir(t *testing.T) string {
 	t.Helper()
 	base := "/tmp"
 	if _, err := os.Stat(base); err != nil {
-		base = os.TempDir()
+		base = os.TempDir() //nolint:usetesting // deliberately short: t.TempDir embeds the test name and blows the 104-byte socket budget
 	}
-	dir, err := os.MkdirTemp(base, "gctl")
+	dir, err := os.MkdirTemp(base, "gctl") //nolint:usetesting // see above
 	if err != nil {
 		t.Fatalf("mktemp: %v", err)
 	}
