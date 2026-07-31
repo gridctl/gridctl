@@ -176,10 +176,15 @@ func (imp *Importer) BackupSkillFile(ctx context.Context, skillName, shortSHA st
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	return BackupSkillFileInDir(imp.skillDir(skillName), shortSHA)
+}
 
-	skillDir := imp.skillDir(skillName)
+// BackupSkillFileInDir is BackupSkillFile for callers that already hold
+// the skill directory (skill projection adopt shares the convention, so
+// there is exactly one hand-edit backup vocabulary).
+func BackupSkillFileInDir(skillDir, shortSHA string) (string, error) {
 	srcPath := filepath.Join(skillDir, "SKILL.md")
-	data, err := os.ReadFile(srcPath)
+	data, err := os.ReadFile(srcPath) // #nosec G304 -- fixed name inside the registry skill dir
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
