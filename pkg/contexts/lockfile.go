@@ -1,85 +1,96 @@
 package contexts
 
 import (
-	"errors"
-	"fmt"
-	"os"
+	"context"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/gridctl/gridctl/pkg/project"
 )
 
-// lockVersion is the current lock file schema version. Readers reject
-// newer versions with ErrNewerLockVersion instead of silently clobbering
-// state written by a newer gridctl (the pkg/pins lesson).
-const lockVersion = 1
+// ErrNewerLockVersion signals projection state written by a newer
+// gridctl. Aliased from the engine so callers' errors.Is checks keep
+// working across the pkg/project extraction.
+var ErrNewerLockVersion = project.ErrNewerLockVersion
 
-// ErrNewerLockVersion signals a lock file written by a newer gridctl.
-var ErrNewerLockVersion = errors.New("context lock file was written by a newer gridctl version")
-
-// LockFile records, per client, what gridctl last wrote and from which
-// canonical revision. Drift is judged against InstalledHash; staleness
-// against CanonicalHash.
+// LockFile is the context-kind view over the unified project lockfile:
+// the per-client sync records, keyed by client slug exactly as the
+// legacy context.lock.yaml was. The engine owns the on-disk schema,
+// versioning, migration, and locking; this view exists so the ops code
+// keeps its shape.
 type LockFile struct {
-	Version int `yaml:"version"`
-	// Scope is "global" today. Present so a future project scope can
-	// share the schema without a format break.
-	Scope   string                  `yaml:"scope"`
-	Clients map[string]*ClientEntry `yaml:"clients"`
+	Version int
+	// Scope is "global" today, recorded as the engine entry's source.
+	Scope   string
+	Clients map[string]*ClientEntry
 }
 
-// ClientEntry is one client's sync record.
+// ClientEntry is one client's sync record. Drift is judged against
+// InstalledHash; staleness against CanonicalHash.
 type ClientEntry struct {
-	Strategy string `yaml:"strategy"`
+	Strategy string
 	// Target is the absolute path gridctl wrote to.
-	Target string `yaml:"target"`
+	Target string
 	// InstalledHash is the managed-region hash exactly as written.
-	InstalledHash string `yaml:"installed_hash"`
+	InstalledHash string
 	// CanonicalHash is the canonical file's hash at sync time.
-	CanonicalHash string `yaml:"canonical_hash"`
+	CanonicalHash string
 	// CreatedFile records whether gridctl created the target file itself
 	// (unsync then removes the whole file, not just the managed region).
-	CreatedFile bool      `yaml:"created_file"`
-	SyncedAt    time.Time `yaml:"synced_at"`
+	CreatedFile bool
+	SyncedAt    time.Time
 }
 
-// newLockFile returns an empty lock for the global scope.
-func newLockFile() *LockFile {
-	return &LockFile{Version: lockVersion, Scope: "global", Clients: map[string]*ClientEntry{}}
-}
-
-// readLockFile loads the lock from path. A missing file is the normal
-// never-synced state and yields an empty lock.
-func readLockFile(path string) (*LockFile, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return newLockFile(), nil
+// viewFromLock projects the engine lock's context entries into the
+// legacy-shaped view the ops code works on.
+func viewFromLock(l *project.Lock) *LockFile {
+	lf := &LockFile{Version: project.LockVersion, Scope: "global", Clients: map[string]*ClientEntry{}}
+	for _, e := range l.Entries(project.KindContext) {
+		if e.Source != "" {
+			lf.Scope = e.Source
 		}
-		return nil, fmt.Errorf("reading context lock file: %w", err)
+		lf.Clients[e.Client] = &ClientEntry{
+			Strategy:      e.Strategy,
+			Target:        e.Path,
+			InstalledHash: e.InstalledHash,
+			CanonicalHash: e.CanonicalHash,
+			CreatedFile:   e.CreatedFile,
+			SyncedAt:      e.SyncedAt,
+		}
 	}
-	var lf LockFile
-	if err := yaml.Unmarshal(data, &lf); err != nil {
-		return nil, fmt.Errorf("parsing context lock file: %w", err)
-	}
-	if lf.Version > lockVersion {
-		return nil, fmt.Errorf("%w (file version %d, supported %d)", ErrNewerLockVersion, lf.Version, lockVersion)
-	}
-	if lf.Clients == nil {
-		lf.Clients = map[string]*ClientEntry{}
-	}
-	if lf.Scope == "" {
-		lf.Scope = "global"
-	}
-	return &lf, nil
+	return lf
 }
 
-// writeLockFile persists the lock atomically.
-func writeLockFile(path string, lf *LockFile) error {
-	lf.Version = lockVersion
-	data, err := yaml.Marshal(lf)
-	if err != nil {
-		return fmt.Errorf("marshaling context lock file: %w", err)
+// saveView flushes the view back into the engine lock and persists it.
+// Clients dropped from the view are removed as explicit engine-driven
+// deletes; entries of other kinds, unknown file-level fields, and
+// unknown per-entry fields (carried forward by Lock.Set) ride along
+// untouched.
+func saveView(l *project.Lock, lf *LockFile) error {
+	var entries []*project.Entry
+	for slug, e := range lf.Clients {
+		entries = append(entries, &project.Entry{
+			Kind:          project.KindContext,
+			Client:        slug,
+			Source:        lf.Scope,
+			Path:          e.Target,
+			Strategy:      e.Strategy,
+			InstalledHash: e.InstalledHash,
+			CanonicalHash: e.CanonicalHash,
+			CreatedFile:   e.CreatedFile,
+			SyncedAt:      e.SyncedAt,
+		})
 	}
-	return atomicWriteFile(path, data)
+	if err := l.ReplaceKind(project.KindContext, entries); err != nil {
+		return err
+	}
+	return l.Save()
+}
+
+// loadView returns a read-only context view of the projection state.
+func (m *Manager) loadView(ctx context.Context) (*LockFile, error) {
+	l, err := m.store.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return viewFromLock(l), nil
 }
