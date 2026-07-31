@@ -44,6 +44,17 @@ func NewErrorResponse(id *json.RawMessage, code int, message string) Response {
 	}
 }
 
+// NewErrorResponseWithData creates a JSON-RPC error response carrying
+// structured error data (e.g. the supported-version list on an MCP
+// UnsupportedProtocolVersionError).
+func NewErrorResponseWithData(id *json.RawMessage, code int, message string, data any) Response {
+	return Response{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error:   &Error{Code: code, Message: message, Data: data},
+	}
+}
+
 // NewSuccessResponse creates a JSON-RPC success response.
 func NewSuccessResponse(id *json.RawMessage, result any) Response {
 	var resultBytes json.RawMessage
