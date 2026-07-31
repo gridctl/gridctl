@@ -71,6 +71,9 @@ export interface MCPServerStatus {
   // MCP protocol version the downstream server reported at initialize; absent
   // for lax servers that omit it and for OpenAPI adapters (no MCP handshake).
   protocolVersion?: string;
+  // Resolved MCP protocol generation ("handshake" or "stateless"); absent
+  // for OpenAPI adapters (no MCP wire protocol) and unresolved servers.
+  protocolGeneration?: string;
   // True for servers that never registered with the gateway (initialize
   // failure, unsupported protocol version, unreachable endpoint). Such
   // entries carry only name/healthy/healthError.
@@ -451,6 +454,7 @@ export interface MCPServerNodeData extends NodeDataBase {
   lastCheck?: string; // RFC3339 timestamp of last health check
   healthError?: string; // Error message if unhealthy
   protocolVersion?: string; // MCP protocol version reported at initialize
+  protocolGeneration?: string; // Resolved MCP protocol generation ("handshake" or "stateless")
   openapi?: boolean; // True for OpenAPI-backed servers
   openapiSpec?: string; // OpenAPI spec URL or file path
   outputFormat?: string; // Configured output format (e.g. "toon", "csv")
@@ -847,4 +851,22 @@ export interface ResolvedTelemetry {
   global: TelemetryPersistDefaults;
   retention?: TelemetryRetention;
   servers: Record<string, ServerPersistOverride>;
+}
+
+// One active MCP session as reported by /api/sessions entries. Sessions
+// exist only on the handshake generation; the stateless generation is
+// sessionless by design, so live stateless traffic never appears here.
+export interface SessionEntry {
+  id: string;
+  generation: string;
+  protocolVersion?: string;
+}
+
+// Response shape of GET /api/sessions. entries rides alongside the
+// legacy bare ID list and is absent from pre-dual-stack daemons, whose
+// sessions are all handshake-generation by definition.
+export interface SessionsResponse {
+  count: number;
+  sessions: string[];
+  entries?: SessionEntry[];
 }

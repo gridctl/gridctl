@@ -4,15 +4,17 @@ import { cn } from '../../lib/cn';
 import {
   ClientLinkError,
   fetchClients,
+  fetchSessions,
   linkClient,
   previewClientLink,
   unlinkClient,
   type ClientLinkPreview,
 } from '../../lib/api';
 import { getClientIcon } from '../../lib/clientIcons';
+import { POLLING } from '../../lib/constants';
 import { escapeNonPrintable } from '../../lib/nonPrintable';
 import { useStackStore } from '../../stores/useStackStore';
-import type { ClientStatus } from '../../types';
+import type { ClientStatus, SessionEntry } from '../../types';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
 
@@ -137,6 +139,9 @@ export default function ConnectionsWorkspace() {
             />
           ))}
         </div>
+        <div className="max-w-3xl mx-auto mt-6">
+          <LiveSessionsCard />
+        </div>
       </div>
 
       {changes.length > 0 && (
@@ -184,6 +189,86 @@ function ConnectionsHeader({ subtitle }: { subtitle: string }) {
         </h1>
         <span className="font-mono text-[10px] text-text-muted">{subtitle}</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Live MCP sessions on the gateway, with their negotiated protocol
+ * generation. Deliberately a separate card: the rows above are declared
+ * links (config-file state), while this is transport state, and the two
+ * must not be conflated. Sessions exist only on the handshake
+ * generation; stateless-era clients are sessionless by design, so their
+ * traffic never appears here.
+ */
+export function LiveSessionsCard() {
+  const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetchSessions();
+        if (!cancelled) {
+          // A pre-dual-stack daemon serves only the bare ID list; every
+          // session it can report is handshake-generation by definition.
+          setSessions(
+            res.entries ?? res.sessions?.map((id) => ({ id, generation: 'handshake' })) ?? [],
+          );
+          setUnavailable(false);
+        }
+      } catch {
+        if (!cancelled) setUnavailable(true);
+      }
+    };
+    void load();
+    const timer = window.setInterval(load, POLLING.SESSIONS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return (
+    <div className="border border-border-subtle rounded-lg bg-surface/30 px-4 py-3">
+      <div className="flex items-baseline gap-3 mb-2">
+        <h2 className="text-[10px] font-medium uppercase tracking-[0.3em] text-text-muted">
+          Live sessions
+        </h2>
+        <span className="font-mono text-[10px] text-text-muted">
+          {unavailable
+            ? 'unavailable'
+            : sessions === null
+              ? 'loading'
+              : `${sessions.length} active · transport state, not declared links`}
+        </span>
+      </div>
+      {sessions !== null && !unavailable && sessions.length === 0 && (
+        <p className="text-xs text-text-muted">
+          No active sessions. Stateless-generation clients (2026-07-28) are sessionless and never
+          appear here.
+        </p>
+      )}
+      {sessions !== null && !unavailable && sessions.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {sessions.map((s) => (
+            <div key={s.id} className="flex justify-between items-center">
+              <span className="text-xs font-mono text-text-secondary truncate max-w-[220px]" title={s.id}>
+                {s.id}
+              </span>
+              <span className="flex items-center gap-2">
+                {s.protocolVersion && (
+                  <span className="text-[10px] font-mono text-text-muted">{s.protocolVersion}</span>
+                )}
+                <span className="text-[10px] px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider bg-secondary/10 text-secondary">
+                  {s.generation}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

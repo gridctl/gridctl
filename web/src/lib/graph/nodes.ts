@@ -80,6 +80,20 @@ export function createGatewayNode(
 }
 
 /**
+ * A fleet is generation-mixed when its servers resolve to more than one
+ * MCP protocol generation. Servers without a generation (OpenAPI
+ * adapters, unresolved registrations) do not count toward mixing: the
+ * badge exists to flag bridging, and absence of a generation is not a
+ * generation.
+ */
+export function hasMixedGenerations(servers: MCPServerStatus[]): boolean {
+  const generations = new Set(
+    servers.map((s) => s.protocolGeneration).filter((g): g is string => Boolean(g))
+  );
+  return generations.size > 1;
+}
+
+/**
  * Create MCP server nodes
  */
 export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
@@ -105,6 +119,7 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       lastCheck: server.lastCheck,
       healthError: server.healthError,
       protocolVersion: server.protocolVersion,
+      protocolGeneration: server.protocolGeneration,
       openapi: server.openapi,
       openapiSpec: server.openapiSpec,
       outputFormat: server.outputFormat,

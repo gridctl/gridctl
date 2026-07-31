@@ -34,6 +34,7 @@ import { getTransportIcon, getTransportColorClasses } from '../../lib/transport'
 import { getClientIcon } from '../../lib/clientIcons';
 import { summarizeClientReach } from '../../lib/clientScope';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
+import { hasMixedGenerations } from '../../lib/graph/nodes';
 import { useUIStore } from '../../stores/useUIStore';
 import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -218,6 +219,18 @@ export function Sidebar() {
                 <span className="text-sm text-text-muted">Protocol</span>
                 <span className="text-xs text-text-secondary font-mono bg-background/50 px-2 py-1 rounded-md">
                   {serverData.protocolVersion}
+                </span>
+              </div>
+            )}
+
+            {/* Generation renders only on mixed fleets: when every server
+                speaks the same generation the label carries no signal
+                (the outputFormat !== 'json' suppression precedent). */}
+            {isServer && serverData?.protocolGeneration && hasMixedGenerations(mcpServers) && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-text-muted">Generation</span>
+                <span className="text-xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider bg-secondary/10 text-secondary">
+                  {serverData.protocolGeneration}
                 </span>
               </div>
             )}
