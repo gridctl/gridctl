@@ -38,6 +38,11 @@ type CloneResult struct {
 	CommitSHA string
 	Skills    []DiscoveredSkill
 	Malformed []MalformedSkill
+	// Agents are agent definitions discovered under the agents/*.md
+	// convention; MalformedAgents records files in agents/ directories
+	// that are not parseable agent definitions.
+	Agents          []DiscoveredAgent
+	MalformedAgents []MalformedAgent
 }
 
 // MalformedSkill records a SKILL.md that could not be read or parsed (or a
@@ -48,11 +53,24 @@ type MalformedSkill struct {
 	Err  string `json:"error"`
 }
 
+// MalformedAgent aliases MalformedSkill so agent call sites read as what
+// they are; the shape and JSON encoding are identical.
+type MalformedAgent = MalformedSkill
+
 // DiscoveredSkill represents a SKILL.md found in a cloned repo.
 type DiscoveredSkill struct {
 	Name        string
 	Path        string // Relative path from repo root to SKILL.md directory
 	Skill       *registry.AgentSkill
+	ContentHash string
+}
+
+// DiscoveredAgent represents an agent definition found in a cloned repo
+// under an agents/ directory.
+type DiscoveredAgent struct {
+	Name        string
+	Path        string // Relative path from repo root to the .md file
+	Definition  *AgentDefinition
 	ContentHash string
 }
 
@@ -95,11 +113,21 @@ func CloneAndDiscover(repo, ref, subPath string, auth AuthConfig, logger *slog.L
 		logger.Warn("skipping malformed SKILL.md", "path", m.Path, "error", m.Err)
 	}
 
+	agents, malformedAgents, err := discoverAgents(searchDir, repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("discovering agents: %w", err)
+	}
+	for _, m := range malformedAgents {
+		logger.Warn("skipping malformed agent definition", "path", m.Path, "error", m.Err)
+	}
+
 	return &CloneResult{
-		RepoPath:  repoPath,
-		CommitSHA: commitSHA,
-		Skills:    skills,
-		Malformed: malformed,
+		RepoPath:        repoPath,
+		CommitSHA:       commitSHA,
+		Skills:          skills,
+		Malformed:       malformed,
+		Agents:          agents,
+		MalformedAgents: malformedAgents,
 	}, nil
 }
 
@@ -334,6 +362,68 @@ func discoverSkills(searchDir, repoRoot string) ([]DiscoveredSkill, []MalformedS
 	})
 
 	return skills, malformed, err
+}
+
+// discoverAgents walks searchDir for the agents/*.md convention: any
+// file directly inside a directory named "agents" (at the repo root or
+// any subdirectory root, the Claude Code plugin layout). Non-markdown
+// files and files failing the agent frontmatter parse are recorded as
+// malformed rather than silently skipped. A SKILL.md inside an agents/
+// directory is left to skill discovery.
+func discoverAgents(searchDir, repoRoot string) ([]DiscoveredAgent, []MalformedAgent, error) {
+	var agents []DiscoveredAgent
+	var malformed []MalformedAgent
+
+	recordMalformed := func(path string, cause error) {
+		relPath, relErr := filepath.Rel(repoRoot, path)
+		if relErr != nil {
+			relPath = path
+		}
+		malformed = append(malformed, MalformedAgent{Path: relPath, Err: cause.Error()})
+	}
+
+	err := filepath.WalkDir(searchDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// An unreadable directory is already recorded by the skill
+			// walk, which visits the same tree.
+			return nil
+		}
+		if d.IsDir() || filepath.Base(filepath.Dir(path)) != "agents" {
+			return nil
+		}
+		if d.Name() == "SKILL.md" {
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(d.Name()), ".md") {
+			recordMalformed(path, fmt.Errorf("not a markdown file (agents/ entries must be *.md)"))
+			return nil
+		}
+
+		data, err := os.ReadFile(path) // #nosec G304 -- walking the cloned repo
+		if err != nil {
+			recordMalformed(path, err)
+			return nil
+		}
+		def, err := ParseAgentMD(data)
+		if err != nil {
+			recordMalformed(path, err)
+			return nil
+		}
+		if def.Name == "" {
+			def.Name = strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))
+		}
+
+		relPath, _ := filepath.Rel(repoRoot, path)
+		agents = append(agents, DiscoveredAgent{
+			Name:        def.Name,
+			Path:        relPath,
+			Definition:  def,
+			ContentHash: contentHash(data),
+		})
+		return nil
+	})
+
+	return agents, malformed, err
 }
 
 func contentHash(data []byte) string {
