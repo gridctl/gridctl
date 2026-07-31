@@ -326,15 +326,19 @@ func TestRPCClient_Initialize(t *testing.T) {
 		t.Fatalf("Initialize() error = %v", err)
 	}
 
-	// Verify initialize was called, then notification was sent
-	if len(calledMethods) != 2 {
-		t.Fatalf("expected 2 calls, got %d: %v", len(calledMethods), calledMethods)
+	// The era probe runs first; its empty answer here is not positively
+	// modern, so the legacy handshake follows on the same connection.
+	want := []string{"server/discover", "initialize", "notifications/initialized"}
+	if len(calledMethods) != len(want) {
+		t.Fatalf("expected calls %v, got %v", want, calledMethods)
 	}
-	if calledMethods[0] != "initialize" {
-		t.Errorf("first call should be 'initialize', got %q", calledMethods[0])
+	for i, m := range want {
+		if calledMethods[i] != m {
+			t.Errorf("call %d should be %q, got %q", i, m, calledMethods[i])
+		}
 	}
-	if calledMethods[1] != "notifications/initialized" {
-		t.Errorf("second call should be 'notifications/initialized', got %q", calledMethods[1])
+	if r.Era() != EraHandshake {
+		t.Errorf("era = %q, want %q", r.Era(), EraHandshake)
 	}
 
 	// Verify state was updated
