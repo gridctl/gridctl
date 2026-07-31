@@ -217,6 +217,40 @@ Container is created but immediately stops or shows `error` status in `gridctl s
 
 ## MCP Connections
 
+### Protocol generation mismatch
+
+**Symptoms:**
+
+```
+server negotiated protocol version "...", which this gridctl supports in neither the handshake nor the stateless generation
+protocol_generation is pinned to stateless but the server did not answer server/discover as a stateless-era peer
+```
+
+**Causes:**
+
+- The server speaks only a protocol revision gridctl does not support
+- A `protocol_generation:` pin in stack.yaml disagrees with what the server actually speaks
+- A redeployed server changed generations and the pin was never updated
+- A legacy server answers the `server/discover` probe with an auth challenge or a 5xx; the gateway rejects registration rather than guessing at the generation (pin `protocol_generation: handshake` for such servers)
+
+**Resolution:**
+
+1. Inspect per-server negotiated generations:
+   ```bash
+   gridctl doctor
+   gridctl status --json
+   ```
+2. Remove any `protocol_generation:` pin so the gateway auto-negotiates (probe `server/discover`, fall back to `initialize`).
+3. If a lax server misbehaves under the probe, pin it explicitly:
+   ```yaml
+   mcp-servers:
+     - name: quirky
+       url: https://example.com/mcp
+       protocol_generation: handshake
+   ```
+
+The gateway serves both generations concurrently and bridges mixed fleets; a mixed-generation stack is normal and reported by `gridctl doctor`, not an error. The one deliberate gap is cross-generation MRTR: a handshake-era client calling a stateless-era tool that needs additional input receives a clear error instead of an interim result.
+
 ### Timeout waiting for MCP server
 
 **Symptoms:**
