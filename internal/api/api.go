@@ -113,6 +113,11 @@ type Server struct {
 	skillsConfigPath     string
 	skillUpdateCachePath string
 
+	// stacksDir overrides the saved-stacks directory. Empty falls back
+	// to state.StacksDir() so production code is unchanged; tests
+	// inject a temp dir to stay isolated from $HOME.
+	stacksDir string
+
 	// Global-context manager (pkg/contexts), lazily built against the
 	// real home directory on first use; tests inject a temp-dir manager
 	// via SetContextsManager. Pure file operations — works stackless.
