@@ -27,10 +27,19 @@ type stackEntry struct {
 	Path string `json:"path"`
 }
 
+// stacksDirPath returns the saved-stacks directory: the injected
+// override when set (tests), the global default otherwise.
+func (s *Server) stacksDirPath() string {
+	if s.stacksDir != "" {
+		return s.stacksDir
+	}
+	return state.StacksDir()
+}
+
 // handleStacksList lists all saved stacks in ~/.gridctl/stacks/.
 // GET /api/stacks
 func (s *Server) handleStacksList(w http.ResponseWriter, r *http.Request) {
-	dir := state.StacksDir()
+	dir := s.stacksDirPath()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -94,7 +103,7 @@ func (s *Server) handleStacksSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir := state.StacksDir()
+	dir := s.stacksDirPath()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		writeJSONError(w, "Failed to create stacks directory: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -140,7 +149,7 @@ func (s *Server) handleStackInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stackPath := filepath.Join(state.StacksDir(), req.Name+".yaml")
+	stackPath := filepath.Join(s.stacksDirPath(), req.Name+".yaml")
 	if _, err := os.Stat(stackPath); os.IsNotExist(err) {
 		writeJSONError(w, "Stack not found: "+req.Name, http.StatusNotFound)
 		return
