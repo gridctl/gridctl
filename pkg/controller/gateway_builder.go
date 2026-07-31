@@ -73,6 +73,12 @@ type GatewayBuilder struct {
 	// registryDir overrides the default registry directory for testing.
 	registryDir string
 
+	// homeDir overrides the home directory used for skill projection
+	// reconciliation. Empty means the real home; tests inject a temp dir
+	// so registry refreshes can never touch real client skill
+	// directories or the real projection lockfile.
+	homeDir string
+
 	// vaultStore for API server injection and log redaction.
 	vaultStore *vault.Store
 
@@ -1271,6 +1277,20 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
 
+	// Resolve the projection home once, at the composition boundary, so
+	// every refresh path below reconciles against an explicit home
+	// instead of resolving the real one deep inside library code (which
+	// is how tests once deleted real skill projections). Empty on
+	// resolution failure; reconcile then skips with a warning.
+	projectionHome := b.homeDir
+	if projectionHome == "" {
+		if h, err := os.UserHomeDir(); err == nil {
+			projectionHome = h
+		} else {
+			slog.New(handler).Warn("home directory unavailable; skill projection reconcile disabled", "error", err)
+		}
+	}
+
 	// startWatcher starts a file watcher for the given stack path.
 	// It is called immediately when --watch is active, and exposed via SetStartWatcher
 	// so POST /api/stack/initialize can activate watching after cold-loading.
@@ -1285,7 +1305,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			if !result.Success {
 				return fmt.Errorf("%s", result.Message)
 			}
-			refreshRegistry(watchCtx, inst, slog.New(handler))
+			refreshRegistry(watchCtx, inst, projectionHome, slog.New(handler))
 			return nil
 		})
 		watcher.SetLogger(slog.New(handler))
@@ -1316,7 +1336,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			regLogger.Warn("could not create registry skills directory for watching", "path", skillsDir, "error", err)
 		}
 		regWatcher := reload.NewDirWatcher(skillsDir, func() error {
-			refreshRegistry(ctx, inst, regLogger)
+			refreshRegistry(ctx, inst, projectionHome, regLogger)
 			return nil
 		})
 		regWatcher.SetLogger(regLogger)
@@ -1342,7 +1362,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 // store is reloaded, the registry client is added or removed from the router
 // depending on whether any skills remain, and the router's tool set is
 // refreshed. A failed reload is logged and tolerated rather than fatal.
-func refreshRegistry(ctx context.Context, inst *GatewayInstance, logger *slog.Logger) {
+func refreshRegistry(ctx context.Context, inst *GatewayInstance, home string, logger *slog.Logger) {
 	if inst.RegistryServer == nil {
 		return
 	}
@@ -1355,7 +1375,7 @@ func refreshRegistry(ctx context.Context, inst *GatewayInstance, logger *slog.Lo
 		inst.Gateway.Router().RemoveClient("registry")
 	}
 	inst.Gateway.Router().RefreshTools()
-	reconcileSkillProjections(ctx, inst, logger)
+	reconcileSkillProjections(ctx, inst, home, logger)
 }
 
 // reconcileSkillProjections keeps native-client skill projections in
@@ -1364,13 +1384,15 @@ func refreshRegistry(ctx context.Context, inst *GatewayInstance, logger *slog.Lo
 // edits. Failures are logged and never propagate — a projection problem
 // must not break the registry/prompt refresh path. Writes go only to
 // client skill directories, never into the watched registry tree, so
-// the disk watcher cannot feed back on itself.
-func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, logger *slog.Logger) {
-	mgr, err := skillsync.NewManager(inst.RegistryServer.Store())
-	if err != nil {
-		logger.Warn("skill projection reconcile skipped", "error", err)
+// the disk watcher cannot feed back on itself. The home is resolved by
+// the caller (setupHotReload) so tests always reconcile against an
+// injected sandbox, never the real home.
+func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, home string, logger *slog.Logger) {
+	if home == "" {
+		logger.Warn("skill projection reconcile skipped: home directory unavailable")
 		return
 	}
+	mgr := skillsync.NewManagerWithHome(home, inst.RegistryServer.Store())
 	results, err := mgr.Reconcile(ctx)
 	if err != nil {
 		logger.Warn("skill projection reconcile failed", "error", err)
@@ -1385,6 +1407,10 @@ func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, logge
 			// Unresolved drift the operator must decide on; reconcile
 			// never forces.
 			logger.Warn("skill projection needs attention", "skill", r.Skill, "client", r.Client, "action", r.Action, "target", r.Target)
+		case skillsync.ActionSkippedEmptyStore:
+			// The guard against mass-removal: an empty store with
+			// recorded projections is refused, not reconciled.
+			logger.Warn("skill projection reconcile refused", "reason", r.Error)
 		default:
 			logger.Info("skill projection reconciled", "skill", r.Skill, "client", r.Client, "action", r.Action, "target", r.Target)
 		}
