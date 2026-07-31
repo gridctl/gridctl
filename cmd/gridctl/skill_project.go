@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 
@@ -25,6 +26,7 @@ var (
 	skillProjectSyncDryRun  bool
 	skillProjectSyncForce   bool
 	skillProjectSyncFormat  string
+	skillProjectSyncKind    string
 	skillProjectSyncJSON    *bool
 	skillProjectSyncPlain   *bool
 
@@ -36,12 +38,33 @@ var (
 	skillProjectUnsyncClients []string
 	skillProjectUnsyncDryRun  bool
 	skillProjectUnsyncFormat  string
+	skillProjectUnsyncKind    string
 	skillProjectUnsyncJSON    *bool
 
 	skillProjectAdoptClient string
 	skillProjectAdoptFormat string
+	skillProjectAdoptKind   string
 	skillProjectAdoptJSON   *bool
 )
+
+// skillProjectKindSkill and skillProjectKindAgent are the --kind values
+// and the kind tags on JSON rows, so consumers can tell skill and agent
+// rows apart as the row vocabulary grows (append-only schema evolution).
+const (
+	skillProjectKindSkill = "skill"
+	skillProjectKindAgent = "agent"
+)
+
+// validProjectKind rejects unknown --kind values before any manager is
+// built. The default "skill" keeps every existing command line behaving
+// exactly as before.
+func validProjectKind(kind string) error {
+	switch kind {
+	case skillProjectKindSkill, skillProjectKindAgent:
+		return nil
+	}
+	return fmt.Errorf("unknown --kind %q (supported: skill, agent)", kind)
+}
 
 var skillProjectCmd = &cobra.Command{
 	Use:   "project",
@@ -98,6 +121,26 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		if err := validProjectKind(skillProjectSyncKind); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		if skillProjectSyncKind == skillProjectKindAgent {
+			mgr, err := newAgentProjectManager()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(ctxExitInfrastructure)
+			}
+			opts := agentsync.SyncOptions{
+				Clients: skillProjectSyncClients,
+				DryRun:  skillProjectSyncDryRun,
+				Force:   skillProjectSyncForce,
+			}
+			if exit := runAgentProjectSync(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain); exit != ctxExitOK {
+				os.Exit(exit)
+			}
+			return nil
+		}
 		mgr, err := newSkillProjectManager()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -147,7 +190,12 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		if exit := runSkillProjectStatus(cmd.Context(), os.Stdout, os.Stderr, mgr, format, *skillProjectStatusPlain); exit != ctxExitOK {
+		agentMgr, err := newAgentProjectManager()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		if exit := runSkillProjectStatus(cmd.Context(), os.Stdout, os.Stderr, mgr, agentMgr, format, *skillProjectStatusPlain); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -164,6 +212,21 @@ create are never touched. Removed skills leave the projection set.`,
 		format, err := resolveFormat(skillProjectUnsyncFormat, cmd.Flags().Changed("format"), *skillProjectUnsyncJSON)
 		if err != nil {
 			return err
+		}
+		if err := validProjectKind(skillProjectUnsyncKind); err != nil {
+			return err
+		}
+		if skillProjectUnsyncKind == skillProjectKindAgent {
+			mgr, merr := newAgentProjectManager()
+			if merr != nil {
+				return merr
+			}
+			opts := agentsync.UnsyncOptions{
+				All:     skillProjectUnsyncAll,
+				Clients: skillProjectUnsyncClients,
+				DryRun:  skillProjectUnsyncDryRun,
+			}
+			return runAgentProjectUnsync(cmd.Context(), os.Stdout, mgr, args, opts, format)
 		}
 		mgr, merr := newSkillProjectManager()
 		if merr != nil {
@@ -207,6 +270,21 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		if err := validProjectKind(skillProjectAdoptKind); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		if skillProjectAdoptKind == skillProjectKindAgent {
+			mgr, err := newAgentProjectManager()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(ctxExitInfrastructure)
+			}
+			if exit := runAgentProjectAdopt(cmd.Context(), os.Stdout, os.Stderr, mgr, args[0], skillProjectAdoptClient, format); exit != ctxExitOK {
+				os.Exit(exit)
+			}
+			return nil
+		}
 		mgr, err := newSkillProjectManager()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -225,6 +303,7 @@ func init() {
 	skillProjectSyncCmd.Flags().BoolVar(&skillProjectSyncDryRun, "dry-run", false, "Show what would change without writing")
 	skillProjectSyncCmd.Flags().BoolVar(&skillProjectSyncForce, "force", false, "Overwrite drifted copies and unmanaged destination paths (after a backup)")
 	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
+	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncKind, "kind", "skill", "Resource kind to sync: skill or agent (agents are experimental and always copied)")
 	skillProjectSyncJSON = addJSONAlias(skillProjectSyncCmd)
 	skillProjectSyncPlain = addPlainFlag(skillProjectSyncCmd)
 
@@ -236,11 +315,13 @@ func init() {
 	skillProjectUnsyncCmd.Flags().StringSliceVar(&skillProjectUnsyncClients, "clients", nil, "Only remove projections for these client slugs")
 	skillProjectUnsyncCmd.Flags().BoolVar(&skillProjectUnsyncDryRun, "dry-run", false, "Show what would be removed without writing")
 	skillProjectUnsyncCmd.Flags().StringVar(&skillProjectUnsyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
+	skillProjectUnsyncCmd.Flags().StringVar(&skillProjectUnsyncKind, "kind", "skill", "Resource kind to unsync: skill or agent")
 	skillProjectUnsyncJSON = addJSONAlias(skillProjectUnsyncCmd)
 
 	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptClient, "client", "", "Client slug whose projected copy to adopt (required)")
 	_ = skillProjectAdoptCmd.MarkFlagRequired("client")
 	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
+	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptKind, "kind", "skill", "Resource kind to adopt: skill or agent")
 	skillProjectAdoptJSON = addJSONAlias(skillProjectAdoptCmd)
 
 	skillProjectCmd.AddCommand(skillProjectSyncCmd)
@@ -260,12 +341,47 @@ func newSkillProjectManager() (*skillsync.Manager, error) {
 	return skillsync.NewManager(store)
 }
 
+// newAgentProjectManager builds the agent projection manager rooted at
+// the user's home, reading the canonical agent store under the registry
+// directory.
+func newAgentProjectManager() (*agentsync.Manager, error) {
+	return agentsync.NewManager(registryDir())
+}
+
+// skillSyncRow is one skill sync result tagged with its kind.
+type skillSyncRow struct {
+	Kind string `json:"kind"`
+	skillsync.SyncResult
+}
+
+// agentSyncRow is one agent sync result tagged with its kind.
+type agentSyncRow struct {
+	Kind string `json:"kind"`
+	agentsync.SyncResult
+}
+
+func skillSyncRows(results []skillsync.SyncResult) []skillSyncRow {
+	rows := make([]skillSyncRow, len(results))
+	for i, r := range results {
+		rows[i] = skillSyncRow{Kind: skillProjectKindSkill, SyncResult: r}
+	}
+	return rows
+}
+
+func agentSyncRows(results []agentsync.SyncResult) []agentSyncRow {
+	rows := make([]agentSyncRow, len(results))
+	for i, r := range results {
+		rows[i] = agentSyncRow{Kind: skillProjectKindAgent, SyncResult: r}
+	}
+	return rows
+}
+
 // skillProjectSyncDoc is the machine-readable sync document.
 type skillProjectSyncDoc struct {
-	SchemaVersion int                    `json:"schema_version"`
-	DryRun        bool                   `json:"dry_run"`
-	HasFailures   bool                   `json:"has_failures"`
-	Results       []skillsync.SyncResult `json:"results"`
+	SchemaVersion int            `json:"schema_version"`
+	DryRun        bool           `json:"dry_run"`
+	HasFailures   bool           `json:"has_failures"`
+	Results       []skillSyncRow `json:"results"`
 }
 
 // runSkillProjectSync performs the sync and returns the exit code.
@@ -280,7 +396,7 @@ func runSkillProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *ski
 		SchemaVersion: skillProjectJSONSchemaVersion,
 		DryRun:        opts.DryRun,
 		HasFailures:   skillsync.HasFailures(results),
-		Results:       results,
+		Results:       skillSyncRows(results),
 	}
 	if strings.EqualFold(format, "json") {
 		if err := output.EncodeJSON(stdout, doc); err != nil {
@@ -335,25 +451,55 @@ func warnCoScannedDuplicates(stderr io.Writer, names, clients []string) {
 	}
 }
 
-// skillProjectStatusDoc is the machine-readable status document.
-type skillProjectStatusDoc struct {
-	SchemaVersion  int                          `json:"schema_version"`
-	NeedsAttention bool                         `json:"needs_attention"`
-	Projections    []skillsync.ProjectionStatus `json:"projections"`
+// skillStatusRow is one skill status row tagged with its kind.
+type skillStatusRow struct {
+	Kind string `json:"kind"`
+	skillsync.ProjectionStatus
 }
 
-// runSkillProjectStatus renders per-projection state and returns the
-// exit code.
-func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, format string, plain bool) int {
+// agentStatusRow is one agent status row tagged with its kind. Agent
+// rows carry an "agent" name field instead of "skill".
+type agentStatusRow struct {
+	Kind string `json:"kind"`
+	agentsync.ProjectionStatus
+}
+
+// skillProjectStatusDoc is the machine-readable status document. The
+// projections array mixes skill and agent rows; the kind field on each
+// row tells them apart.
+type skillProjectStatusDoc struct {
+	SchemaVersion  int   `json:"schema_version"`
+	NeedsAttention bool  `json:"needs_attention"`
+	Projections    []any `json:"projections"`
+}
+
+// runSkillProjectStatus renders per-projection state for both kinds and
+// returns the exit code. agentMgr may be nil (skill rows only).
+func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, agentMgr *agentsync.Manager, format string, plain bool) int {
 	statuses, err := mgr.Statuses(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
 	}
+	var agentStatuses []agentsync.ProjectionStatus
+	if agentMgr != nil {
+		agentStatuses, err = agentMgr.Statuses(ctx)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return ctxExitInfrastructure
+		}
+	}
+	rows := make([]any, 0, len(statuses)+len(agentStatuses))
+	for _, s := range statuses {
+		rows = append(rows, skillStatusRow{Kind: skillProjectKindSkill, ProjectionStatus: s})
+	}
+	for _, s := range agentStatuses {
+		rows = append(rows, agentStatusRow{Kind: skillProjectKindAgent, ProjectionStatus: s})
+	}
 	doc := skillProjectStatusDoc{
 		SchemaVersion:  skillProjectJSONSchemaVersion,
-		NeedsAttention: skillsync.NeedsAttention(statuses),
-		Projections:    statuses,
+		NeedsAttention: skillsync.NeedsAttention(statuses) || agentsync.NeedsAttention(agentStatuses),
+		Projections:    rows,
 	}
 	if strings.EqualFold(format, "json") {
 		if err := output.EncodeJSON(stdout, doc); err != nil {
@@ -361,7 +507,7 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 			return ctxExitInfrastructure
 		}
 	} else {
-		if len(statuses) == 0 {
+		if len(rows) == 0 {
 			fmt.Fprintln(stdout, "Nothing projected yet. Run 'gridctl skill project sync <skill>' to project a skill.")
 			return ctxExitOK
 		}
@@ -370,10 +516,18 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 		for _, s := range statuses {
 			t.AppendRow(table.Row{s.Skill, s.Client, s.Channel, skillProjectStateLabel(s), s.Target})
 		}
+		for _, s := range agentStatuses {
+			t.AppendRow(table.Row{s.Agent + " (agent)", s.Client, s.Channel, agentProjectStateLabel(s), s.Target})
+		}
 		t.Render()
 		for _, s := range statuses {
 			if s.Detail != "" {
 				fmt.Fprintf(stdout, "\n%s → %s: %s\n", s.Skill, s.Client, s.Detail)
+			}
+		}
+		for _, s := range agentStatuses {
+			if s.Detail != "" {
+				fmt.Fprintf(stdout, "\n%s → %s: %s\n", s.Agent, s.Client, s.Detail)
 			}
 		}
 	}
@@ -494,4 +648,169 @@ func skillProjectStateLabel(s skillsync.ProjectionStatus) string {
 	default:
 		return "— " + label
 	}
+}
+
+// agentProjectStateLabel renders a status glyph + state for agent rows,
+// same vocabulary and glyphs as skills.
+func agentProjectStateLabel(s agentsync.ProjectionStatus) string {
+	label := s.State
+	if s.Experimental {
+		label += " (experimental)"
+	}
+	switch s.State {
+	case agentsync.StateInSync:
+		return "✓ " + label
+	case agentsync.StateDrifted, agentsync.StateTargetMissing:
+		return "✗ " + label
+	case agentsync.StateStale:
+		return "~ " + label
+	default:
+		return "— " + label
+	}
+}
+
+// agentProjectActionLabel decorates agent sync actions with glyphs.
+func agentProjectActionLabel(action string) string {
+	switch action {
+	case agentsync.ActionCopied, agentsync.ActionUpdated, agentsync.ActionUnchanged, agentsync.ActionRemoved:
+		return "✓ " + action
+	case agentsync.ActionSkippedDrift, agentsync.ActionSkippedUnmanaged, agentsync.ActionError:
+		return "✗ " + action
+	default:
+		return "— " + action
+	}
+}
+
+// agentProjectSyncDoc is the machine-readable agent sync document.
+type agentProjectSyncDoc struct {
+	SchemaVersion int            `json:"schema_version"`
+	DryRun        bool           `json:"dry_run"`
+	HasFailures   bool           `json:"has_failures"`
+	Results       []agentSyncRow `json:"results"`
+}
+
+// runAgentProjectSync performs an agent-kind sync and returns the exit
+// code. With no names, every imported agent is projected.
+func runAgentProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *agentsync.Manager, names []string, opts agentsync.SyncOptions, format string, plain bool) int {
+	results, err := mgr.Sync(ctx, names, opts)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return ctxExitInfrastructure
+	}
+	doc := agentProjectSyncDoc{
+		SchemaVersion: skillProjectJSONSchemaVersion,
+		DryRun:        opts.DryRun,
+		HasFailures:   agentsync.HasFailures(results),
+		Results:       agentSyncRows(results),
+	}
+	if strings.EqualFold(format, "json") {
+		if err := output.EncodeJSON(stdout, doc); err != nil {
+			fmt.Fprintln(stderr, err)
+			return ctxExitInfrastructure
+		}
+	} else {
+		if len(results) == 0 {
+			fmt.Fprintln(stdout, "No agents imported yet. Run 'gridctl skill add <repo-url>' to import agents.")
+			return ctxExitOK
+		}
+		t := output.NewTableWriter(stdout, plain)
+		t.AppendHeader(table.Row{"AGENT", "CLIENT", "CHANNEL", "ACTION", "TARGET"})
+		for _, r := range results {
+			t.AppendRow(table.Row{r.Agent, r.Client, r.Channel, agentProjectActionLabel(r.Action), r.Target})
+		}
+		t.Render()
+		for _, r := range results {
+			if r.Error != "" {
+				fmt.Fprintf(stdout, "\n%s → %s: %s\n", r.Agent, r.Client, r.Error)
+			}
+			if r.Action == agentsync.ActionSkippedDrift && r.Error == "" {
+				fmt.Fprintf(stdout, "\n%s → %s: projected file was hand-edited. Keep the edit with 'gridctl skill project adopt --kind agent %s --client %s', or overwrite with 'gridctl skill project sync --kind agent %s --clients %s --force'\n",
+					r.Agent, r.Client, r.Agent, r.Client, r.Agent, r.Client)
+			}
+		}
+	}
+	if doc.HasFailures {
+		return ctxExitAttention
+	}
+	return ctxExitOK
+}
+
+// agentProjectUnsyncDoc is the machine-readable agent unsync document.
+type agentProjectUnsyncDoc struct {
+	SchemaVersion int                      `json:"schema_version"`
+	DryRun        bool                     `json:"dry_run"`
+	Results       []agentsync.UnsyncResult `json:"results"`
+}
+
+// runAgentProjectUnsync implements `skill project unsync --kind agent`.
+func runAgentProjectUnsync(ctx context.Context, w io.Writer, mgr *agentsync.Manager, names []string, opts agentsync.UnsyncOptions, format string) error {
+	results, err := mgr.Unsync(ctx, names, opts)
+	if err != nil {
+		if errors.Is(err, agentsync.ErrNotProjected) {
+			return fmt.Errorf("%w (check 'gridctl skill project status')", err)
+		}
+		return err
+	}
+	if strings.EqualFold(format, "json") {
+		return output.EncodeJSON(w, agentProjectUnsyncDoc{
+			SchemaVersion: skillProjectJSONSchemaVersion,
+			DryRun:        opts.DryRun,
+			Results:       results,
+		})
+	}
+	if len(results) == 0 {
+		fmt.Fprintln(w, "Nothing to unsync.")
+		return nil
+	}
+	for _, r := range results {
+		fmt.Fprintf(w, "✓ %-24s %-12s %s (%s)\n", r.Agent, r.Client, r.Target, r.Action)
+	}
+	return nil
+}
+
+// agentProjectAdoptDoc is the machine-readable agent adopt document.
+type agentProjectAdoptDoc struct {
+	SchemaVersion int                    `json:"schema_version"`
+	Result        *agentsync.AdoptResult `json:"result"`
+}
+
+// runAgentProjectAdopt implements `skill project adopt --kind agent` and
+// returns the exit code: 0 adopted, 1 nothing to adopt, 2
+// infrastructure.
+func runAgentProjectAdopt(ctx context.Context, stdout, stderr io.Writer, mgr *agentsync.Manager, agent, client, format string) int {
+	res, err := mgr.Adopt(ctx, agent, client)
+	if err != nil {
+		var refusal *agentsync.AdoptRefusal
+		switch {
+		case errors.As(err, &refusal):
+			fmt.Fprintln(stderr, err)
+			return ctxExitAttention
+		case errors.Is(err, agentsync.ErrNotProjected):
+			fmt.Fprintf(stderr, "%v (check 'gridctl skill project status')\n", err)
+			return ctxExitAttention
+		default:
+			fmt.Fprintln(stderr, err)
+			return ctxExitInfrastructure
+		}
+	}
+	if strings.EqualFold(format, "json") {
+		if err := output.EncodeJSON(stdout, agentProjectAdoptDoc{
+			SchemaVersion: skillProjectJSONSchemaVersion,
+			Result:        res,
+		}); err != nil {
+			fmt.Fprintln(stderr, err)
+			return ctxExitInfrastructure
+		}
+		return ctxExitOK
+	}
+	if !res.Changed {
+		fmt.Fprintf(stdout, "✓ %s's copy of %s already matches the store; hashes refreshed\n", client, agent)
+		return ctxExitOK
+	}
+	fmt.Fprintf(stdout, "✓ Adopted %s's copy of %s into %s\n", client, agent, res.CanonicalFile)
+	if res.BackupFile != "" {
+		fmt.Fprintf(stdout, "  previous AGENT.md kept as %s\n", res.BackupFile)
+	}
+	fmt.Fprintln(stdout, "'gridctl skill update' now treats this file as a local edit and will not overwrite it without --force.")
+	return ctxExitOK
 }

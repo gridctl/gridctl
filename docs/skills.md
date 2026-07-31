@@ -167,6 +167,28 @@ Symlinked projections have nothing to adopt (the registry copy is the source of 
 
 Two caveats. Projecting the same skill to both `claude-code` and `agents` makes clients that scan both roots (Goose, OpenCode, VS Code) discover it twice; sync warns when you do this. And projection places the whole skill directory, including `scripts/`, on paths agents actively load, so only project skills whose supporting files you trust. The security scan runs at `skill add` and `skill update` time, not at projection time, and it is a pattern scan rather than a sandbox: it reads the `SKILL.md` body and any executable or script-extension file being installed, blocking on high-severity matches and reporting the rest as warnings. Treat installing a skill the way you would treat installing software: review what a package ships before projecting it.
 
+## Agent definitions (experimental)
+
+The import pipeline also understands Claude Code subagent definitions. `gridctl skill add` discovers any `agents/*.md` files (an `agents/` directory at the repo root or at any subdirectory root, the layout Claude Code plugin repos already use) alongside `SKILL.md` discovery, so a repo shipping `skills/` plus `agents/` imports as a unit:
+
+```bash
+gridctl skill add https://github.com/acme/agents
+gridctl skill list --kind agent
+```
+
+Each imported agent lands verbatim at `~/.gridctl/registry/agents/<name>/AGENT.md` with the same `.origin.json` sidecar, lockfile tracking, and security scan skills get; the scan covers the agent body and frontmatter values (hooks and command strings live there), and findings gate the import behind the same `--trust` flow. An agent file must carry frontmatter with a `description`; the name comes from the `name` key or the filename stem, and must be lowercase letters, digits, and hyphens (no colons, which Claude Code refuses). Frontmatter beyond `name` and `description` (`tools`, `model`, `hooks`, `mcpServers`, `permissionMode`, vendor keys) passes through untouched: the stored file is byte-identical to the source.
+
+Projection is per-kind and always a copy of the single file:
+
+```bash
+gridctl skill project sync --kind agent          # all imported agents
+gridctl skill project sync --kind agent reviewer # or by name
+```
+
+This writes `~/.claude/agents/<name>.md`. Claude Code is the only render target in this slice, but Cursor and VS Code Copilot read `.claude/agents` natively, so one projection serves all three. Ownership follows the dedicated-file model from `gridctl ctx`: a pre-existing hand-authored file at the destination is refused without `--force` (and backed up under `~/.gridctl/project-backups/agent/` with it), a hand-edited projection shows as drifted in `gridctl skill project status`, and `gridctl skill project adopt --kind agent <name> --client claude-code` pulls the edit back into the canonical store (backing up the prior `AGENT.md` as `AGENT.md.pre-<sha>`) instead of overwriting it. `gridctl skill update` then treats the adopted content as a local edit and refuses to clobber it without `--force`.
+
+One Claude Code quirk worth knowing: it only watches agent directories that existed when the session started. If `~/.claude/agents` did not exist before the first `sync --kind agent`, restart Claude Code once to pick the agents up; subsequent syncs hot-reload.
+
 ## What gridctl deliberately does not do
 
 A short list of choices worth knowing about.

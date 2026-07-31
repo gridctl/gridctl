@@ -121,7 +121,7 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 	var out, errOut bytes.Buffer
 
 	// Empty set: clean exit, guidance message.
-	exit := runSkillProjectStatus(context.Background(), &out, &errOut, mgr, "", true)
+	exit := runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "", true)
 	if exit != ctxExitOK {
 		t.Fatalf("empty status exit = %d", exit)
 	}
@@ -135,16 +135,23 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 	}
 
 	out.Reset()
-	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, "json", false)
+	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "json", false)
 	if exit != ctxExitOK {
 		t.Fatalf("status exit = %d", exit)
 	}
-	var doc skillProjectStatusDoc
+	var doc struct {
+		SchemaVersion  int              `json:"schema_version"`
+		NeedsAttention bool             `json:"needs_attention"`
+		Projections    []skillStatusRow `json:"projections"`
+	}
 	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	if doc.NeedsAttention || len(doc.Projections) != 1 || doc.Projections[0].State != skillsync.StateInSync {
 		t.Errorf("doc = %+v", doc)
+	}
+	if doc.Projections[0].Kind != "skill" {
+		t.Errorf("kind = %q, want skill", doc.Projections[0].Kind)
 	}
 
 	// Break the projection: exit 1.
@@ -152,7 +159,7 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, "", true)
+	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "", true)
 	if exit != ctxExitAttention {
 		t.Errorf("missing-target exit = %d, want %d", exit, ctxExitAttention)
 	}

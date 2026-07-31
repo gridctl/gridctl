@@ -194,13 +194,13 @@ func TestCharacterizationSkillProjectStatus(t *testing.T) {
 	ctx := context.Background()
 
 	var stdout, stderr bytes.Buffer
-	if exit := runSkillProjectStatus(ctx, &stdout, &stderr, mgr, "", true); exit != ctxExitAttention {
+	if exit := runSkillProjectStatus(ctx, &stdout, &stderr, mgr, nil, "", true); exit != ctxExitAttention {
 		t.Fatalf("exit = %d, want 1 (stderr: %s)", exit, stderr.String())
 	}
 	assertGolden(t, "skill-project-status-plain", normalizeCharOutput(stdout.String(), home))
 
 	stdout.Reset()
-	if exit := runSkillProjectStatus(ctx, &stdout, &stderr, mgr, "json", false); exit != ctxExitAttention {
+	if exit := runSkillProjectStatus(ctx, &stdout, &stderr, mgr, nil, "json", false); exit != ctxExitAttention {
 		t.Fatalf("json exit = %d, want 1", exit)
 	}
 	assertGolden(t, "skill-project-status-json", normalizeCharOutput(stdout.String(), home))

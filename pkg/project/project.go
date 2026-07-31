@@ -32,6 +32,9 @@ const (
 	// KindContext projects the canonical global context file into client
 	// context locations (pkg/contexts).
 	KindContext Kind = "context"
+	// KindAgent projects imported agent definitions into client agent
+	// directories as single files (pkg/agentsync).
+	KindAgent Kind = "agent"
 )
 
 // Projection states shared by every kind. Kinds may extend the

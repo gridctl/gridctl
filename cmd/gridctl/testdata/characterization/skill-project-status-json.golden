@@ -3,6 +3,7 @@
   "needs_attention": true,
   "projections": [
   {
+  "kind": "skill",
   "skill": "alpha",
   "client": "antigravity",
   "channel": "copy",
@@ -12,6 +13,7 @@
   "synced_at": "<TS>"
   },
   {
+  "kind": "skill",
   "skill": "alpha",
   "client": "claude-code",
   "channel": "symlink",
@@ -20,6 +22,7 @@
   "synced_at": "<TS>"
   },
   {
+  "kind": "skill",
   "skill": "beta",
   "client": "antigravity",
   "channel": "copy",
