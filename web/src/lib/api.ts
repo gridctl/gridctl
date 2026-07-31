@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse, SessionsResponse } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -153,6 +153,14 @@ export async function fetchToolUsage(): Promise<ToolUsageResponse> {
  */
 export async function fetchClients(): Promise<ClientStatus[]> {
   return fetchJSON<ClientStatus[]>('/api/clients');
+}
+
+/**
+ * Fetch active MCP sessions with per-session protocol generation
+ * GET /api/sessions
+ */
+export async function fetchSessions(): Promise<SessionsResponse> {
+  return fetchJSON<SessionsResponse>('/api/sessions');
 }
 
 // === MCP Server Control Functions ===
