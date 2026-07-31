@@ -15,9 +15,7 @@ import (
 
 func setTempHomeTelemetry(t *testing.T) {
 	t.Helper()
-	orig := os.Getenv("HOME")
-	t.Cleanup(func() { os.Setenv("HOME", orig) })
-	os.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 }
 
 // seedTelemetry writes a telemetry file with the given content under

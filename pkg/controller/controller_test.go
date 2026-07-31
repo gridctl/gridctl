@@ -17,9 +17,7 @@ import (
 // setTempHome overrides HOME so state files go to a temp directory.
 func setTempHome(t *testing.T) {
 	t.Helper()
-	origHome := os.Getenv("HOME")
-	t.Cleanup(func() { os.Setenv("HOME", origHome) })
-	os.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 }
 
 // startDummyProcess starts a sleep process that can be safely killed in tests.

@@ -12,12 +12,10 @@ import (
 )
 
 func TestShouldCheckUpdates(t *testing.T) {
-	origNoCheck := os.Getenv("GRIDCTL_NO_SKILL_UPDATE_CHECK")
-	origCI := os.Getenv("CI")
-	defer func() {
-		os.Setenv("GRIDCTL_NO_SKILL_UPDATE_CHECK", origNoCheck)
-		os.Setenv("CI", origCI)
-	}()
+	// t.Setenv snapshots both vars for automatic restore; the values
+	// are then cleared for the default case.
+	t.Setenv("GRIDCTL_NO_SKILL_UPDATE_CHECK", "")
+	t.Setenv("CI", "")
 
 	// Default: should check
 	os.Unsetenv("GRIDCTL_NO_SKILL_UPDATE_CHECK")
@@ -25,12 +23,12 @@ func TestShouldCheckUpdates(t *testing.T) {
 	assert.True(t, ShouldCheckUpdates())
 
 	// Disabled via env var
-	os.Setenv("GRIDCTL_NO_SKILL_UPDATE_CHECK", "1")
+	t.Setenv("GRIDCTL_NO_SKILL_UPDATE_CHECK", "1")
 	assert.False(t, ShouldCheckUpdates())
 
 	// Disabled in CI
 	os.Unsetenv("GRIDCTL_NO_SKILL_UPDATE_CHECK")
-	os.Setenv("CI", "true")
+	t.Setenv("CI", "true")
 	assert.False(t, ShouldCheckUpdates())
 }
 
@@ -108,9 +106,7 @@ func TestUpdateCachePath(t *testing.T) {
 }
 
 func TestCheckUpdatesBackground_DisabledInCI(t *testing.T) {
-	origCI := os.Getenv("CI")
-	defer os.Setenv("CI", origCI)
-	os.Setenv("CI", "true")
+	t.Setenv("CI", "true")
 
 	// Should return immediately without starting goroutine
 	// No panic = pass
@@ -118,9 +114,7 @@ func TestCheckUpdatesBackground_DisabledInCI(t *testing.T) {
 }
 
 func TestCheckUpdatesBackground_DisabledByEnv(t *testing.T) {
-	orig := os.Getenv("GRIDCTL_NO_SKILL_UPDATE_CHECK")
-	defer os.Setenv("GRIDCTL_NO_SKILL_UPDATE_CHECK", orig)
-	os.Setenv("GRIDCTL_NO_SKILL_UPDATE_CHECK", "1")
+	t.Setenv("GRIDCTL_NO_SKILL_UPDATE_CHECK", "1")
 
 	// Should return immediately
 	CheckUpdatesBackground("/nonexistent", nil)

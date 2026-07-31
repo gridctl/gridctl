@@ -431,27 +431,18 @@ func TestHandleStack_Routing(t *testing.T) {
 // --- Stack library tests ---
 
 func TestHandleStacksList_EmptyDir(t *testing.T) {
-	s := &Server{}
+	s := &Server{stacksDir: t.TempDir()}
 	req := httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
 	w := httptest.NewRecorder()
 
-	// Override StacksDir by using a temp dir approach — since StacksDir() uses
-	// the real home dir, we test the handler directly and expect a graceful empty response.
 	s.handleStacksList(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	// Either empty stacks (dir doesn't exist) or valid JSON response
-	assert.Contains(t, w.Body.String(), `"stacks"`)
+	assert.Contains(t, w.Body.String(), `"stacks":[]`)
 }
 
 func TestHandleStacksSave_Success(t *testing.T) {
 	dir := t.TempDir()
-	// We use the actual handler but point StacksDir to a temp dir via env manipulation.
-	// Since StacksDir() is not injectable, we verify the save logic by calling the
-	// handler and checking the file was created in the expected location.
-	//
-	// To keep tests hermetic we create a wrapper that overrides the dir lookup.
-	// Instead, we test the validation path directly since the dir is live.
 
 	body, _ := json.Marshal(map[string]string{
 		"name": "my-stack",
@@ -460,28 +451,15 @@ func TestHandleStacksSave_Success(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
-	s := &Server{}
-
-	// Patch: temporarily swap the stacks dir using an env var trick is not possible
-	// without refactoring. Instead, test by calling handleStacksSave with the
-	// real handler but verify expected output (path in response).
-	// We trust the OS not to have a pre-existing ~/.gridctl/stacks/my-stack.yaml.
-	// For CI safety, use a separate approach: create the file in a temp dir and
-	// verify the response body format with a minimal test.
-	_ = dir // used for structure, not for dir injection
+	s := &Server{stacksDir: dir}
 
 	s.handleStacksSave(w, req)
 
-	// Either success (200) or dir creation succeeds — check response shape.
-	if w.Code == http.StatusOK {
-		assert.Contains(t, w.Body.String(), `"success":true`)
-		assert.Contains(t, w.Body.String(), `"name":"my-stack"`)
-		// Clean up
-		var resp map[string]any
-		_ = json.Unmarshal(w.Body.Bytes(), &resp)
-		if path, ok := resp["path"].(string); ok {
-			_ = os.Remove(path)
-		}
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"success":true`)
+	assert.Contains(t, w.Body.String(), `"name":"my-stack"`)
+	if _, err := os.Stat(filepath.Join(dir, "my-stack.yaml")); err != nil {
+		t.Fatalf("saved stack not found in injected dir: %v", err)
 	}
 }
 
@@ -580,59 +558,30 @@ func TestHandleStackInitialize_MissingName(t *testing.T) {
 }
 
 func TestHandleStackInitialize_NoReloadHandler(t *testing.T) {
-	// Create a real stack file in a temp dir, copy it to StacksDir for the test.
-	// To avoid polluting the real StacksDir, write to a temp location and use
-	// os.Symlink or direct file test. We test the flow when reloadHandler is nil.
-
-	// Write a temp stack file to a temp stacks dir — we can't inject the dir,
-	// so we write directly to the real stacks dir and clean up.
-	stacksDir := filepath.Join(os.TempDir(), "gridctl-test-stacks")
-	if err := os.MkdirAll(stacksDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(stacksDir)
-
-	stackPath := filepath.Join(stacksDir, "test-stack.yaml")
-	content := "name: test-stack\nnetwork:\n  name: net\n"
-	if err := os.WriteFile(stackPath, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// We can't inject the stacks dir, so we can't fully test the happy path
-	// without the real StacksDir. Test the 404 path with a bogus name instead,
-	// and separately verify the 409 path (already covered above).
-	s := &Server{}
+	// An injected stacks dir without the requested file yields 404.
+	s := &Server{stacksDir: t.TempDir()}
 	body, _ := json.Marshal(map[string]string{"name": "test-stack"})
 	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackInitialize(w, req)
 
-	// Without the real StacksDir having the file, expect 404
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestHandleStackInitialize_SuccessNoReloadHandler(t *testing.T) {
-	// Write a stack to the real StacksDir and test the full initialize flow
-	// with no reloadHandler (stackless mode without --watch).
-	stacksDir := func() string {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".gridctl", "stacks")
-	}()
-
-	if err := os.MkdirAll(stacksDir, 0755); err != nil {
-		t.Skipf("cannot create stacks dir: %v", err)
-	}
+	// Full initialize flow with no reloadHandler (stackless mode without
+	// --watch), against an injected stacks dir.
+	stacksDir := t.TempDir()
 
 	stackName := "gridctl-test-init-stack"
 	stackPath := filepath.Join(stacksDir, stackName+".yaml")
 	content := "name: gridctl-test-init-stack\nnetwork:\n  name: net\n"
 	if err := os.WriteFile(stackPath, []byte(content), 0644); err != nil {
-		t.Skipf("cannot write test stack: %v", err)
+		t.Fatalf("writing test stack: %v", err)
 	}
-	defer os.Remove(stackPath)
 
-	s := &Server{} // no reloadHandler
+	s := &Server{stacksDir: stacksDir} // no reloadHandler
 
 	body, _ := json.Marshal(map[string]string{"name": stackName})
 	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
@@ -654,14 +603,7 @@ func TestHandleStackInitialize_SuccessNoReloadHandler(t *testing.T) {
 // returns HTTP 400 with an errors array in the body instead of 200 OK. This
 // guards the stackless Save & Load silent-green failure mode.
 func TestHandleStackInitialize_SurfacesPerServerErrors(t *testing.T) {
-	stacksDir := func() string {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".gridctl", "stacks")
-	}()
-
-	if err := os.MkdirAll(stacksDir, 0755); err != nil {
-		t.Skipf("cannot create stacks dir: %v", err)
-	}
+	stacksDir := t.TempDir()
 
 	stackName := "gridctl-test-init-partial-failure"
 	stackPath := filepath.Join(stacksDir, stackName+".yaml")
@@ -674,9 +616,8 @@ mcp-servers:
     transport: http
 `
 	if err := os.WriteFile(stackPath, []byte(content), 0644); err != nil {
-		t.Skipf("cannot write test stack: %v", err)
+		t.Fatalf("writing test stack: %v", err)
 	}
-	defer os.Remove(stackPath)
 
 	gw := mcp.NewGateway()
 	orch := runtime.NewOrchestrator(nil, nil)
@@ -685,7 +626,7 @@ mcp-servers:
 		return fmt.Errorf("simulated registration failure for %s", server.Name)
 	})
 
-	s := &Server{}
+	s := &Server{stacksDir: stacksDir}
 	s.SetReloadHandler(rh)
 
 	body, _ := json.Marshal(map[string]string{"name": stackName})
@@ -705,24 +646,17 @@ mcp-servers:
 }
 
 func TestHandleStacksList_WithFiles(t *testing.T) {
-	// Write stacks to the real StacksDir and verify they appear in the list.
-	stacksDir := func() string {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".gridctl", "stacks")
-	}()
-
-	if err := os.MkdirAll(stacksDir, 0755); err != nil {
-		t.Skipf("cannot create stacks dir: %v", err)
-	}
+	// Write stacks to an injected stacks dir and verify they appear in
+	// the list.
+	stacksDir := t.TempDir()
 
 	stackName := "gridctl-test-list-stack"
 	stackPath := filepath.Join(stacksDir, stackName+".yaml")
 	if err := os.WriteFile(stackPath, []byte("name: test\n"), 0644); err != nil {
-		t.Skipf("cannot write test stack: %v", err)
+		t.Fatalf("writing test stack: %v", err)
 	}
-	defer os.Remove(stackPath)
 
-	s := &Server{}
+	s := &Server{stacksDir: stacksDir}
 	req := httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
 	w := httptest.NewRecorder()
 

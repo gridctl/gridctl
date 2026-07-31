@@ -34,6 +34,7 @@ const (
 	ActionSkippedDrift       = "skipped-drift"
 	ActionSkippedUnmanaged   = "skipped-unmanaged"
 	ActionSkippedUnavailable = "skipped-unavailable"
+	ActionSkippedEmptyStore  = "skipped-empty-store"
 	ActionWouldLink          = "would-link"
 	ActionWouldCopy          = "would-copy"
 	ActionWouldUpdate        = "would-update"
@@ -153,6 +154,14 @@ func (m *Manager) Sync(ctx context.Context, names []string, opts SyncOptions) ([
 // Reconcile re-syncs the recorded projection set. The daemon calls it
 // after every registry refresh; it is a fast no-op when nothing is
 // projected.
+//
+// A store reporting zero active skills while projections are recorded
+// is refused rather than reconciled, surfaced as a single
+// ActionSkippedEmptyStore result: the registry treats a missing or
+// unreadable directory as empty, so an empty store here is far more
+// likely a degraded registry than a deliberate deactivate-everything,
+// and acting on it would mass-remove every projection. Explicit
+// `gridctl skill project sync` and `unsync` keep full authority.
 func (m *Manager) Reconcile(ctx context.Context) ([]SyncResult, error) {
 	has, err := m.HasProjections()
 	if err != nil {
@@ -160,6 +169,13 @@ func (m *Manager) Reconcile(ctx context.Context) ([]SyncResult, error) {
 	}
 	if !has {
 		return nil, nil
+	}
+	if len(m.store.ActiveSkills()) == 0 {
+		return []SyncResult{{
+			Action: ActionSkippedEmptyStore,
+			Error: fmt.Sprintf("registry %s reports no active skills while %s records projections; if this is intentional, run 'gridctl skill project sync' to reconcile explicitly",
+				m.store.Dir(), m.LockPath()),
+		}}, nil
 	}
 	return m.Sync(ctx, nil, SyncOptions{})
 }

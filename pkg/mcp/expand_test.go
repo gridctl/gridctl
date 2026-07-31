@@ -171,7 +171,7 @@ func TestExpandEnvVars(t *testing.T) {
 
 			// Set test env vars
 			for k, v := range tc.env {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			got := string(expandEnvVars([]byte(tc.input)))

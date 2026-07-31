@@ -8,20 +8,14 @@ import (
 )
 
 // setTempHome sets HOME to a temp directory for isolated testing.
-// Returns a cleanup function to restore the original HOME.
-func setTempHome(t *testing.T) func() {
+// Restoration is registered on t automatically.
+func setTempHome(t *testing.T) {
 	t.Helper()
-	origHome := os.Getenv("HOME")
-	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
-	return func() {
-		os.Setenv("HOME", origHome)
-	}
+	t.Setenv("HOME", t.TempDir())
 }
 
 func TestBaseDir(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl")
@@ -31,8 +25,7 @@ func TestBaseDir(t *testing.T) {
 }
 
 func TestStateDir(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "state")
@@ -42,8 +35,7 @@ func TestStateDir(t *testing.T) {
 }
 
 func TestLogDir(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "logs")
@@ -53,8 +45,7 @@ func TestLogDir(t *testing.T) {
 }
 
 func TestStatePath(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "state", "test-topo.json")
@@ -64,8 +55,7 @@ func TestStatePath(t *testing.T) {
 }
 
 func TestLogPath(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "logs", "test-topo.log")
@@ -75,8 +65,7 @@ func TestLogPath(t *testing.T) {
 }
 
 func TestTelemetryDir(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "telemetry")
@@ -86,8 +75,7 @@ func TestTelemetryDir(t *testing.T) {
 }
 
 func TestTelemetryServerPath(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	home := os.Getenv("HOME")
 	tests := []struct {
@@ -110,8 +98,7 @@ func TestTelemetryServerPath(t *testing.T) {
 }
 
 func TestEnsureTelemetryServerDir(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	if err := EnsureTelemetryServerDir("my-stack", "github"); err != nil {
 		t.Fatalf("EnsureTelemetryServerDir: %v", err)
@@ -131,8 +118,7 @@ func TestEnsureTelemetryServerDir(t *testing.T) {
 }
 
 func TestSave_CreatesFile(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	state := &DaemonState{
 		StackName:"my-topo",
@@ -154,8 +140,7 @@ func TestSave_CreatesFile(t *testing.T) {
 }
 
 func TestSave_CreatesDirectory(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	state := &DaemonState{
 		StackName:"my-topo",
@@ -179,8 +164,7 @@ func TestSave_CreatesDirectory(t *testing.T) {
 }
 
 func TestLoad_Success(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	startTime := time.Now().Truncate(time.Second)
 
@@ -221,8 +205,7 @@ func TestLoad_Success(t *testing.T) {
 }
 
 func TestLoad_NotExists(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	_, err := Load("nonexistent")
 	if err == nil {
@@ -234,8 +217,7 @@ func TestLoad_NotExists(t *testing.T) {
 }
 
 func TestLoad_InvalidJSON(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Create state directory
 	if err := os.MkdirAll(StateDir(), 0755); err != nil {
@@ -255,8 +237,7 @@ func TestLoad_InvalidJSON(t *testing.T) {
 }
 
 func TestDelete_Success(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Save a state first
 	state := &DaemonState{StackName:"to-delete", PID: 123}
@@ -282,8 +263,7 @@ func TestDelete_Success(t *testing.T) {
 }
 
 func TestDelete_NotExists_NoError(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Delete should be idempotent - no error for nonexistent file
 	if err := Delete("nonexistent"); err != nil {
@@ -292,8 +272,7 @@ func TestDelete_NotExists_NoError(t *testing.T) {
 }
 
 func TestList_Empty(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	states, err := List()
 	if err != nil {
@@ -306,8 +285,7 @@ func TestList_Empty(t *testing.T) {
 }
 
 func TestList_MultipleStates(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Save multiple states
 	for _, name := range []string{"topo-a", "topo-b", "topo-c"} {
@@ -328,8 +306,7 @@ func TestList_MultipleStates(t *testing.T) {
 }
 
 func TestList_SkipsInvalidFiles(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Create state directory
 	if err := os.MkdirAll(StateDir(), 0755); err != nil {
@@ -410,8 +387,7 @@ func TestKillDaemon_ZeroPID(t *testing.T) {
 }
 
 func TestEnsureLogDir(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	if err := EnsureLogDir(); err != nil {
 		t.Fatalf("EnsureLogDir() error = %v", err)
@@ -429,8 +405,7 @@ func TestEnsureLogDir(t *testing.T) {
 }
 
 func TestEnsureLogDir_Idempotent(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Call twice - should not error
 	if err := EnsureLogDir(); err != nil {
@@ -442,8 +417,7 @@ func TestEnsureLogDir_Idempotent(t *testing.T) {
 }
 
 func TestLockPath(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "state", "test-topo.lock")
@@ -453,8 +427,7 @@ func TestLockPath(t *testing.T) {
 }
 
 func TestWithLock_ExecutesCallback(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	called := false
 	err := WithLock("test-topo", 1*time.Second, func() error {
@@ -470,8 +443,7 @@ func TestWithLock_ExecutesCallback(t *testing.T) {
 }
 
 func TestWithLock_ReturnsCallbackError(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	expectedErr := os.ErrNotExist
 	err := WithLock("test-topo", 1*time.Second, func() error {
@@ -483,8 +455,7 @@ func TestWithLock_ReturnsCallbackError(t *testing.T) {
 }
 
 func TestWithLock_CreatesDirectory(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// State directory doesn't exist yet
 	err := WithLock("test-topo", 1*time.Second, func() error {
@@ -506,8 +477,7 @@ func TestWithLock_CreatesDirectory(t *testing.T) {
 }
 
 func TestWithLock_ExclusiveAccess(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Acquire lock and hold it while checking another can't acquire
 	lockAcquired := make(chan struct{})
@@ -541,8 +511,7 @@ func TestWithLock_ExclusiveAccess(t *testing.T) {
 }
 
 func TestCheckAndClean_NoStateFile(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	cleaned, err := CheckAndClean("nonexistent")
 	if err != nil {
@@ -554,8 +523,7 @@ func TestCheckAndClean_NoStateFile(t *testing.T) {
 }
 
 func TestCheckAndClean_RunningProcess(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Save state with current process PID (which is running)
 	state := &DaemonState{
@@ -581,8 +549,7 @@ func TestCheckAndClean_RunningProcess(t *testing.T) {
 }
 
 func TestCheckAndClean_DeadProcess(t *testing.T) {
-	cleanup := setTempHome(t)
-	defer cleanup()
+	setTempHome(t)
 
 	// Save state with a PID that doesn't exist
 	state := &DaemonState{

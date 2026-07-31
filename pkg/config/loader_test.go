@@ -129,8 +129,7 @@ mcp-servers:
 }
 
 func TestLoadStack_EnvExpansion(t *testing.T) {
-	os.Setenv("TEST_API_KEY", "secret123")
-	defer os.Unsetenv("TEST_API_KEY")
+	t.Setenv("TEST_API_KEY", "secret123")
 
 	content := `
 name: test-lab
@@ -156,10 +155,8 @@ mcp-servers:
 }
 
 func TestLoadStack_EnvExpansion_CommandAndURL(t *testing.T) {
-	os.Setenv("TEST_MCP_URL", "https://actions.zapier.com/mcp/sk-ak-test123/sse")
-	os.Setenv("TEST_EXTERNAL_URL", "https://api.example.com/mcp")
-	defer os.Unsetenv("TEST_MCP_URL")
-	defer os.Unsetenv("TEST_EXTERNAL_URL")
+	t.Setenv("TEST_MCP_URL", "https://actions.zapier.com/mcp/sk-ak-test123/sse")
+	t.Setenv("TEST_EXTERNAL_URL", "https://api.example.com/mcp")
 
 	content := `
 name: test-lab

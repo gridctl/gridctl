@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -604,6 +605,7 @@ func TestGatewayBuilder_SetupHotReload_NoWatch(t *testing.T) {
 	rt := runtime.NewOrchestrator(nil, nil)
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", rt, &runtime.UpResult{})
 	builder.registryDir = regDir
+	builder.homeDir = t.TempDir()
 
 	inst, err := builder.Build(false)
 	if err != nil {
@@ -613,8 +615,14 @@ func TestGatewayBuilder_SetupHotReload_NoWatch(t *testing.T) {
 	handler := logging.NewRedactingHandler(logging.NewBufferHandler(logging.NewLogBuffer(100), nil))
 	registrar := NewServerRegistrar(inst.Gateway, false)
 
-	// Should set up reload handler but not start watcher
-	builder.setupHotReload(context.Background(), inst, registrar, handler, false)
+	// The registry dir watcher starts regardless of Watch; the context
+	// must be canceled or its goroutine outlives the test and fires on
+	// t.TempDir cleanup.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Should set up reload handler but not start the stack watcher
+	builder.setupHotReload(ctx, inst, registrar, handler, false)
 }
 
 func TestGatewayBuilder_SetupHotReload_NoWatch_Verbose(t *testing.T) {
@@ -624,6 +632,7 @@ func TestGatewayBuilder_SetupHotReload_NoWatch_Verbose(t *testing.T) {
 	rt := runtime.NewOrchestrator(nil, nil)
 	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", rt, &runtime.UpResult{})
 	builder.registryDir = regDir
+	builder.homeDir = t.TempDir()
 
 	inst, err := builder.Build(false)
 	if err != nil {
@@ -633,8 +642,65 @@ func TestGatewayBuilder_SetupHotReload_NoWatch_Verbose(t *testing.T) {
 	handler := logging.NewRedactingHandler(logging.NewBufferHandler(logging.NewLogBuffer(100), nil))
 	registrar := NewServerRegistrar(inst.Gateway, false)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Setup with verbose=true for additional print coverage
-	builder.setupHotReload(context.Background(), inst, registrar, handler, true)
+	builder.setupHotReload(ctx, inst, registrar, handler, true)
+}
+
+// TestReconcileSkillProjections_EmptyStoreLeavesHomeUntouched
+// reproduces the incident where a registry refresh against an empty
+// test store deleted real skill projections: with the home injected at
+// the controller boundary and the skillsync empty-store guard in
+// place, a recorded projection and its lockfile must survive a
+// reconcile against a store with no skills.
+func TestReconcileSkillProjections_EmptyStoreLeavesHomeUntouched(t *testing.T) {
+	home := t.TempDir()
+
+	// Seed a recorded projection in the sandbox home: a symlink target
+	// plus the lockfile entry that owns it.
+	src := filepath.Join(home, ".gridctl", "registry", "skills", "alpha")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(home, ".claude", "skills", "alpha")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(src, target); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(home, ".gridctl", "skillsync.lock.yaml")
+	lock := "version: 1\nprojections:\n  alpha:\n    claude-code:\n      channel: symlink\n      target: " + target + "\n      created_by_gridctl: true\n      synced_at: 2026-07-31T00:00:00Z\n"
+	if err := os.WriteFile(lockPath, []byte(lock), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build against an empty registry store, exactly what the leaked
+	// watcher once reconciled against.
+	builder := NewGatewayBuilder(Config{Port: 8180}, &config.Stack{Name: "test"}, "/path/stack.yaml", runtime.NewOrchestrator(nil, nil), &runtime.UpResult{})
+	builder.registryDir = t.TempDir()
+	builder.homeDir = home
+
+	inst, err := builder.Build(false)
+	if err != nil {
+		t.Fatalf("Build() returned error: %v", err)
+	}
+
+	handler := logging.NewRedactingHandler(logging.NewBufferHandler(logging.NewLogBuffer(100), nil))
+	reconcileSkillProjections(context.Background(), inst, home, slog.New(handler))
+
+	if _, err := os.Lstat(target); err != nil {
+		t.Fatalf("projection symlink must survive reconcile against an empty store: %v", err)
+	}
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("lockfile must survive reconcile against an empty store: %v", err)
+	}
+	if !strings.Contains(string(data), "alpha") {
+		t.Errorf("lockfile lost its projection entry:\n%s", data)
+	}
 }
 
 func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
@@ -650,6 +716,7 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 	rt := runtime.NewOrchestrator(nil, nil)
 	builder := NewGatewayBuilder(cfg, stack, stackFile, rt, &runtime.UpResult{})
 	builder.registryDir = regDir
+	builder.homeDir = t.TempDir()
 
 	inst, err := builder.Build(false)
 	if err != nil {
@@ -660,8 +727,8 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 	registrar := NewServerRegistrar(inst.Gateway, false)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Stop the watchers even on early failure
 	// Should set up reload handler and start watcher
 	builder.setupHotReload(ctx, inst, registrar, handler, true)
-	cancel() // Stop the watcher
 }
 
