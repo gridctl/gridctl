@@ -2,57 +2,47 @@ package skillsync
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"syscall"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/gridctl/gridctl/pkg/project"
 )
 
-// lockVersion is the current lockfile schema version. Readers reject
-// newer versions with ErrNewerLockVersion instead of silently clobbering
-// state written by a newer gridctl (the pkg/pins lesson).
-const lockVersion = 1
+// ErrNewerLockVersion signals projection state written by a newer
+// gridctl. Aliased from the engine so callers' errors.Is checks keep
+// working across the pkg/project extraction.
+var ErrNewerLockVersion = project.ErrNewerLockVersion
 
-// flockTimeout bounds how long a mutating operation waits for the
-// cross-process lock before reporting contention.
-const flockTimeout = 5 * time.Second
-
-// ErrNewerLockVersion signals a lockfile written by a newer gridctl.
-var ErrNewerLockVersion = errors.New("skill projection lockfile was written by a newer gridctl version")
-
-// LockFile records, per skill and client, what gridctl last projected.
-// Ownership (CreatedByGridctl) is what lets sync refuse to clobber
-// foreign paths and lets unsync remove only gridctl's own artifacts.
+// LockFile is the skill-kind view over the unified project lockfile:
+// what gridctl last projected, keyed skill name → client slug exactly
+// as the legacy skillsync.lock.yaml was. Ownership (CreatedByGridctl)
+// is what lets sync refuse to clobber foreign paths and lets unsync
+// remove only gridctl's own artifacts. The engine owns the on-disk
+// schema, versioning, migration, and locking.
 type LockFile struct {
-	Version int `yaml:"version"`
+	Version int
 	// Projections maps skill name → client slug → entry.
-	Projections map[string]map[string]*Entry `yaml:"projections"`
+	Projections map[string]map[string]*Entry
 }
 
 // Entry is one (skill, client) projection record.
 type Entry struct {
 	// Channel is "symlink" or "copy".
-	Channel Channel `yaml:"channel"`
+	Channel Channel
 	// Target is the absolute path gridctl created (the symlink itself or
 	// the copied directory).
-	Target string `yaml:"target"`
+	Target string
 	// CreatedByGridctl marks the path as gridctl-owned. Always true for
-	// recorded entries; present in the schema so a future adopt flow can
-	// track foreign paths without a format break.
-	CreatedByGridctl bool `yaml:"created_by_gridctl"`
+	// recorded entries; adopt reads it to tell managed copies apart.
+	CreatedByGridctl bool
 	// TreeHash is the copied directory's tree hash at sync time (empty
 	// for symlinks, whose content lives in the registry).
-	TreeHash string    `yaml:"tree_hash,omitempty"`
-	SyncedAt time.Time `yaml:"synced_at"`
+	TreeHash string
+	SyncedAt time.Time
 }
 
-// newLockFile returns an empty lockfile.
+// newLockFile returns an empty view.
 func newLockFile() *LockFile {
-	return &LockFile{Version: lockVersion, Projections: map[string]map[string]*Entry{}}
+	return &LockFile{Version: project.LockVersion, Projections: map[string]map[string]*Entry{}}
 }
 
 // entry returns the record for (skill, client), or nil.
@@ -77,72 +67,75 @@ func (lf *LockFile) remove(skill, client string) {
 	}
 }
 
-// readLockFile loads the lockfile from path. A missing file is the
-// normal nothing-projected state and yields an empty lock.
+// viewFromEntries builds the skill view from engine entries.
+func viewFromEntries(entries []*project.Entry) *LockFile {
+	lf := newLockFile()
+	for _, e := range entries {
+		if e.Kind != project.KindSkill {
+			continue
+		}
+		lf.set(e.Source, e.Client, &Entry{
+			Channel:          Channel(e.Channel),
+			Target:           e.Path,
+			CreatedByGridctl: e.CreatedByGridctl,
+			TreeHash:         e.TreeHash,
+			SyncedAt:         e.SyncedAt,
+		})
+	}
+	return lf
+}
+
+// viewFromLock projects the engine lock's skill entries into the
+// legacy-shaped view the ops code works on.
+func viewFromLock(pl *project.Lock) *LockFile {
+	return viewFromEntries(pl.Entries(project.KindSkill))
+}
+
+// saveView flushes the view back into the engine lock and persists it.
+// Projections dropped from the view are removed as explicit
+// engine-driven deletes; entries of other kinds, unknown file-level
+// fields, and unknown per-entry fields (carried forward by Lock.Set)
+// ride along untouched.
+func saveView(pl *project.Lock, lf *LockFile) error {
+	var entries []*project.Entry
+	for skill, clients := range lf.Projections {
+		for client, e := range clients {
+			entries = append(entries, &project.Entry{
+				Kind:             project.KindSkill,
+				Client:           client,
+				Source:           skill,
+				Path:             e.Target,
+				Channel:          string(e.Channel),
+				CreatedByGridctl: e.CreatedByGridctl,
+				TreeHash:         e.TreeHash,
+				SyncedAt:         e.SyncedAt,
+			})
+		}
+	}
+	if err := pl.ReplaceKind(project.KindSkill, entries); err != nil {
+		return err
+	}
+	return pl.Save()
+}
+
+// readLockFile loads the skill view straight from the unified lockfile
+// at path. A missing file is the normal nothing-projected state.
+// Production reads go through loadView, which also merges the legacy
+// lockfiles before migration; this direct form backs tests that inspect
+// the file a manager just wrote.
 func readLockFile(path string) (*LockFile, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- fixed name under the manager's home
+	ul, err := project.ReadLockFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return newLockFile(), nil
-		}
-		return nil, fmt.Errorf("reading skill projection lockfile: %w", err)
+		return nil, err
 	}
-	var lf LockFile
-	if err := yaml.Unmarshal(data, &lf); err != nil {
-		return nil, fmt.Errorf("parsing skill projection lockfile: %w", err)
-	}
-	if lf.Version > lockVersion {
-		return nil, fmt.Errorf("%w (file version %d, supported %d)", ErrNewerLockVersion, lf.Version, lockVersion)
-	}
-	if lf.Projections == nil {
-		lf.Projections = map[string]map[string]*Entry{}
-	}
-	return &lf, nil
+	return viewFromEntries(ul.Projections), nil
 }
 
-// writeLockFile persists the lockfile atomically (temp + rename).
-func writeLockFile(path string, lf *LockFile) error {
-	lf.Version = lockVersion
-	data, err := yaml.Marshal(lf)
+// loadView returns a read-only skill view of the projection state.
+func (m *Manager) loadView(ctx context.Context) (*LockFile, error) {
+	l, err := m.store.Load(ctx)
 	if err != nil {
-		return fmt.Errorf("marshaling skill projection lockfile: %w", err)
+		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("creating lockfile directory: %w", err)
-	}
-	return atomicWriteFile(path, data)
-}
-
-// withFileLock runs fn while holding an exclusive flock on a sibling of
-// the lockfile. The in-process mutex alone is not enough: the CLI and
-// the daemon reconcile mutate the same lockfile from different
-// processes. Follows the pkg/state.WithLock pattern.
-func (m *Manager) withFileLock(ctx context.Context, fn func() error) error {
-	lockPath := m.LockPath() + ".flock"
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
-		return fmt.Errorf("creating lock directory: %w", err)
-	}
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G304 -- fixed name under the manager's home
-	if err != nil {
-		return fmt.Errorf("opening projection lock: %w", err)
-	}
-	defer f.Close() //nolint:errcheck // closed after unlock; nothing was written
-
-	deadline := time.Now().Add(flockTimeout)
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout acquiring skill projection lock (another gridctl operation may be in progress)")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	defer func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	}()
-	return fn()
+	return viewFromLock(l), nil
 }
