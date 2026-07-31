@@ -67,6 +67,35 @@ func DetectDrift(ctx context.Context, store *registry.Store, lockPath, sourceNam
 	return drifted, nil
 }
 
+// DetectAgentDrift returns the names of imported agents whose on-disk
+// AGENT.md has been edited since the last import. Same fail-open policy
+// as DetectDrift: a missing origin or InstalledHash is not drift.
+func DetectAgentDrift(ctx context.Context, registryDir string) ([]string, error) {
+	agents, err := ListAgents(registryDir)
+	if err != nil {
+		return nil, err
+	}
+	var drifted []string
+	for _, a := range agents {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		origin, err := ReadOrigin(a.Dir)
+		if err != nil || origin.InstalledHash == "" {
+			continue
+		}
+		currentHash, err := ContentHashFile(filepath.Join(a.Dir, "AGENT.md"))
+		if err != nil {
+			continue
+		}
+		if currentHash != origin.InstalledHash {
+			drifted = append(drifted, a.Name)
+		}
+	}
+	sort.Strings(drifted)
+	return drifted, nil
+}
+
 // skillNamesForSource returns the skill names to scan. When sourceName is
 // empty, every skill in the store is returned; otherwise only the skills
 // recorded under that source in the lock file.
