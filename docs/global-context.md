@@ -6,7 +6,9 @@ Scope boundary: this manages only the **global** (user-level) layer. Per-project
 
 ## The canonical file
 
-The source of truth lives at `~/.gridctl/context/AGENTS.md`, plain markdown per the [agents.md](https://agents.md) spec. Because it is a spec-named file, AGENTS.md-native tools can read it directly, and it can be symlinked into a dotfiles repository for version control. A lock file (`context.lock.yaml`) beside it records what was written to each client and from which canonical revision.
+The source of truth lives at `~/.gridctl/context/AGENTS.md`, plain markdown per the [agents.md](https://agents.md) spec. Because it is a spec-named file, AGENTS.md-native tools can read it directly, and it can be symlinked into a dotfiles repository for version control. What was written to each client, and from which canonical revision, is recorded in `~/.gridctl/project.lock.yaml`, the unified projection lockfile shared with `gridctl skill project`. Context operations hold the same cross-process lock as skill projections, so the CLI, the daemon, and the web UI can never interleave lockfile writes.
+
+Older installs kept this state in `~/.gridctl/context/context.lock.yaml`. It migrates automatically on the first sync after upgrading: both legacy lockfiles are backed up to `~/.gridctl/project-migration-backup/<timestamp>/`, the unified file is written, and each legacy file is replaced by a version-2 tombstone. The tombstone is what makes a downgrade loud rather than confusing: a pre-unification gridctl refuses it with "written by a newer gridctl version" instead of silently working from stale state. `gridctl doctor` reports which lockfile generation is in use.
 
 Keep the file short. Every client loads it into every session; durable preferences belong here, project-specific guidance does not.
 
@@ -44,6 +46,8 @@ Every write is preceded by a timestamped backup (`<file>.gridctl-backup-<ts>`, t
 - **drifted**: the client's managed content was hand-edited. Sync skips drifted targets with guidance instead of silently overwriting. Resolve with `gridctl ctx diff <client>` to inspect, `gridctl ctx adopt <client>` to make the edit the new canon, or `gridctl ctx sync --force <client>` to restore the canon.
 
 For CI or a shell prompt, `gridctl ctx sync --check` performs no writes and exits `1` when anything is drifted, stale, or missing.
+
+`ctx status` enumerates every known client, synced or not; `gridctl skill project status` lists only recorded projections. The asymmetry is deliberate and mirrors what each command manages: one canon that targets all clients by default versus an explicit per-skill allow-list.
 
 ## Removal
 
