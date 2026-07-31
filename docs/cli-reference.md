@@ -99,6 +99,7 @@ Skills are prose; the registry surfaces every active `SKILL.md` to prompt-render
 | `gridctl skill project sync [skill...]` | Project named active skills into native client skill directories (`--clients agents,claude-code,antigravity`; `--copy` for copies instead of symlinks; `--dry-run`, `--force`, `--format json` or `--json`, `--plain`; exit `0`/`1`/`2`). With no names, re-syncs the recorded projection set. |
 | `gridctl skill project status` | Per-projection state table (in-sync / stale / drifted / target-missing; `--format json` or `--json`, `--plain`; exit `0`/`1`/`2`). |
 | `gridctl skill project unsync [skill...]` | Remove projections gridctl created (`--all`, `--clients`, `--dry-run`, `--format json` or `--json`). Copies are backed up before removal; unmanaged files are never touched. |
+| `gridctl skill project adopt <skill>` | Pull a hand-edited copy projection back into the registry skill (`--client <slug>`, singular: adopt operates on one pair; `--format json` or `--json`; exit `0`/`1`/`2`). Backs up the registry `SKILL.md` as `.pre-<sha>`, re-syncs the pair to in-sync, and marks the skill locally edited for `skill update`. Symlinked projections are refused: the registry copy is already the source of truth. |
 | `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `-s` / `--stack` to target a stack (auto-detected when only one runs), `--format json` or `--json` for machine output, `-q` / `--quiet` to suppress the success line. |
 
 ## Variables

@@ -12,12 +12,14 @@
 package skillsync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/registry"
 )
 
@@ -28,7 +30,9 @@ var (
 	ErrNotProjected  = errors.New("skill is not projected")
 )
 
-const lockFileName = "skillsync.lock.yaml"
+// lockFileName is the unified engine lockfile, shared with context
+// projections (the legacy skillsync.lock.yaml migrates into it).
+const lockFileName = "project.lock.yaml"
 
 // SkillSource is the slice of the registry store projection reads. The
 // concrete *registry.Store satisfies it; tests can substitute a fake.
@@ -42,15 +46,16 @@ type SkillSource interface {
 	Dir() string
 }
 
-// Manager owns the projection lockfile under <home>/.gridctl and every
-// write into client skill directories. All target paths resolve against
-// home, so tests point it at a temp dir. Mutating operations serialize
-// on mu in-process and on a flock file across processes (the CLI and the
-// daemon reconcile can race).
+// Manager owns skill projections and every write into client skill
+// directories. All target paths resolve against home, so tests point it
+// at a temp dir. Mutating operations serialize on mu in-process and on
+// the engine's cross-process lock (the CLI and the daemon reconcile can
+// race).
 type Manager struct {
-	home  string
-	store SkillSource
-	mu    sync.Mutex
+	home   string
+	source SkillSource
+	store  *project.Store
+	mu     sync.Mutex
 }
 
 // NewManager builds a Manager rooted at the user's home directory. It
@@ -69,19 +74,26 @@ func NewManager(store SkillSource) (*Manager, error) {
 // NewManagerWithHome builds a Manager rooted at an explicit home
 // directory. Tests use this to stay isolated from $HOME.
 func NewManagerWithHome(home string, store SkillSource) *Manager {
-	return &Manager{home: home, store: store}
+	return &Manager{home: home, source: store, store: project.NewStore(home)}
 }
 
 // LockPath returns the projection lockfile path
-// (<home>/.gridctl/skillsync.lock.yaml, a sibling of the registry).
+// (<home>/.gridctl/project.lock.yaml, a sibling of the registry).
 func (m *Manager) LockPath() string {
 	return filepath.Join(m.home, ".gridctl", lockFileName)
 }
 
 // HasProjections reports whether any skill is currently projected. The
-// daemon reconcile uses it as a cheap no-op guard.
+// daemon reconcile uses it as a cheap no-op guard (through the
+// context-aware form; this signature stays context-free for existing
+// callers).
 func (m *Manager) HasProjections() (bool, error) {
-	lf, err := readLockFile(m.LockPath())
+	return m.hasProjections(context.Background())
+}
+
+// hasProjections is HasProjections honoring the caller's context.
+func (m *Manager) hasProjections(ctx context.Context) (bool, error) {
+	lf, err := m.loadView(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -94,5 +106,5 @@ func (m *Manager) skillSourceDir(sk *registry.AgentSkill) string {
 	if sk.Dir != "" {
 		dir = sk.Dir
 	}
-	return filepath.Join(m.store.Dir(), "skills", dir)
+	return filepath.Join(m.source.Dir(), "skills", dir)
 }

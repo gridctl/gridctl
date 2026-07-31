@@ -9,16 +9,18 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/project"
 )
 
 const (
 	backupTimeFormat = "20060102-150405"
-	maxBackups       = 3
+	maxBackups       = project.MaxBackups
 )
 
 // hashScheme prefixes every stored hash so a future scheme change never
 // presents as false drift (the pkg/pins lesson).
-const hashScheme = "sha256:"
+const hashScheme = project.HashScheme
 
 // treeHash fingerprints a skill directory: a hash over the sorted
 // manifest of relative paths and per-file content hashes, so any added,
@@ -215,7 +217,8 @@ func (m *Manager) backupProjection(client, skill, path string) (string, error) {
 
 // pruneBackups keeps only the most recent maxBackups entries in one
 // skill's backup root. Best-effort: a failed prune never fails the
-// write it follows.
+// write it follows. Collection and the out-of-tree placement stay
+// skill-kind policy; the keep-newest tail is the engine's.
 func pruneBackups(root string) {
 	dirEntries, err := os.ReadDir(root)
 	if err != nil {
@@ -225,11 +228,7 @@ func pruneBackups(root string) {
 	for _, entry := range dirEntries {
 		backups = append(backups, filepath.Join(root, entry.Name()))
 	}
-	if len(backups) <= maxBackups {
-		return
-	}
-	sort.Strings(backups)
-	for _, p := range backups[:len(backups)-maxBackups] {
+	for _, p := range project.StaleBackups(backups, maxBackups) {
 		_ = os.RemoveAll(p)
 	}
 }
@@ -252,34 +251,6 @@ func removeProjection(path string) error {
 	}
 	if err := os.RemoveAll(path); err != nil {
 		return fmt.Errorf("removing %s: %w", path, err)
-	}
-	return nil
-}
-
-// atomicWriteFile writes data via a uniquely named temp file + rename in
-// the target dir (mirrors pkg/contexts).
-func atomicWriteFile(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("writing temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("closing temp file: %w", err)
-	}
-	if err := os.Chmod(tmpName, 0o644); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("setting temp file permissions: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("renaming temp file: %w", err)
 	}
 	return nil
 }

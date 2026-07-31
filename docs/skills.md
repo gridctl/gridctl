@@ -145,9 +145,25 @@ Three targets in v1:
 | `claude-code` | `~/.claude/skills/` | symlink | Requires `~/.claude` to exist. |
 | `antigravity` | `~/.gemini/config/skills/` | copy (forced) | Symlink discovery is unverified in Antigravity, so this target always copies. |
 
+`skill project status` lists only recorded projections, unlike `gridctl ctx status`, which enumerates every known client including never-synced ones. The asymmetry is deliberate: the context canon targets all clients by default, while skill projection is an explicit allow-list, so an empty table here means "nothing projected", not "nothing detected".
+
 Skills are projected by symlink where possible: the link points into the registry, so registry edits propagate instantly and a projected skill can never drift. `--copy` materializes copies instead (and copy-forced targets always do); copies get tree-hash drift detection, and a hand-edited copy is skipped on sync until you decide with `--force` (overwrite after a timestamped backup) or `unsync` (remove it).
 
-Ownership is tracked in `~/.gridctl/skillsync.lock.yaml`. A destination gridctl did not create (a skill installed by `npx skills`, or by hand) is never clobbered silently: sync skips it with guidance, `--force` backs it up first, and `unsync` refuses to touch it at all. Backups land under `~/.gridctl/skillsync-backups/<client>/<skill>/`, never inside the client's skills directory, so a backup can never surface in a client as a phantom skill. While the daemon runs, the projection set reconciles automatically after registry changes: deactivating, deleting, or updating a projected skill removes or refreshes its projections without a manual re-sync.
+Ownership is tracked in `~/.gridctl/project.lock.yaml`, the unified projection lockfile shared with `gridctl ctx` (older installs migrate their `skillsync.lock.yaml` automatically on the next sync). A destination gridctl did not create (a skill installed by `npx skills`, or by hand) is never clobbered silently: sync skips it with guidance, `--force` backs it up first, and `unsync` refuses to touch it at all. Backups land under `~/.gridctl/skillsync-backups/<client>/<skill>/`, never inside the client's skills directory, so a backup can never surface in a client as a phantom skill. While the daemon runs, the projection set reconciles automatically after registry changes: deactivating, deleting, or updating a projected skill removes or refreshes its projections without a manual re-sync.
+
+### Adopt a hand edit
+
+`--force` is not the only way out of a drifted copy. When the edit is worth keeping, pull it back into the registry instead:
+
+```bash
+gridctl skill project adopt incident-triage --client antigravity
+```
+
+Adopt reads the projected copy, backs up the registry's current `SKILL.md` as `SKILL.md.pre-<sha>` (the same convention forced updates use), writes the changed files into the registry skill, and re-syncs that one (skill, client) pair so it returns to in-sync. Other clients projecting the skill go stale until the next `gridctl skill project sync`, which is correct: the canon changed. Note the singular `--client` flag: adopt operates on exactly one pair, unlike sync/unsync's `--clients`.
+
+Adopted files count as local edits in the update flow: `gridctl skill update` sees the registry copy diverging from its import origin and refuses to overwrite it without `--force`, exactly as if the edit had been made in the registry directly. One hand-edit vocabulary, whichever side the edit landed on.
+
+Symlinked projections have nothing to adopt (the registry copy is the source of truth; edits made through the link are already in the registry), and adopt refuses empty or invalid projected content rather than truncating a skill. Exit codes follow the family convention: `0` adopted, `1` nothing to adopt, `2` infrastructure error.
 
 Two caveats. Projecting the same skill to both `claude-code` and `agents` makes clients that scan both roots (Goose, OpenCode, VS Code) discover it twice; sync warns when you do this. And projection places the whole skill directory, including `scripts/`, on paths agents actively load, so only project skills whose supporting files you trust. The security scan runs at `skill add` and `skill update` time, not at projection time, and it is a pattern scan rather than a sandbox: it reads the `SKILL.md` body and any executable or script-extension file being installed, blocking on high-severity matches and reporting the rest as warnings. Treat installing a skill the way you would treat installing software: review what a package ships before projecting it.
 

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "dry_run": true,
+  "has_failures": true,
+  "results": [
+  {
+  "skill": "alpha",
+  "client": "antigravity",
+  "channel": "copy",
+  "target": "$HOME/.gemini/config/skills/alpha",
+  "action": "skipped-drift"
+  },
+  {
+  "skill": "alpha",
+  "client": "claude-code",
+  "channel": "symlink",
+  "target": "$HOME/.claude/skills/alpha",
+  "action": "unchanged"
+  },
+  {
+  "skill": "beta",
+  "client": "antigravity",
+  "channel": "copy",
+  "target": "$HOME/.gemini/config/skills/beta",
+  "action": "would-update"
+  }
+  ]
+}

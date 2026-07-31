@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "canonical": {
+  "path": "$HOME/.gridctl/context/AGENTS.md",
+  "exists": true
+  },
+  "needs_sync": true,
+  "clients": [
+  {
+  "slug": "claude-code",
+  "name": "Claude Code",
+  "supported": true,
+  "available": true,
+  "strategy": "dedicated-file",
+  "target_path": "$HOME/.claude/rules/gridctl.md",
+  "state": "stale",
+  "synced_at": "<TS>"
+  },
+  {
+  "slug": "gemini",
+  "name": "Gemini CLI",
+  "supported": true,
+  "available": true,
+  "strategy": "import-shim",
+  "target_path": "$HOME/.gemini/GEMINI.md",
+  "state": "in-sync",
+  "synced_at": "<TS>"
+  },
+  {
+  "slug": "goose",
+  "name": "Goose",
+  "supported": true,
+  "available": false,
+  "strategy": "import-shim",
+  "target_path": "$HOME/.config/goose/.goosehints",
+  "state": "never-synced"
+  },
+  {
+  "slug": "opencode",
+  "name": "OpenCode",
+  "supported": true,
+  "available": true,
+  "strategy": "block",
+  "target_path": "$HOME/.config/opencode/AGENTS.md",
+  "state": "drifted",
+  "synced_at": "<TS>"
+  },
+  {
+  "slug": "zed",
+  "name": "Zed",
+  "supported": true,
+  "available": false,
+  "strategy": "block",
+  "target_path": "$HOME/.config/zed/AGENTS.md",
+  "state": "never-synced"
+  },
+  {
+  "slug": "cline",
+  "name": "Cline",
+  "supported": true,
+  "available": false,
+  "strategy": "block",
+  "target_path": "$HOME/.agents/AGENTS.md",
+  "state": "never-synced"
+  },
+  {
+  "slug": "grok",
+  "name": "Grok Build",
+  "supported": true,
+  "available": false,
+  "strategy": "block",
+  "target_path": "$HOME/.grok/AGENTS.md",
+  "state": "never-synced"
+  },
+  {
+  "slug": "antigravity",
+  "name": "Antigravity",
+  "supported": true,
+  "available": false,
+  "experimental": true,
+  "strategy": "block",
+  "target_path": "$HOME/.gemini/AGENTS.md",
+  "state": "never-synced"
+  },
+  {
+  "slug": "windsurf",
+  "name": "Windsurf",
+  "supported": true,
+  "available": false,
+  "strategy": "block",
+  "target_path": "$HOME/.codeium/windsurf/memories/global_rules.md",
+  "state": "never-synced"
+  },
+  {
+  "slug": "roo",
+  "name": "Roo Code",
+  "supported": true,
+  "available": false,
+  "strategy": "dedicated-file",
+  "target_path": "$HOME/.roo/rules/gridctl.md",
+  "state": "never-synced"
+  },
+  {
+  "slug": "continue",
+  "name": "Continue",
+  "supported": true,
+  "available": false,
+  "strategy": "dedicated-file",
+  "target_path": "$HOME/.continue/rules/gridctl.md",
+  "state": "never-synced"
+  },
+  {
+  "slug": "vscode",
+  "name": "VS Code (Copilot)",
+  "supported": true,
+  "available": false,
+  "strategy": "dedicated-file",
+  "target_path": "$HOME/.copilot/instructions/gridctl.instructions.md",
+  "state": "never-synced"
+  },
+  {
+  "slug": "claude",
+  "name": "Claude Desktop",
+  "supported": false,
+  "available": false,
+  "state": "unsupported",
+  "detail": "instructions live in the app UI; no global context file"
+  },
+  {
+  "slug": "cursor",
+  "name": "Cursor",
+  "supported": false,
+  "available": false,
+  "state": "unsupported",
+  "detail": "global User Rules are stored in app-internal storage; no supported file path"
+  },
+  {
+  "slug": "anythingllm",
+  "name": "AnythingLLM",
+  "supported": false,
+  "available": false,
+  "state": "unsupported",
+  "detail": "workspace system prompt is UI/API only; no context file"
+  }
+  ]
+}

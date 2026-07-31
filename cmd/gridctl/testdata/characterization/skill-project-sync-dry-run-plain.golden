@@ -1,0 +1,6 @@
+SKILL  CLIENT  CHANNEL  ACTION  TARGET
+alpha  antigravity  copy  ✗ skipped-drift  $HOME/.gemini/config/skills/alpha
+alpha  claude-code  symlink  ✓ unchanged  $HOME/.claude/skills/alpha
+beta  antigravity  copy  — would-update  $HOME/.gemini/config/skills/beta
+
+alpha → antigravity: projected copy was hand-edited. Overwrite with 'gridctl skill project sync alpha --clients antigravity --force', or remove it with 'gridctl skill project unsync alpha --clients antigravity'

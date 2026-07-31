@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
@@ -107,6 +108,7 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkNpx(&checks)
 	checkStateDir(ctx, &checks)
 	checkStaleState(ctx, &checks)
+	checkProjectLockfile(ctx, &checks)
 	checkProtocolGenerations(ctx, &checks)
 	checkVault(ctx, &checks)
 
@@ -292,6 +294,38 @@ func checkStaleState(ctx context.Context, checks *[]doctorCheck) {
 		return
 	}
 	*checks = append(*checks, doctorCheck{ID: "state.stale", Status: doctorStatusOK, Message: "no stale state files"})
+}
+
+// checkProjectLockfile reports the projection lockfile state: the
+// unified pkg/project lockfile, legacy pre-unification lockfiles that
+// migrate on the next sync, or the corrupt case of a migration
+// tombstone with no unified file behind it.
+func checkProjectLockfile(ctx context.Context, checks *[]doctorCheck) {
+	if err := ctx.Err(); err != nil {
+		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusInfo, Message: "skipped (cancelled)"})
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusWarn, Message: fmt.Sprintf("home directory unavailable: %v", err)})
+		return
+	}
+	st := project.InspectLockfiles(home)
+	switch {
+	case st.Unified:
+		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusOK, Message: "unified project lockfile in use (" + st.UnifiedPath + ")"})
+	case len(st.Tombstones) > 0:
+		*checks = append(*checks, doctorCheck{
+			ID:     "project.lockfile",
+			Status: doctorStatusFail,
+			Message: fmt.Sprintf("migration tombstone at %s but %s is missing; restore it from %s",
+				strings.Join(st.Tombstones, ", "), st.UnifiedPath, st.BackupRoot),
+		})
+	case st.LegacySkill || st.LegacyContext:
+		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusOK, Message: "legacy projection lockfiles in use (migrate to " + st.UnifiedPath + " on the next sync)"})
+	default:
+		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusOK, Message: "no projection lockfile yet (nothing projected)"})
+	}
 }
 
 // checkProtocolGenerations reports each running stack's per-server

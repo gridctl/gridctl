@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "dry_run": true,
+  "has_failures": true,
+  "results": [
+  {
+  "slug": "claude-code",
+  "name": "Claude Code",
+  "strategy": "dedicated-file",
+  "target_path": "$HOME/.claude/rules/gridctl.md",
+  "action": "would-update",
+  "diff": "--- $HOME/.claude/rules/gridctl.md (current)\n+++ $HOME/.claude/rules/gridctl.md (after sync)\n@@ -3,4 +3,5 @@\n # Rules\n \n - One.\n+- Two.\n \n"
+  },
+  {
+  "slug": "gemini",
+  "name": "Gemini CLI",
+  "strategy": "import-shim",
+  "target_path": "$HOME/.gemini/GEMINI.md",
+  "action": "unchanged"
+  },
+  {
+  "slug": "goose",
+  "name": "Goose",
+  "strategy": "import-shim",
+  "target_path": "$HOME/.config/goose/.goosehints",
+  "action": "skipped-unavailable"
+  },
+  {
+  "slug": "opencode",
+  "name": "OpenCode",
+  "strategy": "block",
+  "target_path": "$HOME/.config/opencode/AGENTS.md",
+  "action": "skipped-drift"
+  },
+  {
+  "slug": "zed",
+  "name": "Zed",
+  "strategy": "block",
+  "target_path": "$HOME/.config/zed/AGENTS.md",
+  "action": "skipped-unavailable"
+  },
+  {
+  "slug": "cline",
+  "name": "Cline",
+  "strategy": "block",
+  "target_path": "$HOME/.agents/AGENTS.md",
+  "action": "skipped-unavailable"
+  },
+  {
+  "slug": "grok",
+  "name": "Grok Build",
+  "strategy": "block",
+  "target_path": "$HOME/.grok/AGENTS.md",
+  "action": "skipped-unavailable"
+  },
+  {
+  "slug": "antigravity",
+  "name": "Antigravity",
+  "strategy": "block",
+  "target_path": "$HOME/.gemini/AGENTS.md",
+  "action": "skipped-unavailable"
+  },
+  {
+  "slug": "windsurf",
+  "name": "Windsurf",
+  "strategy": "block",
+  "target_path": "$HOME/.codeium/windsurf/memories/global_rules.md",
+  "action": "skipped-unavailable"
+  },
+  {
+  "slug": "roo",
+  "name": "Roo Code",
+  "strategy": "dedicated-file",
+  "target_path": "$HOME/.roo/rules/gridctl.md",
+  "action": "skipped-unavailable"
+  },
+  {
+  "slug": "continue",
+  "name": "Continue",
+  "strategy": "dedicated-file",
+  "target_path": "$HOME/.continue/rules/gridctl.md",
+  "action": "skipped-unavailable"
+  },
+  {
+  "slug": "vscode",
+  "name": "VS Code (Copilot)",
+  "strategy": "dedicated-file",
+  "target_path": "$HOME/.copilot/instructions/gridctl.instructions.md",
+  "action": "skipped-unavailable"
+  }
+  ]
+}

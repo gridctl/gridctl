@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/gridctl/gridctl/pkg/project"
 )
 
 // Sentinel errors callers branch on.
@@ -31,8 +33,6 @@ var (
 // is itself readable by AGENTS.md-native tools (and symlinkable into a
 // dotfiles repo).
 const canonicalFileName = "AGENTS.md"
-
-const lockFileName = "context.lock.yaml"
 
 // starterTemplate is the scaffold written by `ctx init` with no import
 // source. Deliberately short: a bloated global file pollutes every
@@ -64,11 +64,13 @@ const starterTemplate = `# Global Agent Context
 // Manager owns the canonical global context store under
 // <home>/.gridctl/context and every projection into client files. All
 // target paths resolve against home, so tests point it at a temp dir.
-// Mutating operations serialize on mu so concurrent API requests never
-// interleave lockfile read-modify-write cycles.
+// Mutating operations serialize on mu in-process and on the engine's
+// cross-process lock (shared with skill projections, so a slow context
+// sync can briefly block a skill sync and vice versa).
 type Manager struct {
-	home string
-	mu   sync.Mutex
+	home  string
+	store *project.Store
+	mu    sync.Mutex
 }
 
 // NewManager builds a Manager rooted at the user's home directory.
@@ -83,7 +85,7 @@ func NewManager() (*Manager, error) {
 // NewManagerWithHome builds a Manager rooted at an explicit home
 // directory. Tests use this to stay isolated from $HOME.
 func NewManagerWithHome(home string) *Manager {
-	return &Manager{home: home}
+	return &Manager{home: home, store: project.NewStore(home)}
 }
 
 // Dir returns the canonical store directory.
@@ -96,9 +98,10 @@ func (m *Manager) CanonicalPath() string {
 	return filepath.Join(m.Dir(), canonicalFileName)
 }
 
-// lockPath returns the lock file path.
+// lockPath returns the projection lockfile path (the unified engine
+// lockfile shared with skill projections).
 func (m *Manager) lockPath() string {
-	return filepath.Join(m.Dir(), lockFileName)
+	return m.store.Path()
 }
 
 // HasCanonical reports whether the canonical file exists.

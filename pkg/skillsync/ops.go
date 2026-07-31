@@ -10,37 +10,39 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/registry"
 )
 
-// Projection states, sharing the pkg/contexts vocabulary. Symlink
+// Projection states, from the engine's shared vocabulary. Symlink
 // projections of active skills are never content-stale (the link
 // references the registry directly), but any projection goes stale
 // when its skill leaves the active set: the pending action is removal.
 const (
-	StateInSync        = "in-sync"
-	StateStale         = "stale"
-	StateDrifted       = "drifted"
-	StateTargetMissing = "target-missing"
+	StateInSync        = project.StateInSync
+	StateStale         = project.StateStale
+	StateDrifted       = project.StateDrifted
+	StateTargetMissing = project.StateTargetMissing
 )
 
-// Sync result actions.
+// Sync result actions. Shared ones come from the engine; the rest are
+// skill-kind extensions.
 const (
 	ActionLinked             = "linked"
 	ActionCopied             = "copied"
-	ActionUpdated            = "updated"
-	ActionUnchanged          = "unchanged"
+	ActionUpdated            = project.ActionUpdated
+	ActionUnchanged          = project.ActionUnchanged
 	ActionRemoved            = "removed"
-	ActionSkippedDrift       = "skipped-drift"
+	ActionSkippedDrift       = project.ActionSkippedDrift
 	ActionSkippedUnmanaged   = "skipped-unmanaged"
-	ActionSkippedUnavailable = "skipped-unavailable"
+	ActionSkippedUnavailable = project.ActionSkippedUnavailable
 	ActionSkippedEmptyStore  = "skipped-empty-store"
 	ActionWouldLink          = "would-link"
 	ActionWouldCopy          = "would-copy"
-	ActionWouldUpdate        = "would-update"
+	ActionWouldUpdate        = project.ActionWouldUpdate
 	ActionWouldRemove        = "would-remove"
 	ActionAlreadyGone        = "already-gone"
-	ActionError              = "error"
+	ActionError              = project.ActionError
 )
 
 // SyncOptions configure a sync pass.
@@ -136,15 +138,13 @@ func (m *Manager) Sync(ctx context.Context, names []string, opts SyncOptions) ([
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var results []SyncResult
-	err := m.withFileLock(ctx, func() error {
-		lf, err := readLockFile(m.LockPath())
-		if err != nil {
-			return err
-		}
+	err := m.store.Mutate(ctx, opts.DryRun, func(pl *project.Lock) error {
+		lf := viewFromLock(pl)
+		var err error
 		if len(names) == 0 {
-			results, err = m.reconcileLocked(ctx, lf, opts)
+			results, err = m.reconcileLocked(ctx, pl, lf, opts)
 		} else {
-			results, err = m.syncNamedLocked(ctx, lf, names, opts)
+			results, err = m.syncNamedLocked(ctx, pl, lf, names, opts)
 		}
 		return err
 	})
@@ -163,18 +163,18 @@ func (m *Manager) Sync(ctx context.Context, names []string, opts SyncOptions) ([
 // and acting on it would mass-remove every projection. Explicit
 // `gridctl skill project sync` and `unsync` keep full authority.
 func (m *Manager) Reconcile(ctx context.Context) ([]SyncResult, error) {
-	has, err := m.HasProjections()
+	has, err := m.hasProjections(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !has {
 		return nil, nil
 	}
-	if len(m.store.ActiveSkills()) == 0 {
+	if len(m.source.ActiveSkills()) == 0 {
 		return []SyncResult{{
 			Action: ActionSkippedEmptyStore,
 			Error: fmt.Sprintf("registry %s reports no active skills while %s records projections; if this is intentional, run 'gridctl skill project sync' to reconcile explicitly",
-				m.store.Dir(), m.LockPath()),
+				m.source.Dir(), m.LockPath()),
 		}}, nil
 	}
 	return m.Sync(ctx, nil, SyncOptions{})
@@ -194,20 +194,20 @@ func resultRecorded(action string) bool {
 // result, so a crash mid-pass never leaves artifacts on disk that the
 // lockfile does not own (which the next sync would refuse to touch as
 // foreign paths).
-func (m *Manager) persistIfRecorded(lf *LockFile, res SyncResult, dryRun bool) error {
+func (m *Manager) persistIfRecorded(pl *project.Lock, lf *LockFile, res SyncResult, dryRun bool) error {
 	if dryRun || !resultRecorded(res.Action) {
 		return nil
 	}
-	return writeLockFile(m.LockPath(), lf)
+	return saveView(pl, lf)
 }
 
 // syncNamedLocked validates and materializes named skills. All names are
 // validated before any disk write, so a typo never half-projects.
-func (m *Manager) syncNamedLocked(ctx context.Context, lf *LockFile, names []string, opts SyncOptions) ([]SyncResult, error) {
+func (m *Manager) syncNamedLocked(ctx context.Context, pl *project.Lock, lf *LockFile, names []string, opts SyncOptions) ([]SyncResult, error) {
 	skillsByName := make(map[string]*registry.AgentSkill, len(names))
 	var bad []string
 	for _, name := range names {
-		sk, err := m.store.GetSkill(name)
+		sk, err := m.source.GetSkill(name)
 		if err != nil {
 			bad = append(bad, name+" (not found)")
 			continue
@@ -239,7 +239,7 @@ func (m *Manager) syncNamedLocked(ctx context.Context, lf *LockFile, names []str
 			}
 			res := m.materialize(sk, t, t.channel(opts.Copy), lf, opts)
 			results = append(results, res)
-			if err := m.persistIfRecorded(lf, res, opts.DryRun); err != nil {
+			if err := m.persistIfRecorded(pl, lf, res, opts.DryRun); err != nil {
 				return results, err
 			}
 		}
@@ -278,7 +278,7 @@ func (m *Manager) resolveTargets(slugs []string) (targets, skipped []Target, err
 // reconcileLocked re-materializes every recorded projection, removing
 // those whose skill is gone or no longer active. Reconcile never forces
 // over a drifted copy; that stays an explicit user decision.
-func (m *Manager) reconcileLocked(ctx context.Context, lf *LockFile, opts SyncOptions) ([]SyncResult, error) {
+func (m *Manager) reconcileLocked(ctx context.Context, pl *project.Lock, lf *LockFile, opts SyncOptions) ([]SyncResult, error) {
 	clientFilter := map[string]bool{}
 	for _, c := range opts.Clients {
 		clientFilter[c] = true
@@ -292,11 +292,11 @@ func (m *Manager) reconcileLocked(ctx context.Context, lf *LockFile, opts SyncOp
 			continue
 		}
 		entry := lf.entry(key.skill, key.client)
-		sk, gerr := m.store.GetSkill(key.skill)
+		sk, gerr := m.source.GetSkill(key.skill)
 		if gerr != nil || sk.State != registry.StateActive {
 			res := m.removeOne(key.skill, key.client, entry, lf, opts.DryRun)
 			results = append(results, res)
-			if err := m.persistIfRecorded(lf, res, opts.DryRun); err != nil {
+			if err := m.persistIfRecorded(pl, lf, res, opts.DryRun); err != nil {
 				return results, err
 			}
 			continue
@@ -312,7 +312,7 @@ func (m *Manager) reconcileLocked(ctx context.Context, lf *LockFile, opts SyncOp
 		// Preserve the recorded channel, unless the table now forces one.
 		res := m.materialize(sk, t, t.channel(entry.Channel == ChannelCopy), lf, opts)
 		results = append(results, res)
-		if err := m.persistIfRecorded(lf, res, opts.DryRun); err != nil {
+		if err := m.persistIfRecorded(pl, lf, res, opts.DryRun); err != nil {
 			return results, err
 		}
 	}
@@ -504,7 +504,7 @@ func (m *Manager) record(lf *LockFile, skill, client string, ch Channel, target,
 // projection set, sorted by skill then client. Reads are lock-free: the
 // lockfile is written atomically.
 func (m *Manager) Statuses(ctx context.Context) ([]ProjectionStatus, error) {
-	lf, err := readLockFile(m.LockPath())
+	lf, err := m.loadView(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -532,7 +532,7 @@ func (m *Manager) statusFor(skill, client string, entry *Entry) ProjectionStatus
 		ps.Experimental = t.Experimental
 	}
 
-	sk, gerr := m.store.GetSkill(skill)
+	sk, gerr := m.source.GetSkill(skill)
 	skillActive := gerr == nil && sk.State == registry.StateActive
 	if !skillActive {
 		ps.State = StateStale
@@ -609,11 +609,8 @@ func (m *Manager) Unsync(ctx context.Context, names []string, opts UnsyncOptions
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var results []UnsyncResult
-	err := m.withFileLock(ctx, func() error {
-		lf, err := readLockFile(m.LockPath())
-		if err != nil {
-			return err
-		}
+	err := m.store.Mutate(ctx, opts.DryRun, func(pl *project.Lock) error {
+		lf := viewFromLock(pl)
 		selected := map[string]bool{}
 		if !opts.All {
 			var missing []string
@@ -668,7 +665,7 @@ func (m *Manager) Unsync(ctx context.Context, names []string, opts UnsyncOptions
 			// resurrect the skill the user just unsynced.
 			lf.remove(key.skill, key.client)
 			results = append(results, res)
-			if err := writeLockFile(m.LockPath(), lf); err != nil {
+			if err := saveView(pl, lf); err != nil {
 				return err
 			}
 		}
