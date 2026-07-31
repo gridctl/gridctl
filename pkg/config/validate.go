@@ -81,6 +81,7 @@ func Validate(s *Stack) error {
 
 	// Gateway output_format validation
 	validOutputFormats := map[string]bool{"json": true, "toon": true, "csv": true, "text": true}
+	validProtocolGenerations := map[string]bool{"auto": true, "handshake": true, "stateless": true}
 	if s.Gateway != nil && s.Gateway.OutputFormat != "" {
 		if !validOutputFormats[s.Gateway.OutputFormat] {
 			errs = append(errs, ValidationError{"gateway.output_format", "must be one of: json, toon, csv, text"})
@@ -402,6 +403,13 @@ func Validate(s *Stack) error {
 		// Per-server output_format validation
 		if server.OutputFormat != "" && !validOutputFormats[server.OutputFormat] {
 			errs = append(errs, ValidationError{prefix + ".output_format", "must be one of: json, toon, csv, text"})
+		}
+
+		// protocol_generation validation. Unknown values must be
+		// rejected: a typo like "statless" would silently re-enable the
+		// probe the operator was trying to bypass.
+		if server.ProtocolGeneration != "" && !validProtocolGenerations[server.ProtocolGeneration] {
+			errs = append(errs, ValidationError{prefix + ".protocol_generation", "must be one of: auto, handshake, stateless"})
 		}
 
 		// ready_timeout validation: must parse as a duration and be non-negative.
