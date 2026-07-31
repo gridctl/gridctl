@@ -403,6 +403,28 @@ func TestPinStore_ApprovePinnedAtPreserved(t *testing.T) {
 	}
 }
 
+// TestVerifyOrPinNeverCreatesRealPinsDir guards saveLocked against
+// resolving state.PinsDir(): a store with an injected path must create
+// only that path's directory, never the home pins directory.
+func TestPinStore_VerifyOrPinNeverCreatesRealPinsDir(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	dir := filepath.Join(t.TempDir(), "nested")
+	ps := NewWithPath(dir, "teststack")
+	tools := []mcp.Tool{{Name: "t", Description: "d", InputSchema: json.RawMessage(`{}`)}}
+	if _, err := ps.VerifyOrPin("srv", tools); err != nil {
+		t.Fatalf("VerifyOrPin: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "teststack.json")); err != nil {
+		t.Fatalf("pin file not created in injected dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(fakeHome, ".gridctl", "pins")); !os.IsNotExist(err) {
+		t.Error("home pins directory must not be created by an injected-path store")
+	}
+}
+
 // --- helpers ---
 
 // newTestStore creates a PinStore backed by a temp directory.
