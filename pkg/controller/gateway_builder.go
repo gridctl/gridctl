@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ import (
 	"github.com/gridctl/gridctl/internal/api"
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/flags"
 	"github.com/gridctl/gridctl/pkg/limits"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -96,6 +98,18 @@ type GatewayBuilder struct {
 	// observations; the observer's resolver closure reads through it on
 	// every call.
 	modelAttribution atomic.Pointer[modelAttribution]
+
+	// experimentalFlags holds the resolved experimental flag display list
+	// (enabled flags only, sorted). Stored behind an atomic pointer so the
+	// hot-reload hook can swap it without racing the /api/status features
+	// closure.
+	experimentalFlags atomic.Pointer[experimentalState]
+}
+
+// experimentalState is the resolved experimental flag set derived from a
+// stack's `experimental:` map plus GRIDCTL_EXPERIMENTAL_* env overrides.
+type experimentalState struct {
+	features []api.FeatureStatus
 }
 
 // modelAttribution is the resolved cost-attribution state derived from a
@@ -621,6 +635,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	accumulator := metrics.NewAccumulator(10000)
 	observer := metrics.NewObserver(counter, accumulator)
 	b.wireModelAttribution(observer, server)
+	b.wireExperimentalFlags(server, handler)
 	gateway.SetToolCallObserver(observer)
 	gateway.SetPromptGetObserver(observer)
 	gateway.SetTokenCounter(counter)
@@ -1086,6 +1101,57 @@ func (b *GatewayBuilder) wireModelAttribution(observer *metrics.Observer, apiSer
 	})
 }
 
+// wireExperimentalFlags resolves the stack's experimental flag map and
+// exposes the enabled set to /api/status as the features payload. The getter
+// closure reads through an atomic pointer so hot reloads of `experimental:`
+// (via refreshExperimentalFlags in the onConfigApplied hook) are reflected
+// without re-wiring.
+func (b *GatewayBuilder) wireExperimentalFlags(apiServer *api.Server, handler slog.Handler) {
+	logger := slog.Default()
+	if handler != nil {
+		logger = slog.New(handler)
+	}
+	b.refreshExperimentalFlags(b.stack, logger)
+	apiServer.SetFeatures(func() []api.FeatureStatus {
+		state := b.experimentalFlags.Load()
+		if state == nil {
+			return nil
+		}
+		return state.features
+	})
+}
+
+// refreshExperimentalFlags re-resolves the experimental flag set from the
+// given stack (YAML map plus env overrides). Called at build time and from
+// the hot-reload hook so `experimental:` edits take effect without restart.
+// Resolution warnings (unknown names, concluded flags, malformed env
+// overrides) are logged; they never block anything.
+func (b *GatewayBuilder) refreshExperimentalFlags(cfg *config.Stack, logger *slog.Logger) {
+	reg := flags.Default()
+	res := flags.Resolve(reg, cfg.Experimental)
+	for _, w := range res.Warnings {
+		logger.Warn("experimental flag issue", "flag", w.Name, "detail", w.Message)
+	}
+	names := make([]string, 0, len(res.Enabled))
+	for name := range res.Enabled {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	features := make([]api.FeatureStatus, 0, len(names))
+	for _, name := range names {
+		f, ok := reg.Lookup(name)
+		if !ok {
+			continue
+		}
+		features = append(features, api.FeatureStatus{
+			Name:        f.Name,
+			Stage:       string(f.Stage),
+			Description: f.Description,
+		})
+	}
+	b.experimentalFlags.Store(&experimentalState{features: features})
+}
+
 // refreshModelAttribution re-resolves the client and server model mappings
 // from the given stack. Called at build time and from the hot-reload hook so
 // `client_models:`, `model:`, and `default_model:` edits take effect on the
@@ -1186,6 +1252,9 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// Re-resolve cost attribution so `client_models:`, `model:`, and
 		// `default_model:` edits price subsequent calls without a restart.
 		b.refreshModelAttribution(newCfg)
+		// Re-resolve experimental flags so `experimental:` edits reach
+		// /api/status (and everything gated on a flag) without restart.
+		b.refreshExperimentalFlags(newCfg, slog.New(handler))
 		// Rebuild the limits policy so `limits:` edits enforce on the next
 		// call. Current-window spend carries over for unchanged entries;
 		// raising a cap mid-window never refills spent budget.

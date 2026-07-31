@@ -79,6 +79,12 @@ type Server struct {
 	// or "" when none is configured. Must be safe for concurrent calls.
 	defaultModel func() string
 
+	// features returns the enabled experimental flags (stack.yaml
+	// `experimental:` plus env overrides), for the /api/status features
+	// payload. Nil means no flag support is wired. Must be safe for
+	// concurrent calls and must reflect hot-reload swaps.
+	features func() []FeatureStatus
+
 	// limitsStatus returns the budgets/rate-limits consumption snapshot for
 	// GET /api/limits. Nil means the builder wired no limits support (the
 	// endpoint then reports configured: false). Must be safe for concurrent
@@ -243,6 +249,31 @@ func (s *Server) SetTokenizerName(name string) {
 // /api/status cost_attribution flag.
 func (s *Server) SetModelAttribution(get func() map[string]string) {
 	s.modelAttribution = get
+}
+
+// FeatureStatus is one enabled experimental flag as exposed on /api/status.
+// Read-only display metadata: the UI never toggles flags (they are configured
+// in stack.yaml and cannot be changed from the browser).
+type FeatureStatus struct {
+	Name        string `json:"name"`
+	Stage       string `json:"stage"`
+	Description string `json:"description"`
+}
+
+// SetFeatures sets a getter for the enabled experimental flag list. The
+// getter (rather than a static slice) lets hot reloads of `experimental:`
+// reach /api/status without re-wiring; it must be safe for concurrent calls.
+func (s *Server) SetFeatures(get func() []FeatureStatus) {
+	s.features = get
+}
+
+// featureList returns the enabled experimental flags, or nil when no getter
+// is wired or nothing is enabled.
+func (s *Server) featureList() []FeatureStatus {
+	if s.features == nil {
+		return nil
+	}
+	return s.features()
 }
 
 // SetClientModelAttribution sets a getter for the client ID -> model mapping
@@ -603,6 +634,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		EffectiveClientModels map[string]EffectiveModel `json:"effective_client_models,omitempty"`
 		EffectiveServerModels map[string]EffectiveModel `json:"effective_server_models,omitempty"`
 		StackName             string                    `json:"stack_name,omitempty"`
+		// Features maps each ENABLED experimental flag name to true —
+		// the capability-bit view for UI gating. Omitted when nothing is
+		// enabled so the no-flags payload is byte-identical to before.
+		Features map[string]bool `json:"features,omitempty"`
+		// FeatureDetails carries the display metadata (stage, description)
+		// for the same enabled flags, for the read-only spec panel rows.
+		FeatureDetails []FeatureStatus `json:"feature_details,omitempty"`
 	}{
 		Gateway: ServerInfo{
 			Name:      s.gateway.ServerInfo().Name,
@@ -640,6 +678,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status.ServerModels = s.modelAttributionMap()
 	status.DefaultModel = s.defaultModelValue()
 	status.CostAttribution = len(status.ServerModels) > 0 || len(status.ClientModels) > 0
+	if features := s.featureList(); len(features) > 0 {
+		status.FeatureDetails = features
+		status.Features = make(map[string]bool, len(features))
+		for _, f := range features {
+			status.Features[f.Name] = true
+		}
+	}
 
 	writeJSON(w, status)
 }

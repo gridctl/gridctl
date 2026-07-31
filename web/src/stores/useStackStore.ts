@@ -12,6 +12,7 @@ import type {
   TokenUsage,
   CostUsage,
   EffectiveModel,
+  FeatureDetail,
   ConnectionStatus,
   AutoscaleDecisionKind,
 } from '../types';
@@ -71,6 +72,8 @@ interface StackState {
   effectiveClientModels: Record<string, EffectiveModel>;
   effectiveServerModels: Record<string, EffectiveModel>;
   stackName: string;        // Active stack name; empty string in stackless mode
+  features: Record<string, boolean>;  // Enabled experimental flags, name -> true
+  featureDetails: FeatureDetail[];    // Display metadata for the same flags (read-only)
 
   // === React Flow State ===
   nodes: Node[];
@@ -149,6 +152,8 @@ export const useStackStore = create<StackState>()(
     effectiveServerModels: {},
     defaultModel: '',
     stackName: '',
+    features: {},
+    featureDetails: [],
     nodes: [],
     edges: [],
     draggedPositions: new Map(),
@@ -210,6 +215,8 @@ export const useStackStore = create<StackState>()(
         effectiveServerModels: status.effective_server_models ?? {},
         defaultModel: status.default_model ?? '',
         stackName: status.stack_name || '',
+        features: status.features ?? {},
+        featureDetails: status.feature_details ?? [],
         autoscaleHistory: folded.history,
         autoscaleDecisions: folded.decisions,
         autoscaleLastSeen: folded.lastSeen,

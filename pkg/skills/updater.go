@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/gridctl/gridctl/pkg/env"
 )
 
 // UpdateStatus records the result of a background update check.
@@ -74,8 +76,10 @@ func WriteUpdateCacheAt(path string, status *UpdateStatus) error {
 }
 
 // ShouldCheckUpdates returns false if update checks are disabled.
+// GRIDCTL_NO_SKILL_UPDATE_CHECK accepts the shared boolean vocabulary
+// (env.Bool); a malformed value is ignored and checks proceed.
 func ShouldCheckUpdates() bool {
-	if os.Getenv("GRIDCTL_NO_SKILL_UPDATE_CHECK") == "1" {
+	if disabled, err := env.Bool("GRIDCTL_NO_SKILL_UPDATE_CHECK"); err == nil && disabled != nil && *disabled {
 		return false
 	}
 	if os.Getenv("CI") == "true" {

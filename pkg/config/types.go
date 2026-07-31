@@ -29,6 +29,14 @@ type Stack struct {
 	// `extends` (matching clients/groups/limits).
 	Link []LinkEntry `yaml:"link,omitempty" json:"link,omitempty"`
 
+	// Experimental enables registered experimental feature flags by name
+	// (see pkg/flags for the registry and lifecycle). Omitted (the default)
+	// enables nothing — Article IX by construction. Unknown, graduated, and
+	// removed names warn at validate and apply time but never block a
+	// deploy. Deliberately typed map[string]bool so YAML 1.1 boolean
+	// spellings (on/yes) decode as booleans.
+	Experimental map[string]bool `yaml:"experimental,omitempty" json:"experimental,omitempty"`
+
 	// ClientModels declares which model each connecting client runs, purely
 	// for cost attribution: tool calls from a declared client are priced at
 	// that model's rates ahead of any per-server model or gateway
@@ -334,10 +342,8 @@ type GatewayConfig struct {
 
 	// CodeMode controls whether the gateway replaces individual tool definitions
 	// with two meta-tools (search + execute). Values: "off" (default), "on".
-	// Experimental: may change without notice.
 	CodeMode string `yaml:"code_mode,omitempty"`
 	// CodeModeTimeout is the execution timeout in seconds (default: 30).
-	// Experimental: may change without notice.
 	CodeModeTimeout int `yaml:"code_mode_timeout,omitempty"`
 
 	// OutputFormat sets the default output format for tool call results.

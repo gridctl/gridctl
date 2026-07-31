@@ -180,6 +180,13 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `effective_server_models` | map | Server -> `{model, provenance, share, models}` reporting which model priced each server's cost (`provenance` is `declared`, `mixed`, or `none`) |
 | `effective_client_models` | map | Client -> effective-model object, same shape as above |
 
+**Experimental flag fields** appear at the top level when any experimental flag is enabled (via the stack's `experimental:` block or a `GRIDCTL_EXPERIMENTAL_*` env override), and are omitted otherwise:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `features` | map | Each enabled flag name mapped to `true` — the capability-bit view for UI gating |
+| `feature_details` | array | `{name, stage, description}` display metadata for the same flags, sorted by name. Read-only: flags are configured in `stack.yaml`, never toggled over the API |
+
 #### `GET /api/sessions`
 
 Returns the active Streamable HTTP MCP session count and the list of session IDs.

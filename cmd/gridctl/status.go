@@ -35,6 +35,9 @@ type statusGatewayJSON struct {
 	Status    string    `json:"status"`
 	StartedAt time.Time `json:"started_at"`
 	CodeMode  string    `json:"code_mode,omitempty"`
+	// Features mirrors /api/status features: each enabled experimental
+	// flag mapped to true. Omitted when nothing is enabled.
+	Features map[string]bool `json:"features,omitempty"`
 }
 
 // statusContainerJSON is one container entry of `gridctl status --json`.
@@ -130,9 +133,10 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 			Status:  status,
 			Started: formatDuration(time.Since(s.StartedAt)),
 		}
-		// Query the running gateway for code mode status
+		// Query the running gateway for code mode and experimental flag status
+		var features map[string]bool
 		if status == "running" {
-			gw.CodeMode = queryCodeMode(s.Port)
+			gw.CodeMode, features = queryGatewayStatus(s.Port)
 		}
 		gateways = append(gateways, gw)
 		gatewaysJSON = append(gatewaysJSON, statusGatewayJSON{
@@ -142,6 +146,7 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 			Status:    status,
 			StartedAt: s.StartedAt,
 			CodeMode:  gw.CodeMode,
+			Features:  features,
 		})
 	}
 
@@ -546,23 +551,25 @@ func formatUptime(d time.Duration) string {
 	}
 }
 
-// queryCodeMode queries a running gateway's API for code mode status.
-// Returns "on" if active, empty string otherwise.
-func queryCodeMode(port int) string {
+// queryGatewayStatus queries a running gateway's API for code mode status
+// ("on" if active, empty otherwise) and the enabled experimental flag map
+// (nil when nothing is enabled).
+func queryGatewayStatus(port int) (codeMode string, features map[string]bool) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/status", port))
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	defer resp.Body.Close()
 
 	var status struct {
-		CodeMode string `json:"code_mode"`
+		CodeMode string          `json:"code_mode"`
+		Features map[string]bool `json:"features"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&status) == nil {
-		return status.CodeMode
+		return status.CodeMode, status.Features
 	}
-	return ""
+	return "", nil
 }
 
 // loadPinLabels loads pin status for all provided stacks and returns a map

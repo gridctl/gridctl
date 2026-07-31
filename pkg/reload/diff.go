@@ -33,6 +33,10 @@ type ConfigDiff struct {
 	// Like ClientsChanged it needs only an in-memory policy rebuild via the
 	// onConfigApplied hook but must still mark the diff non-empty.
 	GroupsChanged bool
+	// ExperimentalChanged indicates the `experimental:` flag map changed.
+	// Like ClientsChanged it needs only an in-memory flag re-resolution via
+	// the onConfigApplied hook but must still mark the diff non-empty.
+	ExperimentalChanged bool
 }
 
 // MCPServerDiff contains changes to MCP servers.
@@ -80,7 +84,8 @@ func (d *ConfigDiff) IsEmpty() bool {
 		!d.ClientsChanged &&
 		!d.ModelAttributionChanged &&
 		!d.LimitsChanged &&
-		!d.GroupsChanged
+		!d.GroupsChanged &&
+		!d.ExperimentalChanged
 }
 
 // ComputeDiff computes the differences between two stack configurations.
@@ -108,7 +113,18 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect tool-group (`groups:`) changes
 	diff.GroupsChanged = groupsChanged(old, new)
 
+	// Detect experimental flag (`experimental:`) changes
+	diff.ExperimentalChanged = experimentalChanged(old, new)
+
 	return diff
+}
+
+// experimentalChanged reports whether the `experimental:` flag map differs
+// between two stacks. A change needs only the resolved flag set rebuilt (via
+// the reload's onConfigApplied hook); no containers are touched. maps.Equal
+// handles the nil-to-set transitions directly.
+func experimentalChanged(old, new *config.Stack) bool {
+	return !maps.Equal(old.Experimental, new.Experimental)
 }
 
 // groupsChanged reports whether the `groups:` block differs between two
