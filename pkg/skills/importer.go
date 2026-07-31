@@ -97,6 +97,10 @@ type ImportResult struct {
 	Imported []ImportedSkill `json:"imported"`
 	Skipped  []SkippedSkill  `json:"skipped"`
 	Warnings []string        `json:"warnings"`
+	// ImportedAgents and SkippedAgents record agent definitions the same
+	// import discovered under the agents/*.md convention.
+	ImportedAgents []ImportedAgent `json:"importedAgents,omitempty"`
+	SkippedAgents  []SkippedAgent  `json:"skippedAgents,omitempty"`
 }
 
 // ImportedSkill records a successfully imported skill.
@@ -110,10 +114,22 @@ type ImportedSkill struct {
 	Findings    []SecurityFinding `json:"findings,omitempty"`
 }
 
-// SkippedSkill records a skill that was skipped during import.
+// SkippedSkill records a skill (or agent) that was skipped during import.
 type SkippedSkill struct {
 	Name   string `json:"name"`
 	Reason string `json:"reason"`
+}
+
+// SkippedAgent aliases SkippedSkill so agent call sites read as what
+// they are; the shape and JSON encoding are identical.
+type SkippedAgent = SkippedSkill
+
+// ImportedAgent records a successfully imported agent definition.
+type ImportedAgent struct {
+	Name     string            `json:"name"`
+	Path     string            `json:"path"`
+	Origin   *Origin           `json:"origin,omitempty"`
+	Findings []SecurityFinding `json:"findings,omitempty"`
 }
 
 // Importer orchestrates the skill import process.
@@ -172,14 +188,17 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		return nil, err
 	}
 
-	if len(result.Skills) == 0 {
+	if len(result.Skills) == 0 && len(result.Agents) == 0 {
 		if len(result.Malformed) > 0 {
 			return nil, fmt.Errorf("no importable skills found: %s", summarizeMalformed(result.Malformed))
 		}
-		return nil, fmt.Errorf("no SKILL.md files found in repository")
+		if len(result.MalformedAgents) > 0 {
+			return nil, fmt.Errorf("no importable agents found: %s", summarizeMalformed(result.MalformedAgents))
+		}
+		return nil, fmt.Errorf("no SKILL.md or agents/*.md files found in repository")
 	}
 
-	imp.logger.Info("discovered skills", "count", len(result.Skills))
+	imp.logger.Info("discovered skills", "count", len(result.Skills), "agents", len(result.Agents))
 
 	importResult := &ImportResult{}
 	// Surface parse failures on fresh imports only. Update re-imports with
@@ -187,6 +206,9 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	// on every sync would just train users to ignore warnings.
 	if !opts.PreserveState {
 		for _, m := range result.Malformed {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: failed to parse: %s", m.Path, m.Err))
+		}
+		for _, m := range result.MalformedAgents {
 			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: failed to parse: %s", m.Path, m.Err))
 		}
 	}
@@ -385,10 +407,12 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		imp.logger.Info("imported skill", "name", skillName, "supportingFiles", filesCopied)
 	}
 
+	lockedAgents, keptAgents := imp.importAgents(result, opts, importResult)
+
 	// Update lock file. Re-read inside the critical section so concurrent
 	// Import calls (e.g. from handleSkillSourcesSyncAll's bounded fan-out)
 	// observe each other's writes instead of clobbering them.
-	if len(lockedSkills) > 0 {
+	if len(lockedSkills) > 0 || len(lockedAgents) > 0 {
 		imp.lockfileMu.Lock()
 		defer imp.lockfileMu.Unlock()
 
@@ -398,6 +422,25 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		}
 
 		sourceName := RepoToName(opts.Repo)
+		// Carry previously tracked agents forward instead of wiping them:
+		// a Selected import never processes agents at all (the web UI's
+		// "add more from this source" flow), and an unforced re-import
+		// skips agents that already exist in the store, but neither means
+		// the source stopped shipping them.
+		if prev, ok := lf.Sources[sourceName]; ok && prev.Agents != nil {
+			if len(opts.Selected) > 0 {
+				lockedAgents = prev.Agents
+			} else {
+				for _, name := range keptAgents {
+					if entry, ok := prev.Agents[name]; ok {
+						if lockedAgents == nil {
+							lockedAgents = make(map[string]LockedAgent)
+						}
+						lockedAgents[name] = entry
+					}
+				}
+			}
+		}
 		lf.SetSource(sourceName, LockedSource{
 			Repo:          opts.Repo,
 			Ref:           opts.Ref,
@@ -405,6 +448,7 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			FetchedAt:     time.Now().UTC(),
 			ContentHash:   result.CommitSHA,
 			Skills:        lockedSkills,
+			Agents:        lockedAgents,
 			CredentialRef: opts.Auth.CredentialRef,
 		})
 
@@ -414,6 +458,118 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	}
 
 	return importResult, nil
+}
+
+// importAgents installs the agent definitions a clone discovered. Agents
+// are written verbatim (identity render): the fetched bytes become
+// ~/.gridctl/registry/agents/<name>/AGENT.md unchanged, so ContentHash
+// and InstalledHash coincide at import time. Explicit skill selection
+// (the web UI picker) skips agents entirely: the user chose specific
+// skills, and agents were not on offer. The second return lists agents
+// skipped as already-existing conflicts; their prior lock entries must
+// survive the source rewrite.
+func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, importResult *ImportResult) (map[string]LockedAgent, []string) {
+	if len(result.Agents) == 0 || len(opts.Selected) > 0 {
+		return nil, nil
+	}
+
+	// Duplicate names inside one batch fail every carrier: Claude Code
+	// resolves same-named agents by undefined read order, so importing
+	// either would be a coin flip.
+	nameSources := make(map[string][]string, len(result.Agents))
+	for _, a := range result.Agents {
+		nameSources[a.Name] = append(nameSources[a.Name], a.Path)
+	}
+
+	lockedAgents := make(map[string]LockedAgent)
+	var kept []string
+	for _, discovered := range result.Agents {
+		if paths := nameSources[discovered.Name]; len(paths) > 1 {
+			importResult.SkippedAgents = append(importResult.SkippedAgents, SkippedAgent{
+				Name:   discovered.Name,
+				Reason: fmt.Sprintf("duplicate agent name %q in %s (Claude Code resolves duplicates by undefined read order; rename one)", discovered.Name, strings.Join(paths, " and ")),
+			})
+			continue
+		}
+		if err := ValidateAgentName(discovered.Name); err != nil {
+			importResult.SkippedAgents = append(importResult.SkippedAgents, SkippedAgent{
+				Name:   discovered.Name,
+				Reason: fmt.Sprintf("%s: %v", discovered.Path, err),
+			})
+			continue
+		}
+		if _, err := GetAgent(imp.registryDir, discovered.Name); err == nil && !opts.Force {
+			importResult.SkippedAgents = append(importResult.SkippedAgents, SkippedAgent{
+				Name:   discovered.Name,
+				Reason: fmt.Sprintf("agent %q already exists (use --force to overwrite)", discovered.Name),
+			})
+			kept = append(kept, discovered.Name)
+			continue
+		}
+
+		scanResult := ScanAgent(discovered.Definition)
+		if !scanResult.Safe && !opts.Trust {
+			importResult.SkippedAgents = append(importResult.SkippedAgents, SkippedAgent{
+				Name:   discovered.Name,
+				Reason: fmt.Sprintf("security findings detected (use --trust to proceed):\n%s", FormatFindings(scanResult.Findings)),
+			})
+			continue
+		}
+
+		agentDir := AgentDir(imp.registryDir, discovered.Name)
+		agentsRoot := AgentsRoot(imp.registryDir)
+		// Defense in depth behind ValidateAgentName: never let a resolved
+		// destination land outside the agents root.
+		if !withinDir(agentsRoot, agentDir) {
+			importResult.SkippedAgents = append(importResult.SkippedAgents, SkippedAgent{
+				Name:   discovered.Name,
+				Reason: fmt.Sprintf("resolved directory %q escapes the registry", discovered.Name),
+			})
+			continue
+		}
+		if err := os.MkdirAll(agentDir, 0o755); err != nil {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to save agent %s: %v", discovered.Name, err))
+			continue
+		}
+		agentFile := filepath.Join(agentDir, "AGENT.md")
+		if err := atomicWriteBytes(agentFile, discovered.Definition.Raw); err != nil {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to save agent %s: %v", discovered.Name, err))
+			continue
+		}
+
+		installedHash, _ := ContentHashFile(agentFile)
+		origin := &Origin{
+			Repo:          opts.Repo,
+			Ref:           opts.Ref,
+			Path:          discovered.Path,
+			CommitSHA:     result.CommitSHA,
+			ImportedAt:    time.Now().UTC(),
+			ContentHash:   discovered.ContentHash,
+			InstalledHash: installedHash,
+			CredentialRef: opts.Auth.CredentialRef,
+		}
+		if err := WriteOrigin(agentDir, origin); err != nil {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to write origin for agent %s: %v", discovered.Name, err))
+		}
+
+		lockedAgents[discovered.Name] = LockedAgent{
+			Path:        discovered.Path,
+			ContentHash: discovered.ContentHash,
+		}
+
+		imported := ImportedAgent{
+			Name:   discovered.Name,
+			Path:   discovered.Path,
+			Origin: origin,
+		}
+		if len(scanResult.Findings) > 0 {
+			imported.Findings = scanResult.Findings
+		}
+		importResult.ImportedAgents = append(importResult.ImportedAgents, imported)
+
+		imp.logger.Info("imported agent", "name", discovered.Name)
+	}
+	return lockedAgents, kept
 }
 
 // summarizeMalformed renders malformed SKILL.md entries for the zero-skills
@@ -470,7 +626,14 @@ func (imp *Importer) Update(skillName string, dryRun, force, trust bool) (*Impor
 	skillDir := imp.skillDir(skillName)
 	origin, err := ReadOrigin(skillDir)
 	if err != nil {
-		return nil, fmt.Errorf("skill %q has no origin (not an imported skill): %w", skillName, err)
+		// The name may be an imported agent: agents share the drift-safe
+		// update flow, and the re-import below refreshes every kind the
+		// source ships anyway.
+		if agentOrigin, aerr := ReadOrigin(AgentDir(imp.registryDir, skillName)); aerr == nil {
+			origin = agentOrigin
+		} else {
+			return nil, fmt.Errorf("skill %q has no origin (not an imported skill): %w", skillName, err)
+		}
 	}
 
 	// Re-resolve any CredentialRef stored at import time.
@@ -532,6 +695,48 @@ func (imp *Importer) Update(skillName string, dryRun, force, trust bool) (*Impor
 	}
 
 	return result, nil
+}
+
+// RemoveAgent removes an imported agent and cleans up origin and lock
+// entries.
+func (imp *Importer) RemoveAgent(agentName string) error {
+	agentDir := AgentDir(imp.registryDir, agentName)
+	_ = DeleteOrigin(agentDir)
+
+	if err := DeleteAgent(imp.registryDir, agentName); err != nil {
+		return fmt.Errorf("deleting agent: %w", err)
+	}
+
+	lf, err := ReadLockFile(imp.lockPath)
+	if err != nil {
+		return fmt.Errorf("reading lock file: %w", err)
+	}
+	lf.RemoveAgent(agentName)
+	if err := WriteLockFile(imp.lockPath, lf); err != nil {
+		return fmt.Errorf("writing lock file: %w", err)
+	}
+	return nil
+}
+
+// AgentInfo returns details about an imported agent's origin.
+func (imp *Importer) AgentInfo(agentName string) (*SkillInfo, error) {
+	if _, err := GetAgent(imp.registryDir, agentName); err != nil {
+		return nil, err
+	}
+	info := &SkillInfo{Name: agentName}
+	origin, err := ReadOrigin(AgentDir(imp.registryDir, agentName))
+	if err != nil {
+		return info, nil
+	}
+	info.Origin = origin
+	info.IsRemote = true
+	lf, _ := ReadLockFile(imp.lockPath)
+	if lf != nil {
+		if _, src, found := lf.FindAgentSource(agentName); found {
+			info.LastChecked = src.FetchedAt
+		}
+	}
+	return info, nil
 }
 
 // Pin updates a skill's ref and disables auto-update.
