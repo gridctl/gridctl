@@ -389,6 +389,15 @@ func (s *Server) handleSkillSourceRemove(w http.ResponseWriter, r *http.Request)
 		removed = append(removed, skillName)
 	}
 
+	// Agents the source shipped leave with it too.
+	for agentName := range src.Agents {
+		if err := imp.RemoveAgent(agentName); err != nil {
+			slog.Warn("failed to remove agent", "agent", agentName, "error", err)
+			continue
+		}
+		removed = append(removed, agentName)
+	}
+
 	s.refreshRegistryRouter()
 
 	writeJSON(w, map[string]any{
@@ -477,6 +486,22 @@ func (s *Server) resolveCheckAuth(req *AuthRequest, storedRef string) (skills.Au
 // authCfg is used only for the on-demand FetchAndCompare (skip-advance and
 // backup naming); Importer.Update independently re-resolves credentials from
 // the stored origin.
+// standInAgent picks a deterministic agent name to carry a source-level
+// update when the source ships no skills. Importer.Update resolves agent
+// origins and re-imports the whole source, so one name refreshes every
+// agent the source ships.
+func standInAgent(src skills.LockedSource) string {
+	names := make([]string, 0, len(src.Agents))
+	for name := range src.Agents {
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	sort.Strings(names)
+	return names[0]
+}
+
 func (s *Server) syncSkill(ctx context.Context, imp *skills.Importer, authCfg skills.AuthConfig, src skills.LockedSource, skillName string, drifted, force bool) SkillSyncResult {
 	entry := SkillSyncResult{Skill: skillName}
 
@@ -574,8 +599,15 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 	imp.SetCredentialResolver(s.credentialResolver())
 
 	// Drifted skills in this source (local edits). Computed once up front.
+	// Agent drift rides along so a stand-in agent update cannot clobber a
+	// hand-edited AGENT.md without force.
 	driftedSet := make(map[string]bool)
 	if drifted, derr := skills.DetectDrift(ctx, store, lockPath, sourceName); derr == nil {
+		for _, name := range drifted {
+			driftedSet[name] = true
+		}
+	}
+	if drifted, derr := skills.DetectAgentDrift(ctx, registryDir); derr == nil {
 		for _, name := range drifted {
 			driftedSet[name] = true
 		}
@@ -596,6 +628,15 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 		skillNames = append(skillNames, skillName)
 	}
 	sort.Strings(skillNames)
+
+	// A source that ships only agents has no skill to carry the update;
+	// one agent stands in (Update re-imports the whole source, so every
+	// agent it ships refreshes). Mirrors the CLI's stand-in loop.
+	if len(skillNames) == 0 && len(filter) == 0 {
+		if standIn := standInAgent(src); standIn != "" {
+			skillNames = append(skillNames, standIn)
+		}
+	}
 
 	results := make([]SkillSyncResult, 0, len(skillNames))
 	for _, skillName := range skillNames {
@@ -791,11 +832,16 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 	imp := skills.NewImporter(store, registryDir, lockPath, logger)
 	imp.SetCredentialResolver(s.credentialResolver())
 
-	// Drift (local edits) across every imported skill, computed once before the
-	// fan-out so the goroutines never read the lock file while it is being
-	// rewritten. Local hashing only — no git fetch.
+	// Drift (local edits) across every imported skill and agent, computed
+	// once before the fan-out so the goroutines never read the lock file
+	// while it is being rewritten. Local hashing only — no git fetch.
 	driftedSet := make(map[string]bool)
 	if drifted, derr := skills.DetectDrift(ctx, store, lockPath, ""); derr == nil {
+		for _, name := range drifted {
+			driftedSet[name] = true
+		}
+	}
+	if drifted, derr := skills.DetectAgentDrift(ctx, registryDir); derr == nil {
 		for _, name := range drifted {
 			driftedSet[name] = true
 		}
@@ -844,6 +890,16 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 			}
 			sort.Strings(skillNames)
 
+			// Agent-only sources get a stand-in agent so they refresh
+			// too; it bypasses the registry ghost check below, which only
+			// applies to skills.
+			standIn := ""
+			if len(skillNames) == 0 {
+				if standIn = standInAgent(source); standIn != "" {
+					skillNames = append(skillNames, standIn)
+				}
+			}
+
 			for _, skillName := range skillNames {
 				// Stop processing further skills in this source if the
 				// client disconnected. In-flight Update calls still complete
@@ -864,13 +920,15 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 				// We gate on registry presence rather than the Update error so a
 				// present skill whose update merely failed (transient/auth) is
 				// still reported and retained.
-				if _, err := store.GetSkill(skillName); err != nil {
-					ghostsBySource[idx] = append(ghostsBySource[idx], skillName)
-					results[idx].Skills = append(results[idx].Skills, SkillSyncResult{
-						Skill:    skillName,
-						Warnings: []string{"skill no longer in registry; removed stale lock entry"},
-					})
-					continue
+				if skillName != standIn {
+					if _, err := store.GetSkill(skillName); err != nil {
+						ghostsBySource[idx] = append(ghostsBySource[idx], skillName)
+						results[idx].Skills = append(results[idx].Skills, SkillSyncResult{
+							Skill:    skillName,
+							Warnings: []string{"skill no longer in registry; removed stale lock entry"},
+						})
+						continue
+					}
 				}
 
 				entry := s.syncSkill(ctx, imp, authCfg, source, skillName, driftedSet[skillName], req.Force)
