@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/project"
 )
 
 // Managed-region markers and header. The header names the source of truth
@@ -28,12 +29,12 @@ const (
 const (
 	backupSuffix     = ".gridctl-backup-"
 	backupTimeFormat = "20060102-150405"
-	maxBackups       = 3
+	maxBackups       = project.MaxBackups
 )
 
 // hashScheme prefixes every stored hash so a future scheme change never
 // presents as false drift (the pkg/pins lesson).
-const hashScheme = "sha256:"
+const hashScheme = project.HashScheme
 
 // contentHash returns the scheme-prefixed hash of CRLF-normalized content.
 func contentHash(content string) string {
@@ -303,33 +304,10 @@ func managedRegionHash(t Target, content, canonicalPath string) (hash string, fo
 	return "", false, fmt.Errorf("unknown strategy %q", t.Strategy)
 }
 
-// atomicWriteFile writes data via a uniquely named temp file + rename in
-// the target dir. Unique names keep concurrent writers from clobbering
-// each other's in-flight temp file.
+// atomicWriteFile writes data via a uniquely named temp file + rename
+// in the target dir (the engine's shared implementation).
 func atomicWriteFile(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("writing temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("closing temp file: %w", err)
-	}
-	if err := os.Chmod(tmpName, 0644); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("setting temp file permissions: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("renaming temp file: %w", err)
-	}
-	return nil
+	return project.AtomicWriteFile(path, data)
 }
 
 // createBackup copies path to a timestamped sibling before a write,
@@ -354,7 +332,9 @@ func createBackup(path string) (string, error) {
 }
 
 // pruneBackups keeps only the most recent maxBackups backups. Best-effort:
-// a failed prune never fails the write it follows.
+// a failed prune never fails the write it follows. Collection and the
+// sibling-file placement stay context-kind policy; the keep-newest tail
+// is the engine's.
 func pruneBackups(originalPath string) {
 	dir := filepath.Dir(originalPath)
 	prefix := filepath.Base(originalPath) + backupSuffix
@@ -368,11 +348,7 @@ func pruneBackups(originalPath string) {
 			backups = append(backups, filepath.Join(dir, entry.Name()))
 		}
 	}
-	if len(backups) <= maxBackups {
-		return
-	}
-	sort.Strings(backups)
-	for _, p := range backups[:len(backups)-maxBackups] {
+	for _, p := range project.StaleBackups(backups, maxBackups) {
 		_ = os.Remove(p)
 	}
 }
