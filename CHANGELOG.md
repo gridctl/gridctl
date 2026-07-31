@@ -4,7 +4,13 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Experimental feature flags: a new optional top-level `experimental:` block in stack.yaml enables registered experimental flags by name, backed by a typed registry (`pkg/flags`) with lifecycle stages (experimental, graduated, removed) and a graduation-deadline test so flags cannot rot silently. Everything defaults to off, so an unchanged stack.yaml behaves identically. Unknown flag names warn at `gridctl apply` and `gridctl validate` listing the valid names, and graduated or removed names warn with a specific migration message — never an error, so a stack written against a newer gridctl still deploys. Each flag can be overridden per process with `GRIDCTL_EXPERIMENTAL_<NAME>` (strconv.ParseBool vocabulary; unset defers to YAML, unparseable warns). Enabled flags surface in `GET /api/status` (`features` plus `feature_details`), `gridctl status --json`, and the web UI as a read-only "N experimental" status-bar chip with per-flag rows in the spec pane; flags are configured in stack.yaml only and cannot be toggled from the UI. Edits to the block hot-reload without container restarts. The first registered flag, `transport_dual_stack`, is reserved for the MCP transport work and currently has no effect. The flag lifecycle is documented in CONTRIBUTING.md, and `GRIDCTL_NO_SKILL_UPDATE_CHECK` now accepts the same boolean vocabulary (previously only `"1"`) (#1021)
+
 ### Changed
+
+- Code mode is now a stable feature: the `gateway.code_mode` and `gateway.code_mode_timeout` settings and the `--code-mode` flag are no longer labeled experimental. Behavior is unchanged (#1021)
 
 - The project task runner is now Task (https://taskfile.dev): `task build`, `task test`, `task lint`, and friends replace the Makefile targets, with namespaced names for grouped work (`build:web`, `test:integration`, `pricing:update`, `mock:servers`). Run `task --list` for the catalog. A transitional Makefile shim keeps every old `make <target>` name working while muscle memory catches up. `task test` and `task test:integration` now run with the race detector to match CI, `task lint` covers both golangci-lint and the frontend lint, a failed frontend build now fails `task build:web` instead of silently staging stale assets, and the `gridctl validate` hint for unknown pricing models points at `task pricing:update` (#1014)
 

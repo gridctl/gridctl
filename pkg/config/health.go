@@ -3,9 +3,11 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/gridctl/gridctl/pkg/flags"
 	"github.com/gridctl/gridctl/pkg/pricing"
 )
 
@@ -171,6 +173,42 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 	}
 
 	r.addModelWarnings(s)
+	r.addExperimentalIssues(s)
+}
+
+// addExperimentalIssues reports on the `experimental:` map: unknown flag
+// names and concluded (graduated/removed) names surface as warnings with the
+// registry's migration text, and each enabled valid flag surfaces as an
+// info-level line so `gridctl validate` and the UI panel show active
+// experiments. Warnings only — an unrecognized name never blocks a deploy
+// (Article IX: a stack written against a newer gridctl must still start).
+func (r *ValidationResult) addExperimentalIssues(s *Stack) {
+	reg := flags.Default()
+	for _, w := range flags.CheckNames(reg, s.Experimental) {
+		r.Issues = append(r.Issues, ValidationIssue{
+			Field:    "experimental." + w.Name,
+			Message:  w.Message,
+			Severity: SeverityWarning,
+		})
+		r.WarningCount++
+	}
+	names := make([]string, 0, len(s.Experimental))
+	for name, on := range s.Experimental {
+		if !on {
+			continue
+		}
+		if f, ok := reg.Lookup(name); ok && f.Stage == flags.StageExperimental {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		r.Issues = append(r.Issues, ValidationIssue{
+			Field:    "experimental." + name,
+			Message:  "experimental flag enabled",
+			Severity: SeverityInfo,
+		})
+	}
 }
 
 // addModelWarnings flags cost-attribution declarations that would silently

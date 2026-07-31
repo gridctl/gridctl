@@ -1909,3 +1909,59 @@ func TestGetResourceStatuses_ListErrorLogsWarning(t *testing.T) {
 		t.Errorf("expected underlying error in log, got: %q", out)
 	}
 }
+
+func TestHandleStatus_IncludesFeatures(t *testing.T) {
+	srv := newTestServer(t)
+	srv.SetFeatures(func() []FeatureStatus {
+		return []FeatureStatus{
+			{Name: "transport_dual_stack", Stage: "experimental", Description: "test"},
+		}
+	})
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var result struct {
+		Features       map[string]bool `json:"features"`
+		FeatureDetails []FeatureStatus `json:"feature_details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if !result.Features["transport_dual_stack"] {
+		t.Errorf("features = %v, want transport_dual_stack true", result.Features)
+	}
+	if len(result.FeatureDetails) != 1 || result.FeatureDetails[0].Stage != "experimental" {
+		t.Errorf("feature_details = %+v", result.FeatureDetails)
+	}
+}
+
+func TestHandleStatus_OmitsFeaturesWhenEmpty(t *testing.T) {
+	// No getter wired at all, and a wired getter returning nothing, must both
+	// omit the fields so the no-flags payload is unchanged.
+	for name, srv := range map[string]*Server{
+		"no getter":    newTestServer(t),
+		"empty getter": newTestServer(t),
+	} {
+		if name == "empty getter" {
+			srv.SetFeatures(func() []FeatureStatus { return nil })
+		}
+		handler := srv.Handler()
+		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		var result map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("%s: failed to unmarshal: %v", name, err)
+		}
+		if _, ok := result["features"]; ok {
+			t.Errorf("%s: expected features to be omitted", name)
+		}
+		if _, ok := result["feature_details"]; ok {
+			t.Errorf("%s: expected feature_details to be omitted", name)
+		}
+	}
+}

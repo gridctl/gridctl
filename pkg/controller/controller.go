@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/flags"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pins"
@@ -283,6 +284,18 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	// Create output printer and phase reporter
 	printer := sc.createPrinter(stack)
 	reporter := sc.createReporter()
+
+	// Surface experimental flag issues (unknown names, concluded flags,
+	// malformed env overrides) at apply time. Warnings only — a stack.yaml
+	// written against a newer gridctl must still deploy on this one.
+	// Foreground mode skips this pass: the gateway builder logs the same
+	// warnings via slog, which reaches the terminal directly there, and
+	// printing both would duplicate every line.
+	if printer != nil && !cfg.Foreground {
+		for _, w := range flags.Resolve(flags.Default(), stack.Experimental).Warnings {
+			printer.Warn(w.Message)
+		}
+	}
 
 	// Start containers
 	rt, err := sc.createRuntime()

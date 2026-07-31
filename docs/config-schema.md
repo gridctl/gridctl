@@ -66,8 +66,8 @@ gateway:
 |-------|------|----------|---------|-------------|
 | `allowed_origins` | []string | No | `["*"]` | CORS allowed origins. Empty or unset allows all |
 | `auth` | object | No | - | Authentication configuration |
-| `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` *(experimental)* |
-| `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 *(experimental)* |
+| `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
+| `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |
 | `default_model` | string | No | - | Model ID used to price tool calls for servers without their own `model` field (e.g. `"claude-opus-4-7"`). Enables cost observability; figures are estimates from the embedded LiteLLM rates, not billing truth. Empty disables cost attribution for servers without a per-server `model` |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
 | `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Results over the limit are truncated with a suffix noting the original size. `0` uses the default (64 KB) |
@@ -1099,6 +1099,50 @@ Reconcile semantics:
   `limits:`).
 - With a `link:` block present, `apply --flash` is ignored with a notice
   (the block owns the linking decision).
+
+## Experimental (feature flags)
+
+The optional top-level `experimental:` block enables registered experimental
+feature flags by name. Omitting the block preserves legacy behavior — every
+flag defaults to off, and an unchanged stack.yaml behaves identically across
+upgrades.
+
+```yaml
+experimental:
+  transport_dual_stack: true
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `<flag name>` | bool | No | `false` | Enables the named experimental flag. Keys are snake_case and spelled identically to the stable config key the feature graduates to |
+
+Registered flags:
+
+| Flag | Stage | Since | Description |
+|------|-------|-------|-------------|
+| `transport_dual_stack` | experimental | 0.1.0 | Reserved for the MCP 2026-07-28 transport dual-stack work; currently has no effect |
+
+Semantics:
+
+- **Warnings, never errors.** An unknown flag name warns at `gridctl apply`
+  and `gridctl validate` (listing the valid names) and is ignored; a
+  graduated or removed flag name warns with a specific migration message.
+  A stack.yaml written against a newer gridctl still deploys on this one.
+- **Env override.** Each flag can be overridden per process with
+  `GRIDCTL_EXPERIMENTAL_<NAME>` (upper snake_case), accepting the
+  `strconv.ParseBool` vocabulary: `1`, `t`, `T`, `TRUE`, `true`, `True`,
+  `0`, `f`, `F`, `FALSE`, `false`, `False`. The env value beats the YAML
+  value; an unset variable defers to YAML; an unparseable value warns and
+  is ignored.
+- **Visibility.** Enabled flags appear in `GET /api/status` as `features`
+  (with display metadata in `feature_details`), in `gridctl status --json`,
+  and as a read-only chip plus per-flag rows in the web UI. Flags cannot be
+  toggled from the UI; stack.yaml stays user-owned.
+- **Hot reload.** Editing the block on a running stack re-resolves flags
+  without restarting any containers.
+- **Lifecycle.** Flags graduate by promotion to a real config block; the
+  full lifecycle (stages, deadlines, and the graduation clock) is
+  documented in [CONTRIBUTING.md](../CONTRIBUTING.md#experimental-feature-flags).
 
 ## Skill Sources
 

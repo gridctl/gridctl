@@ -37,6 +37,7 @@ beforeEach(() => {
     codeMode: 'off',
     tokenUsage: null,
     costUsage: null,
+    featureDetails: [],
     connectionStatus: 'connected',
     lastUpdated: null,
     error: null,
@@ -64,5 +65,23 @@ describe('StatusBar', () => {
     renderBar();
     expect(screen.getByText('MCP')).toBeInTheDocument();
     expect(screen.queryByText('err')).not.toBeInTheDocument();
+  });
+
+  it('shows an aggregate experimental chip when flags are enabled', () => {
+    useStackStore.setState({
+      featureDetails: [
+        { name: 'transport_dual_stack', stage: 'experimental', description: 'd' },
+        { name: 'other_flag', stage: 'experimental', description: 'd' },
+      ],
+    });
+    renderBar();
+    const chip = screen.getByRole('button', { name: /2 experimental flags enabled/i });
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveTextContent('experimental');
+  });
+
+  it('hides the experimental chip when no flags are enabled', () => {
+    renderBar();
+    expect(screen.queryByText('experimental')).not.toBeInTheDocument();
   });
 });

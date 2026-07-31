@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { GitCompareArrows, AlertCircle, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { GitCompareArrows, AlertCircle, CheckCircle2, AlertTriangle, FlaskConical, RefreshCw } from 'lucide-react';
 import { useSpecStore } from '../../stores/useSpecStore';
+import { useStackStore } from '../../stores/useStackStore';
 import { fetchStackSpec, fetchStackHealth, validateStackSpec } from '../../lib/api';
 import type { ValidationIssue, IssueSeverity } from '../../types';
 
@@ -86,6 +87,7 @@ function getLineIssues(lineNum: number, issues: ValidationIssue[]): ValidationIs
 }
 
 export function SpecTab() {
+  const featureDetails = useStackStore((s) => s.featureDetails);
   const spec = useSpecStore((s) => s.spec);
   const specLoading = useSpecStore((s) => s.specLoading);
   const specError = useSpecStore((s) => s.specError);
@@ -191,6 +193,25 @@ export function SpecTab() {
           Compare to running
         </button>
       </div>
+
+      {/* Enabled experimental flags — read-only rows (flags are configured
+          in stack.yaml, or via GRIDCTL_EXPERIMENTAL_* env vars, and cannot
+          be toggled here). Stage is conveyed as text plus the flask icon,
+          never color alone. */}
+      {featureDetails.length > 0 && (
+        <div role="status" aria-label="Enabled experimental flags" className="px-4 py-2 border-b border-border/30 flex-shrink-0 space-y-1">
+          {featureDetails.map((f) => (
+            <div key={f.name} className="flex items-start gap-2 text-xs">
+              <FlaskConical size={11} className="text-text-muted mt-0.5 flex-shrink-0" />
+              <span className="font-mono text-text-secondary">{f.name}</span>
+              <span className="px-1.5 rounded-full border border-border/50 text-text-muted uppercase tracking-wide text-[10px]">
+                {f.stage}
+              </span>
+              {f.description && <span className="text-text-muted">{f.description}</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Spec content */}
       <div className="flex-1 overflow-auto scrollbar-dark font-mono text-xs leading-relaxed">

@@ -1,4 +1,4 @@
-import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, Gauge, ArrowDown, DollarSign } from 'lucide-react';
+import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, FlaskConical, Gauge, ArrowDown, DollarSign } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
@@ -16,6 +16,7 @@ export function StatusBar() {
   const resources = useStackStore((s) => s.resources);
   const sessions = useStackStore((s) => s.sessions);
   const codeMode = useStackStore((s) => s.codeMode);
+  const featureDetails = useStackStore((s) => s.featureDetails);
   const tokenUsage = useStackStore((s) => s.tokenUsage);
   const costUsage = useStackStore((s) => s.costUsage);
   const tokenizerName = useStackStore((s) => s.gatewayInfo?.tokenizer);
@@ -102,6 +103,26 @@ export function StatusBar() {
             <Code size={11} className="text-primary" />
             <span className="text-primary font-semibold">Code Mode</span>
           </div>
+        )}
+
+        {/* Experimental flags — an aggregate count, deliberately neutral (an
+            enabled experiment is not "good" or "bad"). Read-only: flags are
+            configured in stack.yaml and cannot be toggled from the UI; the
+            click deep-links to the spec pane where each flag is listed. */}
+        {featureDetails.length > 0 && (
+          <button
+            type="button"
+            onClick={() => navigate('/stack?spec=1')}
+            aria-label={`${featureDetails.length} experimental ${featureDetails.length === 1 ? 'flag' : 'flags'} enabled. Open spec pane`}
+            title={featureDetails.map((f) => f.name).join(', ')}
+            className="flex items-center gap-2 text-text-muted rounded px-1 -mx-1 hover:bg-surface-highlight/50 hover:text-text-secondary transition-colors"
+          >
+            <FlaskConical size={11} />
+            <span>
+              <span className="font-semibold">{featureDetails.length}</span>
+              <span className="ml-1">experimental</span>
+            </span>
+          </button>
         )}
 
         {/* Token counter — opens the Metrics workspace */}

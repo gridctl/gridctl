@@ -273,3 +273,68 @@ func TestValidateWithIssues_ModelWarnings(t *testing.T) {
 		t.Error("model warnings must not invalidate the stack")
 	}
 }
+
+func TestValidateWithIssues_ExperimentalIssues(t *testing.T) {
+	base := func() *Stack {
+		return &Stack{
+			Name:    "test",
+			Network: Network{Name: "test-net"},
+			Gateway: &GatewayConfig{Auth: &AuthConfig{Type: "bearer", Token: "secret"}},
+			MCPServers: []MCPServer{
+				{Name: "s1", Image: "alpine", Port: 3000},
+			},
+		}
+	}
+
+	t.Run("omitted block adds nothing (back-compat)", func(t *testing.T) {
+		result := ValidateWithIssues(base())
+		for _, issue := range result.Issues {
+			if strings.HasPrefix(issue.Field, "experimental.") {
+				t.Fatalf("unexpected experimental issue: %+v", issue)
+			}
+		}
+	})
+
+	t.Run("unknown flag name warns without invalidating", func(t *testing.T) {
+		stack := base()
+		stack.Experimental = map[string]bool{"tpyo_flag": true}
+		result := ValidateWithIssues(stack)
+		require.True(t, result.Valid)
+		var found bool
+		for _, issue := range result.Issues {
+			if issue.Field == "experimental.tpyo_flag" {
+				found = true
+				assert.Equal(t, SeverityWarning, issue.Severity)
+				assert.Contains(t, issue.Message, "unknown experimental flag")
+			}
+		}
+		require.True(t, found, "expected a warning for the unknown flag name")
+		assert.Greater(t, result.WarningCount, 0)
+	})
+
+	t.Run("enabled known flag reports as info", func(t *testing.T) {
+		stack := base()
+		stack.Experimental = map[string]bool{"transport_dual_stack": true}
+		result := ValidateWithIssues(stack)
+		require.True(t, result.Valid)
+		var found bool
+		for _, issue := range result.Issues {
+			if issue.Field == "experimental.transport_dual_stack" {
+				found = true
+				assert.Equal(t, SeverityInfo, issue.Severity)
+			}
+		}
+		require.True(t, found, "expected an info line for the enabled flag")
+	})
+
+	t.Run("disabled known flag stays silent", func(t *testing.T) {
+		stack := base()
+		stack.Experimental = map[string]bool{"transport_dual_stack": false}
+		result := ValidateWithIssues(stack)
+		for _, issue := range result.Issues {
+			if strings.HasPrefix(issue.Field, "experimental.") {
+				t.Fatalf("unexpected experimental issue: %+v", issue)
+			}
+		}
+	})
+}

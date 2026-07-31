@@ -276,6 +276,15 @@ export interface EffectiveModel {
   models?: ModelShare[];      // full breakdown, descending by cost
 }
 
+// One enabled experimental flag from /api/status feature_details.
+// Read-only display metadata: flags are configured in stack.yaml (or via
+// GRIDCTL_EXPERIMENTAL_* env vars) and cannot be toggled from the UI.
+export interface FeatureDetail {
+  name: string;        // snake_case flag key, e.g. "transport_dual_stack"
+  stage: string;       // lifecycle stage, e.g. "experimental"
+  description: string; // one-line summary from the flag registry
+}
+
 // Gateway status response from GET /api/status
 export interface GatewayStatus {
   gateway: ServerInfo;
@@ -294,6 +303,8 @@ export interface GatewayStatus {
   effective_client_models?: Record<string, EffectiveModel>;
   effective_server_models?: Record<string, EffectiveModel>;
   stack_name?: string;     // Active stack name; omitted in stackless mode
+  features?: Record<string, boolean>; // Enabled experimental flags, name -> true (omitted when none)
+  feature_details?: FeatureDetail[];  // Display metadata for the same flags (omitted when none)
 }
 
 // Response from GET /api/pricing/models

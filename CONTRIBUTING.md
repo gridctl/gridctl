@@ -116,6 +116,40 @@ task test                  # Unit tests
 task test:integration      # Integration tests (requires Docker)
 ```
 
+### Experimental Feature Flags
+
+Risky or unfinished features ship dark behind a flag in the `pkg/flags`
+registry, enabled per stack via the `experimental:` block in stack.yaml.
+The registry is the single source of truth for what is experimental; the
+user-facing flag table lives in `docs/config-schema.md` and must be updated
+in the same PR as any registry change.
+
+Lifecycle:
+
+1. **Born experimental, off by default.** Register the flag with a
+   `Description`, `Since` (the release introducing it), and `GraduatesBy`
+   (the release by which a decision is forced). Name the flag in snake_case,
+   spelled identically to the stable config key it will graduate to, so
+   graduation is a promotion rather than a rename. Everything the flag
+   gates must default to off (Article IX).
+2. **Graduation.** Promote the behavior to a real config block (or make it
+   unconditional), flip the registry entry's stage to graduated, and add a
+   `Message` telling users what to do with the stale entry, naming the
+   release the change shipped in (e.g. "graduated in 0.2.0; remove the
+   entry, the feature is now always on"). A stack.yaml still setting the
+   flag keeps working and warns with that message — never an error.
+3. **Removal.** Two minor releases after graduation (or when an experiment
+   is abandoned), flip the stage to removed. The entry stays in the
+   registry forever: one map entry is the price of a specific migration
+   message instead of a generic unknown-key warning.
+4. **The graduation clock.** `TestNoBuiltinFlagOverdue` in `pkg/flags`
+   fails when a flag's `GraduatesBy` is at or before the most recent
+   release in CHANGELOG.md. Fix it by graduating the flag or by extending
+   the deadline deliberately in a reviewed diff — flags never rot silently.
+
+Every flag addition, graduation, and removal gets a CHANGELOG entry
+(Article XV).
+
 ## 📋 Commit Guidelines
 
 ### Commit Message Format

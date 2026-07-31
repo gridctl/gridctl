@@ -79,7 +79,7 @@ func init() {
 	applyCmd.Flags().BoolVar(&applyNoExpand, "no-expand", false, "Disable environment variable expansion in OpenAPI spec files")
 	applyCmd.Flags().BoolVarP(&applyWatch, "watch", "w", false, "Watch stack file for changes and hot reload")
 	applyCmd.Flags().BoolVar(&applyFlash, "flash", false, "Auto-link detected LLM clients after apply")
-	applyCmd.Flags().BoolVar(&applyCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools) (experimental)")
+	applyCmd.Flags().BoolVar(&applyCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools)")
 	applyCmd.Flags().StringVar(&applyLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
 }
 
