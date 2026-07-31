@@ -270,8 +270,12 @@ func pingTimeoutOrDefault(d time.Duration) time.Duration {
 	return DefaultPingTimeout
 }
 
-// MCPProtocolVersion is the latest MCP protocol version supported by this
-// implementation.
+// MCPProtocolVersion is the latest handshake-era MCP protocol version
+// supported by this implementation: the version advertised in outbound
+// initialize handshakes and counter-offered during initialize
+// negotiation. Stateless-era versions (see era.go) are declared per
+// request and never negotiated through initialize, so this constant
+// deliberately stays handshake-era.
 const MCPProtocolVersion = "2025-11-25"
 
 // SupportedProtocolVersions lists every MCP protocol version this
@@ -279,6 +283,7 @@ const MCPProtocolVersion = "2025-11-25"
 // is decided by membership, never by comparing version strings (future
 // identifiers are not guaranteed to be date-shaped).
 var SupportedProtocolVersions = []string{
+	"2026-07-28",
 	"2025-11-25",
 	"2025-06-18",
 	"2025-03-26",
@@ -304,9 +309,12 @@ func supportedProtocolVersionList() string {
 // negotiation: echo the requested version when it is supported, otherwise
 // counter-offer the latest supported version in a successful response (the
 // client decides whether to disconnect). Initialize never fails for version
-// reasons.
+// reasons. Stateless-era versions are excluded: initialize does not exist
+// in that era, so a handshake client requesting one is counter-offered the
+// latest handshake-era version instead of being handed a version whose
+// semantics its session cannot follow.
 func NegotiateProtocolVersion(requested string) string {
-	if IsSupportedProtocolVersion(requested) {
+	if IsSupportedProtocolVersion(requested) && EraOfVersion(requested) == EraHandshake {
 		return requested
 	}
 	return MCPProtocolVersion
@@ -349,6 +357,12 @@ type Capabilities struct {
 	Tools     *ToolsCapability     `json:"tools,omitempty"`
 	Resources *ResourcesCapability `json:"resources,omitempty"`
 	Prompts   *PromptsCapability   `json:"prompts,omitempty"`
+
+	// Extensions maps extension identifiers to per-extension settings
+	// (2026-07-28). Byte-preserved: gridctl relays extension
+	// declarations (e.g. the tasks extension) without interpreting
+	// their settings objects.
+	Extensions map[string]json.RawMessage `json:"extensions,omitempty"`
 }
 
 // ToolsCapability indicates tools support.
@@ -445,6 +459,7 @@ type Property struct {
 
 // ToolsListResult is the response to tools/list.
 type ToolsListResult struct {
+	StatelessResultFields
 	Tools      []Tool  `json:"tools"`
 	NextCursor *string `json:"nextCursor,omitempty"`
 }
@@ -460,6 +475,16 @@ type ToolsListResult struct {
 type ToolCallParams struct {
 	Name      string         `json:"name"`
 	Arguments map[string]any `json:"arguments"`
+
+	// InputResponses and RequestState are the MRTR retry fields
+	// (2026-07-28): a client retrying a call that returned
+	// input_required echoes the server's requestState and supplies the
+	// gathered inputResponses. Both are opaque to gridctl and relayed
+	// per hop; RequestState carries the gridctl routing envelope on the
+	// upstream leg and the origin server's exact bytes on the
+	// downstream leg (see mrtr.go).
+	InputResponses json.RawMessage `json:"inputResponses,omitempty"`
+	RequestState   string          `json:"requestState,omitempty"`
 }
 
 // ToolCallResult is the response to tools/call.
@@ -487,6 +512,21 @@ type ToolCallResult struct {
 	// extensions (usage, drift signals) can land here as the wire
 	// shape stabilises.
 	Meta map[string]any `json:"_meta,omitempty"`
+
+	// ResultType is the 2026-07-28 required result discriminator:
+	// "complete" for ordinary results, "input_required" for MRTR
+	// interim results. Empty on handshake-era traffic; the stateless
+	// edge synthesizes "complete" when bridging a legacy server's
+	// result to a modern client.
+	ResultType string `json:"resultType,omitempty"`
+
+	// InputRequests and RequestState are the MRTR interim-result
+	// fields (2026-07-28). Both are byte-preserved: gridctl never
+	// inspects inputRequests, and requestState is opaque origin-server
+	// state wrapped in a routing envelope on the upstream leg (see
+	// mrtr.go).
+	InputRequests json.RawMessage `json:"inputRequests,omitempty"`
+	RequestState  string          `json:"requestState,omitempty"`
 }
 
 // CallUsage is the optional per-call usage metadata that an MCP server may
@@ -562,6 +602,7 @@ type PromptArgument struct {
 
 // PromptsListResult is the response to prompts/list.
 type PromptsListResult struct {
+	StatelessResultFields
 	Prompts []MCPPrompt `json:"prompts"`
 }
 
@@ -579,6 +620,7 @@ type PromptMessage struct {
 
 // PromptsGetResult is the response to prompts/get.
 type PromptsGetResult struct {
+	StatelessResultFields
 	Description string          `json:"description,omitempty"`
 	Messages    []PromptMessage `json:"messages"`
 }
@@ -595,6 +637,7 @@ type MCPResource struct {
 
 // ResourcesListResult is the response to resources/list.
 type ResourcesListResult struct {
+	StatelessResultFields
 	Resources []MCPResource `json:"resources"`
 }
 
@@ -612,5 +655,6 @@ type ResourceContents struct {
 
 // ResourcesReadResult is the response to resources/read.
 type ResourcesReadResult struct {
+	StatelessResultFields
 	Contents []ResourceContents `json:"contents"`
 }
