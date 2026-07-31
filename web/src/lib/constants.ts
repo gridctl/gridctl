@@ -116,6 +116,7 @@ export const POLLING = {
   TOOLS: 30000,      // Poll tools every 30 seconds
   LOGS: 2000,        // Poll logs every 2 seconds
   METRICS: 5000,     // Poll metrics every 5 seconds (live mode)
+  SESSIONS: 10000,   // Poll live MCP sessions every 10 seconds
 } as const;
 
 // Tool naming
