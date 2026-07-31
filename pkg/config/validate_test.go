@@ -248,6 +248,50 @@ func TestValidate_GatewayOutputFormat(t *testing.T) {
 	}
 }
 
+func TestValidate_ProtocolGeneration(t *testing.T) {
+	base := func(generation string) *Stack {
+		return &Stack{
+			Name:       "test",
+			Network:    Network{Name: "test-net"},
+			MCPServers: []MCPServer{{Name: "s1", Image: "alpine", Port: 3000, ProtocolGeneration: generation}},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		stack   *Stack
+		wantErr bool
+		errMsg  string
+	}{
+		{name: "absent is valid", stack: base("")},
+		{name: "auto is valid", stack: base("auto")},
+		{name: "handshake is valid", stack: base("handshake")},
+		{name: "stateless is valid", stack: base("stateless")},
+		{
+			name:    "typo is rejected",
+			stack:   base("statless"),
+			wantErr: true,
+			errMsg:  "mcp-servers[0].protocol_generation",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(tc.stack)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.errMsg) {
+					t.Errorf("expected error containing %q, got %q", tc.errMsg, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestValidate_GatewayAuth(t *testing.T) {
 	base := func() *Stack {
 		return &Stack{
