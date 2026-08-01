@@ -31,7 +31,10 @@ type Entry struct {
 	// CreatedByGridctl marks the path as gridctl-owned. Always true for
 	// recorded entries.
 	CreatedByGridctl bool
-	SyncedAt         time.Time
+	// Pack tags the projection with the pack that applied it (empty =
+	// not pack-managed).
+	Pack     string
+	SyncedAt time.Time
 }
 
 // newLockFile returns an empty view.
@@ -71,6 +74,7 @@ func viewFromLock(pl *project.Lock) *LockFile {
 			InstalledHash:    e.InstalledHash,
 			CanonicalHash:    e.CanonicalHash,
 			CreatedByGridctl: e.CreatedByGridctl,
+			Pack:             e.Pack,
 			SyncedAt:         e.SyncedAt,
 		})
 	}
@@ -95,6 +99,7 @@ func saveView(pl *project.Lock, lf *LockFile) error {
 				CreatedByGridctl: e.CreatedByGridctl,
 				InstalledHash:    e.InstalledHash,
 				CanonicalHash:    e.CanonicalHash,
+				Pack:             e.Pack,
 				SyncedAt:         e.SyncedAt,
 			})
 		}
