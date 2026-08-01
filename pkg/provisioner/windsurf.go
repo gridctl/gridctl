@@ -1,7 +1,8 @@
 package provisioner
 
 // Windsurf provisions the Windsurf (Codeium) editor MCP config.
-// Transport: native SSE (no bridge needed).
+// Transport: native streamable HTTP (no bridge needed). Entries are
+// serverUrl-only; the client infers the transport from the endpoint.
 type Windsurf struct{ mcpServersProvisioner }
 
 var _ ClientProvisioner = (*Windsurf)(nil)
@@ -17,7 +18,11 @@ func newWindsurf() *Windsurf {
 		"linux":   "~/.codeium/windsurf/mcp_config.json",
 	}
 	c.buildEntry = func(opts LinkOptions) map[string]any {
-		return sseConfig("serverUrl", opts.GatewayURL)
+		url := opts.GatewayURL
+		if opts.Port > 0 {
+			url = gatewayHTTPURLForOpts(opts)
+		}
+		return urlConfig("serverUrl", url)
 	}
 	return c
 }
