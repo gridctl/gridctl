@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,8 @@ type reconcileFake struct {
 	unlinkErr error
 	isLinked  bool
 	bridge    bool
+	// entries pre-seed the client config the wiring manager reads back.
+	entries map[string]map[string]any
 
 	linkCalls   []provisioner.LinkOptions
 	unlinkNames []string
@@ -45,7 +48,14 @@ func (f *reconcileFake) Unlink(_ string, serverName string) error {
 }
 func (f *reconcileFake) NeedsBridge() bool { return f.bridge }
 func (f *reconcileFake) ListServers(string) ([]provisioner.ServerEntry, error) {
-	return nil, nil
+	var out []provisioner.ServerEntry
+	for name, raw := range f.entries {
+		out = append(out, provisioner.ServerEntry{Name: name, Raw: raw})
+	}
+	return out, nil
+}
+func (f *reconcileFake) PlannedEntry(opts provisioner.LinkOptions) map[string]any {
+	return map[string]any{"url": opts.GatewayURL}
 }
 
 // fakeResolver maps slugs to fakes, standing in for the provisioner
@@ -59,6 +69,7 @@ func (r fakeResolver) FindBySlug(slug string) (provisioner.ClientProvisioner, bo
 
 func TestReconcileDeclaredLinks(t *testing.T) {
 	t.Run("links declared clients with resolved options", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
 		claude := &reconcileFake{slug: "claude", detected: true}
 		cursor := &reconcileFake{slug: "cursor", detected: true}
 		resolver := fakeResolver{"claude": claude, "cursor": cursor}
@@ -68,7 +79,7 @@ func TestReconcileDeclaredLinks(t *testing.T) {
 			{Client: "claude"},
 			{Client: "cursor", Group: "dev", ClientID: "cursor"},
 		}
-		reconcileDeclaredLinks(output.NewWithWriter(&buf), resolver, entries, 8181, false)
+		reconcileDeclaredLinks(context.Background(), output.NewWithWriter(&buf), resolver, entries, 8181, false)
 
 		if len(claude.linkCalls) != 1 || len(cursor.linkCalls) != 1 {
 			t.Fatalf("link calls: claude=%d cursor=%d", len(claude.linkCalls), len(cursor.linkCalls))
@@ -91,27 +102,35 @@ func TestReconcileDeclaredLinks(t *testing.T) {
 	t.Run("not detected warns and skips", func(t *testing.T) {
 		missing := &reconcileFake{slug: "zed", detected: false}
 		var buf bytes.Buffer
-		reconcileDeclaredLinks(output.NewWithWriter(&buf), fakeResolver{"zed": missing}, []config.LinkEntry{{Client: "zed"}}, 8180, false)
+		reconcileDeclaredLinks(context.Background(), output.NewWithWriter(&buf), fakeResolver{"zed": missing}, []config.LinkEntry{{Client: "zed"}}, 8180, false)
 		if len(missing.linkCalls) != 0 {
 			t.Errorf("undetected client must not be linked")
 		}
 	})
 
 	t.Run("already linked is a silent no-op", func(t *testing.T) {
-		f := &reconcileFake{slug: "claude", detected: true, linkErr: provisioner.ErrAlreadyLinked}
+		t.Setenv("HOME", t.TempDir())
+		// The pre-existing entry matches what gridctl would write, so the
+		// manager adopts it silently instead of writing or warning.
+		f := &reconcileFake{slug: "claude", detected: true,
+			entries: map[string]map[string]any{"gridctl": {"url": "http://localhost:8180/mcp"}}}
 		var buf bytes.Buffer
-		reconcileDeclaredLinks(output.NewWithWriter(&buf), fakeResolver{"claude": f}, []config.LinkEntry{{Client: "claude"}}, 8180, false)
+		reconcileDeclaredLinks(context.Background(), output.NewWithWriter(&buf), fakeResolver{"claude": f}, []config.LinkEntry{{Client: "claude"}}, 8180, false)
 		if strings.Contains(buf.String(), "already") {
 			t.Errorf("already-linked should not print: %q", buf.String())
 		}
 	})
 
 	t.Run("conflict warns with force hint and continues", func(t *testing.T) {
-		conflicted := &reconcileFake{slug: "claude", detected: true, linkErr: provisioner.ErrConflict}
+		t.Setenv("HOME", t.TempDir())
+		// A foreign entry (never recorded, not gridctl-shaped) at the
+		// gridctl name is refused, never overwritten.
+		conflicted := &reconcileFake{slug: "claude", detected: true,
+			entries: map[string]map[string]any{"gridctl": {"url": "https://example.com/mine"}}}
 		next := &reconcileFake{slug: "cursor", detected: true}
 		var buf bytes.Buffer
 		entries := []config.LinkEntry{{Client: "claude"}, {Client: "cursor"}}
-		reconcileDeclaredLinks(output.NewWithWriter(&buf), fakeResolver{"claude": conflicted, "cursor": next}, entries, 8180, false)
+		reconcileDeclaredLinks(context.Background(), output.NewWithWriter(&buf), fakeResolver{"claude": conflicted, "cursor": next}, entries, 8180, false)
 		if !strings.Contains(buf.String(), "--force") {
 			t.Errorf("conflict warning must carry the force hint: %q", buf.String())
 		}
@@ -121,11 +140,12 @@ func TestReconcileDeclaredLinks(t *testing.T) {
 	})
 
 	t.Run("quiet keeps warnings, drops success lines", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
 		ok := &reconcileFake{slug: "claude", detected: true}
 		missing := &reconcileFake{slug: "zed", detected: false}
 		var buf bytes.Buffer
 		entries := []config.LinkEntry{{Client: "claude"}, {Client: "zed"}}
-		reconcileDeclaredLinks(output.NewWithWriter(&buf), fakeResolver{"claude": ok, "zed": missing}, entries, 8180, true)
+		reconcileDeclaredLinks(context.Background(), output.NewWithWriter(&buf), fakeResolver{"claude": ok, "zed": missing}, entries, 8180, true)
 		out := buf.String()
 		if strings.Contains(out, "Linked") {
 			t.Errorf("quiet must suppress success lines: %q", out)
