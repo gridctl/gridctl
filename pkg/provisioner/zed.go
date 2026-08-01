@@ -7,7 +7,8 @@ import (
 )
 
 // Zed provisions the Zed Editor MCP config.
-// Transport: native SSE (no bridge needed).
+// Transport: native streamable HTTP (no bridge needed). Zed's HTTP transport
+// is streamable-only (no legacy SSE fallback), so the entry must point at /mcp.
 // Uses "context_servers" key (not "mcpServers").
 type Zed struct {
 	name  string
@@ -64,7 +65,11 @@ func (z *Zed) IsLinked(configPath string, serverName string) (bool, error) {
 }
 
 func (z *Zed) buildEntry(opts LinkOptions) map[string]any {
-	return sseConfig("url", opts.GatewayURL)
+	url := opts.GatewayURL
+	if opts.Port > 0 {
+		url = gatewayHTTPURLForOpts(opts)
+	}
+	return urlConfig("url", url)
 }
 
 func (z *Zed) Link(configPath string, opts LinkOptions) error {
