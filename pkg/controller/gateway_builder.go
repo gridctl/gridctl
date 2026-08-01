@@ -1395,6 +1395,10 @@ func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, home 
 	}
 	// A skill reconcile failure deliberately does not abort the agent
 	// pass below: the two kinds are independent tenants of the engine.
+	// The wiring kind (pkg/wiring) is deliberately NOT reconciled here:
+	// client config endpoints change only on explicit user action, and a
+	// daemon silently rewriting them would be the exact failure mode
+	// wiring ownership exists to prevent. Keep it out of this loop.
 	mgr := skillsync.NewManagerWithHome(home, inst.RegistryServer.Store())
 	results, err := mgr.Reconcile(ctx)
 	if err != nil {
