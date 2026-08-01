@@ -39,7 +39,8 @@ type ClientProvisioner interface {
 	// Unlink removes the gridctl entry from the client config.
 	Unlink(configPath string, serverName string) error
 
-	// NeedsBridge returns true if this client requires mcp-remote for SSE.
+	// NeedsBridge returns true if this stdio-only client requires the
+	// mcp-remote bridge to reach the gateway's HTTP endpoint.
 	NeedsBridge() bool
 
 	// ListServers returns every MCP server entry present in the client
@@ -61,7 +62,7 @@ type ServerEntry struct {
 
 // LinkOptions configures how a link is created.
 type LinkOptions struct {
-	GatewayURL string // e.g., "http://localhost:8180/sse"
+	GatewayURL string // e.g., "http://localhost:8180/mcp" (streamable HTTP)
 	Port       int    // Gateway port for HTTP URL construction
 	ServerName string // Key name in config (default: "gridctl")
 	ClientID   string // Stable client identifier embedded as the `client` query param (empty = none)
@@ -82,7 +83,7 @@ type LinkResult struct {
 	ConfigPath string
 	BackupPath string
 	Action     string // "linked", "updated", "skipped", "already-linked"
-	Transport  string // "native SSE" or "mcp-remote bridge"
+	Transport  string // "native HTTP" or "mcp-remote bridge"
 	Error      error
 }
 
@@ -176,21 +177,13 @@ func TransportDescription(needsBridge bool) string {
 	if needsBridge {
 		return "mcp-remote bridge"
 	}
-	return "native SSE"
+	return "native HTTP"
 }
 
-// TransportDescriptionFor returns a transport description for a specific provisioner,
-// distinguishing HTTP-native clients from SSE-native clients.
+// TransportDescriptionFor returns a transport description for a specific
+// provisioner. Every non-bridge client now links over streamable HTTP.
 func TransportDescriptionFor(prov ClientProvisioner) string {
-	if prov.NeedsBridge() {
-		return "mcp-remote bridge"
-	}
-	switch prov.(type) {
-	case *ClaudeCode, *GeminiCLI, *Antigravity, *OpenCode, *GrokBuild:
-		return "native HTTP"
-	default:
-		return "native SSE"
-	}
+	return TransportDescription(prov.NeedsBridge())
 }
 
 // ClientInfo holds detection and link status for one client provisioner.
@@ -225,7 +218,9 @@ func (r *Registry) AllClientInfo(serverName string) []ClientInfo {
 	return infos
 }
 
-// GatewayURL constructs the SSE gateway URL from a port.
+// GatewayURL constructs the legacy SSE gateway URL from a port. New links
+// never write this shape (legacy HTTP+SSE is deprecated upstream); it exists
+// so existing /sse entries are still recognized on read.
 func GatewayURL(port int) string {
 	return fmt.Sprintf("http://localhost:%d/sse", port)
 }
@@ -235,7 +230,8 @@ func GatewayHTTPURL(port int) string {
 	return fmt.Sprintf("http://localhost:%d/mcp", port)
 }
 
-// GroupGatewayURL constructs a tool group's SSE gateway URL from a port.
+// GroupGatewayURL constructs a tool group's legacy SSE gateway URL. Like
+// GatewayURL, it is read-side only: new links write the HTTP shape.
 func GroupGatewayURL(port int, group string) string {
 	return fmt.Sprintf("http://localhost:%d/groups/%s/sse", port, group)
 }
