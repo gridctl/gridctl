@@ -35,6 +35,10 @@ const (
 	// KindAgent projects imported agent definitions into client agent
 	// directories as single files (pkg/agentsync).
 	KindAgent Kind = "agent"
+	// KindWiring records ownership of gateway entries merged into client
+	// MCP configs (pkg/wiring): key-level ownership inside files gridctl
+	// does not otherwise own, per Article XVI.
+	KindWiring Kind = "wiring"
 )
 
 // Projection states shared by every kind. Kinds may extend the
@@ -97,6 +101,17 @@ type Entry struct {
 	InstalledHash string `yaml:"installed_hash,omitempty"`
 	CanonicalHash string `yaml:"canonical_hash,omitempty"`
 	CreatedFile   bool   `yaml:"created_file,omitempty"`
+
+	// KindWiring attributes. Path is the composite "<config path>#<entry
+	// name>" (one config file legitimately holds several owned entries, and
+	// the one-owner invariant keys on the full Path); ConfigPath is the real
+	// file path so no consumer parses the composite. Hashes is the short
+	// history of canonical value hashes gridctl wrote, newest last, so a
+	// shape change by a newer gridctl never reads as user drift.
+	ConfigPath string   `yaml:"config_path,omitempty"`
+	Group      string   `yaml:"group,omitempty"`
+	ClientID   string   `yaml:"client_id,omitempty"`
+	Hashes     []string `yaml:"hashes,omitempty"`
 
 	SyncedAt time.Time `yaml:"synced_at"`
 
