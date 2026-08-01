@@ -58,6 +58,9 @@ type SyncOptions struct {
 	Force bool
 	// DryRun reports the plan without writing anything.
 	DryRun bool
+	// Pack tags recorded projections with the applying pack. Empty keeps
+	// any existing tag (a plain re-sync never strips pack ownership).
+	Pack string
 }
 
 // SyncResult describes what happened (or would happen) for one
@@ -399,7 +402,7 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 				}
 				if srcHash == entry.TreeHash {
 					res.Action = ActionUnchanged
-					m.record(lf, sk.Name, t.Slug, ch, dest, entry.TreeHash)
+					m.record(lf, sk.Name, t.Slug, ch, dest, entry.TreeHash, opts.Pack)
 					return res
 				}
 			}
@@ -416,7 +419,7 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 			}
 			if rerr == nil && ch == ChannelSymlink && link == src {
 				res.Action = ActionUnchanged
-				m.record(lf, sk.Name, t.Slug, ch, dest, "")
+				m.record(lf, sk.Name, t.Slug, ch, dest, "", opts.Pack)
 				return res
 			}
 			// A link re-pointed away from the registry is drift, exactly
@@ -469,7 +472,7 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 			res.Action, res.Error = ActionError, err.Error()
 			return res
 		}
-		m.record(lf, sk.Name, t.Slug, ch, dest, "")
+		m.record(lf, sk.Name, t.Slug, ch, dest, "", opts.Pack)
 		res.Action = ActionLinked
 	case ChannelCopy:
 		// The source hash is computed before the copy; the copy is
@@ -484,7 +487,7 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 			res.Action, res.Error = ActionError, err.Error()
 			return res
 		}
-		m.record(lf, sk.Name, t.Slug, ch, dest, h)
+		m.record(lf, sk.Name, t.Slug, ch, dest, h, opts.Pack)
 		res.Action = ActionCopied
 	}
 	if exists {
@@ -493,13 +496,21 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 	return res
 }
 
-// record updates the lock entry for one projection.
-func (m *Manager) record(lf *LockFile, skill, client string, ch Channel, target, hash string) {
+// record updates the lock entry for one projection. The pack tag is
+// stamped when the sync carries one and carried forward otherwise, so a
+// plain re-sync never strips pack ownership.
+func (m *Manager) record(lf *LockFile, skill, client string, ch Channel, target, hash, packTag string) {
+	if packTag == "" {
+		if prev := lf.entry(skill, client); prev != nil {
+			packTag = prev.Pack
+		}
+	}
 	lf.set(skill, client, &Entry{
 		Channel:          ch,
 		Target:           target,
 		CreatedByGridctl: true,
 		TreeHash:         hash,
+		Pack:             packTag,
 		SyncedAt:         time.Now().UTC(),
 	})
 }

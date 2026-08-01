@@ -37,6 +37,9 @@ type Entry struct {
 	// TreeHash is the copied directory's tree hash at sync time (empty
 	// for symlinks, whose content lives in the registry).
 	TreeHash string
+	// Pack tags the projection with the pack that applied it (empty =
+	// not pack-managed).
+	Pack     string
 	SyncedAt time.Time
 }
 
@@ -79,6 +82,7 @@ func viewFromEntries(entries []*project.Entry) *LockFile {
 			Target:           e.Path,
 			CreatedByGridctl: e.CreatedByGridctl,
 			TreeHash:         e.TreeHash,
+			Pack:             e.Pack,
 			SyncedAt:         e.SyncedAt,
 		})
 	}
@@ -108,6 +112,7 @@ func saveView(pl *project.Lock, lf *LockFile) error {
 				Channel:          string(e.Channel),
 				CreatedByGridctl: e.CreatedByGridctl,
 				TreeHash:         e.TreeHash,
+				Pack:             e.Pack,
 				SyncedAt:         e.SyncedAt,
 			})
 		}

@@ -69,6 +69,7 @@ type Row struct {
 	Client      string     `json:"client"`
 	Name        string     `json:"name"`
 	Channel     string     `json:"channel"`
+	Pack        string     `json:"pack,omitempty"`
 	Target      string     `json:"target,omitempty"`
 	State       string     `json:"state"`
 	Detail      string     `json:"detail,omitempty"`
@@ -94,6 +95,9 @@ type SyncOptions struct {
 	Force bool
 	// DryRun reports the plan without writing anything.
 	DryRun bool
+	// Pack tags recorded entries with the applying pack. Empty keeps any
+	// existing tag (a plain link or sync never strips pack ownership).
+	Pack string
 }
 
 // StatusOptions configure a status pass.
@@ -153,7 +157,7 @@ func (m *Manager) LinkClient(ctx context.Context, prov provisioner.ClientProvisi
 	var res Result
 	err := m.store.Mutate(ctx, opts.DryRun, func(pl *project.Lock) error {
 		lf := viewFromLock(pl)
-		res = m.linkLocked(lf, prov, configPath, opts)
+		res = m.linkLocked(lf, prov, configPath, opts, "")
 		if opts.DryRun || !linkRecorded(res.Action) {
 			return nil
 		}
@@ -173,7 +177,7 @@ func linkRecorded(action string) bool {
 
 // linkLocked makes the ownership decision for one client entry and
 // performs the write. It mutates the view; the caller persists it.
-func (m *Manager) linkLocked(lf *LockFile, prov provisioner.ClientProvisioner, configPath string, opts provisioner.LinkOptions) Result {
+func (m *Manager) linkLocked(lf *LockFile, prov provisioner.ClientProvisioner, configPath string, opts provisioner.LinkOptions, packTag string) Result {
 	slug, name := prov.Slug(), opts.ServerName
 	res := Result{Client: slug, Name: name, Target: configPath}
 
@@ -200,7 +204,7 @@ func (m *Manager) linkLocked(lf *LockFile, prov provisioner.ClientProvisioner, c
 	case !exists:
 		// Nothing at the key: a first link, or a relink over a wiped
 		// entry (the record, if any, is refreshed either way).
-		return m.writeEntry(lf, prov, configPath, opts, rec, planned, ActionLinked, res)
+		return m.writeEntry(lf, prov, configPath, opts, rec, planned, ActionLinked, packTag, res)
 
 	case rec == nil:
 		if curHash == planned {
@@ -210,7 +214,7 @@ func (m *Manager) linkLocked(lf *LockFile, prov provisioner.ClientProvisioner, c
 				res.Action = ActionWouldAdopt
 				return res
 			}
-			m.record(lf, slug, name, configPath, opts, appendHash(nil, curHash), false)
+			m.record(lf, slug, name, configPath, opts, appendHash(nil, curHash), false, packTag)
 			res.Action = ActionAdopted
 			res.Detail = "existing entry matches what gridctl would write; recorded ownership without rewriting"
 			return res
@@ -221,7 +225,7 @@ func (m *Manager) linkLocked(lf *LockFile, prov provisioner.ClientProvisioner, c
 			res.Remediation = fmt.Sprintf("adopt it with 'gridctl project adopt --kind wiring --client %s --name %s', or overwrite it with --force", slug, name)
 			return res
 		}
-		return m.writeEntry(lf, prov, configPath, opts, nil, planned, ActionUpdated, res)
+		return m.writeEntry(lf, prov, configPath, opts, nil, planned, ActionUpdated, packTag, res)
 
 	default:
 		// An entry identical to what gridctl would write is never drift,
@@ -230,7 +234,7 @@ func (m *Manager) linkLocked(lf *LockFile, prov provisioner.ClientProvisioner, c
 		if curHash == planned {
 			res.Action = ActionUnchanged
 			if !opts.DryRun {
-				m.record(lf, slug, name, configPath, opts, appendHash(rec.Hashes, planned), rec.CreatedByGridctl)
+				m.record(lf, slug, name, configPath, opts, appendHash(rec.Hashes, planned), rec.CreatedByGridctl, packTag)
 			}
 			return res
 		}
@@ -240,14 +244,14 @@ func (m *Manager) linkLocked(lf *LockFile, prov provisioner.ClientProvisioner, c
 			res.Remediation = fmt.Sprintf("keep the edit with 'gridctl project adopt --kind wiring --client %s --name %s', or overwrite it with --force", slug, name)
 			return res
 		}
-		return m.writeEntry(lf, prov, configPath, opts, rec, planned, ActionUpdated, res)
+		return m.writeEntry(lf, prov, configPath, opts, rec, planned, ActionUpdated, packTag, res)
 	}
 }
 
 // writeEntry performs the provisioner write with ownership resolved and
 // records the result. action is the success action for the existing-key
 // case; a fresh key reports linked.
-func (m *Manager) writeEntry(lf *LockFile, prov provisioner.ClientProvisioner, configPath string, opts provisioner.LinkOptions, rec *Entry, planned, action string, res Result) Result {
+func (m *Manager) writeEntry(lf *LockFile, prov provisioner.ClientProvisioner, configPath string, opts provisioner.LinkOptions, rec *Entry, planned, action, packTag string, res Result) Result {
 	if opts.DryRun {
 		if action == ActionLinked {
 			res.Action = ActionWouldLink
@@ -266,19 +270,25 @@ func (m *Manager) writeEntry(lf *LockFile, prov provisioner.ClientProvisioner, c
 		history = rec.Hashes
 	}
 	created := rec == nil || rec.CreatedByGridctl
-	m.record(lf, prov.Slug(), opts.ServerName, configPath, opts, appendHash(history, planned), created)
+	m.record(lf, prov.Slug(), opts.ServerName, configPath, opts, appendHash(history, planned), created, packTag)
 	res.Action = action
 	return res
 }
 
 // record updates the view's entry for (client, name).
-func (m *Manager) record(lf *LockFile, client, name, configPath string, opts provisioner.LinkOptions, hashes []string, createdByGridctl bool) {
+func (m *Manager) record(lf *LockFile, client, name, configPath string, opts provisioner.LinkOptions, hashes []string, createdByGridctl bool, packTag string) {
+	if packTag == "" {
+		if prev := lf.entry(client, name); prev != nil {
+			packTag = prev.Pack
+		}
+	}
 	lf.set(client, name, &Entry{
 		ConfigPath:       configPath,
 		Group:            opts.Group,
 		ClientID:         opts.ClientID,
 		Hashes:           hashes,
 		CreatedByGridctl: createdByGridctl,
+		Pack:             packTag,
 		SyncedAt:         time.Now().UTC(),
 	})
 }
@@ -426,7 +436,7 @@ func (m *Manager) Adopt(ctx context.Context, client, name string) (Result, error
 		} else if strings.HasPrefix(name, "gridctl-") {
 			opts.Group = strings.TrimPrefix(name, "gridctl-")
 		}
-		m.record(lf, client, name, configPath, opts, appendHash(history, curHash), created)
+		m.record(lf, client, name, configPath, opts, appendHash(history, curHash), created, "")
 		res.Action = ActionAdopted
 		return saveView(pl, lf)
 	})
@@ -461,7 +471,7 @@ func (m *Manager) Sync(ctx context.Context, opts SyncOptions) ([]Result, error) 
 				})
 				continue
 			}
-			res := m.linkLocked(lf, dc.Provisioner, dc.ConfigPath, opts.linkOptions())
+			res := m.linkLocked(lf, dc.Provisioner, dc.ConfigPath, opts.linkOptions(), opts.Pack)
 			results = append(results, res)
 			if !opts.DryRun && linkRecorded(res.Action) {
 				if err := saveView(pl, lf); err != nil {
@@ -571,7 +581,7 @@ func gridctlEntryName(name, serverName string) bool {
 
 // statusFor computes one recorded entry's row.
 func (m *Manager) statusFor(client, name string, e *Entry, port int) Row {
-	row := Row{Client: client, Name: name, Channel: ChannelMergeKey, Target: e.ConfigPath}
+	row := Row{Client: client, Name: name, Channel: ChannelMergeKey, Pack: e.Pack, Target: e.ConfigPath}
 	syncedAt := e.SyncedAt
 	row.SyncedAt = &syncedAt
 

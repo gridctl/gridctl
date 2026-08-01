@@ -10,10 +10,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ImportLockVersion is the current skills.lock.yaml schema version.
-// Version 1 adds the version field itself and per-source agents;
-// version-less files predate both and migrate on read.
-const ImportLockVersion = 1
+// ImportLockVersion is the highest skills.lock.yaml schema version this
+// gridctl reads. Version 1 added the version field itself and
+// per-source agents; version 2 added per-source pack records. Files are
+// written at the lowest version that can represent them (see
+// WriteLockFile), so users without packs keep downgrade freedom.
+const ImportLockVersion = 2
 
 // ErrNewerImportLockVersion signals a skills.lock.yaml written by a
 // newer gridctl. Callers must never paper over it: acting on state a
@@ -40,6 +42,35 @@ type LockedSource struct {
 	// CredentialRef is an opaque reference like "${vault:GIT_TOKEN}" used to
 	// re-resolve credentials on source update. Raw tokens are never stored.
 	CredentialRef string `yaml:"credential_ref,omitempty"`
+	// Pack records the pack manifest this source was imported through,
+	// with its resolved selection. Nil for plain skill/agent sources.
+	Pack *LockedPack `yaml:"pack,omitempty"`
+}
+
+// LockedPack is the recorded state of an imported pack: the manifest
+// identity plus the selection as resolved against discovery at import
+// time (never the empty-means-all shorthand).
+type LockedPack struct {
+	Name    string   `yaml:"name"`
+	Version string   `yaml:"version,omitempty"`
+	Wiring  bool     `yaml:"wiring,omitempty"`
+	Clients []string `yaml:"clients,omitempty"`
+	Skills  []string `yaml:"skills,omitempty"`
+	Agents  []string `yaml:"agents,omitempty"`
+	// Unresolved lists manifest-selected names discovery could not find,
+	// so status can keep reporting them until the upstream repo (or the
+	// manifest) is fixed.
+	Unresolved []string `yaml:"unresolved,omitempty"`
+}
+
+// FindPackSource finds the source carrying a pack by pack name.
+func (lf *LockFile) FindPackSource(packName string) (string, *LockedSource, bool) {
+	for srcName, src := range lf.Sources {
+		if src.Pack != nil && src.Pack.Name == packName {
+			return srcName, &src, true
+		}
+	}
+	return "", nil, false
 }
 
 // LockedSkill records per-skill metadata within a source.
@@ -98,7 +129,16 @@ func WriteLockFile(path string, lf *LockFile) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("creating lock file directory: %w", err)
 	}
-	lf.Version = ImportLockVersion
+	// Stamp the lowest version that can represent the file: pack records
+	// need version 2 (an older binary would silently drop them on
+	// rewrite); everything else stays readable by version-1 binaries.
+	lf.Version = 1
+	for _, src := range lf.Sources {
+		if src.Pack != nil {
+			lf.Version = ImportLockVersion
+			break
+		}
+	}
 
 	data, err := yaml.Marshal(lf)
 	if err != nil {

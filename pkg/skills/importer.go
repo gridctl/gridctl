@@ -85,6 +85,15 @@ type ImportOptions struct {
 	Force      bool     // Overwrite existing skills
 	Rename     string   // Rename the skill on import
 	Selected   []string // Only import skills with these names (empty = import all)
+	// SelectedAgents imports exactly these agent names. When empty, the
+	// legacy behavior holds: all agents when Selected is also empty, no
+	// agents when a skill selection is present (the web UI picker's
+	// contract). Pack imports always pass fully resolved lists.
+	SelectedAgents []string
+	// Discovered supplies a pre-cloned discovery result so callers that
+	// already ran CloneAndDiscover (pack add reads the manifest first)
+	// do not clone twice. Nil means Import clones itself.
+	Discovered *CloneResult
 	Auth       AuthConfig
 	// PreserveState carries over the existing skill's State (draft/active/
 	// disabled) instead of resetting it. Used by Update so that re-syncing
@@ -183,9 +192,13 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 
 	imp.logger.Info("importing skills", "repo", gitpkg.RedactURL(opts.Repo), "ref", opts.Ref)
 
-	result, err := CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, opts.Auth, imp.logger)
-	if err != nil {
-		return nil, err
+	result := opts.Discovered
+	if result == nil {
+		var err error
+		result, err = CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, opts.Auth, imp.logger)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if len(result.Skills) == 0 && len(result.Agents) == 0 {
@@ -427,16 +440,35 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		// "add more from this source" flow), and an unforced re-import
 		// skips agents that already exist in the store, but neither means
 		// the source stopped shipping them.
-		if prev, ok := lf.Sources[sourceName]; ok && prev.Agents != nil {
-			if len(opts.Selected) > 0 {
-				lockedAgents = prev.Agents
-			} else {
-				for _, name := range keptAgents {
-					if entry, ok := prev.Agents[name]; ok {
-						if lockedAgents == nil {
-							lockedAgents = make(map[string]LockedAgent)
+		var prevPack *LockedPack
+		if prev, ok := lf.Sources[sourceName]; ok {
+			// A source rewrite must never orphan its pack record: pack
+			// verbs would report "not imported" while projections still
+			// carry the tag, with no cascade-removal path left.
+			prevPack = prev.Pack
+			if prev.Agents != nil {
+				switch {
+				case len(opts.SelectedAgents) > 0:
+					// An explicit agent selection re-imports those agents
+					// only; the source's other agents keep their entries.
+					for name, entry := range prev.Agents {
+						if _, done := lockedAgents[name]; !done {
+							if lockedAgents == nil {
+								lockedAgents = make(map[string]LockedAgent)
+							}
+							lockedAgents[name] = entry
 						}
-						lockedAgents[name] = entry
+					}
+				case len(opts.Selected) > 0:
+					lockedAgents = prev.Agents
+				default:
+					for _, name := range keptAgents {
+						if entry, ok := prev.Agents[name]; ok {
+							if lockedAgents == nil {
+								lockedAgents = make(map[string]LockedAgent)
+							}
+							lockedAgents[name] = entry
+						}
 					}
 				}
 			}
@@ -450,6 +482,7 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			Skills:        lockedSkills,
 			Agents:        lockedAgents,
 			CredentialRef: opts.Auth.CredentialRef,
+			Pack:          prevPack,
 		})
 
 		if err := WriteLockFile(imp.lockPath, lf); err != nil {
@@ -469,8 +502,26 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 // skipped as already-existing conflicts; their prior lock entries must
 // survive the source rewrite.
 func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, importResult *ImportResult) (map[string]LockedAgent, []string) {
-	if len(result.Agents) == 0 || len(opts.Selected) > 0 {
+	// Legacy contract: a skill selection alone skips agents (the web UI
+	// picker chose specific skills; agents were not on offer). An
+	// explicit agent selection overrides that and imports exactly those.
+	if len(result.Agents) == 0 || (len(opts.Selected) > 0 && len(opts.SelectedAgents) == 0) {
 		return nil, nil
+	}
+	selectedAgents := make(map[string]bool, len(opts.SelectedAgents))
+	for _, name := range opts.SelectedAgents {
+		selectedAgents[name] = true
+	}
+	// Selected-implies-overwrite is scoped to this source: an agent the
+	// lockfile attributes to a different source is another import's
+	// resource and still needs --force.
+	sameSource := func(name string) bool {
+		lf, err := ReadLockFile(imp.lockPath)
+		if err != nil {
+			return false
+		}
+		srcName, _, found := lf.FindAgentSource(name)
+		return !found || srcName == RepoToName(opts.Repo)
 	}
 
 	// Duplicate names inside one batch fail every carrier: Claude Code
@@ -484,6 +535,9 @@ func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, impor
 	lockedAgents := make(map[string]LockedAgent)
 	var kept []string
 	for _, discovered := range result.Agents {
+		if len(opts.SelectedAgents) > 0 && !selectedAgents[discovered.Name] {
+			continue
+		}
 		if paths := nameSources[discovered.Name]; len(paths) > 1 {
 			importResult.SkippedAgents = append(importResult.SkippedAgents, SkippedAgent{
 				Name:   discovered.Name,
@@ -498,7 +552,8 @@ func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, impor
 			})
 			continue
 		}
-		if _, err := GetAgent(imp.registryDir, discovered.Name); err == nil && !opts.Force {
+		agentForce := opts.Force || (len(opts.SelectedAgents) > 0 && selectedAgents[discovered.Name] && sameSource(discovered.Name))
+		if _, err := GetAgent(imp.registryDir, discovered.Name); err == nil && !agentForce {
 			importResult.SkippedAgents = append(importResult.SkippedAgents, SkippedAgent{
 				Name:   discovered.Name,
 				Reason: fmt.Sprintf("agent %q already exists (use --force to overwrite)", discovered.Name),

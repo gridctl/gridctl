@@ -58,6 +58,17 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 | `gridctl unlink [client]` | Remove gridctl from an LLM client's config; `-a` / `--all` for every client, `--name <name>` to target a non-default entry, `--dry-run` to preview, `--force` to remove a recorded entry that was hand-edited. Only recorded entries are ever deleted: an entry gridctl did not write is never removed, with or without `--force` (adopt it first with `gridctl project adopt`). |
 | `gridctl import [client]` | The reverse of link: scan installed clients for existing MCP server definitions and append selected ones to stack.yaml (client configs are read-only; the stack file is backed up first). Dedupes identical servers across clients with provenance, filters the gateway's own entry, skips name collisions in non-interactive runs (interactive runs prompt to skip, rename, or overwrite), and offers plaintext env secrets into the variable store as `${var:KEY}`. `-a` / `--all`, `--dry-run`, `-y` / `--yes`, `-f` / `--file <stack.yaml>`, `--no-vault`, `--format json` or `--json`. Exit `0` imported or nothing to do, `1` cancelled, `2` infrastructure or validation error. |
 
+## Packs
+
+`gridctl pack` imports and applies team packs: a git repo with a `gridctl-pack.yaml` manifest selecting skills, agents, and gateway wiring. See [`docs/packs.md`](./packs.md) for the manifest schema and semantics.
+
+| Command | Purpose |
+|---|---|
+| `gridctl pack add <repo-url>` | Import a pack's selection into the registry (`--ref`, `--trust`, `--dry-run`, `--format json` or `--json`). Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
+| `gridctl pack apply <name>` | Project the pack through the existing engines, tagging every projection (`--force`, `--dry-run`, `--clients`, `--format json` or `--json`, `--plain`). Additive; `Applied N/M` summary; exit `0`/`1`/`2`. |
+| `gridctl pack status [name]` | Per-resource state (shared vocabulary plus `unresolved`); exit `0`/`1`/`2`. `--format json` or `--json`, `--plain`. |
+| `gridctl pack remove <name>` | Cascade removal: projections, wiring records, registry entries, then the pack record; drifted projections kept unless `--force` (`--dry-run`, `--format json` or `--json`). |
+
 ## Wiring ownership (project)
 
 `gridctl project` manages recorded projections. The wiring kind (the only kind served here today; skills and agents stay under `gridctl skill project` for now) records ownership of the gateway entries `gridctl link` writes into client configs, so drift, adoption, and safe removal are decided from recorded state per Constitution Article XVI. All commands are pure file operations.

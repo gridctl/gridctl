@@ -125,6 +125,7 @@ func init() {
 		projectCmd:   groupClients,
 		ctxCmd:       groupClients,
 		skillCmd:     groupSkills,
+		packCmd:      groupSkills,
 		activateCmd:  groupSkills,
 		varCmd:       groupConfig,
 		vaultCmd:     groupConfig, // hidden; grouped for completeness

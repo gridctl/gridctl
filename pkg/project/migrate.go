@@ -89,6 +89,7 @@ var (
 		"strategy": true, "installed_hash": true, "canonical_hash": true,
 		"created_file": true, "synced_at": true,
 		"config_path": true, "group": true, "client_id": true, "hashes": true,
+		"pack": true,
 	}
 )
 
