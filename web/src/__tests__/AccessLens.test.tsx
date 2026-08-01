@@ -17,7 +17,7 @@ const CURSOR: ClientStatus = {
   slug: 'cursor',
   detected: true,
   linked: true,
-  transport: 'native SSE',
+  transport: 'native HTTP',
   effectiveScope: { configured: true, unscoped: false, servers: ['github'], tools: ['github__search', 'github__create'] },
 };
 
