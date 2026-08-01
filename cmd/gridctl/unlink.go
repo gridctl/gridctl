@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/wiring"
 
 	"github.com/spf13/cobra"
 )
@@ -15,6 +17,7 @@ var (
 	unlinkName   string
 	unlinkGroup  string
 	unlinkDryRun bool
+	unlinkForce  bool
 )
 
 var unlinkCmd = &cobra.Command{
@@ -38,7 +41,7 @@ Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigr
 		if unlinkGroup != "" && !cmd.Flags().Changed("name") {
 			unlinkName = "gridctl-" + unlinkGroup
 		}
-		return runUnlink(client)
+		return runUnlink(cmd.Context(), client)
 	},
 }
 
@@ -47,29 +50,30 @@ func init() {
 	unlinkCmd.Flags().StringVarP(&unlinkName, "name", "n", "gridctl", "Server name to remove")
 	unlinkCmd.Flags().StringVar(&unlinkGroup, "group", "", "Tool group whose link entry to remove (targets the gridctl-<group> entry)")
 	unlinkCmd.Flags().BoolVar(&unlinkDryRun, "dry-run", false, "Show what would change without modifying files")
+	unlinkCmd.Flags().BoolVar(&unlinkForce, "force", false, "Remove even when the recorded entry was edited")
 }
 
-func runUnlink(client string) error {
+func runUnlink(ctx context.Context, client string) error {
 	printer := output.New()
 	registry := provisioner.NewRegistry()
 
 	// Direct unlink
 	if client != "" {
-		return unlinkSingleClient(printer, registry, client)
+		return unlinkSingleClient(ctx, printer, registry, client)
 	}
 
 	// Unlink all
 	if unlinkAll {
-		return unlinkAllClients(printer, registry)
+		return unlinkAllClients(ctx, printer, registry)
 	}
 
 	// Interactive: find linked clients. The selector guards against
 	// non-terminal stdin itself, so the zero-linked no-op and the
 	// single-client auto-unlink stay script-safe.
-	return unlinkInteractive(printer, registry)
+	return unlinkInteractive(ctx, printer, registry)
 }
 
-func unlinkSingleClient(printer *output.Printer, registry *provisioner.Registry, slug string) error {
+func unlinkSingleClient(ctx context.Context, printer *output.Printer, registry *provisioner.Registry, slug string) error {
 	prov, ok := registry.FindBySlug(slug)
 	if !ok {
 		return unknownClientError(registry, slug)
@@ -81,10 +85,10 @@ func unlinkSingleClient(printer *output.Printer, registry *provisioner.Registry,
 		return nil
 	}
 
-	return doUnlink(printer, prov, configPath)
+	return doUnlink(ctx, printer, prov, configPath)
 }
 
-func unlinkAllClients(printer *output.Printer, registry *provisioner.Registry) error {
+func unlinkAllClients(ctx context.Context, printer *output.Printer, registry *provisioner.Registry) error {
 	detected := registry.DetectAll()
 	if len(detected) == 0 {
 		printer.Info("No supported LLM clients detected")
@@ -92,7 +96,10 @@ func unlinkAllClients(printer *output.Printer, registry *provisioner.Registry) e
 	}
 
 	for _, dc := range detected {
-		if err := doUnlink(printer, dc.Provisioner, dc.ConfigPath); err != nil {
+		if err := doUnlink(ctx, printer, dc.Provisioner, dc.ConfigPath); err != nil {
+			if errors.Is(err, errLinkSkipped) {
+				continue
+			}
 			return err
 		}
 	}
@@ -100,7 +107,7 @@ func unlinkAllClients(printer *output.Printer, registry *provisioner.Registry) e
 	return nil
 }
 
-func unlinkInteractive(printer *output.Printer, registry *provisioner.Registry) error {
+func unlinkInteractive(ctx context.Context, printer *output.Printer, registry *provisioner.Registry) error {
 	detected := registry.DetectAll()
 	if len(detected) == 0 {
 		printer.Info("No supported LLM clients detected")
@@ -121,16 +128,16 @@ func unlinkInteractive(printer *output.Printer, registry *provisioner.Registry) 
 		return nil
 	}
 
-	return unlinkSelected(printer, linked)
+	return unlinkSelected(ctx, printer, linked)
 }
 
 // unlinkSelected unlinks a single linked client directly, or prompts when
 // several are linked. Split from unlinkInteractive so tests can drive it
 // with fake clients and a swapped selector.
-func unlinkSelected(printer *output.Printer, linked []provisioner.DetectedClient) error {
+func unlinkSelected(ctx context.Context, printer *output.Printer, linked []provisioner.DetectedClient) error {
 	// If only one linked client, unlink directly
 	if len(linked) == 1 {
-		return doUnlink(printer, linked[0].Provisioner, linked[0].ConfigPath)
+		return doUnlink(ctx, printer, linked[0].Provisioner, linked[0].ConfigPath)
 	}
 
 	// Multiple linked clients — let the user pick.
@@ -146,7 +153,10 @@ func unlinkSelected(printer *output.Printer, linked []provisioner.DetectedClient
 
 	printer.Print("\n")
 	for _, dc := range selected {
-		if err := doUnlink(printer, dc.Provisioner, dc.ConfigPath); err != nil {
+		if err := doUnlink(ctx, printer, dc.Provisioner, dc.ConfigPath); err != nil {
+			if errors.Is(err, errLinkSkipped) {
+				continue
+			}
 			return err
 		}
 	}
@@ -154,27 +164,34 @@ func unlinkSelected(printer *output.Printer, linked []provisioner.DetectedClient
 	return nil
 }
 
-func doUnlink(printer *output.Printer, prov provisioner.ClientProvisioner, configPath string) error {
-	if unlinkDryRun {
-		isLinked, _ := prov.IsLinked(configPath, unlinkName)
-		if !isLinked {
-			printer.Info(fmt.Sprintf("%s has no '%s' entry", prov.Name(), unlinkName))
-			return nil
-		}
-		printer.Print("  Would remove '%s' entry from: %s\n", unlinkName, configPath)
-		printer.Print("  No changes made (dry run).\n")
-		return nil
+func doUnlink(ctx context.Context, printer *output.Printer, prov provisioner.ClientProvisioner, configPath string) error {
+	mgr, err := wiring.NewManager()
+	if err != nil {
+		return err
 	}
-
-	err := prov.Unlink(configPath, unlinkName)
-	if errors.Is(err, provisioner.ErrNotLinked) {
-		printer.Info(fmt.Sprintf("%s has no '%s' entry", prov.Name(), unlinkName))
-		return nil
-	}
+	res, err := mgr.UnlinkClient(ctx, prov, configPath, unlinkName, unlinkForce, unlinkDryRun)
 	if err != nil {
 		return err
 	}
 
-	printer.Info(fmt.Sprintf("Unlinked %s", prov.Name()))
-	return nil
+	switch res.Action {
+	case wiring.ActionNotLinked:
+		printer.Info(fmt.Sprintf("%s has no '%s' entry", prov.Name(), unlinkName))
+		return nil
+	case wiring.ActionWouldRemove:
+		printer.Print("  Would remove '%s' entry from: %s\n", unlinkName, configPath)
+		printer.Print("  No changes made (dry run).\n")
+		return nil
+	case wiring.ActionAlreadyGone:
+		printer.Info(fmt.Sprintf("%s's '%s' entry was already gone; removed the ownership record", prov.Name(), unlinkName))
+		return nil
+	case wiring.ActionRemoved:
+		printer.Info(fmt.Sprintf("Unlinked %s", prov.Name()))
+		return nil
+	case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
+		printer.Warn(fmt.Sprintf("Skipped %s: %s. %s", prov.Name(), res.Detail, capitalizeFirst(res.Remediation)))
+		return fmt.Errorf("%w: %s", errLinkSkipped, res.Detail)
+	default:
+		return errors.New(res.Error)
+	}
 }
