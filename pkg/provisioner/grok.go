@@ -86,7 +86,7 @@ func (g *GrokBuild) Link(configPath string, opts LinkOptions) error {
 	entry := g.buildEntry(opts)
 
 	existing, exists := servers[opts.ServerName]
-	if exists && !opts.Force {
+	if exists && !opts.Force && !opts.OwnershipResolved {
 		existingMap, ok := toStringMap(existing)
 		if ok && reflect.DeepEqual(normalizeMap(existingMap), normalizeMap(entry)) {
 			return ErrAlreadyLinked
