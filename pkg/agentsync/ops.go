@@ -68,6 +68,9 @@ type SyncResult struct {
 	Channel    string `json:"channel,omitempty"`
 	Target     string `json:"target,omitempty"`
 	Action     string `json:"action"`
+	// Detail carries the lossy-render report (which canonical keys the
+	// target dialect dropped); empty for identity targets.
+	Detail     string `json:"detail,omitempty"`
 	BackupPath string `json:"backup_path,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
@@ -93,10 +96,13 @@ type UnsyncResult struct {
 
 // ProjectionStatus is one (agent, client) row in status output.
 type ProjectionStatus struct {
-	Agent        string     `json:"agent"`
-	Client       string     `json:"client"`
-	Channel      string     `json:"channel"`
-	Target       string     `json:"target"`
+	Agent   string `json:"agent"`
+	Client  string `json:"client"`
+	Channel string `json:"channel"`
+	Target  string `json:"target"`
+	// Render is the target's render class: "identity" (canonical bytes
+	// copied verbatim) or "lossy" (client dialect, some keys dropped).
+	Render       string     `json:"render"`
 	State        string     `json:"state"`
 	Detail       string     `json:"detail,omitempty"`
 	Experimental bool       `json:"experimental,omitempty"`
@@ -125,9 +131,11 @@ func HasFailures(results []SyncResult) bool {
 	return false
 }
 
-// contentHash hashes raw bytes with the engine's scheme prefix. Agents
-// are copied verbatim, so no newline normalization is applied: the
-// destination is byte-identical to the canon by construction.
+// contentHash hashes raw bytes with the engine's scheme prefix. No
+// newline normalization is applied: identity targets are byte-identical
+// to the canon by construction, and rendered targets are deterministic
+// by the RenderFunc contract, so the written bytes are stable either
+// way.
 func contentHash(data []byte) string {
 	sum := sha256.Sum256(data)
 	return project.HashScheme + hex.EncodeToString(sum[:])
@@ -336,7 +344,7 @@ func (m *Manager) persistIfRecorded(pl *project.Lock, lf *LockFile, res SyncResu
 // materialize creates or refreshes one (agent, client) projection,
 // updating its lock entry in place.
 func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, opts SyncOptions) SyncResult {
-	dest := filepath.Join(t.agentsDir(m.home), a.Name+".md")
+	dest := filepath.Join(t.agentsDir(m.home), t.fileName(a.Name))
 	res := SyncResult{Agent: a.Name, Client: t.Slug, Channel: ChannelCopy, Target: dest}
 	entry := lf.entry(a.Name, t.Slug)
 
@@ -346,6 +354,32 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 		return res
 	}
 	srcHash := contentHash(src)
+
+	// Identity targets install the canonical bytes; rendered targets
+	// install the client dialect. CanonicalHash always tracks the canon
+	// (staleness), InstalledHash whatever was written (drift).
+	install := src
+	var detail string
+	if t.Render != nil {
+		def, perr := skills.ParseAgentMD(src)
+		if perr != nil {
+			res.Action, res.Error = ActionError, fmt.Sprintf("rendering for %s: %v", t.Slug, perr)
+			return res
+		}
+		// The store directory name is the agent's identity (it names the
+		// projected files and the lock entries); rendered frontmatter
+		// must carry it even when the canonical file omits or disagrees
+		// on the name key.
+		def.Name = a.Name
+		rendered, rerr := t.Render(def)
+		if rerr != nil {
+			res.Action, res.Error = ActionError, fmt.Sprintf("rendering for %s: %v", t.Slug, rerr)
+			return res
+		}
+		install = rendered.Bytes
+		detail = lossyDetail(t.Slug, rendered.Dropped)
+	}
+	installHash := contentHash(install)
 
 	existing, exists, err := readIfExists(dest)
 	if err != nil {
@@ -376,21 +410,27 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 			}
 			needsBackup = true
 		}
-		if destHash == entry.InstalledHash && srcHash == entry.CanonicalHash {
+		// Unchanged means the destination already holds exactly what this
+		// sync would write. Judging against the recorded InstalledHash
+		// instead would let a renderer-output change record the new hash
+		// while old bytes stay on disk, manufacturing permanent false
+		// drift on the next pass.
+		if destHash == installHash {
 			res.Action = ActionUnchanged
-			m.record(lf, a.Name, t.Slug, dest, srcHash)
+			m.record(lf, a.Name, t.Slug, dest, installHash, srcHash)
 			return res
 		}
 	}
 	// Only content the write would destroy deserves a backup slot: when
-	// the destination already matches the canon byte for byte (adopt's
-	// force-resync right after it copied the edit into the store), a
-	// backup would spend one of the rotation slots on a duplicate.
-	if destHash == srcHash {
+	// the destination already matches what this sync would install (the
+	// adopt force-resync case), a backup would spend one of the rotation
+	// slots on a duplicate.
+	if destHash == installHash {
 		needsBackup = false
 	}
 
 	if opts.DryRun {
+		res.Detail = detail
 		if exists {
 			res.Action = ActionWouldUpdate
 		} else {
@@ -412,11 +452,12 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 		res.Action, res.Error = ActionError, err.Error()
 		return res
 	}
-	if err := project.AtomicWriteFile(dest, src); err != nil {
+	if err := project.AtomicWriteFile(dest, install); err != nil {
 		res.Action, res.Error = ActionError, err.Error()
 		return res
 	}
-	m.record(lf, a.Name, t.Slug, dest, srcHash)
+	m.record(lf, a.Name, t.Slug, dest, installHash, srcHash)
+	res.Detail = detail
 	if exists {
 		res.Action = ActionUpdated
 	} else {
@@ -425,13 +466,14 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 	return res
 }
 
-// record updates the lock entry for one projection. The render is
-// identity, so the installed and canonical hashes coincide at write.
-func (m *Manager) record(lf *LockFile, agent, client, target, hash string) {
+// record updates the lock entry for one projection. On identity targets
+// the installed and canonical hashes coincide at write; on rendered
+// targets they differ by construction.
+func (m *Manager) record(lf *LockFile, agent, client, target, installedHash, canonicalHash string) {
 	lf.set(agent, client, &Entry{
 		Target:           target,
-		InstalledHash:    hash,
-		CanonicalHash:    hash,
+		InstalledHash:    installedHash,
+		CanonicalHash:    canonicalHash,
 		CreatedByGridctl: true,
 		SyncedAt:         time.Now().UTC(),
 	})
@@ -483,12 +525,14 @@ func (m *Manager) statusFor(agent, client string, entry *Entry) ProjectionStatus
 		Agent:   agent,
 		Client:  client,
 		Channel: ChannelCopy,
+		Render:  "identity",
 		Target:  entry.Target,
 	}
 	syncedAt := entry.SyncedAt
 	ps.SyncedAt = &syncedAt
 	if t, ok := FindTarget(client); ok {
 		ps.Experimental = t.Experimental
+		ps.Render = t.renderKind()
 	}
 
 	a, gerr := skills.GetAgent(m.registryDir, agent)
