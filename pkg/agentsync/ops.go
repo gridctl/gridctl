@@ -58,6 +58,9 @@ type SyncOptions struct {
 	Force bool
 	// DryRun reports the plan without writing anything.
 	DryRun bool
+	// Pack tags recorded projections with the applying pack. Empty keeps
+	// any existing tag (a plain re-sync never strips pack ownership).
+	Pack string
 }
 
 // SyncResult describes what happened (or would happen) for one
@@ -417,7 +420,7 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 		// drift on the next pass.
 		if destHash == installHash {
 			res.Action = ActionUnchanged
-			m.record(lf, a.Name, t.Slug, dest, installHash, srcHash)
+			m.record(lf, a.Name, t.Slug, dest, installHash, srcHash, opts.Pack)
 			return res
 		}
 	}
@@ -456,7 +459,7 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 		res.Action, res.Error = ActionError, err.Error()
 		return res
 	}
-	m.record(lf, a.Name, t.Slug, dest, installHash, srcHash)
+	m.record(lf, a.Name, t.Slug, dest, installHash, srcHash, opts.Pack)
 	res.Detail = detail
 	if exists {
 		res.Action = ActionUpdated
@@ -469,12 +472,18 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 // record updates the lock entry for one projection. On identity targets
 // the installed and canonical hashes coincide at write; on rendered
 // targets they differ by construction.
-func (m *Manager) record(lf *LockFile, agent, client, target, installedHash, canonicalHash string) {
+func (m *Manager) record(lf *LockFile, agent, client, target, installedHash, canonicalHash, packTag string) {
+	if packTag == "" {
+		if prev := lf.entry(agent, client); prev != nil {
+			packTag = prev.Pack
+		}
+	}
 	lf.set(agent, client, &Entry{
 		Target:           target,
 		InstalledHash:    installedHash,
 		CanonicalHash:    canonicalHash,
 		CreatedByGridctl: true,
+		Pack:             packTag,
 		SyncedAt:         time.Now().UTC(),
 	})
 }
