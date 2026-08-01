@@ -21,9 +21,10 @@ func bridgeConfig(gatewayURL string) map[string]any {
 	}
 }
 
-// sseConfig returns the native SSE configuration for SSE-capable clients.
-// The key name varies by client (serverUrl, url, etc.) so callers specify it.
-func sseConfig(urlKey, gatewayURL string) map[string]any {
+// urlConfig returns a URL-only entry for clients that infer the transport
+// from the endpoint (no type field in their schema). The key name varies by
+// client (serverUrl, url, etc.) so callers specify it.
+func urlConfig(urlKey, gatewayURL string) map[string]any {
 	return map[string]any{
 		urlKey: gatewayURL,
 	}
