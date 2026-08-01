@@ -1,0 +1,14 @@
+# A portable team pack: one `gridctl pack add <this-repo>` imports the
+# selection below; `gridctl pack apply network-eng` projects it and
+# wires every detected client to the gateway.
+apiVersion: gridctl.dev/v1alpha1
+kind: Pack
+name: network-eng
+version: 1.0.0
+description: Network engineering starter pack
+author:
+  name: Example Team
+skills: [incident-triage]
+agents: [neteng-reviewer]
+wiring: true
+clients: []
