@@ -89,7 +89,7 @@ func (g *Goose) Link(configPath string, opts LinkOptions) error {
 	entry := g.buildEntry(opts)
 
 	existing, exists := extensions[opts.ServerName]
-	if exists && !opts.Force {
+	if exists && !opts.Force && !opts.OwnershipResolved {
 		existingMap, ok := toStringMap(existing)
 		if ok && reflect.DeepEqual(normalizeMap(existingMap), normalizeMap(entry)) {
 			return ErrAlreadyLinked
