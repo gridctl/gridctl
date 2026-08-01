@@ -8,7 +8,8 @@ import (
 )
 
 // Goose provisions the Goose (Block) MCP config.
-// Transport: SSE (no bridge needed).
+// Transport: native streamable HTTP (no bridge needed); Goose's extension
+// type token is "streamable_http" (snake_case) and the URL field is "uri".
 // Uses YAML format with "extensions" dictionary.
 type Goose struct {
 	name  string
@@ -65,12 +66,16 @@ func (g *Goose) IsLinked(configPath string, serverName string) (bool, error) {
 }
 
 func (g *Goose) buildEntry(opts LinkOptions) map[string]any {
+	url := opts.GatewayURL
+	if opts.Port > 0 {
+		url = gatewayHTTPURLForOpts(opts)
+	}
 	return map[string]any{
 		"name":    opts.ServerName,
-		"type":    "sse",
+		"type":    "streamable_http",
 		"enabled": true,
 		"timeout": 300,
-		"uri":     opts.GatewayURL,
+		"uri":     url,
 	}
 }
 
