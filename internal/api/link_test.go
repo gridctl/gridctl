@@ -11,6 +11,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/wiring"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -32,7 +33,9 @@ link:
     group: dev
 `
 
-// linkFakeProv is a controllable ClientProvisioner for link endpoint tests.
+// linkFakeProv is a controllable ClientProvisioner for link endpoint
+// tests. Entries live in memory so the wiring ownership manager can
+// read back what Link wrote.
 type linkFakeProv struct {
 	slug       string
 	configPath string
@@ -40,6 +43,7 @@ type linkFakeProv struct {
 	linkErr    error
 	unlinkErr  error
 	linkedFor  map[string]bool
+	entries    map[string]map[string]any
 
 	linkCalls   []provisioner.LinkOptions
 	unlinkNames []string
@@ -54,19 +58,40 @@ func (f *linkFakeProv) Detect() (string, bool) {
 	return f.configPath, true
 }
 func (f *linkFakeProv) IsLinked(_ string, serverName string) (bool, error) {
+	if _, ok := f.entries[serverName]; ok {
+		return true, nil
+	}
 	return f.linkedFor[serverName], nil
 }
 func (f *linkFakeProv) Link(_ string, opts provisioner.LinkOptions) error {
 	f.linkCalls = append(f.linkCalls, opts)
-	return f.linkErr
+	if f.linkErr != nil {
+		return f.linkErr
+	}
+	if f.entries == nil {
+		f.entries = map[string]map[string]any{}
+	}
+	f.entries[opts.ServerName] = f.PlannedEntry(opts)
+	return nil
 }
 func (f *linkFakeProv) Unlink(_ string, serverName string) error {
 	f.unlinkNames = append(f.unlinkNames, serverName)
-	return f.unlinkErr
+	if f.unlinkErr != nil {
+		return f.unlinkErr
+	}
+	delete(f.entries, serverName)
+	return nil
 }
 func (f *linkFakeProv) NeedsBridge() bool { return false }
 func (f *linkFakeProv) ListServers(string) ([]provisioner.ServerEntry, error) {
-	return nil, nil
+	var out []provisioner.ServerEntry
+	for name, raw := range f.entries {
+		out = append(out, provisioner.ServerEntry{Name: name, Raw: raw})
+	}
+	return out, nil
+}
+func (f *linkFakeProv) PlannedEntry(opts provisioner.LinkOptions) map[string]any {
+	return map[string]any{"url": opts.GatewayURL}
 }
 
 // newLinkHarness writes a stack with a link block and wires a Server with
@@ -90,6 +115,7 @@ func newLinkHarness(t *testing.T, fakes ...*linkFakeProv) (string, *Server) {
 	s.SetStackFile(path)
 	s.SetProvisionerRegistry(provisioner.NewRegistryWith(provs...), "gridctl")
 	s.SetGatewayAddr("http://localhost:8181")
+	s.SetWiringManager(wiring.NewManagerWith(dir, provisioner.NewRegistryWith(provs...)))
 	return path, s
 }
 
@@ -164,7 +190,10 @@ func TestHandleLinkClient_GroupOptions(t *testing.T) {
 }
 
 func TestHandleLinkClient_ConflictWritesNothing(t *testing.T) {
-	grok := &linkFakeProv{slug: "grok", detected: true, linkErr: provisioner.ErrConflict}
+	// A foreign entry (never recorded, not gridctl-shaped) occupies the
+	// gridctl key: the ownership manager refuses without writing.
+	grok := &linkFakeProv{slug: "grok", detected: true,
+		entries: map[string]map[string]any{"gridctl": {"url": "https://example.com/mine"}}}
 	path, s := newLinkHarness(t, grok)
 	before, _ := os.ReadFile(path)
 
@@ -214,6 +243,11 @@ func TestHandleLinkClient_ExternalEditReportsBothFacts(t *testing.T) {
 func TestHandleUnlinkClient_ResolvesDeclaredName(t *testing.T) {
 	cursor := &linkFakeProv{slug: "cursor", detected: true}
 	path, s := newLinkHarness(t, cursor)
+
+	// Link first so the entry exists AND is recorded; unlink then resolves
+	// the declared name and removes both the entry and the record.
+	lw := doLinkRequest(s, http.MethodPost, "cursor", "", `{"group":"dev"}`)
+	require.Equal(t, http.StatusOK, lw.Code, lw.Body.String())
 
 	w := doLinkRequest(s, http.MethodDelete, "cursor", "", "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())

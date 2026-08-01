@@ -27,6 +27,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
+	"github.com/gridctl/gridctl/pkg/wiring"
 )
 
 // HTTP status code for locked vault.
@@ -124,6 +125,32 @@ type Server struct {
 	contextsManager *contexts.Manager
 	contextsOnce    sync.Once
 	contextsErr     error
+
+	// Wiring ownership manager (pkg/wiring), lazily built against the
+	// real home directory on first use; tests inject a temp-home manager
+	// via SetWiringManager.
+	wiringManager *wiring.Manager
+	wiringOnce    sync.Once
+	wiringErr     error
+}
+
+// SetWiringManager injects the wiring ownership manager. Tests use it
+// to keep link handlers away from the real home directory.
+func (s *Server) SetWiringManager(m *wiring.Manager) {
+	s.wiringOnce.Do(func() {})
+	s.wiringManager = m
+}
+
+// wiringMgr returns the wiring ownership manager, building it against
+// the user's home directory on first use.
+func (s *Server) wiringMgr() (*wiring.Manager, error) {
+	s.wiringOnce.Do(func() {
+		if s.wiringManager != nil {
+			return
+		}
+		s.wiringManager, s.wiringErr = wiring.NewManager()
+	})
+	return s.wiringManager, s.wiringErr
 }
 
 // NewServer creates a new API server.
@@ -1369,6 +1396,9 @@ type ClientStatus struct {
 	// distinct from Linked (actual config-file state).
 	Declared  bool           `json:"declared,omitempty"`
 	LinkEntry *LinkEntryInfo `json:"linkEntry,omitempty"`
+	// Drifted reports that a recorded gridctl entry in this client's
+	// config was edited since gridctl wrote it (wiring ownership).
+	Drifted bool `json:"drifted,omitempty"`
 }
 
 // LinkEntryInfo is the wire shape of a declared link: entry's options.
@@ -1406,6 +1436,12 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 	}
 
 	infos := s.provisioners.AllClientInfo(serverName)
+	drifted := map[string]bool{}
+	if mgr, err := s.wiringMgr(); err == nil {
+		if d, derr := mgr.DriftedClients(r.Context(), s.gatewayPortOrDefault()); derr == nil {
+			drifted = d
+		}
+	}
 	statuses := make([]ClientStatus, 0, len(infos))
 	for _, info := range infos {
 		status := ClientStatus{
@@ -1416,6 +1452,7 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 			Transport:  info.Transport,
 			ConfigPath: info.ConfigPath,
 			Model:      clientModels[info.Slug],
+			Drifted:    drifted[info.Slug],
 		}
 		if entry, ok := declared[info.Slug]; ok {
 			status.Declared = true

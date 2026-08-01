@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -13,6 +12,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/wiring"
 
 	"github.com/spf13/cobra"
 )
@@ -123,6 +123,12 @@ func runApply(stackPath string) error {
 		LogLevel:    logLevel,
 	}
 
+	// Cancel ctx on SIGINT/SIGTERM so daemon goroutines exit cleanly.
+	// Created before the OnReady closure below so client linking runs
+	// under the same cancellable context.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Foreground blocks inside Deploy until shutdown, so post-Deploy code
 	// never runs; client linking (declared link: entries and --flash) fires
 	// via the gateway's post-ready callback instead. The daemon child never
@@ -135,20 +141,16 @@ func runApply(stackPath string) error {
 				if applyFlash && !applyQuiet {
 					printer.Info("Stack declares link:, --flash ignored")
 				}
-				reconcileDeclaredLinks(printer, provisioner.NewRegistry(), declared, port, applyQuiet)
+				reconcileDeclaredLinks(ctx, printer, provisioner.NewRegistry(), declared, port, applyQuiet)
 				return
 			}
-			flashLinkClients(port)
+			flashLinkClients(ctx, port)
 		}
 	}
 
 	ctrl := controller.New(cfg)
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
-
-	// Cancel ctx on SIGINT/SIGTERM so daemon goroutines exit cleanly.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	if err := ctrl.Deploy(ctx); err != nil {
 		return err
@@ -172,9 +174,9 @@ func runApply(stackPath string) error {
 			if applyFlash && !applyQuiet {
 				printer.Info("Stack declares link:, --flash ignored")
 			}
-			reconcileDeclaredLinks(printer, provisioner.NewRegistry(), declared, applyPort, applyQuiet)
+			reconcileDeclaredLinks(ctx, printer, provisioner.NewRegistry(), declared, applyPort, applyQuiet)
 		case applyFlash:
-			flashLinkClients(applyPort)
+			flashLinkClients(ctx, applyPort)
 			return nil
 		default:
 			// Post-apply hint: suggest `gridctl link` if no clients are linked
@@ -195,7 +197,7 @@ func runApply(stackPath string) error {
 }
 
 // flashLinkClients links all detected LLM clients after a successful apply.
-func flashLinkClients(port int) {
+func flashLinkClients(ctx context.Context, port int) {
 	printer := output.New()
 	registry := provisioner.NewRegistry()
 	gatewayURL := provisioner.GatewayHTTPURL(port)
@@ -216,23 +218,33 @@ func flashLinkClients(port int) {
 	hasNpx := provisioner.NpxAvailable()
 	var needsRestart []string
 
+	mgr, mgrErr := wiring.NewManager()
+	if mgrErr != nil {
+		printer.Warn(fmt.Sprintf("Skipped auto-linking: %s", mgrErr))
+		return
+	}
+
 	for _, dc := range detected {
 		if dc.Provisioner.NeedsBridge() && !hasNpx {
 			printer.Warn(fmt.Sprintf("Skipped %s: 'npx' not found (mcp-remote bridge requires Node.js)", dc.Provisioner.Name()))
 			continue
 		}
 
-		err := dc.Provisioner.Link(dc.ConfigPath, opts)
-		if errors.Is(err, provisioner.ErrAlreadyLinked) {
-			// Silently skip already-linked clients in flash mode
-			continue
-		}
-		if errors.Is(err, provisioner.ErrConflict) {
-			printer.Warn(fmt.Sprintf("Skipped %s: existing 'gridctl' entry has unexpected config (use --force to overwrite)", dc.Provisioner.Name()))
-			continue
-		}
+		res, err := mgr.LinkClient(ctx, dc.Provisioner, dc.ConfigPath, opts)
 		if err != nil {
 			printer.Warn(fmt.Sprintf("Failed to link %s: %s", dc.Provisioner.Name(), err))
+			continue
+		}
+		switch res.Action {
+		case wiring.ActionUnchanged, wiring.ActionAdopted:
+			// Silently skip already-linked clients in flash mode.
+			continue
+		case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
+			printer.Warn(fmt.Sprintf("Skipped %s: %s (use 'gridctl link %s --force' to overwrite)",
+				dc.Provisioner.Name(), res.Detail, dc.Provisioner.Slug()))
+			continue
+		case wiring.ActionError:
+			printer.Warn(fmt.Sprintf("Failed to link %s: %s", dc.Provisioner.Name(), res.Error))
 			continue
 		}
 

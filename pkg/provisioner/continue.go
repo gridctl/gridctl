@@ -98,7 +98,7 @@ func (c *ContinueDev) Link(configPath string, opts LinkOptions) error {
 		if !ok || m["name"] != opts.ServerName {
 			continue
 		}
-		if !opts.Force {
+		if !opts.Force && !opts.OwnershipResolved {
 			if reflect.DeepEqual(m, entry) {
 				return ErrAlreadyLinked
 			}

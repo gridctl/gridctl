@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/state"
+	"github.com/gridctl/gridctl/pkg/wiring"
 
 	"github.com/spf13/cobra"
 )
@@ -46,7 +48,7 @@ Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigr
 		if linkGroup != "" && !cmd.Flags().Changed("name") {
 			linkName = "gridctl-" + linkGroup
 		}
-		return runLink(client)
+		return runLink(cmd.Context(), client)
 	},
 }
 
@@ -60,7 +62,7 @@ func init() {
 	linkCmd.Flags().BoolVar(&linkForce, "force", false, "Overwrite existing gridctl entry even if present")
 }
 
-func runLink(client string) error {
+func runLink(ctx context.Context, client string) error {
 	printer := output.New()
 	registry := provisioner.NewRegistry()
 
@@ -89,20 +91,20 @@ func runLink(client string) error {
 
 	// Direct client link
 	if client != "" {
-		return linkSingleClient(printer, registry, client, opts)
+		return linkSingleClient(ctx, printer, registry, client, opts)
 	}
 
 	// Link all detected clients
 	if linkAll {
-		return linkAllClients(printer, registry, opts)
+		return linkAllClients(ctx, printer, registry, opts)
 	}
 
 	// Interactive mode. The selector guards against non-terminal stdin
 	// itself, so the zero-clients no-op below stays script-safe.
-	return linkInteractive(printer, registry, opts)
+	return linkInteractive(ctx, printer, registry, opts)
 }
 
-func linkSingleClient(printer *output.Printer, registry *provisioner.Registry, slug string, opts provisioner.LinkOptions) error {
+func linkSingleClient(ctx context.Context, printer *output.Printer, registry *provisioner.Registry, slug string, opts provisioner.LinkOptions) error {
 	prov, ok := registry.FindBySlug(slug)
 	if !ok {
 		return unknownClientError(registry, slug)
@@ -130,10 +132,10 @@ func linkSingleClient(printer *output.Printer, registry *provisioner.Registry, s
 		return showDryRun(printer, prov, configPath, opts)
 	}
 
-	return doLink(printer, prov, configPath, opts)
+	return doLink(ctx, printer, prov, configPath, opts)
 }
 
-func linkAllClients(printer *output.Printer, registry *provisioner.Registry, opts provisioner.LinkOptions) error {
+func linkAllClients(ctx context.Context, printer *output.Printer, registry *provisioner.Registry, opts provisioner.LinkOptions) error {
 	detected := registry.DetectAll()
 	if len(detected) == 0 {
 		printer.Info("No supported LLM clients detected")
@@ -157,10 +159,9 @@ func linkAllClients(printer *output.Printer, registry *provisioner.Registry, opt
 			continue
 		}
 
-		if err := doLink(printer, dc.Provisioner, dc.ConfigPath, opts); err != nil {
-			if errors.Is(err, provisioner.ErrConflict) {
-				printer.Warn(fmt.Sprintf("Skipped %s: existing '%s' entry has unexpected config (use --force to overwrite)",
-					dc.Provisioner.Name(), opts.ServerName))
+		if err := doLink(ctx, printer, dc.Provisioner, dc.ConfigPath, opts); err != nil {
+			if errors.Is(err, errLinkSkipped) {
+				// The refusal warning is already printed; keep linking the rest.
 				continue
 			}
 			return err
@@ -178,7 +179,7 @@ func linkAllClients(printer *output.Printer, registry *provisioner.Registry, opt
 	return nil
 }
 
-func linkInteractive(printer *output.Printer, registry *provisioner.Registry, opts provisioner.LinkOptions) error {
+func linkInteractive(ctx context.Context, printer *output.Printer, registry *provisioner.Registry, opts provisioner.LinkOptions) error {
 	detected := registry.DetectAll()
 	if len(detected) == 0 {
 		printer.Info("No supported LLM clients detected")
@@ -186,13 +187,13 @@ func linkInteractive(printer *output.Printer, registry *provisioner.Registry, op
 		return nil
 	}
 
-	return linkSelected(printer, detected, opts)
+	return linkSelected(ctx, printer, detected, opts)
 }
 
 // linkSelected prompts for a subset of detected clients and links each
 // selection. Split from linkInteractive so tests can drive it with fake
 // clients and a swapped selector.
-func linkSelected(printer *output.Printer, detected []provisioner.DetectedClient, opts provisioner.LinkOptions) error {
+func linkSelected(ctx context.Context, printer *output.Printer, detected []provisioner.DetectedClient, opts provisioner.LinkOptions) error {
 	selected, err := clientSelector("link", detected)
 	if err != nil {
 		return err
@@ -213,7 +214,18 @@ func linkSelected(printer *output.Printer, detected []provisioner.DetectedClient
 			continue
 		}
 
-		if err := doLink(printer, dc.Provisioner, dc.ConfigPath, opts); err != nil {
+		if opts.DryRun {
+			if err := showDryRun(printer, dc.Provisioner, dc.ConfigPath, opts); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := doLink(ctx, printer, dc.Provisioner, dc.ConfigPath, opts); err != nil {
+			if errors.Is(err, errLinkSkipped) {
+				// The refusal warning is already printed; keep linking the rest.
+				continue
+			}
 			return err
 		}
 
@@ -231,25 +243,59 @@ func linkSelected(printer *output.Printer, detected []provisioner.DetectedClient
 	return nil
 }
 
-func doLink(printer *output.Printer, prov provisioner.ClientProvisioner, configPath string, opts provisioner.LinkOptions) error {
+// errLinkSkipped marks a link the ownership manager refused (foreign or
+// drifted entry). The warning is already printed; --all loops continue,
+// single-client invocations surface a non-zero exit.
+var errLinkSkipped = errors.New("skipped")
+
+func doLink(ctx context.Context, printer *output.Printer, prov provisioner.ClientProvisioner, configPath string, opts provisioner.LinkOptions) error {
 	// Warn about JSONC comment loss before modifying
 	if provisioner.HasComments(configPath) {
 		printer.Warn(fmt.Sprintf("Comments in %s will not be preserved", configPath))
 	}
 
-	err := prov.Link(configPath, opts)
-	if errors.Is(err, provisioner.ErrAlreadyLinked) {
-		port := portFromURL(opts.GatewayURL)
-		printer.Info(fmt.Sprintf("%s is already linked to %s on port %s", prov.Name(), opts.ServerName, port))
-		return nil
+	mgr, err := wiring.NewManager()
+	if err != nil {
+		return err
 	}
+	res, err := mgr.LinkClient(ctx, prov, configPath, opts)
 	if err != nil {
 		return err
 	}
 
-	transport := provisioner.TransportDescriptionFor(prov)
-	printer.Info(fmt.Sprintf("Linked %s (via %s)", prov.Name(), transport))
-	return nil
+	switch res.Action {
+	case wiring.ActionUnchanged:
+		port := portFromURL(opts.GatewayURL)
+		printer.Info(fmt.Sprintf("%s is already linked to %s on port %s", prov.Name(), opts.ServerName, port))
+		return nil
+	case wiring.ActionAdopted:
+		printer.Info(fmt.Sprintf("%s already had a matching '%s' entry; recorded ownership without rewriting it", prov.Name(), opts.ServerName))
+		return nil
+	case wiring.ActionLinked, wiring.ActionUpdated:
+		transport := provisioner.TransportDescriptionFor(prov)
+		printer.Info(fmt.Sprintf("Linked %s (via %s)", prov.Name(), transport))
+		return nil
+	case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
+		printer.Warn(fmt.Sprintf("Skipped %s: %s. %s", prov.Name(), res.Detail, capitalizeFirst(res.Remediation)))
+		return fmt.Errorf("%w: %s", errLinkSkipped, res.Detail)
+	case wiring.ActionWouldLink, wiring.ActionWouldUpdate, wiring.ActionWouldAdopt:
+		// Callers divert dry-run to showDryRun before reaching here; this
+		// covers any future path that does not.
+		printer.Print("  Would write '%s' entry to: %s\n", opts.ServerName, configPath)
+		printer.Print("  No changes made (dry run).\n")
+		return nil
+	default:
+		return errors.New(res.Error)
+	}
+}
+
+// capitalizeFirst upper-cases a remediation sentence's first letter for
+// message composition.
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func showDryRun(printer *output.Printer, prov provisioner.ClientProvisioner, configPath string, opts provisioner.LinkOptions) error {

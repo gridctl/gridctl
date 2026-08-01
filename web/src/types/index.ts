@@ -154,6 +154,9 @@ export interface ClientStatus {
   // (actual config-file state). linkEntry carries the declared options.
   declared?: boolean;
   linkEntry?: { group?: string; clientId?: string; name?: string };
+  // A recorded gridctl entry in this client's config was edited since
+  // gridctl wrote it (wiring ownership drift).
+  drifted?: boolean;
 }
 
 // Token counts for a session or server

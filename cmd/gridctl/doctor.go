@@ -17,6 +17,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
+	"github.com/gridctl/gridctl/pkg/wiring"
 
 	"github.com/spf13/cobra"
 )
@@ -109,6 +110,7 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkStateDir(ctx, &checks)
 	checkStaleState(ctx, &checks)
 	checkProjectLockfile(ctx, &checks)
+	checkClientWiring(ctx, &checks)
 	checkProtocolGenerations(ctx, &checks)
 	checkVault(ctx, &checks)
 
@@ -325,6 +327,47 @@ func checkProjectLockfile(ctx context.Context, checks *[]doctorCheck) {
 		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusOK, Message: "legacy projection lockfiles in use (migrate to " + st.UnifiedPath + " on the next sync)"})
 	default:
 		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusOK, Message: "no projection lockfile yet (nothing projected)"})
+	}
+}
+
+// checkClientWiring reports per-client wiring ownership state: detected
+// clients that are not linked, recorded entries that drifted or lost
+// their target, and foreign gridctl-named entries. Advisory only —
+// wiring problems warn, never fail (Article: doctor's hard failures are
+// reserved for runtime and state integrity).
+func checkClientWiring(ctx context.Context, checks *[]doctorCheck) {
+	if err := ctx.Err(); err != nil {
+		*checks = append(*checks, doctorCheck{ID: "wiring.clients", Status: doctorStatusInfo, Message: "skipped (cancelled)"})
+		return
+	}
+	mgr, err := wiring.NewManager()
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "wiring.clients", Status: doctorStatusWarn, Message: fmt.Sprintf("home directory unavailable: %v", err)})
+		return
+	}
+	rows, err := mgr.Statuses(ctx, wiring.StatusOptions{Port: resolveGatewayPort(0)})
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "wiring.clients", Status: doctorStatusWarn, Message: err.Error()})
+		return
+	}
+	if len(rows) == 0 {
+		*checks = append(*checks, doctorCheck{ID: "wiring.clients", Status: doctorStatusOK, Message: "no supported LLM clients detected"})
+		return
+	}
+	for _, r := range rows {
+		id := "wiring." + r.Client
+		switch r.State {
+		case wiring.StateInSync:
+			*checks = append(*checks, doctorCheck{ID: id, Status: doctorStatusOK, Message: fmt.Sprintf("'%s' entry in sync (%s)", r.Name, r.Target)})
+		case wiring.StateMissing:
+			*checks = append(*checks, doctorCheck{ID: id, Status: doctorStatusWarn, Message: fmt.Sprintf("detected but not linked; link it with 'gridctl link %s'", r.Client)})
+		default:
+			msg := fmt.Sprintf("'%s' entry is %s", r.Name, r.State)
+			if r.Detail != "" {
+				msg += ": " + r.Detail
+			}
+			*checks = append(*checks, doctorCheck{ID: id, Status: doctorStatusWarn, Message: msg})
+		}
 	}
 }
 

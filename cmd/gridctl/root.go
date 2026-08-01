@@ -122,6 +122,7 @@ func init() {
 		groupsCmd:    groupClients,
 		unlinkCmd:    groupClients,
 		importCmd:    groupClients,
+		projectCmd:   groupClients,
 		ctxCmd:       groupClients,
 		skillCmd:     groupSkills,
 		activateCmd:  groupSkills,
