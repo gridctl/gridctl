@@ -14,7 +14,7 @@ function client(overrides: Partial<ClientStatus> & { slug: string }): ClientStat
     name: overrides.slug,
     detected: false,
     linked: false,
-    transport: 'native SSE',
+    transport: 'native HTTP',
     ...overrides,
   };
 }
