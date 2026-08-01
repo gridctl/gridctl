@@ -1,7 +1,7 @@
 package main
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +9,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/wiring"
 
 	"gopkg.in/yaml.v3"
 )
@@ -45,7 +46,7 @@ type slugResolver interface {
 // between machines), conflicts warn with a --force hint, and nothing here
 // ever fails the apply. quiet suppresses success lines but never warnings
 // (Article XI).
-func reconcileDeclaredLinks(printer *output.Printer, registry slugResolver, entries []config.LinkEntry, port int, quiet bool) {
+func reconcileDeclaredLinks(ctx context.Context, printer *output.Printer, registry slugResolver, entries []config.LinkEntry, port int, quiet bool) {
 	if len(entries) == 0 {
 		return
 	}
@@ -53,6 +54,12 @@ func reconcileDeclaredLinks(printer *output.Printer, registry slugResolver, entr
 	hasNpx := provisioner.NpxAvailable()
 	warnedComments := make(map[string]bool)
 	var needsRestart []string
+
+	mgr, mgrErr := wiring.NewManager()
+	if mgrErr != nil {
+		printer.Warn(fmt.Sprintf("Skipped declared links: %s", mgrErr))
+		return
+	}
 
 	for _, entry := range entries {
 		prov, ok := registry.FindBySlug(entry.Client)
@@ -79,17 +86,22 @@ func reconcileDeclaredLinks(printer *output.Printer, registry slugResolver, entr
 		}
 
 		opts := linkOptionsForEntry(entry, port)
-		err := prov.Link(configPath, opts)
-		switch {
-		case errors.Is(err, provisioner.ErrAlreadyLinked):
-			// Idempotent reconcile: declared and already converged.
-			continue
-		case errors.Is(err, provisioner.ErrConflict):
-			printer.Warn(fmt.Sprintf("Skipped %s: existing '%s' entry has unexpected config (run 'gridctl link %s --force' to overwrite)",
-				prov.Name(), opts.ServerName, entry.Client))
-			continue
-		case err != nil:
+		res, err := mgr.LinkClient(ctx, prov, configPath, opts)
+		if err != nil {
 			printer.Warn(fmt.Sprintf("Failed to link %s: %s", prov.Name(), err))
+			continue
+		}
+		switch res.Action {
+		case wiring.ActionUnchanged, wiring.ActionAdopted:
+			// Idempotent reconcile: declared and already converged (an
+			// identical pre-existing entry is adopted into the record).
+			continue
+		case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
+			printer.Warn(fmt.Sprintf("Skipped %s: %s (run 'gridctl link %s --force' to overwrite)",
+				prov.Name(), res.Detail, entry.Client))
+			continue
+		case wiring.ActionError:
+			printer.Warn(fmt.Sprintf("Failed to link %s: %s", prov.Name(), res.Error))
 			continue
 		}
 
