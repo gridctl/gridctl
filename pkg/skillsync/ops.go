@@ -93,10 +93,14 @@ type UnsyncResult struct {
 
 // ProjectionStatus is one (skill, client) row in `skill project status`.
 type ProjectionStatus struct {
-	Skill        string     `json:"skill"`
-	Client       string     `json:"client"`
-	Channel      string     `json:"channel"`
-	Target       string     `json:"target"`
+	Skill   string `json:"skill"`
+	Client  string `json:"client"`
+	Channel string `json:"channel"`
+	Target  string `json:"target"`
+	// Render is always "identity" for skills (registry content is placed
+	// as-is); present so JSON consumers see the same column the status
+	// table renders across kinds.
+	Render       string     `json:"render"`
 	State        string     `json:"state"`
 	Detail       string     `json:"detail,omitempty"`
 	Experimental bool       `json:"experimental,omitempty"`
@@ -521,6 +525,7 @@ func (m *Manager) Statuses(ctx context.Context) ([]ProjectionStatus, error) {
 // statusFor computes one projection's status row.
 func (m *Manager) statusFor(skill, client string, entry *Entry) ProjectionStatus {
 	ps := ProjectionStatus{
+		Render: "identity",
 		Skill:   skill,
 		Client:  client,
 		Channel: string(entry.Channel),
