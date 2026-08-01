@@ -113,6 +113,11 @@ type Entry struct {
 	ClientID   string   `yaml:"client_id,omitempty"`
 	Hashes     []string `yaml:"hashes,omitempty"`
 
+	// Pack tags the projection with the pack that applied it (empty =
+	// not pack-managed). Any kind may carry it; `gridctl pack` uses it
+	// for scoped status and cascade removal.
+	Pack string `yaml:"pack,omitempty"`
+
 	SyncedAt time.Time `yaml:"synced_at"`
 
 	Extra map[string]any `yaml:",inline"`
