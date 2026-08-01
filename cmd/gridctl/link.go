@@ -67,9 +67,9 @@ func runLink(client string) error {
 	port := resolveGatewayPort(linkPort)
 	// A group link targets the group's endpoint; the check against the
 	// running daemon is best-effort (the daemon may be down or older).
-	baseURL := provisioner.GatewayURL(port)
+	baseURL := provisioner.GatewayHTTPURL(port)
 	if linkGroup != "" {
-		baseURL = provisioner.GroupGatewayURL(port, linkGroup)
+		baseURL = provisioner.GroupGatewayHTTPURL(port, linkGroup)
 		warnUnknownGroup(printer, port, linkGroup)
 	}
 	// Embed the stable client identifier (when set) on the gateway URL so the

@@ -1,8 +1,10 @@
 package provisioner
 
 // RooCode provisions the Roo Code VS Code extension MCP config.
-// Transport: native SSE and Streamable HTTP (no bridge needed).
-// Adds Roo-specific fields: "transportType", "disabled", "alwaysAllow".
+// Transport: native streamable HTTP (no bridge needed). Roo's schema requires
+// an explicit "type" on url entries ("streamable-http" or legacy "sse"); the
+// old "transportType" key is no longer in its schema.
+// Adds Roo-specific fields: "disabled", "alwaysAllow".
 type RooCode struct{ mcpServersProvisioner }
 
 var _ ClientProvisioner = (*RooCode)(nil)
@@ -22,9 +24,13 @@ func newRooCode() *RooCode {
 		"alwaysAllow": []any{},
 	}
 	c.buildEntry = func(opts LinkOptions) map[string]any {
+		url := opts.GatewayURL
+		if opts.Port > 0 {
+			url = gatewayHTTPURLForOpts(opts)
+		}
 		return map[string]any{
-			"url":           opts.GatewayURL,
-			"transportType": "sse",
+			"type": "streamable-http",
+			"url":  url,
 		}
 	}
 	return c

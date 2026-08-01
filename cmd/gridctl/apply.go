@@ -198,7 +198,7 @@ func runApply(stackPath string) error {
 func flashLinkClients(port int) {
 	printer := output.New()
 	registry := provisioner.NewRegistry()
-	gatewayURL := provisioner.GatewayURL(port)
+	gatewayURL := provisioner.GatewayHTTPURL(port)
 
 	opts := provisioner.LinkOptions{
 		GatewayURL: gatewayURL,

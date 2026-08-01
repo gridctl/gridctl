@@ -35,7 +35,7 @@ func newAntigravity() *Antigravity {
 		if opts.Port > 0 {
 			url = gatewayHTTPURLForOpts(opts)
 		}
-		return sseConfig("serverUrl", url)
+		return urlConfig("serverUrl", url)
 	}
 	return c
 }

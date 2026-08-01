@@ -143,7 +143,7 @@ export interface ClientStatus {
   slug: string;       // CLI identifier (e.g., "claude")
   detected: boolean;  // Whether client is installed on the system
   linked: boolean;    // Whether gridctl entry exists in client config
-  transport: string;  // "native SSE", "native HTTP", or "mcp-remote bridge"
+  transport: string;  // "native HTTP" or "mcp-remote bridge"
   configPath?: string; // Config file path (only if detected)
   model?: string;     // Declared pricing model from client_models (pricing only, not access)
   // Which model actually priced this client's recorded cost, with provenance.

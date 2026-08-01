@@ -7,8 +7,11 @@ import (
 )
 
 // ContinueDev provisions the Continue.dev extension MCP config.
-// Transport: native SSE (no bridge needed).
-// Config structure is different: experimental.mcpServers is an array of objects.
+// Transport: native streamable HTTP (no bridge needed); Continue's token is
+// "streamable-http". Config structure is different: experimental.mcpServers is
+// an array of objects. Note: Continue has deprecated config.json in favor of
+// config.yaml; this JSON key predates that migration and is kept until the
+// provisioner grows a YAML target.
 type ContinueDev struct {
 	name  string
 	slug  string
@@ -48,11 +51,15 @@ func (c *ContinueDev) Detect() (string, bool) {
 }
 
 func (c *ContinueDev) buildEntry(opts LinkOptions) map[string]any {
+	url := opts.GatewayURL
+	if opts.Port > 0 {
+		url = gatewayHTTPURLForOpts(opts)
+	}
 	return map[string]any{
 		"name": opts.ServerName,
 		"transport": map[string]any{
-			"type": "sse",
-			"url":  opts.GatewayURL,
+			"type": "streamable-http",
+			"url":  url,
 		},
 	}
 }
@@ -95,9 +102,10 @@ func (c *ContinueDev) Link(configPath string, opts LinkOptions) error {
 			if reflect.DeepEqual(m, entry) {
 				return ErrAlreadyLinked
 			}
-			// Check if it looks like a gridctl entry
+			// Check if it looks like a gridctl entry; legacy links wrote
+			// "sse", current ones "streamable-http".
 			transport, _ := m["transport"].(map[string]any)
-			if transport == nil || transport["type"] != "sse" {
+			if transport == nil || (transport["type"] != "sse" && transport["type"] != "streamable-http") {
 				return ErrConflict
 			}
 		}

@@ -30,7 +30,7 @@ func testMCPServersProvisioner(t *testing.T, configFile string, bridge bool) (*m
 		}
 	} else {
 		p.buildEntry = func(opts LinkOptions) map[string]any {
-			return sseConfig("serverUrl", opts.GatewayURL)
+			return urlConfig("serverUrl", opts.GatewayURL)
 		}
 	}
 
@@ -39,7 +39,7 @@ func testMCPServersProvisioner(t *testing.T, configFile string, bridge bool) (*m
 
 func defaultLinkOpts() LinkOptions {
 	return LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		ServerName: "gridctl",
 	}
 }
@@ -116,7 +116,7 @@ func TestLink_ConfigDoesNotExist_CreatesFile(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["mcpServers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["serverUrl"] != "http://localhost:8180/sse" {
+	if entry["serverUrl"] != "http://localhost:8180/mcp" {
 		t.Errorf("unexpected entry: %v", entry)
 	}
 }
@@ -231,7 +231,7 @@ func TestLink_Force_OverwritesConflict(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["mcpServers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["serverUrl"] != "http://localhost:8180/sse" {
+	if entry["serverUrl"] != "http://localhost:8180/mcp" {
 		t.Errorf("expected overwritten entry, got: %v", entry)
 	}
 }
@@ -286,7 +286,7 @@ func TestLink_EmptyConfigFile_TreatsAsEmpty(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["mcpServers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["serverUrl"] != "http://localhost:8180/sse" {
+	if entry["serverUrl"] != "http://localhost:8180/mcp" {
 		t.Errorf("unexpected entry: %v", entry)
 	}
 }
@@ -386,7 +386,7 @@ func TestUnlink_EntryExists_RemovesOnly(t *testing.T) {
 
 	writeTestJSON(t, configPath, map[string]any{
 		"mcpServers": map[string]any{
-			"gridctl":      map[string]any{"serverUrl": "http://localhost:8180/sse"},
+			"gridctl":      map[string]any{"serverUrl": "http://localhost:8180/mcp"},
 			"other-server": map[string]any{"command": "other"},
 		},
 	})
@@ -441,7 +441,7 @@ func TestIsLinked(t *testing.T) {
 	// Write config with entry
 	writeTestJSON(t, configPath, map[string]any{
 		"mcpServers": map[string]any{
-			"gridctl": map[string]any{"serverUrl": "http://localhost:8180/sse"},
+			"gridctl": map[string]any{"serverUrl": "http://localhost:8180/mcp"},
 		},
 	})
 
@@ -504,10 +504,10 @@ func TestVSCode_Link(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["servers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["type"] != "sse" {
-		t.Errorf("expected type=sse, got %v", entry["type"])
+	if entry["type"] != "http" {
+		t.Errorf("expected type=http, got %v", entry["type"])
 	}
-	if entry["url"] != "http://localhost:8180/sse" {
+	if entry["url"] != "http://localhost:8180/mcp" {
 		t.Errorf("expected url, got %v", entry["url"])
 	}
 }
@@ -528,7 +528,7 @@ func TestVSCode_Unlink(t *testing.T) {
 
 	writeTestJSON(t, configPath, map[string]any{
 		"servers": map[string]any{
-			"gridctl": map[string]any{"type": "sse", "url": "http://localhost:8180/sse"},
+			"gridctl": map[string]any{"type": "sse", "url": "http://localhost:8180/mcp"},
 			"other":   map[string]any{"type": "sse", "url": "http://other:3000"},
 		},
 	})
@@ -571,7 +571,7 @@ func TestContinueDev_Link(t *testing.T) {
 		t.Errorf("expected name=gridctl, got %v", entry["name"])
 	}
 	transport := entry["transport"].(map[string]any)
-	if transport["type"] != "sse" || transport["url"] != "http://localhost:8180/sse" {
+	if transport["type"] != "streamable-http" || transport["url"] != "http://localhost:8180/mcp" {
 		t.Errorf("unexpected transport: %v", transport)
 	}
 }
@@ -602,7 +602,7 @@ func TestContinueDev_Unlink(t *testing.T) {
 			"mcpServers": []any{
 				map[string]any{
 					"name":      "gridctl",
-					"transport": map[string]any{"type": "sse", "url": "http://localhost:8180/sse"},
+					"transport": map[string]any{"type": "sse", "url": "http://localhost:8180/mcp"},
 				},
 				map[string]any{
 					"name":      "other",
@@ -629,7 +629,7 @@ func TestContinueDev_Unlink(t *testing.T) {
 	}
 }
 
-// --- AnythingLLM Tests (mcpServers wrapper, native SSE) ---
+// --- AnythingLLM Tests (mcpServers wrapper, native streamable HTTP) ---
 
 func TestAnythingLLM_Link(t *testing.T) {
 	dir := t.TempDir()
@@ -647,11 +647,11 @@ func TestAnythingLLM_Link(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["mcpServers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["type"] != "sse" {
-		t.Errorf("expected type=sse, got %v", entry["type"])
+	if entry["type"] != "streamable" {
+		t.Errorf("expected type=streamable, got %v", entry["type"])
 	}
-	if entry["url"] != "http://localhost:8180/sse" {
-		t.Errorf("expected url=http://localhost:8180/sse, got %v", entry["url"])
+	if entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected url=http://localhost:8180/mcp, got %v", entry["url"])
 	}
 }
 
@@ -661,7 +661,7 @@ func TestAnythingLLM_Unlink(t *testing.T) {
 
 	writeTestJSON(t, configPath, map[string]any{
 		"mcpServers": map[string]any{
-			"gridctl": map[string]any{"type": "sse", "url": "http://localhost:8180/sse"},
+			"gridctl": map[string]any{"type": "sse", "url": "http://localhost:8180/mcp"},
 			"other":   map[string]any{"type": "sse", "url": "http://other:3000/sse"},
 		},
 	})
@@ -697,11 +697,11 @@ func TestRooCode_Link(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["mcpServers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["url"] != "http://localhost:8180/sse" {
+	if entry["url"] != "http://localhost:8180/mcp" {
 		t.Errorf("expected url, got %v", entry["url"])
 	}
-	if entry["transportType"] != "sse" {
-		t.Errorf("expected transportType=sse, got %v", entry["transportType"])
+	if entry["type"] != "streamable-http" {
+		t.Errorf("expected type=streamable-http, got %v", entry["type"])
 	}
 	if entry["disabled"] != false {
 		t.Errorf("expected disabled=false, got %v", entry["disabled"])
@@ -741,7 +741,7 @@ func TestClaudeDesktop_Link_UsesHTTPEndpoint(t *testing.T) {
 
 	c := newClaudeDesktop()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -766,7 +766,7 @@ func TestCline_Link_UsesHTTPEndpoint(t *testing.T) {
 
 	c := newCline()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1006,8 +1006,8 @@ func TestTransportDescription(t *testing.T) {
 	if TransportDescription(true) != "mcp-remote bridge" {
 		t.Error("expected mcp-remote bridge")
 	}
-	if TransportDescription(false) != "native SSE" {
-		t.Error("expected native SSE")
+	if TransportDescription(false) != "native HTTP" {
+		t.Error("expected native HTTP")
 	}
 }
 
@@ -1077,7 +1077,7 @@ func TestClientProvisioners_ImplementInterface(t *testing.T) {
 // --- Bridge Config Tests ---
 
 func TestBridgeConfig(t *testing.T) {
-	cfg := bridgeConfig("http://localhost:8180/sse")
+	cfg := bridgeConfig("http://localhost:8180/mcp")
 	if cfg["command"] != "npx" {
 		t.Errorf("expected command=npx, got %v", cfg["command"])
 	}
@@ -1085,14 +1085,14 @@ func TestBridgeConfig(t *testing.T) {
 	if len(args) != 4 {
 		t.Fatalf("expected 4 args, got %d", len(args))
 	}
-	if args[0] != "-y" || args[1] != "mcp-remote" || args[2] != "http://localhost:8180/sse" || args[3] != "--allow-http" {
+	if args[0] != "-y" || args[1] != "mcp-remote" || args[2] != "http://localhost:8180/mcp" || args[3] != "--allow-http" {
 		t.Errorf("unexpected args: %v", args)
 	}
 }
 
-func TestSSEConfig(t *testing.T) {
-	cfg := sseConfig("serverUrl", "http://localhost:8180/sse")
-	if cfg["serverUrl"] != "http://localhost:8180/sse" {
+func TestURLConfig(t *testing.T) {
+	cfg := urlConfig("serverUrl", "http://localhost:8180/mcp")
+	if cfg["serverUrl"] != "http://localhost:8180/mcp" {
 		t.Errorf("unexpected config: %v", cfg)
 	}
 }
@@ -1192,7 +1192,7 @@ func TestClaudeCode_Link(t *testing.T) {
 
 	c := newClaudeCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1218,7 +1218,7 @@ func TestClaudeCode_Link_Idempotent(t *testing.T) {
 
 	c := newClaudeCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1239,7 +1239,7 @@ func TestClaudeCode_Link_Conflict(t *testing.T) {
 
 	c := newClaudeCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1265,7 +1265,7 @@ func TestClaudeCode_Link_Force(t *testing.T) {
 
 	c := newClaudeCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 		Force:      true,
@@ -1453,7 +1453,7 @@ func TestGeminiCLI_Link(t *testing.T) {
 
 	g := newGeminiCLI()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1479,7 +1479,7 @@ func TestGeminiCLI_Link_Idempotent(t *testing.T) {
 
 	g := newGeminiCLI()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1616,8 +1616,8 @@ func TestZed_Link(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["context_servers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["url"] != "http://localhost:8180/sse" {
-		t.Errorf("expected url=http://localhost:8180/sse, got %v", entry["url"])
+	if entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected url=http://localhost:8180/mcp, got %v", entry["url"])
 	}
 }
 
@@ -1681,7 +1681,7 @@ func TestZed_Link_Force(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["context_servers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["url"] != "http://localhost:8180/sse" {
+	if entry["url"] != "http://localhost:8180/mcp" {
 		t.Errorf("expected url after force, got %v", entry["url"])
 	}
 }
@@ -1723,7 +1723,7 @@ func TestZed_Unlink(t *testing.T) {
 
 	writeTestJSON(t, configPath, map[string]any{
 		"context_servers": map[string]any{
-			"gridctl": map[string]any{"url": "http://localhost:8180/sse"},
+			"gridctl": map[string]any{"url": "http://localhost:8180/mcp"},
 			"other":   map[string]any{"url": "http://other:3000"},
 		},
 	})
@@ -1812,7 +1812,7 @@ func TestZed_IsLinked(t *testing.T) {
 
 	writeTestJSON(t, configPath, map[string]any{
 		"context_servers": map[string]any{
-			"gridctl": map[string]any{"url": "http://localhost:8180/sse"},
+			"gridctl": map[string]any{"url": "http://localhost:8180/mcp"},
 		},
 	})
 
@@ -1830,7 +1830,7 @@ func TestOpenCode_Link(t *testing.T) {
 
 	o := newOpenCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1856,7 +1856,7 @@ func TestOpenCode_Link_Idempotent(t *testing.T) {
 
 	o := newOpenCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1877,7 +1877,7 @@ func TestOpenCode_Link_Conflict(t *testing.T) {
 
 	o := newOpenCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1903,7 +1903,7 @@ func TestOpenCode_Link_Force(t *testing.T) {
 
 	o := newOpenCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 		Force:      true,
@@ -1948,7 +1948,7 @@ func TestOpenCode_Link_PreservesOtherServers(t *testing.T) {
 
 	o := newOpenCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -1978,7 +1978,7 @@ func TestOpenCode_Link_PreservesOtherConfig(t *testing.T) {
 
 	o := newOpenCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -2147,8 +2147,8 @@ func TestGoose_Link(t *testing.T) {
 	if entry["name"] != "gridctl" {
 		t.Errorf("expected name=gridctl, got %v", entry["name"])
 	}
-	if entry["type"] != "sse" {
-		t.Errorf("expected type=sse, got %v", entry["type"])
+	if entry["type"] != "streamable_http" {
+		t.Errorf("expected type=streamable_http, got %v", entry["type"])
 	}
 	if entry["enabled"] != true {
 		t.Errorf("expected enabled=true, got %v", entry["enabled"])
@@ -2156,8 +2156,8 @@ func TestGoose_Link(t *testing.T) {
 	if entry["timeout"] != 300 {
 		t.Errorf("expected timeout=300, got %v", entry["timeout"])
 	}
-	if entry["uri"] != "http://localhost:8180/sse" {
-		t.Errorf("expected uri=http://localhost:8180/sse, got %v", entry["uri"])
+	if entry["uri"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected uri=http://localhost:8180/mcp, got %v", entry["uri"])
 	}
 }
 
@@ -2226,10 +2226,10 @@ func TestGoose_Link_Force(t *testing.T) {
 	data := readTestYAML(t, configPath)
 	extensions := data["extensions"].(map[string]any)
 	entry := extensions["gridctl"].(map[string]any)
-	if entry["type"] != "sse" {
-		t.Errorf("expected type=sse after force, got %v", entry["type"])
+	if entry["type"] != "streamable_http" {
+		t.Errorf("expected type=streamable_http after force, got %v", entry["type"])
 	}
-	if entry["uri"] != "http://localhost:8180/sse" {
+	if entry["uri"] != "http://localhost:8180/mcp" {
 		t.Errorf("expected uri after force, got %v", entry["uri"])
 	}
 }
@@ -2280,7 +2280,7 @@ func TestGoose_Unlink(t *testing.T) {
 				"type":    "sse",
 				"enabled": true,
 				"timeout": 300,
-				"uri":     "http://localhost:8180/sse",
+				"uri":     "http://localhost:8180/mcp",
 			},
 			"other": map[string]any{
 				"name": "other",
@@ -2379,7 +2379,7 @@ func TestGoose_IsLinked(t *testing.T) {
 				"type":    "sse",
 				"enabled": true,
 				"timeout": 300,
-				"uri":     "http://localhost:8180/sse",
+				"uri":     "http://localhost:8180/mcp",
 			},
 		},
 	})
@@ -2583,7 +2583,7 @@ func TestDryRunDiff_ClaudeCode(t *testing.T) {
 
 	c := newClaudeCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -2607,7 +2607,7 @@ func TestDryRunDiff_OpenCode(t *testing.T) {
 
 	o := newOpenCode()
 	opts := LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -2634,18 +2634,18 @@ func TestDryRunDiff_OpenCode(t *testing.T) {
 
 func TestLooksLikeGridctlEntry_URI(t *testing.T) {
 	entry := map[string]any{
-		"uri": "http://localhost:8180/sse",
+		"uri": "http://localhost:8180/mcp",
 	}
-	if !looksLikeGridctlEntry(entry, "http://localhost:8180/sse", false) {
+	if !looksLikeGridctlEntry(entry, "http://localhost:8180/mcp", false) {
 		t.Error("should recognize localhost URI")
 	}
 }
 
 func TestLooksLikeGridctlEntry_URI_127(t *testing.T) {
 	entry := map[string]any{
-		"uri": "http://127.0.0.1:8180/sse",
+		"uri": "http://127.0.0.1:8180/mcp",
 	}
-	if !looksLikeGridctlEntry(entry, "http://127.0.0.1:8180/sse", false) {
+	if !looksLikeGridctlEntry(entry, "http://127.0.0.1:8180/mcp", false) {
 		t.Error("should recognize 127.0.0.1 URI")
 	}
 }
@@ -2664,10 +2664,10 @@ func TestTransportDescriptionFor(t *testing.T) {
 		{"Antigravity", newAntigravity(), "native HTTP"},
 		{"OpenCode", newOpenCode(), "native HTTP"},
 		{"Grok Build", newGrokBuild(), "native HTTP"},
-		{"VS Code", newVSCode(), "native SSE"},
-		{"Zed", newZed(), "native SSE"},
-		{"Goose", newGoose(), "native SSE"},
-		{"Windsurf", newWindsurf(), "native SSE"},
+		{"VS Code", newVSCode(), "native HTTP"},
+		{"Zed", newZed(), "native HTTP"},
+		{"Goose", newGoose(), "native HTTP"},
+		{"Windsurf", newWindsurf(), "native HTTP"},
 	}
 
 	for _, tt := range tests {
@@ -2765,7 +2765,7 @@ func TestAllClientInfo_DetectedClient(t *testing.T) {
 		bridge: false,
 		paths:  map[string]string{"linux": configPath, "darwin": configPath, "windows": configPath},
 		buildEntry: func(opts LinkOptions) map[string]any {
-			return sseConfig("serverUrl", opts.GatewayURL)
+			return urlConfig("serverUrl", opts.GatewayURL)
 		},
 	}
 
@@ -2818,7 +2818,7 @@ func TestNewClientProvisioners_ImplementInterface(t *testing.T) {
 
 func grokLinkOpts() LinkOptions {
 	return LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -3095,7 +3095,7 @@ func TestDryRunDiff_GrokBuild(t *testing.T) {
 
 func antigravityLinkOpts() LinkOptions {
 	return LinkOptions{
-		GatewayURL: "http://localhost:8180/sse",
+		GatewayURL: "http://localhost:8180/mcp",
 		Port:       8180,
 		ServerName: "gridctl",
 	}
@@ -3430,5 +3430,195 @@ func TestHasComments(t *testing.T) {
 
 	if HasComments(filepath.Join(dir, "does-not-exist.toml")) {
 		t.Error("HasComments on missing file should be false")
+	}
+}
+
+// --- Legacy SSE Migration Tests ---
+//
+// Links written before the streamable-HTTP flip carry /sse URLs (and
+// SSE-era type tokens). They must be recognized as gridctl entries and
+// updated to the /mcp shape on relink without --force: migration-read,
+// never migration-written.
+
+func TestLink_LegacySSEEntry_UpdatedWithoutForce(t *testing.T) {
+	p, configPath := testMCPServersProvisioner(t, "config.json", false)
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcpServers": map[string]any{
+			"gridctl": map[string]any{"serverUrl": "http://localhost:8180/sse"},
+		},
+	})
+
+	if err := p.Link(configPath, defaultLinkOpts()); err != nil {
+		t.Fatalf("relink over legacy SSE entry: %v", err)
+	}
+
+	data := readTestJSON(t, configPath)
+	entry := data["mcpServers"].(map[string]any)["gridctl"].(map[string]any)
+	if entry["serverUrl"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected legacy entry updated to /mcp, got %v", entry["serverUrl"])
+	}
+}
+
+func TestVSCode_Link_LegacySSEEntry_UpdatedWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp.json")
+	v := newVSCode()
+
+	writeTestJSON(t, configPath, map[string]any{
+		"servers": map[string]any{
+			"gridctl": map[string]any{"type": "sse", "url": "http://localhost:8180/sse"},
+		},
+	})
+
+	if err := v.Link(configPath, defaultLinkOpts()); err != nil {
+		t.Fatalf("relink over legacy SSE entry: %v", err)
+	}
+
+	entry := readTestJSON(t, configPath)["servers"].(map[string]any)["gridctl"].(map[string]any)
+	if entry["type"] != "http" || entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected type=http url=/mcp, got %v", entry)
+	}
+}
+
+func TestRooCode_Link_LegacyTransportTypeEntry_UpdatedWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp_settings.json")
+	r := newRooCode()
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcpServers": map[string]any{
+			"gridctl": map[string]any{
+				"url":           "http://localhost:8180/sse",
+				"transportType": "sse",
+				"disabled":      false,
+				"alwaysAllow":   []any{},
+			},
+		},
+	})
+
+	if err := r.Link(configPath, defaultLinkOpts()); err != nil {
+		t.Fatalf("relink over legacy transportType entry: %v", err)
+	}
+
+	entry := readTestJSON(t, configPath)["mcpServers"].(map[string]any)["gridctl"].(map[string]any)
+	if entry["type"] != "streamable-http" || entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected type=streamable-http url=/mcp, got %v", entry)
+	}
+	if _, hasLegacy := entry["transportType"]; hasLegacy {
+		t.Errorf("expected legacy transportType removed, got %v", entry)
+	}
+}
+
+func TestGoose_Link_LegacySSEEntry_UpdatedWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	g := newGoose()
+
+	writeTestYAML(t, configPath, map[string]any{
+		"extensions": map[string]any{
+			"gridctl": map[string]any{
+				"name": "gridctl", "type": "sse", "enabled": true,
+				"timeout": 300, "uri": "http://localhost:8180/sse",
+			},
+		},
+	})
+
+	if err := g.Link(configPath, defaultLinkOpts()); err != nil {
+		t.Fatalf("relink over legacy SSE entry: %v", err)
+	}
+
+	entry := readTestYAML(t, configPath)["extensions"].(map[string]any)["gridctl"].(map[string]any)
+	if entry["type"] != "streamable_http" || entry["uri"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected type=streamable_http uri=/mcp, got %v", entry)
+	}
+}
+
+func TestContinueDev_Link_LegacySSEEntry_UpdatedWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	c := newContinueDev()
+
+	writeTestJSON(t, configPath, map[string]any{
+		"experimental": map[string]any{
+			"mcpServers": []any{
+				map[string]any{
+					"name": "gridctl",
+					"transport": map[string]any{"type": "sse", "url": "http://localhost:8180/sse"},
+				},
+			},
+		},
+	})
+
+	if err := c.Link(configPath, defaultLinkOpts()); err != nil {
+		t.Fatalf("relink over legacy SSE entry: %v", err)
+	}
+
+	servers := readTestJSON(t, configPath)["experimental"].(map[string]any)["mcpServers"].([]any)
+	transport := servers[0].(map[string]any)["transport"].(map[string]any)
+	if transport["type"] != "streamable-http" || transport["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected streamable-http transport, got %v", transport)
+	}
+}
+
+func TestAnythingLLM_Link_LegacySSEEntry_UpdatedWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp.json")
+	a := newAnythingLLM()
+
+	writeTestJSON(t, configPath, map[string]any{
+		"mcpServers": map[string]any{
+			"gridctl": map[string]any{"type": "sse", "url": "http://localhost:8180/sse"},
+		},
+	})
+
+	if err := a.Link(configPath, defaultLinkOpts()); err != nil {
+		t.Fatalf("relink over legacy SSE entry: %v", err)
+	}
+
+	entry := readTestJSON(t, configPath)["mcpServers"].(map[string]any)["gridctl"].(map[string]any)
+	if entry["type"] != "streamable" || entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected type=streamable url=/mcp, got %v", entry)
+	}
+}
+
+// --- Streamable URL Construction Tests ---
+
+func TestBuildEntry_PortRebuildsStreamableURL(t *testing.T) {
+	opts := LinkOptions{
+		GatewayURL: "http://localhost:9999/mcp?client=ci",
+		Port:       9999,
+		ServerName: "gridctl-dev",
+		ClientID:   "ci",
+		Group:      "dev",
+	}
+
+	tests := []struct {
+		name  string
+		entry map[string]any
+		key   string
+	}{
+		{"cursor", newCursor().buildEntry(opts), "url"},
+		{"windsurf", newWindsurf().buildEntry(opts), "serverUrl"},
+		{"zed", newZed().buildEntry(opts), "url"},
+		{"vscode", newVSCode().buildEntry(opts), "url"},
+		{"roo", newRooCode().buildEntry(opts), "url"},
+		{"anythingllm", newAnythingLLM().buildEntry(opts), "url"},
+		{"goose", newGoose().buildEntry(opts), "uri"},
+	}
+	want := "http://localhost:9999/groups/dev/mcp?client=ci"
+	for _, tt := range tests {
+		got, _ := tt.entry[tt.key].(string)
+		if got != want {
+			t.Errorf("%s: %s = %q, want %q", tt.name, tt.key, got, want)
+		}
+		if strings.Contains(got, "/sse") {
+			t.Errorf("%s writes an /sse URL: %q", tt.name, got)
+		}
+	}
+
+	transport := newContinueDev().buildEntry(opts)["transport"].(map[string]any)
+	if transport["url"] != want {
+		t.Errorf("continue: url = %v, want %q", transport["url"], want)
 	}
 }
