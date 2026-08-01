@@ -111,9 +111,9 @@ func reconcileDeclaredLinks(printer *output.Printer, registry slugResolver, entr
 // endpoint and default the entry name to gridctl-<group>, and a client_id
 // rides the gateway URL as the `client` query parameter.
 func linkOptionsForEntry(entry config.LinkEntry, port int) provisioner.LinkOptions {
-	baseURL := provisioner.GatewayURL(port)
+	baseURL := provisioner.GatewayHTTPURL(port)
 	if entry.Group != "" {
-		baseURL = provisioner.GroupGatewayURL(port, entry.Group)
+		baseURL = provisioner.GroupGatewayHTTPURL(port, entry.Group)
 	}
 	return provisioner.LinkOptions{
 		GatewayURL: provisioner.AppendClientParam(baseURL, entry.ClientID),
