@@ -20,6 +20,7 @@ import (
 	"github.com/gridctl/gridctl/internal/stackedit"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/wiring"
 
 	"gopkg.in/yaml.v3"
 )
@@ -60,6 +61,11 @@ type linkClientResponse struct {
 	Declared      bool   `json:"declared"`
 	AlreadyLinked bool   `json:"alreadyLinked,omitempty"`
 	ConfigPath    string `json:"configPath,omitempty"`
+	// Drifted and RecordedHash surface wiring ownership state: a linked
+	// entry always leaves drifted=false, and the hash is the canonical
+	// value hash just recorded (never the value itself).
+	Drifted      bool   `json:"drifted,omitempty"`
+	RecordedHash string `json:"recordedHash,omitempty"`
 }
 
 // linkPreviewResponse is the dry-run payload: the client config before and
@@ -124,24 +130,35 @@ func (s *Server) handleLinkClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := linkOptionsForDeclared(entry, s.gatewayPortOrDefault())
-	alreadyLinked := false
-	switch err := prov.Link(configPath, opts); {
-	case err == nil:
-		// linked
-	case errors.Is(err, provisioner.ErrAlreadyLinked):
-		// Declaring an already-linked client adopts it; the stack write below
-		// is the meaningful half.
-		alreadyLinked = true
-	case errors.Is(err, provisioner.ErrConflict):
-		writeStructuredError(w, http.StatusConflict, errCodeLinkConflict,
-			"The client config already has a '"+opts.ServerName+"' entry with unexpected contents.",
-			"Run 'gridctl link "+entry.Client+" --force' to overwrite it, then declare the client again.")
+	mgr, err := s.wiringMgr()
+	if err != nil {
+		writeJSONError(w, "Failed to open wiring records: "+err.Error(), http.StatusInternalServerError)
 		return
-	default:
+	}
+	opts := linkOptionsForDeclared(entry, s.gatewayPortOrDefault())
+	res, err := mgr.LinkClient(r.Context(), prov, configPath, opts)
+	if err != nil {
 		writeJSONError(w, "Failed to link "+prov.Name()+": "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	alreadyLinked := false
+	switch res.Action {
+	case wiring.ActionLinked, wiring.ActionUpdated, wiring.ActionAdopted:
+		// linked (an identical pre-existing entry is adopted into the record)
+	case wiring.ActionUnchanged:
+		// Declaring an already-linked client adopts it; the stack write below
+		// is the meaningful half.
+		alreadyLinked = true
+	case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
+		writeStructuredError(w, http.StatusConflict, errCodeLinkConflict,
+			"The client config already has a '"+opts.ServerName+"' entry gridctl does not own: "+res.Detail+".",
+			"Run 'gridctl link "+entry.Client+" --force' to overwrite it, or 'gridctl project adopt --kind wiring --client "+entry.Client+"' to take ownership, then declare the client again.")
+		return
+	default:
+		writeJSONError(w, "Failed to link "+prov.Name()+": "+res.Error, http.StatusInternalServerError)
+		return
+	}
+	recordedHash, _ := mgr.RecordedHash(r.Context(), entry.Client, opts.ServerName)
 
 	fireBetweenReadsHook()
 
@@ -173,6 +190,7 @@ func (s *Server) handleLinkClient(w http.ResponseWriter, r *http.Request) {
 		Declared:      true,
 		AlreadyLinked: alreadyLinked,
 		ConfigPath:    configPath,
+		RecordedHash:  recordedHash,
 	})
 }
 
@@ -218,15 +236,36 @@ func (s *Server) handleUnlinkClient(w http.ResponseWriter, r *http.Request) {
 
 	unlinked := false
 	if configPath, found := prov.Detect(); found {
-		switch err := prov.Unlink(configPath, serverName); {
-		case err == nil:
-			unlinked = true
-		case errors.Is(err, provisioner.ErrNotLinked):
-			// Declared but never linked here; removing the declaration is
-			// still meaningful.
-		default:
+		mgr, err := s.wiringMgr()
+		if err != nil {
+			writeJSONError(w, "Failed to open wiring records: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		res, err := mgr.UnlinkClient(r.Context(), prov, configPath, serverName, false, false)
+		if err != nil {
 			writeJSONError(w, "Failed to unlink "+prov.Name()+": "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+		switch res.Action {
+		case wiring.ActionRemoved, wiring.ActionAlreadyGone:
+			unlinked = true
+		case wiring.ActionNotLinked:
+			// Declared but never linked here; removing the declaration is
+			// still meaningful.
+		case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
+			writeStructuredError(w, http.StatusConflict, errCodeLinkConflict,
+				"The '"+serverName+"' entry was not removed: "+res.Detail+".",
+				res.Remediation+".")
+			return
+		default:
+			writeJSONError(w, "Failed to unlink "+prov.Name()+": "+res.Error, http.StatusInternalServerError)
+			return
+		}
+	} else if mgr, merr := s.wiringMgr(); merr == nil {
+		// The client is no longer installed: nothing to write, but a
+		// recorded entry would otherwise sit as target-missing forever.
+		if res, derr := mgr.DropRecord(r.Context(), entry.Client, serverName); derr == nil && res.Action == wiring.ActionRemoved {
+			unlinked = true
 		}
 	}
 
