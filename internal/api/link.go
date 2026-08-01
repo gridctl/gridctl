@@ -353,9 +353,9 @@ func (s *Server) resolveLinkRequest(w http.ResponseWriter, r *http.Request) (pro
 // `gridctl link` flags and the apply reconcile do: group links target the
 // group endpoint and rename the entry, and client_id rides the URL.
 func linkOptionsForDeclared(entry config.LinkEntry, port int) provisioner.LinkOptions {
-	baseURL := provisioner.GatewayURL(port)
+	baseURL := provisioner.GatewayHTTPURL(port)
 	if entry.Group != "" {
-		baseURL = provisioner.GroupGatewayURL(port, entry.Group)
+		baseURL = provisioner.GroupGatewayHTTPURL(port, entry.Group)
 	}
 	return provisioner.LinkOptions{
 		GatewayURL: provisioner.AppendClientParam(baseURL, entry.ClientID),
