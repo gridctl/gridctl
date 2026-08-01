@@ -512,12 +512,12 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 			return ctxExitOK
 		}
 		t := output.NewTableWriter(stdout, plain)
-		t.AppendHeader(table.Row{"SKILL", "CLIENT", "CHANNEL", "STATE", "TARGET"})
+		t.AppendHeader(table.Row{"SKILL", "CLIENT", "CHANNEL", "RENDER", "STATE", "TARGET"})
 		for _, s := range statuses {
-			t.AppendRow(table.Row{s.Skill, s.Client, s.Channel, skillProjectStateLabel(s), s.Target})
+			t.AppendRow(table.Row{s.Skill, s.Client, s.Channel, s.Render, skillProjectStateLabel(s), s.Target})
 		}
 		for _, s := range agentStatuses {
-			t.AppendRow(table.Row{s.Agent + " (agent)", s.Client, s.Channel, agentProjectStateLabel(s), s.Target})
+			t.AppendRow(table.Row{s.Agent + " (agent)", s.Client, s.Channel, s.Render, agentProjectStateLabel(s), s.Target})
 		}
 		t.Render()
 		for _, s := range statuses {
@@ -726,6 +726,9 @@ func runAgentProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *age
 			if r.Action == agentsync.ActionSkippedDrift && r.Error == "" {
 				fmt.Fprintf(stdout, "\n%s → %s: projected file was hand-edited. Keep the edit with 'gridctl skill project adopt --kind agent %s --client %s', or overwrite with 'gridctl skill project sync --kind agent %s --clients %s --force'\n",
 					r.Agent, r.Client, r.Agent, r.Client, r.Agent, r.Client)
+			}
+			if r.Detail != "" && r.Error == "" {
+				fmt.Fprintf(stdout, "\n%s → %s: %s\n", r.Agent, r.Client, r.Detail)
 			}
 		}
 	}
