@@ -8,6 +8,7 @@
   "client": "antigravity",
   "channel": "copy",
   "target": "$HOME/.gemini/config/skills/alpha",
+  "render": "identity",
   "state": "drifted",
   "experimental": true,
   "synced_at": "<TS>"
@@ -18,6 +19,7 @@
   "client": "claude-code",
   "channel": "symlink",
   "target": "$HOME/.claude/skills/alpha",
+  "render": "identity",
   "state": "in-sync",
   "synced_at": "<TS>"
   },
@@ -27,6 +29,7 @@
   "client": "antigravity",
   "channel": "copy",
   "target": "$HOME/.gemini/config/skills/beta",
+  "render": "identity",
   "state": "stale",
   "experimental": true,
   "synced_at": "<TS>"
