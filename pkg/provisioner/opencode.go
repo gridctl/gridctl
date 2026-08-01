@@ -81,7 +81,7 @@ func (o *OpenCode) Link(configPath string, opts LinkOptions) error {
 	entry := o.buildEntry(opts)
 
 	existing, exists := servers[opts.ServerName]
-	if exists && !opts.Force {
+	if exists && !opts.Force && !opts.OwnershipResolved {
 		existingMap, ok := existing.(map[string]any)
 		if ok && reflect.DeepEqual(existingMap, entry) {
 			return ErrAlreadyLinked
