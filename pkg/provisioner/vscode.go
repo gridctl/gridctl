@@ -7,7 +7,8 @@ import (
 )
 
 // VSCode provisions the VS Code / GitHub Copilot MCP config.
-// Transport: native SSE (no bridge needed).
+// Transport: native streamable HTTP (no bridge needed); "type": "http" is
+// VS Code's streamable token, with client-side fallback to SSE.
 // Uses "servers" key (not "mcpServers") and requires a "type" field.
 type VSCode struct {
 	name  string
@@ -64,9 +65,13 @@ func (v *VSCode) IsLinked(configPath string, serverName string) (bool, error) {
 }
 
 func (v *VSCode) buildEntry(opts LinkOptions) map[string]any {
+	url := opts.GatewayURL
+	if opts.Port > 0 {
+		url = gatewayHTTPURLForOpts(opts)
+	}
 	return map[string]any{
-		"type": "sse",
-		"url":  opts.GatewayURL,
+		"type": "http",
+		"url":  url,
 	}
 }
 
