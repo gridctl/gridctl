@@ -36,6 +36,7 @@ Current as of **v0.1.0-beta.15** (see [CHANGELOG.md](../CHANGELOG.md) for releas
 | Skills import (skill add) | Experimental | May change without notice |
 | Skill projection (skill project) | Experimental | May change without notice |
 | Agent kind (skill add / skill project --kind agent) | Experimental | Distinct from the removed Agent IDE below; may change without notice |
+| Multi-client agent renders (opencode, copilot, gemini) | Experimental | Lossy dialects; may change without notice |
 | Global context sync (ctx) | Experimental | May change without notice |
 | Distributed tracing | Experimental | May change without notice |
 | Cost observability | Experimental | May change without notice |
