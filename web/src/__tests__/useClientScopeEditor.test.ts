@@ -27,7 +27,7 @@ function client(scope?: ClientStatus['effectiveScope']): ClientStatus {
     slug: 'cursor',
     detected: true,
     linked: true,
-    transport: 'native SSE',
+    transport: 'native HTTP',
     effectiveScope: scope,
   };
 }
