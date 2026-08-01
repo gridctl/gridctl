@@ -40,6 +40,18 @@ type AgentExtraField struct {
 	Value *yaml.Node
 }
 
+// ExtraByKey returns the raw frontmatter node for one passthrough key.
+// Renderers use it for key-level access without scanning Extra at every
+// call site.
+func (d *AgentDefinition) ExtraByKey(key string) (*yaml.Node, bool) {
+	for _, f := range d.Extra {
+		if f.Key == key {
+			return f.Value, true
+		}
+	}
+	return nil, false
+}
+
 // agentNamePattern matches valid agent names: lowercase letters, digits,
 // and hyphens. Colons are excluded (Claude Code v2.1.218+ refuses agent
 // names containing ":").

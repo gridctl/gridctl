@@ -53,6 +53,14 @@ func (m *Manager) Adopt(ctx context.Context, agent, client string) (*AdoptResult
 	if !ok {
 		return nil, fmt.Errorf("%w: %q (known clients: %s)", ErrUnknownClient, client, strings.Join(SupportedSlugs(), ", "))
 	}
+	// Rendered targets are one-way: the dialect dropped canonical keys at
+	// render time, so pulling its bytes back would corrupt the store with
+	// lossy client-dialect content. Gate before any validation runs.
+	if t.Render != nil {
+		return nil, &AdoptRefusal{msg: fmt.Sprintf(
+			"%s's projection is a lossy %s render and cannot flow back into the canonical store; adopt the identity projection instead ('gridctl skill project adopt --kind agent %s --client claude-code'), or hand-maintain the file and detach it with 'gridctl skill project unsync --kind agent %s --clients %s'",
+			t.Name, t.Slug, agent, agent, t.Slug)}
+	}
 	a, err := skills.GetAgent(m.registryDir, agent)
 	if err != nil {
 		return nil, fmt.Errorf("unknown agent %q: %w", agent, err)

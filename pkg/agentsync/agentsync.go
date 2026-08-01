@@ -1,11 +1,17 @@
 // Package agentsync projects imported agent definitions into native
-// client agent directories (Claude Code's ~/.claude/agents) so agents
-// distributed through git repos work in clients that read subagent
-// definitions from disk. It is the agent-kind tenant of the pkg/project
-// engine: single-file targets with the dedicated-file ownership model
-// from pkg/contexts (content hash, backup before replacing anything
-// unmanaged, adopt), not pkg/skillsync's directory trees. The render is
-// identity: the canonical AGENT.md bytes are copied verbatim.
+// client agent directories so agents distributed through git repos work
+// in clients that read subagent definitions from disk. It is the
+// agent-kind tenant of the pkg/project engine: single-file targets with
+// the dedicated-file ownership model from pkg/contexts (content hash,
+// backup before replacing anything unmanaged, adopt).
+//
+// Two render classes exist. The claude-code target is identity: the
+// canonical AGENT.md bytes are copied verbatim (Cursor also reads
+// ~/.claude/agents natively, so it needs no target of its own). The
+// opencode, copilot, and gemini targets render the canonical definition
+// into each client's dialect; those renders are lossy (unmappable
+// frontmatter keys are dropped and reported), deterministic, and
+// one-way — adopt is refused on rendered targets.
 package agentsync
 
 import (
@@ -17,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/skills"
 )
 
 // Sentinel errors callers branch on.
@@ -30,27 +37,66 @@ var (
 // gridctl. Aliased from the engine so callers' errors.Is checks work.
 var ErrNewerLockVersion = project.ErrNewerLockVersion
 
+// Rendered is one render's output: the client-native bytes plus the
+// canonical frontmatter keys the dialect could not express. Dropped is
+// surfaced in status detail and dry-run output so lossy conversions are
+// never silent.
+type Rendered struct {
+	Bytes   []byte
+	Dropped []string
+}
+
+// RenderFunc converts a parsed canonical agent definition into one
+// client's native dialect. Renders must be pure and deterministic:
+// the same definition always yields the same bytes, or drift detection
+// manufactures false positives on every sync.
+type RenderFunc func(def *skills.AgentDefinition) (Rendered, error)
+
 // Target describes one client's native agents directory. Each agent
-// becomes a single file AgentsPath/<name>.md, always copied (no symlink
-// channel: a symlinked file would expose registry sidecar paths to
-// client tooling and cannot express the adopt flow).
+// becomes a single file AgentsPath/<file name>, always copied (no
+// symlink channel: a symlinked file would expose registry sidecar paths
+// to client tooling and cannot express the adopt flow).
 type Target struct {
 	Slug string
 	Name string
 	// AgentsPath is a ~-template expanded against the Manager's home.
 	AgentsPath string
 	// DetectDirs mark the client as initialized on this machine. The
-	// agents directory itself is created on first sync (Claude Code does
-	// not create it by default), but only inside a detected client tree.
+	// agents directory itself is created on first sync, but only inside
+	// a detected client tree.
 	DetectDirs []string
-	// Experimental marks the thin-slice tier; surfaced in status output.
+	// Experimental marks the target's tier; surfaced in status output.
 	Experimental bool
+	// Render converts the canonical definition into the client dialect.
+	// Nil means identity: the canonical bytes are copied verbatim.
+	Render RenderFunc
+	// FileName maps an agent name to the target's file name. Nil means
+	// "<name>.md" (Copilot requires "<name>.agent.md").
+	FileName func(name string) string
+}
+
+// fileName resolves the destination file name for one agent.
+func (t Target) fileName(name string) string {
+	if t.FileName != nil {
+		return t.FileName(name)
+	}
+	return name + ".md"
+}
+
+// renderKind labels the target's render class for status output.
+func (t Target) renderKind() string {
+	if t.Render == nil {
+		return "identity"
+	}
+	return "lossy"
 }
 
 // Targets returns the supported projection targets in display order.
-// Claude Code is the only render target in the thin slice; Cursor and
-// VS Code Copilot read ~/.claude/agents natively, so this one path
-// serves them too.
+// claude-code is the identity target (Cursor reads ~/.claude/agents
+// natively, so no Cursor target exists); the rendered targets convert
+// into each client's own dialect. VS Code Copilot does NOT read
+// ~/.claude/agents — its global agents live under ~/.copilot/agents,
+// which is why it needs a render target.
 func Targets() []Target {
 	return []Target{
 		{
@@ -59,6 +105,31 @@ func Targets() []Target {
 			AgentsPath:   "~/.claude/agents",
 			DetectDirs:   []string{"~/.claude"},
 			Experimental: true,
+		},
+		{
+			Slug:         "opencode",
+			Name:         "OpenCode",
+			AgentsPath:   "~/.config/opencode/agents",
+			DetectDirs:   []string{"~/.config/opencode"},
+			Experimental: true,
+			Render:       renderOpenCode,
+		},
+		{
+			Slug:         "copilot",
+			Name:         "GitHub Copilot",
+			AgentsPath:   "~/.copilot/agents",
+			DetectDirs:   []string{"~/.copilot"},
+			Experimental: true,
+			Render:       renderCopilot,
+			FileName:     func(name string) string { return name + ".agent.md" },
+		},
+		{
+			Slug:         "gemini",
+			Name:         "Gemini CLI",
+			AgentsPath:   "~/.gemini/agents",
+			DetectDirs:   []string{"~/.gemini"},
+			Experimental: true,
+			Render:       renderGemini,
 		},
 	}
 }

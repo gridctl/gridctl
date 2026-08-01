@@ -43,6 +43,19 @@ func projectedPath(home, name string) string {
 	return filepath.Join(home, ".claude", "agents", name+".md")
 }
 
+// availableResults drops skipped-unavailable rows: most ops tests stage
+// only ~/.claude, so the rendered targets (opencode, copilot, gemini)
+// report unavailable and are not what those tests assert on.
+func availableResults(results []SyncResult) []SyncResult {
+	var out []SyncResult
+	for _, r := range results {
+		if r.Action != ActionSkippedUnavailable {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func TestSync_ProjectsAllImportedAgents(t *testing.T) {
 	mgr, home, _ := newTestManager(t, "alpha", "beta")
 	ctx := context.Background()
@@ -51,6 +64,7 @@ func TestSync_ProjectsAllImportedAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	results = availableResults(results)
 	if len(results) != 2 {
 		t.Fatalf("results = %+v, want 2", results)
 	}
@@ -69,7 +83,7 @@ func TestSync_ProjectsAllImportedAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range results {
+	for _, r := range availableResults(results) {
 		if r.Action != ActionUnchanged {
 			t.Errorf("re-sync action for %s = %q, want unchanged", r.Agent, r.Action)
 		}
@@ -85,10 +99,11 @@ func TestSync_NamedUnknownAgentFails(t *testing.T) {
 
 func TestSync_DryRunWritesNothing(t *testing.T) {
 	mgr, home, _ := newTestManager(t, "alpha")
-	results, err := mgr.Sync(context.Background(), nil, SyncOptions{DryRun: true})
+	rawResults, err := mgr.Sync(context.Background(), nil, SyncOptions{DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}
+	results := availableResults(rawResults)
 	if len(results) != 1 || results[0].Action != ActionWouldCopy {
 		t.Fatalf("results = %+v", results)
 	}
@@ -118,6 +133,7 @@ func TestSync_UnmanagedFileRefusedThenForced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	results = availableResults(results)
 	if results[0].Action != ActionSkippedUnmanaged {
 		t.Fatalf("action = %q, want skipped-unmanaged", results[0].Action)
 	}
@@ -132,6 +148,7 @@ func TestSync_UnmanagedFileRefusedThenForced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	results = availableResults(results)
 	if results[0].Action != ActionUpdated {
 		t.Fatalf("forced action = %q, want updated", results[0].Action)
 	}
@@ -166,6 +183,7 @@ func TestSync_DriftRefusedThenForced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	results = availableResults(results)
 	if results[0].Action != ActionSkippedDrift {
 		t.Fatalf("action = %q, want skipped-drift", results[0].Action)
 	}
@@ -174,6 +192,7 @@ func TestSync_DriftRefusedThenForced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	results = availableResults(results)
 	if results[0].Action != ActionUpdated || results[0].BackupPath == "" {
 		t.Fatalf("forced result = %+v, want updated with backup", results[0])
 	}
@@ -197,7 +216,7 @@ func TestSync_RemovesProjectionWhenAgentGone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 1 || results[0].Action != ActionRemoved {
+	if r := availableResults(results); len(r) != 1 || r[0].Action != ActionRemoved {
 		t.Fatalf("results = %+v, want one removed", results)
 	}
 	if _, err := os.Stat(projectedPath(home, "alpha")); !os.IsNotExist(err) {
@@ -340,13 +359,18 @@ func TestSync_UnavailableClientSkippedOrErrors(t *testing.T) {
 	mgr := NewManagerWithHome(home, registryDir)
 	ctx := context.Background()
 
-	// No ~/.claude: default target set reports skipped-unavailable.
+	// No client trees at all: every target reports skipped-unavailable.
 	results, err := mgr.Sync(ctx, nil, SyncOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 1 || results[0].Action != ActionSkippedUnavailable {
-		t.Fatalf("results = %+v", results)
+	if len(results) != len(Targets()) {
+		t.Fatalf("results = %+v, want one unavailable row per target", results)
+	}
+	for _, r := range results {
+		if r.Action != ActionSkippedUnavailable {
+			t.Fatalf("results = %+v, want all skipped-unavailable", results)
+		}
 	}
 
 	// Explicitly named unavailable client is an error.
