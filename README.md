@@ -146,7 +146,7 @@ Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemin
 {
   "mcpServers": {
     "gridctl": {
-      "url": "http://localhost:8180/sse"
+      "url": "http://localhost:8180/mcp"
     }
   }
 }
@@ -158,7 +158,7 @@ Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemin
   "mcpServers": {
     "gridctl": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:8180/sse", "--allow-http", "--transport", "sse-only"]
+      "args": ["-y", "mcp-remote", "http://localhost:8180/mcp", "--allow-http"]
     }
   }
 }
