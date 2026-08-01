@@ -85,7 +85,7 @@ func (v *VSCode) Link(configPath string, opts LinkOptions) error {
 	entry := v.buildEntry(opts)
 
 	existing, exists := servers[opts.ServerName]
-	if exists && !opts.Force {
+	if exists && !opts.Force && !opts.OwnershipResolved {
 		existingMap, ok := existing.(map[string]any)
 		if ok && reflect.DeepEqual(existingMap, entry) {
 			return ErrAlreadyLinked
