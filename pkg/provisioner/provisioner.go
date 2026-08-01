@@ -69,6 +69,12 @@ type LinkOptions struct {
 	Group      string // Tool group whose endpoint to link (empty = the default full surface)
 	Force      bool   // Overwrite existing entry
 	DryRun     bool   // Show what would change without modifying files
+	// OwnershipResolved marks the caller (the pkg/wiring manager) as having
+	// already decided ownership from the recorded lockfile state, so Link
+	// writes without consulting the legacy shape heuristic or the
+	// DeepEqual no-op check. Callers without recorded ownership leave it
+	// false and keep the pre-lockfile behavior.
+	OwnershipResolved bool
 }
 
 // DetectedClient pairs a provisioner with its found config path.
