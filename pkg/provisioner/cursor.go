@@ -1,7 +1,8 @@
 package provisioner
 
 // Cursor provisions the Cursor editor MCP config.
-// Transport: native SSE (no bridge needed).
+// Transport: native streamable HTTP (no bridge needed). Cursor's remote
+// entries are url-only; the client infers the transport from the endpoint.
 type Cursor struct{ mcpServersProvisioner }
 
 var _ ClientProvisioner = (*Cursor)(nil)
@@ -17,7 +18,11 @@ func newCursor() *Cursor {
 		"linux":   "~/.cursor/mcp.json",
 	}
 	c.buildEntry = func(opts LinkOptions) map[string]any {
-		return sseConfig("url", opts.GatewayURL)
+		url := opts.GatewayURL
+		if opts.Port > 0 {
+			url = gatewayHTTPURLForOpts(opts)
+		}
+		return urlConfig("url", url)
 	}
 	return c
 }
