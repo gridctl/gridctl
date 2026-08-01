@@ -43,6 +43,7 @@ Current as of **v0.1.0-beta.15** (see [CHANGELOG.md](../CHANGELOG.md) for releas
 | Server catalog (search, add) | Experimental | May change without notice |
 | Client config import (import) | Experimental | May change without notice |
 | Declarative client linking (`link:`) | Experimental | May change without notice |
+| Wiring ownership (link / unlink recording, project) | Experimental | May change without notice |
 | Downstream OAuth brokering (auth) | Experimental | May change without notice |
 | TOFU schema pinning (pins) | Experimental | May change without notice |
 | Tool-poisoning scan | Experimental | May change without notice |
