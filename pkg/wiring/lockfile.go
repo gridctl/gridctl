@@ -34,7 +34,10 @@ type Entry struct {
 	// CreatedByGridctl is false for adopted entries: gridctl owns them
 	// now but did not author their current value.
 	CreatedByGridctl bool
-	SyncedAt         time.Time
+	// Pack tags the record with the pack that applied it (empty = not
+	// pack-managed).
+	Pack     string
+	SyncedAt time.Time
 }
 
 // latestHash returns the newest recorded hash, or "".
@@ -91,6 +94,7 @@ func viewFromLock(pl *project.Lock) *LockFile {
 			ClientID:         e.ClientID,
 			Hashes:           append([]string(nil), e.Hashes...),
 			CreatedByGridctl: e.CreatedByGridctl,
+			Pack:             e.Pack,
 			SyncedAt:         e.SyncedAt,
 		})
 	}
@@ -116,6 +120,7 @@ func saveView(pl *project.Lock, lf *LockFile) error {
 				Hashes:           e.Hashes,
 				InstalledHash:    e.latestHash(),
 				CreatedByGridctl: e.CreatedByGridctl,
+				Pack:             e.Pack,
 				SyncedAt:         e.SyncedAt,
 			})
 		}
