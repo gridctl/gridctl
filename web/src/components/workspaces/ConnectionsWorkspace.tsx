@@ -351,6 +351,11 @@ function Badges({ client }: { client: ClientStatus }) {
           Declared
         </span>
       )}
+      {client.drifted && (
+        <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-warning/15 text-status-warning">
+          Drifted
+        </span>
+      )}
       {client.detected && !client.linked && (
         <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-surface-elevated text-text-muted">
           Detected
