@@ -137,9 +137,20 @@ func (s *Store) SaveSkill(sk *AgentSkill) error {
 		return fmt.Errorf("writing SKILL.md for %q: %w", sk.Name, err)
 	}
 
-	sk.FileCount = countSupportingFiles(skillDir)
-	cp := *sk
-	s.skills[cp.Name] = &cp
+	// Cache the parse of what was written, not the caller's object: a
+	// JSON-supplied skill need not be a parse/render fixed point (CRLF
+	// bodies, empty state), and a cache that differs from the next disk
+	// load would read as phantom content change to anything hashing the
+	// canonical form (skill pins).
+	canonical, err := ParseSkillMD(data)
+	if err != nil {
+		return fmt.Errorf("reparsing rendered SKILL.md for %q: %w", sk.Name, err)
+	}
+	canonical.Name = sk.Name
+	canonical.Dir = sk.Dir
+	canonical.FileCount = countSupportingFiles(skillDir)
+	s.skills[canonical.Name] = canonical
+	*sk = *canonical
 	return nil
 }
 
