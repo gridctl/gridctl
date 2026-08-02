@@ -21,6 +21,7 @@ type Stack struct {
 	Clients    *ClientsConfig         `yaml:"clients,omitempty"`                        // Optional per-client access scoping (NetworkPolicy semantics)
 	Limits     *LimitsConfig          `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional budgets and rate limits enforced at dispatch
 	Groups     map[string]GroupConfig `yaml:"groups,omitempty" json:"groups,omitempty"` // Optional named tool bundles, each at /groups/{name}/mcp
+	Skills     *SkillsPolicyConfig    `yaml:"skills,omitempty" json:"skills,omitempty"` // Optional global skill exposure policy (allow/deny name globs)
 
 	// Link declares LLM clients that `gridctl apply` connects to this
 	// stack's gateway once it is healthy. See LinkEntry for entry forms and
@@ -108,6 +109,33 @@ type ClientProfile struct {
 	// Tools is an allow-list of prefixed tool names. Empty means all tools
 	// within the allowed servers.
 	Tools []string `yaml:"tools,omitempty"`
+}
+
+// SkillsPolicyConfig is the optional top-level `skills:` block: a global
+// exposure policy for registry skills, filtering which skills the gateway
+// serves via prompts/resources and which the daemon projects into client
+// skill directories. Omitting the block preserves legacy behavior — every
+// active skill is exposed (Article IX).
+//
+// Allow and Deny are skill-name globs (path.Match syntax). A Deny match
+// always wins, then an Allow match admits, then Default decides ("deny"
+// denies; anything else, including omitted, allows). Denial filters
+// exposure only: denied skills keep their registry state, stay visible in
+// the registry API and UI flagged with the matching rule, and `gridctl
+// apply` warns for every active skill the policy hides.
+//
+// The policy is global by design; per-client skill scoping remains the
+// documented v1 deferral on ClientsConfig. Distinct from the "skill
+// sources" config in ~/.gridctl/skills.yaml (pkg/skills.SkillsConfig),
+// which declares where git-imported skills come from, not what is exposed.
+type SkillsPolicyConfig struct {
+	// Default is the fate of a skill matching neither list: "allow" (the
+	// default when empty) or "deny".
+	Default string `yaml:"default,omitempty" json:"default,omitempty"`
+	// Allow lists skill-name globs admitted even under default: deny.
+	Allow []string `yaml:"allow,omitempty" json:"allow,omitempty"`
+	// Deny lists skill-name globs hidden from exposure; deny beats allow.
+	Deny []string `yaml:"deny,omitempty" json:"deny,omitempty"`
 }
 
 // LimitsConfig is the optional top-level `limits:` block: declarative budget
