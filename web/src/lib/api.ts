@@ -2511,6 +2511,9 @@ export type ContextState =
   | 'drifted'
   | 'target-missing';
 
+/** How a client receives the context; absent while fragments mode is off. */
+export type ContextMode = 'single-file' | 'multi-file' | 'compiled';
+
 export interface ContextClientStatus {
   slug: string;
   name: string;
@@ -2518,6 +2521,7 @@ export interface ContextClientStatus {
   available: boolean;
   experimental?: boolean;
   strategy?: string;
+  mode?: ContextMode;
   target_path?: string;
   state: ContextState;
   detail?: string;
@@ -2526,8 +2530,19 @@ export interface ContextClientStatus {
 
 export interface ContextDoc {
   canonical: { path: string; exists: boolean; content: string };
+  fragments_active?: boolean;
   needs_sync: boolean;
   clients: ContextClientStatus[];
+}
+
+/** One rule fragment in composition (filename-lexicographic) order. */
+export interface ContextFragment {
+  name: string;
+  description?: string;
+  paths?: string[];
+  content: string;
+  bytes: number;
+  position: number;
 }
 
 export interface ContextScanEntry {
@@ -2610,4 +2625,37 @@ export async function unsyncGlobalContext(slug: string): Promise<void> {
 export async function fetchGlobalContextDiff(slug: string): Promise<string> {
   const body = await fetchJSON<{ diff: string }>(`/api/context/diff/${encodeURIComponent(slug)}`);
   return body.diff;
+}
+
+/** Rule fragments in composition order. GET /api/context/fragments */
+export async function fetchContextFragments(): Promise<{
+  active: boolean;
+  fragments: ContextFragment[];
+}> {
+  return fetchJSON<{ active: boolean; fragments: ContextFragment[] }>('/api/context/fragments');
+}
+
+/**
+ * Create or update one fragment. PUT /api/context/fragments/{name}.
+ * Empty content scaffolds a new fragment; the first ever fragment
+ * activates fragments mode (the backend migrates AGENTS.md to
+ * fragments/00-default.md with a backup and reports it via `migrated`).
+ */
+export async function saveContextFragment(
+  name: string,
+  content: string,
+): Promise<{ name: string; migrated?: boolean }> {
+  return mutateJSON<{ name: string; migrated?: boolean }>(
+    `/api/context/fragments/${encodeURIComponent(name)}`,
+    'PUT',
+    { content },
+  );
+}
+
+/** Delete one fragment (backed up out of tree first). DELETE /api/context/fragments/{name} */
+export async function deleteContextFragment(name: string): Promise<{ name: string; backup: string }> {
+  return mutateJSON<{ name: string; backup: string }>(
+    `/api/context/fragments/${encodeURIComponent(name)}`,
+    'DELETE',
+  );
 }
