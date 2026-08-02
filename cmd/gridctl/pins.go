@@ -151,8 +151,8 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(pinsExitInfrastructure)
 		}
-		if pinsDiffFailOn != "" && pinsDiffFailOn != pins.SeverityWarn && pinsDiffFailOn != pins.SeverityCritical {
-			fmt.Fprintf(os.Stderr, "invalid --fail-on-findings value %q: want 'warn' or 'critical'\n", pinsDiffFailOn)
+		if err := validateFailOnFindings(pinsDiffFailOn); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(pinsExitInfrastructure)
 		}
 		doc, warnings, err := buildPinsDiffDoc(st, server)
@@ -293,8 +293,15 @@ func init() {
 
 // resolveStack returns the stack name, auto-detecting when only one stack is deployed.
 func resolveStack() (string, error) {
-	if pinsStack != "" {
-		return pinsStack, nil
+	return resolveStackNamed(pinsStack)
+}
+
+// resolveStackNamed resolves a stack name from an explicit flag value,
+// auto-detecting when only one stack is deployed. Shared by the pins and
+// skill pins command families, which carry separate --stack flags.
+func resolveStackNamed(flagValue string) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
 	}
 
 	states, err := state.List()
