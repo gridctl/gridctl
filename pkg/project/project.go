@@ -39,6 +39,13 @@ const (
 	// MCP configs (pkg/wiring): key-level ownership inside files gridctl
 	// does not otherwise own, per Article XVI.
 	KindWiring Kind = "wiring"
+	// KindContextFragment projects one context rule fragment as its own
+	// file into a client rules directory (pkg/contexts fragments mode).
+	// A separate kind from KindContext on purpose: contexts flushes its
+	// per-client entries with ReplaceKind, and an older gridctl that only
+	// knows KindContext must never be able to drop or clobber fragment
+	// records it cannot represent.
+	KindContextFragment Kind = "context-fragment"
 )
 
 // Projection states shared by every kind. Kinds may extend the
@@ -101,6 +108,11 @@ type Entry struct {
 	InstalledHash string `yaml:"installed_hash,omitempty"`
 	CanonicalHash string `yaml:"canonical_hash,omitempty"`
 	CreatedFile   bool   `yaml:"created_file,omitempty"`
+	// InputHashes records, for a compiled context target, each input
+	// fragment's canonical hash at sync time (fragment name -> hash), so
+	// staleness can name which fragment moved instead of only "the
+	// composite changed". Absent outside fragments mode.
+	InputHashes map[string]string `yaml:"input_hashes,omitempty"`
 
 	// KindWiring attributes. Path is the composite "<config path>#<entry
 	// name>" (one config file legitimately holds several owned entries, and
