@@ -56,6 +56,31 @@ type Manager struct {
 	source SkillSource
 	store  *project.Store
 	mu     sync.Mutex
+
+	// policy is the optional skill exposure check (the stack.yaml `skills:`
+	// block, compiled by the controller). It reports whether a skill may be
+	// projected and, on denial, the rule responsible. nil allows everything —
+	// CLI call sites without stack context keep full authority, matching the
+	// wiring kind's "daemon enforces, human overrides" posture. A plain func
+	// keeps skillsync decoupled from the policy's home package.
+	policy func(name string) (allowed bool, rule string)
+}
+
+// SetPolicy installs the skill exposure check. Passing nil removes it.
+func (m *Manager) SetPolicy(policy func(name string) (allowed bool, rule string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.policy = policy
+}
+
+// policyDenied reports whether the policy denies a skill, with the rule.
+// Caller must hold m.mu.
+func (m *Manager) policyDenied(name string) (bool, string) {
+	if m.policy == nil {
+		return false, ""
+	}
+	allowed, rule := m.policy(name)
+	return !allowed, rule
 }
 
 // NewManager builds a Manager rooted at the user's home directory. It
