@@ -37,6 +37,7 @@ const (
 	ActionSkippedUnmanaged   = "skipped-unmanaged"
 	ActionSkippedUnavailable = project.ActionSkippedUnavailable
 	ActionSkippedEmptyStore  = "skipped-empty-store"
+	ActionSkippedPolicy      = "skipped-policy"
 	ActionWouldLink          = "would-link"
 	ActionWouldCopy          = "would-copy"
 	ActionWouldUpdate        = project.ActionWouldUpdate
@@ -126,7 +127,7 @@ func NeedsAttention(statuses []ProjectionStatus) bool {
 func HasFailures(results []SyncResult) bool {
 	for _, r := range results {
 		switch r.Action {
-		case ActionError, ActionSkippedDrift, ActionSkippedUnmanaged:
+		case ActionError, ActionSkippedDrift, ActionSkippedUnmanaged, ActionSkippedPolicy:
 			return true
 		}
 	}
@@ -212,6 +213,7 @@ func (m *Manager) persistIfRecorded(pl *project.Lock, lf *LockFile, res SyncResu
 // validated before any disk write, so a typo never half-projects.
 func (m *Manager) syncNamedLocked(ctx context.Context, pl *project.Lock, lf *LockFile, names []string, opts SyncOptions) ([]SyncResult, error) {
 	skillsByName := make(map[string]*registry.AgentSkill, len(names))
+	deniedRules := make(map[string]string)
 	var bad []string
 	for _, name := range names {
 		sk, err := m.source.GetSkill(name)
@@ -221,6 +223,13 @@ func (m *Manager) syncNamedLocked(ctx context.Context, pl *project.Lock, lf *Loc
 		}
 		if sk.State != registry.StateActive {
 			bad = append(bad, fmt.Sprintf("%s (%s)", name, sk.State))
+			continue
+		}
+		// Policy denial is a per-skill skip, not a batch error: the denial
+		// must surface as a visible result row, and the rest of an explicit
+		// batch still projects.
+		if denied, rule := m.policyDenied(name); denied {
+			deniedRules[name] = rule
 			continue
 		}
 		skillsByName[name] = sk
@@ -239,6 +248,16 @@ func (m *Manager) syncNamedLocked(ctx context.Context, pl *project.Lock, lf *Loc
 		results = append(results, SyncResult{Client: t.Slug, Target: t.skillsDir(m.home), Action: ActionSkippedUnavailable})
 	}
 	for _, name := range names {
+		if rule, denied := deniedRules[name]; denied {
+			for _, t := range targets {
+				results = append(results, SyncResult{
+					Skill: name, Client: t.Slug, Target: t.skillsDir(m.home),
+					Action: ActionSkippedPolicy,
+					Error:  fmt.Sprintf("denied by skills policy (rule: %s)", rule),
+				})
+			}
+			continue
+		}
 		sk := skillsByName[name]
 		for _, t := range targets {
 			if err := ctx.Err(); err != nil {
@@ -306,6 +325,17 @@ func (m *Manager) reconcileLocked(ctx context.Context, pl *project.Lock, lf *Loc
 			if err := m.persistIfRecorded(pl, lf, res, opts.DryRun); err != nil {
 				return results, err
 			}
+			continue
+		}
+		// A recorded projection the policy now denies is skipped, never
+		// silently removed: the files stay, the denial surfaces here and in
+		// status, and removal remains an explicit unsync decision.
+		if denied, rule := m.policyDenied(key.skill); denied {
+			results = append(results, SyncResult{
+				Skill: key.skill, Client: key.client, Channel: string(entry.Channel), Target: entry.Target,
+				Action: ActionSkippedPolicy,
+				Error:  fmt.Sprintf("denied by skills policy (rule: %s); run 'gridctl skill project unsync %s' to remove the projection", rule, key.skill),
+			})
 			continue
 		}
 		t, ok := FindTarget(key.client)
