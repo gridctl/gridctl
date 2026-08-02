@@ -522,6 +522,25 @@ export interface AgentSkill {
   body?: string;
   fileCount: number;     // Supporting files count
   dir?: string;          // Relative path from skills/ root (e.g., "git-workflow/branch-fork")
+  // Pin/provenance/policy summary. Absent when the skill has neither a pin
+  // record nor a policy verdict. Every field is optional on the wire
+  // (omitempty), so zero counts and false flags simply do not appear.
+  governance?: SkillGovernance;
+}
+
+// SkillGovernance mirrors the backend's governance object on registry skill
+// responses: factual provenance (never a trust judgment), pin state
+// ("pin drift" in UI copy — a different fact from the Library's sync drift),
+// advisory finding counts, and the skills-policy verdict with the matching
+// rule. Severity vocabulary matches lib/severity.ts ('warn', not 'warning').
+export interface SkillGovernance {
+  source?: 'local' | 'git';
+  origin?: { repo?: string; ref?: string; commitSha?: string };
+  pinStatus?: 'pinned' | 'drift';
+  findingsCount?: number;
+  maxFindingSeverity?: 'info' | 'warn' | 'critical';
+  policyDenied?: boolean;
+  policyRule?: string;
 }
 
 // SkillFile represents a file within a skill directory
