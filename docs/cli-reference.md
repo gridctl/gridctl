@@ -87,12 +87,15 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 | Command | Purpose |
 |---|---|
 | `gridctl ctx init` | Scan every supported client's global context location and bootstrap the canonical file. `--import <client>` adopts an existing client file as canon, `--from <path>` adopts an arbitrary file, `--template` scaffolds the starter, `--force` overwrites an existing canonical file. The scan itself never writes. |
-| `gridctl ctx status` | Per-client sync state (`in-sync`, `stale`, `drifted`, `target-missing`, `never-synced`, `unsupported`); exit `0` clean, `1` when anything needs attention, `2` on error. `--format json` or `--json`, `--plain`. |
-| `gridctl ctx sync [client...]` | Project the canonical file to clients (all available clients when none named). `--dry-run` previews with diffs, `--force` overwrites drifted targets and repairs corrupt blocks, `--check` is CI mode (no writes, exit `1` on drift or pending sync), `--format json` or `--json`, `--plain`. Drifted targets are skipped with guidance, never silently overwritten; every write takes a timestamped backup. |
-| `gridctl ctx diff <client>` | Unified diff between the canonical context and a client's managed content (exit `0` identical, `1` differs, `2` error). |
-| `gridctl ctx adopt <client>` | Pull a client's hand edit back into the canonical file, then re-sync that client (other clients become stale). |
-| `gridctl ctx unsync [client...]` | Remove managed artifacts (`--all` for every synced client). Dedicated files are deleted; shim lines and managed blocks are stripped; user-owned content is preserved. |
-| `gridctl ctx edit` | Open the canonical file in `$VISUAL`/`$EDITOR`, then print sync state. |
+| `gridctl ctx status` | Per-client sync state (`in-sync`, `stale`, `drifted`, `target-missing`, `never-synced`, `unsupported`); in fragments mode also shows `mode` (`single-file` / `multi-file` / `compiled`). Exit `0` clean, `1` when anything needs attention, `2` on error. `--format json` or `--json`, `--plain`. |
+| `gridctl ctx sync [client...]` | Project the canonical file (or fragments) to clients (all available clients when none named). `--dry-run` previews with diffs, `--force` overwrites drifted targets and repairs corrupt blocks, `--check` is CI mode (no writes, exit `1` on drift or pending sync), `--format json` or `--json`, `--plain`. Drifted targets are skipped with guidance, never silently overwritten; every write takes a timestamped backup. |
+| `gridctl ctx add <name>` | Create a rule fragment; on first use activates fragments mode (migrates AGENTS.md to `fragments/00-default.md` with backup). Composition order is filename-lexicographic. |
+| `gridctl ctx list` | List fragments with description, paths, size, and composition position. `--format json` or `--json`. |
+| `gridctl ctx rm <name>` | Remove a fragment (backup first); projected client files drop on the next sync. |
+| `gridctl ctx diff <client> [fragment]` | Unified diff between the canon (or one fragment) and a client's managed content (exit `0` identical, `1` differs, `2` error). Bare multi-file diff prints a per-fragment summary. |
+| `gridctl ctx adopt <client> [fragment]` | Pull a client's hand edit back into the canon or a fragment. Multi-file clients require a fragment name; compiled targets refuse unless `--into <fragment>` captures the whole body. |
+| `gridctl ctx unsync [client...]` | Remove managed artifacts (`--all` for every synced client). Dedicated files and multi-file fragment projections are deleted; shim lines and managed blocks are stripped; user-owned content is preserved. |
+| `gridctl ctx edit [fragment]` | Open the canonical file (or a fragment) in `$VISUAL`/`$EDITOR`, then print sync state. In fragments mode a name is required. |
 
 ## Groups
 
