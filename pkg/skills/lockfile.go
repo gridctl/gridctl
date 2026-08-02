@@ -57,6 +57,8 @@ type LockedPack struct {
 	Clients []string `yaml:"clients,omitempty"`
 	Skills  []string `yaml:"skills,omitempty"`
 	Agents  []string `yaml:"agents,omitempty"`
+	// Rules lists context rule fragments imported from the pack repo.
+	Rules []string `yaml:"rules,omitempty"`
 	// Unresolved lists manifest-selected names discovery could not find,
 	// so status can keep reporting them until the upstream repo (or the
 	// manifest) is fixed.
