@@ -2315,7 +2315,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context
 
 #### `GET /api/context/diff/{slug}`
 
-Returns the unified diff between the canonical context and a client's managed content (empty when identical).
+Returns the unified diff between the canonical context and a client's managed content (empty when identical). Optional `?fragment=` scopes a multi-file client.
 
 **Auth:** Yes
 
@@ -2327,6 +2327,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context/diff/op
 ```json
 {
   "slug": "opencode",
+  "fragment": "",
   "diff": "--- canonical\n+++ opencode\n@@ -1,3 +1,3 @@\n..."
 }
 ```
@@ -2334,6 +2335,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context/diff/op
 **Errors:**
 - `400` - Unsupported client
 - `404` - Unknown client slug, or no canonical file exists
+
+#### `GET /api/context/fragments`
+
+Lists rule fragments when fragments mode is active (`active: false` and an empty list otherwise). Each row includes name, description, paths, raw content, size, and lexicographic position.
+
+#### `PUT /api/context/fragments/{name}`
+
+Creates or overwrites a fragment. Body `{ "content": "..." }` installs that body (activating fragments mode if needed). Omitting content scaffolds a starter fragment via the same path as `gridctl ctx add`.
+
+#### `DELETE /api/context/fragments/{name}`
+
+Removes a fragment after writing a backup. Returns `{ "name", "backup" }`.
 
 ---
 
