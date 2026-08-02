@@ -70,14 +70,16 @@ type contextDoc struct {
 		Exists  bool   `json:"exists"`
 		Content string `json:"content"`
 	} `json:"canonical"`
-	NeedsSync bool                    `json:"needs_sync"`
-	Clients   []contexts.ClientStatus `json:"clients"`
+	FragmentsActive bool                    `json:"fragments_active,omitempty"`
+	NeedsSync       bool                    `json:"needs_sync"`
+	Clients         []contexts.ClientStatus `json:"clients"`
 }
 
 // buildContextDoc assembles the canonical + per-client state document.
 func (s *Server) buildContextDoc(r *http.Request, mgr *contexts.Manager) (contextDoc, error) {
 	var doc contextDoc
 	doc.Canonical.Path = mgr.CanonicalPath()
+	doc.FragmentsActive = mgr.FragmentsActive()
 	if content, err := mgr.CanonicalContent(); err == nil {
 		doc.Canonical.Exists = true
 		doc.Canonical.Content = content
@@ -219,7 +221,7 @@ func (s *Server) handleContextSync(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		for _, slug := range body.Clients {
-			res, serr := mgr.SyncClient(r.Context(), slug, opts)
+			rs, serr := mgr.SyncClientDetailed(r.Context(), slug, opts)
 			if serr != nil {
 				// Bad requests abort; a per-client runtime failure becomes
 				// an error row so earlier writes are still reported.
@@ -228,9 +230,9 @@ func (s *Server) handleContextSync(w http.ResponseWriter, r *http.Request) {
 					writeJSONError(w, serr.Error(), contextErrorStatus(serr, http.StatusBadRequest))
 					return
 				}
-				res = contexts.SyncResult{Slug: slug, Name: slug, Action: contexts.ActionError, Error: serr.Error()}
+				rs = []contexts.SyncResult{{Slug: slug, Name: slug, Action: contexts.ActionError, Error: serr.Error()}}
 			}
-			results = append(results, res)
+			results = append(results, rs...)
 		}
 	}
 
@@ -266,12 +268,16 @@ func (s *Server) handleContextUnsync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	res, err := mgr.Unsync(r.Context(), slug)
+	results, err := mgr.Unsync(r.Context(), slug)
 	if err != nil {
 		writeJSONError(w, err.Error(), contextErrorStatus(err, http.StatusNotFound))
 		return
 	}
-	writeJSON(w, res)
+	if len(results) == 1 {
+		writeJSON(w, results[0])
+		return
+	}
+	writeJSON(w, map[string]any{"results": results})
 }
 
 // handleContextDiff returns the canonical-vs-target unified diff.
@@ -283,10 +289,121 @@ func (s *Server) handleContextDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	diff, err := mgr.Diff(r.Context(), slug)
-	if err != nil {
-		writeJSONError(w, err.Error(), contextErrorStatus(err, http.StatusNotFound))
+	fragment := r.URL.Query().Get("fragment")
+	var diff string
+	var derr error
+	if fragment != "" {
+		diff, derr = mgr.Diff(r.Context(), slug, fragment)
+	} else {
+		diff, derr = mgr.Diff(r.Context(), slug)
+	}
+	if derr != nil {
+		writeJSONError(w, derr.Error(), contextErrorStatus(derr, http.StatusNotFound))
 		return
 	}
-	writeJSON(w, map[string]any{"slug": slug, "diff": diff})
+	writeJSON(w, map[string]any{"slug": slug, "fragment": fragment, "diff": diff})
+}
+
+// handleContextFragmentsList lists rule fragments.
+// GET /api/context/fragments
+func (s *Server) handleContextFragmentsList(w http.ResponseWriter, r *http.Request) {
+	mgr, err := s.contextsMgr()
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !mgr.FragmentsActive() {
+		writeJSON(w, map[string]any{"active": false, "fragments": []any{}})
+		return
+	}
+	frags, err := mgr.ListFragments()
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type row struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description,omitempty"`
+		Paths       []string `json:"paths,omitempty"`
+		Content     string   `json:"content"`
+		Bytes       int      `json:"bytes"`
+		Position    int      `json:"position"`
+	}
+	rows := make([]row, 0, len(frags))
+	for i, f := range frags {
+		rows = append(rows, row{
+			Name: f.Name, Description: f.Description, Paths: f.Paths,
+			Content: string(f.Raw), Bytes: len(f.Raw), Position: i + 1,
+		})
+	}
+	writeJSON(w, map[string]any{"active": true, "fragments": rows})
+}
+
+// handleContextFragmentPut creates or updates a fragment.
+// PUT /api/context/fragments/{name}  body: {content: "..."}
+func (s *Server) handleContextFragmentPut(w http.ResponseWriter, r *http.Request) {
+	mgr, err := s.contextsMgr()
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	name := r.PathValue("name")
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Content == "" {
+		// Create via AddFragment scaffold when content omitted.
+		res, aerr := mgr.AddFragment(name, "")
+		if aerr != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(aerr, contexts.ErrFragmentExists) || errors.Is(aerr, contexts.ErrBadFragmentName) {
+				status = http.StatusBadRequest
+			}
+			writeJSONError(w, aerr.Error(), status)
+			return
+		}
+		writeJSON(w, map[string]any{"name": name, "path": res.CreatedPath, "migrated": res.Migrated})
+		return
+	}
+	// Validate client-supplied content up front so malformed frontmatter
+	// maps to 400, not a store-level 500.
+	if _, perr := contexts.ParseFragment(name, []byte(body.Content)); perr != nil {
+		writeJSONError(w, perr.Error(), http.StatusBadRequest)
+		return
+	}
+	res, ierr := mgr.InstallFragmentBytes(name, []byte(body.Content))
+	if ierr != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(ierr, contexts.ErrBadFragmentName) {
+			status = http.StatusBadRequest
+		}
+		writeJSONError(w, ierr.Error(), status)
+		return
+	}
+	writeJSON(w, map[string]any{"name": name, "saved": true, "migrated": res.Migrated})
+}
+
+// handleContextFragmentDelete removes a fragment.
+// DELETE /api/context/fragments/{name}
+func (s *Server) handleContextFragmentDelete(w http.ResponseWriter, r *http.Request) {
+	mgr, err := s.contextsMgr()
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	name := r.PathValue("name")
+	backup, err := mgr.RemoveFragment(name)
+	if err != nil {
+		status := http.StatusNotFound
+		if errors.Is(err, contexts.ErrFragmentsInactive) {
+			status = http.StatusConflict
+		}
+		writeJSONError(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, map[string]any{"name": name, "backup": backup})
 }
