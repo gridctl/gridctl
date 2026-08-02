@@ -47,15 +47,17 @@ func TestParse_Envelope(t *testing.T) {
 	}
 }
 
-func TestParse_RulesReservedWarns(t *testing.T) {
+func TestParse_RulesActiveNoWarning(t *testing.T) {
 	src := validManifest + "rules: [style-guide]\n"
 	m, err := Parse([]byte(src))
 	if err != nil {
-		t.Fatalf("reserved rules must parse: %v", err)
+		t.Fatalf("rules must parse: %v", err)
 	}
-	w := m.Warnings()
-	if len(w) != 1 || !strings.Contains(w[0], "reserved") {
-		t.Errorf("warnings = %v", w)
+	if len(m.Rules) != 1 || m.Rules[0] != "style-guide" {
+		t.Fatalf("rules = %v", m.Rules)
+	}
+	if w := m.Warnings(); len(w) != 0 {
+		t.Errorf("rules are active; warnings = %v", w)
 	}
 }
 
@@ -63,5 +65,12 @@ func TestParseFile_MissingIsNotExist(t *testing.T) {
 	_, err := ParseFile(filepath.Join(t.TempDir(), ManifestFileName))
 	if !os.IsNotExist(err) {
 		t.Errorf("err = %v, want IsNotExist", err)
+	}
+}
+
+func TestValidate_RejectsBadRuleName(t *testing.T) {
+	src := validManifest + "rules: [Bad_Name]\n"
+	if _, err := Parse([]byte(src)); err == nil || !strings.Contains(err.Error(), "rule name") {
+		t.Fatalf("want rule-name validation error, got %v", err)
 	}
 }

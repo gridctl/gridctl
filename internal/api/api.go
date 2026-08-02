@@ -514,6 +514,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/context/adopt/{slug}", s.handleContextAdopt)
 	mux.HandleFunc("POST /api/context/unsync/{slug}", s.handleContextUnsync)
 	mux.HandleFunc("GET /api/context/diff/{slug}", s.handleContextDiff)
+	mux.HandleFunc("GET /api/context/fragments", s.handleContextFragmentsList)
+	mux.HandleFunc("PUT /api/context/fragments/{name}", s.handleContextFragmentPut)
+	mux.HandleFunc("DELETE /api/context/fragments/{name}", s.handleContextFragmentDelete)
 
 	// Variable store endpoints — canonical /api/var/* surface plus a
 	// deprecated /api/vault/* alias that wears Deprecation/Sunset headers.

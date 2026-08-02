@@ -230,7 +230,7 @@ func TestRunCtxDiffExitCodes(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if exit := runCtxDiff(ctx, &stdout, &stderr, mgr, "opencode"); exit != ctxExitOK {
+	if exit := runCtxDiff(ctx, &stdout, &stderr, mgr, "opencode", ""); exit != ctxExitOK {
 		t.Fatalf("clean diff exit = %d, want 0", exit)
 	}
 
@@ -239,14 +239,14 @@ func TestRunCtxDiffExitCodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdout.Reset()
-	if exit := runCtxDiff(ctx, &stdout, &stderr, mgr, "opencode"); exit != ctxExitAttention {
+	if exit := runCtxDiff(ctx, &stdout, &stderr, mgr, "opencode", ""); exit != ctxExitAttention {
 		t.Errorf("differing diff exit = %d, want 1", exit)
 	}
 	if !strings.Contains(stdout.String(), "+# EDITED") {
 		t.Errorf("diff output missing hunk: %q", stdout.String())
 	}
 
-	if exit := runCtxDiff(ctx, &stdout, &stderr, mgr, "unknown-client"); exit != ctxExitInfrastructure {
+	if exit := runCtxDiff(ctx, &stdout, &stderr, mgr, "unknown-client", ""); exit != ctxExitInfrastructure {
 		t.Error("unknown client should exit 2")
 	}
 }
@@ -357,7 +357,7 @@ func TestRunCtxAdopt(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runCtxAdopt(ctx, &out, mgr, "opencode"); err != nil {
+	if err := runCtxAdopt(ctx, &out, mgr, "opencode", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	content, _ := mgr.CanonicalContent()

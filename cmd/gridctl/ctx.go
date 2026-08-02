@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -48,6 +49,11 @@ var (
 	ctxUnsyncAll    bool
 	ctxUnsyncFormat string
 	ctxUnsyncJSON   *bool
+
+	ctxListFormat string
+	ctxListJSON   *bool
+
+	ctxAdoptInto string
 )
 
 var ctxCmd = &cobra.Command{
@@ -61,6 +67,12 @@ receives it through the safest mechanism it supports: a dedicated file in
 its rules directory, an @-import line, or a marker-delimited managed
 block. Content outside the managed region is never touched.
 
+Optionally, 'ctx add <name>' activates fragments mode: the store becomes
+~/.gridctl/context/fragments/*.md (optional description/paths frontmatter),
+composed per client as multi-file passthrough or a compiled document.
+Composition order is filename-lexicographic; numeric prefixes (00-, 10-)
+are recommended. Fragments mode is strictly opt-in.
+
 Per-project AGENTS.md files stay version-controlled in each repo; ctx
 manages only the global layer.`,
 	Example: `  gridctl ctx init                   Scan clients and bootstrap the canonical file
@@ -68,6 +80,8 @@ manages only the global layer.`,
   gridctl ctx sync --dry-run         Preview what a sync would change
   gridctl ctx sync                   Sync every available client
   gridctl ctx status                 Per-client sync state
+  gridctl ctx add style              Opt into fragments; migrate AGENTS.md
+  gridctl ctx list                   List fragments (fragments mode)
   gridctl ctx adopt gemini           Pull a hand edit back into the canon`,
 }
 
@@ -179,20 +193,26 @@ Exit codes:
 }
 
 var ctxDiffCmd = &cobra.Command{
-	Use:   "diff <client>",
+	Use:   "diff <client> [fragment]",
 	Short: "Diff the canonical context against a client's managed content",
 	Long: `Shows a unified diff between the canonical context and the managed
-content currently in one client's file.
+content currently in one client's file. In fragments mode, an optional
+fragment name scopes a multi-file client; bare multi-file diff prints a
+per-fragment summary.
 
 Exit codes: 0 no differences, 1 differences found, 2 error.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr, err := contexts.NewManager()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		if exit := runCtxDiff(cmd.Context(), os.Stdout, os.Stderr, mgr, args[0]); exit != ctxExitOK {
+		frag := ""
+		if len(args) > 1 {
+			frag = args[1]
+		}
+		if exit := runCtxDiff(cmd.Context(), os.Stdout, os.Stderr, mgr, args[0], frag); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -200,18 +220,83 @@ Exit codes: 0 no differences, 1 differences found, 2 error.`,
 }
 
 var ctxAdoptCmd = &cobra.Command{
-	Use:   "adopt <client>",
+	Use:   "adopt <client> [fragment]",
 	Short: "Pull a client's hand edit back into the canonical context",
 	Long: `Adopts the managed content currently in a client's file as the new
 canonical context, then re-syncs that client. Other synced clients
-become stale until the next 'gridctl ctx sync'.`,
+become stale until the next 'gridctl ctx sync'.
+
+In fragments mode:
+  multi-file clients  require a fragment name (lossless per-file adopt)
+  compiled clients    refuse by default; pass --into <fragment> to capture
+                      the whole managed body into one designated fragment`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr, err := contexts.NewManager()
+		if err != nil {
+			return err
+		}
+		frag := ""
+		if len(args) > 1 {
+			frag = args[1]
+		}
+		return runCtxAdopt(cmd.Context(), os.Stdout, mgr, args[0], frag, ctxAdoptInto)
+	},
+}
+
+var ctxListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List rule fragments (fragments mode)",
+	Long: `Lists every fragment in filename-lexicographic composition order with
+description, paths globs, and size. Requires fragments mode
+('gridctl ctx add <name>' activates it).
+
+Exit codes: 0 success, 2 error.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		format, err := resolveFormat(ctxListFormat, cmd.Flags().Changed("format"), *ctxListJSON)
+		if err != nil {
+			return err
+		}
+		mgr, err := contexts.NewManager()
+		if err != nil {
+			return err
+		}
+		return runCtxList(os.Stdout, mgr, format)
+	},
+}
+
+var ctxAddCmd = &cobra.Command{
+	Use:   "add <name>",
+	Short: "Add a rule fragment (activates fragments mode on first use)",
+	Long: `Creates a fragment under ~/.gridctl/context/fragments/<name>.md.
+On first use, activates fragments mode: the existing AGENTS.md is backed
+up and becomes fragments/00-default.md (an ordinary fragment thereafter).
+Composition order is filename-lexicographic; numeric prefixes are
+recommended.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr, err := contexts.NewManager()
 		if err != nil {
 			return err
 		}
-		return runCtxAdopt(cmd.Context(), os.Stdout, mgr, args[0])
+		return runCtxAdd(os.Stdout, mgr, args[0])
+	},
+}
+
+var ctxRmCmd = &cobra.Command{
+	Use:   "rm <name>",
+	Short: "Remove a rule fragment",
+	Long: `Deletes a fragment after writing a backup under
+~/.gridctl/project-backups/context/. Projected client files for the
+fragment are removed on the next 'gridctl ctx sync'.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr, err := contexts.NewManager()
+		if err != nil {
+			return err
+		}
+		return runCtxRm(os.Stdout, mgr, args[0])
 	},
 }
 
@@ -235,18 +320,25 @@ created are removed entirely. Content the user owns is preserved.`,
 }
 
 var ctxEditCmd = &cobra.Command{
-	Use:   "edit",
-	Short: "Edit the canonical context in $EDITOR",
+	Use:   "edit [fragment]",
+	Short: "Edit the canonical context (or a fragment) in $EDITOR",
 	Long: `Opens the canonical global context file in $VISUAL or $EDITOR. After
 the editor exits, the per-client sync state is printed; run
-'gridctl ctx sync' to propagate changes.`,
-	Args: cobra.NoArgs,
+'gridctl ctx sync' to propagate changes.
+
+In fragments mode a fragment name is required; bare 'ctx edit' lists
+available fragments.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr, err := contexts.NewManager()
 		if err != nil {
 			return err
 		}
-		return runCtxEdit(cmd.Context(), os.Stdout, os.Stderr, mgr)
+		frag := ""
+		if len(args) == 1 {
+			frag = args[0]
+		}
+		return runCtxEdit(cmd.Context(), os.Stdout, os.Stderr, mgr, frag)
 	},
 }
 
@@ -272,6 +364,11 @@ func init() {
 	ctxUnsyncCmd.Flags().StringVar(&ctxUnsyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
 	ctxUnsyncJSON = addJSONAlias(ctxUnsyncCmd)
 
+	ctxListCmd.Flags().StringVar(&ctxListFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
+	ctxListJSON = addJSONAlias(ctxListCmd)
+
+	ctxAdoptCmd.Flags().StringVar(&ctxAdoptInto, "into", "", "In fragments mode, capture a compiled target into this fragment name")
+
 	ctxCmd.AddCommand(ctxInitCmd)
 	ctxCmd.AddCommand(ctxStatusCmd)
 	ctxCmd.AddCommand(ctxSyncCmd)
@@ -279,6 +376,9 @@ func init() {
 	ctxCmd.AddCommand(ctxAdoptCmd)
 	ctxCmd.AddCommand(ctxUnsyncCmd)
 	ctxCmd.AddCommand(ctxEditCmd)
+	ctxCmd.AddCommand(ctxListCmd)
+	ctxCmd.AddCommand(ctxAddCmd)
+	ctxCmd.AddCommand(ctxRmCmd)
 }
 
 // runCtxInit implements `ctx init`. The scan always runs and never
@@ -345,6 +445,7 @@ type ctxCanonicalDoc struct {
 type ctxStatusDoc struct {
 	SchemaVersion int                     `json:"schema_version"`
 	Canonical     ctxCanonicalDoc         `json:"canonical"`
+	Fragments     bool                    `json:"fragments,omitempty"`
 	NeedsSync     bool                    `json:"needs_sync"`
 	Clients       []contexts.ClientStatus `json:"clients"`
 }
@@ -356,9 +457,11 @@ func runCtxStatus(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.M
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
 	}
+	fragmentsActive := mgr.FragmentsActive()
 	doc := ctxStatusDoc{
 		SchemaVersion: ctxJSONSchemaVersion,
 		Canonical:     ctxCanonicalDoc{Path: mgr.CanonicalPath(), Exists: mgr.HasCanonical()},
+		Fragments:     fragmentsActive,
 		NeedsSync:     contexts.NeedsSync(statuses),
 		Clients:       statuses,
 	}
@@ -369,15 +472,25 @@ func runCtxStatus(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.M
 			return ctxExitInfrastructure
 		}
 	} else {
-		if !doc.Canonical.Exists {
+		switch {
+		case fragmentsActive:
+			fmt.Fprintf(stdout, "Fragments: %s (composition order is filename-lexicographic)\n\n", mgr.FragmentsDir())
+		case !doc.Canonical.Exists:
 			fmt.Fprintf(stdout, "No canonical context file yet. Run 'gridctl ctx init' to create one.\n\n")
-		} else {
+		default:
 			fmt.Fprintf(stdout, "Canonical: %s\n\n", doc.Canonical.Path)
 		}
 		t := output.NewTableWriter(stdout, plain)
-		t.AppendHeader(table.Row{"CLIENT", "STRATEGY", "STATE", "TARGET"})
-		for _, cs := range statuses {
-			t.AppendRow(table.Row{cs.Slug, ctxStrategyLabel(cs), ctxStateLabel(cs), ctxTargetLabel(cs)})
+		if fragmentsActive {
+			t.AppendHeader(table.Row{"CLIENT", "MODE", "STRATEGY", "STATE", "TARGET"})
+			for _, cs := range statuses {
+				t.AppendRow(table.Row{cs.Slug, cs.Mode, ctxStrategyLabel(cs), ctxStateLabel(cs), ctxTargetLabel(cs)})
+			}
+		} else {
+			t.AppendHeader(table.Row{"CLIENT", "STRATEGY", "STATE", "TARGET"})
+			for _, cs := range statuses {
+				t.AppendRow(table.Row{cs.Slug, ctxStrategyLabel(cs), ctxStateLabel(cs), ctxTargetLabel(cs)})
+			}
 		}
 		t.Render()
 	}
@@ -408,7 +521,7 @@ func runCtxSync(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 		results = all
 	} else {
 		for _, slug := range args {
-			res, err := mgr.SyncClient(ctx, slug, opts)
+			rs, err := mgr.SyncClientDetailed(ctx, slug, opts)
 			if err != nil {
 				// Usage and infrastructure mistakes abort (a typo must not
 				// pass CI); a per-client runtime failure becomes an error
@@ -418,9 +531,9 @@ func runCtxSync(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 					fmt.Fprintln(stderr, err)
 					return ctxExitInfrastructure
 				}
-				res = contexts.SyncResult{Slug: slug, Name: slug, Action: contexts.ActionError, Error: err.Error()}
+				rs = []contexts.SyncResult{{Slug: slug, Name: slug, Action: contexts.ActionError, Error: err.Error()}}
 			}
-			results = append(results, res)
+			results = append(results, rs...)
 		}
 	}
 
@@ -437,21 +550,44 @@ func runCtxSync(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 			return ctxExitInfrastructure
 		}
 	} else {
-		t := output.NewTableWriter(stdout, plain)
-		t.AppendHeader(table.Row{"CLIENT", "STRATEGY", "ACTION", "TARGET"})
+		// Extra columns only when fragments mode produced them, so
+		// single-file output stays byte-identical to pre-fragments.
+		showFragments := false
 		for _, r := range results {
-			t.AppendRow(table.Row{r.Slug, r.Strategy, ctxActionLabel(r), r.TargetPath})
+			if r.Mode != "" || r.Fragment != "" {
+				showFragments = true
+				break
+			}
+		}
+		t := output.NewTableWriter(stdout, plain)
+		if showFragments {
+			t.AppendHeader(table.Row{"CLIENT", "MODE", "FRAGMENT", "STRATEGY", "ACTION", "TARGET"})
+			for _, r := range results {
+				t.AppendRow(table.Row{r.Slug, r.Mode, r.Fragment, r.Strategy, ctxActionLabel(r), r.TargetPath})
+			}
+		} else {
+			t.AppendHeader(table.Row{"CLIENT", "STRATEGY", "ACTION", "TARGET"})
+			for _, r := range results {
+				t.AppendRow(table.Row{r.Slug, r.Strategy, ctxActionLabel(r), r.TargetPath})
+			}
 		}
 		t.Render()
 		for _, r := range results {
+			label := r.Slug
+			if r.Fragment != "" {
+				label = r.Slug + "/" + r.Fragment
+			}
 			if r.Error != "" {
-				fmt.Fprintf(stdout, "\n%s: %s\n", r.Slug, r.Error)
+				fmt.Fprintf(stdout, "\n%s: %s\n", label, r.Error)
+			}
+			if r.Detail != "" && r.Action != contexts.ActionError {
+				fmt.Fprintf(stdout, "\n%s: %s\n", label, r.Detail)
 			}
 			if r.Action == contexts.ActionSkippedDrift && r.Error == "" {
 				fmt.Fprintf(stdout, "\n%s: target was hand-edited. Inspect with 'gridctl ctx diff %s', keep the edit with 'gridctl ctx adopt %s', or overwrite with 'gridctl ctx sync --force %s'\n", r.Slug, r.Slug, r.Slug, r.Slug)
 			}
 			if opts.DryRun && r.Diff != "" {
-				fmt.Fprintf(stdout, "\n--- %s ---\n%s", r.Slug, r.Diff)
+				fmt.Fprintf(stdout, "\n--- %s ---\n%s", label, r.Diff)
 			}
 		}
 	}
@@ -488,8 +624,14 @@ func runCtxCheck(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Ma
 }
 
 // runCtxDiff prints the diff and returns 0 (clean), 1 (differs), 2 (error).
-func runCtxDiff(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Manager, slug string) int {
-	diff, err := mgr.Diff(ctx, slug)
+func runCtxDiff(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Manager, slug, fragment string) int {
+	var diff string
+	var err error
+	if fragment != "" {
+		diff, err = mgr.Diff(ctx, slug, fragment)
+	} else {
+		diff, err = mgr.Diff(ctx, slug)
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
@@ -498,17 +640,132 @@ func runCtxDiff(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 		fmt.Fprintf(stdout, "%s matches the canonical context.\n", slug)
 		return ctxExitOK
 	}
+	// Multi-file summary lines are not empty diffs; treat "all in-sync" as clean.
+	if fragment == "" && isMultiFileInSyncSummary(diff) {
+		fmt.Fprint(stdout, diff)
+		return ctxExitOK
+	}
 	fmt.Fprint(stdout, diff)
 	return ctxExitAttention
 }
 
-// runCtxAdopt implements `ctx adopt <client>`.
-func runCtxAdopt(ctx context.Context, w io.Writer, mgr *contexts.Manager, slug string) error {
+// isMultiFileInSyncSummary reports a bare multi-file summary with no
+// missing/differs lines.
+func isMultiFileInSyncSummary(diff string) bool {
+	if !strings.Contains(diff, ": in-sync") {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(diff), "\n") {
+		if strings.HasSuffix(line, ": missing") || strings.HasSuffix(line, ": differs") {
+			return false
+		}
+	}
+	return true
+}
+
+// runCtxAdopt implements `ctx adopt <client> [fragment]`.
+func runCtxAdopt(ctx context.Context, w io.Writer, mgr *contexts.Manager, slug, fragment, into string) error {
+	if into != "" && fragment != "" {
+		return fmt.Errorf("pass either a fragment name or --into, not both")
+	}
+	if into != "" {
+		if err := mgr.AdoptInto(slug, into); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "✓ Captured %s's managed content into fragment %q\n", slug, into)
+		fmt.Fprintln(w, "Run 'gridctl ctx sync' to re-project.")
+		return nil
+	}
+	if fragment != "" {
+		if err := mgr.AdoptFragment(slug, fragment); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "✓ Adopted %s's %s into fragment %q\n", slug, fragment, fragment)
+		fmt.Fprintln(w, "Other synced clients may be stale; run 'gridctl ctx sync' to propagate.")
+		return nil
+	}
 	if err := mgr.Adopt(ctx, slug); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "✓ Adopted %s's managed content into %s\n", slug, mgr.CanonicalPath())
 	fmt.Fprintln(w, "Other synced clients are now stale; run 'gridctl ctx sync' to propagate.")
+	return nil
+}
+
+// ctxFragmentRow is one fragment in `ctx list --format json`.
+type ctxFragmentRow struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Paths       []string `json:"paths,omitempty"`
+	Bytes       int      `json:"bytes"`
+	Position    int      `json:"position"`
+}
+
+// ctxListDoc is the machine-readable `ctx list` document.
+type ctxListDoc struct {
+	SchemaVersion int              `json:"schema_version"`
+	Fragments     []ctxFragmentRow `json:"fragments"`
+}
+
+// runCtxList lists fragments in composition order.
+func runCtxList(w io.Writer, mgr *contexts.Manager, format string) error {
+	frags, err := mgr.ListFragments()
+	if err != nil {
+		return err
+	}
+	rows := make([]ctxFragmentRow, 0, len(frags))
+	for i, f := range frags {
+		rows = append(rows, ctxFragmentRow{
+			Name:        f.Name,
+			Description: f.Description,
+			Paths:       f.Paths,
+			Bytes:       len(f.Raw),
+			Position:    i + 1,
+		})
+	}
+	if strings.EqualFold(format, "json") {
+		return output.EncodeJSON(w, ctxListDoc{SchemaVersion: ctxJSONSchemaVersion, Fragments: rows})
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(w, "No fragments yet. Add one with 'gridctl ctx add <name>'.")
+		return nil
+	}
+	t := output.NewTableWriter(w, false)
+	t.AppendHeader(table.Row{"#", "NAME", "DESCRIPTION", "PATHS", "BYTES"})
+	for _, r := range rows {
+		paths := strings.Join(r.Paths, ", ")
+		t.AppendRow(table.Row{r.Position, r.Name, r.Description, paths, r.Bytes})
+	}
+	t.Render()
+	return nil
+}
+
+// runCtxAdd creates a fragment, printing migration when it activates the mode.
+func runCtxAdd(w io.Writer, mgr *contexts.Manager, name string) error {
+	res, err := mgr.AddFragment(name, "")
+	if err != nil {
+		return err
+	}
+	if res.Migrated {
+		fmt.Fprintf(w, "Activated fragments mode: migrated %s → fragments/00-default.md\n", mgr.CanonicalPath())
+		if res.MigratedBackup != "" {
+			fmt.Fprintf(w, "Backup: %s\n", res.MigratedBackup)
+		}
+	}
+	fmt.Fprintf(w, "✓ Created fragment %q at %s\n", name, res.CreatedPath)
+	fmt.Fprintln(w, "Composition order is filename-lexicographic; use numeric prefixes (00-, 10-) to control order.")
+	fmt.Fprintln(w, "Run 'gridctl ctx sync' to project fragments to available clients.")
+	return nil
+}
+
+// runCtxRm removes a fragment.
+func runCtxRm(w io.Writer, mgr *contexts.Manager, name string) error {
+	backup, err := mgr.RemoveFragment(name)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "✓ Removed fragment %q (backup: %s)\n", name, backup)
+	fmt.Fprintln(w, "Run 'gridctl ctx sync' to drop projected client files for this fragment.")
 	return nil
 }
 
@@ -532,11 +789,11 @@ func runCtxUnsync(ctx context.Context, w io.Writer, mgr *contexts.Manager, args 
 		results = rs
 	} else {
 		for _, slug := range args {
-			res, err := mgr.Unsync(ctx, slug)
+			rs, err := mgr.Unsync(ctx, slug)
 			if err != nil {
 				return err
 			}
-			results = append(results, res)
+			results = append(results, rs...)
 		}
 	}
 	if strings.EqualFold(format, "json") {
@@ -552,20 +809,39 @@ func runCtxUnsync(ctx context.Context, w io.Writer, mgr *contexts.Manager, args 
 	return nil
 }
 
-// runCtxEdit opens the canonical file in the user's editor, then prints
-// the resulting per-client state.
-func runCtxEdit(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Manager) error {
-	if !mgr.HasCanonical() {
+// runCtxEdit opens the canonical file (or a fragment) in the user's editor.
+func runCtxEdit(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Manager, fragment string) error {
+	path := mgr.CanonicalPath()
+	if mgr.FragmentsActive() {
+		if fragment == "" {
+			frags, err := mgr.ListFragments()
+			if err != nil {
+				return err
+			}
+			names := make([]string, 0, len(frags))
+			for _, f := range frags {
+				names = append(names, f.Name)
+			}
+			return fmt.Errorf("fragments mode is active; pass a fragment name (known: %s)", strings.Join(names, ", "))
+		}
+		f, err := mgr.ReadFragment(fragment)
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(mgr.FragmentsDir(), f.FileName)
+	} else if !mgr.HasCanonical() {
 		return contexts.ErrNoCanonical
+	} else if fragment != "" {
+		return fmt.Errorf("fragments mode is not active; create one with 'gridctl ctx add %s' or omit the name", fragment)
 	}
 	editor := os.Getenv("VISUAL")
 	if editor == "" {
 		editor = os.Getenv("EDITOR")
 	}
 	if editor == "" {
-		return fmt.Errorf("neither $VISUAL nor $EDITOR is set; edit %s directly or use the web UI", mgr.CanonicalPath())
+		return fmt.Errorf("neither $VISUAL nor $EDITOR is set; edit %s directly or use the web UI", path)
 	}
-	cmd := exec.CommandContext(ctx, editor, mgr.CanonicalPath()) // #nosec G204 -- the user's own $EDITOR, same trust domain as the shell
+	cmd := exec.CommandContext(ctx, editor, path) // #nosec G204 -- the user's own $EDITOR, same trust domain as the shell
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("editor exited with error: %w", err)

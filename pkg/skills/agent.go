@@ -204,6 +204,19 @@ func ScanAgent(def *AgentDefinition) *ScanResult {
 	return result
 }
 
+// ScanFragment checks a context rule fragment for dangerous patterns.
+// Rule fragments are instructions clients inject into every session, so
+// they get the same blocking scan agents do: the whole file (frontmatter
+// and body) is scanned, and any finding blocks without --trust.
+func ScanFragment(name string, content []byte) *ScanResult {
+	result := &ScanResult{SkillName: name, Safe: true}
+	if len(content) > 0 {
+		scanText("fragment", string(content), result)
+	}
+	result.Safe = len(result.Findings) == 0
+	return result
+}
+
 // AgentsRoot returns the canonical agent store directory under a
 // registry directory.
 func AgentsRoot(registryDir string) string {

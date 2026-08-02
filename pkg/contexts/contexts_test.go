@@ -475,12 +475,12 @@ func TestUnsyncBlockKeepsUserFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := m.Unsync(ctx, "opencode")
+	results, err := m.Unsync(ctx, "opencode")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Action != "removed-region" {
-		t.Fatalf("action = %q, want removed-region", res.Action)
+	if len(results) != 1 || results[0].Action != "removed-region" {
+		t.Fatalf("results = %+v, want one removed-region", results)
 	}
 	content := readFile(t, target)
 	if strings.Contains(content, beginMarker) {
