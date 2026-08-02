@@ -32,7 +32,7 @@ Frontmatter keys gridctl does not model (client extensions like `argument-hint` 
 
 Two channels, complementary and per-client.
 
-**MCP prompts (always on).** The registry implements the MCP `prompts/list` and `prompts/get` endpoints. A connected client that renders prompts sees every active skill as a prompt the user can invoke; `prompts/get` returns the post-frontmatter body verbatim. Prompts are user-invoked: the model does not discover them on its own.
+**MCP prompts (always on).** The registry implements the MCP `prompts/list` and `prompts/get` endpoints. A connected client that renders prompts sees every active skill as a prompt the user can invoke; `prompts/get` returns the post-frontmatter body verbatim. Prompts are user-invoked: the model does not discover them on its own. When the stack declares a `skills:` exposure policy, denied skills are filtered from both prompt and resource surfaces; see [Skill pins and exposure policy](#skill-pins-and-exposure-policy).
 
 **File projection (opt-in).** `gridctl skill project sync <skill>` places selected active skills into native client skill directories, where clients that read skills from disk auto-trigger them from the frontmatter description. See [Projecting skills into clients](#projecting-skills-into-clients).
 
@@ -166,6 +166,18 @@ Adopted files count as local edits in the update flow: `gridctl skill update` se
 Symlinked projections have nothing to adopt (the registry copy is the source of truth; edits made through the link are already in the registry), and adopt refuses empty or invalid projected content rather than truncating a skill. Exit codes follow the family convention: `0` adopted, `1` nothing to adopt, `2` infrastructure error.
 
 Two caveats. Projecting the same skill to both `claude-code` and `agents` makes clients that scan both roots (Goose, OpenCode, VS Code) discover it twice; sync warns when you do this. And projection places the whole skill directory, including `scripts/`, on paths agents actively load, so only project skills whose supporting files you trust. The security scan runs at `skill add` and `skill update` time, not at projection time, and it is a pattern scan rather than a sandbox: it reads the `SKILL.md` body and any executable or script-extension file being installed, blocking on high-severity matches and reporting the rest as warnings. Treat installing a skill the way you would treat installing software: review what a package ships before projecting it.
+
+## Skill pins and exposure policy
+
+Skills are natural-language documents that agents obey, and after import nothing used to watch them: a git sync or an on-disk edit reached every linked client with no consent gate. Skill pins close that gap with the same trust-on-first-use model tool definitions get from [schema pins](./cli-reference.md#pins-tofu-schema-pinning).
+
+**Pins.** When the daemon first observes a skill, it silently records per-file SHA-256 digests over the whole document set: the canonical `SKILL.md` (hashed on its parse-rendered form, so frontmatter normalization from imports and editor saves never manufactures drift) plus every supporting file. Any later content change flips the skill to **pin drift**, which persists until a human approves (re-pins) or resets — the daemon never auto-clears it. Pin drift is a different fact from the Library's sync drift (local edits vs the last git import); both can be true at once. Pins live at `~/.gridctl/pins/skills/<stack>.json`, and pinning has no toggle: silent first-pinning is its only effect until something changes.
+
+**Advisory findings.** The poisoning heuristics that scan tool descriptions (P001–P005) also run over skill names, descriptions, and bodies, and persist on the pin record. Findings are advisory, never a gate: heuristic scanners are demonstrably bypassable, so the deterministic content hash is the enforcement mechanism and findings inform the human reviewing it. Prose trips heuristics more often than tool schemas do (a security-tutorial skill legitimately quotes attack phrasing); approving a skill that carries unresolved findings requires a `--reason`, persisted on the record. The `gateway.security.schema_pinning.scan` / `scan_ignore` knobs govern this scanner too.
+
+**Review.** `gridctl skill pins list|verify|diff|approve|reset` mirrors the `gridctl pins` contract: `--format json` with a `schema_version`, exit codes `0` (clean) / `1` (pin drift) / `2` (infrastructure), an opt-in `--fail-on-findings warn|critical` gate for CI, and `approve --expect <composite_hash>` to bind an approval to the reviewed diff. The same surface exists at `/api/skill-pins`. Not to be confused with `gridctl skill pin <name> <ref>` (singular), which pins a git *source* to a ref.
+
+**Exposure policy.** An optional `skills:` block in stack.yaml globally filters which registry skills are exposed and projected — see the [config schema](./config-schema.md#skills-exposure-policy). Denied skills disappear from `prompts/list`/`resources/list` and are skipped by projection sync, but they keep their registry state, stay visible in the Library and API flagged with the matching rule, and `gridctl apply` warns for every active skill the policy hides. Denial is never silent.
 
 ## Agent definitions (experimental)
 
