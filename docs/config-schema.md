@@ -1055,6 +1055,35 @@ decision). Link a client to a group with `gridctl link <client> --group
 
 ---
 
+## Skills (exposure policy)
+
+The optional top-level `skills:` block is a global exposure policy for registry skills: it filters which skills the gateway serves via MCP prompts/resources and which the daemon projects into client skill directories. Omitting the block preserves legacy behavior — every active skill is exposed.
+
+Not to be confused with [Skill Sources](#skill-sources), which configures where git-imported skills come from (`~/.gridctl/skills.yaml`); this block decides what an already-registered skill may reach.
+
+```yaml
+skills:
+  default: allow          # fate of a skill matching neither list ("allow" | "deny")
+  allow:
+    - "incident-*"        # skill-name globs admitted even under default: deny
+  deny:
+    - "*refund*"          # globs hidden from exposure; deny beats allow
+```
+
+### Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `default` | string | no | `allow` | Fate of a skill matching neither list: `allow` or `deny`. |
+| `allow` | list of globs | no | — | Skill-name patterns (path.Match syntax) admitted even under `default: deny`. |
+| `deny` | list of globs | no | — | Skill-name patterns hidden from exposure. A deny match always wins. |
+
+### Semantics
+
+Evaluation order per skill name: a `deny` match denies (naming the glob as the rule), then an `allow` match admits, then `default` decides. A denied skill is excluded from `prompts/list`, `resources/list`, `prompts/get`/`resources/read` (indistinguishable from an absent skill on the wire), and projection sync — but denial is a filter, never a state change: the skill keeps its draft/active/disabled state, stays visible in the Library and registry API flagged with the matching rule, and `gridctl apply` prints a warning for every active skill the policy hides. Recorded projections of a newly denied skill are skipped and reported, never silently removed. Unparseable glob patterns are rejected at validation.
+
+The policy is global. Per-client skill scoping remains deferred, matching the `clients:` block's documented tools-only scope. Edits hot-reload without container restarts. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`).
+
 ## Link (declared clients)
 
 The optional top-level `link:` block declares which LLM clients should be
