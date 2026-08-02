@@ -67,9 +67,15 @@ const (
 	fieldDescription  = "description"
 	fieldInputSchema  = "input_schema"
 	fieldOutputSchema = "output_schema"
+	fieldBody         = "body"
 
 	snippetMax      = 120
 	maxFindingsTool = 16
+	// maxFindingsSkill is the per-document finding cap for ScanSkill. Skill
+	// bodies run to thousands of words, so the cap is wider than a tool
+	// definition's, but still bounded: past this point the reviewer's signal
+	// is "this document is saturated", not the individual findings.
+	maxFindingsSkill = 32
 	// suspiciousWordsMin is the number of distinct P004 words required before
 	// a finding is emitted; a single "important" in a description is noise.
 	suspiciousWordsMin = 2
@@ -180,6 +186,27 @@ func ScanTool(t mcp.Tool) []Finding {
 	sortFindings(findings)
 	if len(findings) > maxFindingsTool {
 		findings = findings[:maxFindingsTool]
+	}
+	return findings
+}
+
+// ScanSkill runs the pin-time text checks (P001-P005) over a skill document:
+// its name, frontmatter description, and markdown body. P006 (tool shadowing)
+// is deliberately excluded — it needs a live cross-server tool inventory and
+// its steering heuristic is calibrated for tool descriptions, not prose.
+// Findings on prose run a higher false-positive rate than on tool definitions
+// (a security-tutorial skill legitimately quotes attack phrasing; the quoted-
+// span discount in matchBank absorbs some, not all, of that), which is one
+// more reason findings stay advisory and never gate.
+func ScanSkill(name, description, body string) []Finding {
+	var findings []Finding
+	findings = append(findings, scanText(fieldName, name)...)
+	findings = append(findings, scanText(fieldDescription, description)...)
+	findings = append(findings, scanText(fieldBody, body)...)
+
+	sortFindings(findings)
+	if len(findings) > maxFindingsSkill {
+		findings = findings[:maxFindingsSkill]
 	}
 	return findings
 }
