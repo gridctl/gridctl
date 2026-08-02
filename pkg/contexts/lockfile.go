@@ -37,6 +37,10 @@ type ClientEntry struct {
 	// CreatedFile records whether gridctl created the target file itself
 	// (unsync then removes the whole file, not just the managed region).
 	CreatedFile bool
+	// InputHashes records, for a compiled fragments-mode target, each
+	// input fragment's hash at sync time so staleness can name which
+	// fragment moved. Absent outside fragments mode.
+	InputHashes map[string]string
 	SyncedAt    time.Time
 }
 
@@ -54,18 +58,15 @@ func viewFromLock(l *project.Lock) *LockFile {
 			InstalledHash: e.InstalledHash,
 			CanonicalHash: e.CanonicalHash,
 			CreatedFile:   e.CreatedFile,
+			InputHashes:   e.InputHashes,
 			SyncedAt:      e.SyncedAt,
 		}
 	}
 	return lf
 }
 
-// saveView flushes the view back into the engine lock and persists it.
-// Clients dropped from the view are removed as explicit engine-driven
-// deletes; entries of other kinds, unknown file-level fields, and
-// unknown per-entry fields (carried forward by Lock.Set) ride along
-// untouched.
-func saveView(l *project.Lock, lf *LockFile) error {
+// applyView replaces KindContext entries from the view without saving.
+func applyView(l *project.Lock, lf *LockFile) error {
 	var entries []*project.Entry
 	for slug, e := range lf.Clients {
 		entries = append(entries, &project.Entry{
@@ -77,10 +78,20 @@ func saveView(l *project.Lock, lf *LockFile) error {
 			InstalledHash: e.InstalledHash,
 			CanonicalHash: e.CanonicalHash,
 			CreatedFile:   e.CreatedFile,
+			InputHashes:   e.InputHashes,
 			SyncedAt:      e.SyncedAt,
 		})
 	}
-	if err := l.ReplaceKind(project.KindContext, entries); err != nil {
+	return l.ReplaceKind(project.KindContext, entries)
+}
+
+// saveView flushes the view back into the engine lock and persists it.
+// Clients dropped from the view are removed as explicit engine-driven
+// deletes; entries of other kinds, unknown file-level fields, and
+// unknown per-entry fields (carried forward by Lock.Set) ride along
+// untouched.
+func saveView(l *project.Lock, lf *LockFile) error {
+	if err := applyView(l, lf); err != nil {
 		return err
 	}
 	return l.Save()
