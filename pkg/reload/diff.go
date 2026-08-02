@@ -37,6 +37,10 @@ type ConfigDiff struct {
 	// Like ClientsChanged it needs only an in-memory flag re-resolution via
 	// the onConfigApplied hook but must still mark the diff non-empty.
 	ExperimentalChanged bool
+	// SkillsPolicyChanged indicates the skill exposure (`skills:`) block
+	// changed. Like ClientsChanged it needs only an in-memory policy rebuild
+	// via the onConfigApplied hook but must still mark the diff non-empty.
+	SkillsPolicyChanged bool
 }
 
 // MCPServerDiff contains changes to MCP servers.
@@ -85,7 +89,8 @@ func (d *ConfigDiff) IsEmpty() bool {
 		!d.ModelAttributionChanged &&
 		!d.LimitsChanged &&
 		!d.GroupsChanged &&
-		!d.ExperimentalChanged
+		!d.ExperimentalChanged &&
+		!d.SkillsPolicyChanged
 }
 
 // ComputeDiff computes the differences between two stack configurations.
@@ -116,7 +121,18 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect experimental flag (`experimental:`) changes
 	diff.ExperimentalChanged = experimentalChanged(old, new)
 
+	// Detect skill exposure policy (`skills:`) changes
+	diff.SkillsPolicyChanged = skillsPolicyChanged(old, new)
+
 	return diff
+}
+
+// skillsPolicyChanged reports whether the `skills:` block differs between two
+// stacks. A change needs only the gateway's in-memory skill policy rebuilt
+// (via the reload's onConfigApplied hook); no containers are touched.
+// DeepEqual handles the nil-to-set transitions directly.
+func skillsPolicyChanged(old, new *config.Stack) bool {
+	return !reflect.DeepEqual(old.Skills, new.Skills)
 }
 
 // experimentalChanged reports whether the `experimental:` flag map differs
