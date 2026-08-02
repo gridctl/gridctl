@@ -32,6 +32,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -54,6 +55,7 @@ type GatewayInstance struct {
 	Handler        slog.Handler
 	RegistryServer *registry.Server // Internal registry MCP server (nil if empty)
 	Broker         *mcpauth.Broker  // Downstream OAuth broker (nil when the token store is unavailable)
+	SkillPinStore  *skillpins.Store // TOFU pins for registry skill documents (nil when unavailable)
 }
 
 // GatewayBuilder constructs and runs the MCP gateway from a stack config.
@@ -85,6 +87,10 @@ type GatewayBuilder struct {
 
 	// pinStore for API server injection (schema pin management).
 	pinStore *pins.PinStore
+
+	// skillPinStore for API server injection and registry-refresh TOFU
+	// (skill document pin management).
+	skillPinStore *skillpins.Store
 
 	// tracingProvider is retained so Shutdown() can be called on gateway exit.
 	tracingProvider *tracing.Provider
@@ -183,6 +189,12 @@ func (b *GatewayBuilder) SetPinStore(ps *pins.PinStore) {
 	b.pinStore = ps
 }
 
+// SetSkillPinStore sets the skill pin store for API server injection and
+// registry-refresh TOFU.
+func (b *GatewayBuilder) SetSkillPinStore(ps *skillpins.Store) {
+	b.skillPinStore = ps
+}
+
 // resolveSchemaPinning returns the effective gateway schema-pinning settings,
 // applying the documented defaults (enabled, "warn", scan on) when the stack
 // omits the security block or individual fields. Enabled and Scan are *bool
@@ -225,6 +237,20 @@ func installSchemaPinning(gateway *mcp.Gateway, server *api.Server, stack *confi
 	ps.SetScanConfig(scan, scanIgnore)
 	server.SetPinStore(ps)
 	gateway.SetSchemaVerifier(pins.NewGatewayAdapter(ps), action)
+}
+
+// installSkillPinning shares the skill pin store with the API server so
+// /api/skill-pins reflects exactly what the registry refresh path records.
+// Skill pins have no enabled toggle (silent first-pinning is their only
+// observable effect, Article IX), but the advisory scanner honors the same
+// knobs as tool pins so one scan_ignore list governs both finding sets.
+func installSkillPinning(server *api.Server, stack *config.Stack, ps *skillpins.Store) {
+	if ps == nil {
+		return
+	}
+	_, _, scan, scanIgnore := resolveSchemaPinning(stack)
+	ps.SetScanConfig(scan, scanIgnore)
+	server.SetSkillPinStore(ps)
 }
 
 // BuildAndRun constructs the gateway and runs it until shutdown.
@@ -280,6 +306,10 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	// configured; group endpoints then 404).
 	inst.Gateway.SetGroupPolicy(mcp.NewGroupPolicy(groupsSpec(b.stack)))
 
+	// Phase 1a6: Install the skill exposure policy (nil when no skills:
+	// block is configured, preserving "every active skill is exposed").
+	inst.Gateway.SetSkillPolicy(mcp.NewSkillPolicy(skillsPolicySpec(b.stack)))
+
 	// Phase 1b: Create registry server (internal MCP server)
 	regDir := filepath.Join(state.BaseDir(), "registry")
 	if b.registryDir != "" {
@@ -306,6 +336,23 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	// Initialize registry after logging is configured so warnings are captured
 	if err := registryServer.Initialize(context.Background()); err != nil {
 		slog.New(inst.Handler).Warn("registry initialization failed", "error", err)
+	}
+
+	// TOFU-pin the loaded skills. First sight pins silently; drift persists
+	// until a human approves or resets (never auto-cleared by the daemon).
+	inst.SkillPinStore = b.skillPinStore
+	syncSkillPins(inst, slog.New(inst.Handler))
+
+	// Name policy-denied active skills in the daemon log too: the apply
+	// printer pass is skipped in foreground mode (this log line reaches the
+	// terminal there), and denial must never be silent in any mode.
+	if policy := inst.Gateway.CurrentSkillPolicy(); policy != nil {
+		for _, sk := range registryStore.ActiveSkills() {
+			if allowed, rule := policy.Evaluate(sk.Name); !allowed {
+				slog.New(inst.Handler).Warn("skill denied by skills policy; not exposed or projected",
+					"skill", sk.Name, "rule", rule)
+			}
+		}
 	}
 
 	if registryServer.HasContent() {
@@ -633,6 +680,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	}
 
 	installSchemaPinning(gateway, server, b.stack, b.pinStore)
+	installSkillPinning(server, b.stack, b.skillPinStore)
 
 	// Wire token usage metrics
 	counter, err := b.buildTokenCounter()
@@ -758,6 +806,20 @@ func clientAccessSpec(stack *config.Stack) *mcp.ClientAccessSpec {
 		}
 	}
 	return spec
+}
+
+// skillsPolicySpec translates the stack's optional `skills:` block into the
+// config-agnostic spec the gateway consumes. Returns nil when no block is
+// configured, which the gateway treats as "every active skill is exposed".
+func skillsPolicySpec(stack *config.Stack) *mcp.SkillPolicySpec {
+	if stack == nil || stack.Skills == nil {
+		return nil
+	}
+	return &mcp.SkillPolicySpec{
+		Default: stack.Skills.Default,
+		Allow:   stack.Skills.Allow,
+		Deny:    stack.Skills.Deny,
+	}
 }
 
 // groupsSpec translates the stack's optional `groups:` block into the
@@ -1274,6 +1336,10 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		if inst.RegistryServer != nil {
 			lintGroupRenamesAgainstSkills(inst.Gateway.CurrentGroupPolicy(), inst.RegistryServer.Store(), slog.New(handler))
 		}
+		// Rebuild the skill exposure policy so `skills:` edits filter the
+		// prompt/resource surface (and projection reconcile) on the next
+		// request. Stateless recompile, no carry-over.
+		inst.Gateway.SetSkillPolicy(mcp.NewSkillPolicy(skillsPolicySpec(newCfg)))
 		b.applyTelemetryConfig(inst.APIServer, handler)
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
@@ -1376,7 +1442,28 @@ func refreshRegistry(ctx context.Context, inst *GatewayInstance, home string, lo
 		inst.Gateway.Router().RemoveClient("registry")
 	}
 	inst.Gateway.Router().RefreshTools()
+	syncSkillPins(inst, logger)
 	reconcileSkillProjections(ctx, inst, home, logger)
+}
+
+// syncSkillPins runs the skill-pin TOFU/verify pass after a registry
+// (re)load. The pin store writes only under ~/.gridctl/pins/, never into
+// the watched registry tree, so this can never feed back into the disk
+// watcher. Failures are logged and tolerated: pinning is an observation
+// layer and must not break the refresh path.
+func syncSkillPins(inst *GatewayInstance, logger *slog.Logger) {
+	if inst.SkillPinStore == nil || inst.RegistryServer == nil {
+		return
+	}
+	res, err := inst.SkillPinStore.Sync(inst.RegistryServer.Store())
+	if err != nil {
+		logger.Warn("skill pin sync failed", "error", err)
+		return
+	}
+	if len(res.Drifted) > 0 {
+		logger.Warn("skill pin drift detected", "skills", res.Drifted,
+			"hint", "review with 'gridctl skill pins diff' or the Pins workspace")
+	}
 }
 
 // reconcileSkillProjections keeps native-client skill projections in
@@ -1400,6 +1487,11 @@ func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, home 
 	// daemon silently rewriting them would be the exact failure mode
 	// wiring ownership exists to prevent. Keep it out of this loop.
 	mgr := skillsync.NewManagerWithHome(home, inst.RegistryServer.Store())
+	// The reconcile enforces the stack's skill exposure policy: denied
+	// recorded projections are skipped (visible, never silently removed).
+	mgr.SetPolicy(func(name string) (bool, string) {
+		return inst.Gateway.CurrentSkillPolicy().Evaluate(name)
+	})
 	results, err := mgr.Reconcile(ctx)
 	if err != nil {
 		logger.Warn("skill projection reconcile failed", "error", err)
@@ -1432,6 +1524,10 @@ func logReconcileAction(logger *slog.Logger, kind, name, client, action, target,
 		// Unresolved drift the operator must decide on; reconcile never
 		// forces.
 		logger.Warn(kind+" projection needs attention", kind, name, "client", client, "action", action, "target", target)
+	case skillsync.ActionSkippedPolicy:
+		// Policy denial stays visible on every pass; removal is an explicit
+		// unsync decision, never the daemon's.
+		logger.Warn(kind+" projection denied by skills policy", kind, name, "client", client, "detail", errMsg)
 	case skillsync.ActionSkippedEmptyStore:
 		// The guard against mass-removal: an empty store with recorded
 		// projections is refused, not reconciled.

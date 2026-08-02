@@ -25,6 +25,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
 	"github.com/gridctl/gridctl/pkg/wiring"
@@ -47,6 +48,7 @@ type Server struct {
 	linkServerName     string
 	registryServer     *registry.Server
 	pinStore           *pins.PinStore
+	skillPinStore      *skillpins.Store
 	vaultStore         *vault.Store
 	metricsAccumulator *metrics.Accumulator
 	traceBuffer        *tracing.Buffer
@@ -235,6 +237,17 @@ func (s *Server) SetPinStore(ps *pins.PinStore) {
 // is active.
 func (s *Server) PinStore() *pins.PinStore {
 	return s.pinStore
+}
+
+// SetSkillPinStore sets the skill pin store for skill governance management.
+func (s *Server) SetSkillPinStore(ps *skillpins.Store) {
+	s.skillPinStore = ps
+}
+
+// SkillPinStore returns the wired skill pin store, or nil when skill pinning
+// is not configured.
+func (s *Server) SkillPinStore() *skillpins.Store {
+	return s.skillPinStore
 }
 
 // SetVaultStore sets the vault store for secrets management.
@@ -483,6 +496,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/pins/{server}/diff", s.handlePinsDiff)
 	mux.HandleFunc("POST /api/pins/{server}/approve", s.handleApprovePins)
 	mux.HandleFunc("DELETE /api/pins/{server}", s.handleResetPins)
+
+	// Skill pin endpoints (skill-document governance; distinct route space
+	// from /api/pins because skills and servers share no name namespace)
+	mux.HandleFunc("GET /api/skill-pins", s.handleListSkillPins)
+	mux.HandleFunc("GET /api/skill-pins/{name}", s.handleGetSkillPin)
+	mux.HandleFunc("GET /api/skill-pins/{name}/diff", s.handleSkillPinDiff)
+	mux.HandleFunc("POST /api/skill-pins/{name}/approve", s.handleApproveSkillPin)
+	mux.HandleFunc("DELETE /api/skill-pins/{name}", s.handleResetSkillPin)
 
 	// Global context (pkg/contexts) — pure file operations, stackless-safe.
 	mux.HandleFunc("GET /api/context", s.handleContextGet)

@@ -117,6 +117,7 @@ The same import pipeline also handles agent definitions (experimental): `skill a
 | `gridctl skill update [name]` | Update imported skills and agents (all when name omitted; name may be a skill or an agent); alias `gridctl skill sync`. `--dry-run` previews, `--force` updates even when no change is detected. Locally edited files (including hand-edited `AGENT.md`) are refused without `--force`. |
 | `gridctl skill remove <name>` | Remove an imported skill (`--kind agent` for an agent). |
 | `gridctl skill pin <name> <ref>` | Pin a skill to a specific git ref. |
+| `gridctl skill pins <verb>` | TOFU content pins for skill documents: `list`, `verify`, `diff <skill>`, `approve <skill>` (`--expect <composite_hash>`, `--reason` for skills with unresolved findings), `reset <skill>`. Same contract as `gridctl pins`: `--stack`, `--format json` or `--json`, exit `0`/`1`/`2`, opt-in `--fail-on-findings warn\|critical` on verify/diff. Distinct from `skill pin` (singular), which pins a git source ref. |
 | `gridctl skill info <name>` | Show origin and update status (`--kind agent` for an agent). |
 | `gridctl skill try <repo-url>` | Temporarily import a skill for evaluation (`--duration`, default `10m`, before auto-cleanup). Auth flags: `--auth-token <pat>`, `--vault-key <key>`, `--ssh-key <path>`. |
 | `gridctl skill validate <name>` | Validate a skill definition. |

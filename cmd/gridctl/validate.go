@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/controller"
 
 	"github.com/spf13/cobra"
 )
@@ -40,7 +41,7 @@ func init() {
 }
 
 func runValidate(stackPath string) error {
-	_, result, err := config.ValidateStackFile(stackPath)
+	stack, result, err := config.ValidateStackFile(stackPath)
 	if err != nil {
 		// File read or YAML parse error — not a validation issue
 		if validateFormat == "json" {
@@ -53,6 +54,20 @@ func runValidate(stackPath string) error {
 			_ = enc.Encode(out)
 		}
 		return err
+	}
+
+	// Name every active skill the skills: policy would hide. This needs the
+	// local registry, which pkg/config deliberately does not read; the cmd
+	// layer joins the two so validate and apply warn identically.
+	if stack != nil && stack.Skills != nil {
+		for _, w := range controller.DeniedActiveSkillWarnings(stack) {
+			result.Issues = append(result.Issues, config.ValidationIssue{
+				Field:    "skills",
+				Message:  w,
+				Severity: config.SeverityWarning,
+			})
+			result.WarningCount++
+		}
 	}
 
 	if validateFormat == "json" {

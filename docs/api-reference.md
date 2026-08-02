@@ -2059,6 +2059,61 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/
 
 ---
 
+### Skill Pins *(experimental)*
+
+TOFU content pins for registry skill documents: per-file digests over the canonical `SKILL.md` plus supporting files, drift review, and approval bound to a composite hash. Advisory poisoning findings ride on each record. See [skills.md](./skills.md#skill-pins-and-exposure-policy).
+
+#### `GET /api/skill-pins`
+
+Every skill pin, keyed by skill name. Returns `200` with an empty object when skill pinning is not wired (the UI polls this endpoint).
+
+```json
+{
+  "incident-triage": {
+    "skill_hash": "s1:9f2c…",
+    "files": [{ "path": "scripts/run.sh", "digest": "s1:11ab…" }],
+    "source": "git",
+    "origin": { "repo": "https://github.com/acme/skills.git", "ref": "main", "commitSha": "abc123" },
+    "pinned_at": "2026-08-01T10:00:00Z",
+    "last_verified_at": "2026-08-01T10:05:00Z",
+    "status": "pinned",
+    "findings": []
+  }
+}
+```
+
+#### `GET /api/skill-pins/{name}`
+
+One skill's pin record. `404` when unpinned, `503` when skill pinning is unavailable.
+
+#### `GET /api/skill-pins/{name}/diff`
+
+What changed since the pin, plus the `composite_hash` an approval must echo. Viewing a diff never persists anything.
+
+```json
+{
+  "skill": "incident-triage",
+  "status": "drift",
+  "composite_hash": "4be1…",
+  "old_document": "---\nname: incident-triage…",
+  "new_document": "---\nname: incident-triage…",
+  "added_files": [],
+  "removed_files": [],
+  "modified_files": ["scripts/run.sh"],
+  "findings": []
+}
+```
+
+#### `POST /api/skill-pins/{name}/approve`
+
+Re-pins the current content. Optional body: `{ "expected_hash": "<composite_hash from the diff>", "reason": "<justification>" }`. `409` when the content changed since the reviewed diff; `400` when the content carries unresolved advisory findings and no reason is given; `404` when the skill is not in the registry.
+
+#### `DELETE /api/skill-pins/{name}`
+
+Deletes the pin record (`204`); the next registry refresh re-pins fresh. `404` when no pin exists.
+
+Registry skill responses (`GET /api/registry/skills`, `GET /api/registry/skills/{name}`) additionally carry a `governance` object when known: `source` (`local` | `git`), `origin`, `pinStatus` (`pinned` | `drift`), `findingsCount`, `maxFindingSeverity`, and — when a `skills:` policy denies the skill — `policyDenied` with the matching `policyRule`.
+
 ### Global Context
 
 Manage the canonical global agent-context file (`~/.gridctl/context/AGENTS.md`) and its projection into each linked client's global context location. Backs `gridctl ctx` and the web UI's Global Context dialog; see [Global Context Sync](global-context.md) for concepts (write strategies, drift, adoption). These endpoints are pure file operations against the gateway host's home directory and work in stackless mode.

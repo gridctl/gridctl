@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -500,6 +501,9 @@ func Validate(s *Stack) error {
 	// Tool group validation
 	errs = append(errs, validateGroups(s, serverNames)...)
 
+	// Skill exposure policy validation
+	errs = append(errs, validateSkillsPolicy(s)...)
+
 	// Declared client link validation
 	errs = append(errs, validateLinks(s)...)
 
@@ -566,6 +570,47 @@ func validateClients(s *Stack, serverNames map[string]bool) ValidationErrors {
 			}
 		}
 	}
+	return errs
+}
+
+// validateSkillsPolicy checks the optional `skills:` exposure block. Skill
+// names are a separate namespace from MCP servers, so nothing here takes
+// serverNames; existence of a matching skill is a registry-time property
+// surfaced as apply/validate warnings, not a load-time error. Patterns are
+// path.Match globs and must compile: a policy with an unparseable pattern
+// would silently fail open at evaluation time, which is exactly the silent
+// behavior a deny-list must never have.
+func validateSkillsPolicy(s *Stack) ValidationErrors {
+	var errs ValidationErrors
+	if s.Skills == nil {
+		return errs
+	}
+
+	switch s.Skills.Default {
+	case "", "deny", "allow":
+		// valid
+	default:
+		errs = append(errs, ValidationError{"skills.default", "must be 'allow' or 'deny'"})
+	}
+
+	checkPatterns := func(field string, patterns []string) {
+		for i, g := range patterns {
+			if g == "" {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s[%d]", field, i), "pattern must not be empty",
+				})
+				continue
+			}
+			if _, err := path.Match(g, ""); err != nil {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s[%d]", field, i),
+					fmt.Sprintf("invalid glob pattern '%s'", g),
+				})
+			}
+		}
+	}
+	checkPatterns("skills.allow", s.Skills.Allow)
+	checkPatterns("skills.deny", s.Skills.Deny)
 	return errs
 }
 
