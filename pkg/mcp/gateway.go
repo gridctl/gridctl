@@ -188,6 +188,12 @@ type Gateway struct {
 	// default /mcp surface exists. Guarded by mu; replaced wholesale on
 	// apply and hot-reload.
 	groupPolicy *GroupPolicy
+
+	// skillPolicy is the compiled `skills:` block: the global skill exposure
+	// filter for prompts/resources. nil means no block was configured and
+	// every active skill is exposed (legacy behavior). Guarded by mu;
+	// replaced wholesale on apply and hot-reload.
+	skillPolicy *SkillPolicy
 }
 
 // NewGateway creates a new MCP gateway.
@@ -313,6 +319,25 @@ func (g *Gateway) CurrentGroupPolicy() *GroupPolicy {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return g.groupPolicy
+}
+
+// SetSkillPolicy installs the compiled skill exposure policy. Passing nil
+// removes it (every active skill is exposed). The live policy is read fresh
+// on every prompt/resource request, so a hot-reload swap takes effect
+// immediately.
+func (g *Gateway) SetSkillPolicy(policy *SkillPolicy) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.skillPolicy = policy
+}
+
+// CurrentSkillPolicy returns the current skill policy under a read lock.
+// Exported so the API layer can flag policy-denied skills with the rule
+// the gateway is actually enforcing.
+func (g *Gateway) CurrentSkillPolicy() *SkillPolicy {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.skillPolicy
 }
 
 // HasGroup reports whether a group with the given name is configured. The
@@ -2164,9 +2189,13 @@ func (g *Gateway) HandlePromptsList() (*PromptsListResult, error) {
 		return &PromptsListResult{Prompts: []MCPPrompt{}}, nil
 	}
 
+	policy := g.CurrentSkillPolicy()
 	prompts := pp.ListPromptData()
-	result := make([]MCPPrompt, len(prompts))
-	for i, p := range prompts {
+	result := make([]MCPPrompt, 0, len(prompts))
+	for _, p := range prompts {
+		if !policy.Allows(p.Name) {
+			continue
+		}
 		args := make([]PromptArgument, len(p.Arguments))
 		for j, a := range p.Arguments {
 			args[j] = PromptArgument{
@@ -2175,11 +2204,11 @@ func (g *Gateway) HandlePromptsList() (*PromptsListResult, error) {
 				Required:    a.Required,
 			}
 		}
-		result[i] = MCPPrompt{
+		result = append(result, MCPPrompt{
 			Name:        p.Name,
 			Description: p.Description,
 			Arguments:   args,
-		}
+		})
 	}
 	return &PromptsListResult{Prompts: result}, nil
 }
@@ -2191,6 +2220,12 @@ func (g *Gateway) HandlePromptsGet(ctx context.Context, params PromptsGetParams)
 	pp := g.promptProvider()
 	if pp == nil {
 		return nil, fmt.Errorf("registry not available")
+	}
+
+	// A policy-denied skill is indistinguishable from an absent one on this
+	// surface; the registry API is where the denial stays visible.
+	if !g.CurrentSkillPolicy().Allows(params.Name) {
+		return nil, fmt.Errorf("skill %q not found", params.Name)
 	}
 
 	p, err := pp.GetPromptData(params.Name)
@@ -2246,15 +2281,19 @@ func (g *Gateway) HandleResourcesList() (*ResourcesListResult, error) {
 		return &ResourcesListResult{Resources: []MCPResource{}}, nil
 	}
 
+	policy := g.CurrentSkillPolicy()
 	prompts := pp.ListPromptData()
-	resources := make([]MCPResource, len(prompts))
-	for i, p := range prompts {
-		resources[i] = MCPResource{
+	resources := make([]MCPResource, 0, len(prompts))
+	for _, p := range prompts {
+		if !policy.Allows(p.Name) {
+			continue
+		}
+		resources = append(resources, MCPResource{
 			URI:         "skills://registry/" + p.Name,
 			Name:        p.Name,
 			Description: p.Description,
 			MimeType:    "text/markdown",
-		}
+		})
 	}
 	return &ResourcesListResult{Resources: resources}, nil
 }
@@ -2277,6 +2316,10 @@ func (g *Gateway) HandleResourcesRead(params ResourcesReadParams) (*ResourcesRea
 	}
 	if name == "" {
 		return nil, fmt.Errorf("empty resource name in URI: %s", params.URI)
+	}
+
+	if !g.CurrentSkillPolicy().Allows(name) {
+		return nil, fmt.Errorf("skill %q not found", name)
 	}
 
 	p, err := pp.GetPromptData(name)
