@@ -16,9 +16,12 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/flags"
 	"github.com/gridctl/gridctl/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pins"
+	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
@@ -233,6 +236,11 @@ func (sc *StackController) buildAndRunStackless(ctx context.Context, verbose boo
 		return err
 	}
 	builder.SetPinStore(pinStore)
+	skillPinStore, err := newSkillPinStore(stack.Name)
+	if err != nil {
+		return err
+	}
+	builder.SetSkillPinStore(skillPinStore)
 	return builder.BuildAndRun(ctx, verbose)
 }
 
@@ -294,6 +302,16 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	if printer != nil && !cfg.Foreground {
 		for _, w := range flags.Resolve(flags.Default(), stack.Experimental).Warnings {
 			printer.Warn(w.Message)
+		}
+	}
+
+	// Surface skills-policy denials at apply time: a policy hiding an
+	// active skill must never be silent. Warning only — denial is the
+	// configured intent; the warning makes it visible. Foreground skips
+	// for the same duplicate-logging reason as the flags pass above.
+	if printer != nil && !cfg.Foreground {
+		for _, w := range DeniedActiveSkillWarnings(stack) {
+			printer.Warn(w)
 		}
 	}
 
@@ -559,6 +577,11 @@ func (sc *StackController) newGatewayBuilder(stack *config.Stack, rt *runtime.Or
 		return nil, err
 	}
 	builder.SetPinStore(pinStore)
+	skillPinStore, err := newSkillPinStore(stack.Name)
+	if err != nil {
+		return nil, err
+	}
+	builder.SetSkillPinStore(skillPinStore)
 	return builder, nil
 }
 
@@ -578,6 +601,47 @@ func loadPinStore(ps *pins.PinStore, stackName string) (*pins.PinStore, error) {
 	if err := ps.Load(); err != nil {
 		if errors.Is(err, pins.ErrCorrupt) {
 			slog.Warn("pins: corrupt pin file; starting with an empty store",
+				"stack", stackName, "error", err)
+			return ps, nil
+		}
+		return nil, err
+	}
+	return ps, nil
+}
+
+// DeniedActiveSkillWarnings loads the registry read-only and names every
+// active skill the stack's `skills:` policy would hide, with the matching
+// rule. Best-effort: an unreadable registry yields no warnings rather than
+// blocking a deploy.
+func DeniedActiveSkillWarnings(stack *config.Stack) []string {
+	if stack == nil || stack.Skills == nil {
+		return nil
+	}
+	policy := mcp.NewSkillPolicy(skillsPolicySpec(stack))
+	store := registry.NewStore(filepath.Join(state.BaseDir(), "registry"))
+	if err := store.Load(); err != nil {
+		return nil
+	}
+	var warnings []string
+	for _, sk := range store.ActiveSkills() {
+		if allowed, rule := policy.Evaluate(sk.Name); !allowed {
+			warnings = append(warnings, fmt.Sprintf(
+				"skill %q is active but denied by the skills policy (rule: %s); it will not be exposed or projected", sk.Name, rule))
+		}
+	}
+	return warnings
+}
+
+// newSkillPinStore loads the on-disk skill pin store for a stack so the
+// running daemon and the `gridctl skill pins` CLI share the same
+// ~/.gridctl/pins/{stack}.skills.json. Load policy matches loadPinStore:
+// corrupt files are discarded with a warning (skills re-pin on the next
+// refresh); a newer-version file aborts startup rather than being replaced.
+func newSkillPinStore(stackName string) (*skillpins.Store, error) {
+	ps := skillpins.New(stackName)
+	if err := ps.Load(); err != nil {
+		if errors.Is(err, skillpins.ErrCorrupt) {
+			slog.Warn("skillpins: corrupt pin file; starting with an empty store",
 				"stack", stackName, "error", err)
 			return ps, nil
 		}
