@@ -56,9 +56,9 @@ type Manifest struct {
 	// selected clients (empty Clients = all detected).
 	Wiring  bool     `yaml:"wiring,omitempty" json:"wiring,omitempty"`
 	Clients []string `yaml:"clients,omitempty" json:"clients,omitempty"`
-	// Rules is reserved for the rules fragment library. Parsed so a
-	// future manifest is not an error today, but never acted on; a
-	// non-empty list surfaces as a warning.
+	// Rules selects context rule fragments from the pack repo's
+	// rules/*.md (or fragments/*.md) discovery. Empty means none
+	// (rules are opt-in, never import-all).
 	Rules []string `yaml:"rules,omitempty" json:"rules,omitempty"`
 }
 
@@ -99,14 +99,23 @@ func (m *Manifest) Validate() error {
 	if !namePattern.MatchString(m.Name) {
 		return fmt.Errorf("pack name %q must be lowercase letters, digits, and hyphens", m.Name)
 	}
-	return nil
+	return m.validateRuleNames()
 }
 
 // Warnings reports advisory conditions a valid manifest still carries.
+// Currently none; the reserved-rules warning was removed when the
+// rules fragment library activated.
 func (m *Manifest) Warnings() []string {
-	var w []string
-	if len(m.Rules) > 0 {
-		w = append(w, "the rules field is reserved and not yet applied; the listed rules are ignored")
+	return nil
+}
+
+// validateRuleNames rejects rule selections that could never become safe
+// fragment filenames, mirroring the skill/agent name discipline.
+func (m *Manifest) validateRuleNames() error {
+	for _, r := range m.Rules {
+		if !namePattern.MatchString(r) {
+			return fmt.Errorf("invalid rule name %q: must be lowercase alphanumerics and hyphens", r)
+		}
 	}
-	return w
+	return nil
 }
