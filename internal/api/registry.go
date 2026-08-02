@@ -47,10 +47,13 @@ type registrySkillListItem struct {
 	State     registry.ItemState `json:"state"`
 	FileCount int                `json:"fileCount"`
 	Dir       string             `json:"dir,omitempty"`
+	// Governance is the pin/provenance/policy summary (nil when neither a
+	// pin record nor a policy verdict exists for the skill).
+	Governance *skillGovernance `json:"governance,omitempty"`
 }
 
 // newRegistrySkillListItem projects one skill into its list shape.
-func newRegistrySkillListItem(sk *registry.AgentSkill) registrySkillListItem {
+func (s *Server) newRegistrySkillListItem(sk *registry.AgentSkill) registrySkillListItem {
 	return registrySkillListItem{
 		Name:               sk.Name,
 		Description:        sk.Description,
@@ -63,6 +66,7 @@ func newRegistrySkillListItem(sk *registry.AgentSkill) registrySkillListItem {
 		State:              sk.State,
 		FileCount:          sk.FileCount,
 		Dir:                sk.Dir,
+		Governance:         s.skillGovernanceFor(sk.Name),
 	}
 }
 
@@ -93,7 +97,7 @@ func (s *Server) handleRegistrySkillsList(w http.ResponseWriter, r *http.Request
 		if sk == nil {
 			continue
 		}
-		items = append(items, newRegistrySkillListItem(sk))
+		items = append(items, s.newRegistrySkillListItem(sk))
 	}
 	writeJSON(w, items)
 }
@@ -141,7 +145,12 @@ func (s *Server) handleRegistrySkillGet(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, "Skill not found: "+name, http.StatusNotFound)
 		return
 	}
-	writeJSON(w, sk)
+	// The embedded skill keeps the original wire shape; governance rides
+	// alongside (nil when nothing is known, omitted from the JSON).
+	writeJSON(w, struct {
+		*registry.AgentSkill
+		Governance *skillGovernance `json:"governance,omitempty"`
+	}{sk, s.skillGovernanceFor(name)})
 }
 
 // handleRegistrySkillPut updates a skill.
@@ -515,4 +524,13 @@ func (s *Server) refreshRegistryRouter() {
 		s.gateway.Router().RemoveClient("registry")
 	}
 	s.gateway.Router().RefreshTools()
+
+	// Keep skill pins in step with API-driven registry mutations (editor
+	// saves, imports) so drift state matches what the daemon's own refresh
+	// path would record. Best-effort, mirroring the tool-refresh posture.
+	if s.skillPinStore != nil {
+		if _, err := s.skillPinStore.Sync(s.registryServer.Store()); err != nil {
+			slog.Warn("registry: skill pin sync failed", "error", err)
+		}
+	}
 }
