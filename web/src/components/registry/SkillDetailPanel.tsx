@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, BookOpen, Code2, Eye, GitBranch, GitCompareArrows, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
+import { AlertTriangle, BookOpen, Code2, Eye, GitBranch, GitCompareArrows, LockOpen, Pencil, Power, PowerOff, ShieldOff, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { updateSkillSource } from '../../lib/api';
 import { summarizeSkillResults, syncCountsMessage } from '../../lib/skillSync';
@@ -8,6 +8,7 @@ import { extractRepoInfo } from '../../lib/repo';
 import { toTitleCase } from '../../lib/text';
 import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
 import { skillCategory } from '../../lib/skillMeta';
+import { originLabel } from '../../lib/skillGovernance';
 import { formatLastUsed } from '../../lib/toolAudit';
 import { InspectorHeader, InspectorTabList, InspectorTabButton, PaneAnchor } from '../inspector';
 import { IconButton } from '../ui/IconButton';
@@ -57,6 +58,12 @@ export interface SkillDetailPanelProps {
   onSelectRelated?: (name: string) => void;
   /** Refresh the registry after a reconciliation (take upstream, or a sync). */
   onRefresh?: () => void;
+  /**
+   * Deep-link into the Pins workspace's skill review for this skill. A
+   * callback rather than navigation so the panel stays router-free (its
+   * tests render it bare); the workspace wires it to navigate.
+   */
+  onOpenPinDrift?: (skillName: string) => void;
 }
 
 /**
@@ -78,6 +85,7 @@ export function SkillDetailPanel({
   onDelete,
   onSelectRelated,
   onRefresh,
+  onOpenPinDrift,
 }: SkillDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<SkillTab>('overview');
   const [viewSource, setViewSource] = useState(false);
@@ -203,6 +211,22 @@ export function SkillDetailPanel({
                 Modified
               </button>
             )}
+            {/* Policy denial is a visibility filter, never a state change:
+                the StateBadge above stays untouched, this chip carries the
+                verdict and names the rule. */}
+            {skill.governance?.policyDenied && (
+              <span
+                title={
+                  skill.governance.policyRule
+                    ? `Hidden from clients and projection by the skills policy (rule: ${skill.governance.policyRule})`
+                    : 'Hidden from clients and projection by the skills policy'
+                }
+                className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-error/30 bg-status-error/10 text-status-error"
+              >
+                <ShieldOff size={9} aria-hidden="true" />
+                Blocked by policy
+              </span>
+            )}
           </div>
         }
         actions={
@@ -270,6 +294,7 @@ export function SkillDetailPanel({
               usage={usage}
               observedSince={observedSince}
               onSelectRelated={onSelectRelated}
+              onOpenPinDrift={onOpenPinDrift}
             />
           )}
         </div>
@@ -479,6 +504,7 @@ function SkillOverview({
   usage,
   observedSince,
   onSelectRelated,
+  onOpenPinDrift,
 }: {
   skill: AgentSkill;
   body: string | null;
@@ -490,6 +516,7 @@ function SkillOverview({
   usage?: SkillUsageStat;
   observedSince?: string | null;
   onSelectRelated?: (name: string) => void;
+  onOpenPinDrift?: (skillName: string) => void;
 }) {
   const categoryKey = skillCategory(skill.dir, skill.metadata);
   const category = categoryKey ? toTitleCase(categoryKey) : null;
@@ -531,6 +558,61 @@ function SkillOverview({
               Counts are cumulative across served clients, so a zero may mean the skill predates tracking.
             </p>
           )}
+        </Section>
+      )}
+
+      {skill.governance && (
+        <Section title="Governance">
+          <dl className="space-y-1.5">
+            <MetaRow label="Origin" value={originLabel(skill.governance)} mono />
+            {/* Rendered only when a pin record exists: a policy-only
+                governance object (or a just-reset skill) must never read as
+                "Pinned" — that would be a false trust statement. */}
+            {skill.governance.pinStatus && (
+            <MetaRow
+              label="Pin"
+              value={
+                skill.governance.pinStatus === 'drift' ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-status-pending">
+                      <LockOpen size={10} aria-hidden="true" />
+                      Pin drift
+                    </span>
+                    {onOpenPinDrift && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenPinDrift(skill.name)}
+                        className="text-primary hover:underline"
+                      >
+                        Review in Pins
+                      </button>
+                    )}
+                  </span>
+                ) : (
+                  'Pinned'
+                )
+              }
+            />
+            )}
+            {(skill.governance.findingsCount ?? 0) > 0 && (
+              <MetaRow
+                label="Findings"
+                value={`${skill.governance.findingsCount} advisory finding${
+                  (skill.governance.findingsCount ?? 0) > 1 ? 's' : ''
+                }${skill.governance.maxFindingSeverity ? ` (${skill.governance.maxFindingSeverity})` : ''}`}
+              />
+            )}
+            {skill.governance.policyDenied && (
+              <MetaRow
+                label="Policy"
+                value={
+                  skill.governance.policyRule
+                    ? `Blocked by policy (rule: ${skill.governance.policyRule})`
+                    : 'Blocked by policy'
+                }
+              />
+            )}
+          </dl>
         </Section>
       )}
 
@@ -629,7 +711,7 @@ function CriterionRow({ keyword, text }: { keyword: string; text: string }) {
   );
 }
 
-function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function MetaRow({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-3">
       <dt className="text-[11px] text-text-muted flex-shrink-0">{label}</dt>

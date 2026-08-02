@@ -2,6 +2,7 @@ import { Check, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
+import { SkillGovernanceBadge } from './SkillGovernanceBadge';
 import { hasAnyCategory, skillCategory } from '../../lib/skillMeta';
 import { formatLastUsed } from '../../lib/toolAudit';
 import { toTitleCase } from '../../lib/text';
@@ -183,6 +184,7 @@ export function LibraryTable({
                         aria-label={`Imported from ${src.repo}`}
                       />
                     )}
+                    <SkillGovernanceBadge governance={skill.governance} />
                   </button>
                 </td>
                 <td className={cn('px-2 text-xs font-mono text-text-muted', cellPad)}>{skill.fileCount}</td>

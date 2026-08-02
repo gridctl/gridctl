@@ -3,6 +3,7 @@ import { BookOpen, Check, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
+import { SkillGovernanceBadge } from './SkillGovernanceBadge';
 import { skillCategory, skillMetaSummary } from '../../lib/skillMeta';
 import { toTitleCase } from '../../lib/text';
 import type { AgentSkill, SkillSourceStatus } from '../../types';
@@ -144,6 +145,7 @@ export const SkillCard = memo(({
               <GitBranch size={12} />
             </span>
           )}
+          <SkillGovernanceBadge governance={skill.governance} className="mt-0.5" />
           {hasLocalEdits && (
             <span
               title="Edited locally; a sync will skip this unless you overwrite"

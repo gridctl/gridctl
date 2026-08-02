@@ -3,14 +3,17 @@ import { useNavigate } from 'react-router';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer } from '../stores/usePinsStore';
+import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer, countDriftedSkills, countFindingSkills, firstDriftedSkill, firstFindingsSkill } from '../stores/usePinsStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
-import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
+import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
+import { skillPinsUrl } from '../lib/skillGovernance';
 
 let _prevDriftCount = 0;
 let _prevFindingCount = 0;
+let _prevSkillDriftCount = 0;
+let _prevSkillFindingCount = 0;
 
 export function usePolling() {
   const intervalRef = useRef<number | null>(null);
@@ -90,6 +93,37 @@ export function usePolling() {
         _prevFindingCount = findingCount;
       } catch {
         // Pins endpoint unavailable (feature not enabled) — suppress silently
+      }
+
+      // Skill pins ride the same cadence in their own progressive-disclosure
+      // block, with rising-edge toasts guarded like the server sentinels.
+      try {
+        const skillPins = await fetchSkillPins();
+        usePinsStore.getState().setSkillPins(skillPins);
+
+        const skillDriftCount = countDriftedSkills(skillPins);
+        if (skillDriftCount > 0 && _prevSkillDriftCount === 0) {
+          const drifted = firstDriftedSkill(skillPins);
+          const target = skillPinsUrl(drifted, 'drift');
+          showToast('warning', `Pin drift detected on ${skillDriftCount} skill${skillDriftCount > 1 ? 's' : ''}`, {
+            action: { label: 'View', onClick: () => navigate(target) },
+            duration: 6000,
+          });
+        }
+        _prevSkillDriftCount = skillDriftCount;
+
+        const skillFindingCount = countFindingSkills(skillPins);
+        if (skillFindingCount > 0 && _prevSkillFindingCount === 0) {
+          const flagged = firstFindingsSkill(skillPins);
+          const target = skillPinsUrl(flagged, 'findings');
+          showToast('warning', `Advisory findings on ${skillFindingCount} skill${skillFindingCount > 1 ? 's' : ''}`, {
+            action: { label: 'View', onClick: () => navigate(target) },
+            duration: 6000,
+          });
+        }
+        _prevSkillFindingCount = skillFindingCount;
+      } catch {
+        // Skill pins endpoint unavailable (older daemon) — suppress silently
       }
 
       // Fetch telemetry inventory + stack spec — progressive disclosure.

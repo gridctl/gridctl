@@ -2027,6 +2027,123 @@ export async function resetServerPins(serverName: string): Promise<void> {
   }
 }
 
+// === Skill Pins API ===
+
+/** One supporting file's content digest inside a skill pin. */
+export interface SkillFileDigest {
+  path: string;
+  digest: string;
+}
+
+/**
+ * TOFU content pin for one registry skill: per-file digests over the whole
+ * document set. status has only two values (no approved_pending_redeploy:
+ * skill approvals take effect immediately, there is no redeploy step).
+ * Findings are advisory, same contract as PinFinding.
+ */
+export interface SkillPin {
+  skill_hash: string;
+  files?: SkillFileDigest[];
+  document?: string;
+  source?: 'local' | 'git';
+  // commitSha is camelCase by design: the field mirrors the .origin.json
+  // sidecar record byte-for-byte.
+  origin?: { repo?: string; ref?: string; commitSha?: string };
+  approved_reason?: string;
+  pinned_at: string;
+  last_verified_at: string;
+  status: 'pinned' | 'drift';
+  findings?: PinFinding[];
+}
+
+/**
+ * What changed since a skill was pinned. composite_hash fingerprints the
+ * CURRENT content this diff was computed from; pass it to approveSkillPin so
+ * the approval is bound to the reviewed snapshot. Documents are the pinned
+ * and current canonical SKILL.md renderings (absent when unchanged).
+ */
+export interface SkillPinsDiff {
+  skill: string;
+  status: 'pinned' | 'drift';
+  composite_hash: string;
+  old_document?: string;
+  new_document?: string;
+  added_files: string[];
+  removed_files: string[];
+  modified_files: string[];
+  findings: PinFinding[];
+}
+
+/**
+ * Fetch pin state for all skills, keyed by skill name.
+ * GET /api/skill-pins
+ */
+export async function fetchSkillPins(): Promise<Record<string, SkillPin>> {
+  return fetchJSON<Record<string, SkillPin>>('/api/skill-pins');
+}
+
+/**
+ * Fetch what changed since a skill was pinned. Never mutates pin state.
+ * GET /api/skill-pins/{name}/diff
+ */
+export async function fetchSkillPinDiff(name: string): Promise<SkillPinsDiff> {
+  return fetchJSON<SkillPinsDiff>(`/api/skill-pins/${encodeURIComponent(name)}/diff`);
+}
+
+/**
+ * Approve a skill's current content, clearing pin drift. The gateway rejects
+ * with 409 when the content changed after the reviewed diff (stale
+ * expectedHash) and with 400 when the content carries unresolved advisory
+ * findings and no reason is given — the UI branches on those two statuses,
+ * so this throws HTTPError rather than a bare Error.
+ * POST /api/skill-pins/{name}/approve
+ */
+export async function approveSkillPin(
+  name: string,
+  expectedHash: string,
+  reason?: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/skill-pins/${encodeURIComponent(name)}/approve`, {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ expected_hash: expectedHash, reason: reason ?? '' }),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    let message = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body; keep the status-line message.
+    }
+    throw new HTTPError(response.status, message);
+  }
+}
+
+/**
+ * Delete a skill's pin record; it re-pins fresh on the next registry refresh.
+ * Returns 204 with no body, so this cannot use fetchJSON.
+ * DELETE /api/skill-pins/{name}
+ */
+export async function resetSkillPin(name: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/skill-pins/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: buildHeaders(),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    let message = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body; keep the status-line message.
+    }
+    throw new Error(message);
+  }
+}
+
 // === JSON-RPC Helper (for MCP protocol calls) ===
 
 interface JSONRPCRequest {
