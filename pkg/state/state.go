@@ -67,6 +67,17 @@ func PinsPath(name string) string {
 	return filepath.Join(PinsDir(), name+".json")
 }
 
+// SkillPinsPath returns the path to the skill pin file for a stack
+// (~/.gridctl/pins/skills/{name}.json). A subdirectory, not a filename
+// suffix, keeps the namespace disjoint from tool pins: any suffix scheme
+// inside PinsDir would collide with a stack literally named with that
+// suffix (PinsPath("x.skills") == a suffix-based SkillPinsPath("x")).
+// Skill pins track registry documents, not live tool sets, and the two
+// stores version independently.
+func SkillPinsPath(name string) string {
+	return filepath.Join(PinsDir(), "skills", name+".json")
+}
+
 // StatePath returns the path to a state file for a stack.
 func StatePath(name string) string {
 	return filepath.Join(StateDir(), name+".json")
