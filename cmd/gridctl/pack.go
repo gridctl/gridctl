@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
+	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/project"
@@ -111,6 +113,7 @@ type packAddDoc struct {
 	Pack          string   `json:"pack"`
 	Skills        []string `json:"skills"`
 	Agents        []string `json:"agents"`
+	Rules         []string `json:"rules,omitempty"`
 	Wiring        bool     `json:"wiring"`
 	Unresolved    []string `json:"unresolved,omitempty"`
 	Skipped       []string `json:"skipped,omitempty"`
@@ -139,7 +142,8 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, imp *skills.Impor
 		return ctxExitInfrastructure
 	}
 
-	resolved := resolvePackSelection(manifest, clone)
+	discoveredRules := discoverPackRules(clone.RepoPath)
+	resolved := resolvePackSelection(manifest, clone, discoveredRules)
 
 	doc := packAddDoc{
 		SchemaVersion: packJSONSchemaVersion,
@@ -147,6 +151,7 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, imp *skills.Impor
 		Pack:          manifest.Name,
 		Skills:        resolved.skills,
 		Agents:        resolved.agents,
+		Rules:         resolved.rules,
 		Wiring:        manifest.Wiring,
 		Unresolved:    resolved.unresolved,
 		Warnings:      manifest.Warnings(),
@@ -184,6 +189,19 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, imp *skills.Impor
 		doc.Warnings = append(doc.Warnings, result.Warnings...)
 
 	}
+	if !dryRun && len(resolved.rules) > 0 {
+		installed, skippedRules, rerr := installPackRules(stdout, resolved.rules, discoveredRules, trust)
+		if rerr != nil {
+			fmt.Fprintln(stderr, rerr)
+			return ctxExitInfrastructure
+		}
+		doc.Skipped = append(doc.Skipped, skippedRules...)
+		// The pack record must claim only what actually installed: a
+		// skipped rule recorded as the pack's would let a later remove
+		// retract a fragment the pack never delivered.
+		resolved.rules = installed
+		doc.Rules = installed
+	}
 	if !dryRun {
 		if err := recordLockedPack(manifest, resolved, repo, ref, clone.CommitSHA); err != nil {
 			fmt.Fprintln(stderr, err)
@@ -205,8 +223,13 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, imp *skills.Impor
 		if manifest.Wiring {
 			wiringLabel = "yes"
 		}
-		fmt.Fprintf(stdout, "%s pack %q (%d skills, %d agents, wiring: %s) from %s\n",
-			verb, manifest.Name, len(doc.Skills), len(doc.Agents), wiringLabel, repo)
+		if len(doc.Rules) > 0 {
+			fmt.Fprintf(stdout, "%s pack %q (%d skills, %d agents, %d rules, wiring: %s) from %s\n",
+				verb, manifest.Name, len(doc.Skills), len(doc.Agents), len(doc.Rules), wiringLabel, repo)
+		} else {
+			fmt.Fprintf(stdout, "%s pack %q (%d skills, %d agents, wiring: %s) from %s\n",
+				verb, manifest.Name, len(doc.Skills), len(doc.Agents), wiringLabel, repo)
+		}
 		for _, w := range doc.Warnings {
 			fmt.Fprintf(stdout, "Warning: %s\n", w)
 		}
@@ -231,13 +254,101 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, imp *skills.Impor
 type resolvedSelection struct {
 	skills     []string
 	agents     []string
+	rules      []string
 	unresolved []string
 }
 
+// packRuleFile is one discovered rule fragment in a pack repo.
+type packRuleFile struct {
+	Name string
+	Path string // absolute path on disk in the clone
+}
+
+// discoverPackRules finds rules/*.md and fragments/*.md under the pack
+// repo root (and one level of subdirs, matching agents discovery breadth).
+func discoverPackRules(repoPath string) map[string]packRuleFile {
+	out := map[string]packRuleFile{}
+	for _, dirName := range []string{"rules", "fragments"} {
+		_ = filepath.WalkDir(repoPath, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if filepath.Base(filepath.Dir(path)) != dirName {
+				return nil
+			}
+			if !strings.EqualFold(filepath.Ext(d.Name()), ".md") || strings.HasPrefix(d.Name(), ".") {
+				return nil
+			}
+			name := strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))
+			if err := contexts.ValidateFragmentName(name); err != nil {
+				return nil
+			}
+			// First discovery wins; rules/ preferred over fragments/ by walk order
+			// only when both exist for the same name — keep the first.
+			if _, exists := out[name]; !exists {
+				out[name] = packRuleFile{Name: name, Path: path}
+			}
+			return nil
+		})
+	}
+	return out
+}
+
+// installPackRules copies selected rule files into the local fragment
+// store behind the same gates the importer applies to skills and agents:
+// a blocking security scan (bypassed only by --trust) and a refusal to
+// overwrite a local fragment whose content differs (identical content
+// installs idempotently). Rules do not carry .origin.json sidecars yet,
+// so 'skill update' does not refresh them; re-run 'pack add' to update.
+// A first install that activates fragments mode prints the migration.
+func installPackRules(stdout io.Writer, names []string, discovered map[string]packRuleFile, trust bool) (installed, skipped []string, err error) {
+	mgr, err := contexts.NewManager()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, name := range names {
+		rf, ok := discovered[name]
+		if !ok {
+			continue
+		}
+		data, rerr := os.ReadFile(rf.Path) // #nosec G304 -- path from pack clone discovery
+		if rerr != nil {
+			return installed, skipped, fmt.Errorf("reading pack rule %s: %w", name, rerr)
+		}
+		if scan := skills.ScanFragment(name, data); !scan.Safe && !trust {
+			skipped = append(skipped, fmt.Sprintf("%s (rule): security findings; re-run with --trust to accept\n%s", name, skills.FormatFindings(scan.Findings)))
+			continue
+		}
+		if mgr.FragmentsActive() {
+			existing, rerr := mgr.ReadFragment(name)
+			switch {
+			case rerr == nil && bytes.Equal(existing.Raw, data):
+				installed = append(installed, name)
+				continue
+			case rerr == nil:
+				skipped = append(skipped, fmt.Sprintf("%s (rule): a local fragment with different content already exists; remove it with 'gridctl ctx rm %s' or rename the pack rule", name, name))
+				continue
+			case !errors.Is(rerr, contexts.ErrNoFragment):
+				return installed, skipped, rerr
+			}
+		}
+		res, ierr := mgr.InstallFragmentBytes(name, data)
+		if ierr != nil {
+			return installed, skipped, fmt.Errorf("installing pack rule %s: %w", name, ierr)
+		}
+		if res.Migrated {
+			fmt.Fprintf(stdout, "Activated fragments mode: migrated %s to fragments/00-default.md (backup: %s)\n", mgr.CanonicalPath(), res.MigratedBackup)
+		}
+		installed = append(installed, name)
+	}
+	return installed, skipped, nil
+}
+
 // resolvePackSelection expands the manifest's selection against the
-// clone's discovery. Empty manifest lists select everything discovered;
-// named selections must resolve or land in unresolved.
-func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult) resolvedSelection {
+// clone's discovery. Empty skill/agent lists select everything discovered;
+// rules are opt-in (empty means none). Named selections must resolve or
+// land in unresolved.
+func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult, discoveredRules map[string]packRuleFile) resolvedSelection {
 	discoveredSkills := map[string]bool{}
 	for _, s := range clone.Skills {
 		discoveredSkills[s.Name] = true
@@ -274,6 +385,14 @@ func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult) resolvedS
 			}
 		}
 	}
+	// Rules: empty means none (opt-in). Named selections must resolve.
+	for _, name := range m.Rules {
+		if _, ok := discoveredRules[name]; ok {
+			out.rules = append(out.rules, name)
+		} else {
+			out.unresolved = append(out.unresolved, "rules:"+name)
+		}
+	}
 	return out
 }
 
@@ -299,6 +418,7 @@ func recordLockedPack(m *pack.Manifest, resolved resolvedSelection, repo, ref, c
 		Clients:    m.Clients,
 		Skills:     resolved.skills,
 		Agents:     resolved.agents,
+		Rules:      resolved.rules,
 		Unresolved: resolved.unresolved,
 	}
 	lf.SetSource(sourceName, src)
@@ -360,10 +480,11 @@ Exit codes:
 // pack engine exists: these are the same managers the standalone verbs
 // drive.
 type packManagers struct {
-	skills *skillsync.Manager
-	agents *agentsync.Manager
-	wiring *wiring.Manager
-	home   string
+	skills   *skillsync.Manager
+	agents   *agentsync.Manager
+	wiring   *wiring.Manager
+	contexts *contexts.Manager
+	home     string
 }
 
 // newPackManagers builds the managers against the user's home.
@@ -384,7 +505,11 @@ func newPackManagers() (*packManagers, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &packManagers{skills: sm, agents: am, wiring: wm, home: home}, nil
+	cm, err := contexts.NewManager()
+	if err != nil {
+		return nil, err
+	}
+	return &packManagers{skills: sm, agents: am, wiring: wm, contexts: cm, home: home}, nil
 }
 
 // loadLockedPack finds a pack's record in the import lockfile.
@@ -509,6 +634,35 @@ func runPackApply(ctx context.Context, stdout, stderr io.Writer, mgrs *packManag
 			}
 		}
 	}
+
+	// Rules: project every available client with the pack tag so lock
+	// entries cascade-remove by tag. Only the pack's fragments need to
+	// exist in the store (installed at pack add); SyncAll projects the
+	// whole fragment set and tags new multi-file writes with Pack.
+	if len(locked.Rules) > 0 {
+		if mgrs.contexts != nil && mgrs.contexts.FragmentsActive() {
+			results, rerr := mgrs.contexts.SyncAll(ctx, contexts.SyncOptions{Force: force, DryRun: dryRun, Pack: name, PackRules: locked.Rules})
+			if rerr != nil {
+				addRow(packRow{Kind: "rule", Name: strings.Join(locked.Rules, ","), Action: "error", Detail: rerr.Error()})
+			} else {
+				for _, r := range results {
+					if r.Action == contexts.ActionSkippedUnavailable {
+						continue
+					}
+					// Keep rows that touch pack-selected fragments (or compiled
+					// clients that receive the whole compose).
+					if r.Fragment != "" && !containsString(locked.Rules, r.Fragment) {
+						continue
+					}
+					addRow(packRow{Kind: "rule", Name: firstNonEmpty(r.Fragment, strings.Join(locked.Rules, ",")), Client: r.Slug, Action: r.Action, Detail: firstNonEmpty(r.Error, r.Detail)})
+				}
+			}
+		} else {
+			addRow(packRow{Kind: "rule", Name: strings.Join(locked.Rules, ","), Action: "error",
+				Detail: "fragments mode is not active; re-run 'gridctl pack add' for this pack"})
+		}
+	}
+
 	for _, u := range locked.Unresolved {
 		addRow(packRow{Kind: "unresolved", Name: u, Action: "unresolved",
 			Detail: "selected by the pack manifest but not shipped by the repository"})
@@ -608,6 +762,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func containsString(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // runningGatewayPort reports a running gateway's port, if any.
@@ -750,6 +913,21 @@ func runPackStatus(ctx context.Context, stdout, stderr io.Writer, mgrs *packMana
 				attention = attention || needsAttention(s.State)
 			}
 		}
+		// Rules report store-level presence; per-client projection state
+		// lives in 'gridctl ctx status' (fragment granularity in detail).
+		for _, n := range p.Rules {
+			state := skillsync.StateInSync
+			detail := ""
+			if mgrs.contexts == nil || !mgrs.contexts.FragmentsActive() {
+				state, detail = "missing", "fragments mode is not active"
+			} else if _, rerr := mgrs.contexts.ReadFragment(n); rerr != nil {
+				state, detail = "missing", "not in the fragment store; re-run 'gridctl pack add'"
+			}
+			rows = append(rows, packRow{Kind: "rule", Name: n, State: state, Detail: detail})
+			// "missing" is clean for skills (never projected); an absent
+			// pack rule is attention: the pack claims it.
+			attention = attention || state != skillsync.StateInSync
+		}
 		for _, r := range wiringRows {
 			if r.Pack == p.Name {
 				rows = append(rows, packRow{Kind: "wiring", Name: r.Name, Client: r.Client, State: r.State, Detail: r.Detail, Remediation: r.Remediation})
@@ -872,6 +1050,9 @@ func runPackRemove(ctx context.Context, stdout, stderr io.Writer, mgrs *packMana
 		for _, n := range removableAgents {
 			rows = append(rows, packRow{Kind: "agent", Name: n, Action: "would-remove"})
 		}
+		for _, n := range locked.Rules {
+			rows = append(rows, packRow{Kind: "rule", Name: n, Action: "would-remove"})
+		}
 		if locked.Wiring {
 			rows = append(rows, packRow{Kind: "wiring", Name: "gridctl", Action: "would-remove"})
 		}
@@ -915,7 +1096,33 @@ func runPackRemove(ctx context.Context, stdout, stderr io.Writer, mgrs *packMana
 		}
 	}
 
-	// 2. Wiring records: delete only what ownership proves is ours;
+	// 2. Pack-tagged rule fragment projections (by tag, never by name).
+	if len(locked.Rules) > 0 && mgrs.contexts != nil {
+		results, ruleNames, uerr := mgrs.contexts.UnsyncPackFragments(ctx, name)
+		if uerr != nil {
+			fmt.Fprintln(stderr, uerr)
+			return ctxExitInfrastructure
+		}
+		for _, r := range results {
+			rows = append(rows, packRow{Kind: "rule", Name: r.Fragment, Client: r.Slug, Action: r.Action})
+		}
+		// Drop store files only for fragments the pack listed and that
+		// lost their pack projections; a user fragment of the same name
+		// created afterward is not in locked.Rules at remove time only
+		// if they renamed — we only remove names still listed on the pack.
+		for _, n := range ruleNames {
+			if !containsString(locked.Rules, n) {
+				continue
+			}
+			if _, rerr := mgrs.contexts.RemoveFragment(n); rerr != nil && !errors.Is(rerr, contexts.ErrNoFragment) {
+				rows = append(rows, packRow{Kind: "rule", Name: n, Action: "error", Detail: rerr.Error()})
+				continue
+			}
+			rows = append(rows, packRow{Kind: "rule", Name: n, Action: "removed", Detail: "fragment store entry removed"})
+		}
+	}
+
+	// 3. Wiring records: delete only what ownership proves is ours;
 	// undetected clients drop the record alone.
 	wr, wkept, werr := removePackWiring(ctx, mgrs.wiring, name, force)
 	if werr != nil {
@@ -925,7 +1132,7 @@ func runPackRemove(ctx context.Context, stdout, stderr io.Writer, mgrs *packMana
 	rows = append(rows, wr...)
 	kept = append(kept, wkept...)
 
-	// 3. Registry entries, then the pack record (which the source GC
+	// 4. Registry entries, then the pack record (which the source GC
 	// drops automatically when its last resource goes).
 	for _, n := range removableSkills {
 		if rerr := imp.Remove(n); rerr != nil {
