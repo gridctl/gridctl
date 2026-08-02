@@ -49,6 +49,32 @@ For CI or a shell prompt, `gridctl ctx sync --check` performs no writes and exit
 
 `ctx status` enumerates every known client, synced or not; `gridctl skill project status` lists only recorded projections. The asymmetry is deliberate and mirrors what each command manages: one canon that targets all clients by default versus an explicit per-skill allow-list.
 
+## Rule fragments (opt-in)
+
+By default `ctx` manages a single AGENTS.md. `gridctl ctx add <name>` activates **fragments mode**: the store becomes `~/.gridctl/context/fragments/*.md`, each an ordinary markdown file with optional YAML frontmatter (`description`, `paths:` glob list). On first add, the existing AGENTS.md is backed up and becomes `fragments/00-default.md` (no special casing afterward). Read-only commands (`status`, `sync --dry-run`, `diff`, `list`) never create the directory or migrate.
+
+Composition order is **filename-lexicographic**; numeric prefixes (`00-`, `10-`) are the ordering control. Per client, projection is one of three modes (shown in `ctx status` when fragments are active):
+
+| Mode | Clients | Behavior |
+|---|---|---|
+| multi-file | Claude Code (`~/.claude/rules/`), VS Code Copilot (`~/.copilot/instructions/`), Cline (`~/Documents/Cline/Rules/`), Roo (`~/.roo/rules/`) | Each fragment is its own lockfile-owned file (`gridctl-<name>.md`, or `.instructions.md` for Copilot). Unrecorded sibling files in those directories are foreign and never claimed or deleted. |
+| compiled | Every other single-file target (OpenCode, Zed, Windsurf, Gemini/Goose shims, …) | Fragments are concatenated with `<!-- Source: fragments/<file> -->` attribution comments into the existing dedicated/shim/block strategy. Size caps (e.g. Windsurf 6,000) stay hard errors. |
+| single-file | (fragments mode off) | Today's behavior, byte-identical until the first `ctx add`. |
+
+Glob metadata: Copilot receives `applyTo` transformed from `paths:`; Claude Code keeps `paths:` as its own dialect (user-scope path scoping has known open bugs upstream; gridctl writes the format but does not claim it works); plain multi-file clients drop `paths:` and report the drop at fragment granularity. Cursor remains unsupported (no on-disk global rules).
+
+| Command | Purpose |
+|---|---|
+| `gridctl ctx add <name>` | Create a fragment; activates fragments mode on first use |
+| `gridctl ctx list` | Name, description, paths, size, composition position (`--format json`) |
+| `gridctl ctx rm <name>` | Delete a fragment (backup first); projections drop on next sync |
+| `gridctl ctx edit <fragment>` | Edit one fragment (bare `ctx edit` lists names when fragments are active) |
+| `gridctl ctx diff <client> [fragment]` | Scoped multi-file diff, or per-fragment summary |
+| `gridctl ctx adopt <client> <fragment>` | Lossless multi-file adopt |
+| `gridctl ctx adopt <client> --into <name>` | Capture a compiled target into one fragment (refused without `--into`) |
+
+Packs can ship fragments via `rules: [names]` in `gridctl-pack.yaml` (files under `rules/*.md` or `fragments/*.md` in the pack repo). Only the fragments a pack shipped are tagged with its name; your own fragments are projected alongside them but never claimed, and `pack remove` retracts by tag only.
+
 ## Removal
 
-`gridctl ctx unsync [client|--all]` removes what gridctl manages and nothing else: dedicated files are deleted, shim lines and managed blocks are stripped, and files gridctl created are removed entirely. User-owned content survives byte-for-byte.
+`gridctl ctx unsync [client|--all]` removes what gridctl manages and nothing else: dedicated files are deleted, shim lines and managed blocks are stripped, multi-file fragment projections are removed individually, and files gridctl created are removed entirely. User-owned content and unrecorded files in shared rules directories survive byte-for-byte.
