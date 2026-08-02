@@ -36,6 +36,7 @@ import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { useSkillUsage } from '../../hooks/useSkillUsage';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useRegistryStore } from '../../stores/useRegistryStore';
+import { skillPinsUrl } from '../../lib/skillGovernance';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { useLibraryCommands, type LibraryFilter } from '../library/useLibraryCommands';
@@ -790,6 +791,7 @@ export function LibraryWorkspace() {
       onDelete={(s) => setConfirmDelete(s.name)}
       onSelectRelated={(name) => setSelectedName(name)}
       onRefresh={refreshAll}
+      onOpenPinDrift={(name) => navigate(skillPinsUrl(name, 'drift'))}
     />
   );
 
