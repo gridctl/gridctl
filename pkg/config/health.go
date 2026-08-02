@@ -174,6 +174,32 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 
 	r.addModelWarnings(s)
 	r.addExperimentalIssues(s)
+	r.addSkillsPolicyIssues(s)
+}
+
+// addSkillsPolicyIssues reports on the `skills:` exposure block. Validate has
+// no registry access, so which skills a rule actually hides is an apply-time
+// warning; here the checks are shape-level: a default-deny block with no
+// allow list hides every skill (legal, but worth a deliberate look), and a
+// present block surfaces as an info line so `gridctl validate` shows that a
+// skill exposure policy is in force.
+func (r *ValidationResult) addSkillsPolicyIssues(s *Stack) {
+	if s.Skills == nil {
+		return
+	}
+	if s.Skills.Default == "deny" && len(s.Skills.Allow) == 0 {
+		r.Issues = append(r.Issues, ValidationIssue{
+			Field:    "skills.default",
+			Message:  "default: deny with no allow list hides every registry skill from clients and projection",
+			Severity: SeverityWarning,
+		})
+		r.WarningCount++
+	}
+	r.Issues = append(r.Issues, ValidationIssue{
+		Field:    "skills",
+		Message:  fmt.Sprintf("skill exposure policy in force (%d allow, %d deny pattern(s)); denied active skills are named at apply time", len(s.Skills.Allow), len(s.Skills.Deny)),
+		Severity: SeverityInfo,
+	})
 }
 
 // addExperimentalIssues reports on the `experimental:` map: unknown flag
