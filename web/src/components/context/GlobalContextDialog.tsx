@@ -9,12 +9,16 @@ import {
   CloudUpload,
   Eye,
   EyeOff,
+  File,
   FileDown,
   FileText,
   Heading,
+  Layers,
   List,
   MonitorSmartphone,
+  Plus,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Modal } from '../ui/Modal';
@@ -27,14 +31,18 @@ import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit
 import { useContextStore } from '../../stores/useContextStore';
 import {
   adoptGlobalContext,
+  deleteContextFragment,
+  fetchContextFragments,
   fetchGlobalContextDiff,
   initGlobalContext,
+  saveContextFragment,
   saveGlobalContext,
   scanGlobalContext,
   syncGlobalContext,
   unsyncGlobalContext,
   type ContextClientStatus,
   type ContextDoc,
+  type ContextFragment,
   type ContextScanEntry,
   type ContextState,
   type ContextSyncResult,
@@ -85,8 +93,13 @@ export function GlobalContextDialog({ isOpen, onClose }: GlobalContextDialogProp
       {error && !doc && (
         <div className="h-40 flex items-center justify-center text-sm text-status-error">{error}</div>
       )}
-      {doc && !doc.canonical.exists && <SetupView />}
-      {doc && doc.canonical.exists && <EditorView doc={doc} refreshError={error} />}
+      {/* Fragments mode replaces the canonical file entirely, so it must
+          route before the exists check (the store is a directory now). */}
+      {doc && doc.fragments_active && <FragmentsView doc={doc} refreshError={error} />}
+      {doc && !doc.fragments_active && !doc.canonical.exists && <SetupView />}
+      {doc && !doc.fragments_active && doc.canonical.exists && (
+        <EditorView doc={doc} refreshError={error} />
+      )}
     </Modal>
   );
 }
@@ -346,6 +359,7 @@ function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: stri
   const [syncing, setSyncing] = useState(false);
   const [driftSlug, setDriftSlug] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [showSplit, setShowSplit] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -459,6 +473,14 @@ function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: stri
             size="sm"
             variant="ghost"
           />
+          <button
+            onClick={() => setShowSplit(true)}
+            title="Split the canonical file into rule fragments"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-muted border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
+          >
+            <Layers size={12} aria-hidden="true" />
+            Fragments
+          </button>
           <button
             onClick={() => setShowImport(true)}
             title="Replace the canonical context from an existing client file"
@@ -579,6 +601,8 @@ function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: stri
           }}
         />
       )}
+
+      {showSplit && <SplitIntoFragmentsDialog dirty={dirty} onClose={() => setShowSplit(false)} />}
 
       {driftSlug && (
         <DriftResolveDialog
@@ -735,6 +759,14 @@ function ClientRow({
       >
         {c.state}
       </span>
+      {c.mode && (
+        <span
+          title="How this client receives the context in fragments mode"
+          className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap"
+        >
+          {c.mode}
+        </span>
+      )}
       <span className="text-xs text-text-primary whitespace-nowrap">
         {c.name}
         {c.experimental && c.supported && (
@@ -892,6 +924,538 @@ function DriftResolveDialog({
   );
 }
 
+// Mirrors the backend's fragment-name rule so a bad name fails in the
+// input, not as a server error.
+const FRAGMENT_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+
+/**
+ * The one deliberate entry into fragments mode from the single-file
+ * editor: names the first fragment, states the migration plainly, and
+ * only then writes. Mirrors `ctx add` (backup, AGENTS.md becomes
+ * fragments/00-default.md, explicit message).
+ */
+function SplitIntoFragmentsDialog({ dirty, onClose }: { dirty: boolean; onClose: () => void }) {
+  const refresh = useContextStore((s) => s.refresh);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const valid = FRAGMENT_NAME_RE.test(name);
+
+  const handleCreate = useCallback(async () => {
+    if (!FRAGMENT_NAME_RE.test(name)) return;
+    setBusy(true);
+    try {
+      const res = await saveContextFragment(name, '');
+      showToast(
+        'success',
+        res.migrated
+          ? 'Fragments mode activated: AGENTS.md migrated to fragments/00-default.md (backup saved)'
+          : `Fragment "${name}" created`,
+      );
+      await refresh();
+      onClose();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to create fragment');
+      setBusy(false);
+    }
+  }, [name, refresh, onClose]);
+
+  return (
+    <Modal isOpen onClose={onClose} title="Split into fragments" size="wide">
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-text-muted">
+          Fragments turn the canonical file into a directory of rule files
+          (~/.gridctl/context/fragments/) composed in filename order — numeric prefixes (00-,
+          10-) control ordering. Your current AGENTS.md becomes fragments/00-default.md (a
+          timestamped backup precedes the move), and this creates one new fragment alongside it.
+          {dirty && ' Your unsaved editor changes will be discarded.'}
+        </p>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
+          placeholder="10-style"
+          aria-label="New fragment name"
+          className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+        />
+        {name && !valid && (
+          <p className="text-[11px] text-status-error">
+            Lowercase letters, digits, and hyphens only.
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="px-3 py-1.5 text-xs text-text-muted border border-border/40 rounded-lg hover:bg-surface-highlight transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void handleCreate()}
+            disabled={busy || !valid}
+            className="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/25 rounded-lg hover:bg-primary/15 transition-colors disabled:opacity-50"
+          >
+            {busy ? 'Migrating…' : 'Activate fragments'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Fragments-mode surface: a left rail of rule fragments in composition
+ * order (adapting SkillFileTree's grammar) feeding the same editor and
+ * preview split the single-file view uses, over the shared clients strip.
+ */
+function FragmentsView({ doc, refreshError }: { doc: ContextDoc; refreshError: string | null }) {
+  const refresh = useContextStore((s) => s.refresh);
+  const [fragments, setFragments] = useState<ContextFragment[] | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [driftSlug, setDriftSlug] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
+
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const { ratio, containerRef, handleMouseDown, isDragging } = useSplitPane(0.5);
+
+  const loadFragments = useCallback(async (selectName?: string) => {
+    try {
+      const res = await fetchContextFragments();
+      setFragments(res.fragments);
+      setSelected((prev) => {
+        const want = selectName ?? prev;
+        if (want && res.fragments.some((f) => f.name === want)) return want;
+        return res.fragments[0]?.name ?? null;
+      });
+    } catch (err) {
+      setFragments([]);
+      showToast('error', err instanceof Error ? err.message : 'Failed to load fragments');
+    }
+  }, []);
+
+  // Initial load uses a raw promise chain (the useContextScan pattern) so
+  // no setState is reachable from the effect body itself.
+  useEffect(() => {
+    let cancelled = false;
+    fetchContextFragments()
+      .then((res) => {
+        if (cancelled) return;
+        setFragments(res.fragments);
+        setSelected((prev) =>
+          prev && res.fragments.some((f) => f.name === prev)
+            ? prev
+            : (res.fragments[0]?.name ?? null),
+        );
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setFragments([]);
+        showToast('error', err instanceof Error ? err.message : 'Failed to load fragments');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const current = fragments?.find((f) => f.name === selected) ?? null;
+  const content = draft ?? current?.content ?? '';
+  const dirty = current !== null && draft !== null && draft !== current.content;
+  const markerIssue = RESERVED_MARKERS.find((m) => content.includes(m)) ?? null;
+  const lineCount = content.split('\n').length;
+  const charCount = content.length;
+  const fragmentPath = current
+    ? doc.canonical.path.replace(/AGENTS\.md$/, `fragments/${current.name}.md`)
+    : doc.canonical.path.replace(/AGENTS\.md$/, 'fragments/');
+
+  const handleSelect = useCallback(
+    (name: string) => {
+      if (name === selected) return;
+      if (dirty) {
+        showToast('warning', 'Save or discard your changes before switching fragments');
+        return;
+      }
+      setSelected(name);
+      setDraft(null);
+    },
+    [selected, dirty],
+  );
+
+  const handleSave = useCallback(async () => {
+    if (!dirty || draft === null || markerIssue || !current) return;
+    const toSave = draft;
+    setSaving(true);
+    try {
+      await saveContextFragment(current.name, toSave);
+      setDraft((d) => (d === toSave ? null : d));
+      showToast('success', 'Fragment saved. Run a sync to propagate.');
+      await loadFragments(current.name);
+      await refresh();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }, [dirty, draft, markerIssue, current, loadFragments, refresh]);
+
+  const handleSyncAll = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const resp = await syncGlobalContext();
+      showToast(resp.has_failures ? 'warning' : 'success', summarizeSync(resp.results));
+      await refresh();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  }, [refresh]);
+
+  const handleAdd = useCallback(
+    async (name: string) => {
+      try {
+        await saveContextFragment(name, '');
+        showToast('success', `Fragment "${name}" created`);
+        await loadFragments(name);
+        await refresh();
+      } catch (err) {
+        showToast('error', err instanceof Error ? err.message : 'Failed to create fragment');
+      }
+    },
+    [loadFragments, refresh],
+  );
+
+  const handleDelete = useCallback(
+    async (name: string) => {
+      try {
+        await deleteContextFragment(name);
+        showToast('success', `Fragment "${name}" removed (backup saved). Run a sync to drop its projections.`);
+        if (name === selected) setDraft(null);
+        await loadFragments();
+        await refresh();
+      } catch (err) {
+        showToast('error', err instanceof Error ? err.message : 'Failed to remove fragment');
+      }
+    },
+    [selected, loadFragments, refresh],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        void handleSave();
+      }
+    },
+    [handleSave],
+  );
+
+  const applyMarkdown = useCallback(
+    (action: MarkdownAction) => {
+      const ta = bodyRef.current;
+      if (!ta) return;
+      const next = applyMarkdownAction(content, ta.selectionStart, ta.selectionEnd, action);
+      setDraft(next.value);
+      requestAnimationFrame(() => {
+        ta.focus();
+        ta.setSelectionRange(next.selStart, next.selEnd);
+      });
+    },
+    [content],
+  );
+
+  const handleEditorScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    const ta = e.currentTarget;
+    const preview = previewRef.current;
+    if (!preview) return;
+    const srcMax = ta.scrollHeight - ta.clientHeight;
+    if (srcMax <= 0) return;
+    const dstMax = preview.scrollHeight - preview.clientHeight;
+    preview.scrollTop = (ta.scrollTop / srcMax) * dstMax;
+  }, []);
+
+  return (
+    <div className="flex flex-col h-[calc(100%+2rem)] -mx-6 -my-4">
+      {/* Action header */}
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border/30 flex-shrink-0">
+        <span className="text-[11px] text-text-muted font-mono truncate min-w-0" title={fragmentPath}>
+          {fragmentPath}
+        </span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setShowPreview((p) => !p)}
+            title={showPreview ? 'Hide preview' : 'Show preview'}
+            className={cn(
+              'p-1.5 rounded-lg transition-all duration-200',
+              showPreview
+                ? 'text-text-muted hover:text-primary hover:bg-primary/10'
+                : 'text-primary bg-primary/10',
+            )}
+          >
+            {showPreview ? <Eye size={14} /> : <EyeOff size={14} />}
+          </button>
+          <IconButton
+            icon={RefreshCw}
+            onClick={() => {
+              void loadFragments();
+              void refresh();
+            }}
+            tooltip="Refresh status"
+            size="sm"
+            variant="ghost"
+          />
+          <button
+            onClick={() => void handleSyncAll()}
+            disabled={syncing || dirty}
+            title={dirty ? 'Save before syncing' : 'Sync every available client'}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-400 border border-emerald-400/25 hover:bg-emerald-400/10 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
+            {syncing ? 'Syncing…' : 'Sync all'}
+          </button>
+          <button
+            onClick={() => void handleSave()}
+            disabled={!dirty || saving || !!markerIssue}
+            className={cn(
+              'px-4 py-2 text-xs font-medium rounded-lg transition-all',
+              'bg-primary text-background hover:bg-primary/90',
+              (!dirty || saving || !!markerIssue) && 'opacity-50 cursor-not-allowed',
+            )}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      {refreshError && (
+        <div
+          role="alert"
+          className="px-5 py-2 bg-status-error/10 border-b border-status-error/30 flex-shrink-0 text-xs text-status-error"
+        >
+          Refresh failed: {refreshError}
+        </div>
+      )}
+
+      <ClientsStrip clients={doc.clients} onReviewDrift={setDriftSlug} />
+
+      <div className="flex-1 flex min-h-0">
+        <FragmentRail
+          fragments={fragments}
+          selected={selected}
+          onSelect={handleSelect}
+          onAdd={handleAdd}
+          onDelete={handleDelete}
+        />
+
+        {/* Editor area, identical grammar to the single-file view */}
+        <div ref={containerRef} className="flex-1 flex min-w-0 min-h-0 group/split">
+          {current === null ? (
+            <div className="flex-1 flex items-center justify-center text-sm text-text-muted">
+              {fragments === null ? 'Loading fragments…' : 'Add a fragment to start.'}
+            </div>
+          ) : (
+            <>
+              <div
+                className={cn('flex flex-col min-w-0 min-h-0', showPreview && 'border-r border-border/30')}
+                style={showPreview ? { width: `${ratio * 100}%` } : { width: '100%' }}
+              >
+                <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border/20 flex-shrink-0">
+                  <span className="text-xs text-text-muted uppercase tracking-wider">Markdown</span>
+                  <div className="flex items-center gap-0.5">
+                    <EditorToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
+                    <EditorToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
+                    <EditorToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} />
+                    <EditorToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} />
+                  </div>
+                </div>
+                <textarea
+                  ref={bodyRef}
+                  value={content}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onScroll={handleEditorScroll}
+                  aria-label={`Fragment ${current.name}`}
+                  placeholder={'---\ndescription: what this rule covers\npaths:\n  - "**/*.go"\n---\n\n# Rules\n'}
+                  className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none focus:outline-none leading-relaxed"
+                  spellCheck={false}
+                />
+              </div>
+
+              {showPreview && (
+                <>
+                  <SplitPaneHandle onMouseDown={handleMouseDown} isDragging={isDragging} />
+                  <div className="flex flex-col min-w-0 min-h-0" style={{ width: `${(1 - ratio) * 100}%` }}>
+                    <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
+                      <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
+                    </div>
+                    <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
+                      <div className="px-5 py-4">
+                        <MarkdownPreview content={content} emptyHint="Fragment preview" />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom status bar */}
+      <div className="flex items-center justify-between px-5 py-2 border-t border-border/30 bg-surface/50 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          {markerIssue ? (
+            <span className="text-xs flex items-center gap-1 text-status-error">
+              <AlertCircle size={12} />
+              contains the reserved gridctl marker {markerIssue}
+            </span>
+          ) : (
+            <span className="text-xs flex items-center gap-1 text-status-running">
+              <Check size={12} />
+              Valid
+            </span>
+          )}
+          {dirty && !markerIssue && <span className="text-xs text-text-muted">Unsaved changes</span>}
+          <span className="text-xs text-text-muted">
+            Composed in filename order; numeric prefixes (00-, 10-) control ordering.
+          </span>
+        </div>
+        <div className="flex items-center gap-4 text-xs text-text-muted font-mono">
+          <span>{lineCount} lines</span>
+          <span>{charCount} chars</span>
+        </div>
+      </div>
+
+      {driftSlug && (
+        <DriftResolveDialog
+          slug={driftSlug}
+          name={doc.clients.find((c) => c.slug === driftSlug)?.name ?? driftSlug}
+          onClose={() => setDriftSlug(null)}
+          onResolved={() => {
+            setDriftSlug(null);
+            void refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The fragment list rail, adapting SkillFileTree's grammar to a flat,
+ * composition-ordered set: position, name, size, paths badge, add and
+ * delete affordances.
+ */
+function FragmentRail({
+  fragments,
+  selected,
+  onSelect,
+  onAdd,
+  onDelete,
+}: {
+  fragments: ContextFragment[] | null;
+  selected: string | null;
+  onSelect: (name: string) => void;
+  onAdd: (name: string) => void;
+  onDelete: (name: string) => void;
+}) {
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState('');
+  const valid = FRAGMENT_NAME_RE.test(newName);
+
+  const submitNew = () => {
+    if (!valid) return;
+    onAdd(newName);
+    setNewName('');
+    setShowNew(false);
+  };
+
+  return (
+    <div className="w-60 flex-shrink-0 border-r border-border/30 flex flex-col min-h-0">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/20 flex-shrink-0">
+        <span className="text-[10px] text-text-muted uppercase tracking-wider">Fragments</span>
+        <button
+          onClick={() => setShowNew((s) => !s)}
+          className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
+        >
+          <Plus size={10} /> Add
+        </button>
+      </div>
+      {showNew && (
+        <div className="px-3 py-2 flex items-center gap-1.5 border-b border-border/20 flex-shrink-0">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submitNew()}
+            placeholder="10-style"
+            aria-label="New fragment name"
+            className="flex-1 min-w-0 bg-background/60 border border-border/40 rounded px-2 py-1 text-[10px] font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
+          />
+          <button
+            onClick={submitNew}
+            disabled={!valid}
+            className="px-2 py-1 text-[10px] text-primary bg-primary/10 rounded hover:bg-primary/20 transition-colors disabled:opacity-50"
+          >
+            Create
+          </button>
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto scrollbar-dark py-1">
+        {fragments === null ? (
+          <p className="text-[10px] text-text-muted px-3 py-2">Loading fragments…</p>
+        ) : fragments.length === 0 ? (
+          <p className="text-[10px] text-text-muted px-3 py-2 italic">No fragments yet</p>
+        ) : (
+          fragments.map((f) => (
+            <div
+              key={f.name}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 group cursor-pointer transition-colors',
+                selected === f.name ? 'bg-primary/10' : 'hover:bg-surface-highlight/50',
+              )}
+            >
+              <File
+                size={10}
+                className={cn('flex-shrink-0', selected === f.name ? 'text-primary/70' : 'text-text-muted')}
+              />
+              <button
+                onClick={() => onSelect(f.name)}
+                title={f.description || f.name}
+                className={cn(
+                  'text-[11px] font-mono flex-1 text-left truncate transition-colors',
+                  selected === f.name ? 'text-primary' : 'text-text-secondary hover:text-primary',
+                )}
+              >
+                {f.name}
+              </button>
+              {(f.paths ?? []).length > 0 && (
+                <span
+                  title={`paths: ${(f.paths ?? []).join(', ')}`}
+                  className="text-[9px] px-1 py-0.5 rounded border border-border/40 text-text-muted font-mono flex-shrink-0"
+                >
+                  globs
+                </span>
+              )}
+              <span className="text-[10px] text-text-muted font-mono flex-shrink-0">{f.bytes}B</span>
+              <button
+                type="button"
+                onClick={() => onDelete(f.name)}
+                title={`Remove fragment ${f.name}`}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
+              >
+                <Trash2 size={10} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** One-line summary of a sync pass for the toast. */
 function summarizeSync(results: ContextSyncResult[]): string {
   const counts: Record<string, number> = {};
@@ -900,6 +1464,7 @@ function summarizeSync(results: ContextSyncResult[]): string {
   const written = (counts['created'] ?? 0) + (counts['updated'] ?? 0);
   if (written) parts.push(`${written} synced`);
   if (counts['unchanged']) parts.push(`${counts['unchanged']} unchanged`);
+  if (counts['removed']) parts.push(`${counts['removed']} removed`);
   if (counts['skipped-drift']) parts.push(`${counts['skipped-drift']} skipped (drifted)`);
   if (counts['skipped-unavailable']) parts.push(`${counts['skipped-unavailable']} unavailable`);
   if (counts['error']) parts.push(`${counts['error']} failed`);
