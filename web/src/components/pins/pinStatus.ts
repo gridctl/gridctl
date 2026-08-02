@@ -1,8 +1,9 @@
-import type { ServerPins } from '../../lib/api';
+import type { ServerPins, SkillPin } from '../../lib/api';
 
 // Shared status display metadata for pin surfaces (workspace rail and
-// detail header), keyed to the status color tokens.
-export function pinStatusMeta(status: ServerPins['status']): {
+// detail header), keyed to the status color tokens. Accepts both kinds'
+// status unions; skill pins only ever emit pinned|drift.
+export function pinStatusMeta(status: ServerPins['status'] | SkillPin['status']): {
   label: string;
   colorClass: string;
 } {
