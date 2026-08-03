@@ -111,11 +111,16 @@
   --color-border: #d3d7de;
   --color-border-subtle: rgba(15, 23, 42, 0.08);
 
-  /* Primary — re-keyed amber (amber-700/800) for contrast on light */
-  --color-primary: #b45309;
-  --color-primary-light: #9a3412;
-  --color-primary-dark: #92400e;
-  --color-primary-glow: rgba(180, 83, 9, 0.18);
+  /* Primary — re-keyed amber (amber-800/900) for contrast on light. Yellow has
+     no dark form: to clear 4.5:1 as small text on these warm-tinted surfaces the
+     accent has to shift to brown-orange, which is what Radix, Primer, and
+     Atlassian all do for their light-mode warm text step. The whole ramp moves
+     together so `from-primary to-primary-dark` gradients keep a visible step and
+     `hover:bg-primary-light` stays a perceptible hover. */
+  --color-primary: #92400e;
+  --color-primary-light: #a5490b;
+  --color-primary-dark: #78350f;
+  --color-primary-glow: rgba(146, 64, 14, 0.18);
 
   /* Secondary — deep teal */
   --color-secondary: #0f766e;
@@ -135,8 +140,11 @@
   --color-status-stopped: #9ca3af;
   --color-status-error: #e11d48;
   --color-status-error-glow: rgba(225, 29, 72, 0.2);
-  --color-status-pending: #b45309;
-  --color-status-pending-glow: rgba(180, 83, 9, 0.2);
+  /* Pending keeps its own hue rather than reusing primary: sharing one hex made
+     "brand accent" and "needs attention" indistinguishable in light, a collision
+     dark mode does not have. */
+  --color-status-pending: #854d0e;
+  --color-status-pending-glow: rgba(133, 77, 14, 0.2);
   --color-status-idle: #6b7280;
 
   /* Text — neutral near-black ramp; muted is darkened a shade from the warm
@@ -168,8 +176,8 @@
   /* Compositing helpers inverted for light */
   --bevel-highlight: rgba(255, 255, 255, 0.7);
   --minimap-mask: rgba(236, 238, 241, 0.6);
-  --selection-bg: rgba(180, 83, 9, 0.08);
-  --selection-border: rgba(180, 83, 9, 0.4);
+  --selection-bg: rgba(146, 64, 14, 0.08);
+  --selection-border: rgba(146, 64, 14, 0.4);
   --grain-opacity: 0;
 }
 
