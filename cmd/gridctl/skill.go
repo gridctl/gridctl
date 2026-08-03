@@ -27,9 +27,10 @@ import (
 
 var skillCmd = &cobra.Command{
 	Use:   "skill",
-	Short: "Manage skills: import, update, and project to clients",
-	Long: "Import, update, and manage skills from remote git repositories, and " +
-		"project them into native client skill directories with 'skill project'.",
+	Short: "Manage skills and agents: import, update, and project",
+	Long: "Import, update, and manage skills and agent definitions from remote " +
+		"git repositories, project them into native client directories with " +
+		"'skill project', and review skill-document pins with 'skill pins'.",
 }
 
 // Flags

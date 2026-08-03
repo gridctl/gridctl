@@ -68,27 +68,36 @@ func validProjectKind(kind string) error {
 
 var skillProjectCmd = &cobra.Command{
 	Use:   "project",
-	Short: "Project skills into native client skill directories",
-	Long: `Project active registry skills into native client skill locations so
-they work in clients that never fetch MCP prompts (Antigravity, Grok
-Build) and auto-trigger in clients that read skills from disk.
+	Short: "Project skills and agents into native client directories",
+	Long: `Project active registry skills (and, with --kind agent, imported agent
+definitions) into native client locations so they work in clients that
+never fetch MCP prompts (Antigravity, Grok Build) and auto-trigger in
+clients that read from disk.
 
 Unlike 'gridctl ctx sync', nothing is projected by default: name the
 skills to project explicitly. Projecting all active skills would flood
-each client's skill discovery context.
+each client's skill discovery context. Agent projections sync the whole
+imported set.
 
-Targets: 'agents' (~/.agents/skills, the vendor-neutral interop dir read
-by Zed, Goose, OpenCode, VS Code, and Grok Build), 'claude-code'
+Skill targets: 'agents' (~/.agents/skills, the vendor-neutral interop
+dir read by Zed, Goose, OpenCode, VS Code, and Grok Build — the interop
+directory, unrelated to the agent kind), 'claude-code'
 (~/.claude/skills), and 'antigravity' (~/.gemini/config/skills, always
 copied). Skills are symlinked into the registry by default, so registry
 edits propagate without a re-sync; --copy materializes copies instead.
+
+Agent targets (--kind agent): 'claude-code' (~/.claude/agents, identity
+copy) plus lossy rendered dialects for 'opencode', 'copilot', and
+'gemini'; dropped frontmatter keys are named in sync output, and adopt
+is refused on rendered targets.
 
 The MCP prompt channel is unchanged: clients that render prompts
 (Gemini CLI, Cursor, Windsurf) keep receiving skills that way.`,
 	Example: `  gridctl skill project sync my-skill               Project to every available client
   gridctl skill project sync my-skill --clients claude-code
   gridctl skill project sync                        Re-sync the projected set
-  gridctl skill project status                      Per-projection state
+  gridctl skill project sync --kind agent           Project every imported agent
+  gridctl skill project status                      Per-projection state (both kinds)
   gridctl skill project adopt my-skill --client antigravity   Pull a hand edit back
   gridctl skill project unsync --all                Remove every projection`,
 }
@@ -162,7 +171,9 @@ Exit codes:
 var skillProjectStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show per-projection state",
-	Long: `Shows the state of every projected (skill, client) pair.
+	Long: `Shows the state of every projection: (skill, client) pairs and, when
+agents are imported, (agent, client) pairs in the same table (no --kind
+flag; status always reports both kinds).
 
 States: in-sync, stale (registry content changed since the copy was
 made, or the skill left the active set), drifted (the projected copy or
@@ -207,7 +218,8 @@ var skillProjectUnsyncCmd = &cobra.Command{
 	Short: "Remove projected skills from client directories",
 	Long: `Removes projections gridctl created: symlinks are unlinked and copied
 directories removed after a timestamped backup. Files gridctl did not
-create are never touched. Removed skills leave the projection set.`,
+create are never touched. Removed skills leave the projection set.
+Pass --kind agent to remove agent projections instead.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(skillProjectUnsyncFormat, cmd.Flags().Changed("format"), *skillProjectUnsyncJSON)
 		if err != nil {
@@ -247,7 +259,10 @@ var skillProjectAdoptCmd = &cobra.Command{
 	Long: `Adopts the files of one projected copy back into the registry skill,
 then re-syncs that (skill, client) pair so it returns to in-sync. Other
 clients projecting the skill become stale until the next
-'gridctl skill project sync'.
+'gridctl skill project sync'. With --kind agent, adopts a hand-edited
+identity projection back into the canonical AGENT.md; rendered targets
+(opencode, copilot, gemini) refuse adopt because their dialects are
+lossy.
 
 Only copy projections can be adopted: a symlinked projection references
 the registry directly, so edits made through it already live in the
