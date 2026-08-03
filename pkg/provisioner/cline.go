@@ -21,12 +21,22 @@ func newCline() *Cline {
 		"disabled":    false,
 		"alwaysAllow": []any{},
 	}
+	// Cline speaks remote HTTP natively, so it needs no npx mcp-remote
+	// bridge: a bridge would add a Node dependency, a package fetch on
+	// every start, and a process hop for nothing. Note the camelCase
+	// "streamableHttp" — Roo Code, despite the shared ancestry, spells the
+	// same transport "streamable-http", so these two must not share a
+	// serializer. Omitting type entirely makes Cline fall back to legacy
+	// SSE, so it is always written.
 	c.buildEntry = func(opts LinkOptions) map[string]any {
 		url := opts.GatewayURL
 		if opts.Port > 0 {
 			url = gatewayHTTPURLForOpts(opts)
 		}
-		return bridgeConfig(url)
+		return map[string]any{
+			"type": "streamableHttp",
+			"url":  url,
+		}
 	}
 	return c
 }
