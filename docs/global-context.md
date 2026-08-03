@@ -73,7 +73,7 @@ Glob metadata: Copilot receives `applyTo` transformed from `paths:`; Claude Code
 | `gridctl ctx adopt <client> <fragment>` | Lossless multi-file adopt |
 | `gridctl ctx adopt <client> --into <name>` | Capture a compiled target into one fragment (refused without `--into`) |
 
-Packs can ship fragments via `rules: [names]` in `gridctl-pack.yaml` (files under `rules/*.md` or `fragments/*.md` in the pack repo). Only the fragments a pack shipped are tagged with its name; your own fragments are projected alongside them but never claimed, and `pack remove` retracts by tag only.
+Packs can ship fragments via `rules: [names]` in `gridctl-pack.yaml` (files under `rules/*.md` or `fragments/*.md` in the pack repo; see the [Packs guide](packs.md)). Only the fragments a pack shipped are tagged with its name; your own fragments are projected alongside them but never claimed, and `pack remove` retracts by tag only. Fragment CRUD is also available over REST; see the [API reference](api-reference.md#global-context) endpoints under `/api/context/fragments`.
 
 ## Removal
 

@@ -1,6 +1,6 @@
 # REST API Reference
 
-The gridctl gateway exposes a REST API for managing stacks, secrets, skills, and MCP protocol interactions. By default the gateway listens on port `8180`.
+The gridctl gateway exposes a REST API for managing stacks, secrets, skills, schema and skill pins, the global context (including rule fragments), and MCP protocol interactions. By default the gateway listens on port `8180`.
 
 ## Authentication
 
@@ -2470,7 +2470,7 @@ Force-updates a single skill to upstream content, backing up the current file fi
 
 ### Registry (Agent Skills) *(experimental)*
 
-Manage reusable skills stored as SKILL.md files. Skills have three lifecycle states: `draft`, `active`, and `disabled`.
+Manage reusable skills stored as SKILL.md files. Skills have three lifecycle states: `draft`, `active`, and `disabled`. The registry also holds imported agent definitions, but those are deliberately CLI-only (`gridctl skill list --kind agent`); there is no agents REST surface.
 
 #### `GET /api/registry/status`
 
