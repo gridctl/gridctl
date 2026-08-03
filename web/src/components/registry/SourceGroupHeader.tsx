@@ -125,7 +125,7 @@ export function SourceGroupHeader({
               onClick={handleUpdate}
               disabled={updating}
               title="Update available, pull latest"
-              className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-colors disabled:opacity-60 flex-shrink-0"
+              className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60 flex-shrink-0"
             >
               <RefreshCw size={10} className={updating ? 'animate-spin' : undefined} />
               {updating ? 'Syncing…' : 'Sync'}
