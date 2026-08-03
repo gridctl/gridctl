@@ -1,6 +1,7 @@
 # Skill Sources Example
 #
-# Declares remote git repositories gridctl clones to discover SKILL.md files.
+# Declares remote git repositories gridctl clones to discover SKILL.md files
+# (and agents/*.md definitions, which import alongside skills).
 # Place this at ~/.gridctl/skills.yaml and run:
 #
 #   gridctl skill update               # fetch all sources

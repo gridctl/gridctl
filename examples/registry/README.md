@@ -1,6 +1,6 @@
 # Registry
 
-Examples demonstrating the Agent Skills registry following the [agentskills.io](https://agentskills.io) specification.
+Examples demonstrating the skills and agents registry. Skills follow the [agentskills.io](https://agentskills.io) specification; agent definitions follow Claude Code's `agents/*.md` convention.
 
 ## Examples
 
@@ -14,16 +14,19 @@ Examples demonstrating the Agent Skills registry following the [agentskills.io](
 
 ## How the Registry Works
 
-The registry stores Agent Skills as SKILL.md files - markdown documents with YAML frontmatter:
+The registry stores Agent Skills as SKILL.md files - markdown documents with YAML frontmatter - and, since the agent resource kind, imported agent definitions alongside them:
 
 ```
 ~/.gridctl/registry/
-└── skills/
+├── skills/
+│   └── {name}/
+│       ├── SKILL.md          # Required: frontmatter + markdown body
+│       ├── scripts/          # Optional: executable scripts
+│       ├── references/       # Optional: reference materials
+│       └── assets/           # Optional: images, data files
+└── agents/
     └── {name}/
-        ├── SKILL.md          # Required: frontmatter + markdown body
-        ├── scripts/          # Optional: executable scripts
-        ├── references/       # Optional: reference materials
-        └── assets/           # Optional: images, data files
+        └── AGENT.md          # Imported verbatim from agents/*.md repos
 ```
 
 Each skill has a lifecycle state:
@@ -31,11 +34,13 @@ Each skill has a lifecycle state:
 - **active** - exposed as an MCP prompt and resource
 - **disabled** - temporarily hidden without deletion
 
+Agents have no lifecycle state; they project to clients via `gridctl skill project sync --kind agent`. Skill documents are also pinned trust-on-first-use (`gridctl skill pins`), so later content changes surface as reviewable drift.
+
 Skills are managed via the REST API or Web UI - they are **not** declared in stack YAML.
 
 ## Skill Sources
 
-`skills.yaml` (separate from the stack YAML above) declares **remote git repositories** that gridctl clones to import SKILL.md files. It lives at `~/.gridctl/skills.yaml` and is consumed by `gridctl skill update`.
+`skills.yaml` (separate from the stack YAML above) declares **remote git repositories** that gridctl clones to import SKILL.md files (and any `agents/*.md` definitions the repo ships). It lives at `~/.gridctl/skills.yaml` and is consumed by `gridctl skill update`.
 
 ```bash
 # Use the provided example (edit sources first, stage any vault keys):
@@ -169,7 +174,7 @@ curl http://localhost:8180/api/registry/skills/echo-and-time/files | jq
 ### Web UI
 
 1. Open http://localhost:8180 in a browser
-2. Navigate to the Registry section
+2. Navigate to the Library workspace
 3. Create and edit skills with the split-pane markdown editor
 4. Activate skills and browse supporting files
 
