@@ -74,7 +74,8 @@ gateway:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `bind` | string | No | `127.0.0.1` | Address the HTTP listener binds. Loopback by default, so the API, web UI, and gateway are unreachable from other hosts and from containers. Set `0.0.0.0` to listen on every interface. The `--bind` and `--bind-all` flags override this. Widening without `auth` logs a startup warning |
+| `bind` | string | No | `127.0.0.1` | Address the HTTP listener binds. Loopback by default, so the API, web UI, and gateway are unreachable from other hosts and from containers. Set `0.0.0.0` to listen on every interface. The `--bind` and `--bind-all` flags override this. **A non-loopback bind requires `auth`** — gridctl refuses to start otherwise |
+| `insecure_allow_unauthenticated` | bool | No | `false` | Permit a non-loopback bind with no `auth` configured. Without it gridctl refuses to start in that combination. Exists as a config field as well as the `--insecure-allow-unauthenticated` flag, because a flag can be dropped by whatever wraps the process (launchd, a Homebrew service, a Dockerfile `CMD`). Warns loudly on every start |
 | `allowed_origins` | []string | No | `["*"]` | CORS allowed origins. Empty or unset allows all |
 | `allowed_hosts` | []string | No | `[]` | Extra `Host` header values accepted on the MCP endpoint (DNS rebinding protection). Loopback hosts are always accepted, so unset means loopback-only. Set only when a reverse proxy or container hostname fronts the gateway. Unlike `allowed_origins`, `"*"` is **not** a wildcard here and matches nothing |
 | `auth` | object | No | - | Authentication configuration |

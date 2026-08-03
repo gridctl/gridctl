@@ -24,6 +24,7 @@ var (
 	applyPort        int
 	applyBind        string
 	applyBindAll     bool
+	applyAllowUnauth bool
 	applyBasePort    int
 	applyForeground  bool
 	applyDaemonChild bool
@@ -76,6 +77,7 @@ func init() {
 	applyCmd.Flags().IntVarP(&applyPort, "port", "p", 8180, "Port for MCP gateway")
 	applyCmd.Flags().StringVar(&applyBind, "bind", "", "Address to bind (default 127.0.0.1, loopback only)")
 	applyCmd.Flags().BoolVar(&applyBindAll, "bind-all", false, "Bind every interface, making the gateway reachable from other hosts")
+	applyCmd.Flags().BoolVar(&applyAllowUnauth, "insecure-allow-unauthenticated", false, "Allow a non-loopback bind with no authentication configured")
 	applyCmd.Flags().IntVar(&applyBasePort, "base-port", 9000, "Base port for MCP server host port allocation")
 	applyCmd.Flags().BoolVarP(&applyForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
 	applyCmd.Flags().BoolVar(&applyDaemonChild, "daemon-child", false, "Internal flag for daemon process")
@@ -105,12 +107,13 @@ func resolveBindFlag() string {
 // Vault and wizard endpoints are active; stack-dependent endpoints return 503.
 func runServeStackless() error {
 	ctrl := controller.New(controller.Config{
-		Port:        applyPort,
-		Bind:        resolveBindFlag(),
-		Foreground:  applyForeground,
-		DaemonChild: applyDaemonChild,
-		LogFile:     applyLogFile,
-		LogLevel:    logLevel,
+		Port:                 applyPort,
+		Bind:                 resolveBindFlag(),
+		AllowUnauthenticated: applyAllowUnauth,
+		Foreground:           applyForeground,
+		DaemonChild:          applyDaemonChild,
+		LogFile:              applyLogFile,
+		LogLevel:             logLevel,
 	})
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
@@ -126,21 +129,22 @@ func runServeStackless() error {
 
 func runApply(stackPath string) error {
 	cfg := controller.Config{
-		StackPath:   stackPath,
-		Port:        applyPort,
-		Bind:        resolveBindFlag(),
-		BasePort:    applyBasePort,
-		Verbose:     applyVerbose,
-		Quiet:       applyQuiet,
-		NoCache:     applyNoCache,
-		NoExpand:    applyNoExpand,
-		Foreground:  applyForeground,
-		Watch:       applyWatch,
-		DaemonChild: applyDaemonChild,
-		CodeMode:    applyCodeMode,
-		Runtime:     runtimeFlag,
-		LogFile:     applyLogFile,
-		LogLevel:    logLevel,
+		StackPath:            stackPath,
+		Port:                 applyPort,
+		Bind:                 resolveBindFlag(),
+		AllowUnauthenticated: applyAllowUnauth,
+		BasePort:             applyBasePort,
+		Verbose:              applyVerbose,
+		Quiet:                applyQuiet,
+		NoCache:              applyNoCache,
+		NoExpand:             applyNoExpand,
+		Foreground:           applyForeground,
+		Watch:                applyWatch,
+		DaemonChild:          applyDaemonChild,
+		CodeMode:             applyCodeMode,
+		Runtime:              runtimeFlag,
+		LogFile:              applyLogFile,
+		LogLevel:             logLevel,
 	}
 
 	// Cancel ctx on SIGINT/SIGTERM so daemon goroutines exit cleanly.
