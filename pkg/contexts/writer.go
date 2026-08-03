@@ -36,6 +36,12 @@ const (
 // presents as false drift (the pkg/pins lesson).
 const hashScheme = project.HashScheme
 
+// FragmentContentHash returns the hash of raw fragment bytes under the same
+// scheme the projection lockfile uses, so provenance recorded at install time
+// and drift measured later are directly comparable. Exported for the pack
+// installer, which records what it wrote.
+func FragmentContentHash(raw []byte) string { return contentHash(string(raw)) }
+
 // contentHash returns the scheme-prefixed hash of CRLF-normalized content.
 func contentHash(content string) string {
 	sum := sha256.Sum256([]byte(normalizeNewlines(content)))

@@ -58,7 +58,15 @@ type LockedPack struct {
 	Skills  []string `yaml:"skills,omitempty"`
 	Agents  []string `yaml:"agents,omitempty"`
 	// Rules lists context rule fragments imported from the pack repo.
+	// Superseded by RuleFiles, which adds per-rule provenance; retained so
+	// lockfiles written before that keep loading, and kept in sync on write
+	// so a downgrade still sees the selection.
 	Rules []string `yaml:"rules,omitempty"`
+	// RuleFiles records per-rule provenance keyed by fragment name. An entry
+	// with an empty ContentHash means provenance is unknown (migrated from a
+	// Rules-only lockfile), and callers must fall back to byte comparison
+	// rather than treating the empty hash as a match.
+	RuleFiles map[string]LockedRule `yaml:"rule_files,omitempty"`
 	// Unresolved lists manifest-selected names discovery could not find,
 	// so status can keep reporting them until the upstream repo (or the
 	// manifest) is fixed.
@@ -84,6 +92,15 @@ type LockedSkill struct {
 
 // LockedAgent records per-agent metadata within a source.
 type LockedAgent struct {
+	Path        string `yaml:"path"`
+	ContentHash string `yaml:"content_hash"`
+}
+
+// LockedRule records per-rule-fragment metadata within a pack source. The
+// content hash is what lets a later install tell an upstream change apart
+// from a local edit; without it the only available comparison is raw bytes
+// against disk, which conflates the two.
+type LockedRule struct {
 	Path        string `yaml:"path"`
 	ContentHash string `yaml:"content_hash"`
 }
@@ -121,8 +138,26 @@ func ReadLockFile(path string) (*LockFile, error) {
 	if lf.Sources == nil {
 		lf.Sources = make(map[string]LockedSource)
 	}
+	migrateRuleFiles(&lf)
 
 	return &lf, nil
+}
+
+// migrateRuleFiles backfills RuleFiles from a Rules-only lockfile written
+// before per-rule provenance existed. Entries get an empty ContentHash,
+// which callers must read as "unknown" and handle by falling back to byte
+// comparison — never as a hash that could match content.
+func migrateRuleFiles(lf *LockFile) {
+	for name, src := range lf.Sources {
+		if src.Pack == nil || len(src.Pack.Rules) == 0 || src.Pack.RuleFiles != nil {
+			continue
+		}
+		src.Pack.RuleFiles = make(map[string]LockedRule, len(src.Pack.Rules))
+		for _, rule := range src.Pack.Rules {
+			src.Pack.RuleFiles[rule] = LockedRule{}
+		}
+		lf.Sources[name] = src
+	}
 }
 
 // WriteLockFile writes skills.lock.yaml atomically. Keys are sorted for

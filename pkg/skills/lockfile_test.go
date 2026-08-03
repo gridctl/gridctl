@@ -200,3 +200,80 @@ func TestLockFileSetSourceInitializesMap(t *testing.T) {
 	assert.Len(t, lf.Sources, 1)
 	assert.Equal(t, "https://example.com/repo", lf.Sources["new"].Repo)
 }
+
+// TestReadLockFileMigratesRuleFiles pins the back-compat path: a lockfile
+// written before per-rule provenance carries rules as a bare name list, and
+// must load with entries whose hash is empty — meaning "unknown", never a
+// hash that could match content and license an overwrite.
+func TestReadLockFileMigratesRuleFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "skills.lock.yaml")
+	legacy := `version: 2
+sources:
+  acme-pack:
+    repo: https://github.com/acme/pack
+    ref: main
+    commit_sha: abc123
+    content_hash: h2:deadbeef
+    pack:
+      name: team-pack
+      rules:
+        - style
+        - review
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := ReadLockFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := lf.Sources["acme-pack"].Pack
+	if pack == nil {
+		t.Fatal("pack record lost on read")
+	}
+	if len(pack.RuleFiles) != 2 {
+		t.Fatalf("RuleFiles = %+v, want 2 migrated entries", pack.RuleFiles)
+	}
+	for name, rule := range pack.RuleFiles {
+		if rule.ContentHash != "" {
+			t.Errorf("%s migrated with hash %q, want empty (unknown provenance)", name, rule.ContentHash)
+		}
+	}
+	if len(pack.Rules) != 2 {
+		t.Errorf("Rules list must survive migration, got %v", pack.Rules)
+	}
+}
+
+func TestReadLockFileKeepsExistingRuleFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "skills.lock.yaml")
+	current := `version: 2
+sources:
+  acme-pack:
+    repo: https://github.com/acme/pack
+    ref: main
+    commit_sha: abc123
+    pack:
+      name: team-pack
+      rules:
+        - style
+      rule_files:
+        style:
+          path: rules/style.md
+          content_hash: h2:cafe
+`
+	if err := os.WriteFile(path, []byte(current), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := ReadLockFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := lf.Sources["acme-pack"].Pack.RuleFiles["style"]
+	if got.ContentHash != "h2:cafe" || got.Path != "rules/style.md" {
+		t.Errorf("recorded provenance overwritten by migration: %+v", got)
+	}
+}
