@@ -431,8 +431,69 @@ func TestGatewayBuilder_Build_HTTPServer(t *testing.T) {
 	if inst.HTTPServer == nil {
 		t.Fatal("expected non-nil HTTPServer")
 	}
-	if inst.HTTPServer.Addr != ":9999" {
-		t.Errorf("expected addr ':9999', got '%s'", inst.HTTPServer.Addr)
+	// Loopback by default: an unconfigured bind must not listen on every
+	// interface. This assertion previously expected ":9999", which is the
+	// bug — an address with no host part binds 0.0.0.0.
+	if inst.HTTPServer.Addr != "127.0.0.1:9999" {
+		t.Errorf("expected addr '127.0.0.1:9999', got '%s'", inst.HTTPServer.Addr)
+	}
+}
+
+func TestGatewayBuilder_Build_BindResolution(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfgBind   string
+		stackBind string
+		want      string
+	}{
+		{"defaults to loopback", "", "", "127.0.0.1:9999"},
+		{"flag widens", "0.0.0.0", "", "0.0.0.0:9999"},
+		{"stack field widens", "", "0.0.0.0", "0.0.0.0:9999"},
+		{"flag beats stack field", "127.0.0.1", "0.0.0.0", "127.0.0.1:9999"},
+		{"ipv6 is bracketed", "::1", "", "[::1]:9999"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stack := &config.Stack{Name: "test"}
+			if tt.stackBind != "" {
+				stack.Gateway = &config.GatewayConfig{Bind: tt.stackBind}
+			}
+			builder := NewGatewayBuilder(
+				Config{Port: 9999, Bind: tt.cfgBind}, stack, "/path/stack.yaml",
+				runtime.NewOrchestrator(nil, nil), &runtime.UpResult{})
+			builder.registryDir = t.TempDir()
+
+			inst, err := builder.Build(false)
+			if err != nil {
+				t.Fatalf("Build() returned error: %v", err)
+			}
+			if inst.HTTPServer.Addr != tt.want {
+				t.Errorf("expected addr %q, got %q", tt.want, inst.HTTPServer.Addr)
+			}
+		})
+	}
+}
+
+func TestConfig_BindIsLoopback(t *testing.T) {
+	tests := []struct {
+		bind string
+		want bool
+	}{
+		{"", true}, // unset resolves to the loopback default
+		{"127.0.0.1", true},
+		{"127.0.0.53", true}, // all of 127.0.0.0/8
+		{"::1", true},
+		{"localhost", true},
+		{"0.0.0.0", false},
+		{"10.0.0.5", false},
+		{"not-an-address", false}, // unvettable, so warn rather than stay silent
+	}
+	for _, tt := range tests {
+		t.Run(tt.bind, func(t *testing.T) {
+			if got := (Config{Bind: tt.bind}).BindIsLoopback(); got != tt.want {
+				t.Errorf("BindIsLoopback(%q) = %v, want %v", tt.bind, got, tt.want)
+			}
+		})
 	}
 }
 

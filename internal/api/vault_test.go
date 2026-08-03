@@ -22,7 +22,7 @@ func TestHandleVault_List_Empty(t *testing.T) {
 	server, _ := setupVaultServer(t)
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -43,7 +43,7 @@ func TestHandleVault_CreateAndGet(t *testing.T) {
 
 	// Create
 	body := `{"key":"API_KEY","value":"secret123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -52,7 +52,7 @@ func TestHandleVault_CreateAndGet(t *testing.T) {
 	}
 
 	// Get
-	req = httptest.NewRequest(http.MethodGet, "/api/vault/API_KEY", nil)
+	req = loopbackRequest(http.MethodGet, "/api/vault/API_KEY", nil)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -72,7 +72,7 @@ func TestHandleVault_List_NoValues(t *testing.T) {
 	_ = store.Set("SECRET", "hidden-value")
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -91,7 +91,7 @@ func TestHandleVault_Delete(t *testing.T) {
 	_ = store.Set("TO_DELETE", "value")
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/vault/TO_DELETE", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/vault/TO_DELETE", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -108,7 +108,7 @@ func TestHandleVault_NotFound(t *testing.T) {
 	server, _ := setupVaultServer(t)
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault/MISSING", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault/MISSING", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -122,7 +122,7 @@ func TestHandleVault_Import(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"secrets":{"KEY1":"val1","KEY2":"val2"}}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault/import", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault/import", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -139,7 +139,7 @@ func TestHandleVault_NotAvailable(t *testing.T) {
 	server := &Server{} // no vault store
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -154,7 +154,7 @@ func TestHandleVault_Update(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"value":"new"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/vault/KEY", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPut, "/api/vault/KEY", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -173,7 +173,7 @@ func TestHandleVault_CreateMissingKey(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"value":"val"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -188,7 +188,7 @@ func TestHandleVault_ListSets_Empty(t *testing.T) {
 	server, _ := setupVaultServer(t)
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault/sets", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault/sets", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -208,7 +208,7 @@ func TestHandleVault_CreateSet(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"name":"github"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault/sets", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault/sets", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -217,7 +217,7 @@ func TestHandleVault_CreateSet(t *testing.T) {
 	}
 
 	// Verify set exists
-	req = httptest.NewRequest(http.MethodGet, "/api/vault/sets", nil)
+	req = loopbackRequest(http.MethodGet, "/api/vault/sets", nil)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -236,7 +236,7 @@ func TestHandleVault_DeleteSet(t *testing.T) {
 	_ = store.CreateSet("temp")
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/vault/sets/temp", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/vault/sets/temp", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -252,7 +252,7 @@ func TestHandleVault_AssignSet(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"set":"group"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/vault/KEY/set", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPut, "/api/vault/KEY/set", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -273,7 +273,7 @@ func TestHandleVault_CreateWithSet(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"key":"NEW_KEY","value":"val","set":"mygroup"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -292,7 +292,7 @@ func TestHandleVault_ListIncludesSet(t *testing.T) {
 	_ = store.SetWithSet("TOKEN", "secret", "github")
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -313,7 +313,7 @@ func TestHandleVault_Status_Unlocked(t *testing.T) {
 	_ = store.Set("KEY", "val")
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault/status", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -340,7 +340,7 @@ func TestHandleVault_Lock(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"passphrase":"testpass"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -362,7 +362,7 @@ func TestHandleVault_LockAndUnlock(t *testing.T) {
 
 	// Lock
 	body := `{"passphrase":"testpass"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -374,7 +374,7 @@ func TestHandleVault_LockAndUnlock(t *testing.T) {
 	_ = store.Load()
 
 	// Verify locked status
-	req = httptest.NewRequest(http.MethodGet, "/api/vault/status", nil)
+	req = loopbackRequest(http.MethodGet, "/api/vault/status", nil)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -386,7 +386,7 @@ func TestHandleVault_LockAndUnlock(t *testing.T) {
 
 	// Unlock
 	body = `{"passphrase":"testpass"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/vault/unlock", bytes.NewBufferString(body))
+	req = loopbackRequest(http.MethodPost, "/api/vault/unlock", bytes.NewBufferString(body))
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -395,7 +395,7 @@ func TestHandleVault_LockAndUnlock(t *testing.T) {
 	}
 
 	// Verify unlocked
-	req = httptest.NewRequest(http.MethodGet, "/api/vault/status", nil)
+	req = loopbackRequest(http.MethodGet, "/api/vault/status", nil)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -413,7 +413,7 @@ func TestHandleVault_Unlock_WrongPassphrase(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"passphrase":"wrong"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault/unlock", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault/unlock", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -430,7 +430,7 @@ func TestHandleVault_LockedReturns423(t *testing.T) {
 	handler := server.Handler()
 
 	// GET /api/vault should return 423
-	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -453,7 +453,7 @@ func TestHandleVault_LockedCreateReturns423(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"key":"NEW","value":"val"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -467,7 +467,7 @@ func TestHandleVault_Lock_MissingPassphrase(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{}`
-	req := httptest.NewRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
+	req := loopbackRequest(http.MethodPost, "/api/vault/lock", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -483,7 +483,7 @@ func TestHandleVault_StatusShowsEncrypted(t *testing.T) {
 	handler := server.Handler()
 
 	// Status should show encrypted=true even when not locked (data in memory)
-	req := httptest.NewRequest(http.MethodGet, "/api/vault/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault/status", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -510,7 +510,7 @@ func TestHandleVault_List_ReflectsExternalWrites(t *testing.T) {
 	handler := server.Handler()
 
 	// First request returns an empty list.
-	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -532,7 +532,7 @@ func TestHandleVault_List_ReflectsExternalWrites(t *testing.T) {
 	}
 
 	// Server's next request reflects the external writes.
-	req = httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	req = loopbackRequest(http.MethodGet, "/api/vault", nil)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -557,7 +557,7 @@ func TestHandleVault_List_ReflectsExternalWrites(t *testing.T) {
 	}
 
 	// Single-key Get should also pick up the external write.
-	req = httptest.NewRequest(http.MethodGet, "/api/vault/API_KEY", nil)
+	req = loopbackRequest(http.MethodGet, "/api/vault/API_KEY", nil)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -582,14 +582,14 @@ func TestHandleVar_CreateRoundtripsTypeAndIsSecret(t *testing.T) {
 	handler := server.Handler()
 
 	body := `{"key":"REGION","value":"us-east-1","type":"string","is_secret":false}`
-	req := httptest.NewRequest(http.MethodPost, "/api/var", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/var", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("POST status = %d, want %d (body=%q)", w.Code, http.StatusCreated, w.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/var/REGION", nil)
+	req = loopbackRequest(http.MethodGet, "/api/var/REGION", nil)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -623,7 +623,7 @@ func TestHandleVar_CreateDefaultsToSecret(t *testing.T) {
 
 	// Legacy payload: just key+value, no metadata.
 	body := `{"key":"DB_PASS","value":"p4ss"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/var", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/var", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -654,7 +654,7 @@ func TestHandleVar_DeprecatedVaultPathAddsHeaders(t *testing.T) {
 	server := &Server{vaultStore: store}
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -671,7 +671,7 @@ func TestHandleVar_DeprecatedVaultPathAddsHeaders(t *testing.T) {
 	}
 
 	// Canonical /api/var must NOT carry the deprecation headers.
-	req = httptest.NewRequest(http.MethodGet, "/api/var", nil)
+	req = loopbackRequest(http.MethodGet, "/api/var", nil)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if got := w.Header().Get("Deprecation"); got != "" {
@@ -691,7 +691,7 @@ func TestHandleVar_StatusIncludesVariablesCount(t *testing.T) {
 	server := &Server{vaultStore: store}
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/var/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/var/status", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

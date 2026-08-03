@@ -58,7 +58,7 @@ func writeStackWithState(t *testing.T, stackName, stackYAML string) {
 
 func getUsage(t *testing.T, server *Server) (int, map[string][]config.Consumer) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/var/usage", nil)
+	req := loopbackRequest(http.MethodGet, "/api/var/usage", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -393,7 +393,7 @@ mcp-servers:
 
 func getDrift(t *testing.T, server *Server) (int, []driftEntry) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/var/drift", nil)
+	req := loopbackRequest(http.MethodGet, "/api/var/drift", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -512,7 +512,7 @@ func TestVariableDriftRoute_NotMirroredOnDeprecatedPath(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	server := &Server{stackName: "ghost"}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vault/drift", nil)
+	req := loopbackRequest(http.MethodGet, "/api/vault/drift", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 

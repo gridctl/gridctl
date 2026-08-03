@@ -39,7 +39,7 @@ func appendRequest(t *testing.T, server *Server, body map[string]string) *httpte
 	t.Helper()
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(raw)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(raw)))
 	w := httptest.NewRecorder()
 	server.handleStackAppend(w, req)
 	return w

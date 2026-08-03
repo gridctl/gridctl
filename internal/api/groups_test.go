@@ -27,7 +27,7 @@ func groupsGateway() *mcp.Gateway {
 
 func TestHandleGroups_Unconfigured(t *testing.T) {
 	s := NewServer(mcp.NewGateway(), nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/groups", nil)
+	req := loopbackRequest(http.MethodGet, "/api/groups", nil)
 	w := httptest.NewRecorder()
 
 	s.handleGroups(w, req)
@@ -42,7 +42,7 @@ func TestHandleGroups_Unconfigured(t *testing.T) {
 
 func TestHandleGroups_ReportsResolvedGroups(t *testing.T) {
 	s := NewServer(groupsGateway(), nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/groups", nil)
+	req := loopbackRequest(http.MethodGet, "/api/groups", nil)
 	w := httptest.NewRecorder()
 
 	s.handleGroups(w, req)
@@ -65,7 +65,7 @@ func TestHandleGroupMCP_UnknownGroup404s(t *testing.T) {
 	s := NewServer(groupsGateway(), nil)
 
 	// The unknown group 404s without any MCP handling.
-	req := httptest.NewRequest(http.MethodPost, "/groups/nope/mcp", nil)
+	req := loopbackRequest(http.MethodPost, "/groups/nope/mcp", nil)
 	req.SetPathValue("name", "nope")
 	w := httptest.NewRecorder()
 	s.handleGroupMCP(w, req)
@@ -73,10 +73,7 @@ func TestHandleGroupMCP_UnknownGroup404s(t *testing.T) {
 
 	// A configured group reaches the streamable transport (which then
 	// rejects the empty body as a JSON parse error, proving pass-through).
-	req = httptest.NewRequest(http.MethodPost, "/groups/release/mcp", nil)
-	// httptest defaults Host to example.com, which the transport's DNS
-	// rebinding protection rejects before the body is ever parsed.
-	req.Host = "localhost:8180"
+	req = loopbackRequest(http.MethodPost, "/groups/release/mcp", nil)
 	req.SetPathValue("name", "release")
 	w = httptest.NewRecorder()
 	s.handleGroupMCP(w, req)
@@ -87,7 +84,7 @@ func TestHandleGroupMCP_UnknownGroup404s(t *testing.T) {
 func TestHandleGroupSSE_PointsAtGroupPath(t *testing.T) {
 	s := NewServer(groupsGateway(), nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/groups/release/sse", nil)
+	req := loopbackRequest(http.MethodGet, "/groups/release/sse", nil)
 	req.SetPathValue("name", "release")
 	w := httptest.NewRecorder()
 	s.handleGroupSSE(w, req)
@@ -95,7 +92,7 @@ func TestHandleGroupSSE_PointsAtGroupPath(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "data: POST /groups/release/mcp")
 
-	req = httptest.NewRequest(http.MethodGet, "/groups/nope/sse", nil)
+	req = loopbackRequest(http.MethodGet, "/groups/nope/sse", nil)
 	req.SetPathValue("name", "nope")
 	w = httptest.NewRecorder()
 	s.handleGroupSSE(w, req)

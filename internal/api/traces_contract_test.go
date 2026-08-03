@@ -55,7 +55,7 @@ func TestHandleTraceDetail_contract(t *testing.T) {
 	traceID := root.SpanContext().TraceID().String()
 	rootSpanID := root.SpanContext().SpanID().String()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/traces/"+traceID, nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces/"+traceID, nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -135,7 +135,7 @@ func TestHandleTraces_summaryContract(t *testing.T) {
 	child.End(trace.WithTimestamp(start.Add(40 * time.Millisecond)))
 	root.End(trace.WithTimestamp(start.Add(42 * time.Millisecond)))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/traces", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -182,7 +182,7 @@ func TestHandleTraces_summaryContract(t *testing.T) {
 // quiet buffer. Regression test for the two states serving identical JSON.
 func TestHandleTraces_disabledVsEmpty(t *testing.T) {
 	disabled := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/traces", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces", nil)
 	rec := httptest.NewRecorder()
 	disabled.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -198,7 +198,7 @@ func TestHandleTraces_disabledVsEmpty(t *testing.T) {
 
 	enabled, _ := newTracedServer(t)
 	rec = httptest.NewRecorder()
-	enabled.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/traces", nil))
+	enabled.Handler().ServeHTTP(rec, loopbackRequest(http.MethodGet, "/api/traces", nil))
 	payload = map[string]any{}
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -232,7 +232,7 @@ func TestHandleTraces_minDurationForms(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/traces?"+tc.query, nil)
+			req := loopbackRequest(http.MethodGet, "/api/traces?"+tc.query, nil)
 			rec := httptest.NewRecorder()
 			srv.Handler().ServeHTTP(rec, req)
 			if rec.Code != tc.wantCode {

@@ -130,9 +130,9 @@ func doLinkRequest(s *Server, method, slug, sub string, body string) *httptest.R
 	target := "/api/clients/" + slug + "/link" + sub
 	var req *http.Request
 	if body == "" {
-		req = httptest.NewRequest(method, target, nil)
+		req = loopbackRequest(method, target, nil)
 	} else {
-		req = httptest.NewRequest(method, target, strings.NewReader(body))
+		req = loopbackRequest(method, target, strings.NewReader(body))
 	}
 	req.SetPathValue("slug", slug)
 	w := httptest.NewRecorder()
@@ -318,7 +318,7 @@ func TestHandleClients_DeclaredState(t *testing.T) {
 	grok := &linkFakeProv{slug: "grok", detected: true}
 	_, s := newLinkHarness(t, claude, cursor, grok)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/clients", nil)
+	req := loopbackRequest(http.MethodGet, "/api/clients", nil)
 	w := httptest.NewRecorder()
 	s.handleClients(w, req)
 	require.Equal(t, http.StatusOK, w.Code)

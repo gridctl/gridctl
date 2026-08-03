@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -401,12 +403,14 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		inst.APIServer.SetOAuthBroker(inst.Broker)
 	}
 
-	// Phase 6: Create HTTP server
+	// Phase 6: Create HTTP server. JoinHostPort rather than string
+	// concatenation so an IPv6 bind address is bracketed correctly.
 	inst.HTTPServer = &http.Server{
-		Addr:              fmt.Sprintf(":%d", b.config.Port),
+		Addr:              net.JoinHostPort(b.effectiveBind(), strconv.Itoa(b.config.Port)),
 		Handler:           inst.APIServer.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	b.warnIfExposed(slog.New(inst.Handler))
 
 	return inst, nil
 }
@@ -649,6 +653,38 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 	router.SetSelfLogger(slog.New(redactHandler))
 
 	return logBuffer, router, nil
+}
+
+// effectiveBind resolves the listen address across both sources: the CLI
+// flag wins, then the stack's gateway.bind, then the loopback default.
+func (b *GatewayBuilder) effectiveBind() string {
+	if b.config.Bind != "" {
+		return b.config.Bind
+	}
+	if b.stack != nil && b.stack.Gateway != nil && b.stack.Gateway.Bind != "" {
+		return b.stack.Gateway.Bind
+	}
+	return DefaultBindAddress
+}
+
+// warnIfExposed reports a gateway that is reachable beyond loopback without
+// authentication configured. Warn-only by design: the bind address is the
+// user's explicit choice, and refusing to start on it belongs with the
+// mandatory-auth work rather than here, where it would be a second behavior
+// break in the same release.
+func (b *GatewayBuilder) warnIfExposed(log *slog.Logger) {
+	if bindIsLoopback(b.effectiveBind()) {
+		return
+	}
+	authConfigured := b.stack != nil && b.stack.Gateway != nil &&
+		b.stack.Gateway.Auth != nil && b.stack.Gateway.Auth.Token != ""
+	if authConfigured {
+		return
+	}
+	log.Warn("gateway is reachable from other hosts with no authentication configured",
+		"bind", b.effectiveBind(),
+		"port", b.config.Port,
+		"remedy", "set gateway.auth in stack.yaml, or remove --bind/--bind-all to listen on loopback only")
 }
 
 // buildAPIServer creates and configures the API server.

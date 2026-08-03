@@ -33,9 +33,9 @@ func doJSON(t *testing.T, srv *Server, method, path string, body string) *httpte
 	t.Helper()
 	var req *http.Request
 	if body == "" {
-		req = httptest.NewRequest(method, path, nil)
+		req = loopbackRequest(method, path, nil)
 	} else {
-		req = httptest.NewRequest(method, path, strings.NewReader(body))
+		req = loopbackRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 	}
 	rec := httptest.NewRecorder()

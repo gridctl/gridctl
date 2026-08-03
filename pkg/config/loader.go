@@ -197,6 +197,8 @@ func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, empt
 				Consumer{Kind: RefKindGateway, Field: fmt.Sprintf("allowed_origins[%d]", i)},
 				s.Gateway.AllowedOrigins[i])
 		}
+		s.Gateway.Bind = expandField(
+			Consumer{Kind: RefKindGateway, Field: "bind"}, s.Gateway.Bind)
 		for i := range s.Gateway.AllowedHosts {
 			s.Gateway.AllowedHosts[i] = expandField(
 				Consumer{Kind: RefKindGateway, Field: fmt.Sprintf("allowed_hosts[%d]", i)},

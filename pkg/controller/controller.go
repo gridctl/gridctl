@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -48,10 +50,27 @@ func (a *vaultSetAdapter) GetSetSecrets(setName string) []config.VaultSecret {
 	return result
 }
 
+// DefaultBindAddress is the listen address used when none is configured.
+// The literal IPv4 loopback is deliberate: the name "localhost" can resolve
+// to ::1 first on some systems, which silently changes which interface is
+// bound and which clients can reach it.
+const DefaultBindAddress = "127.0.0.1"
+
+// BindAllAddress is the opt-in value that restores listening on every
+// interface. Named rather than typed as a bare "0.0.0.0" so the intent is
+// greppable in configs and support threads.
+const BindAllAddress = "0.0.0.0"
+
 // Config holds all deploy configuration, replacing package-level variables.
 type Config struct {
-	StackPath   string
-	Port        int
+	StackPath string
+	Port      int
+
+	// Bind is the address the HTTP listener binds. Empty means loopback
+	// (DefaultBindAddress), which keeps the API, web UI, and gateway
+	// unreachable from other hosts and from containers gridctl launches.
+	// Widening it is an explicit act: see EffectiveBind.
+	Bind        string
 	BasePort    int
 	Verbose     bool
 	Quiet       bool
@@ -73,6 +92,29 @@ type Config struct {
 	// never sets it. Used by `gridctl apply` for post-ready client linking
 	// (declared link: reconcile and --flash).
 	OnReady func(port int)
+}
+
+// EffectiveBind resolves the listen address, defaulting to loopback.
+func (c Config) EffectiveBind() string {
+	if c.Bind == "" {
+		return DefaultBindAddress
+	}
+	return c.Bind
+}
+
+// BindIsLoopback reports whether the resolved bind address is confined to the
+// loopback interface.
+func (c Config) BindIsLoopback() bool { return bindIsLoopback(c.EffectiveBind()) }
+
+// bindIsLoopback reports whether a listen address is confined to loopback.
+// An unparseable address is treated as non-loopback so callers warn rather
+// than stay silent about an address they could not vet.
+func bindIsLoopback(bind string) bool {
+	if strings.EqualFold(bind, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(bind)
+	return ip != nil && ip.IsLoopback()
 }
 
 // effectiveLogLevel resolves the slog level for handlers built from cfg.

@@ -58,7 +58,7 @@ func TestHandleRegistry_Status(t *testing.T) {
 	seedSkill(t, regServer, "s2", registry.StateDraft)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -82,7 +82,7 @@ func TestHandleRegistry_Status_MethodNotAllowed(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/status", nil)
+	req := loopbackRequest(http.MethodPost, "/api/registry/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -97,7 +97,7 @@ func TestHandleRegistry_ListSkills_Empty(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/skills", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -122,7 +122,7 @@ func TestHandleRegistry_ListSkills_OmitsBody(t *testing.T) {
 	seedSkill(t, regServer, "s1", registry.StateActive)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/skills", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -162,7 +162,7 @@ func TestHandleRegistry_ListSkills_FullIncludesBody(t *testing.T) {
 	seedSkill(t, regServer, "s1", registry.StateActive)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills?full=1", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/skills?full=1", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -189,7 +189,7 @@ func TestHandleRegistry_CreateSkill(t *testing.T) {
 	handler := srv.Handler()
 
 	body := `{"name":"my-skill","description":"A new skill","state":"active"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -213,7 +213,7 @@ func TestHandleRegistry_CreateSkill_InvalidJSON(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills", strings.NewReader("nope"))
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills", strings.NewReader("nope"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -228,7 +228,7 @@ func TestHandleRegistry_CreateSkill_ValidationError(t *testing.T) {
 
 	// Missing description
 	body := `{"name":"bad-skill"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -243,7 +243,7 @@ func TestHandleRegistry_CreateSkill_Duplicate(t *testing.T) {
 
 	handler := srv.Handler()
 	body := `{"name":"existing-skill","description":"Duplicate"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -259,7 +259,7 @@ func TestHandleRegistry_GetSkill(t *testing.T) {
 	seedSkill(t, regServer, "my-skill", registry.StateActive)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/my-skill", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/skills/my-skill", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -280,7 +280,7 @@ func TestHandleRegistry_GetSkill_NotFound(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/nope", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/skills/nope", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -297,7 +297,7 @@ func TestHandleRegistry_UpdateSkill(t *testing.T) {
 
 	handler := srv.Handler()
 	body := `{"description":"Updated description","state":"active"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/updatable-skill", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPut, "/api/registry/skills/updatable-skill", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -322,7 +322,7 @@ func TestHandleRegistry_UpdateSkill_NotFound(t *testing.T) {
 	handler := srv.Handler()
 
 	body := `{"description":"test"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/ghost", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPut, "/api/registry/skills/ghost", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -338,7 +338,7 @@ func TestHandleRegistry_DeleteSkill(t *testing.T) {
 	seedSkill(t, regServer, "deletable-skill", registry.StateDraft)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodDelete, "/api/registry/skills/deletable-skill", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/registry/skills/deletable-skill", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -347,7 +347,7 @@ func TestHandleRegistry_DeleteSkill(t *testing.T) {
 	}
 
 	// Verify it's gone
-	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/deletable-skill", nil)
+	req = loopbackRequest(http.MethodGet, "/api/registry/skills/deletable-skill", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -369,7 +369,7 @@ func TestHandleRegistry_DeleteSkill_CleansLockFile(t *testing.T) {
 	handler := srv.Handler()
 
 	// Delete the first skill: it should leave the source intact with skill-b.
-	req := httptest.NewRequest(http.MethodDelete, "/api/registry/skills/skill-a", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/registry/skills/skill-a", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
@@ -392,7 +392,7 @@ func TestHandleRegistry_DeleteSkill_CleansLockFile(t *testing.T) {
 	}
 
 	// Delete the second skill: the now-empty source should be dropped.
-	req = httptest.NewRequest(http.MethodDelete, "/api/registry/skills/skill-b", nil)
+	req = loopbackRequest(http.MethodDelete, "/api/registry/skills/skill-b", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
@@ -415,7 +415,7 @@ func TestHandleRegistry_ActivateSkill(t *testing.T) {
 	seedSkill(t, regServer, "dormant-skill", registry.StateDraft)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/dormant-skill/activate", nil)
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills/dormant-skill/activate", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -437,7 +437,7 @@ func TestHandleRegistry_DisableSkill(t *testing.T) {
 	seedSkill(t, regServer, "active-skill", registry.StateActive)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/active-skill/disable", nil)
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills/active-skill/disable", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -458,7 +458,7 @@ func TestHandleRegistry_ActivateSkill_NotFound(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/ghost/activate", nil)
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills/ghost/activate", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -481,7 +481,7 @@ func TestHandleRegistry_NoRegistryServer(t *testing.T) {
 
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := loopbackRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -506,7 +506,7 @@ func TestHandleRegistry_UnknownPath(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/unknown", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/unknown", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -538,7 +538,7 @@ func TestHandleRegistry_MethodNotAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req := loopbackRequest(tt.method, tt.path, nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -556,7 +556,7 @@ func TestHandleStatus_WithRegistryCounts(t *testing.T) {
 	seedSkill(t, regServer, "s1", registry.StateActive)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -583,7 +583,7 @@ func TestHandleStatus_WithoutRegistryContent(t *testing.T) {
 	// Registry is configured but empty
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -607,7 +607,7 @@ func TestHandleRegistry_ProgressiveDisclosure(t *testing.T) {
 	handler := srv.Handler()
 
 	// Initially, registry status shows 0 skills
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -619,7 +619,7 @@ func TestHandleRegistry_ProgressiveDisclosure(t *testing.T) {
 
 	// Create an active skill — should register with router
 	body := `{"name":"new-skill","description":"A new skill","state":"active"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
+	req = loopbackRequest(http.MethodPost, "/api/registry/skills", strings.NewReader(body))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -628,7 +628,7 @@ func TestHandleRegistry_ProgressiveDisclosure(t *testing.T) {
 	}
 
 	// Registry status should now show the skill
-	req = httptest.NewRequest(http.MethodGet, "/api/registry/status", nil)
+	req = loopbackRequest(http.MethodGet, "/api/registry/status", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -642,7 +642,7 @@ func TestHandleRegistry_ProgressiveDisclosure(t *testing.T) {
 	}
 
 	// Skills should NOT appear as tools (skills are knowledge, not tools)
-	toolsReq := httptest.NewRequest(http.MethodGet, "/api/tools", nil)
+	toolsReq := loopbackRequest(http.MethodGet, "/api/tools", nil)
 	toolsRec := httptest.NewRecorder()
 	handler.ServeHTTP(toolsRec, toolsReq)
 
@@ -672,7 +672,7 @@ func TestHandleRegistry_ProgressiveDisclosure_Deregister(t *testing.T) {
 	}
 
 	// Delete the only skill
-	req := httptest.NewRequest(http.MethodDelete, "/api/registry/skills/only-skill", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/registry/skills/only-skill", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -695,7 +695,7 @@ func TestHandleRegistry_Validate_Valid(t *testing.T) {
 
 	content := "---\nname: test-skill\ndescription: A test\n---\n\n# Body\n\nInstructions here."
 	body := `{"content":"` + strings.ReplaceAll(content, "\n", "\\n") + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -719,7 +719,7 @@ func TestHandleRegistry_Validate_Invalid(t *testing.T) {
 	// Missing description
 	content := "---\nname: test-skill\n---\n\n# Body"
 	body := `{"content":"` + strings.ReplaceAll(content, "\n", "\\n") + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -740,7 +740,7 @@ func TestHandleRegistry_Validate_InvalidJSON(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader("nope"))
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills/validate", strings.NewReader("nope"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -756,7 +756,7 @@ func TestHandleRegistry_ListFiles_Empty(t *testing.T) {
 	seedSkill(t, regServer, "file-skill", registry.StateActive)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/file-skill/files", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/skills/file-skill/files", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -781,7 +781,7 @@ func TestHandleRegistry_WriteAndReadFile(t *testing.T) {
 
 	// Write a file
 	fileContent := "#!/bin/bash\necho hello"
-	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/file-skill/files/scripts/test.sh", strings.NewReader(fileContent))
+	req := loopbackRequest(http.MethodPut, "/api/registry/skills/file-skill/files/scripts/test.sh", strings.NewReader(fileContent))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -790,7 +790,7 @@ func TestHandleRegistry_WriteAndReadFile(t *testing.T) {
 	}
 
 	// Read the file back
-	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/file-skill/files/scripts/test.sh", nil)
+	req = loopbackRequest(http.MethodGet, "/api/registry/skills/file-skill/files/scripts/test.sh", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -809,7 +809,7 @@ func TestHandleRegistry_WriteAndReadFile(t *testing.T) {
 	}
 
 	// List files should show the new file
-	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/file-skill/files", nil)
+	req = loopbackRequest(http.MethodGet, "/api/registry/skills/file-skill/files", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -833,7 +833,7 @@ func TestHandleRegistry_DeleteFile(t *testing.T) {
 	handler := srv.Handler()
 
 	// Write a file first
-	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/file-skill/files/scripts/temp.sh", strings.NewReader("temp"))
+	req := loopbackRequest(http.MethodPut, "/api/registry/skills/file-skill/files/scripts/temp.sh", strings.NewReader("temp"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -842,7 +842,7 @@ func TestHandleRegistry_DeleteFile(t *testing.T) {
 	}
 
 	// Delete it
-	req = httptest.NewRequest(http.MethodDelete, "/api/registry/skills/file-skill/files/scripts/temp.sh", nil)
+	req = loopbackRequest(http.MethodDelete, "/api/registry/skills/file-skill/files/scripts/temp.sh", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -851,7 +851,7 @@ func TestHandleRegistry_DeleteFile(t *testing.T) {
 	}
 
 	// Reading should return 404 or error
-	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/file-skill/files/scripts/temp.sh", nil)
+	req = loopbackRequest(http.MethodGet, "/api/registry/skills/file-skill/files/scripts/temp.sh", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -864,7 +864,7 @@ func TestHandleRegistry_Files_SkillNotFound(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills/nonexistent/files", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/skills/nonexistent/files", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -879,7 +879,7 @@ func TestHandleRegistry_Files_MethodNotAllowed(t *testing.T) {
 	handler := srv.Handler()
 
 	// POST to files listing should be method not allowed
-	req := httptest.NewRequest(http.MethodPost, "/api/registry/skills/file-skill/files", nil)
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills/file-skill/files", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -925,7 +925,7 @@ func skillsBatchRequest(t *testing.T, srv *Server, payload any) *httptest.Respon
 	if err != nil {
 		t.Fatalf("marshal batch payload: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/batch", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPut, "/api/registry/skills/batch", strings.NewReader(string(body)))
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	return rec
@@ -1027,7 +1027,7 @@ func TestHandleRegistry_SkillPut_PreservesExtra(t *testing.T) {
 		"body": "# hinted\n\nSkill instructions.",
 		"extra": {"argument-hint": "<task description>", "disable-model-invocation": true}
 	}`
-	req := httptest.NewRequest(http.MethodPut, "/api/registry/skills/hinted", strings.NewReader(payload))
+	req := loopbackRequest(http.MethodPut, "/api/registry/skills/hinted", strings.NewReader(payload))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1035,7 +1035,7 @@ func TestHandleRegistry_SkillPut_PreservesExtra(t *testing.T) {
 	}
 
 	// The stored skill (re-parsed from disk on GET) must carry the extras.
-	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills/hinted", nil)
+	req = loopbackRequest(http.MethodGet, "/api/registry/skills/hinted", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1055,7 +1055,7 @@ func TestHandleRegistry_SkillPut_PreservesExtra(t *testing.T) {
 	// The list projection must carry extras too: the editor round-trips a
 	// list-sourced skill, so a list that dropped them would undo the fix on
 	// the next save.
-	req = httptest.NewRequest(http.MethodGet, "/api/registry/skills", nil)
+	req = loopbackRequest(http.MethodGet, "/api/registry/skills", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	var items []map[string]any

@@ -10,7 +10,7 @@ func TestAuthMiddleware_NoToken(t *testing.T) {
 	// When no token is configured, all requests pass through
 	handler := authMiddleware("bearer", "", "", okHandler())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -51,7 +51,7 @@ func TestAuthMiddleware_BearerToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+			req := loopbackRequest(http.MethodGet, "/api/status", nil)
 			if tt.header != "" {
 				req.Header.Set("Authorization", tt.header)
 			}
@@ -107,7 +107,7 @@ func TestAuthMiddleware_APIKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := authMiddleware("api_key", "myapikey", tt.headerName, okHandler())
 
-			req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+			req := loopbackRequest(http.MethodGet, "/api/status", nil)
 			if tt.header != "" {
 				req.Header.Set(tt.header, tt.value)
 			}
@@ -127,7 +127,7 @@ func TestAuthMiddleware_HealthBypass(t *testing.T) {
 	paths := []string{"/health", "/ready"}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := loopbackRequest(http.MethodGet, path, nil)
 			// No auth header set
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -145,7 +145,7 @@ func TestAuthMiddleware_ProtectedPaths(t *testing.T) {
 	paths := []string{"/api/status", "/mcp", "/sse", "/api/tools", "/api/mcp-servers"}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := loopbackRequest(http.MethodGet, path, nil)
 			// No auth header
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -160,7 +160,7 @@ func TestAuthMiddleware_ProtectedPaths(t *testing.T) {
 func TestAuthMiddleware_OptionsPassthrough(t *testing.T) {
 	handler := authMiddleware("bearer", "mysecret", "", okHandler())
 
-	req := httptest.NewRequest(http.MethodOptions, "/api/status", nil)
+	req := loopbackRequest(http.MethodOptions, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -172,7 +172,7 @@ func TestAuthMiddleware_OptionsPassthrough(t *testing.T) {
 func TestAuthMiddleware_BearerEmptyToken(t *testing.T) {
 	handler := authMiddleware("bearer", "mysecret", "", okHandler())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	req.Header.Set("Authorization", "Bearer ")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -188,7 +188,7 @@ func TestAuthMiddleware_StaticFilesBypass(t *testing.T) {
 	paths := []string{"/", "/index.html", "/assets/index-abc123.js", "/assets/index-abc123.css", "/favicon.png", "/favicon.ico"}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := loopbackRequest(http.MethodGet, path, nil)
 			// No auth header set
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -207,7 +207,7 @@ func TestAuthMiddleware_TimingSafe(t *testing.T) {
 	partials := []string{"mysecret", "mysecretke", "mysecretkey!", ""}
 	for _, partial := range partials {
 		t.Run("partial_"+partial, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+			req := loopbackRequest(http.MethodGet, "/api/status", nil)
 			req.Header.Set("Authorization", partial)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)

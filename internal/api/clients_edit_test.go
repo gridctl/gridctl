@@ -189,7 +189,7 @@ func TestHandleSetClientScope_HappyPath_NoReload(t *testing.T) {
 	path, s := newClientScopeHarness(t)
 
 	body, _ := json.Marshal(map[string]any{"servers": []string{"github", "gitlab"}})
-	req := httptest.NewRequest(http.MethodPut, "/api/clients/cursor/scope", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPut, "/api/clients/cursor/scope", strings.NewReader(string(body)))
 	req.SetPathValue("slug", "cursor")
 	w := httptest.NewRecorder()
 
@@ -211,7 +211,7 @@ func TestHandleSetClientScope_ServerOnlyPreservesTools(t *testing.T) {
 	path, s := newClientScopeHarness(t)
 
 	body, _ := json.Marshal(map[string]any{"servers": []string{"github", "gitlab"}})
-	req := httptest.NewRequest(http.MethodPut, "/api/clients/team-bot/scope", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPut, "/api/clients/team-bot/scope", strings.NewReader(string(body)))
 	req.SetPathValue("slug", "team-bot")
 	w := httptest.NewRecorder()
 
@@ -227,7 +227,7 @@ func TestHandleSetClientScope_NormalizesSlugToProfileKey(t *testing.T) {
 	path, s := newClientScopeHarness(t)
 
 	body, _ := json.Marshal(map[string]any{"servers": []string{"github"}})
-	req := httptest.NewRequest(http.MethodPut, "/api/clients/Claude%20Code/scope", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPut, "/api/clients/Claude%20Code/scope", strings.NewReader(string(body)))
 	req.SetPathValue("slug", "Claude Code")
 	w := httptest.NewRecorder()
 
@@ -249,7 +249,7 @@ func TestHandleSetClientScope_ConflictOnExternalEdit(t *testing.T) {
 	defer swapBetweenReadsHook(nil)
 
 	body, _ := json.Marshal(map[string]any{"servers": []string{"github"}})
-	req := httptest.NewRequest(http.MethodPut, "/api/clients/cursor/scope", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPut, "/api/clients/cursor/scope", strings.NewReader(string(body)))
 	req.SetPathValue("slug", "cursor")
 	w := httptest.NewRecorder()
 
@@ -260,7 +260,7 @@ func TestHandleSetClientScope_ConflictOnExternalEdit(t *testing.T) {
 
 func TestHandleSetClientScope_RejectsEmptySlug(t *testing.T) {
 	_, s := newClientScopeHarness(t)
-	req := httptest.NewRequest(http.MethodPut, "/api/clients//scope", strings.NewReader(`{"servers":["github"]}`))
+	req := loopbackRequest(http.MethodPut, "/api/clients//scope", strings.NewReader(`{"servers":["github"]}`))
 	req.SetPathValue("slug", "")
 	w := httptest.NewRecorder()
 	s.handleSetClientScope(w, req)
@@ -269,7 +269,7 @@ func TestHandleSetClientScope_RejectsEmptySlug(t *testing.T) {
 
 func TestHandleSetClientScope_RejectsEmptyBody(t *testing.T) {
 	_, s := newClientScopeHarness(t)
-	req := httptest.NewRequest(http.MethodPut, "/api/clients/cursor/scope", strings.NewReader(`{}`))
+	req := loopbackRequest(http.MethodPut, "/api/clients/cursor/scope", strings.NewReader(`{}`))
 	req.SetPathValue("slug", "cursor")
 	w := httptest.NewRecorder()
 	s.handleSetClientScope(w, req)

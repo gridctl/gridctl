@@ -47,7 +47,7 @@ func TestHandleHealth(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := loopbackRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -65,7 +65,7 @@ func TestHandleHealth_MethodNotAllowed(t *testing.T) {
 
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
 		t.Run(method, func(t *testing.T) {
-			req := httptest.NewRequest(method, "/health", nil)
+			req := loopbackRequest(method, "/health", nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -82,7 +82,7 @@ func TestHandleReady_NoServers(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req := loopbackRequest(http.MethodGet, "/ready", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -100,7 +100,7 @@ func TestHandleReady_StacklessMode(t *testing.T) {
 	// No stackFile set — stackless mode
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req := loopbackRequest(http.MethodGet, "/ready", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -114,7 +114,7 @@ func TestHandleReady_StackFileSetNoServers(t *testing.T) {
 	srv.SetStackFile("/some/stack.yaml")
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req := loopbackRequest(http.MethodGet, "/ready", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -137,7 +137,7 @@ func TestHandleReady_AllInitialized(t *testing.T) {
 	registerMockServerMeta(srv.gateway, "test-server", mcp.TransportHTTP)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req := loopbackRequest(http.MethodGet, "/ready", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -156,7 +156,7 @@ func TestHandleReady_NotInitialized(t *testing.T) {
 	registerMockServerMeta(srv.gateway, "unready-server", mcp.TransportHTTP)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req := loopbackRequest(http.MethodGet, "/ready", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -178,7 +178,7 @@ func TestHandleReady_RegistrationFailureDoesNotBlock(t *testing.T) {
 	srv.gateway.RecordRegistrationFailure("broken-server", errors.New(`unsupported protocol version from server: "1999-01-01"`))
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req := loopbackRequest(http.MethodGet, "/ready", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -205,7 +205,7 @@ func TestHandleReady_IdleAutoscaled(t *testing.T) {
 	t.Cleanup(srv.gateway.Close)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req := loopbackRequest(http.MethodGet, "/ready", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -218,7 +218,7 @@ func TestHandleReady_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/ready", nil)
+	req := loopbackRequest(http.MethodPost, "/ready", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -233,7 +233,7 @@ func TestHandleStatus(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -276,7 +276,7 @@ func TestHandleStatus_WithMCPServer(t *testing.T) {
 	registerMockServerMeta(srv.gateway, "my-server", mcp.TransportHTTP)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -306,7 +306,7 @@ func TestHandleStatus_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/status", nil)
+	req := loopbackRequest(http.MethodPost, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -321,7 +321,7 @@ func TestHandleMCPServers(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers", nil)
+	req := loopbackRequest(http.MethodGet, "/api/mcp-servers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -347,7 +347,7 @@ func TestHandleMCPServers_WithServer(t *testing.T) {
 	registerMockServerMeta(srv.gateway, "test-mcp", mcp.TransportStdio)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers", nil)
+	req := loopbackRequest(http.MethodGet, "/api/mcp-servers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -384,7 +384,7 @@ func TestHandleMCPServers_IncludesOutputFormat(t *testing.T) {
 	})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers", nil)
+	req := loopbackRequest(http.MethodGet, "/api/mcp-servers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -408,7 +408,7 @@ func TestHandleMCPServers_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/mcp-servers", nil)
+	req := loopbackRequest(http.MethodPost, "/api/mcp-servers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -423,7 +423,7 @@ func TestHandleTools_Empty(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tools", nil)
+	req := loopbackRequest(http.MethodGet, "/api/tools", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -451,7 +451,7 @@ func TestHandleTools_EmptySerializesArrayNotNull(t *testing.T) {
 	handler := srv.Handler()
 
 	for _, path := range []string{"/api/tools", "/api/tools/catalog"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := loopbackRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -479,7 +479,7 @@ func TestHandleTools_WithTools(t *testing.T) {
 	srv.gateway.Router().RefreshTools()
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/tools", nil)
+	req := loopbackRequest(http.MethodGet, "/api/tools", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -512,7 +512,7 @@ func TestHandleTools_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/tools", nil)
+	req := loopbackRequest(http.MethodPost, "/api/tools", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -553,7 +553,7 @@ func TestHandleGatewayLogs_NoBuffer(t *testing.T) {
 	// logBuffer is nil by default
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -578,7 +578,7 @@ func TestHandleGatewayLogs_Envelope(t *testing.T) {
 	}
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=3", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs?lines=3", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -607,7 +607,7 @@ func TestHandleGatewayLogs_WithEntries(t *testing.T) {
 	})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -641,7 +641,7 @@ func TestHandleGatewayLogs_LevelFilter(t *testing.T) {
 	handler := srv.Handler()
 
 	// Filter for ERROR only
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?level=ERROR", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs?level=ERROR", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -667,7 +667,7 @@ func TestHandleGatewayLogs_MultiLevelFilter(t *testing.T) {
 	srv.logBuffer.Add(logging.BufferedEntry{Level: "DEBUG", Message: "debug"})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?level=WARN,ERROR", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs?level=WARN,ERROR", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -693,7 +693,7 @@ func TestHandleGatewayLogs_LinesParam(t *testing.T) {
 	}
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=5", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs?lines=5", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -710,7 +710,7 @@ func TestHandleGatewayLogs_InvalidLinesParam(t *testing.T) {
 	handler := srv.Handler()
 
 	// Invalid lines param should default to 100
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=abc", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs?lines=abc", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -732,7 +732,7 @@ func TestHandleGatewayLogs_CaseInsensitiveLevelFilter(t *testing.T) {
 	handler := srv.Handler()
 
 	// Filter with lowercase should match uppercase stored levels
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?level=error", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs?level=error", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -758,7 +758,7 @@ func TestHandleGatewayLogs_SparseLevelFilter(t *testing.T) {
 	}
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=50&level=error", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs?lines=50&level=error", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -793,7 +793,7 @@ func TestHandleMCPServerLogs_DeepHistory(t *testing.T) {
 	}
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/github/logs?lines=10", nil)
+	req := loopbackRequest(http.MethodGet, "/api/mcp-servers/github/logs?lines=10", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -818,7 +818,7 @@ func TestHandleGatewayLogs_EmptyBuffer(t *testing.T) {
 	srv := newTestServerWithLogBuffer(t, 100)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	req := loopbackRequest(http.MethodGet, "/api/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -842,7 +842,7 @@ func TestHandleGatewayLogs_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/logs", nil)
+	req := loopbackRequest(http.MethodPost, "/api/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -858,7 +858,7 @@ func TestHandleMCPServerLogs_NoBuffer(t *testing.T) {
 	// logBuffer is nil by default
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
+	req := loopbackRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -895,7 +895,7 @@ func TestHandleMCPServerLogs_FiltersByServer(t *testing.T) {
 	})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
+	req := loopbackRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -927,7 +927,7 @@ func TestHandleMCPServerLogs_EmptyWhenNoMatch(t *testing.T) {
 	})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
+	req := loopbackRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -956,7 +956,7 @@ func TestHandleMCPServerLogs_LinesParam(t *testing.T) {
 	}
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs?lines=5", nil)
+	req := loopbackRequest(http.MethodGet, "/api/mcp-servers/atlassian/logs?lines=5", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -977,7 +977,7 @@ func TestHandleMCPServerLogs_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/mcp-servers/atlassian/logs", nil)
+	req := loopbackRequest(http.MethodPost, "/api/mcp-servers/atlassian/logs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -993,7 +993,7 @@ func TestHandleReload_NotEnabled(t *testing.T) {
 	// reloadHandler is nil by default
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/reload", nil)
+	req := loopbackRequest(http.MethodPost, "/api/reload", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1014,7 +1014,7 @@ func TestHandleReload_MethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/reload", nil)
+	req := loopbackRequest(http.MethodGet, "/api/reload", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1031,7 +1031,7 @@ func TestCORSMiddleware_PreflightRequest(t *testing.T) {
 	srv.SetAllowedOrigins([]string{"http://localhost:3000"})
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodOptions, "/api/status", nil)
+	req := loopbackRequest(http.MethodOptions, "/api/status", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -1055,7 +1055,7 @@ func TestCORSMiddleware_WildcardOrigin(t *testing.T) {
 	srv.SetAllowedOrigins([]string{"*"})
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := loopbackRequest(http.MethodGet, "/health", nil)
 	req.Header.Set("Origin", "http://any-origin.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -1070,7 +1070,7 @@ func TestCORSMiddleware_DisallowedOrigin(t *testing.T) {
 	srv.SetAllowedOrigins([]string{"http://allowed.example.com"})
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := loopbackRequest(http.MethodGet, "/health", nil)
 	req.Header.Set("Origin", "http://disallowed.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -1085,7 +1085,7 @@ func TestCORSMiddleware_NoOriginHeader(t *testing.T) {
 	srv.SetAllowedOrigins([]string{"*"})
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := loopbackRequest(http.MethodGet, "/health", nil)
 	// No Origin header
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -1100,7 +1100,7 @@ func TestCORSMiddleware_RegularRequestIncludesCORSHeaders(t *testing.T) {
 	srv.SetAllowedOrigins([]string{"http://localhost:5173"})
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := loopbackRequest(http.MethodGet, "/health", nil)
 	req.Header.Set("Origin", "http://localhost:5173")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -1119,7 +1119,7 @@ func TestCORSMiddleware_ExtraHeaders(t *testing.T) {
 	srv.SetAuth("api_key", "test", "X-Custom-Key")
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodOptions, "/api/status", nil)
+	req := loopbackRequest(http.MethodOptions, "/api/status", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	req.Header.Set("X-Custom-Key", "test")
 	rec := httptest.NewRecorder()
@@ -1161,7 +1161,7 @@ func TestMethodNotAllowed_AllEndpoints(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req := loopbackRequest(tt.method, tt.path, nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -1340,7 +1340,7 @@ func TestHandleClients_NoProvisioners(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/clients", nil)
+	req := loopbackRequest(http.MethodGet, "/api/clients", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1364,7 +1364,7 @@ func TestHandleClients_WithProvisioners(t *testing.T) {
 	srv.SetProvisionerRegistry(reg, "test-gw")
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/clients", nil)
+	req := loopbackRequest(http.MethodGet, "/api/clients", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1401,7 +1401,7 @@ func TestHandleClients_MethodNotAllowed(t *testing.T) {
 
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
 		t.Run(method, func(t *testing.T) {
-			req := httptest.NewRequest(method, "/api/clients", nil)
+			req := loopbackRequest(method, "/api/clients", nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -1428,7 +1428,7 @@ func TestHandleStatus_IncludesTokenUsage(t *testing.T) {
 	srv.metricsAccumulator.Record("test-server", 100, 50)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1472,7 +1472,7 @@ func TestHandleStatus_IncludesEffectiveModels(t *testing.T) {
 	srv.metricsAccumulator.RecordCostWithModel("lookup", -1, "cursor", "claude-haiku-4-5", 100, 50, metrics.CostBreakdown{Input: 0.05, Output: 0.05})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1517,7 +1517,7 @@ func TestHandleStatus_NoTokenUsageWithoutAccumulator(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1540,7 +1540,7 @@ func TestHandleGetMetricsTokens(t *testing.T) {
 	srv.metricsAccumulator.Record("server-a", 200, 100)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
+	req := loopbackRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1565,7 +1565,7 @@ func TestHandleGetMetricsTokens_DefaultRange(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics/tokens", nil)
+	req := loopbackRequest(http.MethodGet, "/api/metrics/tokens", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1590,7 +1590,7 @@ func TestHandleDeleteMetricsTokens(t *testing.T) {
 		metrics.CostBreakdown{Input: 0.10, Output: 0.20})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodDelete, "/api/metrics/tokens", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/metrics/tokens", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1618,7 +1618,7 @@ func TestHandleMetricsTokens_MethodNotAllowed(t *testing.T) {
 
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch} {
 		t.Run(method, func(t *testing.T) {
-			req := httptest.NewRequest(method, "/api/metrics/tokens", nil)
+			req := loopbackRequest(method, "/api/metrics/tokens", nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -1633,7 +1633,7 @@ func TestHandleGetMetricsTokens_NoAccumulator(t *testing.T) {
 	srv := newTestServer(t) // no accumulator
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
+	req := loopbackRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1659,7 +1659,7 @@ func TestHandleStatus_IncludesCostWhenRecorded(t *testing.T) {
 		metrics.CostBreakdown{Input: 0.10, Output: 0.20})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1690,7 +1690,7 @@ func TestHandleStatus_OmitsCostWhenZero(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1712,7 +1712,7 @@ func TestHandleGetMetricsTokens_ShapeUnchanged(t *testing.T) {
 	srv.metricsAccumulator.Record("server-a", 100, 50)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
+	req := loopbackRequest(http.MethodGet, "/api/metrics/tokens?range=1h", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1738,7 +1738,7 @@ func TestHandleGetMetricsCost(t *testing.T) {
 	srv.metricsAccumulator.RecordCost("server-a", -1, metrics.CostBreakdown{Input: 0.50, Output: 0.50})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics/cost?range=1h", nil)
+	req := loopbackRequest(http.MethodGet, "/api/metrics/cost?range=1h", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1770,7 +1770,7 @@ func TestHandleGetMetricsCost_PerClientGrouping(t *testing.T) {
 		metrics.CostBreakdown{Input: 0.10})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics/cost?range=24h&per_client=true", nil)
+	req := loopbackRequest(http.MethodGet, "/api/metrics/cost?range=24h&per_client=true", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1793,7 +1793,7 @@ func TestHandleGetMetricsCost_DefaultRange(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics/cost", nil)
+	req := loopbackRequest(http.MethodGet, "/api/metrics/cost", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1815,7 +1815,7 @@ func TestHandleDeleteMetricsCost_LeavesTokensIntact(t *testing.T) {
 	srv.metricsAccumulator.RecordCost("server-a", -1, metrics.CostBreakdown{Input: 0.10})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodDelete, "/api/metrics/cost", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/metrics/cost", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1836,7 +1836,7 @@ func TestHandleMetricsCost_MethodNotAllowed(t *testing.T) {
 
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch} {
 		t.Run(method, func(t *testing.T) {
-			req := httptest.NewRequest(method, "/api/metrics/cost", nil)
+			req := loopbackRequest(method, "/api/metrics/cost", nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -1851,7 +1851,7 @@ func TestHandleGetMetricsCost_NoAccumulator(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics/cost?range=1h", nil)
+	req := loopbackRequest(http.MethodGet, "/api/metrics/cost?range=1h", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1919,7 +1919,7 @@ func TestHandleStatus_IncludesFeatures(t *testing.T) {
 	})
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -1949,7 +1949,7 @@ func TestHandleStatus_OmitsFeaturesWhenEmpty(t *testing.T) {
 			srv.SetFeatures(func() []FeatureStatus { return nil })
 		}
 		handler := srv.Handler()
-		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		req := loopbackRequest(http.MethodGet, "/api/status", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 

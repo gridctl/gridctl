@@ -24,7 +24,7 @@ func stubCatalogRegistry(t *testing.T, fn func(ctx context.Context, query string
 func getCatalog(t *testing.T, target string) (int, catalogResponse) {
 	t.Helper()
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req := loopbackRequest(http.MethodGet, target, nil)
 	w := httptest.NewRecorder()
 	s.handleCatalog(w, req)
 	var resp catalogResponse

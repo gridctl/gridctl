@@ -123,7 +123,7 @@ mcp-servers:
 	handler := srv.Handler()
 
 	// Set.
-	req := httptest.NewRequest(http.MethodPut, "/api/clients/claude-code/model",
+	req := loopbackRequest(http.MethodPut, "/api/clients/claude-code/model",
 		strings.NewReader(`{"model":"claude-opus-4-7"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -140,7 +140,7 @@ mcp-servers:
 	assertStackContains(t, stackFile, "claude-code: claude-opus-4-7")
 
 	// Clear.
-	req = httptest.NewRequest(http.MethodPut, "/api/clients/claude-code/model",
+	req = loopbackRequest(http.MethodPut, "/api/clients/claude-code/model",
 		strings.NewReader(`{"model":""}`))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -156,7 +156,7 @@ func TestHandleSetClientModel_NormalizesSlug(t *testing.T) {
 	srv.SetStackFile(stackFile)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/clients/Claude%20Code/model",
+	req := loopbackRequest(http.MethodPut, "/api/clients/Claude%20Code/model",
 		strings.NewReader(`{"model":"claude-opus-4-7"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -170,7 +170,7 @@ func TestHandleSetClientModel_NoStackFile(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/clients/claude-code/model",
+	req := loopbackRequest(http.MethodPut, "/api/clients/claude-code/model",
 		strings.NewReader(`{"model":"claude-opus-4-7"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -183,7 +183,7 @@ func TestHandlePricingModels(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pricing/models", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pricing/models", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -220,7 +220,7 @@ func TestHandleStatus_ClientModelsAndCostAttribution(t *testing.T) {
 	})
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

@@ -63,7 +63,7 @@ mcp-servers:
     image: alpine
     port: 3000
 `
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/validate", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/stack/validate", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	s.handleStackValidate(w, req)
@@ -75,7 +75,7 @@ mcp-servers:
 func TestHandleStackValidate_InvalidYAML(t *testing.T) {
 	s := &Server{}
 	body := `:::not yaml`
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/validate", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/stack/validate", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	s.handleStackValidate(w, req)
@@ -91,7 +91,7 @@ func TestHandleStackValidate_InvalidStack(t *testing.T) {
 mcp-servers:
   - name: s1
 `
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/validate", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPost, "/api/stack/validate", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	s.handleStackValidate(w, req)
@@ -103,7 +103,7 @@ mcp-servers:
 
 func TestHandleStackSpec_NoStackFile(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/spec", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/spec", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackSpec(w, req)
@@ -113,7 +113,7 @@ func TestHandleStackSpec_NoStackFile(t *testing.T) {
 
 func TestHandleStackPlan_NoStackDeployed(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/plan", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/plan", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackPlan(w, req)
@@ -123,7 +123,7 @@ func TestHandleStackPlan_NoStackDeployed(t *testing.T) {
 
 func TestHandleStackHealth_NoStackFile(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/health", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/health", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackHealth(w, req)
@@ -134,7 +134,7 @@ func TestHandleStackHealth_NoStackFile(t *testing.T) {
 
 func TestHandleStackExport_NoStackFile(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/export", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/export", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackExport(w, req)
@@ -144,7 +144,7 @@ func TestHandleStackExport_NoStackFile(t *testing.T) {
 
 func TestHandleStackRecipes(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/recipes", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/recipes", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackRecipes(w, req)
@@ -182,7 +182,7 @@ func TestSanitizeStackSecrets(t *testing.T) {
 func TestHandleStackSpec_WithStackFile(t *testing.T) {
 	sf := writeTestStack(t)
 	s := &Server{stackFile: sf}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/spec", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/spec", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackSpec(w, req)
@@ -195,7 +195,7 @@ func TestHandleStackSpec_WithStackFile(t *testing.T) {
 func TestHandleStackExport_WithStackFile(t *testing.T) {
 	sf := writeTestStack(t)
 	s := &Server{stackFile: sf}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/export", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/export", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackExport(w, req)
@@ -211,7 +211,7 @@ func TestHandleStackExport_WithStackFile(t *testing.T) {
 func TestHandleStackHealth_WithStackFile(t *testing.T) {
 	sf := writeTestStack(t)
 	s := &Server{stackFile: sf, stackName: "test-stack"}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/health", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/health", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackHealth(w, req)
@@ -227,7 +227,7 @@ func TestHandleStackHealth_WithStackFile(t *testing.T) {
 func TestHandleStackHealth_OmitsReplicasWhenSingleReplica(t *testing.T) {
 	// No gateway and no stack means no replicas map in the response.
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/health", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/health", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackHealth(w, req)
@@ -240,7 +240,7 @@ func TestHandleStackHealth_OmitsReplicasWhenSingleReplica(t *testing.T) {
 func TestHandleStackPlan_WithStackFile(t *testing.T) {
 	sf := writeTestStack(t)
 	s := &Server{stackFile: sf, stackName: "test-stack"}
-	req := httptest.NewRequest(http.MethodGet, "/api/stack/plan", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stack/plan", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStackPlan(w, req)
@@ -306,7 +306,7 @@ func TestHandleStackAppend_MCPServer(t *testing.T) {
 		"yaml":         "name: server-new\nimage: nginx\nport: 9000\n",
 		"resourceType": "mcp-server",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackAppend(w, req)
@@ -330,7 +330,7 @@ func TestHandleStackAppend_Resource(t *testing.T) {
 		"yaml":         "name: redis\nimage: redis:7\n",
 		"resourceType": "resource",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackAppend(w, req)
@@ -348,7 +348,7 @@ func TestHandleStackAppend_Resource(t *testing.T) {
 
 func TestHandleStackAppend_NoStackFile(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(`{}`))
+	req := loopbackRequest(http.MethodPost, "/api/stack/append", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 
 	s.handleStackAppend(w, req)
@@ -364,7 +364,7 @@ func TestHandleStackAppend_InvalidResourceType(t *testing.T) {
 		"yaml":         "name: test\n",
 		"resourceType": "stack",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackAppend(w, req)
@@ -380,7 +380,7 @@ func TestHandleStackAppend_InvalidYAML(t *testing.T) {
 		"yaml":         "[unclosed bracket",
 		"resourceType": "agent",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/append", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackAppend(w, req)
@@ -418,7 +418,7 @@ func TestHandleStack_Routing(t *testing.T) {
 			} else {
 				body = strings.NewReader("")
 			}
-			req := httptest.NewRequest(tc.method, tc.path, body)
+			req := loopbackRequest(tc.method, tc.path, body)
 			w := httptest.NewRecorder()
 
 			s.Handler().ServeHTTP(w, req)
@@ -432,7 +432,7 @@ func TestHandleStack_Routing(t *testing.T) {
 
 func TestHandleStacksList_EmptyDir(t *testing.T) {
 	s := &Server{stacksDir: t.TempDir()}
-	req := httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stacks", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStacksList(w, req)
@@ -448,7 +448,7 @@ func TestHandleStacksSave_Success(t *testing.T) {
 		"name": "my-stack",
 		"yaml": "name: my-stack\nnetwork:\n  name: net\n",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s := &Server{stacksDir: dir}
@@ -480,7 +480,7 @@ func TestHandleStacksSave_InvalidName(t *testing.T) {
 				"name": tc.stackName,
 				"yaml": "name: test\n",
 			})
-			req := httptest.NewRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
+			req := loopbackRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
 			w := httptest.NewRecorder()
 
 			s := &Server{}
@@ -496,7 +496,7 @@ func TestHandleStacksSave_InvalidYAML(t *testing.T) {
 		"name": "test-stack",
 		"yaml": ":::not yaml",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s := &Server{}
@@ -510,7 +510,7 @@ func TestHandleStacksSave_MissingYAML(t *testing.T) {
 	body, _ := json.Marshal(map[string]string{
 		"name": "test-stack",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stacks", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s := &Server{}
@@ -523,7 +523,7 @@ func TestHandleStackInitialize_AlreadyLoaded(t *testing.T) {
 	s := &Server{stackFile: "/some/existing/stack.yaml"}
 
 	body, _ := json.Marshal(map[string]string{"name": "my-stack"})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackInitialize(w, req)
@@ -536,7 +536,7 @@ func TestHandleStackInitialize_NotFound(t *testing.T) {
 	s := &Server{}
 
 	body, _ := json.Marshal(map[string]string{"name": "nonexistent-stack-xyz"})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackInitialize(w, req)
@@ -549,7 +549,7 @@ func TestHandleStackInitialize_MissingName(t *testing.T) {
 	s := &Server{}
 
 	body, _ := json.Marshal(map[string]string{})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackInitialize(w, req)
@@ -561,7 +561,7 @@ func TestHandleStackInitialize_NoReloadHandler(t *testing.T) {
 	// An injected stacks dir without the requested file yields 404.
 	s := &Server{stacksDir: t.TempDir()}
 	body, _ := json.Marshal(map[string]string{"name": "test-stack"})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackInitialize(w, req)
@@ -584,7 +584,7 @@ func TestHandleStackInitialize_SuccessNoReloadHandler(t *testing.T) {
 	s := &Server{stacksDir: stacksDir} // no reloadHandler
 
 	body, _ := json.Marshal(map[string]string{"name": stackName})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackInitialize(w, req)
@@ -630,7 +630,7 @@ mcp-servers:
 	s.SetReloadHandler(rh)
 
 	body, _ := json.Marshal(map[string]string{"name": stackName})
-	req := httptest.NewRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPost, "/api/stack/initialize", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
 	s.handleStackInitialize(w, req)
@@ -657,7 +657,7 @@ func TestHandleStacksList_WithFiles(t *testing.T) {
 	}
 
 	s := &Server{stacksDir: stacksDir}
-	req := httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	req := loopbackRequest(http.MethodGet, "/api/stacks", nil)
 	w := httptest.NewRecorder()
 
 	s.handleStacksList(w, req)

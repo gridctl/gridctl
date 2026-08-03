@@ -37,7 +37,7 @@ func TestHandleTraceOTLP_specShape(t *testing.T) {
 	traceID := root.SpanContext().TraceID().String()
 	rootSpanID := root.SpanContext().SpanID().String()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/traces/"+traceID+"/otlp", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces/"+traceID+"/otlp", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -134,7 +134,7 @@ func TestHandleTraceOTLP_specShape(t *testing.T) {
 
 func TestHandleTraceOTLP_notFound(t *testing.T) {
 	srv, _ := newTracedServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/traces/ffffffffffffffffffffffffffffffff/otlp", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces/ffffffffffffffffffffffffffffffff/otlp", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {

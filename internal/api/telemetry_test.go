@@ -44,7 +44,7 @@ func patchStackTelemetryRequest(t *testing.T, server *Server, body any) *httptes
 	t.Helper()
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
-	req := httptest.NewRequest(http.MethodPatch, "/api/stack/telemetry", strings.NewReader(string(raw)))
+	req := loopbackRequest(http.MethodPatch, "/api/stack/telemetry", strings.NewReader(string(raw)))
 	w := httptest.NewRecorder()
 	server.handlePatchStackTelemetry(w, req)
 	return w
@@ -54,7 +54,7 @@ func patchServerTelemetryRequest(t *testing.T, server *Server, name string, body
 	t.Helper()
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
-	req := httptest.NewRequest(http.MethodPatch, "/api/mcp-servers/"+name+"/telemetry", strings.NewReader(string(raw)))
+	req := loopbackRequest(http.MethodPatch, "/api/mcp-servers/"+name+"/telemetry", strings.NewReader(string(raw)))
 	req.SetPathValue("name", name)
 	w := httptest.NewRecorder()
 	server.handlePatchServerTelemetry(w, req)
@@ -379,7 +379,7 @@ func TestHandleGetTelemetryInventory_EmptyStack(t *testing.T) {
 	t.Setenv("HOME", dir) // isolate from real ~/.gridctl
 
 	s := &Server{stackName: "no-such-stack"}
-	req := httptest.NewRequest(http.MethodGet, "/api/telemetry/inventory", nil)
+	req := loopbackRequest(http.MethodGet, "/api/telemetry/inventory", nil)
 	w := httptest.NewRecorder()
 	s.handleGetTelemetryInventory(w, req)
 
@@ -399,7 +399,7 @@ func TestHandleGetTelemetryInventory_PopulatedStack(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(srvDir, "metrics.jsonl"), []byte("c\n"), 0o600))
 
 	s := &Server{stackName: stackName}
-	req := httptest.NewRequest(http.MethodGet, "/api/telemetry/inventory", nil)
+	req := loopbackRequest(http.MethodGet, "/api/telemetry/inventory", nil)
 	w := httptest.NewRecorder()
 	s.handleGetTelemetryInventory(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -426,7 +426,7 @@ func TestHandleDeleteTelemetry_WildcardWipesEverything(t *testing.T) {
 	}
 
 	s := &Server{stackName: stackName}
-	req := httptest.NewRequest(http.MethodDelete, "/api/telemetry", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/telemetry", nil)
 	w := httptest.NewRecorder()
 	s.handleDeleteTelemetry(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -479,7 +479,7 @@ mcp-servers:
 
 func TestHandleDeleteTelemetry_NoStack(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodDelete, "/api/telemetry", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/telemetry", nil)
 	w := httptest.NewRecorder()
 	s.handleDeleteTelemetry(w, req)
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -490,7 +490,7 @@ func TestHandleDeleteTelemetry_InvalidSignal(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	s := &Server{stackName: "demo"}
-	req := httptest.NewRequest(http.MethodDelete, "/api/telemetry?signal=garbage", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/telemetry?signal=garbage", nil)
 	w := httptest.NewRecorder()
 	s.handleDeleteTelemetry(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -508,7 +508,7 @@ func TestHandleDeleteTelemetry_DeletesScopedFiles(t *testing.T) {
 	}
 
 	s := &Server{stackName: stackName}
-	req := httptest.NewRequest(http.MethodDelete, "/api/telemetry?server=github&signal=logs", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/telemetry?server=github&signal=logs", nil)
 	w := httptest.NewRecorder()
 	s.handleDeleteTelemetry(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)

@@ -4,9 +4,17 @@
 # running on another machine on the same network.
 #
 # Gridctl Gateway:
-#   - Listens on all interfaces (0.0.0.0:8180 by default)
+#   - Listens on loopback by default; this example opts in to all interfaces
+#     via `gateway.bind` below (equivalently: `gridctl apply --bind-all`)
 #   - Exposes SSE endpoint at /sse for MCP clients
 #   - Aggregates tools from connected MCP servers with prefixes
+#
+# SECURITY: widening the bind puts the gateway API — including variable
+# endpoints — on your local network. gridctl logs a warning at startup when
+# the bind is non-loopback and no `gateway.auth` is configured. Set auth
+# before using this on any network you do not control, and prefer SSH
+# forwarding (`ssh -L 8180:localhost:8180 <host>`) when you only need access
+# from one machine.
 #
 # Prerequisites:
 #   1. An MCP server running locally (this example uses itential-dev-stack)
@@ -48,6 +56,15 @@
 
 version: "1"
 name: gateway-remote
+
+gateway:
+  # Opt in to all interfaces. Without this the gateway binds 127.0.0.1 and
+  # the remote steps above will not reach it.
+  bind: "0.0.0.0"
+  # Strongly recommended whenever bind is not loopback:
+  # auth:
+  #   type: bearer
+  #   token: "${GRIDCTL_TOKEN}"
 
 network:
   name: devstack
