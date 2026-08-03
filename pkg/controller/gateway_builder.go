@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -410,7 +411,9 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		Handler:           inst.APIServer.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	b.warnIfExposed(slog.New(inst.Handler))
+	if err := b.checkExposure(slog.New(inst.Handler)); err != nil {
+		return nil, err
+	}
 
 	return inst, nil
 }
@@ -667,24 +670,57 @@ func (b *GatewayBuilder) effectiveBind() string {
 	return DefaultBindAddress
 }
 
-// warnIfExposed reports a gateway that is reachable beyond loopback without
-// authentication configured. Warn-only by design: the bind address is the
-// user's explicit choice, and refusing to start on it belongs with the
-// mandatory-auth work rather than here, where it would be a second behavior
-// break in the same release.
-func (b *GatewayBuilder) warnIfExposed(log *slog.Logger) {
+// ErrUnauthenticatedExposure is returned when the gateway would listen
+// beyond loopback with no authentication configured.
+var ErrUnauthenticatedExposure = errors.New("refusing to start: unauthenticated gateway on a non-loopback address")
+
+// checkExposure refuses to start a gateway that would be reachable from
+// other hosts with no authentication.
+//
+// Enforcement is keyed to the user's own act of widening the bind, following
+// Elasticsearch's bootstrap checks: a loopback gateway stays permissive and
+// silent, and only deliberately widening it flips the check to a hard
+// failure. That keeps the default path frictionless while making the
+// dangerous configuration impossible to reach by accident.
+//
+// The message enumerates every way forward rather than stating the refusal
+// alone. A bare failure here reads as gridctl being broken, and the user has
+// no way to guess which of three unrelated settings is responsible.
+func (b *GatewayBuilder) checkExposure(log *slog.Logger) error {
 	if bindIsLoopback(b.effectiveBind()) {
-		return
+		return nil
 	}
 	authConfigured := b.stack != nil && b.stack.Gateway != nil &&
 		b.stack.Gateway.Auth != nil && b.stack.Gateway.Auth.Token != ""
 	if authConfigured {
-		return
+		return nil
 	}
-	log.Warn("gateway is reachable from other hosts with no authentication configured",
-		"bind", b.effectiveBind(),
-		"port", b.config.Port,
-		"remedy", "set gateway.auth in stack.yaml, or remove --bind/--bind-all to listen on loopback only")
+	if b.allowUnauthenticated() {
+		// The override is deliberately noisy on every start: a one-time
+		// acknowledgement that goes silent is one the operator forgets.
+		log.Warn("gateway is reachable from other hosts with no authentication; continuing because the insecure override is set",
+			"bind", b.effectiveBind(), "port", b.config.Port)
+		return nil
+	}
+	return fmt.Errorf("%w (bind %s, port %d)\n"+
+		"  The API, web UI, and gateway would accept unauthenticated requests from any host that can reach this machine.\n"+
+		"  Choose one:\n"+
+		"    1. Configure authentication: set gateway.auth in stack.yaml (type: bearer, token: \"${YOUR_TOKEN}\")\n"+
+		"    2. Listen on loopback only: drop --bind/--bind-all and gateway.bind\n"+
+		"    3. Accept the risk: pass --insecure-allow-unauthenticated, or set gateway.insecure_allow_unauthenticated: true",
+		ErrUnauthenticatedExposure, b.effectiveBind(), b.config.Port)
+}
+
+// allowUnauthenticated resolves the escape hatch across both sources. The
+// stack field exists alongside the flag on purpose: a flag can be dropped by
+// whatever wraps the process (launchd, a Homebrew service, a Dockerfile CMD
+// whose arguments a user replaces), and losing the override silently turns
+// into a daemon that will not start.
+func (b *GatewayBuilder) allowUnauthenticated() bool {
+	if b.config.AllowUnauthenticated {
+		return true
+	}
+	return b.stack != nil && b.stack.Gateway != nil && b.stack.Gateway.InsecureAllowUnauthenticated
 }
 
 // buildAPIServer creates and configures the API server.

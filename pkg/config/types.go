@@ -374,6 +374,13 @@ type GatewayConfig struct {
 	// Widening the bind without setting auth logs a warning at startup.
 	Bind string `yaml:"bind,omitempty"`
 
+	// InsecureAllowUnauthenticated permits a non-loopback bind with no auth
+	// configured. Without it gridctl refuses to start in that combination.
+	// Exists alongside the --insecure-allow-unauthenticated flag because a
+	// flag can be dropped by whatever wraps the process; a config field
+	// survives that.
+	InsecureAllowUnauthenticated bool `yaml:"insecure_allow_unauthenticated,omitempty"`
+
 	// AllowedHosts lists additional Host header values accepted on the MCP
 	// endpoint when a request arrives over loopback. Loopback hosts
 	// (localhost, 127.0.0.0/8, ::1) are always accepted, so the default of

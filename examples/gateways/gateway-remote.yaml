@@ -10,11 +10,11 @@
 #   - Aggregates tools from connected MCP servers with prefixes
 #
 # SECURITY: widening the bind puts the gateway API — including variable
-# endpoints — on your local network. gridctl logs a warning at startup when
-# the bind is non-loopback and no `gateway.auth` is configured. Set auth
-# before using this on any network you do not control, and prefer SSH
-# forwarding (`ssh -L 8180:localhost:8180 <host>`) when you only need access
-# from one machine.
+# endpoints — on your local network. gridctl refuses to start with a
+# non-loopback bind and no `gateway.auth` configured, so the auth block
+# below is required, not optional. Prefer SSH forwarding
+# (`ssh -L 8180:localhost:8180 <host>`) when you only need access from one
+# machine — it needs no widened bind at all.
 #
 # Prerequisites:
 #   1. An MCP server running locally (this example uses itential-dev-stack)
@@ -61,10 +61,13 @@ gateway:
   # Opt in to all interfaces. Without this the gateway binds 127.0.0.1 and
   # the remote steps above will not reach it.
   bind: "0.0.0.0"
-  # Strongly recommended whenever bind is not loopback:
-  # auth:
-  #   type: bearer
-  #   token: "${GRIDCTL_TOKEN}"
+  # Required whenever bind is not loopback: gridctl refuses to start with a
+  # network-reachable listener and no authentication. Store the token in the
+  # vault ('gridctl var set GRIDCTL_TOKEN <value> --secret') rather than
+  # committing it here, and send it as 'Authorization: Bearer <token>'.
+  auth:
+    type: bearer
+    token: "${GRIDCTL_TOKEN}"
 
 network:
   name: devstack

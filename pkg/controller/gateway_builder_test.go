@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -458,8 +459,10 @@ func TestGatewayBuilder_Build_BindResolution(t *testing.T) {
 			if tt.stackBind != "" {
 				stack.Gateway = &config.GatewayConfig{Bind: tt.stackBind}
 			}
+			// This test is about address resolution, not the auth gate; a
+			// widened bind with no auth otherwise refuses to start.
 			builder := NewGatewayBuilder(
-				Config{Port: 9999, Bind: tt.cfgBind}, stack, "/path/stack.yaml",
+				Config{Port: 9999, Bind: tt.cfgBind, AllowUnauthenticated: true}, stack, "/path/stack.yaml",
 				runtime.NewOrchestrator(nil, nil), &runtime.UpResult{})
 			builder.registryDir = t.TempDir()
 
@@ -793,3 +796,72 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 	builder.setupHotReload(ctx, inst, registrar, handler, true)
 }
 
+
+// TestGatewayBuilder_RefusesUnauthenticatedExposure is the regression case:
+// before this, a widened bind with no auth started and served the API to the
+// network with only a log warning.
+func TestGatewayBuilder_RefusesUnauthenticatedExposure(t *testing.T) {
+	withAuth := func() *config.Stack {
+		return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
+			Auth: &config.AuthConfig{Type: "bearer", Token: "secret"},
+		}}
+	}
+	tests := []struct {
+		name      string
+		bind      string
+		allowFlag bool
+		stack     func() *config.Stack
+		wantErr   bool
+	}{
+		{"widened bind with no auth refuses", "0.0.0.0", false, func() *config.Stack {
+			return &config.Stack{Name: "test"}
+		}, true},
+		{"widened bind with auth starts", "0.0.0.0", false, withAuth, false},
+		{"loopback with no auth starts", "127.0.0.1", false, func() *config.Stack {
+			return &config.Stack{Name: "test"}
+		}, false},
+		{"default bind with no auth starts", "", false, func() *config.Stack {
+			return &config.Stack{Name: "test"}
+		}, false},
+		{"escape hatch flag permits it", "0.0.0.0", true, func() *config.Stack {
+			return &config.Stack{Name: "test"}
+		}, false},
+		{"escape hatch config field permits it", "0.0.0.0", false, func() *config.Stack {
+			return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
+				InsecureAllowUnauthenticated: true,
+			}}
+		}, false},
+		{"empty auth token does not count as configured", "0.0.0.0", false, func() *config.Stack {
+			return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
+				Auth: &config.AuthConfig{Type: "bearer", Token: ""},
+			}}
+		}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := NewGatewayBuilder(
+				Config{Port: 9999, Bind: tt.bind, AllowUnauthenticated: tt.allowFlag},
+				tt.stack(), "/path/stack.yaml",
+				runtime.NewOrchestrator(nil, nil), &runtime.UpResult{})
+			builder.registryDir = t.TempDir()
+
+			_, err := builder.Build(false)
+			if tt.wantErr {
+				if !errors.Is(err, ErrUnauthenticatedExposure) {
+					t.Fatalf("expected ErrUnauthenticatedExposure, got %v", err)
+				}
+				// The message is the deliverable: a bare refusal reads as
+				// gridctl being broken, so every remedy must be named.
+				for _, want := range []string{"gateway.auth", "loopback", "insecure-allow-unauthenticated"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("refusal message must name %q, got:\n%s", want, err)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected start, got %v", err)
+			}
+		})
+	}
+}

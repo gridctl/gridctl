@@ -70,8 +70,13 @@ type Config struct {
 	// (DefaultBindAddress), which keeps the API, web UI, and gateway
 	// unreachable from other hosts and from containers gridctl launches.
 	// Widening it is an explicit act: see EffectiveBind.
-	Bind        string
-	BasePort    int
+	Bind string
+
+	// AllowUnauthenticated permits a non-loopback bind with no configured
+	// authentication, which gridctl otherwise refuses to start. Named for
+	// what it costs, not what it enables.
+	AllowUnauthenticated bool
+	BasePort             int
 	Verbose     bool
 	Quiet       bool
 	NoCache     bool
