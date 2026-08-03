@@ -1385,15 +1385,15 @@ function UnencryptedSecretsBanner({
   onDismiss,
 }: UnencryptedSecretsBannerProps) {
   return (
-    <div className="flex-shrink-0 px-6 py-2 border-b border-amber-500/20 bg-amber-500/[0.06] flex items-center gap-2">
-      <ShieldAlert size={12} className="text-amber-300/80 flex-shrink-0" />
+    <div className="flex-shrink-0 px-6 py-2 border-b border-status-pending/20 bg-status-pending/[0.06] flex items-center gap-2">
+      <ShieldAlert size={12} className="text-status-pending flex-shrink-0" />
       <div className="flex-1 min-w-0 text-[11px] text-text-secondary">
         Secrets are stored unencrypted on disk. Encrypt the vault with a
         passphrase.
       </div>
       <button
         onClick={onEncrypt}
-        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-amber-300 hover:text-amber-200 border border-amber-500/30 hover:border-amber-500/50 rounded transition-colors"
+        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-status-pending hover:text-status-pending/80 border border-status-pending/30 hover:border-status-pending/50 rounded transition-colors"
       >
         <Lock size={10} /> Encrypt
       </button>

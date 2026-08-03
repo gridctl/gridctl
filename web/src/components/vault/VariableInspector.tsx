@@ -500,7 +500,7 @@ export function VariableInspector({
                 )}
               </div>
               {variable.is_secret && !editIsSecret && (
-                <p className="text-[10px] text-amber-300/90 leading-relaxed">
+                <p className="text-[10px] text-status-pending leading-relaxed">
                   Switching to plaintext displays this value in the variable
                   list and makes it visible in logs.
                 </p>

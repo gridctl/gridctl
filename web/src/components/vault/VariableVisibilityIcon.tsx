@@ -17,7 +17,7 @@ export function VariableVisibilityIcon({
     return (
       <Lock
         size={size}
-        className={cn('text-amber-400/80', className)}
+        className={cn('text-text-secondary', className)}
         aria-label="secret"
       />
     );

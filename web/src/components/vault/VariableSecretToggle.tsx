@@ -28,7 +28,7 @@ export function VariableSecretToggle({
         className={cn(
           'inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors',
           isSecret
-            ? 'bg-amber-500/20 text-amber-300'
+            ? 'bg-surface-highlight text-text-primary'
             : 'text-text-muted hover:text-text-primary hover:bg-white/[0.04]',
         )}
         title="Secret — redacted in logs"
@@ -41,7 +41,7 @@ export function VariableSecretToggle({
         className={cn(
           'inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors',
           !isSecret
-            ? 'bg-sky-500/20 text-sky-300'
+            ? 'bg-surface-highlight text-text-primary'
             : 'text-text-muted hover:text-text-primary hover:bg-white/[0.04]',
         )}
         title="Plaintext — visible in logs"
