@@ -376,7 +376,7 @@ Some servers reload successfully while others fail. The reload result shows erro
 
 ---
 
-## Vault
+## Variables (vault)
 
 ### Vault is locked
 
@@ -638,6 +638,10 @@ Static heuristics are one layer. Published benchmarks put signature-only detecti
 ### `skill update` does not pick up an upstream change
 
 `skill update` fetches the source and installs whatever the pinned ref (or the default branch, for unpinned sources) now points at. Sources pinned to a version tag or full commit SHA are deliberately skipped by a bulk `gridctl skill update`; update them explicitly by name, or re-pin. A skill with local edits (drift) is also skipped so your changes are not overwritten; resolve the drift or pass `--force` to discard local edits and reinstall upstream (a backup of the edited `SKILL.md` is kept beside the skill). If a drifted skill was previously skipped during a web UI sync, its reviewed upstream version was recorded as seen, so a plain update reports up to date; `gridctl skill update --force <name>` installs it. When the network is unreachable, updates degrade to the cached content with a warning rather than failing.
+
+### "written by a newer gridctl version" on ctx, skill project, or project commands
+
+The unified projection lockfile (`~/.gridctl/project.lock.yaml`) carries a schema version, and an older gridctl refuses to touch a file written by a newer one rather than risk corrupting it. Upgrade gridctl on this machine, or restore the pre-migration state from `~/.gridctl/project-migration-backup/` if you need to stay on the older version.
 
 ---
 
