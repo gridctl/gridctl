@@ -1,7 +1,12 @@
-// Package contexts manages one canonical global agent-context file
-// (AGENTS.md per the agents.md spec) and projects it into each linked
-// client's global context mechanism: a dedicated file in a rules
-// directory, an @-import shim line, or a marker-delimited managed block.
+// Package contexts manages the canonical global agent context and
+// projects it into each linked client's global context mechanism. The
+// store is one canonical file (AGENTS.md per the agents.md spec) by
+// default, or an opt-in directory of rule fragments
+// (~/.gridctl/context/fragments/*.md; see fragments.go). Single-file
+// strategies are a dedicated file in a rules directory, an @-import
+// shim line, or a marker-delimited managed block; in fragments mode,
+// clients with real rules directories receive one file per fragment
+// (multi-file) and everything else receives a compiled document.
 // Per-project AGENTS.md files stay version-controlled in their repos and
 // are out of scope. Every operation is a pure file operation; no running
 // gateway is required.

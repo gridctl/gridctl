@@ -30,8 +30,9 @@ var (
 	ErrNotProjected  = errors.New("skill is not projected")
 )
 
-// lockFileName is the unified engine lockfile, shared with context
-// projections (the legacy skillsync.lock.yaml migrates into it).
+// lockFileName is the unified engine lockfile, shared with context,
+// agent, and wiring projections (the legacy skillsync.lock.yaml
+// migrates into it).
 const lockFileName = "project.lock.yaml"
 
 // SkillSource is the slice of the registry store projection reads. The

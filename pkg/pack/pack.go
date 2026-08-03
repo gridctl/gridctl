@@ -1,9 +1,10 @@
 // Package pack defines the gridctl pack manifest: a versioned selector
-// over a repo's skills, agents, and gateway wiring, so one git import
-// configures a whole team setup. This package is deliberately thin —
-// types, parsing, and validation only. There is no pack engine: the CLI
-// expands a manifest into calls against the existing kind managers
-// (skillsync, agentsync, wiring), which own every write.
+// over a repo's skills, agents, context rule fragments, and gateway
+// wiring, so one git import configures a whole team setup. This package
+// is deliberately thin — types, parsing, and validation only. There is
+// no pack engine: the CLI expands a manifest into calls against the
+// existing kind managers (skillsync, agentsync, contexts, wiring),
+// which own every write.
 //
 // Field names align with the Claude Code plugin.json family where the
 // semantics match (name, version, description, author, skills, agents),
