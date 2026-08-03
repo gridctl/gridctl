@@ -16,11 +16,6 @@
 # logging-set-level fails because gridctl has never implemented
 # logging/setLevel on any generation (2026-07-28 removes it outright).
 #
-# dns-rebinding-protection fails one of its two checks
-# (localhost-host-rebinding-rejected): gridctl validates the Origin
-# header but does not reject non-localhost bare Host headers.
-# Pre-existing behavior, tracked separately from the dual-stack work.
-#
 # Baseline semantics: a failure listed here is expected (exit 0); a
 # failure not listed is a regression (exit 1); a PASS for a listed entry
 # is a stale baseline (exit 1), so this file cannot rot silently.
@@ -47,4 +42,3 @@ server:
   - prompts-get-embedded-resource
   - prompts-get-with-image
   - logging-set-level
-  - dns-rebinding-protection

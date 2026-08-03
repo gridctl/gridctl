@@ -667,6 +667,11 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		server.SetAllowedOrigins([]string{"*"})
 	}
 
+	// Unset means loopback-only, so an absent Gateway block needs no branch.
+	if b.stack.Gateway != nil {
+		server.SetAllowedHosts(b.stack.Gateway.AllowedHosts)
+	}
+
 	if b.stack.Gateway != nil && b.stack.Gateway.Auth != nil {
 		server.SetAuth(b.stack.Gateway.Auth.Type, b.stack.Gateway.Auth.Token, b.stack.Gateway.Auth.Header)
 	}

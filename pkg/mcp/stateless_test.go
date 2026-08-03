@@ -46,6 +46,8 @@ func statelessRequest(t *testing.T, body []byte) *http.Request {
 		t.Fatal(err)
 	}
 	r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	// httptest defaults Host to example.com, which Host validation rejects.
+	r.Host = "localhost:8180"
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
 	r.Header.Set(headerMcpMethod, req.Method)
@@ -108,7 +110,7 @@ func TestStateless_DiscoverWithoutMetaStillAnswers(t *testing.T) {
 	// legacy verdict.
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "server/discover"})
-	r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	r := loopbackRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	w, resp := doStateless(t, srv, r)
 	if w.Code != http.StatusOK || resp.Error != nil {
 		t.Fatalf("probe without _meta must succeed, got %d %v", w.Code, resp.Error)
@@ -138,7 +140,7 @@ func TestStateless_UnsupportedVersionRejected(t *testing.T) {
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{
 		"io.modelcontextprotocol/protocolVersion":"2099-01-01",
 		"io.modelcontextprotocol/clientCapabilities":{}}}}`)
-	r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	r := loopbackRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	r.Header.Set("MCP-Protocol-Version", "2099-01-01")
 	r.Header.Set(headerMcpMethod, "tools/list")
 	w, resp := doStateless(t, srv, r)
@@ -198,7 +200,7 @@ func TestStateless_MissingClientCapabilitiesRejected(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{
 		"io.modelcontextprotocol/protocolVersion":"` + StatelessProtocolVersion + `"}}}`)
-	r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	r := loopbackRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	r.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
 	r.Header.Set(headerMcpMethod, "tools/list")
 	w, resp := doStateless(t, srv, r)
@@ -236,7 +238,7 @@ func TestStateless_NotificationAccepted(t *testing.T) {
 func TestStateless_GetAndDeleteAre405(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
 	for _, method := range []string{http.MethodGet, http.MethodDelete} {
-		r := httptest.NewRequest(method, "/mcp", nil)
+		r := loopbackRequest(method, "/mcp", nil)
 		r.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
 		w := httptest.NewRecorder()
 		srv.ServeHTTP(w, r)

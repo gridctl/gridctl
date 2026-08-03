@@ -68,6 +68,9 @@ func statelessPost(t *testing.T, handler http.Handler, method string, params map
 		t.Fatal(err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	// httptest defaults Host to example.com, which the transport's DNS
+	// rebinding protection rejects with 403 before any dispatch.
+	req.Host = "localhost:8180"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("MCP-Protocol-Version", statelessVersion)
 	req.Header.Set("Mcp-Method", method)
@@ -114,6 +117,7 @@ func TestDualStack_ModernServerLegacyClient(t *testing.T) {
 	handler := mcp.NewStreamableHTTPServer(gw, nil)
 	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"legacy","version":"1"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(initBody))
+	req.Host = "localhost:8180"
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -123,6 +127,7 @@ func TestDualStack_ModernServerLegacyClient(t *testing.T) {
 
 	callBody := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"modern__echo","arguments":{"message":"hi"}}}`
 	req = httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(callBody))
+	req.Host = "localhost:8180"
 	req.Header.Set("Mcp-Session-Id", sessionID)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -192,6 +197,7 @@ func TestDualStack_ModernClientLegacyServer(t *testing.T) {
 	// Era-mismatched version is rejected with -32022 and the supported list.
 	body := `{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2099-01-01","io.modelcontextprotocol/clientCapabilities":{}}}}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Host = "localhost:8180"
 	req.Header.Set("MCP-Protocol-Version", "2099-01-01")
 	req.Header.Set("Mcp-Method", "tools/list")
 	w2 := httptest.NewRecorder()
@@ -272,12 +278,14 @@ func TestDualStack_LegacyClientMRTRToolGetsClearError(t *testing.T) {
 
 	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"legacy","version":"1"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(initBody))
+	req.Host = "localhost:8180"
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	sessionID := w.Header().Get("Mcp-Session-Id")
 
 	callBody := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"modern__ask_secret","arguments":{}}}`
 	req = httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(callBody))
+	req.Host = "localhost:8180"
 	req.Header.Set("Mcp-Session-Id", sessionID)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)

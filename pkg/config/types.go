@@ -365,8 +365,15 @@ type GatewayConfig struct {
 	// AllowedOrigins lists origins for CORS.
 	// When not set, defaults to ["*"] (allow all) for backward compatibility.
 	// Set explicit origins to restrict cross-origin access.
-	AllowedOrigins []string    `yaml:"allowed_origins,omitempty"`
-	Auth           *AuthConfig `yaml:"auth,omitempty"`
+	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
+
+	// AllowedHosts lists additional Host header values accepted on the MCP
+	// endpoint when a request arrives over loopback. Loopback hosts
+	// (localhost, 127.0.0.0/8, ::1) are always accepted, so the default of
+	// unset means loopback-only and needs no configuration. Set this only
+	// when a reverse proxy or container hostname fronts the gateway.
+	AllowedHosts []string    `yaml:"allowed_hosts,omitempty"`
+	Auth         *AuthConfig `yaml:"auth,omitempty"`
 
 	// CodeMode controls whether the gateway replaces individual tool definitions
 	// with two meta-tools (search + execute). Values: "off" (default), "on".
