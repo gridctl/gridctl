@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
@@ -192,17 +193,23 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, imp *skills.Impor
 
 	}
 	if !dryRun && len(resolved.rules) > 0 {
-		installed, skippedRules, rerr := installPackRules(stdout, resolved.rules, discoveredRules, trust)
+		installed, updatedRules, skippedRules, recordedRules, rerr := installPackRules(
+			stdout, resolved.rules, discoveredRules, trust, priorPackRules(manifest.Name))
 		if rerr != nil {
 			fmt.Fprintln(stderr, rerr)
 			return ctxExitInfrastructure
 		}
 		doc.Skipped = append(doc.Skipped, skippedRules...)
+		for _, name := range updatedRules {
+			fmt.Fprintf(stdout, "Updated rule %s from the pack\n", name)
+		}
 		// The pack record must claim only what actually installed: a
 		// skipped rule recorded as the pack's would let a later remove
 		// retract a fragment the pack never delivered.
-		resolved.rules = installed
-		doc.Rules = installed
+		resolved.rules = append(installed, updatedRules...)
+		slices.Sort(resolved.rules)
+		resolved.ruleFiles = recordedRules
+		doc.Rules = resolved.rules
 	}
 	if !dryRun {
 		if err := recordLockedPack(manifest, resolved, repo, ref, clone.CommitSHA); err != nil {
@@ -254,9 +261,12 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, imp *skills.Impor
 // resolvedSelection is a manifest selection resolved against discovery:
 // concrete name lists, never empty-means-all.
 type resolvedSelection struct {
-	skills     []string
-	agents     []string
-	rules      []string
+	skills []string
+	agents []string
+	rules  []string
+	// ruleFiles carries per-rule provenance for what actually installed,
+	// populated by installPackRules and persisted alongside rules.
+	ruleFiles  map[string]skills.LockedRule
 	unresolved []string
 }
 
@@ -264,6 +274,10 @@ type resolvedSelection struct {
 type packRuleFile struct {
 	Name string
 	Path string // absolute path on disk in the clone
+	// Rel is the path within the pack repo, recorded as provenance so a
+	// later install can name where the rule came from. Clone paths are
+	// temporary and must never be persisted.
+	Rel string
 }
 
 // discoverPackRules finds rules/*.md and fragments/*.md under the pack
@@ -288,7 +302,11 @@ func discoverPackRules(repoPath string) map[string]packRuleFile {
 			// First discovery wins; rules/ preferred over fragments/ by walk order
 			// only when both exist for the same name — keep the first.
 			if _, exists := out[name]; !exists {
-				out[name] = packRuleFile{Name: name, Path: path}
+				rel, rerr := filepath.Rel(repoPath, path)
+				if rerr != nil {
+					rel = d.Name()
+				}
+				out[name] = packRuleFile{Name: name, Path: path, Rel: filepath.ToSlash(rel)}
 			}
 			return nil
 		})
@@ -299,15 +317,26 @@ func discoverPackRules(repoPath string) map[string]packRuleFile {
 // installPackRules copies selected rule files into the local fragment
 // store behind the same gates the importer applies to skills and agents:
 // a blocking security scan (bypassed only by --trust) and a refusal to
-// overwrite a local fragment whose content differs (identical content
-// installs idempotently). Rules do not carry .origin.json sidecars yet,
-// so 'skill update' does not refresh them; re-run 'pack add' to update.
-// A first install that activates fragments mode prints the migration.
-func installPackRules(stdout io.Writer, names []string, discovered map[string]packRuleFile, trust bool) (installed, skipped []string, err error) {
-	mgr, err := contexts.NewManager()
-	if err != nil {
-		return nil, nil, err
+// overwrite a fragment the user has edited.
+//
+// The prior hash — what gridctl recorded installing last time — is what
+// makes that refusal accurate. Comparing incoming bytes against disk alone
+// cannot distinguish "the pack changed this rule upstream" from "the user
+// edited it," so an upstream change was refused exactly like a local edit
+// and the documented update path (re-run 'pack add') could not update
+// anything. With the recorded hash the three cases separate: unchanged,
+// upstream-changed-and-untouched (update), and locally modified (skip).
+//
+// A rule with no recorded hash — installed before provenance existed —
+// falls back to the byte comparison, so behavior is unchanged until its
+// next install records one. A first install that activates fragments mode
+// prints the migration.
+func installPackRules(stdout io.Writer, names []string, discovered map[string]packRuleFile, trust bool, prior map[string]skills.LockedRule) (installed, updated, skipped []string, recorded map[string]skills.LockedRule, err error) {
+	mgr, merr := contexts.NewManager()
+	if merr != nil {
+		return nil, nil, nil, nil, merr
 	}
+	recorded = make(map[string]skills.LockedRule, len(names))
 	for _, name := range names {
 		rf, ok := discovered[name]
 		if !ok {
@@ -315,35 +344,58 @@ func installPackRules(stdout io.Writer, names []string, discovered map[string]pa
 		}
 		data, rerr := os.ReadFile(rf.Path) // #nosec G304 -- path from pack clone discovery
 		if rerr != nil {
-			return installed, skipped, fmt.Errorf("reading pack rule %s: %w", name, rerr)
+			return installed, updated, skipped, recorded, fmt.Errorf("reading pack rule %s: %w", name, rerr)
 		}
 		if scan := skills.ScanFragment(name, data); !scan.Safe && !trust {
 			skipped = append(skipped, fmt.Sprintf("%s (rule): security findings; re-run with --trust to accept\n%s", name, skills.FormatFindings(scan.Findings)))
 			continue
 		}
+		entry := skills.LockedRule{Path: rf.Rel, ContentHash: contexts.FragmentContentHash(data)}
+		wasUpdate := false
 		if mgr.FragmentsActive() {
 			existing, rerr := mgr.ReadFragment(name)
 			switch {
 			case rerr == nil && bytes.Equal(existing.Raw, data):
 				installed = append(installed, name)
+				recorded[name] = entry
 				continue
+			case rerr == nil && ruleIsUnmodified(prior[name], existing.Raw):
+				// gridctl installed the current content and the user has
+				// not touched it, so the difference is upstream's.
+				wasUpdate = true
 			case rerr == nil:
-				skipped = append(skipped, fmt.Sprintf("%s (rule): a local fragment with different content already exists; remove it with 'gridctl ctx rm %s' or rename the pack rule", name, name))
+				skipped = append(skipped, fmt.Sprintf("%s (rule): locally modified; 'gridctl ctx rm %s' to discard your copy and take the pack's, or rename the pack rule", name, name))
 				continue
 			case !errors.Is(rerr, contexts.ErrNoFragment):
-				return installed, skipped, rerr
+				return installed, updated, skipped, recorded, rerr
 			}
 		}
 		res, ierr := mgr.InstallFragmentBytes(name, data)
 		if ierr != nil {
-			return installed, skipped, fmt.Errorf("installing pack rule %s: %w", name, ierr)
+			return installed, updated, skipped, recorded, fmt.Errorf("installing pack rule %s: %w", name, ierr)
 		}
 		if res.Migrated {
 			fmt.Fprintf(stdout, "Activated fragments mode: migrated %s to fragments/00-default.md (backup: %s)\n", mgr.CanonicalPath(), res.MigratedBackup)
 		}
+		recorded[name] = entry
+		if wasUpdate {
+			updated = append(updated, name)
+			continue
+		}
 		installed = append(installed, name)
 	}
-	return installed, skipped, nil
+	return installed, updated, skipped, recorded, nil
+}
+
+// ruleIsUnmodified reports whether on-disk content still matches what
+// gridctl recorded installing. An empty recorded hash means provenance is
+// unknown (a pre-provenance lockfile), which must never match — otherwise
+// migration would silently license overwriting user edits.
+func ruleIsUnmodified(prior skills.LockedRule, onDisk []byte) bool {
+	if prior.ContentHash == "" {
+		return false
+	}
+	return prior.ContentHash == contexts.FragmentContentHash(onDisk)
 }
 
 // resolvePackSelection expands the manifest's selection against the
@@ -402,6 +454,22 @@ func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult, discovere
 // keyed exactly as Import keys it (RepoToName), creating the source
 // when the import wrote nothing (wiring-only packs, or a fully skipped
 // selection).
+// priorPackRules returns what a previous install recorded for this pack's
+// rules, keyed by fragment name. An unreadable or absent lockfile yields an
+// empty map, which reads as "provenance unknown" and keeps the install path
+// on its pre-provenance behavior rather than failing the run.
+func priorPackRules(packName string) map[string]skills.LockedRule {
+	lf, err := skills.ReadLockFile(skills.LockFilePath())
+	if err != nil {
+		return nil
+	}
+	_, src, ok := lf.FindPackSource(packName)
+	if !ok || src.Pack == nil {
+		return nil
+	}
+	return src.Pack.RuleFiles
+}
+
 func recordLockedPack(m *pack.Manifest, resolved resolvedSelection, repo, ref, commitSHA string) error {
 	lockPath := skills.LockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
@@ -421,6 +489,7 @@ func recordLockedPack(m *pack.Manifest, resolved resolvedSelection, repo, ref, c
 		Skills:     resolved.skills,
 		Agents:     resolved.agents,
 		Rules:      resolved.rules,
+		RuleFiles:  resolved.ruleFiles,
 		Unresolved: resolved.unresolved,
 	}
 	lf.SetSource(sourceName, src)
@@ -536,7 +605,7 @@ func foreignPackTags(ctx context.Context, home, packName string) (map[string]str
 		return nil, err
 	}
 	foreign := map[string]string{}
-	for _, kind := range []project.Kind{project.KindSkill, project.KindAgent, project.KindWiring} {
+	for _, kind := range []project.Kind{project.KindSkill, project.KindAgent, project.KindWiring, project.KindContextFragment} {
 		for _, e := range l.Entries(kind) {
 			if e.Pack != "" && e.Pack != packName {
 				foreign[string(kind)+"/"+e.Source] = e.Pack

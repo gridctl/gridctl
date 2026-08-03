@@ -437,7 +437,7 @@ func TestInstallPackRulesScanAndCollisionGates(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	installed, skipped, err := installPackRules(&out, []string{"danger", "clean"}, discovered, false)
+	installed, _, skipped, _, err := installPackRules(&out, []string{"danger", "clean"}, discovered, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,15 +449,18 @@ func TestInstallPackRulesScanAndCollisionGates(t *testing.T) {
 	}
 
 	// --trust bypasses the scan gate.
-	installed, skipped, err = installPackRules(&out, []string{"danger"}, discovered, true)
+	installed, _, skipped, _, err = installPackRules(&out, []string{"danger"}, discovered, true, nil)
 	if err != nil || len(installed) != 1 || len(skipped) != 0 {
 		t.Fatalf("trusted install = %v / %v / %v", installed, skipped, err)
 	}
 
 	// Identical content re-installs idempotently; a local edit refuses.
-	installed, skipped, err = installPackRules(&out, []string{"clean"}, discovered, false)
+	installed, _, skipped, recorded, err := installPackRules(&out, []string{"clean"}, discovered, false, nil)
 	if err != nil || len(installed) != 1 || len(skipped) != 0 {
 		t.Fatalf("idempotent re-install = %v / %v / %v", installed, skipped, err)
+	}
+	if recorded["clean"].ContentHash == "" {
+		t.Error("install must record a content hash for the rule")
 	}
 	mgr, err := contexts.NewManager()
 	if err != nil {
@@ -467,11 +470,11 @@ func TestInstallPackRulesScanAndCollisionGates(t *testing.T) {
 	if err := os.WriteFile(local, []byte("hand-edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	installed, skipped, err = installPackRules(&out, []string{"clean"}, discovered, false)
+	installed, _, skipped, _, err = installPackRules(&out, []string{"clean"}, discovered, false, recorded)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(installed) != 0 || len(skipped) != 1 || !strings.Contains(skipped[0], "different content") {
+	if len(installed) != 0 || len(skipped) != 1 || !strings.Contains(skipped[0], "locally modified") {
 		t.Fatalf("collision = %v / %v, want refusal", installed, skipped)
 	}
 	if got, _ := os.ReadFile(local); string(got) != "hand-edited\n" {
@@ -497,8 +500,8 @@ func TestInstallPackRulesPrintsMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	installed, skipped, err := installPackRules(&out, []string{"team-style"},
-		map[string]packRuleFile{"team-style": {Name: "team-style", Path: rule}}, false)
+	installed, _, skipped, _, err := installPackRules(&out, []string{"team-style"},
+		map[string]packRuleFile{"team-style": {Name: "team-style", Path: rule}}, false, nil)
 	if err != nil || len(installed) != 1 || len(skipped) != 0 {
 		t.Fatalf("install = %v / %v / %v", installed, skipped, err)
 	}
@@ -507,5 +510,115 @@ func TestInstallPackRulesPrintsMigration(t *testing.T) {
 	}
 	if _, err := mgr.ReadFragment("00-default"); err != nil {
 		t.Fatalf("canonical not migrated: %v", err)
+	}
+}
+
+// TestInstallPackRulesUpdatesUpstreamChange is the regression case: before
+// per-rule provenance existed, an upstream content change was refused
+// exactly like a local edit, so the documented update path ('pack add'
+// again) could not update a rule that had actually changed.
+func TestInstallPackRulesUpdatesUpstreamChange(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	repo := t.TempDir()
+	rule := filepath.Join(repo, "rules", "style.md")
+	if err := os.MkdirAll(filepath.Dir(rule), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(rule, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	discovered := map[string]packRuleFile{
+		"style": {Name: "style", Path: rule, Rel: "rules/style.md"},
+	}
+
+	var out bytes.Buffer
+	write("Prefer table-driven tests.\n")
+	installed, updated, skipped, recorded, err := installPackRules(&out, []string{"style"}, discovered, false, nil)
+	if err != nil || len(installed) != 1 || len(updated) != 0 || len(skipped) != 0 {
+		t.Fatalf("first install = %v / %v / %v / %v", installed, updated, skipped, err)
+	}
+	if recorded["style"].Path != "rules/style.md" || recorded["style"].ContentHash == "" {
+		t.Fatalf("provenance not recorded: %+v", recorded["style"])
+	}
+
+	// Upstream changes the rule; the user has not touched it.
+	write("Prefer table-driven tests. Use the Oxford comma.\n")
+	installed, updated, skipped, recorded2, err := installPackRules(&out, []string{"style"}, discovered, false, recorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated) != 1 || updated[0] != "style" {
+		t.Fatalf("upstream change must update, got installed=%v updated=%v skipped=%v", installed, updated, skipped)
+	}
+	mgr, err := contexts.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := mgr.ReadFragment("style")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got.Raw), "Oxford comma") {
+		t.Fatalf("fragment not updated on disk: %q", got.Raw)
+	}
+	if recorded2["style"].ContentHash == recorded["style"].ContentHash {
+		t.Error("recorded hash must move with the content")
+	}
+
+	// A local edit is still refused, and the recorded hash is what makes
+	// that refusal accurate rather than a guess.
+	if err := os.WriteFile(filepath.Join(mgr.FragmentsDir(), "style.md"), []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	write("Prefer table-driven tests. Use the Oxford comma. And more.\n")
+	installed, updated, skipped, _, err = installPackRules(&out, []string{"style"}, discovered, false, recorded2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated) != 0 || len(skipped) != 1 || !strings.Contains(skipped[0], "locally modified") {
+		t.Fatalf("local edit must be refused, got installed=%v updated=%v skipped=%v", installed, updated, skipped)
+	}
+}
+
+// TestInstallPackRulesUnknownProvenanceFallsBack pins the migration case:
+// a lockfile written before provenance existed yields an empty hash, which
+// must never match content and so must keep today's refusal behavior.
+func TestInstallPackRulesUnknownProvenanceFallsBack(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	repo := t.TempDir()
+	rule := filepath.Join(repo, "rules", "style.md")
+	if err := os.MkdirAll(filepath.Dir(rule), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rule, []byte("upstream\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	discovered := map[string]packRuleFile{"style": {Name: "style", Path: rule, Rel: "rules/style.md"}}
+
+	var out bytes.Buffer
+	if _, _, _, _, err := installPackRules(&out, []string{"style"}, discovered, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := contexts.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mgr.FragmentsDir(), "style.md"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Migrated entry: name present, hash unknown.
+	prior := map[string]skills.LockedRule{"style": {}}
+	_, updated, skipped, _, err := installPackRules(&out, []string{"style"}, discovered, false, prior)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated) != 0 || len(skipped) != 1 {
+		t.Fatalf("unknown provenance must not update, got updated=%v skipped=%v", updated, skipped)
 	}
 }
