@@ -1597,7 +1597,7 @@ interface SyncSourcesButtonProps {
 /**
  * Workspace-level "Sync sources" affordance. Three states:
  * - hidden when no imported sources exist (feature is dormant)
- * - amber pill "Sync sources (N updates)" when any source has updateAvailable
+ * - brand pill "Sync sources (N updates)" when any source has updateAvailable
  * - low-emphasis IconButton otherwise (lets users force a sync anyway)
  *
  * During sync the button disables and the label morphs inside an aria-live
@@ -1616,8 +1616,10 @@ function SyncSourcesButton({ hasSources, updateCount, syncing, onClick }: SyncSo
       : 'Sync sources from git';
 
   if (hasUpdates) {
-    // Pill mirrors the per-source amber pill in SourceGroupHeader so the two
-    // affordances read as the same family.
+    // Pill mirrors the per-source pill in SourceGroupHeader so the two
+    // affordances read as the same family. Brand tokens rather than the warning
+    // family: an available update is informational and optional, matching the
+    // "N updates" pill in RegistrySidebar.
     return (
       <button
         type="button"
@@ -1626,7 +1628,7 @@ function SyncSourcesButton({ hasSources, updateCount, syncing, onClick }: SyncSo
         aria-label={ariaLabel}
         aria-busy={syncing}
         title={ariaLabel}
-        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-colors disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60"
       >
         <CloudDownload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
         <span aria-live="polite">
