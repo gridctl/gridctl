@@ -31,15 +31,16 @@ const packJSONSchemaVersion = 1
 
 var packCmd = &cobra.Command{
 	Use:   "pack",
-	Short: "Import and apply team packs (skills + agents + wiring)",
+	Short: "Import and apply team packs (skills + agents + rules + wiring)",
 	Long: `A pack is a git repo carrying a ` + pack.ManifestFileName + ` manifest that
-selects skills, agents, and gateway wiring, so one import configures a
-whole setup. 'pack add' imports the selection through the same origin
-pipeline (security scan, --trust gate, drift-safe updates) that
-'gridctl skill add' uses; 'pack apply' projects it through the same
-engines as 'gridctl skill project sync' and 'gridctl project sync
---kind wiring', scoped to the pack; 'pack remove' cascades: projections
-are unsynced and wiring records cleaned before the registry entries go.
+selects skills, agents, context rule fragments, and gateway wiring, so
+one import configures a whole setup. 'pack add' imports the selection
+through the same origin pipeline (security scan, --trust gate,
+drift-safe updates) that 'gridctl skill add' uses; 'pack apply'
+projects it through the same engines as 'gridctl skill project sync',
+'gridctl ctx sync', and 'gridctl project sync --kind wiring', scoped to
+the pack; 'pack remove' cascades: projections are unsynced and wiring
+records cleaned before the registry entries go.
 
 Packs never introduce hidden state: every projection is tagged with the
 pack name in the unified project lockfile, and the underlying verbs keep
@@ -75,8 +76,9 @@ var packAddCmd = &cobra.Command{
 	Use:   "add <repo-url>",
 	Short: "Import a pack from a git repository",
 	Long: `Clones the repository, reads ` + pack.ManifestFileName + ` at its root, and
-imports exactly the manifest's selection of skills and agents into the
-local registry (empty selection lists mean everything discovered).
+imports exactly the manifest's selection of skills, agents, and rule
+fragments into the local stores (empty skill and agent lists mean
+everything discovered; rules are opt-in, an empty list means none).
 Nothing touches client files or the gateway; that is 'pack apply'.
 
 Manifest-selected names the repository does not contain are reported as
@@ -441,9 +443,11 @@ var packApplyCmd = &cobra.Command{
 	Short: "Project a pack's resources to clients",
 	Long: `Projects an imported pack: its skills and agents through the same
 engines as 'gridctl skill project sync' (scoped to the pack's
-selection), and, when the manifest declares wiring, the gateway entry
-through the same machinery as 'gridctl project sync --kind wiring'.
-Every projection is tagged with the pack name.
+selection), its rule fragments through 'gridctl ctx sync', and, when
+the manifest declares wiring, the gateway entry through the same
+machinery as 'gridctl project sync --kind wiring'. Every projection is
+tagged with the pack name; for rules only pack-shipped fragments carry
+the tag.
 
 Apply is additive and never transactional: each resource succeeds or
 skips independently, drifted resources are skipped with an adopt or
@@ -801,6 +805,8 @@ var packStatusCmd = &cobra.Command{
 	Long: `Shows the projection state of every resource an imported pack selects,
 in the shared state vocabulary (in-sync, stale, drifted,
 target-missing, foreign, missing), plus unresolved manifest selections.
+Rule rows report store-level presence; per-client fragment state lives
+in 'gridctl ctx status'.
 
 Exit codes:
   0  everything clean
@@ -975,8 +981,9 @@ var packRemoveCmd = &cobra.Command{
 	Long: `Cascade removal in dependency order: pack-tagged projections are
 unsynced from client directories, pack-tagged wiring records are
 removed through the ownership manager (the entry is deleted only when
-its value is one gridctl recorded), and only then do the pack's skills
-and agents leave the registry, followed by the pack record itself.
+its value is one gridctl recorded), and only then do the pack's skills,
+agents, and installed rule fragments leave the local stores, followed
+by the pack record itself.
 
 A resource whose projection was hand-edited (drifted) is skipped with a
 remediation hint unless --force; everything else still removes, and the

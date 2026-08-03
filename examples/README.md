@@ -22,8 +22,9 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [🔑 secrets-vault/](secrets-vault/) | Encrypted variables and variable sets |
 | [📈 autoscale/](autoscale/) | Static replicas and reactive autoscaling |
 | [🧳 portable-stack/](portable-stack/) | Single-file portable stack with inlined config |
+| [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, and rules behind one `gridctl-pack.yaml` |
 | [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
-| [📋 registry/](registry/) | Skills registry ([agentskills.io](https://agentskills.io) spec) |
+| [📋 registry/](registry/) | Skills and agents registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
 
 ## 🎬 Recommended Path
@@ -32,8 +33,9 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 2. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
 3. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 4. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
-5. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts
-6. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
+5. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts (imports also discover agents)
+6. **Packs**: `portable-pack/` - one manifest importing skills, agents, and rules as a unit
+7. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
 > **Note:** Getting-started examples use placeholder containers to focus on infrastructure concepts.
 > Transport and platform examples include real MCP server implementations.

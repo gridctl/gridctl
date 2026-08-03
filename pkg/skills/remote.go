@@ -85,7 +85,8 @@ func authMethodFor(cfg AuthConfig, url string) (transport.AuthMethod, error) {
 	return auther.AuthFor(url)
 }
 
-// CloneAndDiscover clones a repo and discovers all SKILL.md files.
+// CloneAndDiscover clones a repo and discovers all SKILL.md files plus
+// any agents/*.md definitions it ships.
 func CloneAndDiscover(repo, ref, subPath string, auth AuthConfig, logger *slog.Logger) (*CloneResult, error) {
 	repoPath, err := cloneShallow(repo, ref, auth, logger)
 	if err != nil {

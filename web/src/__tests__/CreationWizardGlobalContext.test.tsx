@@ -14,7 +14,7 @@ describe('CreationWizard Global Context tile', () => {
   it('shows the tile on the resource type step', () => {
     render(<CreationWizard />);
     expect(screen.getByText('Global Context')).toBeInTheDocument();
-    expect(screen.getByText('One AGENTS.md synced to every linked client')).toBeInTheDocument();
+    expect(screen.getByText('Global rules synced to every linked client')).toBeInTheDocument();
   });
 
   it('closes the wizard and opens the Global Context surface on select', () => {

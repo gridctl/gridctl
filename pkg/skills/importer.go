@@ -174,7 +174,8 @@ func (imp *Importer) SetCredentialResolver(r CredentialResolver) {
 	imp.credentialResolver = r
 }
 
-// Import clones a repo, discovers skills, validates, scans, and imports.
+// Import clones a repo, discovers skills and agents, validates, scans,
+// and imports.
 func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	if opts.Path != "" {
 		if err := SafeRepoPath(opts.Path); err != nil {

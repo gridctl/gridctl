@@ -93,7 +93,10 @@ exists. Nothing is written during the scan.
 
 With --import, an existing client file becomes the canonical context.
 With --from, an arbitrary file does. With --template (or when no client
-has an existing file), a short commented starter is scaffolded.`,
+has an existing file), a short commented starter is scaffolded.
+
+This bootstraps the single-file store; 'gridctl ctx add <name>' later
+converts it into a fragment library.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr, err := contexts.NewManager()
@@ -111,6 +114,10 @@ var ctxStatusCmd = &cobra.Command{
 
 States: in-sync, stale (canonical changed since last sync), drifted
 (target was hand-edited), target-missing, never-synced, unsupported.
+
+In fragments mode each row also carries a mode: multi-file (one file per
+fragment in the client's rules directory) or compiled (all fragments
+assembled into the client's single target).
 
 Exit codes:
   0  everything clean

@@ -30,7 +30,7 @@ Any function that performs I/O, blocks on a channel, or calls an external servic
 
 ## Article VII - No Secrets in Version Control
 
-API keys, passwords, tokens, private keys, and any credential MUST NOT be committed to the repository under any circumstances - not in code, not in comments, not in example files, not in tests. Use environment variable references (e.g., `${ENV_VAR}`, `${vault:KEY}`) in all configuration examples.
+API keys, passwords, tokens, private keys, and any credential MUST NOT be committed to the repository under any circumstances - not in code, not in comments, not in example files, not in tests. Use environment variable references (e.g., `${ENV_VAR}`, `${var:KEY}`) in all configuration examples.
 
 ## Article VIII - Semantic Versioning
 
@@ -38,7 +38,7 @@ The public CLI interface and stack YAML schema are versioned artifacts. Breaking
 
 ## Article IX - Stack YAML Backward Compatibility
 
-Every new field added to the `stack.yaml` schema (MCP servers, transports, networks, vault, pins) MUST be optional with a documented default that preserves existing behavior. A stack file valid against version N MUST remain valid and produce equivalent behavior under version N+1 unless the major version has been incremented. Removing or renaming a field is a breaking change. This guarantee covers the `stack.yaml` schema only - skill definition formats are not in scope. The `workflow:` block in `SKILL.md` is no longer supported.
+Every new field added to the `stack.yaml` schema (MCP servers, transports, networks, variables, pins, clients, groups, limits, link, skills, experimental) MUST be optional with a documented default that preserves existing behavior. A stack file valid against version N MUST remain valid and produce equivalent behavior under version N+1 unless the major version has been incremented. Removing or renaming a field is a breaking change. This guarantee covers the `stack.yaml` schema only - skill definition formats are not in scope. The `workflow:` block in `SKILL.md` is no longer supported.
 
 ## Article X - Machine-Parseable CLI Output
 

@@ -7,7 +7,7 @@ Gridctl is pre-1.0 software. This page tracks the stability tier of each feature
 - **Stable** - production-ready. Backward-compatible changes only within the `0.x` line; breaking changes ride a clearly-labeled release.
 - **Experimental** - usable but the API, CLI surface, or output shape may change without notice. Pin a version if you build automation on top of it.
 
-Current as of **v0.1.0-beta.15** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Current as of **v0.1.0-beta.15 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
@@ -39,6 +39,8 @@ Current as of **v0.1.0-beta.15** (see [CHANGELOG.md](../CHANGELOG.md) for releas
 | Multi-client agent renders (opencode, copilot, gemini) | Experimental | Lossy dialects; may change without notice |
 | Packs (pack add / apply / status / remove) | Experimental | Manifest schema v1alpha1; may change without notice |
 | Global context sync (ctx) | Experimental | May change without notice |
+| Rules fragment library (ctx add / list / rm, fragments mode) | Experimental | May change without notice |
+| Skill governance pins (skill pins, skills: policy) | Experimental | May change without notice |
 | Distributed tracing | Experimental | May change without notice |
 | Cost observability | Experimental | May change without notice |
 | Telemetry persistence | Experimental | May change without notice |
@@ -64,6 +66,7 @@ Current as of **v0.1.0-beta.15** (see [CHANGELOG.md](../CHANGELOG.md) for releas
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Code mode sandbox has no filesystem access (by design).
 - Skills registry is local-only with no remote discovery.
+- Packs and agents have no web UI surface; both are CLI-first (agents also have no REST endpoints).
 - Global context sync covers 12 of 15 linkable clients; Claude Desktop, Cursor, and AnythingLLM expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
 - Web UI requires a modern browser (no IE11 support).
 

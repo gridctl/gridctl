@@ -91,7 +91,7 @@ const resourceTypes: ResourceTypeCard[] = [
     type: 'global-context',
     icon: Globe,
     label: 'Global Context',
-    description: 'One AGENTS.md synced to every linked client',
+    description: 'Global rules synced to every linked client',
     color: 'text-secondary',
     glowColor: 'rgba(13, 148, 136, 0.1)',
   },

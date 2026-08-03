@@ -1,14 +1,16 @@
-// Package project is the generic projection engine behind pkg/skillsync
-// and pkg/contexts: "project canonical content into per-client locations
-// with lockfile-tracked ownership." The engine owns the unified lockfile
-// (schema, two-tier versioning, migration from the two legacy lockfiles,
-// cross-process locking) and the shared vocabulary (states, dry-run
-// actions, hash-scheme prefix, atomic writes, backup pruning).
+// Package project is the generic projection engine behind pkg/skillsync,
+// pkg/contexts, pkg/agentsync, and pkg/wiring: "project canonical content
+// into per-client locations with lockfile-tracked ownership." The engine
+// owns the unified lockfile (schema, two-tier versioning, migration from
+// the legacy lockfiles, cross-process locking) and the shared vocabulary
+// (states, dry-run actions, hash-scheme prefix, atomic writes, backup
+// pruning).
 //
 // A kind yields a set of (source, target) projection keys: the contexts
-// adapter records exactly one source ("global") fanned to N clients; the
-// skills adapter records one source per projected skill. Everything the
-// two kinds do differently on purpose stays in the kind packages:
+// adapter records one source ("global") fanned to N clients (plus one
+// source per fragment in fragments mode); the skills adapter records one
+// source per projected skill. Everything the kinds do differently on
+// purpose stays in the kind packages:
 // target tables, channel/strategy resolution, hashing (tree vs content),
 // backup placement, status enumeration mode, rendering, and remediation
 // text. The engine deliberately does not force a uniform Target or a

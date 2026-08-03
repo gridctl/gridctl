@@ -43,10 +43,17 @@ var rootCmd = &cobra.Command{
 
 It allows you to define a stack of MCP servers, tools, and resources
 in a simple YAML file, then spins up, wires together, and exposes
-them via a single MCP gateway.`,
+them via a single MCP gateway.
+
+Alongside the gateway it keeps a registry of skills and agents, projects
+them (plus your global context rules and the gateway wiring itself) into
+each linked client with lockfile-tracked ownership, and imports the whole
+set from a git repo as a pack.`,
 	Example: `  gridctl apply stack.yaml     Deploy a stack of MCP servers
   gridctl link claude          Connect Claude Desktop to the gateway
   gridctl status               Show gateways and containers
+  gridctl skill add <repo>     Import skills and agents from git
+  gridctl pack add <repo>      Import a whole team pack
   gridctl destroy stack.yaml   Stop the stack and clean up`,
 	// Runtime errors are printed exactly once by Execute; usage dumps are
 	// reserved for flag and argument mistakes (see SetFlagErrorFunc below).

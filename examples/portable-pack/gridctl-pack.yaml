@@ -10,5 +10,8 @@ author:
   name: Example Team
 skills: [incident-triage]
 agents: [neteng-reviewer]
+# Rules are opt-in: only the fragments named here are installed and
+# pack-tagged (from rules/*.md in this repo).
+rules: [network-style]
 wiring: true
 clients: []

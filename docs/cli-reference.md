@@ -4,15 +4,17 @@ Commands are grouped by domain, matching the groups in `gridctl --help`. Run `gr
 
 Global flags: `--runtime <docker|podman>` overrides runtime auto-detection, `--no-color` disables styled output, and `--log-level <debug|info|warn|error>` sets the minimum log level (logs go to stderr, so JSON stdout stays parseable). Color is also suppressed automatically when output is piped, when `NO_COLOR` is set ([no-color.org](https://no-color.org/)), or when `TERM=dumb`.
 
-Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (`validate`, `plan`, `optimize`, `activate`, `search`, `add`, `skill list`, `var list`, `pins list`, and `pins verify`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. The `status`, `info`, and `doctor` JSON schemas are experimental until 1.0.
+Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (among them `validate`, `plan`, `optimize`, `activate`, `search`, `add`, `skill list`, `skill pins`, `var list`, `pins list`, `pins verify`, the `pack`, `project`, and `skill project` families, and `ctx status|sync|list`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. The `status`, `info`, and `doctor` JSON schemas are experimental until 1.0.
 
-Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, and `telemetry status` accept `--plain` to render tables without box-drawing (2+-space column separation, one record per line) for `grep`/`awk` pipelines. Piped table output degrades to plain automatically; the flag forces it on a terminal. `--plain` cannot be combined with `--json`. The `var` family keeps `--plain` as its pre-existing "show unmasked value" flag (`var get`, `var export`); `var list` therefore has no formatting flag, though its piped output still degrades to the plain style.
+Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `telemetry status`, and the table-rendering `pack`, `project`, `ctx`, and `skill project` commands accept `--plain` to render tables without box-drawing (2+-space column separation, one record per line) for `grep`/`awk` pipelines. Piped table output degrades to plain automatically; the flag forces it on a terminal. `--plain` cannot be combined with `--json`. The `var` family keeps `--plain` as its pre-existing "show unmasked value" flag (`var get`, `var export`); `var list` therefore has no formatting flag, though its piped output still degrades to the plain style.
 
 ## Contents
 
 - [Stack lifecycle](#stack-lifecycle)
 - [Catalog](#catalog)
 - [LLM clients](#llm-clients)
+- [Packs](#packs)
+- [Wiring ownership (project)](#wiring-ownership-project)
 - [Global context](#global-context)
 - [Groups](#groups)
 - [Skills](#skills)
@@ -60,7 +62,7 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 
 ## Packs
 
-`gridctl pack` imports and applies team packs: a git repo with a `gridctl-pack.yaml` manifest selecting skills, agents, and gateway wiring. See [`docs/packs.md`](./packs.md) for the manifest schema and semantics.
+`gridctl pack` imports and applies team packs: a git repo with a `gridctl-pack.yaml` manifest selecting skills, agents, rule fragments, and gateway wiring. See [`docs/packs.md`](./packs.md) for the manifest schema and semantics.
 
 | Command | Purpose |
 |---|---|
