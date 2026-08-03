@@ -240,8 +240,9 @@ function SetupView() {
           <p className="text-sm text-text-primary font-medium">Set up your global context</p>
           <p className="text-xs text-text-muted mt-1">
             One canonical AGENTS.md holds your cross-project preferences (style, commit
-            conventions, tone, tools) and syncs to every linked client. Per-project AGENTS.md
-            files stay in their repos and are never touched.
+            conventions, tone, tools) and syncs to every linked client. It can later be split
+            into rule fragments with per-client assembly. Per-project AGENTS.md files stay in
+            their repos and are never touched.
           </p>
         </div>
       </div>

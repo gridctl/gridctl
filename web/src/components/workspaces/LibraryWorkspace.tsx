@@ -1467,7 +1467,7 @@ function LibraryHeader({ onNewSkill, onImportSkill, onGlobalContext, onRefresh, 
           <button
             onClick={onGlobalContext}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
-            title="Manage the canonical global AGENTS.md synced to linked clients"
+            title="Manage the global context (single file or rule fragments) synced to linked clients"
           >
             <Globe size={12} /> Global Context
           </button>
