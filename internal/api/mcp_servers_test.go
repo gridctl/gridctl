@@ -46,7 +46,7 @@ func TestHandleSetServerTools_HappyPath_NoReload(t *testing.T) {
 	path, s := newStackHarness(t)
 
 	body, _ := json.Marshal(map[string]any{"tools": []string{"a", "b"}})
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(string(body)))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 
@@ -88,7 +88,7 @@ func TestHandleSetServerTools_HappyPath_WithReload(t *testing.T) {
 	s.SetReloadHandler(rh)
 
 	body, _ := json.Marshal(map[string]any{"tools": []string{"a"}})
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(string(body)))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 
@@ -123,7 +123,7 @@ mcp-servers:
 	s.SetStackFile(path)
 
 	body := `{"tools":[]}`
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 
@@ -138,7 +138,7 @@ mcp-servers:
 func TestHandleSetServerTools_InvalidJSON(t *testing.T) {
 	_, s := newStackHarness(t)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(":::not json"))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(":::not json"))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 
@@ -150,7 +150,7 @@ func TestHandleSetServerTools_InvalidJSON(t *testing.T) {
 func TestHandleSetServerTools_MissingToolsField(t *testing.T) {
 	_, s := newStackHarness(t)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(`{}`))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(`{}`))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 
@@ -164,7 +164,7 @@ func TestHandleSetServerTools_EmptyToolName(t *testing.T) {
 	_, s := newStackHarness(t)
 
 	body := `{"tools":["a",""]}`
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 
@@ -178,7 +178,7 @@ func TestHandleSetServerTools_UnknownServer(t *testing.T) {
 	_, s := newStackHarness(t)
 
 	body := `{"tools":["a"]}`
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/missing/tools", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/missing/tools", strings.NewReader(body))
 	req.SetPathValue("name", "missing")
 	w := httptest.NewRecorder()
 
@@ -196,7 +196,7 @@ func TestHandleSetServerTools_Conflict(t *testing.T) {
 	defer swapBetweenReadsHook(nil)
 
 	body := `{"tools":["a"]}`
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 
@@ -213,7 +213,7 @@ func TestHandleSetServerTools_NoStackFile(t *testing.T) {
 	s := &Server{}
 
 	body := `{"tools":["a"]}`
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 
@@ -244,7 +244,7 @@ func TestHandleSetServerTools_ReloadFailure(t *testing.T) {
 	s.SetReloadHandler(rh)
 
 	body := `{"tools":["a"]}`
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/ext/tools", strings.NewReader(body))
 	req.SetPathValue("name", "ext")
 	w := httptest.NewRecorder()
 

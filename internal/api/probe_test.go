@@ -68,7 +68,7 @@ func postProbe(t *testing.T, handler http.Handler, body any, sessionID string) *
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/probe", bytes.NewReader(b))
+	req := loopbackRequest(http.MethodPost, "/api/servers/probe", bytes.NewReader(b))
 	if sessionID != "" {
 		req.Header.Set("X-Session-ID", sessionID)
 	}
@@ -283,7 +283,7 @@ func TestProbeHandler_AuthSecretScrubbing(t *testing.T) {
 
 func TestProbeHandler_MethodNotAllowed(t *testing.T) {
 	srv := newProbeServer(t, &recordingClient{})
-	req := httptest.NewRequest(http.MethodGet, "/api/servers/probe", nil)
+	req := loopbackRequest(http.MethodGet, "/api/servers/probe", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -293,7 +293,7 @@ func TestProbeHandler_MethodNotAllowed(t *testing.T) {
 
 func TestProbeHandler_NoProber_503(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/probe", strings.NewReader(`{"url":"x"}`))
+	req := loopbackRequest(http.MethodPost, "/api/servers/probe", strings.NewReader(`{"url":"x"}`))
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
@@ -311,7 +311,7 @@ func TestProbeHandler_SessionConcurrencyCap(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]any{"url": "https://example.com/mcp"})
 	send := func() int {
-		req := httptest.NewRequest(http.MethodPost, "/api/servers/probe", bytes.NewReader(body))
+		req := loopbackRequest(http.MethodPost, "/api/servers/probe", bytes.NewReader(body))
 		req.Header.Set("X-Session-ID", "s1")
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)

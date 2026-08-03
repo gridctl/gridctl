@@ -232,6 +232,8 @@ return 503 until a stack is loaded via 'gridctl apply <stack.yaml>'.`,
 
 func init() {
 	serveCmd.Flags().IntVarP(&applyPort, "port", "p", 8180, "Port for the API server and web UI")
+	serveCmd.Flags().StringVar(&applyBind, "bind", "", "Address to bind (default 127.0.0.1, loopback only)")
+	serveCmd.Flags().BoolVar(&applyBindAll, "bind-all", false, "Bind every interface, making the API and web UI reachable from other hosts")
 	serveCmd.Flags().BoolVarP(&applyForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
 	serveCmd.Flags().BoolVar(&applyDaemonChild, "daemon-child", false, "Internal flag for daemon process")
 	_ = serveCmd.Flags().MarkHidden("daemon-child")

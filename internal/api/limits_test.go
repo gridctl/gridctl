@@ -13,7 +13,7 @@ import (
 
 func getLimits(t *testing.T, s *Server) (int, limits.StatusReport) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/limits", nil)
+	req := loopbackRequest(http.MethodGet, "/api/limits", nil)
 	w := httptest.NewRecorder()
 	s.handleLimits(w, req)
 	var report limits.StatusReport

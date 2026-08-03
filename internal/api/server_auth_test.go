@@ -84,7 +84,7 @@ func TestHandleAuthServers(t *testing.T) {
 	srv, _, _ := newAuthTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/servers", nil)
+	req := loopbackRequest(http.MethodGet, "/api/auth/servers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -104,7 +104,7 @@ func TestHandleAuthLoginAndManual(t *testing.T) {
 	srv, _, as := newAuthTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/notion/auth/login", strings.NewReader("{}"))
+	req := loopbackRequest(http.MethodPost, "/api/servers/notion/auth/login", strings.NewReader("{}"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -124,7 +124,7 @@ func TestHandleAuthLoginAndManual(t *testing.T) {
 	// Complete via the manual endpoint with a pasted redirect URL.
 	redirect := "http://localhost:8180/oauth/callback?code=any&state=" + url.QueryEscape(loginResp.State)
 	body := fmt.Sprintf(`{"redirectUrl": %q}`, redirect)
-	req = httptest.NewRequest(http.MethodPost, "/api/servers/notion/auth/manual", strings.NewReader(body))
+	req = loopbackRequest(http.MethodPost, "/api/servers/notion/auth/manual", strings.NewReader(body))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -132,7 +132,7 @@ func TestHandleAuthLoginAndManual(t *testing.T) {
 	}
 
 	// Status should now be authorized.
-	req = httptest.NewRequest(http.MethodGet, "/api/auth/servers", nil)
+	req = loopbackRequest(http.MethodGet, "/api/auth/servers", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	var infos []mcpauth.ServerAuthInfo
@@ -148,7 +148,7 @@ func TestHandleAuthWaitUnknownState(t *testing.T) {
 	srv, _, _ := newAuthTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/servers/notion/auth/wait?state=bogus", nil)
+	req := loopbackRequest(http.MethodGet, "/api/servers/notion/auth/wait?state=bogus", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadGateway {
@@ -160,7 +160,7 @@ func TestHandleAuthLogout(t *testing.T) {
 	srv, _, _ := newAuthTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/notion/auth/logout", nil)
+	req := loopbackRequest(http.MethodPost, "/api/servers/notion/auth/logout", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -172,7 +172,7 @@ func TestAuthEndpointsDisabledWithoutBroker(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/servers", nil)
+	req := loopbackRequest(http.MethodGet, "/api/auth/servers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotImplemented {
@@ -186,7 +186,7 @@ func TestOAuthCallbackMountedOutsideAuthMiddleware(t *testing.T) {
 	handler := srv.Handler()
 
 	// API routes require the gateway token.
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/servers", nil)
+	req := loopbackRequest(http.MethodGet, "/api/auth/servers", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -196,7 +196,7 @@ func TestOAuthCallbackMountedOutsideAuthMiddleware(t *testing.T) {
 	// The OAuth callback must be reachable with NO gateway token: the
 	// browser redirect carries none. A bad state is a 400 from the
 	// callback page, not a 401 from the middleware.
-	req = httptest.NewRequest(http.MethodGet, "/oauth/callback?code=x&state=unknown", nil)
+	req = loopbackRequest(http.MethodGet, "/oauth/callback?code=x&state=unknown", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code == http.StatusUnauthorized {

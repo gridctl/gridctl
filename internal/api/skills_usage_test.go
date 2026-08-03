@@ -14,7 +14,7 @@ import (
 // decoded response plus the HTTP status.
 func decodeSkillUsage(t *testing.T, srv *Server) (skillUsageResponse, int) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/usage", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/usage", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -67,7 +67,7 @@ func TestHandleSkillsUsage_EmptyIsObjectNotNull(t *testing.T) {
 
 func TestHandleSkillsUsage_NoAccumulatorReturns503(t *testing.T) {
 	srv := newTestServer(t) // no metrics accumulator wired
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/usage", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/usage", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 

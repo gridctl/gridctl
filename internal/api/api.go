@@ -54,6 +54,7 @@ type Server struct {
 	traceBuffer        *tracing.Buffer
 	stackFile          string
 	allowedOrigins     []string
+	allowedHosts       []string
 	authType           string
 	authToken          string
 	authHeader         string
@@ -201,9 +202,11 @@ func (s *Server) SetAllowedOrigins(origins []string) {
 	s.streamableServer.SetAllowedOrigins(origins)
 }
 
-// SetAllowedHosts sets extra Host header values accepted on the MCP endpoint.
-// Loopback hosts are always accepted, so an empty list is the secure default.
+// SetAllowedHosts sets extra Host header values accepted across the whole HTTP
+// surface. Loopback hosts are always accepted, so an empty list is the secure
+// default.
 func (s *Server) SetAllowedHosts(hosts []string) {
+	s.allowedHosts = hosts
 	s.streamableServer.SetAllowedHosts(hosts)
 }
 
@@ -645,12 +648,43 @@ func (s *Server) Handler() http.Handler {
 		handler = outer
 	}
 
+	// DNS rebinding protection for the whole surface, not just /mcp. Sits
+	// inside corsMiddleware so preflight still gets its headers, and outside
+	// the OAuth callback mount so that route is covered too — its redirect
+	// URI is loopback, so it satisfies the check without an exemption.
+	handler = s.hostMiddleware(handler)
+
 	var extraHeaders []string
 	if s.authHeader != "" && s.authHeader != "Authorization" {
 		extraHeaders = append(extraHeaders, s.authHeader)
 	}
 	handler = corsMiddleware(s.allowedOrigins, extraHeaders, handler)
 	return handler
+}
+
+// hostExemptPath reports paths that must answer regardless of Host. The
+// liveness probes are polled by the daemon parent before anything else is
+// known to work, and static UI files are served to a browser that may address
+// the machine however the user typed it.
+func hostExemptPath(path string) bool {
+	return path == "/health" || path == "/ready"
+}
+
+// hostMiddleware rejects requests carrying an attacker-controlled Host header,
+// delegating to the same check the MCP transport uses so the two surfaces
+// cannot drift apart.
+func (s *Server) hostMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hostExemptPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if err := mcp.ValidateRequestHost(r, s.allowedHosts); err != nil {
+			http.Error(w, "Forbidden: "+err.Error(), http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // handleStatus returns the overall gateway status.

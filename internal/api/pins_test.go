@@ -25,7 +25,7 @@ func setupPinsServer(t *testing.T) (*Server, *pins.PinStore) {
 func TestHandlePins_NoStore(t *testing.T) {
 	server := &Server{gateway: mcp.NewGateway()}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -48,7 +48,7 @@ func TestHandlePins_NoStore(t *testing.T) {
 func TestHandlePins_ListEmpty(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -68,7 +68,7 @@ func TestHandlePins_ListEmpty(t *testing.T) {
 func TestHandlePins_GetServer_NotFound(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/unknown-server", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/unknown-server", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -80,7 +80,7 @@ func TestHandlePins_GetServer_NotFound(t *testing.T) {
 func TestHandlePins_Approve_PinsNotFound(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/pins/unknown-server/approve", nil)
+	req := loopbackRequest(http.MethodPost, "/api/pins/unknown-server/approve", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -92,7 +92,7 @@ func TestHandlePins_Approve_PinsNotFound(t *testing.T) {
 func TestHandlePins_Reset_NotFound(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/pins/unknown-server", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/pins/unknown-server", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -104,7 +104,7 @@ func TestHandlePins_Reset_NotFound(t *testing.T) {
 func TestHandlePins_MethodNotAllowed(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/pins", nil)
+	req := loopbackRequest(http.MethodPut, "/api/pins", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -122,7 +122,7 @@ func TestHandlePins_GetServer_Found(t *testing.T) {
 		t.Fatalf("VerifyOrPin: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/myserver", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -149,7 +149,7 @@ func TestHandlePins_Approve_ServerNotInGateway(t *testing.T) {
 	}
 
 	// Gateway has no registered clients, so GetClient returns nil → 404.
-	req := httptest.NewRequest(http.MethodPost, "/api/pins/myserver/approve", nil)
+	req := loopbackRequest(http.MethodPost, "/api/pins/myserver/approve", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -161,7 +161,7 @@ func TestHandlePins_Approve_ServerNotInGateway(t *testing.T) {
 func TestHandlePinsDiff_NoStore(t *testing.T) {
 	server := &Server{gateway: mcp.NewGateway()}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -173,7 +173,7 @@ func TestHandlePinsDiff_NoStore(t *testing.T) {
 func TestHandlePinsDiff_PinsNotFound(t *testing.T) {
 	server, _ := setupPinsServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/unknown-server/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/unknown-server/diff", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -190,7 +190,7 @@ func TestHandlePinsDiff_ServerNotInGateway(t *testing.T) {
 		t.Fatalf("VerifyOrPin: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -208,7 +208,7 @@ func TestHandlePinsDiff_Clean(t *testing.T) {
 	}
 	server.gateway.Router().AddClient(newMockAgentClient("myserver", tools))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -251,7 +251,7 @@ func TestHandlePinsDiff_Drift(t *testing.T) {
 	}
 	server.gateway.Router().AddClient(newMockAgentClient("myserver", live))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -317,7 +317,7 @@ func TestHandleListPins_OmitsPersistedSchemas(t *testing.T) {
 		t.Fatalf("VerifyOrPin: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -350,7 +350,7 @@ func TestHandlePinsDiff_SchemaOnlyDrift(t *testing.T) {
 	}}
 	server.gateway.Router().AddClient(newMockAgentClient("myserver", live))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -387,7 +387,7 @@ func TestHandlePins_Approve_ExpectedHash(t *testing.T) {
 	server.gateway.Router().AddClient(newMockAgentClient("myserver", live))
 
 	// Fetch the diff to get the reviewed fingerprint.
-	req := httptest.NewRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/pins/myserver/diff", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	var diff pinsDiffResponse
@@ -397,7 +397,7 @@ func TestHandlePins_Approve_ExpectedHash(t *testing.T) {
 
 	// A stale fingerprint (definitions changed after review) must be rejected.
 	stale := strings.NewReader(`{"expected_server_hash":"h2:not-what-was-reviewed"}`)
-	req = httptest.NewRequest(http.MethodPost, "/api/pins/myserver/approve", stale)
+	req = loopbackRequest(http.MethodPost, "/api/pins/myserver/approve", stale)
 	w = httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusConflict {
@@ -409,7 +409,7 @@ func TestHandlePins_Approve_ExpectedHash(t *testing.T) {
 
 	// The reviewed fingerprint still matches the live tools: approve succeeds.
 	fresh := strings.NewReader(`{"expected_server_hash":"` + diff.LiveServerHash + `"}`)
-	req = httptest.NewRequest(http.MethodPost, "/api/pins/myserver/approve", fresh)
+	req = loopbackRequest(http.MethodPost, "/api/pins/myserver/approve", fresh)
 	w = httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -429,7 +429,7 @@ func TestHandlePins_Approve_NoBodyStaysUnconditional(t *testing.T) {
 	}
 	server.gateway.Router().AddClient(newMockAgentClient("myserver", []mcp.Tool{{Name: "echo", Description: "changed"}}))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/pins/myserver/approve", nil)
+	req := loopbackRequest(http.MethodPost, "/api/pins/myserver/approve", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -446,7 +446,7 @@ func TestHandlePins_Reset_Success(t *testing.T) {
 		t.Fatalf("VerifyOrPin: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/pins/myserver", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/pins/myserver", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 

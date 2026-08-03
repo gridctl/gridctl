@@ -21,7 +21,7 @@ func newTestServerWithTraces(t *testing.T) *Server {
 
 func TestHandleTraces_emptyBuffer(t *testing.T) {
 	srv := newTestServerWithTraces(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/traces", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -43,7 +43,7 @@ func TestHandleTraces_emptyBuffer(t *testing.T) {
 
 func TestHandleTraces_methodNotAllowed(t *testing.T) {
 	srv := newTestServerWithTraces(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/traces", nil)
+	req := loopbackRequest(http.MethodPost, "/api/traces", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -61,7 +61,7 @@ func TestHandleTraces_withData(t *testing.T) {
 
 	srv.SetTraceBuffer(buf)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/traces?limit=10", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces?limit=10", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -72,7 +72,7 @@ func TestHandleTraces_withData(t *testing.T) {
 
 func TestHandleTraceDetail_notFound(t *testing.T) {
 	srv := newTestServerWithTraces(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/traces/nonexistent-trace-id", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces/nonexistent-trace-id", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -84,7 +84,7 @@ func TestHandleTraceDetail_notFound(t *testing.T) {
 func TestHandleTraces_nilBuffer(t *testing.T) {
 	// When no trace buffer is set, should return empty envelope.
 	srv := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/traces", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -102,7 +102,7 @@ func TestHandleTraces_nilBuffer(t *testing.T) {
 
 func TestHandleTraces_filterErrors(t *testing.T) {
 	srv := newTestServerWithTraces(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/traces?errors=true&limit=50", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces?errors=true&limit=50", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -113,7 +113,7 @@ func TestHandleTraces_filterErrors(t *testing.T) {
 
 func TestHandleTraces_filterMinDuration(t *testing.T) {
 	srv := newTestServerWithTraces(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/traces?minDuration=500ms", nil)
+	req := loopbackRequest(http.MethodGet, "/api/traces?minDuration=500ms", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 

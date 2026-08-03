@@ -56,7 +56,7 @@ func setupSkillPinsServer(t *testing.T, skillNames ...string) (*Server, *skillpi
 func TestHandleSkillPins_NoStore(t *testing.T) {
 	server := NewServer(mcp.NewGateway(), nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/skill-pins", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skill-pins", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -75,7 +75,7 @@ func TestHandleSkillPins_NoStore(t *testing.T) {
 func TestHandleSkillPins_ListAndGet(t *testing.T) {
 	server, _, _ := setupSkillPinsServer(t, "alpha")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/skill-pins", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skill-pins", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -89,14 +89,14 @@ func TestHandleSkillPins_ListAndGet(t *testing.T) {
 		t.Fatalf("listed = %+v, want pinned alpha", listed)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/skill-pins/alpha", nil)
+	req = loopbackRequest(http.MethodGet, "/api/skill-pins/alpha", nil)
 	w = httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get status = %d", w.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/skill-pins/absent", nil)
+	req = loopbackRequest(http.MethodGet, "/api/skill-pins/absent", nil)
 	w = httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -117,7 +117,7 @@ func TestHandleSkillPinDiff_DriftAndApprove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/skill-pins/alpha/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skill-pins/alpha/diff", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -141,7 +141,7 @@ func TestHandleSkillPinDiff_DriftAndApprove(t *testing.T) {
 
 	// Stale expected hash: 409.
 	body := strings.NewReader(`{"expected_hash":"stale"}`)
-	req = httptest.NewRequest(http.MethodPost, "/api/skill-pins/alpha/approve", body)
+	req = loopbackRequest(http.MethodPost, "/api/skill-pins/alpha/approve", body)
 	w = httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusConflict {
@@ -150,7 +150,7 @@ func TestHandleSkillPinDiff_DriftAndApprove(t *testing.T) {
 
 	// Correct hash: approved.
 	body = strings.NewReader(`{"expected_hash":"` + diff.CompositeHash + `"}`)
-	req = httptest.NewRequest(http.MethodPost, "/api/skill-pins/alpha/approve", body)
+	req = loopbackRequest(http.MethodPost, "/api/skill-pins/alpha/approve", body)
 	w = httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -158,7 +158,7 @@ func TestHandleSkillPinDiff_DriftAndApprove(t *testing.T) {
 	}
 
 	// Diff is clean again.
-	req = httptest.NewRequest(http.MethodGet, "/api/skill-pins/alpha/diff", nil)
+	req = loopbackRequest(http.MethodGet, "/api/skill-pins/alpha/diff", nil)
 	w = httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if err := json.NewDecoder(w.Body).Decode(&diff); err != nil {
@@ -172,7 +172,7 @@ func TestHandleSkillPinDiff_DriftAndApprove(t *testing.T) {
 func TestHandleSkillPinReset(t *testing.T) {
 	server, ps, _ := setupSkillPinsServer(t, "alpha")
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/skill-pins/alpha", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/skill-pins/alpha", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
@@ -182,7 +182,7 @@ func TestHandleSkillPinReset(t *testing.T) {
 		t.Fatal("pin survived reset")
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/skill-pins/alpha", nil)
+	req = loopbackRequest(http.MethodDelete, "/api/skill-pins/alpha", nil)
 	w = httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -194,7 +194,7 @@ func TestRegistrySkillsList_GovernanceFields(t *testing.T) {
 	server, _, _ := setupSkillPinsServer(t, "alpha")
 	server.gateway.SetSkillPolicy(mcp.NewSkillPolicy(&mcp.SkillPolicySpec{Deny: []string{"alpha"}}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/registry/skills", nil)
+	req := loopbackRequest(http.MethodGet, "/api/registry/skills", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

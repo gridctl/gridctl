@@ -51,7 +51,7 @@ func TestHandleSkillSourcesList_ReportsDrift(t *testing.T) {
 	srv, regServer := setupRegistryTestServer(t)
 	seedDriftedSkill(t, srv, regServer, "my-source", "https://github.com/org/repo", "drifted-skill")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/sources", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/sources", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -77,7 +77,7 @@ func TestHandleSkillSourceUpdate_SkipsDriftedByDefault(t *testing.T) {
 	srv, regServer := setupRegistryTestServer(t)
 	original := seedDriftedSkill(t, srv, regServer, "my-source", "https://github.com/org/repo", "drifted-skill")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/my-source/update", nil)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/my-source/update", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -112,7 +112,7 @@ func TestHandleSkillDetach(t *testing.T) {
 	srv, regServer := setupRegistryTestServer(t)
 	seedDriftedSkill(t, srv, regServer, "my-source", "https://github.com/org/repo", "drifted-skill")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/my-source/skills/drifted-skill/detach", nil)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/my-source/skills/drifted-skill/detach", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -193,7 +193,7 @@ func TestHandleSkillSourceUpdate_ForceBacksUpAndOverwrites(t *testing.T) {
 	sourceName := skills.RepoToName(dir)
 
 	body := strings.NewReader(`{"force":true}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/"+sourceName+"/update", body)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/"+sourceName+"/update", body)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -242,7 +242,7 @@ func TestHandleSkillDiff(t *testing.T) {
 	commitWorktree(t, repo, "v2")
 
 	sourceName := skills.RepoToName(dir)
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/sources/"+sourceName+"/skills/repo-skill/diff", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/sources/"+sourceName+"/skills/repo-skill/diff", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 

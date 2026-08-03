@@ -367,6 +367,13 @@ type GatewayConfig struct {
 	// Set explicit origins to restrict cross-origin access.
 	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
 
+	// Bind is the address the gateway's HTTP listener binds. When not set,
+	// defaults to 127.0.0.1 (loopback only), so the API, web UI, and gateway
+	// are unreachable from other hosts. Set "0.0.0.0" to listen on every
+	// interface; the --bind and --bind-all flags override this field.
+	// Widening the bind without setting auth logs a warning at startup.
+	Bind string `yaml:"bind,omitempty"`
+
 	// AllowedHosts lists additional Host header values accepted on the MCP
 	// endpoint when a request arrives over loopback. Loopback hosts
 	// (localhost, 127.0.0.0/8, ::1) are always accepted, so the default of

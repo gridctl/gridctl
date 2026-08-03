@@ -128,7 +128,7 @@ mcp-servers:
 	handler := srv.Handler()
 
 	// Set.
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/github/model",
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/github/model",
 		strings.NewReader(`{"model":"claude-opus-4-7"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -145,7 +145,7 @@ mcp-servers:
 	assertStackContains(t, stackFile, "model: claude-opus-4-7")
 
 	// Clear.
-	req = httptest.NewRequest(http.MethodPut, "/api/mcp-servers/github/model",
+	req = loopbackRequest(http.MethodPut, "/api/mcp-servers/github/model",
 		strings.NewReader(`{"model":""}`))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -165,7 +165,7 @@ mcp-servers:
 	srv.SetStackFile(stackFile)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/missing/model",
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/missing/model",
 		strings.NewReader(`{"model":"claude-opus-4-7"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -178,7 +178,7 @@ func TestHandleSetServerModel_NoStackFile(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/github/model",
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/github/model",
 		strings.NewReader(`{"model":"claude-opus-4-7"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -217,7 +217,7 @@ func TestHandleStatus_ServerModelsAndDefaultModel(t *testing.T) {
 	srv.SetDefaultModel(func() string { return "claude-haiku-4-5" })
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := loopbackRequest(http.MethodGet, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

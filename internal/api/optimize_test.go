@@ -16,7 +16,7 @@ func TestHandleOptimize_NoAccumulator_503(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/optimize", nil)
+	req := loopbackRequest(http.MethodGet, "/api/optimize", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -30,7 +30,7 @@ func TestHandleOptimize_WrongStack_404(t *testing.T) {
 	srv.SetStackName("test-stack")
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/optimize?stack=other-stack", nil)
+	req := loopbackRequest(http.MethodGet, "/api/optimize?stack=other-stack", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -43,7 +43,7 @@ func TestHandleOptimize_FreshGateway_InfoFinding(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/optimize", nil)
+	req := loopbackRequest(http.MethodGet, "/api/optimize", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -69,7 +69,7 @@ func TestHandleOptimize_MethodNotAllowed(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/optimize", nil)
+	req := loopbackRequest(http.MethodPost, "/api/optimize", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -85,7 +85,7 @@ func TestHandleOptimize_ReportShape(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/optimize", nil)
+	req := loopbackRequest(http.MethodGet, "/api/optimize", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -186,7 +186,7 @@ func TestHandleOptimize_MinImpactRespected(t *testing.T) {
 	srv.metricsAccumulator = metrics.NewAccumulator(100)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/optimize?min_impact=999999", nil)
+	req := loopbackRequest(http.MethodGet, "/api/optimize?min_impact=999999", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

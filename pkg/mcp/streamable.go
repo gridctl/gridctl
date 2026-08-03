@@ -195,8 +195,16 @@ func (s *StreamableHTTPServer) validateOrigin(r *http.Request) error {
 // A request with no recorded local address is treated as loopback, so the
 // protection fails closed.
 func (s *StreamableHTTPServer) validateHost(r *http.Request) error {
-	local := requestLocalAddr(r)
-	if local != nil && !addrIsLoopback(local) {
+	return ValidateRequestHost(r, s.allowedHosts)
+}
+
+// ValidateRequestHost is the shared DNS rebinding check. The MCP transport and
+// the REST API both route through it so the two surfaces cannot drift: a Host
+// value accepted on one must be accepted on the other. See validateHost above
+// for the reasoning.
+func ValidateRequestHost(r *http.Request, allowedHosts []string) error {
+	local := RequestLocalAddr(r)
+	if local != nil && !AddrIsLoopback(local) {
 		return nil
 	}
 	if r.Host == "" {
@@ -206,7 +214,7 @@ func (s *StreamableHTTPServer) validateHost(r *http.Request) error {
 	if !ok {
 		return fmt.Errorf("invalid Host header %q", r.Host)
 	}
-	for _, allowed := range s.allowedHosts {
+	for _, allowed := range allowedHosts {
 		// Empty entries would match an empty authority; wildcards are not
 		// supported here, since an allow-all Host list defeats the control.
 		if allowed == "" {
@@ -220,7 +228,7 @@ func (s *StreamableHTTPServer) validateHost(r *http.Request) error {
 			return nil
 		}
 	}
-	if !hostIsLoopback(hostname) {
+	if !HostIsLoopback(hostname) {
 		return fmt.Errorf("invalid Host header %q", r.Host)
 	}
 	// A loopback name pointed at the wrong port is still someone else's
@@ -233,18 +241,18 @@ func (s *StreamableHTTPServer) validateHost(r *http.Request) error {
 	return nil
 }
 
-// requestLocalAddr returns the address the request arrived on, or nil when the
+// RequestLocalAddr returns the address the request arrived on, or nil when the
 // transport recorded none (httptest requests, custom servers).
-func requestLocalAddr(r *http.Request) net.Addr {
+func RequestLocalAddr(r *http.Request) net.Addr {
 	addr, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
 	return addr
 }
 
-// addrIsLoopback reports whether a listener address is on the loopback
+// AddrIsLoopback reports whether a listener address is on the loopback
 // interface. Anything that does not parse as host:port is treated as loopback
 // so the caller fails closed: a non-TCP listener (Unix socket, net.Pipe) must
 // not silently disable Host validation.
-func addrIsLoopback(addr net.Addr) bool {
+func AddrIsLoopback(addr net.Addr) bool {
 	// Strict host:port here, unlike a Host header, where a bare name is
 	// legitimate: a TCP listener address always carries a port, so anything
 	// else is a non-TCP listener and must fail closed.
@@ -252,15 +260,15 @@ func addrIsLoopback(addr net.Addr) bool {
 	if err != nil || host == "" {
 		return true
 	}
-	return hostIsLoopback(host)
+	return HostIsLoopback(host)
 }
 
-// hostIsLoopback reports whether hostname names the loopback interface.
+// HostIsLoopback reports whether hostname names the loopback interface.
 // ParseIP plus IsLoopback covers all of 127.0.0.0/8 and ::1 (including
 // v4-mapped v6), which a literal comparison against "127.0.0.1" would miss.
 // Note 0.0.0.0 is deliberately NOT loopback: DNS can answer with it, so it is
 // a known rebinding vector despite routing locally on some platforms.
-func hostIsLoopback(hostname string) bool {
+func HostIsLoopback(hostname string) bool {
 	// A trailing dot is the fully-qualified form of the same name.
 	hostname = strings.TrimSuffix(hostname, ".")
 	if strings.EqualFold(hostname, "localhost") {

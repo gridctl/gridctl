@@ -653,12 +653,16 @@ func TestCheckState_ReplaceKeepsExplicitPort(t *testing.T) {
 	}
 }
 
-// occupiedPort starts a listener on all interfaces on a random port and returns
-// the port number. The HTTP server uses ":PORT" (all interfaces), so this
-// listener blocks it. The caller is responsible for closing the listener.
+// occupiedPort starts a listener on a random loopback port and returns the
+// port number. It must bind the same address the HTTP server will
+// (DefaultBindAddress) to actually block it: a wildcard listener does not
+// reliably conflict with a later loopback bind, since SO_REUSEADDR lets the
+// more specific bind succeed, and the server would then start and block
+// forever instead of returning the error these tests assert on. The caller is
+// responsible for closing the listener.
 func occupiedPort(t *testing.T) (int, func()) {
 	t.Helper()
-	ln, err := net.Listen("tcp", ":0") //nolint:gosec // intentionally binding all interfaces to block the HTTP server in tests
+	ln, err := net.Listen("tcp", net.JoinHostPort(DefaultBindAddress, "0"))
 	if err != nil {
 		t.Fatalf("could not listen: %v", err)
 	}

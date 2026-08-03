@@ -128,7 +128,7 @@ mcp-servers:
 	handler := srv.Handler()
 
 	// Set.
-	req := httptest.NewRequest(http.MethodPut, "/api/gateway/default-model",
+	req := loopbackRequest(http.MethodPut, "/api/gateway/default-model",
 		strings.NewReader(`{"model":"claude-haiku-4-5"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -145,7 +145,7 @@ mcp-servers:
 	assertStackContains(t, stackFile, "default_model: claude-haiku-4-5")
 
 	// Clear — the gateway block this endpoint created must round-trip away.
-	req = httptest.NewRequest(http.MethodPut, "/api/gateway/default-model",
+	req = loopbackRequest(http.MethodPut, "/api/gateway/default-model",
 		strings.NewReader(`{"model":""}`))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -159,7 +159,7 @@ func TestHandleSetDefaultModel_NoStackFile(t *testing.T) {
 	srv := newTestServer(t)
 	handler := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/gateway/default-model",
+	req := loopbackRequest(http.MethodPut, "/api/gateway/default-model",
 		strings.NewReader(`{"model":"claude-haiku-4-5"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

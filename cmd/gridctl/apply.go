@@ -22,6 +22,8 @@ var (
 	applyQuiet       bool
 	applyNoCache     bool
 	applyPort        int
+	applyBind        string
+	applyBindAll     bool
 	applyBasePort    int
 	applyForeground  bool
 	applyDaemonChild bool
@@ -72,6 +74,8 @@ func init() {
 	applyCmd.Flags().BoolVarP(&applyQuiet, "quiet", "q", false, "Suppress progress output (show only final result)")
 	applyCmd.Flags().BoolVar(&applyNoCache, "no-cache", false, "Force rebuild of source-based images")
 	applyCmd.Flags().IntVarP(&applyPort, "port", "p", 8180, "Port for MCP gateway")
+	applyCmd.Flags().StringVar(&applyBind, "bind", "", "Address to bind (default 127.0.0.1, loopback only)")
+	applyCmd.Flags().BoolVar(&applyBindAll, "bind-all", false, "Bind every interface, making the gateway reachable from other hosts")
 	applyCmd.Flags().IntVar(&applyBasePort, "base-port", 9000, "Base port for MCP server host port allocation")
 	applyCmd.Flags().BoolVarP(&applyForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
 	applyCmd.Flags().BoolVar(&applyDaemonChild, "daemon-child", false, "Internal flag for daemon process")
@@ -83,11 +87,26 @@ func init() {
 	applyCmd.Flags().StringVar(&applyLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
 }
 
+// resolveBindFlag turns the --bind / --bind-all pair into a single address.
+// --bind-all is a named alias for the all-interfaces address so the intent is
+// visible in shell history and support threads; an explicit --bind wins when
+// both are given.
+func resolveBindFlag() string {
+	if applyBind != "" {
+		return applyBind
+	}
+	if applyBindAll {
+		return controller.BindAllAddress
+	}
+	return ""
+}
+
 // runServeStackless starts the API server and web UI without a stack file.
 // Vault and wizard endpoints are active; stack-dependent endpoints return 503.
 func runServeStackless() error {
 	ctrl := controller.New(controller.Config{
 		Port:        applyPort,
+		Bind:        resolveBindFlag(),
 		Foreground:  applyForeground,
 		DaemonChild: applyDaemonChild,
 		LogFile:     applyLogFile,
@@ -109,6 +128,7 @@ func runApply(stackPath string) error {
 	cfg := controller.Config{
 		StackPath:   stackPath,
 		Port:        applyPort,
+		Bind:        resolveBindFlag(),
 		BasePort:    applyBasePort,
 		Verbose:     applyVerbose,
 		Quiet:       applyQuiet,

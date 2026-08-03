@@ -51,7 +51,7 @@ func batchRequest(t *testing.T, s *Server, payload any) *httptest.ResponseRecord
 	t.Helper()
 	body, err := json.Marshal(payload)
 	require.NoError(t, err)
-	req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/tools", strings.NewReader(string(body)))
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/tools", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 	s.handleSetServerToolsBatch(w, req)
 	return w
@@ -183,7 +183,7 @@ func TestHandleSetServerToolsBatch_BadRequests(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, s := newBatchHarness(t)
-			req := httptest.NewRequest(http.MethodPut, "/api/mcp-servers/tools", strings.NewReader(tc.payload))
+			req := loopbackRequest(http.MethodPut, "/api/mcp-servers/tools", strings.NewReader(tc.payload))
 			w := httptest.NewRecorder()
 			s.handleSetServerToolsBatch(w, req)
 			assert.Equal(t, http.StatusBadRequest, w.Code, "payload: %s", tc.payload)

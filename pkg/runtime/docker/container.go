@@ -21,7 +21,8 @@ type ContainerConfig struct {
 	Command     []string // Override container command
 	Env         map[string]string
 	Port        int // Container port
-	HostPort    int // Host port to publish (0 = auto-assign)
+	HostPort    int    // Host port to publish (0 = auto-assign)
+	HostIP      string // Host address to publish on (empty = 127.0.0.1)
 	NetworkName string
 	Labels      map[string]string
 	Transport   string   // "http" or "stdio"
@@ -64,8 +65,15 @@ func CreateContainer(ctx context.Context, cli dockerclient.DockerClient, cfg Con
 		if cfg.HostPort > 0 {
 			hostPort = fmt.Sprintf("%d", cfg.HostPort)
 		}
+		// Publish on loopback unless told otherwise. Publishing every
+		// downstream server on all interfaces exposed the whole fleet to the
+		// local network, not just the gateway.
+		hostIP := cfg.HostIP
+		if hostIP == "" {
+			hostIP = "127.0.0.1"
+		}
 		portBindings[port] = []nat.PortBinding{
-			{HostIP: "0.0.0.0", HostPort: hostPort},
+			{HostIP: hostIP, HostPort: hostPort},
 		}
 	}
 

@@ -59,7 +59,7 @@ func TestHandleSkills_SourcesList_PopulatesUpdateAvailFromCache(t *testing.T) {
 	}
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/sources", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/sources", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -86,7 +86,7 @@ func TestHandleSkills_SourcesList_MissingCacheFailsOpen(t *testing.T) {
 	// No cache file written.
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/sources", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/sources", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -109,7 +109,7 @@ func TestHandleSkills_SourcesList_Empty(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/sources", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/sources", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -132,7 +132,7 @@ func TestHandleSkills_SourceAdd_MissingRepo(t *testing.T) {
 
 	handler := srv.Handler()
 	body := strings.NewReader(`{}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources", body)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -156,7 +156,7 @@ func TestHandleSkills_SourceAdd_InvalidJSON(t *testing.T) {
 
 	handler := srv.Handler()
 	body := strings.NewReader(`{invalid}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources", body)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -170,7 +170,7 @@ func TestHandleSkills_UpdatesEmpty(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/updates", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/updates", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -192,7 +192,7 @@ func TestHandleSkills_SourceRemove_NotFound(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodDelete, "/api/skills/sources/nonexistent", nil)
+	req := loopbackRequest(http.MethodDelete, "/api/skills/sources/nonexistent", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -205,7 +205,7 @@ func TestHandleSkills_SourceCheck_NotFound(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/nonexistent/check", nil)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/nonexistent/check", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -241,7 +241,7 @@ func TestHandleSkills_SyncAll_HonorsPinsAndCountsFailures(t *testing.T) {
 	}
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/update", nil)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/update", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -293,7 +293,7 @@ func TestHandleSkills_SyncAll_PrunesGhostSkill(t *testing.T) {
 	seedSkillSource(t, srv, "ghost-source", "https://github.com/org/repo", "ghost-skill")
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/update", nil)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/update", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -337,7 +337,7 @@ func TestHandleSkills_SyncAll_RetainsPresentSkillOnUpdateError(t *testing.T) {
 	seedSkillSource(t, srv, "live-source", "/nonexistent/path/to/repo", "live-skill")
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/update", nil)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/update", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -373,7 +373,7 @@ func TestHandleSkills_SyncAll_EmptyLockFile(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/update", nil)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/update", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -397,7 +397,7 @@ func TestHandleSkills_SourceUpdate_NotFound(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/nonexistent/update", nil)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/nonexistent/update", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -410,7 +410,7 @@ func TestHandleSkills_SourcePreview_MissingRepo(t *testing.T) {
 	srv, _ := setupRegistryTestServer(t)
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/sources/newrepo/preview", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/sources/newrepo/preview", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -425,7 +425,7 @@ func TestHandleSkills_NoRegistry(t *testing.T) {
 	// No registry set
 
 	handler := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/sources", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/sources", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -440,7 +440,7 @@ func TestHandleSkills_RoutingMethodNotAllowed(t *testing.T) {
 	handler := srv.Handler()
 
 	// GET on sources should work
-	req := httptest.NewRequest(http.MethodGet, "/api/skills/sources", nil)
+	req := loopbackRequest(http.MethodGet, "/api/skills/sources", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -505,7 +505,7 @@ func TestHandleSkills_SourcePreview_ReportsMalformed(t *testing.T) {
 	repoDir := initPreviewTestRepo(t)
 
 	body := strings.NewReader(`{"repo": ` + strconv.Quote(repoDir) + `}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/skills/sources/test-source/preview", body)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/test-source/preview", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)

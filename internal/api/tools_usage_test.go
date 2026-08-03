@@ -15,7 +15,7 @@ import (
 // decoded response plus the HTTP status.
 func decodeToolUsage(t *testing.T, srv *Server) (toolUsageResponse, int) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/tools/usage", nil)
+	req := loopbackRequest(http.MethodGet, "/api/tools/usage", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -101,7 +101,7 @@ func TestHandleToolsUsage_UnpricedOmitsCostKey(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	srv.metricsAccumulator.RecordToolCall("github", "list_repos")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tools/usage", nil)
+	req := loopbackRequest(http.MethodGet, "/api/tools/usage", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -128,7 +128,7 @@ func TestHandleToolsUsage_EmptyIsObjectNotNull(t *testing.T) {
 
 func TestHandleToolsUsage_NoAccumulatorReturns503(t *testing.T) {
 	srv := newTestServer(t) // no metrics accumulator wired
-	req := httptest.NewRequest(http.MethodGet, "/api/tools/usage", nil)
+	req := loopbackRequest(http.MethodGet, "/api/tools/usage", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
