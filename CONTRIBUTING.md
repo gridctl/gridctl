@@ -244,7 +244,9 @@ gridctl/
 │   ├── runtime/           # Container orchestration
 │   ├── mcp/               # MCP protocol implementation
 │   ├── registry/          # Skills registry (agentskills.io spec)
-│   └── skills/            # Remote skill management (import, update)
+│   ├── skills/            # Remote skill and agent management (import, update)
+│   ├── project/           # Unified projection engine and lockfile
+│   └── pack/              # gridctl-pack.yaml manifest schema
 ├── web/                   # React frontend
 ├── examples/              # Example stacks
 └── tests/integration/     # Integration tests

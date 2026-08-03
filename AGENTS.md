@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository. Follows the [agents.md
 
 ## What gridctl is
 
-Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
+Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and agents registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. A projection engine (`pkg/project`, one lockfile at `~/.gridctl/project.lock.yaml`) also places skills, agents, global-context rules, and gateway wiring onto disk for file-reading clients, and packs (`gridctl-pack.yaml`) import all of it from one git repo. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
 
 ## Build and run
 
@@ -47,7 +47,7 @@ cd web && npm run lint           # frontend; zero-error baseline, enforced by th
 The shape of the codebase from the outside in:
 
 ```
-cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, optimize, …).
+cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, ctx, pack, project, optimize, …).
                     embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, …).
                     The Server struct in api.go wires together every pkg/* subsystem the UI needs to talk to.
@@ -63,9 +63,17 @@ pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
                     token store, callback listener). Backed by `gridctl auth`.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
-pkg/skills/         Remote skill management (git import, lockfile, fingerprinting, updater).
+pkg/skills/         Remote skill and agent management (git import, lockfile, fingerprinting, updater, security scan).
+pkg/project/        Unified projection engine: one lockfile (~/.gridctl/project.lock.yaml), flock, hashing, backups,
+                    drift states, and migrate-on-read. The kind packages below are its tenants.
 pkg/skillsync/      Projects active registry skills into native client skill directories (`gridctl skill project`).
-pkg/contexts/       One canonical global agent-context file projected into each linked client (`gridctl ctx`).
+pkg/agentsync/      Projects imported agents to clients: identity copy for Claude Code, rendered dialects for
+                    OpenCode, Copilot, and Gemini CLI (`gridctl skill project --kind agent`).
+pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonical file, or opt-in rule fragments
+                    with multi-file and compiled per-client assembly.
+pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
+pkg/pack/           gridctl-pack.yaml manifest schema; orchestration lives in cmd/gridctl/pack.go (`gridctl pack`).
+pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
 pkg/limits/         Enforces the `limits:` block: dollar budget caps and rate limits, with a windowed spend ledger.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
@@ -88,9 +96,9 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
                     replicas, transports (incl. Podman), code-mode cost, private git auth, optimize heuristics.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
-                    code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack).
-                    examples/_mock-servers/ is the source for `task mock:servers`.
-docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, tools-workspace,
+                    code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
+                    portable-pack). examples/_mock-servers/ is the source for `task mock:servers`.
+docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, scaling, cost-observability, installation, project-status, troubleshooting).
 ```
 
