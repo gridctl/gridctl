@@ -6,8 +6,9 @@
 // backup before replacing anything unmanaged, adopt).
 //
 // Two render classes exist. The claude-code target is identity: the
-// canonical AGENT.md bytes are copied verbatim (Cursor also reads
-// ~/.claude/agents natively, so it needs no target of its own). The
+// canonical AGENT.md bytes are copied verbatim. (Community reports say
+// Cursor may read ~/.claude/agents too; unverified, so gridctl neither
+// claims it nor ships a Cursor target.) The
 // opencode, copilot, and gemini targets render the canonical definition
 // into each client's dialect; those renders are lossy (unmappable
 // frontmatter keys are dropped and reported), deterministic, and
@@ -92,9 +93,9 @@ func (t Target) renderKind() string {
 }
 
 // Targets returns the supported projection targets in display order.
-// claude-code is the identity target (Cursor reads ~/.claude/agents
-// natively, so no Cursor target exists); the rendered targets convert
-// into each client's own dialect. VS Code Copilot does NOT read
+// claude-code is the identity target (no Cursor target exists: reports
+// that Cursor reads ~/.claude/agents are unverified); the rendered
+// targets convert into each client's own dialect. VS Code Copilot does NOT read
 // ~/.claude/agents — its global agents live under ~/.copilot/agents,
 // which is why it needs a render target.
 func Targets() []Target {
