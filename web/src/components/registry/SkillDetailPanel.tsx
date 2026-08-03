@@ -205,7 +205,7 @@ export function SkillDetailPanel({
                 onClick={() => setShowCompare(true)}
                 aria-label={`Compare ${skill.name} with upstream`}
                 title="Edited locally; a sync will skip this unless you overwrite. Click to compare with upstream."
-                className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-colors"
+                className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending hover:bg-status-pending/20 transition-colors"
               >
                 <GitCompareArrows size={9} aria-hidden="true" />
                 Modified
@@ -244,7 +244,7 @@ export function SkillDetailPanel({
               variant="ghost"
               onClick={() => onToggle(skill)}
               tooltip={skill.state === 'active' ? 'Disable skill' : 'Activate skill'}
-              className={skill.state === 'active' ? 'hover:text-amber-400' : 'hover:text-emerald-400'}
+              className={skill.state === 'active' ? 'hover:text-status-pending' : 'hover:text-status-running'}
             />
             <IconButton
               icon={Trash2}
@@ -387,11 +387,11 @@ function IncompletePackageNotice({
   return (
     <div
       role="status"
-      className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2.5"
+      className="flex items-start gap-2 rounded-lg border border-status-pending/30 bg-status-pending/10 px-3 py-2.5"
     >
-      <AlertTriangle size={14} className="text-amber-300 flex-shrink-0 mt-0.5" aria-hidden="true" />
+      <AlertTriangle size={14} className="text-status-pending flex-shrink-0 mt-0.5" aria-hidden="true" />
       <div className="space-y-1.5 min-w-0">
-        <p className="text-[11px] text-amber-200 leading-relaxed">
+        <p className="text-[11px] text-status-pending leading-relaxed">
           These instructions reference {formatManagedDirs(missing)}, but no such files are
           installed. Steps that invoke them will fail at run time.
         </p>
@@ -400,12 +400,12 @@ function IncompletePackageNotice({
             type="button"
             onClick={onSync}
             disabled={syncing}
-            className="text-[11px] font-medium text-amber-200 underline underline-offset-2 hover:text-amber-100 disabled:opacity-60 disabled:no-underline transition-colors"
+            className="text-[11px] font-medium text-status-pending underline underline-offset-2 hover:text-status-pending/80 disabled:opacity-60 disabled:no-underline transition-colors"
           >
             {syncing ? 'Syncing…' : `Sync from ${source.name}`}
           </button>
         ) : (
-          <p className="text-[10px] text-amber-200/70 leading-relaxed">
+          <p className="text-[10px] text-status-pending leading-relaxed">
             This is a local skill, so add the files directly or re-import it from its source.
           </p>
         )}

@@ -519,11 +519,11 @@ function SkillItem({
           title={isActive ? 'Disable skill' : 'Activate skill'}
           className={cn(
             'p-2 rounded transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-primary/30',
-            isActive ? 'hover:bg-amber-400/10' : 'hover:bg-emerald-400/10',
+            isActive ? 'hover:bg-status-pending/10' : 'hover:bg-status-running/10',
           )}
         >
           {isActive ? (
-            <PowerOff size={12} className="text-text-muted group-hover:text-amber-400 transition-colors" />
+            <PowerOff size={12} className="text-text-muted group-hover:text-status-pending transition-colors" />
           ) : (
             <Power size={12} className="text-text-muted group-hover:text-emerald-400 transition-colors" />
           )}

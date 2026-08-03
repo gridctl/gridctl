@@ -149,7 +149,7 @@ export const SkillCard = memo(({
           {hasLocalEdits && (
             <span
               title="Edited locally; a sync will skip this unless you overwrite"
-              className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300 mt-0.5"
+              className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending mt-0.5"
             >
               Modified
             </span>
