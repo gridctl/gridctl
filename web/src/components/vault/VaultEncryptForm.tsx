@@ -115,7 +115,7 @@ export function VaultEncryptForm({
         <p
           className={cn(
             'text-[10px]',
-            tooShort ? 'text-status-error' : 'text-amber-300/90',
+            tooShort ? 'text-status-error' : 'text-status-pending',
           )}
         >
           {guidance}

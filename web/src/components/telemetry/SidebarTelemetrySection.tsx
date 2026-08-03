@@ -226,7 +226,7 @@ function TriStateRow({ signal, state, globalDefault, busy, onClick }: RowProps) 
           className={cn(
             'inline-block w-2.5 h-2.5 rounded-full border transition-all duration-200',
             isOn && 'bg-status-running border-status-running shadow-[0_0_6px_rgba(16,185,129,0.5)]',
-            isOff && 'bg-transparent border-amber-400',
+            isOff && 'bg-transparent border-status-pending',
             isInherit && (globalDefault
               ? 'bg-status-running/30 border-status-running/40'
               : 'bg-text-muted/20 border-text-muted/40'),
@@ -236,7 +236,7 @@ function TriStateRow({ signal, state, globalDefault, busy, onClick }: RowProps) 
           className={cn(
             'text-sm capitalize',
             isOn && 'text-text-primary',
-            isOff && 'text-amber-400 line-through',
+            isOff && 'text-status-pending line-through',
             isInherit && 'text-text-secondary',
           )}
         >
@@ -247,7 +247,7 @@ function TriStateRow({ signal, state, globalDefault, busy, onClick }: RowProps) 
         className={cn(
           'text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded',
           isOn && 'bg-status-running/10 text-status-running border border-status-running/20',
-          isOff && 'bg-amber-400/10 text-amber-400 border border-amber-400/20',
+          isOff && 'bg-status-pending/10 text-status-pending border border-status-pending/20',
           isInherit && 'bg-surface-elevated text-text-muted border border-border/40',
         )}
       >

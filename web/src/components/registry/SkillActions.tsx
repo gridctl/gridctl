@@ -42,7 +42,7 @@ export function SkillActions({
             variant="ghost"
             onClick={() => onToggle(skill)}
             tooltip="Disable skill"
-            className="hover:text-amber-400"
+            className="hover:text-status-pending"
           />
         ) : (
           <IconButton

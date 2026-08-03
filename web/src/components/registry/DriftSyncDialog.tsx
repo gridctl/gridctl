@@ -73,7 +73,7 @@ export function DriftSyncDialog({
         className="relative glass-panel-elevated rounded-xl p-5 max-w-md w-full mx-4 space-y-3 shadow-lg"
       >
         <h2 id={titleId} className="flex items-center gap-2 text-sm font-semibold text-text-primary">
-          <AlertTriangle size={15} className="text-amber-300" />
+          <AlertTriangle size={15} className="text-status-pending" />
           {title}
         </h2>
         <div id={descId} className="text-xs text-text-muted space-y-2">

@@ -16,14 +16,26 @@ describe('StateBadge', () => {
   it('applies active color tokens', () => {
     const { container } = render(<StateBadge state="active" />);
     const badge = container.firstChild as HTMLElement;
-    expect(badge.className).toContain('text-emerald-400');
-    expect(badge.className).toContain('border-emerald-400/25');
+    expect(badge.className).toContain('text-status-running');
+    expect(badge.className).toContain('border-status-running/25');
   });
 
   it('applies draft color tokens', () => {
     const { container } = render(<StateBadge state="draft" />);
     const badge = container.firstChild as HTMLElement;
-    expect(badge.className).toContain('text-amber-400');
+    expect(badge.className).toContain('text-status-pending');
+  });
+
+  // The badge must never carry a raw palette class: those do not re-key per
+  // theme, which is how the light theme ended up with illegible amber text.
+  it('uses semantic tokens rather than raw palette classes', () => {
+    for (const state of ['active', 'draft', 'disabled'] as const) {
+      const { container } = render(<StateBadge state={state} />);
+      expect((container.firstChild as HTMLElement).className).not.toMatch(
+        /\b(?:text|bg|border)-(?:amber|yellow|emerald|rose|violet|sky|teal|red|green|blue)-\d{2,3}\b/,
+      );
+      cleanup();
+    }
   });
 
   it('applies disabled color tokens', () => {

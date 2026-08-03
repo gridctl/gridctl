@@ -650,7 +650,7 @@ function EditorToolbarButton({
 
 const STATE_STYLE: Record<ContextState, string> = {
   'in-sync': 'text-emerald-400 border-emerald-400/25 bg-emerald-400/10',
-  stale: 'text-amber-300 border-amber-400/30 bg-amber-400/10',
+  stale: 'text-status-pending border-status-pending/30 bg-status-pending/10',
   drifted: 'text-red-400 border-red-400/25 bg-red-400/10',
   'target-missing': 'text-red-400 border-red-400/25 bg-red-400/10',
   'never-synced': 'text-text-muted border-border/40 bg-background/40',
@@ -707,7 +707,7 @@ function ClientsStrip({
         <span className="text-xs text-text-muted uppercase tracking-wider">Clients</span>
         <span className="text-[11px] text-text-muted/80 truncate">{summary}</span>
         {needsAttention && !expanded && (
-          <span className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300">
+          <span className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
             Needs attention
           </span>
         )}
@@ -771,7 +771,7 @@ function ClientRow({
       <span className="text-xs text-text-primary whitespace-nowrap">
         {c.name}
         {c.experimental && c.supported && (
-          <span className="ml-1 text-[10px] text-amber-300/80">(experimental)</span>
+          <span className="ml-1 text-[10px] text-text-secondary">(experimental)</span>
         )}
       </span>
       <span className="text-[11px] text-text-muted font-mono truncate flex-1" title={c.target_path ?? c.detail}>

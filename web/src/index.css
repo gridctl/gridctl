@@ -134,9 +134,12 @@
   --color-tertiary-dark: #5b21b6;
   --color-tertiary-glow: rgba(124, 58, 237, 0.15);
 
-  /* Status — saturated enough to read clearly against the bright canvas */
-  --color-status-running: #059669;
-  --color-status-running-glow: rgba(5, 150, 105, 0.25);
+  /* Status — saturated enough to read clearly against the bright canvas.
+     Running darkens to emerald-800: the previous emerald-600 read 3.33:1 as
+     small text on its own 10% tint, so the active state badge could not clear
+     AA. Same failure the warm accent had, one hue over. */
+  --color-status-running: #065f46;
+  --color-status-running-glow: rgba(6, 95, 70, 0.25);
   --color-status-stopped: #9ca3af;
   --color-status-error: #e11d48;
   --color-status-error-glow: rgba(225, 29, 72, 0.2);

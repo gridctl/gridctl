@@ -15,10 +15,10 @@ export function VariableTypeBadge({
 
   const palette: Record<VariableType, string> = {
     string: 'bg-surface text-text-muted',
-    json: 'bg-violet-500/10 text-violet-300',
-    list: 'bg-sky-500/10 text-sky-300',
-    number: 'bg-emerald-500/10 text-emerald-300',
-    bool: 'bg-amber-500/10 text-amber-300',
+    json: 'bg-tertiary/10 text-tertiary-light',
+    list: 'bg-secondary/10 text-secondary-light',
+    number: 'bg-status-running/10 text-status-running',
+    bool: 'bg-status-pending/10 text-status-pending',
   };
 
   return (
