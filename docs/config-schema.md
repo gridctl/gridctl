@@ -58,6 +58,8 @@ Optional gateway-level configuration for authentication, CORS, and code mode.
 gateway:
   allowed_origins:
     - "https://example.com"
+  allowed_hosts:
+    - "gridctl.internal"
   auth:
     type: bearer
     token: "${MY_TOKEN}"
@@ -72,6 +74,7 @@ gateway:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `allowed_origins` | []string | No | `["*"]` | CORS allowed origins. Empty or unset allows all |
+| `allowed_hosts` | []string | No | `[]` | Extra `Host` header values accepted on the MCP endpoint (DNS rebinding protection). Loopback hosts are always accepted, so unset means loopback-only. Set only when a reverse proxy or container hostname fronts the gateway. Unlike `allowed_origins`, `"*"` is **not** a wildcard here and matches nothing |
 | `auth` | object | No | - | Authentication configuration |
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |

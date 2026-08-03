@@ -201,6 +201,12 @@ func (s *Server) SetAllowedOrigins(origins []string) {
 	s.streamableServer.SetAllowedOrigins(origins)
 }
 
+// SetAllowedHosts sets extra Host header values accepted on the MCP endpoint.
+// Loopback hosts are always accepted, so an empty list is the secure default.
+func (s *Server) SetAllowedHosts(hosts []string) {
+	s.streamableServer.SetAllowedHosts(hosts)
+}
+
 // SetAuth configures authentication for the server.
 // When configured, all requests (except /health and /ready) must include a valid token.
 func (s *Server) SetAuth(authType, token, header string) {

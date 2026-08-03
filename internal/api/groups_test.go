@@ -74,6 +74,9 @@ func TestHandleGroupMCP_UnknownGroup404s(t *testing.T) {
 	// A configured group reaches the streamable transport (which then
 	// rejects the empty body as a JSON parse error, proving pass-through).
 	req = httptest.NewRequest(http.MethodPost, "/groups/release/mcp", nil)
+	// httptest defaults Host to example.com, which the transport's DNS
+	// rebinding protection rejects before the body is ever parsed.
+	req.Host = "localhost:8180"
 	req.SetPathValue("name", "release")
 	w = httptest.NewRecorder()
 	s.handleGroupMCP(w, req)

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -97,6 +99,7 @@ func (s *StreamableSession) clearStream() {
 type StreamableHTTPServer struct {
 	gateway        *Gateway
 	allowedOrigins []string
+	allowedHosts   []string
 
 	mu       sync.RWMutex
 	sessions map[string]*StreamableSession
@@ -116,8 +119,21 @@ func (s *StreamableHTTPServer) SetAllowedOrigins(origins []string) {
 	s.allowedOrigins = origins
 }
 
+// SetAllowedHosts updates the Host allowlist consulted by validateHost.
+// Empty means loopback-only, the secure default.
+func (s *StreamableHTTPServer) SetAllowedHosts(hosts []string) {
+	s.allowedHosts = hosts
+}
+
 // ServeHTTP routes /mcp requests based on HTTP method.
 func (s *StreamableHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Host first: it is the primary DNS rebinding control, because a browser
+	// must send the attacker's domain in Host and page scripts cannot override
+	// it (Host is a forbidden header name). Origin below is defense in depth.
+	if err := s.validateHost(r); err != nil {
+		http.Error(w, "Forbidden: "+err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := s.validateOrigin(r); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
@@ -155,6 +171,131 @@ func (s *StreamableHTTPServer) validateOrigin(r *http.Request) error {
 		}
 	}
 	return fmt.Errorf("origin not allowed: %s", origin)
+}
+
+// validateHost rejects requests carrying an attacker-controlled Host header,
+// which is what actually stops DNS rebinding: after a rebind the browser
+// believes it is same-origin with the attacker's domain, so it omits Origin on
+// GET and HEAD entirely, leaving Host as the only value that still names the
+// attacker.
+//
+// The check applies only when the request arrived on a loopback address, read
+// from the listener via http.LocalAddrContextKey rather than from the
+// configured bind address. That distinction matters: it keeps loopback clients
+// guarded even when the daemon listens on 0.0.0.0, without breaking
+// deployments that are deliberately reachable over the network, where remote
+// clients legitimately send their own Host.
+//
+// Scope, stated plainly: this guards the MCP endpoint only, and only for
+// loopback-arriving connections. A browser rebound onto the machine's LAN
+// address is not covered, because a Host value cannot be judged for a listener
+// that is meant to be reachable by name. Closing that requires binding
+// loopback by default, which is tracked separately.
+//
+// A request with no recorded local address is treated as loopback, so the
+// protection fails closed.
+func (s *StreamableHTTPServer) validateHost(r *http.Request) error {
+	local := requestLocalAddr(r)
+	if local != nil && !addrIsLoopback(local) {
+		return nil
+	}
+	if r.Host == "" {
+		return fmt.Errorf("missing Host header")
+	}
+	hostname, port, ok := splitHostPortLenient(r.Host)
+	if !ok {
+		return fmt.Errorf("invalid Host header %q", r.Host)
+	}
+	for _, allowed := range s.allowedHosts {
+		// Empty entries would match an empty authority; wildcards are not
+		// supported here, since an allow-all Host list defeats the control.
+		if allowed == "" {
+			continue
+		}
+		allowedHost, _, allowedOK := splitHostPortLenient(allowed)
+		if !allowedOK {
+			continue
+		}
+		if strings.EqualFold(allowed, r.Host) || strings.EqualFold(allowedHost, hostname) {
+			return nil
+		}
+	}
+	if !hostIsLoopback(hostname) {
+		return fmt.Errorf("invalid Host header %q", r.Host)
+	}
+	// A loopback name pointed at the wrong port is still someone else's
+	// service; only enforce when the real listener port is known.
+	if port != "" && local != nil {
+		if _, localPort, ok := splitHostPortLenient(local.String()); ok && localPort != "" && port != localPort {
+			return fmt.Errorf("invalid Host header %q", r.Host)
+		}
+	}
+	return nil
+}
+
+// requestLocalAddr returns the address the request arrived on, or nil when the
+// transport recorded none (httptest requests, custom servers).
+func requestLocalAddr(r *http.Request) net.Addr {
+	addr, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	return addr
+}
+
+// addrIsLoopback reports whether a listener address is on the loopback
+// interface. Anything that does not parse as host:port is treated as loopback
+// so the caller fails closed: a non-TCP listener (Unix socket, net.Pipe) must
+// not silently disable Host validation.
+func addrIsLoopback(addr net.Addr) bool {
+	// Strict host:port here, unlike a Host header, where a bare name is
+	// legitimate: a TCP listener address always carries a port, so anything
+	// else is a non-TCP listener and must fail closed.
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil || host == "" {
+		return true
+	}
+	return hostIsLoopback(host)
+}
+
+// hostIsLoopback reports whether hostname names the loopback interface.
+// ParseIP plus IsLoopback covers all of 127.0.0.0/8 and ::1 (including
+// v4-mapped v6), which a literal comparison against "127.0.0.1" would miss.
+// Note 0.0.0.0 is deliberately NOT loopback: DNS can answer with it, so it is
+// a known rebinding vector despite routing locally on some platforms.
+func hostIsLoopback(hostname string) bool {
+	// A trailing dot is the fully-qualified form of the same name.
+	hostname = strings.TrimSuffix(hostname, ".")
+	if strings.EqualFold(hostname, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(hostname)
+	return ip != nil && ip.IsLoopback()
+}
+
+// splitHostPortLenient splits an authority into host and port, tolerating
+// values that carry no port at all (Host may be a bare name) and unbracketed
+// IPv6 literals. ok is false for authorities that are syntactically invalid,
+// which callers must treat as a rejection rather than as a bare hostname.
+func splitHostPortLenient(hostport string) (host, port string, ok bool) {
+	if h, p, err := net.SplitHostPort(hostport); err == nil {
+		// SplitHostPort accepts a bare trailing colon; that is malformed, not
+		// an omitted port, and must not skip the port comparison.
+		if p == "" && strings.HasSuffix(hostport, ":") {
+			return "", "", false
+		}
+		return h, p, true
+	}
+	// No port. Accept a bracketed IPv6 literal, reject other stray brackets
+	// rather than normalizing malformed authorities into valid-looking names.
+	if strings.HasPrefix(hostport, "[") && strings.HasSuffix(hostport, "]") {
+		inner := hostport[1 : len(hostport)-1]
+		if net.ParseIP(inner) == nil {
+			return "", "", false
+		}
+		return inner, "", true
+	}
+	if strings.ContainsAny(hostport, "[]") {
+		return "", "", false
+	}
+	return hostport, "", true
 }
 
 // handlePost handles POST /mcp — client→server messages.
