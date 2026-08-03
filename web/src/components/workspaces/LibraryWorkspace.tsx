@@ -37,6 +37,7 @@ import { useSkillUsage } from '../../hooks/useSkillUsage';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { skillPinsUrl } from '../../lib/skillGovernance';
+import { stateDotClasses } from '../../lib/stateColors';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { useLibraryCommands, type LibraryFilter } from '../library/useLibraryCommands';
@@ -1035,7 +1036,7 @@ export function LibraryWorkspace() {
               {liveSelected.length === 1 ? 'skill' : 'skills'}? Disabled skills stop being served to
               clients until you enable them again.
             </p>
-            {coldCaveat && <p className="text-amber-300">{coldCaveat}</p>}
+            {coldCaveat && <p className="text-status-pending">{coldCaveat}</p>}
           </>
         }
         confirmLabel={
@@ -1346,7 +1347,7 @@ function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, o
       {/* Full-width row so a long sentence never squeezes the actions, and
           placed ahead of them in DOM order so it is read before the buttons. */}
       {caveat && (
-        <span role="status" className="basis-full text-[11px] text-amber-300">
+        <span role="status" className="basis-full text-[11px] text-status-pending">
           {caveat}
         </span>
       )}
@@ -1381,14 +1382,6 @@ function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, o
   );
 }
 
-// Muted state-color dots, aligned with StateBadge. They are a secondary,
-// aria-hidden cue — every KPI is conveyed by its text label + count, so the
-// row never relies on color alone.
-const STATE_DOT: Record<ItemState, string> = {
-  active: 'bg-emerald-400',
-  draft: 'bg-amber-400',
-  disabled: 'bg-text-muted',
-};
 
 // KPI cards double as the state filter: clicking one applies that ?filter, and
 // "Total" clears it. Counts are search-aware (they come from tabCounts),
@@ -1563,8 +1556,10 @@ function KpiCard({ label, count, dot, active, compact, onClick, unknownReason }:
       )}
     >
       <span className="flex items-center gap-1.5">
+        {/* Secondary, aria-hidden cue: every KPI is conveyed by its text label
+            and count, so the row never relies on color alone. */}
         {dot && (
-          <span aria-hidden="true" className={cn('inline-block w-1.5 h-1.5 rounded-full flex-shrink-0', STATE_DOT[dot])} />
+          <span aria-hidden="true" className={cn('inline-block w-1.5 h-1.5 rounded-full flex-shrink-0', stateDotClasses[dot])} />
         )}
         <span className={cn(
           'text-[10px] uppercase tracking-wider font-medium',

@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { BookOpen, CheckCircle, XCircle, Minus } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { stateBadgeClasses } from '../../lib/stateColors';
 import { useUIStore } from '../../stores/useUIStore';
 import { LAYOUT } from '../../lib/constants';
 import type { SkillNodeData, SkillTestStatus } from '../../types';
@@ -37,14 +38,16 @@ function TestBadge({ status, count }: { status: SkillTestStatus; count: number }
   );
 }
 
+// Canvas-local presentation (smaller, uppercase) over the shared state color
+// vocabulary in lib/stateColors.
 function StateBadge({ state }: { state: SkillNodeData['state'] }) {
-  const colors: Record<string, string> = {
-    active: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
-    draft: 'text-amber-400 bg-amber-400/10 border-amber-400/20',
-    disabled: 'text-text-muted bg-surface-highlight border-border/30',
-  };
   return (
-    <span className={cn('text-[9px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wider', colors[state])}>
+    <span
+      className={cn(
+        'text-[9px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wider',
+        stateBadgeClasses[state],
+      )}
+    >
       {state}
     </span>
   );
