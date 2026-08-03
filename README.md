@@ -269,7 +269,7 @@ Learn more → [Configuration Reference](docs/config-schema.md)
 
 ### Schema Pinning
 
-Gridctl pins every tool definition the first time it sees it and flags drift on later applies, so a server that quietly rewrites a tool's description or schema surfaces as a reviewable diff instead of reaching your agent unnoticed. Pinned definitions are also scanned for injection signals: hidden instructions, sensitive-file references, hidden Unicode, and cross-server tool shadowing.
+Gridctl pins every tool definition the first time it sees it and flags drift on later applies, so a server that quietly rewrites a tool's description or schema surfaces as a reviewable diff instead of reaching your agent unnoticed. Pinned definitions are also scanned for injection signals: hidden instructions, sensitive-file references, hidden Unicode, and cross-server tool shadowing. Skill documents get the same trust-on-first-use treatment (`gridctl skill pins`): per-file digests over the whole document set, drift held for human approval, and the same injection heuristics as advisory findings.
 
 ```bash
 gridctl pins verify                # Exit 1 on drift
@@ -304,13 +304,29 @@ Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. 
 
 ```bash
 gridctl skill list                        # Show what's in the registry
-gridctl skill add <git-repo>              # Import skills from a remote repo
+gridctl skill add <git-repo>              # Import skills (and agents) from a remote repo
 gridctl activate my-skill                 # Promote a draft → active
 ```
 
 Skills follow the [agentskills.io specification](https://agentskills.io): author them as plain markdown with frontmatter and they work with every skill-aware client, not just gridctl.
 
+The registry holds more than skills. The same import pipeline discovers Claude Code subagent definitions (`agents/*.md`), and `gridctl skill project sync` places both onto disk for clients that read files instead of MCP: identity copies for Claude Code, rendered dialects for OpenCode, Copilot, and Gemini CLI. A shared lockfile tracks every projected file, so drift is detected, hand edits are adoptable, and unsync removes exactly what gridctl wrote. The global context can likewise become a library of rule fragments with per-client assembly; see [Global Context Sync](docs/global-context.md).
+
 Learn more → [Skills guide](docs/skills.md)
+
+### Packs
+
+A pack is a git repo with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, and gateway wiring that imports and applies as one unit, so a team setup is one command instead of a checklist.
+
+```bash
+gridctl pack add <git-repo>               # Clone, scan, and import the manifest's selection
+gridctl pack apply team-pack              # Project everything to detected clients
+gridctl pack remove team-pack             # Cascade removal by pack tag, never by name match
+```
+
+Every projection a pack applies is tagged with the pack name in the lockfile, which is what makes `pack status` and removal exact: resources you created yourself are never claimed or deleted.
+
+Learn more → [Packs guide](docs/packs.md)
 
 ## 📙 Examples
 
@@ -327,12 +343,13 @@ Learn more → [Skills guide](docs/skills.md)
 | [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |
 | [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
+| [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, and wiring from one manifest |
 
 ## 📖 Documentation
 
 - **Getting started**: [Installation](docs/installation.md)
 - **Reference**: [CLI](docs/cli-reference.md) · [Configuration](docs/config-schema.md) · [REST API](docs/api-reference.md)
-- **Guides**: [Skills](docs/skills.md) · [Tools Workspace](docs/tools-workspace.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
+- **Guides**: [Skills](docs/skills.md) · [Packs](docs/packs.md) · [Tools Workspace](docs/tools-workspace.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
 - **Operations**: [Project Status](docs/project-status.md) · [Troubleshooting](docs/troubleshooting.md)
 
 Full index at [`docs/`](docs/README.md).
