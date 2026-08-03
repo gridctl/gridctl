@@ -124,8 +124,8 @@ func fetchOptimizeReport(port int, stack string, minImpact float64, severity str
 		target += "?" + encoded
 	}
 
-	client := &http.Client{Timeout: optimizeHTTPTimeout}
-	resp, err := client.Get(target)
+	api := newDaemonAPI(port, optimizeHTTPTimeout)
+	resp, err := api.Get(target)
 	if err != nil {
 		return optimize.OptimizeReport{}, fmt.Errorf("optimize: %w", err)
 	}

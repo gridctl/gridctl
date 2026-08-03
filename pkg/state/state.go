@@ -18,6 +18,23 @@ type DaemonState struct {
 	PID       int       `json:"pid"`
 	Port      int       `json:"port"`
 	StartedAt time.Time `json:"started_at"`
+
+	// AuthToken and AuthHeader carry the gateway's inbound credentials so
+	// local subcommands can authenticate against the API they already know
+	// the port of. Empty when gateway.auth is not configured.
+	//
+	// The daemon records the token already resolved, because the config
+	// loader expands ${VAR} references before the value reaches it. The
+	// alternative — each subcommand loading the stack and expanding it —
+	// would turn a `gridctl status` into a vault passphrase prompt.
+	//
+	// This does place a resolved secret on disk. The state file is written
+	// 0600 (see SaveDaemonState), matching the vault's own plaintext
+	// secrets.json and the machine key in pkg/mcpauth, so it is consistent
+	// with the existing posture rather than a new exposure.
+	AuthToken  string `json:"auth_token,omitempty"`
+	AuthHeader string `json:"auth_header,omitempty"`
+	AuthType   string `json:"auth_type,omitempty"`
 }
 
 // BaseDir returns the base gridctl directory (~/.gridctl/).
@@ -115,6 +132,10 @@ func Save(state *DaemonState) error {
 		return fmt.Errorf("creating state directory: %w", err)
 	}
 
+	// #nosec G117 -- AuthToken is intentionally persisted: local subcommands
+	// need the gateway credential to call the API, and the alternative (each
+	// command loading the stack and expanding ${VAR}) would prompt for the
+	// vault passphrase on every invocation. The file is written 0600 below.
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling state: %w", err)
