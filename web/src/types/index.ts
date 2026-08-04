@@ -543,6 +543,80 @@ export interface SkillGovernance {
   policyRule?: string;
 }
 
+// --- Agents (imported agent definitions) ---
+
+// One passthrough frontmatter key on an agent, in document order. An ordered
+// array rather than an object: key order is part of the verbatim-projection
+// contract, and JSON objects do not guarantee it.
+export interface AgentExtraField {
+  key: string;
+  value: unknown;
+}
+
+// RegistryAgent mirrors GET /api/registry/agents[/{name}]. The list endpoint
+// omits body and raw; the single-agent GET (and ?full=1) includes them. Raw is
+// the verbatim file and the editing surface — PUT sends it back whole.
+export interface RegistryAgent {
+  name: string;
+  description: string;
+  /** Imported source's name from the lock file; absent for unsourced agents. */
+  source?: string;
+  extra?: AgentExtraField[];
+  dir?: string;
+  body?: string;
+  raw?: string;
+}
+
+// Shared projection-state vocabulary from the pkg/project engine. The CLI and
+// every REST surface speak these exact strings; the UI must not invent synonyms.
+export type AgentProjectionState = 'in-sync' | 'stale' | 'drifted' | 'target-missing';
+
+// One (agent, client) row from GET /api/project/agents/status.
+export interface AgentProjectionStatus {
+  agent: string;
+  client: string;
+  channel: string;
+  target: string;
+  /** identity = canonical bytes copied verbatim; lossy = client-dialect render. */
+  render: 'identity' | 'lossy';
+  state: AgentProjectionState;
+  /** Lossy-render report (dropped frontmatter keys) or drift detail. */
+  detail?: string;
+  experimental?: boolean;
+  synced_at?: string;
+}
+
+// One row from POST /api/project/agents/sync.
+export interface AgentSyncResult {
+  agent: string;
+  client: string;
+  channel?: string;
+  target?: string;
+  action: string;
+  detail?: string;
+  backup_path?: string;
+  error?: string;
+}
+
+// One row from POST /api/project/agents/unsync.
+export interface AgentUnsyncResult {
+  agent: string;
+  client: string;
+  target: string;
+  action: string;
+  backup_path?: string;
+}
+
+// Response of POST /api/project/agents/adopt.
+export interface AgentAdoptResult {
+  agent: string;
+  client: string;
+  target: string;
+  canonical_file: string;
+  backup_file?: string;
+  changed: boolean;
+}
+
 // SkillFile represents a file within a skill directory
 export interface SkillFile {
   path: string;          // Relative path (e.g., "scripts/lint.sh")
@@ -714,6 +788,17 @@ export interface SkillPreview {
   exists: boolean;
 }
 
+/** A previewed agent definition from a repo (not yet imported). */
+export interface AgentPreview {
+  name: string;
+  description: string;
+  body: string;
+  valid: boolean;
+  errors?: string[];
+  findings?: SecurityFinding[];
+  exists: boolean;
+}
+
 /** A SKILL.md that was found in the repository but could not be parsed. */
 export interface MalformedSkillFile {
   path: string;
@@ -726,6 +811,8 @@ export interface SkillPreviewResponse {
   commitSha: string;
   skills: SkillPreview[];
   malformed?: MalformedSkillFile[];
+  agents?: AgentPreview[];
+  malformedAgents?: MalformedSkillFile[];
 }
 
 export interface ImportedSkillResult {
@@ -742,6 +829,8 @@ export interface ImportResult {
   imported?: ImportedSkillResult[];
   skipped?: SkippedSkillResult[];
   warnings?: string[];
+  importedAgents?: ImportedSkillResult[];
+  skippedAgents?: SkippedSkillResult[];
 }
 
 export interface SourceUpdateCheck {
