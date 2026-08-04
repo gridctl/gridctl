@@ -14,12 +14,14 @@ import { BrowseStep } from './BrowseStep';
 import { showToast } from '../../ui/Toast';
 import {
   addSkillSource,
+  fetchAgentProjectionStatus,
+  fetchRegistryAgents,
   fetchRegistrySkills,
   fetchRegistryStatus,
   type SkillAuth,
 } from '../../../lib/api';
 import { useRegistryStore } from '../../../stores/useRegistryStore';
-import type { SkillPreview } from '../../../types';
+import type { AgentPreview, SkillPreview } from '../../../types';
 
 type ImportStep = 'source' | 'browse' | 'configure' | 'install';
 
@@ -37,6 +39,11 @@ export function SkillImportWizard() {
   const [previews, setPreviews] = useState<SkillPreview[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [configs, setConfigs] = useState<Map<string, SkillConfig>>(new Map());
+  // Agents discovered alongside skills (agents/*.md). Same import path,
+  // separate selection: the importer needs an explicit agent selection —
+  // a skill selection alone deliberately skips agents.
+  const [agentPreviews, setAgentPreviews] = useState<AgentPreview[]>([]);
+  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
 
   // Install state
   const [installing, setInstalling] = useState(false);
@@ -44,6 +51,8 @@ export function SkillImportWizard() {
     imported: string[];
     skipped: { name: string; reason: string }[];
     warnings: string[];
+    importedAgents: string[];
+    skippedAgents: { name: string; reason: string }[];
   } | null>(null);
 
   const stepOrder: ImportStep[] = ['source', 'browse', 'configure', 'install'];
@@ -56,14 +65,16 @@ export function SkillImportWizard() {
       refVal: string,
       pathVal: string,
       authVal: SkillAuth | undefined,
+      agents: AgentPreview[],
     ) => {
       setPreviews(skills);
+      setAgentPreviews(agents);
       setRepoUrl(repo);
       setRef(refVal);
       setPath(pathVal);
       setAuth(authVal);
 
-      // Auto-select valid skills that don't already exist
+      // Auto-select valid skills and agents that don't already exist
       const autoSelected = new Set<string>();
       const configMap = new Map<string, SkillConfig>();
       for (const sk of skills) {
@@ -72,7 +83,12 @@ export function SkillImportWizard() {
         }
         configMap.set(sk.name, { name: sk.name, activate: true });
       }
+      const autoAgents = new Set<string>();
+      for (const a of agents) {
+        if (a.valid && !a.exists) autoAgents.add(a.name);
+      }
       setSelected(autoSelected);
+      setSelectedAgents(autoAgents);
       setConfigs(configMap);
       setStep('browse');
     },
@@ -84,9 +100,9 @@ export function SkillImportWizard() {
     setInstallResult(null);
 
     try {
-      const hasFlagged = previews.some(
-        (p) => selected.has(p.name) && (p.findings?.length ?? 0) > 0,
-      );
+      const hasFlagged =
+        previews.some((p) => selected.has(p.name) && (p.findings?.length ?? 0) > 0) ||
+        agentPreviews.some((a) => selectedAgents.has(a.name) && (a.findings?.length ?? 0) > 0);
 
       const result = await addSkillSource({
         repo: repoUrl,
@@ -95,32 +111,45 @@ export function SkillImportWizard() {
         trust: hasFlagged,
         noActivate: false,
         selected: [...selected],
+        selectedAgents: [...selectedAgents],
         auth,
       });
 
       const imported = (result.imported ?? []).map((i) => i.name);
       const skipped = (result.skipped ?? []).map((s) => ({ name: s.name, reason: s.reason }));
+      const importedAgents = (result.importedAgents ?? []).map((a) => a.name);
+      const skippedAgents = (result.skippedAgents ?? []).map((s) => ({ name: s.name, reason: s.reason }));
 
       setInstallResult({
         imported,
         skipped,
         warnings: result.warnings ?? [],
+        importedAgents,
+        skippedAgents,
       });
 
-      // Refresh registry
+      // Refresh registry (agents included, so the Agents segment shows the
+      // import without a reload)
       try {
-        const [regStatus, regSkills] = await Promise.all([
+        const [regStatus, regSkills, regAgents, agentStatuses] = await Promise.all([
           fetchRegistryStatus(),
           fetchRegistrySkills(),
+          fetchRegistryAgents(),
+          fetchAgentProjectionStatus(),
         ]);
         useRegistryStore.getState().setStatus(regStatus);
         useRegistryStore.getState().setSkills(regSkills);
+        useRegistryStore.getState().setAgents(regAgents);
+        useRegistryStore.getState().setAgentStatuses(agentStatuses);
       } catch {
         // Polling will catch up
       }
 
-      if (imported.length > 0) {
-        showToast('success', `Imported ${imported.length} skill${imported.length > 1 ? 's' : ''}`);
+      if (imported.length > 0 || importedAgents.length > 0) {
+        const parts: string[] = [];
+        if (imported.length > 0) parts.push(`${imported.length} skill${imported.length > 1 ? 's' : ''}`);
+        if (importedAgents.length > 0) parts.push(`${importedAgents.length} agent${importedAgents.length > 1 ? 's' : ''}`);
+        showToast('success', `Imported ${parts.join(', ')}`);
       }
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Import failed');
@@ -128,14 +157,14 @@ export function SkillImportWizard() {
       setInstalling(false);
       setStep('install');
     }
-  }, [repoUrl, ref, path, previews, selected, auth]);
+  }, [repoUrl, ref, path, previews, selected, agentPreviews, selectedAgents, auth]);
 
   const canGoNext = () => {
     switch (step) {
       case 'source':
         return false; // handled by AddSourceStep callback
       case 'browse':
-        return selected.size > 0;
+        return selected.size > 0 || selectedAgents.size > 0;
       case 'configure':
         return true;
       default:
@@ -145,15 +174,17 @@ export function SkillImportWizard() {
 
   const goNext = () => {
     if (step === 'browse') {
-      // Skip configure if no configuration needed
-      if (selected.size > 0) {
-        const needsConfig = previews.some(
+      // Skip configure if no configuration needed. Agents have no per-item
+      // settings (their findings show inline in the browse section), so
+      // only selected skills route through the configure step.
+      const needsConfig =
+        selected.size > 0 &&
+        previews.some(
           (p) => selected.has(p.name) && ((p.findings?.length ?? 0) > 0 || p.exists),
         );
-        if (!needsConfig) {
-          handleInstall();
-          return;
-        }
+      if (!needsConfig) {
+        handleInstall();
+        return;
       }
       setStep('configure');
     } else if (step === 'configure') {
@@ -205,11 +236,25 @@ export function SkillImportWizard() {
         )}
 
         {step === 'browse' && (
-          <BrowseStep
-            previews={previews}
-            selected={selected}
-            onSelectionChange={setSelected}
-          />
+          <>
+            {/* An agents-only repo skips the skills panel entirely — a
+                zero-skill BrowseStep would render an empty two-pane block
+                above the actual content. */}
+            {(previews.length > 0 || agentPreviews.length === 0) && (
+              <BrowseStep
+                previews={previews}
+                selected={selected}
+                onSelectionChange={setSelected}
+              />
+            )}
+            {agentPreviews.length > 0 && (
+              <AgentsBrowseSection
+                previews={agentPreviews}
+                selected={selectedAgents}
+                onSelectionChange={setSelectedAgents}
+              />
+            )}
+          </>
         )}
 
         {step === 'configure' && (
@@ -252,10 +297,16 @@ export function SkillImportWizard() {
                     <Loader2 size={14} className="animate-spin" />
                     Installing...
                   </>
-                ) : step === 'configure' || (step === 'browse' && selected.size > 0) ? (
+                ) : step === 'configure' || (step === 'browse' && (selected.size > 0 || selectedAgents.size > 0)) ? (
                   <>
                     <Download size={14} />
-                    Install {selected.size} Skill{selected.size !== 1 ? 's' : ''}
+                    Install{' '}
+                    {[
+                      selected.size > 0 ? `${selected.size} Skill${selected.size !== 1 ? 's' : ''}` : null,
+                      selectedAgents.size > 0 ? `${selectedAgents.size} Agent${selectedAgents.size !== 1 ? 's' : ''}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}
                   </>
                 ) : (
                   <>
@@ -374,6 +425,94 @@ function ConfigureStep({
   );
 }
 
+// Browse-section for agents discovered alongside skills. Names are listed
+// individually on purpose: at agent scale (typically under ten) names let
+// the user sanity-check provenance before committing, which the skill
+// list cannot afford at three digits.
+function AgentsBrowseSection({
+  previews,
+  selected,
+  onSelectionChange,
+}: {
+  previews: AgentPreview[];
+  selected: Set<string>;
+  onSelectionChange: (next: Set<string>) => void;
+}) {
+  const toggle = (name: string) => {
+    const next = new Set(selected);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    onSelectionChange(next);
+  };
+
+  return (
+    <div className="mt-4 space-y-2">
+      <div>
+        <h3 className="text-sm font-medium text-text-primary">Agents</h3>
+        <p className="text-[10px] text-text-muted mt-0.5">
+          Subagent definitions found under agents/*.md; projected to client agent directories
+        </p>
+      </div>
+      {previews.map((a) => {
+        const findingsCount = a.findings?.length ?? 0;
+        return (
+          <label
+            key={a.name}
+            className="flex items-start gap-3 px-4 py-3 rounded-xl border border-border/20 bg-white/[0.02] cursor-pointer hover:bg-white/[0.03] transition-colors"
+          >
+            <input
+              type="checkbox"
+              checked={selected.has(a.name)}
+              onChange={() => toggle(a.name)}
+              disabled={!a.valid}
+              className="mt-0.5 rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
+            />
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center gap-2">
+                <span className="text-xs font-medium text-text-primary">{a.name}</span>
+                {findingsCount > 0 && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
+                    <AlertTriangle size={8} />
+                    {findingsCount} finding{findingsCount !== 1 ? 's' : ''}
+                  </span>
+                )}
+                {a.exists && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                    exists
+                  </span>
+                )}
+              </span>
+              <span className="block text-[10px] text-text-muted mt-0.5 truncate">
+                {a.description}
+              </span>
+              {!a.valid && a.errors && a.errors.length > 0 && (
+                <span className="block text-[10px] text-status-error mt-0.5">{a.errors[0]}</span>
+              )}
+              {/* Finding descriptions render inline: selecting a flagged
+                  agent grants trust for the import, so the user must be
+                  able to read what was flagged before deciding. */}
+              {(a.findings ?? []).map((f, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    'mt-1 text-[10px] px-2 py-1 rounded-lg flex items-start gap-1.5',
+                    f.severity === 'danger'
+                      ? 'bg-status-error/10 text-status-error'
+                      : 'bg-status-pending/10 text-status-pending',
+                  )}
+                >
+                  <AlertTriangle size={10} className="flex-shrink-0 mt-0.5" />
+                  <span>{f.description}</span>
+                </span>
+              ))}
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 // Install step — progress and results
 function InstallStep({
   installing,
@@ -384,6 +523,8 @@ function InstallStep({
     imported: string[];
     skipped: { name: string; reason: string }[];
     warnings: string[];
+    importedAgents: string[];
+    skippedAgents: { name: string; reason: string }[];
   } | null;
 }) {
   if (installing) {
@@ -395,15 +536,17 @@ function InstallStep({
           </div>
           <div className="absolute inset-0 rounded-full border-2 border-primary/30 animate-ping" />
         </div>
-        <h3 className="text-sm font-medium text-text-primary mb-1">Importing skills...</h3>
-        <p className="text-[10px] text-text-muted">Cloning repository and validating skills</p>
+        <h3 className="text-sm font-medium text-text-primary mb-1">Importing...</h3>
+        <p className="text-[10px] text-text-muted">Cloning repository and validating its contents</p>
       </div>
     );
   }
 
   if (!result) return null;
 
-  const allSucceeded = result.imported.length > 0 && result.skipped.length === 0;
+  const totalImported = result.imported.length + result.importedAgents.length;
+  const totalSkipped = result.skipped.length + result.skippedAgents.length;
+  const allSucceeded = totalImported > 0 && totalSkipped === 0;
 
   return (
     <div className="space-y-4">
@@ -414,31 +557,39 @@ function InstallStep({
             'w-12 h-12 rounded-full flex items-center justify-center mb-3',
             allSucceeded
               ? 'bg-status-running/10 border border-status-running/20'
-              : result.imported.length > 0
+              : totalImported > 0
                 ? 'bg-primary/10 border border-primary/20'
                 : 'bg-status-error/10 border border-status-error/20',
           )}
         >
           {allSucceeded ? (
             <CheckCircle2 size={20} className="text-status-running" />
-          ) : result.imported.length > 0 ? (
+          ) : totalImported > 0 ? (
             <AlertTriangle size={20} className="text-primary" />
           ) : (
             <AlertTriangle size={20} className="text-status-error" />
           )}
         </div>
         <h3 className="text-sm font-medium text-text-primary">
-          {allSucceeded ? 'Import Complete' : result.imported.length > 0 ? 'Partially Imported' : 'Import Failed'}
+          {allSucceeded ? 'Import Complete' : totalImported > 0 ? 'Partially Imported' : 'Import Failed'}
         </h3>
         <p className="text-[10px] text-text-muted mt-0.5">
-          {result.imported.length} imported, {result.skipped.length} skipped
+          {[
+            `${result.imported.length} skill${result.imported.length !== 1 ? 's' : ''}`,
+            result.importedAgents.length > 0
+              ? `${result.importedAgents.length} agent${result.importedAgents.length !== 1 ? 's' : ''}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(', ')}{' '}
+          imported, {totalSkipped} skipped
         </p>
       </div>
 
       {/* Imported skills */}
       {result.imported.length > 0 && (
         <div className="space-y-1">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider px-1">Imported</span>
+          <span className="text-[10px] text-text-muted uppercase tracking-wider px-1">Imported skills</span>
           {result.imported.map((name) => (
             <div
               key={name}
@@ -451,13 +602,33 @@ function InstallStep({
         </div>
       )}
 
-      {/* Skipped skills */}
-      {result.skipped.length > 0 && (
+      {/* Imported agents, named individually */}
+      {result.importedAgents.length > 0 && (
+        <div className="space-y-1">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider px-1">Imported agents</span>
+          {result.importedAgents.map((name) => (
+            <div
+              key={name}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-status-running/5 border border-status-running/10"
+            >
+              <CheckCircle2 size={12} className="text-status-running flex-shrink-0" />
+              <span className="text-xs text-text-primary font-medium">{name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Skipped skills and agents. Keys are kind-prefixed: skills and
+          agents are separate namespaces, so one name can appear in both. */}
+      {totalSkipped > 0 && (
         <div className="space-y-1">
           <span className="text-[10px] text-text-muted uppercase tracking-wider px-1">Skipped</span>
-          {result.skipped.map((s) => (
+          {[
+            ...result.skipped.map((s) => ({ ...s, key: `skill-${s.name}` })),
+            ...result.skippedAgents.map((s) => ({ ...s, key: `agent-${s.name}` })),
+          ].map((s) => (
             <div
-              key={s.name}
+              key={s.key}
               className="flex items-start gap-2 px-3 py-2 rounded-lg bg-status-pending/5 border border-status-pending/10"
             >
               <AlertTriangle size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
