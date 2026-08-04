@@ -25,6 +25,10 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 )
 
+// DefaultServerName is the config entry key gridctl writes when no
+// group-specific name applies.
+const DefaultServerName = "gridctl"
+
 // Sentinel errors callers branch on.
 var (
 	// ErrForeign marks an entry at gridctl's name that gridctl never
@@ -41,6 +45,11 @@ var (
 	// ErrCannotPlan marks a provisioner that cannot report its planned
 	// entry value; ownership hashing is impossible without it.
 	ErrCannotPlan = errors.New("provisioner cannot plan its entry value")
+	// ErrUnknownClient marks a slug the provisioner registry does not know.
+	ErrUnknownClient = errors.New("unknown client")
+	// ErrNotDetected marks a known client with no config detected on this
+	// system.
+	ErrNotDetected = errors.New("client is not detected on this system")
 )
 
 // maxHashHistory bounds the per-entry list of canonical hashes gridctl
