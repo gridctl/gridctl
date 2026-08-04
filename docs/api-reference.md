@@ -2379,18 +2379,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/sources
 
 #### `POST /api/skills/sources`
 
-Imports skills from a git repository.
+Imports skills (and agent definitions) from a git repository. `selected` restricts the import to named skills; `selectedAgents` restricts it to named agents. A skill selection alone deliberately skips agents (the importer's legacy contract), so a caller importing both kinds names both.
 
 **Auth:** Yes
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"repo": "https://github.com/org/skills", "ref": "main", "trust": false, "selected": ["code-review"]}' \
+  -d '{"repo": "https://github.com/org/skills", "ref": "main", "trust": false, "selected": ["code-review"], "selectedAgents": ["reviewer"]}' \
   http://localhost:8180/api/skills/sources
 ```
 
-**Response:** `201 Created` with the import result. Git errors return `401`/`404`/`400` with redacted messages.
+**Response:** `201 Created` with the import result (`imported`, `skipped`, `warnings`, plus `importedAgents` and `skippedAgents` when the repo ships agents). Git errors return `401`/`404`/`400` with redacted messages.
 
 #### `POST /api/skills/sources/update`
 
