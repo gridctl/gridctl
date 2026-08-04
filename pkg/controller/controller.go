@@ -77,18 +77,18 @@ type Config struct {
 	// what it costs, not what it enables.
 	AllowUnauthenticated bool
 	BasePort             int
-	Verbose     bool
-	Quiet       bool
-	NoCache     bool
-	NoExpand    bool
-	Foreground  bool
-	Watch       bool
-	DaemonChild bool
-	CodeMode    bool       // Enable code mode via CLI flag
-	Runtime     string     // Explicit runtime selection (docker, podman)
-	Replace     bool       // Stop a running stack before deploying (used by plan apply)
-	LogFile     string     // Path to log file (overrides stack.yaml logging.file)
-	LogLevel    slog.Level // Minimum slog level (global --log-level; zero value is info)
+	Verbose              bool
+	Quiet                bool
+	NoCache              bool
+	NoExpand             bool
+	Foreground           bool
+	Watch                bool
+	DaemonChild          bool
+	CodeMode             bool       // Enable code mode via CLI flag
+	Runtime              string     // Explicit runtime selection (docker, podman)
+	Replace              bool       // Stop a running stack before deploying (used by plan apply)
+	LogFile              string     // Path to log file (overrides stack.yaml logging.file)
+	LogLevel             slog.Level // Minimum slog level (global --log-level; zero value is info)
 
 	// OnReady fires once the gateway HTTP listener is serving and MCP server
 	// registration has run — the same readiness the daemon parent polls via
@@ -486,12 +486,16 @@ func (sc *StackController) runDaemonChild(ctx context.Context, stack *config.Sta
 		return fmt.Errorf("failed to get container info: %w", err)
 	}
 
+	token, header, authType := authStateFrom(stack)
 	st := &state.DaemonState{
-		StackName: stack.Name,
-		StackFile: sc.config.StackPath,
-		PID:       os.Getpid(),
-		Port:      sc.config.Port,
-		StartedAt: time.Now(),
+		StackName:  stack.Name,
+		StackFile:  sc.config.StackPath,
+		PID:        os.Getpid(),
+		Port:       sc.config.Port,
+		StartedAt:  time.Now(),
+		AuthToken:  token,
+		AuthHeader: header,
+		AuthType:   authType,
 	}
 	if err := state.Save(st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
@@ -846,4 +850,16 @@ func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *
 	}
 
 	return result, nil
+}
+
+// authStateFrom copies the gateway's inbound auth settings into the daemon
+// state so local subcommands can authenticate against the API. The token is
+// already resolved here: the config loader expands ${VAR} before it reaches
+// this point, so the CLI never needs the stack file or the vault.
+func authStateFrom(stack *config.Stack) (token, header, authType string) {
+	if stack == nil || stack.Gateway == nil || stack.Gateway.Auth == nil {
+		return "", "", ""
+	}
+	a := stack.Gateway.Auth
+	return a.Token, a.Header, a.Type
 }

@@ -211,8 +211,8 @@ func fetchPinsRecords(st *state.DaemonState, server string) (map[string]*pins.Se
 	if server != "" {
 		url += "/" + server
 	}
-	client := &http.Client{Timeout: pinsAPITimeout}
-	resp, err := client.Get(url)
+	api := newDaemonAPIFor(*st, pinsAPITimeout)
+	resp, err := api.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("calling pins API: %w", err)
 	}
@@ -562,9 +562,9 @@ func apiErrorMessage(body []byte, fallback string) string {
 // fetchPinsDiff retrieves one server's diff from the running gateway.
 func fetchPinsDiff(st *state.DaemonState, server string) (*pinsDiffServer, error) {
 	url := fmt.Sprintf("http://localhost:%d/api/pins/%s/diff", st.Port, server)
-	client := &http.Client{Timeout: pinsAPITimeout}
+	api := newDaemonAPIFor(*st, pinsAPITimeout)
 
-	resp, err := client.Get(url)
+	resp, err := api.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("calling pins API: %w", err)
 	}
@@ -811,7 +811,6 @@ func runPinsApprove(server, expectHash string) error {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/api/pins/%s/approve", st.Port, server)
-	client := &http.Client{Timeout: pinsAPITimeout}
 
 	var reqBody io.Reader
 	if expectHash != "" {
@@ -822,7 +821,14 @@ func runPinsApprove(server, expectHash string) error {
 		reqBody = strings.NewReader(string(payload))
 	}
 
-	resp, err := client.Post(url, "application/json", reqBody)
+	api := newDaemonAPIFor(*st, pinsAPITimeout)
+	req, err := http.NewRequest(http.MethodPost, url, reqBody)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	api.authorize(req)
+	resp, err := api.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("calling pins API: %w", err)
 	}
@@ -864,14 +870,8 @@ func runPinsReset(server string) error {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/api/pins/%s", st.Port, server)
-	client := &http.Client{Timeout: pinsAPITimeout}
-
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-
-	resp, err := client.Do(req)
+	api := newDaemonAPIFor(*st, pinsAPITimeout)
+	resp, err := api.Do(http.MethodDelete, url, nil)
 	if err != nil {
 		return fmt.Errorf("calling pins API: %w", err)
 	}

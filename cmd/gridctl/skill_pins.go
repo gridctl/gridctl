@@ -546,8 +546,14 @@ func approveSkillPinViaAPI(st *state.DaemonState, skill, expectHash, reason stri
 		return fmt.Errorf("encoding request: %w", err)
 	}
 	url := fmt.Sprintf("http://localhost:%d/api/skill-pins/%s/approve", st.Port, skill)
-	client := &http.Client{Timeout: pinsAPITimeout}
-	resp, err := client.Post(url, "application/json", strings.NewReader(string(payload)))
+	api := newDaemonAPIFor(*st, pinsAPITimeout)
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	api.authorize(req)
+	resp, err := api.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("calling skill pins API: %w", err)
 	}
@@ -594,12 +600,8 @@ func runSkillPinsReset(skill string) error {
 
 func resetSkillPinViaAPI(st *state.DaemonState, skill string) error {
 	url := fmt.Sprintf("http://localhost:%d/api/skill-pins/%s", st.Port, skill)
-	client := &http.Client{Timeout: pinsAPITimeout}
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-	resp, err := client.Do(req)
+	api := newDaemonAPIFor(*st, pinsAPITimeout)
+	resp, err := api.Do(http.MethodDelete, url, nil)
 	if err != nil {
 		return fmt.Errorf("calling skill pins API: %w", err)
 	}

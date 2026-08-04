@@ -135,8 +135,8 @@ func buildTracesURL(port int) string {
 // fetchTraces retrieves the trace list envelope from the gateway API.
 func fetchTraces(port int) (apiTraceList, error) {
 	var list apiTraceList
-	client := &http.Client{Timeout: tracesHTTPTimeout}
-	resp, err := client.Get(buildTracesURL(port))
+	api := newDaemonAPI(port, tracesHTTPTimeout)
+	resp, err := api.Get(buildTracesURL(port))
 	if err != nil {
 		return list, fmt.Errorf("traces: %w", err)
 	}
@@ -254,8 +254,8 @@ func runTracesFollow(port int) error {
 // runTraceDetail fetches and renders an ASCII waterfall for a single trace.
 func runTraceDetail(port int, traceID string) error {
 	detailURL := fmt.Sprintf("http://localhost:%d/api/traces/%s", port, url.PathEscape(traceID))
-	client := &http.Client{Timeout: tracesHTTPTimeout}
-	resp, err := client.Get(detailURL)
+	api := newDaemonAPI(port, tracesHTTPTimeout)
+	resp, err := api.Get(detailURL)
 	if err != nil {
 		return fmt.Errorf("traces: %w", err)
 	}

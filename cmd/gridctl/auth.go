@@ -204,16 +204,13 @@ func authResolveDaemon() (*state.DaemonState, error) {
 	return st, nil
 }
 
-// authAPIClient is the HTTP client for short daemon API calls.
-var authAPIClient = &http.Client{Timeout: 15 * time.Second}
-
 func authAPIURL(port int, path string) string {
 	return fmt.Sprintf("http://localhost:%d%s", port, path)
 }
 
 // fetchAuthServers pulls per-server authorization state from the daemon.
 func fetchAuthServers(port int) ([]authServerInfo, error) {
-	resp, err := authAPIClient.Get(authAPIURL(port, "/api/auth/servers"))
+	resp, err := newDaemonAPI(port, 15*time.Second).Get(authAPIURL(port, "/api/auth/servers"))
 	if err != nil {
 		return nil, fmt.Errorf("gateway unreachable: %w", err)
 	}
@@ -234,7 +231,7 @@ func fetchAuthServers(port int) ([]authServerInfo, error) {
 
 // authPostJSON posts a JSON body to a daemon auth endpoint and decodes the
 // response, mapping error payloads onto errors.
-func authPostJSON(client *http.Client, apiURL string, body, out any) error {
+func authPostJSON(api *daemonAPI, apiURL string, body, out any) error {
 	payload := []byte("{}")
 	if body != nil {
 		var err error
@@ -242,7 +239,13 @@ func authPostJSON(client *http.Client, apiURL string, body, out any) error {
 			return err
 		}
 	}
-	resp, err := client.Post(apiURL, "application/json", bytes.NewReader(payload))
+	req, rerr := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(payload))
+	if rerr != nil {
+		return rerr
+	}
+	req.Header.Set("Content-Type", "application/json")
+	api.authorize(req)
+	resp, err := api.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("gateway unreachable: %w", err)
 	}
@@ -273,7 +276,7 @@ func runAuthLogin(stdout, stderr io.Writer, server string) error {
 		AuthorizeURL string `json:"authorize_url"`
 		State        string `json:"state"`
 	}
-	err = authPostJSON(authAPIClient,
+	err = authPostJSON(newDaemonAPIFor(*st, 15*time.Second),
 		authAPIURL(st.Port, "/api/servers/"+url.PathEscape(server)+"/auth/login"),
 		map[string]int{"timeoutSeconds": int(authLoginTimeout.Seconds())}, &login)
 	if err != nil {
@@ -301,7 +304,7 @@ func runAuthLogin(stdout, stderr io.Writer, server string) error {
 		if readErr != nil && line == "" {
 			return fmt.Errorf("reading redirect URL: %w", readErr)
 		}
-		err = authPostJSON(authAPIClient,
+		err = authPostJSON(newDaemonAPIFor(*st, 15*time.Second),
 			authAPIURL(st.Port, "/api/servers/"+url.PathEscape(server)+"/auth/manual"),
 			map[string]string{"redirectUrl": strings.TrimSpace(line)}, nil)
 		if err != nil {
@@ -364,7 +367,7 @@ func runAuthAction(stdout io.Writer, server, action, successFormat string) error
 	if err != nil {
 		return err
 	}
-	err = authPostJSON(authAPIClient,
+	err = authPostJSON(newDaemonAPIFor(*st, 15*time.Second),
 		authAPIURL(st.Port, "/api/servers/"+url.PathEscape(server)+"/auth/"+action), nil, nil)
 	if err != nil {
 		return fmt.Errorf("%s for %s: %w", action, server, err)
@@ -387,7 +390,7 @@ func runAuthLogoutAll(stdout io.Writer) error {
 		return nil
 	}
 	for _, info := range infos {
-		err := authPostJSON(authAPIClient,
+		err := authPostJSON(newDaemonAPIFor(*st, 15*time.Second),
 			authAPIURL(st.Port, "/api/servers/"+url.PathEscape(info.Server)+"/auth/logout"), nil, nil)
 		if err != nil {
 			fmt.Fprintf(stdout, "Logout failed for %s: %v\n", info.Server, err)

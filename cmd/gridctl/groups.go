@@ -103,8 +103,8 @@ func resolveGroupsPort(stackName string) (int, error) {
 
 // fetchGroupsReport calls GET /api/groups on the local gateway.
 func fetchGroupsReport(port int) (mcp.GroupsReport, error) {
-	client := &http.Client{Timeout: groupsHTTPTimeout}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/groups", port))
+	api := newDaemonAPI(port, groupsHTTPTimeout)
+	resp, err := api.Get(api.URL("/api/groups"))
 	if err != nil {
 		return mcp.GroupsReport{}, fmt.Errorf("groups: %w", err)
 	}

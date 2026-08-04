@@ -87,8 +87,8 @@ func reloadAllStacks() error {
 func callReloadAPI(st *state.DaemonState) error {
 	url := fmt.Sprintf("http://localhost:%d/api/reload", st.Port)
 
-	client := &http.Client{Timeout: reloadHTTPTimeout}
-	resp, err := client.Post(url, "application/json", nil)
+	api := newDaemonAPIFor(*st, reloadHTTPTimeout)
+	resp, err := api.Do(http.MethodPost, url, nil)
 	if err != nil {
 		return fmt.Errorf("calling reload API: %w", err)
 	}

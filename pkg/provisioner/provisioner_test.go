@@ -724,8 +724,13 @@ func TestCline_Link(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["mcpServers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	if entry["command"] != "npx" {
-		t.Errorf("expected command=npx, got %v", entry["command"])
+	// Cline speaks remote HTTP natively; the npx bridge it used to get was
+	// an unnecessary Node dependency and process hop.
+	if entry["type"] != "streamableHttp" {
+		t.Errorf("expected type=streamableHttp, got %v", entry["type"])
+	}
+	if _, ok := entry["command"]; ok {
+		t.Error("expected no npx bridge command")
 	}
 	if entry["disabled"] != false {
 		t.Errorf("expected disabled=false, got %v", entry["disabled"])
@@ -753,8 +758,9 @@ func TestClaudeDesktop_Link_UsesHTTPEndpoint(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["mcpServers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
+	// Claude Desktop's config format is stdio-only, so it keeps the
+	// mcp-remote bridge; only the endpoint matters here (/mcp, not /sse).
 	args := entry["args"].([]any)
-	// Should use /mcp endpoint, not /sse
 	if args[2] != "http://localhost:8180/mcp" {
 		t.Errorf("expected mcp-remote URL http://localhost:8180/mcp, got %v", args[2])
 	}
@@ -778,10 +784,13 @@ func TestCline_Link_UsesHTTPEndpoint(t *testing.T) {
 	data := readTestJSON(t, configPath)
 	servers := data["mcpServers"].(map[string]any)
 	entry := servers["gridctl"].(map[string]any)
-	args := entry["args"].([]any)
-	// Should use /mcp endpoint, not /sse
-	if args[2] != "http://localhost:8180/mcp" {
-		t.Errorf("expected mcp-remote URL http://localhost:8180/mcp, got %v", args[2])
+	// Native remote entry: the /mcp endpoint carried as a url, with no
+	// mcp-remote bridge args.
+	if entry["url"] != "http://localhost:8180/mcp" {
+		t.Errorf("expected url http://localhost:8180/mcp, got %v", entry["url"])
+	}
+	if _, ok := entry["args"]; ok {
+		t.Error("expected no bridge args")
 	}
 }
 

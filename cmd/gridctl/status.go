@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 	"unicode/utf8"
@@ -264,8 +263,8 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 // queryTraceCount queries a running gateway for the number of recorded traces.
 // Returns -1 if the gateway is unreachable or tracing is unavailable.
 func queryTraceCount(port int) int {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/traces", port))
+	api := newDaemonAPI(port, 2*time.Second)
+	resp, err := api.Get(api.URL("/api/traces"))
 	if err != nil {
 		return -1
 	}
@@ -327,8 +326,8 @@ type mcpReplicaAPI struct {
 // gateway. Returns nil if the gateway is unreachable or the response is
 // malformed — the CLI renders whatever it can.
 func queryMCPServers(port int) []mcpServerAPI {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/mcp-servers", port))
+	api := newDaemonAPI(port, 2*time.Second)
+	resp, err := api.Get(api.URL("/api/mcp-servers"))
 	if err != nil {
 		return nil
 	}
@@ -558,8 +557,8 @@ func formatUptime(d time.Duration) string {
 // ("on" if active, empty otherwise) and the enabled experimental flag map
 // (nil when nothing is enabled).
 func queryGatewayStatus(port int) (codeMode string, features map[string]bool) {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/status", port))
+	api := newDaemonAPI(port, 2*time.Second)
+	resp, err := api.Get(api.URL("/api/status"))
 	if err != nil {
 		return "", nil
 	}

@@ -108,8 +108,8 @@ func resolveLimitsPort(stackName string) (int, error) {
 
 // fetchLimitsReport calls GET /api/limits on the local gateway.
 func fetchLimitsReport(port int) (limits.StatusReport, error) {
-	client := &http.Client{Timeout: limitsHTTPTimeout}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/limits", port))
+	api := newDaemonAPI(port, limitsHTTPTimeout)
+	resp, err := api.Get(api.URL("/api/limits"))
 	if err != nil {
 		return limits.StatusReport{}, fmt.Errorf("limits: %w", err)
 	}

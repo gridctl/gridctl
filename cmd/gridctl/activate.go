@@ -116,8 +116,8 @@ func runActivate(stdout, stderr io.Writer, baseURL, name, format string, quiet b
 // caller can map non-success codes.
 func postActivate(baseURL, name string) (*registry.AgentSkill, int, []byte, error) {
 	target := fmt.Sprintf("%s/api/registry/skills/%s/activate", baseURL, url.PathEscape(name))
-	client := &http.Client{Timeout: activateHTTPTimeout}
-	resp, err := client.Post(target, "application/json", nil)
+	api := newDaemonAPIForBaseURL(baseURL, activateHTTPTimeout)
+	resp, err := api.Do(http.MethodPost, target, nil)
 	if err != nil {
 		return nil, 0, nil, fmt.Errorf("activate: %w", err)
 	}
