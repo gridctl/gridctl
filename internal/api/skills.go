@@ -341,13 +341,17 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Repo       string       `json:"repo"`
-		Ref        string       `json:"ref,omitempty"`
-		Path       string       `json:"path,omitempty"`
-		Trust      bool         `json:"trust,omitempty"`
-		NoActivate bool         `json:"noActivate,omitempty"`
-		Selected   []string     `json:"selected,omitempty"`
-		Auth       *AuthRequest `json:"auth,omitempty"`
+		Repo       string   `json:"repo"`
+		Ref        string   `json:"ref,omitempty"`
+		Path       string   `json:"path,omitempty"`
+		Trust      bool     `json:"trust,omitempty"`
+		NoActivate bool     `json:"noActivate,omitempty"`
+		Selected   []string `json:"selected,omitempty"`
+		// SelectedAgents imports exactly these agent names. Required
+		// alongside Selected: a skill selection alone skips agents (the
+		// importer's legacy contract).
+		SelectedAgents []string     `json:"selectedAgents,omitempty"`
+		Auth           *AuthRequest `json:"auth,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -373,13 +377,14 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	imp := skills.NewImporter(store, registryDir, lockPath, logger)
 	imp.SetCredentialResolver(s.credentialResolver())
 	result, err := imp.Import(skills.ImportOptions{
-		Repo:       req.Repo,
-		Ref:        req.Ref,
-		Path:       req.Path,
-		Trust:      req.Trust,
-		NoActivate: req.NoActivate,
-		Selected:   req.Selected,
-		Auth:       authCfg,
+		Repo:           req.Repo,
+		Ref:            req.Ref,
+		Path:           req.Path,
+		Trust:          req.Trust,
+		NoActivate:     req.NoActivate,
+		Selected:       req.Selected,
+		SelectedAgents: req.SelectedAgents,
+		Auth:           authCfg,
 	})
 	if err != nil {
 		writeGitError(w, "Import failed: ", err)
