@@ -1,6 +1,4 @@
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { Cable } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { Modal } from '../../ui/Modal';
 import { StatePill } from '../../ui/StatePill';
@@ -10,7 +8,7 @@ import {
   syncAgentProjections,
   unsyncAgentProjections,
 } from '../../../lib/api';
-import { agentClientName } from './agentModel';
+import { agentClientName, describeSyncResults } from './agentModel';
 import type { AgentProjectionStatus } from '../../../types';
 
 interface AgentProjectionRowsProps {
@@ -48,13 +46,29 @@ export function AgentProjectionRows({ agentName, statuses, onRefresh }: AgentPro
     [onRefresh],
   );
 
+  // Sync toasts classify the engine's actual result rows: skips carry no
+  // error field, so an error-keyed toast would announce success while
+  // nothing was written (undetected client, drifted copy).
+  const runSync = useCallback(
+    async (body: { agents: string[]; clients?: string[]; force?: boolean }) => {
+      setBusy(true);
+      try {
+        const results = await syncAgentProjections(body);
+        const { kind, message } = describeSyncResults(results);
+        showToast(kind, message);
+        await onRefresh();
+      } catch (err) {
+        showToast('error', err instanceof Error ? err.message : 'Sync failed');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onRefresh],
+  );
+
   const syncOne = useCallback(
-    (client: string, force = false) =>
-      act(
-        () => syncAgentProjections({ agents: [agentName], clients: [client], force }),
-        `${agentName} synced to ${agentClientName(client)}`,
-      ),
-    [act, agentName],
+    (client: string) => runSync({ agents: [agentName], clients: [client] }),
+    [runSync, agentName],
   );
 
   const unsyncOne = useCallback(
@@ -75,7 +89,7 @@ export function AgentProjectionRows({ agentName, statuses, onRefresh }: AgentPro
           (verbatim for Claude Code, rendered for other clients).
         </p>
         <button
-          onClick={() => void act(() => syncAgentProjections({ agents: [agentName] }), `${agentName} synced`)}
+          onClick={() => void runSync({ agents: [agentName] })}
           disabled={busy}
           className="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/25 rounded-lg hover:bg-primary/15 transition-colors disabled:opacity-50"
         >
@@ -84,6 +98,11 @@ export function AgentProjectionRows({ agentName, statuses, onRefresh }: AgentPro
       </div>
     );
   }
+
+  // The identity target comes from the status rows, never a hardcoded
+  // slug: a second identity target (or a renamed one) must keep the
+  // adopt-alternative button working without a code change here.
+  const identityClient = statuses.find((s) => s.render === 'identity')?.client ?? null;
 
   return (
     <>
@@ -103,7 +122,7 @@ export function AgentProjectionRows({ agentName, statuses, onRefresh }: AgentPro
         <AgentDriftDialog
           agentName={agentName}
           status={driftReview}
-          hasIdentityRow={statuses.some((s) => s.render === 'identity')}
+          identityClient={identityClient}
           busy={busy}
           onClose={() => setDriftReview(null)}
           onAdopt={() =>
@@ -113,19 +132,18 @@ export function AgentProjectionRows({ agentName, statuses, onRefresh }: AgentPro
               return res;
             }, `Adopted ${agentClientName(driftReview.client)}'s edit into the canonical AGENT.md`)
           }
-          onAdoptIdentity={() =>
+          onAdoptIdentity={() => {
+            if (!identityClient) return;
             void act(async () => {
-              const res = await adoptAgentProjection(agentName, 'claude-code');
+              const res = await adoptAgentProjection(agentName, identityClient);
               setDriftReview(null);
               return res;
-            }, 'Adopted the Claude Code copy into the canonical AGENT.md')
-          }
-          onOverwrite={() =>
-            void act(async () => {
-              await syncAgentProjections({ agents: [agentName], clients: [driftReview.client], force: true });
-              setDriftReview(null);
-            }, `${agentClientName(driftReview.client)} restored from the canonical AGENT.md`)
-          }
+            }, `Adopted the ${agentClientName(identityClient)} copy into the canonical AGENT.md`);
+          }}
+          onOverwrite={() => {
+            setDriftReview(null);
+            void runSync({ agents: [agentName], clients: [driftReview.client], force: true });
+          }}
           onUnsync={() =>
             void act(async () => {
               await unsyncAgentProjections({ agents: [agentName], clients: [driftReview.client] });
@@ -151,7 +169,6 @@ function ProjectionRow({
   onUnsync: () => void;
   onReviewDrift: () => void;
 }) {
-  const navigate = useNavigate();
   return (
     <li className="flex flex-col gap-1 px-1 py-2">
       {/* flex-wrap: at the 300px right-rail minimum the chips stack onto the
@@ -176,14 +193,6 @@ function ProjectionRow({
             <RowAction label="Review" disabled={busy} onClick={onReviewDrift} />
           )}
           <RowAction label="Unsync" subtle disabled={busy} onClick={onUnsync} />
-          <button
-            onClick={() => navigate('/connections')}
-            title={`Open Connections (${agentClientName(s.client)})`}
-            aria-label={`Open Connections for ${agentClientName(s.client)}`}
-            className="p-1 rounded-md text-text-muted/60 hover:text-text-secondary hover:bg-surface-highlight transition-colors"
-          >
-            <Cable size={12} />
-          </button>
         </span>
       </div>
       <span className="text-[11px] text-text-muted font-mono truncate" title={s.target}>
@@ -237,7 +246,7 @@ function RowAction({
 function AgentDriftDialog({
   agentName,
   status,
-  hasIdentityRow,
+  identityClient,
   busy,
   onClose,
   onAdopt,
@@ -247,7 +256,8 @@ function AgentDriftDialog({
 }: {
   agentName: string;
   status: AgentProjectionStatus;
-  hasIdentityRow: boolean;
+  /** Slug of the identity-render row, or null when none is projected. */
+  identityClient: string | null;
   busy: boolean;
   onClose: () => void;
   onAdopt: () => void;
@@ -264,8 +274,8 @@ function AgentDriftDialog({
           <p className="text-xs text-text-muted" data-testid="adopt-refusal">
             {clientName}'s projection is a lossy render; edits there can't sync back into the
             canonical AGENT.md without corrupting it with client-dialect content.
-            {hasIdentityRow
-              ? ' Adopt the Claude Code copy instead, or unsync to hand-maintain this file.'
+            {identityClient
+              ? ` Adopt the ${agentClientName(identityClient)} copy instead, or unsync to hand-maintain this file.`
               : ' Unsync to hand-maintain this file, or overwrite it from the canonical store.'}
           </p>
         ) : (
@@ -293,13 +303,13 @@ function AgentDriftDialog({
             Unsync
           </button>
           {lossy ? (
-            hasIdentityRow && (
+            identityClient !== null && (
               <button
                 onClick={onAdoptIdentity}
                 disabled={busy}
                 className="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/25 rounded-lg hover:bg-primary/15 transition-colors disabled:opacity-50"
               >
-                Adopt Claude Code copy
+                Adopt {agentClientName(identityClient)} copy
               </button>
             )
           ) : (
