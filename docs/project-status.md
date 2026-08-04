@@ -66,7 +66,7 @@ Current as of **v0.1.0-beta.15 plus `[Unreleased]`** (see [CHANGELOG.md](../CHAN
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Code mode sandbox has no filesystem access (by design).
 - Skills registry is local-only with no remote discovery.
-- Packs and agents have no web UI surface; both are CLI-first (agents also have no REST endpoints).
+- Packs and agents have no web UI surface yet; packs are CLI-first, and agents gained REST endpoints (`/api/registry/agents`, `/api/project/agents/*`) ahead of the Library UI landing next.
 - Global context sync covers 12 of 15 linkable clients; Claude Desktop, Cursor, and AnythingLLM expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
 - Web UI requires a modern browser (no IE11 support).
 
