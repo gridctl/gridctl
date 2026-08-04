@@ -214,6 +214,29 @@ func TestHandleAgentDelete(t *testing.T) {
 	}
 }
 
+// TestHandleAgentDelete_RetiresProjections pins the orphan contract: a
+// deleted agent must not leave project-lock rows behind, or its name
+// keeps appearing in status output and poisons later named syncs with a
+// 404 for the whole batch.
+func TestHandleAgentDelete_RetiresProjections(t *testing.T) {
+	srv, registryDir, home := setupAgentTestServer(t, ".claude")
+	seedAgent(t, registryDir, "reviewer", sampleAgentRaw)
+	doJSON(t, srv, http.MethodPost, "/api/project/agents/sync", "")
+
+	rec := doJSON(t, srv, http.MethodDelete, "/api/registry/agents/reviewer", "")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(home, ".claude", "agents", "reviewer.md")); !os.IsNotExist(err) {
+		t.Errorf("projected file should be removed with the agent, err = %v", err)
+	}
+	rec = doJSON(t, srv, http.MethodGet, "/api/project/agents/status", "")
+	if got := strings.TrimSpace(rec.Body.String()); got != "[]" {
+		t.Errorf("status after delete = %q, want [] (no orphan rows)", got)
+	}
+}
+
 func TestHandleProjectAgentsStatus_EmptyIsArray(t *testing.T) {
 	srv, _, _ := setupAgentTestServer(t)
 	rec := doJSON(t, srv, http.MethodGet, "/api/project/agents/status", "")
