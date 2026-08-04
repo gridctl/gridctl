@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -1057,6 +1057,24 @@ export async function unsyncAgentProjections(body: {
 
 export async function adoptAgentProjection(agent: string, client: string): Promise<AgentAdoptResult> {
   return mutateJSON<AgentAdoptResult>('/api/project/agents/adopt', 'POST', { agent, client });
+}
+
+// --- Wiring ownership (REST face of `gridctl project --kind wiring`) ---
+
+export async function fetchWiringStatus(): Promise<WiringRow[]> {
+  return fetchJSON<WiringRow[]>('/api/project/wiring/status');
+}
+
+/**
+ * Adopt records ownership of the entry's current value without rewriting
+ * it. Refusals arrive as 409 with the engine's reason; callers render
+ * that message verbatim.
+ */
+export async function adoptWiringEntry(client: string, name?: string): Promise<WiringAdoptResult> {
+  return mutateJSON<WiringAdoptResult>('/api/project/wiring/adopt', 'POST', {
+    client,
+    ...(name ? { name } : {}),
+  });
 }
 
 // --- Skill File Management ---
