@@ -29,6 +29,8 @@ interface ClientDetailPaneProps {
   /** null while the sessions fetch has not resolved; an empty array is a
    *  real "no attributed activity" fact. */
   sessions: SessionEntry[] | null;
+  /** True when the sessions fetch failed: unavailable, not loading. */
+  sessionsFailed?: boolean;
   onRefresh: () => Promise<void> | void;
   onReviewContext: () => void;
 }
@@ -49,12 +51,14 @@ export function ClientDetailPane({
   contextClient,
   agentRows,
   sessions,
+  sessionsFailed = false,
   onRefresh,
   onReviewContext,
 }: ClientDetailPaneProps) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [confirmAdopt, setConfirmAdopt] = useState<WiringRow | null>(null);
+  const [confirmOverwrite, setConfirmOverwrite] = useState<WiringRow | null>(null);
 
   const act = useCallback(
     async (fn: () => Promise<unknown>, okMessage: string) => {
@@ -64,8 +68,10 @@ export function ClientDetailPane({
         showToast('success', okMessage);
         await onRefresh();
       } catch (err) {
-        // Refusals carry the engine's reason (409 body); render it verbatim,
-        // hint included — the remediation sentence is the useful half.
+        // Failures render the server's message verbatim. Link failures
+        // arrive as structured ClientLinkError with a remediation hint
+        // (append it); wiring adopt 409s carry the engine's reason in the
+        // plain error message already.
         const detail =
           err instanceof ClientLinkError && err.hint
             ? `${err.message} ${err.hint}`
@@ -127,15 +133,25 @@ export function ClientDetailPane({
         <div className="mt-3 flex items-center gap-4 flex-wrap">
           <AxisBadge
             label="Ownership"
-            tone={ownershipAttention ? 'pending' : 'ok'}
-            text={ownershipAttention ? health.reasons.join(' · ') : 'everything gridctl placed is in sync'}
+            tone={wiringRows === null ? 'muted' : ownershipAttention ? 'pending' : 'ok'}
+            text={
+              wiringRows === null
+                ? 'loading'
+                : ownershipAttention
+                  ? health.reasons.join(' · ')
+                  : wiringRows.length === 0
+                    ? 'nothing placed yet'
+                    : 'everything gridctl placed is in sync'
+            }
           />
           <AxisBadge
             label="Activity"
             tone={attributedSessions.length > 0 ? 'live' : 'muted'}
             text={
               sessions === null
-                ? 'loading'
+                ? sessionsFailed
+                  ? 'unavailable'
+                  : 'loading'
                 : attributedSessions.length > 0
                   ? `${attributedSessions.length} active session${attributedSessions.length === 1 ? '' : 's'}`
                   : 'no attributed sessions'
@@ -181,14 +197,17 @@ export function ClientDetailPane({
                 </span>
               )}
               <span className="ml-auto flex items-center gap-1.5">
-                {/* Adopt records the entry's CURRENT value, so it cannot
-                    apply to target-missing (nothing exists to adopt);
-                    Re-link is that state's remedy, so no disabled button
-                    with a hidden reason ever renders. */}
+                {/* Actions match what the API can actually do per state.
+                    Adopt records the entry's CURRENT value, so it cannot
+                    apply to target-missing (nothing exists to adopt).
+                    Plain Re-link succeeds only on stale and
+                    target-missing; drifted and foreign entries need the
+                    explicit Overwrite (force) with its confirm — a plain
+                    Re-link there would systematically 409. */}
                 {(row.state === 'stale' || row.state === 'drifted' || row.state === 'foreign') && (
                   <InlineAction label="Adopt" disabled={busy} onClick={() => setConfirmAdopt(row)} />
                 )}
-                {(row.state === 'stale' || row.state === 'drifted' || row.state === 'foreign' || row.state === 'target-missing') && (
+                {(row.state === 'stale' || row.state === 'target-missing') && (
                   <InlineAction
                     label="Re-link"
                     subtle
@@ -198,9 +217,23 @@ export function ClientDetailPane({
                     }
                   />
                 )}
+                {(row.state === 'drifted' || row.state === 'foreign') && (
+                  <InlineAction
+                    label="Overwrite"
+                    subtle
+                    disabled={busy}
+                    onClick={() => setConfirmOverwrite(row)}
+                  />
+                )}
               </span>
             </div>
             {row.detail && <span className="text-[11px] text-text-muted/80 px-1">{row.detail}</span>}
+            {/* The engine's remediation is the user's map when a state
+                needs a decision; hiding it until an action fails would
+                make the failure the discovery mechanism. */}
+            {row.remediation && row.state !== 'in-sync' && (
+              <span className="text-[11px] text-text-muted/60 px-1">{row.remediation}</span>
+            )}
             {row.target && (
               <span className="text-[11px] text-text-muted font-mono truncate px-1" title={row.target}>
                 {row.target}
@@ -357,7 +390,9 @@ export function ClientDetailPane({
         title="Sessions"
         summary={
           sessions === null
-            ? 'loading'
+            ? sessionsFailed
+              ? 'unavailable'
+              : 'loading'
             : attributedSessions.length === 0
               ? 'none attributed'
               : `${attributedSessions.length} active`
@@ -366,7 +401,9 @@ export function ClientDetailPane({
       >
         {sessions === null && (
           <p className="text-[11px] text-text-muted px-1">
-            Session state has not loaded (or the daemon predates the sessions API).
+            {sessionsFailed
+              ? 'Session state is unavailable: the sessions endpoint failed (or the daemon predates it).'
+              : 'Session state has not loaded yet.'}
           </p>
         )}
         {sessions !== null && attributedSessions.length === 0 && (
@@ -421,6 +458,36 @@ export function ClientDetailPane({
           </>
         }
         confirmLabel="Adopt"
+      />
+
+      <ConfirmDialog
+        isOpen={confirmOverwrite !== null}
+        onClose={() => setConfirmOverwrite(null)}
+        onConfirm={() => {
+          const row = confirmOverwrite;
+          setConfirmOverwrite(null);
+          if (!row) return;
+          void act(
+            () => linkClient(client.slug, { force: true }),
+            `${client.name}'s '${row.name}' entry rewritten from gridctl`,
+          );
+        }}
+        title="Overwrite entry"
+        message={
+          <>
+            <p>
+              Rewrite <span className="font-mono text-primary">{confirmOverwrite?.name}</span> in{' '}
+              {client.name}'s config with gridctl's gateway entry?
+            </p>
+            <p>
+              The current value was {confirmOverwrite?.state === 'foreign' ? 'not written by gridctl' : 'edited after gridctl wrote it'};
+              the engine backs it up before overwriting. Adopt instead if the current value should
+              become the recorded one.
+            </p>
+          </>
+        }
+        confirmLabel="Overwrite"
+        variant="danger"
       />
     </div>
   );
