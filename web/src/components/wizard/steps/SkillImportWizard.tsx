@@ -44,6 +44,11 @@ export function SkillImportWizard() {
   // a skill selection alone deliberately skips agents.
   const [agentPreviews, setAgentPreviews] = useState<AgentPreview[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
+  // Explicit acknowledgment before flagged agents install. Skills route
+  // flagged items through the configure step; agents have no per-item
+  // settings, so the trust grant needs its own visible consent instead of
+  // riding silently on a checked box.
+  const [agentsTrustAck, setAgentsTrustAck] = useState(false);
 
   // Install state
   const [installing, setInstalling] = useState(false);
@@ -89,6 +94,7 @@ export function SkillImportWizard() {
       }
       setSelected(autoSelected);
       setSelectedAgents(autoAgents);
+      setAgentsTrustAck(false);
       setConfigs(configMap);
       setStep('browse');
     },
@@ -159,12 +165,19 @@ export function SkillImportWizard() {
     }
   }, [repoUrl, ref, path, previews, selected, agentPreviews, selectedAgents, auth]);
 
+  const flaggedAgentsSelected = agentPreviews.some(
+    (a) => selectedAgents.has(a.name) && (a.findings?.length ?? 0) > 0,
+  );
+
   const canGoNext = () => {
     switch (step) {
       case 'source':
         return false; // handled by AddSourceStep callback
       case 'browse':
-        return selected.size > 0 || selectedAgents.size > 0;
+        return (
+          (selected.size > 0 || selectedAgents.size > 0) &&
+          (!flaggedAgentsSelected || agentsTrustAck)
+        );
       case 'configure':
         return true;
       default:
@@ -253,6 +266,20 @@ export function SkillImportWizard() {
                 selected={selectedAgents}
                 onSelectionChange={setSelectedAgents}
               />
+            )}
+            {flaggedAgentsSelected && (
+              <label className="mt-3 flex items-start gap-2 px-4 py-3 rounded-xl border border-status-pending/30 bg-status-pending/5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agentsTrustAck}
+                  onChange={(e) => setAgentsTrustAck(e.target.checked)}
+                  className="mt-0.5 rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
+                />
+                <span className="text-xs text-text-secondary">
+                  Import the flagged agents anyway. This grants the import trust to proceed
+                  despite the security findings listed above.
+                </span>
+              </label>
             )}
           </>
         )}
