@@ -6,6 +6,7 @@ import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { AgentsWorkspace } from '../components/registry/agents/AgentsWorkspace';
 import { AgentProjectionRows } from '../components/registry/agents/AgentProjectionRows';
 import { AgentEditor } from '../components/registry/agents/AgentEditor';
+import { describeSyncResults } from '../components/registry/agents/agentModel';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { AgentScanError } from '../lib/api';
 import type { AgentProjectionStatus, RegistryAgent } from '../types';
@@ -26,6 +27,7 @@ vi.mock('../lib/api', async () => {
 });
 
 import {
+  adoptAgentProjection,
   fetchAgentProjectionStatus,
   fetchRegistryAgent,
   fetchRegistryAgents,
@@ -147,6 +149,67 @@ describe('AgentsWorkspace', () => {
       expect(syncAgentProjections).toHaveBeenCalledWith({ agents: ['code-reviewer'] });
     });
   });
+
+  it('excludes orphaned lock rows from the stale-sync pill', async () => {
+    // A projection row for an agent the catalog no longer serves (deleted
+    // out from under its projections) must not enter the named sync: the
+    // backend 404s the whole batch on an unknown name.
+    vi.mocked(fetchRegistryAgents).mockResolvedValue([reviewer]);
+    vi.mocked(fetchAgentProjectionStatus).mockResolvedValue([
+      { ...identityInSync, state: 'stale' },
+      { ...identityInSync, agent: 'ghost', state: 'stale' },
+    ]);
+    vi.mocked(syncAgentProjections).mockResolvedValue([]);
+
+    renderWorkspace();
+
+    const pill = await screen.findByRole('button', { name: /Sync 1 stale agent/ });
+    fireEvent.click(pill);
+    await waitFor(() => {
+      expect(syncAgentProjections).toHaveBeenCalledWith({ agents: ['code-reviewer'] });
+    });
+  });
+
+  it('counts drifted-only agents as projected in the KPI strip', async () => {
+    vi.mocked(fetchRegistryAgents).mockResolvedValue([reviewer]);
+    vi.mocked(fetchAgentProjectionStatus).mockResolvedValue([lossyDrifted]);
+
+    renderWorkspace();
+
+    await screen.findByText('code-reviewer');
+    const strip = screen.getByRole('group', { name: 'Agent projection summary' });
+    // The files and lock rows exist, so the agent IS projected even
+    // though nothing is in sync; Drifted carries the health signal.
+    expect(within(strip).getByText('1 of 1')).toBeInTheDocument();
+  });
+});
+
+describe('describeSyncResults', () => {
+  it('warns instead of claiming success when every client was unavailable', () => {
+    const outcome = describeSyncResults([
+      { agent: '', client: 'claude-code', action: 'skipped-unavailable' },
+      { agent: '', client: 'opencode', action: 'skipped-unavailable' },
+    ]);
+    expect(outcome.kind).toBe('warning');
+    expect(outcome.message).toMatch(/No agent clients detected/);
+  });
+
+  it('flags drift skips and errors as a warning with counts', () => {
+    const outcome = describeSyncResults([
+      { agent: 'a', client: 'claude-code', action: 'copied' },
+      { agent: 'b', client: 'claude-code', action: 'skipped-drift' },
+      { agent: 'c', client: 'claude-code', action: 'error', error: 'boom' },
+    ]);
+    expect(outcome.kind).toBe('warning');
+    expect(outcome.message).toContain('1 synced');
+    expect(outcome.message).toContain('1 skipped');
+    expect(outcome.message).toContain('1 failed');
+  });
+
+  it('reports plain success only when something was applied', () => {
+    expect(describeSyncResults([{ agent: 'a', client: 'claude-code', action: 'copied' }]).kind).toBe('success');
+    expect(describeSyncResults([{ agent: 'a', client: 'claude-code', action: 'unchanged' }]).message).toBe('Already in sync');
+  });
 });
 
 describe('AgentProjectionRows', () => {
@@ -186,10 +249,47 @@ describe('AgentProjectionRows', () => {
     expect(screen.getAllByRole('button', { name: 'Unsync' }).length).toBeGreaterThan(0);
     // No "Adopt into canon" — that action is identity-only.
     expect(screen.queryByRole('button', { name: 'Adopt into canon' })).not.toBeInTheDocument();
+
+    // The adopt alternative targets the identity row's actual client slug,
+    // not a hardcoded assumption.
+    vi.mocked(adoptAgentProjection).mockResolvedValue({
+      agent: 'code-reviewer',
+      client: 'claude-code',
+      target: identityInSync.target,
+      canonical_file: '/reg/agents/code-reviewer/AGENT.md',
+      changed: true,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Adopt Claude Code copy' }));
+    await waitFor(() => {
+      expect(adoptAgentProjection).toHaveBeenCalledWith('code-reviewer', identityInSync.client);
+    });
   });
 });
 
 describe('AgentEditor', () => {
+  it('confirms before discarding unsaved edits', async () => {
+    vi.mocked(fetchRegistryAgent).mockResolvedValue({
+      ...reviewer,
+      body: 'Body.',
+      raw: '---\nname: code-reviewer\ndescription: d\n---\nBody.',
+    });
+    const onClose = vi.fn();
+    render(<AgentEditor isOpen agent={reviewer} onClose={onClose} onSaved={() => {}} />);
+
+    const textarea = await screen.findByRole('textbox', { name: /AGENT.md content/ });
+    await waitFor(() => {
+      expect((textarea as HTMLTextAreaElement).value).toContain('code-reviewer');
+    });
+    fireEvent.change(textarea, { target: { value: '---\nname: code-reviewer\ndescription: d\n---\nEdited.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    // The editor must not close silently: a confirm interposes.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText(/unsaved edits/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('renders the scan findings when a save is blocked with 409', async () => {
     vi.mocked(fetchRegistryAgent).mockResolvedValue({
       ...reviewer,
