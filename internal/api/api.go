@@ -652,6 +652,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/project/agents/unsync", s.handleProjectAgentsUnsync)
 	mux.HandleFunc("POST /api/project/agents/adopt", s.handleProjectAgentsAdopt)
 
+	// Wiring ownership endpoints (pkg/wiring): the REST face of
+	// `gridctl project status|adopt --kind wiring`.
+	mux.HandleFunc("GET /api/project/wiring/status", s.handleProjectWiringStatus)
+	mux.HandleFunc("POST /api/project/wiring/adopt", s.handleProjectWiringAdopt)
+
 	// Static files (UI) - served at root
 	if s.staticFS != nil {
 		fileServer := http.FileServer(http.FS(s.staticFS))
