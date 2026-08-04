@@ -63,7 +63,7 @@ func (m *Manager) Adopt(ctx context.Context, agent, client string) (*AdoptResult
 	}
 	a, err := skills.GetAgent(m.registryDir, agent)
 	if err != nil {
-		return nil, fmt.Errorf("unknown agent %q: %w", agent, err)
+		return nil, fmt.Errorf("%w %q: %w", ErrUnknownAgent, agent, err)
 	}
 
 	var result *AdoptResult

@@ -30,6 +30,7 @@ import (
 // Sentinel errors callers branch on.
 var (
 	ErrUnknownClient = errors.New("unknown client")
+	ErrUnknownAgent  = errors.New("unknown agent")
 	ErrNotAvailable  = errors.New("client not initialized on this machine")
 	ErrNotProjected  = errors.New("agent is not projected")
 )

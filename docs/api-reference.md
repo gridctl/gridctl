@@ -2470,7 +2470,7 @@ Force-updates a single skill to upstream content, backing up the current file fi
 
 ### Registry (Agent Skills) *(experimental)*
 
-Manage reusable skills stored as SKILL.md files. Skills have three lifecycle states: `draft`, `active`, and `disabled`. The registry also holds imported agent definitions, but those are deliberately CLI-only (`gridctl skill list --kind agent`); there is no agents REST surface.
+Manage reusable skills stored as SKILL.md files. Skills have three lifecycle states: `draft`, `active`, and `disabled`. The registry also holds imported agent definitions; see [Registry (Agents)](#registry-agents-experimental) below.
 
 #### `GET /api/registry/status`
 
@@ -2676,6 +2676,144 @@ Deletes a file from a skill directory. The `{path...}` segment is variadic, so n
 **Auth:** Yes
 
 **Response:** `204 No Content`
+
+---
+
+### Registry (Agents) *(experimental)*
+
+Manage imported agent definitions (`~/.gridctl/registry/agents/<name>/AGENT.md`). Agents are single-file definitions projected into client directories; gridctl never executes them, and they are not gateway-routed MCP content. Agents enter the store through import (`gridctl skill add` or `POST /api/skills/sources`), so there is no create endpoint; PUT edits an existing agent.
+
+Frontmatter keys other than `name` and `description` ride in `extra` as an ordered `{key, value}` array, never an object: the canonical file is projected verbatim to identity targets, so key order is part of the contract. `extra` is read-only display data; edits submit the whole file through `raw`.
+
+#### `GET /api/registry/agents`
+
+Lists installed agents. The default response omits each agent's `body` and `raw`; pass `?full=1` for the complete shapes.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/agents
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "code-reviewer",
+    "description": "Reviews code for style and correctness",
+    "source": "team-agents",
+    "extra": [
+      {"key": "tools", "value": "Read, Grep, Glob"},
+      {"key": "model", "value": "sonnet"}
+    ],
+    "dir": "/home/user/.gridctl/registry/agents/code-reviewer"
+  }
+]
+```
+
+#### `GET /api/registry/agents/{name}`
+
+Returns a single agent, `body` (markdown after the frontmatter) and `raw` (the verbatim file) included.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/agents/code-reviewer
+```
+
+**Response:** the list shape plus `body` and `raw`.
+
+#### `PUT /api/registry/agents/{name}`
+
+Updates an agent's file. The body carries the whole file; the server re-parses it, refuses renames (frontmatter `name` must match the path), runs the blocking security scan, and writes the bytes verbatim. A scan finding returns `409` with the findings; there is no trust override over REST. Unknown agents are `404` (editing only, no upsert).
+
+**Auth:** Yes
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/agents/code-reviewer \
+  -H "Content-Type: application/json" \
+  -d '{"raw": "---\nname: code-reviewer\ndescription: Reviews code\n---\nReview the changed files.\n"}'
+```
+
+**Response:** the updated agent in the full GET shape.
+
+#### `DELETE /api/registry/agents/{name}`
+
+Removes an agent from the canonical store, including its origin sidecar and lock-file entry. Projections already placed in client directories are not touched; remove them first with `POST /api/project/agents/unsync` if they should leave too.
+
+**Auth:** Yes
+
+**Response:** `204 No Content`
+
+---
+
+### Agent Projection *(experimental)*
+
+Per-client projection of imported agents: the REST face of `gridctl skill project --kind agent`, backed by the same engine and lockfile (`~/.gridctl/project.lock.yaml`). States use the shared projection vocabulary: `in-sync`, `stale`, `drifted`, `target-missing`. Each row carries `render` (`identity`: canonical bytes copied verbatim, currently Claude Code; `lossy`: client-dialect render that drops unmappable keys, currently OpenCode, Copilot, and Gemini CLI) and `experimental`.
+
+#### `GET /api/project/agents/status`
+
+Returns every (agent, client) projection row.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/agents/status
+```
+
+**Response:**
+```json
+[
+  {
+    "agent": "code-reviewer",
+    "client": "claude-code",
+    "channel": "copy",
+    "target": "/home/user/.claude/agents/code-reviewer.md",
+    "render": "identity",
+    "state": "in-sync",
+    "experimental": true,
+    "synced_at": "2026-08-04T12:00:00Z"
+  }
+]
+```
+
+#### `POST /api/project/agents/sync`
+
+Projects agents into detected client directories. All body fields are optional; an empty body syncs every agent to every available client. Undetected clients report `skipped-unavailable` rows, drifted projections report `skipped-drift` unless `force` is set (which backs up before overwriting), and lossy renders name the dropped frontmatter keys in `detail`.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/agents/sync \
+  -H "Content-Type: application/json" \
+  -d '{"agents": ["code-reviewer"], "clients": ["claude-code"], "force": false, "dry_run": false}'
+```
+
+#### `POST /api/project/agents/unsync`
+
+Removes projected agent files. Name `agents` or set `all: true`; an empty request is refused (`400`) so a stray POST cannot silently strip every projection. Accepts the same `clients` filter and `dry_run`.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/agents/unsync \
+  -H "Content-Type: application/json" \
+  -d '{"agents": ["code-reviewer"]}'
+```
+
+**Response:** per-projection removal rows (`agent`, `client`, `target`, `action`, optional `backup_path`).
+
+#### `POST /api/project/agents/adopt`
+
+Pulls a hand-edited projected file back into the canonical store (identity targets only). The prior `AGENT.md` is backed up as `AGENT.md.pre-<sha>`, and the pair is force-resynced to in-sync. Refusals return `409` carrying the full reason: lossy render targets cannot flow back (the dialect dropped keys at render time), and invalid or renamed projected content is refused. Unknown agents are `404`, unknown clients `400`.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/agents/adopt \
+  -H "Content-Type: application/json" \
+  -d '{"agent": "code-reviewer", "client": "claude-code"}'
+```
 
 ---
 
