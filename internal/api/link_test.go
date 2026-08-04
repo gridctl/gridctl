@@ -205,6 +205,20 @@ func TestHandleLinkClient_ConflictWritesNothing(t *testing.T) {
 	assert.Equal(t, string(before), string(after), "stack must be untouched on conflict")
 }
 
+func TestHandleLinkClient_ForceOverwritesForeign(t *testing.T) {
+	// The same foreign entry, with {"force": true}: the engine backs up
+	// and overwrites, mirroring `gridctl link --force`. This is the
+	// overwrite path the Connections hub's Overwrite action uses.
+	grok := &linkFakeProv{slug: "grok", detected: true,
+		entries: map[string]map[string]any{"gridctl": {"url": "https://example.com/mine"}}}
+	_, s := newLinkHarness(t, grok)
+
+	w := doLinkRequest(s, http.MethodPost, "grok", "", `{"force": true}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.NotEmpty(t, grok.linkCalls, "force link must reach the provisioner")
+	assert.True(t, grok.linkCalls[len(grok.linkCalls)-1].Force, "Force must thread through to LinkOptions")
+}
+
 func TestHandleLinkClient_NotDetected(t *testing.T) {
 	grok := &linkFakeProv{slug: "grok", detected: false}
 	path, s := newLinkHarness(t, grok)
