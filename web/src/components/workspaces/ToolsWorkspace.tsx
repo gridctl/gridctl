@@ -295,6 +295,26 @@ export function ToolsWorkspace() {
   const [fleetOpen, setFleetOpen] = useState(false);
   // Per-client access editor (which servers each client may reach).
   const [accessOpen, setAccessOpen] = useState(false);
+  const [accessInitialSlug, setAccessInitialSlug] = useState<string | undefined>(undefined);
+
+  // /tools?client=<slug> — the Connections hub's access-scope deep link —
+  // opens the per-client access editor on that client, then drops the
+  // param so refresh and back navigation do not reopen the editor.
+  useEffect(() => {
+    const slug = searchParams.get('client');
+    if (!slug) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL-intent resolution: the param arrives from cross-workspace navigation and must open the editor exactly once
+    setAccessInitialSlug(slug);
+    setAccessOpen(true);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('client');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams]);
   // Tool groups panel (the curation axis: bundles served at /groups/{name}/mcp).
   const [groupsOpen, setGroupsOpen] = useState(false);
   const { report: groupsReport } = useGroups(true);
@@ -634,10 +654,15 @@ export function ToolsWorkspace() {
         fetchedAt={fetchedAt}
       />
 
+      {/* Keyed by the deep-linked slug: the editor seeds its active client
+          in a state initializer, so focusing a specific client requires a
+          remount (per the editor's own contract). */}
       <ClientAccessEditor
+        key={accessInitialSlug ?? 'default'}
         isOpen={accessOpen}
         onClose={() => setAccessOpen(false)}
         servers={servers}
+        initialSlug={accessInitialSlug}
       />
 
       <GroupsPanel
