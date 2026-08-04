@@ -23,6 +23,7 @@ import {
 import { cn } from '../../lib/cn';
 import { Modal } from '../ui/Modal';
 import { IconButton } from '../ui/IconButton';
+import { StatePill } from '../ui/StatePill';
 import { showToast } from '../ui/Toast';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
@@ -648,15 +649,6 @@ function EditorToolbarButton({
   );
 }
 
-const STATE_STYLE: Record<ContextState, string> = {
-  'in-sync': 'text-emerald-400 border-emerald-400/25 bg-emerald-400/10',
-  stale: 'text-status-pending border-status-pending/30 bg-status-pending/10',
-  drifted: 'text-red-400 border-red-400/25 bg-red-400/10',
-  'target-missing': 'text-red-400 border-red-400/25 bg-red-400/10',
-  'never-synced': 'text-text-muted border-border/40 bg-background/40',
-  unsupported: 'text-text-muted/60 border-border/30 bg-background/30',
-};
-
 // States that make the clients strip open itself: the user must act.
 const ATTENTION_STATES: ContextState[] = ['drifted', 'stale', 'target-missing'];
 
@@ -752,14 +744,7 @@ function ClientRow({
 
   return (
     <li className="flex items-center gap-2.5 px-5 py-2">
-      <span
-        className={cn(
-          'text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap',
-          STATE_STYLE[c.state],
-        )}
-      >
-        {c.state}
-      </span>
+      <StatePill state={c.state} />
       {c.mode && (
         <span
           title="How this client receives the context in fragments mode"
