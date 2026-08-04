@@ -180,7 +180,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       <CreationWizard
         onOpenVault={() => navigate('/vault')}
         onOpenGlobalContext={() => setShowGlobalContext(true)}
-        onOpenConnections={() => navigate('/connections')}
+        onOpenConnections={() => navigate('/connections?spotlight=unlinked')}
         onDeploy={onRefresh}
       />
       {/* Portaled: the header's backdrop-blur creates a containing block
