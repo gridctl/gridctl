@@ -470,6 +470,8 @@ func initPreviewTestRepo(t *testing.T) string {
 	files := map[string]string{
 		"skills/good/SKILL.md":   "---\nname: good-skill\ndescription: valid\n---\n\nBody.\n",
 		"skills/broken/SKILL.md": "---\nname: [unclosed\ndescription: broken\n---\n\nBody.\n",
+		"agents/reviewer.md":     "---\nname: reviewer\ndescription: Reviews code\n---\n\nReview.\n",
+		"agents/broken.md":       "# not an agent definition\n",
 	}
 	wt, err := repo.Worktree()
 	if err != nil {
@@ -522,6 +524,14 @@ func TestHandleSkills_SourcePreview_ReportsMalformed(t *testing.T) {
 			Path  string `json:"path"`
 			Error string `json:"error"`
 		} `json:"malformed"`
+		Agents []struct {
+			Name  string `json:"name"`
+			Valid bool   `json:"valid"`
+		} `json:"agents"`
+		MalformedAgents []struct {
+			Path  string `json:"path"`
+			Error string `json:"error"`
+		} `json:"malformedAgents"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
@@ -538,5 +548,11 @@ func TestHandleSkills_SourcePreview_ReportsMalformed(t *testing.T) {
 	}
 	if !strings.Contains(resp.Malformed[0].Error, "parsing frontmatter") {
 		t.Errorf("malformed error = %q, want frontmatter parse error", resp.Malformed[0].Error)
+	}
+	if len(resp.Agents) != 1 || resp.Agents[0].Name != "reviewer" || !resp.Agents[0].Valid {
+		t.Fatalf("expected one valid reviewer agent preview, got %+v", resp.Agents)
+	}
+	if len(resp.MalformedAgents) != 1 || resp.MalformedAgents[0].Path != filepath.Join("agents", "broken.md") {
+		t.Fatalf("expected one malformed agent entry, got %+v", resp.MalformedAgents)
 	}
 }
