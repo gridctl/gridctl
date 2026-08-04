@@ -29,10 +29,11 @@ const TRANSLATED_KEYS = ['tools', 'model'];
  */
 export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, onRefresh }: AgentDetailPanelProps) {
   const [tab, setTab] = useState<AgentTab>('overview');
-  // Body cache: the list payload omits body/raw, so the Body tab fetches the
-  // single agent on demand and keeps it until the selection changes.
-  const [body, setBody] = useState<string | null>(null);
+  // Body cache: the list payload omits body/raw, so the Body tab fetches
+  // the full agent on demand and keeps it until the data may have changed.
+  const [full, setFull] = useState<RegistryAgent | null>(null);
   const [bodyError, setBodyError] = useState<string | null>(null);
+  const [bodyView, setBodyView] = useState<'preview' | 'source'>('preview');
 
   const name = agent?.name ?? null;
   // Render-time reset (the sanctioned adjust-during-render pattern; a
@@ -45,17 +46,20 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
   const [prevAgent, setPrevAgent] = useState(agent);
   if (agent !== prevAgent) {
     setPrevAgent(agent);
-    setBody(null);
+    setFull(null);
     setBodyError(null);
-    if (agent?.name !== prevAgent?.name) setTab('overview');
+    if (agent?.name !== prevAgent?.name) {
+      setTab('overview');
+      setBodyView('preview');
+    }
   }
 
   useEffect(() => {
-    if (tab !== 'body' || !name || body !== null) return;
+    if (tab !== 'body' || !name || full !== null) return;
     let cancelled = false;
     fetchRegistryAgent(name)
-      .then((full) => {
-        if (!cancelled) setBody(full.body ?? '');
+      .then((result) => {
+        if (!cancelled) setFull(result);
       })
       .catch((err) => {
         if (!cancelled) setBodyError(err instanceof Error ? err.message : 'Failed to load body');
@@ -63,7 +67,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
     return () => {
       cancelled = true;
     };
-  }, [tab, name, body]);
+  }, [tab, name, full]);
 
   if (!agent) {
     return (
@@ -182,13 +186,37 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
         )}
 
         {tab === 'body' && (
-          <div id="agent-tab-body" role="tabpanel" className="p-5">
+          <div id="agent-tab-body" role="tabpanel" className="p-5 flex flex-col gap-3">
             {bodyError && <p className="text-xs text-status-error">{bodyError}</p>}
-            {!bodyError && body === null && <p className="text-xs text-text-muted">Loading…</p>}
-            {body !== null && (
-              <div className="skill-md">
-                <MarkdownPreview content={body} emptyHint="This agent has an empty body." />
-              </div>
+            {!bodyError && full === null && <p className="text-xs text-text-muted">Loading…</p>}
+            {full !== null && (
+              <>
+                <div className="flex items-center gap-1" role="group" aria-label="Body view">
+                  {(['preview', 'source'] as const).map((view) => (
+                    <button
+                      key={view}
+                      onClick={() => setBodyView(view)}
+                      aria-pressed={bodyView === view}
+                      className={
+                        bodyView === view
+                          ? 'px-2 py-1 rounded-md text-[11px] font-medium bg-primary/10 text-primary border border-primary/25 transition-colors'
+                          : 'px-2 py-1 rounded-md text-[11px] font-medium text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent transition-colors'
+                      }
+                    >
+                      {view === 'preview' ? 'Preview' : 'Source'}
+                    </button>
+                  ))}
+                </div>
+                {bodyView === 'preview' ? (
+                  <div className="skill-md">
+                    <MarkdownPreview content={full.body ?? ''} emptyHint="This agent has an empty body." />
+                  </div>
+                ) : (
+                  <pre className="text-[11px] font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap text-text-secondary">
+                    {full.raw ?? ''}
+                  </pre>
+                )}
+              </>
             )}
           </div>
         )}
