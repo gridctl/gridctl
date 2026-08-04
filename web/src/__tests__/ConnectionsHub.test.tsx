@@ -41,6 +41,7 @@ import { showToast } from '../components/ui/Toast';
 import {
   adoptWiringEntry,
   fetchClients,
+  linkClient,
   fetchAgentProjectionStatus,
   fetchGlobalContext,
   fetchSessions,
@@ -239,6 +240,52 @@ describe('ConnectionsWorkspace hub', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Cursor' })).toBeInTheDocument();
     });
+  });
+
+  it('does not claim ownership health while wiring status is still loading', async () => {
+    // A never-resolving wiring fetch: the Ownership axis must say
+    // loading, not "in sync".
+    vi.mocked(fetchWiringStatus).mockReturnValue(new Promise(() => {}));
+    renderHub('/connections?client=claude');
+    await screen.findByText('Ownership');
+    const strip = screen.getByText('Ownership').parentElement!;
+    expect(within(strip).getByText('loading')).toBeInTheDocument();
+    expect(screen.queryByText(/is in sync/)).not.toBeInTheDocument();
+  });
+
+  it('offers Overwrite (not plain Re-link) on drifted and foreign wiring rows', async () => {
+    renderHub('/connections?client=claude');
+    // The foreign row gets Adopt + Overwrite; a plain Re-link would
+    // systematically 409 without force.
+    expect(await screen.findByRole('button', { name: 'Adopt' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Overwrite' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Re-link' })).not.toBeInTheDocument();
+    // The engine's remediation renders inline rather than surfacing only
+    // on failure.
+    expect(screen.getByText('adopt to take ownership')).toBeInTheDocument();
+  });
+
+  it('force-links through the Overwrite confirm dialog', async () => {
+    vi.mocked(linkClient).mockResolvedValue({
+      client: 'claude',
+      serverName: 'gridctl',
+      linked: true,
+      declared: true,
+    });
+    renderHub('/connections?client=claude');
+    fireEvent.click(await screen.findByRole('button', { name: 'Overwrite' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Overwrite' }));
+    await waitFor(() => {
+      expect(linkClient).toHaveBeenCalledWith('claude', { force: true });
+    });
+  });
+
+  it('reports a failed sessions fetch as unavailable, never permanent loading', async () => {
+    vi.mocked(fetchSessions).mockRejectedValue(new Error('boom'));
+    renderHub('/connections?client=claude');
+    fireEvent.click(await screen.findByRole('button', { name: /^Sessions/ }));
+    expect(await screen.findByText(/Session state is unavailable/)).toBeInTheDocument();
   });
 
   it('toasts and clears an unknown ?client deep link once loaded', async () => {
