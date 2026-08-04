@@ -474,6 +474,9 @@ export interface LinkClientOptions {
   group?: string;
   clientId?: string;
   name?: string;
+  /** Overwrite a foreign or drifted entry (the engine backs it up first),
+   *  mirroring `gridctl link --force`. Without it those states 409. */
+  force?: boolean;
 }
 
 // LinkClientResponse echoes the applied state from POST/DELETE.
