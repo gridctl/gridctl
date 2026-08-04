@@ -86,6 +86,46 @@ type SkillPreview struct {
 	Exists      bool                     `json:"exists"`
 }
 
+// AgentPreview represents a previewed agent definition from a repo (not
+// yet imported). The kind marker for the wizard's review step: a mixed
+// repo previews as skills plus agents, each under its own key.
+type AgentPreview struct {
+	Name        string                   `json:"name"`
+	Description string                   `json:"description"`
+	Body        string                   `json:"body"`
+	Valid       bool                     `json:"valid"`
+	Errors      []string                 `json:"errors,omitempty"`
+	Findings    []skills.SecurityFinding `json:"findings,omitempty"`
+	Exists      bool                     `json:"exists"`
+}
+
+// buildAgentPreviews projects discovered agents into preview shape:
+// name validation, the blocking security scan, and an already-installed
+// check against the canonical store.
+func buildAgentPreviews(registryDir string, discovered []skills.DiscoveredAgent) []AgentPreview {
+	previews := make([]AgentPreview, 0, len(discovered))
+	for _, d := range discovered {
+		preview := AgentPreview{
+			Name:        d.Name,
+			Description: d.Definition.Description,
+			Body:        d.Definition.Body,
+			Valid:       true,
+		}
+		if err := skills.ValidateAgentName(d.Name); err != nil {
+			preview.Valid = false
+			preview.Errors = append(preview.Errors, err.Error())
+		}
+		if scan := skills.ScanAgent(d.Definition); !scan.Safe {
+			preview.Findings = scan.Findings
+		}
+		if _, err := skills.GetAgent(registryDir, d.Name); err == nil {
+			preview.Exists = true
+		}
+		previews = append(previews, preview)
+	}
+	return previews
+}
+
 // UpdateSummary represents pending updates across all sources.
 type UpdateSummary struct {
 	Available int                   `json:"available"`
@@ -512,6 +552,7 @@ func (s *Server) syncSkill(ctx context.Context, imp *skills.Importer, authCfg sk
 			return entry
 		}
 		entry.Imported = len(result.Imported)
+		entry.ImportedAgents = len(result.ImportedAgents)
 		entry.Warnings = result.Warnings
 		return entry
 	}
@@ -542,6 +583,7 @@ func (s *Server) syncSkill(ctx context.Context, imp *skills.Importer, authCfg sk
 		return entry
 	}
 	entry.Imported = len(result.Imported)
+	entry.ImportedAgents = len(result.ImportedAgents)
 	entry.Warnings = append(entry.Warnings, result.Warnings...)
 	return entry
 }
@@ -755,13 +797,19 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 	if malformed == nil {
 		malformed = []skills.MalformedSkill{}
 	}
+	malformedAgents := result.MalformedAgents
+	if malformedAgents == nil {
+		malformedAgents = []skills.MalformedAgent{}
+	}
 
 	writeJSON(w, map[string]any{
-		"repo":      repo,
-		"ref":       ref,
-		"commitSha": result.CommitSHA,
-		"skills":    previews,
-		"malformed": malformed,
+		"repo":            repo,
+		"ref":             ref,
+		"commitSha":       result.CommitSHA,
+		"skills":          previews,
+		"malformed":       malformed,
+		"agents":          buildAgentPreviews(store.Dir(), result.Agents),
+		"malformedAgents": malformedAgents,
 	})
 }
 
@@ -786,10 +834,13 @@ type SourceSyncResult struct {
 
 // SkillSyncResult is the per-skill outcome within a sync.
 type SkillSyncResult struct {
-	Skill    string   `json:"skill"`
-	Imported int      `json:"imported,omitempty"`
-	Warnings []string `json:"warnings,omitempty"`
-	Error    string   `json:"error,omitempty"`
+	Skill    string `json:"skill"`
+	Imported int    `json:"imported,omitempty"`
+	// ImportedAgents counts agent definitions the same update refreshed
+	// (Update re-imports the whole source, so agents ride along).
+	ImportedAgents int      `json:"importedAgents,omitempty"`
+	Warnings       []string `json:"warnings,omitempty"`
+	Error          string   `json:"error,omitempty"`
 	// Skipped, when set, is the reason a drifted skill was left untouched
 	// (e.g. "local edits"). Its tracking metadata is still advanced.
 	Skipped string `json:"skipped,omitempty"`
