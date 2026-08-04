@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/gridctl/gridctl/pkg/project"
 )
 
 // AgentDefinition is a parsed Claude Code subagent definition (AGENT.md /
@@ -286,6 +288,33 @@ func GetAgent(registryDir, name string) (*InstalledAgent, error) {
 		return nil, fmt.Errorf("agent %q: %w", name, err)
 	}
 	return &InstalledAgent{Name: name, Definition: def, Dir: dir}, nil
+}
+
+// SaveAgent validates raw as an agent definition named name and writes
+// it into the canonical store byte-for-byte. No normalization happens
+// here on purpose: identity projections copy the canonical bytes
+// verbatim, so any rewrite (key reordering, trailing-newline fixes)
+// would surface as drift on every synced client after an edit. Returns
+// the parsed definition so callers can inspect what was written.
+func SaveAgent(registryDir, name string, raw []byte) (*AgentDefinition, error) {
+	if err := ValidateAgentName(name); err != nil {
+		return nil, err
+	}
+	def, err := ParseAgentMD(raw)
+	if err != nil {
+		return nil, err
+	}
+	if def.Name != "" && def.Name != name {
+		return nil, fmt.Errorf("frontmatter names the agent %q, not %q; renames are not supported", def.Name, name)
+	}
+	dir := AgentDir(registryDir, name)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return nil, fmt.Errorf("creating agent directory: %w", err)
+	}
+	if err := project.AtomicWriteFile(filepath.Join(dir, "AGENT.md"), raw); err != nil {
+		return nil, fmt.Errorf("writing AGENT.md: %w", err)
+	}
+	return def, nil
 }
 
 // DeleteAgent removes one agent from the canonical store.
