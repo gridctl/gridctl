@@ -128,7 +128,9 @@ export function AppRoutes() {
       {/* /topology → /stack: the workspace was renamed when the UI label
           caught up with the backend's Topology→Stack migration. */}
       <Route path="/topology" element={<Navigate to="/stack" replace />} />
-      <Route path="/agent" element={<Navigate to="/library" replace />} />
+      {/* The retired Agent IDE's path now lands on the Library's Agents
+          segment, which is where imported agents actually live. */}
+      <Route path="/agent" element={<Navigate to="/library?kind=agent" replace />} />
 
       {/* Detached windows stay frameless — outside AppShell on purpose. */}
       <Route path="/sidebar" element={<DetachedSidebarPage />} />
