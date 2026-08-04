@@ -152,7 +152,7 @@ func (s *Server) handleLinkClient(w http.ResponseWriter, r *http.Request) {
 	case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
 		writeStructuredError(w, http.StatusConflict, errCodeLinkConflict,
 			"The client config already has a '"+opts.ServerName+"' entry gridctl does not own: "+res.Detail+".",
-			"Run 'gridctl link "+entry.Client+" --force' to overwrite it, or 'gridctl project adopt --kind wiring --client "+entry.Client+"' to take ownership, then declare the client again.")
+			"Adopt the entry to take ownership (POST /api/project/wiring/adopt, or 'gridctl project adopt --kind wiring --client "+entry.Client+"'), or run 'gridctl link "+entry.Client+" --force' to overwrite it, then declare the client again.")
 		return
 	default:
 		writeJSONError(w, "Failed to link "+prov.Name()+": "+res.Error, http.StatusInternalServerError)
