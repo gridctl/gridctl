@@ -51,6 +51,10 @@ type linkClientRequest struct {
 	Group    string `json:"group,omitempty"`
 	ClientID string `json:"clientId,omitempty"`
 	Name     string `json:"name,omitempty"`
+	// Force overwrites a foreign or drifted entry (after the engine's
+	// backup), mirroring `gridctl link --force`. Without it those states
+	// 409 with an adopt-or-force hint.
+	Force bool `json:"force,omitempty"`
 }
 
 // linkClientResponse echoes the applied state.
@@ -89,7 +93,7 @@ type linkPreviewResponse struct {
 //
 // POST /api/clients/{slug}/link
 func (s *Server) handleLinkClient(w http.ResponseWriter, r *http.Request) {
-	prov, entry, ok := s.resolveLinkRequest(w, r)
+	prov, entry, req, ok := s.resolveLinkRequest(w, r)
 	if !ok {
 		return
 	}
@@ -136,6 +140,7 @@ func (s *Server) handleLinkClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opts := linkOptionsForDeclared(entry, s.gatewayPortOrDefault())
+	opts.Force = req.Force
 	res, err := mgr.LinkClient(r.Context(), prov, configPath, opts)
 	if err != nil {
 		writeJSONError(w, "Failed to link "+prov.Name()+": "+err.Error(), http.StatusInternalServerError)
@@ -152,7 +157,7 @@ func (s *Server) handleLinkClient(w http.ResponseWriter, r *http.Request) {
 	case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
 		writeStructuredError(w, http.StatusConflict, errCodeLinkConflict,
 			"The client config already has a '"+opts.ServerName+"' entry gridctl does not own: "+res.Detail+".",
-			"Adopt the entry to take ownership (POST /api/project/wiring/adopt, or 'gridctl project adopt --kind wiring --client "+entry.Client+"'), or run 'gridctl link "+entry.Client+" --force' to overwrite it, then declare the client again.")
+			"Adopt the entry to take ownership (POST /api/project/wiring/adopt, or 'gridctl project adopt --kind wiring --client "+entry.Client+"'), or retry with {\"force\": true} ('gridctl link "+entry.Client+" --force') to overwrite it after a backup.")
 		return
 	default:
 		writeJSONError(w, "Failed to link "+prov.Name()+": "+res.Error, http.StatusInternalServerError)
@@ -202,7 +207,7 @@ func (s *Server) handleLinkClient(w http.ResponseWriter, r *http.Request) {
 //
 // DELETE /api/clients/{slug}/link
 func (s *Server) handleUnlinkClient(w http.ResponseWriter, r *http.Request) {
-	prov, entry, ok := s.resolveLinkRequest(w, r)
+	prov, entry, _, ok := s.resolveLinkRequest(w, r)
 	if !ok {
 		return
 	}
@@ -310,7 +315,7 @@ func (s *Server) handleUnlinkClient(w http.ResponseWriter, r *http.Request) {
 //
 // POST /api/clients/{slug}/link/preview
 func (s *Server) handleLinkPreview(w http.ResponseWriter, r *http.Request) {
-	prov, entry, ok := s.resolveLinkRequest(w, r)
+	prov, entry, _, ok := s.resolveLinkRequest(w, r)
 	if !ok {
 		return
 	}
@@ -353,13 +358,15 @@ func (s *Server) handleLinkPreview(w http.ResponseWriter, r *http.Request) {
 // resolveLinkRequest applies the guards shared by the three link handlers:
 // provisioner registry present, stack file configured, known slug, and a
 // parseable optional body. Writes the error response itself when ok is
-// false.
-func (s *Server) resolveLinkRequest(w http.ResponseWriter, r *http.Request) (provisioner.ClientProvisioner, config.LinkEntry, bool) {
+// false. The parsed request rides back for options (Force) that live
+// outside the stack's LinkEntry shape.
+func (s *Server) resolveLinkRequest(w http.ResponseWriter, r *http.Request) (provisioner.ClientProvisioner, config.LinkEntry, linkClientRequest, bool) {
 	var entry config.LinkEntry
+	var zero linkClientRequest
 
 	if s.provisioners == nil || s.stackFile == "" {
 		writeJSONError(w, "No stack file configured", http.StatusServiceUnavailable)
-		return nil, entry, false
+		return nil, entry, zero, false
 	}
 
 	slug := r.PathValue("slug")
@@ -368,24 +375,24 @@ func (s *Server) resolveLinkRequest(w http.ResponseWriter, r *http.Request) (pro
 		writeStructuredError(w, http.StatusNotFound, errCodeUnknownClient,
 			"Unknown client "+strconv.Quote(slug)+".",
 			"See GET /api/clients for the supported slugs.")
-		return nil, entry, false
+		return nil, entry, zero, false
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, setToolsRequestMaxBytes))
 	if err != nil {
 		writeJSONError(w, "Failed to read request body: "+err.Error(), http.StatusBadRequest)
-		return nil, entry, false
+		return nil, entry, zero, false
 	}
 	var req linkClientRequest
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
 			writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
-			return nil, entry, false
+			return nil, entry, zero, false
 		}
 	}
 
 	entry = config.LinkEntry{Client: slug, Group: req.Group, ClientID: req.ClientID, Name: req.Name}
-	return prov, entry, true
+	return prov, entry, req, true
 }
 
 // linkOptionsForDeclared maps a link entry to LinkOptions exactly as
