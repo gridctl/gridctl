@@ -288,7 +288,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleImport}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
                   title="Import agents from a git repository (discovered from agents/*.md)"
                 >
                   <Download size={12} /> Import

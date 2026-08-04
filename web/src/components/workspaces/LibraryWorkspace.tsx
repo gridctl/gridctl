@@ -1480,9 +1480,13 @@ function LibraryHeader({ kindSwitch, onNewSkill, onImportSkill, onGlobalContext,
             sole discovery mechanism for the Agents catalog. */}
         {kindSwitch}
         <div className="flex items-center gap-2">
+          {/* One shared treatment for the three header actions (the
+              secondary outline Import always had): uniform color, padding,
+              and nowrap so no label ever two-lines and heights stay equal.
+              The stateful Sync pill keeps its distinct alert styling. */}
           <button
             onClick={onNewSkill}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
           >
             <Plus size={12} /> New Skill
           </button>
@@ -1491,14 +1495,14 @@ function LibraryHeader({ kindSwitch, onNewSkill, onImportSkill, onGlobalContext,
               generic resource-type step. */}
           <button
             onClick={onImportSkill}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
             title="Import skills from a git repository"
           >
             <Download size={12} /> Import
           </button>
           <button
             onClick={onGlobalContext}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
             title="Manage the global context (single file or rule fragments) synced to linked clients"
           >
             <Globe size={12} /> Global Context
@@ -1662,7 +1666,7 @@ function SyncSourcesButton({ hasSources, updateCount, syncing, onClick }: SyncSo
         aria-label={ariaLabel}
         aria-busy={syncing}
         title={ariaLabel}
-        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 whitespace-nowrap rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60"
       >
         <CloudDownload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
         <span aria-live="polite">
