@@ -60,6 +60,10 @@ const RESERVED_MARKERS = [
 
 interface GlobalContextDialogProps {
   isOpen: boolean;
+  /** Open the drift review for this client slug once the doc loads (the
+   *  Connections hub's Review deep link). Single-file mode only:
+   *  fragments-mode review is per-fragment and stays in-dialog. */
+  initialDriftSlug?: string | null;
   onClose: () => void;
 }
 
@@ -74,7 +78,7 @@ interface GlobalContextDialogProps {
  * The editor mirrors SkillEditor's grammar: collapsible strip, formatting
  * toolbar, resizable markdown/preview split, and a status bar.
  */
-export function GlobalContextDialog({ isOpen, onClose }: GlobalContextDialogProps) {
+export function GlobalContextDialog({ isOpen, onClose, initialDriftSlug = null }: GlobalContextDialogProps) {
   const doc = useContextStore((s) => s.doc);
   const loading = useContextStore((s) => s.loading);
   const error = useContextStore((s) => s.error);
@@ -99,7 +103,7 @@ export function GlobalContextDialog({ isOpen, onClose }: GlobalContextDialogProp
       {doc && doc.fragments_active && <FragmentsView doc={doc} refreshError={error} />}
       {doc && !doc.fragments_active && !doc.canonical.exists && <SetupView />}
       {doc && !doc.fragments_active && doc.canonical.exists && (
-        <EditorView doc={doc} refreshError={error} />
+        <EditorView doc={doc} refreshError={error} initialDriftSlug={initialDriftSlug} />
       )}
     </Modal>
   );
@@ -351,7 +355,15 @@ function ImportSourceDialog({
  * strip, resizable markdown/preview split with a formatting toolbar, and
  * a status bar with live marker validation and line/char counts.
  */
-function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: string | null }) {
+function EditorView({
+  doc,
+  refreshError,
+  initialDriftSlug = null,
+}: {
+  doc: ContextDoc;
+  refreshError: string | null;
+  initialDriftSlug?: string | null;
+}) {
   const setDoc = useContextStore((s) => s.setDoc);
   const refresh = useContextStore((s) => s.refresh);
   // null draft = pristine (textarea mirrors the canonical content), so a
@@ -360,6 +372,19 @@ function EditorView({ doc, refreshError }: { doc: ContextDoc; refreshError: stri
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [driftSlug, setDriftSlug] = useState<string | null>(null);
+  // Seed the drift review once from a caller's deep link (render-time
+  // adjust; only when that client is actually drifted, so a stale link
+  // never opens an empty review).
+  const [seededDriftSlug, setSeededDriftSlug] = useState<string | null>(null);
+  if (initialDriftSlug !== seededDriftSlug) {
+    setSeededDriftSlug(initialDriftSlug);
+    if (
+      initialDriftSlug &&
+      doc.clients.some((c) => c.slug === initialDriftSlug && c.state === 'drifted')
+    ) {
+      setDriftSlug(initialDriftSlug);
+    }
+  }
   const [showImport, setShowImport] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
