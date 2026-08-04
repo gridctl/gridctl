@@ -8,6 +8,7 @@ import type {
   MCPServerStatus,
   ResourceStatus,
   ClientStatus,
+  SessionEntry,
   Tool,
   TokenUsage,
   CostUsage,
@@ -60,6 +61,10 @@ interface StackState {
   // so the Tools workspace sources descriptions/schemas/search from it.
   toolCatalog: Tool[];
   sessions: number;
+  // Session entries from /api/sessions, polled while Connections is open.
+  // null = not fetched. StatusBar prefers this over the status-poll count
+  // when present, so the two surfaces read one array and cannot diverge.
+  sessionEntries: SessionEntry[] | null;
   codeMode: string | null;  // Gateway code mode status ("on" when active)
   tokenUsage: TokenUsage | null; // Token usage metrics from status response
   costUsage: CostUsage | null;   // USD cost snapshot; null when no cost recorded
@@ -104,6 +109,7 @@ interface StackState {
   // === Actions ===
   setGatewayStatus: (status: GatewayStatus) => void;
   setClients: (clients: ClientStatus[]) => void;
+  setSessionEntries: (entries: SessionEntry[] | null) => void;
   // Optimistic local edit of a single client's declared pricing model so the
   // pill reflects a save before the next status poll confirms it. An empty
   // model removes the entry (mirrors the backend's clear semantics).
@@ -142,6 +148,7 @@ export const useStackStore = create<StackState>()(
     tools: [],
     toolCatalog: [],
     sessions: 0,
+    sessionEntries: null,
     codeMode: null,
     tokenUsage: null,
     costUsage: null,
@@ -228,6 +235,7 @@ export const useStackStore = create<StackState>()(
       get().refreshNodesAndEdges();
     },
 
+    setSessionEntries: (entries) => set({ sessionEntries: entries }),
     setClients: (clients) => {
       set({ clients });
       // No refreshNodesAndEdges here -- setGatewayStatus already triggers it,
