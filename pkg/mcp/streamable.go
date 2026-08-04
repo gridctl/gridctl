@@ -357,6 +357,14 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	// Expired (manager-reaped) sessions 404 immediately so the client
+	// re-initializes cleanly, instead of continuing on a session no
+	// status surface counts and no observer can attribute.
+	if s.gateway.sessions.Get(sessionID) == nil {
+		s.pruneExpired(sessionID)
+		http.Error(w, "session expired", http.StatusNotFound)
+		return
+	}
 
 	s.gateway.sessions.Touch(sessionID)
 
@@ -455,6 +463,15 @@ func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	// A transport record whose gateway session has been reaped is an
+	// expired session: tear it down and 404 so the client re-initializes,
+	// rather than serving an unattributed stream that no status surface
+	// counts.
+	if s.gateway.sessions.Get(sessionID) == nil {
+		s.pruneExpired(sessionID)
+		http.Error(w, "session expired", http.StatusNotFound)
+		return
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -500,6 +517,10 @@ func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request)
 			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", evt.ID, evt.Type, evt.Data)
 			flusher.Flush()
 		case <-ticker.C:
+			// The keepalive also marks the session live: a connected but
+			// quiet SSE client must never age past the idle cutoff and get
+			// reaped (then pruned) out from under its open stream.
+			s.gateway.sessions.Touch(sessionID)
 			fmt.Fprint(w, ": keepalive\n\n")
 			flusher.Flush()
 		}
@@ -659,11 +680,11 @@ func (s *StreamableHTTPServer) handleResourcesRead(req *jsonrpc.Request) jsonrpc
 	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
-// SessionCount returns the number of active Streamable HTTP sessions.
+// SessionCount returns the number of active Streamable HTTP sessions,
+// counting only sessions the gateway's SessionManager still recognizes,
+// so this figure always agrees with Gateway.SessionCount.
 func (s *StreamableHTTPServer) SessionCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.sessions)
+	return len(s.SessionEntries())
 }
 
 // SessionIDs returns the IDs of all active sessions.
@@ -682,26 +703,73 @@ func (s *StreamableHTTPServer) SessionIDs() []string {
 // none), so Generation is currently always "handshake"; it is derived
 // from the negotiated version rather than hardcoded so the field stays
 // honest if a future revision reintroduces session semantics.
+//
+// ClientName and ClientVersion are the client-supplied clientInfo from
+// initialize; AccessID is the normalized identifier that string-matches
+// provisioner client slugs, so status surfaces can attribute a session
+// to a linked client without new normalization logic.
 type SessionEntry struct {
 	ID              string `json:"id"`
 	Generation      string `json:"generation"`
 	ProtocolVersion string `json:"protocolVersion,omitempty"`
+	ClientName      string `json:"clientName,omitempty"`
+	ClientVersion   string `json:"clientVersion,omitempty"`
+	AccessID        string `json:"accessId,omitempty"`
 }
 
 // SessionEntries returns the active sessions with their negotiated
-// protocol version and generation.
+// protocol version, generation, and client identity.
+//
+// The gateway's SessionManager is authoritative: it is the store the
+// periodic cleanup sweeps, and every transport session is created
+// alongside a manager entry. A transport record whose manager entry is
+// gone (idle past the cleanup cutoff; clients that crash never send the
+// graceful DELETE) is an expired session — it is excluded from the
+// listing and lazily torn down here, so /api/status's count and this
+// listing agree by construction instead of drifting apart as orphans
+// accumulate. A client that later posts on a pruned ID receives the
+// spec's 404 and re-initializes cleanly, rather than continuing on a
+// session the gateway no longer attributes.
 func (s *StreamableHTTPServer) SessionEntries() []SessionEntry {
 	ids := s.SessionIDs()
 	entries := make([]SessionEntry, 0, len(ids))
 	for _, id := range ids {
-		e := SessionEntry{ID: id, Generation: string(EraHandshake)}
-		if gs := s.gateway.sessions.Get(id); gs != nil {
-			e.ProtocolVersion = gs.ProtocolVersion
-			e.Generation = string(EraOfVersion(gs.ProtocolVersion))
+		gs := s.gateway.sessions.Get(id)
+		if gs == nil {
+			s.pruneExpired(id)
+			continue
 		}
-		entries = append(entries, e)
+		entries = append(entries, SessionEntry{
+			ID:              id,
+			Generation:      string(EraOfVersion(gs.ProtocolVersion)),
+			ProtocolVersion: gs.ProtocolVersion,
+			ClientName:      gs.ClientInfo.Name,
+			ClientVersion:   gs.ClientInfo.Version,
+			AccessID:        gs.AccessID,
+		})
 	}
 	return entries
+}
+
+// pruneExpired tears down a transport session whose gateway session has
+// been reaped: the transport-level counterpart of the manager's cleanup,
+// mirroring deleteSession minus the (already absent) manager entry.
+func (s *StreamableHTTPServer) pruneExpired(id string) {
+	s.mu.Lock()
+	session, ok := s.sessions[id]
+	if ok {
+		delete(s.sessions, id)
+	}
+	s.mu.Unlock()
+
+	if ok {
+		session.streamMu.Lock()
+		if session.sseCancel != nil {
+			session.sseCancel()
+			session.sseCancel = nil
+		}
+		session.streamMu.Unlock()
+	}
 }
 
 // Close tears down all active sessions and cancels their SSE streams.
