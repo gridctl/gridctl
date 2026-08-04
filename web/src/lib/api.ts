@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse, SessionsResponse } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -981,6 +981,84 @@ export async function setRegistrySkillsBatch(
   return mutateJSON<SetRegistrySkillsBatchResponse>('/api/registry/skills/batch', 'PUT', { skills });
 }
 
+// --- Agents (imported agent definitions) ---
+
+export async function fetchRegistryAgents(): Promise<RegistryAgent[]> {
+  return fetchJSON<RegistryAgent[]>('/api/registry/agents');
+}
+
+export async function fetchRegistryAgent(name: string): Promise<RegistryAgent> {
+  return fetchJSON<RegistryAgent>(`/api/registry/agents/${encodeURIComponent(name)}`);
+}
+
+/**
+ * AgentScanError carries the blocking security-scan findings from a 409 on
+ * PUT /api/registry/agents/{name}, so the editor can render the actual
+ * findings instead of a generic error string.
+ */
+export class AgentScanError extends HTTPError {
+  findings: SecurityFinding[];
+  constructor(message: string, findings: SecurityFinding[]) {
+    super(409, message);
+    this.name = 'AgentScanError';
+    this.findings = findings;
+  }
+}
+
+/**
+ * PUT the whole AGENT.md back. The server re-parses, refuses renames, runs
+ * the blocking security scan, and writes the bytes verbatim. A scan 409
+ * throws AgentScanError with the findings attached.
+ */
+export async function updateRegistryAgent(name: string, raw: string): Promise<RegistryAgent> {
+  const response = await fetch(`${API_BASE}/api/registry/agents/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ raw }),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 409 && Array.isArray(data.findings)) {
+      throw new AgentScanError(data.error ?? 'Security scan blocked the save', data.findings);
+    }
+    throw new HTTPError(response.status, data.error || `PUT agent failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function deleteRegistryAgent(name: string): Promise<void> {
+  return mutateJSON<void>(`/api/registry/agents/${encodeURIComponent(name)}`, 'DELETE');
+}
+
+// --- Agent projection (REST face of `gridctl skill project --kind agent`) ---
+
+export async function fetchAgentProjectionStatus(): Promise<AgentProjectionStatus[]> {
+  return fetchJSON<AgentProjectionStatus[]>('/api/project/agents/status');
+}
+
+export async function syncAgentProjections(body?: {
+  agents?: string[];
+  clients?: string[];
+  force?: boolean;
+  dry_run?: boolean;
+}): Promise<AgentSyncResult[]> {
+  return mutateJSON<AgentSyncResult[]>('/api/project/agents/sync', 'POST', body ?? {});
+}
+
+export async function unsyncAgentProjections(body: {
+  agents?: string[];
+  clients?: string[];
+  all?: boolean;
+  dry_run?: boolean;
+}): Promise<AgentUnsyncResult[]> {
+  return mutateJSON<AgentUnsyncResult[]>('/api/project/agents/unsync', 'POST', body);
+}
+
+export async function adoptAgentProjection(agent: string, client: string): Promise<AgentAdoptResult> {
+  return mutateJSON<AgentAdoptResult>('/api/project/agents/adopt', 'POST', { agent, client });
+}
+
 // --- Skill File Management ---
 
 export async function fetchSkillFiles(skillName: string): Promise<SkillFile[]> {
@@ -1595,6 +1673,9 @@ export async function addSkillSource(source: {
   trust?: boolean;
   noActivate?: boolean;
   selected?: string[];
+  /** Agent names to import. Required alongside `selected`: a skill selection
+   *  alone skips agents (legacy importer contract). */
+  selectedAgents?: string[];
   auth?: SkillAuth;
 }): Promise<ImportResult> {
   return mutateJSON<ImportResult>('/api/skills/sources', 'POST', source);

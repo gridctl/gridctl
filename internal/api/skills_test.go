@@ -556,3 +556,44 @@ func TestHandleSkills_SourcePreview_ReportsMalformed(t *testing.T) {
 		t.Fatalf("expected one malformed agent entry, got %+v", resp.MalformedAgents)
 	}
 }
+
+// TestHandleSkills_SourceAdd_SelectedAgents pins the selection contract the
+// wizard depends on: a skill selection alone skips agents (legacy importer
+// behavior), so the request must carry selectedAgents for agents to import.
+func TestHandleSkills_SourceAdd_SelectedAgents(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	srv, regServer := setupRegistryTestServer(t)
+	repoDir := initPreviewTestRepo(t)
+
+	body := strings.NewReader(`{"repo": ` + strconv.Quote(repoDir) + `, "selected": ["good-skill"], "selectedAgents": ["reviewer"]}`)
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Imported []struct {
+			Name string `json:"name"`
+		} `json:"imported"`
+		ImportedAgents []struct {
+			Name string `json:"name"`
+		} `json:"importedAgents"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(resp.Imported) != 1 || resp.Imported[0].Name != "good-skill" {
+		t.Fatalf("expected good-skill imported, got %+v", resp.Imported)
+	}
+	if len(resp.ImportedAgents) != 1 || resp.ImportedAgents[0].Name != "reviewer" {
+		t.Fatalf("expected reviewer agent imported, got %+v", resp.ImportedAgents)
+	}
+	if _, err := skills.GetAgent(regServer.Store().Dir(), "reviewer"); err != nil {
+		t.Fatalf("agent not in canonical store after import: %v", err)
+	}
+}

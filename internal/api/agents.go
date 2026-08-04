@@ -299,6 +299,19 @@ func (s *Server) handleRegistryAgentDelete(w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, "Agent not found: "+name, http.StatusNotFound)
 		return
 	}
+
+	// Retire the agent's projections before the store entry goes: an
+	// orphaned project-lock row would keep reporting status for an agent
+	// the catalog no longer serves, and a later named sync of that name
+	// would fail the whole batch. Best-effort like the skill-delete lock
+	// scrub: the store deletion below is authoritative, and a projection
+	// cleanup failure is logged, not surfaced.
+	if mgr, merr := s.agentsMgr(); merr == nil {
+		if _, uerr := mgr.Unsync(r.Context(), []string{name}, agentsync.UnsyncOptions{}); uerr != nil && !errors.Is(uerr, agentsync.ErrNotProjected) {
+			slog.Warn("delete agent: failed to remove projections", "agent", name, "error", uerr) // #nosec G706 -- name passed agentExists (ValidateAgentName: lowercase, digits, hyphens) above
+		}
+	}
+
 	imp := skills.NewImporter(store, store.Dir(), s.lockFilePath(), slog.Default())
 	if err := imp.RemoveAgent(name); err != nil {
 		writeJSONError(w, "Failed to delete agent: "+err.Error(), http.StatusInternalServerError)

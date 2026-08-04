@@ -1,0 +1,44 @@
+import { cn } from '../../lib/cn';
+
+/**
+ * The shared projection-state vocabulary from the pkg/project engine. The
+ * CLI, the context API, and the agent projection API all speak these exact
+ * strings; UI surfaces must render them verbatim rather than inventing
+ * synonyms. Agent rows use the first four; context rows add the last two.
+ */
+export type ProjectionState =
+  | 'in-sync'
+  | 'stale'
+  | 'drifted'
+  | 'target-missing'
+  | 'never-synced'
+  | 'unsupported';
+
+const PROJECTION_STATE_STYLE: Record<ProjectionState, string> = {
+  'in-sync': 'text-emerald-400 border-emerald-400/25 bg-emerald-400/10',
+  stale: 'text-status-pending border-status-pending/30 bg-status-pending/10',
+  drifted: 'text-red-400 border-red-400/25 bg-red-400/10',
+  'target-missing': 'text-red-400 border-red-400/25 bg-red-400/10',
+  'never-synced': 'text-text-muted border-border/40 bg-background/40',
+  unsupported: 'text-text-muted/60 border-border/30 bg-background/30',
+};
+
+/**
+ * One projection-state chip. Extracted from GlobalContextDialog's local
+ * STATE_STYLE so context rows and agent projection rows stay one color
+ * vocabulary. The state text itself is the accessible content — color is
+ * never the only carrier.
+ */
+export function StatePill({ state, className }: { state: ProjectionState; className?: string }) {
+  return (
+    <span
+      className={cn(
+        'text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap',
+        PROJECTION_STATE_STYLE[state],
+        className,
+      )}
+    >
+      {state}
+    </span>
+  );
+}

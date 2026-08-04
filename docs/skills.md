@@ -203,6 +203,10 @@ One Claude Code quirk worth knowing: it only watches agent directories that exis
 
 The rendered dialects were verified against each client's documentation as of August 2026; they are experimental, and a client changing its format shows up as drift or a failed load in that client, never as damage to the canonical store.
 
+### Agents in the web UI
+
+The Library workspace carries a `Skills | Agents` segment (also reachable as `/library?kind=agent`). The Agents segment lists imported agents grouped by source with per-client projection chips, and each agent's inspector shows its frontmatter (with `tools` and `model` called out as per-client-translated), its body, and a Projection tab with the same state vocabulary the CLI prints: sync, unsync, and drift review per client, adopt on the identity target, and the lossy-render refusal spelled out with its alternatives when a rendered copy was hand-edited. Editing in the UI saves the whole file byte-verbatim behind the same blocking security scan imports run. The import wizard discovers agents alongside skills and lists them by name in the review step.
+
 ## What gridctl deliberately does not do
 
 A short list of choices worth knowing about.

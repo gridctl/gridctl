@@ -41,6 +41,9 @@ import { stateDotClasses } from '../../lib/stateColors';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { useLibraryCommands, type LibraryFilter } from '../library/useLibraryCommands';
+import { LibraryKindSwitch } from '../registry/LibraryKindSwitch';
+import { isRegistryKind, type RegistryKind } from '../../lib/registryKind';
+import { AgentsWorkspace } from '../registry/agents/AgentsWorkspace';
 import { hasAnyCategory, skillCategory } from '../../lib/skillMeta';
 import {
   coldWindowCaveat,
@@ -197,6 +200,25 @@ export function LibraryWorkspace() {
   const setLibraryPrefs = useUIStore((s) => s.setLibraryPrefs);
   const openWizard = useWizardStore((s) => s.open);
   const handleImportSkill = useCallback(() => openWizard('skill'), [openWizard]);
+
+  // Catalog kind: ?kind=agent switches the whole workspace to the Agents
+  // segment. The default ('skill') is omitted from the URL so existing deep
+  // links stay clean. Switching clears every kind-inapplicable param — the
+  // two segments share the URL but not their facet vocabulary.
+  const kindParam = searchParams.get('kind');
+  const kind: RegistryKind = isRegistryKind(kindParam) ? kindParam : 'skill';
+  const setKind = useCallback((next: RegistryKind) => {
+    setSearchParams(
+      (prev) => {
+        const current = isRegistryKind(prev.get('kind')) ? prev.get('kind') : 'skill';
+        if (current === next) return prev;
+        const cleared = new URLSearchParams();
+        if (next !== 'skill') cleared.set('kind', next);
+        return cleared;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   // URL → local state for the search input. We round-trip through state so the
   // input keeps caret behavior; the URL is the source of truth on reload.
@@ -459,8 +481,12 @@ export function LibraryWorkspace() {
 
   // Esc clears an active multi-selection first, then (on a second press) closes
   // the inspector. Ignored while a modal is open or focus is in a text input
-  // (the search box keeps its own clear affordance).
+  // (the search box keeps its own clear affordance). Inert on the Agents
+  // segment: AgentsWorkspace owns Esc there — this handler would otherwise
+  // clear the shared ?selected param behind the agents dialogs, or silently
+  // eat a press on an invisible skills multi-selection.
   useEffect(() => {
+    if (kind === 'agent') return;
     if (!selectedName && selectedNames.size === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showEditor) return;
@@ -474,7 +500,7 @@ export function LibraryWorkspace() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedName, selectedNames.size, showEditor, setSelectedName]);
+  }, [kind, selectedName, selectedNames.size, showEditor, setSelectedName]);
 
   const refreshRegistry = useCallback(async () => {
     try {
@@ -628,6 +654,8 @@ export function LibraryWorkspace() {
     onFilter: handleFilter,
     onOpenInNewWindow: handlePopout,
     onSetGroup: setGroupMode,
+    kind,
+    onSwitchKind: setKind,
   });
 
   const searchResults = useFuzzySearch(skills ?? [], searchQuery);
@@ -778,6 +806,13 @@ export function LibraryWorkspace() {
     );
   }, [selectedSkillObj, skills]);
 
+  // The Agents segment is its own self-contained tree (data, header, KPI
+  // strip, inspector). Returned after every hook above has run, so the
+  // hook order stays identical across kind switches.
+  if (kind === 'agent') {
+    return <AgentsWorkspace onKindChange={setKind} />;
+  }
+
   const inspector = (
     <SkillDetailPanel
       skill={selectedSkillObj}
@@ -806,6 +841,7 @@ export function LibraryWorkspace() {
       >
         <main className="flex flex-col h-full overflow-hidden">
           <LibraryHeader
+            kindSwitch={<LibraryKindSwitch kind="skill" onChange={setKind} />}
             onNewSkill={handleNewSkill}
             onImportSkill={handleImportSkill}
             onGlobalContext={() => setShowGlobalContext(true)}
@@ -1396,6 +1432,8 @@ const KPI_METRICS: { key: FilterTab; label: string; dot: ItemState | null }[] = 
 ];
 
 interface LibraryHeaderProps {
+  /** The Skills | Agents segment control, standing in the eyebrow slot. */
+  kindSwitch: React.ReactNode;
   onNewSkill: () => void;
   onImportSkill: () => void;
   onGlobalContext: () => void;
@@ -1427,7 +1465,7 @@ interface LibraryHeaderProps {
   compact: boolean;
 }
 
-function LibraryHeader({ onNewSkill, onImportSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, staleCount, staleUnknownReason, staleFilterActive, onToggleStale, compact }: LibraryHeaderProps) {
+function LibraryHeader({ kindSwitch, onNewSkill, onImportSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, staleCount, staleUnknownReason, staleFilterActive, onToggleStale, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
   const hasSources = sources.length > 0;
   const updateCount = sources.filter((s) => s.updateAvailable).length;
@@ -1437,13 +1475,18 @@ function LibraryHeader({ onNewSkill, onImportSkill, onGlobalContext, onRefresh, 
       compact ? 'py-2' : 'py-3',
     )}>
       <div className="flex items-center justify-between gap-3">
-        <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">
-          library
-        </div>
+        {/* The kind segment stands where the static "library" eyebrow label
+            used to: the header is already five actions wide, and this is the
+            sole discovery mechanism for the Agents catalog. */}
+        {kindSwitch}
         <div className="flex items-center gap-2">
+          {/* One shared treatment for the three header actions (the
+              secondary outline Import always had): uniform color, padding,
+              and nowrap so no label ever two-lines and heights stay equal.
+              The stateful Sync pill keeps its distinct alert styling. */}
           <button
             onClick={onNewSkill}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
           >
             <Plus size={12} /> New Skill
           </button>
@@ -1452,14 +1495,14 @@ function LibraryHeader({ onNewSkill, onImportSkill, onGlobalContext, onRefresh, 
               generic resource-type step. */}
           <button
             onClick={onImportSkill}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
             title="Import skills from a git repository"
           >
             <Download size={12} /> Import
           </button>
           <button
             onClick={onGlobalContext}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
             title="Manage the global context (single file or rule fragments) synced to linked clients"
           >
             <Globe size={12} /> Global Context
@@ -1623,7 +1666,7 @@ function SyncSourcesButton({ hasSources, updateCount, syncing, onClick }: SyncSo
         aria-label={ariaLabel}
         aria-busy={syncing}
         title={ariaLabel}
-        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 whitespace-nowrap rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60"
       >
         <CloudDownload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
         <span aria-live="polite">

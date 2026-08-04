@@ -24,7 +24,7 @@ import {
 } from '../../../lib/api';
 import { showToast } from '../../ui/Toast';
 import { VariablesPopover } from '../VariablesPopover';
-import type { SkillPreview, SkillSourceStatus } from '../../../types';
+import type { AgentPreview, SkillPreview, SkillSourceStatus } from '../../../types';
 
 interface AddSourceStepProps {
   onPreviewLoaded: (
@@ -33,6 +33,7 @@ interface AddSourceStepProps {
     ref: string,
     path: string,
     auth: SkillAuth | undefined,
+    agents: AgentPreview[],
   ) => void;
 }
 
@@ -138,14 +139,20 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
       });
 
       const malformed = result.malformed ?? [];
+      const malformedAgents = result.malformedAgents ?? [];
+      const agents = result.agents ?? [];
 
-      if (result.skills.length === 0) {
+      if (result.skills.length === 0 && agents.length === 0) {
         if (malformed.length > 0) {
           setError(
             `${malformed.length} SKILL.md file${malformed.length === 1 ? '' : 's'} found but none could be parsed (${malformed[0].path}: ${malformed[0].error})`,
           );
+        } else if (malformedAgents.length > 0) {
+          setError(
+            `${malformedAgents.length} agent definition${malformedAgents.length === 1 ? '' : 's'} found but none could be parsed (${malformedAgents[0].path}: ${malformedAgents[0].error})`,
+          );
         } else {
-          setError('No SKILL.md files found in this repository');
+          setError('No SKILL.md files or agents/*.md definitions found in this repository');
         }
         return;
       }
@@ -157,7 +164,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         );
       }
 
-      onPreviewLoaded(result.skills, trimmedUrl, ref, path, auth);
+      onPreviewLoaded(result.skills, trimmedUrl, ref, path, auth, agents);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to scan repository';
       setError(msg);

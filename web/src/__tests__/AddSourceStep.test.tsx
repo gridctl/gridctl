@@ -120,6 +120,7 @@ describe('AddSourceStep — auth card', () => {
       '',
       '',
       { method: 'token', token: 'my-pat' },
+      expect.any(Array),
     );
   });
 
@@ -209,7 +210,9 @@ describe('AddSourceStep — malformed SKILL.md reporting', () => {
     scan();
 
     await waitFor(() => {
-      expect(screen.getByText(/no SKILL\.md files found in this repository/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/no SKILL\.md files or agents\/\*\.md definitions found in this repository/i),
+      ).toBeInTheDocument();
     });
   });
 
