@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { Bot, Plug, Radio } from 'lucide-react';
 import {
   ClientLinkError,
@@ -56,10 +56,14 @@ export default function ConnectionsWorkspace() {
   const agentStatuses = useRegistryStore((s) => s.agentStatuses);
 
   const [wiringRows, setWiringRows] = useState<WiringRow[] | null>(null);
+  const [sessionsFailed, setSessionsFailed] = useState(false);
   const [staged, setStaged] = useState<StagedChanges>({});
   const [reviewing, setReviewing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [showContextDialog, setShowContextDialog] = useState(false);
+  // The client whose drift review the dialog should open on (the pane's
+  // Review action); null for a plain open.
+  const [contextReviewSlug, setContextReviewSlug] = useState<string | null>(null);
 
   // ---- Data: wiring + agent projections + context, refreshed together. ----
   const refreshHealth = useCallback(async () => {
@@ -93,6 +97,7 @@ export default function ConnectionsWorkspace() {
       try {
         const res = await fetchSessions();
         if (!cancelled) {
+          setSessionsFailed(false);
           useStackStore
             .getState()
             .setSessionEntries(
@@ -100,7 +105,10 @@ export default function ConnectionsWorkspace() {
             );
         }
       } catch {
-        // Sessions unavailable — the section shows its loading state.
+        // A failed fetch is its own fact, distinct from "still loading":
+        // the pane says unavailable, and the store slice stays null so
+        // the status bar keeps its honest status-poll fallback.
+        if (!cancelled) setSessionsFailed(true);
       }
     };
     void load();
@@ -371,8 +379,12 @@ export default function ConnectionsWorkspace() {
                       ? attributed.bySlug.get(selectedSlug) ?? []
                       : []
                 }
+                sessionsFailed={sessionsFailed}
                 onRefresh={refreshHealth}
-                onReviewContext={() => setShowContextDialog(true)}
+                onReviewContext={() => {
+                  setContextReviewSlug(selectedSlug);
+                  setShowContextDialog(true);
+                }}
               />
             </div>
             {unjoinedAgents.length > 0 && (
@@ -423,8 +435,10 @@ export default function ConnectionsWorkspace() {
 
       <GlobalContextDialog
         isOpen={showContextDialog}
+        initialDriftSlug={contextReviewSlug}
         onClose={() => {
           setShowContextDialog(false);
+          setContextReviewSlug(null);
           void refreshHealth();
         }}
       />
@@ -458,6 +472,7 @@ function UnjoinedAgentsStrip({
   slugs: string[];
   agentsByClient: Map<string, AgentProjectionStatus[]>;
 }) {
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const total = slugs.reduce((n, s) => n + (agentsByClient.get(s)?.length ?? 0), 0);
   return (
@@ -481,7 +496,15 @@ function UnjoinedAgentsStrip({
                 <span className="text-[10px] text-text-muted w-28 truncate flex-shrink-0">
                   {agentClientName(slug)}
                 </span>
-                <span className="text-xs font-mono text-text-secondary truncate">{row.agent}</span>
+                <button
+                  onClick={() =>
+                    navigate(`/library?kind=agent&selected=${encodeURIComponent(row.agent)}`)
+                  }
+                  title={`Open ${row.agent} in the Library`}
+                  className="text-xs font-mono text-text-secondary hover:text-primary transition-colors truncate"
+                >
+                  {row.agent}
+                </button>
                 <span className="text-[10px] text-text-muted/70 ml-auto">{row.state}</span>
               </li>
             )),
