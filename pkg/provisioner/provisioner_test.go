@@ -562,7 +562,12 @@ func TestContinueDev_Link(t *testing.T) {
 
 	data := readTestJSON(t, configPath)
 	exp := data["experimental"].(map[string]any)
-	servers := exp["mcpServers"].([]any)
+	// Continue's config.json schema defines modelContextProtocolServers;
+	// the old "mcpServers" key was accepted and silently ignored.
+	if _, stale := exp["mcpServers"]; stale {
+		t.Error("wrote the legacy mcpServers key, which Continue does not read")
+	}
+	servers := exp["modelContextProtocolServers"].([]any)
 	if len(servers) != 1 {
 		t.Fatalf("expected 1 server, got %d", len(servers))
 	}
@@ -617,9 +622,15 @@ func TestContinueDev_Unlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The fixture above seeds the legacy key, so this doubles as the
+	// migration case: unlink must find an entry written before the key was
+	// corrected, and rewrite the survivors under the key Continue reads.
 	data := readTestJSON(t, configPath)
 	exp := data["experimental"].(map[string]any)
-	servers := exp["mcpServers"].([]any)
+	if _, stale := exp["mcpServers"]; stale {
+		t.Error("legacy mcpServers key survived unlink")
+	}
+	servers := exp["modelContextProtocolServers"].([]any)
 	if len(servers) != 1 {
 		t.Fatalf("expected 1 server after unlink, got %d", len(servers))
 	}
@@ -3563,7 +3574,8 @@ func TestContinueDev_Link_LegacySSEEntry_UpdatedWithoutForce(t *testing.T) {
 		t.Fatalf("relink over legacy SSE entry: %v", err)
 	}
 
-	servers := readTestJSON(t, configPath)["experimental"].(map[string]any)["mcpServers"].([]any)
+	// Relinking migrates the entry onto the key Continue actually reads.
+	servers := readTestJSON(t, configPath)["experimental"].(map[string]any)["modelContextProtocolServers"].([]any)
 	transport := servers[0].(map[string]any)["transport"].(map[string]any)
 	if transport["type"] != "streamable-http" || transport["url"] != "http://localhost:8180/mcp" {
 		t.Errorf("expected streamable-http transport, got %v", transport)
@@ -3629,5 +3641,61 @@ func TestBuildEntry_PortRebuildsStreamableURL(t *testing.T) {
 	transport := newContinueDev().buildEntry(opts)["transport"].(map[string]any)
 	if transport["url"] != want {
 		t.Errorf("continue: url = %v, want %q", transport["url"], want)
+	}
+}
+
+// TestContinueDev_Link_MigratesLegacyKey covers an install linked before the
+// key was corrected: the stale entry must be adopted rather than duplicated,
+// so the user does not end up with the server listed under both keys.
+func TestContinueDev_Link_MigratesLegacyKey(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+
+	writeTestJSON(t, configPath, map[string]any{
+		"experimental": map[string]any{
+			"mcpServers": []any{
+				map[string]any{
+					"name":      "gridctl",
+					"transport": map[string]any{"type": "streamable-http", "url": "http://localhost:8180/mcp"},
+				},
+			},
+		},
+	})
+
+	c := newContinueDev()
+	if err := c.Link(configPath, defaultLinkOpts()); err != nil {
+		t.Fatal(err)
+	}
+
+	exp := readTestJSON(t, configPath)["experimental"].(map[string]any)
+	if _, stale := exp["mcpServers"]; stale {
+		t.Error("legacy key survived relink; the server would be listed twice")
+	}
+	servers, ok := exp["modelContextProtocolServers"].([]any)
+	if !ok || len(servers) != 1 {
+		t.Fatalf("expected 1 migrated server, got %v", exp["modelContextProtocolServers"])
+	}
+}
+
+// TestContinueDev_Unlink_RemovesEmptyKey pins the residue fix: unlinking the
+// only server previously left "mcpServers": null in the file, because an
+// empty slice marshals to null rather than an empty array.
+func TestContinueDev_Unlink_RemovesEmptyKey(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+
+	c := newContinueDev()
+	if err := c.Link(configPath, defaultLinkOpts()); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Unlink(configPath, "gridctl"); err != nil {
+		t.Fatal(err)
+	}
+
+	exp := readTestJSON(t, configPath)["experimental"].(map[string]any)
+	for _, key := range []string{"modelContextProtocolServers", "mcpServers"} {
+		if v, present := exp[key]; present {
+			t.Errorf("%s should be removed when empty, got %v", key, v)
+		}
 	}
 }

@@ -8,10 +8,27 @@ import (
 
 // ContinueDev provisions the Continue.dev extension MCP config.
 // Transport: native streamable HTTP (no bridge needed); Continue's token is
-// "streamable-http". Config structure is different: experimental.mcpServers is
-// an array of objects. Note: Continue has deprecated config.json in favor of
-// config.yaml; this JSON key predates that migration and is kept until the
-// provisioner grows a YAML target.
+// "streamable-http". Config structure is different: the servers live in an
+// array under experimental, keyed by continueMCPKey.
+//
+// That key was previously written as "mcpServers", which Continue does not
+// read: its config.json schema defines experimental.modelContextProtocolServers,
+// and because the schema does not restrict additional properties the wrong key
+// was accepted and silently ignored — so linking reported success while the
+// gateway never appeared. The legacy key is still read so entries written
+// before the correction can be found and cleaned up.
+//
+// Note: Continue also supports config.yaml with a top-level mcpServers list.
+// config.json remains in the current schema, so this provisioner stays on it
+// until it grows a YAML target.
+const (
+	// continueMCPKey is the key Continue's config.json schema defines.
+	continueMCPKey = "modelContextProtocolServers"
+	// continueLegacyMCPKey is what gridctl wrote before the correction.
+	// Read-only: entries found here are migrated or removed, never added.
+	continueLegacyMCPKey = "mcpServers"
+)
+
 type ContinueDev struct {
 	name  string
 	slug  string
@@ -99,7 +116,12 @@ func (c *ContinueDev) Link(configPath string, opts LinkOptions) error {
 			continue
 		}
 		if !opts.Force && !opts.OwnershipResolved {
-			if reflect.DeepEqual(m, entry) {
+			// Identical content is only "already linked" when it also sits
+			// under the key Continue reads. An entry left under the legacy
+			// key is inert, so short-circuiting here would leave the user
+			// permanently unlinked with no way to notice.
+			_, underLegacyKey := experimental[continueLegacyMCPKey]
+			if reflect.DeepEqual(m, entry) && !underLegacyKey {
 				return ErrAlreadyLinked
 			}
 			// Check if it looks like a gridctl entry; legacy links wrote
@@ -117,7 +139,7 @@ func (c *ContinueDev) Link(configPath string, opts LinkOptions) error {
 			return fmt.Errorf("creating backup: %w", err)
 		}
 		servers[i] = entry
-		experimental["mcpServers"] = servers
+		setContinueServers(experimental, servers)
 		data["experimental"] = experimental
 		return writeJSONFile(configPath, data)
 	}
@@ -132,7 +154,7 @@ func (c *ContinueDev) Link(configPath string, opts LinkOptions) error {
 	}
 
 	servers = append(servers, entry)
-	experimental["mcpServers"] = servers
+	setContinueServers(experimental, servers)
 	data["experimental"] = experimental
 	return writeJSONFile(configPath, data)
 }
@@ -172,7 +194,7 @@ func (c *ContinueDev) Unlink(configPath string, serverName string) error {
 		return fmt.Errorf("creating backup: %w", err)
 	}
 
-	experimental["mcpServers"] = filtered
+	setContinueServers(experimental, filtered)
 	data["experimental"] = experimental
 	return writeJSONFile(configPath, data)
 }
@@ -186,18 +208,30 @@ func (c *ContinueDev) getMCPServers(data map[string]any) []any {
 }
 
 func (c *ContinueDev) getMCPServersFromMap(experimental map[string]any) []any {
-	v, ok := experimental["mcpServers"]
-	if !ok {
-		return nil
+	// The legacy key is consulted so a link written before the key was
+	// corrected is still discoverable, which is what lets unlink clean it up.
+	for _, key := range []string{continueMCPKey, continueLegacyMCPKey} {
+		if arr, ok := experimental[key].([]any); ok {
+			return arr
+		}
 	}
-	arr, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	return arr
+	return nil
 }
 
-// ListServers enumerates Continue's experimental.mcpServers ARRAY, the one
+// setContinueServers writes the server list under the correct key and drops
+// the legacy one. An empty list removes both keys rather than leaving them
+// behind: writing an empty slice marshals to null, and a stale null is what
+// unlink used to leave in the file.
+func setContinueServers(experimental map[string]any, servers []any) {
+	delete(experimental, continueLegacyMCPKey)
+	if len(servers) == 0 {
+		delete(experimental, continueMCPKey)
+		return
+	}
+	experimental[continueMCPKey] = servers
+}
+
+// ListServers enumerates Continue's experimental MCP ARRAY, the one
 // registered client that stores a list of objects (keyed by a "name" field)
 // rather than a map.
 func (c *ContinueDev) ListServers(configPath string) ([]ServerEntry, error) {
@@ -209,7 +243,10 @@ func (c *ContinueDev) ListServers(configPath string) ([]ServerEntry, error) {
 	if experimental == nil {
 		return nil, nil
 	}
-	list, _ := experimental["mcpServers"].([]any)
+	// Same both-keys read as IsLinked/Unlink: a listing that missed the
+	// key the writer uses is how unlink reports "no entry" for a server it
+	// just wrote.
+	list := c.getMCPServersFromMap(experimental)
 	entries := make([]ServerEntry, 0, len(list))
 	for _, v := range list {
 		entry, ok := v.(map[string]any)
