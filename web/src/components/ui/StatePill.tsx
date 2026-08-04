@@ -2,9 +2,10 @@ import { cn } from '../../lib/cn';
 
 /**
  * The shared projection-state vocabulary from the pkg/project engine. The
- * CLI, the context API, and the agent projection API all speak these exact
- * strings; UI surfaces must render them verbatim rather than inventing
- * synonyms. Agent rows use the first four; context rows add the last two.
+ * CLI, the context API, the agent projection API, and the wiring API all
+ * speak these exact strings; UI surfaces must render them verbatim rather
+ * than inventing synonyms. Agent rows use the first four; context rows
+ * add never-synced and unsupported; wiring rows add foreign and missing.
  */
 export type ProjectionState =
   | 'in-sync'
@@ -12,7 +13,9 @@ export type ProjectionState =
   | 'drifted'
   | 'target-missing'
   | 'never-synced'
-  | 'unsupported';
+  | 'unsupported'
+  | 'foreign'
+  | 'missing';
 
 const PROJECTION_STATE_STYLE: Record<ProjectionState, string> = {
   'in-sync': 'text-emerald-400 border-emerald-400/25 bg-emerald-400/10',
@@ -21,6 +24,10 @@ const PROJECTION_STATE_STYLE: Record<ProjectionState, string> = {
   'target-missing': 'text-red-400 border-red-400/25 bg-red-400/10',
   'never-synced': 'text-text-muted border-border/40 bg-background/40',
   unsupported: 'text-text-muted/60 border-border/30 bg-background/30',
+  // Wiring extensions: foreign is an ownership conflict (red family);
+  // missing is a quiet opportunity, not a fault.
+  foreign: 'text-red-400 border-red-400/25 bg-red-400/10',
+  missing: 'text-text-muted border-border/40 bg-background/40',
 };
 
 /**
