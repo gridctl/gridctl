@@ -1,9 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { hasMixedGenerations } from '../lib/graph/nodes';
-import { LiveSessionsCard } from '../components/workspaces/ConnectionsWorkspace';
-import * as api from '../lib/api';
+import { attributeSessions, sessionIdentity } from '../components/connections/connectionsModel';
 import type { MCPServerStatus } from '../types';
 
 function server(overrides: Partial<MCPServerStatus> & { name: string }): MCPServerStatus {
@@ -53,59 +51,37 @@ describe('hasMixedGenerations', () => {
   });
 });
 
-describe('LiveSessionsCard', () => {
-  it('renders session entries with their generation tags', async () => {
-    vi.spyOn(api, 'fetchSessions').mockResolvedValue({
-      count: 2,
-      sessions: ['s-1', 's-2'],
-      entries: [
-        { id: 's-1', generation: 'handshake', protocolVersion: '2025-11-25' },
-        { id: 's-2', generation: 'handshake', protocolVersion: '2025-06-18' },
+describe('session attribution (Connections hub)', () => {
+  it('joins entries to client slugs by accessId and buckets the rest honestly', () => {
+    const { bySlug, unattributed } = attributeSessions(
+      [
+        { id: 's-1', generation: 'handshake', protocolVersion: '2025-11-25', accessId: 'claude' },
+        { id: 's-2', generation: 'handshake', accessId: 'mystery' },
+        { id: 's-3', generation: 'handshake' },
       ],
-    });
-    render(<LiveSessionsCard />);
-
-    await waitFor(() => {
-      expect(screen.getByText('s-1')).toBeInTheDocument();
-    });
-    expect(screen.getByText('s-2')).toBeInTheDocument();
-    expect(screen.getAllByText('handshake')).toHaveLength(2);
-    expect(screen.getByText('2025-11-25')).toBeInTheDocument();
-    expect(screen.getByText(/2 active/)).toBeInTheDocument();
+      new Set(['claude', 'cursor']),
+    );
+    expect(bySlug.get('claude')).toHaveLength(1);
+    // Unknown identities are never force-matched to a guess.
+    expect(unattributed).toHaveLength(2);
   });
 
-  it('explains the stateless-era absence when no sessions exist', async () => {
-    vi.spyOn(api, 'fetchSessions').mockResolvedValue({ count: 0, sessions: [], entries: [] });
-    render(<LiveSessionsCard />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/No active sessions/)).toBeInTheDocument();
-    });
-    expect(screen.getByText(/sessionless/)).toBeInTheDocument();
+  it('synthesizes a fallback identity instead of showing unknown', () => {
+    expect(
+      sessionIdentity({ id: 'abcdef0123456789', generation: 'handshake' }),
+    ).toBe('handshake \u00b7 abcdef01');
+    expect(
+      sessionIdentity({ id: 'x', generation: 'handshake', clientName: 'claude-code', clientVersion: '2.1' }),
+    ).toBe('claude-code 2.1');
   });
 
-  it('reports unavailability instead of failing when the fetch errors', async () => {
-    vi.spyOn(api, 'fetchSessions').mockRejectedValue(new Error('boom'));
-    render(<LiveSessionsCard />);
-
-    await waitFor(() => {
-      expect(screen.getByText('unavailable')).toBeInTheDocument();
-    });
-  });
-
-  it('falls back to the bare ID list from pre-dual-stack daemons', async () => {
-    // An old daemon serves {count, sessions} with no entries; every
-    // session it reports is handshake-generation by definition.
-    vi.spyOn(api, 'fetchSessions').mockResolvedValue({
-      count: 1,
-      sessions: ['old-session'],
-    });
-    render(<LiveSessionsCard />);
-
-    await waitFor(() => {
-      expect(screen.getByText('old-session')).toBeInTheDocument();
-    });
-    expect(screen.getByText('handshake')).toBeInTheDocument();
-    expect(screen.queryByText(/No active sessions/)).not.toBeInTheDocument();
+  it('treats the pre-dual-stack bare ID list as handshake-generation sessions', () => {
+    // An old daemon serves {count, sessions} with no entries; the
+    // workspace maps every bare ID to a handshake entry before
+    // attribution, so nothing is dropped.
+    const entries = ['old-session'].map((id) => ({ id, generation: 'handshake' }));
+    const { unattributed } = attributeSessions(entries, new Set());
+    expect(unattributed).toHaveLength(1);
+    expect(sessionIdentity(unattributed[0])).toContain('handshake');
   });
 });
