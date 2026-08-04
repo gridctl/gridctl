@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Eye, Loader2, Pencil } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { Modal } from '../../ui/Modal';
 import { showToast } from '../../ui/Toast';
 import { MarkdownPreview } from '../MarkdownPreview';
@@ -31,6 +32,7 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [error, setError] = useState<string | null>(null);
   const [findings, setFindings] = useState<SecurityFinding[] | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const name = agent?.name ?? null;
   const loadKey = isOpen && name ? name : null;
@@ -47,6 +49,7 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
     setFindings(null);
     setDirty(false);
     setMode('edit');
+    setConfirmDiscard(false);
     setLoading(loadKey !== null);
   }
 
@@ -93,10 +96,20 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
     }
   }, [name, raw, saving, onSaved, onClose]);
 
+  // Unsaved edits confirm before they are discarded, mirroring
+  // SkillEditor's pending-action guard.
+  const requestClose = useCallback(() => {
+    if (dirty && !saving) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }, [dirty, saving, onClose]);
+
   if (!isOpen || !agent) return null;
 
   return (
-    <Modal isOpen onClose={onClose} title={`Edit ${agent.name}`} size="wide">
+    <Modal isOpen onClose={requestClose} title={`Edit ${agent.name}`} size="wide">
       <div className="flex flex-col gap-3">
         {/* Mode toggle, matching the workspace's aria-pressed segment treatment. */}
         <div className="flex items-center justify-between gap-2">
@@ -167,7 +180,7 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
 
         <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/20">
           <button
-            onClick={onClose}
+            onClick={requestClose}
             disabled={saving}
             className="px-3 py-1.5 text-xs text-text-muted border border-border/40 rounded-lg hover:bg-surface-highlight transition-colors"
           >
@@ -183,6 +196,19 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDiscard}
+        onClose={() => setConfirmDiscard(false)}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          onClose();
+        }}
+        title="Discard changes"
+        message={<p>This agent has unsaved edits. Discard them?</p>}
+        confirmLabel="Discard"
+        variant="danger"
+      />
     </Modal>
   );
 }
