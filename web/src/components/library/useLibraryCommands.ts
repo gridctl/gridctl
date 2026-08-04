@@ -11,9 +11,11 @@ import {
   PowerOff,
   RefreshCw,
 } from 'lucide-react';
+import { Bot } from 'lucide-react';
 import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import type { PaletteCommand } from '../../types/palette';
 import type { GroupMode } from '../registry/LibraryGrid';
+import type { RegistryKind } from '../../lib/registryKind';
 
 export type LibraryFilter = 'all' | 'active' | 'draft' | 'disabled';
 
@@ -25,6 +27,11 @@ interface UseLibraryCommandsOptions {
   onOpenInNewWindow: () => void;
   /** Optional: switch the grouping axis (Source / Category / None). */
   onSetGroup?: (mode: GroupMode) => void;
+  /** Active catalog kind. Skills-only commands register only for 'skill';
+   *  the Agents segment registers its own set. Defaults to 'skill'. */
+  kind?: RegistryKind;
+  /** Optional: switch the catalog kind (Skills / Agents segment). */
+  onSwitchKind?: (kind: RegistryKind) => void;
 }
 
 /**
@@ -38,10 +45,19 @@ export function useLibraryCommands({
   onFilter,
   onOpenInNewWindow,
   onSetGroup,
+  kind = 'skill',
+  onSwitchKind,
 }: UseLibraryCommandsOptions): void {
   const { registerCommands, unregisterCommands } = useCommandRegistry();
 
   useEffect(() => {
+    // On the Agents segment every command below acts on skills state the
+    // segment is not showing, and AgentsWorkspace registers its own set
+    // (including the switch back) under its own scope. Register nothing.
+    if (kind !== 'skill') {
+      return;
+    }
+
     const commands: PaletteCommand[] = [
       {
         id: 'library:new-skill',
@@ -140,6 +156,18 @@ export function useLibraryCommands({
       );
     }
 
+    if (onSwitchKind) {
+      commands.push({
+        id: 'library:view-agents-kind',
+        label: 'Library: View Agents',
+        section: 'registry',
+        workspaces: ['library'],
+        icon: createElement(Bot, { size: 14 }),
+        keywords: ['agents', 'segment', 'switch', 'kind'],
+        onSelect: () => onSwitchKind('agent'),
+      });
+    }
+
     registerCommands('library', commands);
     return () => unregisterCommands('library');
   }, [
@@ -151,5 +179,7 @@ export function useLibraryCommands({
     onFilter,
     onOpenInNewWindow,
     onSetGroup,
+    kind,
+    onSwitchKind,
   ]);
 }
