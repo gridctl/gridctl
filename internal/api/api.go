@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/internal/probe"
+	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
@@ -135,6 +136,13 @@ type Server struct {
 	wiringManager *wiring.Manager
 	wiringOnce    sync.Once
 	wiringErr     error
+
+	// Agent projection manager (pkg/agentsync), lazily built against the
+	// real home directory and the live registry dir on first use; tests
+	// inject a temp manager via SetAgentsManager.
+	agentsManager *agentsync.Manager
+	agentsOnce    sync.Once
+	agentsErr     error
 }
 
 // SetWiringManager injects the wiring ownership manager. Tests use it
@@ -627,6 +635,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/registry/skills/{name}/files/{path...}", s.handleRegistrySkillFileGet)
 	mux.HandleFunc("PUT /api/registry/skills/{name}/files/{path...}", s.handleRegistrySkillFilePut)
 	mux.HandleFunc("DELETE /api/registry/skills/{name}/files/{path...}", s.handleRegistrySkillFileDelete)
+
+	// Agent registry endpoints. Agents are single-file definitions
+	// projected to clients, not gateway-routed MCP content, so mutations
+	// here never refresh the registry router.
+	mux.HandleFunc("GET /api/registry/agents", s.handleRegistryAgentsList)
+	mux.HandleFunc("GET /api/registry/agents/{name}", s.handleRegistryAgentGet)
+	mux.HandleFunc("PUT /api/registry/agents/{name}", s.handleRegistryAgentPut)
+	mux.HandleFunc("DELETE /api/registry/agents/{name}", s.handleRegistryAgentDelete)
+
+	// Agent projection endpoints (pkg/agentsync): per-client status and
+	// the sync / unsync / adopt operations the CLI exposes as
+	// `gridctl skill project ... --kind agent`.
+	mux.HandleFunc("GET /api/project/agents/status", s.handleProjectAgentsStatus)
+	mux.HandleFunc("POST /api/project/agents/sync", s.handleProjectAgentsSync)
+	mux.HandleFunc("POST /api/project/agents/unsync", s.handleProjectAgentsUnsync)
+	mux.HandleFunc("POST /api/project/agents/adopt", s.handleProjectAgentsAdopt)
 
 	// Static files (UI) - served at root
 	if s.staticFS != nil {
