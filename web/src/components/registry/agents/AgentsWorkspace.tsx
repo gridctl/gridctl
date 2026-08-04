@@ -14,7 +14,7 @@ import type { RegistryKind } from '../../../lib/registryKind';
 import { AgentCard } from './AgentCard';
 import { AgentDetailPanel } from './AgentDetailPanel';
 import { AgentEditor } from './AgentEditor';
-import { needsSync, statusesByAgent } from './agentModel';
+import { describeSyncResults, needsSync, statusesByAgent } from './agentModel';
 import {
   deleteRegistryAgent,
   fetchAgentProjectionStatus,
@@ -153,31 +153,37 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
   const statusMap = useMemo(() => statusesByAgent(agentStatuses), [agentStatuses]);
 
   // KPI counts. Always rendered, zero included: the strip itself is the
-  // signal that agents support exists on a fresh install.
+  // signal that agents support exists on a fresh install. Projected means
+  // "has any projection rows" (coverage), not "all in sync" (health —
+  // that is what Drifted and the per-row states are for). No Experimental
+  // KPI: every current target is experimental-tier, so the count would
+  // just mirror Projected and teach a false axis; the per-row suffix
+  // carries the tier signal.
   const kpis = useMemo(() => {
     const total = (agents ?? []).length;
     let projected = 0;
     let drifted = 0;
-    let experimental = 0;
     for (const a of agents ?? []) {
       const rows = statusMap.get(a.name) ?? [];
-      if (rows.some((r) => r.state === 'in-sync')) projected++;
+      if (rows.length > 0) projected++;
       if (rows.some((r) => r.state === 'drifted')) drifted++;
-      if (rows.some((r) => r.experimental)) experimental++;
     }
-    return { total, projected, drifted, experimental };
+    return { total, projected, drifted };
   }, [agents, statusMap]);
 
   // Agents with at least one stale or target-missing projection, for the
   // "Sync N stale agents" pill (SyncSourcesButton's proportionate sibling —
-  // at 0-10 agents a checkbox bulk bar would be overkill).
+  // at 0-10 agents a checkbox bulk bar would be overkill). Restricted to
+  // agents still in the catalog: an orphaned lock row (agent deleted out
+  // from under its projections) would otherwise 404 the whole named sync.
   const staleAgents = useMemo(() => {
+    const known = new Set((agents ?? []).map((a) => a.name));
     const names = new Set<string>();
     for (const s of agentStatuses ?? []) {
-      if (needsSync(s)) names.add(s.agent);
+      if (needsSync(s) && known.has(s.agent)) names.add(s.agent);
     }
     return [...names].sort();
-  }, [agentStatuses]);
+  }, [agents, agentStatuses]);
 
   const [syncingStale, setSyncingStale] = useState(false);
   const handleSyncStale = useCallback(async () => {
@@ -185,9 +191,8 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
     setSyncingStale(true);
     try {
       const results = await syncAgentProjections({ agents: staleAgents });
-      const failed = results.filter((r) => r.error).length;
-      if (failed === 0) showToast('success', `Synced ${staleAgents.length} agent${staleAgents.length === 1 ? '' : 's'}`);
-      else showToast('warning', `Synced with ${failed} failure${failed === 1 ? '' : 's'}`);
+      const { kind, message } = describeSyncResults(results);
+      showToast(kind, message);
       await refresh();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Sync failed');
@@ -319,7 +324,6 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
                 detail={isLoading ? undefined : `of ${kpis.total}`}
               />
               <AgentKpi label="Drifted" value={isLoading ? null : kpis.drifted} />
-              <AgentKpi label="Experimental" value={isLoading ? null : kpis.experimental} />
             </div>
           </header>
 
@@ -430,8 +434,8 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
               canonical store?
             </p>
             <p>
-              Files already projected into client directories stay in place; unsync them first if
-              they should leave too. This action cannot be undone.
+              Its projected copies in client directories are removed with it. This action cannot
+              be undone.
             </p>
           </>
         }
