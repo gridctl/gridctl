@@ -176,7 +176,7 @@ func (m *Manager) Sync(ctx context.Context, names []string, opts SyncOptions) ([
 			selected = append(selected, a)
 		}
 		if len(bad) > 0 {
-			return nil, fmt.Errorf("unknown agent(s): %s (see 'gridctl skill list --kind agent')", strings.Join(bad, ", "))
+			return nil, fmt.Errorf("%w: %s (see 'gridctl skill list --kind agent')", ErrUnknownAgent, strings.Join(bad, ", "))
 		}
 	}
 
