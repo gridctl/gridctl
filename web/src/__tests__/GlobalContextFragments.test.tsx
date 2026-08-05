@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { GlobalContextDialog } from '../components/context/GlobalContextDialog';
 import { useContextStore } from '../stores/useContextStore';
 import type { ContextDoc, ContextFragment } from '../lib/api';
@@ -24,9 +24,11 @@ vi.mock('../lib/api', async () => {
 });
 
 import {
+  adoptGlobalContext,
   deleteContextFragment,
   fetchContextFragments,
   fetchGlobalContext,
+  fetchGlobalContextDiff,
   saveContextFragment,
 } from '../lib/api';
 
@@ -186,5 +188,196 @@ describe('GlobalContextDialog fragments mode', () => {
     await waitFor(() => {
       expect(saveContextFragment).toHaveBeenCalledWith('10-style', '');
     });
+  });
+});
+
+// One client per doc keeps Review buttons unambiguous per test.
+function clientDoc(client: ContextDoc['clients'][number]): ContextDoc {
+  return {
+    canonical: { path: '/home/u/.gridctl/context/AGENTS.md', exists: false, content: '' },
+    fragments_active: true,
+    needs_sync: true,
+    clients: [client],
+  };
+}
+
+const identityClient: ContextDoc['clients'][number] = {
+  slug: 'claude-code',
+  name: 'Claude Code',
+  supported: true,
+  available: true,
+  strategy: 'dedicated-file',
+  mode: 'multi-file',
+  target_path: '/home/u/.claude/rules',
+  state: 'drifted',
+  fragments: [
+    { name: '00-default', state: 'drifted' },
+    { name: '10-style', state: 'stale' },
+  ],
+};
+
+const lossyClient: ContextDoc['clients'][number] = {
+  slug: 'vscode',
+  name: 'VS Code',
+  supported: true,
+  available: true,
+  strategy: 'dedicated-file',
+  mode: 'multi-file',
+  target_path: '/home/u/.copilot/instructions',
+  state: 'drifted',
+  fragments: [{ name: '00-default', state: 'drifted' }],
+};
+
+const compiledClient: ContextDoc['clients'][number] = {
+  slug: 'opencode',
+  name: 'OpenCode',
+  supported: true,
+  available: true,
+  strategy: 'block',
+  mode: 'compiled',
+  target_path: '/home/u/.config/opencode/AGENTS.md',
+  state: 'drifted',
+};
+
+describe('fragment-level drift review', () => {
+  beforeEach(() => {
+    vi.mocked(fetchGlobalContextDiff).mockResolvedValue('--- canonical\n+++ target\n');
+    vi.mocked(adoptGlobalContext).mockResolvedValue(clientDoc(identityClient));
+  });
+
+  it('expands a multi-file row to every non-synced fragment, drifted and stale', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(identityClient));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByLabelText('Expand Claude Code fragments');
+
+    fireEvent.click(screen.getByLabelText('Expand Claude Code fragments'));
+    const list = screen.getByLabelText('Claude Code fragments');
+    // The hidden-bucket case: the drifted fragment must not hide the stale one.
+    expect(within(list).getByText('00-default')).toBeInTheDocument();
+    expect(within(list).getByText('drifted')).toBeInTheDocument();
+    expect(within(list).getByText('10-style')).toBeInTheDocument();
+    expect(within(list).getByText('stale')).toBeInTheDocument();
+  });
+
+  it('adopts one fragment losslessly on the identity target', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(identityClient));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByLabelText('Expand Claude Code fragments');
+
+    fireEvent.click(screen.getByLabelText('Expand Claude Code fragments'));
+    const list = screen.getByLabelText('Claude Code fragments');
+    fireEvent.click(within(list).getByText('Review'));
+
+    // The diff request is fragment-scoped, not whole-client.
+    await waitFor(() => {
+      expect(fetchGlobalContextDiff).toHaveBeenCalledWith('claude-code', '00-default');
+    });
+    fireEvent.click(await screen.findByText('Adopt 00-default'));
+    await waitFor(() => {
+      expect(adoptGlobalContext).toHaveBeenCalledWith('claude-code', { fragment: '00-default' });
+    });
+  });
+
+  it('shows the lossy reason with no Adopt affordance on lossy renders', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(lossyClient));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByLabelText('Expand VS Code fragments');
+
+    fireEvent.click(screen.getByLabelText('Expand VS Code fragments'));
+    const list = screen.getByLabelText('VS Code fragments');
+    fireEvent.click(within(list).getByText('Review'));
+
+    expect(await screen.findByTestId('lossy-reason')).toHaveTextContent(/lossy render/);
+    expect(screen.queryByText(/^Adopt /)).not.toBeInTheDocument();
+    expect(screen.getByText('Force overwrite')).toBeInTheDocument();
+  });
+
+  it('captures a compiled edit into an existing fragment', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(compiledClient));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByText('Review');
+
+    fireEvent.click(screen.getByText('Review'));
+    await screen.findByText(/receives one assembled document/);
+    fireEvent.click(screen.getByText('Capture into 00-default'));
+
+    await waitFor(() => {
+      expect(adoptGlobalContext).toHaveBeenCalledWith('opencode', { into: '00-default' });
+    });
+  });
+
+  it('captures a compiled edit into a new named fragment', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(compiledClient));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByText('Review');
+
+    fireEvent.click(screen.getByText('Review'));
+    const picker = await screen.findByLabelText('Capture into');
+    fireEvent.change(picker, { target: { value: '__new__' } });
+    fireEvent.change(screen.getByLabelText('New capture fragment name'), {
+      target: { value: 'captured-notes' },
+    });
+    fireEvent.click(screen.getByText('Capture into captured-notes'));
+
+    await waitFor(() => {
+      expect(adoptGlobalContext).toHaveBeenCalledWith('opencode', { into: 'captured-notes' });
+    });
+  });
+
+  it('disables Capture while the new fragment name is invalid', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(compiledClient));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByText('Review');
+
+    fireEvent.click(screen.getByText('Review'));
+    const picker = await screen.findByLabelText('Capture into');
+    fireEvent.change(picker, { target: { value: '__new__' } });
+    fireEvent.change(screen.getByLabelText('New capture fragment name'), {
+      target: { value: 'Bad_Name' },
+    });
+
+    expect(screen.getByText(/Lowercase letters, digits, and hyphens only/)).toBeInTheDocument();
+    expect(screen.getByText('Capture')).toBeDisabled();
+    expect(adoptGlobalContext).not.toHaveBeenCalled();
+  });
+
+  it('deep-links straight into the review when exactly one fragment is drifted', async () => {
+    const oneDrift = {
+      ...identityClient,
+      fragments: [{ name: '00-default', state: 'drifted' as const }],
+    };
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(oneDrift));
+    render(<GlobalContextDialog isOpen onClose={() => {}} initialDriftSlug="claude-code" />);
+
+    expect(await screen.findByText('00-default in Claude Code was edited')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchGlobalContextDiff).toHaveBeenCalledWith('claude-code', '00-default');
+    });
+  });
+
+  it('leaves the expanded fragment lines as the picker when several are drifted', async () => {
+    const twoDrift = {
+      ...identityClient,
+      fragments: [
+        { name: '00-default', state: 'drifted' as const },
+        { name: '10-style', state: 'drifted' as const },
+      ],
+    };
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(twoDrift));
+    render(<GlobalContextDialog isOpen onClose={() => {}} initialDriftSlug="claude-code" />);
+
+    // The row arrives pre-expanded (spotlight), but no dialog opens.
+    const list = await screen.findByLabelText('Claude Code fragments');
+    expect(within(list).getAllByText('Review')).toHaveLength(2);
+    expect(screen.queryByText(/was edited/)).not.toBeInTheDocument();
+  });
+
+  it('marks fragments with non-synced copies in the rail', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(identityClient));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByText('10-style');
+
+    // Both the drifted and the stale fragment carry a dot naming the client.
+    expect(screen.getAllByLabelText('Out of sync in Claude Code')).toHaveLength(2);
   });
 });
