@@ -1,5 +1,6 @@
 import { Check, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { PackChip } from './PackChip';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
 import { SkillGovernanceBadge } from './SkillGovernanceBadge';
@@ -186,6 +187,7 @@ export function LibraryTable({
                     )}
                     <SkillGovernanceBadge governance={skill.governance} />
                   </button>
+                  {src && <PackChip source={src.name} className="ml-1.5" />}
                 </td>
                 <td className={cn('px-2 text-xs font-mono text-text-muted', cellPad)}>{skill.fileCount}</td>
                 {showUsage && (
