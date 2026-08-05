@@ -11,6 +11,14 @@ import (
 const maxSessions = 1000
 
 // Session represents an MCP client session.
+//
+// Sessions are a handshake-era (2025-11-25 and earlier) concept: the
+// 2026-07-28 stateless generation removed them, deriving identity per
+// request from _meta instead (see handleStateless). This struct keeps
+// serving handshake peers for as long as that generation is supported
+// (two-generation policy, stable plus next); it is deprecated in the
+// sense that no new fields or semantics should be added for
+// stateless-era needs, not that it is going away soon.
 type Session struct {
 	ID         string
 	ClientInfo ClientInfo
