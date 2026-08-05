@@ -4,7 +4,9 @@ import { InspectorHeader, InspectorTabList, InspectorTabButton, PaneAnchor } fro
 import { MarkdownPreview } from '../MarkdownPreview';
 import { AgentProjectionRows } from './AgentProjectionRows';
 import { agentClientName, formatExtraValue } from './agentModel';
-import { fetchRegistryAgent } from '../../../lib/api';
+import { useNavigate } from 'react-router';
+import { useRegistryStore } from '../../../stores/useRegistryStore';
+import { fetchRegistryAgent, type PackListItem } from '../../../lib/api';
 import type { AgentProjectionStatus, RegistryAgent } from '../../../types';
 
 type AgentTab = 'overview' | 'body' | 'projection';
@@ -91,7 +93,10 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
         title={agent.name}
         subtitle={
           agent.source ? (
-            <span className="text-[11px] text-text-muted">from {agent.source}</span>
+            <span className="text-[11px] text-text-muted inline-flex items-center gap-1.5">
+              from {agent.source}
+              <AgentPackChip source={agent.source} />
+            </span>
           ) : (
             <span className="text-[11px] text-text-muted">local agent</span>
           )
@@ -228,5 +233,27 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Reverse ownership chip: an agent whose source was imported through a
+ * pack links back to the pack detail. Free client-side join on the
+ * packs list; renders nothing until that list has loaded.
+ */
+function AgentPackChip({ source }: { source: string }) {
+  const navigate = useNavigate();
+  const packs = useRegistryStore((s) => s.packs);
+  const owning = (packs ?? []).find((p: PackListItem) => p.origin.source === source);
+  if (!owning) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(`/library?kind=pack&selected=${encodeURIComponent(owning.name)}`)}
+      title={`Imported through pack ${owning.name}; open the pack detail`}
+      className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-secondary/30 bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors"
+    >
+      pack: {owning.name}
+    </button>
   );
 }
