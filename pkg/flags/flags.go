@@ -138,10 +138,11 @@ func (r *Registry) experimentalNames() []string {
 var builtin = []Flag{
 	{
 		Name:        "transport_dual_stack",
-		Description: "Reserved for the MCP 2026-07-28 transport dual-stack work; currently has no effect.",
-		Stage:       StageExperimental,
+		Description: "MCP 2026-07-28 transport dual-stack; always on, per-server pinning via protocol_generation.",
+		Stage:       StageGraduated,
 		Since:       "0.1.0",
 		GraduatesBy: "0.3.0",
+		Message:     "graduated in 0.1.0-beta.16; remove the entry, the dual-stack transport is always on and per-server pinning lives in protocol_generation",
 	},
 }
 
