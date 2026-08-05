@@ -352,4 +352,20 @@ func TestValidateWithIssues_ExperimentalIssues(t *testing.T) {
 		}
 		require.True(t, found, "expected an info line for the enabled flag")
 	})
+
+	t.Run("disabled experimental flag stays silent", func(t *testing.T) {
+		reg, err := flags.NewRegistry(flags.Flag{
+			Name:        "test_flag",
+			Description: "synthetic flag for validation tests",
+			Stage:       flags.StageExperimental,
+			Since:       "0.1.0",
+			GraduatesBy: "99.0.0",
+		})
+		require.NoError(t, err)
+		stack := base()
+		stack.Experimental = map[string]bool{"test_flag": false}
+		result := &ValidationResult{Valid: true}
+		result.addExperimentalIssues(reg, stack)
+		assert.Empty(t, result.Issues, "a known experimental flag set to false must add nothing")
+	})
 }
