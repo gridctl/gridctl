@@ -15,15 +15,15 @@ import (
 )
 
 // conformanceVersion pins the suite so the checked-in expected-failures
-// baseline describes a fixed scenario set; bump both together.
-const conformanceVersion = "@modelcontextprotocol/conformance@0.1.16"
+// baseline describes a fixed scenario set; bump both together. Pinned to
+// an exact 0.2.0-alpha version (never the floating `alpha` dist-tag):
+// the alpha line is where 2026-07-28 support lives, and no 0.2.0 stable
+// exists yet (move to it when tagged).
+const conformanceVersion = "@modelcontextprotocol/conformance@0.2.0-alpha.10"
 
-// conformanceSpecVersions are the --spec-version runs. The suite does
-// not yet accept "2026-07-28" as a dated version; its stateless-era
-// scenarios land under "draft" (currently zero scenarios, so that run
-// is a forward-looking no-op). Switch "draft" to "2026-07-28" when the
-// suite promotes the dated revision.
-var conformanceSpecVersions = []string{"2025-11-25", "draft"}
+// conformanceSpecVersions are the --spec-version runs, one per supported
+// protocol generation.
+var conformanceSpecVersions = []string{"2025-11-25", "2026-07-28"}
 
 // TestConformance runs the official MCP conformance suite against a
 // live gridctl daemon, once per spec generation. The suite is the
