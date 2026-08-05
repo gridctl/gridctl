@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -41,6 +42,141 @@ func doJSON(t *testing.T, srv *Server, method, path string, body string) *httpte
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	return rec
+}
+
+// TestHandleContextAdopt_FragmentDispatch pins the fragment-aware adopt
+// contract: empty body keeps whole-client semantics, `fragment` does the
+// lossless per-fragment adopt, `into` captures a compiled target's body,
+// both together is a 400, and refusals reach the wire as 409 with the
+// engine's prose verbatim (the UI renders that text).
+func TestHandleContextAdopt_FragmentDispatch(t *testing.T) {
+	srv, mgr, home := setupContextTestServer(t, ".claude", ".config/opencode", ".copilot")
+	if err := mgr.SaveCanonical("# Base\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.AddFragment("notes", "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, slug := range []string{"claude-code", "opencode", "vscode"} {
+		if _, err := mgr.SyncClient(ctx, slug, contexts.SyncOptions{}); err != nil {
+			t.Fatalf("sync %s: %v", slug, err)
+		}
+	}
+
+	// Identity multi-file adopt: hand-edit the projected fragment, adopt
+	// it back per fragment.
+	projected := filepath.Join(home, ".claude", "rules", "gridctl-notes.md")
+	if err := os.WriteFile(projected, []byte("# edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, srv, http.MethodPost, "/api/context/adopt/claude-code", `{"fragment":"notes"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("fragment adopt = %d: %s", rec.Code, rec.Body.String())
+	}
+	frag, err := mgr.ReadFragment("notes")
+	if err != nil {
+		t.Fatalf("reading adopted fragment: %v", err)
+	}
+	if !strings.Contains(frag.Body, "edited") {
+		t.Fatalf("fragment not adopted: body=%q", frag.Body)
+	}
+
+	// Whole-client adopt on a multi-file target refuses with the typed
+	// reason as 409, prose intact (empty body = legacy shape).
+	rec = doJSON(t, srv, http.MethodPost, "/api/context/adopt/claude-code", "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("whole adopt on multi-file = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "adopt one with") {
+		t.Errorf("409 must carry the engine prose verbatim: %s", rec.Body.String())
+	}
+
+	// Lossy multi-file target refuses per-fragment adopt as 409.
+	rec = doJSON(t, srv, http.MethodPost, "/api/context/adopt/vscode", `{"fragment":"notes"}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("lossy fragment adopt = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "lossy render") {
+		t.Errorf("lossy 409 must carry the reason: %s", rec.Body.String())
+	}
+
+	// Compiled target: capture into a designated fragment succeeds.
+	rec = doJSON(t, srv, http.MethodPost, "/api/context/adopt/opencode", `{"into":"captured"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("adopt into = %d: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := mgr.ReadFragment("captured"); err != nil {
+		t.Fatalf("captured fragment missing: %v", err)
+	}
+
+	// Both fragment and into is a 400 before any engine call.
+	rec = doJSON(t, srv, http.MethodPost, "/api/context/adopt/opencode", `{"fragment":"a","into":"b"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("fragment+into = %d, want 400", rec.Code)
+	}
+
+	// Bad capture name maps to 400 via the sentinel.
+	rec = doJSON(t, srv, http.MethodPost, "/api/context/adopt/opencode", `{"into":"Bad_Name"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad into name = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestHandleContextGet_FragmentsField pins the structured per-fragment
+// status: a drifted fragment must not hide a stale one.
+func TestHandleContextGet_FragmentsField(t *testing.T) {
+	srv, mgr, home := setupContextTestServer(t, ".claude")
+	if err := mgr.SaveCanonical("# Base\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.AddFragment("aaa", "alpha\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.AddFragment("bbb", "beta\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.SyncClient(context.Background(), "claude-code", contexts.SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "rules", "gridctl-aaa.md"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.SaveFragment(&contexts.Fragment{Name: "bbb", FileName: "bbb.md", Body: "beta v2\n"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doJSON(t, srv, http.MethodGet, "/api/context", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get = %d: %s", rec.Code, rec.Body.String())
+	}
+	var doc struct {
+		Clients []struct {
+			Slug      string `json:"slug"`
+			State     string `json:"state"`
+			Fragments []struct {
+				Name  string `json:"name"`
+				State string `json:"state"`
+			} `json:"fragments"`
+		} `json:"clients"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range doc.Clients {
+		if c.Slug != "claude-code" {
+			continue
+		}
+		got := map[string]string{}
+		for _, f := range c.Fragments {
+			got[f.Name] = f.State
+		}
+		if got["aaa"] != "drifted" || got["bbb"] != "stale" {
+			t.Fatalf("fragments = %v, want aaa drifted AND bbb stale", got)
+		}
+		return
+	}
+	t.Fatal("no claude-code row in context doc")
 }
 
 func TestHandleContextGetEmptyState(t *testing.T) {
