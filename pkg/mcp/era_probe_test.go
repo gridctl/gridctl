@@ -294,3 +294,41 @@ func TestStampStatelessMetaPreservesSiblingBytes(t *testing.T) {
 		}
 	}
 }
+
+// versionRecordingTransport is a fakeTransport that also implements the
+// protocolVersionSetter seam, recording every call.
+type versionRecordingTransport struct {
+	fakeTransport
+	versions []string
+}
+
+func (v *versionRecordingTransport) setProtocolVersion(s string) {
+	v.versions = append(v.versions, s)
+}
+
+func TestInitialize_ClearsStaleProtocolVersionBeforeProbe(t *testing.T) {
+	// A redeployed server may have changed generation. The re-probe
+	// must not carry the previously negotiated version in its
+	// MCP-Protocol-Version header: it would contradict the probe's
+	// _meta, which a strict modern server rejects with -32020 instead
+	// of answering (issue #1086).
+	vt := &versionRecordingTransport{fakeTransport: fakeTransport{
+		callFn: discoverAnswer(t, []string{StatelessProtocolVersion}),
+	}}
+	r := &RPCClient{}
+	initRPCClient(r, "test", vt)
+	// Simulate a prior handshake-era resolution.
+	r.SetProtocolVersion("2025-11-25")
+	vt.setProtocolVersion("2025-11-25")
+	vt.versions = nil
+
+	if err := r.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if len(vt.versions) == 0 || vt.versions[0] != "" {
+		t.Fatalf("transport version calls = %q, want a clearing \"\" before the probe", vt.versions)
+	}
+	if r.ProtocolVersion() != StatelessProtocolVersion {
+		t.Errorf("protocol version = %q, want re-negotiated %q", r.ProtocolVersion(), StatelessProtocolVersion)
+	}
+}

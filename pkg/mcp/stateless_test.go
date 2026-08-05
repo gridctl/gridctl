@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
@@ -502,5 +504,73 @@ func TestStateless_TasksWithoutCapableServer(t *testing.T) {
 	}
 	if !strings.Contains(resp.Error.Message, TasksExtensionID) {
 		t.Errorf("error should name the extension: %s", resp.Error.Message)
+	}
+}
+
+func TestStateless_ResourcesReadUsesGatewayOwnedCacheMeta(t *testing.T) {
+	// Skill resources are gateway-owned: their cache lifetime must not
+	// inherit the downstream tool fleet's aggregate, where one legacy
+	// tool server pins everything to uncacheable.
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	mock := setupMockAgentClient(ctrl, "registry", nil)
+	g.Router().AddClient(&promptProviderClient{
+		AgentClient: mock,
+		prompts:     []PromptData{{Name: "demo", Content: "body"}},
+	})
+	srv := NewStreamableHTTPServer(g, nil)
+
+	w, resp := doStateless(t, srv, statelessRequest(t, statelessBody(t, 1, "resources/read",
+		map[string]any{"uri": "skills://registry/demo"})))
+	if w.Code != http.StatusOK || resp.Error != nil {
+		t.Fatalf("resources/read: %d %+v", w.Code, resp.Error)
+	}
+	var result ResourcesReadResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ResultType != ResultTypeComplete || result.TTLMs == nil ||
+		*result.TTLMs != skillResourceTTLMs || result.CacheScope != CacheScopePrivate {
+		t.Errorf("read cache meta = %+v, want gateway-owned %d/private", result.StatelessResultFields, skillResourceTTLMs)
+	}
+}
+
+func TestStateless_ResourcesReadNotFoundCarriesURI(t *testing.T) {
+	// SEP-2164: not-found is -32602 and the error data carries the
+	// requested URI.
+	srv := NewStreamableHTTPServer(NewGateway(), nil)
+	w, resp := doStateless(t, srv, statelessRequest(t, statelessBody(t, 1, "resources/read",
+		map[string]any{"uri": "skills://registry/missing"})))
+	if w.Code != http.StatusOK || resp.Error == nil || resp.Error.Code != jsonrpc.InvalidParams {
+		t.Fatalf("expected -32602, got %d %+v", w.Code, resp.Error)
+	}
+	data, _ := json.Marshal(resp.Error.Data)
+	if !strings.Contains(string(data), "skills://registry/missing") {
+		t.Errorf("error data must carry the requested URI, got %s", data)
+	}
+}
+
+func TestStateless_SkillListsUseGatewayOwnedCacheMeta(t *testing.T) {
+	// prompts/list, resources/list, and resources/templates/list are
+	// the same gateway-owned registry surface resources/read serves;
+	// their cache metadata must match it, not the downstream fleet's
+	// aggregate, or clients see skill content cacheable for 60s while
+	// the skill list reads uncacheable.
+	srv := NewStreamableHTTPServer(NewGateway(), nil)
+	for _, method := range []string{"prompts/list", "resources/list", "resources/templates/list"} {
+		t.Run(method, func(t *testing.T) {
+			w, resp := doStateless(t, srv, statelessRequest(t, statelessBody(t, 1, method, nil)))
+			if w.Code != http.StatusOK || resp.Error != nil {
+				t.Fatalf("%s: %d %+v", method, w.Code, resp.Error)
+			}
+			var fields StatelessResultFields
+			if err := json.Unmarshal(resp.Result, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if fields.ResultType != ResultTypeComplete || fields.TTLMs == nil ||
+				*fields.TTLMs != skillResourceTTLMs || fields.CacheScope != CacheScopePrivate {
+				t.Errorf("%s cache meta = %+v, want gateway-owned %d/private", method, fields, skillResourceTTLMs)
+			}
+		})
 	}
 }

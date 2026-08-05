@@ -23,32 +23,47 @@ func injectMetaTraceparent(ctx context.Context, paramsBytes json.RawMessage) jso
 		return paramsBytes
 	}
 
-	// Unmarshal params to an object (handle nil/empty as empty object).
-	var obj map[string]any
+	// Merge through json.RawMessage, never map[string]any: params can
+	// carry integers beyond float64's 53-bit mantissa, and a full
+	// decode-reencode would silently corrupt them (the
+	// stampStatelessMeta precedent). Only the _meta trace keys are
+	// touched; every sibling byte passes through unmodified.
+	obj := map[string]json.RawMessage{}
 	if len(paramsBytes) > 0 {
 		if err := json.Unmarshal(paramsBytes, &obj); err != nil {
 			// Not a JSON object — leave params unchanged.
 			return paramsBytes
 		}
 	}
-	if obj == nil {
-		obj = make(map[string]any)
-	}
-
-	// Get or create the _meta map.
-	var meta map[string]any
+	meta := map[string]json.RawMessage{}
 	if existing, ok := obj["_meta"]; ok {
-		if m, ok := existing.(map[string]any); ok {
-			meta = m
+		if err := json.Unmarshal(existing, &meta); err != nil {
+			// _meta is not an object — leave params unchanged.
+			return paramsBytes
 		}
 	}
-	carrier := tracing.NewMetaCarrier(meta)
 
-	// Inject trace context into the carrier (populates traceparent/tracestate).
+	// Inject trace context into a fresh carrier (populates
+	// traceparent/tracestate), then graft its string values in.
+	carrier := tracing.NewMetaCarrier(nil)
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	for key, value := range carrier.Map() {
+		s, ok := value.(string)
+		if !ok {
+			continue
+		}
+		encoded, err := json.Marshal(s)
+		if err != nil {
+			continue
+		}
+		meta[key] = encoded
+	}
 
-	obj["_meta"] = carrier.Map()
-
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return paramsBytes
+	}
+	obj["_meta"] = metaBytes
 	result, err := json.Marshal(obj)
 	if err != nil {
 		return paramsBytes

@@ -23,6 +23,25 @@ import (
 // context carries from the /groups/{name}/mcp route wrapper, and a
 // request to the default /mcp endpoint is full-surface.
 
+// skillResourceTTLMs is the cache lifetime stamped on the gateway-owned
+// skill surfaces (prompts/list, resources/list, resources/templates/list,
+// and resources/read): short enough to track registry edits (the disk
+// watcher refreshes content underneath cached readers), long enough to
+// be worth caching at all.
+const skillResourceTTLMs int64 = 60_000
+
+// attachSkillCacheMeta stamps the required stateless result fields for
+// gateway-owned skill surfaces. Unlike attachListCacheMeta, this is
+// deliberately not the downstream fleet's aggregate: skills are served
+// from the local registry, so one legacy tool server must not pin the
+// skill list or its content to uncacheable.
+func attachSkillCacheMeta(fields *StatelessResultFields) {
+	fields.ResultType = ResultTypeComplete
+	ttl := skillResourceTTLMs
+	fields.TTLMs = &ttl
+	fields.CacheScope = CacheScopePrivate
+}
+
 // mcpParamHeadersKey carries unrecognized Mcp-Param-* headers from the
 // upstream request so the downstream HTTP leg can forward them
 // untouched, per the transport spec's intermediary rules.
@@ -156,7 +175,7 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
 			return
 		}
-		s.gateway.attachListCacheMeta(&result.StatelessResultFields)
+		attachSkillCacheMeta(&result.StatelessResultFields)
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "prompts/get":
 		if req.Params == nil {
@@ -181,11 +200,11 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
 			return
 		}
-		s.gateway.attachListCacheMeta(&result.StatelessResultFields)
+		attachSkillCacheMeta(&result.StatelessResultFields)
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "resources/templates/list":
 		result := s.gateway.HandleResourceTemplatesList()
-		s.gateway.attachListCacheMeta(&result.StatelessResultFields)
+		attachSkillCacheMeta(&result.StatelessResultFields)
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "resources/read":
 		if req.Params == nil {
@@ -208,7 +227,7 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 				req.ID, jsonrpc.InvalidParams, err.Error(), map[string]string{"uri": params.URI}))
 			return
 		}
-		s.gateway.attachListCacheMeta(&result.StatelessResultFields)
+		attachSkillCacheMeta(&result.StatelessResultFields)
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "tasks/get", "tasks/update", "tasks/cancel":
 		s.handleStatelessTask(ctx, w, req)

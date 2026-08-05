@@ -35,6 +35,10 @@ mcp-servers:
   # The command is executed relative to the stack file directory
   - name: local-tools
     command: ["../_mock-servers/local-stdio-server/mock-stdio-server"]
+    # The mock speaks the legacy handshake generation by default; add
+    # `-protocol 2026-07-28` to its command to exercise the stateless
+    # generation instead (auto-negotiated either way; see
+    # protocol_generation in external-mcp.yaml to pin it).
 
   # You can also use full paths or system commands
   # - name: python-mcp

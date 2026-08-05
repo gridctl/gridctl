@@ -48,6 +48,12 @@ go build -o mock-stdio-server .
 
 Used by `examples/transports/local-mcp.yaml`.
 
+By default the server speaks the legacy handshake generation
+(`initialize`, `ping`). Pass `-protocol 2026-07-28` to speak the
+stateless generation instead: `server/discover` replaces the handshake
+and ping, results carry `resultType` and cache metadata, and the removed
+legacy methods answer `-32601`.
+
 ## 🌐 mock-mcp-server
 
 A Go-based MCP server that supports HTTP and SSE transports.
@@ -62,6 +68,9 @@ go run main.go -port 9001
 
 # SSE mode
 go run main.go -port 9002 -sse
+
+# Stateless generation (2026-07-28: server/discover, no handshake)
+go run main.go -port 9001 -protocol 2026-07-28
 ```
 
 ### Usage

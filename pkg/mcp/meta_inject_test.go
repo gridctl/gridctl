@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel"
@@ -115,5 +116,29 @@ func TestInjectMetaTraceparent_nonObjectParams(t *testing.T) {
 	result := injectMetaTraceparent(ctx, params)
 	if string(result) != string(params) {
 		t.Errorf("non-object params should be unchanged, got %s", result)
+	}
+}
+
+func TestInjectMetaTraceparent_PreservesBigIntegers(t *testing.T) {
+	// Regression: the merge must go through json.RawMessage, never
+	// map[string]any — a full decode-reencode converts integers beyond
+	// float64's 53-bit mantissa and corrupts them silently.
+	cleanup := setupTestTracer(t)
+	defer cleanup()
+
+	tracer := otel.Tracer("test")
+	ctx, span := tracer.Start(context.Background(), "test")
+	defer span.End()
+
+	params := json.RawMessage(`{"name":"tool","arguments":{"big":9007199254740993,"huge":12345678901234567890},"_meta":{"existing":9223372036854775807}}`)
+	result := injectMetaTraceparent(ctx, params)
+
+	for _, digits := range []string{"9007199254740993", "12345678901234567890", "9223372036854775807"} {
+		if !strings.Contains(string(result), digits) {
+			t.Errorf("big integer %s corrupted: %s", digits, result)
+		}
+	}
+	if !strings.Contains(string(result), "traceparent") {
+		t.Errorf("traceparent not injected: %s", result)
 	}
 }

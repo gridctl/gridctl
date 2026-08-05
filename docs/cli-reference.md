@@ -226,7 +226,7 @@ Inspect and manage opt-in telemetry persistence under `~/.gridctl/telemetry/`. O
 | Command | Purpose |
 |---|---|
 | `gridctl info` | Show runtime and environment facts: detected runtime (Docker/Podman), socket path, version, host alias, SELinux state, and rootless network stack. `--json` for machine output. Always exits 0; for judgments, use `doctor`. |
-| `gridctl doctor` | Run opinionated environment checks with remediation hints: runtime detection, socket reachability, version floor, gateway port, `npx` availability, state directory hygiene, stale state files, and vault status. `--json` for a machine-readable report, `-q` to print only failures. Exit `0` (no errors), `1` (errors), `2` (doctor failed). |
+| `gridctl doctor` | Run opinionated environment checks with remediation hints: runtime detection, socket reachability, version floor, gateway port, `npx` availability, state directory hygiene, stale state files, vault status, and per-server MCP protocol generation (flagging mixed-generation fleets). `--json` for a machine-readable report, `-q` to print only failures. Exit `0` (no errors), `1` (errors), `2` (doctor failed). |
 | `gridctl open` | Open the web UI in the default browser (alias: `gridctl ui`). Port resolves from the first running stack; `-s` / `--stack` picks one, `-p` / `--port` overrides, `--path` sets the URL path, `--print` prints the URL only, `--json` emits `{"url": ...}`. |
 | `gridctl version` | Print version information. |
 | `gridctl upgrade` | Check + prompt + upgrade (standalone install). `--check` only checks; `--yes` non-interactive (CI / cron); `--version <tag>` installs a specific release tag (allows downgrades); `--force` bypasses Homebrew detection and the up-to-date short-circuit. |
