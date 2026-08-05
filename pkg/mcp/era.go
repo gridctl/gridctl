@@ -95,6 +95,12 @@ type StatelessResultFields struct {
 
 // RequestMeta is the parsed modern per-request _meta envelope.
 type RequestMeta struct {
+	// HasMeta reports whether a _meta object was present at all, and
+	// HasProtocolVersion whether it carried the protocolVersion key.
+	// The stateless edge distinguishes the two so its -32602
+	// completeness rejections can name the missing piece.
+	HasMeta            bool
+	HasProtocolVersion bool
 	// ProtocolVersion is the declared version (required by the spec).
 	ProtocolVersion string
 	// ClientInfo identifies the caller (SHOULD per spec).
@@ -123,11 +129,12 @@ func parseRequestMeta(params json.RawMessage) (RequestMeta, bool) {
 	}
 	rawVersion, ok := envelope.Meta[metaKeyProtocolVersion]
 	if !ok {
-		return RequestMeta{}, false
+		return RequestMeta{HasMeta: true}, false
 	}
-	var m RequestMeta
+	m := RequestMeta{HasMeta: true, HasProtocolVersion: true}
 	// A non-string value leaves ProtocolVersion empty; the caller
-	// rejects it as unsupported rather than treating it as legacy.
+	// rejects it (as a header mismatch or unsupported version) rather
+	// than treating it as legacy.
 	_ = json.Unmarshal(rawVersion, &m.ProtocolVersion)
 	if raw, ok := envelope.Meta[metaKeyClientInfo]; ok {
 		if json.Unmarshal(raw, &m.ClientInfo) == nil {
