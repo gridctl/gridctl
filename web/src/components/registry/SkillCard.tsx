@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { BookOpen, Check, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { PackChip } from './PackChip';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
 import { SkillGovernanceBadge } from './SkillGovernanceBadge';
@@ -145,6 +146,7 @@ export const SkillCard = memo(({
               <GitBranch size={12} />
             </span>
           )}
+          {source && <PackChip source={source.name} className="mt-0.5" />}
           <SkillGovernanceBadge governance={skill.governance} className="mt-0.5" />
           {hasLocalEdits && (
             <span
