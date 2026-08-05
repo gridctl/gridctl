@@ -1,5 +1,10 @@
 # Expected-failures baseline for the @modelcontextprotocol/conformance
-# suite (pinned at 0.1.16) run against a stackless gridctl daemon.
+# suite (pinned at 0.2.0-alpha.10) run against a stackless gridctl
+# daemon, shared by the 2025-11-25 and 2026-07-28 runs. A listed entry
+# only reads as stale when its scenario runs AND passes, so entries the
+# modern suite no longer emits (logging-set-level, sampling,
+# elicitation, subscribe: removed or replaced by MRTR in 2026-07-28)
+# stay valid for the legacy run without tripping the modern one.
 #
 # Almost every entry here fails by design, not by defect: the suite
 # tests a reference MCP server that implements its own test tools,
