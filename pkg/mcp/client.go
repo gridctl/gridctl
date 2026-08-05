@@ -306,6 +306,16 @@ func (c *Client) Ping(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, pingTimeoutOrDefault(c.pingTimeout))
 	defer cancel()
 
+	// On the stateless generation the health check exercises the
+	// protocol, not bare reachability: server/discover is the era's
+	// always-available method (the stdio/process precedent), so a
+	// server that changed generation underneath a live connection
+	// fails into the health channel instead of degrading as per-call
+	// tool errors.
+	if c.Era() == EraStateless {
+		return c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion())}, nil)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "GET", c.endpoint, nil)
 	if err != nil {
 		return err
