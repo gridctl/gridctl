@@ -527,6 +527,13 @@ type ToolCallResult struct {
 	// mrtr.go).
 	InputRequests json.RawMessage `json:"inputRequests,omitempty"`
 	RequestState  string          `json:"requestState,omitempty"`
+
+	// unknownTool marks a routing failure where the name cannot map to
+	// any server (as opposed to a known server with no live replica).
+	// In-memory only: the stateless edge maps it to the spec's -32602
+	// unknown-tool protocol error, while the handshake path keeps the
+	// in-band isError result.
+	unknownTool bool
 }
 
 // CallUsage is the optional per-call usage metadata that an MCP server may
@@ -639,6 +646,20 @@ type MCPResource struct {
 type ResourcesListResult struct {
 	StatelessResultFields
 	Resources []MCPResource `json:"resources"`
+}
+
+// MCPResourceTemplate is one resources/templates/list entry.
+type MCPResourceTemplate struct {
+	URITemplate string `json:"uriTemplate"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// ResourceTemplatesListResult is the response to resources/templates/list.
+type ResourceTemplatesListResult struct {
+	StatelessResultFields
+	ResourceTemplates []MCPResourceTemplate `json:"resourceTemplates"`
 }
 
 // ResourcesReadParams contains parameters for resources/read.
