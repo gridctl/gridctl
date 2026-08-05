@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { AgentSkill, AgentProjectionStatus, RegistryAgent, RegistryStatus, SkillSourceStatus } from '../types';
+import type { PackListItem } from '../lib/api';
 
 interface RegistryState {
   // Data
@@ -13,6 +14,10 @@ interface RegistryState {
   // call sites read `s.skills` directly. null = not loaded yet.
   agents: RegistryAgent[] | null;
   agentStatuses: AgentProjectionStatus[] | null;
+  // Installed packs. null = not loaded yet (the loading state must never
+  // render as the empty teaching state). Off the global polling cycle:
+  // mutations own their refetch.
+  packs: PackListItem[] | null;
 
   // Loading state
   isLoading: boolean;
@@ -24,6 +29,7 @@ interface RegistryState {
   setSources: (sources: SkillSourceStatus[]) => void;
   setAgents: (agents: RegistryAgent[]) => void;
   setAgentStatuses: (statuses: AgentProjectionStatus[]) => void;
+  setPacks: (packs: PackListItem[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
@@ -39,6 +45,7 @@ export const useRegistryStore = create<RegistryState>()(
     sources: null,
     agents: null,
     agentStatuses: null,
+    packs: null,
     isLoading: false,
     error: null,
 
@@ -47,6 +54,7 @@ export const useRegistryStore = create<RegistryState>()(
     setSources: (sources) => set({ sources: sources ?? [] }),
     setAgents: (agents) => set({ agents: agents ?? [] }),
     setAgentStatuses: (statuses) => set({ agentStatuses: statuses ?? [] }),
+    setPacks: (packs) => set({ packs: packs ?? [] }),
     setLoading: (isLoading) => set({ isLoading }),
     setError: (error) => set({ error }),
 
