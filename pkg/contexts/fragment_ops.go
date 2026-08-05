@@ -1,6 +1,7 @@
 package contexts
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -97,15 +98,18 @@ func (m *Manager) syncOneFragment(t Target, dir string, flf *FragmentLockFile, f
 		res.Error = target + " exists but is not tracked by gridctl; re-run with --force to back it up and replace it"
 		return res
 	}
-	if entry != nil && exists && !opts.Force && contentHash(existing) != entry.InstalledHash {
-		res.Action = ActionSkippedDrift
-		return res
-	}
-
+	// Content equality beats the drift guard: when the file already holds
+	// exactly what this sync would write, the drift is definitionally
+	// resolved (adopt round-trips converge here), so record it rather
+	// than skipping forever on a stale hash.
 	newContent := string(rendered.data)
 	if exists && normalizeNewlines(existing) == normalizeNewlines(newContent) {
 		res.Action = ActionUnchanged
 		recordFragmentSync(flf, t, f, target, newContent, entry, opts.packTagFor(f.Name))
+		return res
+	}
+	if entry != nil && exists && !opts.Force && contentHash(existing) != entry.InstalledHash {
+		res.Action = ActionSkippedDrift
 		return res
 	}
 
@@ -224,14 +228,17 @@ func (m *Manager) fragmentStatusFor(t Target, flf *FragmentLockFile, fragments [
 		data, err := os.ReadFile(entry.Target)
 		if err != nil {
 			missing = append(missing, f.Name)
+			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateTargetMissing})
 			continue
 		}
 		if contentHash(string(data)) != entry.InstalledHash {
 			drifted = append(drifted, f.Name)
+			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateDrifted})
 			continue
 		}
 		if canonicalContentHash(string(f.Raw)) != entry.CanonicalHash {
 			stale = append(stale, f.Name)
+			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateStale})
 			continue
 		}
 		synced = append(synced, f.Name)
@@ -259,9 +266,19 @@ func (m *Manager) fragmentStatusFor(t Target, flf *FragmentLockFile, fragments [
 }
 
 // AdoptFragment pulls one hand-edited projected fragment file back into
-// the canonical fragment. Only the identity render round-trips: a lossy
-// dialect cannot reconstruct what it dropped, so those targets refuse.
-func (m *Manager) AdoptFragment(slug, name string) error {
+// the canonical fragment, then re-syncs that client so its hashes return
+// to in-sync (the whole-client Adopt contract). Only the identity render
+// round-trips: a lossy dialect cannot reconstruct what it dropped, so
+// those targets refuse.
+func (m *Manager) AdoptFragment(ctx context.Context, slug, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ValidateFragmentName(name); err != nil {
+		return err
+	}
 	t, err := resolveTarget(slug)
 	if err != nil {
 		return err
@@ -270,24 +287,26 @@ func (m *Manager) AdoptFragment(slug, name string) error {
 		return ErrFragmentsInactive
 	}
 	if !m.usesMultiFile(t) {
-		fragments, lerr := m.ListFragments()
-		if lerr != nil {
-			return lerr
-		}
-		names := make([]string, 0, len(fragments))
-		for _, f := range fragments {
-			names = append(names, f.Name)
-		}
-		return fmt.Errorf("%s receives a compiled document assembled from %d fragments (%s); adopting it wholesale would collapse them into one. Edit the fragment directly with 'gridctl ctx edit <fragment>', or capture the whole file deliberately with 'gridctl ctx adopt %s --into <fragment>'",
-			t.Name, len(names), strings.Join(names, ", "), slug)
+		return m.adoptCompiledRefusal(t)
 	}
 	if !fragmentRenderIdentity(t) {
-		return fmt.Errorf("%s's fragment files are a lossy render (frontmatter this dialect cannot express is dropped at write time), so they cannot flow back into the canonical store; adopt from an identity target instead, or hand-maintain the file and detach it with 'gridctl ctx unsync %s'", t.Name, slug)
+		return &adoptRefusal{
+			reason: ErrAdoptLossyRender,
+			msg:    fmt.Sprintf("%s's fragment files are a lossy render (frontmatter this dialect cannot express is dropped at write time), so they cannot flow back into the canonical store; adopt from an identity target instead, or hand-maintain the file and detach it with 'gridctl ctx unsync %s'", t.Name, slug),
+		}
+	}
+	// The fragment must exist in the canonical store: adopt updates a
+	// fragment, it never conjures one from a stray projected file.
+	if _, err := m.ReadFragment(name); err != nil {
+		return err
 	}
 
 	target := filepath.Join(fragmentTargetDir(t, m.home), fragmentFileName(t, name))
 	data, err := os.ReadFile(target)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: %s has no projected copy of fragment %s", ErrNotSynced, t.Name, name)
+		}
 		return fmt.Errorf("reading %s: %w", target, err)
 	}
 	if strings.TrimSpace(string(data)) == "" {
@@ -297,12 +316,25 @@ func (m *Manager) AdoptFragment(slug, name string) error {
 	if err != nil {
 		return err
 	}
-	return m.SaveFragment(f)
+	if err := m.SaveFragment(f); err != nil {
+		return err
+	}
+	// Non-force: the adopted fragment now byte-matches its render and
+	// converges, while other hand-edited fragments stay drift-protected.
+	_, err = m.syncClientLocked(ctx, slug, SyncOptions{})
+	return err
 }
 
 // AdoptInto captures a compiled target's whole managed body into one
-// designated fragment — the deliberate escape hatch for the refusal above.
-func (m *Manager) AdoptInto(slug, fragmentName string) error {
+// designated fragment (the deliberate escape hatch for the refusal
+// above), then force re-syncs that client so the freshly assembled
+// document replaces the hand edit it just captured.
+func (m *Manager) AdoptInto(ctx context.Context, slug, fragmentName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := ValidateFragmentName(fragmentName); err != nil {
 		return err
 	}
@@ -314,11 +346,14 @@ func (m *Manager) AdoptInto(slug, fragmentName string) error {
 		return ErrFragmentsInactive
 	}
 	if t.Strategy == StrategyImportShim {
-		return fmt.Errorf("%s uses an import shim that references the canonical file directly; there is no copied content to adopt", t.Name)
+		return adoptImportShimRefusal(t)
 	}
 	targetPath := t.targetPath(m.home)
 	data, err := os.ReadFile(targetPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: %s", ErrNotSynced, t.Name)
+		}
 		return fmt.Errorf("reading %s: %w", targetPath, err)
 	}
 	var body string
@@ -339,7 +374,13 @@ func (m *Manager) AdoptInto(slug, fragmentName string) error {
 	if strings.TrimSpace(body) == "" {
 		return fmt.Errorf("managed content in %s is empty; refusing to adopt an empty fragment", targetPath)
 	}
-	return m.SaveFragment(&Fragment{Name: fragmentName, FileName: fragmentName + ".md", Body: body})
+	if err := m.SaveFragment(&Fragment{Name: fragmentName, FileName: fragmentName + ".md", Body: body}); err != nil {
+		return err
+	}
+	// Force: the capture preserved the hand edit in the canon, so the
+	// re-assembled document (which now includes it) replaces the target.
+	_, err = m.syncClientLocked(ctx, slug, SyncOptions{Force: true})
+	return err
 }
 
 // stripSourceMarkers removes the provenance comments compose adds, so a
