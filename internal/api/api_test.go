@@ -1914,7 +1914,7 @@ func TestHandleStatus_IncludesFeatures(t *testing.T) {
 	srv := newTestServer(t)
 	srv.SetFeatures(func() []FeatureStatus {
 		return []FeatureStatus{
-			{Name: "transport_dual_stack", Stage: "experimental", Description: "test"},
+			{Name: "test_flag", Stage: "experimental", Description: "test"},
 		}
 	})
 
@@ -1930,8 +1930,8 @@ func TestHandleStatus_IncludesFeatures(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
-	if !result.Features["transport_dual_stack"] {
-		t.Errorf("features = %v, want transport_dual_stack true", result.Features)
+	if !result.Features["test_flag"] {
+		t.Errorf("features = %v, want test_flag true", result.Features)
 	}
 	if len(result.FeatureDetails) != 1 || result.FeatureDetails[0].Stage != "experimental" {
 		t.Errorf("feature_details = %+v", result.FeatureDetails)
