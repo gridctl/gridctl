@@ -247,7 +247,7 @@ export function ClientDetailPane({
       <Section
         icon={<Globe size={13} />}
         title="Context"
-        summary={contextClient ? contextClient.state : 'unknown'}
+        summary={contextClient ? contextSummary(contextClient) : 'unknown'}
         attention={
           !!contextClient && ['stale', 'drifted', 'target-missing'].includes(contextClient.state)
         }
@@ -600,4 +600,14 @@ function InlineAction({
       {label}
     </button>
   );
+}
+
+/**
+ * Section summary for the Context row: the state, plus how many fragments
+ * drifted when the per-fragment status reports any.
+ */
+function contextSummary(c: ContextClientStatus): string {
+  const drifted = (c.fragments ?? []).filter((f) => f.state === 'drifted').length;
+  if (!drifted) return c.state;
+  return `${c.state} (${drifted} fragment${drifted === 1 ? '' : 's'})`;
 }
