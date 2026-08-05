@@ -1168,9 +1168,11 @@ Registered flags:
 Semantics:
 
 - **Warnings, never errors.** An unknown flag name warns at `gridctl apply`
-  and `gridctl validate` (listing the valid names) and is ignored; a
-  graduated or removed flag name warns with a specific migration message.
-  A stack.yaml written against a newer gridctl still deploys on this one.
+  and `gridctl validate` and is ignored; the warning lists the valid names
+  when any experimental flags are registered, and says "no experimental
+  flags are registered in this build" otherwise. A graduated or removed
+  flag name warns with a specific migration message. A stack.yaml written
+  against a newer gridctl still deploys on this one.
 - **Env override.** Each flag can be overridden per process with
   `GRIDCTL_EXPERIMENTAL_<NAME>` (upper snake_case), accepting the
   `strconv.ParseBool` vocabulary: `1`, `t`, `T`, `TRUE`, `true`, `True`,
