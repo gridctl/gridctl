@@ -194,7 +194,7 @@ func TestAdoptCompiledRefusesMultiFileRequiresFragment(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--into") {
 		t.Fatalf("compiled adopt should refuse with --into hint: %v", err)
 	}
-	if err := m.AdoptInto("opencode", "captured"); err != nil {
+	if err := m.AdoptInto(ctx, "opencode", "captured"); err != nil {
 		t.Fatal(err)
 	}
 	cap, err := m.ReadFragment("captured")
@@ -209,7 +209,7 @@ func TestAdoptCompiledRefusesMultiFileRequiresFragment(t *testing.T) {
 	if err := os.WriteFile(target, []byte("# edited notes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.AdoptFragment("claude-code", "notes"); err != nil {
+	if err := m.AdoptFragment(ctx, "claude-code", "notes"); err != nil {
 		t.Fatal(err)
 	}
 	f, err := m.ReadFragment("notes")
@@ -218,6 +218,105 @@ func TestAdoptCompiledRefusesMultiFileRequiresFragment(t *testing.T) {
 	}
 	if !strings.Contains(f.Body, "edited notes") {
 		t.Fatalf("adopt did not pull edit: %q", f.Body)
+	}
+}
+
+func TestAdoptFragmentLossyRenderRefuses(t *testing.T) {
+	// vscode is multi-file capable but its render is lossy (only
+	// claude-code is identity), so per-fragment adopt must refuse with
+	// the typed reason, never silently corrupt the canonical store.
+	m := newTestManager(t, ".copilot")
+	initCanonical(t, m, "# Base\n")
+	if _, err := m.AddFragment("notes", "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := m.SyncClient(ctx, "vscode", SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := m.AdoptFragment(ctx, "vscode", "notes")
+	if err == nil {
+		t.Fatal("lossy-render adopt must refuse")
+	}
+	if !errors.Is(err, ErrAdoptLossyRender) {
+		t.Fatalf("refusal must carry ErrAdoptLossyRender, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "lossy render") {
+		t.Fatalf("refusal prose must survive the sentinel wrap: %v", err)
+	}
+}
+
+func TestAdoptRefusalsCarrySentinels(t *testing.T) {
+	m := newTestManager(t, ".claude", ".config/opencode")
+	initCanonical(t, m, "# Base\n")
+	if _, err := m.AddFragment("notes", "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// Whole-client adopt on a multi-file target: requires a fragment.
+	if err := m.Adopt(ctx, "claude-code"); !errors.Is(err, ErrAdoptRequiresFragment) {
+		t.Errorf("multi-file whole adopt = %v, want ErrAdoptRequiresFragment", err)
+	}
+	// Whole-client (or per-fragment) adopt on a compiled target: refuses
+	// without a capture fragment.
+	if err := m.Adopt(ctx, "opencode"); !errors.Is(err, ErrAdoptRefusesCompiled) {
+		t.Errorf("compiled whole adopt = %v, want ErrAdoptRefusesCompiled", err)
+	}
+	if err := m.AdoptFragment(ctx, "opencode", "notes"); !errors.Is(err, ErrAdoptRefusesCompiled) {
+		t.Errorf("compiled fragment adopt = %v, want ErrAdoptRefusesCompiled", err)
+	}
+}
+
+func TestFragmentStatusStructuredBuckets(t *testing.T) {
+	// One drifted and one stale fragment on the same client must BOTH
+	// appear in the structured Fragments field: the aggregate Detail's
+	// worst-state-wins prose hides the stale one.
+	m := newTestManager(t, ".claude")
+	initCanonical(t, m, "# Base\n")
+	if _, err := m.AddFragment("aaa", "alpha\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.AddFragment("bbb", "beta\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := m.SyncClient(ctx, "claude-code", SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Drift aaa: hand-edit the projected copy.
+	if err := os.WriteFile(filepath.Join(m.home, ".claude", "rules", "gridctl-aaa.md"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Stale bbb: change the canonical fragment after sync.
+	if err := m.SaveFragment(&Fragment{Name: "bbb", FileName: "bbb.md", Body: "beta v2\n"}); err != nil {
+		t.Fatal(err)
+	}
+
+	statuses, err := m.Statuses(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row *ClientStatus
+	for i := range statuses {
+		if statuses[i].Slug == "claude-code" {
+			row = &statuses[i]
+		}
+	}
+	if row == nil {
+		t.Fatal("no claude-code row")
+	}
+	if row.State != StateDrifted {
+		t.Errorf("aggregate state = %q, want drifted (worst wins)", row.State)
+	}
+	got := map[string]string{}
+	for _, fs := range row.Fragments {
+		got[fs.Name] = fs.State
+	}
+	if got["aaa"] != StateDrifted || got["bbb"] != StateStale {
+		t.Errorf("structured fragments = %v, want aaa drifted AND bbb stale", got)
 	}
 }
 
@@ -352,5 +451,165 @@ func TestClineFallsBackToCompiledWithoutRulesTree(t *testing.T) {
 	body := readFile(t, filepath.Join(m.home, ".agents", "AGENTS.md"))
 	if !strings.Contains(body, "Be concise.") {
 		t.Fatalf("compiled fallback did not write the block: %s", body)
+	}
+}
+
+func TestAdoptFragmentConvergesToInSync(t *testing.T) {
+	// The whole point of adopt: after pulling the edit into the canon,
+	// the client's hashes must return to in-sync, and a plain sync must
+	// not report skipped-drift on the adopted fragment.
+	m := newTestManager(t, ".claude")
+	initCanonical(t, m, "# Base\n")
+	if _, err := m.AddFragment("notes", "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := m.SyncClient(ctx, "claude-code", SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(m.home, ".claude", "rules", "gridctl-notes.md")
+	if err := os.WriteFile(target, []byte("# edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.AdoptFragment(ctx, "claude-code", "notes"); err != nil {
+		t.Fatal(err)
+	}
+
+	statuses, err := m.Statuses(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range statuses {
+		if s.Slug != "claude-code" {
+			continue
+		}
+		if s.State != StateInSync {
+			t.Fatalf("state after adopt = %q (%s), want in-sync", s.State, s.Detail)
+		}
+		if len(s.Fragments) != 0 {
+			t.Fatalf("fragments after adopt = %v, want none", s.Fragments)
+		}
+	}
+}
+
+func TestAdoptFragmentPreservesOtherDrift(t *testing.T) {
+	// Adopting fragment A must never clobber a still-drifted fragment B:
+	// the post-adopt re-sync is non-force.
+	m := newTestManager(t, ".claude")
+	initCanonical(t, m, "# Base\n")
+	if _, err := m.AddFragment("aaa", "alpha\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.AddFragment("bbb", "beta\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := m.SyncClient(ctx, "claude-code", SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(m.home, ".claude", "rules")
+	if err := os.WriteFile(filepath.Join(dir, "gridctl-aaa.md"), []byte("# edited a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gridctl-bbb.md"), []byte("# edited b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.AdoptFragment(ctx, "claude-code", "aaa"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "gridctl-bbb.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "# edited b\n" {
+		t.Fatalf("adopting aaa overwrote bbb's hand edit: %q", data)
+	}
+	f, err := m.ReadFragment("bbb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(f.Body, "edited b") {
+		t.Fatalf("bbb was adopted without being asked: %q", f.Body)
+	}
+}
+
+func TestAdoptFragmentRefusalMapping(t *testing.T) {
+	m := newTestManager(t, ".claude")
+	initCanonical(t, m, "# Base\n")
+	if _, err := m.AddFragment("notes", "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := m.SyncClient(ctx, "claude-code", SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unknown fragment: a typed not-found, never a filesystem error.
+	if err := m.AdoptFragment(ctx, "claude-code", "nope"); !errors.Is(err, ErrNoFragment) {
+		t.Errorf("unknown fragment = %v, want ErrNoFragment", err)
+	}
+	// Invalid name: rejected before it can touch a path.
+	if err := m.AdoptFragment(ctx, "claude-code", "Bad_Name"); !errors.Is(err, ErrBadFragmentName) {
+		t.Errorf("bad name = %v, want ErrBadFragmentName", err)
+	}
+	if err := m.AdoptFragment(ctx, "claude-code", "a/../../etc/x"); !errors.Is(err, ErrBadFragmentName) {
+		t.Errorf("traversal name = %v, want ErrBadFragmentName", err)
+	}
+	// Fragment exists in the store but was never projected here.
+	if _, err := m.AddFragment("unprojected", "later\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AdoptFragment(ctx, "claude-code", "unprojected"); !errors.Is(err, ErrNotSynced) {
+		t.Errorf("unprojected fragment = %v, want ErrNotSynced", err)
+	}
+}
+
+func TestAdoptIntoConvergesAndRefusesShims(t *testing.T) {
+	m := newTestManager(t, ".config/opencode", ".gemini")
+	initCanonical(t, m, "# Base\n")
+	if _, err := m.AddFragment("notes", "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := m.SyncClient(ctx, "opencode", SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Hand-edit the compiled document, then capture it.
+	path := filepath.Join(m.home, ".config", "opencode", "AGENTS.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "hello", "hello edited", 1)
+	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AdoptInto(ctx, "opencode", "captured"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The capture re-projects, so the client converges instead of
+	// reporting the drift it just resolved.
+	statuses, err := m.Statuses(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range statuses {
+		if s.Slug == "opencode" && s.State != StateInSync {
+			t.Fatalf("state after adopt into = %q (%s), want in-sync", s.State, s.Detail)
+		}
+	}
+
+	// Import shims have nothing to capture: typed refusal, not a 500.
+	if err := m.AdoptInto(ctx, "gemini", "captured"); !errors.Is(err, ErrAdoptImportShim) {
+		t.Errorf("import-shim adopt into = %v, want ErrAdoptImportShim", err)
+	}
+	// Never-synced compiled target: typed conflict.
+	if err := m.AdoptInto(ctx, "windsurf", "captured"); !errors.Is(err, ErrNotSynced) {
+		t.Errorf("never-synced adopt into = %v, want ErrNotSynced", err)
 	}
 }
