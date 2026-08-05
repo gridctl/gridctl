@@ -281,6 +281,15 @@ func (r *RPCClient) Initialize(ctx context.Context) error {
 		}
 	}
 	r.SetEra("") // re-resolve on every Initialize (Reconnect reuses the client)
+	// The previously negotiated version resets with the era: a
+	// redeployed server may have changed generation, and a stale
+	// version leaking into the re-probe's MCP-Protocol-Version header
+	// would contradict the probe's _meta, which a strict modern server
+	// rejects with -32020 instead of answering.
+	r.SetProtocolVersion("")
+	if setter, ok := r.transport.(protocolVersionSetter); ok {
+		setter.setProtocolVersion("")
+	}
 
 	switch r.generationPinValue() {
 	case GenerationHandshake:
