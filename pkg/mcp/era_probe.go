@@ -226,6 +226,23 @@ func (r *RPCClient) adoptDiscoverResult(result DiscoverResult) (bool, error) {
 	return true, nil
 }
 
+// verifyDiscoverHealth validates a health-probe discover result: the
+// peer must still answer as a stateless-era server with a mutually
+// supported version, so a generation flip (or a lax peer answering
+// junk to unknown methods) fails into the health channel instead of
+// reporting healthy on a bare RPC success.
+func verifyDiscoverHealth(result DiscoverResult) error {
+	if result.ResultType != ResultTypeComplete {
+		return fmt.Errorf("server/discover health check: resultType %q, want %q", result.ResultType, ResultTypeComplete)
+	}
+	for _, v := range result.SupportedVersions {
+		if EraOfVersion(v) == EraStateless && IsSupportedProtocolVersion(v) {
+			return nil
+		}
+	}
+	return fmt.Errorf("server/discover health check: no mutually supported stateless-era version (server: %v)", result.SupportedVersions)
+}
+
 // serverInfoFromMeta extracts the spec's serverInfo _meta key from a
 // discover result. Missing or malformed info yields a zero ServerInfo,
 // which is what lax legacy servers produce today.
