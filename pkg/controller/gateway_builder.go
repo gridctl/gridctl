@@ -1257,7 +1257,7 @@ func (b *GatewayBuilder) wireExperimentalFlags(apiServer *api.Server, handler sl
 	if handler != nil {
 		logger = slog.New(handler)
 	}
-	b.refreshExperimentalFlags(b.stack, logger)
+	b.refreshExperimentalFlags(flags.Default(), b.stack, logger)
 	apiServer.SetFeatures(func() []api.FeatureStatus {
 		state := b.experimentalFlags.Load()
 		if state == nil {
@@ -1272,8 +1272,7 @@ func (b *GatewayBuilder) wireExperimentalFlags(apiServer *api.Server, handler sl
 // the hot-reload hook so `experimental:` edits take effect without restart.
 // Resolution warnings (unknown names, concluded flags, malformed env
 // overrides) are logged; they never block anything.
-func (b *GatewayBuilder) refreshExperimentalFlags(cfg *config.Stack, logger *slog.Logger) {
-	reg := flags.Default()
+func (b *GatewayBuilder) refreshExperimentalFlags(reg *flags.Registry, cfg *config.Stack, logger *slog.Logger) {
 	res := flags.Resolve(reg, cfg.Experimental)
 	for _, w := range res.Warnings {
 		logger.Warn("experimental flag issue", "flag", w.Name, "detail", w.Message)
@@ -1400,7 +1399,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		b.refreshModelAttribution(newCfg)
 		// Re-resolve experimental flags so `experimental:` edits reach
 		// /api/status (and everything gated on a flag) without restart.
-		b.refreshExperimentalFlags(newCfg, slog.New(handler))
+		b.refreshExperimentalFlags(flags.Default(), newCfg, slog.New(handler))
 		// Rebuild the limits policy so `limits:` edits enforce on the next
 		// call. Current-window spend carries over for unchanged entries;
 		// raising a cap mid-window never refills spent budget.
