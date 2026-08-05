@@ -329,7 +329,11 @@ func (c *StdioClient) Ping(ctx context.Context) error {
 	// always-available method, so health checks use it there instead of
 	// tripping -32601 into a permanent unhealthy loop.
 	if c.Era() == EraStateless {
-		return c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion())}, nil)
+		var result DiscoverResult
+		if err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion())}, &result); err != nil {
+			return err
+		}
+		return verifyDiscoverHealth(result)
 	}
 	return c.call(ctx, "ping", nil, nil)
 }

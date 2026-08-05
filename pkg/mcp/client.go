@@ -313,7 +313,11 @@ func (c *Client) Ping(ctx context.Context) error {
 	// fails into the health channel instead of degrading as per-call
 	// tool errors.
 	if c.Era() == EraStateless {
-		return c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion())}, nil)
+		var result DiscoverResult
+		if err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion())}, &result); err != nil {
+			return err
+		}
+		return verifyDiscoverHealth(result)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", c.endpoint, nil)
