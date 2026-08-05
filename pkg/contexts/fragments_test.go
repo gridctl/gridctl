@@ -613,3 +613,50 @@ func TestAdoptIntoConvergesAndRefusesShims(t *testing.T) {
 		t.Errorf("never-synced adopt into = %v, want ErrNotSynced", err)
 	}
 }
+
+// TestFragmentStatusCarriesPackTag pins the provenance ride-along: a
+// pack-applied fragment projection reports its tag on the structured
+// per-fragment row once it needs attention (rows list non-synced
+// fragments only), and untagged fragments omit it.
+func TestFragmentStatusCarriesPackTag(t *testing.T) {
+	m := newTestManager(t, ".claude")
+	initCanonical(t, m, "# Base\n")
+	if _, err := m.AddFragment("team-style", "Use the Oxford comma.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.AddFragment("personal", "Mine.\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := m.SyncClient(ctx, "claude-code", SyncOptions{Pack: "team-pack", PackRules: []string{"team-style"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Drift both so they appear in the structured rows.
+	dir := filepath.Join(m.home, ".claude", "rules")
+	for _, f := range []string{"gridctl-team-style.md", "gridctl-personal.md"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("edited\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	statuses, err := m.Statuses(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range statuses {
+		if s.Slug != "claude-code" {
+			continue
+		}
+		got := map[string]string{}
+		for _, f := range s.Fragments {
+			got[f.Name] = f.Pack
+		}
+		if got["team-style"] != "team-pack" {
+			t.Errorf("pack-applied fragment tag = %q, want team-pack (%v)", got["team-style"], s.Fragments)
+		}
+		if got["personal"] != "" {
+			t.Errorf("untagged fragment carries a pack: %v", s.Fragments)
+		}
+	}
+}
