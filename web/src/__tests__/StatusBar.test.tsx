@@ -70,7 +70,7 @@ describe('StatusBar', () => {
   it('shows an aggregate experimental chip when flags are enabled', () => {
     useStackStore.setState({
       featureDetails: [
-        { name: 'transport_dual_stack', stage: 'experimental', description: 'd' },
+        { name: 'test_flag', stage: 'experimental', description: 'd' },
         { name: 'other_flag', stage: 'experimental', description: 'd' },
       ],
     });
