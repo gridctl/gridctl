@@ -189,14 +189,7 @@ export function ClientDetailPane({
             <div className="flex items-center gap-2 flex-wrap">
               <StatePill state={row.state} />
               <span className="text-xs text-text-primary font-mono">{row.name}</span>
-              {row.pack && (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded-full border border-secondary/25 bg-secondary/10 text-secondary"
-                  title={`Applied by pack ${row.pack}`}
-                >
-                  pack: {row.pack}
-                </span>
-              )}
+              {row.pack && <PackChip pack={row.pack} />}
               <span className="ml-auto flex items-center gap-1.5">
                 {/* Actions match what the API can actually do per state.
                     Adopt records the entry's CURRENT value, so it cannot
@@ -303,6 +296,22 @@ export function ClientDetailPane({
               )}
             </span>
           </div>
+        )}
+        {contextClient && (contextClient.fragments ?? []).length > 0 && (
+          <ul
+            className="flex flex-col gap-1 px-1 pb-1.5"
+            aria-label={`${client.name} out-of-sync context fragments`}
+          >
+            {(contextClient.fragments ?? []).map((f) => (
+              <li key={f.name} className="flex items-center gap-2">
+                <StatePill state={f.state} />
+                <span className="text-[11px] text-text-secondary font-mono truncate flex-1">
+                  {f.name}
+                </span>
+                {f.pack && <PackChip pack={f.pack} />}
+              </li>
+            ))}
+          </ul>
         )}
       </Section>
 
