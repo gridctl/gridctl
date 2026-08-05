@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { AgentsWorkspace } from '../components/registry/agents/AgentsWorkspace';
 import { AgentProjectionRows } from '../components/registry/agents/AgentProjectionRows';
@@ -213,6 +213,20 @@ describe('describeSyncResults', () => {
 });
 
 describe('AgentProjectionRows', () => {
+  it('links each projection row to its client in Connections', () => {
+    render(
+      <MemoryRouter initialEntries={['/library?kind=agent']}>
+        <AgentProjectionRows agentName="code-reviewer" statuses={[identityInSync]} onRefresh={() => {}} />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByLabelText('Open Claude Code in Connections'));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent(
+      '/connections?client=claude-code',
+    );
+  });
+
+
   it('shows the never-synced empty state with a working Sync now action', async () => {
     vi.mocked(syncAgentProjections).mockResolvedValue([]);
     render(
@@ -318,3 +332,9 @@ describe('AgentEditor', () => {
     });
   });
 });
+
+/** Renders the current location so navigation assertions read the URL. */
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location-probe">{location.pathname + location.search}</span>;
+}
