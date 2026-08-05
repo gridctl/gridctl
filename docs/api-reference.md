@@ -2180,6 +2180,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context
 
 Per-client fields: `slug`, `name`, `supported`, `available` (client detected on this machine), `experimental` (omitted when false), `strategy` (`dedicated-file`, `import-shim`, or `block`; omitted for unsupported clients), `target_path`, `state`, `detail` (human-readable reason or hint), and `synced_at` (omitted when never synced).
 
+In fragments mode, multi-file clients also carry a `fragments` array with one `{ "name", "state" }` entry per out-of-sync fragment (`stale`, `drifted`, or `target-missing`). In-sync fragments are not listed, and the array is omitted when every fragment is in sync.
+
 **State values:** `"in-sync"` | `"stale"` | `"drifted"` | `"target-missing"` | `"never-synced"` | `"unsupported"`
 
 #### `PUT /api/context`
@@ -2295,10 +2297,28 @@ Pulls a client's hand-edited managed content back into the canonical file, then 
 curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context/adopt/opencode
 ```
 
+In fragments mode the request may carry an optional JSON body that scopes the adopt. An empty or absent body keeps the whole-client behavior above.
+
+| Field | Type | Description |
+|---|---|---|
+| `fragment` | string | Adopt one projected fragment file back into its source fragment. Only valid on multi-file clients whose render is the identity render (currently `claude-code`). |
+| `into` | string | Capture a compiled (single-file) target's edited body into the named fragment, creating it when absent. Mirrors `gridctl ctx adopt <client> --into <name>`. |
+
+Passing both `fragment` and `into` is a `400`.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"fragment":"go-style"}' \
+  http://localhost:8180/api/context/adopt/claude-code
+```
+
+Both scoped forms re-sync the client after the capture, so a successful adopt returns the document with that client back `in-sync` (other clients become `stale`).
+
 **Errors:**
-- `400` - Unsupported client
-- `404` - Unknown client slug, or no canonical file exists
-- `409` - Client was never synced or is not available
+- `400` - Unsupported client, both `fragment` and `into` supplied, or an invalid `fragment` or `into` name
+- `404` - Unknown client slug, no canonical file exists, or an unknown fragment
+- `409` - Client was never synced or is not available; whole-client adopt on a multi-file target (adopt per fragment instead); per-fragment adopt on a lossy render; compiled target without `into`; import-shim target (nothing is copied); `fragment` or `into` while fragments mode is off. The body carries the engine's reason.
 
 #### `POST /api/context/unsync/{slug}`
 
