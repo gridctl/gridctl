@@ -676,15 +676,15 @@ func runCtxAdopt(ctx context.Context, w io.Writer, mgr *contexts.Manager, slug, 
 		return fmt.Errorf("pass either a fragment name or --into, not both")
 	}
 	if into != "" {
-		if err := mgr.AdoptInto(slug, into); err != nil {
+		if err := mgr.AdoptInto(ctx, slug, into); err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "✓ Captured %s's managed content into fragment %q\n", slug, into)
-		fmt.Fprintln(w, "Run 'gridctl ctx sync' to re-project.")
+		fmt.Fprintf(w, "✓ Captured %s's managed content into fragment %q and re-projected it\n", slug, into)
+		fmt.Fprintln(w, "Other synced clients may be stale; run 'gridctl ctx sync' to propagate.")
 		return nil
 	}
 	if fragment != "" {
-		if err := mgr.AdoptFragment(slug, fragment); err != nil {
+		if err := mgr.AdoptFragment(ctx, slug, fragment); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "✓ Adopted %s's %s into fragment %q\n", slug, fragment, fragment)

@@ -44,10 +44,16 @@ import {
   type ContextClientStatus,
   type ContextDoc,
   type ContextFragment,
+  type ContextFragmentStatus,
   type ContextScanEntry,
   type ContextState,
   type ContextSyncResult,
 } from '../../lib/api';
+
+// Mirrors pkg/contexts/fragment_render.go: only Claude Code's rule-file
+// dialect is a byte-identical projection of the source fragments, so only
+// it can adopt a hand edit back. Every other multi-file dialect is lossy.
+const IDENTITY_RENDER_SLUGS = new Set(['claude-code']);
 
 // Strings the managed-block parser treats as boundaries; the backend
 // rejects canonical content containing them, so the editor flags them
@@ -60,11 +66,27 @@ const RESERVED_MARKERS = [
 
 interface GlobalContextDialogProps {
   isOpen: boolean;
-  /** Open the drift review for this client slug once the doc loads (the
-   *  Connections hub's Review deep link). Single-file mode only:
-   *  fragments-mode review is per-fragment and stays in-dialog. */
+  /** Land on this client's drift review once the doc loads (the
+   *  Connections hub's Review deep link). In fragments mode the client's
+   *  row is spotlighted, and the review opens directly when the target
+   *  is unambiguous (compiled, or exactly one drifted fragment). */
   initialDriftSlug?: string | null;
   onClose: () => void;
+}
+
+/**
+ * Render-time deep-link seeding: run the seed exactly once per distinct
+ * non-null initial value, during render, so the first paint already
+ * reflects the deep link. Extracted into a hook because hand-copying the
+ * adjust block between views has broken this file before.
+ */
+function useDriftSeed(initial: string | null | undefined, seed: (slug: string) => void) {
+  const [seeded, setSeeded] = useState<string | null>(null);
+  const value = initial ?? null;
+  if (value !== seeded) {
+    setSeeded(value);
+    if (value) seed(value);
+  }
 }
 
 /**
@@ -100,7 +122,9 @@ export function GlobalContextDialog({ isOpen, onClose, initialDriftSlug = null }
       )}
       {/* Fragments mode replaces the canonical file entirely, so it must
           route before the exists check (the store is a directory now). */}
-      {doc && doc.fragments_active && <FragmentsView doc={doc} refreshError={error} />}
+      {doc && doc.fragments_active && (
+        <FragmentsView doc={doc} refreshError={error} initialDriftSlug={initialDriftSlug} />
+      )}
       {doc && !doc.fragments_active && !doc.canonical.exists && <SetupView />}
       {doc && !doc.fragments_active && doc.canonical.exists && (
         <EditorView doc={doc} refreshError={error} initialDriftSlug={initialDriftSlug} />
@@ -372,19 +396,13 @@ function EditorView({
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [driftSlug, setDriftSlug] = useState<string | null>(null);
-  // Seed the drift review once from a caller's deep link (render-time
-  // adjust; only when that client is actually drifted, so a stale link
-  // never opens an empty review).
-  const [seededDriftSlug, setSeededDriftSlug] = useState<string | null>(null);
-  if (initialDriftSlug !== seededDriftSlug) {
-    setSeededDriftSlug(initialDriftSlug);
-    if (
-      initialDriftSlug &&
-      doc.clients.some((c) => c.slug === initialDriftSlug && c.state === 'drifted')
-    ) {
-      setDriftSlug(initialDriftSlug);
+  // Seed the drift review once from a caller's deep link; only when that
+  // client is actually drifted, so a stale link never opens an empty review.
+  useDriftSeed(initialDriftSlug, (slug) => {
+    if (doc.clients.some((c) => c.slug === slug && c.state === 'drifted')) {
+      setDriftSlug(slug);
     }
-  }
+  });
   const [showImport, setShowImport] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
@@ -685,9 +703,12 @@ const ATTENTION_STATES: ContextState[] = ['drifted', 'stale', 'target-missing'];
 function ClientsStrip({
   clients,
   onReviewDrift,
+  spotlightSlug = null,
 }: {
   clients: ContextClientStatus[];
-  onReviewDrift: (slug: string) => void;
+  onReviewDrift: (slug: string, fragment?: string) => void;
+  /** Deep-link target: this client's row starts expanded and scrolled into view. */
+  spotlightSlug?: string | null;
 }) {
   const needsAttention = clients.some((c) => ATTENTION_STATES.includes(c.state));
   const [expanded, setExpanded] = useState(needsAttention);
@@ -732,7 +753,12 @@ function ClientsStrip({
       {expanded && (
         <ul className="divide-y divide-border/20 max-h-56 overflow-y-auto scrollbar-dark border-t border-border/20">
           {clients.map((c) => (
-            <ClientRow key={c.slug} client={c} onReviewDrift={onReviewDrift} />
+            <ClientRow
+              key={c.slug}
+              client={c}
+              onReviewDrift={onReviewDrift}
+              spotlight={c.slug === spotlightSlug}
+            />
           ))}
         </ul>
       )}
@@ -740,16 +766,36 @@ function ClientsStrip({
   );
 }
 
-/** One client's row with inline actions. */
+/**
+ * One client's row with inline actions. In fragments mode a multi-file
+ * row with non-synced fragments grows a chevron that expands one line per
+ * fragment (StatePill, name, and Review on drifted lines), so a drifted
+ * fragment can never hide a stale one behind the summary.
+ */
 function ClientRow({
   client: c,
   onReviewDrift,
+  spotlight = false,
 }: {
   client: ContextClientStatus;
-  onReviewDrift: (slug: string) => void;
+  onReviewDrift: (slug: string, fragment?: string) => void;
+  spotlight?: boolean;
 }) {
   const refresh = useContextStore((s) => s.refresh);
   const [busy, setBusy] = useState(false);
+  const fragments = c.fragments ?? [];
+  const [expanded, setExpanded] = useState(spotlight && fragments.length > 0);
+  // A spotlighted row whose fragments arrive after mount (the deep link
+  // landed on a stale doc) still expands when the refresh delivers them.
+  const [hadFragments, setHadFragments] = useState(fragments.length > 0);
+  if ((fragments.length > 0) !== hadFragments) {
+    setHadFragments(fragments.length > 0);
+    if (spotlight && fragments.length > 0) setExpanded(true);
+  }
+  const rowRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (spotlight) rowRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [spotlight]);
 
   const act = useCallback(
     async (fn: () => Promise<unknown>, okMessage: string) => {
@@ -768,7 +814,18 @@ function ClientRow({
   );
 
   return (
-    <li className="flex items-center gap-2.5 px-5 py-2">
+    <li ref={rowRef} className="px-5 py-2">
+      <div className="flex items-center gap-2.5">
+      {fragments.length > 0 && (
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${c.name} fragments`}
+          className="p-0.5 -ml-1 rounded text-text-muted hover:text-text-primary transition-colors flex-shrink-0"
+        >
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+      )}
       <StatePill state={c.state} />
       {c.mode && (
         <span
@@ -808,6 +865,47 @@ function ClientRow({
           />
         )}
       </span>
+      </div>
+      {expanded && fragments.length > 0 && (
+        <ul className="mt-1.5 ml-6 flex flex-col gap-1" aria-label={`${c.name} fragments`}>
+          {fragments.map((f) => (
+            <FragmentStatusLine
+              key={`${c.slug}:${f.name}`}
+              clientSlug={c.slug}
+              fragment={f}
+              busy={busy}
+              onReviewDrift={onReviewDrift}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/** One non-synced fragment line under an expanded multi-file client row. */
+function FragmentStatusLine({
+  clientSlug,
+  fragment: f,
+  busy,
+  onReviewDrift,
+}: {
+  clientSlug: string;
+  fragment: ContextFragmentStatus;
+  busy: boolean;
+  onReviewDrift: (slug: string, fragment?: string) => void;
+}) {
+  return (
+    <li className="flex items-center gap-2">
+      <StatePill state={f.state} />
+      <span className="text-[11px] text-text-secondary font-mono truncate flex-1">{f.name}</span>
+      {f.state === 'drifted' && (
+        <ClientAction
+          label="Review"
+          disabled={busy}
+          onClick={() => onReviewDrift(clientSlug, f.name)}
+        />
+      )}
     </li>
   );
 }
@@ -935,6 +1033,305 @@ function DriftResolveDialog({
   );
 }
 
+/**
+ * Fragments-mode drift review, three honest cases keyed off the client's
+ * mode and render class:
+ *  - identity multi-file (Claude Code): per-fragment diff with a lossless
+ *    Adopt; multiple drifted fragments select via a mini-list in the same
+ *    modal, never stacked dialogs.
+ *  - lossy multi-file: same rows and diff, no Adopt affordance at all;
+ *    the reason and the real alternatives are stated as visible prose.
+ *  - compiled: whole-document diff plus capture-into-fragment, the UI form
+ *    of the engine's designated-capture-fragment adopt.
+ * Force overwrite (canonical wins) and Cancel are always available.
+ */
+function FragmentDriftResolveDialog({
+  client,
+  fragmentNames,
+  initialFragment,
+  onClose,
+  onResolved,
+}: {
+  client: ContextClientStatus;
+  fragmentNames: string[];
+  initialFragment: string | null;
+  onClose: () => void;
+  onResolved: () => void;
+}) {
+  const multiFile = client.mode === 'multi-file';
+  const identity = multiFile && IDENTITY_RENDER_SLUGS.has(client.slug);
+  const drifted = (client.fragments ?? []).filter((f) => f.state === 'drifted');
+  const [selected, setSelected] = useState<string | null>(
+    multiFile ? (initialFragment ?? drifted[0]?.name ?? null) : null,
+  );
+  // Diff text keyed by its request, so switching fragments derives back to
+  // the loading state instead of flashing the previous fragment's diff.
+  const diffKey = `${client.slug}:${multiFile ? (selected ?? '') : ''}`;
+  const [diffState, setDiffState] = useState<{ key: string; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (multiFile && !selected) return;
+    fetchGlobalContextDiff(client.slug, multiFile ? (selected ?? undefined) : undefined)
+      .then((d) => {
+        if (!cancelled) setDiffState({ key: diffKey, text: d });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setDiffState({ key: diffKey, text: err instanceof Error ? err.message : 'Diff unavailable' });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client.slug, multiFile, selected, diffKey]);
+
+  const diff = diffState?.key === diffKey ? diffState.text : null;
+
+  const run = useCallback(
+    async (fn: () => Promise<unknown>, okMessage: string) => {
+      setBusy(true);
+      try {
+        await fn();
+        showToast('success', okMessage);
+        onResolved();
+      } catch (err) {
+        showToast('error', err instanceof Error ? err.message : 'Action failed');
+        setBusy(false);
+      }
+    },
+    [onResolved],
+  );
+
+  const handleOverwrite = () =>
+    void run(
+      () => syncGlobalContext({ clients: [client.slug], force: true }),
+      `${client.name} restored from the canonical store`,
+    );
+
+  const title = multiFile
+    ? `${selected ?? 'fragments'} in ${client.name} was edited`
+    : `${client.name} was edited`;
+
+  return (
+    <Modal isOpen onClose={onClose} title={title} size="wide">
+      <div className="flex gap-4">
+        {multiFile && drifted.length > 1 && (
+          <ul className="w-44 flex-shrink-0 flex flex-col gap-1" aria-label="Drifted fragments">
+            {drifted.map((f) => (
+              <li key={f.name}>
+                <button
+                  onClick={() => setSelected(f.name)}
+                  aria-current={selected === f.name ? 'true' : undefined}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-2 py-1.5 rounded-lg border text-left transition-colors',
+                    selected === f.name
+                      ? 'border-primary/40 bg-primary/10'
+                      : 'border-border/40 hover:bg-surface-highlight',
+                  )}
+                >
+                  <StatePill state={f.state} />
+                  <span className="text-[11px] font-mono text-text-primary truncate">{f.name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex flex-col gap-3 min-w-0 flex-1">
+          {multiFile && identity && (
+            <p className="text-xs text-text-muted">
+              The projected copy of this fragment in {client.name}'s rules directory differs
+              from the canonical store. Adopt the edit to make it the fragment's new content,
+              or overwrite the client to restore the canon. A timestamped backup precedes
+              every write.
+            </p>
+          )}
+          {multiFile && !identity && (
+            <p className="text-xs text-text-muted" data-testid="lossy-reason">
+              {client.name}'s rule files are a lossy render of the source fragments
+              (frontmatter its dialect cannot express is dropped at write time), so this edit
+              cannot flow back automatically. Re-apply the change to the source fragment in
+              the editor, or force overwrite to restore the projected copy from the canon.
+            </p>
+          )}
+          {!multiFile && (
+            <p className="text-xs text-text-muted">
+              {client.name} receives one assembled document compiled from{' '}
+              {fragmentNames.length > 0
+                ? `${fragmentNames.length} fragment${fragmentNames.length === 1 ? '' : 's'}`
+                : 'your rule fragments'}
+              , so the edit cannot be split back automatically. Capture the edited document
+              into a fragment to keep it, or overwrite the client to restore the assembled
+              canon. A timestamped backup precedes every write.
+            </p>
+          )}
+          <pre className="text-[11px] font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto max-h-72 overflow-y-auto scrollbar-dark whitespace-pre">
+            {diff ?? 'Loading diff…'}
+          </pre>
+          {multiFile ? (
+            <div className="flex items-center justify-end gap-2">
+              <DialogButton label="Cancel" onClick={onClose} disabled={busy} variant="muted" />
+              {identity && selected && (
+                <DialogButton
+                  label={`Adopt ${selected}`}
+                  disabled={busy}
+                  variant="primary"
+                  onClick={() =>
+                    void run(
+                      () => adoptGlobalContext(client.slug, { fragment: selected }),
+                      `Adopted "${selected}" from ${client.name} into the canonical store`,
+                    )
+                  }
+                />
+              )}
+              <DialogButton
+                label="Force overwrite"
+                disabled={busy}
+                variant="danger"
+                onClick={handleOverwrite}
+              />
+            </div>
+          ) : (
+            <CompiledCaptureActions
+              fragmentNames={fragmentNames}
+              busy={busy}
+              onCapture={(into) =>
+                void run(
+                  () => adoptGlobalContext(client.slug, { into }),
+                  `Captured ${client.name}'s edit into fragment "${into}"`,
+                )
+              }
+              onOverwrite={handleOverwrite}
+              onClose={onClose}
+            />
+          )}
+          {multiFile && (
+            <p className="text-[11px] text-text-muted">
+              Force overwrite rewrites every projected fragment from the canonical store;
+              fragments you did not touch rewrite identically.
+            </p>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Capture picker for compiled targets: choose an existing fragment or name
+ * a new one, then adopt the edited document into it.
+ */
+function CompiledCaptureActions({
+  fragmentNames,
+  busy,
+  onCapture,
+  onOverwrite,
+  onClose,
+}: {
+  fragmentNames: string[];
+  busy: boolean;
+  onCapture: (into: string) => void;
+  onOverwrite: () => void;
+  onClose: () => void;
+}) {
+  const NEW_FRAGMENT = '__new__';
+  const [choice, setChoice] = useState(fragmentNames[0] ?? NEW_FRAGMENT);
+  const [newName, setNewName] = useState('');
+  // The fragment list can arrive after mount (deep link opens the dialog
+  // before the rail load resolves); re-default the untouched picker.
+  const [hadNames, setHadNames] = useState(fragmentNames.length > 0);
+  if ((fragmentNames.length > 0) !== hadNames) {
+    setHadNames(fragmentNames.length > 0);
+    if (choice === NEW_FRAGMENT && newName === '' && fragmentNames.length > 0) {
+      setChoice(fragmentNames[0]);
+    }
+  }
+  const isNew = choice === NEW_FRAGMENT;
+  const target = isNew ? newName : choice;
+  const valid = FRAGMENT_NAME_RE.test(target);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <label htmlFor="capture-fragment" className="text-[11px] text-text-muted">
+          Capture into
+        </label>
+        <select
+          id="capture-fragment"
+          value={choice}
+          onChange={(e) => setChoice(e.target.value)}
+          className="bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-[11px] font-mono text-text-primary focus:outline-none focus:border-primary/50"
+        >
+          {fragmentNames.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+          <option value={NEW_FRAGMENT}>New fragment…</option>
+        </select>
+        {isNew && (
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="captured-from-client"
+            aria-label="New capture fragment name"
+            className="flex-1 min-w-32 bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-[11px] font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+          />
+        )}
+      </div>
+      {isNew && newName && !valid && (
+        <p className="text-[11px] text-status-error">
+          Lowercase letters, digits, and hyphens only.
+        </p>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        <DialogButton label="Cancel" onClick={onClose} disabled={busy} variant="muted" />
+        <DialogButton
+          label={valid ? `Capture into ${target}` : 'Capture'}
+          disabled={busy || !valid}
+          variant="primary"
+          onClick={() => onCapture(target)}
+        />
+        <DialogButton
+          label="Force overwrite"
+          disabled={busy}
+          variant="danger"
+          onClick={onOverwrite}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DialogButton({
+  label,
+  onClick,
+  disabled,
+  variant,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  variant: 'muted' | 'primary' | 'danger';
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'px-3 py-1.5 text-xs rounded-lg border transition-colors disabled:opacity-50',
+        variant === 'muted' && 'text-text-muted border-border/40 hover:bg-surface-highlight',
+        variant === 'primary' &&
+          'font-medium text-primary bg-primary/10 border-primary/25 hover:bg-primary/15',
+        variant === 'danger' && 'font-medium text-red-400 border-red-400/25 hover:bg-red-400/10',
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 // Mirrors the backend's fragment-name rule so a bad name fails in the
 // input, not as a server error.
 const FRAGMENT_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
@@ -1019,15 +1416,42 @@ function SplitIntoFragmentsDialog({ dirty, onClose }: { dirty: boolean; onClose:
  * order (adapting SkillFileTree's grammar) feeding the same editor and
  * preview split the single-file view uses, over the shared clients strip.
  */
-function FragmentsView({ doc, refreshError }: { doc: ContextDoc; refreshError: string | null }) {
+function FragmentsView({
+  doc,
+  refreshError,
+  initialDriftSlug = null,
+}: {
+  doc: ContextDoc;
+  refreshError: string | null;
+  initialDriftSlug?: string | null;
+}) {
   const refresh = useContextStore((s) => s.refresh);
   const [fragments, setFragments] = useState<ContextFragment[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [driftSlug, setDriftSlug] = useState<string | null>(null);
+  const [driftTarget, setDriftTarget] = useState<{ slug: string; fragment: string | null } | null>(
+    null,
+  );
+  const [spotlightSlug, setSpotlightSlug] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
+
+  // Deep link from the Connections hub: spotlight the client's row, and
+  // open the review directly only when the target is unambiguous (compiled
+  // client, or exactly one drifted fragment). Otherwise the expanded
+  // fragment lines are the picker.
+  useDriftSeed(initialDriftSlug, (slug) => {
+    const c = doc.clients.find((cl) => cl.slug === slug);
+    if (!c) return;
+    if (c.mode === 'multi-file') {
+      setSpotlightSlug(slug);
+      const drifted = (c.fragments ?? []).filter((f) => f.state === 'drifted');
+      if (drifted.length === 1) setDriftTarget({ slug, fragment: drifted[0].name });
+    } else if (c.state === 'drifted') {
+      setDriftTarget({ slug, fragment: null });
+    }
+  });
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -1116,7 +1540,17 @@ function FragmentsView({ doc, refreshError }: { doc: ContextDoc; refreshError: s
     setSyncing(true);
     try {
       const resp = await syncGlobalContext();
-      showToast(resp.has_failures ? 'warning' : 'success', summarizeSync(resp.results));
+      // Name the fragments a drift skip protected, not just a count. The
+      // results themselves carry the fragment identity, so the names are
+      // exact even when the doc in the store is stale.
+      const driftedNames = new Set<string>();
+      for (const r of resp.results) {
+        if (r.action === 'skipped-drift' && r.fragment) driftedNames.add(r.fragment);
+      }
+      showToast(
+        resp.has_failures ? 'warning' : 'success',
+        summarizeSync(resp.results, [...driftedNames]),
+      );
       await refresh();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Sync failed');
@@ -1250,7 +1684,11 @@ function FragmentsView({ doc, refreshError }: { doc: ContextDoc; refreshError: s
         </div>
       )}
 
-      <ClientsStrip clients={doc.clients} onReviewDrift={setDriftSlug} />
+      <ClientsStrip
+        clients={doc.clients}
+        onReviewDrift={(slug, fragment) => setDriftTarget({ slug, fragment: fragment ?? null })}
+        spotlightSlug={spotlightSlug}
+      />
 
       <div className="flex-1 flex min-h-0">
         <FragmentRail
@@ -1259,6 +1697,7 @@ function FragmentsView({ doc, refreshError }: { doc: ContextDoc; refreshError: s
           onSelect={handleSelect}
           onAdd={handleAdd}
           onDelete={handleDelete}
+          outOfSync={fragmentOutOfSync(doc.clients)}
         />
 
         {/* Editor area, identical grammar to the single-file view */}
@@ -1340,19 +1779,42 @@ function FragmentsView({ doc, refreshError }: { doc: ContextDoc; refreshError: s
         </div>
       </div>
 
-      {driftSlug && (
-        <DriftResolveDialog
-          slug={driftSlug}
-          name={doc.clients.find((c) => c.slug === driftSlug)?.name ?? driftSlug}
-          onClose={() => setDriftSlug(null)}
-          onResolved={() => {
-            setDriftSlug(null);
-            void refresh();
-          }}
-        />
-      )}
+      {driftTarget &&
+        (() => {
+          const client = doc.clients.find((c) => c.slug === driftTarget.slug);
+          if (!client) return null;
+          return (
+            <FragmentDriftResolveDialog
+              client={client}
+              fragmentNames={(fragments ?? []).map((f) => f.name)}
+              initialFragment={driftTarget.fragment}
+              onClose={() => setDriftTarget(null)}
+              onResolved={() => {
+                setDriftTarget(null);
+                void loadFragments();
+                void refresh();
+              }}
+            />
+          );
+        })()}
     </div>
   );
+}
+
+/**
+ * Which clients hold a non-synced copy of each fragment, for the rail's
+ * display-only drift dots.
+ */
+function fragmentOutOfSync(clients: ContextClientStatus[]): Map<string, string[]> {
+  const byFragment = new Map<string, string[]>();
+  for (const c of clients) {
+    for (const f of c.fragments ?? []) {
+      const names = byFragment.get(f.name) ?? [];
+      names.push(c.name);
+      byFragment.set(f.name, names);
+    }
+  }
+  return byFragment;
 }
 
 /**
@@ -1366,12 +1828,15 @@ function FragmentRail({
   onSelect,
   onAdd,
   onDelete,
+  outOfSync,
 }: {
   fragments: ContextFragment[] | null;
   selected: string | null;
   onSelect: (name: string) => void;
   onAdd: (name: string) => void;
   onDelete: (name: string) => void;
+  /** Fragment name to client names holding a non-synced copy (drift dots). */
+  outOfSync?: Map<string, string[]>;
 }) {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
@@ -1442,6 +1907,14 @@ function FragmentRail({
               >
                 {f.name}
               </button>
+              {(outOfSync?.get(f.name) ?? []).length > 0 && (
+                <span
+                  role="img"
+                  aria-label={`Out of sync in ${(outOfSync?.get(f.name) ?? []).join(', ')}`}
+                  title={`Out of sync in ${(outOfSync?.get(f.name) ?? []).join(', ')}`}
+                  className="w-1.5 h-1.5 rounded-full bg-status-pending flex-shrink-0"
+                />
+              )}
               {(f.paths ?? []).length > 0 && (
                 <span
                   title={`paths: ${(f.paths ?? []).join(', ')}`}
@@ -1467,8 +1940,11 @@ function FragmentRail({
   );
 }
 
-/** One-line summary of a sync pass for the toast. */
-function summarizeSync(results: ContextSyncResult[]): string {
+/**
+ * One-line summary of a sync pass for the toast. In fragments mode the
+ * caller can name the fragments a drift skip protected.
+ */
+function summarizeSync(results: ContextSyncResult[], driftedFragments?: string[]): string {
   const counts: Record<string, number> = {};
   for (const r of results) counts[r.action] = (counts[r.action] ?? 0) + 1;
   const parts: string[] = [];
@@ -1476,7 +1952,13 @@ function summarizeSync(results: ContextSyncResult[]): string {
   if (written) parts.push(`${written} synced`);
   if (counts['unchanged']) parts.push(`${counts['unchanged']} unchanged`);
   if (counts['removed']) parts.push(`${counts['removed']} removed`);
-  if (counts['skipped-drift']) parts.push(`${counts['skipped-drift']} skipped (drifted)`);
+  if (counts['skipped-drift']) {
+    parts.push(
+      driftedFragments?.length
+        ? `${counts['skipped-drift']} skipped (drifted: ${driftedFragments.join(', ')})`
+        : `${counts['skipped-drift']} skipped (drifted)`,
+    );
+  }
   if (counts['skipped-unavailable']) parts.push(`${counts['skipped-unavailable']} unavailable`);
   if (counts['error']) parts.push(`${counts['error']} failed`);
   return parts.length ? `Sync: ${parts.join(', ')}` : 'Nothing to sync';

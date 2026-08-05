@@ -2616,6 +2616,12 @@ export type ContextState =
 /** How a client receives the context; absent while fragments mode is off. */
 export type ContextMode = 'single-file' | 'multi-file' | 'compiled';
 
+/** One out-of-sync fragment on a multi-file client. */
+export interface ContextFragmentStatus {
+  name: string;
+  state: ContextState;
+}
+
 export interface ContextClientStatus {
   slug: string;
   name: string;
@@ -2628,6 +2634,9 @@ export interface ContextClientStatus {
   state: ContextState;
   detail?: string;
   synced_at?: string;
+  /** Every non-synced fragment with its own state; multi-file clients
+   *  only, omitted when all fragments are in sync. */
+  fragments?: ContextFragmentStatus[];
 }
 
 export interface ContextDoc {
@@ -2659,6 +2668,8 @@ export interface ContextSyncResult {
   slug: string;
   name: string;
   strategy: string;
+  /** Set on per-fragment rows from multi-file targets in fragments mode. */
+  fragment?: string;
   target_path: string;
   action: string;
   backup_path?: string;
@@ -2713,9 +2724,21 @@ export async function syncGlobalContext(opts?: {
   });
 }
 
-/** Pull a client's managed content back into the canon. POST /api/context/adopt/{slug} */
-export async function adoptGlobalContext(slug: string): Promise<ContextDoc> {
-  return mutateJSON<ContextDoc>(`/api/context/adopt/${encodeURIComponent(slug)}`, 'POST');
+/**
+ * Pull a client's managed content back into the canon.
+ * POST /api/context/adopt/{slug}. In fragments mode, `fragment` adopts one
+ * projected file on an identity multi-file target, and `into` captures a
+ * compiled target's edited body into the named fragment. No opts keeps the
+ * whole-client behavior.
+ */
+export async function adoptGlobalContext(
+  slug: string,
+  opts?: { fragment?: string; into?: string },
+): Promise<ContextDoc> {
+  const url = `/api/context/adopt/${encodeURIComponent(slug)}`;
+  if (opts?.fragment) return mutateJSON<ContextDoc>(url, 'POST', { fragment: opts.fragment });
+  if (opts?.into) return mutateJSON<ContextDoc>(url, 'POST', { into: opts.into });
+  return mutateJSON<ContextDoc>(url, 'POST');
 }
 
 /** Remove a client's managed artifact. POST /api/context/unsync/{slug} */
@@ -2723,9 +2746,15 @@ export async function unsyncGlobalContext(slug: string): Promise<void> {
   await mutateJSON<unknown>(`/api/context/unsync/${encodeURIComponent(slug)}`, 'POST');
 }
 
-/** Canonical-vs-target unified diff. GET /api/context/diff/{slug} */
-export async function fetchGlobalContextDiff(slug: string): Promise<string> {
-  const body = await fetchJSON<{ diff: string }>(`/api/context/diff/${encodeURIComponent(slug)}`);
+/**
+ * Canonical-vs-target unified diff. GET /api/context/diff/{slug}.
+ * With `fragment`, diffs one projected fragment file on a multi-file client.
+ */
+export async function fetchGlobalContextDiff(slug: string, fragment?: string): Promise<string> {
+  const query = fragment ? `?fragment=${encodeURIComponent(fragment)}` : '';
+  const body = await fetchJSON<{ diff: string }>(
+    `/api/context/diff/${encodeURIComponent(slug)}${query}`,
+  );
   return body.diff;
 }
 

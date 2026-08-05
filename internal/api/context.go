@@ -46,6 +46,18 @@ func contextErrorStatus(err error, unknownStatus int) int {
 	case errors.Is(err, contexts.ErrNotAvailable), errors.Is(err, contexts.ErrNotSynced),
 		errors.Is(err, contexts.ErrCanonicalExists):
 		return http.StatusConflict
+	// Adopt refusals: user-actionable conflicts whose message the UI
+	// renders verbatim (the prose names the alternatives).
+	case errors.Is(err, contexts.ErrAdoptRequiresFragment),
+		errors.Is(err, contexts.ErrAdoptRefusesCompiled),
+		errors.Is(err, contexts.ErrAdoptLossyRender),
+		errors.Is(err, contexts.ErrAdoptImportShim),
+		errors.Is(err, contexts.ErrFragmentsInactive):
+		return http.StatusConflict
+	case errors.Is(err, contexts.ErrNoFragment):
+		return http.StatusNotFound
+	case errors.Is(err, contexts.ErrBadFragmentName):
+		return http.StatusBadRequest
 	case errors.Is(err, contexts.ErrNoCanonical):
 		return http.StatusNotFound
 	default:
@@ -244,6 +256,12 @@ func (s *Server) handleContextSync(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleContextAdopt pulls a client's managed content into the canon.
+// The optional body scopes the adopt in fragments mode: `fragment` does
+// a lossless per-fragment adopt (identity multi-file targets only), and
+// `into` captures a compiled target's whole managed body into one
+// designated fragment (the CLI's `ctx adopt <client> [fragment]` and
+// `--into` shapes, one to one). An absent or empty body keeps the
+// original whole-client semantics.
 // POST /api/context/adopt/{slug}
 func (s *Server) handleContextAdopt(w http.ResponseWriter, r *http.Request) {
 	mgr, err := s.contextsMgr()
@@ -252,7 +270,29 @@ func (s *Server) handleContextAdopt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	if err := mgr.Adopt(r.Context(), slug); err != nil {
+
+	var req struct {
+		Fragment string `json:"fragment,omitempty"`
+		Into     string `json:"into,omitempty"`
+	}
+	if err := decodeOptionalBody(r, &req); err != nil {
+		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Fragment != "" && req.Into != "" {
+		writeJSONError(w, "pass either fragment or into, not both", http.StatusBadRequest)
+		return
+	}
+
+	switch {
+	case req.Fragment != "":
+		err = mgr.AdoptFragment(r.Context(), slug, req.Fragment)
+	case req.Into != "":
+		err = mgr.AdoptInto(r.Context(), slug, req.Into)
+	default:
+		err = mgr.Adopt(r.Context(), slug)
+	}
+	if err != nil {
 		writeJSONError(w, err.Error(), contextErrorStatus(err, http.StatusNotFound))
 		return
 	}

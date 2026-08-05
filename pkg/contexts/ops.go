@@ -57,6 +57,18 @@ type ClientStatus struct {
 	State      string     `json:"state"`
 	Detail     string     `json:"detail,omitempty"`
 	SyncedAt   *time.Time `json:"synced_at,omitempty"`
+	// Fragments lists every non-synced fragment with its own state, for
+	// multi-file targets only. The aggregate State/Detail keep their
+	// worst-state-wins prose (a drifted fragment would otherwise hide a
+	// stale one from any structured consumer).
+	Fragments []FragmentStatus `json:"fragments,omitempty"`
+}
+
+// FragmentStatus is one fragment's projection state on one multi-file
+// client.
+type FragmentStatus struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
 }
 
 // SyncOptions configure a sync pass.
@@ -788,11 +800,13 @@ func (m *Manager) Adopt(ctx context.Context, slug string) error {
 			return err
 		}
 		if m.usesMultiFile(t) {
-			return fmt.Errorf("%s projects fragments as individual files; adopt one with 'gridctl ctx adopt %s <fragment>'", t.Name, slug)
+			return &adoptRefusal{
+				reason: ErrAdoptRequiresFragment,
+				msg:    fmt.Sprintf("%s projects fragments as individual files; adopt one with 'gridctl ctx adopt %s <fragment>'", t.Name, slug),
+			}
 		}
-		// Compiled: refuse wholesale collapse into a single canon.
-		// Drop the lock so AdoptFragment/AdoptInto path messages stay
-		// consistent (AdoptInto is the escape hatch).
+		// Compiled: refuse wholesale collapse into a single canon
+		// (AdoptInto is the escape hatch).
 		return m.adoptCompiledRefusal(t)
 	}
 	t, err := resolveTarget(slug)
@@ -800,7 +814,7 @@ func (m *Manager) Adopt(ctx context.Context, slug string) error {
 		return err
 	}
 	if t.Strategy == StrategyImportShim {
-		return fmt.Errorf("%s uses an import shim that references the canonical file directly; there is no copied content to adopt", t.Name)
+		return adoptImportShimRefusal(t)
 	}
 	lf, err := m.loadView(ctx)
 	if err != nil {
@@ -851,8 +865,11 @@ func (m *Manager) adoptCompiledRefusal(t Target) error {
 	for _, f := range fragments {
 		names = append(names, f.Name)
 	}
-	return fmt.Errorf("%s receives a compiled document assembled from %d fragments (%s); adopting it wholesale would collapse them into one. Edit the fragment directly with 'gridctl ctx edit <fragment>', or capture the whole file deliberately with 'gridctl ctx adopt %s --into <fragment>'",
-		t.Name, len(names), strings.Join(names, ", "), t.Slug)
+	return &adoptRefusal{
+		reason: ErrAdoptRefusesCompiled,
+		msg: fmt.Sprintf("%s receives a compiled document assembled from %d fragments (%s); adopting it wholesale would collapse them into one. Edit the fragment directly with 'gridctl ctx edit <fragment>', or capture the whole file deliberately with 'gridctl ctx adopt %s --into <fragment>'",
+			t.Name, len(names), strings.Join(names, ", "), t.Slug),
+	}
 }
 
 // Unsync removes one client's managed artifact and clears its lock entry.
