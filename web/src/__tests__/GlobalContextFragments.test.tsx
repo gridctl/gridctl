@@ -211,7 +211,7 @@ const identityClient: ContextDoc['clients'][number] = {
   target_path: '/home/u/.claude/rules',
   state: 'drifted',
   fragments: [
-    { name: '00-default', state: 'drifted' },
+    { name: '00-default', state: 'drifted', pack: 'team-pack' },
     { name: '10-style', state: 'stale' },
   ],
 };
@@ -257,6 +257,10 @@ describe('fragment-level drift review', () => {
     expect(within(list).getByText('drifted')).toBeInTheDocument();
     expect(within(list).getByText('10-style')).toBeInTheDocument();
     expect(within(list).getByText('stale')).toBeInTheDocument();
+    // Pack provenance rides the wire onto the fragment line; untagged
+    // fragments show none.
+    expect(within(list).getByText('pack: team-pack')).toBeInTheDocument();
+    expect(within(list).getAllByText(/^pack:/)).toHaveLength(1);
   });
 
   it('adopts one fragment losslessly on the identity target', async () => {
