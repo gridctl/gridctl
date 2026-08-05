@@ -109,6 +109,19 @@ func TestBuiltinRegistryValid(t *testing.T) {
 	}
 }
 
+func TestBuiltinTransportDualStackGraduated(t *testing.T) {
+	f, ok := Default().Lookup("transport_dual_stack")
+	if !ok {
+		t.Fatal("transport_dual_stack missing from the built-in registry (entries are append-only)")
+	}
+	if f.Stage != StageGraduated {
+		t.Fatalf("Stage = %q, want graduated (dual-stack shipped unconditionally)", f.Stage)
+	}
+	if !strings.Contains(f.Message, "graduated in") {
+		t.Fatalf("Message = %q, want migration text naming the shipping release", f.Message)
+	}
+}
+
 func TestLookupAndAll(t *testing.T) {
 	r := mustRegistry(t, experimentalFlag("aaa"), experimentalFlag("bbb"))
 	if _, ok := r.Lookup("aaa"); !ok {
@@ -129,8 +142,8 @@ func TestLookupAndAll(t *testing.T) {
 }
 
 func TestEnvVar(t *testing.T) {
-	f := experimentalFlag("transport_dual_stack")
-	if got := f.EnvVar(); got != "GRIDCTL_EXPERIMENTAL_TRANSPORT_DUAL_STACK" {
+	f := experimentalFlag("some_flag")
+	if got := f.EnvVar(); got != "GRIDCTL_EXPERIMENTAL_SOME_FLAG" {
 		t.Fatalf("EnvVar() = %q", got)
 	}
 }
