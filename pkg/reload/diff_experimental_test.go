@@ -17,7 +17,7 @@ func experimentalTestStack(experimental map[string]bool) *config.Stack {
 
 func TestComputeDiff_ExperimentalOnlyChange(t *testing.T) {
 	old := experimentalTestStack(nil)
-	new := experimentalTestStack(map[string]bool{"transport_dual_stack": true})
+	new := experimentalTestStack(map[string]bool{"test_flag": true})
 
 	diff := ComputeDiff(old, new)
 	if !diff.ExperimentalChanged {
@@ -34,7 +34,7 @@ func TestComputeDiff_ExperimentalOnlyChange(t *testing.T) {
 
 func TestComputeDiff_ExperimentalIdentical(t *testing.T) {
 	mk := func() map[string]bool {
-		return map[string]bool{"transport_dual_stack": true, "other": false}
+		return map[string]bool{"test_flag": true, "other": false}
 	}
 	diff := ComputeDiff(experimentalTestStack(mk()), experimentalTestStack(mk()))
 	if diff.ExperimentalChanged {
@@ -46,15 +46,15 @@ func TestComputeDiff_ExperimentalIdentical(t *testing.T) {
 }
 
 func TestComputeDiff_ExperimentalValueFlip(t *testing.T) {
-	old := experimentalTestStack(map[string]bool{"transport_dual_stack": true})
-	new := experimentalTestStack(map[string]bool{"transport_dual_stack": false})
+	old := experimentalTestStack(map[string]bool{"test_flag": true})
+	new := experimentalTestStack(map[string]bool{"test_flag": false})
 	if diff := ComputeDiff(old, new); !diff.ExperimentalChanged {
 		t.Error("expected a true-to-false flip to mark ExperimentalChanged")
 	}
 }
 
 func TestComputeDiff_ExperimentalSetToNil(t *testing.T) {
-	old := experimentalTestStack(map[string]bool{"transport_dual_stack": true})
+	old := experimentalTestStack(map[string]bool{"test_flag": true})
 	new := experimentalTestStack(nil)
 	if diff := ComputeDiff(old, new); !diff.ExperimentalChanged {
 		t.Error("expected removing the block to mark ExperimentalChanged")
