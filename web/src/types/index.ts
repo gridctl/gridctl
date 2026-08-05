@@ -286,7 +286,7 @@ export interface EffectiveModel {
 // Read-only display metadata: flags are configured in stack.yaml (or via
 // GRIDCTL_EXPERIMENTAL_* env vars) and cannot be toggled from the UI.
 export interface FeatureDetail {
-  name: string;        // snake_case flag key, e.g. "transport_dual_stack"
+  name: string;        // snake_case flag key from the registry
   stage: string;       // lifecycle stage, e.g. "experimental"
   description: string; // one-line summary from the flag registry
 }
