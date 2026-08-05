@@ -39,6 +39,44 @@ var (
 	ErrBadFragmentName   = errors.New("fragment name must be lowercase letters, digits, and hyphens")
 )
 
+// Adopt refusal sentinels. Callers (the REST layer, the UI) branch on
+// the reason with errors.Is; the user-facing prose the CLI has always
+// printed rides on the concrete error unchanged.
+var (
+	// ErrAdoptRequiresFragment marks a whole-client adopt on a multi-file
+	// target: each fragment is its own file, so adopt needs a name.
+	ErrAdoptRequiresFragment = errors.New("adopt requires a fragment name on a multi-file target")
+	// ErrAdoptRefusesCompiled marks an adopt on a compiled target, where
+	// wholesale adoption would collapse every fragment into one.
+	ErrAdoptRefusesCompiled = errors.New("adopt refuses compiled targets without a capture fragment")
+	// ErrAdoptLossyRender marks a per-fragment adopt on a lossy dialect,
+	// which cannot flow back into the canonical store.
+	ErrAdoptLossyRender = errors.New("fragment render is lossy and cannot be adopted")
+	// ErrAdoptImportShim marks an adopt on an import-shim target, which
+	// references the canonical file directly: no copied content exists.
+	ErrAdoptImportShim = errors.New("import shim targets have no copied content to adopt")
+)
+
+// adoptImportShimRefusal is the shared refusal for both whole-client
+// Adopt and AdoptInto on import-shim targets.
+func adoptImportShimRefusal(t Target) error {
+	return &adoptRefusal{
+		reason: ErrAdoptImportShim,
+		msg:    fmt.Sprintf("%s uses an import shim that references the canonical file directly; there is no copied content to adopt", t.Name),
+	}
+}
+
+// adoptRefusal pairs a machine-readable reason sentinel with the exact
+// user-facing prose, so errors.Is dispatch never depends on substring
+// matching and the printed message stays byte-identical.
+type adoptRefusal struct {
+	reason error
+	msg    string
+}
+
+func (e *adoptRefusal) Error() string { return e.msg }
+func (e *adoptRefusal) Unwrap() error { return e.reason }
+
 var fragmentNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 // FragmentExtraField is one frontmatter key this package does not model,
