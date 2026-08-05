@@ -347,6 +347,75 @@ func TestSessionEntries(t *testing.T) {
 	if entries[0].ProtocolVersion == "" {
 		t.Error("entry must carry the negotiated protocol version")
 	}
+	// Client identity rides along so status surfaces can attribute the
+	// session to a linked client.
+	if entries[0].ClientName != "test-client" || entries[0].ClientVersion != "1.0" {
+		t.Errorf("clientInfo = %q/%q, want test-client/1.0", entries[0].ClientName, entries[0].ClientVersion)
+	}
+	if entries[0].AccessID != "test-client" {
+		t.Errorf("accessId = %q, want normalized test-client", entries[0].AccessID)
+	}
+}
+
+// TestExpiredSessionPostReturns404 pins the expiry contract: a POST on
+// a session the gateway manager has reaped must 404 (so the client
+// re-initializes) and prune the orphaned transport record, never serve
+// unattributed traffic that no status surface counts.
+func TestExpiredSessionPostReturns404(t *testing.T) {
+	g := NewGateway()
+	srv := NewStreamableHTTPServer(g, nil)
+	id := initializeStreamable(t, srv)
+	if removed := g.Sessions().Cleanup(0); removed != 1 {
+		t.Fatalf("cleanup removed %d, want 1", removed)
+	}
+
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	req := loopbackRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Mcp-Session-Id", id)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expired POST = %d, want 404: %s", w.Code, w.Body.String())
+	}
+	if ids := srv.SessionIDs(); len(ids) != 0 {
+		t.Errorf("expired transport record must be pruned, still holds %v", ids)
+	}
+}
+
+// TestSessionEntries_AgreesWithGatewayAfterCleanup pins the count
+// reconciliation contract: the transport listing must exclude (and tear
+// down) sessions the gateway's SessionManager has reaped, so the status
+// bar's Gateway.SessionCount and /api/sessions can never diverge — the
+// 7-vs-21 failure mode where crashed clients never send the graceful
+// DELETE and the transport map grew forever.
+func TestSessionEntries_AgreesWithGatewayAfterCleanup(t *testing.T) {
+	g := NewGateway()
+	srv := NewStreamableHTTPServer(g, nil)
+	initializeStreamable(t, srv)
+	initializeStreamable(t, srv)
+
+	if got, want := srv.SessionCount(), g.SessionCount(); got != want || got != 2 {
+		t.Fatalf("before cleanup: transport %d, gateway %d, want both 2", got, want)
+	}
+
+	// Reap everything from the authoritative manager (age 0 expires all),
+	// simulating idle sessions whose clients vanished without a DELETE.
+	if removed := g.Sessions().Cleanup(0); removed != 2 {
+		t.Fatalf("cleanup removed %d, want 2", removed)
+	}
+
+	entries := srv.SessionEntries()
+	if len(entries) != 0 {
+		t.Fatalf("entries after cleanup = %d, want 0 (orphans must not be listed)", len(entries))
+	}
+	if got, want := srv.SessionCount(), g.SessionCount(); got != want || got != 0 {
+		t.Errorf("after cleanup: transport %d, gateway %d, want both 0", got, want)
+	}
+	// The orphaned transport records were lazily torn down, not merely hidden.
+	if ids := srv.SessionIDs(); len(ids) != 0 {
+		t.Errorf("transport map still holds %d orphans: %v", len(ids), ids)
+	}
 }
 
 func TestStateless_TasksWithoutCapableServer(t *testing.T) {

@@ -14,7 +14,13 @@ export function StatusBar() {
   const navigate = useNavigate();
   const mcpServers = useStackStore((s) => s.mcpServers);
   const resources = useStackStore((s) => s.resources);
-  const sessions = useStackStore((s) => s.sessions);
+  const statusSessions = useStackStore((s) => s.sessions);
+  const sessionEntries = useStackStore((s) => s.sessionEntries);
+  // Prefer the entries array when the Connections workspace has loaded it:
+  // both surfaces then read one list, so the two numbers cannot diverge
+  // even transiently between polling cadences. The status-poll count is
+  // the fallback while entries are unfetched (backend keeps them equal).
+  const sessions = sessionEntries !== null ? sessionEntries.length : statusSessions;
   const codeMode = useStackStore((s) => s.codeMode);
   const featureDetails = useStackStore((s) => s.featureDetails);
   const tokenUsage = useStackStore((s) => s.tokenUsage);

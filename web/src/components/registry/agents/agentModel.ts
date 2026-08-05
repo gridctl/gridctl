@@ -30,6 +30,26 @@ export function statusesByAgent(
   return map;
 }
 
+/** Per-client status rows, keyed by client slug (the transpose of
+ *  statusesByAgent, for surfaces that answer "what does this client
+ *  receive?"). */
+export function statusesByClient(
+  statuses: AgentProjectionStatus[] | null,
+): Map<string, AgentProjectionStatus[]> {
+  const map = new Map<string, AgentProjectionStatus[]>();
+  for (const s of statuses ?? []) {
+    const rows = map.get(s.client);
+    if (rows) rows.push(s);
+    else map.set(s.client, [s]);
+  }
+  return map;
+}
+
+/** Slugs agentsync can project to. Derived from the status rows plus the
+ *  known target table; used to distinguish "not an agent projection
+ *  target" from "target with nothing projected yet". */
+export const AGENT_TARGET_SLUGS = new Set(Object.keys(CLIENT_NAMES));
+
 /**
  * Honest classification of a sync pass. The engine reports skips without
  * an error field (skipped-unavailable for undetected clients,

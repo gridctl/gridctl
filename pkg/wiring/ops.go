@@ -400,11 +400,11 @@ func (m *Manager) Adopt(ctx context.Context, client, name string) (Result, error
 
 	prov, ok := m.registry.FindBySlug(client)
 	if !ok {
-		return res, fmt.Errorf("unknown client %q", client)
+		return res, fmt.Errorf("%w %q", ErrUnknownClient, client)
 	}
 	configPath, found := prov.Detect()
 	if !found {
-		return res, fmt.Errorf("%s is not detected on this system", prov.Name())
+		return res, fmt.Errorf("%s: %w", prov.Name(), ErrNotDetected)
 	}
 	res.Target = configPath
 
@@ -512,7 +512,7 @@ func (m *Manager) selectClients(slugs []string) ([]provisioner.DetectedClient, e
 // detected clients. Reads are lock-free.
 func (m *Manager) Statuses(ctx context.Context, opts StatusOptions) ([]Row, error) {
 	if opts.ServerName == "" {
-		opts.ServerName = "gridctl"
+		opts.ServerName = DefaultServerName
 	}
 	lf, err := m.loadView(ctx)
 	if err != nil {

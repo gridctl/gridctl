@@ -971,6 +971,47 @@ export interface SessionEntry {
   id: string;
   generation: string;
   protocolVersion?: string;
+  /** Client-supplied clientInfo from initialize. */
+  clientName?: string;
+  clientVersion?: string;
+  /** Normalized identifier; string-matches provisioner client slugs. */
+  accessId?: string;
+}
+
+// --- Wiring ownership (GET /api/project/wiring/status) ---
+
+// The wiring ownership vocabulary: the engine's shared projection states
+// plus the two wiring extensions. The full form of the fact ClientStatus
+// collapses into its single `drifted` boolean.
+export type WiringState =
+  | 'in-sync'
+  | 'stale'
+  | 'drifted'
+  | 'target-missing'
+  | 'foreign'
+  | 'missing';
+
+// One (client, entry) ownership row from GET /api/project/wiring/status.
+export interface WiringRow {
+  client: string;
+  name: string;
+  channel: string;
+  pack?: string;
+  target?: string;
+  state: WiringState;
+  detail?: string;
+  remediation?: string;
+  synced_at?: string;
+}
+
+// Response of POST /api/project/wiring/adopt.
+export interface WiringAdoptResult {
+  client: string;
+  name: string;
+  target?: string;
+  action: string;
+  detail?: string;
+  error?: string;
 }
 
 // Response shape of GET /api/sessions. entries rides alongside the

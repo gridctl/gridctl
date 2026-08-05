@@ -61,12 +61,16 @@ afterEach(() => {
 describe('ConnectionsWorkspace', () => {
   it('renders every client with status badges', () => {
     renderWorkspace();
-    expect(screen.getByText('Claude Desktop')).toBeInTheDocument();
-    expect(screen.getAllByText('Linked')).toHaveLength(2);
-    expect(screen.getAllByText('Declared')).toHaveLength(2);
+    // The name renders in the rail row, and again in the detail pane when
+    // the client is the default selection.
+    expect(screen.getAllByText('Claude Desktop').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Linked').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Declared').length).toBeGreaterThanOrEqual(2);
     // Detected-but-unlinked badge for grok.
     expect(screen.getByText('Detected')).toBeInTheDocument();
-    expect(screen.getByText('Not installed on this machine')).toBeInTheDocument();
+    // Undetected clients still get a rail row (with a disabled toggle);
+    // the "not installed" detail lives in the detail pane now.
+    expect(screen.getByText('Zed')).toBeInTheDocument();
   });
 
   it('disables the toggle for undetected clients', () => {

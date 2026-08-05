@@ -189,7 +189,9 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 
 #### `GET /api/sessions`
 
-Returns the active Streamable HTTP MCP session count and the list of session IDs.
+Returns the active Streamable HTTP MCP sessions. The count agrees with the `sessions` field of [`/api/status`](#get-apistatus) by construction: both surfaces report the gateway's session manager, and transport records for sessions the manager has expired (idle past the cleanup cutoff; clients that crash never send the graceful `DELETE /mcp`) are excluded and torn down rather than accumulating.
+
+Each entry carries the session's client identity: `clientName` and `clientVersion` are the client-supplied `clientInfo` from initialize, and `accessId` is the normalized identifier that matches provisioner client slugs, so callers can attribute a session to a linked client by string equality.
 
 **Auth:** Yes
 
@@ -200,8 +202,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/sessions
 **Response:**
 ```json
 {
-  "count": 2,
-  "sessions": ["sess-abc123", "sess-def456"]
+  "count": 1,
+  "sessions": ["sess-abc123"],
+  "entries": [
+    {
+      "id": "sess-abc123",
+      "generation": "handshake",
+      "protocolVersion": "2025-11-25",
+      "clientName": "claude-code",
+      "clientVersion": "2.1.0",
+      "accessId": "claude-code"
+    }
+  ]
 }
 ```
 
@@ -2739,7 +2751,7 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry
 
 #### `DELETE /api/registry/agents/{name}`
 
-Removes an agent from the canonical store, including its origin sidecar and lock-file entry. Projections already placed in client directories are not touched; remove them first with `POST /api/project/agents/unsync` if they should leave too.
+Removes an agent from the canonical store, including its origin sidecar and lock-file entry. The agent's projections are retired first (best-effort): projected copies leave client directories and the project lock, so no orphaned rows linger in status output.
 
 **Auth:** Yes
 
@@ -2814,6 +2826,51 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
   -H "Content-Type: application/json" \
   -d '{"agent": "code-reviewer", "client": "claude-code"}'
 ```
+
+---
+
+### Wiring Ownership *(experimental)*
+
+Per-client gateway-entry ownership: the REST face of `gridctl project status|adopt --kind wiring`, backed by the wiring ownership records in the unified project lockfile. States use the wiring vocabulary: `in-sync`, `stale` (gateway port or entry shape changed), `drifted` (edited since gridctl wrote it), `target-missing`, `foreign` (an entry at gridctl's name that gridctl never recorded), and `missing` (detected client, nothing recorded, nothing present). This is the full form of the fact `GET /api/clients` collapses into its single `drifted` boolean.
+
+#### `GET /api/project/wiring/status`
+
+Returns every (client, entry) ownership row with `state`, `detail`, `remediation`, and the applying `pack` tag when one exists.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/wiring/status
+```
+
+**Response:**
+```json
+[
+  {
+    "client": "claude",
+    "name": "gridctl",
+    "channel": "config-entry",
+    "target": "/home/user/.claude.json",
+    "state": "foreign",
+    "detail": "entry was not recorded by gridctl",
+    "remediation": "adopt to take ownership, or link --force to overwrite"
+  }
+]
+```
+
+#### `POST /api/project/wiring/adopt`
+
+Records ownership of the entry's current value without rewriting it (the take-ownership verb for `foreign` and `drifted` entries, mirroring `gridctl project adopt --kind wiring`). `name` defaults to the gateway entry name. Refusals (nothing to adopt, client not detected) return `409` carrying the engine's full reason; unknown clients return `400`.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/wiring/adopt \
+  -H "Content-Type: application/json" \
+  -d '{"client": "claude"}'
+```
+
+**Response:** the adopt result (`client`, `name`, `target`, `action: "adopted"`).
 
 ---
 
