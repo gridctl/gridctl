@@ -94,8 +94,12 @@ func (s *StreamableSession) clearStream() {
 	s.sseCancel = nil
 }
 
-// StreamableHTTPServer implements the MCP Streamable HTTP transport (spec 2025-06-18).
-// It handles POST, GET, and DELETE requests at a single /mcp endpoint.
+// StreamableHTTPServer implements the MCP Streamable HTTP transport for
+// both protocol generations: the handshake era (2025-11-25 and earlier;
+// sessions, GET SSE streams, DELETE teardown) and the stateless era
+// (2026-07-28; per-request _meta, no sessions, POST only). It serves a
+// single /mcp endpoint and classifies each request's generation at the
+// edge (see handlePost).
 type StreamableHTTPServer struct {
 	gateway        *Gateway
 	allowedOrigins []string
