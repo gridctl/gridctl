@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SkillDetailPanel } from '../components/registry/SkillDetailPanel';
 import { fetchRegistrySkill, fetchSkillFiles, updateSkillSource } from '../lib/api';
@@ -43,14 +44,14 @@ function noop() {}
 
 function renderPanel(overrides: Partial<React.ComponentProps<typeof SkillDetailPanel>> = {}) {
   return render(
-    <SkillDetailPanel
+    <MemoryRouter><SkillDetailPanel
       skill={SKILL}
       onClose={noop}
       onEdit={noop}
       onToggle={noop}
       onDelete={noop}
       {...overrides}
-    />,
+    /></MemoryRouter>,
   );
 }
 
@@ -61,7 +62,7 @@ describe('SkillDetailPanel', () => {
 
   it('renders an empty state when no skill is selected', () => {
     render(
-      <SkillDetailPanel skill={null} onClose={noop} onEdit={noop} onToggle={noop} onDelete={noop} />,
+      <MemoryRouter><SkillDetailPanel skill={null} onClose={noop} onEdit={noop} onToggle={noop} onDelete={noop} /></MemoryRouter>,
     );
     expect(screen.getByText(/select a skill to inspect/i)).toBeInTheDocument();
   });
