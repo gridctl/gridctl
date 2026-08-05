@@ -327,11 +327,15 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 	// Era classification: modern per-request _meta selects the stateless
 	// path, as does server/discover in any shape (it doubles as the
 	// backward-compatibility probe and must never 404 into a legacy
-	// verdict). initialize selects the handshake path. Everything else
-	// is session traffic.
+	// verdict) and a MCP-Protocol-Version header declaring a
+	// stateless-era version (so a modern request with missing or
+	// incomplete _meta gets the stateless edge's -32602 rejection
+	// instead of falling through to session lookup). initialize selects
+	// the handshake path. Everything else is session traffic.
 	meta, hasMeta := parseRequestMeta(req.Params)
-	if hasMeta || req.Method == "server/discover" {
-		s.handleStateless(w, r, &req, meta, hasMeta)
+	if hasMeta || req.Method == "server/discover" ||
+		EraOfVersion(r.Header.Get("MCP-Protocol-Version")) == EraStateless {
+		s.handleStateless(w, r, &req, meta)
 		return
 	}
 
@@ -595,6 +599,8 @@ func (s *StreamableHTTPServer) handleRequest(ctx context.Context, session *Strea
 		return s.handleResourcesList(req)
 	case "resources/read":
 		return s.handleResourcesRead(req)
+	case "resources/templates/list":
+		return jsonrpc.NewSuccessResponse(req.ID, s.gateway.HandleResourceTemplatesList())
 	case "ping":
 		return jsonrpc.NewSuccessResponse(req.ID, struct{}{})
 	default:

@@ -1644,7 +1644,20 @@ func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error)
 		tools = g.CurrentGroupPolicy().FilterAndRewrite(group, tools)
 	}
 	g.logToolCountHint(len(tools))
+	if tools == nil {
+		// The spec requires an array; a nil slice would marshal as
+		// JSON null, which conformance reads as a failed call.
+		tools = []Tool{}
+	}
 	return &ToolsListResult{Tools: tools}, nil
+}
+
+// HandleResourceTemplatesList serves resources/templates/list. gridctl
+// exposes no templated resources (registry skills are concrete URIs),
+// but a server advertising the resources capability must answer the
+// method with an empty list rather than -32601.
+func (g *Gateway) HandleResourceTemplatesList() *ResourceTemplatesListResult {
+	return &ResourceTemplatesListResult{ResourceTemplates: []MCPResourceTemplate{}}
 }
 
 // HandleToolsListUnscoped returns the full aggregated tool surface, ignoring
@@ -1660,7 +1673,11 @@ func (g *Gateway) HandleToolsListUnscoped() (*ToolsListResult, error) {
 	if cm != nil {
 		return cm.ToolsList(), nil
 	}
-	return &ToolsListResult{Tools: g.router.AggregatedTools()}, nil
+	tools := g.router.AggregatedTools()
+	if tools == nil {
+		tools = []Tool{}
+	}
+	return &ToolsListResult{Tools: tools}, nil
 }
 
 // HandleToolsCatalog returns the full downstream tool inventory with each
@@ -1789,9 +1806,16 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		if err != nil {
 			routeSpan.SetStatus(codes.Error, err.Error())
 			routeSpan.End()
+			// Record whether the name can map to any server at all, as
+			// opposed to a known server with no pickable replica. The
+			// stateless edge turns the former into the spec's -32602
+			// unknown-tool error; the handshake path keeps the in-band
+			// isError result either way.
+			serverName, _, parseErr := ParsePrefixedTool(params.Name)
 			return &ToolCallResult{
-				Content: []Content{NewTextContent(fmt.Sprintf("Error: %v", err))},
-				IsError: true,
+				Content:     []Content{NewTextContent(fmt.Sprintf("Error: %v", err))},
+				IsError:     true,
+				unknownTool: parseErr != nil || g.router.GetReplicaSet(serverName) == nil,
 			}, nil
 		}
 	}

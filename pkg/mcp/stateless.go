@@ -84,29 +84,30 @@ func writeStatelessResponse(w http.ResponseWriter, status int, resp jsonrpc.Resp
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// handleStateless serves one stateless-era request. hasMeta is false
-// only for a server/discover carried without modern _meta: discover
-// doubles as the backward-compatibility probe, so it is answered with
-// maximum leniency rather than validated into a 400 a legacy-shaped
-// prober cannot interpret.
-func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Request, req *jsonrpc.Request, meta RequestMeta, hasMeta bool) {
-	if hasMeta {
-		// Version validation: _meta is authoritative on this path.
-		if meta.ProtocolVersion == "" || EraOfVersion(meta.ProtocolVersion) != EraStateless || !IsSupportedProtocolVersion(meta.ProtocolVersion) {
-			writeStatelessResponse(w, http.StatusBadRequest, jsonrpc.NewErrorResponseWithData(
-				req.ID, ErrCodeUnsupportedProtocolVersion, "Unsupported protocol version",
-				UnsupportedVersionErrorData{Supported: SupportedProtocolVersions, Requested: meta.ProtocolVersion}))
-			return
-		}
-		if len(meta.ClientCapabilities) == 0 {
-			writeStatelessResponse(w, http.StatusBadRequest, jsonrpc.NewErrorResponse(
-				req.ID, jsonrpc.InvalidRequest, "missing required _meta field io.modelcontextprotocol/clientCapabilities"))
-			return
-		}
-		if msg := validateStatelessHeaders(r, req, meta); msg != "" {
-			writeStatelessResponse(w, http.StatusBadRequest, jsonrpc.NewErrorResponse(req.ID, ErrCodeHeaderMismatch, msg))
-			return
-		}
+// handleStateless serves one stateless-era request. Validation order is
+// spec-driven: _meta completeness first (-32602 Invalid params, so a
+// missing-field rejection is never misread as a version problem), then
+// the header mirror (-32020 HeaderMismatch: a header/_meta version
+// disagreement wins even when one side is also unsupported), then
+// supported-set membership (-32022), all at HTTP 400. server/discover
+// is not exempt: a modern prober always stamps full _meta (gridctl's
+// own downstream probe does), so leniency here would only mask
+// non-compliant callers.
+func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Request, req *jsonrpc.Request, meta RequestMeta) {
+	if missing := missingMetaField(meta); missing != "" {
+		writeStatelessResponse(w, http.StatusBadRequest, jsonrpc.NewErrorResponse(
+			req.ID, jsonrpc.InvalidParams, "missing required "+missing))
+		return
+	}
+	if msg := validateStatelessHeaders(r, req, meta); msg != "" {
+		writeStatelessResponse(w, http.StatusBadRequest, jsonrpc.NewErrorResponse(req.ID, ErrCodeHeaderMismatch, msg))
+		return
+	}
+	if EraOfVersion(meta.ProtocolVersion) != EraStateless || !IsSupportedProtocolVersion(meta.ProtocolVersion) {
+		writeStatelessResponse(w, http.StatusBadRequest, jsonrpc.NewErrorResponseWithData(
+			req.ID, ErrCodeUnsupportedProtocolVersion, "Unsupported protocol version",
+			UnsupportedVersionErrorData{Supported: SupportedProtocolVersions, Requested: meta.ProtocolVersion}))
+		return
 	}
 
 	// Per-request identity, feeding the same context keys the session
@@ -182,6 +183,10 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 		}
 		s.gateway.attachListCacheMeta(&result.StatelessResultFields)
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
+	case "resources/templates/list":
+		result := s.gateway.HandleResourceTemplatesList()
+		s.gateway.attachListCacheMeta(&result.StatelessResultFields)
+		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "resources/read":
 		if req.Params == nil {
 			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "params required for resources/read"))
@@ -195,14 +200,12 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 		result, err := s.gateway.HandleResourcesRead(params)
 		if err != nil {
 			// 2026-07-28 renumbered resource-not-found from -32002 to
-			// -32602; gridctl's read failures (unknown scheme, missing
-			// skill) are not-found shaped. An unavailable registry is
-			// infrastructure, not the caller's params.
-			code := jsonrpc.InvalidParams
-			if strings.Contains(err.Error(), "registry not available") {
-				code = jsonrpc.InternalError
-			}
-			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, code, err.Error()))
+			// -32602, and every read failure is not-found shaped from
+			// the caller's viewpoint: a gateway without a registry
+			// simply has no resources (SEP-2164). The error data
+			// SHOULD carry the requested URI.
+			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponseWithData(
+				req.ID, jsonrpc.InvalidParams, err.Error(), map[string]string{"uri": params.URI}))
 			return
 		}
 		s.gateway.attachListCacheMeta(&result.StatelessResultFields)
@@ -217,6 +220,21 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 		// does not host /mcp at all.
 		writeStatelessResponse(w, http.StatusNotFound, jsonrpc.NewErrorResponse(req.ID, jsonrpc.MethodNotFound, fmt.Sprintf("Unknown method: %s", req.Method)))
 	}
+}
+
+// missingMetaField names the first missing required piece of the
+// per-request _meta envelope, or "" when it is complete. clientInfo is
+// deliberately not required (a SHOULD since spec PR #3002).
+func missingMetaField(meta RequestMeta) string {
+	switch {
+	case !meta.HasMeta:
+		return "_meta"
+	case !meta.HasProtocolVersion:
+		return "_meta field " + metaKeyProtocolVersion
+	case len(meta.ClientCapabilities) == 0:
+		return "_meta field " + metaKeyClientCapabilities
+	}
+	return ""
 }
 
 // validateStatelessHeaders enforces the request-metadata header mirror:
@@ -306,6 +324,13 @@ func (s *StreamableHTTPServer) handleStatelessToolsCall(ctx context.Context, w h
 	result, err := s.gateway.HandleToolsCall(ctx, params)
 	if err != nil {
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
+		return
+	}
+	if result.unknownTool {
+		// The modern spec shapes an unknown tool as a protocol error,
+		// not an executed-with-error result.
+		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(
+			req.ID, jsonrpc.InvalidParams, fmt.Sprintf("Unknown tool: %s", params.Name)))
 		return
 	}
 

@@ -109,6 +109,33 @@ func TestBuiltinRegistryValid(t *testing.T) {
 	}
 }
 
+func TestDefaultRegistryUnknownNameHint(t *testing.T) {
+	// With every builtin flag graduated, the registry has no settable
+	// flags, so unknown names get the empty-registry hint instead of a
+	// valid-names list. This is exactly the state users hit today.
+	res := Resolve(Default(), map[string]bool{"tpyo": true})
+	if res.Enabled != nil {
+		t.Fatalf("Enabled = %v, want nil", res.Enabled)
+	}
+	if len(res.Warnings) != 1 ||
+		!strings.Contains(res.Warnings[0].Message, "no experimental flags are registered in this build") {
+		t.Fatalf("Warnings = %+v, want the empty-registry hint", res.Warnings)
+	}
+}
+
+func TestBuiltinTransportDualStackGraduated(t *testing.T) {
+	f, ok := Default().Lookup("transport_dual_stack")
+	if !ok {
+		t.Fatal("transport_dual_stack missing from the built-in registry (entries are append-only)")
+	}
+	if f.Stage != StageGraduated {
+		t.Fatalf("Stage = %q, want graduated (dual-stack shipped unconditionally)", f.Stage)
+	}
+	if !strings.Contains(f.Message, "graduated in") {
+		t.Fatalf("Message = %q, want migration text naming the shipping release", f.Message)
+	}
+}
+
 func TestLookupAndAll(t *testing.T) {
 	r := mustRegistry(t, experimentalFlag("aaa"), experimentalFlag("bbb"))
 	if _, ok := r.Lookup("aaa"); !ok {
@@ -129,8 +156,8 @@ func TestLookupAndAll(t *testing.T) {
 }
 
 func TestEnvVar(t *testing.T) {
-	f := experimentalFlag("transport_dual_stack")
-	if got := f.EnvVar(); got != "GRIDCTL_EXPERIMENTAL_TRANSPORT_DUAL_STACK" {
+	f := experimentalFlag("some_flag")
+	if got := f.EnvVar(); got != "GRIDCTL_EXPERIMENTAL_SOME_FLAG" {
 		t.Fatalf("EnvVar() = %q", got)
 	}
 }

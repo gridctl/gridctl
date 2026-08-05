@@ -1,5 +1,10 @@
 # Expected-failures baseline for the @modelcontextprotocol/conformance
-# suite (pinned at 0.1.16) run against a stackless gridctl daemon.
+# suite (pinned at 0.2.0-alpha.10) run against a stackless gridctl
+# daemon with --spec-version 2025-11-25. The 2026-07-28 runs have their
+# own baseline (conformance-baseline-2026-07-28.yml): with
+# --expected-failures the suite runs strict (warnings count as
+# failures) and a few multi-version scenarios fail on exactly one
+# generation, which one shared file cannot express.
 #
 # Almost every entry here fails by design, not by defect: the suite
 # tests a reference MCP server that implements its own test tools,
@@ -18,10 +23,10 @@
 #
 # Baseline semantics: a failure listed here is expected (exit 0); a
 # failure not listed is a regression (exit 1); a PASS for a listed entry
-# is a stale baseline (exit 1), so this file cannot rot silently.
+# is a stale baseline (exit 1), so this file cannot rot silently. An
+# entry whose scenario does not run at all is neither.
 server:
   - completion-complete
-  - tools-list
   - tools-call-image
   - tools-call-audio
   - tools-call-embedded-resource

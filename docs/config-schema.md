@@ -1152,7 +1152,7 @@ upgrades.
 
 ```yaml
 experimental:
-  transport_dual_stack: true
+  some_flag: true  # hypothetical; see the Registered flags table below
 ```
 
 | Field | Type | Required | Default | Description |
@@ -1163,14 +1163,16 @@ Registered flags:
 
 | Flag | Stage | Since | Description |
 |------|-------|-------|-------------|
-| `transport_dual_stack` | experimental | 0.1.0 | Reserved for the MCP 2026-07-28 transport dual-stack work; currently has no effect |
+| `transport_dual_stack` | graduated | 0.1.0 | MCP 2026-07-28 transport dual-stack; always on, per-server pinning via `protocol_generation` |
 
 Semantics:
 
 - **Warnings, never errors.** An unknown flag name warns at `gridctl apply`
-  and `gridctl validate` (listing the valid names) and is ignored; a
-  graduated or removed flag name warns with a specific migration message.
-  A stack.yaml written against a newer gridctl still deploys on this one.
+  and `gridctl validate` and is ignored; the warning lists the valid names
+  when any experimental flags are registered, and says "no experimental
+  flags are registered in this build" otherwise. A graduated or removed
+  flag name warns with a specific migration message. A stack.yaml written
+  against a newer gridctl still deploys on this one.
 - **Env override.** Each flag can be overridden per process with
   `GRIDCTL_EXPERIMENTAL_<NAME>` (upper snake_case), accepting the
   `strconv.ParseBool` vocabulary: `1`, `t`, `T`, `TRUE`, `true`, `True`,

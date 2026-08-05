@@ -104,16 +104,58 @@ func TestStateless_ServerDiscover(t *testing.T) {
 	}
 }
 
-func TestStateless_DiscoverWithoutMetaStillAnswers(t *testing.T) {
-	// server/discover doubles as the backward-compatibility probe; a
-	// probe without modern _meta must be answered, not 404ed into a
-	// legacy verdict.
+func TestStateless_MissingMetaRejected(t *testing.T) {
+	// _meta completeness is required on every stateless request,
+	// server/discover included: the probe endpoint is not exempt
+	// (SEP-2575), and a modern prober always stamps full _meta. Each
+	// missing piece rejects with -32602 at HTTP 400, checked before the
+	// header mirror so a partial _meta is never misread as a header
+	// mismatch or version problem.
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "server/discover"})
+	tests := []struct {
+		name    string
+		method  string
+		params  string
+		missing string
+	}{
+		{"discover without _meta", "server/discover", `{}`, "_meta"},
+		{"tools/list without _meta", "tools/list", `{}`, "_meta"},
+		{"missing protocolVersion", "tools/list",
+			`{"_meta":{"io.modelcontextprotocol/clientCapabilities":{}}}`, metaKeyProtocolVersion},
+		{"missing clientCapabilities", "tools/list",
+			`{"_meta":{"io.modelcontextprotocol/protocolVersion":"` + StatelessProtocolVersion + `"}}`, metaKeyClientCapabilities},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := []byte(`{"jsonrpc":"2.0","id":1,"method":"` + tc.method + `","params":` + tc.params + `}`)
+			r := loopbackRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+			r.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
+			r.Header.Set(headerMcpMethod, tc.method)
+			w, resp := doStateless(t, srv, r)
+			if w.Code != http.StatusBadRequest || resp.Error == nil || resp.Error.Code != jsonrpc.InvalidParams {
+				t.Fatalf("expected 400 -32602, got %d %+v", w.Code, resp.Error)
+			}
+			if !strings.Contains(resp.Error.Message, tc.missing) {
+				t.Errorf("rejection must name %q, got %q", tc.missing, resp.Error.Message)
+			}
+		})
+	}
+}
+
+func TestStateless_HeaderMismatchBeatsUnsupportedVersion(t *testing.T) {
+	// A header/_meta version disagreement is a HeaderMismatch (-32020)
+	// even when the _meta side is also unsupported; -32022 is reserved
+	// for the agreeing-but-unsupported case.
+	srv := NewStreamableHTTPServer(NewGateway(), nil)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{
+		"io.modelcontextprotocol/protocolVersion":"v999.0.0",
+		"io.modelcontextprotocol/clientCapabilities":{}}}}`)
 	r := loopbackRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	r.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
+	r.Header.Set(headerMcpMethod, "server/discover")
 	w, resp := doStateless(t, srv, r)
-	if w.Code != http.StatusOK || resp.Error != nil {
-		t.Fatalf("probe without _meta must succeed, got %d %v", w.Code, resp.Error)
+	if w.Code != http.StatusBadRequest || resp.Error == nil || resp.Error.Code != ErrCodeHeaderMismatch {
+		t.Fatalf("expected 400 -32020, got %d %+v", w.Code, resp.Error)
 	}
 }
 
@@ -204,8 +246,42 @@ func TestStateless_MissingClientCapabilitiesRejected(t *testing.T) {
 	r.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
 	r.Header.Set(headerMcpMethod, "tools/list")
 	w, resp := doStateless(t, srv, r)
-	if w.Code != http.StatusBadRequest || resp.Error == nil || resp.Error.Code != jsonrpc.InvalidRequest {
-		t.Fatalf("expected 400 -32600 for missing clientCapabilities, got %d %+v", w.Code, resp.Error)
+	if w.Code != http.StatusBadRequest || resp.Error == nil || resp.Error.Code != jsonrpc.InvalidParams {
+		t.Fatalf("expected 400 -32602 for missing clientCapabilities, got %d %+v", w.Code, resp.Error)
+	}
+}
+
+func TestStateless_ResourceTemplatesList(t *testing.T) {
+	// SEP-2549 requires caching hints on resources/templates/list, so a
+	// server advertising the resources capability must answer it (an
+	// empty list) rather than -32601.
+	srv := NewStreamableHTTPServer(NewGateway(), nil)
+	w, resp := doStateless(t, srv, statelessRequest(t, statelessBody(t, 1, "resources/templates/list", nil)))
+	if w.Code != http.StatusOK || resp.Error != nil {
+		t.Fatalf("resources/templates/list: %d %+v", w.Code, resp.Error)
+	}
+	var result ResourceTemplatesListResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ResultType != ResultTypeComplete || result.TTLMs == nil || result.CacheScope != CacheScopePrivate {
+		t.Errorf("templates list must carry the stateless result fields, got %+v", result.StatelessResultFields)
+	}
+	if !strings.Contains(string(resp.Result), `"resourceTemplates":[]`) {
+		t.Errorf("empty template set must marshal as an array, got %s", resp.Result)
+	}
+}
+
+func TestStateless_ToolsListEmptyIsArray(t *testing.T) {
+	// The spec requires tools to be an array; a nil slice marshaling as
+	// JSON null reads as a failed call to conformance clients.
+	srv := NewStreamableHTTPServer(NewGateway(), nil)
+	w, resp := doStateless(t, srv, statelessRequest(t, statelessBody(t, 1, "tools/list", nil)))
+	if w.Code != http.StatusOK || resp.Error != nil {
+		t.Fatalf("tools/list: %d %+v", w.Code, resp.Error)
+	}
+	if !strings.Contains(string(resp.Result), `"tools":[]`) {
+		t.Errorf("empty tool set must marshal as an array, got %s", resp.Result)
 	}
 }
 

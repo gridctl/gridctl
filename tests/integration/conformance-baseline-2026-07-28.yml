@@ -1,0 +1,65 @@
+# Expected-failures baseline for the @modelcontextprotocol/conformance
+# suite (pinned at 0.2.0-alpha.10) run against a stackless gridctl
+# daemon with --spec-version 2026-07-28, covering both the default
+# active run and the individually-run pending scenarios (see
+# conformance_test.go). The 2025-11-25 run has its own baseline
+# (conformance-baseline.yml): with --expected-failures the suite runs
+# strict (warnings count as failures) and a few multi-version scenarios
+# fail on exactly one generation, which one shared file cannot express.
+#
+# Every entry fails by design, not by defect: the suite tests a
+# reference MCP server implementing its own diagnostic tools, resources,
+# prompts, and completion endpoints, while gridctl is an aggregating
+# gateway whose surface is whatever the downstream fleet provides. A
+# stackless daemon has no fleet, so scenarios that call suite-defined
+# tools (test_simple_text, test_missing_capability,
+# test_input_required_result_*, json_schema_2020_12_tool, x-mcp-header
+# annotated tools), read suite-defined resources, or exercise completion
+# report failures or strict-mode warnings. The stateless scenarios that
+# CAN pass against a stackless daemon (tools-list, resources-list,
+# prompts-list, caching, sep-2164-resource-not-found, dns-rebinding,
+# input-required unsupported-methods and validate-input) are
+# deliberately absent so a regression in them fails the run.
+#
+# Baseline semantics: a failure listed here is expected (exit 0); a
+# failure not listed is a regression (exit 1); a PASS for a listed entry
+# is a stale baseline (exit 1), so this file cannot rot silently. An
+# entry whose scenario does not run at all is neither.
+server:
+  # Default active run: suite-defined tools, resources, prompts, and
+  # completion do not exist behind a fleet-less gateway. tools/call for
+  # a nonexistent tool is the spec's -32602 protocol error on this
+  # generation, which these scenarios read as a failed call.
+  - completion-complete
+  - tools-call-simple-text
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-error
+  - tools-call-with-progress
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  # Pending scenarios: all not-testable without the suite's diagnostic
+  # tools (reported as failures or strict-mode warnings).
+  - server-stateless
+  - json-schema-2020-12
+  - http-header-validation
+  - http-custom-header-server-validation
+  - input-required-result-basic-elicitation
+  - input-required-result-basic-sampling
+  - input-required-result-basic-list-roots
+  - input-required-result-request-state
+  - input-required-result-multiple-input-requests
+  - input-required-result-multi-round
+  - input-required-result-missing-input-response
+  - input-required-result-non-tool-request
+  - input-required-result-result-type
+  - input-required-result-tampered-state
+  - input-required-result-capability-check
+  - input-required-result-ignore-extra-params
