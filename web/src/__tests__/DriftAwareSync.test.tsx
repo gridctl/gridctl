@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { SourceGroupHeader } from '../components/registry/SourceGroupHeader';
 import { updateSkillSource } from '../lib/api';
 import type { SkillSourceStatus } from '../types';
@@ -36,7 +37,7 @@ afterEach(() => cleanup());
 describe('SourceGroupHeader drift-aware sync', () => {
   it('syncs immediately (no confirm) when there are no local edits', async () => {
     render(
-      <SourceGroupHeader source={makeSource()} count={1} hasSearch={false} isActive={false} onToggle={() => {}} />,
+      <MemoryRouter><SourceGroupHeader source={makeSource()} count={1} hasSearch={false} isActive={false} onToggle={() => {}} /></MemoryRouter>,
     );
     fireEvent.click(screen.getByTitle('Update available, pull latest'));
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
@@ -46,13 +47,13 @@ describe('SourceGroupHeader drift-aware sync', () => {
 
   it('opens a confirm listing drifted skills instead of syncing immediately', () => {
     render(
-      <SourceGroupHeader
+      <MemoryRouter><SourceGroupHeader
         source={makeSource({ driftedSkills: ['edited-skill'] })}
         count={1}
         hasSearch={false}
         isActive={false}
         onToggle={() => {}}
-      />,
+      /></MemoryRouter>,
     );
     fireEvent.click(screen.getByTitle('Update available, pull latest'));
     expect(updateMock).not.toHaveBeenCalled();
@@ -62,13 +63,13 @@ describe('SourceGroupHeader drift-aware sync', () => {
 
   it('"keep my edits" syncs without force; "overwrite" syncs with force', async () => {
     const { rerender } = render(
-      <SourceGroupHeader
+      <MemoryRouter><SourceGroupHeader
         source={makeSource({ driftedSkills: ['edited-skill'] })}
         count={1}
         hasSearch={false}
         isActive={false}
         onToggle={() => {}}
-      />,
+      /></MemoryRouter>,
     );
     fireEvent.click(screen.getByTitle('Update available, pull latest'));
     fireEvent.click(screen.getByRole('button', { name: /keep my edits/i }));
@@ -76,13 +77,13 @@ describe('SourceGroupHeader drift-aware sync', () => {
 
     updateMock.mockClear();
     rerender(
-      <SourceGroupHeader
+      <MemoryRouter><SourceGroupHeader
         source={makeSource({ driftedSkills: ['edited-skill'] })}
         count={1}
         hasSearch={false}
         isActive={false}
         onToggle={() => {}}
-      />,
+      /></MemoryRouter>,
     );
     fireEvent.click(screen.getByTitle('Update available, pull latest'));
     fireEvent.click(screen.getByRole('button', { name: /overwrite local edits/i }));
