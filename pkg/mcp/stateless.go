@@ -23,6 +23,12 @@ import (
 // context carries from the /groups/{name}/mcp route wrapper, and a
 // request to the default /mcp endpoint is full-surface.
 
+// skillResourceTTLMs is the cache lifetime stamped on resources/read
+// results: short enough to track registry edits (the disk watcher
+// refreshes content underneath cached readers), long enough to be worth
+// caching at all.
+const skillResourceTTLMs int64 = 60_000
+
 // mcpParamHeadersKey carries unrecognized Mcp-Param-* headers from the
 // upstream request so the downstream HTTP leg can forward them
 // untouched, per the transport spec's intermediary rules.
@@ -208,7 +214,15 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 				req.ID, jsonrpc.InvalidParams, err.Error(), map[string]string{"uri": params.URI}))
 			return
 		}
-		s.gateway.attachListCacheMeta(&result.StatelessResultFields)
+		// Skill resources are gateway-owned (served from the local
+		// registry, refreshed by its disk watcher), so their cache
+		// lifetime is unrelated to the downstream tool fleet's
+		// aggregate: one legacy tool server must not pin skill reads to
+		// uncacheable.
+		result.ResultType = ResultTypeComplete
+		ttl := skillResourceTTLMs
+		result.TTLMs = &ttl
+		result.CacheScope = CacheScopePrivate
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "tasks/get", "tasks/update", "tasks/cancel":
 		s.handleStatelessTask(ctx, w, req)
