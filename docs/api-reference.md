@@ -3014,15 +3014,33 @@ Cascade removal in dependency order: pack-tagged projections are unsynced, pack-
 
 ### MCP Protocol
 
-The gateway negotiates the MCP protocol version at `initialize`: a requested
-version in the supported set (`2025-11-25`, `2025-06-18`, `2025-03-26`,
-`2024-11-05`) is echoed back, and any other value receives a successful
-response carrying the latest supported version (the client decides whether to
-disconnect). Post-initialize requests on `/mcp` (POST, GET, and DELETE) may
-carry the `MCP-Protocol-Version` header; an absent header is accepted (the
-session-negotiated version applies), while an unsupported value is rejected
-with `400 Bad Request` naming the supported set. Malformed `initialize`
-params return a JSON-RPC `InvalidParams` error.
+The gateway speaks two protocol generations concurrently on `/mcp`, classified
+per request:
+
+- **Handshake generation** (`2025-11-25`, `2025-06-18`, `2025-03-26`,
+  `2024-11-05`): the version is negotiated at `initialize` (a supported
+  requested version is echoed back; any other value receives a successful
+  response carrying the latest supported handshake version, and the client
+  decides whether to disconnect), and a `Mcp-Session-Id` session carries
+  identity. Post-initialize requests may send the `MCP-Protocol-Version`
+  header; an absent header is accepted (the session-negotiated version
+  applies), while an unsupported value is rejected with `400 Bad Request`
+  naming the supported set. Malformed `initialize` params return a JSON-RPC
+  `InvalidParams` error.
+- **Stateless generation** (`2026-07-28`): no handshake and no sessions.
+  Every request carries `_meta` with `io.modelcontextprotocol/protocolVersion`
+  and `io.modelcontextprotocol/clientCapabilities` (`clientInfo` is optional),
+  plus a matching `MCP-Protocol-Version` header and an `Mcp-Method` header
+  mirroring the body method (`Mcp-Name` mirrors `params.name`/`params.uri`
+  where present, plain or base64-sentinel encoded). Identity derives per
+  request from `_meta` `clientInfo`, the `client` query parameter, or the
+  `X-Gridctl-Client-Id` header. Rejections are typed at HTTP 400: missing or
+  incomplete `_meta` is `-32602`, a header/body mismatch is `-32020`
+  (HeaderMismatch), and an unsupported version is `-32022`
+  (UnsupportedProtocolVersion) carrying the supported set. Unknown or removed
+  methods (`ping`, `logging/setLevel`, `initialize`) return HTTP 404 with
+  `-32601`, and results carry `resultType` plus `ttlMs`/`cacheScope` cache
+  metadata on list and read responses.
 
 #### `POST /mcp`
 
@@ -3034,15 +3052,18 @@ JSON-RPC 2.0 endpoint for MCP protocol operations.
 
 | Method | Description |
 |--------|-------------|
-| `initialize` | Initialize MCP session |
+| `initialize` | Initialize MCP session (handshake generation only) |
+| `server/discover` | Server identity, versions, and capabilities (stateless generation) |
 | `tools/list` | List available tools |
-| `tools/call` | Call a tool |
+| `tools/call` | Call a tool (stateless generation adds MRTR relay: `input_required` results, `requestState`, `inputResponses`) |
 | `prompts/list` | List available prompts |
 | `prompts/get` | Get a specific prompt |
 | `resources/list` | List available resources |
 | `resources/read` | Read a specific resource |
-| `ping` | Connectivity check |
-| `notifications/initialized` | Client initialization notification |
+| `resources/templates/list` | List resource templates (always empty; gridctl exposes no templated resources) |
+| `tasks/get`, `tasks/update`, `tasks/cancel` | Tasks-extension proxy, when exactly one stateless server declares the extension |
+| `ping` | Connectivity check (handshake generation only) |
+| `notifications/initialized` | Client initialization notification (handshake generation only) |
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/mcp \
@@ -3069,7 +3090,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/mcp \
 
 Tool names are namespaced as `{server}__{tool}` to prevent collisions.
 
-The streamable HTTP transport also serves two other verbs on `/mcp`:
+The streamable HTTP transport also serves two other verbs on `/mcp`, for the
+handshake generation only (a request declaring the stateless generation
+receives `405 Method Not Allowed`; that generation has no sessions or
+server-initiated streams):
 
 #### `GET /mcp`
 
