@@ -173,7 +173,7 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 	}
 
 	r.addModelWarnings(s)
-	r.addExperimentalIssues(s)
+	r.addExperimentalIssues(flags.Default(), s)
 	r.addSkillsPolicyIssues(s)
 }
 
@@ -208,8 +208,7 @@ func (r *ValidationResult) addSkillsPolicyIssues(s *Stack) {
 // info-level line so `gridctl validate` and the UI panel show active
 // experiments. Warnings only — an unrecognized name never blocks a deploy
 // (Article IX: a stack written against a newer gridctl must still start).
-func (r *ValidationResult) addExperimentalIssues(s *Stack) {
-	reg := flags.Default()
+func (r *ValidationResult) addExperimentalIssues(reg *flags.Registry, s *Stack) {
 	for _, w := range flags.CheckNames(reg, s.Experimental) {
 		r.Issues = append(r.Issues, ValidationIssue{
 			Field:    "experimental." + w.Name,
