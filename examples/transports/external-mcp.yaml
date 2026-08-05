@@ -38,6 +38,11 @@ mcp-servers:
   - name: mock-http
     url: http://localhost:9001/mcp
     transport: http
+    # Optional: pin the MCP protocol generation instead of auto-probing.
+    # `auto` (the default when omitted) probes server/discover and falls
+    # back to the legacy initialize handshake; `handshake` or `stateless`
+    # skip the probe for peers that mis-answer it.
+    protocol_generation: auto
 
   # External SSE MCP server
   # Run with: go run main.go -port 9002 -sse
