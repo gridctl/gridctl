@@ -109,7 +109,10 @@ type ProjectionStatus struct {
 	State        string     `json:"state"`
 	Detail       string     `json:"detail,omitempty"`
 	Experimental bool       `json:"experimental,omitempty"`
-	SyncedAt     *time.Time `json:"synced_at,omitempty"`
+	// Pack names the pack that applied this projection; empty for
+	// projections made outside a pack. Additive provenance for UI chips.
+	Pack     string     `json:"pack,omitempty"`
+	SyncedAt *time.Time `json:"synced_at,omitempty"`
 }
 
 // NeedsAttention reports whether any projection requires action.
@@ -536,6 +539,7 @@ func (m *Manager) statusFor(agent, client string, entry *Entry) ProjectionStatus
 		Channel: ChannelCopy,
 		Render:  "identity",
 		Target:  entry.Target,
+		Pack:    entry.Pack,
 	}
 	syncedAt := entry.SyncedAt
 	ps.SyncedAt = &syncedAt
