@@ -1152,7 +1152,7 @@ upgrades.
 
 ```yaml
 experimental:
-  transport_dual_stack: true
+  some_flag: true  # hypothetical; see the Registered flags table below
 ```
 
 | Field | Type | Required | Default | Description |
@@ -1163,7 +1163,7 @@ Registered flags:
 
 | Flag | Stage | Since | Description |
 |------|-------|-------|-------------|
-| `transport_dual_stack` | experimental | 0.1.0 | Reserved for the MCP 2026-07-28 transport dual-stack work; currently has no effect |
+| `transport_dual_stack` | graduated | 0.1.0 | MCP 2026-07-28 transport dual-stack; always on, per-server pinning via `protocol_generation` |
 
 Semantics:
 
