@@ -36,6 +36,7 @@ import { MCPServerForm } from './steps/MCPServerForm';
 import { StackForm } from './steps/StackForm';
 import { ResourceForm } from './steps/ResourceForm';
 import { SkillImportWizard } from './steps/SkillImportWizard';
+import { PackImportWizard } from './steps/PackImportWizard';
 
 interface ResourceTypeCard {
   type: ResourceType;
@@ -76,6 +77,14 @@ const resourceTypes: ResourceTypeCard[] = [
     icon: Puzzle,
     label: 'Skill',
     description: 'Import skills from a Git repository',
+    color: 'text-secondary',
+    glowColor: 'rgba(13, 148, 136, 0.1)',
+  },
+  {
+    type: 'pack',
+    icon: Package,
+    label: 'Pack',
+    description: 'Import a repo with gridctl-pack.yaml: skills, agents, rules, and wiring as one unit',
     color: 'text-secondary',
     glowColor: 'rgba(13, 148, 136, 0.1)',
   },
@@ -125,6 +134,7 @@ function getResourceCounts(
     'mcp-server': mcpServers.length,
     resource: resources.length,
     skill: (skills ?? []).length,
+    pack: 0, // Off the global poll; the Packs segment owns the count
     secret: 0, // Vault count not easily available
     'global-context': 0, // Singleton; the dialog shows per-client state
     'client-link': linkedClients,
@@ -218,7 +228,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
       return;
     }
     setSelectedType(type);
-    if (type === 'skill') {
+    if (type === 'skill' || type === 'pack') {
       setStep('form');
     }
   }, [setSelectedType, setStep, close, onOpenVault, onOpenGlobalContext, onOpenConnections]);
@@ -229,7 +239,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   // Generate YAML from form data (debounced)
   useEffect(() => {
     if (!selectedType || !isOpen) return;
-    if (selectedType === 'skill' || selectedType === 'secret') return;
+    if (selectedType === 'skill' || selectedType === 'pack' || selectedType === 'secret') return;
 
     if (yamlDebounceRef.current) clearTimeout(yamlDebounceRef.current);
     yamlDebounceRef.current = setTimeout(() => {
@@ -324,7 +334,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   };
 
   const currentStepIdx = stepOrder.indexOf(currentStep);
-  const showPreviewPanel = currentStep === 'form' && selectedType !== 'skill' && selectedType !== 'secret';
+  const showPreviewPanel = currentStep === 'form' && selectedType !== 'skill' && selectedType !== 'pack' && selectedType !== 'secret';
 
   if (!isOpen) return null;
 
@@ -373,7 +383,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
 
           <div className="flex items-center gap-2">
             {/* Expert Mode Toggle (visible during form step) */}
-            {currentStep === 'form' && selectedType !== 'skill' && selectedType !== 'secret' && (
+            {currentStep === 'form' && selectedType !== 'skill' && selectedType !== 'pack' && selectedType !== 'secret' && (
               <ExpertModeToggle
                 expertMode={expertMode}
                 onToggle={handleExpertModeToggle}
@@ -406,10 +416,14 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
 
         {/* Content */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          {/* Skill Import Wizard — own step flow, no preview panel */}
+          {/* Skill and Pack import wizards — own step flows, no preview panel */}
           {selectedType === 'skill' && currentStep !== 'type' ? (
             <div className="h-full overflow-y-auto scrollbar-dark px-6 py-4">
               <SkillImportWizard />
+            </div>
+          ) : selectedType === 'pack' && currentStep !== 'type' ? (
+            <div className="h-full overflow-y-auto scrollbar-dark px-6 py-4">
+              <PackImportWizard />
             </div>
           ) : showPreviewPanel ? (
             <PanelGroup orientation="horizontal" className="h-full">
@@ -469,8 +483,8 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
           )}
         </div>
 
-        {/* Footer — hidden when skill import wizard is active (it has its own footer) */}
-        {!(selectedType === 'skill' && currentStep !== 'type') && (
+        {/* Footer — hidden when an import wizard is active (they have their own) */}
+        {!((selectedType === 'skill' || selectedType === 'pack') && currentStep !== 'type') && (
         <div className="flex items-center justify-between px-6 py-3 border-t border-border/30 flex-shrink-0">
           <div>
             {currentStepIdx > 0 && (

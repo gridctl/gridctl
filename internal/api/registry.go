@@ -202,13 +202,14 @@ func (s *Server) handleRegistrySkillDelete(w http.ResponseWriter, r *http.Reques
 	// deletion above is authoritative; lock cleanup is best-effort and a failure
 	// here is logged, not surfaced to the caller.
 	lockPath := s.lockFilePath()
-	if lf, err := skills.ReadLockFile(lockPath); err != nil {
-		slog.Default().Warn("delete skill: failed to read lock file for cleanup", "skill", name, "error", err)
-	} else if _, _, found := lf.FindSkillSource(name); found {
-		lf.RemoveSkill(name)
-		if err := skills.WriteLockFile(lockPath, lf); err != nil {
-			slog.Default().Warn("delete skill: failed to write lock file after cleanup", "skill", name, "error", err)
+	if err := skills.MutateLockFile(r.Context(), lockPath, func(lf *skills.LockFile) (bool, error) {
+		if _, _, found := lf.FindSkillSource(name); !found {
+			return false, nil
 		}
+		lf.RemoveSkill(name)
+		return true, nil
+	}); err != nil {
+		slog.Default().Warn("delete skill: failed to clean lock file", "skill", name, "error", err)
 	}
 
 	s.refreshRegistryRouter()

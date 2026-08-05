@@ -167,3 +167,24 @@ func FormatFindings(findings []SecurityFinding) string {
 	}
 	return b.String()
 }
+
+// ScanSkillTree runs the same security gate an import applies to one
+// discovered skill: the SKILL.md body (any finding blocks) plus the
+// supporting-file tree (danger-severity findings block; lower severities
+// surface without blocking). srcDir is the skill's directory in the
+// clone. Callers that refuse before importing (the pack REST surface)
+// use this so their refusal covers exactly what the importer would skip.
+func ScanSkillTree(sk *registry.AgentSkill, srcDir string) (findings []SecurityFinding, blocking bool) {
+	scan := ScanSkill(sk)
+	findings = append(findings, scan.Findings...)
+	blocking = !scan.Safe
+	supporting, _, err := collectSupportingFiles(srcDir)
+	if err != nil {
+		// A tree the importer would refuse to install (over limits) is
+		// not a scan finding; the import itself reports it.
+		return findings, blocking
+	}
+	treeFindings, treeBlocking := scanSupportingFiles(supporting)
+	findings = append(findings, treeFindings...)
+	return findings, blocking || treeBlocking
+}

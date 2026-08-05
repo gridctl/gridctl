@@ -2790,3 +2790,202 @@ export async function deleteContextFragment(name: string): Promise<{ name: strin
     'DELETE',
   );
 }
+
+// === Packs API ===
+// Wire format mirrors pkg/packops JSON tags.
+
+/** One resource line in a pack document (status, apply, or remove). */
+export interface PackRow {
+  kind: 'skill' | 'agent' | 'rule' | 'wiring' | 'unresolved';
+  name: string;
+  client?: string;
+  action?: string;
+  state?: string;
+  detail?: string;
+  remediation?: string;
+}
+
+export interface PackOrigin {
+  source: string;
+  repo: string;
+  ref?: string;
+  commit_sha?: string;
+  fetched_at?: string;
+}
+
+export interface PackCounts {
+  skills: number;
+  agents: number;
+  rules: number;
+  wiring: boolean;
+}
+
+/** Identity half of a pack: the list item shape. */
+export interface PackInfo {
+  name: string;
+  version?: string;
+  description?: string;
+  author?: string;
+  origin: PackOrigin;
+  counts: PackCounts;
+  unresolved?: string[];
+  applied: boolean;
+  collision?: boolean;
+  collision_repos?: string[];
+}
+
+export interface PackListItem extends PackInfo {
+  needs_attention: boolean;
+}
+
+export interface PackDetail {
+  info: PackInfo;
+  rows: PackRow[];
+  needs_attention: boolean;
+}
+
+export interface PackAddDoc {
+  pack: string;
+  dry_run?: boolean;
+  skills: string[];
+  agents: string[];
+  rules?: string[];
+  wiring: boolean;
+  unresolved?: string[];
+  skipped?: string[];
+  warnings?: string[];
+}
+
+export interface PackApplyDoc {
+  pack: string;
+  dry_run?: boolean;
+  applied: number;
+  total: number;
+  rows: PackRow[];
+}
+
+export interface PackRemoveDoc {
+  pack: string;
+  dry_run?: boolean;
+  rows: PackRow[];
+  kept?: string[];
+}
+
+export interface PackPreviewResource {
+  kind: string;
+  name: string;
+  findings?: { description?: string; pattern?: string; line?: number; severity?: string }[];
+  /** True when the findings would block an untrusted import (the exact
+   *  importer gate); non-blocking findings stay visible without forcing
+   *  a trust grant. */
+  blocking?: boolean;
+}
+
+export interface PackPreview {
+  pack: string;
+  version?: string;
+  description?: string;
+  author?: string;
+  wiring: boolean;
+  clients?: string[];
+  skills: PackPreviewResource[];
+  agents: PackPreviewResource[];
+  rules: PackPreviewResource[];
+  unresolved?: string[];
+  warnings?: string[];
+}
+
+/** The 409 body a blocked-on-findings pack import carries. */
+export class PackFindingsError extends Error {
+  pack: string;
+  findings: PackPreviewResource[];
+  constructor(message: string, pack: string, findings: PackPreviewResource[]) {
+    super(message);
+    this.name = 'PackFindingsError';
+    this.pack = pack;
+    this.findings = findings;
+  }
+}
+
+/** Shared fetch for pack endpoints that need response bodies on DELETE
+ *  and typed 409 bodies on POST. */
+async function packFetch<T>(endpoint: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { ...buildHeaders() };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 409 && Array.isArray(data.findings)) {
+      throw new PackFindingsError(data.error ?? 'Security findings', data.pack ?? '', data.findings);
+    }
+    throw new HTTPError(response.status, data.error || `${method} ${endpoint} failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+/** Installed packs with identity, origin, counts, and attention. GET /api/packs */
+export async function fetchPacks(): Promise<PackListItem[]> {
+  const body = await packFetch<{ packs: PackListItem[] | null }>('/api/packs', 'GET');
+  return body.packs ?? [];
+}
+
+/**
+ * One pack's identity plus per-resource state rows. GET /api/packs/{name}.
+ * A name claimed by two sources throws an HTTPError with status 409 whose
+ * message names both repos (rendered as a detail banner, never a toast).
+ */
+export async function fetchPackDetail(name: string): Promise<PackDetail> {
+  return packFetch<PackDetail>(`/api/packs/${encodeURIComponent(name)}`, 'GET');
+}
+
+/**
+ * Import a pack from git (also the update path against a known origin).
+ * Security findings without trust throw PackFindingsError before any
+ * write. POST /api/packs
+ */
+export async function addPack(req: {
+  repo: string;
+  ref?: string;
+  path?: string;
+  trust?: boolean;
+  dryRun?: boolean;
+}): Promise<{ doc: PackAddDoc; notes: string[] }> {
+  return packFetch<{ doc: PackAddDoc; notes: string[] }>('/api/packs', 'POST', req);
+}
+
+/** Resolve a pack manifest read-only. POST /api/packs/preview */
+export async function previewPack(req: { repo: string; ref?: string; path?: string }): Promise<PackPreview> {
+  return packFetch<PackPreview>('/api/packs/preview', 'POST', req);
+}
+
+/** Project one pack (CLI flag parity). POST /api/packs/{name}/apply */
+export async function applyPack(
+  name: string,
+  opts?: { clients?: string[]; force?: boolean; dryRun?: boolean },
+): Promise<PackApplyDoc> {
+  const body: Record<string, unknown> = {};
+  if (opts?.clients?.length) body.clients = opts.clients;
+  if (opts?.force) body.force = true;
+  if (opts?.dryRun) body.dry_run = true;
+  return packFetch<PackApplyDoc>(`/api/packs/${encodeURIComponent(name)}/apply`, 'POST', body);
+}
+
+/** Cascade-remove one pack. DELETE /api/packs/{name}?dry_run=1&force=1 */
+export async function removePack(
+  name: string,
+  opts?: { dryRun?: boolean; force?: boolean },
+): Promise<PackRemoveDoc> {
+  const params = new URLSearchParams();
+  if (opts?.dryRun) params.set('dry_run', '1');
+  if (opts?.force) params.set('force', '1');
+  const query = params.toString();
+  return packFetch<PackRemoveDoc>(
+    `/api/packs/${encodeURIComponent(name)}${query ? `?${query}` : ''}`,
+    'DELETE',
+  );
+}

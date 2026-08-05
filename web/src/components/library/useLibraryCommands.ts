@@ -11,7 +11,7 @@ import {
   PowerOff,
   RefreshCw,
 } from 'lucide-react';
-import { Bot } from 'lucide-react';
+import { Bot, Package } from 'lucide-react';
 import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import type { PaletteCommand } from '../../types/palette';
 import type { GroupMode } from '../registry/LibraryGrid';
@@ -157,15 +157,26 @@ export function useLibraryCommands({
     }
 
     if (onSwitchKind) {
-      commands.push({
-        id: 'library:view-agents-kind',
-        label: 'Library: View Agents',
-        section: 'registry',
-        workspaces: ['library'],
-        icon: createElement(Bot, { size: 14 }),
-        keywords: ['agents', 'segment', 'switch', 'kind'],
-        onSelect: () => onSwitchKind('agent'),
-      });
+      commands.push(
+        {
+          id: 'library:view-agents-kind',
+          label: 'Library: View Agents',
+          section: 'registry',
+          workspaces: ['library'],
+          icon: createElement(Bot, { size: 14 }),
+          keywords: ['agents', 'segment', 'switch', 'kind'],
+          onSelect: () => onSwitchKind('agent'),
+        },
+        {
+          id: 'library:view-packs-kind',
+          label: 'Library: View Packs',
+          section: 'registry',
+          workspaces: ['library'],
+          icon: createElement(Package, { size: 14 }),
+          keywords: ['packs', 'pack', 'segment', 'switch', 'kind'],
+          onSelect: () => onSwitchKind('pack'),
+        },
+      );
     }
 
     registerCommands('library', commands);

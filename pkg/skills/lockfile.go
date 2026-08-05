@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -21,6 +22,10 @@ const ImportLockVersion = 2
 // newer gridctl. Callers must never paper over it: acting on state a
 // newer version wrote risks silent data loss (the pkg/project lesson).
 var ErrNewerImportLockVersion = errors.New("import lockfile was written by a newer gridctl version")
+
+// ErrImportLockBusy signals contention on the cross-process import lock:
+// the operation should be retried, nothing is corrupted.
+var ErrImportLockBusy = errors.New("timeout acquiring import lock")
 
 // LockFile represents skills.lock.yaml — pins exact versions of imported skills.
 type LockFile struct {
@@ -51,12 +56,18 @@ type LockedSource struct {
 // identity plus the selection as resolved against discovery at import
 // time (never the empty-means-all shorthand).
 type LockedPack struct {
-	Name    string   `yaml:"name"`
-	Version string   `yaml:"version,omitempty"`
-	Wiring  bool     `yaml:"wiring,omitempty"`
-	Clients []string `yaml:"clients,omitempty"`
-	Skills  []string `yaml:"skills,omitempty"`
-	Agents  []string `yaml:"agents,omitempty"`
+	Name    string `yaml:"name"`
+	Version string `yaml:"version,omitempty"`
+	// Description and Author persist the manifest metadata a list view
+	// needs, so no consumer ever has to re-clone the repo to show it.
+	// Additive fields: files without them keep loading, and version 2
+	// (which every pack record already stamps) covers them.
+	Description string   `yaml:"description,omitempty"`
+	Author      string   `yaml:"author,omitempty"`
+	Wiring      bool     `yaml:"wiring,omitempty"`
+	Clients     []string `yaml:"clients,omitempty"`
+	Skills      []string `yaml:"skills,omitempty"`
+	Agents      []string `yaml:"agents,omitempty"`
 	// Rules lists context rule fragments imported from the pack repo.
 	// Superseded by RuleFiles, which adds per-rule provenance; retained so
 	// lockfiles written before that keep loading, and kept in sync on write
@@ -185,6 +196,24 @@ func WriteLockFile(path string, lf *LockFile) error {
 	return atomicWriteBytes(path, data)
 }
 
+// MutateLockFile runs one read-modify-write cycle over skills.lock.yaml
+// while holding the cross-process import lock, so concurrent operations
+// serialize instead of losing each other's updates. fn returns whether
+// its changes should be written; false skips the write and succeeds.
+func MutateLockFile(ctx context.Context, path string, fn func(*LockFile) (bool, error)) error {
+	return withLockFileFlock(ctx, path, func() error {
+		lf, err := ReadLockFile(path)
+		if err != nil {
+			return err
+		}
+		write, err := fn(lf)
+		if err != nil || !write {
+			return err
+		}
+		return WriteLockFile(path, lf)
+	})
+}
+
 // SetSource updates or adds a source in the lock file.
 func (lf *LockFile) SetSource(name string, src LockedSource) {
 	if lf.Sources == nil {
@@ -249,4 +278,3 @@ func (lf *LockFile) FindAgentSource(agentName string) (string, *LockedSource, bo
 	}
 	return "", nil, false
 }
-

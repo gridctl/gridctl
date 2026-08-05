@@ -1004,15 +1004,13 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 		ghosts = append(ghosts, g...)
 	}
 	if len(ghosts) > 0 {
-		if lf2, err := skills.ReadLockFile(lockPath); err != nil {
-			logger.Warn("sync: failed to read lock file to prune stale skills", "error", err)
-		} else {
+		if err := skills.MutateLockFile(r.Context(), lockPath, func(lf2 *skills.LockFile) (bool, error) {
 			for _, skillName := range ghosts {
 				lf2.RemoveSkill(skillName)
 			}
-			if err := skills.WriteLockFile(lockPath, lf2); err != nil {
-				logger.Warn("sync: failed to write lock file after pruning stale skills", "error", err)
-			}
+			return true, nil
+		}); err != nil {
+			logger.Warn("sync: failed to prune stale skills from lock file", "error", err)
 		}
 	}
 

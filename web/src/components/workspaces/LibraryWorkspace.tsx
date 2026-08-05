@@ -43,7 +43,9 @@ import { useWizardStore } from '../../stores/useWizardStore';
 import { useLibraryCommands, type LibraryFilter } from '../library/useLibraryCommands';
 import { LibraryKindSwitch } from '../registry/LibraryKindSwitch';
 import { isRegistryKind, type RegistryKind } from '../../lib/registryKind';
+import { fetchPacks } from '../../lib/api';
 import { AgentsWorkspace } from '../registry/agents/AgentsWorkspace';
+import { PacksWorkspace } from '../registry/packs/PacksWorkspace';
 import { hasAnyCategory, skillCategory } from '../../lib/skillMeta';
 import {
   coldWindowCaveat,
@@ -115,6 +117,16 @@ export function LibraryWorkspace() {
   // the store instead of starting a second polling loop here.
   const skills = useRegistryStore((s) => s.skills);
   const sources = useRegistryStore((s) => s.sources);
+  // Load the packs list once for the reverse-ownership chips (source
+  // group headers and agent detail); packs are off the global poll.
+  useEffect(() => {
+    if (useRegistryStore.getState().packs !== null) return;
+    fetchPacks()
+      .then((packs) => useRegistryStore.getState().setPacks(packs))
+      .catch(() => {
+        // Chips are progressive enhancement; a failed load renders none.
+      });
+  }, []);
 
   // Per-skill usage, fetched separately and joined by name (mirroring the
   // provenance source join) so the registry list payload stays untouched. When
@@ -486,7 +498,7 @@ export function LibraryWorkspace() {
   // clear the shared ?selected param behind the agents dialogs, or silently
   // eat a press on an invisible skills multi-selection.
   useEffect(() => {
-    if (kind === 'agent') return;
+    if (kind === 'agent' || kind === 'pack') return;
     if (!selectedName && selectedNames.size === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showEditor) return;
@@ -811,6 +823,9 @@ export function LibraryWorkspace() {
   // hook order stays identical across kind switches.
   if (kind === 'agent') {
     return <AgentsWorkspace onKindChange={setKind} />;
+  }
+  if (kind === 'pack') {
+    return <PacksWorkspace onKindChange={setKind} />;
   }
 
   const inspector = (

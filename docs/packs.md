@@ -39,8 +39,14 @@ Field names follow the Claude Code plugin.json family where the semantics match,
 
 Packs add bookkeeping, not a second write path. `gridctl skill project sync`, `gridctl skill update`, and `gridctl project sync --kind wiring` keep working on pack-managed resources; a plain re-sync never strips the pack tag. One pack owns a resource at a time: applying a pack over a resource tagged by another pack refuses that resource until one manifest gives it up.
 
+## REST and web UI
+
+The full verb set is available over HTTP: `GET /api/packs` (list), `GET /api/packs/{name}` (detail with per-resource state rows), `POST /api/packs` (add from git, behind the same blocking security scan; also the update path against an already-imported origin), `POST /api/packs/preview` (read-only manifest resolution), `POST /api/packs/{name}/apply` (with `clients`, `force`, and `dry_run`, matching the CLI flags), and `DELETE /api/packs/{name}` (with a dry-run cascade preview). See the [API reference](api-reference.md#packs-experimental). The web UI's Library workspace surfaces installed packs in its Packs segment.
+
+Status rows for rules report per-client projection state once a pack is applied (drift and staleness per fragment-file projection; a compiled client's whole-document state stays in `gridctl ctx status`), with a store-presence row for a rule that was imported but never projected.
+
 ## What packs deliberately do not have
 
-No enable/disable state (imported and projected are the only states), no inter-pack dependencies, no interactive configuration prompts (secrets flow through the existing `${var:KEY}` vault mechanism), no marketplace indirection (`pack add` points at a git repo you chose, with the same trust gate as `skill add`), and no web UI yet.
+No enable/disable state (imported and projected are the only states), no inter-pack dependencies, no interactive configuration prompts (secrets flow through the existing `${var:KEY}` vault mechanism), and no marketplace indirection (`pack add` points at a git repo you chose, with the same trust gate as `skill add`).
 
 See `examples/portable-pack/` for a complete pack repo layout.

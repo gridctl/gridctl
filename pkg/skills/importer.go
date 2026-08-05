@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -430,64 +431,64 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		imp.lockfileMu.Lock()
 		defer imp.lockfileMu.Unlock()
 
-		lf, err := ReadLockFile(imp.lockPath)
-		if err != nil {
-			return importResult, fmt.Errorf("reading lock file: %w", err)
-		}
-
-		sourceName := RepoToName(opts.Repo)
-		// Carry previously tracked agents forward instead of wiping them:
-		// a Selected import never processes agents at all (the web UI's
-		// "add more from this source" flow), and an unforced re-import
-		// skips agents that already exist in the store, but neither means
-		// the source stopped shipping them.
-		var prevPack *LockedPack
-		if prev, ok := lf.Sources[sourceName]; ok {
-			// A source rewrite must never orphan its pack record: pack
-			// verbs would report "not imported" while projections still
-			// carry the tag, with no cascade-removal path left.
-			prevPack = prev.Pack
-			if prev.Agents != nil {
-				switch {
-				case len(opts.SelectedAgents) > 0:
-					// An explicit agent selection re-imports those agents
-					// only; the source's other agents keep their entries.
-					for name, entry := range prev.Agents {
-						if _, done := lockedAgents[name]; !done {
-							if lockedAgents == nil {
-								lockedAgents = make(map[string]LockedAgent)
+		// The cross-process lock covers the whole read-modify-write:
+		// the API server builds a fresh Importer per request, so the
+		// in-process mutex alone cannot serialize concurrent writers.
+		err := MutateLockFile(context.Background(), imp.lockPath, func(lf *LockFile) (bool, error) {
+			sourceName := RepoToName(opts.Repo)
+			// Carry previously tracked agents forward instead of wiping them:
+			// a Selected import never processes agents at all (the web UI's
+			// "add more from this source" flow), and an unforced re-import
+			// skips agents that already exist in the store, but neither means
+			// the source stopped shipping them.
+			var prevPack *LockedPack
+			if prev, ok := lf.Sources[sourceName]; ok {
+				// A source rewrite must never orphan its pack record: pack
+				// verbs would report "not imported" while projections still
+				// carry the tag, with no cascade-removal path left.
+				prevPack = prev.Pack
+				if prev.Agents != nil {
+					switch {
+					case len(opts.SelectedAgents) > 0:
+						// An explicit agent selection re-imports those agents
+						// only; the source's other agents keep their entries.
+						for name, entry := range prev.Agents {
+							if _, done := lockedAgents[name]; !done {
+								if lockedAgents == nil {
+									lockedAgents = make(map[string]LockedAgent)
+								}
+								lockedAgents[name] = entry
 							}
-							lockedAgents[name] = entry
 						}
-					}
-				case len(opts.Selected) > 0:
-					lockedAgents = prev.Agents
-				default:
-					for _, name := range keptAgents {
-						if entry, ok := prev.Agents[name]; ok {
-							if lockedAgents == nil {
-								lockedAgents = make(map[string]LockedAgent)
+					case len(opts.Selected) > 0:
+						lockedAgents = prev.Agents
+					default:
+						for _, name := range keptAgents {
+							if entry, ok := prev.Agents[name]; ok {
+								if lockedAgents == nil {
+									lockedAgents = make(map[string]LockedAgent)
+								}
+								lockedAgents[name] = entry
 							}
-							lockedAgents[name] = entry
 						}
 					}
 				}
 			}
-		}
-		lf.SetSource(sourceName, LockedSource{
-			Repo:          opts.Repo,
-			Ref:           opts.Ref,
-			CommitSHA:     result.CommitSHA,
-			FetchedAt:     time.Now().UTC(),
-			ContentHash:   result.CommitSHA,
-			Skills:        lockedSkills,
-			Agents:        lockedAgents,
-			CredentialRef: opts.Auth.CredentialRef,
-			Pack:          prevPack,
+			lf.SetSource(sourceName, LockedSource{
+				Repo:          opts.Repo,
+				Ref:           opts.Ref,
+				CommitSHA:     result.CommitSHA,
+				FetchedAt:     time.Now().UTC(),
+				ContentHash:   result.CommitSHA,
+				Skills:        lockedSkills,
+				Agents:        lockedAgents,
+				CredentialRef: opts.Auth.CredentialRef,
+				Pack:          prevPack,
+			})
+			return true, nil
 		})
-
-		if err := WriteLockFile(imp.lockPath, lf); err != nil {
-			return importResult, fmt.Errorf("writing lock file: %w", err)
+		if err != nil {
+			return importResult, fmt.Errorf("updating lock file: %w", err)
 		}
 	}
 
@@ -657,14 +658,12 @@ func (imp *Importer) Remove(skillName string) error {
 		return fmt.Errorf("deleting skill: %w", err)
 	}
 
-	// Update lock file
-	lf, err := ReadLockFile(imp.lockPath)
-	if err != nil {
-		return fmt.Errorf("reading lock file: %w", err)
-	}
-	lf.RemoveSkill(skillName)
-	if err := WriteLockFile(imp.lockPath, lf); err != nil {
-		return fmt.Errorf("writing lock file: %w", err)
+	// Update lock file under the cross-process import lock.
+	if err := MutateLockFile(context.Background(), imp.lockPath, func(lf *LockFile) (bool, error) {
+		lf.RemoveSkill(skillName)
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("updating lock file: %w", err)
 	}
 
 	return nil
@@ -763,13 +762,11 @@ func (imp *Importer) RemoveAgent(agentName string) error {
 		return fmt.Errorf("deleting agent: %w", err)
 	}
 
-	lf, err := ReadLockFile(imp.lockPath)
-	if err != nil {
-		return fmt.Errorf("reading lock file: %w", err)
-	}
-	lf.RemoveAgent(agentName)
-	if err := WriteLockFile(imp.lockPath, lf); err != nil {
-		return fmt.Errorf("writing lock file: %w", err)
+	if err := MutateLockFile(context.Background(), imp.lockPath, func(lf *LockFile) (bool, error) {
+		lf.RemoveAgent(agentName)
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("updating lock file: %w", err)
 	}
 	return nil
 }
@@ -808,18 +805,16 @@ func (imp *Importer) Pin(skillName, ref string) error {
 		return fmt.Errorf("writing origin: %w", err)
 	}
 
-	// Update lock file
-	lf, err := ReadLockFile(imp.lockPath)
-	if err != nil {
-		return fmt.Errorf("reading lock file: %w", err)
-	}
-
-	srcName, src, found := lf.FindSkillSource(skillName)
-	if found {
+	// Update lock file under the cross-process import lock.
+	_ = MutateLockFile(context.Background(), imp.lockPath, func(lf *LockFile) (bool, error) {
+		srcName, src, found := lf.FindSkillSource(skillName)
+		if !found {
+			return false, nil
+		}
 		src.Ref = ref
 		lf.SetSource(srcName, *src)
-		_ = WriteLockFile(imp.lockPath, lf)
-	}
+		return true, nil
+	})
 
 	return nil
 }

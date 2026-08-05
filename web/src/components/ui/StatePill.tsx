@@ -5,7 +5,7 @@ import { cn } from '../../lib/cn';
  * CLI, the context API, the agent projection API, and the wiring API all
  * speak these exact strings; UI surfaces must render them verbatim rather
  * than inventing synonyms. Agent rows use the first four; context rows
- * add never-synced and unsupported; wiring rows add foreign and missing.
+ * add never-synced and unsupported; wiring rows add foreign and missing; pack rows add unresolved.
  */
 export type ProjectionState =
   | 'in-sync'
@@ -15,7 +15,8 @@ export type ProjectionState =
   | 'never-synced'
   | 'unsupported'
   | 'foreign'
-  | 'missing';
+  | 'missing'
+  | 'unresolved';
 
 const PROJECTION_STATE_STYLE: Record<ProjectionState, string> = {
   'in-sync': 'text-emerald-400 border-emerald-400/25 bg-emerald-400/10',
@@ -28,6 +29,10 @@ const PROJECTION_STATE_STYLE: Record<ProjectionState, string> = {
   // missing is a quiet opportunity, not a fault.
   foreign: 'text-red-400 border-red-400/25 bg-red-400/10',
   missing: 'text-text-muted border-border/40 bg-background/40',
+  // Pack extension: a manifest selection the repository does not ship.
+  // Selection-time, not a projection outcome: amber, never red, and it
+  // must not be reused for loading or not-yet-applied states.
+  unresolved: 'text-status-pending border-status-pending/30 bg-status-pending/10',
 };
 
 /**

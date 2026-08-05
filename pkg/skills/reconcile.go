@@ -152,18 +152,18 @@ func (imp *Importer) AdvanceTracking(ctx context.Context, skillName, newSHA stri
 	imp.lockfileMu.Lock()
 	defer imp.lockfileMu.Unlock()
 
-	lf, err := ReadLockFile(imp.lockPath)
-	if err != nil {
-		return fmt.Errorf("reading lock file: %w", err)
-	}
-	if srcName, src, found := lf.FindSkillSource(skillName); found {
+	if err := MutateLockFile(ctx, imp.lockPath, func(lf *LockFile) (bool, error) {
+		srcName, src, found := lf.FindSkillSource(skillName)
+		if !found {
+			return false, nil
+		}
 		src.CommitSHA = newSHA
 		src.ContentHash = newSHA
 		src.FetchedAt = time.Now().UTC()
 		lf.SetSource(srcName, *src)
-		if err := WriteLockFile(imp.lockPath, lf); err != nil {
-			return fmt.Errorf("writing lock file: %w", err)
-		}
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("updating lock file: %w", err)
 	}
 	return nil
 }
@@ -219,13 +219,11 @@ func (imp *Importer) Detach(ctx context.Context, skillName string) error {
 	imp.lockfileMu.Lock()
 	defer imp.lockfileMu.Unlock()
 
-	lf, err := ReadLockFile(imp.lockPath)
-	if err != nil {
-		return fmt.Errorf("reading lock file: %w", err)
-	}
-	lf.RemoveSkill(skillName)
-	if err := WriteLockFile(imp.lockPath, lf); err != nil {
-		return fmt.Errorf("writing lock file: %w", err)
+	if err := MutateLockFile(ctx, imp.lockPath, func(lf *LockFile) (bool, error) {
+		lf.RemoveSkill(skillName)
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("updating lock file: %w", err)
 	}
 	return nil
 }

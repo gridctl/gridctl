@@ -18,6 +18,7 @@ vi.mock('../components/ui/Toast', () => ({
 
 vi.mock('../lib/api', () => ({
   fetchRegistryStatus: vi.fn().mockResolvedValue({ totalSkills: 0, activeSkills: 0 }),
+  fetchPacks: vi.fn().mockResolvedValue([]),
   fetchRegistrySkills: vi.fn().mockResolvedValue([]),
   fetchSkillSources: vi.fn().mockResolvedValue([]),
   updateSkillSource: vi.fn().mockResolvedValue({ source: 'acme-skills', results: [] }),

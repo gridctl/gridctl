@@ -2894,6 +2894,121 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
 
 ---
 
+### Packs *(experimental)*
+
+The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, and optional gateway wiring (see the [Packs guide](packs.md)). Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the repository does not ship.
+
+#### `GET /api/packs`
+
+Lists installed packs: identity, origin, per-kind resource counts, and aggregate attention. Never re-clones; everything comes from the import lockfile and the projection engines.
+
+**Auth:** Yes
+
+**Response:**
+```json
+{
+  "packs": [
+    {
+      "name": "team-pack",
+      "version": "1.0.0",
+      "description": "Team conventions in one repo",
+      "author": "Acme Platform",
+      "origin": {
+        "source": "team-pack",
+        "repo": "https://github.com/acme/team-pack",
+        "ref": "main",
+        "commit_sha": "abc123...",
+        "fetched_at": "2026-08-05T12:00:00Z"
+      },
+      "counts": { "skills": 3, "agents": 1, "rules": 2, "wiring": true },
+      "unresolved": [],
+      "needs_attention": false
+    }
+  ]
+}
+```
+
+A pack name claimed by more than one imported source carries `"collision": true` with `collision_repos` listing them, and counts as attention.
+
+#### `GET /api/packs/{name}`
+
+One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected.
+
+**Auth:** Yes
+
+**Errors:**
+- `404` - Pack not imported
+- `409` - Pack name claimed by multiple sources (the body names both repos)
+
+#### `POST /api/packs`
+
+Imports a pack from git, mirroring `gridctl pack add`: clone, manifest resolution (empty skill and agent lists select everything discovered; rules are opt-in), the blocking security scan, and rule-fragment installation. Unlike the CLI (which partially imports and reports per-resource skips), security findings without `trust` refuse the whole import with a `409` before any write, carrying the flagged resources, so the trust decision always precedes the import. The refusal covers the same gate the importer applies: SKILL.md bodies, supporting files (danger severity), agents, and rules.
+
+**This is also the update path.** `pack add` is the documented update verb: a POST against an already-imported origin re-resolves the selection, refreshes rules whose content changed upstream, and leaves locally edited rules alone (reported in `doc.skipped`). There is no separate update endpoint.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
+  -H "Content-Type: application/json" \
+  -d '{"repo": "https://github.com/acme/team-pack", "trust": false}'
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `repo` | string | Git repository URL (required) |
+| `ref` | string | Branch, tag, or commit; default: the default branch |
+| `path` | string | Subdirectory within the repository |
+| `trust` | bool | Accept security findings (the CLI's `--trust`) |
+| `dryRun` | bool | Resolve and report without importing |
+
+**Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation).
+
+**Errors:**
+- `400` - Missing repo or invalid body
+- `409` - Security findings without trust: `{ "error", "pack", "findings": [{kind, name, findings}] }`; nothing was imported
+- `422` - No `gridctl-pack.yaml` at the repository root
+
+#### `POST /api/packs/preview`
+
+Resolves a pack manifest against its repository without writing anything: manifest identity, the resolved selection per kind with per-resource scan findings, unresolved names, and warnings. The wizard's read-only review step.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs/preview \
+  -H "Content-Type: application/json" \
+  -d '{"repo": "https://github.com/acme/team-pack"}'
+```
+
+**Errors:** `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos).
+
+#### `POST /api/packs/{name}/apply`
+
+Projects one pack with full CLI flag parity. Apply is additive and never transactional: each resource succeeds or skips independently, and the response reports every outcome.
+
+**Auth:** Yes
+
+| Field | Type | Description |
+|---|---|---|
+| `clients` | []string | Restrict wiring to these client slugs (the CLI's `--clients`) |
+| `force` | bool | Overwrite drifted or foreign resources after backup (`--force`) |
+| `dry_run` | bool | Report what would change without writing (`--dry-run`) |
+
+An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named.
+
+**Errors:** `404` - Pack not imported; `409` - Name collision.
+
+#### `DELETE /api/packs/{name}`
+
+Cascade removal in dependency order: pack-tagged projections are unsynced, pack-tagged wiring records removed through the ownership manager, then registry entries and the pack record. `?dry_run=1` returns the cascade preview (`would-remove` rows plus the drift-kept list) without executing; `?force=1` removes hand-edited projections too. A partial removal trims the pack record to the kept resources rather than deleting it, so the response's `kept` list is the truth about what remains.
+
+**Auth:** Yes
+
+**Errors:** `404` - Pack not imported; `409` - Name collision.
+
+---
+
 ### MCP Protocol
 
 The gateway negotiates the MCP protocol version at `initialize`: a requested
